@@ -1,19 +1,25 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type ActivityResponse, type PostCard, type PublicProfile } from '../api';
+import { ApiRequestError, api, type ActivityResponse, type BlockedRow, type FeedListing, type PostCard, type PublicProfile } from '../api';
+import { listingRarity } from '@shared/quest';
+import { LootCard } from './FeedPage';
+import { useToast } from '../components/Feedback';
 import { CollectorHeader, PurchasedCollection } from './CollectorProfile';
 import { SocialPostCard } from '../components/SocialPost';
-import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, LevelChip, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { EarnPill, earnOf } from '../components/Affiliate';
+import { PushCard } from '../components/PushControls';
 
-type Tab = 'collection' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
+type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
 
 const TAB_LABELS: Record<Tab, string> = {
   collection: '🗂️ Collection',
+  saved: '♥ Saved',
   posts: '📝 Posts',
   photos: '📸 Photos',
   listings: 'My listings',
@@ -31,9 +37,11 @@ const TAB_LABELS: Record<Tab, string> = {
  */
 function waitingOn(data: ActivityResponse, userId: string) {
   return [...data.orders, ...data.sales].filter((order) => {
+    // An unpaid Buy lives in the cart, not here: only placed orders wait on anyone.
+    if (order.placedAt === null) return false;
     // An open dispute is waiting on somebody whichever side they are, so it
     // counts whether or not there is an order action behind it.
-    if (order.escrow.state === 'disputed') return true;
+    if (order.hold.state === 'disputed') return true;
     return actionsFor(order, userId).some((action) => action === 'pay' || action === 'confirm');
   });
 }
@@ -47,6 +55,7 @@ function waitingOn(data: ActivityResponse, userId: string) {
  */
 export function ProfilePage() {
   const { user } = useSession();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState<ActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,8 +110,12 @@ export function ProfilePage() {
           memberSince: publicPage?.memberSince,
           lastSeenAt: null,
         }}
-        action={
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setTab('settings')}>✏️ Edit</button>
+        page={publicPage}
+        onReviews={() => user.username && navigate(`/${user.username}`)}
+        actions={
+          <div className="pacts">
+            <button type="button" className="pbtn pbtn--follow" onClick={() => setTab('settings')}>Edit profile</button>
+          </div>
         } />
 
       <div className="storefront__body">
@@ -137,6 +150,10 @@ export function ProfilePage() {
         )}
       </div>
 
+      {/* Notifications for this device, with a test, so "am I getting
+          them?" has an answer on the spot. */}
+      <PushCard />
+
       {/* Something with money on it and a person waiting. Above the tabs,
           because it is the reason to have opened this page at all. */}
       {data && waitingOn(data, user.id).length > 0 && (
@@ -147,7 +164,7 @@ export function ProfilePage() {
               style={{ color: 'inherit', textDecoration: 'none' }}>
               <span>{order.itemName}</span>
               <span className="badge badge--accent">
-                {order.escrow.state === 'disputed' ? 'disputed'
+                {order.hold.state === 'disputed' ? 'disputed'
                   : order.paymentStatus === 'unpaid' ? 'pay'
                   : 'confirm delivery'}
               </span>
@@ -160,7 +177,7 @@ export function ProfilePage() {
         {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
-            {data && entry !== 'settings' && entry !== 'posts' && entry !== 'photos' && entry !== 'collection' && (
+            {data && entry !== 'settings' && entry !== 'posts' && entry !== 'photos' && entry !== 'collection' && entry !== 'saved' && (
               <span className="faint" style={{ marginLeft: 6 }}>
                 {entry === 'listings' ? data.listings.length
                   : entry === 'sales' ? data.sales.length
@@ -174,10 +191,13 @@ export function ProfilePage() {
       {error && <ErrorNotice message={error} />}
       {tab === 'collection' ? (
         <PurchasedCollection userId={user.id} isMe />
+      ) : tab === 'saved' ? (
+        <SavedItems />
       ) : tab === 'settings' ? (
         <>
           <UsernameSettings />
           <MyPageSettings />
+          <BlockedList />
         </>
       ) : tab === 'posts' ? (
         posts === null ? <p className="muted">Loading…</p>
@@ -205,7 +225,7 @@ export function ProfilePage() {
         ) : (
           <div className="grid">
             {data.listings.map((listing) => (
-              <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
+              <Link key={listing.id} to={`/listing/${listing.id}`} className={`card card--link${listing.affiliate ? ' is-affiliate' : ''}`}>
                 <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                   <div className="thumb__badges">
                     <span className="badge badge--solid">{listing.condition}</span>
@@ -214,7 +234,10 @@ export function ProfilePage() {
                 </Thumb>
                 <div className="listing__body">
                   <span className="listing__title">{listing.title}</span>
-                  <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                  <span className="pricerow">
+                    <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+                    <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
+                  </span>
                   <span className="faint">{listing.viewCount} views · {listing.likeCount} saved</span>
                 </div>
               </Link>
@@ -232,7 +255,7 @@ export function ProfilePage() {
           <div className="card table-scroll">
             <table className="table">
               <thead>
-                <tr><th>Item</th><th>Qty</th><th>Total</th><th>Tracking</th><th>Payment</th><th>Escrow</th><th>Ordered</th></tr>
+                <tr><th>Item</th><th>Qty</th><th>Total</th><th>Tracking</th><th>Payment</th><th>Protection</th><th>Ordered</th></tr>
               </thead>
               <tbody>
                 {(tab === 'sales' ? data.sales : data.orders).map((order) => (
@@ -250,7 +273,7 @@ export function ProfilePage() {
                         {order.paymentStatus.replace(/_/g, ' ')}
                       </span>
                     </td>
-                    <td><span className={`badge badge--${order.escrow.state === 'held' ? 'ok' : ''}`}>{order.escrow.state}</span></td>
+                    <td><span className={`badge badge--${order.hold.state === 'held' ? 'ok' : ''}`}>{order.hold.state}</span></td>
                     <td className="faint">{timeAgo(order.createdAt)}</td>
                   </tr>
                 ))}
@@ -269,6 +292,7 @@ export function ProfilePage() {
               <Avatar name={seller.storefrontName} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="card__title">{seller.storefrontName}</div>
+                <LevelChip tag={seller.level} />
                 <span className="faint">{seller.dispatchRegion} · {seller.followerCount} followers</span>
               </div>
               <TrustBadge score={seller.trustScore} tier={seller.tier} />
@@ -474,5 +498,74 @@ function PhotoGrid({ posts, listings }: { posts: PostCard[] | null; listings: Ac
         <span key={photo.key} className="photogrid__cell"><img src={photo.url} alt="" loading="lazy" /></span>
       ))}
     </div>
+  );
+}
+
+/** Everything you saved with the heart, as the Buy tab shows it, sold-out ones dimmed. */
+function SavedItems() {
+  const [items, setItems] = useState<(FeedListing & { gone: boolean })[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void api.saved().then((result) => setItems(result.listings))
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your saves.'));
+  }, []);
+  if (error) return <ErrorNotice message={error} />;
+  if (!items) return <p className="muted">Loading…</p>;
+  if (items.length === 0) {
+    return (
+      <EmptyState icon="♥" title="Nothing saved yet">
+        Tap the heart on anything in <Link to="/">Buy</Link> to keep it here.
+      </EmptyState>
+    );
+  }
+  const now = Date.now();
+  return (
+    <div className="grid qgrid">
+      {items.map((listing) => (
+        <div key={listing.id} className={listing.gone ? 'is-gone' : undefined}>
+          <LootCard listing={{ ...listing, rarity: listingRarity(listing, now) }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** People and shops you blocked, each one tap from being let back in. */
+function BlockedList() {
+  const toast = useToast();
+  const [rows, setRows] = useState<BlockedRow[] | null>(null);
+  useEffect(() => {
+    void api.blocked().then((result) => setRows(result.blocked)).catch(() => setRows([]));
+  }, []);
+  async function unblock(row: BlockedRow) {
+    try {
+      await api.unblock(row.id);
+      setRows((current) => current?.filter((entry) => entry.id !== row.id) ?? current);
+      toast(`${row.name} unblocked.`, 'ok');
+    } catch (err) {
+      toast(err instanceof ApiRequestError ? err.message : 'Could not unblock.', 'error');
+    }
+  }
+  return (
+    <section className="card card--pad stack" style={{ marginTop: 18 }}>
+      <span className="card__title">Blocked people and shops</span>
+      <p className="faint" style={{ margin: 0 }}>Blocking someone blocks their shop too. Neither of you can message the other.</p>
+      {!rows ? <p className="muted">Loading…</p> : rows.length === 0 ? <p className="muted">You have not blocked anyone.</p> : (
+        <ul className="followlist">
+          {rows.map((row) => (
+            <li key={row.id} className="followlist__row">
+              <Avatar name={row.name} size={34} />
+              <span style={{ flex: 1 }}>
+                <strong>{row.name}</strong>
+                <span className="faint">
+                  {row.handle && `@${row.handle}`}{row.shop && ` · shop: ${row.shop.name}`}
+                </span>
+              </span>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => void unblock(row)}>Unblock</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

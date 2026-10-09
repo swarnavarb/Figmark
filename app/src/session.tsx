@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AuthUser } from '@shared/contracts';
+import { disablePush } from './push';
 import { api, setSessionRejectedHandler } from './api';
 
 /**
@@ -28,6 +29,20 @@ interface SessionValue {
   signOut: () => Promise<void>;
   /** Re-read the principal, after something on it has changed server-side. */
   refresh: () => Promise<void>;
+  /**
+   * Ask a guest to sign in, in a popup over the page they are on. Anything
+   * that needs an account calls this instead of hiding itself; once they are
+   * in, the popup closes and they are still on the same page.
+   */
+  promptAuth: (reason?: string) => void;
+  /**
+   * `fn` for somebody signed in; the sign-in popup for a guest. For wrapping
+   * the handler of anything interactive.
+   */
+  gate: <A extends unknown[]>(fn: (...args: A) => unknown, reason?: string) => (...args: A) => void;
+  /** Non-null while the sign-in popup is open: why it was asked for. */
+  authPrompt: { reason: string | null } | null;
+  closeAuth: () => void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -39,6 +54,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [warning, setWarning] = useState<string | null>(null);
   const [sessionsInsecure, setSessionsInsecure] = useState(false);
   const [missingContainers, setMissingContainers] = useState<string[]>([]);
+  const [authPrompt, setAuthPrompt] = useState<{ reason: string | null } | null>(null);
+  const userRef = useRef<AuthUser | null>(null);
+  userRef.current = user;
+  const loadingRef = useRef(true);
+  loadingRef.current = loading;
 
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +106,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     let checking = false;
-    setSessionRejectedHandler(() => {
+    setSessionRejectedHandler((method) => {
+      // A guest pressing something that needs an account: ask them to sign
+      // in, rather than showing "Authentication required" on the page.
+      if (!userRef.current && !loadingRef.current) {
+        if (method !== 'GET') setAuthPrompt({ reason: null });
+        return;
+      }
       if (checking) return;
       checking = true;
       void api
@@ -129,14 +155,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // While still signed in, so the account can let go of this device: the
+    // next person to use it must not get this account's notifications.
+    await disablePush().catch(() => undefined);
     await api.logout();
     setUser(null);
     setWarning(null);
   }, []);
 
+  // Signed in: whatever asked for it is now allowed, so the popup goes.
+  useEffect(() => {
+    if (user) setAuthPrompt(null);
+  }, [user]);
+
+  const promptAuth = useCallback((reason?: string) => setAuthPrompt({ reason: reason ?? null }), []);
+  const closeAuth = useCallback(() => setAuthPrompt(null), []);
+  const gate = useCallback(<A extends unknown[]>(fn: (...args: A) => unknown, reason?: string) => (...args: A) => {
+    if (userRef.current) {
+      void fn(...args);
+      return;
+    }
+    // A click on a link or inside a form must not go on to do the thing anyway.
+    const event = args[0] as { preventDefault?: () => void; stopPropagation?: () => void } | undefined;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setAuthPrompt({ reason: reason ?? null });
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh }),
-    [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh],
+    () => ({
+      user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh,
+      promptAuth, gate, authPrompt, closeAuth,
+    }),
+    [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh,
+      promptAuth, gate, authPrompt, closeAuth],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

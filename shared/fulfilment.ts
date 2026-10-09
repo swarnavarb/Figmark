@@ -8,7 +8,80 @@ import {
   type LotStage,
   type Sourcing,
 } from './enums.js';
-import type { Order, StageEvent, StageEventKind } from './models.js';
+import type { Lot, Order, StageEvent, StageEventKind } from './models.js';
+import { currentStepOf, lotEndIndex, lotOffset, routeOf } from './routes.js';
+
+/**
+ * A lot that is finished: closed, or every item in it delivered. Nothing more
+ * is filed into it or moved along it, and it lists under Completed.
+ */
+export function lotIsDone(lot: Pick<Lot, 'status' | 'stage'>): boolean {
+  return lot.status === 'closed' || lot.status === 'cancelled' || lot.stage === 'delivered';
+}
+
+/**
+ * Where a lot is, in the few words its buyers are shown.
+ *
+ * Coarser than the route on purpose: a buyer wants to know whether the box is
+ * still being filled, has been shut and is getting ready to go, is on its
+ * way, or has arrived - not which of the seller's eleven steps it is on.
+ */
+export type LotBuyerPhase = 'filling' | 'closed' | 'in_transit' | 'received' | 'cancelled';
+
+export const LOT_PHASE_LABELS: Record<LotBuyerPhase, string> = {
+  filling: 'Filling',
+  closed: 'Closed',
+  in_transit: 'In transit',
+  received: 'Received',
+  cancelled: 'Called off',
+};
+
+/** The four a lot goes through, in order - the stops on a buyer's track. */
+export const LOT_PHASES: readonly LotBuyerPhase[] = ['filling', 'closed', 'in_transit', 'received'];
+
+/** What each one means, in a line a buyer reads under it. */
+export const LOT_PHASE_HINTS: Record<LotBuyerPhase, string> = {
+  filling: 'Still taking orders - the box is filling up.',
+  closed: 'Sealed and taped - being prepped for dispatch.',
+  in_transit: 'On its way across.',
+  received: 'Landed - items are being sent out to their buyers.',
+  cancelled: 'This lot was called off.',
+};
+
+export function lotPhase(lot: Pick<Lot, 'status' | 'stage' | 'route' | 'currentStep'>): LotBuyerPhase {
+  if (lot.status === 'cancelled') return 'cancelled';
+  if (lot.stage === 'delivered' || lot.status === 'closed') return 'received';
+  const route = routeOf(lot);
+  const at = currentStepOf(lot);
+  const offset = lotOffset(route);
+  // Not one of its own steps taken: still filling, unless the seller shut it.
+  if (at < offset) return lot.status === 'filled' ? 'closed' : 'filling';
+  /* The steps are the seller's own words, so where the lot is is read from
+     what the steps it has taken say: nothing about leaving yet is a box shut
+     and waiting; anything about arriving is a box that has landed. Past the
+     lot's last step its items are being worked one by one at the far end. */
+  if (at > lotEndIndex(route)) return 'received';
+  const taken = route.steps.slice(offset, at + 1).map((step) => step.name);
+  if (taken.some((name) => ARRIVED.test(name))) return 'received';
+  if (taken.some((name) => LEFT.test(name))) return 'in_transit';
+  return 'closed';
+}
+
+const LEFT = /dispatch|ship|transit|sail|flight|flown|fly|depart|forwards?\b|on (its|the) way|left/i;
+const ARRIVED = /receiv|land|arriv|customs|clear|destination warehouse/i;
+
+/** How long a step forward can be taken back before it shows on the timeline. */
+export const UNDO_WINDOW_MS = 3 * 60 * 1000;
+
+/** Whether an event is still inside its undo window, and so not shown yet. */
+export function isPendingUndo(event: Pick<StageEvent, 'undoUntil'>, now: number = Date.now()): boolean {
+  return Boolean(event.undoUntil) && Date.parse(event.undoUntil!) > now;
+}
+
+/** A history as a timeline shows it: everything except what can still be undone. */
+export function settledHistory<T extends Pick<StageEvent, 'undoUntil'>>(events: readonly T[], now: number = Date.now()): T[] {
+  return events.filter((event) => !isPendingUndo(event, now));
+}
 
 /**
  * Partition key for an order with no shipment lot behind it.

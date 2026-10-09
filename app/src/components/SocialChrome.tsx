@@ -178,22 +178,12 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
  */
 export function SocialSearch({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
-  const { voice } = useVoice();
   const [q, setQ] = useState('');
   const [result, setResult] = useState<SocialSearchResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [followed, setFollowed] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
-    document.addEventListener('keydown', key);
-    document.body.classList.add('is-locked');
-    return () => {
-      document.removeEventListener('keydown', key);
-      document.body.classList.remove('is-locked');
-    };
-  }, [onClose]);
+  useSearchSheet(onClose);
 
   useEffect(() => {
     const needle = q.trim();
@@ -224,26 +214,6 @@ export function SocialSearch({ onClose }: { onClose: () => void }) {
     navigate(to);
   };
 
-  const follow = async (id: string) => {
-    try {
-      const { following } = await api.follow(id);
-      setFollowed((all) => ({ ...all, [id]: following }));
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
-    }
-  };
-
-  const followButton = (id: string, already: boolean) => {
-    // A shop has no follows of its own; the button is for people.
-    if (voice.storeId) return null;
-    const on = followed[id] ?? already;
-    return (
-      <button type="button" className={`followbtn${on ? ' is-on' : ''}`} onClick={() => void follow(id)}>
-        {on ? <><Icon name="check" size={12} /> Following</> : <><Icon name="plus" size={12} /> Follow</>}
-      </button>
-    );
-  };
-
   const empty = result && result.people.length + result.shops.length + result.forums.length === 0;
 
   return (
@@ -268,63 +238,119 @@ export function SocialSearch({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {empty && <p className="socsearch__none">Nobody by that name yet.</p>}
-
-        {result && result.shops.length > 0 && (
-          <section className="socsearch__group">
-            <h2>Shops</h2>
-            {result.shops.map((shop) => (
-              <div key={shop.id} className="socsearch__row">
-                <button type="button" className="socsearch__open"
-                  onClick={() => open(shop.handle ? `/${shop.handle}` : `/social/c/${shop.id}`)}>
-                  {shop.photoUrl ? <img className="socsearch__photo" src={shop.photoUrl} alt="" /> : <Avatar name={shop.name} size={44} />}
-                  <span className="socsearch__who">
-                    <strong>{shop.name} <span className="socsearch__kind">Shop</span></strong>
-                    <span className="faint">{shop.handle ? `@${shop.handle} · ` : ''}{shop.followerCount} followers</span>
-                  </span>
-                </button>
-                {shop.mine ? <span className="faint">Yours</span> : followButton(shop.id, shop.following)}
-              </div>
-            ))}
-          </section>
-        )}
-
-        {result && result.people.length > 0 && (
-          <section className="socsearch__group">
-            <h2>People</h2>
-            {result.people.map((person) => (
-              <div key={person.id} className="socsearch__row">
-                <button type="button" className="socsearch__open"
-                  onClick={() => person.handle && open(`/${person.handle}`)}>
-                  <Avatar name={person.name} size={44} />
-                  <span className="socsearch__who">
-                    <strong>{person.name}</strong>
-                    <span className="faint">{person.handle ? `@${person.handle}` : ''}{person.bio ? ` · ${person.bio}` : ''}</span>
-                  </span>
-                </button>
-                {followButton(person.id, person.following)}
-              </div>
-            ))}
-          </section>
-        )}
-
-        {result && result.forums.length > 0 && (
-          <section className="socsearch__group">
-            <h2>Forums</h2>
-            {result.forums.map((forum) => (
-              <div key={forum.id} className="socsearch__row">
-                <button type="button" className="socsearch__open" onClick={() => open(`/social/f/${forum.id}`)}>
-                  <span className="forumav" aria-hidden="true"><Icon name="forum" size={20} /></span>
-                  <span className="socsearch__who">
-                    <strong>{forum.name}</strong>
-                    <span className="faint">{forum.memberCount} members{forum.member ? ' · joined' : ''}</span>
-                  </span>
-                </button>
-              </div>
-            ))}
-          </section>
-        )}
+        {result && <SocialMatches result={result} open={open} onError={setError} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * A full-screen search sheet's housekeeping: Escape closes it, and the page
+ * underneath stays still while it is open.
+ */
+export function useSearchSheet(onClose: () => void) {
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    document.addEventListener('keydown', key);
+    document.body.classList.add('is-locked');
+    return () => {
+      document.removeEventListener('keydown', key);
+      document.body.classList.remove('is-locked');
+    };
+  }, [onClose]);
+}
+
+/**
+ * The shops, people and forums a search found, with following on the row.
+ *
+ * Shared by the social search and the marketplace one, so somebody found from
+ * either looks and follows the same way.
+ */
+export function SocialMatches({ result, open, onError }: {
+  result: SocialSearchResult;
+  open: (to: string) => void;
+  onError: (message: string) => void;
+}) {
+  const { voice } = useVoice();
+  const [followed, setFollowed] = useState<Record<string, boolean>>({});
+
+  const follow = async (id: string) => {
+    try {
+      const { following } = await api.follow(id);
+      setFollowed((all) => ({ ...all, [id]: following }));
+    } catch (err) {
+      onError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
+    }
+  };
+
+  const followButton = (id: string, already: boolean) => {
+    // A shop has no follows of its own; the button is for people.
+    if (voice.storeId) return null;
+    const on = followed[id] ?? already;
+    return (
+      <button type="button" className={`followbtn${on ? ' is-on' : ''}`} onClick={() => void follow(id)}>
+        {on ? <><Icon name="check" size={12} /> Following</> : <><Icon name="plus" size={12} /> Follow</>}
+      </button>
+    );
+  };
+
+  return (
+    <>
+      {result.shops.length > 0 && (
+        <section className="socsearch__group">
+          <h2>Shops</h2>
+          {result.shops.map((shop) => (
+            <div key={shop.id} className="socsearch__row">
+              <button type="button" className="socsearch__open"
+                onClick={() => open(shop.handle ? `/${shop.handle}` : `/social/c/${shop.id}`)}>
+                {shop.photoUrl ? <img className="socsearch__photo" src={shop.photoUrl} alt="" /> : <Avatar name={shop.name} size={44} />}
+                <span className="socsearch__who">
+                  <strong>{shop.name} <span className="socsearch__kind">Shop</span></strong>
+                  <span className="faint">{shop.handle ? `@${shop.handle} · ` : ''}{shop.followerCount} followers</span>
+                </span>
+              </button>
+              {shop.mine ? <span className="faint">Yours</span> : followButton(shop.id, shop.following)}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {result.people.length > 0 && (
+        <section className="socsearch__group">
+          <h2>People</h2>
+          {result.people.map((person) => (
+            <div key={person.id} className="socsearch__row">
+              <button type="button" className="socsearch__open"
+                onClick={() => person.handle && open(`/${person.handle}`)}>
+                <Avatar name={person.name} size={44} />
+                <span className="socsearch__who">
+                  <strong>{person.name}</strong>
+                  <span className="faint">{person.handle ? `@${person.handle}` : ''}{person.bio ? ` · ${person.bio}` : ''}</span>
+                </span>
+              </button>
+              {followButton(person.id, person.following)}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {result.forums.length > 0 && (
+        <section className="socsearch__group">
+          <h2>Forums</h2>
+          {result.forums.map((forum) => (
+            <div key={forum.id} className="socsearch__row">
+              <button type="button" className="socsearch__open" onClick={() => open(`/social/f/${forum.id}`)}>
+                <span className="forumav" aria-hidden="true"><Icon name="forum" size={20} /></span>
+                <span className="socsearch__who">
+                  <strong>{forum.name}</strong>
+                  <span className="faint">{forum.memberCount} members{forum.member ? ' · joined' : ''}</span>
+                </span>
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
+    </>
   );
 }
 

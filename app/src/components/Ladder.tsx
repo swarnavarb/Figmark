@@ -1,9 +1,9 @@
 import { Fragment, useState, type ReactNode } from 'react';
-import { isLotEvent, kindOf } from '@shared/fulfilment';
+import { isLotEvent, kindOf, settledHistory } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import {
-  groupStages, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep,
+  groupStages, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep, lotNo,
 } from '@shared/routes';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { formatDateOrdinal } from '../format';
@@ -27,7 +27,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, skin = 'classic',
+  leaveAt, leaveNote, actFor, lockFrom, zones, moveUpTo, ended,
 }: {
   steps: RouteStep[];
   current: number;
@@ -71,11 +71,35 @@ export function Ladder({
   leaveAt?: number;
   leaveNote?: ReactNode;
   /**
-   * `quest` draws the same rungs as a game board - numbered level nodes,
-   * gold coins for the ones reached, XP on each. `classic` is the plain
-   * ladder, kept so the look can be switched back.
+   * The seller's button for a rung, drawn on the rung itself - the tick that
+   * reaches this step, pressed from the timeline it writes. Absent, or
+   * returning nothing, draws no button.
    */
-  skin?: 'classic' | 'quest';
+  actFor?: (step: RouteStep, index: number, steps: readonly RouteStep[]) => ReactNode;
+  /**
+   * From this rung on, a step not yet within reach is drawn locked: the last
+   * mile, which opens one step at a time as the journey gets there rather
+   * than sitting there as a list of things nobody can do yet.
+   */
+  lockFrom?: number;
+  /**
+   * Colour the rungs by part of the journey - before the lot, in it, after
+   * it - where a seller is arranging one. Buyers read one journey, so their
+   * timeline leaves this out.
+   */
+  zones?: { join: number; leave: number };
+  /**
+   * The furthest rung `onMove` may go to. Past it the move is not on offer at
+   * all - a lot cannot be moved onto the steps its items take one at a time,
+   * and a button that only answers with a refusal is worse than none.
+   */
+  moveUpTo?: number;
+  /**
+   * The journey stopped here - the order was cancelled or turned down. The
+   * rungs past where it got to are not drawn at all, and one last rung says
+   * how it ended: nothing further is going to happen to it.
+   */
+  ended?: { label: string; at?: string | null; note?: string | null } | null;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -93,12 +117,12 @@ export function Ladder({
     setShipper('');
   }
 
-  const notes = notesByStep(steps, history ?? [], current);
+  // What can still be undone is not on the timeline yet.
+  const notes = notesByStep(steps, settledHistory(history ?? []), current);
   /* Whether the lot has started carrying this item: until the item reaches a
      rung on the lot's half of the route, the lot is still a promise. */
   const stillWaiting = current < 0 || !steps[current] || sideOf(steps[current]!, current) === 'pre';
-  const quest = skin === 'quest';
-  const editable = Boolean(onMove || onNote);
+  const editable = !ended && Boolean(onMove || onNote);
 
   /*
    * Stage headers, drawn only where the seller actually grouped steps.
@@ -130,15 +154,19 @@ export function Ladder({
    * to. Nothing, most of the time: only a handful of steps are places a
    * buyer actually waits.
    */
-  const gapMessage = waitingFor || (current >= 0 ? waitMessageFor(steps[current]) : null);
+  const gapMessage = ended ? null : waitingFor || (current >= 0 ? waitMessageFor(steps[current]) : null);
+  const shown = ended ? steps.slice(0, Math.max(0, current + 1)) : steps;
 
   return (
-    <ol className={`ladder${editable ? ' ladder--live' : ''}${quest ? ' ladder--quest' : ''}`}>
-      {steps.map((step, index) => {
+    <ol className={`ladder${editable ? ' ladder--live' : ''}${ended ? ' ladder--ended' : ''}`}>
+      {shown.map((step, index) => {
         // Reaching a step is what ticks it - the present is the gap after
         // it, drawn as its own row below, not a mark on the rung itself.
         const state = stepStateAt(index, current);
         const said = notes.get(index) ?? [];
+        /* Locked: on the last mile and more than one step ahead of where the
+           item is - it unlocks the moment the step before it is reached. */
+        const locked = lockFrom !== undefined && index >= lockFrom && index > current + 1;
         const stage = stageStarts.get(index);
         return (
           <Fragment key={step.id}>
@@ -161,19 +189,18 @@ export function Ladder({
               </span>
             </li>
           )}
-          <li className={`ladder__row is-${state}`}>
+          <li className={`ladder__row is-${state}${locked ? ' is-locked' : ''}${zones
+            ? ` ladder__row--${index < zones.join ? 'pre' : index < zones.leave ? 'lot' : 'post'}` : ''}`}>
             <span className="ladder__dot" aria-hidden="true">
-              {quest && state !== 'done'
-                ? <span className="ladder__lvl">{index + 1}</span>
-                : <StepMark state={state} size={11} />}
+              <StepMark state={state} size={11} />
             </span>
 
             <span className="ladder__body">
               <span className="ladder__name">
                 {renderStepText(step.name, vars ?? {})}
-                {quest && state === 'done' && <span className="ladder__xp">+{STEP_XP} XP</span>}
               </span>
               {step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
+              {actFor?.(step, index, steps)}
 
               {said.map((event, at) => (
                 isLotEvent(event)
@@ -193,7 +220,7 @@ export function Ladder({
                           : stillWaiting
                             ? <>Will be shipped with <strong>{event.lot?.name}</strong></>
                             : <>Travelling with <strong>{event.lot?.name}</strong></>}
-                        {event.lot?.number && <span className="ladder__lot-no">LOT {event.lot.number}</span>}
+                        {event.lot?.number && <span className="ladder__lot-no">LOT {lotNo(event.lot.number)}</span>}
                       </span>
                       <span className="ladder__note-when">{when(event.enteredAt)}</span>
                       {lotAction?.(event)}
@@ -242,7 +269,7 @@ export function Ladder({
                       <Icon name="plus" size={11} /> Note
                     </button>
                   )}
-                  {onMove && index !== current && forwarding !== index && (
+                  {onMove && index !== current && forwarding !== index && (moveUpTo === undefined || index <= moveUpTo) && (
                     <button type="button" className="ladder__act ladder__act--move" disabled={busy}
                       onClick={() => step.forward ? setForwarding(index) : void onMove(index)}>
                       {index < current ? 'Move back here' : 'Move here'}
@@ -253,17 +280,16 @@ export function Ladder({
 
               {/* A hand-over to a carrier gets its two fields here, on the step
                   it actually happened at - not one global "tracking" field
-                  that a second forward on the same lot would overwrite. The
-                  courier is required: a tracking ID with nobody to ask it of
-                  is not a lookup anybody can make, live or by hand. */}
+                  that a second forward on the same lot would overwrite. Both
+                  are optional, and a blank one is never shown to the buyer. */}
               {editable && forwarding === index && (
                 <span className="ladder__write">
                   <input value={trackingId} onChange={(event) => setTrackingId(event.target.value)}
                     placeholder="Tracking ID / AWB" aria-label="Tracking ID or AWB number" />
                   <input value={shipper} onChange={(event) => setShipper(event.target.value)}
-                    placeholder="Courier, e.g. DHL, Bluedart" aria-label="Courier or shipper" required />
+                    placeholder="Courier, e.g. DHL, Bluedart" aria-label="Courier or shipper" />
                   <span className="ladder__write-acts">
-                    <button type="button" className="btn btn--sm" disabled={busy || !shipper.trim()}
+                    <button type="button" className="btn btn--sm" disabled={busy}
                       onClick={() => moveTo(index)}>
                       Move here
                     </button>
@@ -271,9 +297,9 @@ export function Ladder({
                       Cancel
                     </button>
                   </span>
-                  {!shipper.trim() && (
-                    <span className="field__hint">The courier's name is required to move here.</span>
-                  )}
+                  <span className="field__hint">
+                    Both optional - buyers only see what you fill in, and nothing at all if you leave them blank.
+                  </span>
                 </span>
               )}
 
@@ -316,7 +342,7 @@ export function Ladder({
                 <WaveLoader />
               </span>
               <span className="ladder__body">
-                <span className="ladder__name">{gapMessage}</span>
+                <span className="ladder__name">{renderStepText(gapMessage, vars ?? {})}</span>
                 {waitingFor && (
                   <span className="faint">
                     Everything from here happens to the whole lot, not to this piece alone.
@@ -328,6 +354,17 @@ export function Ladder({
           </Fragment>
         );
       })}
+      {ended && (
+        <li className="ladder__row ladder__row--ended">
+          <span className="ladder__dot" aria-hidden="true">✕</span>
+          <span className="ladder__body">
+            <span className="ladder__name">{ended.label}</span>
+            {ended.note && <span className="faint">{ended.note}</span>}
+            <span className="faint">The journey ends here.</span>
+          </span>
+          {ended.at && <span className="ladder__note-when">{when(ended.at)}</span>}
+        </li>
+      )}
     </ol>
   );
 }
@@ -384,9 +421,6 @@ function notesByStep(steps: RouteStep[], history: StageEvent[], current: number)
   }
   return out;
 }
-
-/** What reaching one rung is worth on the quest skin. Flat, so it reads as a count. */
-export const STEP_XP = 100;
 
 /** A date a person reads at a glance, not a timestamp. */
 function when(iso: string): string {

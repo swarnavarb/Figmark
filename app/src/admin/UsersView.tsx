@@ -84,9 +84,9 @@ export function UsersView() {
               {row.suspended && <span className="badge badge--warn">suspended</span>}
               {!row.signInAccount && <span className="badge">no login</span>}
               {row.store && <span className="badge">store</span>}
-              {row.escrowRights && (
+              {row.managerRights && (
                 <span className="badge badge--ok">
-                  escrow · {(row.escrowRights.feeBasisPoints / 100).toFixed(1)}%
+                  Community manager{row.managerRights.available === false ? ' · off' : ''}
                 </span>
               )}
             </div>
@@ -108,6 +108,7 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
+  const [alertText, setAlertText] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -129,7 +130,10 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
       setPending(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
+      const message = err instanceof ApiRequestError ? err.message : 'That did not work.';
+      // A refusal to delete a bought item needs to be seen, not tucked under the page.
+      if (err instanceof ApiRequestError && err.code === 'listing_purchased') setAlertText(message);
+      else setError(message);
       setPending(null);
     } finally {
       setBusy(false);
@@ -177,7 +181,7 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </dl>
       </div>
 
-      <EscrowPanel user={user} onChanged={load} />
+      <ManagerPanel user={user} onChanged={load} />
 
       <ResourceList title="Listings" empty="Nothing listed."
         items={data.listings.map((listing) => ({
@@ -260,6 +264,19 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </Confirm>
       )}
 
+      {alertText && (
+        <div className="modal" role="alertdialog" aria-modal="true" aria-label="Item has been bought"
+          onClick={(event) => event.target === event.currentTarget && setAlertText(null)}>
+          <div className="modal__box">
+            <h2 className="modal__title">This item has been bought</h2>
+            <div className="modal__body"><p className="notice notice--warn">{alertText}</p></div>
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 14 }}>
+              <button type="button" className="btn btn--danger" onClick={() => setAlertText(null)}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pending && pending.kind !== 'user' && (
         <Confirm
           title={`Delete this ${pending.kind}?`}
@@ -269,7 +286,10 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
           onConfirm={() => void act(() => admin.deleteResource(pending.kind, pending.id, pending.ownerId))}
         >
           <p style={{ overflowWrap: 'anywhere' }}>{pending.label}</p>
-          <p className="notice notice--warn" style={{ margin: 0 }}>This cannot be undone.</p>
+          <p className="notice notice--warn" style={{ margin: 0 }}>
+            This cannot be undone.{pending.kind !== 'lot' && pending.kind !== 'review'
+              ? ' Its photos are removed from storage too.' : ''}
+          </p>
         </Confirm>
       )}
     </div>
@@ -277,17 +297,16 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 /**
- * Approving somebody to hold other people's money.
+ * Appointing a community manager.
  *
- * An escrow is a party, not a mechanism: buyers pick one at checkout from the
- * people approved here, and that person decides what happens to the money if
- * the trade goes wrong. The rate travels with the grant rather than sitting in
- * one global setting, because it is their fee for doing the work.
+ * A community manager hears disputes - on purchases, reviews, comments,
+ * posts and members - and is assigned to purchases bought with buyer
+ * protection, releasing the held payment once a result is agreed. They never
+ * hold money: Figmark does. Only the people appointed here see Services → My
+ * Job → Community Service. Fees are not theirs: every fee is set centrally
+ * under Settings, and they are paid a share of it after Figmark's commission.
  */
-function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
-  const [percent, setPercent] = useState(String((user.escrowRights?.feeBasisPoints ?? 200) / 100));
-  const [label, setLabel] = useState(user.escrowRights?.displayName ?? '');
-  const [note, setNote] = useState(user.escrowRights?.note ?? '');
+function ManagerPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -296,12 +315,7 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
     setBusy(true);
     setError(null);
     try {
-      await admin.setEscrow(user.id, {
-        enabled,
-        feeBasisPoints: Math.round(Number(percent) * 100),
-        displayName: label,
-        note,
-      });
+      await admin.setManager(user.id, { enabled });
       await onChanged();
       setConfirming(false);
     } catch (err) {
@@ -313,64 +327,44 @@ function EscrowPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
 
   return (
     <div className="card card--pad stack">
-      <span className="card__title">Escrow</span>
-      {user.escrowRights ? (
+      <span className="card__title">Community manager</span>
+      {user.managerRights ? (
         <p className="faint">
-          Approved {formatDate(user.escrowRights.grantedAt)} at{' '}
-          {(user.escrowRights.feeBasisPoints / 100).toFixed(1)}%, listed to buyers as{' '}
-          <strong>{user.escrowRights.displayName}</strong>. They can be chosen to hold payments on any
-          trade they are not part of, and they settle disputes over what they hold.
+          🛡️ Appointed {formatDate(user.managerRights.grantedAt)}
+          {user.managerRights.available === false ? ' - currently not taking new disputes' : ''}. Members see them as{' '}
+          <strong>{user.displayName}</strong>, their profile name, with the community manager badge.
         </p>
       ) : (
         <p className="faint">
-          Not approved. They cannot be chosen to hold anybody's payment.
+          Not a community manager. They cannot hear disputes or be assigned to protected purchases.
         </p>
       )}
-
-      <div className="field-row">
-        <label className="field">
-          <span>Listed to buyers as</span>
-          <input value={label} onChange={(event) => setLabel(event.target.value)}
-            placeholder={user.store?.name ?? user.displayName} />
-          <span className="field__hint">The name in the picker at checkout.</span>
-        </label>
-        <label className="field">
-          <span>Their fee (%)</span>
-          <input value={percent} onChange={(event) => setPercent(event.target.value)} inputMode="decimal" />
-          <span className="field__hint">Charged to the buyer on top of the item. Up to 20%.</span>
-        </label>
-      </div>
-      <label className="field">
-        <span>Note</span>
-        <input value={note} onChange={(event) => setNote(event.target.value)}
-          placeholder="Why this person, at this rate. Operators only — buyers never see it." />
-      </label>
 
       {error && <p className="notice notice--error">{error}</p>}
 
       <div className="row" style={{ flexWrap: 'wrap' }}>
-        <button className="btn" disabled={busy} onClick={() => void save(true)}>
-          {user.escrowRights ? 'Update' : 'Approve as an escrow'}
-        </button>
-        {user.escrowRights && (
+        {user.managerRights ? (
           <button className="btn btn--quiet" disabled={busy} onClick={() => setConfirming(true)}>
-            Withdraw
+            Remove community manager
+          </button>
+        ) : (
+          <button className="btn" disabled={busy} onClick={() => void save(true)}>
+            Make community manager
           </button>
         )}
       </div>
 
       {confirming && (
         <Confirm
-          title="Remove them as an escrow?"
-          confirmLabel="Remove"
+          title="Remove them as a community manager?"
+          confirmLabel="Remove community manager"
           busy={busy}
           onCancel={() => setConfirming(false)}
           onConfirm={() => void save(false)}
         >
-          <p>{user.displayName} will no longer appear in the picker at checkout.</p>
+          <p>{user.displayName} will no longer be assigned new disputes or protected purchases, and loses the Community Service desk.</p>
           <p>
-            Payments they are already holding stay with them — those are live transactions the two
-            parties agreed to, not a setting.
+            Rounds and releases they hold move to another manager on their own; you can also reassign them from the Disputes tab.
           </p>
         </Confirm>
       )}

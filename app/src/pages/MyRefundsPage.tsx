@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { REFUND_ORIGIN_LABELS } from '@shared/payments';
-import { ApiRequestError, api, type MyRefund } from '../api';
+import { AFFILIATE_STATUS_LABELS } from '@shared/affiliate';
+import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../api';
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 
 /**
- * My refunds - the buyer's side of every refund owed to them.
+ * My wallet - the money owed to this person: refunds from shops they bought
+ * from, and commission their affiliate links earned.
+ *
+ * Refunds are the buyer's side of every refund owed to them.
  *
  * What each one is for, how much has come back and when, what is still
  * owed, and - first, because it is the one thing waiting on them - any
@@ -21,7 +25,8 @@ export function MyRefundsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   // In the URL, so a notification asking for reversal details lands on that tab.
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'details' ? 'details' : 'refunds';
+  const asked = params.get('tab');
+  const tab = asked === 'details' ? 'details' : asked === 'earnings' ? 'earnings' : 'refunds';
 
   const load = useCallback(async () => {
     try {
@@ -94,6 +99,10 @@ export function MyRefundsPage() {
       <button type="button" className={`tab${tab === 'refunds' ? ' is-on' : ''}`} onClick={() => setParams({}, { replace: true })}>
         Refunds
       </button>
+      <button type="button" className={`tab${tab === 'earnings' ? ' is-on' : ''}`}
+        onClick={() => setParams({ tab: 'earnings' }, { replace: true })}>
+        Affiliate earnings
+      </button>
       <button type="button" className={`tab${tab === 'details' ? ' is-on' : ''}`}
         onClick={() => setParams({ tab: 'details' }, { replace: true })}>
         Payment reversal details
@@ -101,10 +110,20 @@ export function MyRefundsPage() {
     </div>
   );
 
+  if (tab === 'earnings') {
+    return (
+      <main className="page stack page--top">
+        <div className="page__head"><h1>👛 My wallet</h1></div>
+        {tabs}
+        <EarningsTab />
+      </main>
+    );
+  }
+
   if (tab === 'details') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>↩️ My refunds</h1></div>
+        <div className="page__head"><h1>👛 My wallet</h1></div>
         {tabs}
         {asks}
         <ReversalDetailsForm onSaved={load} />
@@ -123,7 +142,7 @@ export function MyRefundsPage() {
   return (
     <main className="page stack page--top">
       <div className="page__head">
-        <h1>↩️ My refunds</h1>
+        <h1>👛 My wallet</h1>
       </div>
       {tabs}
       {asks}
@@ -229,5 +248,72 @@ export function MyRefundsPage() {
         );
       })}
     </main>
+  );
+}
+
+/**
+ * What this person's affiliate links have earned.
+ *
+ * Pending until the item is delivered, because a sale that falls through
+ * owes nothing; then earned, until the shop marks it paid.
+ */
+function EarningsTab() {
+  const [earnings, setEarnings] = useState<AffiliateEarning[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.myAffiliate()
+      .then((result) => !cancelled && setEarnings(result.earnings))
+      .catch((err) => !cancelled && setError(err instanceof ApiRequestError ? err.message : 'Could not load your earnings.'));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error) return <ErrorNotice message={error} />;
+  if (!earnings) return <p className="muted">Loading…</p>;
+
+  const currency = earnings[0]?.currency ?? 'INR';
+  const sum = (status: AffiliateEarning['status']) => earnings
+    .filter((entry) => entry.status === status).reduce((total, entry) => total + entry.commissionMinor, 0);
+
+  return (
+    <>
+      <section className="rfhero">
+        <div className="rfhero__main">
+          <small>Earned, waiting to be paid</small>
+          <b>{formatMoney(sum('earned'), currency)}</b>
+          <span>
+            {formatMoney(sum('pending'), currency)} pending delivery · {formatMoney(sum('paid'), currency)} paid out so far
+          </span>
+        </div>
+      </section>
+
+      {earnings.length === 0 ? (
+        <EmptyState title="No affiliate earnings yet">
+          Items with a 💸 Earn tag pay a commission. Open one, tap “Share &amp; earn” and send your link: when somebody
+          buys through it, your share shows here.
+        </EmptyState>
+      ) : earnings.map((entry) => (
+        <div key={entry.orderId} className={`earnrow earnrow--${entry.status}`}>
+          <span className="earnrow__what">
+            <b><Link to={`/listing/${entry.listingId}`}>{entry.itemName}</Link></b>
+            <small>
+              {formatMoney(entry.unitMinor, entry.currency)}{entry.quantity > 1 ? ` × ${entry.quantity}` : ''} on a {formatMoney(entry.saleMinor, entry.currency)} sale · from {entry.sellerName}
+              {entry.placedAt ? ` · ${formatDateOrdinal(entry.placedAt)}` : ''}
+              {entry.paidAt ? ` · paid ${formatDateOrdinal(entry.paidAt)}${entry.paidReference ? ` (ref ${entry.paidReference})` : ''}` : ''}
+            </small>
+          </span>
+          <span className="earnrow__side">
+            <b>{formatMoney(entry.commissionMinor, entry.currency)}</b>
+            <span className={`badge ${entry.status === 'earned' ? 'badge--lime' : entry.status === 'paid' ? 'badge--ok'
+              : entry.status === 'void' ? 'badge--danger' : 'badge--warn'}`}>
+              {AFFILIATE_STATUS_LABELS[entry.status]}
+            </span>
+          </span>
+        </div>
+      ))}
+    </>
   );
 }

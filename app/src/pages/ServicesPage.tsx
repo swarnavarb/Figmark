@@ -4,38 +4,45 @@ import { CHECKPOINT_COUNT_LABELS, type OrderCheckpoint } from '@shared/enums';
 import { countOf } from '@shared/board';
 import {
   CREW_CHECKPOINTS, ENTRY_NOTE, SERVICES, SERVICE_ORDER,
-  type ServiceKind,
+  type CrewRole, type ServiceKind,
 } from '@shared/services';
+import type { StoreStatus } from '@shared/models';
+import { STORE_KIND_LABELS, type StoreKind } from '@shared/service-stores';
 import {
   ApiRequestError,
   api,
   type ConsignmentRow,
   type DistributionLot,
   type DistributionRow,
+  type CrewRow,
+  type MyServicesView,
+  type MyStoreRow,
   type ProviderCard,
   type ServicesHub,
 } from '../api';
-import { EmptyState, ErrorNotice, Icon, TrustBadge } from '../components/ui';
-import { SERVICES_GLYPH } from '../components/TabBar';
+import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName } from '../components/ui';
+import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
 
 /**
  * The trades around the trade.
  *
- * A lot of figures reaches a buyer in Kochi because four different people
- * each did one job: somebody checked the pieces in Guangzhou, somebody flew the
- * crate, somebody took delivery in Mumbai and broke it into fifteen parcels,
- * and somebody held the money until each one arrived. Three of those four were
- * already in here - a forwarder directory, an escrow console, a packing list -
- * but only ever as something a seller reached into from their own console. The
- * people doing the work had no door of their own.
+ * A lot of figures reaches a buyer in Kochi because different people each did
+ * one job: somebody checked the pieces in Guangzhou, somebody flew the crate,
+ * and somebody took delivery in Mumbai and broke it into fifteen parcels. Those
+ * jobs were already in here - a forwarder directory, a packing list - but only
+ * ever as something a seller reached into from their own console. The people
+ * doing the work had no door of their own.
  *
  * This is that door, on the bar, next to the two it sits between: you buy, you
- * sell, and this is everyone who makes the middle of it happen.
+ * sell, and this is everyone who makes the middle of it happen. Whoever does
+ * one of these jobs finds their own work first, above the directory.
  */
 export function ServicesPage() {
+  const { user } = useSession();
   const [hub, setHub] = useState<ServicesHub | null>(null);
+  const [mine, setMine] = useState<MyServicesView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,6 +54,11 @@ export function ServicesPage() {
       );
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    void api.myServices().then(setMine).catch(() => setMine(null));
+  }, [user]);
+
   return (
     <main className="page tab-view">
       <div className="page__head">
@@ -54,7 +66,7 @@ export function ServicesPage() {
           <h1>Services</h1>
           <p className="muted">
             The people around the trade. Someone checks the goods, someone flies them, someone gets
-            them to the door, someone holds the money.
+            them to the door — and someone makes it one of a kind.
           </p>
         </div>
       </div>
@@ -63,42 +75,20 @@ export function ServicesPage() {
 
       {/* Whoever provides one is here to work, not to browse. Their door goes
           above the directory rather than under it. */}
-      <Link to="/services/mine" className="myservice">
-        <svg className="myservice__glyph" viewBox="0 0 24 24" width="24" height="24" fill="none"
-          stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
-          aria-hidden="true">
-          {SERVICES_GLYPH}
-        </svg>
-        <span className="myservice__body">
-          <span className="myservice__title">My service</span>
-          <span className="faint">
-            {hub === null
-              ? 'Loading…'
-              : hub.mine.length === 0
-                ? 'Offer one — freight forwarding, or handling in India.'
-                : hub.mine.map((kind) => SERVICES[kind].label).join(' · ')}
-          </span>
-        </span>
-        <span className="myservice__go" aria-hidden="true">→</span>
-      </Link>
+      <MyServicesStrip mine={mine} signedIn={Boolean(user)} />
 
-      <div className="stack">
+      <h2 className="ms-section">Find a service</h2>
+      <div className="ms-cats">
         {(hub?.categories ?? SERVICE_ORDER.map((kind) => ({ ...SERVICES[kind], count: null }))).map(
           (category) => (
-            <Link key={category.kind} to={`/services/${category.kind}`} className="svc">
-              <span className="svc__glyph"><Icon name={category.icon} size={22} /></span>
-              <span className="svc__body">
-                <span className="svc__top">
-                  <span className="svc__name">{category.plural}</span>
-                  {/* No count where there is no list: "0 suppliers" would be a
-                      lie about a category that deliberately has no roster. */}
-                  {category.count !== null ? (
-                    <span className="badge">{category.count}</span>
-                  ) : (
-                    <span className="badge badge--quiet">Private</span>
-                  )}
-                </span>
-                <span className="faint">{category.blurb}</span>
+            <Link key={category.kind} to={`/services/${category.kind}`} className={`ms-cat ms-cat--${category.kind}`}>
+              <span className="ms-cat__glyph"><Icon name={category.icon} size={22} /></span>
+              <span className="ms-cat__name">{category.plural}</span>
+              <span className="ms-cat__blurb">{category.blurb}</span>
+              {/* No count where there is no list: "0 suppliers" would be a
+                  lie about a category that deliberately has no roster. */}
+              <span className="ms-cat__count">
+                {category.count !== null ? `${category.count} on Figmark` : 'Named per lot'}
               </span>
             </Link>
           ),
@@ -106,6 +96,81 @@ export function ServicesPage() {
       </div>
     </main>
   );
+}
+
+const ROLE_COPY: Record<CrewRole, { label: string; icon: IconName }> = {
+  supplier: { label: 'Supplier', icon: 'search' },
+  handler: { label: 'Domestic handler', icon: 'box' },
+  forwarder: { label: 'Forwarder', icon: 'plane' },
+};
+
+/** The top of the Services tab: your own work, or the invitation to do some. */
+function MyServicesStrip({ mine, signedIn }: { mine: MyServicesView | null; signedIn: boolean }) {
+  const roles = mine ? mine.stores.length + new Set(mine.crew.map((row) => `${row.role}`)).size : 0;
+  if (!signedIn || (mine && roles === 0 && !mine.communityManager)) {
+    return (
+      <Link to="/services/mine" className="ms-invite">
+        <span className="ms-invite__glow" aria-hidden="true" />
+        <span className="ms-invite__eyebrow">My services</span>
+        <span className="ms-invite__title">Run a service store on Figmark</span>
+        <span className="ms-invite__line">
+          Fly lots for shops as a freight forwarder, or take commissions as an artist. Apply once —
+          we review it and open your store.
+        </span>
+        <span className="ms-invite__chips">
+          <span className="ms-chip ms-chip--aqua"><Icon name="plane" size={14} /> Forwarding company</span>
+          <span className="ms-chip ms-chip--pink"><Icon name="spark" size={14} /> Artist studio</span>
+        </span>
+      </Link>
+    );
+  }
+  const waiting = (mine?.stores ?? []).reduce((sum, row) => sum + row.waiting, 0)
+    + (mine?.crew ?? []).reduce((sum, row) => sum + (row.toPress > 0 ? 1 : 0), 0);
+  return (
+    <section className="ms-strip" aria-label="My services">
+      <Link to="/services/mine" className="ms-strip__head">
+        <span>
+          <span className="ms-strip__title">My services</span>
+          <span className="faint">
+            {mine === null ? 'Loading…' : waiting > 0 ? `${waiting} waiting on you` : 'All caught up'}
+          </span>
+        </span>
+        <span className="ms-strip__go">Open <Icon name="right" size={14} /></span>
+      </Link>
+      <div className="ms-strip__row">
+        {(mine?.stores ?? []).map((row) => (
+          <Link key={`${row.kind}-${row.ownerId}`} to={`/services/store/${row.kind}/${row.ownerId}`} className="ms-tile" style={accentStyle(row.accent)}>
+            <StoreMark name={row.name} logoUrl={row.logoUrl} accent={row.accent} size={36} />
+            <span className="ms-tile__name">{row.name}</span>
+            <span className="ms-tile__meta">{STORE_KIND_LABELS[row.kind].store}</span>
+            {row.status === 'approved'
+              ? row.waiting > 0 && <span className="ms-tile__ping">{row.waiting}</span>
+              : <StatusPill status={row.status} />}
+          </Link>
+        ))}
+        {groupCrew(mine?.crew ?? []).map(({ role, rows }) => (
+          <Link key={role} to="/services/mine" className="ms-tile">
+            <span className="ms-tile__icon"><Icon name={ROLE_COPY[role].icon} size={18} /></span>
+            <span className="ms-tile__name">{ROLE_COPY[role].label}</span>
+            <span className="ms-tile__meta">{rows.length} {rows.length === 1 ? 'lot' : 'lots'}</span>
+            {rows.some((row) => row.toPress > 0) && <span className="ms-tile__ping">{rows.filter((row) => row.toPress > 0).length}</span>}
+          </Link>
+        ))}
+        {mine?.communityManager && (
+          <Link to="/community-service" className="ms-tile">
+            <span className="ms-tile__icon"><Icon name="users" size={18} /></span>
+            <span className="ms-tile__name">Community Service</span>
+            <span className="ms-tile__meta">My job · disputes</span>
+          </Link>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function groupCrew(rows: CrewRow[]): { role: CrewRole; rows: CrewRow[] }[] {
+  const order: CrewRole[] = ['supplier', 'forwarder', 'handler'];
+  return order.map((role) => ({ role, rows: rows.filter((row) => row.role === role) })).filter((group) => group.rows.length > 0);
 }
 
 /* ── One category ───────────────────────────────────────────────────────── */
@@ -174,7 +239,7 @@ export function ServiceDirectoryPage() {
       {!meta.browsable ? (
         <EmptyState icon="🔒" title="There is no list">
           {meta.plural} are named by a shop on one lot, so nobody is on offer here. If a shop has
-          named you, the lot is waiting under My service.
+          named you, the lot is waiting under My services.
         </EmptyState>
       ) : (
         <>
@@ -188,7 +253,9 @@ export function ServiceDirectoryPage() {
                   ? 'Filter by route — Guangzhou, Mumbai…'
                   : meta.kind === 'handler'
                     ? 'Filter by city or name…'
-                    : 'Filter by name…'
+                    : meta.kind === 'artist'
+                      ? 'Filter by style — repaint, sculpt…'
+                      : 'Filter by name…'
               }
               aria-label={`Filter ${meta.plural}`}
             />
@@ -207,7 +274,12 @@ export function ServiceDirectoryPage() {
               {providers.map((provider) => (
                 <article key={provider.userId} className="provider">
                   <div className="provider__top">
-                    {provider.handle ? (
+                    {provider.slug && (meta.kind === 'forwarder' || meta.kind === 'artist') ? (
+                      <Link to={`/services/${meta.kind}/${provider.slug}`} className="provider__name provider__name--store">
+                        <StoreMark name={provider.name} logoUrl={provider.logoUrl} accent={provider.accent} size={34} />
+                        <span>{provider.name}{provider.tagline && <span className="faint provider__tag">{provider.tagline}</span>}</span>
+                      </Link>
+                    ) : provider.handle ? (
                       <Link to={`/${provider.handle}`} className="provider__name">{provider.name}</Link>
                     ) : (
                       <span className="provider__name">{provider.name}</span>
@@ -241,26 +313,34 @@ export function ServiceDirectoryPage() {
   );
 }
 
-/* ── My service ─────────────────────────────────────────────────────────── */
+/* ── My services ────────────────────────────────────────────────────── */
 
-/** Where somebody who does one of these jobs goes to do it. */
+/**
+ * Everything this person does for somebody else, on one screen.
+ *
+ * Three ways in, and they are genuinely different: a store you applied for
+ * and run with a team; a lot a shop named you on, with the buttons its route
+ * handed you; and the open handler list. Each gets its own block, busiest
+ * first, and the invitation to open a store sits under the work rather than
+ * over it.
+ */
 export function MyServicesPage() {
   const { user } = useSession();
-  const [hub, setHub] = useState<ServicesHub | null>(null);
+  const [mine, setMine] = useState<MyServicesView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [offering, setOffering] = useState<'forwarder' | 'handler' | null>(null);
+  const [offering, setOffering] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setHub(await api.services());
+      setMine(await api.myServices());
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your services.');
     }
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (user) void load();
+  }, [load, user]);
 
   if (!user) {
     return (
@@ -272,86 +352,184 @@ export function MyServicesPage() {
     );
   }
 
+  const owned = (kind: StoreKind) => mine?.stores.find((row) => row.kind === kind && row.isOwner) ?? null;
+
   return (
     <main className="page">
       <BackLink to="/services">← Services</BackLink>
       <div className="page__head">
         <div>
-          <h1>My service</h1>
-          <p className="muted">
-            What you do for other people’s lots, and the screen for doing it.
-          </p>
+          <h1>My services</h1>
+          <p className="muted">The stores you run, and the lots other shops have handed you.</p>
         </div>
       </div>
 
       {error && <ErrorNotice message={error} />}
 
-      {hub === null ? (
+      {mine === null ? (
         <p className="muted">Loading…</p>
       ) : (
-        <div className="stack">
-          {hub.mine.length === 0 ? (
-            <EmptyState icon="◍" title="You don’t provide one yet">
-              Freight forwarding and domestic handling are open to anyone — put yourself on the list
-              and shops can name you on a lot. Escrow is granted by Figmark, and an supplier is
-              named by a shop on one run.
-            </EmptyState>
-          ) : (
-            hub.mine.map((kind) => (
-              <Link key={kind} to={SERVICES[kind].console} className="svc">
-                <span className="svc__glyph"><Icon name={SERVICES[kind].icon} size={22} /></span>
-                <span className="svc__body">
-                  <span className="svc__top">
-                    <span className="svc__name">{SERVICES[kind].label}</span>
-                    <span className="badge badge--ok">Yours</span>
-                  </span>
-                  <span className="faint">{SERVICES[kind].blurb}</span>
-                </span>
-              </Link>
-            ))
+        <div className="stack ms-page">
+          {mine.stores.length > 0 && (
+            <section className="stack">
+              <h2 className="ms-section">Your stores</h2>
+              {mine.stores.map((row) => <StoreRowCard key={`${row.kind}-${row.ownerId}`} row={row} />)}
+            </section>
           )}
 
-          {/* Both open lists, in one form. Escrow and supplier are deliberately
-              not here: neither is something you can sign up for. */}
-          <div className="card card--pad stack">
-            <div>
-              <h2>Offer a service</h2>
-              <span className="field__hint">
-                You can be listed for both. A handler can stay off the public list and still be
-                named by the shops that already know you.
-              </span>
-            </div>
-            <div className="seg" role="radiogroup" aria-label="Which service">
-              <button type="button" role="radio" aria-checked={offering === 'forwarder'}
-                className={offering === 'forwarder' ? 'is-on' : ''}
-                onClick={() => setOffering(offering === 'forwarder' ? null : 'forwarder')}>
-                Freight forwarding
-              </button>
-              <button type="button" role="radio" aria-checked={offering === 'handler'}
-                className={offering === 'handler' ? 'is-on' : ''}
-                onClick={() => setOffering(offering === 'handler' ? null : 'handler')}>
-                Domestic handling
-              </button>
-            </div>
+          {mine.crew.length > 0 && (
+            <section className="stack">
+              <h2 className="ms-section">Lots you work on</h2>
+              {groupCrew(mine.crew).map(({ role, rows }) => (
+                <div key={role} className="stack ms-crew-group">
+                  <span className="ms-role">
+                    <Icon name={ROLE_COPY[role].icon} size={14} /> {ROLE_COPY[role].label}
+                  </span>
+                  {rows.map((row) => <CrewCard key={`${row.role}-${row.lot.id}`} row={row} />)}
+                </div>
+              ))}
+            </section>
+          )}
 
-            {offering && (
-              <OfferForm
-                kind={offering}
-                onSaved={() => {
-                  setOffering(null);
-                  void load();
-                }}
-              />
-            )}
-          </div>
+          <section className="stack">
+            <h2 className="ms-section">Open a service store</h2>
+            <div className="ms-apply">
+              <ApplyCard kind="forwarder" row={owned('forwarder')} status={mine.own.forwarder} />
+              <ApplyCard kind="artist" row={owned('artist')} status={mine.own.artist} />
+            </div>
+          </section>
+
+          <section className="card card--pad stack">
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <div>
+                <h3>Domestic handling</h3>
+                <span className="field__hint">
+                  {mine.handler
+                    ? 'You are on the handler list. Shops name you on a lot and it appears above.'
+                    : 'Take delivery in India and get parcels out. Open to anyone — no store needed.'}
+                </span>
+              </div>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setOffering(!offering)}>
+                {offering ? 'Close' : mine.handler ? 'Edit' : 'List me'}
+              </button>
+            </div>
+            {offering && <OfferForm onSaved={() => { setOffering(false); void load(); }} />}
+          </section>
+
+          {/* Only for the people Figmark has appointed community managers. */}
+          {mine.communityManager && (
+            <>
+              <h2 className="ms-section">My job</h2>
+              <Link to="/community-service" className="svc">
+                <span className="svc__glyph"><Icon name="users" size={22} /></span>
+                <span className="svc__body">
+                  <span className="svc__name">Community Service</span>
+                  <span className="faint">Disputes waiting on your decision, held payments to release, and what you have earned.</span>
+                </span>
+              </Link>
+            </>
+          )}
         </div>
       )}
     </main>
   );
 }
 
-/** The one form both open services share. */
-function OfferForm({ kind, onSaved }: { kind: 'forwarder' | 'handler'; onSaved: () => void }) {
+function StoreRowCard({ row }: { row: MyStoreRow }) {
+  return (
+    <Link to={`/services/store/${row.kind}/${row.ownerId}`} className="ms-store" style={accentStyle(row.accent)}>
+      <StoreMark name={row.name} logoUrl={row.logoUrl} accent={row.accent} size={48} />
+      <span className="ms-store__body">
+        <span className="ms-store__top">
+          <span className="ms-store__name">{row.name}</span>
+          <StatusPill status={row.status} />
+        </span>
+        <span className="faint">
+          {STORE_KIND_LABELS[row.kind].store}{row.isOwner ? ' · Owner' : ` · ${row.rights.join(', ')}`}
+        </span>
+        {row.status === 'approved' ? (
+          <span className="ms-store__counts">
+            <span className={row.waiting > 0 ? 'ms-store__hot' : ''}>
+              <b>{row.waiting}</b> {row.kind === 'forwarder' ? 'requests' : 'need a move'}
+            </span>
+            <span><b>{row.active}</b> {row.kind === 'forwarder' ? 'lots on' : 'in progress'}</span>
+          </span>
+        ) : row.lastNote && (
+          <span className="ms-store__note">“{row.lastNote}”</span>
+        )}
+      </span>
+      <span className="ms-store__go" aria-hidden="true"><Icon name="right" size={18} /></span>
+    </Link>
+  );
+}
+
+function CrewCard({ row }: { row: CrewRow }) {
+  const progress = row.lot.steps > 1 ? Math.max(0, row.lot.stepIndex) / (row.lot.steps - 1) : 0;
+  return (
+    <Link to={`/services/crew/${row.lot.sellerId}/${row.lot.id}?role=${row.role}`} className="ms-crew">
+      <span className="ms-crew__top">
+        <span className="ms-crew__name">{row.lot.name} <span className="faint">{row.lot.number}</span></span>
+        {row.toPress > 0
+          ? <span className="badge badge--warn">{row.toPress} to press</span>
+          : <span className="badge badge--ok">Done for now</span>}
+      </span>
+      <span className="faint">{row.store.name} · {row.lot.step || row.lot.stage.replace(/_/g, ' ')}</span>
+      <span className="ms-crew__bar" aria-hidden="true"><span style={{ width: `${Math.round(progress * 100)}%` }} /></span>
+      <span className="ms-crew__btns">
+        {row.buttons.length === 0
+          ? <span className="faint">No buttons handed to you on this route yet.</span>
+          : row.buttons.map((label) => <span key={label} className="ms-btnchip">⚡ {label}</span>)}
+      </span>
+      <span className="ms-crew__stats">
+        <span><b>{row.items}</b> items</span>
+        {row.role === 'handler' && <span><b>{row.parcels}</b> parcels</span>}
+      </span>
+    </Link>
+  );
+}
+
+const APPLY_COPY: Record<StoreKind, { title: string; line: string; points: string[]; icon: IconName; accent: string }> = {
+  forwarder: {
+    title: 'Forwarding company',
+    line: 'Fly or ship lots for shops, sell transit cover to their buyers.',
+    points: ['Priced lanes shops book on a lot', 'Transit insurance buyers can add', 'Your team works the lots'],
+    icon: 'plane',
+    accent: 'aqua',
+  },
+  artist: {
+    title: 'Artist studio',
+    line: 'Take commissions on what people bought — repaints, customs, repairs.',
+    points: ['A menu with your prices', 'A portfolio on your store page', 'Paid held or direct, per job'],
+    icon: 'spark',
+    accent: 'pink',
+  },
+};
+
+function ApplyCard({ kind, row, status }: { kind: StoreKind; row: MyStoreRow | null; status: StoreStatus | null }) {
+  const copy = APPLY_COPY[kind];
+  const target = status === 'approved' || status === 'suspended'
+    ? `/services/store/${kind}/${row?.ownerId ?? ''}` : `/services/apply/${kind}`;
+  const action = status === null ? 'Apply' : status === 'approved' ? 'Open console'
+    : status === 'pending' ? 'View application' : status === 'changes' ? 'Fix and resend'
+      : status === 'rejected' ? 'Edit and reapply' : 'View store';
+  return (
+    <Link to={target} className={`ms-applycard ms-applycard--${kind}`} style={accentStyle(copy.accent)}>
+      <span className="ms-applycard__icon"><Icon name={copy.icon} size={22} /></span>
+      <span className="ms-applycard__title">{copy.title}</span>
+      <span className="ms-applycard__line">{copy.line}</span>
+      <ul className="ms-applycard__points">
+        {copy.points.map((point) => <li key={point}>{point}</li>)}
+      </ul>
+      <span className="ms-applycard__foot">
+        {status ? <StatusPill status={status} /> : <span className="faint">Reviewed by Figmark</span>}
+        <span className="ms-applycard__cta">{action} <Icon name="right" size={14} /></span>
+      </span>
+    </Link>
+  );
+}
+
+/** The open handler list: the one service you sign yourself up for. */
+function OfferForm({ onSaved }: { onSaved: () => void }) {
   const [companyName, setCompanyName] = useState('');
   const [description, setDescription] = useState('');
   const [places, setPlaces] = useState('');
@@ -366,7 +544,7 @@ function OfferForm({ kind, onSaved }: { kind: 'forwarder' | 'handler'; onSaved: 
     setError(null);
     try {
       await api.offerService({
-        kind,
+        kind: 'handler',
         companyName: companyName.trim() || undefined,
         description: description.trim() || undefined,
         places: places.split(',').map((part) => part.trim()).filter(Boolean),
@@ -390,22 +568,18 @@ function OfferForm({ kind, onSaved }: { kind: 'forwarder' | 'handler'; onSaved: 
           placeholder="Bombay Parcel Works" />
       </label>
       <label className="field">
-        <span>{kind === 'forwarder' ? 'Routes' : 'Cities you cover'}</span>
-        <input value={places} onChange={(e) => setPlaces(e.target.value)}
-          placeholder={kind === 'forwarder' ? 'Guangzhou → Mumbai, Yiwu → Delhi' : 'Mumbai, Pune'} />
+        <span>Cities you cover</span>
+        <input value={places} onChange={(e) => setPlaces(e.target.value)} placeholder="Mumbai, Pune" />
         <span className="field__hint">Comma separated.</span>
       </label>
       <label className="field">
         <span>What you do</span>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
-          placeholder={kind === 'forwarder'
-            ? 'Consolidated air freight, customs at both ends.'
-            : 'Take delivery, break the crate down, book the courier same day.'} />
+          placeholder="Take delivery, break the crate down, book the courier same day." />
       </label>
       <label className="field">
         <span>Contact</span>
-        <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)}
-          placeholder="+91…" />
+        <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+91…" />
       </label>
       <label className="tick">
         <input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} />
@@ -447,7 +621,7 @@ export function ConsignmentsPage() {
 
   return (
     <main className="page">
-      <BackLink to="/services/mine">← My service</BackLink>
+      <BackLink to="/services/mine">← My services</BackLink>
       <div className="page__head">
         <div>
           <h1>Consigned to you</h1>
@@ -518,7 +692,7 @@ export function DistributionPage() {
 
   return (
     <main className="page">
-      <BackLink to="/services/mine">← My service</BackLink>
+      <BackLink to="/services/mine">← My services</BackLink>
       <div className="page__head">
         <div>
           <h1>To distribute</h1>

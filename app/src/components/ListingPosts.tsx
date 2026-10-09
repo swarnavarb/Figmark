@@ -21,7 +21,7 @@ export function ListingPosts({ listingId, sellerId, posts, onChange }: {
   posts: ListingPost[];
   onChange: (posts: ListingPost[]) => void;
 }) {
-  const { user } = useSession();
+  const { user, promptAuth } = useSession();
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<ListingPost | null>(null);
   const [busy, setBusy] = useState(false);
@@ -98,6 +98,13 @@ export function ListingPosts({ listingId, sellerId, posts, onChange }: {
 
       {problem && <p className="posts__problem" role="alert">{problem}</p>}
 
+      {/* A guest sees where to write, locked: tapping it asks them to sign in. */}
+      {!user && (
+        <button type="button" className="posts__compose posts__compose--locked is-locked"
+          onClick={() => promptAuth('Sign in to post, ask the shop or react.')}>
+          <span className="lockmark" aria-hidden="true">🔒</span> Sign in to post or ask something…
+        </button>
+      )}
       {user && (
         <form className="posts__compose" onSubmit={submit}>
           {replyTo && (
@@ -135,8 +142,12 @@ function Post({ post, listingId, sellerId, canAct, mine, reply, onReact, onReply
   const [open, setOpen] = useState(false);
   const [picking, setPicking] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
+  const { promptAuth } = useSession();
   const press = useLongPress(() => {
-    if (!canAct) return;
+    if (!canAct) {
+      promptAuth('Sign in to react or reply.');
+      return;
+    }
     setOpen(true);
     setPicking(false);
   });
@@ -158,7 +169,7 @@ function Post({ post, listingId, sellerId, canAct, mine, reply, onReact, onReply
   };
 
   return (
-    <div ref={box} className={`post${reply ? ' post--reply' : ''}${open ? ' is-open' : ''}`}>
+    <div ref={box} className={`post post--menu${reply ? ' post--reply' : ''}${open ? ' is-open' : ''}`}>
       <Avatar name={post.author.name} size={reply ? 28 : 34} />
       <div className="post__col">
         <div className="post__bubble" role="button" tabIndex={0} aria-expanded={open}
@@ -202,8 +213,11 @@ function Post({ post, listingId, sellerId, canAct, mine, reply, onReact, onReply
               {REACTION_META[entry.kind].emoji}{entry.count > 1 ? ` ${entry.count}` : ''}
             </button>
           ))}
-          <ReportButton targetType="comment" targetId={post.id} parentId={listingId} mine={mine} moderation={post.moderation} />
         </div>
+      </div>
+      <div className="post__more">
+        <ReportButton targetType="comment" targetId={post.id} parentId={listingId} mine={mine} moderation={post.moderation}
+          authorId={post.authorId} label={`Comment by ${post.author.name}`} />
       </div>
     </div>
   );

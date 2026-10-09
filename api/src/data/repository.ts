@@ -3,6 +3,7 @@ import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
+  ClientDevice,
   Dispute, Follow, Forum, SiteContent, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 
@@ -61,8 +62,6 @@ export interface CatalogQuery {
    */
   includeHidden?: boolean;
   maxPriceMinor?: number;
-  /** Ranks listings from followed sellers first. */
-  followedSellerIds?: readonly string[];
 }
 
 /**
@@ -156,12 +155,20 @@ export interface Repository {
    * Writes an order. One already placed moves stock and pre-order fill at
    * once; a checkout (`placedAt: null`) moves nothing until `takeStock`.
    *
-   * Every seller-facing list here - by seller, lot, listing, awaiting a lot,
-   * held by an escrow - leaves checkouts out: pressing Buy is not an order.
+   * Every seller-facing list here - by seller, lot, listing, awaiting a lot -
+   * leaves checkouts out: pressing Buy is not an order.
    */
   createOrder(order: Order): Promise<Order>;
-  /** Moves stock and pre-order fill for a checkout the buyer has just placed. */
-  takeStock(order: Order): Promise<void>;
+  /**
+   * Moves stock and pre-order fill for a checkout the buyer has just placed.
+   * False when there is not enough left - checked in the same write, so two
+   * buyers cannot both take the last one.
+   */
+  takeStock(order: Order): Promise<boolean>;
+  /** Removes an order outright. Only for a cart item, which holds no stock. */
+  deleteOrder(order: Order): Promise<void>;
+  /** One more look at a listing's page. */
+  countView(listing: Listing): Promise<void>;
   /** A seller's checkouts nobody went ahead with - for insights, never for the order book. */
   listCheckoutDrafts(sellerId: string): Promise<Order[]>;
   /** Every save of any of these items. */
@@ -246,8 +253,20 @@ export interface Repository {
   getPowerSale(sellerId: string, id: string): Promise<PowerSale | null>;
   savePowerSale(sale: PowerSale): Promise<PowerSale>;
   /** Everything waiting for one person, newest first. */
-  listNotifications(userId: string, limit?: number): Promise<Notification[]>;
+  /** Newest first; with `before`, only those written before that moment - the next page. */
+  listNotifications(userId: string, limit?: number, before?: string): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;
+  /**
+   * Held notices whose hold ended between `from` and `until`, not yet sent to
+   * anybody's devices and not taken back - across everybody, for the clock
+   * that sends them. Bounded below so a notice from before push existed is
+   * never sent late.
+   */
+  listHeldNotificationsDue(from: string, until: string): Promise<Notification[]>;
+  /** Accounts holding this push endpoint: a browser belongs to whoever signed in on it last. */
+  listUsersByPushEndpoint(endpoint: string): Promise<User[]>;
+  /** Every account's reported devices, for the operators' install figures. */
+  listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>>;
   saveWantOffer(offer: WantOffer): Promise<WantOffer>;
   listStoreReviews(subjectId: string): Promise<StoreReview[]>;
   saveStoreReview(review: StoreReview): Promise<StoreReview>;
@@ -261,20 +280,40 @@ export interface Repository {
   /** By id alone, for a link into one: the order it belongs to is on the row. */
   getDisputeById(id: string): Promise<Dispute | null>;
   updateDispute(dispute: Dispute): Promise<Dispute>;
+  /**
+   * Saves only if the stored copy is still at `expectedVersion`; null when
+   * somebody else wrote in between. The caller sets the new version.
+   */
+  saveDisputeIfVersion(dispute: Dispute, expectedVersion: number): Promise<Dispute | null>;
   /** The mediation queue: everything the company has been asked to settle. */
   listDisputes(status?: string): Promise<Dispute[]>;
+  /** Every dispute in one partition: one order's, or one subject's. */
+  listDisputesForOrder(orderId: string): Promise<Dispute[]>;
+  /** Every dispute a person is a party to, either end. */
+  listDisputesForParty(userId: string): Promise<Dispute[]>;
+  /** Every dispute a community manager has held a round of. */
+  listDisputesForManager(managerId: string): Promise<Dispute[]>;
 
   /* ── Operating the marketplace ───────────────────────────────────────── */
 
   /** Every account, for the admin list. Bounded by how many people signed up. */
   listAllUsers(): Promise<User[]>;
   /**
+   * Every photo name any record still mentions, lower-cased.
+   *
+   * Read as text across every container, so a photo counts as used wherever it
+   * turns up - a listing, an order, a post, a collection card, a message -
+   * without this having to know which field holds which. Slow, and meant to be:
+   * only the operator's unused-photo scan calls it.
+   */
+  blobReferences(): Promise<Set<string>>;
+  /**
    * Everyone the company has approved to hold money.
    *
    * Read at checkout, so it is on the buyer's path: a handful of vetted people,
    * which is the size that makes a scan the right answer.
    */
-  listEscrowAgents(): Promise<User[]>;
+  listManagers(): Promise<User[]>;
   /** Everything one account has made, for the admin's view of them. */
   listPostsByAuthor(authorId: string): Promise<Post[]>;
   deleteUser(id: string): Promise<void>;
@@ -307,10 +346,14 @@ export interface Repository {
    * rare and deliberate - not on any page render.
    */
   listFollowerIds(sellerId: string): Promise<string[]>;
+  /** Who follows this shop or person, with when they started. */
+  listFollowsOf(sellerId: string): Promise<Follow[]>;
 
   /** A page the operators write (the Learn guide), or null before anybody has saved one. */
   getSiteContent(id: string): Promise<SiteContent | null>;
   saveSiteContent(content: SiteContent): Promise<SiteContent>;
+  /** Read, change and write back one document without losing a write made in between. */
+  mutateSiteContent(id: string, change: (current: SiteContent | null) => SiteContent): Promise<SiteContent>;
   deleteSiteContent(id: string): Promise<void>;
 
   /** Saves an edited account - the storefront editor is the only caller. */
@@ -335,26 +378,40 @@ export interface Repository {
 
   /* Messages. */
 
-  listMessages(threadId: string, limit?: number): Promise<Message[]>;
+  /**
+   * Oldest first. `before` pages back: messages written at or before that time -
+   * at, so two sent in the same millisecond are not lost at a page edge; the
+   * caller drops the ones it already has.
+   */
+  listMessages(threadId: string, limit?: number, before?: string): Promise<Message[]>;
   /** Every message touching any of these handles, for the inbox. */
   listMessagesForHandles(handles: readonly string[], limit?: number): Promise<Message[]>;
   sendMessage(message: Message): Promise<Message>;
   /** Writes a message back, for reactions. */
   updateMessage(message: Message): Promise<Message>;
+  /** Removes one message from its thread. */
+  deleteMessage(threadId: string, id: string): Promise<void>;
   /** Marks everything addressed to `handle` in this thread as read. */
   markThreadRead(threadId: string, handle: string): Promise<number>;
 
   /** Every order a seller has taken, for the tracking and analytics views. */
   listOrdersForSeller(sellerId: string): Promise<Order[]>;
-  /** Everything one escrow is holding, or has held. */
-  listOrdersHeldBy(escrowAgentId: string): Promise<Order[]>;
+  /** Every order carrying a commission with this artist, newest first. */
+  listOrdersCommissionedFrom(artistId: string): Promise<Order[]>;
 
   /* Social. */
 
   /** One channel or forum, newest first. */
   listPosts(channelId: string, limit?: number): Promise<Post[]>;
   /** The feed: posts across many channels, newest first. */
-  listPostsForChannels(channelIds: readonly string[], limit?: number): Promise<Post[]>;
+  /**
+   * Newest first across several channels. `before` pages back; `feedOnly`
+   * leaves out messages that stay in their room, so they cannot crowd a feed
+   * page out.
+   */
+  listPostsForChannels(
+    channelIds: readonly string[], limit?: number, options?: { before?: string; feedOnly?: boolean },
+  ): Promise<Post[]>;
   createPost(post: Post): Promise<Post>;
   getPost(channelId: string, id: string): Promise<Post | null>;
   /**

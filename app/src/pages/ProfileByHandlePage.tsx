@@ -1,56 +1,38 @@
-import { ReportButton } from '../components/ReportButton';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { CommunityAlertBanner } from '../components/CommunityAlerts';
+import { ManagerTag } from '../components/ManagerBadge';
 import { Link, useParams } from 'react-router-dom';
 import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import {
-  ApiRequestError, api,
-  type Credit, type PageReviews, type PublicProfile, type ReviewsAbout,
-} from '../api';
-import { Avatar, EmptyState, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from '../components/ui';
-import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
+import { ApiRequestError, api, type FeedListing, type PostCard, type PublicProfile, type ShelfState } from '../api';
+import { listingRarity } from '@shared/quest';
+import { LootCard } from './FeedPage';
+import { SocialPostCard } from '../components/SocialPost';
+import { SkeletonText } from '../components/Feedback';
+import { Avatar, EmptyState, ErrorNotice, LevelChip } from '../components/ui';
+import { brandHueFor, formatDate, timeAgo } from '../format';
 import { useSession } from '../session';
-import { MessageButton } from './MessagesPage';
-import { Stars } from './OrderPage';
-import { Canopy, StarRow } from '../components/ListingBlocks';
+import { Canopy } from '../components/ListingBlocks';
+import {
+  Bio, FollowButton, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
+} from '../components/ProfileParts';
 import { CollectorProfile } from './CollectorProfile';
 
 /**
  * Whatever lives at `/<username>`.
  *
- * People and shops share one namespace, so this is one page: the server says
- * which it was and the page renders accordingly. That is not a shortcut. A
- * buyer is somebody a seller decides whether to deal with, and giving them a
- * name and nothing else while shops get a whole shopfront makes one side of
- * every trade unaccountable. So both get the same page, and the difference is
- * which numbers are worth showing on it.
- *
- * The shape follows the marketplaces this is modelled on: a banner, who they
- * are in one glance, then the credit record, then the shelf. The record sits
- * above the goods on purpose — deciding whether to trust a stranger comes
- * before deciding whether you want what they are selling.
+ * People and shops share one namespace, so this is one route: the server says
+ * which it was. A person gets their collector page; a shop gets its storefront
+ * - a banner, who they are, one rating, its level and milestones, then the
+ * shelf, live items first. Everything comes back in one request.
  */
-type Tab = 'items' | 'reviews';
+type Tab = 'items' | 'feed' | 'reviews';
+type Shelf = 'all' | ShelfState;
 
 export function ProfileByHandlePage() {
   const { username } = useParams<{ username: string }>();
   const { user } = useSession();
   const [data, setData] = useState<PublicProfile | null>(null);
-  const [reviews, setReviews] = useState<ReviewsAbout | null>(null);
-  const [pageReviews, setPageReviews] = useState<PageReviews | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('items');
-  const [shelf, setShelf] = useState<'all' | 'onSale' | 'sold'>('all');
-  const [creditOpen, setCreditOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
-  const loadReviews = useCallback(async (id: string) => {
-    const [trade, page] = await Promise.all([
-      api.reviewsAbout(id).catch(() => null),
-      api.pageReviews(id).catch(() => null),
-    ]);
-    if (trade) setReviews(trade);
-    if (page) setPageReviews(page);
-  }, []);
 
   useEffect(() => {
     if (!username) return;
@@ -62,584 +44,217 @@ export function ProfileByHandlePage() {
     }
     setError(null);
     setData(null);
-    setReviews(null);
-    setPageReviews(null);
-    void api
-      .profile(username)
-      .then((profile) => {
-        setData(profile);
-        // Reviews are about the account, not the handle, so they need the id the
-        // profile resolves to — and a page without them still renders.
-        void loadReviews(profile.sellerId);
-      })
-      .catch((err: unknown) =>
-        setError(err instanceof ApiRequestError ? err.message : 'Could not open that page.'),
-      );
-  }, [username, loadReviews]);
+    void api.profile(username).then(setData)
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not open that page.'));
+  }, [username]);
 
   if (error) {
     return (
       <main className="page tab-view">
         <ErrorNotice message={error} />
-        <Link to="/" className="btn btn--ghost" style={{ marginTop: 14, justifySelf: 'start' }}>
-          Back to the feed
-        </Link>
+        <Link to="/" className="btn btn--ghost" style={{ marginTop: 14, justifySelf: 'start' }}>Back to the feed</Link>
       </main>
     );
   }
-  if (!data) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
+  if (!data) return <PageSkeleton />;
 
   const isMe = user?.id === data.sellerId;
-  // A shop's page is about them as a seller; a person's is about them as a
-  // buyer. A review of the same account on the other side is a real review of a
-  // different thing, and belongs on the page that is about that thing.
-  const direction = data.isStore ? 'buyer_to_seller' : 'seller_to_buyer';
-  const rating = reviews ? (data.isStore ? reviews.asSeller : reviews.asBuyer) : null;
-  const listed = reviews?.reviews.filter((review) => review.direction === direction) ?? [];
-
-  // A person has no items tab, so asking for one lands on the only tab there is.
-  const shownTab: Tab = data.isStore ? tab : 'reviews';
-
-  // Every person's page is a collector page. A shop's page is about its
-  // shelf, so it keeps the storefront layout below.
-  if (!data.isStore) {
-    return (
-      <CollectorProfile
-        profile={data}
-        trade={reviews}
-        listed={listed}
-        page={pageReviews}
-        isMe={isMe}
-        canWrite={Boolean(user) && !isMe}
-        onWritten={() => void loadReviews(data.sellerId)}
-      />
-    );
-  }
-
-  const shown = data.listings.filter((listing) =>
-    shelf === 'all' ? true : shelf === 'sold' ? listing.quantityAvailable === 0 : listing.quantityAvailable > 0,
-  );
+  const reload = () => void api.profile(data.handle).then(setData).catch(() => undefined);
+  const onFollow = (following: boolean, followers?: number) => setData((page) => page && {
+    ...page,
+    following,
+    followerCount: followers ?? Math.max(0, page.followerCount + (following === page.following ? 0 : following ? 1 : -1)),
+  });
 
   return (
-    <main className={`storefront${data.isStore ? ' storefront--shop' : ''}`}>
-      {/* The banner. A shop that has not set one gets a full brand gradient in
-          its own hue rather than a grey band, so every storefront opens with
-          colour and two shops never look like the same shop. */}
-      <div className={`storefront__cover storefront__cover--${brandHueFor(data.handle ?? data.displayName)}`}>
+    <>
+      {/* What a community manager's final decision put on this page, if anything. */}
+      <CommunityAlertBanner userId={data.sellerId} />
+      {data.isStore
+        ? <Storefront data={data} isMe={isMe} onFollow={onFollow} reload={reload} />
+        : <CollectorProfile profile={data} isMe={isMe} onFollow={onFollow} reload={reload} />}
+    </>
+  );
+}
+
+/** The page's outline while it loads, so nothing jumps when it lands. */
+function PageSkeleton() {
+  return (
+    <main className="storefront">
+      <div className="storefront__cover pskel__cover" />
+      <div className="storefront__body">
+        <div className="pskel__head"><span className="pskel__face" /><SkeletonText lines={2} /></div>
+        <div className="pskel__slab" />
+        <SkeletonText lines={3} />
+      </div>
+    </main>
+  );
+}
+
+function Storefront({ data, isMe, onFollow, reload }: {
+  data: PublicProfile;
+  isMe: boolean;
+  onFollow: (following: boolean, followers?: number) => void;
+  reload: () => void;
+}) {
+  const [tab, setTab] = useState<Tab>('items');
+  const [shelf, setShelf] = useState<Shelf>('all');
+  const [ratingOpen, setRatingOpen] = useState(false);
+  // Live items as the Buy tab shows them: rarity, saves, the lot.
+  const [live, setLive] = useState<Map<string, FeedListing>>(new Map());
+  useEffect(() => {
+    void api.feed({ seller: data.sellerId })
+      .then((result) => setLive(new Map(result.listings.map((listing) => [listing.id, listing]))))
+      .catch(() => setLive(new Map()));
+  }, [data.sellerId]);
+  const now = Date.now();
+
+  const shown = data.listings.filter((listing) => shelf === 'all' || listing.state === shelf);
+  const filters = ([
+    ['all', 'All', data.counts.listings],
+    ['active', 'Live', data.counts.onSale],
+    ['sold', 'Sold out', data.counts.sold],
+    ['expired', 'Expired', data.counts.expired],
+  ] as const).filter(([id, , count]) => id === 'all' || count > 0);
+
+  return (
+    <main className="storefront storefront--shop">
+      {/* An unset banner is a full gradient in the shop's own hue, so every
+          storefront opens with colour and no two look like the same shop. */}
+      <div className={`storefront__cover storefront__cover--${brandHueFor(data.handle)}`}>
         {data.coverUrl && <img src={data.coverUrl} alt="" />}
-        {data.isStore && <Canopy />}
-        {data.isStore && (
-          <span className="storefront__open"><i aria-hidden="true" /> Open for orders</span>
-        )}
+        <Canopy />
+        <span className="storefront__open"><i aria-hidden="true" /> Open for orders</span>
       </div>
 
       <div className="storefront__body">
         <header className="storefront__head storefront__sign">
           <div className="storefront__avatar">
-            {data.photoUrl ? <img src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={76} />}
+            {data.photoUrl ? <img src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
           </div>
           <div className="storefront__who">
             <h1>{data.displayName}</h1>
+            <ManagerTag id={data.sellerId} />
+            <LevelChip tag={data.levelTag} />
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
               <span className="faint">@{data.handle}</span>
-              {data.isStore && <span className="badge badge--accent">shop</span>}
+
               {data.tier && <span className="badge">{data.tier}</span>}
             </div>
             <p className="faint" style={{ margin: 0 }}>
-              {data.isStore && (
-                <>
-                  {data.followerCount} {data.followerCount === 1 ? 'follower' : 'followers'} ·{' '}
-                </>
-              )}
-              here since {formatDate(data.memberSince)}
+              open since {formatDate(data.memberSince)}
               {data.lastSeenAt && ` · seen ${timeAgo(data.lastSeenAt)}`}
             </p>
           </div>
-          <div className="storefront__act">
-            {isMe ? (
-              <Link to={data.isStore ? '/shop' : '/me'} className="btn btn--ghost btn--sm">Edit</Link>
-            ) : (
-              <MessageButton handle={data.handle} />
-            )}
-          </div>
         </header>
 
-        {data.tags.length > 0 && (
-          <div className="chips chips--tight">
-            {data.tags.map((tag) => <span key={tag} className="chip chip--static">{tag}</span>)}
-            {data.dispatchRegion && <span className="chip chip--static">ships from {data.dispatchRegion}</span>}
-          </div>
-        )}
+        <PageActions profile={data} isMe={isMe} onFollow={onFollow}
+          edit={<Link to="/shop" className="pbtn pbtn--follow">Edit shop</Link>} />
 
-        {data.bio && (
-          <p className={`storefront__bio${expanded ? ' is-open' : ''}`}>
-            {data.bio}
-            {data.bio.length > 120 && (
-              <button type="button" className="storefront__more" onClick={() => setExpanded(!expanded)}>
-                {expanded ? 'Less' : 'More'}
-              </button>
-            )}
-          </p>
-        )}
-
-        <div className="row" style={{ flexWrap: 'wrap', marginBottom: 14 }}>
-          {data.link && (
-            <a className="btn btn--quiet btn--sm" href={withScheme(data.link)} target="_blank" rel="noreferrer noopener">
-              {data.link.replace(/^https?:\/\//, '')}
-            </a>
-          )}
-          {/* The person behind a shop is a separate address, and worth reaching
-              when the shop's own voice is not who you want. */}
-          {data.isStore && data.ownerHandle && (
-            <Link to={`/${data.ownerHandle}`} className="btn btn--quiet btn--sm">@{data.ownerHandle}</Link>
-          )}
+        <div className="pstats">
+          <span className="pstats__follows"><FollowCounts userId={data.sellerId} followerCount={data.followerCount} isStore /></span>
+          <span><b>{data.counts.onSale}</b><small>live</small></span>
+          <span><b>{data.counts.sold}</b><small>sold out</small></span>
+          <span><b className={`ptrust ptrust--${trustTone(data.trustScore)}`}>{data.trustScore ?? '—'}</b><small>trust</small></span>
         </div>
 
-        {/* The credit record. Two words and a percentage is all that fits, and
-            all of it opens onto what it counted — a grade nobody can check is
-            a grade nobody should believe. */}
-        {/* One record, and it is the one this page is about: a storefront is
-            rated as a seller, a person as a buyer. Showing both here invited
-            the wrong one to be read — a shop whose owner buys a lot would
-            carry a reassuring figure that says nothing about shipping. */}
-        <button type="button" className={`credit credit--one${data.isStore ? ' credit--store' : ''}`} onClick={() => setCreditOpen(true)}>
-          <div className="credit__cell">
-            <span className={`credit__grade${data.isStore ? '' : ' credit__grade--buyer'}`}>
-              {gradeFor(rating?.average ?? null)}
-            </span>
-            <span className="credit__label">{data.isStore ? 'Seller credit' : 'Buyer credit'}</span>
+        {(data.tags.length > 0 || data.dispatchRegion || data.link || data.ownerHandle) && (
+          <div className="chips chips--tight">
+            {data.tags.map((tag) => <span key={tag} className="chip chip--static">{tag}</span>)}
+            {data.dispatchRegion && <span className="chip chip--static">📦 ships from {data.dispatchRegion}</span>}
+            {data.link && (
+              <a className="chip" href={withScheme(data.link)} target="_blank" rel="noreferrer noopener">
+                🔗 {data.link.replace(/^https?:\/\//, '')}
+              </a>
+            )}
+            {/* The person behind a shop is a separate page, rated as a buyer. */}
+            {data.ownerHandle && <Link to={`/${data.ownerHandle}`} className="chip">👤 @{data.ownerHandle}</Link>}
           </div>
-          <div className="credit__cell">
-            <span className="credit__figure">
-              {rating?.average != null ? `${(rating.average / 20).toFixed(1)}` : '—'}
-            </span>
-            <span className="credit__label">
-              {rating?.count ? `from ${rating.count}` : 'unrated'}
-            </span>
-          </div>
-          {/* The same Trust the listing's "Posted by" card shows: buyer
-              reviews' average star rating times 20, as last recomputed. */}
-          {data.isStore && (
-            <div className="credit__cell">
-              <span className={`credit__figure credit__trust credit__trust--${trustTone(data.trustScore)}`}>
-                {data.trustScore ?? '—'}<small>/100</small>
-              </span>
-              <span className="credit__label">trust</span>
-            </div>
-          )}
-          <div className="credit__cell">
-            <span className="credit__figure">
-              {data.isStore ? data.counts.sold : (pageReviews?.count ?? 0)}
-            </span>
-            <span className="credit__label">{data.isStore ? 'sold out' : 'page notes'}</span>
-          </div>
-          <span className="credit__open">›</span>
-        </button>
+        )}
 
-        {/* A person with no shop has no shelf, so they get no tab for one. A tab
-            whose whole content is "there is nothing here" is a tab that exists
-            to be disappointing. */}
+        <Bio text={data.bio} />
+
+        <RatingSlab rating={data.rating} side="store" onOpen={() => setRatingOpen(true)} />
+
+        {data.level && <StoreLevelCard level={data.level} stickers={data.stickers} />}
+
         <div className="tabs" style={{ marginTop: 16 }}>
-          {data.isStore && (
-            <button className={`tab${shownTab === 'items' ? ' is-on' : ''}`} onClick={() => setTab('items')}>
-              Items {data.counts.listings}
-            </button>
-          )}
-          <button className={`tab${shownTab === 'reviews' ? ' is-on' : ''}`} onClick={() => setTab('reviews')}>
-            Reviews {(reviews?.count ?? 0) + (pageReviews?.count ?? 0)}
+          <button type="button" className={`tab${tab === 'items' ? ' is-on' : ''}`} onClick={() => setTab('items')}>
+            Items {data.counts.listings}
+          </button>
+          <button type="button" className={`tab${tab === 'feed' ? ' is-on' : ''}`} onClick={() => setTab('feed')}>
+            Feed
+          </button>
+          <button type="button" className={`tab${tab === 'reviews' ? ' is-on' : ''}`} onClick={() => setTab('reviews')}>
+            Reviews {data.rating.count}
           </button>
         </div>
 
-        {shownTab === 'items' ? (
-          data.listings.length === 0 ? (
-            <EmptyState title="Nothing listed yet">
-              This shop has not put anything up. Following it puts new items on your feed.
-            </EmptyState>
-          ) : (
-            <>
-              <div className="chips chips--tight" style={{ marginBottom: 12 }}>
-                {([
-                  ['all', `All ${data.counts.listings}`],
-                  ['onSale', `On sale ${data.counts.onSale}`],
-                  ['sold', `Sold out ${data.counts.sold}`],
-                ] as const).map(([id, label]) => (
-                  <button key={id} type="button" className={`chip${shelf === id ? ' is-on' : ''}`}
-                    onClick={() => setShelf(id)}>
-                    {label}
+        {tab === 'feed' ? (
+          <ShopFeed shopId={data.sellerId} />
+        ) : tab === 'reviews' ? (
+          <ReviewsTab profile={data} canWrite={!isMe} onWritten={reload} />
+        ) : data.listings.length === 0 ? (
+          <EmptyState title="Nothing listed yet">
+            This shop has not put anything up. Following it puts new items on your feed.
+          </EmptyState>
+        ) : (
+          <>
+            {filters.length > 2 && (
+              <div className="chips chips--tight">
+                {filters.map(([id, label, count]) => (
+                  <button key={id} type="button" className={`chip${shelf === id ? ' is-on' : ''}`} onClick={() => setShelf(id)}>
+                    {label} {count}
                   </button>
                 ))}
               </div>
-              {shown.length === 0 ? (
-                <p className="faint">Nothing here under that filter.</p>
-              ) : (
-                <div className="grid">
-                  {shown.map((listing) => (
-                    <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
-                      <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
-                        <div className="thumb__badges">
-                          <span className="badge badge--solid">{listing.condition}</span>
-                        </div>
-                      </Thumb>
-                      <div className="listing__body">
-                        <span className="listing__title">{listing.title}</span>
-                        <span className="listing__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-                        <div className="listing__meta">
-                          <span className="faint">♥ {listing.likeCount}</span>
-                          <span className="faint">
-                            {listing.quantityAvailable === 0 ? 'sold out' : `${listing.quantityAvailable} left`}
-                          </span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </>
-          )
-        ) : (
-          <ReviewsTab
-            profile={data}
-            trade={reviews}
-            listed={listed}
-            page={pageReviews}
-            canWrite={Boolean(user) && !isMe}
-            onWritten={() => void loadReviews(data.sellerId)}
-          />
+            )}
+            <div className="grid qgrid">
+              {shown.map((listing, i) => {
+                const full = live.get(listing.id);
+                return full
+                  ? <LootCard key={listing.id} listing={{ ...full, rarity: listingRarity(full, now) }} />
+                  : <ShelfCard key={listing.id} listing={listing} index={i} />;
+              })}
+            </div>
+          </>
         )}
       </div>
 
-      {creditOpen && <CreditSheet profile={data} onClose={() => setCreditOpen(false)} />}
+      {ratingOpen && (
+        <RatingSheet profile={data} rating={data.rating} onClose={() => setRatingOpen(false)} onReviews={() => setTab('reviews')} />
+      )}
     </main>
   );
 }
 
 /**
- * The whole record behind two words on a card.
- *
- * Every figure here names the rows it counted. "Excellent" without what is
- * under it is a badge somebody awarded themselves, and the point of opening
- * this is that a stranger can check.
+ * What the shop said out loud: its posts on the social feed, which anybody can
+ * read - not the messages kept for followers in its channel.
  */
-function CreditSheet({ profile, onClose }: { profile: PublicProfile; onClose: () => void }) {
-  const [credit, setCredit] = useState<Credit | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
+function ShopFeed({ shopId }: { shopId: string }) {
+  const { user, gate } = useSession();
+  const [posts, setPosts] = useState<PostCard[] | null>(null);
   useEffect(() => {
-    void api
-      .credit(profile.sellerId)
-      .then(setCredit)
-      .catch((err: unknown) =>
-        setError(err instanceof ApiRequestError ? err.message : 'Could not load their record.'),
-      );
-  }, [profile.sellerId]);
+    if (!user) return;
+    setPosts(null);
+    void api.shopFeed(shopId).then((result) => setPosts(result.posts)).catch(() => setPosts([]));
+  }, [shopId, user]);
 
-  return (
-    <Modal title="Buying and selling record" onClose={onClose}>
-      {error && <ErrorNotice message={error} />}
-      {!credit ? (
-        <p className="muted">Loading…</p>
-      ) : (
-        <div className="stack">
-          <p className="faint" style={{ marginTop: 0 }}>
-            {profile.displayName} · here since {formatDate(credit.memberSince)}
-          </p>
-
-          {/* The side this page is about, and only that side. The same account
-              may be excellent at one and untested at the other, and a reader
-              deciding whether to buy from a shop is not helped by how promptly
-              its owner pays other people. */}
-          {profile.isStore ? (
-            <CreditCard
-              title="As a seller"
-              grade={gradeFor(credit.seller.average)}
-              rate={credit.asSeller.goodRate}
-              rows={[
-                ['Sold', credit.asSeller.sold],
-                ['Completed', credit.asSeller.completed],
-                ['Rated well', credit.asSeller.praised],
-                ['Disputes lost', credit.asSeller.disputes],
-              ]}
-            />
-          ) : (
-            <CreditCard
-              title="As a buyer"
-              grade={gradeFor(credit.buyer.average)}
-              rate={credit.asBuyer.goodRate}
-              rows={[
-                ['Bought', credit.asBuyer.bought],
-                ['Completed', credit.asBuyer.completed],
-                ['Rated well', credit.asBuyer.praised],
-                ['Disputes lost', credit.asBuyer.disputes],
-              ]}
-            />
-          )}
-
-          {/* Where the other half of this account lives, for anybody who wants
-              it. Named rather than shown, because it is a different question. */}
-          {profile.isStore && profile.ownerHandle && (
-            <p className="faint">
-              How they behave as a buyer is on their own page,{' '}
-              <Link to={`/${profile.ownerHandle}`}>@{profile.ownerHandle}</Link>.
-            </p>
-          )}
-
-          <section className="detail__section">
-            <h3>What has been checked</h3>
-            <div className="kv"><dt>Phone</dt><dd>{credit.verification.phone}</dd></div>
-            <div className="kv"><dt>Email</dt><dd>{credit.verification.email}</dd></div>
-            <div className="kv"><dt>Government ID</dt><dd>{credit.verification.governmentId}</dd></div>
-            {/* A seller fact, so it belongs only on the page that is about
-                selling. It was appearing under a buyer's record, where it read
-                as part of a figure it has nothing to do with. */}
-            {profile.isStore && credit.tier && (
-              <div className="kv"><dt>Seller tier</dt><dd>{credit.tier}</dd></div>
-            )}
-          </section>
-
-          {/* Said out loud rather than left to be inferred, because the number
-              above it is only worth anything if this one cannot move it. */}
-          <p className="faint">
-            Everything above is counted from completed orders. Opinions left on this page
-            {credit.page.count > 0
-              ? ` — ${credit.page.count} of them, averaging ${(credit.page.average! / 20).toFixed(1)} —`
-              : ' '}
-            are shown under Reviews and are not part of any figure here.
-          </p>
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-function CreditCard({ title, grade, rate, rows }: {
-  title: string;
-  grade: string;
-  rate: number | null;
-  rows: [string, number][];
-}) {
-  return (
-    <div className="creditcard">
-      <div className="row row--between">
-        <strong>{title}</strong>
-        <span className="credit__grade">{grade}</span>
-      </div>
-      <div className="creditcard__rate">{rate === null ? 'unrated' : `${rate}% rated well`}</div>
-      {rows.map(([label, value]) => (
-        <div className="kv" key={label}><dt>{label}</dt><dd>{value}</dd></div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Reviews, in two lists that are never added together.
- *
- * The earned ones carry the item they were written about: a five-star on a ₹200
- * keyring and one on a ₹40,000 consignment are not the same recommendation, and
- * a review with the thing next to it is evidence rather than an assertion.
- *
- * Below them, what people said about the page. Anybody may write one, which is
- * exactly why it is a separate list under its own heading and counts towards
- * nothing above.
- */
-export function ReviewsTab({ profile, trade, listed, page, canWrite, onWritten }: {
-  profile: PublicProfile;
-  trade: ReviewsAbout | null;
-  listed: ReviewsAbout['reviews'];
-  page: PageReviews | null;
-  canWrite: boolean;
-  onWritten: () => void;
-}) {
-  const all = [...listed.map((review) => review.rating), ...(page?.reviews ?? []).map((review) => review.rating)];
-  const average = all.length ? all.reduce((sum, n) => sum + n, 0) / all.length : null;
-  // How many sit at each star, five first - the shape of a record says more
-  // than its average does.
-  const bars = [5, 4, 3, 2, 1].map((star) => ({
-    star, count: all.filter((rating) => Math.round(rating) === star).length,
-  }));
-
-  return (
-    <div className="stack">
-      <div className="revsum rise">
-        <div className="revsum__score">
-          <b>{average !== null ? average.toFixed(1) : '—'}</b>
-          <StarRow value={average ?? 0} size={18} />
-          <span className="faint">{all.length} {all.length === 1 ? 'review' : 'reviews'}</span>
-        </div>
-        <div className="revsum__bars">
-          {bars.map((bar, i) => (
-            <div key={bar.star} className="revsum__bar">
-              <span>{bar.star}</span>
-              <span className="revsum__track">
-                <span style={{ width: `${all.length ? (bar.count / all.length) * 100 : 0}%`, ['--i' as string]: i }} />
-              </span>
-              <span className="faint">{bar.count}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <section className="stack">
-        <h3 className="revhead">From completed orders <span className="badge badge--ok">Verified</span></h3>
-        {!trade ? (
-          <p className="faint">Loading…</p>
-        ) : listed.length === 0 ? (
-          <p className="faint">
-            No reviews yet{profile.isStore ? ' as a seller' : ' as a buyer'}.
-            {trade.pending > 0 && ` ${trade.pending} written and waiting on the other side.`}
-          </p>
-        ) : (
-          <div className="revlist">
-            {listed.map((review, i) => (
-              <article key={review.id} className="revcard" style={{ ['--i' as string]: i }}>
-                <div className="revcard__head">
-                  <Avatar name={review.author.name} size={36} />
-                  <span className="revcard__who">
-                    <PersonLink party={review.author} />
-                    <span className="faint">{timeAgo(review.createdAt)}</span>
-                  </span>
-                  <StarRow value={review.rating} />
-                </div>
-                {review.body && <p className="revcard__body">{review.body}</p>}
-                <div className="revcard__foot">
-                  {review.item && (
-                    <Link to={`/listing/${review.item.listingId}`} className="revcard__item">
-                      <span>{review.item.name}</span>
-                      <b>{formatMoney(review.item.totalMinor, review.item.currency)}</b>
-                    </Link>
-                  )}
-                  <ReportButton targetType="review" targetId={review.id} parentId={profile.sellerId}
-                    mine={Boolean(review.mine)} moderation={review.moderation} />
-                </div>
-              </article>
-            ))}
-            {trade.pending > 0 && (
-              <p className="faint">{trade.pending} more written and hidden until both sides have rated.</p>
-            )}
-          </div>
-        )}
-      </section>
-
-      <section className="stack">
-        <h3 className="revhead">
-          About this page
-          {page && page.count > 0 && <span className="faint" style={{ fontWeight: 400 }}>{(page.average! / 20).toFixed(1)} from {page.count}</span>}
-        </h3>
-        <p className="faint" style={{ marginTop: 0 }}>
-          Anybody can leave one of these, so they are counted on their own and never folded into the
-          record above.
-        </p>
-
-        {canWrite && <PageReviewForm subjectId={profile.sellerId} existing={page?.yours ?? null} onWritten={onWritten} />}
-
-        {page && page.reviews.length > 0 && (
-          <div className="revlist">
-            {page.reviews.map((review, i) => (
-              <article key={review.id} className="revcard" style={{ ['--i' as string]: i }}>
-                <div className="revcard__head">
-                  <Avatar name={review.authorName} size={36} />
-                  <span className="revcard__who">
-                    <span>
-                      <PersonLink party={{ name: review.authorName, handle: review.authorHandle }} />
-                      {review.mine && <span className="badge" style={{ marginLeft: 8 }}>yours</span>}
-                    </span>
-                    <span className="faint">{timeAgo(review.createdAt)}</span>
-                  </span>
-                  <StarRow value={review.rating} />
-                </div>
-                <p className="revcard__body">{review.body}</p>
-                <div className="revcard__foot">
-                  <ReportButton targetType="store_review" targetId={review.id} parentId={profile.sellerId}
-                    mine={review.mine} moderation={review.moderation} />
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-/** One per person, replaced rather than added to. */
-function PageReviewForm({ subjectId, existing, onWritten }: {
-  subjectId: string;
-  existing: number | null;
-  onWritten: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [rating, setRating] = useState(existing ?? 5);
-  const [body, setBody] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.writePageReview(subjectId, { rating, body: body.trim() });
-      setOpen(false);
-      setBody('');
-      onWritten();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!open) {
+  if (!user) {
     return (
-      <button className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }} onClick={() => setOpen(true)}>
-        {existing === null ? 'Leave a review' : 'Change your review'}
-      </button>
+      <EmptyState title="Posts">
+        <button type="button" className="pbtn pbtn--follow" onClick={gate(() => undefined, 'Sign in to see the shop feed.')}>Sign in</button>
+      </EmptyState>
     );
   }
-
+  if (!posts) return <SkeletonText lines={3} />;
+  if (posts.length === 0) return <EmptyState title="Nothing posted yet">When the shop posts to the feed, it shows up here.</EmptyState>;
   return (
-    <div className="card card--pad stack">
-      <label className="field">
-        <span>Rating</span>
-        <div className="row">
-          {[1, 2, 3, 4, 5].map((value) => (
-            <button key={value} type="button"
-              className={`starpick${value <= rating ? ' is-on' : ''}`}
-              aria-label={`${value} out of 5`}
-              onClick={() => setRating(value)}>
-              ★
-            </button>
-          ))}
-        </div>
-      </label>
-      <label className="field">
-        <span>What you want to say</span>
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3}
-          placeholder="Quick to reply, packs well, knows the range…" />
-      </label>
-      {error && <ErrorNotice message={error} />}
-      <div className="row">
-        <button className="btn" disabled={busy || body.trim().length < 4} onClick={() => void submit()}>
-          {busy ? 'Saving…' : 'Post it'}
-        </button>
-        <button type="button" className="btn btn--quiet" onClick={() => setOpen(false)}>Cancel</button>
-      </div>
+    <div className="stack">
+      {posts.map((card) => <SocialPostCard key={card.post.id} card={card} />)}
     </div>
   );
-}
-
-/**
- * A score out of 100 as a word.
- *
- * Words rather than a number because the number is already beside it, and
- * because "unrated" is a real answer that 0% is not — an account nobody has
- * reviewed is not one everybody disliked.
- */
-function gradeFor(average: number | null): string {
-  if (average === null) return 'unrated';
-  if (average >= 90) return 'excellent';
-  if (average >= 75) return 'good';
-  if (average >= 55) return 'mixed';
-  return 'poor';
 }
 
 /** Links are stored as typed, so give a bare domain a scheme before opening it. */

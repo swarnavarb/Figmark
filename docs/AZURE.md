@@ -49,6 +49,10 @@ credentials were present. These steps need a machine that can reach Azure:
 
 3. **Create the database, containers and blob containers:**
 
+   Blob containers: `listing-photos` (public-read), `chat-photos` (private; chat
+   photos are served only through the API to the two handles in the thread) and
+   `dispute-evidence` (private).
+
    ```bash
    npm run build:api
    npm run azure:provision

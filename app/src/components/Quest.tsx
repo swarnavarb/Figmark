@@ -4,13 +4,14 @@ import {
 import { Link } from 'react-router-dom';
 import {
   CARDS, CARD_ODDS, CARD_SETS, CARD_XP, RARITY_LABELS, SET_BONUS_XP, STICKER_TIER_NAMES,
-  type CardDef, type CardRarity, type QuestView, type RarityTier, type StickerView,
+  titleFor, type CardDef, type CardRarity, type QuestView, type RarityTier, type StickerView,
 } from '@shared/quest';
 import { ApiRequestError, api, type QuestResult } from '../api';
 import { useSession } from '../session';
 import { useToast } from './Feedback';
-import { Confetti } from './SocialPost';
+import { Confetti } from './Confetti';
 import { Modal } from './ui';
+import { useShareSheet, type ShareSpec } from './ShareKit';
 
 /*
  * The collector game's shared pieces.
@@ -20,67 +21,6 @@ import { Modal } from './ui';
  * every screen - and so the one piece of global state the game has (your own
  * quest view, and the celebration when it moves) is held in one place.
  */
-
-/* ── Which design ──────────────────────────────────────────────────────── */
-
-export type Design = 'quest' | 'classic';
-const DESIGN_KEY = 'figmark.design';
-const DESIGN_EVENT = 'figmark:design';
-
-function readDesign(): Design {
-  try {
-    return window.localStorage.getItem(DESIGN_KEY) === 'classic' ? 'classic' : 'quest';
-  } catch {
-    return 'quest';
-  }
-}
-
-/**
- * The new design or the old one, per browser.
- *
- * Both are kept while the choice is being made, and the switch is a
- * preference rather than a setting on the account: it is a question about the
- * app, not about the person. Every mounted screen hears a change at once, so
- * flipping it on the feed also flips the profile behind it.
- */
-export function useDesign(): [Design, (next: Design) => void] {
-  const [design, setDesign] = useState<Design>(readDesign);
-  useEffect(() => {
-    const sync = () => setDesign(readDesign());
-    window.addEventListener(DESIGN_EVENT, sync);
-    window.addEventListener('storage', sync);
-    return () => {
-      window.removeEventListener(DESIGN_EVENT, sync);
-      window.removeEventListener('storage', sync);
-    };
-  }, []);
-  const choose = useCallback((next: Design) => {
-    try {
-      window.localStorage.setItem(DESIGN_KEY, next);
-    } catch {
-      // Private mode: the choice lasts as long as the page does.
-    }
-    setDesign(next);
-    window.dispatchEvent(new Event(DESIGN_EVENT));
-  }, []);
-  return [design, choose];
-}
-
-export function DesignSwitch() {
-  const [design, choose] = useDesign();
-  return (
-    <div className="qswitch" role="radiogroup" aria-label="Design">
-      <button type="button" role="radio" aria-checked={design === 'quest'}
-        className={design === 'quest' ? 'is-on' : ''} onClick={() => choose('quest')}>
-        Quest
-      </button>
-      <button type="button" role="radio" aria-checked={design === 'classic'}
-        className={design === 'classic' ? 'is-on' : ''} onClick={() => choose('classic')}>
-        Classic
-      </button>
-    </div>
-  );
-}
 
 /* ── Your own quest state ──────────────────────────────────────────────── */
 
@@ -197,7 +137,55 @@ export function QuestProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** What a celebration looks like as a picture to share: the pull, the set it finished, or the level. */
+function celebrationSpec(party: Celebration, view: QuestView | null): ShareSpec | null {
+  const card = party.card;
+  if (card) {
+    const set = view?.sets.find((entry) => entry.id === card.set);
+    const firstCopy = (view?.cards.filter((mine) => mine.id === card.id).length ?? 0) <= 1;
+    if (set?.complete && firstCopy) {
+      return {
+        kind: 'set',
+        moment: { card, title: `${set.name} complete`, detail: `All ${set.total} cards · ${SET_BONUS_XP} XP bonus`, headline: 'Set complete!' },
+        link: { to: 'invite' },
+        caption: `Just finished the ${set.name} set on Figmark 🏆 Come collect with me.`,
+        target: card.set,
+      };
+    }
+    const big = card.rarity === 'legendary' || card.rarity === 'epic';
+    return {
+      kind: 'card',
+      moment: {
+        card, title: `From the ${setName(card.set)} set`, detail: `${RARITY_LABELS_CARD[card.rarity]} · only ${CARD_ODDS[card.rarity]}% of packs`,
+        headline: big ? `${RARITY_LABELS_CARD[card.rarity]} pull!` : 'New card pulled',
+      },
+      link: { to: 'invite' },
+      caption: `Pulled ${card.rarity === 'epic' ? 'an' : 'a'} ${card.rarity} ${card.name} on Figmark 🃏 Only ${CARD_ODDS[card.rarity]}% of packs have one.`,
+      target: card.id,
+    };
+  }
+  if (party.levelAfter > party.levelBefore) {
+    const title = titleFor(party.levelAfter);
+    return {
+      kind: 'level',
+      moment: {
+        level: { level: party.levelAfter, title }, title: `Level ${party.levelAfter} · ${title}`,
+        detail: 'Collector on Figmark', headline: 'Level up!',
+      },
+      link: { to: 'invite' },
+      caption: `Just hit level ${party.levelAfter} (${title}) on Figmark ⭐ Come play - pre-orders, card packs and quests.`,
+      target: String(party.levelAfter),
+    };
+  }
+  return null;
+}
+
+const RARITY_LABELS_CARD: Record<CardRarity, string> = { common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
+
 function CelebrationModal({ party, onClose }: { party: Celebration; onClose: () => void }) {
+  const { view } = useQuest();
+  const { open, sheet } = useShareSheet();
+  const spec = celebrationSpec(party, view);
   const [flipped, setFlipped] = useState(false);
   useEffect(() => {
     const timer = window.setTimeout(() => setFlipped(true), 350);
@@ -233,10 +221,12 @@ function CelebrationModal({ party, onClose }: { party: Celebration; onClose: () 
         )}
         {party.gained > 0 && <p className="qparty__xp">+{party.gained} XP</p>}
         <div className="row" style={{ justifyContent: 'center' }}>
-          {levelled && <Link to="/quests" className="btn" onClick={onClose}>Open Quests</Link>}
+          {spec && <button type="button" className="btn mshare__go" onClick={() => open(spec)}>Share it</button>}
+          {levelled && <Link to="/quests" className="btn btn--quiet" onClick={onClose}>Open Quests</Link>}
           <button type="button" className="btn btn--quiet" onClick={onClose}>Nice</button>
         </div>
       </div>
+      {sheet}
     </Modal>
   );
 }
@@ -311,10 +301,37 @@ export function CollectorChip() {
       )}
       <LevelRing level={view.level} progress={view.progress} size={30} />
       <span className="qchip__text">
-        <small>{view.title}</small>
+        <small>You</small>
         <span>{view.xp - view.levelFloor}/{view.nextLevelXp - view.levelFloor} XP</span>
       </span>
       {gain ? <em className={`qchip__gain${gain.xp < 0 ? ' qchip__gain--loss' : ''}`}>{gain.xp > 0 ? `+${gain.xp}` : `−${-gain.xp}`} XP</em> : null}
+    </Link>
+  );
+}
+
+/** The first shop you run, as the same chip: its level and XP, one tap from its quests. */
+export function StoreChip() {
+  const [shop, setShop] = useState<{ id: string; name: string; level: Awaited<ReturnType<typeof api.growth>>['level'] } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.stores().then(async ({ stores }) => {
+      const first = stores[0];
+      if (!first) return;
+      const board = await api.growth(first.ownerId);
+      if (live) setShop({ id: first.ownerId, name: board.name, level: board.level });
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
+  if (!shop) return null;
+  const { level } = shop;
+  return (
+    <Link to={`/quests?shop=${encodeURIComponent(shop.id)}`} className="qchip"
+      aria-label={`${shop.name}: level ${level.level} ${level.title}, open shop quests`}>
+      <LevelRing level={level.level} progress={level.progress} size={30} />
+      <span className="qchip__text">
+        <small>Store</small>
+        <span>{level.points.toLocaleString('en-IN')}{level.next === null ? '' : `/${level.next.toLocaleString('en-IN')}`} XP</span>
+      </span>
     </Link>
   );
 }
@@ -419,14 +436,103 @@ export function Sticker({ sticker, onOpen }: { sticker: StickerView; onOpen?: ()
   );
 }
 
+/**
+ * A card or sticker on a turntable. It spins in when opened; a tap spins it
+ * once more; a drag turns it under the finger and lets go into a spin that
+ * comes to rest face up. One element throughout, so it never blinks.
+ */
+export function Spin({ spinKey, children, back }: {
+  /** Changes when the thing shown changes, which spins it in again. */
+  spinKey: string;
+  children: ReactNode;
+  /** What shows when it is turned away: a card's back. Without one it shows through. */
+  back?: ReactNode;
+}) {
+  const node = useRef<HTMLDivElement>(null);
+  const angle = useRef(0);
+  const drag = useRef<{ x: number; from: number; moved: boolean } | null>(null);
+  const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  const turnTo = useCallback((to: number, from: number, ms: number) => {
+    const el = node.current;
+    if (!el) return;
+    el.getAnimations().forEach((animation) => animation.cancel());
+    angle.current = to;
+    el.style.transform = `rotateY(${to}deg)`;
+    if (still) return;
+    el.animate(
+      [{ transform: `rotateY(${from}deg)` }, { transform: `rotateY(${to}deg)` }],
+      { duration: ms, easing: 'cubic-bezier(0.17, 0.84, 0.28, 1)' },
+    );
+  }, [still]);
+
+  useEffect(() => {
+    turnTo(0, -720, 1200);
+  }, [spinKey, turnTo]);
+
+  function down(event: React.PointerEvent<HTMLDivElement>) {
+    const el = node.current;
+    if (!el) return;
+    // Pick it up where it is, even mid-spin: the angle it is showing right now.
+    const shown = getComputedStyle(el).transform;
+    const matrix = shown && shown !== 'none' ? new DOMMatrixReadOnly(shown) : null;
+    const live = matrix ? (Math.atan2(-matrix.m13, matrix.m11) * 180) / Math.PI : angle.current;
+    el.getAnimations().forEach((animation) => animation.cancel());
+    drag.current = { x: event.clientX, from: live, moved: false };
+    el.style.transform = `rotateY(${live}deg)`;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function move(event: React.PointerEvent<HTMLDivElement>) {
+    const held = drag.current;
+    const el = node.current;
+    if (!held || !el) return;
+    const dx = event.clientX - held.x;
+    if (Math.abs(dx) > 4) held.moved = true;
+    angle.current = held.from + dx * 0.9;
+    el.style.transform = `rotateY(${angle.current}deg)`;
+  }
+
+  function up() {
+    const held = drag.current;
+    drag.current = null;
+    if (!held) return;
+    const at = angle.current;
+    if (!held.moved) {
+      turnTo(Math.round(at / 360) * 360 + 360, at, 1000);
+      return;
+    }
+    // Carry on the way it was flicked, one more full turn, landing face up.
+    const way = at >= held.from ? 1 : -1;
+    const rest = way > 0 ? (Math.floor(at / 360) + 2) * 360 : (Math.ceil(at / 360) - 2) * 360;
+    turnTo(rest, at, 1100);
+  }
+
+  return (
+    <div className="spin" onPointerDown={down} onPointerMove={move} onPointerUp={up}
+      onPointerCancel={() => { drag.current = null; turnTo(Math.round(angle.current / 360) * 360, angle.current, 500); }}>
+      <div ref={node} className={`spin__turn${back ? ' spin__turn--sided' : ''}`}>
+        {back ? <><div className="spin__face">{children}</div><div className="spin__face spin__back">{back}</div></> : children}
+      </div>
+      <span className="spin__hint">Tap to spin · drag to turn it</span>
+    </div>
+  );
+}
+
 /** What a sticker means, how to earn it, and how far along its tiers somebody is. */
-export function StickerSheet({ sticker, whose, onClose }: { sticker: StickerView; whose: 'mine' | 'theirs'; onClose: () => void }) {
+export function StickerSheet({ sticker, whose, onClose }: {
+  sticker: StickerView;
+  whose: 'mine' | 'theirs';
+  onClose: () => void;
+}) {
   return (
     <Modal title={sticker.name} onClose={onClose}>
       <div className="qsheet">
-        <span className={`qsticker__hex qsticker__hex--big qhue--${sticker.hue} qtier--${sticker.tier}`}>
-          <Glyph name={sticker.glyph} size={40} />
-        </span>
+        <Spin spinKey={sticker.id}>
+          <span className={`qsticker__hex qsticker__hex--big qhue--${sticker.hue} qtier--${sticker.tier}`}>
+            <Glyph name={sticker.glyph} size={40} />
+          </span>
+        </Spin>
         <p className="qsheet__state">
           {sticker.earned
             ? <><b className={`qtiertext--${sticker.tier}`}>{sticker.tiers.length > 1 ? STICKER_TIER_NAMES[sticker.tier] : 'Earned'}</b>{whose === 'mine' ? ' · yours' : ''}</>
@@ -456,7 +562,7 @@ export function StickerSheet({ sticker, whose, onClose }: { sticker: StickerView
             : `${Math.min(sticker.have, sticker.next)} of ${sticker.next} towards ${sticker.tiers.length > 1 ? STICKER_TIER_NAMES[Math.min(3, sticker.tier + 1)] : 'this sticker'}.`}
         </p>
         <XpBar progress={sticker.next === null ? 1 : sticker.have / sticker.next} tone="gold" />
-        <p className="faint qsheet__note">Stickers show on the profile, so anybody deciding whether to deal with this person can see them.</p>
+        <p className="faint qsheet__note">Stickers show on the page, so anybody deciding whether to deal with them can see them.</p>
       </div>
     </Modal>
   );
@@ -474,7 +580,9 @@ export function CardSheet({ card, copies, setOwned, onClose }: {
   return (
     <Modal title={card.name} onClose={onClose}>
       <div className="qsheet">
-        <CardFace card={card} />
+        <Spin spinKey={card.id} back={<span className={`qcardback qcardface--${card.rarity}`}><Glyph name="crest" size={44} /></span>}>
+          <CardFace card={card} />
+        </Spin>
         <p className="qsheet__lore">&ldquo;{card.lore}&rdquo;</p>
         <p className="qsheet__state">
           <span className={`qrarity qrarity--${card.rarity}`}>{card.rarity}</span>{' '}
@@ -517,11 +625,15 @@ export function ShowcaseModal({ cards, stickers, whose, onClose, start = 'cards'
   const copiesOf = (id: string) => cards.filter((card) => card.id === id).reduce((sum, card) => sum + (card.copies ?? 1), 0);
   const ownedIn = (setId: string) => new Set(cards.filter((card) => card.set === setId).map((card) => card.id)).size;
 
+  const sortedStickers = [...stickers].sort((a, b) => b.tier - a.tier);
+
   if (opened?.kind === 'card') {
-    return <CardSheet card={opened.card} copies={copiesOf(opened.card.id)} setOwned={ownedIn(opened.card.set)} onClose={() => setOpened(null)} />;
+    const card = opened.card;
+    return <CardSheet card={card} copies={copiesOf(card.id)} setOwned={ownedIn(card.set)} onClose={() => setOpened(null)} />;
   }
   if (opened?.kind === 'sticker') {
-    return <StickerSheet sticker={opened.sticker} whose={whose} onClose={() => setOpened(null)} />;
+    const sticker = opened.sticker;
+    return <StickerSheet sticker={sticker} whose={whose} onClose={() => setOpened(null)} />;
   }
 
   return (
@@ -561,7 +673,7 @@ export function ShowcaseModal({ cards, stickers, whose, onClose, start = 'cards'
             Stickers are earned by what somebody actually does - buying, reviewing, backing pre-orders, trading cleanly. Bronze, silver and gold show how far. Tap one to see what it means.
           </p>
           <div className="qstickers">
-            {[...stickers].sort((a, b) => b.tier - a.tier).map((sticker) => (
+            {sortedStickers.map((sticker) => (
               <Sticker key={sticker.id} sticker={sticker} onOpen={() => setOpened({ kind: 'sticker', sticker })} />
             ))}
           </div>

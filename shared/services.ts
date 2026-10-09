@@ -1,5 +1,6 @@
 import type { OrderCheckpoint } from './enums.js';
 import type { Lot, User } from './models.js';
+import { isLive } from './service-stores.js';
 
 /**
  * The trades around the trade.
@@ -19,22 +20,22 @@ import type { Lot, User } from './models.js';
  * job is.
  */
 
-export const SERVICE_KINDS = ['forwarder', 'handler', 'escrow', 'supplier'] as const;
+export const SERVICE_KINDS = ['forwarder', 'handler', 'supplier', 'artist'] as const;
 export type ServiceKind = (typeof SERVICE_KINDS)[number];
 
 /**
  * How somebody comes to provide a service.
  *
- * The three routes are genuinely different, and the difference is what decides
+ * The routes are genuinely different, and the difference is what decides
  * whether there can be a public list at all:
  *
  * - `listed` - they put themselves up. Anyone can, so there is a directory.
- * - `granted` - the company grants it, because the job is holding other
- *   people's money and an open sign-up for that is a fraud vector.
+ * - `approved` - they apply with their details and an operator opens the
+ *   store. There is a directory, of the approved ones only.
  * - `named` - a shop names one person on one lot. Nobody applies, so a
  *   directory would list people who never agreed to be listed.
  */
-export type ServiceEntry = 'listed' | 'granted' | 'named';
+export type ServiceEntry = 'listed' | 'approved' | 'named';
 
 export interface ServiceMeta {
   kind: ServiceKind;
@@ -47,7 +48,7 @@ export interface ServiceMeta {
    */
   glyph: string;
   /** The drawn mark, by name in the app's own icon set. */
-  icon: 'plane' | 'box' | 'lock' | 'search';
+  icon: 'plane' | 'box' | 'search' | 'spark';
   /** What they do, in the words a seller would use. */
   blurb: string;
   /** The longer version, on the category's own screen. */
@@ -71,9 +72,9 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
       'They take the lot from the supplier or the China warehouse and get it to India: '
       + 'consolidation, air or sea freight, and the customs paperwork at both ends. Rates and '
       + 'turnaround are the forwarder’s own claims until they have shipped lots here.',
-    entry: 'listed',
+    entry: 'approved',
     browsable: true,
-    console: '/services/mine/forwarder',
+    console: '/services/store/forwarder',
   },
   handler: {
     kind: 'handler',
@@ -89,21 +90,6 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     entry: 'listed',
     browsable: true,
     console: '/services/mine/handler',
-  },
-  escrow: {
-    kind: 'escrow',
-    label: 'Escrow',
-    plural: 'Escrow agents',
-    glyph: '🔒',
-    icon: 'lock',
-    blurb: 'Holds the money until the buyer has the thing.',
-    detail:
-      'A person, not a company account: the buyer picks one at checkout, they hold the payment '
-      + 'until the item arrives, and they are the one who decides a dispute. Granted by Figmark '
-      + 'rather than applied for, because the job is holding other people’s money.',
-    entry: 'granted',
-    browsable: true,
-    console: '/escrow',
   },
   supplier: {
     kind: 'supplier',
@@ -122,27 +108,42 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     browsable: false,
     console: '/packing',
   },
+  artist: {
+    kind: 'artist',
+    label: 'Artist',
+    plural: 'Artists',
+    glyph: '🎨',
+    icon: 'spark',
+    blurb: 'Repaints, customs and restoration on the piece you bought.',
+    detail:
+      'Painters, sculptors and restorers who work on figures: a repaint, a custom head, a '
+      + 'diorama base, a broken part made good. Commission one from your order - they quote, '
+      + 'you pay held or direct, and the finished piece comes back to you.',
+    entry: 'approved',
+    browsable: true,
+    console: '/services/store/artist',
+  },
 };
 
 /** In the order the goods actually move. */
-export const SERVICE_ORDER: readonly ServiceKind[] = ['supplier', 'forwarder', 'handler', 'escrow'];
+export const SERVICE_ORDER: readonly ServiceKind[] = ['supplier', 'forwarder', 'handler', 'artist'];
 
 /** How somebody becomes one, in one line, for the category screen. */
 export const ENTRY_NOTE: Record<ServiceEntry, string> = {
-  listed: 'Anyone can offer this. Put yourself on the list from My service.',
-  granted: 'Granted by Figmark. Ask, rather than sign up.',
+  listed: 'Anyone can offer this. Put yourself on the list from My services.',
+  approved: 'Apply with your details from My services. Figmark reviews it and opens your store.',
   named: 'Named by a shop on one lot. There is no list to join.',
 };
 
 /** Whether this account provides that service right now. */
-export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'escrowRights'>, kind: ServiceKind): boolean {
+export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'artistProfile'>, kind: ServiceKind): boolean {
   switch (kind) {
     case 'forwarder':
-      return Boolean(user.forwarderProfile);
+      return isLive(user.forwarderProfile);
+    case 'artist':
+      return isLive(user.artistProfile);
     case 'handler':
       return Boolean(user.handlerProfile);
-    case 'escrow':
-      return Boolean(user.escrowRights);
     // Being somebody's supplier is not a thing you are, it is a thing a shop
     // asked you to be: the answer is the lots naming you, which only the API
     // can see.
@@ -153,7 +154,7 @@ export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' 
 
 /** The services this account provides, minus the one it cannot answer alone. */
 export function servicesOf(
-  user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'escrowRights'>,
+  user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'artistProfile'>,
 ): ServiceKind[] {
   return SERVICE_ORDER.filter((kind) => provides(user, kind));
 }
@@ -161,7 +162,7 @@ export function servicesOf(
 /* ── Working somebody else's lot ─────────────────────────────────────── */
 
 /** What this account is on a given lot, beyond owning it. */
-export type CrewRole = 'supplier' | 'handler';
+export type CrewRole = 'supplier' | 'handler' | 'forwarder';
 
 /**
  * The account behind this lot's supplier, wherever it was written.
@@ -182,7 +183,8 @@ export function supplierIdOf(
  * pieces packed and that is all - the warehouse receipt stays the shop's,
  * because the shop is the one being told a crate arrived. A handler is the one
  * taking custody in India, so the receipt there is theirs, and so is everything
- * from it to somebody's door.
+ * from it to somebody's door. A forwarder takes the piece in at their origin
+ * warehouse; whatever else they press is what the shop's route hands them.
  *
  * Shared so the console offers exactly the ticks the API will accept: a button
  * that appears and then 403s is worse than no button.
@@ -190,6 +192,7 @@ export function supplierIdOf(
 export const CREW_CHECKPOINTS: Record<CrewRole, readonly OrderCheckpoint[]> = {
   supplier: ['china_packed'],
   handler: ['india_received', 'ready_to_dispatch', 'packed', 'dispatched'],
+  forwarder: ['china_received'],
 };
 
 export function mayTick(role: CrewRole, checkpoint: OrderCheckpoint): boolean {

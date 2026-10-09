@@ -1,4 +1,5 @@
 import type { CreditRecord, Listing, Order } from './models.js';
+import { orderTotalMinor } from './service-stores.js';
 
 /**
  * Stock, expiry and money-in-instalments, shared by the API and the app.
@@ -27,7 +28,7 @@ export const EXPIRY_WARNING_HOURS = 48;
 
 /**
  * Expired is read from the clock rather than written by a job, for the same
- * reason escrow auto-release is: a deadline kept by a scheduler silently stops
+ * reason held-payment auto-release is: a deadline kept by a scheduler silently stops
  * the day the scheduler does.
  */
 export function isExpired(listing: Pick<Listing, 'expiresAt'>, now = new Date()): boolean {
@@ -71,7 +72,7 @@ export interface OrderMoney {
   refundedMinor: number;
 }
 
-type MoneyShape = Pick<Order, 'unitPriceMinor' | 'quantity' | 'paymentStatus' | 'payments' | 'credits'>;
+type MoneyShape = Pick<Order, 'unitPriceMinor' | 'quantity' | 'paymentStatus' | 'payments' | 'credits'> & Partial<Pick<Order, 'addOns'>>;
 
 /**
  * What an order is worth, what has come in and what is left.
@@ -81,7 +82,8 @@ type MoneyShape = Pick<Order, 'unitPriceMinor' | 'quantity' | 'paymentStatus' | 
  * payment records existed are treated as paid in full when they say so.
  */
 export function orderMoney(order: MoneyShape): OrderMoney {
-  const totalMinor = order.unitPriceMinor * order.quantity;
+  // Cover the buyer added is owed like the goods are, so it counts here.
+  const totalMinor = orderTotalMinor(order);
   const records = order.payments ?? [];
   const paidMinor = records.length
     ? records.filter((p) => p.kind !== 'refund').reduce((sum, p) => sum + p.amountMinor, 0)
@@ -179,5 +181,5 @@ export function creditIsLive(credit: Pick<CreditRecord, 'status'>): boolean {
 
 export const PAYMENT_METHOD_LABELS = {
   direct: 'Direct to seller (UPI / bank)',
-  protected: 'Buyer protection (escrow)',
+  protected: 'Buyer Protection',
 } as const;

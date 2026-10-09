@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Listing, Post, PowerSale, PowerSaleItem, User } from '../../../shared/models.js';
 import type { getRepository } from '../data/index.js';
+import { actorName } from '../../../shared/notifications.js';
 import { notify } from './notify.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -36,6 +37,15 @@ export const MAX_SALE_ITEMS = 30;
 /** Floors, so a sale cannot be configured into a wall of posts. */
 export const MIN_EVERY_MINUTES = 1;
 export const MIN_WINDOW_MINUTES = 5;
+/**
+ * The least time between the opening message and the first item.
+ *
+ * Half an hour, so every drop has a countdown on the Buy tab's Drops shelf and
+ * in the channel - time for the announcement to travel and for people to set
+ * a reminder. A sale whose first item lands with its own announcement gives
+ * nobody a chance to turn up.
+ */
+export const MIN_LEAD_MINUTES = 30;
 
 function minutes(n: number): number {
   return n * 60_000;
@@ -44,7 +54,7 @@ function minutes(n: number): number {
 /** A post the runner writes as the shop, into the shop's own channel. */
 function shopPost(
   shop: User, body: string, listingId: string | null, announcement: boolean, reach: Post['reach'] = 'channel',
-  drop: Post['drop'] = null,
+  drop: Post['drop'] = null, opening: Post['opening'] = null,
 ): Post {
   const now = new Date().toISOString();
   return {
@@ -66,6 +76,7 @@ function shopPost(
     reach,
     announcement,
     ...(drop ? { drop } : {}),
+    ...(opening ? { opening } : {}),
     powerSale: true,
     createdAt: now,
     updatedAt: now,
@@ -116,6 +127,17 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
 /** A limited time deal runs from when the item goes public. */
 function publicExpiry(item: PowerSaleItem, now: Date): string | null {
   return item.limitedDays ? new Date(now.getTime() + item.limitedDays * 86_400_000).toISOString() : null;
+}
+
+/** When the first item goes out: the moment the shelf counts down to. */
+export function firstDropAt(sale: PowerSale): string {
+  return new Date(dueAt(sale, 0)).toISOString();
+}
+
+/** When the next item still to post is due, or null when all are out. */
+export function nextDropAt(sale: PowerSale): string | null {
+  const next = sale.items.findIndex((item) => !item.postedAt);
+  return next === -1 ? null : new Date(dueAt(sale, next)).toISOString();
 }
 
 /** When the nth item is due out, counting from the opening message. */
@@ -181,7 +203,16 @@ export async function advancePowerSale(
   //    into a room that was never told a sale was starting is just an item.
   if (!sale.openedAt) {
     if (Date.parse(sale.openingAt) > now.getTime()) return sale;
-    await repository.createPost(shopPost(shop, sale.openingBody, null, true));
+    // The opening message carries the sale, so the channel can count down to
+    // the first item and offer a reminder - and the Buy tab's Drops shelf
+    // shows the sale from this moment on.
+    await repository.createPost(shopPost(shop, sale.openingBody, null, true, 'channel', null, {
+      saleId: sale.id,
+      sellerId: sale.sellerId,
+      startsAt: firstDropAt(sale),
+      saleName: sale.name,
+      itemCount: sale.items.length,
+    }));
     sale.openedAt = stamp;
     sale.status = 'running';
     changed = true;
@@ -191,7 +222,7 @@ export async function advancePowerSale(
       kind: 'sale_opened',
       title: `${shop.sellerProfile.storefrontName} has started a sale`,
       body: sale.openingBody.slice(0, 140),
-      link: `/social?view=channels&channel=${encodeURIComponent(sale.sellerId)}`,
+      link: `/social/c/${encodeURIComponent(sale.sellerId)}`,
     });
   }
 
@@ -266,6 +297,17 @@ export async function advancePowerSale(
     item.windowEndsAt = endsAt;
     item.listingId = listing.id;
     changed = true;
+
+    // The first item is what everyone who pressed "Remind me" was waiting for.
+    if (next === 0 && !sale.remindedAt && (sale.reminders ?? []).length > 0) {
+      await notify(repository, sale.reminders ?? [], {
+        kind: 'sale_opened',
+        title: `⚡ ${sale.name} is dropping now at ${actorName(shop.sellerProfile.storefrontName, shop.sellerProfile.username)}`,
+        body: `${item.title} is first - members' price for ${sale.windowMinutes} min.`,
+        link: `/social/c/${encodeURIComponent(sale.sellerId)}`,
+      }, { except: sale.sellerId });
+      sale.remindedAt = stamp;
+    }
   }
 
   // 4. The closing message, once every item is out and every window is shut.

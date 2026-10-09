@@ -3,12 +3,64 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#080B12" />
+    <!-- An iPhone zooms the page into any field whose text is under 16px, and
+         most of ours are. maximum-scale=1 stops that; iOS still lets a pinch
+         zoom past it, so nothing is lost there. Android would honour it and
+         lose pinch-zoom, so it is added on iPhone and iPad only. -->
+    <script>
+      if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+        document.querySelector('meta[name="viewport"]').content += ', maximum-scale=1';
+      }
+    </script>
+    <meta name="theme-color" content="#5B5EF1" />
+    <!-- The section's colour before the first paint. Safari takes its status
+         bar colour from the first frame, so waiting for the app to load and
+         set it left every section in Buy's. Keep in step with TONES in
+         src/AppShell.tsx and the tabs' paths in src/components/TabBar.tsx. -->
+    <script>
+      (function () {
+        var path = location.pathname;
+        var starts = function (list) { return list.some(function (p) { return path.indexOf(p) === 0; }); };
+        var tone = starts(['/social', '/messages']) ? ['social', '#FF3471']
+          : starts(['/services', '/forwarders', '/community-service', '/packing']) ? ['services', '#3A8C4E']
+          : starts(['/shop', '/sell', '/lots', '/lot/', '/routes']) ? ['sell', '#177ACE']
+          : ['buy', '#5B5EF1'];
+        if (path.indexOf('/social/f/') === 0) tone[1] = '#C627CB';
+        document.documentElement.setAttribute('data-tone', tone[0]);
+        document.querySelector('meta[name="theme-color"]').content = tone[1];
+      })();
+    </script>
     <title>Figmark</title>
+    <!-- Installable: on a phone's home screen it opens like an app, and on an
+         iPhone that is what lets it show notifications at all. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Figmark" />
+    <!-- "default", not "black-translucent". Translucent drew the page under
+         the clock, and from iOS 26 the home-screen app lays its Liquid Glass
+         edge blur over whatever is there and a band below it - the header's
+         logo and icons included. "default" puts the page below an opaque
+         status bar, which iOS tints from theme-color: each section's colour,
+         set before the first paint above and on every change of section in
+         AppShell. iOS keeps these tags from when the icon was added, so an
+         existing home-screen icon has to be removed and added again. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta
       name="description"
-      content="Marketplace for import resellers: group-buy lots, order manifests, escrow and verified two-sided reviews."
+      content="Marketplace for import resellers: pre-orders, order manifests, Buyer Protection and verified two-sided reviews."
     />
+    <!-- What a link to anywhere on the site unfolds into in WhatsApp and the
+         rest. Shared items, shops and invites get their own: /api/og writes
+         them over these (see api/src/functions/og-routes.ts). -->
+    <meta property="og:site_name" content="Figmark" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Figmark - import pre-orders, Buyer Protection and real reviews" />
+    <meta property="og:description" content="Join pre-orders from import resellers, track every stage, and pay with Buyer Protection. Collect cards and level up as you shop." />
+    <meta property="og:image" content="/og/figmark.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>

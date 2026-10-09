@@ -13,13 +13,18 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.132.1",
     "@azure/cosmos": "^4.2.0",
     "@azure/functions": "^4.6.0",
     "@azure/identity": "^4.5.0",
-    "@azure/storage-blob": "^12.26.0"
+    "@azure/storage-blob": "^12.26.0",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "jpeg-js": "^0.4.4",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/web-push": "^3.6.4",
     "typescript": "^5.7.2"
   }
 }

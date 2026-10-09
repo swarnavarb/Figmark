@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiRequestError, api, type ForumRow, type ShareableListing } from '../api';
 import { Thumb } from './ui';
 import { Icon } from './Icon';
-import { Confetti } from './SocialPost';
+import { Confetti } from './Confetti';
 import { VoiceAvatar, VoicePicker, useVoice } from './SocialVoice';
 import { shrink } from './PhotoManager';
 import {
@@ -316,6 +316,7 @@ export function Composer({ onPosted, forum = null }: {
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
                 onClick={() => {
                   URL.revokeObjectURL(photo.preview);
+                  if (photo.url) void api.discardPhoto(photo.url);
                   setPhotos((list) => list.filter((entry) => entry.key !== photo.key));
                 }}>
                 <Icon name="close" size={12} />

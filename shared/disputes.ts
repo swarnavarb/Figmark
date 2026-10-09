@@ -4,7 +4,10 @@ import {
   type DisputeOutcome,
   type DisputeReason,
 } from './enums.js';
-import type { Dispute, DisputeTopic, Order } from './models.js';
+import type {
+  Dispute, DisputeDecision, DisputeRound, ReleaseDuty, DisputeSanctionKind, DisputeSubjectType, DisputeTopic, Order,
+} from './models.js';
+import { ACTION_XP } from './quest.js';
 import { sideOf, type OrderSide } from './orders.js';
 
 /**
@@ -28,16 +31,16 @@ import { sideOf, type OrderSide } from './orders.js';
 
 /** Every topic, in the words both sides read. */
 export const DISPUTE_TOPIC_LABELS: Record<DisputeTopic, string> = {
-  escrow: 'Held payment',
+  held_payment: 'Held payment',
   payment_rejected: 'Payment not acknowledged',
   refund_rejected: 'Refund not acknowledged',
   reversal_rejected: 'Reversal not acknowledged',
   general: 'Dispute',
 };
 
-/** Only an escrow dispute is about money the marketplace is holding, so only it can settle by moving money. */
+/** Only a held-payment dispute is about money Figmark is holding, so only it can settle by moving money. */
 export function holdsMoney(dispute: Pick<Dispute, 'topic'>): boolean {
-  return (dispute.topic ?? 'escrow') === 'escrow';
+  return (dispute.topic ?? 'held_payment') === 'held_payment';
 }
 
 /** Days the other side has to answer before either party may escalate. */
@@ -137,4 +140,242 @@ export function loserOf(
 /** The protection fee is handed back only when the seller was wholly at fault. */
 export function feeRefunded(outcome: DisputeOutcome): boolean {
   return outcome === 'refund_buyer';
+}
+
+/* ── Community disputes: rounds, escalation and the final result ────────── */
+
+/**
+ * The rules every dispute now runs on, whatever it is about.
+ *
+ * A community manager decides each round, and there are at most three: the
+ * dispute as raised, and two escalations. Every round is paid - raising by the
+ * person raising it (free on a protected purchase, whose protection fee
+ * already bought it), an escalation by whoever escalates - and nothing is
+ * refunded, whatever the outcome.
+ *
+ * The final result is the best of the decisions given: two that agree stand,
+ * whatever came before or after. When the first two agree a third round could
+ * not change anything, so it is not offered. When nobody escalates in time,
+ * the latest decision stands.
+ *
+ * Either party may settle with the other at any point before it is final,
+ * without the manager. A settlement has no winner and no loser, and voids
+ * every decision before it.
+ */
+
+export const MAX_ROUNDS = 3;
+/** Days past a manager's deadline before the system reassigns, if no operator did. */
+export const REASSIGN_GRACE_DAYS = 2;
+
+const DAY_MS = 86_400_000;
+
+export const DISPUTE_SUBJECT_LABELS: Record<DisputeSubjectType, string> = {
+  review: 'Trade review',
+  store_review: 'Page review',
+  comment: 'Listing comment',
+  post_comment: 'Post comment',
+  post: 'Feed post',
+  forum_post: 'Forum post',
+  user: 'Member',
+};
+
+export const SANCTION_LABELS: Record<DisputeSanctionKind, string> = {
+  remove_content: 'Remove the content',
+  warning_post: 'Warning post in the feed or a forum',
+  flag: 'Flag as "dispute lost"',
+  rating_reduction: 'Reduce their rating',
+  alert_banner: 'Alert banner on their page',
+  xp_deduction: 'Take XP away',
+};
+
+/** The two that wait for an operator after the manager decides. */
+export const NEEDS_ADMIN: readonly DisputeSanctionKind[] = ['alert_banner', 'xp_deduction'];
+
+/** XP taken for each severity: lost disputes cost a store severely, as they should. */
+export const XP_PENALTY = { light: ACTION_XP * 10, severe: ACTION_XP * 40 } as const;
+
+/** Every round, old disputes included: one from before rounds existed reads as having none yet. */
+export function roundsOf(dispute: Pick<Dispute, 'rounds'>): DisputeRound[] {
+  return dispute.rounds ?? [];
+}
+
+export function currentRound(dispute: Pick<Dispute, 'rounds'>): DisputeRound | null {
+  const rounds = roundsOf(dispute);
+  return rounds[rounds.length - 1] ?? null;
+}
+
+export function isClosed(dispute: Pick<Dispute, 'status'>): boolean {
+  return dispute.status === 'resolved' || dispute.status === 'withdrawn';
+}
+
+/** The decisions given so far, in round order. */
+export function decisionsOf(dispute: Pick<Dispute, 'rounds'>): { round: number; decision: DisputeDecision }[] {
+  return roundsOf(dispute)
+    .filter((round) => round.decision)
+    .map((round) => ({ round: round.n, decision: round.decision! }));
+}
+
+/**
+ * Where the decisions point: two that agree, or else the latest.
+ *
+ * `finalRound` is the round whose decision stands - the latest of the two that
+ * agree - so its sanctions and its refund are the ones carried out.
+ */
+export function standingDecision(dispute: Pick<Dispute, 'rounds'>): { favour: 'raiser' | 'respondent'; finalRound: number; decision: DisputeDecision } | null {
+  const given = decisionsOf(dispute);
+  if (given.length === 0) return null;
+  for (const favour of ['raiser', 'respondent'] as const) {
+    const agreeing = given.filter((entry) => entry.decision.favour === favour);
+    if (agreeing.length >= 2) {
+      const last = agreeing[agreeing.length - 1]!;
+      return { favour, finalRound: last.round, decision: last.decision };
+    }
+  }
+  const latest = given[given.length - 1]!;
+  return { favour: latest.decision.favour, finalRound: latest.round, decision: latest.decision };
+}
+
+/** True once two decisions agree: nothing a further round decides could change it. */
+export function majorityReached(dispute: Pick<Dispute, 'rounds'>): boolean {
+  const given = decisionsOf(dispute);
+  return (['raiser', 'respondent'] as const).some(
+    (favour) => given.filter((entry) => entry.decision.favour === favour).length >= 2,
+  );
+}
+
+/** The parties: who raised it, and who it is against. */
+export function partiesOf(dispute: Pick<Dispute, 'raisedBy' | 'againstUserId'>): [string, string] {
+  return [dispute.raisedBy, dispute.againstUserId];
+}
+
+export function isParty(dispute: Pick<Dispute, 'raisedBy' | 'againstUserId'>, userId: string): boolean {
+  return dispute.raisedBy === userId || dispute.againstUserId === userId;
+}
+
+/** Who the latest decision went against - the only person who may escalate it. */
+export function losingPartyOfLatest(dispute: Pick<Dispute, 'rounds' | 'raisedBy' | 'againstUserId'>): string | null {
+  const latest = [...decisionsOf(dispute)].pop();
+  if (!latest) return null;
+  return latest.decision.favour === 'raiser' ? dispute.againstUserId : dispute.raisedBy;
+}
+
+/** Whether another round can be had at all, whoever asks. */
+export function escalationOpen(
+  dispute: Pick<Dispute, 'status' | 'rounds' | 'escalateBy'>,
+  now = new Date(),
+): boolean {
+  if (dispute.status !== 'decided') return false;
+  const rounds = roundsOf(dispute);
+  if (rounds.length >= MAX_ROUNDS) return false;
+  // The first two agreeing settles it: a third could not change the result.
+  if (majorityReached(dispute)) return false;
+  return Boolean(dispute.escalateBy && new Date(dispute.escalateBy).getTime() > now.getTime());
+}
+
+/**
+ * Whether a decided dispute is now final: both parties agreed with the
+ * decision, no further round can be had, or the window to ask for one has
+ * closed - a party who never answered is taken to agree with the manager.
+ * Read from the clock, the way auto-release is, so no scheduler has to
+ * remember to do it.
+ */
+export function finalDue(
+  dispute: Pick<Dispute, 'status' | 'rounds' | 'escalateBy' | 'raisedBy' | 'againstUserId'> & Partial<Pick<Dispute, 'agreements'>>,
+  now = new Date(),
+): boolean {
+  if (dispute.status !== 'decided') return false;
+  return bothAgreed(dispute) || !escalationOpen(dispute, now);
+}
+
+/** A manager past their deadline, waiting on an operator to reassign. */
+export function decisionOverdue(round: Pick<DisputeRound, 'decideBy' | 'decision'> | null, now = new Date()): boolean {
+  return Boolean(round && !round.decision && new Date(round.decideBy).getTime() <= now.getTime());
+}
+
+/** Two days past the deadline with no operator acting: the system reassigns. */
+export function autoReassignDue(round: Pick<DisputeRound, 'decideBy' | 'decision'> | null, now = new Date()): boolean {
+  return Boolean(round && !round.decision
+    && new Date(round.decideBy).getTime() + REASSIGN_GRACE_DAYS * DAY_MS <= now.getTime());
+}
+
+/** The release is past due: the operators are told. */
+export function releaseOverdue(duty: Pick<ReleaseDuty, 'dueBy'> | null | undefined, now = new Date()): boolean {
+  return Boolean(duty && new Date(duty.dueBy).getTime() <= now.getTime());
+}
+
+/** Two days past the release deadline with no operator acting: another manager takes it. */
+export function releaseReassignDue(duty: Pick<ReleaseDuty, 'dueBy'> | null | undefined, now = new Date()): boolean {
+  return Boolean(duty && new Date(duty.dueBy).getTime() + REASSIGN_GRACE_DAYS * DAY_MS <= now.getTime());
+}
+
+/** Whether this party has agreed with the decision now on the table. */
+export function hasAgreed(dispute: Pick<Dispute, 'rounds' | 'agreements'>, userId: string): boolean {
+  const round = currentRound(dispute);
+  if (!round?.decision) return false;
+  return (dispute.agreements ?? []).some((entry) => entry.userId === userId && entry.round === round.n);
+}
+
+/** Both parties agreed with the current decision: nobody is left to escalate it. */
+export function bothAgreed(dispute: Pick<Dispute, 'rounds' | 'agreements' | 'raisedBy' | 'againstUserId'>): boolean {
+  return partiesOf(dispute).every((party) => hasAgreed(dispute, party));
+}
+
+export type CommunityAction =
+  | 'reply' | 'propose_settlement' | 'accept_settlement' | 'withdraw' | 'escalate' | 'decide' | 'agree' | 'release';
+
+/**
+ * What this person may do now, on the dispute page.
+ *
+ * The parties talk, settle, agree with a decision or escalate it; the manager
+ * on the current round talks and decides. Once the result is agreed, the
+ * manager responsible releases the held money - Figmark holds it, the
+ * manager says where it goes.
+ */
+export function communityActionsFor(
+  dispute: Pick<Dispute, 'status' | 'raisedBy' | 'againstUserId' | 'offer' | 'rounds' | 'escalateBy' | 'topic'>
+    & Partial<Pick<Dispute, 'respondByAt' | 'agreements' | 'releaseDuty' | 'release'>>,
+  viewerId: string,
+  now = new Date(),
+): CommunityAction[] {
+  const round = currentRound(dispute);
+  const actions: CommunityAction[] = [];
+  const party = isParty(dispute, viewerId);
+  const managing = round?.managerId === viewerId;
+
+  if (isClosed(dispute)) {
+    if (dispute.status === 'resolved' && dispute.releaseDuty?.managerId === viewerId && !dispute.release) {
+      actions.push('release');
+    }
+    return actions;
+  }
+
+  if (party || managing) actions.push('reply');
+  if (party) {
+    actions.push('propose_settlement');
+    if (dispute.offer && dispute.offer.fromUserId !== viewerId) actions.push('accept_settlement');
+    // Withdrawing is for before anyone has decided anything: afterwards it
+    // would be a way out of a decision that went against you.
+    if (dispute.raisedBy === viewerId && decisionsOf(dispute).length === 0) actions.push('withdraw');
+    if (dispute.status === 'decided' && !hasAgreed(dispute, viewerId)) actions.push('agree');
+    if (escalationOpen(dispute, now) && losingPartyOfLatest(dispute) === viewerId) actions.push('escalate');
+  }
+  // Round one waits for the other side to answer, or for their days to run out.
+  const heard = !(round?.n === 1 && dispute.status === 'awaiting_response'
+    && dispute.respondByAt && new Date(dispute.respondByAt).getTime() > now.getTime());
+  if (managing && round && !round.decision && heard) actions.push('decide');
+  return actions;
+}
+
+/** The synthetic partition a dispute about something other than an order lives in. */
+export function subjectPartition(type: DisputeSubjectType, id: string): string {
+  return `subject:${type}:${id}`;
+}
+
+export function isSubjectDispute(dispute: Pick<Dispute, 'subjectRef'>): boolean {
+  return Boolean(dispute.subjectRef);
+}
+
+/** Days from now, as an ISO date: deadlines are stored, never re-derived. */
+export function inDays(days: number, from = new Date()): string {
+  return new Date(from.getTime() + days * DAY_MS).toISOString();
 }

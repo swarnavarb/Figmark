@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PhotoStore, StoredPhoto, StorageStatus } from './types.js';
+import type { BlobEntry, PhotoScope, PhotoStore, PrivatePhotoInfo, PublicPhotoInfo, StoredPhoto, StorageStatus } from './types.js';
 
 /**
  * Used when no storage account is configured.
@@ -11,7 +11,10 @@ import type { PhotoStore, StoredPhoto, StorageStatus } from './types.js';
  * screen a seller uses most could not be tried at all.
  */
 export class MemoryPhotoStore implements PhotoStore {
-  private readonly blobs = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  private readonly blobs = new Map<
+    string,
+    { bytes: Uint8Array; contentType: string; createdAt: string; uploadedBy: string | null; attachedTo: string | null }
+  >();
 
   async init(): Promise<void> {}
 
@@ -32,14 +35,68 @@ export class MemoryPhotoStore implements PhotoStore {
     return `/api/photos/${encodeURIComponent(blobName)}`;
   }
 
-  async upload(bytes: Uint8Array, contentType: string): Promise<StoredPhoto> {
+  async upload(bytes: Uint8Array, contentType: string, uploadedBy?: string): Promise<StoredPhoto> {
     const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
-    this.blobs.set(blobName, { bytes, contentType });
+    this.blobs.set(blobName, {
+      bytes, contentType, createdAt: new Date().toISOString(), uploadedBy: uploadedBy ?? null, attachedTo: null,
+    });
     return { blobName, url: this.urlFor(blobName)! };
   }
 
   async read(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
     return this.blobs.get(blobName) ?? null;
+  }
+
+  async publicInfo(blobName: string): Promise<PublicPhotoInfo | null> {
+    const found = this.blobs.get(blobName);
+    return found ? { uploadedBy: found.uploadedBy, attachedTo: found.attachedTo, uploadedAt: found.createdAt } : null;
+  }
+
+  async claimPublic(blobName: string, owner: string): Promise<boolean> {
+    const found = this.blobs.get(blobName);
+    if (!found) return false;
+    found.attachedTo ??= owner;
+    return found.attachedTo === owner;
+  }
+
+  private readonly privateBlobs = new Map<
+    string,
+    { bytes: Uint8Array; contentType: string; uploadedBy: string; threadKey: string | null; createdAt: string }
+  >();
+
+  async uploadPrivate(bytes: Uint8Array, contentType: string, uploadedBy: string): Promise<{ blobName: string }> {
+    const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
+    this.privateBlobs.set(blobName, { bytes, contentType, uploadedBy, threadKey: null, createdAt: new Date().toISOString() });
+    return { blobName };
+  }
+
+  async privateInfo(blobName: string): Promise<PrivatePhotoInfo | null> {
+    const found = this.privateBlobs.get(blobName);
+    return found ? { uploadedBy: found.uploadedBy, threadKey: found.threadKey } : null;
+  }
+
+  async attachPrivate(blobName: string, threadKey: string): Promise<void> {
+    const found = this.privateBlobs.get(blobName);
+    if (found) found.threadKey = threadKey;
+  }
+
+  async readPrivate(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    return this.privateBlobs.get(blobName) ?? null;
+  }
+
+  async list(): Promise<BlobEntry[]> {
+    const entries: BlobEntry[] = [];
+    for (const [name, blob] of this.blobs) {
+      entries.push({ scope: 'public', name, size: blob.bytes.byteLength, uploadedAt: blob.createdAt });
+    }
+    for (const [name, blob] of this.privateBlobs) {
+      entries.push({ scope: 'private', name, size: blob.bytes.byteLength, uploadedAt: blob.createdAt });
+    }
+    return entries;
+  }
+
+  async remove(scope: PhotoScope, blobName: string): Promise<boolean> {
+    return (scope === 'public' ? this.blobs : this.privateBlobs).delete(blobName);
   }
 }
 

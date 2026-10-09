@@ -20,9 +20,9 @@ export type IconName =
   | 'search' | 'target' | 'compose' | 'heart' | 'plus' | 'back' | 'check' | 'close' | 'chevron'
   | 'tag' | 'bolt' | 'lock' | 'bell' | 'message' | 'mail' | 'megaphone'
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
-  | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image'
+  | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image' | 'camera'
   | 'trash' | 'sort' | 'filter' | 'external' | 'home'
-  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy';
+  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy' | 'rising';
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>),
@@ -57,6 +57,8 @@ const PATHS: Record<IconName, ReactNode> = {
   forum: (<><path d="M4 5.6h12.8v8.8H8.8L4 17.6Z" /><path d="M8.4 17.6v1.2h7.2l4 2.8v-9.2h-2.8" /></>),
   send: <path d="M4.4 12 20 4.4l-4 15.2-4-6.2Zm7.6 1.4L20 4.4" />,
   image: (<><rect x="3.4" y="5" width="17.2" height="14" rx="2" /><circle cx="8.6" cy="10" r="1.6" /><path d="m4.4 17.4 5-4.6 4.4 3.6 2.8-2.4 4 3.4" /></>),
+  // A camera, for searching with a photo.
+  camera: (<><path d="M4.4 8.2a1.6 1.6 0 0 1 1.6-1.6h2.2l1.6-2.2h4.4l1.6 2.2H18a1.6 1.6 0 0 1 1.6 1.6v9.6A1.6 1.6 0 0 1 18 19.4H6a1.6 1.6 0 0 1-1.6-1.6Z" /><circle cx="12" cy="12.6" r="3.4" /></>),
   trash: (<><path d="M4.8 7.2h14.4M9.6 7.2V5.4a1.2 1.2 0 0 1 1.2-1.2h2.4a1.2 1.2 0 0 1 1.2 1.2v1.8" /><path d="M6.6 7.2 7.6 19a1.6 1.6 0 0 0 1.6 1.4h5.6A1.6 1.6 0 0 0 16.4 19l1-11.8" /></>),
   sort: <path d="M7 4.6v14.8M7 19.4l-3-3M17 19.4V4.6M17 4.6l3 3" />,
   filter: <path d="M3.6 5.4h16.8l-6.6 7.6v6l-3.6 2v-8Z" />,
@@ -72,6 +74,8 @@ const PATHS: Record<IconName, ReactNode> = {
   /** In search of: a crosshair, since the magnifier already means "search this site". */
   target: (<><circle cx="12" cy="12" r="7.6" /><circle cx="12" cy="12" r="2.4" /><path d="M12 2.4v3.4M12 18.2v3.4M2.4 12h3.4M18.2 12h3.4" /></>),
   compose: (<><path d="M4.4 19.6h15.2" /><path d="M14.8 5.2l3.2 3.2-8.8 8.8H6v-3.2Z" /></>),
+  /** A new post climbing: a line going up and to the right. */
+  rising: (<><path d="m3.6 17.4 5.6-5.6 3.8 3.8 7.4-7.4" /><path d="M14.6 8.2h5.8v5.8" /></>),
 };
 
 /** Glyphs that read better filled than stroked. */

@@ -39,6 +39,7 @@ const {
   SHARED_THROUGHPUT_RU,
   PHOTO_CONTAINER_NAME,
   EVIDENCE_CONTAINER_NAME,
+  CHAT_PHOTO_CONTAINER_NAME,
 } = containers;
 
 async function loadSettings() {
@@ -117,9 +118,10 @@ if (!settings.STORAGE_ACCOUNT && !settings.STORAGE_CONNECTION_STRING) {
   }
 
   console.log('\nProvisioning blob containers');
-  // Listing photos are served publicly; dispute evidence never is.
+  // Listing photos are served publicly; chat photos and dispute evidence never are.
   for (const [name, access] of [
     [PHOTO_CONTAINER_NAME, 'blob'],
+    [CHAT_PHOTO_CONTAINER_NAME, undefined],
     [EVIDENCE_CONTAINER_NAME, undefined],
   ]) {
     const container = blobClient.getContainerClient(name);

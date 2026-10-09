@@ -1,18 +1,25 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { DISPUTE_OUTCOMES, type DisputeOutcome } from '../../../shared/enums.js';
-import type { EscrowRights, User } from '../../../shared/models.js';
+import type { ManagerRights, User } from '../../../shared/models.js';
+import { currentRound, decisionOverdue, isClosed, releaseOverdue, roundsOf, standingDecision } from '../../../shared/disputes.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { settleDispute } from './dispute-routes.js';
+import {
+  applySanction, bringReleaseUpToDate, bringUpToDate, commit, excludedFrom, isManager, loadActions, loadLedger, mutateActions, pickManager,
+  pickManagerFor, reassignRelease, reassignRound,
+} from '../community.js';
+import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
+import { getPhotoStore } from '../storage/index.js';
+import { releaseListingPhotos, releasePostPhotos } from '../storage/release.js';
+import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
 
 /**
  * Operating the marketplace.
  *
  * Everything here is destructive or financial: deleting accounts, deleting what
- * people made, handing out the right to hold other people's money, and settling
- * disputes over it. So three rules run through the whole module.
+ * people made, appointing the community managers who decide disputes, and
+ * approving what their decisions ask for. So three rules run through the whole module.
  *
  * Only a configured operator gets in. `isAdmin` is read from ADMIN_EMAILS at
  * request time rather than from a row, so the right cannot be acquired by
@@ -54,7 +61,7 @@ function row(user: User) {
           managers: user.sellerProfile.managers?.length ?? 0,
         }
       : null,
-    escrowRights: user.escrowRights ?? null,
+    managerRights: user.managerRights ?? null,
     buyerTrust: user.buyerTrust,
     sellerTrust: user.sellerTrust,
     // Whether they can be signed into at all. A catalog fixture is not an
@@ -134,19 +141,26 @@ async function userDetail(request: HttpRequest, _context: InvocationContext) {
  * matters.
  */
 async function deletionBlockers(id: string, repository: Repo): Promise<string[]> {
-  const [purchases, sales] = await Promise.all([
+  const [purchases, sales, asParty, asManager] = await Promise.all([
     repository.listOrdersForBuyer(id),
     repository.listOrdersForSeller(id),
+    repository.listDisputesForParty(id),
+    repository.listDisputesForManager(id),
   ]);
 
   const blockers: string[] = [];
   const live = [...purchases, ...sales].filter(
-    (order) => order.escrow.state === 'held' || order.escrow.state === 'disputed',
+    (order) => order.hold.state === 'held' || order.hold.state === 'disputed',
   );
   if (live.length > 0) {
     blockers.push(
       `${live.length} order(s) still hold money. Settle or release them before deleting the account.`,
     );
+  }
+  const open = [...asParty, ...asManager.filter((dispute) => currentRound(dispute)?.managerId === id)]
+    .filter((dispute) => !isClosed(dispute));
+  if (open.length > 0) {
+    blockers.push(`${new Set(open.map((dispute) => dispute.id)).size} dispute(s) they are in or deciding are still open.`);
   }
   return blockers;
 }
@@ -207,6 +221,8 @@ async function deleteAccount(request: HttpRequest, _context: InvocationContext) 
   for (const listing of listings) await repository.deleteListing(id, listing.id);
   for (const lot of lots) await repository.deleteLot(id, lot.id);
   for (const post of posts) await repository.deletePost(post.channelId, post.id);
+  await releasePostPhotos(posts, repository);
+  await releaseListingPhotos(listings, repository);
   await repository.deleteUser(id);
 
   return json(200, {
@@ -234,20 +250,42 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
       // Something somebody bought stays: their order, tracking and collection
       // card all point at it. It can be expired instead, which takes it out of
       // the catalogue without taking it out of anybody's history.
-      const bought = (await repository.listOrdersForListing(id))
-        .some((order) => isPlaced(order) && !isCancelledLike(order.status));
-      if (bought) {
-        return error(409, 'listing_purchased', 'This item has been bought, so it cannot be deleted. Expire it instead.');
+      // The listing's own seller is the partition it lives in, so use that
+      // rather than trusting the caller's ownerId: a mismatch would make the
+      // delete a silent no-op.
+      const listing = await repository.getListing(id);
+      if (!listing) return error(404, 'not_found', 'That item no longer exists.');
+      const live = (await repository.listOrdersForListing(id))
+        .filter((order) => isPlaced(order) && !isCancelledLike(order.status));
+      if (live.length > 0) {
+        const buyers = new Set<string>();
+        for (const order of live) {
+          const buyer = await repository.getUserById(order.buyerId);
+          buyers.add(buyer?.displayName ?? order.buyerId);
+        }
+        return error(
+          409,
+          'listing_purchased',
+          `Heads up: "${listing.title}" has been bought (${live.length} order${live.length === 1 ? '' : 's'}, buyer${buyers.size === 1 ? '' : 's'}: ${[...buyers].join(', ')}). `
+          + 'It was not deleted, because the buyer\'s order and tracking point at it. Expire it instead, or settle the order first.',
+        );
       }
-      await repository.deleteListing(ownerId, id);
-      break;
+      await repository.deleteListing(listing.sellerId, id);
+      if (await repository.getListing(id)) {
+        return error(500, 'delete_failed', 'The item could not be deleted. Try again.');
+      }
+      const photosRemoved = await releaseListingPhotos([listing], repository);
+      return json(200, { deleted: { kind, id }, photosRemoved });
     }
     case 'lot':
       await repository.deleteLot(ownerId, id);
       break;
-    case 'post':
+    case 'post': {
+      const gone = await repository.getPost(ownerId, id);
       await repository.deletePost(ownerId, id);
+      if (gone) await releasePostPhotos([gone], repository);
       break;
+    }
     case 'review':
       await repository.deleteReview(ownerId, id);
       break;
@@ -259,21 +297,61 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
 }
 
 /**
- * POST /api/ops/users/{id}/escrow - approve or remove an escrow.
+ * POST /api/ops/photos/scan - which stored photos does nothing use?
  *
- * The commercial decision behind the whole feature: this person may hold other
- * people's money and settle what happens to it. Buyers choose from the people
- * approved here, so the grant is what puts somebody on that list, and the rate
- * is theirs — it is their fee for doing the work.
+ * Read-only. Slow on a big database because it reads every record, so it runs
+ * when an operator asks and never by itself.
  */
-async function escrowRights(request: HttpRequest, _context: InvocationContext) {
+async function scanPhotos(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const body = (await request.json().catch(() => ({}))) as { graceHours?: unknown };
+  const store = await getPhotoStore();
+  const scan = await scanUnused(store, await getRepository(), graceFrom(body.graceHours));
+  return json(200, { ...scan, storage: store.status() });
+}
+
+/**
+ * POST /api/ops/photos/cleanup - delete the photos nothing uses.
+ *
+ * Looks again before deleting, so it never acts on a stale list. With `only` it
+ * deletes just those photos, if they are still unused.
+ */
+async function cleanupPhotos(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  let body: { graceHours?: unknown; only?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  let only: { scope: 'public' | 'private'; name: string }[] | undefined;
+  if (body.only !== undefined) {
+    if (!Array.isArray(body.only) || !body.only.every((entry) =>
+      entry && (entry.scope === 'public' || entry.scope === 'private') && typeof entry.name === 'string')) {
+      return error(400, 'invalid_request', 'Name photos as { scope, name }.');
+    }
+    only = body.only as typeof only;
+  }
+  const result = await deleteUnused(await getPhotoStore(), await getRepository(), graceFrom(body.graceHours), only);
+  return json(200, result);
+}
+
+/**
+ * POST /api/ops/users/{id}/manager - appoint or remove a community manager.
+ *
+ * A community manager hears disputes. They never hold money: every payment
+ * bought with buyer protection is held by Figmark. Operators appoint them;
+ * fees are not theirs to set - every fee is set centrally in the settings, and
+ * managers are paid a share of the dispute fees.
+ */
+async function appointManager(request: HttpRequest, _context: InvocationContext) {
   const admin = await operator(request);
   const repository = await getRepository();
 
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A user id is required.');
 
-  let body: { enabled?: boolean; feeBasisPoints?: number; note?: string; displayName?: string };
+  let body: { enabled?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -284,29 +362,16 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
   if (!user) return error(404, 'not_found', 'No such account.');
 
   if (body.enabled === false) {
-    // Withdrawing it stops new protected checkouts. Orders already protected
-    // keep the terms they were bought under - those are settled transactions,
-    // not a setting.
-    user.escrowRights = null;
+    // Removing them stops new disputes reaching them.
+    user.managerRights = null;
   } else {
-    const points = Math.round(Number(body.feeBasisPoints ?? 200));
-    if (!Number.isFinite(points) || points < 0 || points > 2_000) {
-      return error(400, 'invalid_rate', 'A protection fee is between 0 and 2000 basis points (0-20%).');
-    }
-    const rights: EscrowRights = {
-      // Regranting keeps the original date: the grant is a standing decision,
-      // and re-rating somebody is not the marketplace meeting them again.
-      grantedAt: user.escrowRights?.grantedAt ?? new Date().toISOString(),
+    const rights: ManagerRights = {
+      // Re-appointing keeps the original date: the grant is a standing decision.
+      grantedAt: user.managerRights?.grantedAt ?? new Date().toISOString(),
       grantedBy: admin.id,
-      feeBasisPoints: points,
-      displayName:
-        (body.displayName ?? '').trim().slice(0, 80) ||
-        user.escrowRights?.displayName ||
-        user.sellerProfile?.storefrontName ||
-        user.displayName,
-      note: (body.note ?? '').trim().slice(0, 500),
+      available: user.managerRights?.available ?? true,
     };
-    user.escrowRights = rights;
+    user.managerRights = rights;
   }
 
   user.updatedAt = new Date().toISOString();
@@ -314,29 +379,38 @@ async function escrowRights(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/ops/disputes - the mediation queue.
+ * GET /api/ops/disputes - every dispute, for oversight.
  *
- * Escalated first, because those are the ones actually waiting on the company.
- * Everything else is here to be read, not worked.
+ * Community managers decide disputes; Figmark does not. What an operator
+ * does here is watch the clock: a manager past their deadline is flagged
+ * first, to be reassigned - and if nobody does within two days, the system
+ * reassigns it.
  */
 async function disputes(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
   const repository = await getRepository();
 
-  const all = await repository.listDisputes(request.query.get('status') ?? undefined);
+  const all = await Promise.all(
+    (await repository.listDisputes(request.query.get('status') ?? undefined)).map(async (entry) => bringReleaseUpToDate(repository, await bringUpToDate(repository, entry))),
+  );
   const rows = await Promise.all(
     all.map(async (dispute) => {
-      const order = await repository.getOrder(dispute.orderId);
-      const [buyer, seller] = await Promise.all([
+      const order = dispute.subjectRef ? null : await repository.getOrder(dispute.orderId);
+      const [raiser, respondent, buyer, seller] = await Promise.all([
+        repository.getUserById(dispute.raisedBy),
+        repository.getUserById(dispute.againstUserId),
         order ? repository.getUserById(order.buyerId) : null,
         order ? repository.getUserById(order.sellerId) : null,
       ]);
+      const round = currentRound(dispute);
       return {
         dispute,
-        itemName: order?.itemName ?? 'Unknown item',
-        heldMinor: order?.escrow.amountMinor ?? 0,
+        itemName: order?.itemName ?? dispute.subjectRef?.excerpt ?? 'Unknown',
+        heldMinor: order?.hold.amountMinor ?? 0,
         currency: order?.currency ?? 'INR',
         protectionFeeMinor: order?.protection?.feeMinor ?? 0,
+        raiser: raiser ? { id: raiser.id, name: raiser.sellerProfile?.storefrontName ?? raiser.displayName } : null,
+        respondent: respondent ? { id: respondent.id, name: respondent.sellerProfile?.storefrontName ?? respondent.displayName } : null,
         buyer: buyer ? { id: buyer.id, name: buyer.displayName, trust: buyer.buyerTrust } : null,
         seller: seller
           ? {
@@ -345,60 +419,172 @@ async function disputes(request: HttpRequest, _context: InvocationContext) {
               trust: seller.sellerTrust,
             }
           : null,
+        round: round ? { n: round.n, managerId: round.managerId, managerName: round.managerName, decideBy: round.decideBy, decided: Boolean(round.decision) } : null,
+        rounds: roundsOf(dispute).length,
+        overdue: !isClosed(dispute) ? decisionOverdue(round) : !dispute.release && releaseOverdue(dispute.releaseDuty),
+        /** Agreed, and waiting on a manager to release the held payment. */
+        releasePending: dispute.status === 'resolved' && !dispute.release ? dispute.releaseDuty ?? null : null,
+        standing: standingDecision(dispute),
       };
     }),
   );
 
-  const weight = (status: string) => (status === 'under_mediation' ? 0 : status === 'resolved' || status === 'withdrawn' ? 2 : 1);
-  rows.sort((a, b) => weight(a.dispute.status) - weight(b.dispute.status));
+  const weight = (row: (typeof rows)[number]) => (row.overdue ? 0 : isClosed(row.dispute) ? 2 : 1);
+  rows.sort((a, b) => weight(a) - weight(b));
   return json(200, { disputes: rows });
 }
 
 /**
- * POST /api/ops/disputes/{id}/resolve - the company decides.
+ * POST /api/ops/disputes/{id}/reassign - hand the current round to another manager.
  *
- * The last step, not the first: a dispute reaches here because the two sides
- * could not settle it themselves. The note is written into the record both of
- * them can read, because a ruling nobody can see the reasoning for is
- * indistinguishable from an arbitrary one.
+ * Named, or - with no `managerId` - whoever the system would pick by
+ * availability. Never a party, and never a manager who already held a round.
+ * On a resolved dispute whose held payment is still waiting to be released,
+ * it is the release that moves.
  */
-async function resolveDispute(request: HttpRequest, _context: InvocationContext) {
-  const admin = await operator(request);
+async function reassign(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
   const repository = await getRepository();
 
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A dispute id is required.');
+  const dispute = await repository.getDisputeById(id);
+  if (!dispute) return error(404, 'not_found', 'No such dispute.');
+  const pendingRelease = dispute.status === 'resolved' && !dispute.release && dispute.releaseDuty;
+  if (pendingRelease) {
+    let releaseBody: { managerId?: string };
+    try {
+      releaseBody = (await request.json()) as typeof releaseBody;
+    } catch {
+      releaseBody = {};
+    }
+    const parties = [dispute.raisedBy, dispute.againstUserId, pendingRelease.managerId];
+    const to = releaseBody.managerId
+      ? await repository.getUserById(releaseBody.managerId)
+      : await pickManager(repository, parties);
+    if (!to) return error(409, 'no_manager', 'No other community manager is available.');
+    if (!isManager(to)) return error(400, 'invalid_manager', 'That person is not a community manager.');
+    if (parties.includes(to.id)) return error(400, 'invalid_manager', 'A party, or the manager it is with now, cannot take it.');
+    return json(200, { dispute: await reassignRelease(repository, dispute, to) });
+  }
+  if (isClosed(dispute)) return error(409, 'already_resolved', 'That dispute is closed.');
+  const round = currentRound(dispute);
+  if (!round || round.decision) return error(409, 'nothing_to_reassign', 'The current round has already been decided.');
 
-  let body: { outcome?: string; refundMinor?: number; note?: string };
+  let body: { managerId?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+
+  const excluded = excludedFrom(dispute);
+  let manager: User | null;
+  if (body.managerId) {
+    manager = await repository.getUserById(body.managerId);
+    if (!isManager(manager)) return error(400, 'invalid_manager', 'That person is not a community manager.');
+    if (excluded.includes(manager.id)) return error(400, 'invalid_manager', 'A party, or a manager who already held a round, cannot take it.');
+  } else {
+    manager = await pickManagerFor(repository, dispute);
+    if (!manager) return error(409, 'no_manager', 'No other community manager is available.');
+  }
+
+  await reassignRound(repository, dispute, manager, 'admin');
+  return json(200, { dispute: await commit(repository, dispute) });
+}
+
+/** GET /api/ops/actions - managers' decisions waiting for an operator: alert banners and XP deductions. */
+async function actions(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const all = await loadActions(await getRepository());
+  return json(200, {
+    actions: [...all].sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending') || b.createdAt.localeCompare(a.createdAt)),
+  });
+}
+
+/**
+ * POST /api/ops/actions/{id}/decide - approve or reject one.
+ *
+ * An operator may adjust it on the way through - a shorter banner, a lighter
+ * deduction - but not change what it is or who it is against.
+ */
+async function decideAction(request: HttpRequest, _context: InvocationContext) {
+  const admin = await operator(request);
+  const repository = await getRepository();
+  const id = request.params.id;
+
+  let body: { approve?: boolean; days?: number; severity?: string; note?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
+  if (typeof body.approve !== 'boolean') return error(400, 'invalid_request', 'Approve it or reject it.');
 
-  const dispute = await repository.getDisputeById(id);
-  if (!dispute) return error(404, 'not_found', 'No such dispute.');
-  if (dispute.resolvedAt) return error(409, 'already_resolved', 'That dispute is already settled.');
+  const found = (await loadActions(repository)).find((entry) => entry.id === id);
+  if (!found) return error(404, 'not_found', 'No such action.');
+  if (found.status !== 'pending') return error(409, 'already_decided', 'That action has already been decided.');
 
-  const order = await repository.getOrder(dispute.orderId);
-  if (!order) return error(404, 'not_found', 'That dispute has no order behind it.');
-
-  const outcome = body.outcome as DisputeOutcome | undefined;
-  if (!outcome || !DISPUTE_OUTCOMES.includes(outcome)) {
-    return error(400, 'invalid_outcome', 'Say how it was decided.');
+  const sanction = { ...found.sanction };
+  if (body.days !== undefined) {
+    const days = Number(body.days);
+    if (!Number.isInteger(days) || days < 1 || days > 60) return error(400, 'invalid_request', 'Between 1 and 60 days.');
+    sanction.days = days;
   }
-  const noteText = (body.note ?? '').trim();
-  if (!noteText) return error(400, 'invalid_outcome', 'Write the reasoning. Both parties read it.');
-
-  const refundMinor = Math.round(Number(body.refundMinor ?? 0));
-  if (outcome === 'split' && (!Number.isFinite(refundMinor) || refundMinor <= 0 || refundMinor >= order.escrow.amountMinor)) {
-    return error(400, 'invalid_outcome', 'A split is between nothing and the full amount held.');
+  if (body.severity !== undefined) {
+    if (body.severity !== 'light' && body.severity !== 'severe') return error(400, 'invalid_request', 'Light or severe.');
+    sanction.severity = body.severity;
   }
 
-  const settled = await settleDispute(
-    dispute, order, outcome, refundMinor, noteText, admin.id, true, repository,
-  );
-  return json(200, settled);
+  const now = new Date().toISOString();
+  let action = found;
+  // Decided against what is stored at that moment: two operators pressing at
+  // once get one decision, and the sanction is carried out once.
+  let raced = false;
+  await mutateActions(repository, admin.id, (all) => all.map((entry) => {
+    if (entry.id !== id) return entry;
+    if (entry.status !== 'pending') {
+      raced = true;
+      return entry;
+    }
+    action = {
+      ...entry,
+      sanction,
+      status: body.approve ? 'approved' : 'rejected',
+      decidedAt: now,
+      decidedBy: admin.displayName ?? admin.email,
+      note: body.note?.trim().slice(0, 500) || null,
+    };
+    return action;
+  }));
+  if (raced) return error(409, 'already_decided', 'That action has already been decided.');
+
+  if (body.approve) {
+    const dispute = await repository.getDisputeById(action.disputeId);
+    if (dispute) await applySanction(repository, dispute, sanction, action.managerName, action.managerId);
+  }
+  await notify(repository, [action.managerId], {
+    kind: 'dispute_action',
+    title: `Figmark ${body.approve ? 'approved' : 'rejected'} your ${sanction.kind === 'xp_deduction' ? 'XP deduction' : 'alert banner'}`,
+    body: `Against ${action.targetName}. ${action.note ?? ''}`.trim(),
+    link: `/dispute/${action.disputeId}`,
+  });
+  return json(200, { action });
+}
+
+/** GET /api/ops/ledger - every fee paid through the gateway, and Figmark's commission on it. */
+async function ledger(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const entries = await loadLedger(await getRepository());
+  const sum = (pick: (entry: (typeof entries)[number]) => number) => entries.reduce((total, entry) => total + pick(entry), 0);
+  return json(200, {
+    entries: [...entries].reverse().slice(0, 500),
+    totals: {
+      collectedMinor: sum((entry) => entry.amountMinor),
+      commissionMinor: sum((entry) => entry.commissionMinor),
+      managerShareMinor: sum((entry) => entry.managerShareMinor),
+    },
+  });
 }
 
 export const adminUsersRoute = handler(users);
@@ -406,9 +592,14 @@ export const adminUserDetailRoute = handler(userDetail);
 export const adminSuspendRoute = handler(suspend);
 export const adminDeleteUserRoute = handler(deleteAccount);
 export const adminDeleteResourceRoute = handler(deleteResource);
-export const adminEscrowRoute = handler(escrowRights);
+export const adminPhotoScanRoute = handler(scanPhotos);
+export const adminPhotoCleanupRoute = handler(cleanupPhotos);
+export const adminManagerRoute = handler(appointManager);
 export const adminDisputesRoute = handler(disputes);
-export const adminResolveRoute = handler(resolveDispute);
+export const adminReassignRoute = handler(reassign);
+export const adminActionsRoute = handler(actions);
+export const adminDecideActionRoute = handler(decideAction);
+export const adminLedgerRoute = handler(ledger);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -416,7 +607,12 @@ app.http('admin-users', { ...anon, methods: ['GET'], route: 'ops/users', handler
 app.http('admin-user', { ...anon, methods: ['GET'], route: 'ops/users/{id}', handler: adminUserDetailRoute });
 app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'ops/users/{id}/suspend', handler: adminSuspendRoute });
 app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'ops/users/{id}/delete', handler: adminDeleteUserRoute });
-app.http('admin-escrow', { ...anon, methods: ['POST'], route: 'ops/users/{id}/escrow', handler: adminEscrowRoute });
+app.http('admin-manager', { ...anon, methods: ['POST'], route: 'ops/users/{id}/manager', handler: adminManagerRoute });
 app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'ops/resources/delete', handler: adminDeleteResourceRoute });
+app.http('admin-photo-scan', { ...anon, methods: ['POST'], route: 'ops/photos/scan', handler: adminPhotoScanRoute });
+app.http('admin-photo-cleanup', { ...anon, methods: ['POST'], route: 'ops/photos/cleanup', handler: adminPhotoCleanupRoute });
 app.http('admin-disputes', { ...anon, methods: ['GET'], route: 'ops/disputes', handler: adminDisputesRoute });
-app.http('admin-resolve', { ...anon, methods: ['POST'], route: 'ops/disputes/{id}/resolve', handler: adminResolveRoute });
+app.http('admin-reassign', { ...anon, methods: ['POST'], route: 'ops/disputes/{id}/reassign', handler: adminReassignRoute });
+app.http('admin-actions', { ...anon, methods: ['GET'], route: 'ops/actions', handler: adminActionsRoute });
+app.http('admin-action-decide', { ...anon, methods: ['POST'], route: 'ops/actions/{id}/decide', handler: adminDecideActionRoute });
+app.http('admin-ledger', { ...anon, methods: ['GET'], route: 'ops/ledger', handler: adminLedgerRoute });

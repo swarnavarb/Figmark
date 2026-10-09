@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Order } from '../../../shared/models.js';
 import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
+import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { affiliateCommissionMinor } from '../../../shared/affiliate.js';
+import { affiliateFor, creditAffiliate } from '../affiliate.js';
 import type { getRepository } from '../data/index.js';
-import { notify } from './notify.js';
+import { notify, orderNames } from './notify.js';
 import { reconcilePreOrder } from './preorder.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -45,7 +48,16 @@ export async function placeOrder(
     return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
   }
   if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
+  // Stock comes off first, in one checked write: the check above can be beaten
+  // by another buyer pressing at the same moment, and this cannot.
+  if (!(await repository.takeStock(order))) {
+    return isMultiple(listing) ? 'This item is no longer for sale.' : 'This item has just sold out.';
+  }
   if (listing.privateFor) order.privateDeal = true;
+
+  // Whoever's link brought the buyer, if the checkout opened before they
+  // followed it - the account remembers, so the credit is not lost.
+  if (!order.affiliate) order.affiliate = await affiliateFor(repository, order.buyerId, listing);
 
   const now = new Date().toISOString();
   order.placedAt = now;
@@ -66,10 +78,23 @@ export async function placeOrder(
     }
   }
 
-  await adjustHeldCredit(repository, order, actorId);
+  // A booking moves no money until the seller has said yes - kept credit
+  // included. Spending it here left a booking part-paid before anybody had
+  // accepted it, which took the Accept and Reject buttons away from the
+  // seller. It is spent when the buyer pays for the accepted booking instead.
+  if (!order.bookingOnly) await adjustHeldCredit(repository, order, actorId);
 
   await repository.updateOrder(order);
-  await repository.takeStock(order);
+
+  // A sale the post made: counted once per buyer, on the post itself.
+  if (order.fromPost) {
+    const buyer = order.buyerId;
+    await repository.mutatePost(order.fromPost.channelId, order.fromPost.postId, (post) =>
+      (post.boughtBy ?? []).includes(buyer)
+        ? null
+        : { ...post, buyCount: (post.buyCount ?? 0) + 1, boughtBy: [...(post.boughtBy ?? []), buyer] },
+    ).catch(() => null);
+  }
 
   if (listing.preOrder) {
     // Re-read: taking stock moved the fill counter.
@@ -77,11 +102,23 @@ export async function placeOrder(
     if (fresh) await reconcilePreOrder(repository, fresh, { actorId });
   }
 
+  // The affiliate who brought the buyer hears it the moment it is a sale.
+  if (order.affiliate) {
+    await creditAffiliate(repository, order);
+    await notify(repository, [order.affiliate.referrerId], {
+      kind: 'order_placed',
+      title: `Your link made a sale — ${rupees(affiliateCommissionMinor(order))} commission`,
+      body: `${order.itemName}. It is yours once the item is delivered.`,
+      link: '/wallet?tab=earnings',
+    });
+  }
+
   if (options.tellSeller !== false) {
+    const named = await orderNames(repository, order);
     await notify(repository, [order.sellerId], {
       kind: 'order_placed',
-      title: `New order — the buyer chose ${HOW_TEXT[how]}`,
-      body: order.itemName,
+      title: `${named.buyer} ordered from ${named.forShop}`,
+      body: `${order.itemName} · chose ${HOW_TEXT[how]}`,
       link: `/order/${order.id}`,
     });
   }
@@ -180,4 +217,61 @@ export async function adjustHeldCredit(repository: Repo, order: Order, actorId: 
     order.paymentStatus = money.outstandingMinor === 0 ? 'paid' : 'partially_paid';
   }
   return applied;
+}
+
+/**
+ * Puts kept credit this order spent back where it came from - for an order
+ * the seller turns down before taking it on.
+ *
+ * The reverse of `adjustHeldCredit`: each source order gets its credit back as
+ * `held`, and this order drops the credit payments, since none of that money
+ * was ever the buyer paying for it. Mutates `order` (the caller saves it);
+ * saves the source orders.
+ */
+export async function returnKeptCredit(repository: Repo, order: Order, actorId: string): Promise<number> {
+  const spent = (order.payments ?? []).filter((payment) => payment.kind === 'credit');
+  if (spent.length === 0) return 0;
+
+  const now = new Date().toISOString();
+  let returned = 0;
+  const sources = (await repository.listOrdersForBuyer(order.buyerId))
+    .filter((entry) => entry.id !== order.id && entry.sellerId === order.sellerId);
+  for (const source of sources) {
+    let back = 0;
+    source.credits = (source.credits ?? []).map((credit) => {
+      const mine = (credit.applications ?? []).filter((entry) => entry.orderId === order.id);
+      if (mine.length === 0) return credit;
+      const amount = mine.reduce((sum, entry) => sum + entry.amountMinor, 0);
+      back += amount;
+      return {
+        ...credit,
+        appliedMinor: Math.max(0, (credit.appliedMinor ?? 0) - amount),
+        applications: (credit.applications ?? []).filter((entry) => entry.orderId !== order.id),
+        status: credit.status === 'applied' ? 'held' as const : credit.status,
+      };
+    });
+    if (back <= 0) continue;
+    returned += back;
+    source.stageHistory = [
+      ...source.stageHistory,
+      { stage: source.stage, enteredAt: now, note: `💰 ${rupees(back)} of kept credit came back from "${order.itemName}".`, recordedBy: actorId },
+    ];
+    source.updatedAt = now;
+    await repository.updateOrder(source);
+  }
+
+  order.payments = (order.payments ?? []).filter((payment) => payment.kind !== 'credit');
+  if (returned > 0) {
+    order.stageHistory = [
+      ...order.stageHistory,
+      { stage: order.stage, enteredAt: now, note: `💰 ${rupees(returned)} of kept credit returned to the buyer's balance with the seller.`, recordedBy: actorId },
+    ];
+  }
+  // Read from what is left, not `orderMoney`: with no records left it would
+  // take the stale 'paid' status at its word.
+  const paidMinor = order.payments.filter((payment) => payment.kind !== 'refund')
+    .reduce((sum, payment) => sum + payment.amountMinor, 0);
+  const totalMinor = orderTotalMinor(order);
+  order.paymentStatus = paidMinor === 0 ? 'unpaid' : paidMinor >= totalMinor ? 'paid' : 'partially_paid';
+  return returned;
 }

@@ -12,13 +12,14 @@ import {
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { liveStores } from './store-routes.js';
+import { liveOfferings } from '../../../shared/service-stores.js';
 
 /**
  * The trades around the trade: who offers them, and the screens for doing them.
  *
- * Three of these four already existed in pieces - a forwarder directory nobody
- * could act from, an escrow console reachable only from a link on the sell tab,
- * a packing list behind a store right. What was missing was the front door: one
+ * Some of these already existed in pieces - a forwarder directory nobody
+ * could act from, a packing list behind a store right. What was missing was the front door: one
  * place that says these jobs exist, who does them, and where you go if you do
  * one. Nothing here replaces those screens; it points at them, and fills in the
  * two that were never built.
@@ -42,6 +43,11 @@ interface ProviderCard {
   trustScore: number | null;
   /** Completed work behind the score, so an empty one reads as new. */
   completed: number | null;
+  /** A store page to open, for the kinds that have one. */
+  slug?: string | null;
+  tagline?: string;
+  logoUrl?: string | null;
+  accent?: string | null;
 }
 
 function forwarderCard(user: User): ProviderCard {
@@ -58,6 +64,32 @@ function forwarderCard(user: User): ProviderCard {
     contact: profile.contactEmail || profile.contactPhone || null,
     trustScore: profile.trust.score,
     completed: profile.trust.completedTransactions,
+    slug: profile.directorySlug,
+    tagline: profile.tagline ?? '',
+    logoUrl: profile.logoUrl ?? null,
+    accent: profile.accent ?? 'aqua',
+  };
+}
+
+function artistCard(user: User): ProviderCard {
+  const profile = user.artistProfile!;
+  const from = liveOfferings(profile).map((offering) => offering.priceFromMinor).filter((price) => price > 0);
+  return {
+    userId: user.id,
+    name: profile.companyName,
+    handle: user.username ?? null,
+    line: [
+      profile.specialties.slice(0, 3).join(' · '),
+      from.length ? `from ₹${Math.round(Math.min(...from) / 100).toLocaleString('en-IN')}` : '',
+    ].filter(Boolean).join(' — ') || 'Commissions',
+    description: profile.description,
+    contact: null,
+    trustScore: profile.trust.score,
+    completed: profile.trust.completedTransactions,
+    slug: profile.directorySlug,
+    tagline: profile.tagline ?? '',
+    logoUrl: profile.logoUrl ?? null,
+    accent: profile.accent ?? 'pink',
   };
 }
 
@@ -75,40 +107,23 @@ function handlerCard(user: User): ProviderCard {
   };
 }
 
-function escrowCard(user: User): ProviderCard {
-  const rights = user.escrowRights!;
-  const fee = (rights.feeBasisPoints / 100).toFixed(rights.feeBasisPoints % 100 === 0 ? 0 : 2);
-  return {
-    userId: user.id,
-    name: rights.displayName || user.displayName,
-    handle: user.username ?? null,
-    line: `${fee}% of the order, charged to the buyer`,
-    // The operator's note is for operators. What a buyer needs is the fee and
-    // the name, and inventing a blurb they never wrote would be worse.
-    description: '',
-    contact: null,
-    trustScore: null,
-    completed: null,
-  };
-}
-
 /** Everyone offering one kind, already filtered to what may be shown. */
 async function providersOf(repository: Repo, kind: ServiceKind): Promise<ProviderCard[]> {
   switch (kind) {
     case 'forwarder':
-      return (await repository.listForwarders())
-        .filter((user) => user.forwarderProfile)
+      // Approved stores only: an application is not an offer to strangers.
+      return (await liveStores(repository, 'forwarder'))
         .map(forwarderCard)
+        .sort((a, b) => (b.trustScore ?? 0) - (a.trustScore ?? 0));
+    case 'artist':
+      return (await liveStores(repository, 'artist'))
+        .map(artistCard)
         .sort((a, b) => (b.trustScore ?? 0) - (a.trustScore ?? 0));
     case 'handler':
       return (await repository.listHandlers())
         .filter((user) => user.handlerProfile)
         .map(handlerCard)
         .sort((a, b) => (b.trustScore ?? 0) - (a.trustScore ?? 0));
-    case 'escrow':
-      return (await repository.listEscrowAgents())
-        .filter((user) => user.escrowRights && !user.suspended)
-        .map(escrowCard);
     case 'supplier':
       // Private by construction. Guarded at the route too; this is the second
       // lock, so a future caller cannot reach the list by asking politely.
@@ -205,12 +220,11 @@ interface ListingBody {
 }
 
 /**
- * POST /api/me/service - put yourself on a list, or take yourself off it.
+ * POST /api/me/service - put yourself on the handler list, or take yourself off it.
  *
- * Only the two kinds anyone may offer. Escrow is granted because the job is
- * holding other people's money, and a supplier is named by a shop - neither is
- * something to sign up for, and letting this route write them would be a way
- * around both rules.
+ * Only the kind anyone may offer. A forwarder or an artist applies for a store,
+ * and a supplier is named by a shop - none of those is something to sign up for, and
+ * letting this route write them would be a way around every one of those rules.
  */
 async function offerService(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -224,15 +238,20 @@ async function offerService(request: HttpRequest, _context: InvocationContext) {
   }
 
   const kind = body.kind;
-  if (kind !== 'forwarder' && kind !== 'handler') {
-    return error(400, 'invalid_service', 'You can offer freight forwarding or domestic handling.');
+  if (kind === 'forwarder') {
+    // A forwarder runs a store now, which opens on approval rather than by
+    // writing yourself onto a list.
+    return error(400, 'apply_instead', 'Apply for a forwarding store from My services.');
+  }
+  if (kind !== 'handler') {
+    return error(400, 'invalid_service', 'You can offer domestic handling here.');
   }
 
   const repository = await getRepository();
   const account = await repository.getUserById(user.id);
   if (!account) return error(404, 'not_found', 'No such account.');
 
-  const existing = kind === 'forwarder' ? account.forwarderProfile : account.handlerProfile;
+  const existing = account.handlerProfile;
   const name = (body.companyName ?? '').trim() || existing?.companyName || account.displayName;
   const places = (body.places ?? []).map((place) => place.trim()).filter(Boolean);
 
@@ -240,52 +259,25 @@ async function offerService(request: HttpRequest, _context: InvocationContext) {
   // are somebody else's history too, and it has to keep resolving to a name.
   const listed = body.listed !== false;
 
-  if (kind === 'handler') {
-    const profile: HandlerProfile = {
-      companyName: name,
-      directorySlug: account.handlerProfile?.directorySlug ?? slugOf(name, account.id),
-      description: (body.description ?? account.handlerProfile?.description ?? '').trim(),
-      cities: places.length > 0 ? places : (account.handlerProfile?.cities ?? []),
-      contactEmail: (body.contactEmail ?? account.handlerProfile?.contactEmail ?? account.email ?? '').trim(),
-      contactPhone: (body.contactPhone ?? account.handlerProfile?.contactPhone ?? account.phone ?? '').trim(),
-      perParcelFeeMinor:
-        body.perParcelFeeMinor === undefined
-          ? (account.handlerProfile?.perParcelFeeMinor ?? null)
-          : body.perParcelFeeMinor,
-      trust: account.handlerProfile?.trust ?? { score: 0, completedTransactions: 0, disputesLost: 0, computedAt: null },
-      listedInDirectory: listed,
-    };
-    account.handlerProfile = profile;
-  } else {
-    const routes = places.map((place) => {
-      const [origin, destination] = place.split(/→|->|,/).map((part) => part.trim());
-      return {
-        originCity: origin ?? place,
-        destinationCity: destination ?? '',
-        claimedTurnaroundDays: 0,
-        ratePerKgMinor: 0,
-        currency: 'INR',
-      };
-    });
-    account.forwarderProfile = {
-      companyName: name,
-      directorySlug: account.forwarderProfile?.directorySlug ?? slugOf(name, account.id),
-      description: (body.description ?? account.forwarderProfile?.description ?? '').trim(),
-      routes: routes.length > 0 ? routes : (account.forwarderProfile?.routes ?? []),
-      contactEmail: (body.contactEmail ?? account.forwarderProfile?.contactEmail ?? account.email ?? '').trim(),
-      contactPhone: (body.contactPhone ?? account.forwarderProfile?.contactPhone ?? account.phone ?? '').trim(),
-      claimedMonthlyCapacityKg: account.forwarderProfile?.claimedMonthlyCapacityKg ?? null,
-      trust: account.forwarderProfile?.trust ?? { score: 0, completedTransactions: 0, disputesLost: 0, computedAt: null },
-      listedInDirectory: listed,
-    };
-  }
+  const profile: HandlerProfile = {
+    companyName: name,
+    directorySlug: existing?.directorySlug ?? slugOf(name, account.id),
+    description: (body.description ?? existing?.description ?? '').trim(),
+    cities: places.length > 0 ? places : (existing?.cities ?? []),
+    contactEmail: (body.contactEmail ?? existing?.contactEmail ?? account.email ?? '').trim(),
+    contactPhone: (body.contactPhone ?? existing?.contactPhone ?? account.phone ?? '').trim(),
+    perParcelFeeMinor:
+      body.perParcelFeeMinor === undefined
+        ? (existing?.perParcelFeeMinor ?? null)
+        : body.perParcelFeeMinor,
+    trust: existing?.trust ?? { score: 0, completedTransactions: 0, disputesLost: 0, computedAt: null },
+    listedInDirectory: listed,
+  };
+  account.handlerProfile = profile;
 
   account.updatedAt = new Date().toISOString();
   const saved = await repository.updateUser(account);
-  return json(200, {
-    kind,
-    profile: kind === 'handler' ? saved.handlerProfile : saved.forwarderProfile,
-  });
+  return json(200, { kind, profile: saved.handlerProfile });
 }
 
 /** A readable slug that cannot collide with another account's. */

@@ -1,13 +1,10 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { Order } from '@shared/models';
-import { groupStages, type RouteStep, type StageIcon } from '@shared/routes';
+import type { RouteStep, StageIcon } from '@shared/routes';
+import { settledHistory } from '@shared/fulfilment';
 import { formatDateOrdinal, timeAgo } from '../format';
 import { ShipmentChip } from './OrderStatus';
-import { Ladder, STEP_XP } from './Ladder';
-import type { TrackStyle } from './trackStyle';
-
-/** One milestone on the quest skin: a stage of the journey, earned once all of it is done. */
-export interface QuestBadge { icon: string; label: string; earned: boolean }
+import { Ladder } from './Ladder';
 
 const STAGE_EMOJI: Record<StageIcon, string> = {
   supplier: '🏭', warehouse: '🏬', transit: '✈️', customs: '🛃', delivery: '🏠',
@@ -17,107 +14,91 @@ const TRIGGER_EMOJI: Record<string, string> = {
   ready_to_dispatch: '🏷️', packed: '📦', dispatched: '🚚', delivered: '📬',
 };
 
+/** A picture for a step, read off its words first - the seller named it - then its button, then its stage. */
+export function stepEmoji(step: Pick<RouteStep, 'name' | 'trigger' | 'stageIcon' | 'locked'>, index: number): string {
+  const name = step.name.toLowerCase();
+  if (index === 0 || /order placed|ordered|booked/.test(name)) return '🧾';
+  if (/deliver/.test(name)) return '📬';
+  if (/dispatch|courier|out for/.test(name)) return '🚚';
+  if (/custom/.test(name)) return '🛃';
+  if (/forward/.test(name)) return '🤝';
+  if (/pack|box/.test(name)) return '📦';
+  if (/air|flight|fly/.test(name)) return '✈️';
+  if (/sea|ship|vessel|container/.test(name)) return '🚢';
+  if (/land|arriv/.test(name)) return '🛬';
+  if (/ready|check/.test(name)) return '🏷️';
+  if (/supplier|factory/.test(name)) return '🏭';
+  if (/warehouse|\bwh\b|received/.test(name)) return '🏬';
+  if (step.trigger) return TRIGGER_EMOJI[step.trigger] ?? '📍';
+  if (step.stageIcon) return STAGE_EMOJI[step.stageIcon];
+  return '📍';
+}
+
+/* Lives in shared now, beside the rule that made it mostly unnecessary; kept
+   importable from here for the screens that draw it. */
+export { withLastMile } from '@shared/buttons';
+
+/** One box in the row across the top of a timeline: a step, and whether it has been reached. */
+export interface TrackBox { key: string; icon: string; label: string; state: 'done' | 'here' | 'next' | 'locked' }
+
 /**
- * The badges a route awards, read off the route itself.
- *
- * Its named stages when the seller grouped steps into them - "Freight
- * Forwarder", "Domestic" - since those are the chapters the seller already
- * thinks in. A route with no stages gets one badge per step instead, thinned
- * to six so the row still fits a phone.
+ * The steps as boxes - "Order placed", "Received at the warehouse", on to
+ * "Delivered" - each ticked once reached. Everything past the next one is
+ * locked: the journey opens a box at a time as it gets there.
  */
-export function badgesFor(steps: readonly RouteStep[], current: number): QuestBadge[] {
-  const groups = groupStages(steps).filter((group) => group.steps[0]!.step.stageId);
-  if (groups.length >= 2) {
-    return groups.map((group) => ({
-      icon: STAGE_EMOJI[group.stageIcon ?? 'warehouse'],
-      label: group.stageName,
-      earned: group.steps[group.steps.length - 1]!.index <= current,
-    }));
-  }
-  const every = Math.max(1, Math.ceil(steps.length / 6));
-  return steps
-    .map((step, index) => ({ step, index }))
-    .filter(({ index }) => index % every === 0 || index === steps.length - 1)
-    .map(({ step, index }) => ({
-      icon: index === steps.length - 1 ? '🏆' : index === 0 ? '🧾' : TRIGGER_EMOJI[step.trigger ?? ''] ?? '⭐',
-      label: step.name,
-      earned: index <= current,
-    }));
+export function boxesFor(steps: readonly Pick<RouteStep, 'id' | 'name' | 'trigger' | 'stageIcon' | 'locked'>[], current: number,
+  vars?: { origin?: string | null; destination?: string | null }): TrackBox[] {
+  return steps.map((step, index) => ({
+    key: `${step.id}-${index}`,
+    icon: stepEmoji(step, index),
+    label: step.name.replace(/\{(origin|destination)\}/g, (_, key: 'origin' | 'destination') => vars?.[key] ?? key),
+    state: index < current ? 'done' : index === current ? 'here' : index === current + 1 ? 'next' : 'locked',
+  }));
+}
+
+/** The row of boxes itself, slid along to the one it is at. */
+export function TrackBoxes({ boxes }: { boxes: TrackBox[] }) {
+  const row = useRef<HTMLOListElement>(null);
+  const here = boxes.findIndex((box) => box.state === 'here');
+  /* Slide the row, not the page, so the box it is at sits in view with the one before it. */
+  useEffect(() => {
+    const list = row.current;
+    const item = list?.children[Math.max(0, here - 1)] as HTMLElement | undefined;
+    if (list && item) list.scrollTo({ left: item.offsetLeft, behavior: 'smooth' });
+  }, [here]);
+  return (
+    <ol ref={row} className="trkbox" aria-label="Milestones">
+      {boxes.map((box, index) => (
+        <li key={box.key} className={`trkbox__item is-${box.state}`} style={{ ['--i' as string]: index }}
+          title={`${box.label}${box.state === 'locked' ? ' — unlocks as the journey gets there' : ''}`}>
+          <span className="trkbox__icon" aria-hidden="true">{box.icon}</span>
+          <span className="trkbox__label">{box.label}</span>
+          {(box.state === 'done' || box.state === 'here') && <span className="trkbox__tick" aria-label="reached">✓</span>}
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 /**
  * Where an order has got to, as one card: a headline for the step it is on,
- * a bar for how far along that is, and the steps themselves, dated.
+ * a bar for how far along that is, the milestones as boxes, and the steps
+ * themselves, dated.
  *
  * The same card for the buyer and the seller - the two are looking at one
  * parcel, and should never read two different journeys.
  */
-export function TrackHero({ icon, now, sub, done, total, children, skin = 'classic', badges, next }: {
+export function TrackHero({ icon, now, sub, done, total, boxes, children }: {
   icon: string;
   /** The step it is on, in a few words. */
   now: string;
   sub?: ReactNode;
   done: number;
   total: number;
+  boxes?: TrackBox[];
   children?: ReactNode;
-  skin?: TrackStyle;
-  /** Quest skin only: the milestones along the way. */
-  badges?: QuestBadge[];
-  /** Quest skin only: the next thing to happen, named as the next quest. */
-  next?: ReactNode;
 }) {
   const share = total > 0 ? Math.round((Math.min(done, total) / total) * 100) : 0;
-  if (skin === 'quest') {
-    const reached = Math.max(0, Math.min(done, total));
-    const complete = total > 0 && reached >= total;
-    return (
-      <div className={`trk trk--quest${complete ? ' is-complete' : ''}`}>
-        <div className="qtrk__hud">
-          <span className="qtrk__lvl" aria-label={`Level ${reached} of ${total}`}>
-            <small>LVL</small>
-            <b>{reached}</b>
-            <small>/{total}</small>
-          </span>
-          <span className="trk__now">
-            <span className="trk__eyebrow">{complete ? 'Quest complete' : 'Current level'}</span>
-            <b className="trk__title"><span aria-hidden="true">{complete ? '🏆' : icon}</span> {now}</b>
-            {sub && <span className="trk__sub">{sub}</span>}
-          </span>
-          <span className="qtrk__xp" title="100 XP for every step reached">
-            <span className="qtrk__coin" aria-hidden="true" />
-            <b>{reached * STEP_XP}</b>
-            <small>XP</small>
-          </span>
-        </div>
-
-        {/* One segment per step, so the bar counts levels rather than a
-            percentage nobody can picture. */}
-        <div className="qtrk__segs" role="progressbar" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100}
-          aria-label="How far along it is" style={{ ['--n' as string]: Math.max(1, total) }}>
-          {Array.from({ length: Math.max(1, total) }, (_, index) => (
-            <span key={index} className={index < reached ? 'is-on' : index === reached ? 'is-here' : ''}
-              style={{ ['--i' as string]: index }} />
-          ))}
-        </div>
-
-        {badges && badges.length > 0 && (
-          <div className="qtrk__badges" aria-label="Milestones">
-            {badges.map((badge, index) => (
-              <span key={`${badge.label}-${index}`} className={`qtrk__badge${badge.earned ? ' is-earned' : ''}`}
-                title={`${badge.label}${badge.earned ? ' — unlocked' : ' — locked'}`}
-                style={{ ['--i' as string]: index }}>
-                <i aria-hidden="true">{badge.earned ? badge.icon : '🔒'}</i>
-                <small>{badge.label}</small>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {next && !complete && <div className="qtrk__next"><span aria-hidden="true">🎯</span> {next}</div>}
-        {children}
-      </div>
-    );
-  }
   return (
     <div className="trk">
       <div className="trk__hero">
@@ -133,6 +114,7 @@ export function TrackHero({ icon, now, sub, done, total, children, skin = 'class
         aria-label="How far along it is">
         <span style={{ width: `${share}%` }} />
       </div>
+      {boxes && boxes.length > 0 && <TrackBoxes boxes={boxes} />}
       {children}
     </div>
   );
@@ -145,6 +127,8 @@ interface Step {
   at: string | null;
   done: boolean;
   detail?: ReactNode;
+  /** The seller's button that reaches it, for the two that one reaches. */
+  trigger?: 'dispatched' | 'delivered';
 }
 
 /**
@@ -171,11 +155,11 @@ function directSteps(order: Order): Step[] {
       detail: order.paymentStatus === 'claimed' ? <span className="faint">Payment sent — the seller is checking it.</span> : undefined,
     },
     {
-      key: 'dispatched', icon: '📦', label: 'Dispatched', at: dispatchedAt, done: Boolean(dispatchedAt) || delivered,
+      key: 'dispatched', icon: '🚚', label: 'Dispatched', trigger: 'dispatched', at: dispatchedAt, done: Boolean(dispatchedAt) || delivered,
       detail: order.shipment ? <ShipmentChip shipment={order.shipment} /> : undefined,
     },
     {
-      key: 'delivered', icon: '📬', label: 'Delivered',
+      key: 'delivered', icon: '📬', label: 'Delivered', trigger: 'delivered',
       at: order.checkpoints?.delivered ?? order.completedAt ?? null, done: delivered,
       detail: order.receivedAt
         ? <span className="faint">Buyer confirmed receipt {timeAgo(order.receivedAt)}.</span>
@@ -189,34 +173,54 @@ function directSteps(order: Order): Step[] {
  * the seller's shelf and one crossing in a container read as one kind of
  * thing, with only the steps differing.
  */
-export function DirectTrack({ order, skin = 'classic' }: { order: Order; skin?: TrackStyle }) {
+/** Statuses that end an order's journey for good. */
+const ENDED_LABELS: Partial<Record<Order['status'], string>> = {
+  cancelled: 'Order cancelled',
+  rejected: 'Order turned down',
+  refunded: 'Cancelled and refunded',
+  payment_reversal_pending: 'Order cancelled · money on its way back',
+  cancelled_reversed: 'Cancelled and refunded',
+};
+
+/** How an order's timeline ends, when it was called off - or null while it is still travelling. */
+export function endedOf(order: Pick<Order, 'status' | 'updatedAt'> & { cancelReason?: string | null }) {
+  const label = ENDED_LABELS[order.status];
+  return label ? { label, at: order.updatedAt, note: order.cancelReason ?? null } : null;
+}
+
+export function DirectTrack({ order, actFor }: {
+  order: Order;
+  /** The seller's buttons, on the rungs they reach. */
+  actFor?: (step: RouteStep, index: number, steps: readonly RouteStep[]) => ReactNode;
+}) {
   const steps = directSteps(order);
   const done = steps.filter((step) => step.done).length;
   const current = steps.findIndex((step) => !step.done);
   const here = current === -1 ? steps[steps.length - 1]! : steps[Math.max(0, current - 1)]!;
   const next = current === -1 ? null : steps[current]!;
   // What the seller said along the way, newest first, so nothing typed is lost.
-  const notes = order.stageHistory
+  const notes = settledHistory(order.stageHistory)
     .filter((event) => event.note && !/^Courier:/.test(event.note))
     .slice(-6)
     .reverse();
-  const rungs = steps.map((step, position) => ({
-    id: step.key, position, name: step.label,
+  const rungs: RouteStep[] = steps.map((step, position) => ({
+    // All the item's own: there is no lot on a shelf sale to carry any of it.
+    id: step.key, position, name: step.label, trigger: step.trigger, side: 'pre',
     description: step.done && step.at ? formatDateOrdinal(step.at) : step.key === 'paid' && order.paymentStatus === 'claimed'
       ? 'Payment sent — the seller is checking it.' : '',
   }));
 
   return (
-    <TrackHero icon={here.icon} now={here.label} skin={skin}
-      sub={skin === 'quest'
-        ? <>🏠 In hand · ships from the seller</>
-        : <>🏠 In hand · ships from the seller{next ? <> · next: <b>{next.label}</b></> : null}</>}
-      badges={steps.map((step) => ({ icon: step.icon, label: step.label, earned: step.done }))}
-      next={next ? <>Next level: <b>{next.label}</b> <span className="qtrk__reward">+{STEP_XP} XP</span></> : null}
+    <TrackHero icon={endedOf(order) ? '🚫' : here.icon} now={endedOf(order)?.label ?? here.label}
+      sub={<>🏠 In hand · ships from the seller{next ? <> · next: <b>{next.label}</b></> : null}</>}
+      boxes={steps.map((step, index) => ({
+        key: step.key, icon: step.icon, label: step.label,
+        state: step.done ? (index === done - 1 ? 'here' : 'done') : index === done ? 'next' : 'locked',
+      }))}
       done={done} total={steps.length}>
       {order.shipment && <ShipmentChip shipment={order.shipment} />}
       <div className="trk__ladder">
-        <Ladder steps={rungs} current={done - 1} skin={skin} />
+        <Ladder steps={rungs} current={done - 1} actFor={actFor} lockFrom={3} ended={endedOf(order)} />
       </div>
       {order.receivedAt && <span className="faint">Buyer confirmed receipt {timeAgo(order.receivedAt)}.</span>}
       {notes.length > 0 && (

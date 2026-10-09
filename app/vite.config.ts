@@ -23,7 +23,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // No source maps: the whole of dist is deployed, so a map - linked or
+    // not - hands the original source to anybody who asks for it.
+    sourcemap: false,
     rollupOptions: {
       // Two entry points, two bundles. The operations console shares nothing
       // with the marketplace but the API and the stylesheet: it is a different

@@ -1,6 +1,7 @@
 import type { OrderStatus } from './enums.js';
 import type { DisputeTopic, Order, Review } from './models.js';
 import { rupees } from './payments.js';
+import { orderTotalMinor } from './service-stores.js';
 
 /**
  * What may happen to an order, and who may do it.
@@ -12,8 +13,8 @@ import { rupees } from './payments.js';
  *
  * The money is the reason this exists. A buyer paying a stranger for a crate
  * that has not been packed yet needs the payment held rather than handed over,
- * and the seller needs it to arrive without waiting on goodwill. So the escrow
- * record moves through exactly four transitions and nothing else touches it.
+ * and the seller needs it to arrive without waiting on goodwill. So Figmark
+ * holds it, and the hold record moves through exactly four transitions and nothing else touches it.
  */
 
 /**
@@ -55,9 +56,12 @@ export type OrderAction =
   // The buyer answering whether a returned extra payment reached them.
   | 'ack_credit_refund';
 
-/** Protection is only offered where the company has granted the seller it. */
-export function protectionFeeMinor(totalMinor: number, feeBasisPoints: number): number {
-  return Math.max(0, Math.round((totalMinor * feeBasisPoints) / 10_000));
+/**
+ * Buyer protection costs a flat amount Figmark sets, whatever the order is
+ * worth - never more than the order itself.
+ */
+export function protectionFeeMinor(totalMinor: number, flatFeeMinor: number): number {
+  return Math.max(0, Math.min(flatFeeMinor, totalMinor));
 }
 
 /** How the viewer relates to an order. Nobody else may see one at all. */
@@ -85,10 +89,10 @@ export function isPlaced(order: Pick<Order, 'placedAt'>): boolean {
  * when the scheduler does. Reading an order is the moment its state matters, so
  * that is where the clock is checked.
  */
-export function autoReleaseDue(order: Pick<Order, 'escrow'>, now = new Date()): boolean {
-  const { escrow } = order;
-  if (escrow.state !== 'held' || !escrow.autoReleaseAt) return false;
-  return new Date(escrow.autoReleaseAt).getTime() <= now.getTime();
+export function autoReleaseDue(order: Pick<Order, 'hold'>, now = new Date()): boolean {
+  const { hold } = order;
+  if (hold.state !== 'held' || !hold.autoReleaseAt) return false;
+  return new Date(hold.autoReleaseAt).getTime() <= now.getTime();
 }
 
 /**
@@ -101,7 +105,7 @@ export function autoReleaseDue(order: Pick<Order, 'escrow'>, now = new Date()): 
 export function actionsFor(
   order: Pick<
     Order,
-    'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'escrow' | 'completedAt' | 'protection'
+    'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'hold' | 'completedAt' | 'protection'
   > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck' | 'placedAt' | 'receivedAt'>>,
   viewerId: string,
   reviewed = false,
@@ -143,7 +147,15 @@ export function actionsFor(
   // A brand new order or booking is waiting on the seller to say yes before
   // anything else happens to it - nobody has paid, nobody has claimed to, and
   // the seller has not yet said either way.
-  const fresh = order.status === 'pending_payment' && order.paymentStatus === 'unpaid'
+  //
+  // Credit the seller kept for this buyer is not the buyer paying: it is the
+  // seller's own money moving between two of their orders. A booking placed
+  // before bookings stopped spending it (see placeOrder) carries a credit
+  // payment and so reads as part-paid, and must still be accepted or rejected.
+  const payments = order.payments ?? [];
+  const onlyKeptCredit = payments.length > 0 && payments.every((payment) => payment.kind === 'credit');
+  const fresh = order.status === 'pending_payment'
+    && (order.paymentStatus === 'unpaid' || (onlyKeptCredit && order.paymentStatus !== 'claimed'))
     && !order.accepted && !order.paymentClaim;
   if (side === 'seller' && fresh) actions.push('accept');
 
@@ -153,7 +165,7 @@ export function actionsFor(
   // that is not silence. Only before it is accepted, and never once money is
   // held: after that it is `cancel`, a different button with a different
   // ending, because the buyer was already told yes.
-  if (side === 'seller' && fresh && order.escrow.state !== 'held') actions.push('reject');
+  if (side === 'seller' && fresh && order.hold.state !== 'held') actions.push('reject');
 
   // Once accepted or placed, the same X button means something else: the
   // order is being called off after the buyer was told it would happen.
@@ -199,14 +211,14 @@ export function actionsFor(
   // only closes the delivery, and a balance still owed does not block it.
   const onItsWayOrDelivered = order.status === 'shipped' || order.status === 'delivered';
   const confirmable = onItsWayOrDelivered && !order.receivedAt
-    && (order.escrow.state === 'held' ? order.paymentStatus === 'paid' : order.escrow.state === 'none');
+    && (order.hold.state === 'held' ? order.paymentStatus === 'paid' : order.hold.state === 'none');
   if (side === 'buyer' && confirmable) actions.push('confirm');
 
   // Disputing needs something to dispute over. Without protection the money
   // went straight to the seller and there is nothing for the company to hold,
   // which is exactly what declining protection means — so this is the one place
   // the choice made at checkout actually bites.
-  const protectedAndHeld = order.protection != null && order.escrow.state === 'held';
+  const protectedAndHeld = order.protection != null && order.hold.state === 'held';
   const disputable = side === 'buyer'
     ? protectedAndHeld
     : protectedAndHeld && (order.status === 'shipped' || order.status === 'delivered');
@@ -274,6 +286,20 @@ export function isStopped(status: OrderStatus): boolean {
 }
 
 /**
+ * A booking the seller has not yet said yes to.
+ *
+ * It is a pledge, not a sale: nothing may ship it or mark it delivered until
+ * the seller accepts it. Otherwise it walks past the one place Accept and
+ * Reject are offered, and a buyer who was never told yes ends up with a
+ * delivered order they may not even have paid for.
+ */
+export function awaitingAcceptance(order: Pick<Order, 'status'> & Partial<Pick<Order, 'bookingOnly' | 'accepted'>>): boolean {
+  return order.bookingOnly === true && order.accepted !== true && !isStopped(order.status);
+}
+
+export const NOT_ACCEPTED_MESSAGE = 'Accept this booking before you dispatch or deliver it.';
+
+/**
  * The status an order takes when its lot (or the seller) moves it along the
  * route short of delivery.
  *
@@ -289,7 +315,7 @@ export function travellingStatus(status: OrderStatus): OrderStatus {
 /** One rejection the viewer could dispute, and what to call it. */
 export interface DisputeSubject {
   subject: string;
-  kind: Exclude<DisputeTopic, 'escrow' | 'general'>;
+  kind: Exclude<DisputeTopic, 'held_payment' | 'general'>;
   amountMinor: number;
   label: string;
 }
@@ -305,7 +331,7 @@ export interface DisputeSubject {
  */
 export function disputeSubjects(
   order: Pick<Order, 'buyerId' | 'sellerId' | 'unitPriceMinor' | 'quantity'>
-    & Partial<Pick<Order, 'paymentClaim' | 'credits' | 'reversal' | 'disputeLinks'>>,
+    & Partial<Pick<Order, 'paymentClaim' | 'credits' | 'reversal' | 'disputeLinks' | 'addOns'>>,
   viewerId: string,
 ): DisputeSubject[] {
   const side = sideOf(order, viewerId);
@@ -314,7 +340,7 @@ export function disputeSubjects(
 
   const claim = order.paymentClaim;
   if (side === 'buyer' && claim?.decision === 'denied') {
-    const amount = claim.amountMinor ?? order.unitPriceMinor * order.quantity;
+    const amount = claim.amountMinor ?? orderTotalMinor(order);
     out.push({
       subject: `claim:${claim.claimedAt}`, kind: 'payment_rejected', amountMinor: amount,
       label: `The seller says your payment of ${rupees(amount)} did not arrive`,

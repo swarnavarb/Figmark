@@ -1,12 +1,27 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
-import type { Message, MessageDeal, MessageParty, User } from '../../../shared/models.js';
+import type { Listing, Message, MessageDeal, MessageItem, MessageParty, User } from '../../../shared/models.js';
+import type { DealState } from '../../../shared/deals.js';
+import { isExpired, isMultiple } from '../../../shared/payments.js';
+import { reviewRevealed } from '../../../shared/orders.js';
+import {
+  buyerTag, mergedRating, personFollowId, reviewSide, storeLevel, storeStickers, storeTag,
+} from '../../../shared/storefront.js';
+import { moderation } from '../moderation.js';
 import { accessFor } from '../../../shared/stores.js';
-import { isReaction } from '../../../shared/social.js';
+import { isReaction, REACTION_META } from '../../../shared/social.js';
+import { actorName, gistOf, toWhom, whose } from '../../../shared/notifications.js';
+import { notify, readGroup, storeCrew } from './notify.js';
 import { getAuthService } from '../auth/index.js';
+import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { affiliateUnitMinor } from '../../../shared/affiliate.js';
+import { storeFactsFrom } from '../store-facts.js';
+import { getPhotoStore } from '../storage/index.js';
+import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
+import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 
 /**
  * The handle namespace, and the messages addressed through it.
@@ -96,6 +111,7 @@ async function partyFor(username: string, repository: Repo): Promise<MessagePart
     userId: user.id,
     isStore,
     displayName: isStore ? (user.sellerProfile?.storefrontName ?? user.displayName) : user.displayName,
+    level: isStore ? storeTag(user.sellerProfile?.levelCache) : buyerTag(user.quest?.levelCache),
   };
 }
 
@@ -113,7 +129,12 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
 
   const mine = await handlesFor(user.id, repository);
   const byHandle = new Map(mine.map((party) => [party.handle, party]));
-  const messages = await repository.listMessagesForHandles([...byHandle.keys()]);
+  const [messages, me] = await Promise.all([
+    repository.listMessagesForHandles([...byHandle.keys()]),
+    repository.getUserById(user.id),
+  ]);
+  const blocked = new Set(me?.messageBlocks ?? []);
+  const muted = new Set(me?.mutedThreads ?? []);
 
   // Newest message per thread wins the row; the rest are history.
   const threads = new Map<string, { message: Message; unread: number }>();
@@ -131,6 +152,7 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
   const rows = [...threads.values()].map(({ message, unread }) => {
     // "Us" is whichever end of this thread is one of ours.
     const usIsSender = byHandle.has(message.from.handle);
+    const isMuted = muted.has(message.threadId);
     return {
       threadId: message.threadId,
       us: usIsSender ? message.from : message.to,
@@ -138,11 +160,25 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
       lastMessage: message.body,
       lastAt: message.createdAt,
       lastFromUs: usIsSender,
-      unread,
+      // A muted conversation is kept, not counted.
+      unread: isMuted ? 0 : unread,
+      muted: isMuted,
     };
-  });
+  }).filter((row) => !blocked.has(row.them.userId));
 
   rows.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  // The names are snapshots; their levels are read fresh, in one batch.
+  const people = new Map((await repository.listUsersByIds([...new Set(rows.map((row) => row.them.userId))]))
+    .map((person: User) => [person.id, person]));
+  for (const row of rows) {
+    const person = people.get(row.them.userId);
+    if (person) {
+      row.them = {
+        ...row.them,
+        level: row.them.isStore ? storeTag(person.sellerProfile?.levelCache) : buyerTag(person.quest?.levelCache),
+      };
+    }
+  }
   return json(200, { handles: mine, threads: rows });
 }
 
@@ -174,12 +210,240 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
   if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
 
   const threadId = threadIdFor(us.handle, them.handle);
-  const messages = await repository.listMessages(threadId);
-  await repository.markThreadRead(threadId, us.handle);
+  // `before` pages back through a long conversation; `since` is the refresh
+  // while it is open, and only carries what is new.
+  const before = request.query.get('before') || undefined;
+  const since = request.query.get('since') || null;
+  const page = await repository.listMessages(threadId, THREAD_PAGE, before);
+  // Inclusive, as `before` is: the app drops what it already has.
+  const messages = since ? page.filter((message) => message.createdAt >= since) : page;
+  // Where the reader left off, worked out before reading it marks it read:
+  // the app draws "new messages" above this one and opens the chat there.
+  const firstUnread = !before && !since
+    ? page.find((message) => message.to.handle === us.handle && !message.readAt) ?? null
+    : null;
+  const unread = firstUnread ? page.filter((message) => message.to.handle === us.handle && !message.readAt).length : 0;
+  const firstUnreadId = firstUnread?.id ?? null;
+  // Writing read receipts is a write per message; only when there is one to write.
+  if (!before && page.some((message) => message.to.handle === us.handle && !message.readAt)) {
+    await repository.markThreadRead(threadId, us.handle);
+  }
+  // Reading the conversation is reading the news of it.
+  if (!before && !since) await readGroup(repository, user.id, messageGroup(threadId));
+  const me = await repository.getUserById(user.id);
 
   // Every voice the caller has, so the thread can offer a switch rather than
   // making them go back to the inbox to change who is speaking.
-  return json(200, { us, them, handles: mine, threadId, messages });
+  return json(200, {
+    us, them, handles: mine, threadId, messages: await withLiveItems(messages, repository),
+    /** Whether there is more to page back to. */
+    more: !since && page.length === THREAD_PAGE,
+    /** The oldest message to you that you had not read, and how many there were. */
+    firstUnreadId,
+    unread,
+    blocked: (me?.messageBlocks ?? []).includes(them.userId),
+    muted: (me?.mutedThreads ?? []).includes(threadId),
+  });
+}
+
+/** Where an item stands now, as a deal or an item talked about sees it. */
+function stateOf(listing: Listing | null): DealState {
+  if (!listing || listing.status === 'archived' || listing.status === 'draft') return 'gone';
+  if (isExpired(listing)) return 'expired';
+  if (listing.status === 'sold_out' || (!isMultiple(listing) && listing.quantityAvailable === 0)) return 'bought';
+  return 'live';
+}
+
+/**
+ * The deals and items in a page of messages, with where each stands now.
+ *
+ * The message keeps the snapshot it was sent with - what was offered is what
+ * was offered - but whether it can still be bought, and until when, is read
+ * from the item, so a card never offers something that has gone.
+ */
+async function withLiveItems(messages: Message[], repository: Repo): Promise<Message[]> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (message.deal?.kind === 'offer' && message.deal.listingId) ids.add(message.deal.listingId);
+    if (message.item) ids.add(message.item.listingId);
+  }
+  if (ids.size === 0) return messages;
+  const found = new Map<string, Listing | null>(
+    await Promise.all([...ids].map(async (id) => [id, await repository.getListing(id)] as const)),
+  );
+  return messages.map((message) => {
+    let next = message;
+    if (message.deal?.kind === 'offer' && message.deal.listingId) {
+      const listing = found.get(message.deal.listingId) ?? null;
+      next = { ...next, deal: { ...message.deal, state: stateOf(listing), expiresAt: listing?.expiresAt ?? message.deal.expiresAt ?? null } };
+    }
+    if (message.item) {
+      const listing = found.get(message.item.listingId) ?? null;
+      const state = stateOf(listing);
+      next = {
+        ...next,
+        item: {
+          ...message.item, state,
+          ...(listing && listing.priceMinor !== message.item.priceMinor ? { nowMinor: listing.priceMinor } : {}),
+        },
+      };
+    }
+    return next;
+  });
+}
+
+/** How many messages a conversation opens with, and each page back adds. */
+const THREAD_PAGE = 60;
+
+/**
+ * Whether `from` may write to `to` at all: neither end has blocked the other.
+ *
+ * Checked by account, both ways round. Blocking somebody also stops you
+ * writing to them - a conversation where only one side can speak is not one.
+ */
+async function blockedBetween(fromUserId: string, to: MessageParty, repository: Repo): Promise<'you' | 'them' | null> {
+  const [sender, recipient] = await Promise.all([repository.getUserById(fromUserId), repository.getUserById(to.userId)]);
+  if ((sender?.messageBlocks ?? []).includes(to.userId)) return 'you';
+  if ((recipient?.messageBlocks ?? []).includes(fromUserId)) return 'them';
+  return null;
+}
+
+/**
+ * POST /api/messages/{handle}/block - stop, or start again, taking messages from them.
+ *
+ * `{ block: true | false }`. By account, so their shop is blocked with them.
+ */
+async function block(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const them = request.params.handle ? await partyFor(request.params.handle, repository) : null;
+  if (!them) return error(404, 'not_found', 'Nobody holds that handle.');
+  if (them.userId === user.id) return error(400, 'invalid_handle', 'You cannot block yourself.');
+  let body: { block?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (typeof body.block !== 'boolean') return error(400, 'invalid_body', 'Say block: true or false.');
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  const blocks = new Set(me.messageBlocks ?? []);
+  if (body.block) blocks.add(them.userId);
+  else blocks.delete(them.userId);
+  await repository.updateUser({ ...me, messageBlocks: [...blocks], updatedAt: new Date().toISOString() });
+  return json(200, { blocked: body.block });
+}
+
+/** GET /api/me/blocked - everybody you blocked, to let back in from one place. */
+async function blockedList(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  const people = await repository.listUsersByIds(me?.messageBlocks ?? []);
+  return json(200, {
+    blocked: people.map((person) => ({
+      id: person.id,
+      name: person.displayName,
+      handle: person.username ?? null,
+      shop: person.sellerProfile ? { name: person.sellerProfile.storefrontName, handle: person.sellerProfile.username ?? null } : null,
+    })),
+  });
+}
+
+/** POST /api/me/blocked/{id}/unblock - let them write again, by account. */
+async function unblock(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  const next = (me.messageBlocks ?? []).filter((id) => id !== request.params.id);
+  await repository.updateUser({ ...me, messageBlocks: next, updatedAt: new Date().toISOString() });
+  return json(200, { blocked: false });
+}
+
+/**
+ * POST /api/messages/{handle}/mute?as=<handle> - keep the conversation, stop counting it.
+ *
+ * `{ mute: true | false }`. Per conversation, so muting a shop's thread with
+ * somebody leaves your own one with them alone.
+ */
+async function mute(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const them = request.params.handle ? await partyFor(request.params.handle, repository) : null;
+  if (!them) return error(404, 'not_found', 'Nobody holds that handle.');
+  let body: { mute?: unknown; as?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (typeof body.mute !== 'boolean') return error(400, 'invalid_body', 'Say mute: true or false.');
+  const mine = await handlesFor(user.id, repository);
+  const us = typeof body.as === 'string'
+    ? mine.find((party) => party.handle === (body.as as string).toLowerCase())
+    : await defaultVoice(mine, them.handle, repository);
+  if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
+  const threadId = threadIdFor(us.handle, them.handle);
+  const me = await repository.getUserById(user.id);
+  if (!me) return error(404, 'not_found', 'No such account.');
+  const muted = new Set(me.mutedThreads ?? []);
+  if (body.mute) muted.add(threadId);
+  else muted.delete(threadId);
+  await repository.updateUser({ ...me, mutedThreads: [...muted], updatedAt: new Date().toISOString() });
+  return json(200, { muted: body.mute });
+}
+
+/**
+ * Who hears about a message to `party`: the person, or everybody who speaks
+ * for the store - minus anybody who muted this conversation.
+ */
+async function listenersFor(party: MessageParty, threadId: string, repository: Repo): Promise<string[]> {
+  let ids = [party.userId];
+  if (party.isStore) {
+    const owner = await repository.getUserById(party.userId);
+    if (owner?.sellerProfile) ids = storeCrew(owner, 'posts');
+  }
+  const people = await repository.listUsersByIds(ids);
+  return people.filter((person) => !(person.mutedThreads ?? []).includes(threadId)).map((person) => person.id);
+}
+
+/** One conversation's notices, folded together: see `notify`. */
+const messageGroup = (threadId: string) => `msg:${threadId}`;
+
+/**
+ * Tell whoever a message went to. Says which of their voices it reached -
+ * "Arjun messaged you" and "Arjun messaged Kaiju Imports" are different
+ * conversations to someone who runs a shop - and folds a run of them into
+ * "Arjun sent Kaiju Imports 3 messages".
+ */
+async function announceMessage(message: Message, senderId: string, repository: Repo): Promise<void> {
+  const { from, to } = message;
+  const sender = actorName(from.displayName, from.handle);
+  const recipient = toWhom(to.isStore ? to.displayName : null);
+  const first = message.deal?.kind === 'offer'
+    ? `${sender} sent ${recipient} a private deal`
+    : message.deal?.kind === 'request'
+      ? `${sender} asked ${recipient} for a private deal`
+      : `${sender} messaged ${recipient}`;
+  const photo = /^\s*$/.test(message.body) ? 'Sent a photo' : '';
+  await notify(repository, await listenersFor(to, message.threadId, repository), {
+    kind: 'message',
+    title: first,
+    body: gistOf(message.body, photo || 'New message'),
+    // Opens the conversation in the voice it reached, not whichever is default.
+    link: `/messages/${encodeURIComponent(from.handle)}?as=${encodeURIComponent(to.handle)}`,
+    group: {
+      key: messageGroup(message.threadId),
+      actor: sender,
+      title: ({ count }) => (count === 1 ? first : `${sender} sent ${recipient} ${count} messages`),
+    },
+  }, { except: senderId });
 }
 
 /** POST /api/messages/{handle}/send - say something, as one of your handles. */
@@ -191,7 +455,13 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   const other = request.params.handle;
   if (!other) return error(400, 'invalid_handle', 'Name who this is for.');
 
-  let body: { body?: string; as?: string; deal?: Partial<MessageDeal> | null; replyToId?: string | null };
+  let body: {
+    body?: string; as?: string; deal?: Partial<MessageDeal> | null; replyToId?: string | null;
+    /** An item this message is about: one either side of the chat sells. */
+    itemId?: string | null;
+    /** Names from POST /api/message-photos, uploaded by the sender. */
+    photos?: unknown;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -199,8 +469,20 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   }
 
   let text = body.body?.trim() ?? '';
-  if (!text && !body.deal) return error(400, 'invalid_message', 'Write something first.');
+  let photoNames: string[] = [];
+  if (body.photos !== undefined && body.photos !== null) {
+    if (!Array.isArray(body.photos) || body.photos.length > MESSAGE_MAX_PHOTOS
+      || !body.photos.every((name) => typeof name === 'string' && CHAT_PHOTO_NAME.test(name))) {
+      return error(400, 'invalid_photo', `A message can carry up to ${MESSAGE_MAX_PHOTOS} photos.`);
+    }
+    photoNames = [...new Set(body.photos as string[])];
+  }
+  if (!text && !body.deal && !body.itemId && photoNames.length === 0) {
+    return error(400, 'invalid_message', 'Write something first.');
+  }
   if (text.length > 4000) return error(400, 'invalid_message', 'Keep a message under 4000 characters.');
+  const slow = tooFast(user.id, 'message');
+  if (slow) return slow;
 
   const mine = await handlesFor(user.id, repository);
   if (mine.length === 0) return error(409, 'no_handle', 'Pick a username before messaging.');
@@ -213,6 +495,25 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     : await defaultVoice(mine, them.handle, repository);
   if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
   if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
+  const wall = await blockedBetween(user.id, them, repository);
+  if (wall === 'you') return error(403, 'blocked', `You blocked @${them.handle}. Unblock them to write.`);
+  // Not saying who blocked whom: being told is its own message.
+  if (wall === 'them') return error(403, 'blocked', `@${them.handle} is not taking messages from you.`);
+
+  // Photos: each must be one this account uploaded and has not already sent.
+  // Checked here, once both ends are known, so a name cannot be lifted from
+  // somebody else's upload or reused to show a photo in a second thread.
+  const threadKey = threadKeyOf(threadIdFor(us.handle, them.handle));
+  if (photoNames.length > 0) {
+    const store = await getPhotoStore();
+    for (const name of photoNames) {
+      const info = await store.privateInfo(name);
+      if (!info || info.uploadedBy !== user.id || info.threadKey) {
+        return error(400, 'invalid_photo', 'One of those photos is not yours to send. Add it again.');
+      }
+    }
+    text ||= photoNames.length === 1 ? 'Sent a photo' : `Sent ${photoNames.length} photos`;
+  }
 
   // A private deal, either way round. An offer is the shop's: an item made
   // for this buyer alone, bought like any other. A request is the buyer's:
@@ -227,6 +528,8 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     deal = {
       kind: 'offer', listingId: listing.id, title: listing.title, priceMinor: listing.priceMinor,
       quantity: listing.quantityAvailable, photo: photo?.url || null,
+      expiresAt: listing.expiresAt ?? null,
+      wasMinor: listing.dealFrom && listing.dealFrom.priceMinor !== listing.priceMinor ? listing.dealFrom.priceMinor : null,
     };
     text ||= `Private deal for you: ${listing.title}`;
   } else if (body.deal?.kind === 'request') {
@@ -242,6 +545,23 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     text ||= `Asking for a private deal: ${title}`;
   } else if (body.deal) {
     return error(400, 'invalid_deal', 'A deal is an offer or a request.');
+  }
+
+  // An item the message is about: one this chat's shop sells, and that the
+  // writer can see - a private deal is its own buyer's and its shop's only.
+  let item: MessageItem | null = null;
+  if (body.itemId) {
+    const listing = await repository.getListing(String(body.itemId));
+    const sellers = new Set([us.userId, them.userId]);
+    const visible = listing && listing.status !== 'draft' && listing.status !== 'archived'
+      && sellers.has(listing.sellerId) && (!listing.privateFor || sellers.has(listing.privateFor));
+    if (!listing || !visible) return error(404, 'not_found', 'That item is not one of theirs to ask about.');
+    const photo = listing.photos.find((row) => row.isPrimary) ?? listing.photos[0];
+    item = {
+      listingId: listing.id, title: listing.title, photo: photo?.url || null,
+      priceMinor: listing.priceMinor, currency: listing.currency, condition: listing.condition,
+    };
+    text ||= `About ${listing.title}`;
   }
 
   // Answering one message in particular: quoted, so the quote survives.
@@ -266,13 +586,218 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     to: them,
     body: text,
     readAt: null,
+    ...(photoNames.length > 0 ? { photos: photoNames } : {}),
     ...(deal ? { deal } : {}),
+    ...(item ? { item } : {}),
     ...(replyTo ? { replyTo } : {}),
     createdAt: now,
     updatedAt: now,
   };
 
-  return json(201, { message: await repository.sendMessage(message) });
+  const saved = await repository.sendMessage(message);
+  // Pinned to the thread only once the message exists, so a failed send leaves
+  // the photo free to try again rather than stuck to a message that is not there.
+  if (photoNames.length > 0) {
+    const store = await getPhotoStore();
+    await Promise.all(photoNames.map((name) => store.attachPrivate(name, threadKey)));
+  }
+  const [sent] = await withLiveItems([saved], repository);
+  await announceMessage(message, user.id, repository);
+  return json(201, { message: sent });
+}
+
+/** A name the private photo store gave out: a uuid and an extension, nothing else. */
+const CHAT_PHOTO_NAME = /^[\w-]+\.(?:jpg|png|webp|gif)$/;
+const MESSAGE_MAX_PHOTOS = 4;
+
+/** What a photo is pinned to: the thread, hashed so the store never holds handles. */
+function threadKeyOf(threadId: string): string {
+  return createHash('sha256').update(threadId).digest('hex');
+}
+
+/**
+ * POST /api/message-photos - a picture in, a name out, for a chat.
+ *
+ * The same data-URL contract and size cap as listing photos, but the picture
+ * goes to the private store and comes back as a name with no address. It does
+ * not appear anywhere until a message carries it.
+ */
+async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const slow = tooFast(user.id, 'chatphoto');
+  if (slow) return slow;
+
+  let body: { dataUrl?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+
+  const match = /^data:([a-z/+-]+);base64,(.+)$/i.exec(body.dataUrl ?? '');
+  if (!match) return error(400, 'invalid_photo', 'Send the photo as a base64 data URL.');
+  const contentType = match[1]!.toLowerCase();
+  if (!ALLOWED_TYPES.includes(contentType)) {
+    return error(400, 'invalid_photo', 'Photos must be JPEG, PNG, WebP or GIF.');
+  }
+  const bytes = Buffer.from(match[2]!, 'base64');
+  if (bytes.byteLength === 0) return error(400, 'invalid_photo', 'That photo is empty.');
+  if (bytes.byteLength > MAX_PHOTO_BYTES) {
+    return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
+  }
+
+  const photo = compressPhoto(new Uint8Array(bytes), contentType);
+  if (photo.bytes.byteLength > PHOTO_MAX_BYTES) {
+    return error(413, 'photo_too_large', 'That photo could not be made small enough. Try a different one.');
+  }
+  const stored = await (await getPhotoStore()).uploadPrivate(photo.bytes, photo.contentType, user.id);
+  return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
+}
+
+/**
+ * GET /api/messages/{handle}/photos/{name}?as=<handle> - a photo from a chat.
+ *
+ * Served only to someone speaking as one end of the thread the photo was sent
+ * in. Everyone else, including other people in the same chat's neighbouring
+ * threads, gets the same 404 as a name that does not exist.
+ */
+async function chatPhoto(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const other = request.params.handle;
+  const name = request.params.name;
+  const missing = { status: 404, body: 'Not found' };
+  if (!other || !name || !CHAT_PHOTO_NAME.test(name)) return missing;
+
+  const mine = await handlesFor(user.id, repository);
+  const them = await partyFor(other, repository);
+  if (mine.length === 0 || !them) return missing;
+  const asHandle = request.query.get('as')?.toLowerCase();
+  const us = asHandle
+    ? mine.find((party) => party.handle === asHandle)
+    : await defaultVoice(mine, them.handle, repository);
+  if (!us || us.handle === them.handle) return missing;
+
+  const store = await getPhotoStore();
+  const info = await store.privateInfo(name);
+  if (!info || info.threadKey !== threadKeyOf(threadIdFor(us.handle, them.handle))) return missing;
+
+  const found = await store.readPrivate(name);
+  if (!found) return missing;
+  return {
+    status: 200,
+    headers: {
+      'Content-Type': found.contentType,
+      // Private: a shared cache must not keep what only two people may see.
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    },
+    body: Buffer.from(found.bytes),
+  };
+}
+
+/**
+ * GET /api/messages/{handle}/items - the shop's own items, to make a deal from.
+ *
+ * Everything it has put up, sold out and expired included: an item that ran
+ * out is exactly the one a buyer asks to have again. Not other buyers' private
+ * deals, which are theirs.
+ */
+async function dealItems(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const mine = await handlesFor(user.id, repository);
+  const asHandle = request.query.get('as')?.toLowerCase();
+  const us = mine.find((party) => party.handle === asHandle);
+  if (!us?.isStore) return error(403, 'forbidden', 'Make deals as one of your shops.');
+  const listings = (await repository.listListings({ sellerId: us.userId, limit: 200, includeHidden: true }))
+    .filter((listing) => (listing.status === 'active' || listing.status === 'sold_out') && !listing.privateFor)
+    .map((listing) => ({ listing, state: stateOf(listing) }))
+    .sort((a, b) => b.listing.createdAt.localeCompare(a.listing.createdAt));
+  return json(200, {
+    items: listings.map(({ listing, state }) => ({
+      id: listing.id, title: listing.title, description: listing.description, category: listing.category,
+      condition: listing.condition, priceMinor: listing.priceMinor, currency: listing.currency,
+      quantityAvailable: listing.quantityAvailable, tags: listing.tags,
+      photos: listing.photos.map((photo) => ({ blobName: photo.blobName, url: photo.url, isPrimary: photo.isPrimary })),
+      state,
+    })),
+  });
+}
+
+/**
+ * POST /api/messages/{handle}/delete - take back a message you sent.
+ *
+ * Gone for both of you, and so are any photos it carried: they are removed from
+ * the private store, since nothing else can ever show them. Only the handle
+ * that wrote it can; you cannot delete what somebody sent you.
+ */
+async function deleteMessage(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const other = request.params.handle;
+  if (!other) return error(400, 'invalid_handle', 'Name who the conversation is with.');
+
+  let body: { messageId?: string; as?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (!body.messageId) return error(400, 'invalid_request', 'Say which message.');
+
+  const mine = await handlesFor(user.id, repository);
+  const them = await partyFor(other, repository);
+  if (!them) return error(404, 'not_found', `Nobody holds @${other}.`);
+  const us = body.as
+    ? mine.find((party) => party.handle === body.as!.toLowerCase())
+    : await defaultVoice(mine, them.handle, repository);
+  if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
+
+  const threadId = threadIdFor(us.handle, them.handle);
+  const message = (await repository.listMessages(threadId)).find((entry) => entry.id === body.messageId);
+  if (!message) return error(404, 'not_found', 'That message is not in this conversation.');
+  if (message.from.handle !== us.handle) return error(403, 'forbidden', 'You can only delete what you sent.');
+
+  await repository.deleteMessage(threadId, message.id);
+  if (message.photos?.length) {
+    const store = await getPhotoStore();
+    const key = threadKeyOf(threadId);
+    for (const name of message.photos) {
+      // Only a photo pinned to this very thread: the name alone proves nothing.
+      const info = await store.privateInfo(name).catch(() => null);
+      if (info?.threadKey === key) await store.remove('private', name).catch(() => false);
+    }
+  }
+  return json(200, { deleted: message.id });
+}
+
+/**
+ * POST /api/message-photos/discard - take back a chat photo picked and not sent.
+ *
+ * Only the uploader's, and only before a message carries it: once sent, a photo
+ * goes with its message and nothing else.
+ */
+async function discardChatPhoto(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  let body: { blobName?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const name = typeof body.blobName === 'string' ? body.blobName : '';
+  if (!CHAT_PHOTO_NAME.test(name)) return error(400, 'invalid_request', 'Say which photo.');
+  const store = await getPhotoStore();
+  const info = await store.privateInfo(name);
+  if (!info || info.uploadedBy !== user.id || info.threadKey) return json(200, { discarded: false });
+  return json(200, { discarded: await store.remove('private', name) });
 }
 
 /**
@@ -313,6 +838,27 @@ async function reactToMessage(request: HttpRequest, _context: InvocationContext)
   message.reactions = body.kind && body.kind !== had ? [...others, { handle: us.handle, kind: body.kind }] : others;
   message.updatedAt = new Date().toISOString();
   const saved = await repository.updateMessage(message);
+
+  // A first reaction to somebody else's message is news to them; changing it
+  // or taking it back is not.
+  if (body.kind && !had && message.from.handle !== us.handle) {
+    const reactor = actorName(us.displayName, us.handle);
+    const theirs = whose(message.from.isStore ? message.from.displayName : null);
+    const emoji = REACTION_META[body.kind].emoji;
+    await notify(repository, await listenersFor(message.from, message.threadId, repository), {
+      kind: 'message_reacted',
+      title: `${reactor} reacted ${emoji} to ${theirs} message`,
+      body: gistOf(message.body, 'A message'),
+      link: `/messages/${encodeURIComponent(us.handle)}?as=${encodeURIComponent(message.from.handle)}`,
+      group: {
+        key: `msgr:${message.threadId}`,
+        actor: reactor,
+        title: ({ count }) => (count === 1
+          ? `${reactor} reacted ${emoji} to ${theirs} message`
+          : `${reactor} reacted to ${count} of ${theirs} messages`),
+      },
+    }, { except: user.id });
+  }
   return json(200, { reactions: saved.reactions ?? [] });
 }
 
@@ -331,17 +877,72 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
   if (!found) return error(404, 'not_found', `Nobody holds @${handle}.`);
 
   const { user, isStore }: { user: User; isStore: boolean } = found;
-  // Everything they have listed, not one page of it: the shelf is filtered on
-  // the page - all, in stock, on sale, sold - and a filter that only searches
-  // the first two dozen is a filter that lies about the counts beside it.
-  const listings = isStore ? await repository.listListings({ sellerId: user.id, limit: 200 }) : [];
+  const side = isStore ? 'store' : 'person';
+  const followId = isStore ? user.id : personFollowId(user.id);
+  const auth = await getAuthService();
+  // Everything the page needs in one round trip: the shelf, the rating the
+  // slab shows, and whether this viewer follows it.
+  const [viewer, all, tradeReviews, pageReviews, moderated, sales, posts] = await Promise.all([
+    auth.getCurrentUser(request),
+    // Every item they have put up, not one page of it, including what sold
+    // out or ran out of time: the shelf shows those too, stamped.
+    isStore ? repository.listListings({ sellerId: user.id, limit: 200, includeHidden: true }) : Promise.resolve([]),
+    repository.listReviewsAbout(user.id),
+    repository.listStoreReviews(user.id),
+    moderation(repository),
+    // A shop's level counts what it did to bring people in: sales through
+    // affiliate links and what it posted to its followers.
+    isStore ? repository.listOrdersForSeller(user.id) : Promise.resolve([]),
+    isStore ? repository.listPosts(user.id, 200) : Promise.resolve([]),
+  ]);
+  const following = viewer
+    ? (await repository.listFollowsBy(viewer.id)).some((follow) => follow.sellerId === followId)
+    : false;
+
+  // A shop is rated as a seller and a person as a buyer, each with the page
+  // ratings left on that page, merged into the one figure the slab shows.
+  const direction = isStore ? 'buyer_to_seller' : 'seller_to_buyer';
+  const rating = mergedRating(
+    tradeReviews.filter((review) => review.direction === direction && reviewRevealed(review, false)).map((review) => review.rating),
+    pageReviews
+      .filter((review) => !moderated.isRemoved('store_review', review.id))
+      .filter((review) => reviewSide(review, Boolean(user.sellerProfile)) === side)
+      .map((review) => review.rating),
+  );
 
   // A person's page is about them; a shop's is about the shop. The two carry
   // different names, pictures and words, and reading the wrong set is how a
   // storefront ends up with somebody's personal bio on it.
   const shop = isStore ? user.sellerProfile : null;
 
-  const sold = listings.filter((listing) => listing.quantityAvailable === 0).length;
+  const now = Date.now();
+  const stateOf = (listing: Listing): 'active' | 'sold' | 'expired' =>
+    listing.status === 'sold_out' || listing.quantityAvailable === 0 ? 'sold'
+      : listing.expiresAt && Date.parse(listing.expiresAt) <= now ? 'expired' : 'active';
+  const ORDER = { active: 0, sold: 1, expired: 2 } as const;
+  // Drafts, private deals and members-only drops are nobody else's business.
+  const listings = all
+    .filter((listing) => (listing.status === 'active' || listing.status === 'sold_out') && !listing.unlisted && !listing.privateFor)
+    .map((listing) => ({ listing, state: stateOf(listing) }))
+    .sort((a, b) => ORDER[a.state] - ORDER[b.state]);
+  const count = (state: string) => listings.filter((entry) => entry.state === state).length;
+  const followerCount = isStore ? (shop?.followerCount ?? 0) : (user.followerCount ?? 0);
+
+  const facts = storeFactsFrom({
+    user,
+    all,
+    sales,
+    posts,
+    rating,
+    buyerReviews: tradeReviews.filter((review) => review.direction === 'buyer_to_seller' && reviewRevealed(review, false)),
+    now,
+  });
+  const level = isStore ? storeLevel(facts, shop?.growth) : null;
+  // Kept on the account so every name elsewhere can wear it without a recount.
+  if (level && shop && shop.levelCache !== level.level) {
+    shop.levelCache = level.level;
+    await repository.updateUser(user);
+  }
 
   return json(200, {
     handle: handle.toLowerCase(),
@@ -353,34 +954,38 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     tags: (isStore ? shop?.tags : user.tags) ?? [],
     link: shop?.link ?? null,
     dispatchRegion: shop?.dispatchRegion ?? '',
-    followerCount: shop?.followerCount ?? 0,
+    followerCount,
+    following,
+    rating,
     tier: shop?.tier ?? null,
     // The owner's own handle, so a shop page can point at the person behind it.
     ownerHandle: isStore ? (user.username ?? null) : null,
     sellerId: user.id,
     // The same Trust a listing's "Posted by" card shows, so the two never disagree.
     trustScore: isStore ? user.sellerTrust.score : null,
+    level,
+    stickers: isStore ? storeStickers(facts) : [],
+    // The level and title shown beside the name: a shop's own, or the buyer's.
+    levelTag: isStore ? storeTag(level?.level) : buyerTag(user.quest?.levelCache),
     memberSince: user.createdAt,
     lastSeenAt: user.lastSeenAt ?? null,
     /** What the tabs and chips count, so neither has to guess. */
-    counts: {
-      listings: listings.length,
-      onSale: listings.length - sold,
-      sold,
-    },
-    listings: listings.map((listing) => ({
+    counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },
+    // Active first, then sold out, then expired.
+    listings: listings.map(({ listing, state }) => ({
       id: listing.id,
       title: listing.title,
       priceMinor: listing.priceMinor,
       currency: listing.currency,
       condition: listing.condition,
-      lotId: listing.lotId,
-      sourcing: listing.sourcing,
       quantityAvailable: listing.quantityAvailable,
       likeCount: listing.likeCount,
-      // The picture, so a shop's grid looks like its shop rather than like a
-      // wall of generated squares.
-      photos: listing.photos ?? [],
+      state,
+      // Highlighted on the card when sharing it pays a commission.
+      affiliate: listing.affiliate && state === 'active'
+        ? { amountMinor: affiliateUnitMinor(listing.affiliate, listing.priceMinor) } : null,
+      // The lead picture only: the grid shows one, and the rest is weight.
+      photos: (listing.photos ?? []).filter((photo, i, list) => photo.isPrimary || (i === 0 && !list.some((p) => p.isPrimary))).slice(0, 1),
     })),
   });
 }
@@ -432,15 +1037,33 @@ export const setUsernameRoute = handler(setUsername);
 export const threadRoute = handler(thread);
 export const sendMessageRoute = handler(send);
 export const reactToMessageRoute = handler(reactToMessage);
+export const deleteMessageRoute = handler(deleteMessage);
+export const discardChatPhotoRoute = handler(discardChatPhoto);
+export const blockRoute = handler(block);
+export const muteRoute = handler(mute);
+export const dealItemsRoute = handler(dealItems);
+export const uploadChatPhotoRoute = handler(uploadChatPhoto);
+export const chatPhotoRoute = handler(chatPhoto);
 export const publicProfileRoute = handler(publicProfile);
 
 const anon = { authLevel: 'anonymous' } as const;
 
+export const blockedListRoute = handler(blockedList);
+export const unblockRoute = handler(unblock);
 app.http('messages-inbox', { ...anon, methods: ['GET'], route: 'messages', handler: inboxRoute });
 app.http('messages-thread', { ...anon, methods: ['GET'], route: 'messages/{handle}', handler: threadRoute });
 // A distinct template, not just a distinct method: the Functions host treats
 // equivalent templates as a conflict regardless of verb.
+app.http('messages-deal-items', { ...anon, methods: ['GET'], route: 'messages/{handle}/items', handler: dealItemsRoute });
 app.http('messages-send', { ...anon, methods: ['POST'], route: 'messages/{handle}/send', handler: sendMessageRoute });
+app.http('messages-photo-upload', { ...anon, methods: ['POST'], route: 'message-photos', handler: uploadChatPhotoRoute });
+app.http('messages-photo', { ...anon, methods: ['GET'], route: 'messages/{handle}/photos/{name}', handler: chatPhotoRoute });
+app.http('messages-delete', { ...anon, methods: ['POST'], route: 'messages/{handle}/delete', handler: deleteMessageRoute });
+app.http('messages-photo-discard', { ...anon, methods: ['POST'], route: 'message-photos/discard', handler: discardChatPhotoRoute });
 app.http('messages-react', { ...anon, methods: ['POST'], route: 'messages/{handle}/react', handler: reactToMessageRoute });
+app.http('messages-block', { ...anon, methods: ['POST'], route: 'messages/{handle}/block', handler: blockRoute });
+app.http('me-blocked', { ...anon, methods: ['GET'], route: 'me/blocked', handler: blockedListRoute });
+app.http('me-unblock', { ...anon, methods: ['POST'], route: 'me/blocked/{id}/unblock', handler: unblockRoute });
+app.http('messages-mute', { ...anon, methods: ['POST'], route: 'messages/{handle}/mute', handler: muteRoute });
 app.http('public-profile', { ...anon, methods: ['GET'], route: 'u/{handle}', handler: publicProfileRoute });
 app.http('me-username', { ...anon, methods: ['POST'], route: 'me/username', handler: setUsernameRoute });

@@ -195,7 +195,7 @@ const BUY: LearnTab = {
         step('Check the seller', 'The seller card shows their trust score, on-time dispatch rate and followers. Tap their name to see reviews from earlier buyers.'),
         step('Tap Buy now', 'On a pre-order the button says **Book a place** instead. This opens checkout - it does not charge you.'),
         step('Full or advance', 'If the seller accepts an advance you can pay a percentage now and the rest later from **My Purchases**, with the same payment method.'),
-        step('Choose how to pay', '- **Buy directly from the seller**: you pay them yourself (UPI, bank transfer - whatever they list). Nothing is held, so anything that goes wrong is between the two of you.\n- **Add buyer protection**: the payment is held by an approved escrow until you confirm the item arrived, and settled by Figmark if you disagree. A small fee is added.\n- **Book**: reserve it now and pay the moment the seller confirms it is available. Booking is not payment.', '/learn/buy-checkout.jpg', 'The three ways to pay, with the total for each.'),
+        step('Choose how to pay', '- **Buy directly from the seller**: you pay them yourself (UPI, bank transfer - whatever they list). Nothing is held, so anything that goes wrong is between the two of you.\n- **Add Buyer Protection**: the payment is held by an approved Buyer Protection agent until you confirm the item arrived, and settled by Figmark if you disagree. A small fee is added.\n- **Book**: reserve it now and pay the moment the seller confirms it is available. Booking is not payment.', '/learn/buy-checkout.jpg', 'The three ways to pay, with the total for each.'),
         step('Pay and show it went through', 'Pay using the details shown, then enter the payment reference and, if you like, a screenshot of the confirmation. The seller confirms the money arrived before the order moves on.'),
         step('Done', 'Your order is in **My Purchases** (profile menu). You will get a notification at every step.'),
       ],
@@ -203,7 +203,7 @@ const BUY: LearnTab = {
     {
       id: 'pre-orders',
       title: 'Pre-orders',
-      body: 'A pre-order is a group buy: the seller only orders the item from abroad once enough people want it. That is how rare imports become affordable.',
+      body: 'A pre-order is how a shop buys together with its buyers: the seller only orders the item from abroad once enough people want it. That is how rare imports become affordable.',
       steps: [
         step('Read the bar', 'The LV bar and the pre-order panel on the listing show how many places are taken out of the goal, who is in, and when it closes.', '/learn/buy-preorder.jpg', 'A pre-order panel with its fill bar and the people in it.'),
         step('Book or pledge', '**Book a place** pays (or books) a unit now. **+ I\'m in** is a free pledge: you are counted, and only asked to pay - within a day - once the pre-order fills.'),
@@ -229,7 +229,7 @@ const BUY: LearnTab = {
       body: 'Reviews are two-sided and blind: you rate the seller, the seller rates you, and neither sees the other\'s until both are written (or the window closes). Your rating as a buyer shows on your profile, so paying on time and being easy to deal with matters.',
       steps: [
         step('Review the seller', 'After the order completes, the order page asks for a rating and a few words. Mention how the item compared with the listing, the packing and the speed.'),
-        step('Refunds', 'If an order is cancelled after you paid, the seller refunds you and asks for your refund details once. Keep them current in **My refunds** → details.'),
+        step('Refunds', 'If an order is cancelled after you paid, the seller refunds you and asks for your refund details once. Keep them current in **My wallet** → details.'),
         step('Open a dispute', 'If something is wrong - not as described, damaged, never arrived - open a dispute from the order before the protection window closes. Explain what happened and attach photos.'),
         step('Dispute a review or comment', 'Every review and comment has a **Dispute** button: tell Figmark if it is untrue, abusive or not about a real trade, and an operator decides whether it stays. On your own review or comment the same button reads **Ask to validate** - an operator checks it, and if it holds up it shows a ✓ Validated mark.'),
         step('Settle it', 'The seller can reply and either side can offer a refund amount the other accepts in one tap. If you cannot agree, escalate it and Figmark decides.'),
@@ -284,12 +284,12 @@ const SERVICES: LearnTab = {
   title: 'Services',
   icon: '🧭',
   hidden: false,
-  intro: 'Forwarders, handlers, packers and escrows - the people who move things between countries and keep payments safe. A full guide is on its way.',
+  intro: 'Forwarders, handlers, packers and Buyer Protection agents - the people who move things between countries and keep payments safe. A full guide is on its way.',
   sections: [
     {
       id: 'overview',
       title: 'What Services are for',
-      body: '- **Forwarders** consolidate shipments abroad and send them on.\n- **Handlers** receive lots in India and get parcels to buyers.\n- **Escrows** hold payments for buyer protection.\n- Browse them in the **Services** tab and see their routes, trust and reviews.',
+      body: '- **Forwarders** consolidate shipments abroad and send them on.\n- **Handlers** receive lots in India and get parcels to buyers.\n- **Buyer Protection agents** hold payments until the buyer has the item.\n- Browse them in the **Services** tab and see their routes, trust and reviews.',
       steps: [],
     },
   ],

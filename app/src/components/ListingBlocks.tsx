@@ -17,7 +17,7 @@ import { Lightbox } from './SocialPost';
  * colour and stay sharp at any size.
  */
 
-export type Glyph = 'clock' | 'flame' | 'box' | 'views' | 'open' | 'heart' | 'spark' | 'coin' | 'home' | 'ship' | 'users' | 'tag' | 'bolt' | 'shield' | 'calendar' | 'cart' | 'reply' | 'smile' | 'pin' | 'star';
+export type Glyph = 'clock' | 'flame' | 'box' | 'views' | 'open' | 'heart' | 'spark' | 'coin' | 'home' | 'ship' | 'users' | 'tag' | 'bolt' | 'shield' | 'calendar' | 'cart' | 'reply' | 'smile' | 'pin' | 'star' | 'rocket';
 
 const PATHS: Record<Glyph, string> = {
   clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
@@ -40,6 +40,7 @@ const PATHS: Record<Glyph, string> = {
   smile: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM8.5 14a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01',
   pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21ZM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
   star: 'm12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z',
+  rocket: 'M12 2c3 2.5 4.5 6 4.5 10.5L14.5 16h-5l-2-3.5C7.5 8 9 4.5 12 2ZM12 10.5h.01M9.5 16l-3 1.5 1-4.5M14.5 16l3 1.5-1-4.5M10.5 19l1.5 3 1.5-3',
 };
 
 export function Svg({ name, size = 18 }: { name: Glyph; size?: number }) {

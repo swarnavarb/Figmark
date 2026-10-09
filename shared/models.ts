@@ -1,4 +1,6 @@
 import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
+import type { DealState } from './deals.js';
+import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
@@ -7,7 +9,7 @@ import type {
   DisputeOutcome,
   DisputeReason,
   DisputeStatus,
-  EscrowState,
+  HoldState,
   ListingStatus,
   LotStage,
   LotStatus,
@@ -69,6 +71,10 @@ export interface TrustSignals {
   completedTransactions: number;
   /** Disputes resolved against this user. */
   disputesLost: number;
+  /** Disputes whose final result went this user's way. Absent on older rows. */
+  disputesWon?: number;
+  /** Disputes the two parties settled between themselves: nobody won or lost. */
+  disputesSettled?: number;
   /** ISO-8601 of last recompute, or null if never computed. */
   computedAt: string | null;
 }
@@ -110,6 +116,13 @@ export interface User extends BaseDocument {
    */
   username?: string;
   /**
+   * Accounts this one will not take messages from. By account rather than
+   * handle, so a blocked person cannot come back as their shop.
+   */
+  messageBlocks?: string[];
+  /** Conversations this account keeps but is not told about: no unread count. */
+  mutedThreads?: string[];
+  /**
    * Platform administration: verification queue, dispute console, payouts.
    * A real assigned role, not a capability derived from verification, so it is
    * stored rather than computed.
@@ -141,6 +154,22 @@ export interface User extends BaseDocument {
   /** Calculations kept to list later (Pro). Kept beside the calculators, for the same reason. */
   savedCalcs?: SavedCalc[];
   /**
+   * The browsers and installed copies of the site that asked to be woken when
+   * something happens to this account. Kept on the account for the same reason
+   * as the calculators: a person has a handful, they are read all at once, and
+   * the database is at its container ceiling. Never sent to anyone - each one
+   * is enough to put a message on that person's screen.
+   */
+  pushEndpoints?: PushEndpoint[];
+  /** What reaches their phone; absent means everything, with sound. */
+  notificationPrefs?: NotificationPrefs;
+  /**
+   * Where this account uses Figmark: one row per browser or home-screen copy,
+   * as that copy reports itself. Kept for the operators' install figures and
+   * nothing else; never sent to anyone but an admin, and only as totals.
+   */
+  clientDevices?: ClientDevice[];
+  /**
    * Freight forwarders share the same account base rather than living in a
    * separate system; this extension is what puts one in the directory.
    */
@@ -151,11 +180,19 @@ export interface User extends BaseDocument {
    * the same reason - one person is often a seller too.
    */
   handlerProfile?: HandlerProfile | null;
+  /** An artist's studio, opened on application. */
+  artistProfile?: ArtistProfile | null;
   /**
-   * Non-null once the company has granted this seller protected checkout.
-   * Absent on every account that has not been granted it, which is most.
+   * Non-null once an operator has appointed this person a community manager.
+   * Absent on every account that has not been, which is most.
    */
-  escrowRights?: EscrowRights | null;
+  managerRights?: ManagerRights | null;
+  /**
+   * What community managers' final decisions have put on this account: XP and
+   * rating taken away, a time-boxed alert on their page, and flags. Absent on
+   * every account no dispute has been lost by.
+   */
+  standing?: CommunityStanding | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
   /**
@@ -168,6 +205,8 @@ export interface User extends BaseDocument {
   bio?: string;
   coverUrl?: string | null;
   tags?: string[];
+  /** People following the person's page (a shop's count is on its profile). */
+  followerCount?: number;
   /** Last seen, so a page can say whether anybody is home. */
   lastSeenAt?: string | null;
   /** Where to send this buyer's money back when an order they paid is cancelled. */
@@ -188,6 +227,80 @@ export interface User extends BaseDocument {
   collection?: CollectionItem[];
   /** The shelves a collection is grouped into, in the order the owner likes. */
   collectionGroups?: CollectionGroup[];
+  /**
+   * Affiliate links this person arrived through, newest per item. Kept on the
+   * account so the credit survives signing up, signing out and coming back
+   * days later to buy: whoever sent them still gets it.
+   */
+  referrals?: ReferralRecord[];
+  /** Orders this person earns a commission on, as the affiliate. */
+  affiliateOrderIds?: string[];
+  /** This person's short link code for each item, so sharing twice gives the same link. */
+  affiliateLinks?: Record<string, string>;
+  /** This person's invite code, for `/i/<code>`: made the first time they invite anybody. */
+  inviteCode?: string;
+  /** Who brought this account to Figmark, if anybody did. Set once, at sign-up. */
+  invitedBy?: { userId: string; at: string; asSeller?: boolean } | null;
+  /** Accounts that signed up through this person's invite, newest last. */
+  invitees?: { userId: string; at: string }[];
+  /**
+   * Other people opening what this person shared - one row per visitor per
+   * link, so a friend tapping the same link ten times is one open. Counted by
+   * the quests, because a share that reaches nobody is not marketing.
+   */
+  shareOpens?: ShareOpen[];
+  /** Times this person sent something out of the app (WhatsApp, a story, a copied link). */
+  shareLog?: ShareEvent[];
+}
+
+/** Somebody else opening a link this person shared. */
+export interface ShareOpen {
+  at: string;
+  /** What the link was for: an item, an invite, a shop or a person's page. */
+  kind: 'item' | 'invite' | 'shop' | 'profile';
+  /** The item id, shop owner id or handle it pointed at. */
+  target: string;
+  /** A short hash of who opened it, only to keep one visitor one open. */
+  visitor: string;
+}
+
+/** Something this person sent out of the app. */
+export interface ShareEvent {
+  at: string;
+  /** What the picture or link was about. */
+  kind: ShareKind;
+  /** Where it went: WhatsApp, the phone's share sheet, a saved picture, a copied link, a post in Figmark. */
+  via: 'whatsapp' | 'native' | 'download' | 'copy' | 'post';
+  target: string | null;
+}
+
+export type ShareKind =
+  | 'item' | 'fill' | 'booked' | 'purchased' | 'delivered' | 'sold' | 'filled'
+  | 'level' | 'card' | 'set' | 'shop' | 'invite' | 'invite_seller' | 'profile';
+
+/**
+ * A shop's growth quests: which it collected, and the bump points they paid.
+ * Kept on the shop's profile because the shop - not whichever manager pressed
+ * Claim - earned them.
+ */
+export interface StoreGrowthState {
+  /** `taskId:period` -> when it was claimed. */
+  claimed: Record<string, string>;
+  /** Bump points earned and not yet spent. The name is from when they were called Spotlights. */
+  spotlights: number;
+  /** Bumps spent, newest last. */
+  spotlightLog?: { listingId: string; at: string; by: string }[];
+  /** Times somebody on the shop sent it out of the app. */
+  shares?: { at: string; kind: ShareKind; by: string }[];
+  /** Visitors who arrived through any shared link to the shop or its items. */
+  opens?: { at: string; visitor: string; target: string }[];
+}
+
+/** One affiliate link somebody arrived through. */
+export interface ReferralRecord {
+  listingId: string;
+  referrerId: string;
+  at: string;
 }
 
 /**
@@ -201,11 +314,16 @@ export interface CollectionItem {
   /** The order it came from - one card per order. */
   orderId: string;
   listingId: string;
-  /** What the owner calls it, shown under the picture. */
+  /** The item's name as it was sold. */
   name: string;
   /** The item's name as it was sold, kept so a rename can always be undone. */
   itemName: string;
+  /** The first is the one the card leads with; the owner picks it. */
   photos: string[];
+  /** Photos the owner keeps to themselves. Never the lead photo. */
+  hiddenPhotos?: string[];
+  /** The one photo the owner added themselves, if any. */
+  ownPhoto?: string | null;
   groupId: string | null;
   /** When it was delivered: the day it could first be added. */
   deliveredAt: string;
@@ -235,6 +353,13 @@ export interface QuestState {
   claimed: Record<string, string>;
   /** Every card pulled, one per opened pack. */
   cards: OwnedCard[];
+  /**
+   * Bump points earned from weekly and monthly quests and not yet spent. Bump
+   * on a shop's item spends the shop's points first, then these.
+   */
+  bumps?: number;
+  /** Bumps spent, newest last. */
+  bumpLog?: { listingId: string; at: string }[];
   /** The last XP and level worked out, so a leaderboard is a scan, not a recount. */
   xpCache?: number;
   levelCache?: number;
@@ -314,6 +439,10 @@ export interface SellerProfile {
    * because they are scanned, not read, and a paragraph gets skipped.
    */
   tags?: string[];
+  /** The shop's level as last worked out, so names elsewhere can show it without a recount. */
+  levelCache?: number;
+  /** Growth quests and the bump points they earned. Absent until the shop first plays. */
+  growth?: StoreGrowthState;
 }
 
 /**
@@ -341,25 +470,23 @@ export interface SellerPaymentDetails {
  * row; the id is what any permission check actually uses.
  */
 /**
- * The company's grant that this person may hold other people's money.
+ * An operator's appointment of this person as a community manager. Managers
+ * are assigned to purchases bought with buyer protection, decide disputes,
+ * and release held payments once a result is agreed - but never hold money
+ * themselves: every protected payment is held by Figmark.
  *
- * An escrow is a party, not a mechanism: a vetted individual who holds a
- * buyer's payment until the goods land and who settles it if the two sides
- * disagree. Buyers choose one at checkout, so the grant is what puts somebody
- * on that list — and the rate is theirs, because it is their fee for the work.
- *
- * Held rather than derived, because it is a commercial decision about a named
- * person and the marketplace has to be able to point at when it made it.
+ * Held rather than derived, because it is a decision about a named person and
+ * the marketplace has to be able to point at when it made it.
  */
-export interface EscrowRights {
+export interface ManagerRights {
   grantedAt: string;
   grantedBy: string;
-  /** Charged to the buyer on top of the order, in basis points of the total. */
-  feeBasisPoints: number;
-  /** How they are listed to buyers choosing one. */
-  displayName: string;
-  /** Why the company granted it. Read by operators, never by buyers. */
-  note: string;
+  /**
+   * Whether they are taking new disputes. Off keeps them out of the raise
+   * picker and out of the system's escalation assignment; cases they already
+   * hold stay theirs. Absent means available.
+   */
+  available?: boolean;
 }
 
 export interface StoreManager {
@@ -368,6 +495,159 @@ export interface StoreManager {
   permissions: StorePermission[];
   addedAt: string;
   addedBy: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Service stores                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where a service store stands with the company. See `shared/service-stores.ts`
+ * for the rules; absent on a store means approved, which is what every entry
+ * written before review existed already was.
+ */
+export type StoreStatus = 'pending' | 'changes' | 'approved' | 'rejected' | 'suspended';
+
+/** One decision on a store, oldest first: what was asked and what was decided. */
+export interface StoreReviewEvent {
+  at: string;
+  by: string;
+  status: StoreStatus;
+  note: string;
+}
+
+export interface StoreApplication {
+  submittedAt: string;
+  history: StoreReviewEvent[];
+}
+
+export interface StoreLink {
+  label: string;
+  url: string;
+}
+
+/** What a team member may do in a service store, besides the owner. */
+export type StoreRight = 'work' | 'store' | 'team';
+
+export interface StoreMember {
+  userId: string;
+  displayName: string;
+  rights: StoreRight[];
+  addedAt: string;
+  addedBy: string;
+}
+
+/**
+ * The shopfront every service store shares, forwarder or artist.
+ *
+ * The first block is what the directory has always read. Everything after it
+ * is optional so an entry written before stores existed still loads as one.
+ */
+export interface StoreCore {
+  companyName: string;
+  /** URL slug for the public store page. */
+  directorySlug: string;
+  description: string;
+  contactEmail: string;
+  contactPhone: string;
+  trust: TrustSignals;
+  /** Withdrawn entries keep their history but stop appearing in search. */
+  listedInDirectory: boolean;
+
+  status?: StoreStatus;
+  application?: StoreApplication | null;
+  /** One line under the name. */
+  tagline?: string;
+  logoUrl?: string | null;
+  coverUrl?: string | null;
+  /** One of the app's hues, for the store page's wash. */
+  accent?: string;
+  city?: string;
+  country?: string;
+  /** GST, company or studio registration - read by operators, shown as "registered". */
+  businessId?: string | null;
+  /** Trading since, as a year. */
+  since?: number | null;
+  links?: StoreLink[];
+  team?: StoreMember[];
+  /** Where a buyer pays this store directly. Artists use it; a forwarder is paid through the shop. */
+  payment?: SellerPaymentDetails | null;
+}
+
+/** One lane a forwarder runs, priced. */
+export interface FreightLane {
+  id: string;
+  originCity: string;
+  originCountry: string;
+  destinationCity: string;
+  destinationCountry: string;
+  mode: 'air' | 'express' | 'sea' | 'rail' | 'road';
+  /** Indicative rate in minor units per kilogram. */
+  ratePerKgMinor: number;
+  /** The least weight billed, in kg. */
+  minChargeKg: number;
+  transitDaysMin: number;
+  transitDaysMax: number;
+  /** Duty and clearance handled by the forwarder at destination. */
+  customsIncluded: boolean;
+  /** Cut-off day, consolidation window, anything a shop plans around. */
+  note: string;
+  active: boolean;
+}
+
+/** Transit cover a forwarder sells, which a buyer can add to their item. */
+export interface InsurancePlan {
+  id: string;
+  name: string;
+  /** Share of the declared value paid out on a loss. */
+  coverPercent: number;
+  /** Premium, in basis points of the declared value. */
+  premiumBasisPoints: number;
+  minPremiumMinor: number;
+  /** Ceiling on a payout, per item. Null means none. */
+  maxCoverMinor: number | null;
+  /** What is and is not covered, and how a claim is made. */
+  terms: string;
+  active: boolean;
+}
+
+/** Where goods go to be consolidated. */
+export interface StoreWarehouse {
+  address: string;
+  contact: string;
+  hours: string;
+}
+
+/** One thing an artist offers, priced from. */
+export interface ArtistOffering {
+  id: string;
+  name: string;
+  description: string;
+  priceFromMinor: number;
+  turnaroundDays: number;
+  active: boolean;
+}
+
+export interface PortfolioPiece {
+  id: string;
+  url: string;
+  caption: string;
+}
+
+/**
+ * An artist's studio: repaints, customs, restoration, diorama work.
+ *
+ * Opened on application like a forwarder's store. Buyers commission one on an
+ * item they bought here, so the work hangs off the order (see `ArtistJob`).
+ */
+export interface ArtistProfile extends StoreCore {
+  specialties: string[];
+  offerings: ArtistOffering[];
+  portfolio: PortfolioPiece[];
+  /** Off means the store stays up but takes no new commissions. */
+  acceptingWork: boolean;
+  /** Where an item is sent to be worked on. Shown to the shop once a commission is paid. */
+  studioAddress: string;
 }
 
 /** One China-origin to India-destination lane a forwarder claims to serve. */
@@ -382,27 +662,28 @@ export interface ForwarderRoute {
 }
 
 /**
- * A freight forwarder's directory entry. Forwarders sign themselves up and
- * sellers choose them; nothing here is admin-entered.
+ * A freight forwarder's store. They apply with their details and lanes, an
+ * operator approves it, and sellers book them on a lot from then on.
  */
-export interface ForwarderProfile {
-  companyName: string;
-  /** URL slug for the public directory entry. */
-  directorySlug: string;
-  description: string;
+export interface ForwarderProfile extends StoreCore {
+  /**
+   * The lanes as the directory has always read them. Kept in step with
+   * `lanes` on every save, so older screens keep working.
+   */
   routes: ForwarderRoute[];
-  contactEmail: string;
-  contactPhone: string;
   /** Monthly volume in kg the forwarder claims to handle. Unverified. */
   claimedMonthlyCapacityKg: number | null;
+  /** Priced lanes, as the store sells them. */
+  lanes?: FreightLane[];
+  /** Transit cover buyers can add to an item travelling with this forwarder. */
+  insurance?: InsurancePlan[];
+  /** Where suppliers drop goods for consolidation. */
+  warehouse?: StoreWarehouse | null;
   /**
-   * Ratings from sellers, gated on lots this forwarder actually shipped - the
-   * same completed-transaction rule as buyer and seller reviews, so a rating
-   * cannot exist without a shipment behind it.
+   * Take every lot a shop sends without asking. Off, a lot arrives as a
+   * request the team accepts or declines before it can work it.
    */
-  trust: TrustSignals;
-  /** Withdrawn entries keep their history but stop appearing in search. */
-  listedInDirectory: boolean;
+  autoAccept?: boolean;
 }
 
 /**
@@ -589,6 +870,19 @@ export interface Listing extends BaseDocument {
    * in the order book, lots and tracking like any other.
    */
   privateFor?: string | null;
+  /**
+   * The item a private deal was made from, and its price then - so the deal
+   * can show what it took off. Only ever one of the same shop's items.
+   */
+  dealFrom?: { listingId: string; priceMinor: number } | null;
+  /**
+   * Affiliate selling: the shop pays this much per unit sold to whoever
+   * brought the buyer through their own link. Absent or null means off.
+   * `percent` is only on items set up before the amount was in rupees.
+   * `buyerOffMinor` is what the buyer saves per unit for coming through
+   * somebody's link - the shop's way of making the link worth sending.
+   */
+  affiliate?: { amountMinor?: number; percent?: number; buyerOffMinor?: number | null } | null;
 }
 
 /**
@@ -717,6 +1011,15 @@ export type StageEventKind = 'step' | 'note' | 'joined' | 'moved';
 export interface StageEvent {
   stage: FulfilmentStage;
   enteredAt: string;
+  /**
+   * Progress can be taken back for a few minutes after it is made. Until
+   * `undoUntil` passes the event is in effect but not shown on any timeline
+   * (and its buyers are not told), so a slip of the thumb that is undone in
+   * time leaves no trace. `undoId` ties together every copy of one action -
+   * the lot's and each of its items'.
+   */
+  undoId?: string;
+  undoUntil?: string;
   note: string | null;
   /** User id that recorded the transition. */
   recordedBy: string;
@@ -884,6 +1187,19 @@ export interface LotForwarder {
    * is no live carrier API pull yet; this is the tracking reference as given.
    */
   trackingReference: string | null;
+  /** The store lane this lot is booked on, when picked from a store. */
+  laneId?: string | null;
+  /** The lane in words as it was booked, so a later edit does not rewrite it. */
+  laneLabel?: string | null;
+  /**
+   * Whether the forwarder has taken the lot. A store on auto-accept takes it
+   * at once; otherwise it waits as a request. Absent on a typed-in forwarder.
+   */
+  acceptance?: 'pending' | 'accepted' | 'declined';
+  respondedAt?: string | null;
+  respondedBy?: string | null;
+  /** Cover the shop offers its buyers on this lot, from the forwarder's plans. */
+  insurancePlanIds?: string[];
 }
 
 /** Inputs to the landed-cost / profit calculator. All amounts in minor units. */
@@ -929,13 +1245,13 @@ export interface Order extends BaseDocument {
   currency: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
-  escrow: EscrowRecord;
+  /** The protected payment Figmark is holding for this order, if any. */
+  hold: PaymentHold;
   /**
    * What the buyer bought alongside the item.
    *
-   * Null means they declined protection, or the seller was never granted it -
-   * and then there is no escrow to hold and no dispute for the company to
-   * settle. Recorded on the order rather than looked up later, because the fee
+   * Null means they declined protection - and then Figmark holds nothing and
+   * there is no protection claim for the company to settle. Recorded on the order rather than looked up later, because the fee
    * and the rate are terms of that transaction and must not move when the
    * seller's grant is changed afterwards.
    */
@@ -970,6 +1286,19 @@ export interface Order extends BaseDocument {
    * shipped.
    */
   broughtBy?: string | null;
+  /**
+   * The social post the buyer pressed Buy on, when they did - so a post can
+   * say how many it sold and trending can count sales, not only taps.
+   */
+  fromPost?: { channelId: string; postId: string } | null;
+  /** The buyer's "it arrived" post in the shop's channel, once they shared one. */
+  unboxingPostId?: string | null;
+  /**
+   * The affiliate who brought this buyer, with the rate the shop offered when
+   * the checkout opened. Copied so editing the item cannot move a commission
+   * somebody has already earned. The name is a snapshot for the same reason.
+   */
+  affiliate?: OrderAffiliate | null;
   /**
    * The ladder this item read before it joined a lot.
    *
@@ -1007,6 +1336,19 @@ export interface Order extends BaseDocument {
    * yet; orders written before checkpoints existed simply have none.
    */
   checkpoints?: Partial<Record<OrderCheckpoint, string | null>>;
+  /**
+   * Presses of the route's own custom buttons, by step id - "Photos sent",
+   * "Gift wrapped" - kept apart from `checkpoints` because those seven have
+   * meanings the rest of the app relies on and these have none.
+   */
+  customTicks?: Record<string, string | null>;
+  /**
+   * Where this item was received before it had a lot, in the seller's words
+   * - "Received at freight forwarder's warehouse" - chosen when the warehouse
+   * button was pressed. Only the label: the tick is still `china_received`,
+   * and it means what it always meant. Cleared when that tick is undone.
+   */
+  receivedAs?: string | null;
   /**
    * The buyer's claim that they have paid, and what the seller made of it.
    *
@@ -1073,6 +1415,30 @@ export interface Order extends BaseDocument {
    * and so have no lot tracking reference to borrow.
    */
   shipment?: OrderShipment | null;
+  /**
+   * Extras the buyer opted into on this item - transit cover so far. Their
+   * premiums are part of what the order costs (`orderTotalMinor`), paid the
+   * same way as the goods.
+   */
+  addOns?: OrderAddOn[];
+  /** A commission on this item with an artist, when the buyer asked for one. */
+  artistJob?: ArtistJob | null;
+}
+
+/** Who earns a commission on an order, and on what terms. */
+export interface OrderAffiliate {
+  referrerId: string;
+  referrerName: string;
+  referrerHandle: string | null;
+  /** Per unit, in paise, as the shop offered it when the checkout opened. */
+  amountMinor?: number;
+  /** Orders from before the amount was in rupees carry a percentage instead. */
+  percent?: number;
+  /** Per unit, in paise: what the buyer saved for coming through the link. Already off `unitPriceMinor`. */
+  buyerOffMinor?: number | null;
+  /** When the shop says it paid the commission out. */
+  paidAt?: string | null;
+  paidReference?: string | null;
 }
 
 /** Who is carrying a parcel, and the number to track it by. */
@@ -1128,6 +1494,83 @@ export interface BuyerReversalDetails {
   accountName: string;
   notes?: string | null;
   qrCodeUrl?: string | null;
+  updatedAt: string;
+}
+
+/** An extra a buyer added to their order. */
+export interface OrderAddOn {
+  id: string;
+  kind: 'insurance';
+  /** The forwarder store selling it. */
+  providerId: string;
+  providerName: string;
+  planId: string;
+  planName: string;
+  /** The value insured: the goods, at what the buyer paid. */
+  valueMinor: number;
+  coverMinor: number;
+  premiumMinor: number;
+  terms: string;
+  addedAt: string;
+  addedBy: string;
+  /** Taken off before the goods left. Kept so the history still says it was there. */
+  removedAt: string | null;
+}
+
+export type ArtistJobStatus =
+  | 'requested' | 'quoted' | 'accepted' | 'paid' | 'working' | 'ready' | 'shipped' | 'completed'
+  | 'declined' | 'cancelled';
+
+export interface ArtistJobPayment {
+  at: string;
+  amountMinor: number;
+  method: PaymentMethod;
+  reference: string | null;
+  /** Direct payments wait on the artist saying it arrived; held ones are confirmed at once. */
+  confirmedAt: string | null;
+}
+
+export interface ArtistJobEvent {
+  at: string;
+  by: string;
+  status: ArtistJobStatus;
+  note: string;
+}
+
+/**
+ * A commission: a buyer asks an artist to work on something they bought.
+ *
+ * Paid on its own, to the artist, the same two ways an order is: held by
+ * Figmark until the buyer has the finished piece, or sent direct with the
+ * artist confirming it arrived.
+ */
+export interface ArtistJob {
+  id: string;
+  artistId: string;
+  artistName: string;
+  offeringId: string | null;
+  offeringName: string;
+  brief: string;
+  /** Reference pictures the buyer linked. */
+  refUrls: string[];
+  status: ArtistJobStatus;
+  quoteMinor: number | null;
+  quoteNote: string;
+  turnaroundDays: number | null;
+  method: PaymentMethod | null;
+  /** The community manager assigned to its protection; null when paid direct. */
+  managerId?: string | null;
+  managerName?: string | null;
+  protectionFeeMinor: number;
+  payments: ArtistJobPayment[];
+  /** Held by Figmark, released when the buyer marks it complete. */
+  heldMinor: number;
+  releasedAt: string | null;
+  /** Pictures of the finished work. */
+  photos: string[];
+  shipment: { courier: string; awb: string; at: string } | null;
+  history: ArtistJobEvent[];
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -1190,14 +1633,14 @@ export type RefundOrigin = 'overpaid' | 'cancelled' | 'manual';
  * What a dispute is about. Every dispute on the marketplace is one `Dispute`
  * record with one of these topics:
  *
- * - `escrow` - a protected order whose held money is in question. The only
- *   kind whose settlement moves money, because it is the only kind where the
- *   marketplace holds any. Absent on records from before topics existed.
+ * - `held_payment` - a protected order whose held money is in question. The
+ *   only kind whose settlement moves money, because it is the only kind where
+ *   Figmark holds any. Absent on records from before topics existed.
  * - `payment_rejected` / `refund_rejected` / `reversal_rejected` - one side
  *   says it paid, the other says the money never came.
  * - `general` - anything else either side wants settled.
  */
-export type DisputeTopic = 'escrow' | 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
+export type DisputeTopic = 'held_payment' | 'payment_rejected' | 'refund_rejected' | 'reversal_rejected' | 'general';
 
 /** The order's own index of its disputes: enough to list them and never dispute one thing twice. */
 export interface DisputeLink {
@@ -1206,7 +1649,7 @@ export interface DisputeLink {
   /** What was disputed - a particular rejected payment, or the dispute's own id. */
   subject: string;
   raisedBy: string;
-  raisedSide: 'buyer' | 'seller';
+  raisedSide: DisputeSide;
   raisedAt: string;
 }
 
@@ -1261,15 +1704,24 @@ export interface PaymentClaim {
   excessMinor?: number;
 }
 
-/** Buyer protection, as bought: who holds it, and on what terms. */
+/**
+ * Buyer protection, as bought. Figmark holds the payment; the community
+ * manager assigned here hears any dispute over it and releases it once the
+ * result is agreed. They are paid a share of the fee, and never hold money.
+ */
 export interface OrderProtection {
-  /** The escrow holding this payment, and who will settle a dispute over it. */
-  escrowAgentId: string;
+  /** The community manager assigned to this purchase. */
+  managerId: string;
   /** Their name as it was at purchase, so a later rename cannot rewrite it. */
-  escrowName: string;
-  /** The fee paid, on top of the item total. */
+  managerName: string;
+  /** The fee paid, on top of the item total - a flat amount set by Figmark. */
   feeMinor: number;
-  feeBasisPoints: number;
+  /** Only on orders protected while the fee was a percentage of the total. */
+  feeBasisPoints?: number;
+  /** Figmark's commission out of that fee, at the rate when it was bought. */
+  commissionMinor?: number;
+  /** The gateway's reference for the fee payment. */
+  gatewayRef?: string | null;
   boughtAt: string;
   /**
    * Set when the fee is handed back. The fee buys the service, so it is kept
@@ -1279,9 +1731,9 @@ export interface OrderProtection {
   refundedAt: string | null;
 }
 
-/** Escrow hold attached to an order. */
-export interface EscrowRecord {
-  state: EscrowState;
+/** The payment Figmark holds on a protected order. */
+export interface PaymentHold {
+  state: HoldState;
   amountMinor: number;
   heldAt: string | null;
   releasedAt: string | null;
@@ -1335,6 +1787,8 @@ export interface StoreReview extends BaseDocument {
   authorHandle: string | null;
   rating: number;
   body: string;
+  /** Which of the account's two pages it was left on. Absent on older rows. */
+  side?: 'store' | 'person';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1368,8 +1822,12 @@ export interface DisputeEvidence {
 export interface DisputeMessage {
   id: string;
   authorId: string;
-  /** 'company' marks a message from whoever is mediating. */
-  authorRole: 'buyer' | 'seller' | 'company';
+  /**
+   * 'company' marks a message from Figmark; 'manager' from the community
+   * manager deciding the current round; 'member' from a party to a dispute
+   * that is not about an order.
+   */
+  authorRole: 'buyer' | 'seller' | 'company' | 'manager' | 'member';
   body: string;
   evidence: DisputeEvidence[];
   createdAt: string;
@@ -1384,10 +1842,14 @@ export interface DisputeMessage {
  * which is the outcome a marketplace should want most.
  */
 export interface DisputeOffer {
+  /** Accepting names it, so an offer swapped a moment before cannot be accepted by mistake. */
+  id?: string;
   fromUserId: string;
-  /** What goes back to the buyer. Zero is "release it all to the seller". */
+  /** What goes back to the buyer. Zero is "release it all to the seller", and always zero where no money is held. */
   refundMinor: number;
   note: string;
+  /** The terms in words, for a settlement that moves no money. */
+  terms?: string;
   createdAt: string;
 }
 
@@ -1405,7 +1867,7 @@ export interface DisputeResolution {
 export interface Dispute extends BaseDocument {
   /** Partition key. */
   orderId: string;
-  /** What it is about. Absent means `escrow`, the only kind there used to be. */
+  /** What it is about. Absent means `held_payment`, the only kind there used to be. */
   topic?: DisputeTopic;
   /** What was disputed, for a rejected payment - so it cannot be disputed twice. */
   subject?: string | null;
@@ -1413,8 +1875,8 @@ export interface Dispute extends BaseDocument {
   amountMinor?: number | null;
   raisedBy: string;
   againstUserId: string;
-  /** Which side opened it. Either may: a seller has grievances too. */
-  raisedSide: 'buyer' | 'seller';
+  /** Which side opened it. Either may: a seller has grievances too. 'member' when it is not about an order. */
+  raisedSide: DisputeSide;
   /** Structured, so the queue can be triaged and the form can ask the right thing. */
   reasonCode: DisputeReason;
   reason: string;
@@ -1428,6 +1890,183 @@ export interface Dispute extends BaseDocument {
   resolution: DisputeResolution | null;
   resolutionNote: string | null;
   resolvedAt: string | null;
+  /**
+   * What it is about when that is not an order: a review, a comment, a post,
+   * or a person. Absent on order disputes, whose `orderId` says it. A subject
+   * dispute's `orderId` is a synthetic partition (`subject:<type>:<id>`) so it
+   * lives in the same container without one.
+   */
+  subjectRef?: DisputeSubjectRef | null;
+  /**
+   * Up to three rounds, each decided by a different community manager. Round
+   * one is the dispute as raised; two and three are paid escalations. Absent
+   * on disputes from before rounds existed - read through `roundsOf`.
+   */
+  rounds?: DisputeRound[];
+  /** Every manager who has held a round, for "my cases" without a scan of rounds. */
+  managerIds?: string[];
+  /** The last day the losing side of the latest decision may escalate. */
+  escalateBy?: string | null;
+  /** How it ended, once it has. */
+  result?: DisputeResult | null;
+  /**
+   * The parties' agreement with the result on the table: the current
+   * round's decision, or the settlement. Held money is released only when
+   * both parties and the manager agree; a party who does not answer before
+   * the window closes is taken to agree with the manager.
+   */
+  agreements?: DisputeAgreement[];
+  /** Who must release the held money once the result is agreed, and by when. */
+  releaseDuty?: ReleaseDuty | null;
+  /** Held money released by the community manager after the result was agreed. */
+  release?: DisputeRelease | null;
+  /** Bumped on every write, so two people acting at once cannot both win. */
+  version?: number;
+}
+
+export type DisputeSide = 'buyer' | 'seller' | 'member';
+
+/** What a non-order dispute is about. */
+export type DisputeSubjectType =
+  | 'review' | 'store_review' | 'comment' | 'post_comment' | 'post' | 'forum_post' | 'user';
+
+export interface DisputeSubjectRef {
+  type: DisputeSubjectType;
+  id: string;
+  /** Where it lives, as the report button names it: whose page, which listing, `channelId:postId`, the channel. */
+  parentId: string;
+  /** Whose words or account it is - the person the dispute is against. */
+  ownerId: string;
+  /** What it said when it was disputed, so the decision is about those words. */
+  excerpt: string;
+  /** Where to open it. */
+  link: string | null;
+}
+
+/** A fee paid through the gateway, split between Figmark and the manager doing the work. */
+export interface FeePayment {
+  id: string;
+  kind: 'dispute' | 'escalation' | 'protection';
+  payerId: string;
+  amountMinor: number;
+  currency: string;
+  /** Figmark's cut, at the commission rate in force when it was paid. */
+  commissionMinor: number;
+  /** What the community manager on the round earns. */
+  managerShareMinor: number;
+  gatewayRef: string;
+  paidAt: string;
+}
+
+/**
+ * What a community manager may do as part of a decision.
+ *
+ * Every one runs when the dispute is final, using the decision that set the
+ * final result - never on a round's decision that a later round may overturn.
+ * `alert_banner` and `xp_deduction` wait for an operator's approval too.
+ */
+export type DisputeSanctionKind =
+  | 'remove_content' | 'warning_post' | 'flag' | 'rating_reduction' | 'alert_banner' | 'xp_deduction';
+
+export interface DisputeSanction {
+  kind: DisputeSanctionKind;
+  /** Who it is against: always a party to the dispute. */
+  targetUserId: string;
+  /** Words shown with it: the warning post, the alert, the flag. */
+  message: string;
+  /** For an alert banner or a warning post: how many days it shows. */
+  days?: number;
+  /** For an XP deduction. */
+  severity?: 'light' | 'severe';
+  /** For a rating reduction, in points of the 0-100 average. */
+  points?: number;
+  /** For a warning post: the forum to post it in, or the feed when absent. */
+  forumId?: string | null;
+}
+
+export interface DisputeDecision {
+  /** In whose favour: the person who raised it, or the person it is against. */
+  favour: 'raiser' | 'respondent';
+  reasoning: string;
+  /** On held money: what goes back to the buyer if this decision is the final one. */
+  refundMinor: number | null;
+  sanctions: DisputeSanction[];
+  decidedAt: string;
+}
+
+export interface DisputeRound {
+  /** 1 is the dispute as raised, 2 and 3 the escalations. */
+  n: number;
+  managerId: string;
+  managerName: string;
+  assignedAt: string;
+  /** How the manager came to have it. */
+  assignedBy: 'raiser' | 'protection' | 'system' | 'admin';
+  /** When their decision is due. Past it, an operator is asked; two days later the system reassigns. */
+  decideBy: string;
+  /** Who paid for this round: the raiser, the escalating party, or nobody on a protected purchase's first round. */
+  payment: FeePayment | null;
+  /** Who escalated into this round; null for round one. */
+  escalatedBy: string | null;
+  decision: DisputeDecision | null;
+  /** When the operators were told this round's manager missed their deadline. */
+  adminNotifiedAt?: string | null;
+  /** Managers this round was taken from because they did not decide in time. */
+  reassigned?: { fromId: string; fromName: string; at: string; by: 'admin' | 'system' }[];
+}
+
+export interface DisputeResult {
+  /** `decided` by managers; `settled` between the parties; `withdrawn` by the raiser. */
+  how: 'decided' | 'settled' | 'withdrawn';
+  winnerId: string | null;
+  loserId: string | null;
+  favour: 'raiser' | 'respondent' | null;
+  /** The round whose decision stands. */
+  finalRound: number | null;
+  /** The terms, for a settlement. */
+  terms: string | null;
+  at: string;
+}
+
+/** A party agreeing with a decision (by round) or with the settlement (round null). */
+export interface DisputeAgreement {
+  userId: string;
+  round: number | null;
+  at: string;
+}
+
+/**
+ * The community manager's last step on held money: releasing it as agreed.
+ * Missed, the operators are told at `dueBy`; two days later it moves to
+ * another active manager - the same clock a round's decision runs on.
+ */
+export interface ReleaseDuty {
+  managerId: string;
+  managerName: string;
+  assignedAt: string;
+  dueBy: string;
+  adminNotifiedAt: string | null;
+  reassigned?: { fromId: string; fromName: string; at: string; by: 'admin' | 'system' }[];
+}
+
+export interface DisputeRelease {
+  toBuyerMinor: number;
+  toSellerMinor: number;
+  requestedBy: string;
+  requestedAt: string;
+  gatewayRef: string;
+}
+
+/** What managers' final decisions have done to an account. */
+export interface CommunityStanding {
+  /** XP taken away by approved deductions, all told. */
+  xpPenalty: number;
+  /** Points off the 0-100 rating average, all told. */
+  ratingPenalty: number;
+  /** A banner on their page until `until`. */
+  alert: { message: string; until: string; disputeId: string } | null;
+  /** "Dispute lost" marks, newest first. */
+  flags: { disputeId: string; message: string; at: string }[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1514,6 +2153,11 @@ export interface Post extends BaseDocument {
   photoUrls?: string[];
   /** Set on a power sale drop: the members' window and what comes after it. */
   drop?: PostDrop | null;
+  /**
+   * Set on a power sale's opening message: which sale, and when its first
+   * item drops. The channel draws a countdown and a "Remind me" on it.
+   */
+  opening?: PostOpening | null;
   /** Written by a power sale run - its drops and its messages - and tagged as such. */
   powerSale?: boolean;
   /**
@@ -1529,6 +2173,25 @@ export interface Post extends BaseDocument {
   comments?: StoredComment[];
   /** How many times it was passed on - reposted, or sent out as a link. */
   shareCount?: number;
+  /**
+   * Actor keys that have been counted for sharing it, so passing it on twice
+   * counts once. Shares weigh most in trending; an uncapped tap would be a way
+   * to put anything at the top.
+   */
+  sharedBy?: string[];
+  /**
+   * People this post is first tried on as Rising, beyond whoever the feed
+   * would pick: the hunters of the ISO it answers, say.
+   */
+  audience?: string[];
+  /** A buyer showing what arrived: the order it came from. */
+  delivered?: { orderId: string; itemName: string } | null;
+  /** The hunt this post answers, when a shop posted its answer to the feed. */
+  answersWant?: { id: string; buyerId: string; title: string } | null;
+  /** Orders placed from this post's Buy button. */
+  buyCount?: number;
+  /** Who bought from it, so one buyer's second order is not a second sale. */
+  boughtBy?: string[];
   /** A question with a few answers to pick from. */
   poll?: StoredPoll | null;
   /** Set when this post is somebody else's, passed on to the reposter's followers. */
@@ -1683,9 +2346,101 @@ export interface Notification extends BaseDocument {
   /** Where tapping it goes, as an in-app route. */
   link: string;
   readAt: string | null;
+  /** Held back until then: the action it reports can still be undone. */
+  notBefore?: string;
+  /** The undoable action it reports, so undoing it can take the notice back. */
+  undoId?: string;
+  /** Taken back because what it reported was undone. Never shown. */
+  withdrawn?: boolean;
+  /**
+   * When it went out to the person's devices. Set as it is written for an
+   * ordinary notice; left off a held one until the clock sends it, which is
+   * how the clock knows what is still owed.
+   */
+  pushedAt?: string;
+  /**
+   * Notices about the same thing collapse into one while unread: a third
+   * message from Arjun is "Arjun sent you 3 messages", not a third row. This
+   * is that thing - a conversation, a post's reactions - and the lock screen
+   * replaces rather than stacks on it too.
+   */
+  group?: string;
+  /** How many events this row stands for. Absent means one. */
+  count?: number;
+  /** Who did them, newest first and each once, for "Arjun and 3 others". */
+  actors?: string[];
+}
+
+/** What reaches somebody's phone, set from the notifications card. */
+export interface NotificationPrefs {
+  /** Categories that stay in the bell and do not go to the lock screen. */
+  pushOff: NotificationCategory[];
+  /** Between 22:00 and 07:00 where they are, pushes arrive without sound. */
+  quietHours: boolean;
+  /** Their IANA time zone, as their device reported it. */
+  timeZone: string | null;
+}
+
+export const CLIENT_PLATFORMS = ['ios', 'android', 'mac', 'windows', 'linux', 'other'] as const;
+export type ClientPlatform = (typeof CLIENT_PLATFORMS)[number];
+export const CLIENT_BROWSERS = ['safari', 'chrome', 'samsung', 'edge', 'firefox', 'opera', 'other'] as const;
+export type ClientBrowser = (typeof CLIENT_BROWSERS)[number];
+export const CLIENT_PUSH_STATES = ['on', 'off', 'blocked', 'needs-install', 'unsupported', 'unavailable'] as const;
+export type ClientPushState = (typeof CLIENT_PUSH_STATES)[number];
+
+/**
+ * One copy of the site somebody uses, as it describes itself.
+ *
+ * "Copy" because an iPhone's home-screen Figmark and its Safari are separate
+ * as far as the site can tell - separate storage, separate sign-in - so each
+ * gets its own row, and a person counts as having installed it on a platform
+ * when any of their rows on that platform was opened from the home screen.
+ */
+export interface ClientDevice {
+  /** Random, made by that copy and kept in its own storage. */
+  id: string;
+  platform: ClientPlatform;
+  browser: ClientBrowser;
+  /** Opened from the home screen (or as an installed app) when it last reported. */
+  installed: boolean;
+  /** The first time it reported from the home screen; null if it never has. */
+  installedAt: string | null;
+  push: ClientPushState;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+/**
+ * One device that agreed to be woken: a browser's Web Push subscription.
+ *
+ * The endpoint is the push service's address for that one browser, and the two
+ * keys are what the message is encrypted to, so only that browser can read it.
+ */
+export interface PushEndpoint {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  /** A rough name for the device, so the list can be told apart. Not trusted for anything. */
+  device: string;
+  createdAt: string;
 }
 
 export type NotificationKind =
+  /** A direct message, to you or a store you speak for. */
+  | 'message'
+  /** Somebody reacted to a message you or your store sent. */
+  | 'message_reacted'
+  /** A customer wrote in your store's channel. */
+  | 'channel_message'
+  /** A store you follow announced something in its channel. */
+  | 'channel_announcement'
+  /** Somebody liked a comment you or your store wrote. */
+  | 'comment_liked'
+  /** Somebody followed you, or your store. */
+  | 'followed'
+  /** A review was left for you, your store, or an order. */
+  | 'review_received'
+  /** A forum's founder or a moderator warned, removed or appointed you. */
+  | 'forum_moderation'
   | 'want_answered'
   | 'payment_claimed'
   | 'payment_received'
@@ -1699,6 +2454,12 @@ export type NotificationKind =
   | 'dispute_opened'
   | 'dispute_replied'
   | 'dispute_settled'
+  | 'dispute_decided'
+  | 'dispute_escalated'
+  | 'dispute_assigned'
+  /** A community manager missed a deadline: told to the operators. */
+  | 'dispute_overdue'
+  | 'dispute_action'
   | 'lot_moved'
   /** One item reached its buyer - the step after a lot is unpacked. */
   | 'order_delivered'
@@ -1730,7 +2491,11 @@ export type NotificationKind =
   | 'post_reacted'
   | 'post_commented'
   | 'comment_replied'
-  | 'post_shared';
+  | 'post_shared'
+  /** A service store's application was decided, or a lot was booked with one. */
+  | 'service_store'
+  /** An artist commission moved: quoted, paid, finished, shipped. */
+  | 'commission';
 
 /**
  * A run of channel posts that sells things, on a timer the shop sets.
@@ -1779,6 +2544,10 @@ export interface PowerSale extends BaseDocument {
    * public. Absent on older sales, which announced nothing at that point.
    */
   afterWindow?: { channel: boolean; feed: boolean };
+  /** People who asked to be told when the first item drops. */
+  reminders?: string[];
+  /** When they were told, so nobody is told twice. */
+  remindedAt?: string | null;
 }
 
 export type PowerSaleStatus = 'draft' | 'scheduled' | 'running' | 'done' | 'cancelled';
@@ -1831,6 +2600,15 @@ export interface PowerSaleItem {
 }
 
 /** What a channel drop post shows beside its item: the clock and the price after it. */
+export interface PostOpening {
+  saleId: string;
+  sellerId: string;
+  /** When the first item goes out. */
+  startsAt: string;
+  saleName: string;
+  itemCount: number;
+}
+
 export interface PostDrop {
   endsAt: string;
   memberPriceMinor: number;
@@ -1859,6 +2637,14 @@ export interface Forum extends BaseDocument {
    * membership existed, which read as empty.
    */
   memberIds?: string[];
+  /** Up to two people the founder appointed to keep the room in order. */
+  moderatorIds?: string[];
+  /** Removed and kept out: they cannot join again until let back in. */
+  bannedIds?: string[];
+  /** House rules, shown at the top of the room. */
+  rules?: string;
+  /** Warnings handed out, newest last. */
+  warnings?: { userId: string; byId: string; note: string; at: string }[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1882,6 +2668,8 @@ export interface MessageParty {
   isStore: boolean;
   /** Snapshot of the name shown, so a thread renders without a lookup. */
   displayName: string;
+  /** Their level beside the name, read fresh when the party is looked up. */
+  level?: { level: number; title: string; shop?: boolean };
 }
 
 export interface Message extends BaseDocument {
@@ -1897,8 +2685,16 @@ export interface Message extends BaseDocument {
   to: MessageParty;
   body: string;
   readAt: string | null;
+  /**
+   * Photos sent with the message, as names in the private chat-photos store.
+   * Never URLs: they have no public address, and are read only through the
+   * thread by the two handles in it.
+   */
+  photos?: string[];
   /** A private deal card, when the message carries one. */
   deal?: MessageDeal | null;
+  /** An item this message is about, so both sides know which one. */
+  item?: MessageItem | null;
   /** The message this one answers, as a snapshot so the quote survives. */
   replyTo?: { id: string; name: string; body: string } | null;
   /** One reaction per handle; reacting again changes it. */
@@ -1919,4 +2715,27 @@ export interface MessageDeal {
   priceMinor: number;
   quantity: number;
   photo: string | null;
+  /** When the deal stops being buyable. Read live from the item on the way out. */
+  expiresAt?: string | null;
+  /** What the item it was made from cost, when it was made from one. */
+  wasMinor?: number | null;
+  /** Filled in when the thread is read: where the deal stands now. */
+  state?: DealState;
+}
+
+/**
+ * An item a message is about: a snapshot, so the card still reads after the
+ * item changes, with where it stands now filled in when the thread is read.
+ */
+export interface MessageItem {
+  listingId: string;
+  title: string;
+  photo: string | null;
+  priceMinor: number;
+  currency: string;
+  condition: string;
+  /** Filled in when the thread is read. */
+  state?: DealState;
+  /** The price now, when it has changed since. */
+  nowMinor?: number;
 }

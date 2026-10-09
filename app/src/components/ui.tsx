@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import type { StepState } from '@shared/routes';
@@ -11,6 +11,7 @@ import { brandHueFor, gradientFor, initialsOf } from '../format';
  */
 export { Icon } from './Icon';
 import { Icon } from './Icon';
+import { ManagerMark } from './ManagerBadge';
 export type { IconName } from './Icon';
 
 /**
@@ -173,7 +174,7 @@ export function Tile({ value, label, tone, onClick, open }: {
  *
  * Escape closes it and so does the backdrop, because the way out of a dialog
  * should be the thing people reach for without thinking. Used for choices worth
- * interrupting the page for — picking who holds your money is one.
+ * interrupting the page for — turning an order down is one.
  */
 export function Modal({ title, onClose, children }: {
   title: string;
@@ -213,6 +214,62 @@ export function Modal({ title, onClose, children }: {
   );
 }
 
+/** What a confirmation asks, and what its two buttons say. */
+export interface ConfirmAsk {
+  title: string;
+  body?: ReactNode;
+  /** The button that does it. */
+  action: string;
+  /** Red, for something that cannot be undone. */
+  danger?: boolean;
+}
+
+/**
+ * "Are you sure?", drawn by the app rather than the browser.
+ *
+ * `window.confirm` on a phone is the browser's own box - the site's address
+ * across the top, buttons in the system's words, nothing of the app around
+ * it. This is the same question in the app's own dialog. `confirm(...)`
+ * resolves true for the action, false for cancel, Escape or a tap outside;
+ * render `dialog` anywhere in the component.
+ */
+export function useConfirm() {
+  const [asking, setAsking] = useState<ConfirmAsk | null>(null);
+  const settle = useRef<((yes: boolean) => void) | null>(null);
+
+  const confirm = useCallback((ask: ConfirmAsk) => new Promise<boolean>((resolve) => {
+    settle.current?.(false);
+    settle.current = resolve;
+    setAsking(ask);
+  }), []);
+
+  const answer = useCallback((yes: boolean) => {
+    settle.current?.(yes);
+    settle.current = null;
+    setAsking(null);
+  }, []);
+
+  // Leaving with the question open answers it "no", so nothing waits forever.
+  useEffect(() => () => settle.current?.(false), []);
+
+  const dialog = asking ? (
+    <Modal title={asking.title} onClose={() => answer(false)}>
+      <div className="confirm">
+        {asking.body && <p className="confirm__body">{asking.body}</p>}
+        <div className="confirm__actions">
+          <button type="button" className="btn btn--ghost" onClick={() => answer(false)}>Cancel</button>
+          <button type="button" className={`btn${asking.danger ? ' btn--danger' : ''}`} autoFocus
+            onClick={() => answer(true)}>
+            {asking.action}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  ) : null;
+
+  return { confirm, dialog };
+}
+
 /**
  * Somebody's name, as a link to their page.
  *
@@ -224,17 +281,47 @@ export function Modal({ title, onClose, children }: {
  * Which page it opens is decided by whoever built the reference, not here: a
  * seller's name carries the shop's handle, a buyer's carries the person's.
  */
-export function PersonLink({ party, className, children }: {
-  party: { name: string; handle: string | null } | null | undefined;
+type Tag = { level: number; title: string; shop?: boolean };
+
+export function PersonLink({ party, className, children, bare }: {
+  party: { name: string; handle: string | null; level?: Tag; id?: string | null } | null | undefined;
   className?: string;
   children?: ReactNode;
+  /** Leave the level tagline off, where the name sits inside something that already shows it. */
+  bare?: boolean;
 }) {
   if (!party) return null;
   const label = children ?? party.name;
-  if (!party.handle) return <span className={className}>{label}</span>;
+  const name = party.handle
+    ? <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>{label}</Link>
+    : <span className={className}>{label}</span>;
+  // A community manager's shield goes wherever their name does.
+  const mark = <ManagerMark id={party.id} handle={party.handle} />;
+  if (bare || !party.level) return <>{name}{mark}</>;
+  // The level reads as a tagline under the name.
+  return <span className="pname"><span className="pname__line">{name}{mark}</span><LevelChip tag={party.level} /></span>;
+}
+
+/**
+ * A level as a tagline: "LV 5 · Collector", the same for buyers and shops,
+ * with a Shop mark on a shop. `inline` sits it beside a name on one line.
+ */
+export function LevelChip({ tag, inline = false }: { tag: Tag | null | undefined; inline?: boolean }) {
+  if (!tag) return null;
   return (
-    <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>
-      {label}
-    </Link>
+    <span className={`lvtag lvtag--l${levelRung(tag.level)}${inline ? ' lvtag--inline' : ''}`} title={`Level ${tag.level} · ${tag.title}`}>
+      <span className="lvtag__lv">Lv {tag.level}</span>
+      <span className="lvtag__title">{tag.title}</span>
+      {tag.shop && <span className="lvtag__shop">Shop</span>}
+    </span>
   );
+}
+
+/** Which colour a level wears: its own up to ten, then one per titled band. */
+function levelRung(level: number): number {
+  if (level >= 50) return 50;
+  if (level >= 30) return 30;
+  if (level >= 20) return 20;
+  if (level >= 15) return 15;
+  return Math.min(Math.max(Math.floor(level), 1), 10);
 }

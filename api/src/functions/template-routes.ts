@@ -1,16 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
-import { inLot, isDirect } from '../../../shared/fulfilment.js';
+import { inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
-import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf } from '../../../shared/routes.js';
+import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf, ticksOf } from '../../../shared/routes.js';
 import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
+import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
+import { discardUpload } from '../storage/release.js';
 import { buildLot, type NewLotBody } from './fulfilment-routes.js';
-import { notify } from './notify.js';
+import { notify, orderNames } from './notify.js';
+import { gistOf } from '../../../shared/notifications.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -142,8 +145,8 @@ async function deleteTemplate(request: HttpRequest, _context: InvocationContext)
 /* ── Photos ────────────────────────────────────────────────────────────── */
 
 /** The most a single photo may be, after the browser has shrunk it. */
-const MAX_PHOTO_BYTES = 900_000;
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+export const MAX_PHOTO_BYTES = 900_000;
+export const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 /**
  * POST /api/uploads - a picture in, a URL out.
@@ -156,7 +159,7 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
  */
 async function upload(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  await auth.requireCapability(request, ['sell']);
+  const user = await auth.requireCapability(request, ['sell']);
 
   let body: { dataUrl?: string };
   try {
@@ -179,9 +182,39 @@ async function upload(request: HttpRequest, _context: InvocationContext) {
     return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
   }
 
+  // Every stored photo is compressed to 70-90 KB; the smaller of what was sent
+  // and the recompressed picture is the one kept.
+  const photo = compressPhoto(new Uint8Array(bytes), contentType);
+  if (photo.bytes.byteLength > PHOTO_MAX_BYTES) {
+    return error(413, 'photo_too_large', 'That photo could not be made small enough. Try a different one.');
+  }
+
   const store = await getPhotoStore();
-  const stored = await store.upload(new Uint8Array(bytes), contentType);
-  return json(201, stored);
+  const stored = await store.upload(photo.bytes, photo.contentType, user.id);
+  return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
+}
+
+/**
+ * POST /api/uploads/discard - take back a photo picked and then removed before saving.
+ *
+ * Only for a draft: the uploader's own, not yet part of any listing, post or
+ * hunt, and not old. Anything else is refused and left to the operator's
+ * unused-photo scan.
+ */
+async function discardRoute(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  let body: { url?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (typeof body.url !== 'string' || !body.url) return error(400, 'invalid_request', 'Say which photo.');
+  const result = await discardUpload(user.id, body.url);
+  if (result === 'discarded') return json(200, { discarded: true });
+  // One answer for a photo that is not there and one that is not theirs.
+  return json(200, { discarded: false, reason: result === 'not_yours' ? 'not_found' : result });
 }
 
 /**
@@ -258,6 +291,12 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
   if (lot && lot.id === order.lotId) {
     return error(409, 'already_filed', 'That item is already in that lot.');
   }
+  if (lot && lotIsDone(lot)) {
+    return error(409, 'lot_done', 'That lot is finished. Pick an open lot, or start a new one.');
+  }
+  if (lot && lot.status === 'filled') {
+    return error(409, 'lot_closed', 'This lot is closed to new orders. Reopen it, or pick a lot that is still filling.');
+  }
 
   if (!lot) {
     if (!body.newLot) return error(400, 'invalid_request', 'Pick a lot, or describe a new one.');
@@ -272,7 +311,7 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
      put "travelling with lot" above an arrival that happened first. A move
      between lots starts fresh on the new lot's ladder, so only the checkpoint
      floors it. */
-  const index = itemStepOn(route, currentStepOf(lot), undefined, order.checkpoints);
+  const index = itemStepOn(route, currentStepOf(lot), undefined, ticksOf(order));
   const now = new Date().toISOString();
   const event: StageEvent = {
     stage: coarseStage(route, index),
@@ -304,12 +343,14 @@ async function assignOrderToLot(request: HttpRequest, _context: InvocationContex
     order.lotId,
   );
 
+  const named = await orderNames(repository, moved);
+  const item = gistOf(moved.itemName, 'Your item', 30);
   await notify(
     repository,
     [moved.buyerId],
     {
       kind: 'lot_moved',
-      title: was ? `Your item moved to ${lot.name}` : `Your item is in ${lot.name}`,
+      title: was ? `${named.shop} moved ${item} to ${lot.name}` : `${named.shop} put ${item} in ${lot.name}`,
       body: body.note?.trim()
         || (was
           ? `It travels with ${lot.name} now instead of ${was.name}.`
@@ -326,6 +367,7 @@ export const listTemplatesRoute = handler(listTemplates);
 export const saveTemplateRoute = handler(saveTemplate);
 export const deleteTemplateRoute = handler(deleteTemplate);
 export const uploadRoute = handler(upload);
+export const discardUploadRoute = handler(discardRoute);
 export const photoRoute = handler(photo);
 export const assignOrderToLotRoute = handler(assignOrderToLot);
 
@@ -339,6 +381,7 @@ app.http('templates-delete', {
   ...anon, methods: ['POST'], route: 'templates/{id}/delete', handler: deleteTemplateRoute,
 });
 app.http('uploads', { ...anon, methods: ['POST'], route: 'uploads', handler: uploadRoute });
+app.http('uploads-discard', { ...anon, methods: ['POST'], route: 'uploads/discard', handler: discardUploadRoute });
 app.http('photo', { ...anon, methods: ['GET'], route: 'photos/{name}', handler: photoRoute });
 app.http('order-lot', {
   ...anon, methods: ['POST'], route: 'orders/{id}/lot', handler: assignOrderToLotRoute,

@@ -227,3 +227,23 @@ export function matchesSearch(listing: SearchShape, term: string): boolean {
     .toLowerCase();
   return needle.split(/\s+/).every((word) => haystack.includes(word));
 }
+
+interface FreshnessShape {
+  createdAt: string;
+  bumpedAt?: string | null;
+  sellerId: string;
+}
+
+/** When an item last came to the top: its bump, or when it was listed. */
+export function freshness(listing: FreshnessShape): string {
+  return listing.bumpedAt && listing.bumpedAt > listing.createdAt ? listing.bumpedAt : listing.createdAt;
+}
+
+/**
+ * The "newest" order of the Buy tab: whatever went up most recently leads,
+ * whether it was just listed or just bumped. The same for every reader -
+ * following a shop does not push its older stock above a new listing.
+ */
+export function newestOrder(a: FreshnessShape, b: FreshnessShape): number {
+  return freshness(b).localeCompare(freshness(a));
+}

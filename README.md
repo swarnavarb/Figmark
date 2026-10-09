@@ -1,8 +1,8 @@
 # Figmark
 
 A marketplace for import resellers. Group-buy lots with order manifests and
-buyer-visible fulfilment stages, escrow-held payments, and two-sided reviews
-gated on completed transactions.
+buyer-visible fulfilment stages, payments held by Figmark under Buyer
+Protection, and two-sided reviews gated on completed transactions.
 
 This is the scaffold: the build and deploy pipeline, the auth seam, the data
 model, and a status page that proves the whole path works. Feature modules
@@ -48,6 +48,7 @@ browsable with nothing provisioned:
 | Database | Cosmos DB, when `COSMOS_ENDPOINT` is set | In-memory store with seeded data |
 | Storage | Blob Storage, when `STORAGE_ACCOUNT` is set | In-memory (photos resolve to nothing) |
 | Auth | Static Web Apps identity, when `AUTH_MODE=swa` | Mock username/password provider |
+| Photo search | Claude reads the photo, when `ANTHROPIC_API_KEY` is set | Matches by picture only |
 
 `/api/health` reports which implementation actually loaded, and the status page
 renders it — so a deployment running on fallbacks is visibly degraded rather
@@ -57,6 +58,7 @@ than quietly wrong.
 
 - [docs/AZURE.md](docs/AZURE.md) — resources, credentials, deployment, current blockers
 - [docs/AUTH.md](docs/AUTH.md) — the auth seam and how to swap in a real provider
+- [docs/PUSH.md](docs/PUSH.md) — lock-screen notifications: turning them on, and installing on a phone
 - [docs/DATA-MODEL.md](docs/DATA-MODEL.md) — containers, partition keys, and why
 
 ## What's built
@@ -67,9 +69,17 @@ freight forwarder directory, and a combined profile covering listings,
 purchases and follows. Social signals — bookmarks, follows, public comments and
 rate-limited bumps — are wired end to end.
 
-Not built yet: direct buyer-seller messaging, photo upload (listings use a
-generated placeholder until blob storage is connected), and reverse-image
-search.
+Photo upload works against Blob Storage (listing photos are public-read; photos
+sent in chats go to a private container and are served only to the two handles
+in the thread).
+
+Photo search: the camera in the search sheet takes a photo or picks one, and
+the catalogue shows what matches it first, then related items, as one list. A
+perceptual fingerprint finds items listed with the same picture, even resized
+or recompressed; with `ANTHROPIC_API_KEY` set, Claude also reads what the item
+is and those words find it under a different picture. The search photo is
+never uploaded to the photo store or kept anywhere: it is held in the browser's
+memory for the search and dropped by `POST /api/search/photo` when it answers.
 
 ## Status
 

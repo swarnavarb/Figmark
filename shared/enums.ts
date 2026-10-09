@@ -136,16 +136,17 @@ export const PAYMENT_STATUSES = ['unpaid', 'claimed', 'partially_paid', 'paid', 
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 /**
- * Escrow state machine. Funds are held by the platform and released on buyer
+ * Where a protected payment stands. Figmark holds it and releases it on buyer
  * confirmation, or automatically after `autoReleaseAt` when no dispute exists.
  */
-export const ESCROW_STATES = ['none', 'held', 'released', 'refunded', 'disputed'] as const;
-export type EscrowState = (typeof ESCROW_STATES)[number];
+export const HOLD_STATES = ['none', 'held', 'released', 'refunded', 'disputed'] as const;
+export type HoldState = (typeof HOLD_STATES)[number];
 
 export const DISPUTE_STATUSES = [
   'awaiting_response',
   'in_discussion',
   'under_mediation',
+  'decided',
   'resolved',
   'withdrawn',
 ] as const;
@@ -155,7 +156,8 @@ export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
   awaiting_response: 'Waiting on the other side',
   in_discussion: 'Being discussed',
   under_mediation: 'With Figmark',
-  resolved: 'Settled',
+  decided: 'Decision given',
+  resolved: 'Closed',
   withdrawn: 'Withdrawn',
 };
 
@@ -201,8 +203,8 @@ export const SELLER_DISPUTE_REASONS = [
 
 /**
  * Every reason a dispute record can carry. `other` is for disputes that come
- * from a rejected payment or a free-form complaint rather than the escrow
- * form, whose topic already says what they are about.
+ * from a rejected payment or a free-form complaint rather than the protection
+ * claim form, whose topic already says what they are about.
  */
 export const DISPUTE_REASONS = [...BUYER_DISPUTE_REASONS, ...SELLER_DISPUTE_REASONS, 'other'] as const;
 export type DisputeReason = (typeof DISPUTE_REASONS)[number];
@@ -241,6 +243,28 @@ export type ReviewDirection = (typeof REVIEW_DIRECTIONS)[number];
  * starts scarce and grows once there is traffic to justify it.
  */
 export const FORUM_CAP = 6;
+
+/**
+ * The levels at which a person may open another forum: their first at 5, then
+ * one more at each of 7, 8, 9 and 10 - five in all.
+ */
+export const FORUM_UNLOCK_LEVELS = [5, 7, 8, 9, 10] as const;
+/** Moderators a forum's founder may appoint besides themselves. */
+export const FORUM_MODERATORS_MAX = 2;
+
+/** How many forums somebody at this level may have opened. */
+export function forumSlotsAt(level: number): number {
+  return FORUM_UNLOCK_LEVELS.filter((at) => level >= at).length;
+}
+
+/** Said when somebody asks for a forum they have not unlocked yet. */
+export function forumLockedMessage(level: number, opened: number): string {
+  const ladder = 'You can open your first forum at level 5, then one more at levels 7, 8, 9 and 10 (five in all).';
+  const next = FORUM_UNLOCK_LEVELS.find((at) => at > level);
+  if (opened === 0) return `You will be eligible to create your first forum when you reach level 5. You are level ${level}. ${ladder}`;
+  if (next === undefined) return `You have opened all ${FORUM_UNLOCK_LEVELS.length} of your forums.`;
+  return `You have used your ${opened} forum slot${opened === 1 ? '' : 's'}. Your next one unlocks at level ${next}; you are level ${level}. ${ladder}`;
+}
 
 /**
  * What someone may do in a store they do not own.

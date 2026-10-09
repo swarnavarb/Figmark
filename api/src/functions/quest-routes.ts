@@ -1,4 +1,5 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
+import { isPersonFollow, reviewSide } from '../../../shared/storefront.js';
 import type { Dispute, QuestState, User } from '../../../shared/models.js';
 import { isCancelledLike, isPlaced, reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import {
@@ -7,6 +8,7 @@ import {
 } from '../../../shared/quest.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { invitedSellerCount } from '../share.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -24,7 +26,7 @@ type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** Everything the rules count, read from the rows rather than from a tally. */
 async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
-  const [allOrders, likes, follows, posts, wants, pledged, reviewsAbout, pageReviews] = await Promise.all([
+  const [allOrders, likes, follows, posts, wants, pledged, reviewsAbout, pageReviews, invitedSellers] = await Promise.all([
     repository.listOrdersForBuyer(user.id),
     repository.listLikesBy(user.id),
     repository.listFollowsBy(user.id),
@@ -33,6 +35,7 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
     repository.listPledgedListingIds(user.id),
     repository.listReviewsAbout(user.id),
     repository.listStoreReviews(user.id),
+    invitedSellerCount(repository, user),
   ]);
 
   // Pressing Buy is not an order, and an order called off is not one either.
@@ -60,16 +63,26 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
     ratingsReceived: reviewsAbout
       .filter((review) => review.direction === 'seller_to_buyer' && reviewRevealed(review, false))
       .map((review) => review.rating),
-    pageRatings: pageReviews.map((review) => review.rating),
+    // The person's page only: what people said about their shop is the shop's.
+    pageRatings: pageReviews
+      .filter((review) => reviewSide(review, Boolean(user.sellerProfile)) === 'person')
+      .map((review) => review.rating),
     likes: likes.map((like) => ({ createdAt: like.createdAt })),
-    follows: follows.map((follow) => ({ createdAt: follow.createdAt })),
+    follows: follows.filter((follow) => !isPersonFollow(follow.sellerId)).map((follow) => ({ createdAt: follow.createdAt })),
     posts: posts.map((post) => ({ createdAt: post.createdAt })),
     wants: wants.map((want) => ({ createdAt: want.createdAt })),
     pledges: pledged.length,
     disputesLost: user.buyerTrust?.disputesLost ?? 0,
+    penaltyXp: user.standing?.xpPenalty ?? 0,
     collection: (user.collection ?? []).map((item) => ({ addedAt: item.addedAt })),
     hasBio: Boolean(user.bio?.trim()),
+    shares: Object.keys(user.affiliateLinks ?? {}).length,
+    referredSales: (user.affiliateOrderIds ?? []).length,
     hasTags: (user.tags ?? []).length > 0,
+    shareOpens: (user.shareOpens ?? []).map((open) => ({ createdAt: open.at })),
+    sharesSent: (user.shareLog ?? []).map((sent) => ({ createdAt: sent.at })),
+    invites: (user.invitees ?? []).map((invite) => ({ createdAt: invite.at })),
+    invitedSellers,
   };
 }
 
@@ -88,6 +101,11 @@ async function viewFor(repository: Repo, user: User, state: QuestState = user.qu
     await repository.updateUser(user);
   }
   return view;
+}
+
+/** Somebody's level as of now, the cache brought up to date on the way. */
+export async function levelOf(repository: Repo, user: User): Promise<number> {
+  return (await viewFor(repository, user)).level;
 }
 
 async function signedIn(request: HttpRequest) {
@@ -158,6 +176,7 @@ async function claim(request: HttpRequest, _context: InvocationContext) {
   return commit(repository, user, before, {
     ...state,
     claimed: { ...state.claimed, [key]: new Date().toISOString() },
+    bumps: (state.bumps ?? 0) + task.bumps,
   }, { taskId });
 }
 
@@ -242,8 +261,15 @@ async function leaderboard(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** How one dispute ended for one of its two people. */
-function outcomeFor(dispute: Dispute, userId: string): 'won' | 'lost' | 'even' | 'open' {
+function outcomeFor(dispute: Dispute, userId: string): 'won' | 'lost' | 'even' | 'open' | 'none' {
   if (dispute.status !== 'resolved' && dispute.status !== 'withdrawn') return 'open';
+  // A community manager's final result, or a settlement between the two: the
+  // record says who won. A withdrawal counts for nobody.
+  if (dispute.result) {
+    if (dispute.result.how === 'settled') return 'even';
+    if (dispute.result.how === 'withdrawn') return 'none';
+    return dispute.result.winnerId === userId ? 'won' : 'lost';
+  }
   const side = dispute.raisedBy === userId ? dispute.raisedSide : dispute.raisedSide === 'buyer' ? 'seller' : 'buyer';
   const outcome = dispute.resolution?.outcome ?? (dispute.status === 'withdrawn' ? 'withdrawn' : null);
   if (outcome === 'split') return 'even';
@@ -283,12 +309,18 @@ async function collector(request: HttpRequest, _context: InvocationContext) {
     repository.listFollowedSellerIds(id),
   ]);
   const view = questView(user.id, facts, user.quest);
+  // Whoever opens the page refreshes the level their name wears elsewhere.
+  const state = user.quest ?? emptyQuestState();
+  if (state.xpCache !== view.xp || state.levelCache !== view.level) {
+    user.quest = tidyQuestState({ ...state, xpCache: view.xp, levelCache: view.level, computedAt: new Date().toISOString() });
+    await repository.updateUser(user);
+  }
 
   const visible = reviews.filter((review) => reviewRevealed(review, false));
   const asBuyer = visible.filter((review) => review.direction === 'seller_to_buyer').map((review) => review.rating);
   const asSeller = visible.filter((review) => review.direction === 'buyer_to_seller').map((review) => review.rating);
   const theirs = disputes.filter((dispute) => dispute.raisedBy === id || dispute.againstUserId === id);
-  const tally = { won: 0, lost: 0, even: 0, open: 0 };
+  const tally = { won: 0, lost: 0, even: 0, open: 0, none: 0 };
   for (const dispute of theirs) tally[outcomeFor(dispute, id)] += 1;
 
   return json(200, {

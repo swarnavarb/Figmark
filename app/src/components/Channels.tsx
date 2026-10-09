@@ -5,13 +5,15 @@ import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
-import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb } from './ui';
+import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
-import { DropCard, Lightbox, copyLink, withReaction } from './SocialPost';
+import { DropCard, Lightbox, Linked, copyLink, withReaction } from './SocialPost';
+import { figmarkLink, LinkCard } from './LinkCard';
 import { PersonVoice, useVoice } from './SocialVoice';
 import { RoomBar, useLongPress, useScrolledPast } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
+import { OpeningCard } from './Showcase';
 
 /**
  * Channels: one room per shop, where the shop announces and its customers
@@ -284,10 +286,11 @@ function Room() {
   const load = useCallback(async (quiet = false) => {
     if (!id) return;
     try {
-      const next = await api.channelThread(id, voice.storeId);
+      const next = await api.channelThread(id, voice.storeId, quiet);
       const arrived = next.posts.filter((card) => !known.current.has(card.post.id));
       const wasNear = nearBottom();
-      setData(next);
+      // A light refresh leaves the item list out; keep the one already here.
+      setData((current) => (quiet && current ? { ...next, shareable: current.shareable } : next));
       setFollowing(Boolean(next.channel.following));
       next.posts.forEach((card) => known.current.add(card.post.id));
       if (quiet && arrived.length > 0 && !wasNear) setFresh((count) => count + arrived.length);
@@ -590,6 +593,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
   const fromShop = !isForum && (post.voice ?? 'store') === 'store';
   const announced = !isForum && isAnnouncement(post) && fromShop;
   const photos = photosOf(card);
+  const linked = photos.length === 0 && !post.drop ? figmarkLink(post.body) : null;
 
   async function react(kind: ReactionKind) {
     const before = social.reactions;
@@ -605,6 +609,8 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
     }
   }
 
+  const { confirm, dialog } = useConfirm();
+
   async function pin() {
     try {
       const { pinned } = await api.pinPost(post.channelId, post.id);
@@ -618,7 +624,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
 
   async function remove() {
     setOpen(false);
-    if (!window.confirm('Delete this message?')) return;
+    if (!(await confirm({ title: 'Delete this message?', action: 'Delete', danger: true }))) return;
     try {
       await api.deletePost(post.channelId, post.id);
       onChange(() => null);
@@ -632,6 +638,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
   return (
     <div id={`msg-${post.id}`} ref={box}
       className={`cmsg cmsg--${side}${startsRun ? ' is-first' : ''}${announced ? ' cmsg--announce' : ''}${open ? ' is-open' : ''}`}>
+      {dialog}
       {!mine && (
         <span className="cmsg__avatar">{startsRun ? <Avatar name={post.authorName} size={32} /> : null}</span>
       )}
@@ -670,7 +677,12 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
               ))}
             </div>
           )}
-          {post.body && !(listing && post.drop) && <p className="cmsg__body">{post.body}</p>}
+          {(linked ? linked.rest : post.body) && !(listing && post.drop) && <p className="cmsg__body"><Linked text={linked ? linked.rest : post.body} /></p>}
+          {linked && <LinkCard path={linked.path} compact />}
+          {post.opening && (
+            <OpeningCard sellerId={post.opening.sellerId} saleId={post.opening.saleId}
+              startsAt={post.opening.startsAt} saleName={post.opening.saleName} itemCount={post.opening.itemCount} />
+          )}
           {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
           {listing && !post.drop && (
             <Link to={`/listing/${listing.id}`} className="cmsg__item">
@@ -851,7 +863,10 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
               <img src={photo.preview} alt={`Attached photo ${index + 1}`} />
               {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
-                onClick={() => setPhotos((all) => all.filter((entry) => entry.key !== photo.key))}>
+                onClick={() => {
+                  if (photo.url) void api.discardPhoto(photo.url);
+                  setPhotos((all) => all.filter((entry) => entry.key !== photo.key));
+                }}>
                 <Icon name="close" size={12} />
               </button>
             </div>

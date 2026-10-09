@@ -1,3 +1,4 @@
+import { lotNo } from '@shared/routes';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { LOT_CARD_LABELS } from '@shared/enums';
@@ -45,7 +46,7 @@ export function LotBoardPage() {
 
       <div className="lothead">
         <span className="lothead__name">{lot.name}</span>
-        {lot.lotNumber && <span className="lothead__no">LOT {lot.lotNumber}</span>}
+        {lot.lotNumber && <span className="lothead__no">LOT {lotNo(lot.lotNumber)}</span>}
         <span className="badge">{tally.customers} cust</span>
         <span className="badge">{tally.orders} orders</span>
         <span className="faint">{LOT_CARD_LABELS[lot.stage as keyof typeof LOT_CARD_LABELS]}</span>

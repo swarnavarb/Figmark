@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CARDS } from '@shared/quest';
 import type { CollectionItem } from '@shared/models';
 import {
   ApiRequestError, api,
-  type CollectionCandidate, type CollectionShelf, type CollectorPage, type PageReviews, type PostCard,
-  type PublicProfile, type RatingSummary, type ReviewsAbout,
+  type CollectionCandidate, type CollectionShelf, type CollectorPage, type PostCard, type PublicProfile,
 } from '../api';
 import { SkeletonText, useToast } from '../components/Feedback';
 import {
   CardFace, Glyph, LevelRing, ShowcaseModal, Sticker, XpBar,
 } from '../components/Quest';
-import { Lightbox, SocialPostCard } from '../components/SocialPost';
-import { Avatar, EmptyState, ErrorNotice, Modal, Thumb } from '../components/ui';
+import { SocialPostCard } from '../components/SocialPost';
+import { shrink } from '../components/PhotoManager';
+import { ManagerTag } from '../components/ManagerBadge';
+import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
-import { MessageButton } from './MessagesPage';
-import { ReviewsTab } from './ProfileByHandlePage';
+import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
 
 /**
  * A person's page, as a collector's.
@@ -39,18 +39,27 @@ export interface Person {
   lastSeenAt?: string | null;
 }
 
+export type ProfilePart = Pick<PublicProfile,
+  'sellerId' | 'isStore' | 'handle' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince' | 'rating' | 'followerCount'>;
+
 /* ── The header every person page shares ──────────────────────────────── */
 
 /**
- * Banner, level ring, name, stats, ratings and showcase.
+ * Banner, level ring, name, the buttons, bio, rating, stats and showcase.
  *
  * Used on anybody's page and on your own hub at /me, so the two always look
- * the same - the only difference is the button in the corner.
+ * the same - the only difference is the buttons under the name.
  */
-export function CollectorHeader({ person, action }: { person: Person; action: ReactNode }) {
+export function CollectorHeader({ person, actions, page, onReviews }: {
+  person: Person;
+  actions: ReactNode;
+  /** The public page: its one rating and follower count. Absent until loaded. */
+  page: ProfilePart | null;
+  onReviews: () => void;
+}) {
   const [collector, setCollector] = useState<CollectorPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [ratingOpen, setRatingOpen] = useState(false);
   const [showcase, setShowcase] = useState<'cards' | 'stickers' | null>(null);
 
   useEffect(() => {
@@ -81,21 +90,22 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
           </div>
           <div className="qprofile__who">
             <h1>{person.displayName}</h1>
+            <ManagerTag id={person.userId} />
+            {collector && <LevelChip tag={{ level: collector.level, title: collector.title }} />}
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
               {person.handle && <span className="faint">@{person.handle}</span>}
-              {collector && <span className="qtitle">{collector.title}</span>}
+
               {collector && collector.streak.current > 1 && (
                 <span className="qchip__streak"><Glyph name="flame" size={12} />{collector.streak.current}</span>
               )}
             </div>
-            {person.memberSince && (
-              <p className="faint" style={{ margin: 0 }}>
-                here since {formatDate(person.memberSince)}
-                {person.lastSeenAt && ` · seen ${timeAgo(person.lastSeenAt)}`}
-              </p>
-            )}
+            <p className="faint" style={{ margin: 0 }}>
+              {page && <FollowCounts userId={page.sellerId} followerCount={page.followerCount} isStore={false} />}
+              {page && person.memberSince && ' · '}
+              {person.memberSince && `here since ${formatDate(person.memberSince)}`}
+              {person.lastSeenAt && ` · seen ${timeAgo(person.lastSeenAt)}`}
+            </p>
           </div>
-          <div className="storefront__act">{action}</div>
         </header>
 
         {collector && (
@@ -107,6 +117,7 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
         {collector && collector.penalty > 0 && (
           <p className="qprofile__penalty">−{collector.penalty} XP from low ratings and lost disputes</p>
         )}
+        {actions}
 
         {person.tags && person.tags.length > 0 && (
           <div className="chips chips--tight">
@@ -114,35 +125,16 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
           </div>
         )}
 
-        {person.bio && (
-          <p className={`storefront__bio${expanded ? ' is-open' : ''}`}>
-            {person.bio}
-            {person.bio.length > 120 && (
-              <button type="button" className="storefront__more" onClick={() => setExpanded(!expanded)}>
-                {expanded ? 'Less' : 'More'}
-              </button>
-            )}
-          </p>
-        )}
+        {person.bio && <Bio text={person.bio} />}
 
         {error && <ErrorNotice message={error} />}
 
-        {!stats || !collector ? (
+        {page && <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} />}
+
+        {!collector ? (
           <SkeletonText lines={3} />
         ) : (
           <>
-            <div className="qstats">
-              <Stat label="Orders completed" value={String(stats.completed)} sub={`of ${stats.orders} placed`} />
-              <Stat label="Disputes won" tone="ok" value={String(stats.disputesWon)}
-                sub={stats.disputesOpen ? `${stats.disputesOpen} open` : stats.disputesSettled ? `${stats.disputesSettled} settled` : 'none open'} />
-              <Stat label="Disputes lost" tone={stats.disputesLost ? 'hot' : undefined} value={String(stats.disputesLost)} sub="as decided" />
-              <Stat label="Reviews written" value={String(stats.reviewsWritten)} sub="after orders" />
-              <Stat label="Pre-orders" value={String(stats.preOrders)} sub="joined" />
-              <Stat label="Following" value={String(stats.following)} sub="shops" />
-            </div>
-
-            <RatingsPanel ratings={collector.ratings} />
-
             <button type="button" className="qshowcase" onClick={() => setShowcase('cards')}
               aria-label="Open the showcase: every card and sticker">
               <span className="qpanel__head">
@@ -170,6 +162,20 @@ export function CollectorHeader({ person, action }: { person: Person; action: Re
         )}
       </div>
 
+      {ratingOpen && page && (
+        <RatingSheet profile={page} rating={page.rating} onClose={() => setRatingOpen(false)} onReviews={onReviews}
+          record={stats ? (
+            <div className="qstats rsheet__qstats">
+                <Stat label="Orders completed" value={String(stats.completed)} sub={`of ${stats.orders} placed`} />
+                <Stat label="Disputes won" tone="ok" value={String(stats.disputesWon)}
+                  sub={stats.disputesOpen ? `${stats.disputesOpen} open` : stats.disputesSettled ? `${stats.disputesSettled} settled` : 'none open'} />
+                <Stat label="Disputes lost" tone={stats.disputesLost ? 'hot' : undefined} value={String(stats.disputesLost)} sub="as decided" />
+                <Stat label="Reviews written" value={String(stats.reviewsWritten)} sub="after orders" />
+                <Stat label="Pre-orders" value={String(stats.preOrders)} sub="joined" />
+                <Stat label="Following" value={String(stats.following)} sub="shops" />
+            </div>
+          ) : <SkeletonText lines={2} />} />
+      )}
       {showcase && collector && (
         <ShowcaseModal cards={collector.cards} stickers={collector.stickers} whose="theirs" start={showcase}
           onClose={() => setShowcase(null)} />
@@ -188,57 +194,6 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub: 
   );
 }
 
-/* ── Ratings ───────────────────────────────────────────────────────────── */
-
-/**
- * The three kinds of rating, side by side and never added together.
- *
- * From sellers is the one that matters most for a buyer, so it leads with its
- * star breakdown; from buyers only appears for somebody who sells; page notes
- * are anybody's opinion and say so.
- */
-export function RatingsPanel({ ratings }: { ratings: CollectorPage['ratings'] }) {
-  return (
-    <section className="qratings" aria-label="Ratings">
-      <RatingBlock title="As a buyer" sub="from sellers, after completed orders" summary={ratings.buyer} lead />
-      {ratings.seller.count > 0 && <RatingBlock title="As a seller" sub="from buyers, after completed orders" summary={ratings.seller} />}
-      <RatingBlock title="Page reviews" sub="anyone can leave one; counted apart" summary={ratings.page} />
-    </section>
-  );
-}
-
-function RatingBlock({ title, sub, summary, lead = false }: { title: string; sub: string; summary: RatingSummary; lead?: boolean }) {
-  const most = Math.max(1, ...summary.stars);
-  const average = summary.average === null ? null : summary.average / 20;
-  return (
-    <div className={`qrating${lead ? ' qrating--lead' : ''}`}>
-      <div className="qrating__head">
-        <span className="qrating__score">{average === null ? '—' : average.toFixed(1)}</span>
-        <span className="qrating__stars" aria-label={average === null ? 'Unrated' : `${average.toFixed(1)} out of 5`}>
-          {[1, 2, 3, 4, 5].map((value) => (
-            <span key={value} className={average !== null && value <= Math.round(average) ? 'is-on' : ''}>★</span>
-          ))}
-        </span>
-        <span className="qrating__title">
-          <b>{title}</b>
-          <small className="faint">{summary.count ? `${summary.count} ${summary.count === 1 ? 'rating' : 'ratings'} · ` : 'No ratings yet · '}{sub}</small>
-        </span>
-      </div>
-      {lead && summary.count > 0 && (
-        <div className="qrating__bars">
-          {summary.stars.map((count, index) => (
-            <span key={index} className="qrating__bar">
-              <small>{5 - index}★</small>
-              <span className="qrating__track"><span style={{ width: `${(count / most) * 100}%` }} className={index >= 3 ? 'is-low' : ''} /></span>
-              <small>{count}</small>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ── The collection of delivered purchases ────────────────────────────── */
 
 /**
@@ -253,7 +208,7 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
   const [shelf, setShelf] = useState<CollectionShelf | null>(null);
   const [candidates, setCandidates] = useState<CollectionCandidate[]>([]);
   const [filter, setFilter] = useState<string>('all');
-  const [viewing, setViewing] = useState<CollectionItem | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const [newShelf, setNewShelf] = useState('');
   const [managing, setManaging] = useState(false);
 
@@ -288,27 +243,33 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
   }
 
   async function add(candidate: CollectionCandidate) {
-    const ok = await run(() => api.collectionAdd(candidate.orderId, undefined, filter !== 'all' && filter !== 'none' ? filter : null), 'Added to your collection · +10 XP');
+    const ok = await run(() => api.collectionAdd(candidate.orderId, filter !== 'all' && filter !== 'none' ? filter : null), 'Added to your collection · +20 XP');
     if (ok) setCandidates((list) => list.filter((entry) => entry.orderId !== candidate.orderId));
   }
 
   async function remove(item: CollectionItem) {
+    setViewing(null);
     const ok = await run(() => api.collectionRemove(item.orderId), 'Taken off your page');
     if (ok) void load();
   }
 
   if (!shelf) return <SkeletonText lines={3} />;
 
-  const shown = shelf.items.filter((item) =>
-    filter === 'all' ? true : filter === 'none' ? item.groupId === null : item.groupId === filter,
-  );
-  const hasUnsorted = shelf.items.some((item) => item.groupId === null);
+  const unsorted = shelf.items.filter((item) => item.groupId === null);
+  // "All" reads shelf by shelf, each under its own name, with the unsorted last.
+  const sections = filter === 'all'
+    ? [
+      ...shelf.groups.map((group) => ({ id: group.id, name: group.name, items: shelf.items.filter((item) => item.groupId === group.id) })),
+      { id: 'none', name: shelf.groups.length ? 'Unsorted' : '', items: unsorted },
+    ].filter((section) => section.items.length > 0)
+    : [{ id: filter, name: '', items: filter === 'none' ? unsorted : shelf.items.filter((item) => item.groupId === filter) }];
+  const open = shelf.items.find((item) => item.orderId === viewing) ?? null;
 
   return (
     <div className="stack qcollection">
       <p className="faint" style={{ margin: 0 }}>
         {isMe
-          ? 'Things delivered to you, as cards. Add one when it arrives, give it a name, and sort your cards onto shelves.'
+          ? 'Things delivered to you, as cards. Add one when it arrives, then open it to put it on a shelf or pick its photo.'
           : 'Things delivered to them through Figmark, as cards.'}
       </p>
 
@@ -341,9 +302,9 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
               {group.name} {shelf.items.filter((item) => item.groupId === group.id).length}
             </button>
           ))}
-          {shelf.groups.length > 0 && hasUnsorted && (
+          {shelf.groups.length > 0 && unsorted.length > 0 && (
             <button type="button" className={`chip${filter === 'none' ? ' is-on' : ''}`} onClick={() => setFilter('none')}>
-              Unsorted
+              Unsorted {unsorted.length}
             </button>
           )}
           {isMe && (
@@ -352,36 +313,31 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
         </div>
       )}
 
-      {shown.length === 0 ? (
+      {sections.length === 0 || sections.every((section) => section.items.length === 0) ? (
         <EmptyState title={shelf.items.length === 0 ? 'No collection yet' : 'Nothing on this shelf'}>
           {shelf.items.length === 0
             ? (isMe ? 'When an order is delivered it shows up above, ready to add.' : 'Nothing added yet.')
-            : 'Move cards here from the menu under each one.'}
+            : 'Open a card to move it here.'}
         </EmptyState>
-      ) : (
-        <div className="qitems">
-          {shown.map((item) => (
-            <ItemCard key={item.orderId} item={item} isMe={isMe} groups={shelf.groups}
-              onOpen={() => setViewing(item)}
-              onRename={(name) => run(() => api.collectionEdit(item.orderId, { name }))}
-              onMove={(groupId) => run(() => api.collectionEdit(item.orderId, { groupId }), 'Moved')}
-              onRemove={() => void remove(item)} />
-          ))}
-        </div>
-      )}
-
-      {viewing && (viewing.photos.length > 0 ? (
-        <Lightbox photos={viewing.photos} start={0} onClose={() => setViewing(null)}
-          title={viewing.name} caption={`Delivered ${formatDate(viewing.deliveredAt)} · added ${formatDate(viewing.addedAt)}`} />
-      ) : (
-        <Modal title={viewing.name} onClose={() => setViewing(null)}>
-          <div className="qsheet">
-            <Thumb seed={viewing.listingId} label={viewing.name} className="thumb qitem__big" />
-            <p className="faint">Delivered {formatDate(viewing.deliveredAt)} · added to collection {formatDate(viewing.addedAt)}</p>
-            <p className="faint" style={{ margin: 0 }}>This item had no photos when it was added.</p>
+      ) : sections.map((section) => (
+        <section key={section.id} className="qshelf">
+          {section.name && <h3 className="shelfhead"><span>{section.name}</span></h3>}
+          <div className="qitems">
+            {section.items.map((item, i) => (
+              <button key={item.orderId} type="button" className="qitem" style={{ ['--i' as string]: i }}
+                onClick={() => setViewing(item.orderId)} aria-label={`Open ${item.name}`}>
+                <RoyalCard item={item} />
+              </button>
+            ))}
           </div>
-        </Modal>
+        </section>
       ))}
+
+      {open && (
+        <CardViewer item={open} isMe={isMe} groups={shelf.groups} onClose={() => setViewing(null)}
+          onEdit={(changes, done) => run(() => api.collectionEdit(open.orderId, changes), done)}
+          onRemove={() => void remove(open)} />
+      )}
 
       {managing && (
         <Modal title="Shelves" onClose={() => setManaging(false)}>
@@ -411,70 +367,124 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
   );
 }
 
+/** One royal card: the item in a gilded frame, its name engraved on a crested back. */
+function RoyalCard({ item, photo = item.photos[0], flipped = false, big = false }: {
+  item: CollectionItem;
+  photo?: string;
+  flipped?: boolean;
+  big?: boolean;
+}) {
+  return (
+    <span className={`royal${flipped ? ' is-flipped' : ''}${big ? ' royal--big' : ''}`}>
+      <span className="royal__card">
+        <span className="royal__face royal__front">
+          <span className="royal__frame">
+            <Thumb seed={item.listingId} label={item.name} photo={photo ? { url: photo } : null} className="thumb royal__thumb" />
+          </span>
+          <span className="royal__plate">{item.name}</span>
+        </span>
+        <span className="royal__face royal__back">
+          <span className="royal__crest" aria-hidden="true">♛</span>
+          <span className="royal__name">{item.name}</span>
+          <span className="royal__date">Delivered {formatDate(item.deliveredAt)}</span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
 /**
- * One card: the item's picture, and its name underneath.
- *
- * The owner types straight into the name. The field never grows - a long
- * name is cut with an ellipsis once you leave it - so every card in the grid
- * stays the same size.
+ * A card opened: the same card, larger, on a turntable. Arrows walk its photos.
+ * The owner can shelve it, choose the photo it leads with, and hide the rest.
  */
-function ItemCard({ item, isMe, groups, onOpen, onRename, onMove, onRemove }: {
+function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
   item: CollectionItem;
   isMe: boolean;
   groups: CollectionShelf['groups'];
-  onOpen: () => void;
-  onRename: (name: string) => Promise<boolean>;
-  onMove: (groupId: string | null) => Promise<boolean>;
+  onClose: () => void;
+  onEdit: (changes: { groupId?: string | null; cover?: string; hidden?: string[]; own?: string }, done?: string) => Promise<boolean>;
   onRemove: () => void;
 }) {
-  const [name, setName] = useState(item.name);
-  const [menu, setMenu] = useState(false);
-  useEffect(() => setName(item.name), [item.name]);
+  const toast = useToast();
+  const [index, setIndex] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const photos = item.photos;
+  const photo = photos[Math.min(index, photos.length - 1)];
+  const hidden = item.hiddenPhotos ?? [];
+  const isHidden = photo !== undefined && hidden.includes(photo);
+  const step = (by: number) => { setFlipped(false); setIndex((at) => (at + by + photos.length) % photos.length); };
 
-  async function commit() {
-    const next = name.trim();
-    if (!next) {
-      setName(item.name);
-      return;
+  async function upload(file: File) {
+    setUploading(true);
+    try {
+      const stored = await api.uploadPhoto(await shrink(file));
+      if (await onEdit({ own: stored.url }, 'Your photo is the cover now')) setIndex(0);
+    } catch (err) {
+      toast(err instanceof ApiRequestError ? err.message : 'That photo did not upload.', 'error');
+    } finally {
+      setUploading(false);
     }
-    if (next !== item.name && !(await onRename(next))) setName(item.name);
   }
 
   return (
-    <div className="qitem">
-      <button type="button" className="qitem__open" onClick={onOpen} aria-label={`Open photos of ${item.name}`}>
-        <Thumb seed={item.listingId} label={item.name} photo={item.photos[0] ? { url: item.photos[0] } : null} className="thumb qitem__thumb">
-          {item.photos.length > 1 && <span className="qitem__count">{item.photos.length}</span>}
-        </Thumb>
-      </button>
-      {isMe ? (
-        <input className="qitem__name" value={name} maxLength={60} aria-label="Card name"
-          onChange={(event) => setName(event.target.value)}
-          onBlur={() => void commit()}
-          onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); }} />
-      ) : (
-        <span className="qitem__label" title={item.name}>{item.name}</span>
-      )}
-      {isMe && (
-        <div className="qitem__tools">
-          <button type="button" className="qitem__more" aria-label="Card options" aria-expanded={menu} onClick={() => setMenu(!menu)}>⋯</button>
-          {menu && (
-            <div className="qitem__menu" role="menu">
-              <label className="qitem__menurow">
-                <span>Shelf</span>
-                <select value={item.groupId ?? ''} onChange={(event) => { setMenu(false); void onMove(event.target.value || null); }}>
-                  <option value="">Unsorted</option>
-                  {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-                </select>
-              </label>
-              <button type="button" className="qitem__menurow qitem__remove" onClick={() => { setMenu(false); onRemove(); }}>
-                Take off my page
-              </button>
-            </div>
+    <Modal title={item.name} onClose={onClose}>
+      <div className="qviewer">
+        <div className="qviewer__stage">
+          {photos.length > 1 && (
+            <button type="button" className="qviewer__arrow" aria-label="Previous photo" onClick={() => step(-1)}>‹</button>
+          )}
+          {/* A tap turns it over, front to back and back again. */}
+          <button type="button" className="qviewer__card" onClick={() => setFlipped(!flipped)}
+            aria-label={flipped ? 'Show the front' : 'Turn it over'} aria-pressed={flipped}>
+            <RoyalCard item={item} photo={photo} flipped={flipped} big />
+          </button>
+          {photos.length > 1 && (
+            <button type="button" className="qviewer__arrow" aria-label="Next photo" onClick={() => step(1)}>›</button>
           )}
         </div>
-      )}
-    </div>
+        {photos.length > 1 && (
+          <div className="qviewer__dots" aria-hidden="true">
+            {photos.map((url, i) => <i key={url} className={`${i === index ? 'is-on' : ''}${hidden.includes(url) ? ' is-hidden' : ''}`} />)}
+          </div>
+        )}
+        <p className="faint" style={{ margin: 0 }}>
+          Tap the card to turn it over · delivered {formatDate(item.deliveredAt)}
+          {isHidden && ' · this photo is hidden from others'}
+        </p>
+
+        {isMe && (
+          <div className="qviewer__tools">
+            <input ref={fileInput} type="file" accept="image/*" hidden
+              onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void upload(file); }} />
+            <button type="button" className="btn btn--sm qbtn-gold" disabled={uploading} onClick={() => fileInput.current?.click()}>
+              {uploading ? 'Uploading…' : item.ownPhoto ? 'Change your cover photo' : 'Add your own cover photo'}
+            </button>
+            <label className="field">
+              <span>Shelf</span>
+              <select value={item.groupId ?? ''} onChange={(event) => void onEdit({ groupId: event.target.value || null }, 'Moved')}>
+                <option value="">Unsorted</option>
+                {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+              </select>
+            </label>
+            {photo && index > 0 && (
+              <div className="row">
+                <button type="button" className="btn btn--sm btn--quiet"
+                  onClick={() => void onEdit({ cover: photo, hidden: hidden.filter((url) => url !== photo) }, 'Now the cover photo').then((ok) => ok && setIndex(0))}>
+                  Make this the cover
+                </button>
+                <button type="button" className="btn btn--sm btn--quiet"
+                  onClick={() => void onEdit({ hidden: isHidden ? hidden.filter((url) => url !== photo) : [...hidden, photo] }, isHidden ? 'Shown to others' : 'Hidden from others')}>
+                  {isHidden ? 'Show to others' : 'Hide from others'}
+                </button>
+              </div>
+            )}
+            <button type="button" className="btn btn--sm btn--quiet qitem__remove" onClick={onRemove}>Take off my page</button>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -493,22 +503,21 @@ function ShelfRow({ name, onRename, onDelete }: { name: string; onRename: (name:
 
 type Tab = 'feed' | 'reviews' | 'collection';
 
-export function CollectorProfile({ profile, trade, listed, page, isMe, canWrite, onWritten }: {
+export function CollectorProfile({ profile, isMe, onFollow, reload }: {
   profile: PublicProfile;
-  trade: ReviewsAbout | null;
-  listed: ReviewsAbout['reviews'];
-  page: PageReviews | null;
   isMe: boolean;
-  canWrite: boolean;
-  onWritten: () => void;
+  onFollow: (following: boolean, followers?: number) => void;
+  reload: () => void;
 }) {
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [tab, setTab] = useState<Tab>('collection');
 
+  // Posts are read when the tab is first opened: most visits are not for them.
+  useEffect(() => setPosts(null), [profile.sellerId]);
   useEffect(() => {
-    setPosts(null);
+    if (tab !== 'feed' || posts !== null) return;
     void api.personPosts(profile.sellerId).then((result) => setPosts(result.posts)).catch(() => setPosts([]));
-  }, [profile.sellerId]);
+  }, [tab, posts, profile.sellerId]);
 
   const person: Person = {
     userId: profile.sellerId,
@@ -524,9 +533,9 @@ export function CollectorProfile({ profile, trade, listed, page, isMe, canWrite,
 
   return (
     <main className="storefront qprofile">
-      <CollectorHeader person={person} action={isMe
-        ? <Link to="/me?tab=settings" className="btn btn--ghost btn--sm">Edit</Link>
-        : <MessageButton handle={profile.handle} />} />
+      <CollectorHeader person={person} page={profile} onReviews={() => setTab('reviews')}
+        actions={<PageActions profile={profile} isMe={isMe} onFollow={onFollow}
+          edit={<Link to="/me?tab=settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
 
       <div className="storefront__body">
         <div className="tabs" style={{ marginTop: 16 }}>
@@ -537,7 +546,7 @@ export function CollectorProfile({ profile, trade, listed, page, isMe, canWrite,
             Feed {posts ? posts.length : ''}
           </button>
           <button type="button" className={`tab${tab === 'reviews' ? ' is-on' : ''}`} onClick={() => setTab('reviews')}>
-            Reviews {(trade?.count ?? 0) + (page?.count ?? 0)}
+            Reviews {profile.rating.count}
           </button>
         </div>
 
@@ -561,7 +570,7 @@ export function CollectorProfile({ profile, trade, listed, page, isMe, canWrite,
             </div>
           )
         ) : (
-          <ReviewsTab profile={profile} trade={trade} listed={listed} page={page} canWrite={canWrite} onWritten={onWritten} />
+          <ReviewsTab profile={profile} canWrite={!isMe} onWritten={reload} />
         )}
       </div>
     </main>

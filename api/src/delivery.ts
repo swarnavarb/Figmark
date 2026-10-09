@@ -1,9 +1,10 @@
 import { inLot } from '../../shared/fulfilment.js';
 import type { Order, StageEvent } from '../../shared/models.js';
-import { autoReleaseDue, daysFrom, isStopped } from '../../shared/orders.js';
+import { autoReleaseDue, awaitingAcceptance, daysFrom, isStopped } from '../../shared/orders.js';
 import { coarseStage, lotEndIndex, routeOf } from '../../shared/routes.js';
 import type { getRepository } from './data/index.js';
-import { notify } from './functions/notify.js';
+import { possessive } from '../../shared/notifications.js';
+import { capital, notify, orderNames } from './functions/notify.js';
 
 /**
  * The one way an item reaches its buyer, and the one way its money is let go.
@@ -50,6 +51,8 @@ export interface DeliverOptions {
  */
 export function deliver(order: Order, options: DeliverOptions): boolean {
   if (isStopped(order.status)) return false;
+  // Backstop for every way in: a booking nobody accepted is not delivered.
+  if (awaitingAcceptance(order)) return false;
   const now = options.now ?? new Date().toISOString();
   order.status = 'delivered';
   order.stage = 'delivered';
@@ -58,8 +61,8 @@ export function deliver(order: Order, options: DeliverOptions): boolean {
   // Held money waits for the buyer, or for the window. If nothing opened the
   // window (the item was never ticked dispatched), delivery opens it, so the
   // payment can never sit held forever with nobody left to press anything.
-  if (order.escrow.state === 'held' && !order.escrow.autoReleaseAt) {
-    order.escrow = { ...order.escrow, autoReleaseAt: daysFrom(options.releaseDays, new Date(now)) };
+  if (order.hold.state === 'held' && !order.hold.autoReleaseAt) {
+    order.hold = { ...order.hold, autoReleaseAt: daysFrom(options.releaseDays, new Date(now)) };
   }
   order.updatedAt = now;
   if (options.note) appendEvent(order, { note: options.note, by: options.by, now, step: options.step });
@@ -88,8 +91,8 @@ export function undeliver(order: Order, options: { now?: string }): 'ok' | 'lock
  * money held for it has been released. The same lock for direct and protected
  * orders - after either, the seller cannot take the delivery back.
  */
-export function isDeliveryLocked(order: Pick<Order, 'receivedAt' | 'escrow'>): boolean {
-  return Boolean(order.receivedAt) || order.escrow.state === 'released';
+export function isDeliveryLocked(order: Pick<Order, 'receivedAt' | 'hold'>): boolean {
+  return Boolean(order.receivedAt) || order.hold.state === 'released';
 }
 
 /** Why a locked delivery cannot be undone, in words for the seller. */
@@ -110,17 +113,18 @@ export function lockedReason(order: Pick<Order, 'receivedAt'>): string {
  */
 export async function confirmReceived(order: Order, by: string, repository: Repo): Promise<Order> {
   order.receivedAt = new Date().toISOString();
-  if (order.escrow.state === 'held') {
+  if (order.hold.state === 'held') {
     return releaseHeld(order, 'Delivery confirmed by the buyer.', by, repository);
   }
   const saved = await releaseHeld(order, 'The buyer confirmed they received it.', by, repository);
+  const named = await orderNames(repository, order);
   await notify(
     repository,
     [order.sellerId],
     {
       kind: 'order_received',
-      title: `Received: ${order.itemName}`,
-      body: 'The buyer confirmed it reached them.',
+      title: `${named.buyer} received their order from ${named.forShop}`,
+      body: order.itemName,
       link: `/order/${encodeURIComponent(order.id)}`,
     },
     { except: by },
@@ -168,20 +172,21 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
   let saved = order;
   // Only an order with no money in play is finished by arriving. Held money
   // counts when released; disputed money counts when the dispute settles.
-  if (order.escrow.state === 'none' && !order.trustCountedAt) {
+  if (order.hold.state === 'none' && !order.trustCountedAt) {
     await countCompleted(order, repository);
     saved = await repository.updateOrder(order);
   }
-  const held = order.escrow.state === 'held';
+  const held = order.hold.state === 'held';
+  const named = await orderNames(repository, order);
   await notify(
     repository,
     [order.buyerId],
     {
       kind: 'order_delivered',
-      title: `Delivered: ${order.itemName}`,
+      title: `Your order from ${named.shop} was delivered`,
       body: held
-        ? 'Tap "Yes, it arrived" on the order once it is in your hands - that releases the payment - or open a dispute if something is wrong. You can add it to your collection now.'
-        : 'Tap "I received it" on the order once it is in your hands. You can add it to your collection and leave a review now.',
+        ? `${order.itemName}. Tap "Yes, it arrived" once it is in your hands to release the payment, or open a dispute if something is wrong.`
+        : `${order.itemName}. Tap "I received it" once it is in your hands, then leave a review.`,
       link: `/order/${encodeURIComponent(order.id)}`,
     },
     { except: by },
@@ -199,8 +204,8 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
  */
 export async function releaseHeld(order: Order, reason: string, by: string, repository: Repo): Promise<Order> {
   const now = new Date().toISOString();
-  const wasHeld = order.escrow.state === 'held';
-  if (wasHeld) order.escrow = { ...order.escrow, state: 'released', releasedAt: now };
+  const wasHeld = order.hold.state === 'held';
+  if (wasHeld) order.hold = { ...order.hold, state: 'released', releasedAt: now };
   const newlyDelivered = order.status !== 'delivered' && deliver(order, { by, now, releaseDays: 0 });
   order.updatedAt = now;
   appendEvent(order, { note: reason, by, now });
@@ -211,13 +216,14 @@ export async function releaseHeld(order: Order, reason: string, by: string, repo
     saved = (await repository.getOrder(saved.id)) ?? saved;
   }
   if (wasHeld) {
+    const named = await orderNames(repository, order);
     await notify(
       repository,
       [order.sellerId],
       {
         kind: 'payment_released',
-        title: `Payment released: ${order.itemName}`,
-        body: reason,
+        title: `${capital(possessive(named.buyer))} payment released to ${named.forShop}`,
+        body: `${order.itemName} · ${reason}`,
         link: `/order/${encodeURIComponent(order.id)}`,
       },
       { except: by },
@@ -231,7 +237,7 @@ export async function releaseHeld(order: Order, reason: string, by: string, repo
  *
  * Called on reads, because a deadline that only exists inside a scheduled job
  * stops working the moment the job does - and there is no job here. A dispute
- * moves the escrow to `disputed`, which `autoReleaseDue` does not release, so
+ * moves the held payment to `disputed`, which `autoReleaseDue` does not release, so
  * "released unless the buyer disputed" is the rule without saying it twice.
  */
 export async function settleDue(order: Order, repository: Repo): Promise<Order> {

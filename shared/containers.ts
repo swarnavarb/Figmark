@@ -264,6 +264,11 @@ export const CONTAINER_LIST: ContainerDefinition[] = Object.values(CONTAINERS);
 
 /** Blob container holding listing and condition photos. */
 export const PHOTO_CONTAINER_NAME = 'listing-photos';
+/**
+ * Blob container holding photos sent in chats. Never publicly readable: the API
+ * streams a photo only to the two handles in the thread it was sent in.
+ */
+export const CHAT_PHOTO_CONTAINER_NAME = 'chat-photos';
 /** Blob container holding dispute evidence. Never publicly readable. */
 export const EVIDENCE_CONTAINER_NAME = 'dispute-evidence';
 

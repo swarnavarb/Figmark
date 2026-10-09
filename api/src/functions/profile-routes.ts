@@ -3,11 +3,19 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { Order, Review, StoreReview, User } from '../../../shared/models.js';
 import { reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import { personRef } from '../../../shared/parties.js';
+import { actorName, gistOf, stars, toWhom, whose } from '../../../shared/notifications.js';
+import { notify } from './notify.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { confirmDetailsOn } from './order-routes.js';
+import { reviewSide } from '../../../shared/storefront.js';
+
+/** The page a page-review request is about: `?side=store` or the person's own. */
+function sideOf(request: HttpRequest): 'store' | 'person' {
+  return request.query?.get('side') === 'store' ? 'store' : 'person';
+}
 
 /**
  * A page about somebody, and what other people have said about them.
@@ -96,8 +104,10 @@ async function credit(request: HttpRequest, _context: InvocationContext) {
 
   // A page review an operator took down after a dispute no longer counts.
   const moderated = await moderation(repository);
+  const side = sideOf(request);
   const opinions = storeReviews
     .filter((entry) => !moderated.isRemoved('store_review', entry.id))
+    .filter((entry) => reviewSide(entry, Boolean(user.sellerProfile)) === side)
     .map((entry) => entry.rating);
 
   return json(200, {
@@ -128,9 +138,13 @@ async function pageReviews(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
   if (!id) return error(400, 'invalid_request', 'A user id is required.');
 
-  const moderated = await moderation(repository);
-  const reviews = (await repository.listStoreReviews(id))
-    .filter((entry) => !moderated.isRemoved('store_review', entry.id));
+  const side = sideOf(request);
+  const [moderated, all, subject] = await Promise.all([
+    moderation(repository), repository.listStoreReviews(id), repository.getUserById(id),
+  ]);
+  const reviews = all
+    .filter((entry) => !moderated.isRemoved('store_review', entry.id))
+    .filter((entry) => reviewSide(entry, Boolean(subject?.sellerProfile)) === side);
   const auth = await getAuthService();
   const viewer = await auth.getCurrentUser(request);
 
@@ -172,7 +186,7 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
   const subject = await repository.getUserById(id);
   if (!subject) return error(404, 'not_found', 'No such account.');
 
-  let body: { rating?: number; body?: string };
+  let body: { rating?: number; body?: string; side?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -189,7 +203,10 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
   }
 
   const author = await repository.getUserById(user.id);
-  const existing = (await repository.listStoreReviews(id)).find((entry) => entry.authorId === user.id);
+  // One per person per page: the shop and the person behind it are rated apart.
+  const side = body.side === 'store' && subject.sellerProfile ? 'store' : 'person';
+  const existing = (await repository.listStoreReviews(id))
+    .find((entry) => entry.authorId === user.id && reviewSide(entry, Boolean(subject.sellerProfile)) === side);
   const now = new Date().toISOString();
 
   const review: StoreReview = {
@@ -200,11 +217,28 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
     authorHandle: author?.username ?? null,
     rating,
     body: text.slice(0, 600),
+    side,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
 
-  return json(existing ? 200 : 201, { review: await repository.saveStoreReview(review) });
+  const saved = await repository.saveStoreReview(review);
+
+  // News to the page it was left on - said as which page, since one account
+  // can have both, and with the stars, since that is what they will ask first.
+  const who = actorName(review.authorName, review.authorHandle);
+  const store = side === 'store' ? subject.sellerProfile!.storefrontName : null;
+  const handle = side === 'store' ? subject.sellerProfile!.username : subject.username;
+  await notify(repository, [subject.id], {
+    kind: 'review_received',
+    title: existing
+      ? `${who} updated ${whose(store)} review to ${stars(rating)}`
+      : `${who} reviewed ${toWhom(store)} ${stars(rating)}`,
+    body: gistOf(review.body),
+    link: handle ? `/${encodeURIComponent(handle)}` : '/me',
+  }, { except: user.id });
+
+  return json(existing ? 200 : 201, { review: saved });
 }
 
 /**

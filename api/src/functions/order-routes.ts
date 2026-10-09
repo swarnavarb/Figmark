@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
-import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
 import { threadIdFor } from '../../../shared/handles.js';
 import type {
-  CreditRecord, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
+  CreditRecord, Dispute, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
 } from '../../../shared/models.js';
 import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
+import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
   REVIEW_REVEAL_DAYS,
@@ -21,15 +21,20 @@ import {
   scoreFrom,
   sideOf,
 } from '../../../shared/orders.js';
-import { DISPUTE_TOPIC_LABELS } from '../../../shared/disputes.js';
+import { DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, currentRound } from '../../../shared/disputes.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
-import { autoReleaseDays } from '../settings.js';
-import { notify } from './notify.js';
+import { autoReleaseDays, marketSettings } from '../settings.js';
+import { availableManagers, bringUpToDate, chargeFee, managerName, pickManager } from '../community.js';
+import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
+import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
-import { heldCreditMinor, placeOrder } from './placement.js';
+import { adjustHeldCredit, heldCreditMinor, placeOrder, returnKeptCredit } from './placement.js';
 import { error, handler, json } from './http.js';
+import { ownPhotos } from '../storage/index.js';
+import { claimPhotos } from '../storage/release.js';
+import { tooFast } from '../rate-limit.js';
 
 /**
  * What happens to an order after it is placed.
@@ -108,7 +113,7 @@ function statusFromMoney(order: Order): void {
 
 /** How much the chosen plan asks for now, or the refusal. */
 function planAmount(order: Order, plan: unknown): { plan: 'full' | 'advance'; amountMinor: number } | null {
-  const totalMinor = order.unitPriceMinor * order.quantity;
+  const totalMinor = orderTotalMinor(order);
   if (plan !== 'advance') return { plan: 'full', amountMinor: totalMinor };
   if (!order.advancePercent) return null;
   return { plan: 'advance', amountMinor: advanceMinor(totalMinor, order.advancePercent) };
@@ -134,15 +139,13 @@ const settle = (order: Order, repository: Repo): Promise<Order> => settleDue(ord
 /**
  * POST /api/orders/{id}/pay - the buyer pays, with or without protection.
  *
- * Protection is what creates the escrow. Bought, the money is held and the
- * company will settle a dispute over it; declined, it goes to the seller and
- * the buyer is on their own with them. That is a real choice with a real cost
- * either way, so the checkout states both halves rather than defaulting the
- * buyer into one quietly.
- *
- * It is only on the table where the company has granted the seller it, which is
- * the point of the grant: the marketplace is agreeing to arbitrate for that
- * seller, and it does not agree to that for everyone.
+ * Protection is what makes Figmark hold the money. Bought, Figmark holds the
+ * payment and the system assigns a community manager to the purchase: they
+ * hear any dispute over it, release the money once the result is agreed, and
+ * are paid a share of the fee. Declined, the money goes to the seller and the
+ * buyer is on their own with them. That is a real choice
+ * with a real cost either way, so the checkout states both halves rather than
+ * defaulting the buyer into one quietly.
  */
 async function pay(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -153,7 +156,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
-  let body: { protection?: boolean; escrowAgentId?: string; plan?: 'full' | 'advance' };
+  let body: { protection?: boolean; plan?: 'full' | 'advance' };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -166,22 +169,12 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'not_payable', 'This order is not waiting for payment.');
   }
 
-  // Protection means an escrow holds the money, so it needs a named one. The
-  // buyer chooses; there is no house default, because "whoever the platform
-  // picked" is not a party either side agreed to trust.
-  let agent = null;
-  if (body.protection) {
-    if (!body.escrowAgentId) {
-      return error(400, 'no_escrow', 'Choose an escrow to hold the payment.');
-    }
-    agent = await repository.getUserById(body.escrowAgentId);
-    if (!agent?.escrowRights) {
-      return error(409, 'protection_unavailable', 'That escrow is not approved to hold payments.');
-    }
-    // Neither end of a trade can be the neutral party in it.
-    if (agent.id === order.buyerId || agent.id === order.sellerId) {
-      return error(400, 'invalid_escrow', 'An escrow cannot be the buyer or the seller.');
-    }
+  const protect = body.protection === true;
+  // Whoever is available, carrying the fewest cases - never either end of
+  // the trade, who cannot be neutral in it.
+  const manager = protect ? await pickManager(repository, [order.buyerId, order.sellerId]) : null;
+  if (protect && !manager) {
+    return error(409, 'protection_unavailable', 'No community manager is available for Buyer Protection right now. Try again soon, or buy directly.');
   }
 
   const terms = planAmount(order, body.plan);
@@ -190,9 +183,12 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   // Choosing to pay is what makes a checkout an order the seller sees.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id);
   if (refusal) return error(409, 'unavailable', refusal);
+  // A booking was placed without touching kept credit; paying for it is when
+  // that money moves.
+  if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
   const now = new Date().toISOString();
-  const totalMinor = order.unitPriceMinor * order.quantity;
+  const totalMinor = orderTotalMinor(order);
   // Credit the seller kept for this buyer was spent when the order was
   // placed, so only what it did not cover is asked for now.
   const dueMinor = dueAfterCredit(order, terms.amountMinor);
@@ -202,24 +198,31 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   order.acceptedAt = order.acceptedAt ?? now;
   order.updatedAt = now;
   order.paymentPlan = terms.plan;
-  order.paymentMethod = agent ? 'protected' : 'direct';
+  order.paymentMethod = protect ? 'protected' : 'direct';
 
-  if (agent?.escrowRights) {
-    const rights = agent.escrowRights;
+  if (manager) {
+    // Set centrally by the operators, and paid through the gateway like every
+    // other fee: Figmark keeps its commission, the assigned manager the rest.
+    const settings = await marketSettings(repository);
+    const feeMinor = protectionFeeMinor(totalMinor, settings.protectionFeeMinor);
+    const fee = await chargeFee(repository, {
+      kind: 'protection', payerId: user.id, amountMinor: feeMinor, currency: order.currency,
+      reference: order.id, managerId: manager.id,
+    }, settings);
     order.protection = {
-      escrowAgentId: agent.id,
-      // Their name as it was today: a later rename must not rewrite what the
-      // buyer agreed to.
-      escrowName: rights.displayName || agent.displayName,
-      // The rate is copied onto the order, not looked up later: the fee is a
-      // term of this transaction and must not move when the grant is changed.
-      feeBasisPoints: rights.feeBasisPoints,
-      feeMinor: protectionFeeMinor(totalMinor, rights.feeBasisPoints),
+      managerId: manager.id,
+      // Their name as it was today: a later rename must not rewrite the terms.
+      managerName: managerName(manager),
+      // The fee is copied onto the order, not looked up later: it is a term of
+      // this transaction and must not move when the setting changes.
+      feeMinor,
+      commissionMinor: fee.commissionMinor,
+      gatewayRef: fee.gatewayRef,
       boughtAt: now,
       refundedAt: null,
     };
-    order.escrow = {
-      ...order.escrow,
+    order.hold = {
+      ...order.hold,
       state: 'held',
       amountMinor: dueMinor,
       heldAt: now,
@@ -228,10 +231,10 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       // pay the seller for a box still with their supplier.
       autoReleaseAt: null,
     };
-    note(order, `Paid with buyer protection. ${order.protection.escrowName} is holding it.`, user.id);
+    note(order, `Paid with Buyer Protection. Figmark is holding it; ${order.protection.managerName} is the community manager on it.`, user.id);
   } else {
     order.protection = null;
-    order.escrow = { ...order.escrow, state: 'none', heldAt: null, autoReleaseAt: null };
+    order.hold = { ...order.hold, state: 'none', heldAt: null, autoReleaseAt: null };
     note(order, 'Paid directly to the seller, without protection.', user.id);
   }
   if (dueMinor > 0) {
@@ -263,19 +266,10 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
 
   const seller = await repository.getUserById(order.sellerId);
-  const totalMinor = order.unitPriceMinor * order.quantity;
-
-  // Everyone approved to hold money, minus the two people who cannot be neutral
-  // in this particular trade.
-  const agents = (await repository.listEscrowAgents()).filter(
-    (agent) => agent.id !== order.buyerId && agent.id !== order.sellerId && !agent.suspended,
-  );
-
-  // What each of them has actually done as an escrow. Read per agent because a
-  // rating assembled from anything else would be a number we made up.
-  const records = await Promise.all(agents.map((agent) => escrowRecord(agent, repository)));
+  const totalMinor = orderTotalMinor(order);
 
   const payment = seller?.sellerProfile?.payment ?? null;
+  const protectionFlat = (await marketSettings(repository)).protectionFeeMinor;
 
   return json(200, {
     itemMinor: totalMinor,
@@ -291,103 +285,16 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
      * offered at all - there is nowhere to send the money.
      */
     sellerPayment: payment && hasAnyDetail(payment) ? payment : null,
-    escrows: agents.map((agent, index) => ({
-      id: agent.id,
-      name: agent.escrowRights!.displayName || agent.displayName,
-      feeBasisPoints: agent.escrowRights!.feeBasisPoints,
-      feeMinor: protectionFeeMinor(totalMinor, agent.escrowRights!.feeBasisPoints),
-      /** What the group already knows about them, rather than a rating we invented. */
-      heldBefore: agent.buyerTrust.completedTransactions,
-      ...records[index]!,
-    })),
-    suggested: await suggestEscrow(order, agents, repository),
+    /** Buyer Protection: Figmark holds the payment until the buyer has the item. */
+    protectionFeeMinor: protectionFeeMinor(totalMinor, protectionFlat),
+    /** False when no community manager could be assigned - neither party, and available. */
+    protectionAvailable: (await availableManagers(repository, [order.buyerId, order.sellerId])).length > 0,
   });
 }
 
 /** True once a seller has filled in at least one way to be paid. */
 function hasAnyDetail(payment: SellerPaymentDetails): boolean {
   return Boolean(payment.upiId?.trim() || (payment.accountNumber?.trim() && payment.ifsc?.trim()));
-}
-
-/**
- * What an escrow has done, as a rating a buyer can weigh.
- *
- * Assembled from their own record rather than from stars anybody typed: how
- * much they have held, how many arguments they settled, and how many of those
- * were escalated past them. `rating` is null when there is nothing behind it -
- * a new escrow is unproven, not bad, and five blank stars would say the
- * opposite of the truth.
- */
-async function escrowRecord(
-  agent: User,
-  repository: Repo,
-): Promise<{
-  held: number;
-  settled: number;
-  openNow: number;
-  rating: number | null;
-  since: string;
-}> {
-  const holdings = await repository.listOrdersHeldBy(agent.id);
-  const settled = holdings.filter((order) => order.escrow.state === 'released' || order.escrow.state === 'refunded');
-  const openNow = holdings.filter((order) => order.escrow.state === 'held' || order.escrow.state === 'disputed');
-
-  // Their published trust score, but only once they have actually held
-  // something. Out of five, because that is how the picker reads it.
-  const rating = settled.length > 0 ? Math.round((agent.buyerTrust.score / 20) * 10) / 10 : null;
-
-  return {
-    held: holdings.length,
-    settled: settled.length,
-    openNow: openNow.length,
-    rating,
-    since: agent.escrowRights!.grantedAt,
-  };
-}
-
-/**
- * The escrow the rest of this lot is already using.
- *
- * A consignment is one shipment with one set of problems, and thirty buyers
- * each picking a different holder turns a single conversation into thirty. So
- * when others in the same lot have already settled on somebody, say so — and
- * say how many, because that is the actual reason to agree with them.
- *
- * A suggestion, never a default: the buyer still chooses.
- */
-async function suggestEscrow(
-  order: Order,
-  agents: User[],
-  repository: Repo,
-): Promise<{ agentId: string; name: string; because: string } | null> {
-  // A direct sale rides in no consignment, so there is nobody to agree with.
-  if (order.lotId === DIRECT_LOT_ID) return null;
-
-  const siblings = await repository.listOrdersForLot(order.lotId);
-  const counts = new Map<string, number>();
-  for (const sibling of siblings) {
-    const held = sibling.protection?.escrowAgentId;
-    if (!held || sibling.id === order.id) continue;
-    counts.set(held, (counts.get(held) ?? 0) + 1);
-  }
-
-  let best: { agentId: string; count: number } | null = null;
-  for (const [agentId, count] of counts) {
-    // Only somebody this buyer could actually choose.
-    if (!agents.some((agent) => agent.id === agentId)) continue;
-    if (!best || count > best.count) best = { agentId, count };
-  }
-  if (!best) return null;
-
-  const agent = agents.find((entry) => entry.id === best!.agentId)!;
-  return {
-    agentId: agent.id,
-    name: agent.escrowRights!.displayName || agent.displayName,
-    because:
-      best.count === 1
-        ? '1 other order in this lot already uses them.'
-        : `${best.count} other orders in this lot already use them.`,
-  };
 }
 
 /**
@@ -420,6 +327,37 @@ async function confirm(request: HttpRequest, _context: InvocationContext) {
  * A rating the counterparty can read before writing their own is a rating they
  * can answer, and retaliation is what makes two-sided feedback worthless.
  */
+/**
+ * The news of an order review, to whoever it is about.
+ *
+ * Reviews are blind until both sides have written, so the first one cannot
+ * say what it says: it says one is waiting, and that writing yours opens
+ * both. The second says what the other side gave, now it can be seen.
+ * Addressed to the side it is about - "Arjun reviewed Kaiju Imports" to a
+ * shop, "Kaiju Imports reviewed you" to a buyer.
+ */
+async function announceReview(order: Order, written: Review, repository: Awaited<ReturnType<typeof getRepository>>) {
+  const [buyer, seller] = await Promise.all([repository.getUserById(order.buyerId), repository.getUserById(order.sellerId)]);
+  const storeName = seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'The shop';
+  const byBuyer = written.authorId === order.buyerId;
+  const who = byBuyer ? actorName(buyer?.displayName ?? 'Your buyer', buyer?.username) : actorName(storeName, seller?.sellerProfile?.username);
+  const whom = toWhom(byBuyer ? storeName : null);
+  const item = gistOf(order.itemName, 'your order', 40);
+  await notify(repository, [written.subjectId], written.revealed
+    ? {
+      kind: 'review_received',
+      title: `${who} reviewed ${whom} ${stars(written.rating)}`,
+      body: written.body ? `${item}: ${gistOf(written.body, '', 70)}` : `${item} · both reviews are now visible`,
+      link: `/order/${encodeURIComponent(order.id)}`,
+    }
+    : {
+      kind: 'review_received',
+      title: `${who} reviewed ${whom}`,
+      body: `Review ${item} too and both reviews open`,
+      link: `/order/${encodeURIComponent(order.id)}`,
+    }, { except: written.authorId });
+}
+
 async function review(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -479,8 +417,84 @@ async function review(request: HttpRequest, _context: InvocationContext) {
     await rescore(other.subjectId, repository);
   }
   if (written.revealed) await rescore(written.subjectId, repository);
+  await announceReview(order, written, repository);
 
   return json(201, { review: written });
+}
+
+/**
+ * POST /api/orders/{id}/unboxing - show the shop's followers what arrived.
+ *
+ * The buyer's photos and words, in the shop's channel and on its followers'
+ * feeds, with the item attached so the next person can buy it from there.
+ * Separate from the review on purpose: a review is blind until both sides have
+ * written, and a public post of it would give the rating away. This carries no
+ * rating at all. Once per order, buyer only, after it is complete.
+ */
+async function unboxing(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  if (sideOf(order, user.id) !== 'buyer') return error(403, 'forbidden', 'Only the buyer shares what arrived.');
+  if (!order.completedAt) return error(409, 'not_delivered', 'Share it once the order is complete.');
+  if (order.unboxingPostId) return error(409, 'already_shared', 'You already shared this one.');
+
+  let body: { body?: unknown; photoUrls?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  if (text.length > 1000) return error(400, 'invalid_post', 'Keep it under 1000 characters.');
+  const photoUrls = await ownPhotos(body.photoUrls, 4);
+  if (!photoUrls || photoUrls.length === 0) return error(400, 'invalid_post', 'Add a photo of what arrived.');
+  const slow = tooFast(user.id, 'post');
+  if (slow) return slow;
+
+  const [buyer, listing] = await Promise.all([repository.getUserById(user.id), repository.getListing(order.listingId)]);
+  const now = new Date().toISOString();
+  const post = await repository.createPost({
+    id: `pst_${randomUUID().slice(0, 12)}`,
+    channelId: order.sellerId,
+    channel: 'seller',
+    kind: listing ? 'sale' : 'update',
+    authorId: user.id,
+    authorName: buyer?.displayName ?? user.displayName,
+    body: text || `It arrived: ${order.itemName}`,
+    listingId: listing?.id ?? null,
+    photoUrl: photoUrls[0]!,
+    likeCount: 0,
+    replyCount: 0,
+    // A customer speaking, out loud: on the shop's followers' feeds.
+    voice: 'visitor',
+    reach: 'feed',
+    announcement: false,
+    photoUrls,
+    reactions: [],
+    comments: [],
+    shareCount: 0,
+    poll: null,
+    vibe: null,
+    delivered: { orderId: order.id, itemName: order.itemName },
+    createdAt: now,
+    updatedAt: now,
+  });
+  await claimPhotos(photoUrls, `post:${post.id}`);
+  order.unboxingPostId = post.id;
+  order.updatedAt = now;
+  await repository.updateOrder(order);
+  const named = await orderNames(repository, order);
+  await notify(repository, [order.sellerId], {
+    kind: 'post_shared',
+    title: `${named.buyer} showed off what arrived from ${named.forShop}`,
+    body: order.itemName,
+    link: `/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`,
+  }, { except: user.id });
+  return json(201, { post });
 }
 
 /**
@@ -524,16 +538,26 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = await settle(found.order, repository);
 
-  const reviews = await repository.listReviewsForOrder(order.id);
-  const mine = reviews.find((entry) => entry.authorId === user.id) ?? null;
-  const theirs = reviews.find((entry) => entry.authorId !== user.id) ?? null;
-
   // The other party, named. This screen reads the same for both sides, so
   // "from Arjun Collects" on Arjun's own sale is the kind of thing that only
   // shows up once somebody looks at their own order.
   const side = sideOf(order, user.id);
   const otherId = side === 'buyer' ? order.sellerId : order.buyerId;
-  const [other] = await repository.listUsersByIds([otherId]);
+
+  // Everything else this screen needs is independent of everything else, so
+  // it is read side by side rather than one round trip after another.
+  const [reviews, people, dispute, releaseDays] = await Promise.all([
+    repository.listReviewsForOrder(order.id),
+    // Both parties at once: the counterparty's name, the buyer's reversal
+    // details (seller side) and the buyer's own collection (buyer side).
+    repository.listUsersByIds([...new Set([otherId, user.id])]),
+    order.hold.disputeId ? repository.getDispute(order.id, order.hold.disputeId) : Promise.resolve(null),
+    autoReleaseDays(repository),
+  ]);
+  const mine = reviews.find((entry) => entry.authorId === user.id) ?? null;
+  const theirs = reviews.find((entry) => entry.authorId !== user.id) ?? null;
+  const other = people.find((person) => person.id === otherId);
+  const self = people.find((person) => person.id === user.id);
 
   return json(200, {
     order,
@@ -547,22 +571,18 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     simulatedPayment: true,
     // Lets the seller's cancel/reversal screen know, before they try, whether
     // the buyer has somewhere for the money to go.
-    buyerHasReversalDetails: side === 'seller'
-      ? Boolean((await repository.getUserById(order.buyerId))?.reversalDetails)
-      : null,
+    buyerHasReversalDetails: side === 'seller' ? Boolean(other?.reversalDetails) : null,
     myReview: mine,
     // Only if it may be seen: an unrevealed review is exactly what this whole
     // mechanism exists to keep out of the counterparty's hands.
     theirReview: theirs && reviewRevealed(theirs, mine !== null) ? theirs : null,
     theirReviewPending: theirs !== null && !(theirs && reviewRevealed(theirs, mine !== null)),
-    dispute: order.escrow.disputeId
-      ? await repository.getDispute(order.id, order.escrow.disputeId)
-      : null,
+    dispute,
     /** The protection window as operators have it set today, for the words on screen. */
-    autoReleaseDays: await autoReleaseDays(repository),
+    autoReleaseDays: releaseDays,
     /** Whether the buyer already has this one on a collection shelf. */
     inCollection: side === 'buyer'
-      ? Boolean((await repository.getUserById(user.id))?.collection?.some((item) => item.orderId === order.id))
+      ? Boolean(self?.collection?.some((item) => item.orderId === order.id))
       : false,
   });
 }
@@ -637,6 +657,7 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   // The claim itself tells the seller, so placing stays quiet.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id, { tellSeller: false });
   if (refusal) return error(409, 'unavailable', refusal);
+  if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
   const now = new Date().toISOString();
   const dueMinor = dueAfterCredit(order, terms.amountMinor);
@@ -651,9 +672,10 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
     statusFromMoney(order);
     note(order, 'Paid with the credit the seller kept for you.', user.id);
     const saved = await repository.updateOrder(order);
+    const named = await orderNames(repository, order);
     await notify(repository, [order.sellerId], {
       kind: 'order_placed',
-      title: 'New order — paid with the credit you kept',
+      title: `${named.buyer} ordered from ${named.forShop} with kept credit`,
       body: order.itemName,
       link: `/order/${order.id}`,
     });
@@ -678,10 +700,11 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
 
   // The seller is the only person who can answer this, and they have no reason
   // to be looking at the order until somebody tells them to.
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'payment_claimed',
-    title: 'A buyer says they have paid',
-    body: order.itemName,
+    title: `${named.buyer} says they paid ${named.forShop}`,
+    body: `${order.itemName} · check it arrived and confirm`,
     link: `/order/${order.id}`,
   });
 
@@ -747,7 +770,7 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
     record(order, {
       kind: claim?.plan === 'additional' ? 'additional' : (claim?.plan ?? 'full'),
       method: 'direct',
-      amountMinor: claim?.amountMinor ?? order.unitPriceMinor * order.quantity,
+      amountMinor: claim?.amountMinor ?? orderTotalMinor(order),
       batchId: claim?.batchId ?? null,
       batchTotalMinor: claim?.batchTotalMinor ?? null,
       reference: claim?.reference ?? null,
@@ -755,9 +778,9 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
     });
     statusFromMoney(order);
     // Nobody is holding this. The money went from the buyer to the seller
-    // directly, so there is no escrow to release and nothing to dispute over -
+    // directly, so there is no held payment to release and nothing to dispute over -
     // which is exactly what buying without protection means.
-    order.escrow = { ...order.escrow, state: 'none' };
+    order.hold = { ...order.hold, state: 'none' };
     note(order, 'Seller confirmed the payment arrived.', user.id);
 
     // The part of this payment that overshot this order's own balance,
@@ -791,9 +814,10 @@ async function settleClaim(request: HttpRequest, _context: InvocationContext) {
 
   // The buyer has sent money somewhere and is waiting to hear. A denial is the
   // one they most need, because it is the one they have to act on.
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'payment_settled',
-    title: body.accept ? 'Your payment was confirmed' : 'The seller says your payment has not arrived',
+    title: body.accept ? `${named.shop} confirmed your payment` : `${named.shop} says your payment has not arrived`,
     body: body.accept ? order.itemName : reason,
     link: `/order/${order.id}`,
   });
@@ -895,9 +919,10 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
     const saved: Order[] = [];
     for (const order of touched.values()) saved.push(await repository.updateOrder({ ...order, updatedAt: now }));
 
+    const named = await orderNames(repository, first);
     await notify(repository, [first.sellerId], {
       kind: 'payment_claimed',
-      title: `A buyer says they paid ${rupees(amountMinor)}`,
+      title: `${named.buyer} says they paid ${named.forShop} ${rupees(amountMinor)}`,
       body: saved.map((o) => o.itemName).join(', '),
       link: `/order/${first.id}`,
     });
@@ -912,8 +937,8 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
       reference, recordedBy: user.id,
     });
     statusFromMoney(order);
-    if (order.escrow.state === 'held') {
-      order.escrow = { ...order.escrow, amountMinor: order.escrow.amountMinor + line.amountMinor };
+    if (order.hold.state === 'held') {
+      order.hold = { ...order.hold, amountMinor: order.hold.amountMinor + line.amountMinor };
     }
     touched.set(order.id, order);
   }
@@ -941,9 +966,10 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
   const saved: Order[] = [];
   for (const order of touched.values()) saved.push(await repository.updateOrder({ ...order, updatedAt: now }));
 
+  const named = await orderNames(repository, first);
   await notify(repository, [first.sellerId], {
     kind: 'payment_received',
-    title: `A buyer paid ${rupees(amountMinor)}`,
+    title: `${named.buyer} paid ${named.forShop} ${rupees(amountMinor)}`,
     body: saved.map((o) => o.itemName).join(', '),
     link: `/order/${first.id}`,
   });
@@ -1079,16 +1105,17 @@ function startReturn(
 async function tellBuyerRefunded(
   repository: Repo, order: Order, amountMinor: number, reference: string | null, message?: string,
 ): Promise<void> {
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'credit_refund_sent',
-    title: `The seller says they refunded ${rupees(amountMinor)} to you`,
+    title: `${named.shop} says they refunded you ${rupees(amountMinor)}`,
     body: `${order.itemName} — tell them whether it arrived.`,
-    link: '/refunds',
+    link: '/wallet',
   });
   const [seller, buyer] = await Promise.all([repository.getUserById(order.sellerId), repository.getUserById(order.buyerId)]);
   if (seller && buyer) {
     await systemMessage(repository, seller, buyer, message?.trim()
-      || `I have refunded ${rupees(amountMinor)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm under My refunds once it reaches you.`, order.sellerId);
+      || `I have refunded ${rupees(amountMinor)} for "${order.itemName}"${reference ? ` (reference ${reference})` : ''}. Please confirm under My wallet once it reaches you.`, order.sellerId);
   }
 }
 
@@ -1287,9 +1314,12 @@ async function ackCreditRefund(request: HttpRequest, _context: InvocationContext
   order.updatedAt = now;
   const saved = await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'credit_refund_answered',
-    title: body.received ? `The buyer got the ${rupees(total)} you returned` : `The buyer says the ${rupees(total)} you returned has not arrived`,
+    title: body.received
+      ? `${named.buyer} got the ${rupees(total)} refund from ${named.forShop}`
+      : `${named.buyer} says the ${rupees(total)} refund from ${named.forShop} has not arrived`,
     body: order.itemName,
     link: `/order/${order.id}`,
   });
@@ -1378,10 +1408,11 @@ async function applyCredit(request: HttpRequest, _context: InvocationContext) {
 
   const [savedSource, savedTarget] = [await repository.updateOrder(source), await repository.updateOrder(target)];
 
+  const named = await orderNames(repository, source);
   await notify(repository, [source.buyerId], {
     kind: 'credit_applied',
-    title: `${rupees(amount)} of your extra payment went towards ${target.itemName}`,
-    body: `From ${source.itemName}`,
+    title: `${named.shop} put ${rupees(amount)} of your credit towards ${gistOf(target.itemName, 'an order', 40)}`,
+    body: `Extra you paid on ${source.itemName}`,
     link: `/order/${target.id}`,
   });
 
@@ -1419,10 +1450,11 @@ async function holdCredit(request: HttpRequest, _context: InvocationContext) {
   order.updatedAt = new Date().toISOString();
   const saved = await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'credit_applied',
-    title: `Your extra ${rupees(total)} is kept as credit`,
-    body: `The seller will put it towards your next order with them. (${order.itemName})`,
+    title: `${named.shop} kept your extra ${rupees(total)} as credit`,
+    body: `It goes towards your next order with them. (${order.itemName})`,
     link: `/order/${order.id}`,
   });
 
@@ -1439,9 +1471,9 @@ async function holdCredit(request: HttpRequest, _context: InvocationContext) {
  * and only once. Without one: a dispute about anything else, which needs a
  * reason because otherwise there is nothing on record to work from.
  *
- * Either way it becomes an ordinary dispute record - the same one an escrow
- * dispute is - with its own page to talk it through, withdraw it, or ask
- * Figmark to step in. Only an escrow dispute can settle by moving money.
+ * Either way it becomes an ordinary dispute record - the same one a
+ * protection claim is - with its own page to talk it through, withdraw it, or
+ * ask Figmark to step in. Only a held-payment dispute can settle by moving money.
  */
 async function flagDispute(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -1453,8 +1485,18 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
   const side = sideOf(order, user.id)!;
 
-  const body = await bodyOf<{ subject: string; reason: string }>(request);
-  const typed = body.reason?.trim() || null;
+  const body = await bodyOf<{ subject?: string; reason?: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
+  if (!body || typeof body !== 'object') return error(400, 'invalid_body', 'Request body must be JSON.');
+
+  // While buyer protection still holds the money, every complaint about the
+  // purchase goes through the protection claim: it is free, it freezes the
+  // payment Figmark holds, and the manager assigned to it hears it. A paid "general" dispute
+  // here would leave the money on its auto-release clock and block the
+  // buyer's own claim.
+  if (order.protection && order.hold.state === 'held') {
+    return error(409, 'use_protection_claim', 'This purchase is still under buyer protection. Open a protection claim on the order instead - it is free and holds the payment until it is settled.');
+  }
+  const typed = typeof body.reason === 'string' ? body.reason.trim() || null : null;
   if (typed && typed.length > 2000) return error(400, 'too_long', 'Keep it under 2000 characters.');
 
   let topic: DisputeTopic = 'general';
@@ -1471,8 +1513,18 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
     reason = typed;
   }
 
+  const evidence = (Array.isArray(body.evidence) ? body.evidence : []).slice(0, 8).flatMap((entry) => {
+    const url = String(entry?.url ?? '').trim();
+    if (!/^https?:\/\/\S+$/i.test(url) && !/^\/api\/photos\/[\w.%-]+$/.test(url)) return [];
+    return [{ url, blobName: null, caption: String(entry?.caption ?? '').slice(0, 200), uploadedBy: user.id, uploadedAt: new Date().toISOString() }];
+  });
+
+  // Raised with a community manager of the raiser's choosing (or the
+  // system's, if they left it), and paid through the gateway - unless the
+  // purchase is still protected, when its holder hears it for free.
   const dispute = await openDisputeRecord(repository, order, {
-    raisedBy: user.id, side, topic, subject, reasonCode: 'other', reason, amountMinor,
+    raisedBy: user.id, side, topic, subject, reasonCode: 'other', reason, amountMinor, evidence,
+    managerId: body.managerId ?? null,
   });
   note(order, `⚖️ Dispute raised by the ${side} — ${DISPUTE_TOPIC_LABELS[topic]}${typed ? `: ${typed}` : ''}`, user.id);
   const saved = await repository.updateOrder(order);
@@ -1481,67 +1533,88 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/me/disputes - every dispute on this person's orders, from both sides.
+ * GET /api/me/disputes - every dispute this person is a party to.
  *
- * Split the way they will be worked: the ones on things they bought, and the
- * ones on their store's sales. Read from the dispute records themselves, so
- * the status shown is the dispute's own, and every row opens the one page
- * where it is worked.
+ * Split the way they will be worked: the ones on things they bought, the ones
+ * on their store's sales, and the ones about everything else - reviews,
+ * comments, posts, people. Read from the dispute records themselves, so the
+ * status shown is the dispute's own, and every row opens the one page where
+ * the three-way thread is.
  */
 async function myDisputes(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  const bought = await repository.listOrdersForBuyer(user.id);
-  const sold = await repository.listOrdersForSeller(user.id);
+  const [bought, sold, mine] = await Promise.all([
+    repository.listOrdersForBuyer(user.id),
+    repository.listOrdersForSeller(user.id),
+    repository.listDisputesForParty(user.id),
+  ]);
+  const disputes = await Promise.all(mine.map((dispute) => bringUpToDate(repository, dispute)));
+  const orders = new Map([...bought, ...sold].map((order) => [order.id, order]));
   const people = new Map((await repository.listUsersByIds([
-    ...new Set([...bought.map((order) => order.sellerId), ...sold.map((order) => order.buyerId)]),
+    ...new Set([
+      ...bought.map((order) => order.sellerId), ...sold.map((order) => order.buyerId),
+      ...disputes.flatMap((dispute) => [dispute.raisedBy, dispute.againstUserId]),
+    ]),
   ])).map((person) => [person.id, person]));
   const nameOf = (id: string) => {
     const person = people.get(id);
     return person?.sellerProfile?.storefrontName ?? person?.displayName ?? 'Someone';
   };
 
-  const rows = async (order: Order, side: 'buyer' | 'seller') => {
-    // An escrow dispute opened before orders indexed their disputes is still
-    // found through the one pointer it did leave.
-    const ids = new Set((order.disputeLinks ?? []).map((link) => link.id));
-    if (order.escrow.disputeId) ids.add(order.escrow.disputeId);
-    const out = [];
-    for (const id of ids) {
-      const dispute = await repository.getDispute(order.id, id);
-      if (!dispute) continue;
-      const topic = dispute.topic ?? 'escrow';
-      out.push({
-        id: dispute.id,
-        orderId: order.id,
-        itemName: order.itemName,
-        currency: order.currency,
-        counterpartyName: nameOf(side === 'buyer' ? order.sellerId : order.buyerId),
-        topic,
-        label: DISPUTE_TOPIC_LABELS[topic],
-        amountMinor: dispute.amountMinor ?? (topic === 'escrow' ? order.escrow.amountMinor : null),
-        reason: dispute.reason,
-        raisedAt: dispute.createdAt,
-        raisedByMe: dispute.raisedBy === user.id,
-        raisedBySide: dispute.raisedSide,
-        status: dispute.status,
-      });
-    }
-    return out;
+  const row = (dispute: Dispute, order: Order | null) => {
+    const topic = dispute.topic ?? 'held_payment';
+    const counterparty = dispute.raisedBy === user.id ? dispute.againstUserId : dispute.raisedBy;
+    const round = currentRound(dispute);
+    return {
+      id: dispute.id,
+      orderId: order?.id ?? null,
+      itemName: order?.itemName ?? dispute.subjectRef?.excerpt.slice(0, 80) ?? 'Dispute',
+      currency: order?.currency ?? 'INR',
+      counterpartyName: nameOf(counterparty),
+      topic,
+      label: dispute.subjectRef ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type] : DISPUTE_TOPIC_LABELS[topic],
+      amountMinor: dispute.amountMinor ?? (order && topic === 'held_payment' ? order.hold.amountMinor : null),
+      reason: dispute.reason,
+      raisedAt: dispute.createdAt,
+      raisedByMe: dispute.raisedBy === user.id,
+      raisedBySide: dispute.raisedSide,
+      status: dispute.status,
+      round: round?.n ?? null,
+      managerName: round?.managerName ?? null,
+      result: dispute.result ?? null,
+    };
   };
-  const collect = async (orders: Order[], side: 'buyer' | 'seller') =>
-    (await Promise.all(orders.map((order) => rows(order, side)))).flat()
-      .sort((a, b) => b.raisedAt.localeCompare(a.raisedAt));
+
+  type Row = ReturnType<typeof row>;
+  const asBuyer: Row[] = [];
+  const asStore: Row[] = [];
+  const community: Row[] = [];
+  for (const dispute of disputes) {
+    if (dispute.subjectRef) {
+      community.push(row(dispute, null));
+      continue;
+    }
+    const order = orders.get(dispute.orderId) ?? null;
+    if (!order) continue;
+    (order.buyerId === user.id ? asBuyer : asStore).push(row(dispute, order));
+  }
+  const newest = (a: { raisedAt: string }, b: { raisedAt: string }) => b.raisedAt.localeCompare(a.raisedAt);
 
   // What a new dispute could be raised on: their recent orders, either side.
-  const orders = [
-    ...bought.map((order) => ({ id: order.id, itemName: order.itemName, side: 'buyer' as const, counterpartyName: nameOf(order.sellerId), createdAt: order.createdAt })),
-    ...sold.map((order) => ({ id: order.id, itemName: order.itemName, side: 'seller' as const, counterpartyName: nameOf(order.buyerId), createdAt: order.createdAt })),
+  const choices = [
+    ...bought.map((order) => ({ id: order.id, itemName: order.itemName, side: 'buyer' as const, counterpartyName: nameOf(order.sellerId), counterpartyId: order.sellerId, protectedNow: Boolean(order.protection && (order.hold.state === 'held' || order.hold.state === 'disputed')), createdAt: order.createdAt })),
+    ...sold.map((order) => ({ id: order.id, itemName: order.itemName, side: 'seller' as const, counterpartyName: nameOf(order.buyerId), counterpartyId: order.buyerId, protectedNow: Boolean(order.protection && (order.hold.state === 'held' || order.hold.state === 'disputed')), createdAt: order.createdAt })),
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 80);
 
-  return json(200, { asBuyer: await collect(bought, 'buyer'), asStore: await collect(sold, 'seller'), orders });
+  return json(200, {
+    asBuyer: asBuyer.sort(newest),
+    asStore: asStore.sort(newest),
+    community: community.sort(newest),
+    orders: choices,
+  });
 }
 
 export const payRoute = handler(pay);
@@ -1566,8 +1639,8 @@ export const claimPaymentRoute = handler(claimPayment);
  *
  * It puts back everything the order took: the stock, and the place it held in a
  * pre-order. Refused once money is being held, because that is a refund or a
- * dispute - different rules, different screen, and an escrow that can be
- * emptied by one side calling it off is not an escrow.
+ * dispute - different rules, different screen, and a held payment that can be
+ * emptied by one side calling it off is not being held.
  */
 async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -1604,6 +1677,9 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
     order.paymentClaim.decidedAt = now;
     order.paymentClaim.decidedReason = reason;
   }
+  // Kept credit a booking spent goes back to the buyer's balance with this
+  // seller; it was never money the buyer sent, so there is nothing to refund.
+  await returnKeptCredit(repository, order, user.id);
   if (order.paymentStatus === 'paid' || order.paymentStatus === 'claimed') {
     order.paymentStatus = 'refunded';
   }
@@ -1629,9 +1705,10 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
     });
   }
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'order_rejected',
-    title: `${order.itemName} could not be sold to you`,
+    title: `${named.shop} could not sell you ${gistOf(order.itemName, 'this item', 40)}`,
     body: reason,
     link: `/order/${order.id}`,
   });
@@ -1642,6 +1719,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
 export const settleClaimRoute = handler(settleClaim);
 export const rejectOrderRoute = handler(rejectOrder);
 export const confirmRoute = handler(confirm);
+export const unboxingRoute = handler(unboxing);
 export const reviewRoute = handler(review);
 export const orderStateRoute = handler(orderState);
 export const checkoutRoute = handler(checkout);
@@ -1705,20 +1783,31 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
   order.accepted = true;
   order.acceptedAt = now;
   order.updatedAt = now;
+  // A booking that kept credit already covers in full has nothing left to pay
+  // for, so saying yes is what confirms it.
+  const covered = (order.payments ?? []).length > 0 && orderMoney(order).outstandingMinor === 0;
+  if (covered) {
+    order.status = 'confirmed';
+    order.paymentStatus = 'paid';
+    order.paymentMethod = order.paymentMethod ?? 'direct';
+  }
   note(order, order.bookingOnly ? 'Booking accepted by seller.' : 'Order accepted by seller.', user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], order.bookingOnly
     ? {
         kind: 'booking_accepted',
-        title: 'Your booking has been accepted',
-        body: 'Please make the payment.',
+        title: `${named.shop} accepted your booking`,
+        body: covered
+          ? `${order.itemName} · paid with the credit they kept for you`
+          : `${order.itemName} · make the payment to lock it in`,
         link: `/order/${order.id}`,
       }
     : {
         kind: 'order_accepted',
-        title: `${order.itemName} was accepted`,
-        body: 'The seller has accepted your order.',
+        title: `${named.shop} accepted your order`,
+        body: order.itemName,
         link: `/order/${order.id}`,
       });
 
@@ -1736,6 +1825,35 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
  * order becomes `payment_reversal_pending` and stays there until the reversal
  * is recorded - see `submitReversal`.
  */
+/**
+ * Takes an item out of the cart: a Buy that was never paid or booked. Nothing
+ * is held for a checkout and the seller was never told, so it simply goes.
+ * With `save`, the item is kept on the buyer's Saved list instead.
+ */
+async function discardCheckout(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const order = await repository.getOrder(request.params.id ?? '');
+  if (!order || order.buyerId !== user.id) return error(404, 'not_found', 'Nothing like that in your cart.');
+  if (order.placedAt !== null) return error(409, 'already_placed', 'That is an order now, not a cart item.');
+
+  let body: { save?: boolean };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  let saved = false;
+  if (body.save) {
+    saved = (await repository.listLikedListingIds(user.id)).includes(order.listingId)
+      || (await repository.toggleLike(user.id, order.listingId));
+  }
+  await repository.deleteOrder(order);
+  return json(200, { removed: order.id, saved });
+}
+
 async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -1771,10 +1889,11 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
     note(order, `Order cancelled by seller: ${reason}`, user.id);
     await repository.updateOrder(order);
 
+    const named = await orderNames(repository, order);
     await notify(repository, [order.buyerId], {
       kind: 'order_cancelled',
-      title: `${order.itemName} was cancelled`,
-      body: reason,
+      title: `${named.shop} cancelled your order`,
+      body: `${order.itemName}: ${reason}`,
       link: `/order/${order.id}`,
     });
     if (buyer && seller) {
@@ -1810,19 +1929,20 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   note(order, `Payment reversal initiated — ${rupees(money.paidMinor)}`, user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'payment_reversal_pending',
-    title: `${order.itemName} was cancelled — reversing your payment`,
-    body: reason,
+    title: `${named.shop} cancelled your order and is returning ${rupees(money.paidMinor)}`,
+    body: `${order.itemName}: ${reason}`,
     link: `/order/${order.id}`,
   });
 
   if (buyer && !buyer.reversalDetails) {
     await notify(repository, [order.buyerId], {
       kind: 'reversal_details_needed',
-      title: 'Add your payment reversal details',
-      body: `${order.itemName} was cancelled and needs somewhere to send your ${rupees(money.paidMinor)} back.`,
-      link: '/refunds?tab=details',
+      title: `Tell ${named.shop} where to send your ${rupees(money.paidMinor)}`,
+      body: `Add your payment reversal details so the refund for ${order.itemName} can go out.`,
+      link: '/wallet?tab=details',
     });
     if (seller) {
       const text = (body.message ?? '').trim()
@@ -1866,9 +1986,9 @@ async function requestReversalDetails(request: HttpRequest, _context: Invocation
   const text = body.message?.trim()
     || (has
       ? `Before I refund you for "${order.itemName}", please check your Payment Reversal Details are up to date `
-        + '(My refunds → Payment reversal details) and confirm them, or update them if anything has changed.'
+        + '(My wallet → Payment reversal details) and confirm them, or update them if anything has changed.'
       : `I need to refund you for "${order.itemName}". Please add your Payment Reversal Details `
-        + '(My refunds → Payment reversal details) so I know where to send it.');
+        + '(My wallet → Payment reversal details) so I know where to send it.');
   await systemMessage(repository, seller, buyer, text, order.sellerId);
 
   const now = new Date().toISOString();
@@ -1878,11 +1998,12 @@ async function requestReversalDetails(request: HttpRequest, _context: Invocation
   order.updatedAt = now;
   const saved = await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'reversal_details_needed',
-    title: has ? 'Please confirm your payment reversal details' : 'Add your payment reversal details',
-    body: `${seller.sellerProfile?.storefrontName ?? seller.displayName} needs them to refund you for ${order.itemName}.`,
-    link: '/refunds?tab=details',
+    title: has ? `${named.shop} asks you to confirm your refund details` : `${named.shop} needs your refund details`,
+    body: `So they can refund you for ${order.itemName}.`,
+    link: '/wallet?tab=details',
   });
 
   return json(200, { sent: true, order: saved });
@@ -1929,10 +2050,11 @@ export async function confirmDetailsOn(repository: Repo, order: Order, buyer: Us
   note(order, 'Buyer confirmed their payment reversal details.', buyer.id);
   const saved = await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'reversal_details_updated',
-    title: 'The buyer confirmed their payment reversal details',
-    body: `${order.itemName} — you can refund them now.`,
+    title: `${named.buyer} confirmed their refund details for ${named.forShop}`,
+    body: `${order.itemName} · you can send the refund now`,
     link: '/shop?tab=refunds',
   });
   const seller = await repository.getUserById(order.sellerId);
@@ -2030,10 +2152,11 @@ async function submitReversal(request: HttpRequest, _context: InvocationContext)
   note(order, `Payment reversed — ${rupees(amountMinor)}`, user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'payment_reversed',
-    title: `${rupees(amountMinor)} has been marked reversed`,
-    body: 'Please confirm whether you have received it.',
+    title: `${named.shop} sent back ${rupees(amountMinor)}`,
+    body: `${order.itemName} · tell them whether it arrived`,
     link: `/order/${order.id}`,
   });
 
@@ -2089,9 +2212,12 @@ async function ackReversal(request: HttpRequest, _context: InvocationContext) {
   note(order, body.received ? 'Buyer confirmed payment received.' : 'Buyer says payment not received.', user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'reversal_ack',
-    title: body.received ? 'The buyer confirmed the reversal arrived' : 'The buyer says the reversal has not arrived',
+    title: body.received
+      ? `${named.buyer} got the refund from ${named.forShop}`
+      : `${named.buyer} says the refund from ${named.forShop} has not arrived`,
     body: order.itemName,
     link: `/order/${order.id}`,
   });
@@ -2135,10 +2261,11 @@ async function raiseDispute(request: HttpRequest, _context: InvocationContext) {
   note(order, 'Dispute raised: buyer reports payment not received.', user.id);
   await repository.updateOrder(order);
 
+  const named = await orderNames(repository, order);
   await notify(repository, [order.sellerId], {
     kind: 'dispute_raised_reversal',
-    title: `Dispute raised on ${order.itemName}`,
-    body: 'The buyer says the reversed payment never arrived.',
+    title: `${named.buyer} opened a dispute with ${named.forShop}`,
+    body: `${order.itemName} · they say the refund never arrived`,
     link: `/dispute/${dispute.id}`,
   });
 
@@ -2165,10 +2292,16 @@ async function bookOrder(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'cannot_book', 'This order cannot be booked.');
   }
 
-  const refusal = await placeOrder(repository, order, 'booked', user.id);
-  if (refusal) return error(409, 'unavailable', refusal);
-
+  // Marked before placing, so the order is a booking from its first save -
+  // placing reads it to leave kept credit alone, and the seller's first look
+  // at it must be a booking waiting on their yes.
   order.bookingOnly = true;
+  const refusal = await placeOrder(repository, order, 'booked', user.id);
+  if (refusal) {
+    order.bookingOnly = false;
+    return error(409, 'unavailable', refusal);
+  }
+
   order.updatedAt = new Date().toISOString();
   note(order, 'Buyer chose to book — payment is due once the seller confirms availability.', user.id);
   await repository.updateOrder(order);
@@ -2202,10 +2335,13 @@ app.http('order-settle-claim', { ...anon, methods: ['POST'], route: 'orders/{id}
 app.http('order-reject', { ...anon, methods: ['POST'], route: 'orders/{id}/reject', handler: rejectOrderRoute });
 app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/confirm', handler: confirmRoute });
 app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
+app.http('order-unboxing', { ...anon, methods: ['POST'], route: 'orders/{id}/unboxing', handler: unboxingRoute });
 app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state', handler: orderStateRoute });
 app.http('order-checkout', { ...anon, methods: ['GET'], route: 'orders/{id}/checkout', handler: checkoutRoute });
 app.http('order-book', { ...anon, methods: ['POST'], route: 'orders/{id}/book', handler: bookOrderRoute });
 app.http('order-accept', { ...anon, methods: ['POST'], route: 'orders/{id}/accept', handler: acceptOrderRoute });
+export const discardCheckoutRoute = handler(discardCheckout);
+app.http('order-discard', { ...anon, methods: ['POST'], route: 'orders/{id}/discard', handler: discardCheckoutRoute });
 app.http('order-cancel', { ...anon, methods: ['POST'], route: 'orders/{id}/cancel', handler: cancelOrderRoute });
 app.http('order-reversal-request-details', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/request-details', handler: requestReversalDetailsRoute });
 app.http('order-reversal-confirm-details', { ...anon, methods: ['POST'], route: 'orders/{id}/reversal/confirm-details', handler: confirmReversalDetailsRoute });

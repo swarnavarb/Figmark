@@ -1,4 +1,5 @@
 import type {
+  ArtistProfile, ForwarderProfile,
   Follow,
   Forum,
   Like,
@@ -46,8 +47,8 @@ export const DEMO_PASSWORD = 'figmark123';
  */
 export const PACKER_EMAIL = 'packer@baiyunhobby.example';
 
-/** The neutral escrow, so their side of a held payment can be signed into. */
-export const ESCROW_EMAIL = 'meera@figmark.in';
+/** A community manager, so their side of a dispute can be signed into. */
+export const MANAGER_EMAIL = 'meera@figmark.in';
 
 /**
  * The domestic handler, for the same reason as the packer.
@@ -58,6 +59,9 @@ export const ESCROW_EMAIL = 'meera@figmark.in';
  */
 export const HANDLER_EMAIL = 'ops@bombayparcel.example';
 export const PACKER_PHONE = '+8613800000024';
+
+/** The freight forwarder whose store the demo lots are booked with. */
+export const FORWARDER_EMAIL = 'ops@lotusfreight.example';
 
 const NOW = new Date('2026-09-01T09:00:00.000Z');
 const iso = (days = 0, hours = 0) =>
@@ -159,28 +163,25 @@ export function seedUsers(): User[] {
         ],
       },
       forwarderProfile: null,
-      /* Also an escrow: a trusted regular who holds money for other people's
-         trades. Never for their own — you cannot be the neutral party in a
-         transaction you are one end of. */
-      escrowRights: {
+      /* Also a community manager: a trusted regular who decides other
+         people's disputes. Never their own — you cannot be the neutral party
+         in a transaction you are one end of. */
+      managerRights: {
         grantedAt: iso(-30),
         grantedBy: 'usr_ops',
-        feeBasisPoints: 250,
-        displayName: 'Arjun M.',
-        note: 'Long-standing member. Holds for the Mumbai group buys.',
       },
       suspended: false,
       createdAt: iso(-120),
       updatedAt: iso(-2),
     },
 
-    /* An escrow and nothing else: no shop, no listings, just the person the
-       group trusts to hold the money. Sign-in-able, because the escrow console
-       only means anything seen from their side. */
+    /* A community manager and nothing else: no shop, no listings, just the
+       person the group trusts to decide disputes. Sign-in-able, because the
+       Community Service desk only means anything seen from their side. */
     {
       id: 'usr_escrow_meera',
       username: 'meera_holds',
-      email: ESCROW_EMAIL,
+      email: MANAGER_EMAIL,
       phone: '+919812300099',
       displayName: 'Meera Iyer',
       isAdmin: false,
@@ -190,12 +191,9 @@ export function seedUsers(): User[] {
       sellerTrust: sellerTrust(),
       sellerProfile: null,
       forwarderProfile: null,
-      escrowRights: {
+      managerRights: {
         grantedAt: iso(-90),
         grantedBy: 'usr_ops',
-        feeBasisPoints: 150,
-        displayName: 'Meera I. — community escrow',
-        note: 'Runs escrow for three of the larger Bengaluru group buys. No complaints.',
       },
       suspended: false,
       createdAt: iso(-200),
@@ -224,11 +222,9 @@ export function seedUsers(): User[] {
 
     /* Catalog sellers. No password hash: they populate the feed, they are not
        accounts you can sign in as. */
-    withEscrow(
+    asManager(
       storefront('usr_kaiju', 'Kaiju Imports', 'Ravi Krishnan', 'kaiju-imports', 'Bengaluru, KA', 91, 148, 0.96,
-        'Weekly group-buys from Guangzhou. Scale figures and garage kits.'),
-      200,
-      'High volume, long record, no unresolved disputes.',
+        'Weekly pre-orders from Guangzhou. Scale figures and garage kits.'),
     ),
     storefront('usr_tokyoline', 'Tokyo Line', 'Meiko Tanaka', 'tokyo-line', 'Delhi, DL', 84, 96, 0.91,
       'Anime merch and trading cards, direct from Akihabara runs.'),
@@ -247,7 +243,7 @@ export function seedUsers(): User[] {
       [
         { originCity: 'Guangzhou', destinationCity: 'Bengaluru', claimedTurnaroundDays: 12, ratePerKgMinor: 48_000, currency: 'INR' },
         { originCity: 'Yiwu', destinationCity: 'Mumbai', claimedTurnaroundDays: 18, ratePerKgMinor: 39_000, currency: 'INR' },
-      ]),
+      ], LOTUS_STORE, true),
     forwarder('usr_fwd_silkroute', 'Silk Route Cargo', 'silk-route-cargo', 'hello@silkroute.example',
       '+919000000102', 15_000, 81, 52, 'Sea freight specialists. Slower, materially cheaper on volume.',
       [
@@ -260,6 +256,18 @@ export function seedUsers(): User[] {
         { originCity: 'Guangzhou', destinationCity: 'Delhi', claimedTurnaroundDays: 7, ratePerKgMinor: 72_000, currency: 'INR' },
         { originCity: 'Shanghai', destinationCity: 'Bengaluru', claimedTurnaroundDays: 8, ratePerKgMinor: 68_000, currency: 'INR' },
       ]),
+
+    /* An application waiting on an operator, so the review queue has one. */
+    forwarder('usr_fwd_harbor', 'Harbor Line Logistics', 'harbor-line-logistics', 'desk@harborline.example',
+      '+919000000104', 6_000, 0, 0,
+      'Sea and rail consolidation from Ningbo and Yiwu into Nhava Sheva, with our own CHA for clearance. Weekly sailings, LCL from 50 kg.',
+      [], HARBOR_APPLICATION),
+
+    /* Artists: studios that work on what people bought. The first is a
+       sign-in account, so the commission board can be seen from the side
+       that paints. */
+    artist('usr_art_inkwell', ARTIST_EMAIL, '+919000000301', INKWELL_STUDIO, true),
+    artist('usr_art_kintsugi', 'hello@kintsugikustoms.example', '+919000000302', KINTSUGI_APPLICATION),
 
     /* Domestic handlers: the India end. The first is a sign-in account, because
        a distribution list only means anything from the side that works it. */
@@ -278,16 +286,13 @@ export function seedUsers(): User[] {
   ];
 }
 
-/** Approves a seeded account to hold other people's money, at a given rate. */
-function withEscrow(user: User, feeBasisPoints: number, note: string): User {
+/** Appoints a seeded account a community manager. */
+function asManager(user: User): User {
   return {
     ...user,
-    escrowRights: {
+    managerRights: {
       grantedAt: iso(-45),
       grantedBy: 'usr_ops',
-      feeBasisPoints,
-      displayName: user.sellerProfile?.storefrontName ?? user.displayName,
-      note,
     },
   };
 }
@@ -384,10 +389,191 @@ function handler(
   };
 }
 
+const SINCE_APPROVAL = (days: number, by: string, note: string) => ({
+  submittedAt: iso(days - 3),
+  history: [
+    { at: iso(days - 3), by, status: 'pending' as const, note: 'Application sent.' },
+    { at: iso(days), by: 'usr_demo', status: 'approved' as const, note: 'Documents checked. Welcome aboard.' },
+  ],
+});
+
+/** Lotus, as a store: the forwarder the demo shop's lots fly with. */
+const LOTUS_STORE: Partial<ForwarderProfile> = {
+  status: 'approved',
+  application: SINCE_APPROVAL(-120, 'usr_fwd_lotus', ''),
+  tagline: 'Guangzhou & Yiwu → India, consolidated weekly',
+  accent: 'aqua',
+  city: 'Guangzhou',
+  country: 'China',
+  businessId: 'GZ-91440101MA5CXXXX',
+  since: 2016,
+  links: [
+    { label: 'Website', url: 'https://lotusfreight.example' },
+    { label: 'WhatsApp', url: 'https://wa.me/919000000101' },
+  ],
+  team: [],
+  autoAccept: false,
+  warehouse: {
+    address: 'Unit 12, Baiyun Logistics Park, Taihe Town, Baiyun District, Guangzhou 510540',
+    contact: 'Mr. Chen · +86 138 0000 0101 · WeChat lotus_gz',
+    hours: 'Mon–Sat, 9:00–18:00 CST. Cut-off Thursday 15:00 for the Saturday flight.',
+  },
+  lanes: [
+    { id: 'lane_gz_blr', originCity: 'Guangzhou', originCountry: 'China', destinationCity: 'Bengaluru', destinationCountry: 'India',
+      mode: 'air', ratePerKgMinor: 48_000, minChargeKg: 5, transitDaysMin: 9, transitDaysMax: 12, customsIncluded: true,
+      note: 'Weekly consolidation, flies Saturday.', active: true },
+    { id: 'lane_gz_bom_x', originCity: 'Guangzhou', originCountry: 'China', destinationCity: 'Mumbai', destinationCountry: 'India',
+      mode: 'express', ratePerKgMinor: 72_000, minChargeKg: 1, transitDaysMin: 4, transitDaysMax: 6, customsIncluded: true,
+      note: 'Door to door, any weekday.', active: true },
+    { id: 'lane_yw_bom', originCity: 'Yiwu', originCountry: 'China', destinationCity: 'Mumbai', destinationCountry: 'India',
+      mode: 'sea', ratePerKgMinor: 21_000, minChargeKg: 50, transitDaysMin: 24, transitDaysMax: 30, customsIncluded: true,
+      note: 'LCL, fortnightly sailings from Ningbo.', active: true },
+    { id: 'lane_gz_del', originCity: 'Guangzhou', originCountry: 'China', destinationCity: 'Delhi', destinationCountry: 'India',
+      mode: 'air', ratePerKgMinor: 52_000, minChargeKg: 5, transitDaysMin: 10, transitDaysMax: 14, customsIncluded: false,
+      note: 'Duty billed at actuals on landing.', active: true },
+  ],
+  insurance: [
+    { id: 'plan_lotus_std', name: 'Transit Shield', coverPercent: 80, premiumBasisPoints: 150, minPremiumMinor: 4_900,
+      maxCoverMinor: 50_00_000, active: true,
+      terms: 'Covers loss and visible transit damage from our China warehouse to landing in India. Claims within 72 hours of delivery with unboxing photos.' },
+    { id: 'plan_lotus_full', name: 'Transit Shield Plus', coverPercent: 100, premiumBasisPoints: 300, minPremiumMinor: 9_900,
+      maxCoverMinor: 2_00_00_000, active: true,
+      terms: 'Full declared value, door to door, including box damage on collector packaging. Claims within 7 days of delivery.' },
+  ],
+};
+
+const HARBOR_APPLICATION: Partial<ForwarderProfile> = {
+  status: 'pending',
+  application: { submittedAt: iso(-1), history: [{ at: iso(-1), by: 'usr_fwd_harbor', status: 'pending', note: 'Application sent.' }] },
+  tagline: 'Sea & rail LCL into Nhava Sheva, weekly',
+  accent: 'blue',
+  city: 'Ningbo',
+  country: 'China',
+  businessId: 'NB-91330201MA2HXXXX',
+  since: 2019,
+  links: [{ label: 'Website', url: 'https://harborline.example' }],
+  autoAccept: true,
+  listedInDirectory: true,
+  lanes: [
+    { id: 'lane_nb_nsa', originCity: 'Ningbo', originCountry: 'China', destinationCity: 'Mumbai', destinationCountry: 'India',
+      mode: 'sea', ratePerKgMinor: 17_500, minChargeKg: 50, transitDaysMin: 22, transitDaysMax: 28, customsIncluded: true,
+      note: 'Sails every Tuesday.', active: true },
+    { id: 'lane_yw_del_rail', originCity: 'Yiwu', originCountry: 'China', destinationCity: 'Delhi', destinationCountry: 'India',
+      mode: 'rail', ratePerKgMinor: 26_000, minChargeKg: 30, transitDaysMin: 18, transitDaysMax: 22, customsIncluded: false,
+      note: '', active: true },
+  ],
+  insurance: [
+    { id: 'plan_harbor', name: 'Cargo cover', coverPercent: 100, premiumBasisPoints: 120, minPremiumMinor: 2_500,
+      maxCoverMinor: null, active: true, terms: 'All-risk marine cover, port to port.' },
+  ],
+  warehouse: { address: 'Beilun Port Zone, Ningbo', contact: '+86 574 0000 0104', hours: 'Mon–Fri' },
+};
+
+/** The artist the demo can sign into. */
+export const ARTIST_EMAIL = 'studio@inkwell.example';
+
+const INKWELL_STUDIO: Partial<ArtistProfile> & Pick<ArtistProfile, 'companyName' | 'directorySlug' | 'description'> = {
+  companyName: 'Inkwell Figure Studio',
+  directorySlug: 'inkwell-figure-studio',
+  description: 'A two-person studio in Pune doing repaints, custom sculpts and restoration on scale figures and garage kits. '
+    + 'Eight years of airbrush work; every piece is photographed at each stage so you see it before it ships back.',
+  status: 'approved',
+  application: SINCE_APPROVAL(-60, 'usr_art_inkwell', ''),
+  tagline: 'Repaints, custom sculpts & restoration',
+  accent: 'pink',
+  city: 'Pune',
+  country: 'India',
+  businessId: 'MSME UDYAM-MH-26-00XXXXX',
+  since: 2018,
+  links: [
+    { label: 'Instagram', url: 'https://instagram.com/inkwell.figures' },
+    { label: 'Portfolio', url: 'https://inkwell.example' },
+  ],
+  trust: { score: 92, completedTransactions: 41, disputesLost: 0, computedAt: null },
+  specialties: ['Repaint', 'Custom sculpt', 'Restoration', 'Weathering', 'Diorama'],
+  acceptingWork: true,
+  studioAddress: 'Inkwell Figure Studio, 14 Prabhat Road, Erandwane, Pune 411004 · +91 90000 00301',
+  payment: { upiId: 'inkwell@okaxis', accountName: 'Inkwell Figure Studio', accountNumber: null, ifsc: null, instructions: 'Quote the order number.' },
+  offerings: [
+    { id: 'svc_repaint', name: 'Full repaint', description: 'Strip, prime and airbrush to your reference. Gloss or matte finish, sealed.', priceFromMinor: 6_50_000, turnaroundDays: 21, active: true },
+    { id: 'svc_touchup', name: 'Touch-up & paint fix', description: 'Factory paint slop, scuffs and rubs corrected and blended.', priceFromMinor: 1_80_000, turnaroundDays: 7, active: true },
+    { id: 'svc_sculpt', name: 'Custom head sculpt', description: 'A new head or expression sculpted, cast and painted to match.', priceFromMinor: 12_00_000, turnaroundDays: 35, active: true },
+    { id: 'svc_restore', name: 'Restoration & repair', description: 'Broken parts rebuilt, pins replaced, yellowing treated.', priceFromMinor: 2_50_000, turnaroundDays: 14, active: true },
+    { id: 'svc_diorama', name: 'Diorama base', description: 'A themed base built for your figure: rubble, foliage, water effects.', priceFromMinor: 4_00_000, turnaroundDays: 18, active: true },
+  ],
+  portfolio: [
+    { id: 'pic_1', url: 'seed:inkwell-1', caption: 'Dragon Knight, battle-worn repaint' },
+    { id: 'pic_2', url: 'seed:inkwell-2', caption: 'Mecha weathering, chipped edges' },
+    { id: 'pic_3', url: 'seed:inkwell-3', caption: 'Custom head, 1/6 scale' },
+    { id: 'pic_4', url: 'seed:inkwell-4', caption: 'Restored 2004 garage kit' },
+    { id: 'pic_5', url: 'seed:inkwell-5', caption: 'Diorama base, ruined temple' },
+    { id: 'pic_6', url: 'seed:inkwell-6', caption: 'Pearl-white gloss repaint' },
+  ],
+};
+
+const KINTSUGI_APPLICATION: Partial<ArtistProfile> & Pick<ArtistProfile, 'companyName' | 'directorySlug' | 'description'> = {
+  companyName: 'Kintsugi Kustoms',
+  directorySlug: 'kintsugi-kustoms',
+  description: 'Gold-seam repairs and mixed-media customs for broken figures. I turn the crack into the feature.',
+  status: 'pending',
+  application: { submittedAt: iso(-2), history: [{ at: iso(-2), by: 'usr_art_kintsugi', status: 'pending', note: 'Application sent.' }] },
+  tagline: 'Broken figures, mended in gold',
+  accent: 'lime',
+  city: 'Bengaluru',
+  country: 'India',
+  since: 2022,
+  links: [{ label: 'Instagram', url: 'https://instagram.com/kintsugi.kustoms' }],
+  specialties: ['Kintsugi', 'Repair', 'Mixed media'],
+  acceptingWork: true,
+  studioAddress: 'Indiranagar, Bengaluru',
+  offerings: [
+    { id: 'svc_gold', name: 'Gold-seam repair', description: 'Breaks rebuilt with a gold kintsugi seam.', priceFromMinor: 3_50_000, turnaroundDays: 14, active: true },
+  ],
+  portfolio: [],
+};
+
+/** An artist's studio account. */
+function artist(
+  id: string, email: string, phone: string,
+  studio: Partial<ArtistProfile> & Pick<ArtistProfile, 'companyName' | 'directorySlug' | 'description'>,
+  password = false,
+): User {
+  return {
+    id,
+    username: id.replace('usr_art_', ''),
+    email,
+    phone,
+    displayName: studio.companyName,
+    isAdmin: false,
+    passwordHash: password ? hashPassword(DEMO_PASSWORD) : null,
+    verification: verification(true),
+    buyerTrust: trust(),
+    sellerTrust: sellerTrust(),
+    sellerProfile: null,
+    forwarderProfile: null,
+    artistProfile: {
+      contactEmail: email,
+      contactPhone: phone,
+      trust: trust(0, 0),
+      listedInDirectory: true,
+      specialties: [],
+      offerings: [],
+      portfolio: [],
+      acceptingWork: true,
+      studioAddress: '',
+      ...studio,
+    },
+    suspended: false,
+    createdAt: iso(-90),
+    updatedAt: iso(-2),
+  };
+}
+
 function forwarder(
   id: string, company: string, slug: string, email: string, phone: string,
   capacityKg: number, score: number, completed: number, description: string,
   routes: NonNullable<User['forwarderProfile']>['routes'],
+  store: Partial<ForwarderProfile> = {}, password = false,
 ): User {
   return {
     id,
@@ -396,7 +582,7 @@ function forwarder(
     phone,
     displayName: company,
     isAdmin: false,
-    passwordHash: null,
+    passwordHash: password ? hashPassword(DEMO_PASSWORD) : null,
     verification: verification(true),
     buyerTrust: trust(),
     sellerTrust: sellerTrust(),
@@ -411,6 +597,7 @@ function forwarder(
       claimedMonthlyCapacityKg: capacityKg,
       trust: trust(score, completed),
       listedInDirectory: true,
+      ...store,
     },
     suspended: false,
     createdAt: iso(-300),
@@ -492,7 +679,7 @@ const LISTINGS: ListingSeed[] = [
   },
   {
     id: 'lst_iem_audio', sellerId: 'usr_gadgetgrid', title: 'Planar IEM — Shenzhen direct',
-    description: 'Group-buy slot against the October Shenzhen consolidation. Balanced cable included.',
+    description: 'Pre-order slot against the October Shenzhen consolidation. Balanced cable included.',
     category: 'Electronics', condition: 'MISB', priceMinor: 54_000,
     quantity: 22, lotId: 'lot_sz_oct', tags: ['audio', 'iem', 'planar', 'preorder'],
     preOrder: { fillThreshold: 12, cutoffDays: 16 },
@@ -620,7 +807,11 @@ export function seedLots(): Lot[] {
       status: 'open', stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Lot opened for pre-booking.', recordedBy: 'usr_kaiju' }],
       estimatedDispatchAt: iso(24),
-      forwarder: { forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight', contact: 'ops@lotusfreight.example', trackingReference: null },
+      forwarder: {
+        forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight', contact: 'ops@lotusfreight.example', trackingReference: null,
+        laneId: 'lane_gz_blr', laneLabel: 'Guangzhou → Bengaluru · air', acceptance: 'accepted',
+        insurancePlanIds: ['plan_lotus_std', 'plan_lotus_full'],
+      },
       costModel: { currency: 'INR', goodsCostMinor: 18_50_000, freightMinor: 2_40_000, customsDutyMinor: 3_10_000, packagingMinor: 45_000, localShippingMinor: 60_000, totalWeightGrams: 24_500 },
       createdAt: iso(-6), updatedAt: iso(-1),
     },
@@ -685,10 +876,10 @@ export function seedOrders(): Order[] {
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_demo' }],
       protection: {
-        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — community escrow',
+        managerId: 'usr_escrow_meera', managerName: 'Meera Iyer',
         feeMinor: 4_350, feeBasisPoints: 150, boughtAt: iso(-5), refundedAt: null,
       },
-      escrow: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
+      hold: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
       completedAt: null, createdAt: iso(-5), updatedAt: iso(-5),
     },
     {
@@ -704,10 +895,10 @@ export function seedOrders(): Order[] {
         { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
       ],
       protection: {
-        escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera I. — community escrow',
+        managerId: 'usr_escrow_meera', managerName: 'Meera Iyer',
         feeMinor: 480, feeBasisPoints: 150, boughtAt: iso(-30), refundedAt: null,
       },
-      escrow: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
+      hold: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
       completedAt: null, createdAt: iso(-30), updatedAt: iso(-4),
     },
     {
@@ -717,7 +908,8 @@ export function seedOrders(): Order[] {
       status: 'pending_payment', paymentStatus: 'unpaid',
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-2), note: 'Order placed.', recordedBy: 'usr_demo' }],
-      escrow: { state: 'none', amountMinor: 54_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      hold: { state: 'none', amountMinor: 54_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      placedAt: null,
       completedAt: null, createdAt: iso(-2), updatedAt: iso(-2),
     },
     {
@@ -736,7 +928,7 @@ export function seedOrders(): Order[] {
         { stage: 'india_received', enteredAt: iso(-30), note: 'Cleared customs.', recordedBy: 'usr_kaiju' },
         { stage: 'delivered', enteredAt: iso(-24), note: 'Delivery confirmed by the buyer.', recordedBy: 'usr_demo' },
       ],
-      escrow: { state: 'released', amountMinor: 29_000, heldAt: iso(-64), releasedAt: iso(-24), autoReleaseAt: null, disputeId: null },
+      hold: { state: 'released', amountMinor: 29_000, heldAt: iso(-64), releasedAt: iso(-24), autoReleaseAt: null, disputeId: null },
       completedAt: iso(-24), createdAt: iso(-64), updatedAt: iso(-24),
     },
     {
@@ -750,7 +942,8 @@ export function seedOrders(): Order[] {
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-1), note: 'Order placed.', recordedBy: 'usr_demo' }],
       protection: null,
-      escrow: { state: 'none', amountMinor: 32_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      hold: { state: 'none', amountMinor: 32_000, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
+      placedAt: null,
       completedAt: null, createdAt: iso(-1), updatedAt: iso(-1),
     },
     /* Sales the demo account has made, so the seller dashboards have numbers in
@@ -767,7 +960,7 @@ export function seedOrders(): Order[] {
         { stage: 'local_dispatch', enteredAt: iso(-19), note: null, recordedBy: 'usr_demo' },
         { stage: 'delivered', enteredAt: iso(-17), note: 'Handed over.', recordedBy: 'usr_demo' },
       ],
-      escrow: { state: 'released', amountMinor: 1_20_000, heldAt: iso(-22), releasedAt: iso(-17), autoReleaseAt: null, disputeId: null },
+      hold: { state: 'released', amountMinor: 1_20_000, heldAt: iso(-22), releasedAt: iso(-17), autoReleaseAt: null, disputeId: null },
       completedAt: iso(-17), createdAt: iso(-22), updatedAt: iso(-17),
     },
     {
@@ -781,7 +974,7 @@ export function seedOrders(): Order[] {
         { stage: 'dispatched', enteredAt: iso(-10), note: null, recordedBy: 'usr_demo' },
         { stage: 'delivered', enteredAt: iso(-8), note: null, recordedBy: 'usr_demo' },
       ],
-      escrow: { state: 'released', amountMinor: 36_000, heldAt: iso(-11), releasedAt: iso(-8), autoReleaseAt: null, disputeId: null },
+      hold: { state: 'released', amountMinor: 36_000, heldAt: iso(-11), releasedAt: iso(-8), autoReleaseAt: null, disputeId: null },
       completedAt: iso(-8), createdAt: iso(-11), updatedAt: iso(-8),
     },
     {
@@ -798,10 +991,10 @@ export function seedOrders(): Order[] {
         { stage: 'ordering', enteredAt: iso(-1), note: 'Buyer opened a dispute.', recordedBy: 'usr_gadgetgrid' },
       ],
       protection: {
-        escrowAgentId: 'usr_kaiju', escrowName: 'Kaiju Imports',
+        managerId: 'usr_kaiju', managerName: 'Ravi Krishnan',
         feeMinor: 2_400, feeBasisPoints: 200, boughtAt: iso(-3), refundedAt: null,
       },
-      escrow: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
+      hold: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
       completedAt: null, createdAt: iso(-3), updatedAt: iso(-1),
     },
   ];
@@ -1006,13 +1199,13 @@ export function seedLiveSale(): Order {
     status: 'confirmed', paymentStatus: 'paid',
     stage: 'ordering',
     stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Order placed.', recordedBy: 'usr_tokyoline' }],
-    /* Same lot as ord_2003, same escrow — which is exactly what the suggestion
-       at checkout is for. */
+    /* Same lot as ord_2003, also bought with Buyer Protection, with the same
+       community manager assigned. */
     protection: {
-      escrowAgentId: 'usr_kaiju', escrowName: 'Kaiju Imports',
+      managerId: 'usr_kaiju', managerName: 'Ravi Krishnan',
       feeMinor: 2_200, feeBasisPoints: 200, boughtAt: iso(-6), refundedAt: null,
     },
-    escrow: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },
+    hold: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },
     completedAt: null, createdAt: iso(-6), updatedAt: iso(-6),
   };
 }
@@ -1077,7 +1270,7 @@ export function seedForums(): Forum[] {
     },
     {
       id: 'frm_deals', name: 'Deal spotting',
-      description: 'Price drops and group-buys worth joining.',
+      description: 'Price drops and pre-orders worth joining.',
       createdBy: 'usr_b_sana', postCount: 1,
       memberIds: ['usr_b_sana', 'usr_b_karan', 'usr_b_aisha'],
       createdAt: iso(-18), updatedAt: iso(-1),
@@ -1222,7 +1415,7 @@ const POSTS: PostSeed[] = [
   {
     id: 'pst_kaiju_pin', channelId: 'usr_kaiju', channel: 'seller', kind: 'update',
     authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
-    body: '📌 How our group-buys work: book a slot, pay the deposit when the lot fills, balance when it lands in India. Questions go right here.',
+    body: '📌 How our pre-orders work: book a slot, pay the deposit when the lot fills, balance when it lands in India. Questions go right here.',
     likeCount: 9, replyCount: 0, ageDays: -12, reach: 'channel', announcement: true, pinned: true,
   },
   {
@@ -1565,7 +1758,7 @@ export function seedLotOrders(): Order[] {
       currency: 'INR',
       status: 'in_fulfilment',
       paymentStatus: 'paid',
-      escrow: {
+      hold: {
         state: 'held', amountMinor: priceMinor, heldAt: iso(-12),
         releasedAt: null, autoReleaseAt: null, disputeId: null,
       },
@@ -1611,6 +1804,8 @@ export function seedShippedLot(): Lot {
     forwarder: {
       forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight',
       contact: 'ops@lotusfreight.example', trackingReference: 'LF-2026-09-8841',
+      laneId: 'lane_gz_bom_x', laneLabel: 'Guangzhou → Mumbai · express', acceptance: 'accepted',
+      insurancePlanIds: ['plan_lotus_std'],
     },
     handler: {
       handlerUserId: 'usr_hnd_bombay', name: 'Bombay Parcel Works',
@@ -1637,7 +1832,12 @@ export function seedOpenLot(): Lot {
     stage: 'ordering',
     stageHistory: [{ stage: 'ordering', enteredAt: iso(-14), note: 'Lot opened.', recordedBy: 'usr_demo' }],
     estimatedDispatchAt: iso(12),
-    forwarder: { forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight', contact: 'ops@lotusfreight.example', trackingReference: null },
+    // Booked, and waiting on Lotus to take it: the request their console opens on.
+    forwarder: {
+      forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight', contact: 'ops@lotusfreight.example', trackingReference: null,
+      laneId: 'lane_gz_bom_x', laneLabel: 'Guangzhou → Mumbai · express', acceptance: 'pending',
+      insurancePlanIds: ['plan_lotus_std', 'plan_lotus_full'],
+    },
     handler: {
       handlerUserId: 'usr_hnd_bombay', name: 'Bombay Parcel Works',
       contact: '+919000000201', city: 'Mumbai',

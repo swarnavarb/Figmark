@@ -8,9 +8,10 @@ import { error, handler, json } from './http.js';
 /**
  * Marketplace settings: read by anyone, changed only by operators.
  *
- * Today that is one number - how many days a payment held under buyer
- * protection waits before it releases itself - but it is a document rather
- * than a field so the next setting is an addition, not a new store.
+ * The protection window, the deadlines disputes run on, and every fee the
+ * marketplace charges - buyer protection, raising a dispute, each escalation,
+ * and Figmark's commission out of all of them. Managed here, centrally, and
+ * nowhere else.
  */
 
 async function operator(request: HttpRequest) {
@@ -18,10 +19,10 @@ async function operator(request: HttpRequest) {
   return auth.requireCapability(request, ['admin']);
 }
 
-/** GET /api/settings - what the rules currently are, for the words on screen. */
+/** GET /api/settings - what the rules and fees currently are, for the words on screen. */
 async function read(_request: HttpRequest, _context: InvocationContext) {
-  const settings = await marketSettings(await getRepository());
-  return json(200, { autoReleaseDays: settings.autoReleaseDays });
+  const { updatedAt: _at, updatedBy: _by, ...settings } = await marketSettings(await getRepository());
+  return json(200, settings);
 }
 
 /** GET /api/ops/settings - the same, with who last changed them. */
@@ -45,10 +46,13 @@ async function save(request: HttpRequest, _context: InvocationContext) {
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
-  const cleaned = cleanSettings(body);
+  // A change to one number leaves the others as they were: the console may
+  // send only what it changed.
+  const repository = await getRepository();
+  const { updatedAt: _at, updatedBy: _by, ...current } = await marketSettings(repository);
+  const cleaned = cleanSettings(body && typeof body === 'object' ? { ...current, ...body } : body);
   if ('error' in cleaned) return error(400, 'invalid_settings', cleaned.error);
 
-  const repository = await getRepository();
   const now = new Date().toISOString();
   const existing = await repository.getSiteContent(SETTINGS_ID);
   await repository.saveSiteContent({

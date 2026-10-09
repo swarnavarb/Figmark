@@ -79,9 +79,22 @@ await check('every advertised demo account actually signs in', async () => {
   }
 });
 
+await check('every demo session fits in a cookie a browser will keep', async () => {
+  // Browsers drop a cookie over 4096 bytes without a word, so an account whose
+  // session outgrows one signs in and is signed straight back out. A forwarder
+  // with a full store did exactly that.
+  for (const account of repository.listDemoAccounts()) {
+    const password = account.label.split('·').pop().trim();
+    const result = await auth.login({ identifier: account.identifier, password });
+    const cookie = auth.loginCookies(result.token)[0];
+    assert.ok(cookie.length < 4000, `${account.identifier}'s session cookie is ${cookie.length} bytes`);
+  }
+});
+
 await check('catalog sellers and forwarders cannot be signed into', async () => {
   // They exist as data so the marketplace has content, but hold no credential.
-  for (const id of ['usr_kaiju', 'usr_fwd_lotus']) {
+  // Lotus is a demo sign-in now, for its store console; Silk Route is still only data.
+  for (const id of ['usr_kaiju', 'usr_fwd_silkroute']) {
     const user = await repository.getUserById(id);
     assert.ok(user, `${id} should exist`);
     assert.equal(user.passwordHash, null, `${id} must not be signable-into`);
@@ -350,7 +363,11 @@ await check('a correct password clears the failed-attempt record', async () => {
 console.log('\ndata layer');
 
 await check('search matches title, tags and description', async () => {
-  assert.equal((await repository.listListings({ search: 'sneaker' })).length, 2);
+  // Behaviour rather than a seed count: every hit says the word somewhere.
+  const sneakers = await repository.listListings({ search: 'sneaker' });
+  assert.ok(sneakers.length >= 2);
+  assert.ok(sneakers.every((listing) => [listing.title, listing.description, listing.category, ...listing.tags]
+    .some((text) => text.toLowerCase().includes('sneaker'))));
   assert.equal((await repository.listListings({ search: 'deadstock' })).length, 1);
   assert.equal((await repository.listListings({ search: 'nothingmatchesthis' })).length, 0);
 });

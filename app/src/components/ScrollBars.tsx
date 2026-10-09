@@ -11,10 +11,20 @@ import { useLocation } from 'react-router-dom';
  * the glass would make the bars flicker.
  *
  * Written as an attribute on the root rather than as state, so the page does
- * not re-render on every scroll event - the stylesheet does the moving.
+ * not re-render on every scroll event - the stylesheet does the moving. The
+ * same pass marks the page as scrolled at all (`data-scrolled`), which is when
+ * the header turns to glass over what passes under it.
  */
 const JITTER = 8;
 const ALWAYS_SHOW_ABOVE = 80;
+/** Past this the page is under the header, and the header is see-through. */
+const SCROLLED_PAST = 4;
+
+function markScrolled() {
+  const root = document.documentElement;
+  if (window.scrollY > SCROLLED_PAST) root.dataset.scrolled = '';
+  else delete root.dataset.scrolled;
+}
 
 export function ScrollBars() {
   const { pathname } = useLocation();
@@ -22,6 +32,7 @@ export function ScrollBars() {
   // A new page starts with its bars showing, whatever the last one did.
   useEffect(() => {
     delete document.documentElement.dataset.bars;
+    markScrolled();
   }, [pathname]);
 
   useEffect(() => {
@@ -33,6 +44,7 @@ export function ScrollBars() {
       const now = window.scrollY;
       const delta = now - last;
       const root = document.documentElement;
+      markScrolled();
       if (now < ALWAYS_SHOW_ABOVE) {
         delete root.dataset.bars;
       } else if (delta > JITTER) {
@@ -54,6 +66,7 @@ export function ScrollBars() {
       window.removeEventListener('scroll', onScroll);
       if (frame) window.cancelAnimationFrame(frame);
       delete document.documentElement.dataset.bars;
+      delete document.documentElement.dataset.scrolled;
     };
   }, []);
 

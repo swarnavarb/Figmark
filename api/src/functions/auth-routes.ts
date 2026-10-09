@@ -3,6 +3,24 @@ import type { LoginRequest, MeResponse, SignupRequest } from '../../../shared/co
 import { MockAuthProvider } from '../auth/mock-provider.js';
 import { getAuthService } from '../auth/index.js';
 import { error, handler, json } from './http.js';
+import { getRepository } from '../data/index.js';
+import { claimCookieReferrals } from '../affiliate.js';
+import { claimInvite } from '../share.js';
+
+/**
+ * A referral link followed before signing in now belongs to this account, and
+ * a brand-new account is filed under whoever invited it.
+ */
+async function claimReferrals(request: HttpRequest, userId: string | undefined): Promise<void> {
+  if (!userId) return;
+  try {
+    const repository = await getRepository();
+    await claimCookieReferrals(repository, request, userId);
+    await claimInvite(repository, request, userId);
+  } catch {
+    // Never let a referral stand between somebody and their account.
+  }
+}
 
 /** POST /api/auth/login - exchange credentials for a session. */
 async function login(request: HttpRequest, _context: InvocationContext) {
@@ -16,6 +34,7 @@ async function login(request: HttpRequest, _context: InvocationContext) {
   }
 
   const result = await auth.login(body);
+  await claimReferrals(request, result.user?.id);
   return json(200, result, auth.loginCookies(result.token));
 }
 
@@ -35,6 +54,7 @@ async function signup(request: HttpRequest, _context: InvocationContext) {
   }
 
   const result = await auth.signup(body);
+  await claimReferrals(request, result.user?.id);
   return json(201, result, auth.loginCookies(result.token));
 }
 

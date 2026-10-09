@@ -1,17 +1,23 @@
 import { ReportButton } from './ReportButton';
+import { RaiseDisputeModal, ReportModal } from './DisputeFlows';
+import { useSession } from '../session';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { ApiRequestError, api, type PostCard } from '../api';
+import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
 import {
   REACTIONS, REACTION_META,
   type CommentThread, type CommentView, type PollView, type ReactionKind, type ReactionSummary, type ReactorRow,
 } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
-import { Avatar, Modal, PersonLink, Thumb } from './ui';
+import { ManagerMark } from './ManagerBadge';
+import { Avatar, Modal, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { useVoice, VoiceAvatar } from './SocialVoice';
+import { PostInFigmark } from './PostInFigmark';
+import { figmarkLink, LinkCard } from './LinkCard';
+import { OpeningCard } from './Showcase';
 
 /**
  * One post, and everything people do with it.
@@ -121,6 +127,126 @@ export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['lis
   );
 }
 
+/** What each badge says when tapped: the name first, then why the post is in front of you. */
+const BOOSTS: Record<PostBoost, { icon: 'bolt' | 'rising'; title: string; line: string }> = {
+  trending: { icon: 'bolt', title: 'Trending', line: 'One of the most talked-about posts on Figmark right now.' },
+  rising: { icon: 'rising', title: 'Rising', line: 'A new post picking up fast. You are seeing it early.' },
+};
+
+const TIP_MS = 2600;
+
+/**
+ * Why the home feed is showing a post: a small icon that, tapped, says so in a
+ * bubble right above itself.
+ *
+ * Above the icon rather than at the foot of the screen, because the question
+ * is "what is this mark" and the answer belongs where the eye already is. It
+ * goes by itself after a moment, on a second tap, on Escape, or on a tap
+ * anywhere else.
+ */
+function BoostBadge({ kind }: { kind: PostBoost }) {
+  const meta = BOOSTS[kind];
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => setOpen(false), TIP_MS);
+    const away = (event: Event) => {
+      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', escape);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+
+  return (
+    <span className="boost" ref={wrap}>
+      <button type="button" className={`boost__icon boost__icon--${kind}`} aria-label={meta.title}
+        aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name={meta.icon} size={12} />
+      </button>
+      {open && (
+        <span className={`boost__tip boost__tip--${kind}`} role="status">
+          <strong><Icon name={meta.icon} size={13} /> {meta.title}</strong>
+          <span>{meta.line}</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The item on a sale post, with the way to buy it right there.
+ *
+ * Buy opens the item carrying which post it came from, so the post is credited
+ * with the sale and can say how many it sold. A group pre-order shows how full
+ * it is, a short-stock item how many are left - the two things that make
+ * somebody act now rather than later.
+ */
+function SaleItem({ listing, post, nested, offerTo }: {
+  listing: NonNullable<PostCard['listing']>;
+  post: PostCard['post'];
+  nested: boolean;
+  /** The shop's handle, when this viewer may message it about the item. */
+  offerTo: string | null;
+}) {
+  const href = `/listing/${listing.id}?post=${encodeURIComponent(`${post.channelId}:${post.id}`)}`;
+  const fill = listing.fill ?? null;
+  const pct = fill ? Math.min(100, Math.round((fill.joined / Math.max(1, fill.total)) * 100)) : 0;
+  const sold = post.buyCount ?? 0;
+  const gone = listing.buyable === false;
+  return (
+    <div className={`spost__sale${gone ? ' is-gone' : ''}`}>
+      <Link to={href} className="spost__item">
+        {listing.photoUrl ? (
+          <img className="spost__itemphoto" src={listing.photoUrl} alt="" loading="lazy" />
+        ) : (
+          <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
+        )}
+        <span className="spost__itembody">
+          <span className="spost__itemtag">{gone ? 'Sold out' : fill ? 'Group pre-order' : 'For sale'}</span>
+          <span className="spost__itemname">{listing.title}</span>
+          <span className="spost__itemmeta">
+            <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+            <span className="faint">{listing.condition}</span>
+            {!gone && listing.left != null && listing.left > 0 && (
+              <span className="spost__left">{listing.left === 1 ? 'Last one' : `${listing.left} left`}</span>
+            )}
+          </span>
+          {fill && (
+            <span className="spost__fill" aria-label={`${fill.joined} of ${fill.total} joined`}>
+              <span className="spost__fillbar"><i style={{ width: `${pct}%` }} /></span>
+              <span className="faint">{fill.joined} of {fill.total} joined</span>
+            </span>
+          )}
+        </span>
+        <span className={`spost__itemcta${gone ? '' : ' spost__itemcta--buy'}`}>
+          {gone ? 'View' : fill ? 'Join' : 'Buy'} <Icon name="right" size={12} />
+        </span>
+      </Link>
+      {!nested && (sold > 0 || offerTo) && (
+        <span className="spost__saleline">
+          {sold > 0 && <span><Icon name="tag" size={12} /> {sold} bought from this post</span>}
+          {offerTo && (
+            <Link className="spost__offer"
+              to={`/messages/${encodeURIComponent(offerTo)}?about=${encodeURIComponent(listing.id)}`}>
+              💬 Message about this
+            </Link>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function reduceMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
@@ -128,9 +254,12 @@ function reduceMotion(): boolean {
 /* ── The post ──────────────────────────────────────────────────────────── */
 
 export function SocialPostCard({
-  card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false,
+  card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false, canModerate = false, onPinned,
 }: {
   card: PostCard;
+  /** Read by the forum's admin or a moderator, who may take it down or pin it. */
+  canModerate?: boolean;
+  onPinned?: (id: string, pinned: boolean) => void;
   /** Read inside its own forum, where naming the forum again is noise. */
   inForum?: boolean;
   /** Its place on the trending board, when it is on one. */
@@ -150,9 +279,12 @@ export function SocialPostCard({
   const [showComments, setShowComments] = useState(openComments);
   const [sharing, setSharing] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [objecting, setObjecting] = useState<'report' | 'dispute' | null>(null);
+  const { user } = useSession();
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [burst, setBurst] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   useEffect(() => {
     setCard(initial);
@@ -161,7 +293,11 @@ export function SocialPostCard({
 
   const { post, listing, author, social } = card;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
-  const hot = social.reactions.total >= HOT_REACTIONS
+  // A Figmark link is drawn as its card, unless the post brought its own pictures.
+  const linked = !post.vibe && photos.length === 0 ? figmarkLink(post.body) : null;
+  const badges = nested ? [] : card.badges ?? [];
+  // The lightning already says it louder; two flames for one post is noise.
+  const hot = !badges.includes('trending') && social.reactions.total >= HOT_REACTIONS
     && Date.now() - new Date(post.createdAt).getTime() < HOT_WINDOW_MS;
 
   const react = useCallback(async (kind: ReactionKind | null) => {
@@ -187,7 +323,10 @@ export function SocialPostCard({
 
   async function remove() {
     setMenu(false);
-    if (!window.confirm('Delete this post? Its reactions and comments go with it.')) return;
+    const sure = await confirm({
+      title: 'Delete this post?', body: 'Its reactions and comments go with it.', action: 'Delete', danger: true,
+    });
+    if (!sure) return;
     try {
       await api.deletePost(post.channelId, post.id);
       onRemoved?.(post.id);
@@ -203,6 +342,13 @@ export function SocialPostCard({
         <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>
       )}
       {social.poll && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
+      {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
+      {post.answersWant && (
+        <Link className="spost__kind spost__kind--poll"
+          to={`/social?view=wanted&want=${encodeURIComponent(post.answersWant.id)}&buyer=${encodeURIComponent(post.answersWant.buyerId)}`}>
+          <Icon name="target" size={11} /> Answers an ISO
+        </Link>
+      )}
       {hot && <span className="spost__kind spost__kind--hot">🔥 Hot</span>}
       {post.powerSale || post.drop ? (
         <span className="spost__kind spost__kind--drop">⚡ Exclusive drop <span className="probadge">PRO</span></span>
@@ -215,12 +361,31 @@ export function SocialPostCard({
   return (
     <article className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {!nested && <span className="spost__glow" aria-hidden="true" />}
+      {dialog}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
           <span className="spost__byline">
             <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
+            {/* Right by the name, for anyone not yet followed. A shop does not
+                follow anybody, so speaking as one still follows as the person. */}
+            {!nested && !social.mine && !following && post.channel === 'seller' && voice.storeId !== post.channelId && (
+              <button type="button" className="spost__follow" disabled={followBusy}
+                title={voice.storeId ? 'Shops do not follow - this follows as you' : undefined}
+                onClick={async () => {
+                  setFollowBusy(true);
+                  try {
+                    setFollowing((await api.follow(post.channelId)).following);
+                  } catch (err) {
+                    setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
+                  } finally {
+                    setFollowBusy(false);
+                  }
+                }}>
+                <Icon name="plus" size={11} /> Follow
+              </button>
+            )}
             {card.forum && !inForum && (
               <>
                 <Icon name="right" size={12} className="spost__in" />
@@ -237,6 +402,7 @@ export function SocialPostCard({
           </span>
           <span className="spost__meta">
             <Link to={postHref(post)} className="spost__time">{timeAgo(post.createdAt)}</Link>
+            {badges.map((kind) => <BoostBadge key={kind} kind={kind} />)}
             {card.shop && !nested && (
               <>
                 <span aria-hidden="true">·</span>
@@ -246,22 +412,6 @@ export function SocialPostCard({
             {kindLine}
           </span>
         </div>
-        {/* People follow; a shop does not, so the button is not offered to one. */}
-        {!nested && !social.mine && !following && post.channel === 'seller' && !voice.storeId && (
-          <button type="button" className="followbtn" disabled={followBusy}
-            onClick={async () => {
-              setFollowBusy(true);
-              try {
-                setFollowing((await api.follow(post.channelId)).following);
-              } catch (err) {
-                setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
-              } finally {
-                setFollowBusy(false);
-              }
-            }}>
-            <Icon name="plus" size={12} /> Follow
-          </button>
-        )}
         {!nested && (
           <div className="spost__menuwrap">
             <button type="button" className="iconbtn" aria-label="More" aria-expanded={menu}
@@ -276,9 +426,33 @@ export function SocialPostCard({
                 <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
                   <Icon name="external" size={15} /> Open post
                 </Link>
-                {social.mine && (
+                {canModerate && (
+                  <button type="button" role="menuitem" onClick={async () => {
+                    setMenu(false);
+                    try {
+                      const { pinned } = await api.pinPost(post.channelId, post.id);
+                      onPinned?.(post.id, pinned);
+                    } catch (err) {
+                      setError(err instanceof ApiRequestError ? err.message : 'Could not pin that.');
+                    }
+                  }}>
+                    <Icon name="bolt" size={15} /> {post.pinned ? 'Unpin' : 'Pin to the top'}
+                  </button>
+                )}
+                {/* Somebody else's post: report it to Figmark, or raise a dispute a community manager hears. */}
+                {user && !social.mine && (
+                  <>
+                    <button type="button" role="menuitem" onClick={() => { setMenu(false); setObjecting('report'); }}>
+                      ⚠️ Report now
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => { setMenu(false); setObjecting('dispute'); }}>
+                      ⚖️ Raise a dispute
+                    </button>
+                  </>
+                )}
+                {(social.mine || canModerate) && (
                   <button type="button" role="menuitem" className="is-danger" onClick={() => void remove()}>
-                    <Icon name="trash" size={15} /> Delete post
+                    <Icon name="trash" size={15} /> {social.mine ? 'Delete post' : 'Remove post (moderator)'}
                   </button>
                 )}
               </div>
@@ -286,12 +460,25 @@ export function SocialPostCard({
           </div>
         )}
       </header>
+      {objecting === 'report' && (
+        <ReportModal targetType={post.channel === 'forum' ? 'forum_post' : 'post'} targetId={post.id} parentId={post.channelId}
+          kind="report" onClose={() => setObjecting(null)} />
+      )}
+      {objecting === 'dispute' && (
+        <RaiseDisputeModal onClose={() => setObjecting(null)}
+          target={{
+            type: post.channel === 'forum' ? 'forum_post' : 'post', id: post.id, parentId: post.channelId,
+            againstId: post.authorId, label: `${post.channel === 'forum' ? 'Forum post' : 'Post'} by ${post.authorName}`,
+          }} />
+      )}
 
       {post.vibe ? (
         <div className={`vibe vibe--${post.vibe}`}><p>{post.body}</p></div>
       ) : (
-        post.body && <Body text={post.body} long={!nested && photos.length === 0} />
+        (linked ? linked.rest : post.body) && <Body text={linked ? linked.rest : post.body} long={!nested && photos.length === 0 && !linked} />
       )}
+
+      {linked && <LinkCard path={linked.path} compact={nested} />}
 
       {photos.length > 0 && (
         <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
@@ -306,25 +493,15 @@ export function SocialPostCard({
           }} />
       )}
 
+      {post.opening && (
+        <OpeningCard sellerId={post.opening.sellerId} saleId={post.opening.saleId}
+          startsAt={post.opening.startsAt} saleName={post.opening.saleName} itemCount={post.opening.itemCount} />
+      )}
       {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
 
       {listing && !post.drop && (
-        <Link to={`/listing/${listing.id}`} className="spost__item">
-          {listing.photoUrl ? (
-            <img className="spost__itemphoto" src={listing.photoUrl} alt="" loading="lazy" />
-          ) : (
-            <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
-          )}
-          <span className="spost__itembody">
-            <span className="spost__itemtag">For sale</span>
-            <span className="spost__itemname">{listing.title}</span>
-            <span className="spost__itemmeta">
-              <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-              <span className="faint">{listing.condition}</span>
-            </span>
-          </span>
-          <span className="spost__itemcta">View <Icon name="right" size={12} /></span>
-        </Link>
+        <SaleItem listing={listing} post={post} nested={nested}
+          offerTo={!nested && card.shop && !social.mine && !voice.storeId ? author.handle : null} />
       )}
 
       {post.repostOf && (
@@ -354,7 +531,7 @@ export function SocialPostCard({
             <button type="button" className="spost__preview" onClick={() => setShowComments(true)}>
               {social.preview.map((comment) => (
                 <span key={comment.id} className="spost__previewline">
-                  <strong>{comment.authorName}</strong> {comment.body}
+                  <strong>{comment.authorName}<ManagerMark handle={comment.author?.handle} size={12} /></strong> {comment.body}
                 </span>
               ))}
               {social.commentCount > social.preview.length && (
@@ -412,11 +589,45 @@ function Body({ text, long }: { text: string; long: boolean }) {
   const big = long && text.length < 90 && !text.includes('\n');
   return (
     <div className={`spost__body${big ? ' spost__body--big' : ''}${folds && !open ? ' is-folded' : ''}`}>
-      <p>{text}</p>
+      <p><Linked text={text} /></p>
       {folds && !open && (
         <button type="button" className="spost__more" onClick={() => setOpen(true)}>See more</button>
       )}
     </div>
+  );
+}
+
+/**
+ * Links in a post's words, made pressable. One into Figmark opens in place;
+ * anything else opens in a new tab, and is never vouched for.
+ */
+export function Linked({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s<>"']+)/g);
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (index % 2 === 0) return part;
+        // A sentence's full stop or closing bracket is not part of the address.
+        const url = part.replace(/[.,!?;:)\]]+$/, '');
+        const tail = part.slice(url.length);
+        let inside: string | null = null;
+        try {
+          const parsed = new URL(url);
+          if (parsed.origin === window.location.origin) inside = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        } catch {
+          return part;
+        }
+        const shown = url.replace(/^https?:\/\//, '').replace(/[?#].*$/, '');
+        return (
+          <span key={index}>
+            {inside
+              ? <Link className="spost__link" to={inside} onClick={(event) => event.stopPropagation()}>{shown}</Link>
+              : <a className="spost__link" href={url} target="_blank" rel="noopener noreferrer nofollow ugc" onClick={(event) => event.stopPropagation()}>{shown}</a>}
+            {tail}
+          </span>
+        );
+      })}
+    </>
   );
 }
 
@@ -1001,6 +1212,8 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
     setLikes(comment.likeCount);
   }, [comment.likedByMe, comment.likeCount]);
 
+  const { confirm, dialog } = useConfirm();
+
   async function like() {
     setLiked(!liked);
     setLikes(likes + (liked ? -1 : 1));
@@ -1015,7 +1228,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   }
 
   async function remove() {
-    if (!window.confirm('Delete this comment?')) return;
+    if (!(await confirm({ title: 'Delete this comment?', body: 'Replies to it go with it.', action: 'Delete', danger: true }))) return;
     try {
       onChanged(await api.deletePostComment(channelId, id, comment.id, voice.storeId));
     } catch {
@@ -1025,6 +1238,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
 
   return (
     <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}`}>
+      {dialog}
       <Avatar name={comment.authorName} size={small ? 26 : 32} />
       <div className="cmt__main">
         <div className="cmt__bubble">
@@ -1130,6 +1344,7 @@ function ShareSheet({ card, onClose, onShared }: {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [elsewhere, setElsewhere] = useState(false);
   // Share the original when this is a repost: that is what the link should open.
   const target = card.original?.post ?? card.post;
   const canRepost = (target.reach ?? 'feed') === 'feed';
@@ -1199,7 +1414,17 @@ function ShareSheet({ card, onClose, onShared }: {
             <span className="sharesheet__glyph sharesheet__glyph--dm"><Icon name="mail" size={20} /></span>
             Message
           </Link>
+          <button type="button" className={`sharesheet__tile${elsewhere ? ' is-on' : ''}`} aria-expanded={elsewhere}
+            onClick={() => setElsewhere((open) => !open)}>
+            <span className="sharesheet__glyph sharesheet__glyph--room"><Icon name="repost" size={20} /></span>
+            Forum or channel
+          </button>
         </div>
+        {elsewhere && (
+          <PostInFigmark feed={false} asStore={Boolean(voice.storeId)}
+            text={`${thought.trim() ? `${thought.trim()}\n` : ''}${window.location.origin}${postHref(target)}`}
+            onPosted={() => void count('link').catch(() => undefined)} />
+        )}
         {done && <p className="sharesheet__done" role="status">{done}</p>}
         {error && <p className="notice notice--error">{error}</p>}
       </div>
@@ -1207,16 +1432,4 @@ function ShareSheet({ card, onClose, onShared }: {
   );
 }
 
-/** A small celebration, for things worth one. Respects reduced motion by not happening. */
-export function Confetti({ run }: { run: number }): ReactNode {
-  if (run === 0 || reduceMotion()) return null;
-  const pieces = Array.from({ length: 18 }, (_, index) => index);
-  return (
-    <span key={run} className="confetti" aria-hidden="true">
-      {pieces.map((index) => (
-        <span key={index} className={`confetti__bit confetti__bit--${index % 6}`}
-          style={{ left: `${(index * 53) % 100}%`, animationDelay: `${(index % 6) * 40}ms` }} />
-      ))}
-    </span>
-  );
-}
+export { Confetti } from './Confetti';

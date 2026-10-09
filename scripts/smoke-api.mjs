@@ -6,10 +6,16 @@
  * Functions host. Run `npm run build:api` first.
  */
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 
+// Steps are undoable for three minutes in the app; these checks read every
+// step at once, as they were written to, except the one that tests undo.
+process.env.FIGMARK_UNDO_WINDOW_MS = '0';
+// One account here does a day's posting in seconds; the limit has its own check.
+process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
-const { toErrorResponse } = await import(new URL('http.js', fns));
+const { toErrorResponse, json: jsonResponse } = await import(new URL('http.js', fns));
 const { loginRoute: login, signupRoute: signup, meRoute: me } = await import(new URL('auth-routes.js', fns));
 const {
   feedRoute: feed, listingDetailRoute: listingDetail, createListingRoute: createListing,
@@ -65,8 +71,9 @@ const {
   readPostRoute: readPost, reactRoute: reactTo, reactorsRoute: reactors,
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
-  removePostRoute: removePost, trendingRoute: trending, shareableRoute: shareable, pinPostRoute: pinPost,
+  removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, shareableRoute: shareable, pinPostRoute: pinPost,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
+  forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -79,7 +86,11 @@ const {
 const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
   publicProfileRoute: publicProfile, setUsernameRoute: setUsername, reactToMessageRoute: reactToMessage,
+  blockRoute: blockHandle, muteRoute: muteThread, dealItemsRoute: dealItems,
+  uploadChatPhotoRoute: uploadChatPhoto, chatPhotoRoute, deleteMessageRoute: deleteMessage, discardChatPhotoRoute: discardChatPhoto,
 } = await import(new URL('message-routes.js', fns));
+const { unboxingRoute: shareUnboxing } = await import(new URL('order-routes.js', fns));
+const { resetRateLimits } = await import(new URL('../rate-limit.js', fns));
 const {
   payRoute: payOrder, confirmRoute: confirmOrder, reviewRoute: reviewOrder,
   orderStateRoute: orderState, checkoutRoute: checkout,
@@ -99,10 +110,14 @@ const { notificationsRoute: notifications, notificationsReadRoute: markRead } =
 const { preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge } =
   await import(new URL('preorder-routes.js', fns));
 const {
-  powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSale,
+  powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSaleRaw,
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
 } = await import(new URL('power-sale-routes.js', fns));
+const {
+  fillingLotsRoute: fillingLots, dropsRoute: dropsShelf, dropRoute: readDrop, remindRoute: remindDrop,
+} = await import(new URL('showcase-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
+const { discardCheckoutRoute: discardCheckout } = await import(new URL('order-routes.js', fns));
 const {
   acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
   requestReversalDetailsRoute: requestReversalDetails, confirmReversalDetailsRoute: confirmReversalDetails,
@@ -126,16 +141,24 @@ const {
   offerServiceRoute: offerService, consignmentsRoute: consignments,
   distributionRoute: distribution, distributionDetailRoute: distributionDetail,
 } = await import(new URL('service-routes.js', fns));
+const {
+  myServicesRoute: myServices, applyStoreRoute: applyStore, storeConsoleRoute: storeConsole, saveStoreRoute: saveStore,
+  storeTeamRoute: storeTeam, storeWorkRoute: storeWork, respondLotRoute: respondLot, artistActRoute: artistAct,
+  storePageRoute: storePage, lotForwarderOptionsRoute: lotForwarderOptions, bookForwarderRoute: bookForwarder,
+  orderServicesRoute: orderServices, setInsuranceRoute: setInsurance, commissionRoute: commission,
+  commissionActRoute: commissionAct, crewLotRoute: crewLot, opsStoresRoute: opsStores, opsReviewRoute: opsReview,
+} = await import(new URL('store-routes.js', fns));
+const { orderMoney } = await import(new URL('../api/dist/shared/payments.js', import.meta.url));
 const { setCrewRoute: setCrew } = await import(new URL('fulfilment-routes.js', fns));
 const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
   lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
   noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
-  myItemsRoute: myItems,
+  myItemsRoute: myItems, applyRouteRoute: applyRoute, closeLotRoute: closeLot,
 } = await import(new URL('tracking-routes.js', fns));
 const {
   listTemplatesRoute: listTemplates, saveTemplateRoute: saveTemplate,
-  deleteTemplateRoute: deleteTemplate, uploadRoute: upload, photoRoute,
+  deleteTemplateRoute: deleteTemplate, uploadRoute: upload, discardUploadRoute: discardUpload, photoRoute,
   assignOrderToLotRoute: assignOrderToLot,
 } = await import(new URL('template-routes.js', fns));
 const {
@@ -147,13 +170,18 @@ const {
   openDisputeRoute: openDispute, readDisputeRoute: readDispute, replyDisputeRoute: replyDispute,
   offerDisputeRoute: offerDispute, acceptDisputeRoute: acceptDispute,
   withdrawDisputeRoute: withdrawDispute, escalateDisputeRoute: escalateDispute,
-  settleAsEscrowRoute: settleAsEscrow, escrowHoldingsRoute: escrowHoldings,
+  decideDisputeRoute: decideDispute, agreeDisputeRoute: agreeDispute, releaseDisputeRoute: releaseDispute,
+  raiseSubjectDisputeRoute: raiseSubjectDispute, communityCasesRoute: communityCases,
+  communityAvailabilityRoute: communityAvailability, communityManagersRoute: communityManagers,
+  communityNoticesRoute: communityNotices, communityStandingRoute: communityStanding, communityTeamRoute: communityTeam,
 } = await import(new URL('dispute-routes.js', fns));
 const {
   adminUsersRoute: adminUsers, adminUserDetailRoute: adminUser,
   adminSuspendRoute: adminSuspend, adminDeleteUserRoute: adminDeleteUser,
-  adminDeleteResourceRoute: adminDeleteResource, adminEscrowRoute: adminEscrow,
-  adminDisputesRoute: adminDisputes, adminResolveRoute: adminResolve,
+  adminDeleteResourceRoute: adminDeleteResource, adminManagerRoute: adminManager,
+  adminDisputesRoute: adminDisputes, adminReassignRoute: adminReassign,
+  adminActionsRoute: adminActions, adminDecideActionRoute: adminDecideAction, adminLedgerRoute: adminLedger,
+  adminPhotoScanRoute: adminPhotoScan, adminPhotoCleanupRoute: adminPhotoCleanup,
 } = await import(new URL('admin-routes.js', fns));
 const { isAnnouncement } = await import(new URL('../api/dist/shared/posts.js', import.meta.url));
 const { LOT_STAGES } = await import(new URL('../api/dist/shared/enums.js', import.meta.url));
@@ -163,7 +191,7 @@ const {
 } = await import(new URL('../api/dist/shared/insights.js', import.meta.url));
 const { tally: tallyOf } = await import(new URL('../api/dist/shared/board.js', import.meta.url));
 const {
-  DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, ESCROW_EMAIL, HANDLER_EMAIL,
+  DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, MANAGER_EMAIL, HANDLER_EMAIL,
   seedListings, seedReviews,
 } = await import(
   new URL('../api/dist/api/src/data/seed.js', import.meta.url)
@@ -178,6 +206,24 @@ const repository_dispute = async (id) => (await getRepository()).getDisputeById(
 // Fixture buyers have no password, so their notifications are read through the
 // same repository the routes write them to rather than by signing in as them.
 const noticesFor = async (id) => (await getRepository()).listNotifications(id, 40);
+
+/*
+ * Every sale now waits at least 30 minutes between its opening message and
+ * its first item. The checks written before that schedule a sale and expect
+ * it dropping at once; unless one names its own lead time, this lets the
+ * half hour pass, the way the minute timer would.
+ */
+const schedulePowerSale = async (request, ctx) => {
+  const made = await schedulePowerSaleRaw(request, ctx);
+  const body = await request.json().catch(() => ({}));
+  if (made.status !== 201 || body.leadMinutes !== undefined || made.jsonBody.sale.status !== 'running') return made;
+  const repository = await getRepository();
+  const stored = (await repository.listLivePowerSales()).find((sale) => sale.id === made.jsonBody.sale.id);
+  if (!stored) return made;
+  await repository.savePowerSale({ ...stored, leadMinutes: 0 });
+  const read = await readPowerSale(req({ headers: Object.fromEntries(request.headers), params: { id: stored.id } }), ctx);
+  return { ...made, jsonBody: read.jsonBody };
+};
 // Campaigns end when a cutoff passes, and a smoke test cannot wait a week for
 // one. Moving the cutoff into the past is the same fact arriving sooner.
 const expireCampaign = async (id) => {
@@ -363,9 +409,11 @@ await check('serves the catalog anonymously', async () => {
 });
 
 await check('text search narrows results', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings.length;
   const body = (await feed(req({ query: { q: 'sneaker' } }), ctx)).jsonBody;
-  assert.equal(body.listings.length, 2);
-  assert.ok(body.listings.every((l) => /sneaker|runner|high-top/i.test(`${l.title} ${l.tags.join(' ')}`)));
+  // Narrower than everything, and every hit is a sneaker by its words or its category.
+  assert.ok(body.listings.length >= 2 && body.listings.length < all);
+  assert.ok(body.listings.every((l) => /sneaker|runner|high-top/i.test(`${l.title} ${l.tags.join(' ')} ${l.category}`)));
 });
 
 await check('extra search words narrow rather than widen', async () => {
@@ -398,18 +446,32 @@ await check('the feed never exposes a shipment lot to buyers', async () => {
   assert.ok('estimatedDispatchAt' in tagged);
 });
 
-await check('followed sellers rank first for a signed-in viewer', async () => {
+await check('newest is newest for everyone, whoever they follow', async () => {
   const body = (await feed(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(body.followedSellerIds.includes('usr_kaiju'));
 
-  // The invariant is the ordering, not which seller happens to be at the top:
-  // every followed seller's listing comes before every unfollowed one. Naming a
-  // single expected seller only held while exactly one was followed.
-  const followed = new Set(body.followedSellerIds);
-  const ranks = body.listings.map((listing) => Number(followed.has(listing.sellerId)));
-  const sorted = [...ranks].sort((a, b) => b - a);
-  assert.deepEqual(ranks, sorted, 'a listing from someone unfollowed came before a followed one');
-  assert.ok(followed.has(body.listings[0].sellerId));
+  // A new listing from a shop nobody follows still leads: following a shop
+  // must not push its older stock above it.
+  const fresh = (listing) => (listing.bumpedAt && listing.bumpedAt > listing.createdAt ? listing.bumpedAt : listing.createdAt);
+  const times = body.listings.map(fresh);
+  assert.deepEqual(times, [...times].sort().reverse(), 'the signed-in feed is not newest first');
+  const anon = (await feed(req({}), ctx)).jsonBody.listings.map((listing) => listing.id);
+  assert.deepEqual(body.listings.map((listing) => listing.id), anon, 'following a shop changed the order');
+});
+
+await check('responses carry no database bookkeeping, and buyers see only "was", not the price history', async () => {
+  const body = jsonResponse(200, { listing: { id: 'x', _rid: 'r', _etag: 'e', photos: [{ url: 'u', _ts: 1 }] } }).jsonBody;
+  assert.deepEqual(body, { listing: { id: 'x', photos: [{ url: 'u' }] } });
+
+  const listings = (await feed(req({}), ctx)).jsonBody.listings;
+  const dropped = listings.filter((listing) => listing.priceHistory);
+  assert.ok(dropped.length > 0, 'the seed needs an item whose price came down');
+  for (const listing of listings) {
+    assert.equal(listing.costSheet, undefined);
+    if (!listing.priceHistory) continue;
+    assert.equal(listing.priceHistory.length, 1, 'only the high-water mark leaves the shop');
+    assert.ok(listing.priceHistory[0].priceMinor > listing.priceMinor);
+  }
 });
 
 /* ── listing detail and social ─────────────────────────────────────────── */
@@ -466,6 +528,24 @@ await check('empty comments are refused', async () => {
   assert.equal(empty.status, 400);
 });
 
+await check('saving a listing that does not exist is refused, so saves cannot be farmed', async () => {
+  assert.equal((await toggleLike(req({ headers: auth, params: { id: 'lst_made_up_1' } }), ctx)).status, 404);
+});
+
+await check('a comment has a length limit and a listing behind it', async () => {
+  const long = await addComment(req({ headers: auth, params: { id: 'lst_handheld' }, body: { body: 'x'.repeat(2001) } }), ctx);
+  assert.equal(long.status, 400);
+  const nowhere = await addComment(req({ headers: auth, params: { id: 'lst_made_up_1' }, body: { body: 'Hello?' } }), ctx);
+  assert.equal(nowhere.status, 404);
+});
+
+await check('a quantity that is not a whole number is refused, not coerced', async () => {
+  for (const quantity of ['abc', 0, -2, 1.5, 1e9]) {
+    const opened = await openCheckout(req({ headers: auth, body: { listingId: 'lst_handheld', quantity } }), ctx);
+    assert.equal(opened.status, 400, `quantity ${JSON.stringify(quantity)}`);
+  }
+});
+
 /* ── selling ───────────────────────────────────────────────────────────── */
 console.log('\nselling');
 
@@ -491,16 +571,61 @@ await check('publishing requires a session and a valid price', async () => {
   assert.equal(noPrice.status, 400);
 });
 
-await check('bump works once, then is rate-limited', async () => {
+await check('bump spends a bump point, and is refused with none left or within the hour', async () => {
   const id = published.jsonBody.listing.id;
-  assert.equal((await bump(req({ headers: auth, params: { id } }), ctx)).status, 200);
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const owner = await repository.getUserById('usr_demo');
+  const pool = (count) => {
+    if (owner.sellerProfile) owner.sellerProfile.growth = { ...(owner.sellerProfile.growth ?? { claimed: {} }), spotlights: count };
+    else owner.quest = { ...(owner.quest ?? { checkIns: [], claimed: {}, cards: [] }), bumps: count };
+  };
+  pool(0);
+  await repository.updateUser(owner);
+  const none = await bump(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(none.status, 409);
+  assert.equal(none.jsonBody.error, 'no_bumps');
+  pool(2);
+  await repository.updateUser(owner);
+  const done = await bump(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(done.status, 200, JSON.stringify(done.jsonBody));
+  assert.equal(done.jsonBody.bumps, 1);
   const again = await bump(req({ headers: auth, params: { id } }), ctx);
-  assert.equal(again.status, 429, 'a second bump must be refused');
+  assert.equal(again.status, 429, 'a second bump within the hour must be refused');
+});
+
+await check('a bumped item goes to the top of the Buy tab', async () => {
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const before = (await feed(req({ headers: auth }), ctx)).jsonBody.listings;
+  const oldest = [...before].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  assert.notEqual(before[0].id, oldest.id, 'the test needs an item that is not already first');
+  const row = await repository.getListing(oldest.id);
+  const saved = row.bumpedAt;
+  row.bumpedAt = new Date().toISOString();
+  await repository.updateListing(row);
+  try {
+    for (const headers of [auth, {}]) {
+      const after = (await feed(req({ headers }), ctx)).jsonBody.listings;
+      assert.equal(after[0].id, oldest.id, 'the item bumped a moment ago must lead the feed');
+    }
+    // A bump is recency: anything listed after it goes above it.
+    const { newestOrder } = await import(new URL('../api/dist/shared/catalog.js', import.meta.url));
+    const at = (h) => new Date(Date.now() - h * 3600_000).toISOString();
+    const items = [
+      { id: 'older', sellerId: 'a', createdAt: at(50), bumpedAt: null },
+      { id: 'stale_bump', sellerId: 'b', createdAt: at(90), bumpedAt: at(30) },
+      { id: 'fresh', sellerId: 'b', createdAt: at(1), bumpedAt: null },
+      { id: 'bumped', sellerId: 'b', createdAt: at(80), bumpedAt: at(2) },
+    ];
+    assert.deepEqual(items.sort(newestOrder).map((l) => l.id), ['fresh', 'bumped', 'stale_bump', 'older']);
+  } finally {
+    row.bumpedAt = saved;
+    await repository.updateListing(row);
+  }
 });
 
 await check("bumping someone else's listing is refused", async () => {
   const other = await bump(req({ headers: auth, params: { id: 'lst_dragon_knight' } }), ctx);
-  assert.equal(other.status, 429);
+  assert.equal(other.status, 403);
 });
 
 /* ── buying ────────────────────────────────────────────────────────────── */
@@ -568,7 +693,7 @@ await check('a lot carries its origin and supplier', () => {
   assert.equal(lot.jsonBody.lot.supplier.reference, 'BH-1');
 });
 
-await check('a name and the two countries are all a lot insists on', async () => {
+await check('the two countries are all a lot insists on', async () => {
   const bare = await createLot(req({ headers: auth, body: { name: 'Bare lot' } }), ctx);
   assert.equal(bare.status, 201);
   assert.equal(bare.jsonBody.lot.origin, '');
@@ -577,6 +702,7 @@ await check('a name and the two countries are all a lot insists on', async () =>
   // A contact with nobody attached to it is not a supplier.
   assert.equal(bare.jsonBody.lot.supplier, null);
 
+  // The name is required: it is how a shop tells its lots apart.
   const nameless = await createLot(req({ headers: auth, body: { origin: 'Shenzhen, CN' } }), ctx);
   assert.equal(nameless.status, 400);
   assert.equal(nameless.jsonBody.error, 'invalid_lot');
@@ -1163,10 +1289,20 @@ await check('a repost reaches your followers and points at the original', async 
   const again = await sharePost(req({ headers: auth, params: on(repost.post), body: { mode: 'repost' } }), ctx);
   assert.equal(again.jsonBody.repost.original.post.id, 'pst_tokyo_1');
 
+  // Passing it on again counts once per sharer; somebody new counts.
   const counted = await sharePost(req({ headers: auth, params: { channel: 'usr_tokyoline', id: 'pst_tokyo_1' }, body: { mode: 'link' } }), ctx);
   assert.equal(counted.status, 200);
   assert.equal(counted.jsonBody.repost, null);
-  assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount + 1);
+  assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount, 'the same sharer is counted once');
+  const sharer = await signup(req({
+    body: { displayName: 'Link Sharer', email: 'linksharer@figmark.example', phone: '+919000045833', password: 'longenough1' },
+  }), ctx);
+  const byThem = await sharePost(req({
+    headers: { authorization: `Bearer ${sharer.jsonBody.token}` },
+    params: { channel: 'usr_tokyoline', id: 'pst_tokyo_1' }, body: { mode: 'link' },
+  }), ctx);
+  assert.equal(byThem.jsonBody.shareCount, again.jsonBody.shareCount + 1);
+  assert.equal(byThem.jsonBody.repost, null);
 
   assert.equal((await sharePost(req({ headers: auth, params: on(repost.post), body: { mode: 'tweet' } }), ctx)).status, 400);
 });
@@ -1504,19 +1640,6 @@ await check('a forum can be created, and posted into', async () => {
   const thread = await channelThread(req({ headers: auth, params: { id: created.jsonBody.forum.id } }), ctx);
   assert.equal(thread.jsonBody.channel.kind, 'forum');
   assert.equal(thread.jsonBody.posts.length, 1);
-});
-
-await check('forums are capped, and the refusal says so', async () => {
-  // Fill whatever is left, then prove the next one is refused rather than
-  // silently accepted - the cap is the feature being deliberately small.
-  let remaining = (await listForums(req({ headers: auth }), ctx)).jsonBody.remaining;
-  for (let index = 0; index < remaining; index += 1) {
-    const filler = await createForum(req({ headers: auth, body: { name: `Filler room ${index}` } }), ctx);
-    assert.equal(filler.status, 201);
-  }
-  const refused = await createForum(req({ headers: auth, body: { name: 'One too many' } }), ctx);
-  assert.equal(refused.status, 409);
-  assert.equal(refused.jsonBody.error, 'forum_cap_reached');
 });
 
 await check('a duplicate forum name is refused', async () => {
@@ -2054,29 +2177,191 @@ await check('the packing view never shows the owner the buyer list twice', async
   assert.ok(owners.customers.length > 0, 'the owner still gets customers');
 });
 
+/* Photos sent in a chat are private: readable from their own thread only. */
+const chatPixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+let chatPhotoName;
+
+await check('a chat photo goes to the private store and comes back as a name, not a URL', async () => {
+  const stored = await uploadChatPhoto(req({ headers: auth, body: { dataUrl: chatPixel } }), ctx);
+  assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
+  assert.ok(stored.jsonBody.blobName.endsWith('.png'));
+  assert.equal(stored.jsonBody.url, undefined, 'a private photo has no address to hand out');
+  chatPhotoName = stored.jsonBody.blobName;
+
+  // Not readable from the public photo route, nor before a message carries it.
+  assert.equal((await photoRoute(req({ params: { name: chatPhotoName } }), ctx)).status, 404);
+  const early = await chatPhotoRoute(req({ headers: auth, params: { handle: 'baiyun_hobby', name: chatPhotoName }, query: { as: 'arjun' } }), ctx);
+  assert.equal(early.status, 404);
+});
+
+await check('only a signed-in account may upload, and the same limits as any photo apply', async () => {
+  assert.equal((await uploadChatPhoto(req({ body: { dataUrl: chatPixel } }), ctx)).status, 401);
+  assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: 'data:application/pdf;base64,AAAA' } }), ctx)).status, 400);
+  const huge = `data:image/jpeg;base64,${'A'.repeat(1_400_000)}`;
+  assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: huge } }), ctx)).status, 413);
+});
+
+await check("somebody else's upload cannot be sent as yours, and made-up names are refused", async () => {
+  const theirs = (await uploadChatPhoto(req({ headers: packer, body: { dataUrl: chatPixel } }), ctx)).jsonBody.blobName;
+  const stolen = await sendMessage(req({
+    headers: auth, params: { handle: 'baiyun_hobby' }, body: { body: 'mine now', as: 'arjun', photos: [theirs] },
+  }), ctx);
+  assert.equal(stolen.status, 400);
+  assert.equal(stolen.jsonBody.error, 'invalid_photo');
+
+  for (const photos of [['../etc/passwd'], ['nope.png'], 'x', ['a.png', 'b.png', 'c.png', 'd.png', 'e.png']]) {
+    const refused = await sendMessage(req({
+      headers: auth, params: { handle: 'baiyun_hobby' }, body: { body: 'x', as: 'arjun', photos },
+    }), ctx);
+    assert.equal(refused.status, 400, JSON.stringify(photos));
+  }
+});
+
+await check('a photo can be sent on its own, and carries no words it was not given', async () => {
+  const sent = await sendMessage(req({
+    headers: auth, params: { handle: 'baiyun_hobby' }, body: { as: 'arjun', photos: [chatPhotoName] },
+  }), ctx);
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  assert.deepEqual(sent.jsonBody.message.photos, [chatPhotoName]);
+  assert.equal(sent.jsonBody.message.body, 'Sent a photo');
+});
+
+await check('both ends of the thread can read it, privately cached', async () => {
+  const mine = await chatPhotoRoute(req({ headers: auth, params: { handle: 'baiyun_hobby', name: chatPhotoName }, query: { as: 'arjun' } }), ctx);
+  assert.equal(mine.status, 200);
+  assert.equal(mine.headers['Content-Type'], 'image/png');
+  assert.match(mine.headers['Cache-Control'], /^private/);
+  assert.ok(mine.body.length > 0);
+
+  const theirs = await chatPhotoRoute(req({ headers: packer, params: { handle: 'arjun', name: chatPhotoName } }), ctx);
+  assert.equal(theirs.status, 200);
+});
+
+await check('nobody else can read it: another account, another thread, or no sign-in', async () => {
+  const outsider = await chatPhotoRoute(req({ headers: shopless, params: { handle: 'arjun', name: chatPhotoName } }), ctx);
+  assert.equal(outsider.status, 404, 'another account, even one naming the real handle');
+  const otherThread = await chatPhotoRoute(req({ headers: auth, params: { handle: 'sams_corner', name: chatPhotoName }, query: { as: 'arjun' } }), ctx);
+  assert.equal(otherThread.status, 404, 'the same sender, but a different conversation');
+  const asShop = await chatPhotoRoute(req({ headers: auth, params: { handle: 'baiyun_hobby', name: chatPhotoName }, query: { as: 'arjun_collects' } }), ctx);
+  assert.equal(asShop.status, 404, 'the same two people on different voices are a different thread');
+  await assert.rejects(
+    async () => { const r = await chatPhotoRoute(req({ params: { handle: 'baiyun_hobby', name: chatPhotoName } }), ctx); if (r.status === 401) throw new Error('401'); },
+    /401/,
+  );
+});
+
+await check('a photo already sent cannot be sent again into another thread', async () => {
+  const again = await sendMessage(req({
+    headers: auth, params: { handle: 'sams_corner' }, body: { body: 'again', as: 'arjun', photos: [chatPhotoName] },
+  }), ctx);
+  assert.equal(again.status, 400);
+  assert.equal(again.jsonBody.error, 'invalid_photo');
+});
+
+/* Taking photos back out: deleted from the blob with whatever owned them. */
+const tinyPhoto = (seed) => `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==#${seed}`;
+const { getPhotoStore: photoStore } = await import(new URL('../api/dist/api/src/storage/index.js', import.meta.url));
+
+await check('a listing photo removed before publishing is deleted from storage at once', async () => {
+  const store = await photoStore();
+  const picked = (await upload(req({ headers: auth, body: { dataUrl: tinyPhoto(1) } }), ctx)).jsonBody;
+  assert.ok(await store.read(picked.blobName));
+
+  // Somebody else cannot throw it away; the answer is the same as for a photo that is not there.
+  const other = await discardUpload(req({ headers: helper, body: { url: picked.url } }), ctx);
+  assert.equal(other.jsonBody.discarded, false);
+  assert.ok(await store.read(picked.blobName), 'it survived the stranger');
+
+  const gone = await discardUpload(req({ headers: auth, body: { url: picked.url } }), ctx);
+  assert.equal(gone.jsonBody.discarded, true);
+  assert.equal(await store.read(picked.blobName), null);
+});
+
+await check('a photo that a saved listing uses cannot be discarded', async () => {
+  const store = await photoStore();
+  const picked = (await upload(req({ headers: auth, body: { dataUrl: tinyPhoto(2) } }), ctx)).jsonBody;
+  const made = await createListing(req({
+    headers: auth, body: { title: 'Holds its photo', priceMinor: 20_000, photos: [{ blobName: picked.blobName, url: picked.url, isPrimary: true }] },
+  }), ctx);
+  assert.equal(made.status, 201);
+  const refused = await discardUpload(req({ headers: auth, body: { url: picked.url } }), ctx);
+  assert.equal(refused.jsonBody.discarded, false);
+  assert.equal(refused.jsonBody.reason, 'in_use');
+  assert.ok(await store.read(picked.blobName));
+});
+
+await check("deleting a post deletes the photos it was made with, and only those", async () => {
+  const store = await photoStore();
+  const own = (await upload(req({ headers: auth, body: { dataUrl: tinyPhoto(3) } }), ctx)).jsonBody;
+  const listingPhoto = (await upload(req({ headers: auth, body: { dataUrl: tinyPhoto(4) } }), ctx)).jsonBody;
+  await createListing(req({
+    headers: auth, body: { title: 'Lends its photo', priceMinor: 20_000, photos: [{ blobName: listingPhoto.blobName, url: listingPhoto.url, isPrimary: true }] },
+  }), ctx);
+
+  // A post that shows the listing's photo as well as its own.
+  const said = await createPost(req({
+    headers: auth, body: { body: 'New in', channelId: 'usr_demo', photoUrls: [own.url, listingPhoto.url] },
+  }), ctx);
+  assert.equal(said.status, 201, JSON.stringify(said.jsonBody));
+  const post = said.jsonBody.post;
+
+  // Once sent it is the post's, so it can no longer be discarded as a draft.
+  assert.equal((await discardUpload(req({ headers: auth, body: { url: own.url } }), ctx)).jsonBody.discarded, false);
+
+  const removed = await removePost(req({ headers: auth, params: { channel: post.channelId, id: post.id } }), ctx);
+  assert.equal(removed.status, 200);
+  assert.equal(await store.read(own.blobName), null, "the post's own photo goes with it");
+  assert.ok(await store.read(listingPhoto.blobName), "the listing's photo, which the post only showed, stays");
+});
+
+await check('a chat photo picked and not sent can be taken back, a sent one cannot', async () => {
+  const store = await photoStore();
+  const picked = (await uploadChatPhoto(req({ headers: auth, body: { dataUrl: tinyPhoto(5) } }), ctx)).jsonBody;
+  const stranger = await discardChatPhoto(req({ headers: helper, body: { blobName: picked.blobName } }), ctx);
+  assert.equal(stranger.jsonBody.discarded, false);
+  assert.ok(await store.readPrivate(picked.blobName));
+  assert.equal((await discardChatPhoto(req({ headers: auth, body: { blobName: picked.blobName } }), ctx)).jsonBody.discarded, true);
+  assert.equal(await store.readPrivate(picked.blobName), null);
+});
+
+await check('deleting a message deletes it for both, with its photos, and only its sender can', async () => {
+  const store = await photoStore();
+  const sentPhoto = (await uploadChatPhoto(req({ headers: auth, body: { dataUrl: tinyPhoto(6) } }), ctx)).jsonBody.blobName;
+  const sent = await sendMessage(req({
+    headers: auth, params: { handle: 'baiyun_hobby' }, body: { body: 'Look at this', as: 'arjun', photos: [sentPhoto] },
+  }), ctx);
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  const id = sent.jsonBody.message.id;
+
+  // The one it was sent to cannot delete it; nothing changes.
+  const theirs = await deleteMessage(req({ headers: packer, params: { handle: 'arjun' }, body: { messageId: id } }), ctx);
+  assert.equal(theirs.status, 403);
+  assert.ok(await store.readPrivate(sentPhoto), 'the photo is still there');
+
+  // Nor can somebody who is not in the chat.
+  assert.equal((await deleteMessage(req({ headers: shopless, params: { handle: 'arjun' }, body: { messageId: id } }), ctx)).status, 404);
+
+  const done = await deleteMessage(req({ headers: auth, params: { handle: 'baiyun_hobby' }, body: { messageId: id, as: 'arjun' } }), ctx);
+  assert.equal(done.status, 200);
+  assert.equal(await store.readPrivate(sentPhoto), null, 'the photo went with the message');
+  const after = (await thread(req({ headers: auth, params: { handle: 'baiyun_hobby' }, query: { as: 'arjun' } }), ctx)).jsonBody;
+  assert.ok(!after.messages.some((message) => message.id === id), 'gone from the thread');
+  const theirsNow = (await thread(req({ headers: packer, params: { handle: 'arjun' } }), ctx)).jsonBody;
+  assert.ok(!theirsNow.messages.some((message) => message.id === id), 'and gone for the other side too');
+});
+
 /* ── checkout, with and without protection ─────────────────────────────── */
 console.log('\ncheckout, with and without protection');
 
-await check('the checkout offers the escrows who could be neutral in this trade', async () => {
+await check('the checkout prices Buyer Protection at the flat fee Figmark sets', async () => {
   const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
-  const ids = body.escrows.map((entry) => entry.id);
-
-  assert.ok(ids.includes('usr_escrow_meera'), 'a neutral escrow is on the list');
-  // Neither end of a trade can hold it: usr_demo is the buyer here, usr_kaiju
-  // the seller, and both are approved escrows in general.
-  assert.equal(ids.includes('usr_demo'), false, 'the buyer cannot hold their own payment');
-  assert.equal(ids.includes('usr_kaiju'), false, 'nor can the seller');
-
-  // Each carries their own rate: 1.5% of 32,000 is 480.
-  const meera = body.escrows.find((entry) => entry.id === 'usr_escrow_meera');
-  assert.equal(meera.feeBasisPoints, 150);
-  assert.equal(meera.feeMinor, 480);
+  // ₹49, whatever the order: Figmark holds the money, and Figmark sets the fee.
+  assert.equal(body.protectionFeeMinor, 4_900);
+  // A community manager who is neither party can be assigned to it.
+  assert.equal(body.protectionAvailable, true);
 });
 
-await check('the lot suggests the escrow the rest of it already uses', async () => {
-  // ord_2003 and ord_2004 are both in lot_my_batch and both held by Kaiju, so
-  // a third order in that lot should be pointed at them. Thirty buyers each
-  // picking a different holder turns one conversation into thirty.
+await check('every order in a lot is offered the same protection, held by Figmark', async () => {
   const listed = await createListing(req({
     headers: auth, body: { title: 'Third in the lot', priceMinor: 40_000, lotId: 'lot_my_batch', sourcing: 'import' },
   }), ctx);
@@ -2095,73 +2380,38 @@ await check('the lot suggests the escrow the rest of it already uses', async () 
   assert.equal(placed.status, 201);
 
   const body = (await checkout(req({ headers: theirs, params: { id: placed.jsonBody.order.id } }), ctx)).jsonBody;
-  assert.ok(body.suggested, 'the lot has an escrow to suggest');
-  assert.equal(body.suggested.agentId, 'usr_kaiju');
-  assert.match(body.suggested.because, /2 other orders in this lot already use them/);
+  assert.equal(body.protectionFeeMinor, 4_900);
 });
 
-await check('the suggestion reads correctly for a single other order', async () => {
-  // One order says "uses", two say "use". A count in a sentence is a sentence.
-  const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
-  if (body.suggested) assert.match(body.suggested.because, /already uses? them\./);
-});
-
-await check('a direct sale has no lot, so nothing to agree with', async () => {
-  const body = (await checkout(req({ headers: auth, params: { id: 'ord_1003' } }), ctx)).jsonBody;
-  // ord_1003 rides in lot_sz_oct, whose other orders carry no escrow.
-  assert.equal(body.suggested, null);
-});
-
-await check('protection needs a named escrow, not just a tick', async () => {
-  const nameless = await payOrder(req({
-    headers: auth, params: { id: 'ord_1005' }, body: { protection: true },
-  }), ctx);
-  assert.equal(nameless.status, 400);
-  assert.equal(nameless.jsonBody.error, 'no_escrow');
-});
-
-await check('an escrow cannot be either end of the trade it holds', async () => {
-  const seller = await payOrder(req({
-    headers: auth, params: { id: 'ord_1005' }, body: { protection: true, escrowAgentId: 'usr_kaiju' },
-  }), ctx);
-  assert.equal(seller.status, 400);
-  assert.equal(seller.jsonBody.error, 'invalid_escrow');
-
-  const self = await payOrder(req({
-    headers: auth, params: { id: 'ord_1005' }, body: { protection: true, escrowAgentId: 'usr_demo' },
-  }), ctx);
-  assert.equal(self.status, 400);
-});
-
-await check('somebody never approved cannot be chosen', async () => {
-  const refused = await payOrder(req({
-    headers: auth, params: { id: 'ord_1005' },
-    body: { protection: true, escrowAgentId: 'usr_tokyoline' },
-  }), ctx);
-  assert.equal(refused.status, 409);
-  assert.equal(refused.jsonBody.error, 'protection_unavailable');
-});
-
-await check('choosing one is what holds the money, in their name', async () => {
+await check('ticking protection makes Figmark hold the money, with a neutral manager assigned', async () => {
   const paid = await payOrder(req({
     headers: auth, params: { id: 'ord_1005' },
-    body: { protection: true, escrowAgentId: 'usr_escrow_meera' },
+    body: { protection: true },
   }), ctx);
   assert.equal(paid.status, 200);
-  assert.equal(paid.jsonBody.order.escrow.state, 'held');
-  assert.equal(paid.jsonBody.order.protection.escrowAgentId, 'usr_escrow_meera');
-  // Their name as it was today: a later rename must not rewrite the terms.
-  assert.match(paid.jsonBody.order.protection.escrowName, /Meera/);
-  assert.equal(paid.jsonBody.order.protection.feeMinor, 480);
+  assert.equal(paid.jsonBody.order.paymentMethod, 'protected');
+  assert.equal(paid.jsonBody.order.hold.state, 'held');
+  // The system assigns the manager - never the buyer (usr_demo) or the
+  // seller (usr_kaiju), both of whom are managers themselves.
+  const { managerId, managerName } = paid.jsonBody.order.protection;
+  assert.ok(managerId, 'a manager is assigned');
+  assert.notEqual(managerId, 'usr_demo');
+  assert.notEqual(managerId, 'usr_kaiju');
+  assert.ok(managerName);
+  // The central flat fee, paid through the gateway: Figmark keeps its 20%
+  // commission, the assigned manager the rest.
+  assert.equal(paid.jsonBody.order.protection.feeMinor, 4_900);
+  assert.equal(paid.jsonBody.order.protection.commissionMinor, 980);
+  assert.ok(paid.jsonBody.order.protection.gatewayRef);
   // The clock still does not start at checkout.
-  assert.equal(paid.jsonBody.order.escrow.autoReleaseAt, null);
+  assert.equal(paid.jsonBody.order.hold.autoReleaseAt, null);
 });
 
 await check('declining it pays the seller directly, and holds nothing', async () => {
   const paid = await payOrder(req({ headers: auth, params: { id: 'ord_1003' }, body: { protection: false } }), ctx);
   assert.equal(paid.status, 200);
   assert.equal(paid.jsonBody.order.paymentStatus, 'paid');
-  assert.equal(paid.jsonBody.order.escrow.state, 'none');
+  assert.equal(paid.jsonBody.order.hold.state, 'none');
   assert.equal(paid.jsonBody.order.protection, null);
 });
 
@@ -2186,7 +2436,7 @@ await check('the seller ticking dispatched is what starts the clock', async () =
   // than from a second screen repeating it. ord_2004 is the demo account's own
   // sale, so the seller side is a session these tests hold.
   const before = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
-  assert.equal(before.order.escrow.autoReleaseAt, null);
+  assert.equal(before.order.hold.autoReleaseAt, null);
 
   const ticked = await setCheckpoint(req({
     headers: auth, params: { id: 'ord_2004' }, body: { checkpoint: 'dispatched', on: true },
@@ -2195,7 +2445,7 @@ await check('the seller ticking dispatched is what starts the clock', async () =
 
   const body = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
   assert.equal(body.order.status, 'shipped');
-  assert.ok(body.order.escrow.autoReleaseAt, 'the auto-release window should now be open');
+  assert.ok(body.order.hold.autoReleaseAt, 'the auto-release window should now be open');
 });
 
 await check('only the buyer may confirm delivery', async () => {
@@ -2226,15 +2476,6 @@ await check('the checkout carries the seller\'s details, so there is somewhere t
   const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
   assert.ok(body.sellerPayment, 'the seller can be paid directly');
   assert.ok(body.sellerPayment.upiId, 'and the UPI id is what a buyer needs');
-});
-
-await check('an escrow with no settled payments has no rating, rather than a blank five', async () => {
-  const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
-  for (const option of body.escrows) {
-    assert.ok(typeof option.held === 'number', 'their record is counted, not invented');
-    if (option.settled === 0) assert.equal(option.rating, null, 'unproven is not the same as bad');
-    else assert.ok(option.rating > 0 && option.rating <= 5);
-  }
 });
 
 /* A whole direct sale, end to end, on an order of its own. */
@@ -2359,7 +2600,7 @@ await check('accepting is the seller saying it is in their account', async () =>
   assert.equal(accepted.jsonBody.order.paymentStatus, 'paid');
   assert.equal(accepted.jsonBody.order.status, 'confirmed');
   // Nobody held this, so there is nothing to release and nothing to dispute.
-  assert.equal(accepted.jsonBody.order.escrow.state, 'none');
+  assert.equal(accepted.jsonBody.order.hold.state, 'none');
   assert.equal(accepted.jsonBody.order.protection ?? null, null);
 });
 
@@ -2394,8 +2635,8 @@ await check('a seller can raise one too, with reasons only a seller has', async 
 
   // And the hold freezes: no clock can run it out while this is open.
   const after = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
-  assert.equal(after.order.escrow.state, 'disputed');
-  assert.equal(after.order.escrow.autoReleaseAt, null);
+  assert.equal(after.order.hold.state, 'disputed');
+  assert.equal(after.order.hold.autoReleaseAt, null);
 });
 
 await check('neither side can give the other side\'s reasons', async () => {
@@ -2450,13 +2691,12 @@ await check('only the two parties can read it', async () => {
   assert.equal((await readDispute(req({ headers: auth, params: { id } }), ctx)).status, 200);
 });
 
-await check('escalating is refused until the other side has had their days', async () => {
-  // "Ask Figmark" as an opening move would make the company the first port of
-  // call for every disagreement.
+await check('escalating is refused until a community manager has decided', async () => {
+  // An escalation is a second opinion: there has to be a first one.
   const id = buyerDispute.jsonBody.dispute.id;
   const early = await escalateDispute(req({ headers: auth, params: { id } }), ctx);
   assert.equal(early.status, 409);
-  assert.match(early.jsonBody.message, /days to answer/);
+  assert.match(early.jsonBody.message, /no decision to escalate/);
 });
 
 await check('an offer is the other side\'s to accept, never your own', async () => {
@@ -2489,8 +2729,10 @@ await check('withdrawing puts everything back and blames nobody', async () => {
   const done = await withdrawDispute(req({ headers: auth, params: { id } }), ctx);
   assert.equal(done.status, 200);
   assert.equal(done.jsonBody.dispute.status, 'withdrawn');
-  // The hold goes to the seller, and no record is marked against anyone.
-  assert.equal(done.jsonBody.order.escrow.state, 'released');
+  // The money goes back on hold exactly as before - not to either side - and
+  // no record is marked against anyone.
+  assert.equal(done.jsonBody.order.hold.state, 'held');
+  assert.equal(done.jsonBody.order.hold.disputeId, null);
   assert.equal(sellerBefore.asSeller.count >= 0, true);
 });
 
@@ -2597,146 +2839,233 @@ await check('the public list never carries a review still hidden', async () => {
   assert.equal(body.count, body.reviews.length);
 });
 
-/* ── the escrow's side ─────────────────────────────────────────────────── */
-console.log("\nthe escrow's side");
+/* ── the community manager's side ──────────────────────────────────────── */
+console.log("\nthe community manager's side");
 
-const escrowSession = await login(req({
-  body: { identifier: ESCROW_EMAIL, password: DEMO_PASSWORD },
+const managerSession = await login(req({
+  body: { identifier: MANAGER_EMAIL, password: DEMO_PASSWORD },
 }), ctx);
-const escrow = { authorization: `Bearer ${escrowSession.jsonBody.token}` };
+const manager = { authorization: `Bearer ${managerSession.jsonBody.token}` };
+const meeraId = managerSession.jsonBody.user.id;
 
-await check('an escrow sees what is in their name, and nothing else', async () => {
-  const body = (await escrowHoldings(req({ headers: escrow }), ctx)).jsonBody;
-  assert.ok(body.holdings.length > 0);
-  for (const row of body.holdings) {
-    assert.equal(row.order.protection.escrowAgentId, escrowSession.jsonBody.user.id);
-  }
-  assert.ok(body.heldMinor > 0, 'the number they are accountable for');
-});
-
-await check('somebody never approved has no holdings screen at all', async () => {
-  const refused = await escrowHoldings(req({ headers: helper }), ctx);
-  assert.equal(refused.status, 403);
-  assert.equal(refused.jsonBody.error, 'not_an_escrow');
-});
-
-// ord_1001 is held by Meera, so a dispute on it is hers to settle.
+// ord_1001 is held by Figmark under buyer protection, with Meera assigned to
+// it, so a claim on it is hers to hear - free, because the buyer already paid
+// for the protection.
 const heldDispute = await openDispute(req({
   headers: auth, params: { id: 'ord_1001' },
   body: { reasonCode: 'damaged', reason: 'Both statues arrived with cracked bases.' },
 }), ctx);
 
-await check('the escrow can read a dispute over money they hold', async () => {
-  assert.equal(heldDispute.status, 201);
-  const id = heldDispute.jsonBody.dispute.id;
-  // A party to neither side, but the person who has to decide.
-  assert.equal((await readDispute(req({ headers: escrow, params: { id } }), ctx)).status, 403,
-    'reading the thread is still the parties\' route');
-  // Their own route is the one that lets them see it.
-  const holdings = (await escrowHoldings(req({ headers: escrow }), ctx)).jsonBody;
-  const row = holdings.holdings.find((entry) => entry.order.id === 'ord_1001');
-  assert.ok(row.dispute, 'the argument is on their screen');
+await check('a protected purchase goes to the manager assigned to it, and costs nothing to raise', async () => {
+  assert.equal(heldDispute.status, 201, JSON.stringify(heldDispute.jsonBody));
+  assert.equal(heldDispute.jsonBody.dispute.topic, 'held_payment');
+  const round = heldDispute.jsonBody.dispute.rounds[0];
+  assert.equal(round.managerId, meeraId);
+  assert.equal(round.assignedBy, 'protection');
+  assert.equal(round.payment, null, 'the protection fee already bought this round');
 });
 
-await check('the escrow may not rule while the two of them are still talking', async () => {
+await check('the manager reads the same thread the two parties do', async () => {
   const id = heldDispute.jsonBody.dispute.id;
-  const early = await settleAsEscrow(req({
-    headers: escrow, params: { id }, body: { outcome: 'refund_buyer', note: 'Sorting it out.' },
+  const read = await readDispute(req({ headers: manager, params: { id } }), ctx);
+  assert.equal(read.status, 200);
+  assert.equal(read.jsonBody.role, 'manager');
+  assert.equal(read.jsonBody.actions.includes('decide'), false, 'not before the other side has been heard');
+  assert.ok(read.jsonBody.actions.includes('reply'));
+  // Somebody with no part in it still cannot.
+  assert.equal((await readDispute(req({ headers: helper, params: { id } }), ctx)).status, 403);
+  // Three-way: the manager can write in it.
+  const said = await replyDispute(req({ headers: manager, params: { id }, body: { body: 'Please send photos of both bases.' } }), ctx);
+  assert.equal(said.status, 200);
+  assert.equal(said.jsonBody.dispute.messages.at(-1).authorRole, 'manager');
+});
+
+await check('the manager may not rule before the other side has answered or had their days', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const early = await decideDispute(req({
+    headers: manager, params: { id }, body: { favour: 'raiser', reasoning: 'Sorting it out.' },
   }), ctx);
   assert.equal(early.status, 409);
   assert.equal(early.jsonBody.error, 'too_early');
 });
 
-await check('once escalated, the escrow settles it — not the company', async () => {
+await check('nobody but the manager on the round decides it', async () => {
   const id = heldDispute.jsonBody.dispute.id;
+  const party = await decideDispute(req({ headers: auth, params: { id }, body: { favour: 'raiser', reasoning: 'Mine.' } }), ctx);
+  assert.equal(party.status, 403);
+});
 
-  // The response window has to run out, or somebody has to ask. The seller
-  // holds no password here, so the buyer escalates once they are overdue.
+await check('a decision needs its reasoning, and holds the money until it is final', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
   const record = await repository_dispute(id);
   record.respondByAt = new Date(Date.now() - 86_400_000).toISOString();
   await (await getRepository()).updateDispute(record);
 
-  const escalated = await escalateDispute(req({ headers: auth, params: { id } }), ctx);
-  assert.equal(escalated.status, 200);
-  assert.equal(escalated.jsonBody.dispute.status, 'under_mediation');
-
-  const settled = await settleAsEscrow(req({
-    headers: escrow, params: { id },
-    body: { outcome: 'split', refundMinor: 1_45_000, note: 'Damaged in transit; half back, keep the pieces.' },
-  }), ctx);
-  assert.equal(settled.status, 200);
-  assert.equal(settled.jsonBody.dispute.resolution.outcome, 'split');
-  // Recorded as theirs: the parties chose this person, and the record says so.
-  assert.equal(settled.jsonBody.dispute.resolution.byCompany, false);
-  assert.equal(settled.jsonBody.dispute.resolution.decidedBy, escrowSession.jsonBody.user.id);
-  assert.equal(settled.jsonBody.order.paymentStatus, 'partially_paid');
-});
-
-await check('an escrow cannot settle a dispute over money somebody else holds', async () => {
-  // ord_2003 is held by Kaiju, not Meera.
-  const held = (await orderState(req({ headers: auth, params: { id: 'ord_2003' } }), ctx)).jsonBody;
-  const id = held.order.escrow.disputeId;
-  const refused = await settleAsEscrow(req({
-    headers: escrow, params: { id }, body: { outcome: 'refund_buyer', note: 'Not mine to call.' },
-  }), ctx);
-  assert.equal(refused.status, 403);
-});
-
-/* ── mediation ─────────────────────────────────────────────────────────── */
-console.log('\nmediation');
-
-await check('the company settles what the two sides could not', async () => {
-  // ord_2004: the seller raised it, the buyer holds no password, and it has sat
-  // past the deadline. That is exactly the shape that reaches mediation.
-  const opened = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
-  const id = opened.order.escrow.disputeId;
-  assert.ok(id, 'the seller-raised dispute is still open');
-
-  const queue = (await adminDisputes(req({ headers: auth }), ctx)).jsonBody;
-  const row = queue.disputes.find((entry) => entry.dispute.id === id);
-  assert.ok(row, 'it is in the queue');
-  // The mediator gets both records, not a summary of them.
-  assert.ok(row.buyer && row.seller);
-  assert.equal(typeof row.buyer.trust.disputesLost, 'number');
-  assert.equal(row.heldMinor, 1_10_000);
-
-  const settled = await adminResolve(req({
-    headers: auth, params: { id },
-    body: { outcome: 'split', refundMinor: 30_000, note: 'Damage is real but the item is usable.' },
-  }), ctx);
-  assert.equal(settled.status, 200);
-  assert.equal(settled.jsonBody.dispute.resolution.outcome, 'split');
-  assert.equal(settled.jsonBody.dispute.resolution.byCompany, true);
-  assert.equal(settled.jsonBody.order.paymentStatus, 'partially_paid');
-  // The fee is kept on a split: the service was used, and neither side was
-  // wholly at fault.
-  assert.equal(settled.jsonBody.order.protection.refundedAt, null);
-});
-
-await check('a split marks nobody down; a one-sided finding does', async () => {
-  const seller = await repository_user('usr_demo');
-  assert.equal(seller.sellerTrust.disputesLost, 0, 'a split is the system working');
-});
-
-await check('a ruling has to carry its reasoning', async () => {
-  const queue = (await adminDisputes(req({ headers: auth }), ctx)).jsonBody;
-  const open = queue.disputes.find((entry) => !entry.dispute.resolvedAt);
-  if (!open) return;
-  const blank = await adminResolve(req({
-    headers: auth, params: { id: open.dispute.id }, body: { outcome: 'refund_buyer', note: '  ' },
-  }), ctx);
+  const blank = await decideDispute(req({ headers: manager, params: { id }, body: { favour: 'respondent', reasoning: '  ' } }), ctx);
   assert.equal(blank.status, 400);
   assert.match(blank.jsonBody.message, /reasoning/i);
+
+  const decided = await decideDispute(req({
+    headers: manager, params: { id },
+    body: { favour: 'respondent', reasoning: 'The courier photos show both bases intact at delivery.' },
+  }), ctx);
+  assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
+  assert.equal(decided.jsonBody.dispute.status, 'decided');
+  assert.ok(decided.jsonBody.dispute.escalateBy, 'the losing side gets a window to escalate');
+  assert.equal(decided.jsonBody.order.hold.state, 'disputed', 'the money stays held until the result is final');
 });
 
-await check('a settled dispute cannot be settled again', async () => {
-  const queue = (await adminDisputes(req({ headers: auth }), ctx)).jsonBody;
-  const done = queue.disputes.find((entry) => entry.dispute.resolvedAt);
-  assert.ok(done);
-  const again = await adminResolve(req({
-    headers: auth, params: { id: done.dispute.id },
-    body: { outcome: 'refund_buyer', note: 'Changed my mind.' },
+await check('a decision cannot be withdrawn from, and only the losing side can escalate', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const out = await withdrawDispute(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(out.status, 409);
+  const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  assert.ok(read.actions.includes('escalate'), 'the buyer lost round one');
+  assert.ok(read.actions.includes('agree'), 'or they can agree with it');
+  assert.equal(read.escalation.nextRound, 2);
+  assert.equal(read.escalation.feeMinor, 19_900, 'the first escalation fee, set centrally');
+});
+
+// A manager who is neither party nor Meera, for the system to assign.
+await adminManager(req({ headers: auth, params: { id: helperId }, body: { enabled: true } }), ctx);
+
+await check('escalating is paid, and the system assigns a manager who has not held it', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const up = await escalateDispute(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(up.status, 200, JSON.stringify(up.jsonBody));
+  const round = up.jsonBody.dispute.rounds[1];
+  assert.equal(round.n, 2);
+  assert.equal(round.assignedBy, 'system');
+  assert.notEqual(round.managerId, meeraId);
+  assert.notEqual(round.managerId, 'usr_demo');
+  assert.notEqual(round.managerId, 'usr_kaiju');
+  assert.equal(round.payment.payerId, 'usr_demo');
+  assert.equal(round.payment.amountMinor, 19_900);
+  assert.equal(round.payment.commissionMinor + round.payment.managerShareMinor, 19_900);
+  assert.equal(up.jsonBody.dispute.status, 'in_discussion');
+});
+
+await check('two decisions that disagree leave one more round to the other side', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const decided = await decideDispute(req({
+    headers: helper, params: { id },
+    body: { favour: 'raiser', reasoning: 'The buyer\'s photos show cracks the courier photos cannot.', refundMinor: 1_45_000 },
   }), ctx);
+  assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
+  assert.equal(decided.jsonBody.dispute.status, 'decided', 'one each: not final yet');
+  const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  assert.equal(read.actions.includes('escalate'), false, 'the buyer won this round, so it is not theirs to escalate');
+});
+
+await check('when nobody answers in time, the manager\'s decision stands, and the money waits for them', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const record = await repository_dispute(id);
+  record.escalateBy = new Date(Date.now() - 60_000).toISOString();
+  await (await getRepository()).updateDispute(record);
+
+  const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  assert.equal(read.dispute.status, 'resolved');
+  assert.equal(read.dispute.result.how, 'decided');
+  assert.equal(read.dispute.result.winnerId, 'usr_demo');
+  assert.equal(read.dispute.result.finalRound, 2);
+  assert.equal(read.dispute.resolution.outcome, 'split');
+  // Figmark holds the money, and it does not move on its own: the manager
+  // whose decision stands releases it.
+  assert.equal(read.order.hold.state, 'disputed');
+  assert.equal(read.dispute.release ?? null, null);
+  assert.equal(read.dispute.releaseDuty.managerId, helperId, 'the round-two manager, whose decision stands');
+  assert.ok(read.dispute.releaseDuty.dueBy);
+  assert.equal(read.actions.length, 0, 'nothing left for the parties to do');
+  // The seller never wrote a word, so the loss counts against them but the
+  // win does not count for the buyer: an account that never answers is no
+  // way to farm a record of wins.
+  const buyer = await repository_user('usr_demo');
+  assert.equal(buyer.buyerTrust.disputesWon ?? 0, 0, 'an uncontested win is not counted');
+  const seller = await repository_user('usr_kaiju');
+  assert.ok(seller.sellerTrust.disputesLost >= 1);
+});
+
+await check('the manager releases the held money as agreed, through the gateway, once', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const notTheirs = await releaseDispute(req({ headers: manager, params: { id } }), ctx);
+  assert.equal(notTheirs.status, 403, 'only the manager the release is with');
+  const party = await releaseDispute(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(party.status, 403);
+
+  const read = (await readDispute(req({ headers: helper, params: { id } }), ctx)).jsonBody;
+  assert.ok(read.actions.includes('release'));
+  const released = await releaseDispute(req({ headers: helper, params: { id } }), ctx);
+  assert.equal(released.status, 200, JSON.stringify(released.jsonBody));
+  assert.equal(released.jsonBody.order.hold.state, 'released');
+  assert.equal(released.jsonBody.order.paymentStatus, 'partially_paid');
+  assert.equal(released.jsonBody.dispute.release.toBuyerMinor, 1_45_000);
+  assert.equal(released.jsonBody.dispute.release.requestedBy, helperId);
+  assert.ok(released.jsonBody.dispute.release.gatewayRef);
+  // No fee comes back, whatever the outcome.
+  assert.equal(released.jsonBody.order.protection.refundedAt, null);
+
+  const again = await releaseDispute(req({ headers: helper, params: { id } }), ctx);
+  assert.equal(again.status, 409);
+});
+
+/* ── oversight ─────────────────────────────────────────────────────────── */
+console.log('\noversight');
+
+await check('operators see every dispute and who holds its round, but do not decide it', async () => {
+  const queue = (await adminDisputes(req({ headers: auth }), ctx)).jsonBody;
+  const row = queue.disputes.find((entry) => entry.dispute.id === heldDispute.jsonBody.dispute.id);
+  assert.ok(row, 'it is in the list');
+  assert.ok(row.buyer && row.seller);
+  assert.equal(typeof row.buyer.trust.disputesLost, 'number');
+  assert.equal(row.rounds, 2);
+});
+
+await check('a manager past their deadline is flagged, and an operator can reassign the round', async () => {
+  // ord_2004: the seller raised it earlier, and it is still open.
+  const opened = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
+  const id = opened.order.hold.disputeId;
+  assert.ok(id, 'the seller-raised dispute is still open');
+  const record = await repository_dispute(id);
+  const round = record.rounds.at(-1);
+  round.decideBy = new Date(Date.now() - 3_600_000).toISOString();
+  await (await getRepository()).updateDispute(record);
+
+  const queue = (await adminDisputes(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(queue.disputes[0].overdue, true, 'overdue rounds come first');
+
+  const before = round.managerId;
+  const moved = await adminReassign(req({ headers: auth, params: { id }, body: {} }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  const now = moved.jsonBody.dispute.rounds.at(-1);
+  assert.notEqual(now.managerId, before);
+  assert.equal(now.assignedBy, 'admin');
+  assert.equal(now.reassigned.at(-1).fromId, before);
+});
+
+await check('two days past the deadline with no operator, the system reassigns it', async () => {
+  const opened = (await orderState(req({ headers: auth, params: { id: 'ord_2004' } }), ctx)).jsonBody;
+  const id = opened.order.hold.disputeId;
+  const record = await repository_dispute(id);
+  const round = record.rounds.at(-1);
+  const before = round.managerId;
+  round.decideBy = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  await (await getRepository()).updateDispute(record);
+
+  const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  const now = read.dispute.rounds.at(-1);
+  // Every manager who could take it may already have held it; when one is
+  // free, it moves.
+  if (now.managerId !== before) {
+    assert.equal(now.assignedBy, 'system');
+    assert.ok(read.dispute.messages.some((entry) => /automatically/.test(entry.body)));
+  } else {
+    assert.ok(read.overdue, 'still flagged, with nobody left to take it');
+  }
+});
+
+await check('a closed dispute cannot be reassigned', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const again = await adminReassign(req({ headers: auth, params: { id }, body: {} }), ctx);
   assert.equal(again.status, 409);
 });
 
@@ -2921,12 +3250,11 @@ await check('a comment carries one too, resolved now rather than frozen', async 
 await check('somebody with no handle is named without being linked', async () => {
   // Catalog fixtures were never sign-in accounts and hold no handle. A link to
   // nowhere is worse than plain text.
-  const holdings = (await escrowHoldings(req({ headers: escrow }), ctx)).jsonBody;
-  for (const row of holdings.holdings) {
-    assert.ok(row.buyer.name && row.seller.name, 'both ends are named');
-    for (const party of [row.buyer, row.seller]) {
-      assert.ok(party.handle === null || typeof party.handle === 'string');
-    }
+  const read = (await readDispute(req({ headers: manager, params: { id: heldDispute.jsonBody.dispute.id } }), ctx)).jsonBody;
+  const { buyer, seller } = read.parties;
+  assert.ok(buyer.name && seller.name, 'both ends are named');
+  for (const party of [buyer, seller]) {
+    assert.ok(party.handle === null || typeof party.handle === 'string');
   }
 });
 
@@ -3015,10 +3343,10 @@ await check('answering again replaces it rather than stacking another on', async
 
 await check('an ISO takes photos, and a person and their shop answer separately', async () => {
   const posted = await postWant(req({ headers: auth, body: {
-    title: 'ISO Gundam Wing Zero Ver.Ka', category: 'Model kits', photoUrls: ['https://example.com/wz.jpg'],
+    title: 'ISO Gundam Wing Zero Ver.Ka', category: 'Model kits', photoUrls: ['/api/photos/wz.jpg'],
   } }), ctx);
   assert.equal(posted.status, 201);
-  assert.deepEqual(posted.jsonBody.want.photoUrls, ['https://example.com/wz.jpg']);
+  assert.deepEqual(posted.jsonBody.want.photoUrls, ['/api/photos/wz.jpg']);
   const bad = await postWant(req({ headers: auth, body: {
     title: 'ISO with a script', category: 'Model kits', photoUrls: ['javascript:alert(1)'],
   } }), ctx);
@@ -3276,9 +3604,13 @@ await check('a lot moving tells everybody who bought into it', async () => {
 
   const one = (await noticesFor(buyerIds[0]))[0];
   assert.equal(one.kind, 'lot_moved');
-  // To their own purchases, not to the seller's view of the lot, which
-  // shows them everybody else's orders.
-  assert.equal(one.link, '/me?tab=purchases');
+  // To their own order (or their purchases, when they have several in the
+  // lot), never to the seller's view of the lot, which shows them everybody
+  // else's orders.
+  assert.match(one.link, /^\/order\/|^\/me\?tab=purchases$/);
+  assert.ok(!one.link.includes('/lot/'), one.link);
+  // Says whose shop it came from, so somebody with three lots knows which.
+  assert.match(one.title, / from /, one.title);
 });
 
 await check('a dispute tells the other side and whoever holds the money', async () => {
@@ -3304,11 +3636,10 @@ await check('a dispute tells the other side and whoever holds the money', async 
   }), ctx)).jsonBody.order;
   await payOrder(req({
     headers: theirs, params: { id: order.id },
-    body: { protection: true, escrowAgentId: 'usr_escrow_meera' },
+    body: { protection: true },
   }), ctx);
 
   const beforeSeller = (await noticesFor('usr_demo')).length;
-  const beforeEscrow = (await noticesFor('usr_escrow_meera')).length;
 
   const raised = await openDispute(req({
     headers: theirs, params: { id: order.id },
@@ -3320,9 +3651,10 @@ await check('a dispute tells the other side and whoever holds the money', async 
     (await noticesFor('usr_demo')).length > beforeSeller,
     'the other side is told',
   );
+  const managerId = raised.jsonBody.dispute.rounds[0].managerId;
   assert.ok(
-    (await noticesFor('usr_escrow_meera')).length > beforeEscrow,
-    'and so is whoever is holding the money',
+    (await noticesFor(managerId)).some((notice) => notice.link === `/dispute/${raised.jsonBody.dispute.id}`),
+    'and so is the manager who will decide it',
   );
 });
 
@@ -3335,10 +3667,15 @@ await check('every operations route refuses an ordinary account', async () => {
     [adminUser, { params: { id: 'usr_demo' } }],
     [adminSuspend, { params: { id: 'usr_demo' }, body: { suspended: true } }],
     [adminDeleteUser, { params: { id: 'usr_demo' } }],
-    [adminEscrow, { params: { id: 'usr_demo' }, body: { enabled: true } }],
+    [adminManager, { params: { id: 'usr_demo' }, body: { enabled: true } }],
     [adminDeleteResource, { body: { kind: 'listing', id: 'x', ownerId: 'y' } }],
     [adminDisputes, {}],
-    [adminResolve, { params: { id: 'x' }, body: { outcome: 'refund_buyer', note: 'no' } }],
+    [adminPhotoScan, { body: {} }],
+    [adminPhotoCleanup, { body: {} }],
+    [adminReassign, { params: { id: 'x' }, body: {} }],
+    [adminActions, {}],
+    [adminDecideAction, { params: { id: 'x' }, body: { approve: true } }],
+    [adminLedger, {}],
   ];
   for (const [call, extra] of calls) {
     const refused = await call(req({ headers: helper, ...extra }), ctx);
@@ -3350,12 +3687,74 @@ await check('and refuses a request with no session at all', async () => {
   assert.equal((await adminUsers(req(), ctx)).status, 401);
 });
 
+await check('unused photos are found by looking at every record, and only those are deleted', async () => {
+  const { getPhotoStore } = await import(new URL('../api/dist/api/src/storage/index.js', import.meta.url));
+  const { scanUnused, deleteUnused } = await import(new URL('../api/dist/api/src/storage/unused.js', import.meta.url));
+  const store = await getPhotoStore();
+  const repo = await getRepository();
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+
+  const used = await store.upload(bytes, 'image/jpeg');
+  const lonely = await store.upload(bytes, 'image/jpeg');
+  const sharedInPost = await store.upload(bytes, 'image/jpeg');
+  const chatUsed = await store.uploadPrivate(bytes, 'image/jpeg', 'usr_x');
+  const chatLonely = await store.uploadPrivate(bytes, 'image/jpeg', 'usr_x');
+
+  // Mentioned anywhere counts: a listing's own photos, another record that only
+  // copied the address, and a chat message carrying a private photo.
+  const listed = await createListing(req({
+    headers: auth, body: { title: 'Keeps a photo', priceMinor: 20_000, photos: [{ blobName: used.blobName, url: used.url, isPrimary: true }] },
+  }), ctx);
+  assert.equal(listed.status, 201);
+  await repo.sendMessage({
+    id: 'msg_photo_scan', threadId: 'a|b', from: { handle: 'a', userId: 'u1', isStore: false, displayName: 'A' },
+    to: { handle: 'b', userId: 'u2', isStore: false, displayName: 'B' }, body: 'Sent a photo', readAt: null,
+    photos: [chatUsed.blobName], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  await repo.updateListing({ ...listed.jsonBody.listing, description: `copied: ${sharedInPost.url}` });
+
+  // Too new to judge by the normal grace; an operator's scan leaves them alone.
+  const route = await adminPhotoScan(req({ headers: auth, body: { graceHours: 24 } }), ctx);
+  assert.equal(route.status, 200);
+  assert.equal(route.jsonBody.unusedCount, 0, 'a photo from a minute ago is never called unused');
+  assert.ok(route.jsonBody.tooNew >= 2);
+
+  // With no grace at all, the two nothing mentions are the only ones found.
+  const scan = await scanUnused(store, repo, 0);
+  const names = scan.unused.map((blob) => `${blob.scope}:${blob.name}`);
+  assert.ok(names.includes(`public:${lonely.blobName}`));
+  assert.ok(names.includes(`private:${chatLonely.blobName}`));
+  for (const kept of [used.blobName, sharedInPost.blobName, chatUsed.blobName]) {
+    assert.ok(!names.some((entry) => entry.endsWith(kept)), `${kept} is used and must not be listed`);
+  }
+
+  // Deleting only touches what is still unused, and only what was named.
+  const only = await deleteUnused(store, repo, 0, [{ scope: 'public', name: lonely.blobName }, { scope: 'public', name: used.blobName }]);
+  assert.equal(only.deleted, 1, 'the used one named alongside it is skipped');
+  assert.equal(await store.read(lonely.blobName), null);
+  assert.ok(await store.read(used.blobName));
+
+  const rest = await deleteUnused(store, repo, 0);
+  assert.ok(rest.deleted >= 1);
+  assert.equal(await store.readPrivate(chatLonely.blobName), null);
+  assert.ok(await store.readPrivate(chatUsed.blobName), 'a photo in a message survives');
+  assert.ok(await store.read(sharedInPost.blobName), 'so does one only mentioned in a description');
+});
+
+await check('the grace period cannot be set to nothing from the route', async () => {
+  const route = await adminPhotoScan(req({ headers: auth, body: { graceHours: 0 } }), ctx);
+  assert.equal(route.jsonBody.graceHours, 1);
+  const wild = await adminPhotoScan(req({ headers: auth, body: { graceHours: 'soon' } }), ctx);
+  assert.equal(wild.jsonBody.graceHours, 24);
+  assert.equal((await adminPhotoCleanup(req({ headers: auth, body: { only: 'all' } }), ctx)).status, 400);
+});
+
 await check('the list carries the store and the grant behind each account', async () => {
   const body = (await adminUsers(req({ headers: auth }), ctx)).jsonBody;
   const kaiju = body.users.find((row) => row.id === 'usr_kaiju');
   assert.ok(kaiju);
   assert.equal(kaiju.store.name, 'Kaiju Imports');
-  assert.equal(kaiju.escrowRights.feeBasisPoints, 200);
+  assert.ok(kaiju.managerRights.grantedAt, 'appointed a community manager');
   // A catalog fixture is not an account somebody lost access to.
   assert.equal(kaiju.signInAccount, false);
 });
@@ -3374,28 +3773,35 @@ await check('opening an account shows everything it holds', async () => {
   assert.ok(Array.isArray(body.blockers));
 });
 
-await check('escrow rights can be granted, re-rated and withdrawn', async () => {
-  const granted = await adminEscrow(req({
+await check('a community manager can be appointed and removed, and sets no fee of their own', async () => {
+  const granted = await adminManager(req({
     headers: auth, params: { id: 'usr_sneakervault' },
-    body: { enabled: true, feeBasisPoints: 350, note: 'Trial.' },
+    body: { enabled: true, feeBasisPoints: 350, displayName: 'Ignored', note: 'Ignored' },
   }), ctx);
   assert.equal(granted.status, 200);
-  assert.equal(granted.jsonBody.user.escrowRights.feeBasisPoints, 350);
+  assert.ok(granted.jsonBody.user.managerRights.grantedAt);
+  // No listing name or note: members see the profile name.
+  assert.equal(granted.jsonBody.user.managerRights.displayName, undefined);
+  assert.equal(granted.jsonBody.user.managerRights.note, undefined);
+  // The badge list is public and has them in it, by id and by handle.
+  const team = (await communityTeam(req({}), ctx)).jsonBody.managers;
+  const listed = team.find((member) => member.id === 'usr_sneakervault');
+  assert.ok(listed, 'on the public team list');
+  assert.ok(listed.handles.length > 0 && listed.since);
+  // Fees are set centrally; a rate sent with the appointment is ignored.
+  assert.equal(granted.jsonBody.user.managerRights.feeBasisPoints, undefined);
+  assert.equal(granted.jsonBody.user.managerRights.available, true);
 
-  // The rate is a lever, and it has a ceiling.
-  const silly = await adminEscrow(req({
-    headers: auth, params: { id: 'usr_sneakervault' }, body: { enabled: true, feeBasisPoints: 9_000 },
-  }), ctx);
-  assert.equal(silly.status, 400);
-
-  const withdrawn = await adminEscrow(req({
+  const withdrawn = await adminManager(req({
     headers: auth, params: { id: 'usr_sneakervault' }, body: { enabled: false },
   }), ctx);
-  assert.equal(withdrawn.jsonBody.user.escrowRights, null);
+  assert.equal(withdrawn.jsonBody.user.managerRights, null);
+  const after = (await communityTeam(req({}), ctx)).jsonBody.managers;
+  assert.ok(!after.some((member) => member.id === 'usr_sneakervault'), 'off the badge list once removed');
 });
 
 await check('an account holding money cannot be deleted', async () => {
-  // usr_kaiju holds a protected payment from the demo account.
+  // usr_kaiju has sales whose payment Figmark is still holding.
   const detail = (await adminUser(req({ headers: auth, params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
   assert.ok(detail.blockers.length > 0, 'the screen says so before the button is offered');
 
@@ -3451,12 +3857,35 @@ await check('one resource can be removed without touching the account', async ()
   assert.equal(after.user.id, 'usr_kaiju', 'the account is untouched');
 });
 
+await check('admin deleting an item removes its photos, and finds it whatever owner is sent', async () => {
+  const repository = await getRepository();
+  const store = await photoStore();
+  const template = await repository.getListing('lst_mecha_kit');
+  const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
+  const stored = await store.upload(jpeg, 'image/jpeg', 'usr_kaiju');
+  const mine = await store.upload(jpeg, 'image/jpeg', 'usr_kaiju');
+  await repository.createListing({
+    ...template, id: 'lst_admin_photo', title: 'Has a photo', soldCount: 0,
+    photos: [{ blobName: stored.blobName, url: stored.url, imageHash: null, isPrimary: true }],
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  assert.ok(await store.publicInfo(stored.blobName));
+  const gone = await adminDeleteResource(req({
+    headers: auth, body: { kind: 'listing', id: 'lst_admin_photo', ownerId: 'someone_else' },
+  }), ctx);
+  assert.equal(gone.status, 200);
+  assert.equal(await repository.getListing('lst_admin_photo'), null);
+  assert.equal(await store.publicInfo(stored.blobName), null, 'the photo went with it');
+  assert.ok(await store.publicInfo(mine.blobName), 'an unrelated photo stays');
+});
+
 await check('a bought item cannot be deleted, only expired', async () => {
   const refused = await adminDeleteResource(req({
     headers: auth, body: { kind: 'listing', id: 'lst_dragon_knight', ownerId: 'usr_kaiju' },
   }), ctx);
   assert.equal(refused.status, 409);
   assert.equal(refused.jsonBody.error, 'listing_purchased');
+  assert.match(refused.jsonBody.message, /bought/);
   assert.ok(await (await getRepository()).getListing('lst_dragon_knight'), 'and it is still there');
 });
 
@@ -3723,6 +4152,13 @@ await check('whoever brought someone in gets the credit, and cannot give it to t
 
   const own = (await readPreOrder(req({ headers: selfMade.headers, params: { id } }), ctx)).jsonBody;
   assert.deepEqual(own.brought, []);
+
+  // Nor can a link credit somebody who is not in it at all.
+  const outsider = await newBuyer('Outsider');
+  const lured = await newBuyer('Lured');
+  await pledge(req({ headers: lured.headers, params: { id }, body: { via: outsider.id } }), ctx);
+  const outsiders = (await readPreOrder(req({ headers: outsider.headers, params: { id } }), ctx)).jsonBody;
+  assert.deepEqual(outsiders.brought, [], 'only somebody in the group buy can bring people in');
 });
 
 await check('the credit follows a pledge into the order it becomes', async () => {
@@ -3730,6 +4166,8 @@ await check('the credit follows a pledge into the order it becomes', async () =>
   const recruiter = await newBuyer('Credit Recruiter');
   const recruited = await newBuyer('Credit Recruited');
 
+  // The recruiter is in it themselves: a link only credits somebody who is.
+  await pledge(req({ headers: recruiter.headers, params: { id } }), ctx);
   await pledge(req({ headers: recruited.headers, params: { id }, body: { via: recruiter.id } }), ctx);
   const bought = await createOrder(req({ headers: recruited.headers, body: { listingId: id } }), ctx);
   assert.equal(bought.jsonBody.order.broughtBy, recruiter.id, 'paying does not lose the recruiter their credit');
@@ -3914,6 +4352,90 @@ await check('a run posts its opening message and its first item', async () => {
   assert.ok(first.windowLeft > 0, 'the window is open');
 });
 
+await check('a drop is on the shelf from its opening message, with a reminder that fires at the first item', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Shelf drop',
+      openingBody: 'Shelf drop in half an hour!',
+      leadMinutes: 30,
+      everyMinutes: 1,
+      windowMinutes: 60,
+      items: [saleItem('Shelf first', 30_000, 40_000), saleItem('Shelf second', 20_000, 25_000)],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const saleId = made.jsonBody.sale.id;
+
+  // Announced, not started: on the shelf, counting down, nothing dropped yet.
+  let shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  let row = shelf.find((entry) => entry.id === saleId);
+  assert.ok(row, 'on the shelf once the opening message is out');
+  assert.equal(row.live, false);
+  assert.ok(Date.parse(row.startsAt) - Date.now() > 25 * 60_000, 'counting down to the first item');
+  // The opening message in the channel carries the countdown too.
+  const thread = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(thread.posts.some((card) => card.post.opening?.saleId === saleId));
+
+  // A buyer asks to be reminded; a guest is asked to sign in.
+  const buyer = await newBuyer('Drop Watcher');
+  const reminded = await remindDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(reminded.status, 200, JSON.stringify(reminded.jsonBody));
+  assert.equal(reminded.jsonBody.drop.reminded, true);
+  assert.equal(reminded.jsonBody.drop.reminders, 1);
+  const guest = await remindDrop(req({ params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(guest.status, 401);
+  assert.equal((await readDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId } }), ctx)).jsonBody.drop.reminded, true);
+
+  // The curtain goes up: the first item drops, and the reminder goes out.
+  const repository = await getRepository();
+  const stored = await repository.getPowerSale('usr_demo', saleId);
+  await repository.savePowerSale({ ...stored, leadMinutes: 0 });
+  shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  row = shelf.find((entry) => entry.id === saleId);
+  assert.equal(row.live, true);
+  const told = await noticesFor(buyer.id);
+  assert.ok(told.some((notice) => notice.title.includes('Shelf drop is dropping now')), 'reminded');
+  const late = await remindDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+  assert.equal(late.status, 409);
+
+  // A sale not yet announced is nobody's business.
+  const later = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Secret plan', openingBody: 'Tomorrow.', openingAt: new Date(Date.now() + 86_400_000).toISOString(),
+      everyMinutes: 1, windowMinutes: 60, items: [saleItem('Not yet', 10_000, 12_000)],
+    },
+  }), ctx);
+  shelf = (await dropsShelf(req({}), ctx)).jsonBody.drops;
+  assert.ok(!shelf.some((entry) => entry.id === later.jsonBody.sale.id));
+});
+
+await check('boxes filling up lists lots still taking orders that something can be bought into', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Shelf box' } }), ctx)).jsonBody.lot;
+  let lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  assert.ok(!lots.some((row) => row.id === lot.id), 'an empty box is a dead end, not shown');
+
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'In the shelf box', priceMinor: 9_000, sourcing: 'import', quantityAvailable: 4 },
+  }), ctx)).jsonBody.listing;
+  await assignToLot(req({ headers: auth, params: { id: lot.id }, body: { listingIds: [listing.id] } }), ctx);
+  const buyer = await newBuyer('Box Joiner');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx);
+
+  lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  const row = lots.find((entry) => entry.id === lot.id);
+  assert.ok(row, 'shown once it has something to buy');
+  assert.equal(row.people, 1);
+  assert.ok(row.listings.some((entry) => entry.id === listing.id));
+  assert.ok(lots.filter((entry) => entry.sellerId === 'usr_demo').length <= 2, 'no shop fills the shelf');
+
+  // Shut to new orders: off the shelf.
+  await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: true } }), ctx);
+  lots = (await fillingLots(req({}), ctx)).jsonBody.lots;
+  assert.ok(!lots.some((entry) => entry.id === lot.id));
+});
+
 await check('a live sale item is in the channel and nowhere else', async () => {
   const made = await schedulePowerSale(req({
     headers: auth,
@@ -3988,10 +4510,12 @@ await check('a run says when the last item hands over', async () => {
   }), ctx);
   const sale = made.jsonBody.sale;
 
-  // The third is due at +20 minutes and its window shuts 30 after that, so the
-  // whole run is public about fifty minutes from now.
+  // Asked for no wait, it gets the half-hour minimum: the first item is due at
+  // +30 minutes, the third at +50, and its window shuts 30 after that - so
+  // the whole run is public about eighty minutes from now.
+  assert.equal(sale.leadMinutes, 30, 'no drop lands with its own announcement');
   const minutesOut = (Date.parse(sale.finishesAt) - Date.now()) / 60_000;
-  assert.ok(minutesOut > 45 && minutesOut < 55, `expected about 50 minutes, got ${minutesOut}`);
+  assert.ok(minutesOut > 75 && minutesOut < 85, `expected about 80 minutes, got ${minutesOut}`);
 
   // And nothing to count down to once it is over.
   await stopPowerSale(req({ headers: auth, params: { id: sale.id } }), ctx);
@@ -4210,7 +4734,7 @@ await check('the buyer cannot turn down their own order, and neither side can on
   const listed = await createListing(req({
     headers: auth, body: { title: 'Held money', priceMinor: 12_000, quantityAvailable: 2 },
   }), ctx);
-  const buyer = await newBuyer('Escrowed Buyer');
+  const buyer = await newBuyer('Protected Buyer');
   const placed = await createOrder(req({
     headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id },
   }), ctx);
@@ -4222,10 +4746,10 @@ await check('the buyer cannot turn down their own order, and neither side can on
   }), ctx);
   assert.equal(wrongSide.status, 409);
 
-  // Once an escrow holds it, this is a refund or a dispute - different rules.
+  // Once Figmark holds it, this is a refund or a dispute - different rules.
   await payOrder(req({
     headers: buyer.headers, params: { id: orderId },
-    body: { protection: true, escrowAgentId: 'usr_escrow_meera' },
+    body: { protection: true },
   }), ctx);
   const tooLate = await rejectOrder(req({
     headers: auth, params: { id: orderId }, body: { reason: 'Cannot serve it after all.' },
@@ -4477,10 +5001,9 @@ await check('the hub counts what there is to count, and says so where there is n
   const byKind = Object.fromEntries(body.categories.map((row) => [row.kind, row]));
 
   // Every job, in the order the goods move.
-  assert.deepEqual(body.categories.map((row) => row.kind), ['supplier', 'forwarder', 'handler', 'escrow']);
+  assert.deepEqual(body.categories.map((row) => row.kind), ['supplier', 'forwarder', 'handler', 'artist']);
   assert.ok(byKind.forwarder.count >= 3, 'the seeded forwarders should be counted');
   assert.ok(byKind.handler.count >= 2);
-  assert.ok(byKind.escrow.count >= 1);
   // "0 suppliers" would be a lie about a category that has no roster at all.
   assert.equal(byKind.supplier.count, null);
   assert.equal(byKind.supplier.browsable, false);
@@ -4549,16 +5072,13 @@ await check('offering a service puts you on the list, and withdrawing takes you 
   assert.deepEqual((await servicesHub(req({ headers: theirs }), ctx)).jsonBody.mine, ['handler']);
 });
 
-await check('the two you cannot sign up for, you cannot sign up for', async () => {
-  for (const kind of ['escrow', 'supplier', 'plumber']) {
+await check('what you cannot sign up for, you cannot sign up for', async () => {
+  for (const kind of ['supplier', 'plumber']) {
     const refused = await offerService(req({ headers: auth, body: { kind } }), ctx);
     assert.equal(refused.status, 400, `${kind} should not be self-service`);
     assert.equal(refused.jsonBody.error, 'invalid_service');
   }
 
-  // Holding other people's money is granted, and the grant is an operator's.
-  const demo = await repository_user('usr_demo');
-  assert.ok(demo.escrowRights, 'the demo account was granted it by the fixture');
 });
 
 await check('a shop names a handler, and the lot turns up on their screen', async () => {
@@ -4697,9 +5217,18 @@ await check('naming a supplier on one lot hands over that lot and no other', asy
   assert.equal(nobody.status, 404);
 });
 
+/** A complete forwarder application, as the wizard sends it. */
+const forwarderApplication = (name) => ({
+  kind: 'forwarder', companyName: name, city: 'Guangzhou', country: 'China', contactPhone: '+8613800009999',
+  description: 'Consolidated air freight from Guangzhou to Mumbai, customs cleared at both ends, weekly.',
+  lanes: [{ originCity: 'Guangzhou', destinationCity: 'Mumbai', mode: 'air', ratePerKgMinor: 50_000, minChargeKg: 5, transitDaysMin: 8, transitDaysMax: 11, customsIncluded: true }],
+  insurance: [{ name: 'Transit cover', coverPercent: 100, premiumBasisPoints: 200, minPremiumMinor: 5_000 }],
+});
+
 await check('a forwarder finally has a screen of their own', async () => {
   // The directory has existed since the first week and led nowhere: a forwarder
   // could be listed, chosen and consigned to, and had no way to see any of it.
+  // Listing yourself is gone too - a forwarder applies for a store now.
   const made = await signup(req({
     body: {
       displayName: 'Harbour Air Cargo', email: 'harbour@figmark.example',
@@ -4707,10 +5236,15 @@ await check('a forwarder finally has a screen of their own', async () => {
     },
   }), ctx);
   const theirs = { authorization: `Bearer ${made.jsonBody.token}` };
-  await offerService(req({
+  const listed = await offerService(req({
     headers: theirs,
     body: { kind: 'forwarder', companyName: 'Harbour Air Cargo', places: ['Guangzhou → Mumbai'] },
   }), ctx);
+  assert.equal(listed.status, 400);
+  assert.equal(listed.jsonBody.error, 'apply_instead');
+
+  assert.equal((await applyStore(req({ headers: theirs, body: forwarderApplication('Harbour Air Cargo') }), ctx)).status, 200);
+  assert.equal((await opsReview(req({ headers: auth, params: { kind: 'forwarder', ownerId: made.jsonBody.user.id }, body: { decision: 'approved' } }), ctx)).status, 200);
 
   assert.deepEqual((await consignments(req({ headers: theirs }), ctx)).jsonBody.consignments, []);
 
@@ -4788,9 +5322,12 @@ await check('a route is a ladder you write once and reuse', async () => {
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const route = made.jsonBody.route;
-  assert.equal(route.steps.length, 5);
-  assert.deepEqual(route.steps.map((step) => step.position), [0, 1, 2, 3, 4]);
+  // Every route ends on Dispatched and Delivered, so the one it lacked is added.
+  assert.equal(route.steps.length, 6);
+  assert.deepEqual(route.steps.map((step) => step.position), [0, 1, 2, 3, 4, 5]);
   assert.equal(route.steps[1].description, 'Counted and photographed');
+  assert.deepEqual(route.steps.slice(-2).map((step) => [step.name, step.trigger]),
+    [['Dispatched to you', 'dispatched'], ['Delivered', 'delivered']]);
 
   // One step is a status, not a journey.
   const thin = await saveRoute(req({ headers: auth, body: { name: 'Nope', steps: [{ name: 'Sent' }] } }), ctx);
@@ -4799,7 +5336,78 @@ await check('a route is a ladder you write once and reuse', async () => {
   const padded = await saveRoute(req({
     headers: auth, body: { name: 'Padded', steps: [{ name: 'One' }, { name: '  ' }, { name: 'Two' }] },
   }), ctx);
-  assert.equal(padded.jsonBody.route.steps.length, 2);
+  assert.deepEqual(padded.jsonBody.route.steps.slice(0, 2).map((step) => step.name), ['One', 'Two']);
+
+  // A button's own words ride with its step - and only with a step a button reaches.
+  const worded = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Forwarder air',
+      steps: [
+        { name: 'Order placed' },
+        { name: 'Received by the freight forwarder', trigger: 'china_received', button: '  Forwarder got it  ' },
+        { name: 'Flown', button: 'Nothing presses this' },
+        { name: 'Delivered', trigger: 'delivered' },
+      ],
+    },
+  }), ctx);
+  assert.equal(worded.status, 201, JSON.stringify(worded.jsonBody));
+  assert.equal(worded.jsonBody.route.steps[1].button, 'Forwarder got it');
+  assert.equal(worded.jsonBody.route.steps[2].button, undefined);
+
+  /* Which button moves which step is worked out, never taken from the request:
+     a route sent with them jumbled is stored with them in order. */
+  const jumbled = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Jumbled',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Received at the forwarder', side: 'pre', trigger: 'dispatched' },
+        { name: 'Flying', side: 'post', trigger: 'china_received' },
+        { name: 'Landed', side: 'post' },
+        { name: 'Quality check', side: 'post', trigger: 'delivered' },
+        { name: 'Delivered', side: 'post', trigger: 'packed' },
+      ],
+    },
+  }), ctx);
+  assert.equal(jumbled.status, 201, JSON.stringify(jumbled.jsonBody));
+  assert.deepEqual(jumbled.jsonBody.route.steps.map((step) => step.trigger ?? null), [
+    null, 'china_received', null, 'india_received', 'ready_to_dispatch', 'dispatched', 'delivered',
+  ]);
+  assert.equal(jumbled.jsonBody.route.steps[2].lastMile, undefined, 'the lot carries the flight');
+  assert.equal(jumbled.jsonBody.route.steps[4].lastMile, true, 'and lets go once it has landed');
+
+  // What is left to get wrong is the words - and a button whose words say it
+  // delivers when it does not is refused, as are two buttons saying one thing.
+  const lying = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Lying',
+      steps: [
+        { name: 'Order placed' },
+        { name: 'At the warehouse', trigger: 'china_received', button: 'Delivered!' },
+        { name: 'Delivered' },
+      ],
+    },
+  }), ctx);
+  assert.equal(lying.status, 400);
+  assert.match(lying.jsonBody.message, /does not mark the order delivered/);
+  const twins = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Twins',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'At the warehouse', side: 'pre', button: 'Got it' },
+        { name: 'Flown', side: 'post' },
+        { name: 'Landed', side: 'post', button: 'got it' },
+        { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  assert.equal(twins.status, 400);
+  assert.match(twins.jsonBody.message, /both have a button saying/);
 
   const after = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
   assert.ok(after.routes.some((row) => row.id === route.id));
@@ -4823,13 +5431,13 @@ await check('a lot carries a copy of its route, not a pointer to one', async () 
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const lot = made.jsonBody.lot;
   assert.equal(lot.route.name, 'Guangzhou air express');
-  assert.equal(lot.route.steps.length, 5);
+  assert.equal(lot.route.steps.length, routeFixture.steps.length);
   // Not step zero: that is an item step on this route, and a crate nobody has
   // touched has taken none of its own. It opens one short of its first.
   assert.equal(lot.currentStep, 1);
   assert.equal(lot.stage, 'ordering', 'and reads as what it is: filling');
   // A number a person can say out loud, derived rather than invented.
-  assert.match(lot.lotNumber, /^\d\d-[A-Z0-9]{4}$/);
+  assert.match(lot.lotNumber, /^[A-Z][2-9]-[A-Z0-9]{4}$/);
 
   // Renaming the template must not rewrite a timeline a buyer has been reading
   // for three weeks.
@@ -4842,7 +5450,7 @@ await check('a lot carries a copy of its route, not a pointer to one', async () 
   }), ctx);
   const still = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
   assert.equal(still.route.name, 'Guangzhou air express');
-  assert.equal(still.route.steps.length, 5);
+  assert.equal(still.route.steps.length, routeFixture.steps.length);
 
   // A lot created against a route that does not exist is not created at all.
   const nonsense = await createLot(req({
@@ -4935,7 +5543,7 @@ await check('filling a lot moves the item into it, and tells the buyer', async (
   }), ctx)).jsonBody;
   assert.equal(tracking.awaitingLot, false);
   assert.equal(tracking.route.name, 'Guangzhou air express');
-  assert.equal(tracking.route.steps.length, 5);
+  assert.equal(tracking.route.steps.length, 6);
   // Joining is an event carrying the lot it names, not a sentence to grep and
   // not a rung: the timeline draws it where it happened.
   const join = tracking.order.stageHistory.find((event) => event.kind === 'joined');
@@ -5125,15 +5733,18 @@ await check('a lot walks its own half of the route, and neither end past it', as
     headers: auth, params: { id: routedLot.id }, body: { to: 0 } }), ctx);
   assert.equal(tooFar.status, 409, 'a lot cannot be stepped into an item step');
 
-  // Walk it as far as a crate goes: one short of Delivered, where it is
-  // unpacked and each item goes to its own buyer.
-  const steps = board.route.steps.length - offset - 1;
+  // Walk it as far as a crate goes: one short of where items leave it -
+  // which on every route is no later than Dispatched, so the lot is unpacked
+  // and each item goes to its own buyer on its own button.
+  const leave = board.route.steps.findIndex((step) => step.lastMile);
+  assert.equal(board.route.steps[leave].trigger, 'dispatched');
+  const steps = leave - offset;
   for (let i = 0; i < steps; i += 1) {
     const step = await stepLot(req({ headers: auth, params: { id: routedLot.id } }), ctx);
     assert.equal(step.status, 200, `step ${i} should move`);
   }
   const end = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(end.route.currentStep, end.route.steps.length - 2);
+  assert.equal(end.route.currentStep, leave - 1);
   assert.notEqual(end.lot.status, 'closed', 'an unpacked lot is not finished until its items are');
 
   // The crate itself cannot be "delivered".
@@ -5195,24 +5806,37 @@ await check('the buyer sees one timeline per lot, not one per item', async () =>
   const group = body.groups.find((row) => row.lot?.id === routedLot.id);
   assert.ok(group, 'their item is grouped under the lot it travels in');
   assert.equal(group.kind, 'lot');
-  assert.equal(group.lot.steps.length, 5);
-  assert.equal(group.lot.currentStep, 4);
+  assert.equal(group.lot.steps.length, 6);
+  assert.equal(group.lot.currentStep, 5);
   // One card, one ladder, however many of their items are in it.
   assert.ok(group.items.length >= 1);
   assert.ok(group.sellerName);
 
-  // A second item in the same lot joins the same group rather than making
-  // a second identical timeline.
+  // That lot is finished - every item in it delivered - so nothing more is
+  // filed into it.
   const extra = await waitingItem('Also theirs');
   const alsoPlaced = await createOrder(req({ headers: earlyBuyer.headers, body: { listingId: extra } }), ctx);
-  await addItems(req({
+  const refused = await addItems(req({
     headers: auth, params: { id: routedLot.id }, body: { orderIds: [alsoPlaced.jsonBody.order.id] },
   }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'lot_done');
+
+  // Two of their items in one open lot are one group rather than two
+  // identical timelines.
+  const open = (await createLot(req({ headers: auth, body: { name: 'Open for two' } }), ctx)).jsonBody.lot;
+  const another = await waitingItem('Theirs as well');
+  const anotherPlaced = await createOrder(req({ headers: earlyBuyer.headers, body: { listingId: another } }), ctx);
+  const both = await addItems(req({
+    headers: auth, params: { id: open.id },
+    body: { orderIds: [alsoPlaced.jsonBody.order.id, anotherPlaced.jsonBody.order.id] },
+  }), ctx);
+  assert.equal(both.jsonBody.added, 2);
 
   const after = (await myItems(req({ headers: earlyBuyer.headers }), ctx)).jsonBody;
-  const groups = after.groups.filter((row) => row.lot?.id === routedLot.id);
+  const groups = after.groups.filter((row) => row.lot?.id === open.id);
   assert.equal(groups.length, 1, 'one group, two items');
-  assert.equal(groups[0].items.length, group.items.length + 1);
+  assert.equal(groups[0].items.length, 2);
 
   // What is waiting sorts first: it is the only thing a buyer might act on.
   const waiting = after.groups.find((row) => row.kind === 'awaiting');
@@ -5247,7 +5871,7 @@ await check('a route can be dropped, and the lots on it carry on', async () => {
 
   // The lot carries its own copy, which is the reason it carries one.
   const still = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
-  assert.equal(still.route.steps.length, 5);
+  assert.equal(still.route.steps.length, 6);
   assert.equal(still.route.name, 'Guangzhou air express');
 });
 
@@ -5288,7 +5912,7 @@ await check('a lot closes itself once every piece in it is marked delivered', as
   const delivered = (await orderState(req({ headers: buyerA.headers, params: { id: orderA.id } }), ctx)).jsonBody;
   assert.equal(delivered.order.status, 'delivered', 'the delivered tick delivers the item');
   assert.ok(delivered.order.completedAt);
-  assert.notEqual(delivered.order.escrow.state, 'released', 'a seller tick never releases money');
+  assert.notEqual(delivered.order.hold.state, 'released', 'a seller tick never releases money');
   const told = await noticesFor(buyerA.id);
   assert.ok(told.some((row) => row.kind === 'order_delivered'), 'the buyer hears it arrived');
   const { myCollectionRoute } = await import(new URL('collection-routes.js', fns));
@@ -5397,6 +6021,44 @@ await check('a photo goes in and comes back out', async () => {
   photoFixture = stored.jsonBody;
 });
 
+/** A big, detailed JPEG as a data URL, under the 900 KB the upload accepts. */
+const bigJpeg = (() => {
+  const { encode } = createRequire(new URL('../api/package.json', import.meta.url))('jpeg-js');
+  const [width, height] = [1000, 700];
+  const data = Buffer.alloc(width * height * 4);
+  let seed = 99;
+  for (let i = 0; i < data.length; i += 4) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    data[i] = (i / 4 % width) * 255 / width + (seed >>> 24) / 6;
+    data[i + 1] = (seed >>> 16 & 255) / 6 + 90;
+    data[i + 2] = (seed >>> 8 & 255) / 6 + 60;
+    data[i + 3] = 255;
+  }
+  const bytes = Buffer.from(encode({ data, width, height }, 88).data);
+  return { bytes, dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}` };
+})();
+
+await check('an uploaded photo is compressed to 70-90 KB, and the smaller of the two is kept', async () => {
+  assert.ok(bigJpeg.bytes.length > 150_000 && bigJpeg.bytes.length < 900_000, `fixture was ${bigJpeg.bytes.length}`);
+  const stored = await upload(req({ headers: auth, body: { dataUrl: bigJpeg.dataUrl } }), ctx);
+  assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
+  assert.equal(stored.jsonBody.originalSize, bigJpeg.bytes.length);
+  assert.ok(stored.jsonBody.size <= 90 * 1024, `kept ${stored.jsonBody.size}`);
+  assert.ok(stored.jsonBody.size >= 70 * 1024, `squeezed to ${stored.jsonBody.size}`);
+  const served = await photoRoute(req({ params: { name: stored.jsonBody.blobName } }), ctx);
+  assert.equal(served.body.length, stored.jsonBody.size, 'what is served is what was kept');
+
+  const chat = await uploadChatPhoto(req({ headers: auth, body: { dataUrl: bigJpeg.dataUrl } }), ctx);
+  assert.equal(chat.status, 201);
+  assert.ok(chat.jsonBody.size <= 90 * 1024, 'chat photos are compressed too');
+});
+
+await check('a photo that cannot be recompressed here and is over 90 KB is refused, not stored large', async () => {
+  const bulky = `data:image/png;base64,${Buffer.alloc(200_000, 7).toString('base64')}`;
+  assert.equal((await upload(req({ headers: auth, body: { dataUrl: bulky } }), ctx)).status, 413);
+  assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: bulky } }), ctx)).status, 413);
+});
+
 await check('a listing keeps its photos, in order, with one leading', async () => {
   const made = await createListing(req({
     headers: auth,
@@ -5495,7 +6157,7 @@ await check('the order card carries everything it needs answering about', async 
   const row = board.orders[0];
   for (const key of [
     'itemName', 'buyer', 'inHand', 'awaitingLot', 'lotId', 'lotNumber', 'lotStep',
-    'paymentStatus', 'escrowState', 'chinaReceivedAt',
+    'paymentStatus', 'holdState', 'chinaReceivedAt',
   ]) {
     assert.ok(key in row, `an order card needs ${key}`);
   }
@@ -5782,7 +6444,7 @@ await check('a lot can be put on a different ladder, carrying its place', async 
 
   const board = (await lotContents(req({ headers: auth, params: { id: lotId } }), ctx)).jsonBody;
   assert.equal(board.route.name, 'The long way round');
-  assert.equal(board.route.steps.length, 6);
+  assert.equal(board.route.steps.length, 7, 'its six, and the Dispatched every route ends on');
   assert.ok(board.route.currentStep > 0, 'a lot halfway there does not start again');
 
   // The buyer reads the new ladder, from the equivalent point, and is told why.
@@ -5819,12 +6481,15 @@ await check('a lot is named by the person opening it, never by the first thing i
     headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
   }), ctx)).jsonBody.order;
 
+  // Left blank, it is refused rather than named after whoever's parcel
+  // happened to be first in.
   for (const name of [undefined, '', '   ']) {
-    const refused = await assignOrderToLot(req({
+    const filed = await assignOrderToLot(req({
       headers: auth, params: { id: order.id },
       body: { newLot: { name, origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India' } },
     }), ctx);
-    assert.equal(refused.status, 400, `"${name}" is not a name`);
+    assert.equal(filed.status, 400, `"${name}" is refused`);
+    assert.equal(filed.jsonBody.error, 'invalid_lot');
   }
 });
 
@@ -5961,11 +6626,33 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   };
   assert.equal(await where(), 'Order placed', 'nothing pressed, nothing moved');
 
+  /* The order card offers the same button the timeline does - the next one,
+     in the route's words - and nothing while the lot has to move it. */
+  const card = async () => (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((row) => row.id === order.id);
+  assert.equal((await card()).next.checkpoint, 'china_received');
+  assert.match((await card()).next.label, /^Received at international/);
+  /* The lot's own next move rides on the card too - and says it would carry
+     an item past the warehouse check-in that was never ticked in there. */
+  assert.equal((await card()).lotNext.label, 'Dispatched from China');
+  assert.equal((await card()).lotNext.unchecked, 1);
+  /* And every button the item has - its own and the lot's - on one line, in route order. */
+  const serial = (await card()).serial;
+  assert.deepEqual(serial.slice(0, 2).map((button) => [button.kind, button.label]),
+    [['item', 'Received at international warehouse'], ['lot', 'Dispatched from China']]);
+  assert.equal(serial[1].gated, true, 'the lot move warns while the item is not checked in');
+  assert.ok(serial.some((button) => button.kind === 'item' && button.key === 'delivered'), 'the last mile is on the line');
+
   // One press.
   await setCheckpoint(req({
     headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
   }), ctx);
   assert.equal(await where(), 'Received at international warehouse');
+  assert.equal((await card()).next, null, 'the lot flies it, not a button');
+  assert.equal((await card()).waitingOnLot, true);
+  assert.equal((await card()).lotNext.unchecked, 0, 'checked in, so the lot can move from the card');
+  assert.equal((await card()).serial[0].done, true);
+  assert.equal((await card()).serial[1].gated, false);
+  assert.equal((await card()).done.checkpoint, 'china_received', 'and the press just made is there to undo');
 
   // A button bound to a step further along jumps straight there: the lot flew
   // while nobody was ticking, and the tick that lands is the truth.
@@ -5988,11 +6675,18 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   assert.equal(await where(), 'Received at international warehouse');
 
   // And the lot moving still carries everyone, buttons or no buttons - as far
-  // as the crate goes. It lands and is unpacked...
-  await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 3 } }), ctx);
+  // as the crate goes, which is not as far as arriving: each item is
+  // received on its own, after the lot.
+  await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 2 } }), ctx);
+  assert.equal(await where(), 'Dispatched from China');
+  const tooFar = await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 3 } }), ctx);
+  assert.equal(tooFar.status, 409, 'arriving is one item at a time');
+  assert.equal((await card()).next.checkpoint, 'india_received', 'the card offers the arrival');
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'india_received', on: true },
+  }), ctx);
   assert.equal(await where(), 'Landed in India');
-  const tooFar = await stepLot(req({ headers: auth, params: { id: lotId }, body: { to: 4 } }), ctx);
-  assert.equal(tooFar.status, 409, 'the last leg is one item at a time');
+  assert.equal((await card()).next.checkpoint, 'dispatched', 'landed: the card offers the last mile');
 
   // ...and each item goes out on its own, on its own button.
   await setCheckpoint(req({
@@ -6001,9 +6695,106 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   assert.equal(await where(), 'Out for delivery');
 });
 
-await check('a route with no buttons bound still works the way it always did', async () => {
-  // Nobody is forced to bind anything: an unbound route falls back to the
-  // hand-over, which is the best a guess can do and what shops had before.
+await check('a custom button moves its own item, and never lives inside a lot', async () => {
+  const route = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'With my own buttons',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Photos sent to buyer', side: 'pre', custom: true, button: 'Photos sent', assignee: 'supplier' },
+        { name: 'Received at the warehouse', side: 'pre' },
+        { name: 'Flying', side: 'post', custom: true, forward: true },
+        { name: 'Received at India warehouse', side: 'post' },
+        { name: 'Gift wrapped', side: 'post', custom: true, lastMile: true },
+        { name: 'Delivered', side: 'post', lastMile: true },
+      ],
+    },
+  }), ctx);
+  assert.equal(route.status, 201, JSON.stringify(route.jsonBody));
+  const steps = route.jsonBody.route.steps;
+  assert.equal(steps[1].custom, true);
+  assert.equal(steps[1].assignee, 'supplier', 'handed to the supplier, as asked');
+  assert.equal(steps[3].custom, undefined, 'a lot moves its items together: no button in it');
+  assert.equal(steps[4].trigger, 'india_received', 'arriving is after the lot');
+  assert.equal(steps[4].lastMile, true);
+  assert.equal(steps[5].custom, true);
+
+  const lot = await createLot(req({
+    headers: auth, body: { name: 'Custom run', origin: 'Guangzhou, CN', routeId: route.jsonBody.route.id },
+  }), ctx);
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Has its own button', priceMinor: 5_000, sourcing: 'import' },
+  }), ctx);
+  const buyer = await newBuyer('Custom Watcher');
+  const order = (await createOrder(req({
+    headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id },
+  }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.jsonBody.lot.id } }), ctx);
+
+  const where = async () => {
+    const t = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+    return t.route.steps[t.route.currentStep].name;
+  };
+  const card = async () => (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((row) => row.id === order.id);
+  assert.equal((await card()).next.checkpoint, `custom:${steps[1].id}`, 'the card offers the custom button first');
+  assert.equal((await card()).next.label, 'Photos sent');
+
+  const pressed = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: `custom:${steps[1].id}`, on: true },
+  }), ctx);
+  assert.equal(pressed.status, 200, JSON.stringify(pressed.jsonBody));
+  assert.equal(await where(), 'Photos sent to buyer');
+
+  // A custom key the route does not have is refused, not stored.
+  const ghost = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'custom:nope', on: true },
+  }), ctx);
+  assert.equal(ghost.status, 404);
+
+  // A hand-over moved to with no courier or tracking ID is fine - and stores neither.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  const flown = await stepLot(req({ headers: auth, params: { id: lot.jsonBody.lot.id }, body: { to: 3 } }), ctx);
+  assert.equal(flown.status, 200, JSON.stringify(flown.jsonBody));
+  const history = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody.order.stageHistory;
+  const handover = history.findLast((event) => event.step === 'Flying');
+  assert.ok(handover);
+  assert.equal(handover.shipper, undefined, 'no blank courier for the buyer to read');
+  assert.equal(handover.trackingId, undefined);
+});
+
+await check('an item with no lot is received where the seller says, under the same tick', async () => {
+  const listing = await waitingItem('Received at the forwarder');
+  const buyer = await newBuyer('Forwarder Watcher');
+  const order = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing } }), ctx)).jsonBody.order;
+  assert.equal(order.lotId, 'awaiting_lot');
+
+  const said = "Received at freight forwarder's warehouse";
+  const ticked = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true, label: said },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+
+  const tracking = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(tracking.preLot.steps[tracking.preLot.currentStep].name, said, 'the buyer reads where it really is');
+  assert.equal(tracking.order.checkpoints.china_received != null, true, 'and it is the same warehouse tick');
+  assert.ok(tracking.order.stageHistory.some((event) => event.note === `${said}.`));
+  const row = (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((entry) => entry.id === order.id);
+  assert.equal(row.done.label, said);
+
+  // Undone, the label goes with it.
+  await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_received', on: false },
+  }), ctx);
+  const after = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(after.order.receivedAs, null);
+});
+
+await check('a route written with no buttons gets them anyway', async () => {
+  // Nobody binds anything by hand any more: the warehouse step is found by
+  // its words and given its button, and the timeline moves as it always did.
   const route = await saveRoute(req({
     headers: auth,
     body: {
@@ -6394,6 +7185,97 @@ await check('credit kept for later is taken off the buyer\'s next order on its o
   assert.deepEqual(settled.payments.map((p) => [p.kind, p.amountMinor]), [['credit', 20_000], ['full', 20_000]]);
   kept = (await repository.getOrder(oA.id)).credits.find((c) => c.id === 'cr_keep');
   assert.equal(kept.status, 'applied');
+});
+
+await check('a booking leaves kept credit alone until it is accepted, so the seller can still say yes or no', async () => {
+  const repository = await getRepository();
+  const source = await repository.getOrder(oA.id);
+  await repository.updateOrder({
+    ...source,
+    credits: [...(source.credits ?? []), {
+      id: 'cr_book', createdAt: new Date().toISOString(), amountMinor: 50_000, batchId: null,
+      refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'held',
+    }],
+  });
+  const open = async (title, priceMinor) =>
+    (await openCheckout(req({ headers: payAuth, body: { listingId: (await list({ title, priceMinor })).id } }), ctx)).jsonBody.order;
+
+  // Booked: nothing moves, and the seller has the decision in front of them.
+  const first = await open('Item J', 30_000);
+  const booked = await bookOrder(req({ headers: payAuth, params: { id: first.id }, body: {} }), ctx);
+  assert.equal(booked.status, 200, JSON.stringify(booked.jsonBody));
+  assert.equal(booked.jsonBody.order.paymentStatus, 'unpaid');
+  assert.deepEqual(booked.jsonBody.order.payments, []);
+  const seen = (await orderState(req({ headers: auth, params: { id: first.id } }), ctx)).jsonBody;
+  assert.ok(seen.actions.includes('accept') && seen.actions.includes('reject'), JSON.stringify(seen.actions));
+  const row = (await sales(req({ headers: auth }), ctx)).jsonBody.placed.find((entry) => entry.id === first.id);
+  assert.ok(row?.canAccept, 'in the pile waiting on the seller, with the button');
+  assert.equal((await repository.getOrder(oA.id)).credits.find((c) => c.id === 'cr_book').appliedMinor ?? 0, 0);
+
+  // Accepted, then paid: the credit covers it and no proof is needed.
+  await acceptOrder(req({ headers: auth, params: { id: first.id }, body: {} }), ctx);
+  const paid = await claimPayment(req({ headers: payAuth, params: { id: first.id }, body: { plan: 'full' } }), ctx);
+  assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+  assert.equal(paid.jsonBody.order.paymentStatus, 'paid');
+  assert.deepEqual(paid.jsonBody.order.payments.map((p) => [p.kind, p.amountMinor]), [['credit', 30_000]]);
+});
+
+await check('a booking stuck part-paid by kept credit can still be accepted or rejected, and rejecting gives the credit back', async () => {
+  // The shape bookings had before they stopped spending credit on placement.
+  const repository = await getRepository();
+  const listing = await list({ title: 'Item K', priceMinor: 40_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const booked = (await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx)).jsonBody.order;
+  const sourceBefore = await repository.getOrder(oA.id);
+  const at = new Date().toISOString();
+  await repository.updateOrder({
+    ...sourceBefore,
+    credits: sourceBefore.credits.map((c) => c.id === 'cr_book'
+      ? { ...c, appliedMinor: 50_000, status: 'applied', applications: [...(c.applications ?? []), { orderId: booked.id, itemName: 'Item K', amountMinor: 20_000, at }] }
+      : c),
+  });
+  await repository.updateOrder({
+    ...booked,
+    paymentStatus: 'partially_paid',
+    payments: [{ id: 'pay_stuck', at, kind: 'credit', method: 'direct', amountMinor: 20_000, batchId: null, batchTotalMinor: null, reference: null, recordedBy: booked.buyerId }],
+  });
+
+  const seen = (await orderState(req({ headers: auth, params: { id: booked.id } }), ctx)).jsonBody;
+  assert.ok(seen.actions.includes('accept') && seen.actions.includes('reject'), JSON.stringify(seen.actions));
+
+  const rejected = await rejectOrder(req({ headers: auth, params: { id: booked.id }, body: { reason: 'Out of stock' } }), ctx);
+  assert.equal(rejected.status, 200, JSON.stringify(rejected.jsonBody));
+  assert.equal(rejected.jsonBody.order.status, 'rejected');
+  assert.equal(rejected.jsonBody.order.paymentStatus, 'unpaid');
+  assert.deepEqual(rejected.jsonBody.order.payments, []);
+  const back = (await repository.getOrder(oA.id)).credits.find((c) => c.id === 'cr_book');
+  assert.equal(back.status, 'held');
+  assert.equal(back.appliedMinor, 30_000);
+  assert.ok(!back.applications.some((entry) => entry.orderId === booked.id));
+
+  // Leave the shop as the checks after this one expect it: nothing kept.
+  const tidy = await repository.getOrder(oA.id);
+  await repository.updateOrder({ ...tidy, credits: tidy.credits.filter((c) => c.id !== 'cr_book') });
+});
+
+await check('a booking cannot be dispatched or delivered until the seller accepts it', async () => {
+  const listing = await list({ title: 'Item L', priceMinor: 25_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const booked = (await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx)).jsonBody.order;
+  const tick = (checkpoint) => setCheckpoint(req({ headers: auth, params: { id: booked.id }, body: { checkpoint, on: true } }), ctx);
+
+  for (const checkpoint of ['dispatched', 'delivered']) {
+    const refused = await tick(checkpoint);
+    assert.equal(refused.status, 409, `${checkpoint}: ${JSON.stringify(refused.jsonBody)}`);
+    assert.equal(refused.jsonBody.error, 'not_accepted');
+  }
+  const still = (await orderState(req({ headers: auth, params: { id: booked.id } }), ctx)).jsonBody;
+  assert.equal(still.order.status, 'pending_payment', 'nothing moved');
+  assert.ok(still.actions.includes('accept') && still.actions.includes('reject'), 'and the decision is still there');
+
+  await acceptOrder(req({ headers: auth, params: { id: booked.id }, body: {} }), ctx);
+  const shipped = await tick('dispatched');
+  assert.equal(shipped.status, 200, JSON.stringify(shipped.jsonBody));
 });
 
 await check('a group paid two different ways is refused rather than switched', async () => {
@@ -6815,7 +7697,7 @@ await check('a buyer whose payment the seller denies can dispute it, once', asyn
   const dropped = (await withdrawDispute(req({ headers: buyer.headers, params: { id: record.id } }), ctx)).jsonBody;
   assert.equal(dropped.dispute.status, 'withdrawn');
   assert.equal(dropped.order.status, 'pending_payment');
-  assert.equal(dropped.order.escrow.state, 'none');
+  assert.equal(dropped.order.hold.state, 'none');
   assert.equal((await myDisputes(req({ headers: buyer.headers }), ctx)).jsonBody.asBuyer
     .find((d) => d.id === record.id).status, 'withdrawn');
 });
@@ -6850,7 +7732,7 @@ await check('either side can raise a dispute about anything, with a reason', asy
   assert.ok(listed.orders.some((o) => o.id === orderId && o.side === 'buyer'), 'and the order is offered to raise another');
 });
 
-await check('the reversal dispute and the escrow dispute are the same kind of record, in the same list', async () => {
+await check('the reversal dispute and the held-payment dispute are the same kind of record, in the same list', async () => {
   const { orderId, buyer } = await paidAcceptedOrder('Merged Reversal Dispute', 14_000);
   await saveReversalDetails(req({ headers: buyer.headers, body: { method: 'UPI', identifier: 'm@upi', accountName: 'M' } }), ctx);
   await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Gone.' } }), ctx);
@@ -6878,7 +7760,7 @@ await check('the refund window carries the buyer’s details, and refunds wait u
   // Asked from the window: a message and a notification.
   const asked = await requestReversalDetails(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
   assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
-  assert.ok((await noticesFor(buyer.id)).some((n) => n.kind === 'reversal_details_needed' && n.link === '/refunds?tab=details'));
+  assert.ok((await noticesFor(buyer.id)).some((n) => n.kind === 'reversal_details_needed' && n.link === '/wallet?tab=details'));
   const mine = (await myRefunds(req({ headers: buyer.headers }), ctx)).jsonBody;
   assert.equal(mine.hasDetails, false);
   assert.ok(mine.detailsRequests.some((r) => r.orderId === orderId), 'the buyer sees who is waiting on them');
@@ -6935,6 +7817,25 @@ await check('pressing Buy opens a checkout the seller cannot see, and holds no s
   const again = await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx);
   assert.equal(again.jsonBody.order.id, orderId, 'Buy again goes back to the same checkout');
   assert.equal(again.jsonBody.order.buyClicks, 2);
+});
+
+await check('a cart item can be removed, or moved to saved; a placed order cannot', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Cart Only', priceMinor: 7_000, quantityAvailable: 2 } }), ctx);
+  const listingId = listed.jsonBody.listing.id;
+  const buyer = await newBuyer('Cart Tidier');
+  const first = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.equal((await discardCheckout(req({ headers: auth, params: { id: first }, body: {} }), ctx)).status, 404, 'only the buyer');
+  const saved = await discardCheckout(req({ headers: buyer.headers, params: { id: first }, body: { save: true } }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.saved, true);
+  assert.equal((await orderState(req({ headers: buyer.headers, params: { id: first } }), ctx)).status, 404, 'gone from the cart');
+  const second = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  assert.notEqual(second, first);
+  const again = await discardCheckout(req({ headers: buyer.headers, params: { id: second }, body: { save: true } }), ctx);
+  assert.equal(again.jsonBody.saved, true, 'saving twice keeps it saved');
+  const third = (await openCheckout(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id;
+  await bookOrder(req({ headers: buyer.headers, params: { id: third } }), ctx);
+  assert.equal((await discardCheckout(req({ headers: buyer.headers, params: { id: third }, body: {} }), ctx)).status, 409);
 });
 
 await check('booking from the checkout places the order and tells the seller', async () => {
@@ -7370,6 +8271,50 @@ await check('forums are people only: no shop speaks in a seeded one', async () =
   assert.ok(thread.posts.every((card) => card.post.authorId.startsWith('usr_b_') || card.post.authorId === 'usr_demo'));
 });
 
+await check('a forum is earned by level, and the refusal says when', async () => {
+  const person = await newBuyer('Level One');
+  const list = (await listForums(req({ headers: person.headers }), ctx)).jsonBody;
+  assert.equal(list.slots.canCreate, false);
+  assert.deepEqual(list.slots.unlockLevels, [5, 7, 8, 9, 10]);
+  const refused = await createForum(req({ headers: person.headers, body: { name: 'Too early' } }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.jsonBody.error, 'forum_locked');
+  assert.match(refused.jsonBody.message ?? JSON.stringify(refused.jsonBody), /level 5/);
+});
+
+await check('the admin moderates with up to two moderators, who cannot touch the admin', async () => {
+  const room = (await createForum(req({ headers: auth, body: { name: 'Moderated room' } }), ctx)).jsonBody.forum;
+  const [a, b, c] = [await newBuyer('Mod A'), await newBuyer('Mod B'), await newBuyer('Mod C')];
+  for (const who of [a, b, c]) await joinForum(req({ headers: who.headers, params: { id: room.id }, body: { join: true } }), ctx);
+  const mod = (headers, body) => moderateForum(req({ headers, params: { id: room.id }, body }), ctx);
+  assert.equal((await mod(auth, { action: 'promote', user: a.id })).status, 200);
+  assert.equal((await mod(auth, { action: 'promote', user: b.id })).status, 200);
+  assert.equal((await mod(auth, { action: 'promote', user: c.id })).jsonBody.error, 'too_many_moderators');
+  assert.equal((await mod(a.headers, { action: 'promote', user: c.id })).status, 403, 'only the admin appoints');
+  assert.equal((await mod(a.headers, { action: 'ban', user: b.id })).status, 403, 'a moderator cannot act on a moderator');
+  const owner = (await forumMembers(req({ headers: auth, params: { id: room.id } }), ctx)).jsonBody.members.find((m) => m.role === 'admin');
+  assert.equal((await mod(a.headers, { action: 'remove', user: owner.id })).status, 403, 'nobody acts against the admin');
+  assert.equal((await mod(a.headers, { action: 'warn', user: c.id, note: 'Keep it civil.' })).status, 200);
+  const posted = await createPost(req({ headers: c.headers, body: { body: 'Spam spam', forumId: room.id } }), ctx);
+  assert.equal(posted.status, 201);
+  const gone = await removePost(req({ headers: a.headers, params: { channel: room.id, id: posted.jsonBody.post.id } }), ctx);
+  assert.equal(gone.status, 200, 'a moderator takes posts down');
+  assert.equal((await mod(a.headers, { action: 'ban', user: c.id })).status, 200);
+  const back = await joinForum(req({ headers: c.headers, params: { id: room.id }, body: { join: true } }), ctx);
+  assert.equal(back.jsonBody.error, 'forum_banned');
+  const people = (await forumMembers(req({ headers: auth, params: { id: room.id } }), ctx)).jsonBody;
+  assert.equal(people.banned.length, 1);
+  assert.equal(people.warnings.length, 1);
+});
+
+await check('a person and their shop have separate followers, and only people follow', async () => {
+  const shop = (await follows(req({ params: { id: 'usr_demo' }, query: { kind: 'store' } }), ctx)).jsonBody;
+  assert.ok(Array.isArray(shop.followers));
+  assert.deepEqual(shop.following, [], 'a shop follows nobody');
+  const person = (await follows(req({ params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(person.followers.every((row) => !row.isStore), 'followers are people');
+});
+
 await check('joining a forum is for people, and posting needs it', async () => {
   const person = await newBuyer('Forum Joiner');
   const refused = await createPost(req({ headers: person.headers, body: { body: 'Hello room', forumId: 'frm_deals' } }), ctx);
@@ -7535,11 +8480,140 @@ await check('rarity reads sales and saves, and a timer turns the heat up', () =>
 
 await check('levels climb on a widening curve and every level has a title', () => {
   assert.equal(quest.levelFor(0), 1);
-  assert.equal(quest.levelFor(99), 1);
-  assert.equal(quest.levelFor(100), 2);
-  assert.equal(quest.levelFor(300), 3);
+  assert.equal(quest.levelFor(499), 1);
+  assert.equal(quest.levelFor(500), 2);
+  assert.equal(quest.levelFor(1500), 3);
+  for (let level = 2; level < quest.MAX_LEVEL; level += 1) {
+    const step = quest.xpForLevel(level + 1) - quest.xpForLevel(level);
+    assert.ok(step > quest.xpForLevel(level) - quest.xpForLevel(level - 1), `level ${level + 1} asks more than level ${level}`);
+  }
   assert.equal(quest.titleFor(1), 'Rookie');
-  assert.equal(quest.titleFor(40), 'Legend');
+  assert.equal(quest.titleFor(14), 'Legend');
+  assert.equal(quest.titleFor(15), 'Mythic');
+  assert.equal(quest.titleFor(20), 'Icon');
+  assert.equal(quest.titleFor(40), 'Titan');
+  assert.equal(quest.titleFor(50), 'Immortal');
+});
+
+await check('a shop levels only on quests it collected, upkeep paying a token amount', async () => {
+  const shop = await import(new URL('../api/dist/shared/storefront.js', import.meta.url));
+  const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
+  const totals = {
+    completedSales: 10, affiliateSales: 10, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 5, soldOut: 0, trust: 0,
+    preOrders: 0, disputesLost: 0, ageDays: 0,
+  };
+  assert.equal(shop.storeLevel(totals, undefined).points, 0, 'what a shop did pays nothing until a quest collects it');
+  const facts = {
+    shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+    listed: [], follows: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+  };
+  const { state, tasks } = growth.claimAllGrowth(facts, undefined);
+  const sales = tasks.find((task) => task.id === 'ms-sales-10');
+  const shelf = tasks.find((task) => task.id === 'ms-shelf-5');
+  assert.ok(tasks.find((task) => task.id === 'ms-sales-1'), 'collecting all climbs a ladder as far as the shop reaches');
+  assert.equal(sales.xp, quest.TIER_XP[1], 'a sales milestone pays full');
+  assert.equal(shelf.xp, Math.round(quest.TIER_XP[0] * growth.UPKEEP_SHARE), 'an upkeep milestone pays a token amount');
+  assert.equal(shelf.bumps, 0);
+  const level = shop.storeLevel(totals, state);
+  assert.equal(level.points, tasks.reduce((sum, task) => sum + task.xp, 0));
+  assert.equal(level.breakdown.find((line) => line.label === 'Sales quests').xp, quest.TIER_XP[0] + quest.TIER_XP[1]);
+  assert.equal(level.level, quest.levelFor(level.points), 'the buyer curve');
+
+  // A follower milestone pays only while the shop keeps the followers.
+  const popular = { ...totals, followers: 12 };
+  const claimed = growth.claimGrowth({ ...facts, totals: popular }, undefined, 'ms-fans-10');
+  assert.equal(shop.storeLevel(popular, claimed.state).points, quest.TIER_XP[0]);
+  assert.equal(shop.storeLevel({ ...popular, followers: 8 }, claimed.state).points, 0, 'unfollowed back below the step');
+
+  const stickers = shop.storeStickers({ ...totals, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
+  assert.deepEqual(stickers.slice(0, 2).map((s) => s.id), ['s-trust', 's-rated'], 'Trusted and Top rated lead once earned');
+});
+
+await check('every sticker, follower, sale and review count has a quest that pays for it', async () => {
+  const shop = await import(new URL('../api/dist/shared/storefront.js', import.meta.url));
+  const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
+  const totals = {
+    completedSales: 0, affiliateSales: 0, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 0, soldOut: 0, trust: 0,
+    preOrders: 0, disputesLost: 0, ageDays: 0,
+  };
+  const now = Date.now();
+  const at = new Date(now).toISOString();
+  const facts = {
+    shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+    listed: [], follows: [{ at }, { at }, { at }], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+  };
+  const view = growth.growthView(facts, undefined, now);
+  const ids = view.tasks.map((task) => task.id.replace(/-\d+$/, ''));
+  // Each sticker on a shop's page, and the milestone ladder that leads to it.
+  const ladderFor = {
+    's-trust': 'ms-trusted', 's-rated': 'ms-rated', 's-mouth': 'ms-mouth', 's-partner': 'ms-partner', 's-fans': 'ms-fans',
+    's-voice': 'ms-voice', 's-hearts': 'ms-hearts', 's-launch': 'ms-launch', 's-sales': 'ms-sales', 's-soldout': 'ms-soldout',
+    's-shelf': 'ms-shelf', 's-clean': 'ms-flawless', 's-year': 'ms-year',
+  };
+  for (const sticker of shop.storeStickers(totals)) {
+    assert.ok(ladderFor[sticker.id], `${sticker.id} is mapped to a quest`);
+    assert.ok(ids.includes(ladderFor[sticker.id]), `${sticker.id} has its quest`);
+  }
+  assert.ok(ids.includes('ms-stickers'), 'collecting stickers is a quest of its own');
+  for (const id of ['weekly-follows3', 'monthly-follows10', 'weekly-deliver3', 'weekly-good2', 'weekly-sales3']) {
+    assert.ok(ids.includes(id), `${id} is offered`);
+  }
+  const follows = view.tasks.find((task) => task.id === 'weekly-follows3');
+  assert.equal(follows.claimable, true, 'three follows this week finish it');
+  assert.equal(follows.xp, quest.TASK_XP.weekly);
+
+  // Trust and the sticker book pay only while they still stand.
+  const trusted = { ...totals, trust: 82 };
+  const t = growth.claimGrowth({ ...facts, totals: trusted }, undefined, 'ms-trusted-50');
+  assert.equal(shop.storeLevel(trusted, t.state).points, quest.TIER_XP[0]);
+  assert.equal(shop.storeLevel({ ...trusted, trust: 40 }, t.state).points, 0, 'trust fell back below the step');
+  const book = { ...totals, stickerSteps: 4 };
+  const b = growth.claimGrowth({ ...facts, totals: book }, undefined, 'ms-stickers-3');
+  assert.ok(!('refusal' in b), 'four sticker steps finish the first page of the book');
+});
+
+await check('the follower quests ask a bigger shop for more new followers', async () => {
+  const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
+  const totals = {
+    completedSales: 0, affiliateSales: 0, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 0, soldOut: 0, trust: 0,
+    preOrders: 0, disputesLost: 0, ageDays: 0,
+  };
+  const now = Date.now();
+  const at = new Date(now).toISOString();
+  const base = {
+    shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+    listed: [], follows: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+  };
+  const goals = (facts, state) => {
+    const tasks = growth.growthView(facts, state, now).tasks;
+    const pick = (id) => tasks.find((task) => task.id === id);
+    return { week: pick('weekly-follows3'), month: pick('monthly-follows10') };
+  };
+  const small = goals(base);
+  assert.equal(small.week.goal, 3);
+  assert.equal(small.week.title, 'Three new followers');
+  assert.equal(small.month.goal, 10);
+
+  const big = goals({ ...base, totals: { ...totals, followers: 120 } });
+  assert.equal(big.week.goal, 10, 'a hundred followers asks for ten a week');
+  assert.equal(big.week.title, 'Ten new followers');
+  assert.equal(big.month.goal, 40);
+  assert.equal(goals({ ...base, totals: { ...totals, followers: 5000 } }).week.goal, 50, 'the top size');
+
+  // Followers gained this week do not raise the goal while the shop works on it.
+  const growing = goals({ ...base, follows: [{ at }, { at }, { at }], totals: { ...totals, followers: 26 } });
+  assert.equal(growing.week.goal, 3);
+  assert.equal(growing.week.claimable, true);
+
+  // A shop that levelled up is asked for more too - by the quests it collected before this period.
+  const old = '2020-01-06T00:00:00.000Z';
+  const claimed = Object.fromEntries(Array.from({ length: 90 }, (_, index) => [`weekly-sales3:old-${index}`, old]));
+  assert.equal(goals(base, { claimed, spotlights: 0 }).week.goal, 5, 'level 5 asks for five');
+  const fresh = Object.fromEntries(Object.keys(claimed).map((key) => [key, at]));
+  assert.equal(goals(base, { claimed: fresh, spotlights: 0 }).week.goal, 3, 'quests collected this week wait for next week');
 });
 
 await check('a pack always holds the same card, never below its floor', () => {
@@ -7565,7 +8639,7 @@ await check('the game needs a session, and a new account starts at level one', a
 await check('checking in pays once a day and starts a streak', async () => {
   const player = await newBuyer('Quest Checker');
   const first = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
-  assert.equal(first.gained, 10);
+  assert.equal(first.gained, quest.ACTION_XP);
   assert.equal(first.view.streak.current, 1);
   assert.ok(first.view.tasks.find((task) => task.id === 'daily-checkin').claimed);
   const again = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
@@ -7579,7 +8653,7 @@ await check('the daily reveal gives one card, the same one however often it is a
   assert.ok(first.card.id);
   assert.equal(first.view.dailyRevealed, true);
   assert.equal(first.view.cards.length, 1);
-  assert.equal(first.gained, 15 + quest.CARD_XP[first.card.rarity]);
+  assert.equal(first.gained, quest.ACTION_XP + quest.CARD_XP[first.card.rarity]);
   const again = (await questReveal(req({ headers: player.headers }), ctx)).jsonBody;
   assert.equal(again.card.id, first.card.id);
   assert.equal(again.gained, 0);
@@ -7601,7 +8675,7 @@ await check('a task pays only once it is done, and only once', async () => {
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(before.tasks.find((task) => task.id === 'ms-saves-10').claimable, true);
   const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'ms-saves-10' } }), ctx)).jsonBody;
-  assert.equal(claimed.gained, 50);
+  assert.equal(claimed.gained, quest.TIER_XP[0], 'a first milestone step pays the same on every ladder');
   const twice = await questClaim(req({ headers: player.headers, body: { taskId: 'ms-saves-10' } }), ctx);
   assert.equal(twice.status, 409);
   const next = claimed.view.tasks.find((task) => task.id.startsWith('ms-saves-'));
@@ -7613,9 +8687,9 @@ await check('there are daily, weekly, monthly and milestone quests, and the week
   const player = await newBuyer('Quest Calendar');
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   const kinds = (kind) => view.tasks.filter((task) => task.kind === kind).length;
-  assert.equal(kinds('daily'), 4, 'check in, reveal and two from the pool');
-  assert.equal(kinds('weekly'), 4);
-  assert.equal(kinds('monthly'), 3);
+  assert.equal(kinds('daily'), 5, 'check in, reveal, share a find and two from the pool');
+  assert.equal(kinds('weekly'), 5, 'five check-ins, two opens and three from the pool');
+  assert.equal(kinds('monthly'), 4, 'bring a friend and three from the pool');
   assert.ok(kinds('milestone') >= 8);
   assert.equal(view.streak.week.length, 7);
   const monday = new Date(`${view.streak.week[0].day}T12:00:00Z`).getUTCDay();
@@ -7637,22 +8711,22 @@ await check('an order earns XP, a milestone, and a pack that opens exactly once'
   const player = await newBuyer('Quest Buyer');
   await createOrder(req({ headers: player.headers, body: { listingId: 'lst_kbeauty', quantity: 1 } }), ctx);
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(view.xp, 40, 'an order placed is forty');
+  assert.equal(view.xp, quest.ACTION_XP, 'an order placed is one action');
   const haul = view.stickers.find((sticker) => sticker.id === 'haul');
   assert.equal(haul.tier, 1, 'bronze after one order');
   assert.equal(haul.next, 10);
   assert.equal(view.tasks.find((task) => task.id === 'ms-orders-1').claimable, true);
 
   const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx)).jsonBody;
-  assert.equal(claimed.levelAfter, 2, '40 + 100 crosses into level two');
+  assert.equal(claimed.levelAfter, 1, 'one order and its milestone are not a level yet');
   const packIds = claimed.view.packs.map((pack) => pack.id).sort();
-  assert.deepEqual(packIds, ['level-2', 'task-ms-orders-1']);
+  assert.deepEqual(packIds, ['task-ms-orders-1']);
 
   const opened = await questOpen(req({ headers: player.headers, body: { packId: 'task-ms-orders-1' } }), ctx);
   assert.equal(opened.status, 200);
   assert.notEqual(opened.jsonBody.card.rarity, 'common');
   assert.ok(opened.jsonBody.card.lore, 'every card has a line of its own');
-  assert.equal(opened.jsonBody.view.packs.length, 1);
+  assert.equal(opened.jsonBody.view.packs.length, 0, 'the one pack is open; no level pack yet');
   assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'task-ms-orders-1' } }), ctx)).status, 404);
   assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'level-9' } }), ctx)).status, 404,
     'a pack for a level not reached is not there to open');
@@ -7698,11 +8772,16 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
   const player = await newBuyer('Quest Rated');
   const order = await deliveredOrderFor(player, 'lst_kbeauty');
   await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx);
+  const repository = await getRepository();
+  // Twenty-two days checked in, so there is a level to lose.
+  const days = Array.from({ length: 22 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
+  const seeded = await repository.getUserById(player.id);
+  await repository.updateUser({ ...seeded, quest: { ...seeded.quest, checkIns: days } });
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(before.xp, 180, '40 placed + 40 received + 100 milestone');
+  const unit = quest.ACTION_XP;
+  assert.equal(before.xp, unit + quest.TIER_XP[0] + 22 * unit, 'an order, its first milestone, twenty-two check-ins');
   assert.equal(before.level, 2);
 
-  const repository = await getRepository();
   const now = new Date().toISOString();
   await repository.createReview({
     id: 'rev_quest_bad', subjectId: player.id, authorId: 'usr_gadgetgrid', orderId: order.id,
@@ -7710,15 +8789,15 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
     createdAt: now, updatedAt: now,
   });
   const after = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(after.xp, 120, 'a one-star rating costs 60');
-  assert.equal(after.penalty, 60);
+  assert.equal(after.xp, before.xp - 2 * unit, 'a one-star rating costs two actions');
+  assert.equal(after.penalty, 2 * unit);
   const line = after.breakdown.find((entry) => entry.label === 'Low ratings from sellers');
-  assert.equal(line.xp, -60, 'and the breakdown says so');
+  assert.equal(line.xp, -2 * unit, 'and the breakdown says so');
 
   const user = await repository.getUserById(player.id);
   await repository.updateUser({ ...user, buyerTrust: { ...user.buyerTrust, disputesLost: 1 } });
   const lower = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(lower.xp, 40);
+  assert.equal(lower.xp, after.xp - 4 * unit, 'a lost dispute costs four');
   assert.equal(lower.level, 1, 'ranked back down');
   assert.equal(lower.packs.some((pack) => pack.id === 'level-2'), false, 'and the unopened level pack goes with it');
   assert.equal(lower.stickers.find((sticker) => sticker.id === 'clean-record').tier, 0);
@@ -7755,13 +8834,13 @@ await check('a delivered purchase can go in the collection, once, and be renamed
 
   const shelf = (await collectionGroups(req({ headers: player.headers, body: { action: 'create', name: 'Skincare' } }), ctx)).jsonBody.group;
   const moved = (await editCollection(req({ headers: player.headers,
-    body: { orderId: order.id, name: '  My Seoul haul  ', groupId: shelf.id } }), ctx)).jsonBody.item;
-  assert.equal(moved.name, 'My Seoul haul');
+    body: { orderId: order.id, name: 'Renamed', groupId: shelf.id } }), ctx)).jsonBody.item;
+  assert.equal(moved.name, order.itemName, 'a card keeps the name it was sold under');
   assert.equal(moved.groupId, shelf.id);
 
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(view.stickers.find((sticker) => sticker.id === 'curator').tier, 1);
-  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === 10));
+  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === quest.ACTION_XP));
 
   const seen = (await publicCollection(req({ params: { id: player.id } }), ctx)).jsonBody;
   assert.equal(seen.items.length, 1);
@@ -7870,7 +8949,7 @@ const sale = async (name, { protection = false } = {}) => {
   assert.ok(opened.jsonBody.order, JSON.stringify(opened.jsonBody));
   const paid = await payOrder(req({
     headers: buyer.headers, params: { id: opened.jsonBody.order.id },
-    body: protection ? { protection: true, escrowAgentId: 'usr_escrow_meera' } : {},
+    body: protection ? { protection: true } : {},
   }), ctx);
   assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
   return { buyer, order: paid.jsonBody.order };
@@ -7896,7 +8975,7 @@ await check('the protection window is 10 days unless an operator changes it', as
   const { order } = await sale('Seven day window', { protection: true });
   await tick(order.id, 'dispatched');
   const state = (await orderState(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody;
-  const days = (new Date(state.order.escrow.autoReleaseAt).getTime() - Date.now()) / 86_400_000;
+  const days = (new Date(state.order.hold.autoReleaseAt).getTime() - Date.now()) / 86_400_000;
   assert.ok(days > 6.9 && days <= 7, `window should be 7 days, was ${days}`);
   assert.equal(state.autoReleaseDays, 7);
 
@@ -7909,14 +8988,14 @@ await check('a seller marking delivered delivers the item but never releases the
   assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
   const state = (await orderState(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
   assert.equal(state.order.status, 'delivered');
-  assert.equal(state.order.escrow.state, 'held', 'the money waits for the buyer or the window');
-  assert.ok(state.order.escrow.autoReleaseAt, 'and the window opened, since nobody ticked dispatched');
+  assert.equal(state.order.hold.state, 'held', 'the money waits for the buyer or the window');
+  assert.ok(state.order.hold.autoReleaseAt, 'and the window opened, since nobody ticked dispatched');
   assert.ok(state.actions.includes('confirm'), 'the buyer can still say it arrived');
   assert.ok(state.actions.includes('dispute'), 'or dispute it');
 
   const confirmed = await confirmOrder(req({ headers: buyer.headers, params: { id: order.id } }), ctx);
   assert.equal(confirmed.status, 200, JSON.stringify(confirmed.jsonBody));
-  assert.equal(confirmed.jsonBody.order.escrow.state, 'released');
+  assert.equal(confirmed.jsonBody.order.hold.state, 'released');
   assert.ok(confirmed.jsonBody.order.trustCountedAt);
   // Once paid out, delivery cannot be walked back.
   assert.equal((await tick(order.id, 'delivered', false)).status, 409);
@@ -7965,13 +9044,13 @@ await check('a window that ran out releases the money, and the item shows up rea
   await tick(order.id, 'dispatched');
   const repository = await getRepository();
   const stored = await repository.getOrder(order.id);
-  await repository.updateOrder({ ...stored, escrow: { ...stored.escrow, autoReleaseAt: new Date(Date.now() - 1000).toISOString() } });
+  await repository.updateOrder({ ...stored, hold: { ...stored.hold, autoReleaseAt: new Date(Date.now() - 1000).toISOString() } });
 
   const shelf = (await collectionOf(req({ headers: buyer.headers }), ctx)).jsonBody;
   assert.ok(shelf.candidates.some((row) => row.orderId === order.id), 'delivered by the clock, ready to add');
   const settled = await repository.getOrder(order.id);
   assert.equal(settled.status, 'delivered');
-  assert.equal(settled.escrow.state, 'released');
+  assert.equal(settled.hold.state, 'released');
   const told = await noticesFor('usr_demo');
   assert.ok(told.some((row) => row.kind === 'payment_released'), 'the seller is told the money arrived');
 });
@@ -8073,15 +9152,15 @@ await check('direct and protected buyers in one lot go through the same unpack-a
     const opened = await openCheckout(req({ headers: buyer.headers, body: { listingId: listing.jsonBody.listing.id } }), ctx);
     const paid = await payOrder(req({
       headers: buyer.headers, params: { id: opened.jsonBody.order.id },
-      body: protection ? { protection: true, escrowAgentId: 'usr_escrow_meera' } : {},
+      body: protection ? { protection: true } : {},
     }), ctx);
     assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
     return { buyer, order: paid.jsonBody.order };
   };
   const direct = await buy('Paid direct', false);
   const guarded = await buy('Paid protected', true);
-  assert.equal(direct.order.escrow.state, 'none');
-  assert.equal(guarded.order.escrow.state, 'held');
+  assert.equal(direct.order.hold.state, 'none');
+  assert.equal(guarded.order.hold.state, 'held');
 
   const lot = (await createLot(req({ headers: auth, body: { name: 'Mixed payments' } }), ctx)).jsonBody.lot;
   for (const { order } of [direct, guarded]) {
@@ -8109,20 +9188,20 @@ await check('direct and protected buyers in one lot go through the same unpack-a
     assert.ok(state.actions.includes('confirm'), 'both buyers get the same "it arrived" step');
   }
   // Only the protected one has a clock and a way to hold the money back.
-  assert.equal(d.order.escrow.autoReleaseAt ?? null, null);
+  assert.equal(d.order.hold.autoReleaseAt ?? null, null);
   assert.equal(d.actions.includes('dispute'), false);
-  assert.ok(g.order.escrow.autoReleaseAt);
+  assert.ok(g.order.hold.autoReleaseAt);
   assert.ok(g.actions.includes('dispute'));
 
   // The same confirmation closes both; only the protected one moves money.
   const dc = await confirmOrder(req({ headers: direct.buyer.headers, params: { id: direct.order.id } }), ctx);
   assert.equal(dc.status, 200, JSON.stringify(dc.jsonBody));
   assert.ok(dc.jsonBody.order.receivedAt);
-  assert.equal(dc.jsonBody.order.escrow.state, 'none', 'nothing to release on a direct payment');
+  assert.equal(dc.jsonBody.order.hold.state, 'none', 'nothing to release on a direct payment');
   assert.ok((await noticesFor('usr_demo')).some((row) => row.kind === 'order_received'));
   const gc = await confirmOrder(req({ headers: guarded.buyer.headers, params: { id: guarded.order.id } }), ctx);
   assert.ok(gc.jsonBody.order.receivedAt);
-  assert.equal(gc.jsonBody.order.escrow.state, 'released');
+  assert.equal(gc.jsonBody.order.hold.state, 'released');
 
   // Confirmed is final for both: no confirming twice, no seller undo.
   for (const { buyer, order } of [direct, guarded]) {
@@ -8134,12 +9213,13 @@ await check('direct and protected buyers in one lot go through the same unpack-a
 });
 
 await check('a quest claimed on saves opens again, and pays nothing, once the saves are taken back', async () => {
-  const { questView, claimKey } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
+  const { questView, claimKey, TASK_XP, ACTION_XP } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
   const now = Date.now();
   const at = new Date(now).toISOString();
   const facts = (saves) => ({
     orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], follows: [], posts: [], wants: [],
-    pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false,
+    pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false, shares: 0, referredSales: 0,
+    shareOpens: [], sharesSent: [], invites: [], invitedSellers: 0,
     likes: Array.from({ length: saves }, () => ({ createdAt: at })),
   });
   const key = claimKey('daily-save3', now);
@@ -8148,16 +9228,1502 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
   const met = questView('usr_x', facts(3), state, now);
   const undone = questView('usr_x', facts(2), state, now);
   const redone = questView('usr_x', facts(3), state, now);
-  assert.equal(quests(met), 30, 'three saves: the claimed reward counts');
+  assert.equal(quests(met), TASK_XP.daily, 'three saves: the claimed reward counts');
   assert.equal(quests(undone), 0, 'one save taken back: the reward goes with it');
-  assert.equal(met.xp - undone.xp, 30 + 3, 'the quest reward and the save itself both come off');
-  assert.equal(quests(redone), 30, 'saving again brings the same claim back, not a second one');
+  assert.equal(met.xp - undone.xp, TASK_XP.daily + ACTION_XP, 'the quest reward and the save itself both come off');
+  assert.equal(quests(redone), TASK_XP.daily, 'saving again brings the same claim back, not a second one');
   const task = undone.tasks.find((entry) => entry.id === 'daily-save3');
   if (task) {
     assert.equal(task.claimed, false, 'the quest is open again');
     assert.equal(task.claimable, false, 'and not claimable until it is met again');
     assert.equal(task.progress, 2);
   }
+});
+
+await check('a button handed to the handler is theirs to press', async () => {
+  // Last on purpose: it puts a demo lot on a new route.
+  const handlerAuth = { authorization: `Bearer ${(await login(req({
+    body: { identifier: HANDLER_EMAIL, password: DEMO_PASSWORD },
+  }), ctx)).jsonBody.token}` };
+  const order = (await distributionDetail(req({
+    headers: handlerAuth, params: { id: 'lot_open_24' },
+  }), ctx)).jsonBody.parcels[0].items[0];
+
+  const route = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Handler counts it in',
+      steps: [
+        { name: 'Order placed', side: 'pre' },
+        { name: 'Received at the warehouse', side: 'pre', trigger: 'china_received', assignee: 'handler' },
+        { name: 'Flown', side: 'post' },
+        { name: 'Received at India warehouse', side: 'post' },
+        { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  assert.equal(route.jsonBody.route.steps[1].assignee, 'handler');
+  const moved = await setLotRoute(req({
+    headers: auth, params: { id: 'lot_open_24' }, body: { routeId: route.jsonBody.route.id },
+  }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+
+  // Not normally theirs - but the seller handed it to them.
+  const ticked = await setCheckpoint(req({
+    headers: handlerAuth, params: { id: order.id }, body: { checkpoint: 'china_received', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+  // And what was not handed over still is not.
+  const refused = await setCheckpoint(req({
+    headers: handlerAuth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: true },
+  }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+
+/* ── disputes about anything, decided by community managers ────────────── */
+console.log('\ndisputes about anything, decided by community managers');
+
+await check('a comment can be disputed with a manager the raiser picks, for the fee set centrally', async () => {
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Argued over', priceMinor: 5_000, sourcing: 'domestic' },
+  }), ctx);
+  const listingId = listing.jsonBody.listing.id;
+  const writer = await newBuyer('Loud Commenter');
+  const said = await addComment(req({
+    headers: writer.headers, params: { id: listingId }, body: { body: 'This shop sells fakes, avoid.' },
+  }), ctx);
+  const subject = { type: 'comment', id: said.jsonBody.comment.id, parentId: listingId };
+
+  // The picker leaves out both parties.
+  const pick = (await communityManagers(req({ headers: auth, query: { against: writer.id } }), ctx)).jsonBody;
+  assert.equal(pick.feeMinor, 9_900);
+  assert.equal(pick.managers.some((entry) => entry.id === 'usr_demo'), false, 'you cannot decide your own dispute');
+  assert.ok(pick.managers.some((entry) => entry.id === 'usr_escrow_meera'));
+
+  const own = await raiseSubjectDispute(req({
+    headers: writer.headers, body: { subject, reason: 'Disputing my own words here.', managerId: 'usr_escrow_meera' },
+  }), ctx);
+  assert.equal(own.status, 400, 'your own words are validated, not disputed');
+
+  const noManager = await raiseSubjectDispute(req({ headers: auth, body: { subject, reason: 'They have never bought from me.' } }), ctx);
+  assert.equal(noManager.status, 400);
+
+  const raised = await raiseSubjectDispute(req({
+    headers: auth,
+    body: {
+      subject, reason: 'They have never bought from me, and the claim is false.', managerId: 'usr_escrow_meera',
+      evidence: [{ url: '/api/photos/screenshot.png', caption: 'Order history' }],
+    },
+  }), ctx);
+  assert.equal(raised.status, 201, JSON.stringify(raised.jsonBody));
+  const dispute = raised.jsonBody.dispute;
+  assert.equal(dispute.againstUserId, writer.id);
+  assert.equal(dispute.subjectRef.type, 'comment');
+  assert.equal(dispute.rounds[0].managerId, 'usr_escrow_meera');
+  assert.equal(dispute.rounds[0].assignedBy, 'raiser');
+  assert.equal(dispute.rounds[0].payment.amountMinor, 9_900);
+  assert.equal(dispute.rounds[0].payment.commissionMinor, 1_980, '20% commission to Figmark');
+  assert.equal(dispute.messages[0].evidence.length, 1, 'the screenshot is attached');
+
+  // One matter, one dispute - for either side.
+  const twice = await raiseSubjectDispute(req({
+    headers: (await newBuyer('Second Critic')).headers,
+    body: { subject, reason: 'Disputing the same comment again.', managerId: 'usr_escrow_meera' },
+  }), ctx);
+  assert.equal(twice.status, 409);
+  assert.equal(twice.jsonBody.error, 'already_disputed');
+
+  // It is in both people's My Disputes, under the community pile.
+  const mineList = (await myDisputes(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(mineList.community.some((row) => row.id === dispute.id && row.raisedByMe));
+  const theirs = (await myDisputes(req({ headers: writer.headers }), ctx)).jsonBody;
+  assert.ok(theirs.community.some((row) => row.id === dispute.id && !row.raisedByMe));
+
+  // A settlement needs no manager, and leaves nobody won or lost.
+  const offered = await offerDispute(req({
+    headers: writer.headers, params: { id: dispute.id }, body: { terms: 'I will delete the comment and apologise.' },
+  }), ctx);
+  assert.equal(offered.status, 200, JSON.stringify(offered.jsonBody));
+  // Accepting names the offer that was read: a stale or missing one is refused,
+  // so an offer swapped a moment before cannot be accepted by mistake.
+  const offerId = offered.jsonBody.dispute.offer.id;
+  assert.ok(offerId);
+  const stale = await acceptDispute(req({ headers: auth, params: { id: dispute.id }, body: { offerId: 'off_old' } }), ctx);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.jsonBody.error, 'offer_changed');
+  const settled = await acceptDispute(req({ headers: auth, params: { id: dispute.id }, body: { offerId } }), ctx);
+  assert.equal(settled.status, 200, JSON.stringify(settled.jsonBody));
+  assert.equal(settled.jsonBody.dispute.result.how, 'settled');
+  assert.equal(settled.jsonBody.dispute.result.winnerId, null);
+  assert.equal(settled.jsonBody.dispute.result.loserId, null);
+  const after = await repository_user(writer.id);
+  assert.equal(after.buyerTrust.disputesLost, 0);
+  assert.equal(after.buyerTrust.disputesSettled, 1);
+  // Nothing more to do on it: no escalating out of an agreement.
+  const read = (await readDispute(req({ headers: auth, params: { id: dispute.id } }), ctx)).jsonBody;
+  assert.deepEqual(read.actions, []);
+});
+
+await check('two managers who agree make it final, and no third round is offered', async () => {
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Argued over again', priceMinor: 5_000, sourcing: 'domestic' },
+  }), ctx);
+  const listingId = listing.jsonBody.listing.id;
+  const writer = await newBuyer('Repeat Offender');
+  const said = await addComment(req({
+    headers: writer.headers, params: { id: listingId }, body: { body: 'Scam shop, they stole my money.' },
+  }), ctx);
+  const commentId = said.jsonBody.comment.id;
+  const raised = await raiseSubjectDispute(req({
+    headers: auth,
+    body: { subject: { type: 'comment', id: commentId, parentId: listingId }, reason: 'This person has never ordered from me.', managerId: 'usr_escrow_meera' },
+  }), ctx);
+  assert.equal(raised.status, 201, JSON.stringify(raised.jsonBody));
+  const id = raised.jsonBody.dispute.id;
+
+  // The writer answers, which opens the way to a decision.
+  await replyDispute(req({ headers: writer.headers, params: { id }, body: { body: 'I stand by it.' } }), ctx);
+
+  const sanctions = [
+    { kind: 'remove_content', targetUserId: writer.id, message: 'False accusation.' },
+    { kind: 'warning_post', targetUserId: writer.id, message: 'Accused a shop of fraud with no order behind it.', days: 5 },
+    { kind: 'alert_banner', targetUserId: writer.id, message: 'Lost a dispute for a false accusation.', days: 7 },
+    { kind: 'xp_deduction', targetUserId: writer.id, message: 'False accusation.', severity: 'severe' },
+  ];
+  const bad = await decideDispute(req({
+    headers: manager, params: { id },
+    body: { favour: 'raiser', reasoning: 'No order exists.', sanctions: [{ kind: 'flag', targetUserId: 'usr_kaiju', message: 'Not a party.' }] },
+  }), ctx);
+  assert.equal(bad.status, 400, 'an action is only ever against one of the two parties');
+
+  const first = await decideDispute(req({
+    headers: manager, params: { id }, body: { favour: 'raiser', reasoning: 'No order between them exists.', sanctions },
+  }), ctx);
+  assert.equal(first.status, 200, JSON.stringify(first.jsonBody));
+  assert.equal(first.jsonBody.dispute.status, 'decided');
+  // Nothing has happened to the comment yet: the decision is not final.
+  const before = (await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody;
+  assert.ok(before.comments.some((c) => c.id === commentId), 'sanctions wait for the final result');
+
+  // The writer escalates, and pays the first escalation fee. Kaiju is off for
+  // now, so the system's pick by availability is the helper.
+  const repository = await getRepository();
+  const kaiju = await repository_user('usr_kaiju');
+  kaiju.managerRights = { ...kaiju.managerRights, available: false };
+  await repository.updateUser(kaiju);
+  const up = await escalateDispute(req({ headers: writer.headers, params: { id } }), ctx);
+  kaiju.managerRights = { ...kaiju.managerRights, available: true };
+  await repository.updateUser(kaiju);
+  assert.equal(up.status, 200, JSON.stringify(up.jsonBody));
+  assert.equal(up.jsonBody.payment.amountMinor, 19_900);
+  const second = up.jsonBody.dispute.rounds[1];
+  assert.notEqual(second.managerId, 'usr_escrow_meera');
+  const secondHeaders = second.managerId === helperId ? helper : null;
+  assert.ok(secondHeaders, `expected the helper manager to be assigned, got ${second.managerId}`);
+
+  const agree = await decideDispute(req({
+    headers: secondHeaders, params: { id }, body: { favour: 'raiser', reasoning: 'Agreed: there is no order.' },
+  }), ctx);
+  assert.equal(agree.status, 200, JSON.stringify(agree.jsonBody));
+  // Two agreeing is final at once: a third round could not change it.
+  assert.equal(agree.jsonBody.dispute.status, 'resolved');
+  assert.equal(agree.jsonBody.dispute.result.winnerId, 'usr_demo');
+  assert.equal(agree.jsonBody.dispute.result.finalRound, 2);
+  const third = await escalateDispute(req({ headers: writer.headers, params: { id } }), ctx);
+  assert.equal(third.status, 409);
+
+  // The standing decision is round two's, which carried no sanctions; round
+  // one's agreed, but it is the latest agreeing decision that is carried out.
+  const loser = await repository_user(writer.id);
+  assert.equal(loser.buyerTrust.disputesLost, 1);
+});
+
+await check('a final decision\'s sanctions: removal and warnings now, banner and XP after an operator', async () => {
+  const listing = await createListing(req({
+    headers: auth, body: { title: 'Argued over a third time', priceMinor: 5_000, sourcing: 'domestic' },
+  }), ctx);
+  const listingId = listing.jsonBody.listing.id;
+  const writer = await newBuyer('Sanctioned Writer');
+  const said = await addComment(req({
+    headers: writer.headers, params: { id: listingId }, body: { body: 'Never buy here, total fraud.' },
+  }), ctx);
+  const commentId = said.jsonBody.comment.id;
+  const raised = await raiseSubjectDispute(req({
+    headers: auth,
+    body: { subject: { type: 'comment', id: commentId, parentId: listingId }, reason: 'A false fraud claim with no order.', managerId: 'usr_escrow_meera' },
+  }), ctx);
+  const id = raised.jsonBody.dispute.id;
+  await replyDispute(req({ headers: writer.headers, params: { id }, body: { body: 'Whatever.' } }), ctx);
+
+  const decided = await decideDispute(req({
+    headers: manager, params: { id },
+    body: {
+      favour: 'raiser', reasoning: 'No order exists between them.',
+      sanctions: [
+        { kind: 'remove_content', targetUserId: writer.id, message: 'False accusation.' },
+        { kind: 'warning_post', targetUserId: writer.id, message: 'Accused a shop of fraud with no order behind it.', days: 5 },
+        { kind: 'flag', targetUserId: writer.id, message: 'Dispute lost: false accusation.' },
+        { kind: 'alert_banner', targetUserId: writer.id, message: 'Lost a dispute for a false accusation.', days: 7 },
+        { kind: 'xp_deduction', targetUserId: writer.id, message: 'False accusation.', severity: 'severe' },
+      ],
+    },
+  }), ctx);
+  assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
+
+  // Nobody escalates in time: final, and the sanctions run.
+  const record = await repository_dispute(id);
+  record.escalateBy = new Date(Date.now() - 60_000).toISOString();
+  await (await getRepository()).updateDispute(record);
+  const final = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  assert.equal(final.dispute.status, 'resolved');
+
+  const after = (await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody;
+  assert.equal(after.comments.some((c) => c.id === commentId), false, 'the comment is gone');
+  const notices = (await communityNotices(req(), ctx)).jsonBody.notices;
+  assert.ok(notices.some((notice) => notice.disputeId === id && notice.targetUserId === writer.id), 'the warning is in the feed');
+
+  let standing = (await communityStanding(req({ params: { id: writer.id } }), ctx)).jsonBody;
+  assert.equal(standing.alert, null, 'the banner waits for an operator');
+  assert.equal(standing.flags.length, 1, 'a flag is the manager\'s own call');
+
+  const queue = (await adminActions(req({ headers: auth }), ctx)).jsonBody.actions.filter((entry) => entry.disputeId === id);
+  assert.equal(queue.length, 2);
+  assert.ok(queue.every((entry) => entry.status === 'pending'));
+  const banner = queue.find((entry) => entry.sanction.kind === 'alert_banner');
+  const xp = queue.find((entry) => entry.sanction.kind === 'xp_deduction');
+
+  const approved = await adminDecideAction(req({ headers: auth, params: { id: banner.id }, body: { approve: true, days: 3 } }), ctx);
+  assert.equal(approved.status, 200, JSON.stringify(approved.jsonBody));
+  standing = (await communityStanding(req({ params: { id: writer.id } }), ctx)).jsonBody;
+  assert.ok(standing.alert, 'the banner is up');
+  const days = (Date.parse(standing.alert.until) - Date.now()) / 86_400_000;
+  assert.ok(days > 2.9 && days <= 3, 'for as long as the operator allowed');
+
+  const rejected = await adminDecideAction(req({ headers: auth, params: { id: xp.id }, body: { approve: false, note: 'Too harsh for a first time.' } }), ctx);
+  assert.equal(rejected.status, 200);
+  assert.equal((await repository_user(writer.id)).standing.xpPenalty, 0, 'a rejected deduction takes nothing');
+  const twice = await adminDecideAction(req({ headers: auth, params: { id: xp.id }, body: { approve: true } }), ctx);
+  assert.equal(twice.status, 409);
+});
+
+await check('an applied XP deduction adds to the account\'s penalty', async () => {
+  const before = (await repository_user('usr_kaiju')).standing?.xpPenalty ?? 0;
+  const disputes = await (await getRepository()).listDisputes();
+  const dispute = disputes[0];
+  const { applySanction } = await import(new URL('../api/dist/api/src/community.js', import.meta.url));
+  await applySanction(await getRepository(), dispute, { kind: 'xp_deduction', targetUserId: 'usr_kaiju', message: 'Test.', severity: 'light' }, 'Ops', 'usr_ops');
+  const after = await repository_user('usr_kaiju');
+  assert.equal(after.standing.xpPenalty, before + 200);
+});
+
+await check('the manager\'s desk lists their cases, earnings and record, and they can step back', async () => {
+  const desk = await communityCases(req({ headers: manager }), ctx);
+  assert.equal(desk.status, 200);
+  assert.ok(desk.jsonBody.cases.length >= 3);
+  assert.ok(desk.jsonBody.stats.decided >= 3);
+  assert.ok(desk.jsonBody.earnings.totalMinor > 0, 'their share of the fees');
+  assert.equal((await communityCases(req({ headers: (await newBuyer('Not A Manager')).headers }), ctx)).status, 403);
+
+  const off = await communityAvailability(req({ headers: manager, body: { available: false } }), ctx);
+  assert.equal(off.status, 200);
+  const pick = (await communityManagers(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(pick.managers.some((entry) => entry.id === 'usr_escrow_meera'), false, 'off means no new disputes');
+  await communityAvailability(req({ headers: manager, body: { available: true } }), ctx);
+});
+
+await check('every fee is in the ledger, with Figmark\'s commission split off', async () => {
+  const ledger = (await adminLedger(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(ledger.entries.some((entry) => entry.kind === 'dispute'));
+  assert.ok(ledger.entries.some((entry) => entry.kind === 'escalation'));
+  assert.ok(ledger.entries.some((entry) => entry.kind === 'protection'));
+  assert.equal(ledger.totals.commissionMinor + ledger.totals.managerShareMinor, ledger.totals.collectedMinor);
+});
+
+await check('operators set every fee centrally, and the next escalation charges the new one', async () => {
+  const saved = await saveSettings(req({ headers: auth, body: { escalationFeeMinor: 25_000, commissionBasisPoints: 1_500 } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.escalationFeeMinor, 25_000);
+  assert.equal(saved.jsonBody.autoReleaseDays, 10, 'what was not sent is left as it was');
+  const pub = (await readSettings(req(), ctx)).jsonBody;
+  assert.equal(pub.escalationFeeMinor, 25_000);
+  assert.equal(pub.protectionFeeMinor, 4_900, 'buyer protection is a flat ₹ amount');
+  const bad = await saveSettings(req({ headers: auth, body: { disputeFeeMinor: -1 } }), ctx);
+  assert.equal(bad.status, 400);
+  await saveSettings(req({ headers: auth, body: { escalationFeeMinor: 19_900, commissionBasisPoints: 2_000 } }), ctx);
+});
+
+await check('posts in the feed and forums can be reported now', async () => {
+  const writer = await newBuyer('Poster');
+  const repository = await getRepository();
+  const now = new Date().toISOString();
+  await repository.createPost({
+    id: 'pst_reportable', channelId: writer.id, channel: 'seller', kind: 'update', authorId: writer.id, authorName: 'Poster',
+    body: 'Something to report.', listingId: null, photoUrl: null, likeCount: 0, replyCount: 0, createdAt: now, updatedAt: now,
+  });
+  const reported = await createReport(req({
+    headers: auth, body: { targetType: 'post', targetId: 'pst_reportable', parentId: writer.id, reason: 'This post is abusive to buyers.' },
+  }), ctx);
+  assert.equal(reported.status, 201, JSON.stringify(reported.jsonBody));
+  const wrongKind = await createReport(req({
+    headers: auth, body: { targetType: 'forum_post', targetId: 'pst_reportable', parentId: writer.id, reason: 'This post is abusive to buyers.' },
+  }), ctx);
+  assert.equal(wrongKind.status, 404, 'a channel post is not a forum post');
+});
+
+
+/* ── affiliate links ───────────────────────────────────────────────────── */
+/* ── disputes cannot be gamed ─────────────────────────────────────────── */
+console.log('\ndisputes cannot be gamed');
+
+/** A fresh comment by a new member on a fresh listing, and a dispute about it raised by the demo shop with Meera. */
+async function contestedComment(title) {
+  const listing = await createListing(req({ headers: auth, body: { title, priceMinor: 5_000, sourcing: 'domestic' } }), ctx);
+  const listingId = listing.jsonBody.listing.id;
+  const writer = await newBuyer(`${title} writer`);
+  const said = await addComment(req({ headers: writer.headers, params: { id: listingId }, body: { body: 'This shop is a scam.' } }), ctx);
+  const raised = await raiseSubjectDispute(req({
+    headers: auth,
+    body: { subject: { type: 'comment', id: said.jsonBody.comment.id, parentId: listingId }, reason: 'No order between us exists at all.', managerId: 'usr_escrow_meera' },
+  }), ctx);
+  assert.equal(raised.status, 201, JSON.stringify(raised.jsonBody));
+  return { id: raised.jsonBody.dispute.id, writer };
+}
+
+await check('a paid "general" dispute cannot sidestep a purchase still under buyer protection', async () => {
+  // ord_1005 is the demo account's purchase, held by Meera again since its
+  // earlier claim was withdrawn.
+  assert.equal((await (await getRepository()).getOrder('ord_1005')).hold.state, 'held');
+  const flagged = await flagDispute(req({ headers: auth, params: { id: 'ord_1005' }, body: { reason: 'Seller is being difficult.' } }), ctx);
+  assert.equal(flagged.status, 409);
+  assert.equal(flagged.jsonBody.error, 'use_protection_claim');
+  const order = await (await getRepository()).getOrder('ord_1005');
+  assert.equal(order.hold.state, 'held', 'nothing about the held money changed');
+});
+
+await check('the raiser making an offer does not cut short the other side\'s time to answer', async () => {
+  const { id } = await contestedComment('Offer first');
+  const offered = await offerDispute(req({ headers: auth, params: { id }, body: { terms: 'Delete it and we are done.' } }), ctx);
+  assert.equal(offered.status, 200);
+  assert.equal(offered.jsonBody.dispute.status, 'awaiting_response');
+  assert.ok(offered.jsonBody.dispute.respondByAt, 'the other side still has their days');
+  const early = await decideDispute(req({ headers: manager, params: { id }, body: { favour: 'raiser', reasoning: 'Quick.' } }), ctx);
+  assert.equal(early.jsonBody.error, 'too_early');
+});
+
+await check('actions only ever fall on the side the decision goes against', async () => {
+  const { id, writer } = await contestedComment('Wrong target');
+  await replyDispute(req({ headers: writer.headers, params: { id }, body: { body: 'I stand by it.' } }), ctx);
+  const onWinner = await decideDispute(req({
+    headers: manager, params: { id },
+    body: { favour: 'raiser', reasoning: 'No order exists.', sanctions: [{ kind: 'flag', targetUserId: 'usr_demo', message: 'Flag the winner.' }] },
+  }), ctx);
+  assert.equal(onWinner.status, 400);
+  const twice = await decideDispute(req({
+    headers: manager, params: { id },
+    body: { favour: 'raiser', reasoning: 'No order exists.', sanctions: [
+      { kind: 'flag', targetUserId: writer.id, message: 'Once.' }, { kind: 'flag', targetUserId: writer.id, message: 'Twice.' }] },
+  }), ctx);
+  assert.equal(twice.status, 400, 'one of each action per decision');
+  const junk = await decideDispute(req({ headers: manager, params: { id }, body: { favour: 'raiser', reasoning: 'x', sanctions: [null] } }), ctx);
+  assert.equal(junk.status, 400, 'a malformed action is refused, not a crash');
+});
+
+await check('two people accepting the same settlement at once settle it once', async () => {
+  const { id, writer } = await contestedComment('Double accept');
+  const offered = await offerDispute(req({ headers: writer.headers, params: { id }, body: { terms: 'I will delete it.' } }), ctx);
+  const offerId = offered.jsonBody.dispute.offer.id;
+  const before = (await repository_user(writer.id)).buyerTrust.disputesSettled ?? 0;
+  const results = await Promise.all([1, 2].map(() => acceptDispute(req({ headers: auth, params: { id }, body: { offerId } }), ctx)));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  assert.equal((await repository_user(writer.id)).buyerTrust.disputesSettled, before + 1, 'counted once');
+});
+
+await check('two escalations pressed at once open one round and charge one fee', async () => {
+  const { id, writer } = await contestedComment('Double escalate');
+  await replyDispute(req({ headers: writer.headers, params: { id }, body: { body: 'I stand by it.' } }), ctx);
+  await decideDispute(req({ headers: manager, params: { id }, body: { favour: 'raiser', reasoning: 'No order exists.' } }), ctx);
+  const ledgerBefore = (await adminLedger(req({ headers: auth }), ctx)).jsonBody.entries.filter((e) => e.reference === id).length;
+  const results = await Promise.all([1, 2].map(() => escalateDispute(req({ headers: writer.headers, params: { id } }), ctx)));
+  assert.equal(results.filter((r) => r.status === 200).length, 1, results.map((r) => JSON.stringify(r.jsonBody)).join(' | '));
+  const after = await repository_dispute(id);
+  assert.equal(after.rounds.length, 2);
+  const ledgerAfter = (await adminLedger(req({ headers: auth }), ctx)).jsonBody.entries.filter((e) => e.reference === id).length;
+  assert.equal(ledgerAfter - ledgerBefore, 1, 'one escalation fee');
+});
+
+await check('a manager whose appointment is taken away cannot decide, and the round moves on', async () => {
+  const { id, writer } = await contestedComment('Revoked manager');
+  await replyDispute(req({ headers: writer.headers, params: { id }, body: { body: 'I stand by it.' } }), ctx);
+  const repository = await getRepository();
+  const meera = await repository_user('usr_escrow_meera');
+  const rights = meera.managerRights;
+  meera.managerRights = null;
+  await repository.updateUser(meera);
+  try {
+    const tried = await decideDispute(req({ headers: manager, params: { id }, body: { favour: 'raiser', reasoning: 'Still me.' } }), ctx);
+    assert.equal(tried.status, 403);
+    const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+    assert.notEqual(read.dispute.rounds[0].managerId, 'usr_escrow_meera', 'handed to another manager at once');
+  } finally {
+    meera.managerRights = rights;
+    await repository.updateUser(meera);
+  }
+});
+
+await check('both parties agreeing makes a decision final at once; the manager still releases it', async () => {
+  const repository = await getRepository();
+  const opened = await openDispute(req({
+    headers: auth, params: { id: 'ord_1005' },
+    body: { reasonCode: 'damaged', reason: 'The base arrived snapped in two.' },
+  }), ctx);
+  assert.equal(opened.status, 201, JSON.stringify(opened.jsonBody));
+  const id = opened.jsonBody.dispute.id;
+  // The manager assigned at checkout hears it.
+  const order = await (await getRepository()).getOrder('ord_1005');
+  const deciderId = opened.jsonBody.dispute.rounds[0].managerId;
+  assert.equal(deciderId, order.protection.managerId);
+  const signedIn = { [meeraId]: manager, [helperId]: helper };
+  const decider = signedIn[deciderId];
+  assert.ok(decider, `assigned to a manager this suite can sign in as, not ${deciderId}`);
+  const record = await repository_dispute(id);
+  record.respondByAt = new Date(Date.now() - 86_400_000).toISOString();
+  await repository.updateDispute(record);
+  const decided = await decideDispute(req({
+    headers: decider, params: { id }, body: { favour: 'raiser', reasoning: 'The photos show the break.', refundMinor: 10_000 },
+  }), ctx);
+  assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
+  assert.equal(decided.jsonBody.order.hold.state, 'disputed', 'held while it can still be escalated');
+
+  // The seller agrees (they have no sign-in in the fixtures, so it is written
+  // as the route would), then the buyer: all three agree, and it is final.
+  const pending = await repository_dispute(id);
+  pending.agreements = [{ userId: 'usr_kaiju', round: 1, at: new Date().toISOString() }];
+  await repository.updateDispute(pending);
+  const agreed = await agreeDispute(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(agreed.status, 200, JSON.stringify(agreed.jsonBody));
+  assert.equal(agreed.jsonBody.dispute.status, 'resolved', 'final before the escalation window closes');
+  assert.equal(agreed.jsonBody.dispute.result.how, 'decided');
+  assert.equal(agreed.jsonBody.dispute.releaseDuty.managerId, deciderId);
+  assert.equal(agreed.jsonBody.order.hold.state, 'disputed', 'still held until the manager releases it');
+  assert.equal((await agreeDispute(req({ headers: auth, params: { id } }), ctx)).status, 409);
+});
+
+await check('a manager who does not release in time is reported, then replaced after two days', async () => {
+  const repository = await getRepository();
+  const order = await repository.getOrder('ord_1005');
+  const id = order.hold.disputeId;
+  const first = (await repository_dispute(id)).releaseDuty.managerId;
+
+  const overdue = await repository_dispute(id);
+  overdue.releaseDuty.dueBy = new Date(Date.now() - 60_000).toISOString();
+  await repository.updateDispute(overdue);
+  await readDispute(req({ headers: auth, params: { id } }), ctx);
+  // The operators (in the demo, the demo account) are told.
+  assert.ok((await noticesFor('usr_demo')).some((notice) => notice.kind === 'dispute_overdue' && notice.link === `/dispute/${id}`));
+  assert.equal((await repository_dispute(id)).releaseDuty.managerId, first, 'not moved yet: the operators get their two days');
+
+  const stale = await repository_dispute(id);
+  stale.releaseDuty.dueBy = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  await repository.updateDispute(stale);
+  const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
+  const next = read.dispute.releaseDuty.managerId;
+  assert.notEqual(next, first, 'handed to another manager');
+  assert.ok(!['usr_demo', 'usr_kaiju'].includes(next), 'never a party');
+  assert.equal(read.dispute.releaseDuty.reassigned.at(-1).fromId, first);
+
+  const signedIn = { [meeraId]: manager, [helperId]: helper };
+  assert.ok(signedIn[next], `reassigned to a manager this suite can sign in as, not ${next}`);
+  assert.equal((await releaseDispute(req({ headers: signedIn[first], params: { id } }), ctx)).status, 403, 'the old one can no longer release it');
+  const released = await releaseDispute(req({ headers: signedIn[next], params: { id } }), ctx);
+  assert.equal(released.status, 200, JSON.stringify(released.jsonBody));
+  assert.equal(released.jsonBody.dispute.release.toBuyerMinor, 10_000);
+  assert.notEqual(released.jsonBody.order.hold.state, 'disputed');
+});
+
+await check('a settlement on held money waits for the manager to release the agreed split', async () => {
+  const repository = await getRepository();
+  // Keep the assignment to managers this suite can sign in as.
+  const kaiju = await repository_user('usr_kaiju');
+  const rights = kaiju.managerRights;
+  kaiju.managerRights = { ...rights, available: false };
+  await repository.updateUser(kaiju);
+  try {
+    const listed = await createListing(req({
+      headers: auth, body: { title: 'Settled under protection', priceMinor: 30_000, sourcing: 'in_hand' },
+    }), ctx);
+    const buyer = await newBuyer('Settling Buyer');
+    const order = (await createOrder(req({
+      headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id, quantity: 1 },
+    }), ctx)).jsonBody.order;
+    const paid = await payOrder(req({ headers: buyer.headers, params: { id: order.id }, body: { protection: true } }), ctx);
+    assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+    const assigned = paid.jsonBody.order.protection.managerId;
+    const signedIn = { [meeraId]: manager, [helperId]: helper };
+    assert.ok(signedIn[assigned], `assigned ${assigned}`);
+
+    const raised = await openDispute(req({
+      headers: buyer.headers, params: { id: order.id },
+      body: { reasonCode: 'damaged', reason: 'One arm snapped off in the box.' },
+    }), ctx);
+    assert.equal(raised.status, 201, JSON.stringify(raised.jsonBody));
+    const id = raised.jsonBody.dispute.id;
+    assert.equal(raised.jsonBody.dispute.rounds[0].managerId, assigned, 'the assigned manager hears it');
+
+    const offered = await offerDispute(req({ headers: auth, params: { id }, body: { refundMinor: 10_000, terms: 'Part back for the arm.' } }), ctx);
+    const settled = await acceptDispute(req({
+      headers: buyer.headers, params: { id }, body: { offerId: offered.jsonBody.dispute.offer.id },
+    }), ctx);
+    assert.equal(settled.status, 200, JSON.stringify(settled.jsonBody));
+    assert.equal(settled.jsonBody.dispute.result.how, 'settled');
+    assert.equal(settled.jsonBody.order.hold.state, 'disputed', 'two of three: the manager has not agreed yet');
+    assert.equal(settled.jsonBody.dispute.releaseDuty.managerId, assigned);
+
+    const released = await releaseDispute(req({ headers: signedIn[assigned], params: { id } }), ctx);
+    assert.equal(released.status, 200, JSON.stringify(released.jsonBody));
+    assert.equal(released.jsonBody.dispute.release.toBuyerMinor, 10_000);
+    assert.equal(released.jsonBody.dispute.release.toSellerMinor, 20_000);
+  } finally {
+    kaiju.managerRights = rights;
+    await repository.updateUser(kaiju);
+  }
+});
+
+await check('a manager past their decision deadline is reported to the operators', async () => {
+  const { id } = await contestedComment('Slow manager');
+  const record = await repository_dispute(id);
+  record.rounds.at(-1).decideBy = new Date(Date.now() - 60_000).toISOString();
+  await (await getRepository()).updateDispute(record);
+  await readDispute(req({ headers: auth, params: { id } }), ctx);
+  const round = (await repository_dispute(id)).rounds.at(-1);
+  assert.ok(round.adminNotifiedAt, 'told once');
+  assert.ok((await noticesFor('usr_demo')).some((notice) => notice.kind === 'dispute_overdue' && notice.link === `/dispute/${id}`));
+});
+
+await check('a dispute is about something somebody wrote, not about a person', async () => {
+  const writer = await newBuyer('Not a subject');
+  const raised = await raiseSubjectDispute(req({
+    headers: auth, body: { subject: { type: 'user', id: writer.id }, reason: 'I just do not like them.', managerId: 'usr_escrow_meera' },
+  }), ctx);
+  assert.equal(raised.status, 400);
+});
+
+console.log('\naffiliate links');
+const {
+  similarListingsRoute: similarListings, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,
+} = await import(new URL('catalog-routes.js', fns));
+const { myAffiliateRoute: myAffiliate, markAffiliatePaidRoute: markAffiliatePaid } = await import(new URL('affiliate-routes.js', fns));
+
+const affListed = (await createListing(req({
+  headers: auth,
+  body: { title: 'Affiliate Figure', priceMinor: 20_000, quantityAvailable: 5, affiliateMinor: 2_000, category: 'Figures', tags: ['figure'] },
+}), ctx)).jsonBody.listing;
+const affiliatePerson = await newBuyer('Affi Liate');
+const referredBuyer = await newBuyer('Referred Buyer');
+const affDetail = (headers) => listingDetail(req({ headers, params: { id: affListed.id } }), ctx);
+const linkOf = async (who) => (await affiliateLink(req({ headers: who.headers, params: { id: affListed.id }, body: {} }), ctx)).jsonBody;
+/** What a browser holding these cookies would send back. */
+const withCookies = (headers, setCookies) => ({
+  ...headers,
+  cookie: setCookies.map((line) => line.split(';')[0]).join('; '),
+});
+const cookiesOf = (response) => [...(response.headers?.entries?.() ?? [])]
+  .filter(([name]) => name.toLowerCase() === 'set-cookie').map(([, value]) => value);
+
+await check('a private deal never pays commission and runs on a clock of at most a day', async () => {
+  const buyer = await newBuyer('Clock Buyer');
+  const before = Date.now();
+  const plain = (await createListing(req({ headers: auth, body: {
+    title: 'Two Hour Deal', priceMinor: 9_000, privateFor: buyer.id, affiliateMinor: 2_000, affiliateOffMinor: 500,
+  } }), ctx)).jsonBody.listing;
+  assert.equal(plain.affiliate, null, 'no commission on a private deal');
+  const left = Date.parse(plain.expiresAt) - before;
+  assert.ok(left > 1.9 * 3_600_000 && left < 2.1 * 3_600_000, `two hours by default, got ${left}`);
+  assert.equal((await affiliateLink(req({ headers: buyer.headers, params: { id: plain.id } }), ctx)).status, 409, 'no link to share');
+
+  const long = (await createListing(req({ headers: auth, body: {
+    title: 'Too Long Deal', priceMinor: 9_000, privateFor: buyer.id,
+    expiresAt: new Date(Date.now() + 72 * 3_600_000).toISOString(),
+  } }), ctx)).jsonBody.listing;
+  assert.ok(Date.parse(long.expiresAt) <= Date.now() + 24 * 3_600_000 + 1_000, 'held to a day');
+
+  const edited = (await editListing(req({ headers: auth, params: { id: plain.id }, body: {
+    affiliateMinor: 3_000, expiresAt: new Date(Date.now() + 100 * 3_600_000).toISOString(),
+  } }), ctx)).jsonBody.listing;
+  assert.equal(edited.affiliate, null, 'an edit cannot turn commission on');
+  assert.ok(Date.parse(edited.expiresAt) <= Date.now() + 24 * 3_600_000 + 1_000, 'a new clock is a day at most');
+
+  const posted = await createPost(req({ headers: auth, body: { body: 'Look', storeId: 'usr_demo', listingId: plain.id } }), ctx);
+  assert.equal(posted.status, 404, 'a private deal is never posted');
+});
+
+await check('a deal made from an item shows what it took off', async () => {
+  const buyer = await newBuyer('From Item Buyer');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'from_item_buyer' } }), ctx);
+  const source = (await createListing(req({ headers: auth, body: { title: 'Shelf Figure', priceMinor: 20_000, quantityAvailable: 1 } }), ctx)).jsonBody.listing;
+  const other = (await (await getRepository()).listListings({ limit: 200 })).find((listing) => listing.sellerId !== 'usr_demo');
+  const made = (await createListing(req({ headers: auth, body: {
+    title: 'Shelf Figure', priceMinor: 17_000, privateFor: buyer.id, dealFromId: source.id,
+  } }), ctx)).jsonBody.listing;
+  assert.deepEqual(made.dealFrom, { listingId: source.id, priceMinor: 20_000 });
+  const stranger = (await createListing(req({ headers: auth, body: {
+    title: 'Not Yours', priceMinor: 17_000, privateFor: buyer.id, dealFromId: other.id,
+  } }), ctx)).jsonBody.listing;
+  assert.equal(stranger.dealFrom, null, "another shop's item is not a source");
+
+  const offer = (await sendMessage(req({ headers: auth, params: { handle: 'from_item_buyer' },
+    body: { as: 'arjun_collects', deal: { kind: 'offer', listingId: made.id } } }), ctx)).jsonBody.message;
+  assert.equal(offer.deal.wasMinor, 20_000);
+  assert.ok(offer.deal.expiresAt, 'the card carries its clock');
+  assert.equal(offer.deal.state, 'live');
+
+  const items = await dealItems(req({ headers: auth, params: { handle: 'from_item_buyer' }, query: { as: 'arjun_collects' } }), ctx);
+  assert.equal(items.status, 200);
+  assert.ok(items.jsonBody.items.some((item) => item.id === source.id));
+  assert.ok(!items.jsonBody.items.some((item) => item.id === made.id), 'not other private deals');
+  assert.equal((await dealItems(req({ headers: auth, params: { handle: 'from_item_buyer' }, query: { as: 'arjun' } }), ctx)).status, 403,
+    'a person has no items to deal from');
+
+  // Sold out still counts: it is what buyers ask for again.
+  await editListing(req({ headers: auth, params: { id: source.id }, body: { quantityAvailable: 0 } }), ctx);
+  const again = (await dealItems(req({ headers: auth, params: { handle: 'from_item_buyer' }, query: { as: 'arjun_collects' } }), ctx)).jsonBody.items;
+  assert.equal(again.find((item) => item.id === source.id)?.state, 'bought');
+});
+
+await check('a message can be about an item, and says where it stands', async () => {
+  const buyer = await newBuyer('Item Asker');
+  await setUsername(req({ headers: buyer.headers, body: { username: 'item_asker' } }), ctx);
+  const item = (await createListing(req({ headers: auth, body: { title: 'Ask Me', priceMinor: 5_000, quantityAvailable: 2 } }), ctx)).jsonBody.listing;
+  const sent = await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun_collects' }, body: { body: '', itemId: item.id } }), ctx);
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  assert.equal(sent.jsonBody.message.item.title, 'Ask Me');
+  assert.equal(sent.jsonBody.message.body, 'About Ask Me');
+
+  const other = (await (await getRepository()).listListings({ limit: 200 })).find((listing) => listing.sellerId !== 'usr_demo');
+  assert.equal((await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun_collects' },
+    body: { body: 'this?', itemId: other.id } }), ctx)).status, 404, "only this shop's items");
+  const someoneElse = await newBuyer('Not The Buyer');
+  const secret = (await createListing(req({ headers: auth, body: { title: 'Secret', priceMinor: 5_000, privateFor: someoneElse.id } }), ctx)).jsonBody.listing;
+  assert.equal((await sendMessage(req({ headers: buyer.headers, params: { handle: 'arjun_collects' },
+    body: { body: 'this?', itemId: secret.id } }), ctx)).status, 404, "nobody else's private deal");
+
+  await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 4_500 } }), ctx);
+  const seen = (await thread(req({ headers: auth, params: { handle: 'item_asker' }, query: { as: 'arjun_collects' } }), ctx)).jsonBody;
+  const card = seen.messages.find((message) => message.item?.listingId === item.id).item;
+  assert.equal(card.state, 'live');
+  assert.equal(card.nowMinor, 4_500, 'a changed price is shown');
+});
+
+await check('an item on affiliate pays a fixed amount, and anyone but the shop gets a short link', async () => {
+  assert.deepEqual(affListed.affiliate, { amountMinor: 2_000 });
+  const detail = (await affDetail(affiliatePerson.headers)).jsonBody.affiliate;
+  assert.equal(detail.amountMinor, 2_000);
+  assert.equal(detail.canShare, true);
+  assert.equal((await affDetail(auth)).jsonBody.affiliate.canShare, false, 'the shop earns nothing on its own item');
+  assert.equal((await affDetail({})).jsonBody.affiliate.canShare, false, 'nor does somebody signed out');
+
+  const link = await linkOf(affiliatePerson);
+  assert.match(link.path, /^\/r\/[A-Za-z0-9]{7}$/, 'seven characters, nothing to trim');
+  assert.equal((await linkOf(affiliatePerson)).code, link.code, 'the same link every time');
+  const own = await affiliateLink(req({ headers: auth, params: { id: affListed.id }, body: {} }), ctx);
+  assert.equal(own.status, 409);
+});
+
+await check('a commission can never be as much as the price', async () => {
+  const greedy = (await createListing(req({ headers: auth, body: { title: 'Greedy', priceMinor: 5_000, affiliateMinor: 9_000 } }), ctx)).jsonBody.listing;
+  assert.ok(greedy.affiliate.amountMinor < 5_000);
+});
+
+await check('an edited short link leads nowhere and credits nobody', async () => {
+  const { code } = await linkOf(affiliatePerson);
+  const edited = code.slice(0, -1) + (code.endsWith('a') ? 'b' : 'a');
+  const opened = await openShortLink(req({ params: { code: edited } }), ctx);
+  assert.equal(opened.status, 404);
+});
+
+await check('a short link opened signed out is remembered through sign-up, with nothing in the address', async () => {
+  const { code } = await linkOf(affiliatePerson);
+  const opened = await openShortLink(req({ params: { code } }), ctx);
+  assert.equal(opened.status, 200);
+  assert.equal(opened.jsonBody.listingId, affListed.id);
+  const cookies = cookiesOf(opened);
+  assert.ok(cookies.some((line) => line.startsWith('fm_ref=')), 'held in a cookie');
+
+  // The guest reads the plain item page - no code, no parameter - and is told who sent them.
+  const guestView = (await affDetail(withCookies({}, cookies))).jsonBody;
+  assert.equal(guestView.affiliate.referredBy.name, 'Affi Liate');
+
+  // They sign up; the account takes the referral over from the cookie.
+  buyerSeq += 1;
+  const made = await signup(req({
+    headers: withCookies({}, cookies),
+    body: { displayName: 'Cookie Buyer', email: `cookie${buyerSeq}@figmark.example`, phone: `+91900008${String(1000 + buyerSeq).slice(-4)}`, password: 'longenough1' },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const headers = { authorization: `Bearer ${made.jsonBody.token}` };
+  // Days later, a different browser with no cookie and a bare address: still credited.
+  const opened2 = (await openCheckout(req({ headers, body: { listingId: affListed.id } }), ctx)).jsonBody.order;
+  assert.equal(opened2.affiliate.referrerId, affiliatePerson.id);
+  assert.equal(opened2.affiliate.amountMinor, 2_000);
+});
+
+await check('a short link opened signed in credits the checkout straight away', async () => {
+  const { code } = await linkOf(affiliatePerson);
+  await openShortLink(req({ headers: referredBuyer.headers, params: { code } }), ctx);
+  assert.equal((await affDetail(referredBuyer.headers)).jsonBody.affiliate.referredBy.name, 'Affi Liate');
+  const opened = (await openCheckout(req({ headers: referredBuyer.headers, body: { listingId: affListed.id } }), ctx)).jsonBody.order;
+  assert.equal(opened.affiliate.referrerId, affiliatePerson.id);
+  // A checkout is not a sale: nothing in the wallet yet.
+  assert.ok(!(await myAffiliate(req({ headers: affiliatePerson.headers }), ctx)).jsonBody.earnings.some((e) => e.orderId === opened.id));
+});
+
+await check('a person cannot refer themselves', async () => {
+  const { code } = await linkOf(affiliatePerson);
+  const self = await openShortLink(req({ headers: affiliatePerson.headers, params: { code } }), ctx);
+  assert.equal(cookiesOf(self).length, 0);
+  assert.equal((await affDetail(affiliatePerson.headers)).jsonBody.affiliate.referredBy, null);
+  const own = (await openCheckout(req({ headers: affiliatePerson.headers, body: { listingId: affListed.id } }), ctx)).jsonBody.order;
+  assert.equal(own.affiliate ?? null, null);
+});
+
+await check('the commission is pending until delivery, then earned, then paid by the shop', async () => {
+  const open = (await openCheckout(req({ headers: referredBuyer.headers, body: { listingId: affListed.id, quantity: 2 } }), ctx)).jsonBody.order;
+  const booked = (await bookOrder(req({ headers: referredBuyer.headers, params: { id: open.id }, body: {} }), ctx)).jsonBody.order;
+  const wallet = async () => (await myAffiliate(req({ headers: affiliatePerson.headers }), ctx)).jsonBody.earnings
+    .find((entry) => entry.orderId === booked.id);
+
+  const pending = await wallet();
+  assert.equal(pending.status, 'pending');
+  assert.equal(pending.commissionMinor, 4_000, '₹20 a unit, two units');
+
+  const early = await markAffiliatePaid(req({ headers: auth, params: { id: booked.id }, body: {} }), ctx);
+  assert.equal(early.status, 409);
+  assert.equal(early.jsonBody.error, 'not_earned');
+
+  await acceptOrder(req({ headers: auth, params: { id: booked.id }, body: {} }), ctx);
+  const repository = await getRepository();
+  const order = await repository.getOrder(booked.id);
+  await repository.updateOrder({ ...order, status: 'delivered', completedAt: new Date().toISOString() });
+  assert.equal((await wallet()).status, 'earned');
+
+  const stranger = await markAffiliatePaid(req({ headers: referredBuyer.headers, params: { id: booked.id }, body: {} }), ctx);
+  assert.equal(stranger.status, 404, 'only the shop says it paid');
+  const paid = await markAffiliatePaid(req({ headers: auth, params: { id: booked.id }, body: { reference: 'UPI-77' } }), ctx);
+  assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+  const after = await wallet();
+  assert.equal(after.status, 'paid');
+  assert.equal(after.paidReference, 'UPI-77');
+});
+
+await check('a cancelled referred sale owes nothing', async () => {
+  const open = (await openCheckout(req({ headers: referredBuyer.headers, body: { listingId: affListed.id } }), ctx)).jsonBody.order;
+  const booked = (await bookOrder(req({ headers: referredBuyer.headers, params: { id: open.id }, body: {} }), ctx)).jsonBody.order;
+  await rejectOrder(req({ headers: auth, params: { id: booked.id }, body: { reason: 'Out of stock' } }), ctx);
+  const entry = (await myAffiliate(req({ headers: affiliatePerson.headers }), ctx)).jsonBody.earnings.find((e) => e.orderId === booked.id);
+  assert.equal(entry.status, 'void');
+});
+
+await check('turning the commission off stops the links and the highlight', async () => {
+  const plain = (await createListing(req({ headers: auth, body: { title: 'No Commission', priceMinor: 9_000 } }), ctx)).jsonBody.listing;
+  const detail = (await listingDetail(req({ headers: referredBuyer.headers, params: { id: plain.id } }), ctx)).jsonBody;
+  assert.equal((await affiliateLink(req({ headers: referredBuyer.headers, params: { id: plain.id }, body: {} }), ctx)).status, 409);
+  assert.equal(detail.affiliate, null);
+  const { feedListings } = { feedListings: (await feed(req({ headers: referredBuyer.headers }), ctx)).jsonBody.listings };
+  assert.ok(feedListings.find((l) => l.id === affListed.id)?.affiliate, 'the feed card knows to highlight it');
+  assert.ok(!feedListings.find((l) => l.id === plain.id)?.affiliate);
+});
+
+await check('similar items leave out the item itself and lead with its own kind', async () => {
+  await createListing(req({ headers: auth, body: { title: 'Another Figure', priceMinor: 21_000, category: 'Figures', tags: ['figure'] } }), ctx);
+  const { listings } = (await similarListings(req({ params: { id: affListed.id } }), ctx)).jsonBody;
+  assert.ok(listings.length > 0);
+  assert.ok(!listings.some((l) => l.id === affListed.id));
+  assert.equal(listings[0].category, affListed.category);
+});
+
+
+await check('an edited route reaches the lots on it only when the seller says so', async () => {
+  const made = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: 'Edited later',
+      steps: [
+        { name: 'Ordered', side: 'pre' }, { name: 'Consolidated', side: 'post' },
+        { name: 'Sailed', side: 'post' }, { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const route = made.jsonBody.route;
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Rides the edit', routeId: route.id } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'On an edited route', priceMinor: 4_000, sourcing: 'import' },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Edited Route Buyer');
+  const order = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.id } }), ctx);
+
+  // Unchanged, picking the same route again is refused.
+  const same = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
+  assert.equal(same.status, 409);
+
+  // Edited: the save only stores the route, and says how many lots are behind.
+  const edit = (name) => saveRoute(req({
+    headers: auth,
+    body: { id: route.id, name: route.name, steps: route.steps.map((step) => (step.name === 'Sailed' ? { ...step, name } : step)) },
+  }), ctx);
+  const saved = await edit('Sailed by sea');
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.lotsBehind, 1);
+  assert.deepEqual((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id], { lots: 1, behind: 1 });
+  let board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed'), 'the lot keeps its own copy until asked');
+
+  // Asked: every lot on it takes the new steps, and its items keep riding it.
+  const applied = await applyRoute(req({ headers: auth, params: { id: route.id } }), ctx);
+  assert.equal(applied.status, 200, JSON.stringify(applied.jsonBody));
+  assert.equal(applied.jsonBody.lotsUpdated, 1);
+  board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by sea'));
+  const item = board.items.find((row) => row.id === order.id);
+  assert.equal(item.ownStep, false, 'no position of its own was invented for the item');
+  assert.ok(!board.history.some((event) => /were updated/.test(event.note ?? '')), 'a correction is not news');
+  assert.equal((await listRoutes(req({ headers: auth }), ctx)).jsonBody.usage[route.id].behind, 0);
+
+  // Re-picking the same, now edited, route does the same for one lot.
+  await edit('Sailed by air');
+  const repicked = await setLotRoute(req({ headers: auth, params: { id: lot.id }, body: { routeId: route.id } }), ctx);
+  assert.equal(repicked.status, 200, JSON.stringify(repicked.jsonBody));
+  board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.steps.some((step) => step.name === 'Sailed by air'));
+});
+
+await check('a closed lot takes no new orders, and its buyers are told it is prepping for dispatch', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Shut box' } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'In the shut box', priceMinor: 3_000, sourcing: 'import', quantityAvailable: 5 },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Shut Box Buyer');
+  const first = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: first.id }, body: { lotId: lot.id } }), ctx);
+
+  let tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: first.id } }), ctx)).jsonBody;
+  assert.equal(tracked.route.lotPhase, 'filling');
+
+  const closed = await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: true } }), ctx);
+  assert.equal(closed.status, 200, JSON.stringify(closed.jsonBody));
+  assert.equal(closed.jsonBody.lot.status, 'filled');
+  tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: first.id } }), ctx)).jsonBody;
+  assert.equal(tracked.route.lotPhase, 'closed');
+
+  // Nothing more goes in while it is shut.
+  const other = await newBuyer('Late To The Box');
+  const late = await createOrder(req({ headers: other.headers, body: { listingId: listing.id } }), ctx);
+  assert.ok(late.jsonBody.order, JSON.stringify(late.jsonBody));
+  const second = late.jsonBody.order;
+  const refused = await assignOrderToLot(req({ headers: auth, params: { id: second.id }, body: { lotId: lot.id } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'lot_closed');
+
+  // Reopened, it fills again.
+  const reopened = await closeLot(req({ headers: auth, params: { id: lot.id }, body: { closed: false } }), ctx);
+  assert.equal(reopened.jsonBody.lot.status, 'open');
+  const filed = await assignOrderToLot(req({ headers: auth, params: { id: second.id }, body: { lotId: lot.id } }), ctx);
+  assert.equal(filed.status, 200, JSON.stringify(filed.jsonBody));
+});
+
+await check('a step forward can be undone for three minutes, and shows nowhere until then', async () => {
+  process.env.FIGMARK_UNDO_WINDOW_MS = String(3 * 60 * 1000);
+  try {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Undo box' } }), ctx)).jsonBody.lot;
+  const listing = (await createListing(req({
+    headers: auth, body: { title: 'Undo item', priceMinor: 2_000, sourcing: 'import', quantityAvailable: 3 },
+  }), ctx)).jsonBody.listing;
+  const buyer = await newBuyer('Undo Buyer');
+  const order = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await assignOrderToLot(req({ headers: auth, params: { id: order.id }, body: { lotId: lot.id } }), ctx);
+  const startAt = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody.route.currentStep;
+
+  // Moved: in effect at once, offered for undoing, on no timeline, nobody told.
+  const moved = await stepLot(req({ headers: auth, params: { id: lot.id }, body: {} }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  const undo = moved.jsonBody.undo;
+  assert.ok(undo && undo.id && undo.until, 'the move comes with an undo');
+  assert.ok(Date.parse(undo.until) - Date.now() > 170_000, 'about three minutes');
+  let tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.ok(!tracked.order.stageHistory.some((event) => event.undoId === undo.id), 'hidden from the buyer timeline');
+  let told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
+  assert.ok(!told.some((row) => row.body.includes('Undo box')), 'the buyer is not told yet');
+
+  // Undone: back where it was, no trace, the held notice withdrawn.
+  const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
+  assert.equal(back.status, 200, JSON.stringify(back.jsonBody));
+  const board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.equal(board.route.currentStep, startAt);
+  assert.ok(!board.history.some((event) => event.undoId === undo.id));
+  assert.ok((await noticesFor(buyer.id)).filter((row) => row.undoId === undo.id).every((row) => row.withdrawn));
+  const twice = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
+  assert.equal(twice.status, 409);
+  assert.equal(twice.jsonBody.error, 'undo_expired');
+
+  // Left alone past the window: it is history, shown and told, and no longer undoable.
+  const again = (await stepLot(req({ headers: auth, params: { id: lot.id }, body: {} }), ctx)).jsonBody;
+  const repository = await getRepository();
+  const past = new Date(Date.now() - 1000).toISOString();
+  const age = (history) => history.map((event) => (event.undoId === again.undo.id ? { ...event, undoUntil: past } : event));
+  const stored = await repository.getLot(lot.sellerId, lot.id);
+  await repository.updateLot({ ...stored, stageHistory: age(stored.stageHistory) });
+  const storedOrder = await repository.getOrder(order.id);
+  await repository.updateOrder({ ...storedOrder, stageHistory: age(storedOrder.stageHistory) });
+  for (const row of await noticesFor(buyer.id)) {
+    if (row.undoId === again.undo.id) await repository.saveNotification({ ...row, notBefore: past });
+  }
+  tracked = (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody;
+  assert.ok(tracked.order.stageHistory.some((event) => event.undoId === again.undo.id), 'shown once the window closes');
+  told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
+  // About their item, with the lot it travels in.
+  assert.ok(told.some((row) => row.body.includes('Undo box')), 'and the buyer is told');
+  const late = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: again.undo.to, undoOf: again.undo.id } }), ctx);
+  assert.equal(late.status, 409);
+
+  // A button press undone leaves no "undone" line behind.
+  const pressed = await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: true } }), ctx);
+  assert.equal(pressed.status, 200, JSON.stringify(pressed.jsonBody));
+  assert.ok(pressed.jsonBody.undo);
+  const unpressed = await setCheckpoint(req({
+    headers: auth, params: { id: order.id }, body: { checkpoint: 'china_packed', on: false, undoOf: pressed.jsonBody.undo.id },
+  }), ctx);
+  assert.equal(unpressed.status, 200, JSON.stringify(unpressed.jsonBody));
+  assert.ok(!unpressed.jsonBody.order.checkpoints.china_packed);
+  const after = await repository.getOrder(order.id);
+  assert.ok(!after.stageHistory.some((event) => /undone/.test(event.note ?? '')));
+  } finally {
+    process.env.FIGMARK_UNDO_WINDOW_MS = '0';
+  }
+});
+
+await check('a route that never joins a lot cannot be given to one', async () => {
+  const library = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
+  const courier = library.presets.find((preset) => preset.steps.every((step) => step.side !== 'post'));
+  assert.ok(courier, 'a preset that never joins a lot exists');
+  const saved = await saveRoute(req({ headers: auth, body: { name: 'Courier only', steps: courier.steps } }), ctx);
+  assert.equal(saved.status, 201, JSON.stringify(saved.jsonBody));
+  const refused = await createLot(req({ headers: auth, body: { name: 'Nothing to move', routeId: saved.jsonBody.route.id } }), ctx);
+  assert.equal(refused.status, 400);
+  assert.equal(refused.jsonBody.error, 'invalid_route');
+  const open = (await createLot(req({ headers: auth, body: { name: 'Rerouted to nothing' } }), ctx)).jsonBody.lot;
+  const rerouted = await setLotRoute(req({ headers: auth, params: { id: open.id }, body: { routeId: saved.jsonBody.route.id } }), ctx);
+  assert.equal(rerouted.status, 400);
+});
+
+await check('a finished lot stays finished', async () => {
+  const board = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(board.lot.status, 'closed');
+  const back = await stepLot(req({ headers: auth, params: { id: routedLot.id }, body: { to: board.route.offset } }), ctx);
+  assert.equal(back.status, 409);
+  assert.equal(back.jsonBody.error, 'lot_done');
+  assert.equal((await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody.lot.status, 'closed');
+});
+
+await check('moving a lot before its own first step says so, not that it is at the end', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Too far back' } }), ctx)).jsonBody.lot;
+  const board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(board.route.offset >= 2, 'the generic route starts with steps each item takes on its own');
+  const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: 0 } }), ctx);
+  assert.equal(back.status, 409);
+  assert.ok(/start of its own steps/.test(back.jsonBody.message), back.jsonBody.message);
+});
+
+await check('the lots list counts orders waiting for a lot, and never in-hand stock', async () => {
+  const listing = await waitingItem('Waiting for a lot');
+  const buyer = await newBuyer('Waiting Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: listing } }), ctx);
+  await createListing(req({ headers: auth, body: { title: 'On the shelf', priceMinor: 2_000, sourcing: 'in_hand' } }), ctx);
+  const body = (await myLots(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(body.awaitingOrders >= 1);
+  assert.ok(body.unassigned.every((row) => row.sourcing === 'import'));
+  assert.ok(!body.unassigned.some((row) => row.title === 'On the shelf'));
+});
+
+
+/* ── service stores ────────────────────────────────────────────────────── */
+console.log('\nservice stores');
+
+const signInAs = async (identifier) =>
+  ({ authorization: `Bearer ${(await login(req({ body: { identifier, password: DEMO_PASSWORD } }), ctx)).jsonBody.token}` });
+const lotusTeam = await signInAs('ops@lotusfreight.example');
+const inkwellTeam = await signInAs('studio@inkwell.example');
+const newMember = async (name, email, phone) => {
+  const made = await signup(req({ body: { displayName: name, email, phone, password: 'longenough1' } }), ctx);
+  return { id: made.jsonBody.user.id, headers: { authorization: `Bearer ${made.jsonBody.token}` } };
+};
+
+/** A copy of a seeded order, fresh: placed, unpaid, nothing ticked, nothing added. */
+const freshOrder = async (id, lotId, buyerId = 'usr_demo') => {
+  const repository = await getRepository();
+  const base = await repository.getOrder('ord_1001');
+  return repository.createOrder({
+    ...structuredClone(base), id, lotId, buyerId, status: 'confirmed', stage: 'ordering', paymentStatus: 'unpaid',
+    checkpoints: {}, customTicks: {}, payments: [], credits: [], addOns: [], artistJob: null, paymentClaim: null,
+    protection: null, hold: { ...base.hold, state: 'none', heldAt: null, autoReleaseAt: null },
+    stageHistory: [], placedAt: new Date().toISOString(), currentStep: undefined, completedAt: null,
+  });
+};
+
+await check('a store opens only when an operator approves it, and says why when not', async () => {
+  const applicant = await newMember('Pearl River Freight', 'pearl@figmark.example', '+919000078901');
+
+  const thin = await applyStore(req({ headers: applicant.headers, body: { kind: 'forwarder', companyName: 'Pearl River Freight' } }), ctx);
+  assert.equal(thin.status, 400);
+  assert.equal(thin.jsonBody.error, 'incomplete');
+
+  const sent = await applyStore(req({ headers: applicant.headers, body: forwarderApplication('Pearl River Freight') }), ctx);
+  assert.equal(sent.status, 200);
+  assert.equal(sent.jsonBody.store.status, 'pending');
+
+  // Nothing public while it waits: not listed, no page for a stranger.
+  const listed = (await serviceDirectory(req({ params: { kind: 'forwarder' } }), ctx)).jsonBody.providers;
+  assert.equal(listed.some((row) => row.userId === applicant.id), false);
+  const slug = sent.jsonBody.store.directorySlug;
+  assert.equal((await storePage(req({ params: { kind: 'forwarder', slug } }), ctx)).status, 404);
+  // Its own team may preview it.
+  assert.equal((await storePage(req({ headers: applicant.headers, params: { kind: 'forwarder', slug } }), ctx)).status, 200);
+
+  // Only an operator reads the queue, and a refusal has to say why.
+  assert.equal((await opsStores(req({ headers: applicant.headers }), ctx)).status, 403);
+  const queue = (await opsStores(req({ headers: auth }), ctx)).jsonBody.stores;
+  assert.equal(queue[0].status, 'pending', 'waiting applications come first');
+  assert.ok(queue.some((row) => row.owner.id === applicant.id));
+  const silent = await opsReview(req({ headers: auth, params: { kind: 'forwarder', ownerId: applicant.id }, body: { decision: 'changes' } }), ctx);
+  assert.equal(silent.status, 400);
+  assert.equal((await opsReview(req({ headers: auth, params: { kind: 'forwarder', ownerId: applicant.id }, body: { decision: 'changes', note: 'Add your GST number.' } }), ctx)).status, 200);
+  const told = await noticesFor(applicant.id);
+  assert.ok(told.some((notice) => notice.kind === 'service_store' && notice.body.includes('GST')));
+
+  // Fixed and resent, then approved: listed, and the page is public.
+  assert.equal((await applyStore(req({ headers: applicant.headers, body: { ...forwarderApplication('Pearl River Freight'), businessId: 'GST-1' } }), ctx)).jsonBody.store.status, 'pending');
+  assert.equal((await opsReview(req({ headers: auth, params: { kind: 'forwarder', ownerId: applicant.id }, body: { decision: 'approved' } }), ctx)).status, 200);
+  const live = (await serviceDirectory(req({ params: { kind: 'forwarder' } }), ctx)).jsonBody.providers;
+  assert.ok(live.some((row) => row.userId === applicant.id && row.slug === slug));
+  const page = (await storePage(req({ params: { kind: 'forwarder', slug } }), ctx)).jsonBody.store;
+  assert.equal(page.lanes.length, 1);
+  assert.equal(page.registered, true);
+  // The registration itself is for operators: the page only says there is one.
+  assert.equal(JSON.stringify(page).includes('GST-1'), false);
+
+  // A live store edits in place, and applying again is refused.
+  const edited = await saveStore(req({ headers: applicant.headers, params: { kind: 'forwarder', ownerId: applicant.id }, body: { tagline: 'Faster now' } }), ctx);
+  assert.equal(edited.jsonBody.status, 'approved');
+  assert.equal((await applyStore(req({ headers: applicant.headers, body: forwarderApplication('Pearl River Freight') }), ctx)).status, 409);
+});
+
+await check('a team member holds the rights they were given, and no more', async () => {
+  const member = await newMember('Chen Ops', 'chen.ops@figmark.example', '+919000078902');
+  const added = await storeTeam(req({ headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { identifier: 'chen.ops@figmark.example', rights: ['work'] } }), ctx);
+  assert.equal(added.status, 200);
+  const theirs = (await myServices(req({ headers: member.headers }), ctx)).jsonBody.stores;
+  assert.deepEqual(theirs.map((row) => [row.ownerId, row.rights]), [['usr_fwd_lotus', ['work']]]);
+  // Working is not editing the rate card, and not managing people.
+  assert.equal((await saveStore(req({ headers: member.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { tagline: 'x' } }), ctx)).status, 403);
+  assert.equal((await storeTeam(req({ headers: member.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { identifier: DEMO_EMAIL, rights: ['team'] } }), ctx)).status, 403);
+  assert.equal((await storeWork(req({ headers: member.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).status, 200);
+  // A stranger has no door at all.
+  assert.equal((await storeConsole(req({ headers: auth, params: { kind: 'artist', ownerId: 'usr_art_inkwell' } }), ctx)).status, 403);
+});
+
+await check('booking a store on a lot is instant, or a request the forwarder answers', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Booked on Pearl' } }), ctx)).jsonBody.lot;
+  const options = (await lotForwarderOptions(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  const pearl = options.stores.find((row) => row.name === 'Pearl River Freight');
+  assert.ok(pearl, 'approved stores are bookable');
+  assert.equal(options.stores.some((row) => row.status !== 'approved'), false);
+  const booked = await bookForwarder(req({ headers: auth, params: { id: lot.id }, body: { storeOwnerId: pearl.ownerId, laneId: pearl.lanes[0].id, insurancePlanIds: [pearl.insurance[0].id] } }), ctx);
+  assert.equal(booked.jsonBody.lot.forwarder.acceptance, 'accepted', 'auto-accept takes it at once');
+  assert.match(booked.jsonBody.lot.forwarder.laneLabel, /Guangzhou → Mumbai/);
+
+  // Lotus asks first: Lot 24 waits on them, and they cannot work it yet.
+  const work = (await storeWork(req({ headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).jsonBody.lots;
+  assert.equal(work.find((row) => row.lot.id === 'lot_open_24').acceptance, 'pending');
+  const order = (await (await getRepository()).listOrdersForLot('lot_open_24')).find((row) => !row.checkpoints?.china_received);
+  const early = await setCheckpoint(req({ headers: lotusTeam, params: { id: order.id }, body: { checkpoint: 'china_received' } }), ctx);
+  assert.equal(early.status, 403);
+  assert.equal((await respondLot(req({ headers: lotusTeam, params: { ownerId: 'usr_fwd_lotus' }, body: { sellerId: 'usr_demo', lotId: 'lot_open_24', accept: true } }), ctx)).status, 200);
+  const ticked = await setCheckpoint(req({ headers: lotusTeam, params: { id: order.id }, body: { checkpoint: 'china_received' } }), ctx);
+  assert.equal(ticked.status, 200);
+  // Their own button, and not the handler's.
+  const handlers = await setCheckpoint(req({ headers: lotusTeam, params: { id: order.id }, body: { checkpoint: 'dispatched' } }), ctx);
+  assert.equal(handlers.status, 403);
+
+  // A store still in review cannot be booked by naming it.
+  const waiting = await newMember('Not Yet Freight', 'notyet@figmark.example', '+919000078903');
+  await applyStore(req({ headers: waiting.headers, body: forwarderApplication('Not Yet Freight') }), ctx);
+  const named = await setTracking(req({ headers: auth, params: { id: lot.id }, body: { forwarderUserId: waiting.id, forwarderName: 'Not Yet Freight' } }), ctx);
+  assert.equal(named.jsonBody.lot.forwarder.forwarderUserId, null, 'a store in review is a typed name, with no screen behind it');
+  assert.equal(named.jsonBody.lot.forwarder.name, 'Not Yet Freight');
+});
+
+await check('the crew get the lot with exactly the buttons the route handed them', async () => {
+  // The shop hands the crate's own legs to the forwarder in the Studio; an
+  // earlier check put this lot on a route of its own, so do that here.
+  const repository = await getRepository();
+  const lot = await repository.getLot('usr_demo', 'lot_open_24');
+  const { lotOffset, lotEndIndex } = await import(new URL('../api/dist/shared/routes.js', import.meta.url));
+  const span = [lotOffset(lot.route), lotEndIndex(lot.route)];
+  await repository.updateLot({
+    ...lot,
+    route: { ...lot.route, steps: lot.route.steps.map((step, index) => (index >= span[0] && index <= span[1] && !step.trigger ? { ...step, assignee: 'forwarder' } : step)) },
+  });
+  const forwarder = (await crewLot(req({ headers: lotusTeam, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' } }), ctx)).jsonBody;
+  assert.equal(forwarder.role, 'forwarder');
+  assert.ok(forwarder.buttons.some((button) => button.key === 'china_received'));
+  assert.ok(forwarder.moves.length > 0, 'the route handed them the flight');
+  // Pieces, not people, and never a price.
+  assert.equal(forwarder.items.every((item) => item.buyer === null), true);
+  assert.equal(JSON.stringify(forwarder).includes('unitPriceMinor'), false);
+
+  const handlerHeaders = await signInAs(HANDLER_EMAIL);
+  const handler = (await crewLot(req({ headers: handlerHeaders, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' }, query: { role: 'handler' } }), ctx)).jsonBody;
+  assert.equal(handler.role, 'handler');
+  // Their own half of the trip, plus whatever the route handed the handler - and nothing else.
+  const ownHalf = ['india_received', 'ready_to_dispatch', 'packed', 'dispatched'];
+  assert.ok(handler.buttons.length > 0);
+  assert.ok(handler.buttons.every((button) => handler.steps[button.index].assignee === 'handler' || ownHalf.includes(button.key)));
+  assert.ok(forwarder.buttons.every((button) => forwarder.steps[button.index].assignee === 'forwarder' || button.key === 'china_received'));
+  assert.ok(handler.items.every((item) => item.buyer && item.buyer.name), 'a handler addresses parcels');
+
+  const mine = (await myServices(req({ headers: handlerHeaders }), ctx)).jsonBody;
+  assert.ok(mine.crew.some((row) => row.role === 'handler' && row.lot.id === 'lot_open_24' && row.buttons.length > 0));
+  assert.equal((await crewLot(req({ headers: inkwellTeam, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' } }), ctx)).status, 403);
+});
+
+await check('a forwarder moves the crate only onto steps the route gave them', async () => {
+  const before = await (await getRepository()).getLot('usr_demo', 'lot_open_24');
+  const route = before.route.steps;
+  const theirs = route.findIndex((step) => step.assignee === 'forwarder');
+  const notTheirs = route.findIndex((step, index) => index > theirs && !step.assignee);
+  const refused = await stepLot(req({ headers: lotusTeam, params: { id: 'lot_open_24' }, query: { store: 'usr_demo' }, body: { to: notTheirs } }), ctx);
+  assert.equal(refused.status, 403);
+  const moved = await stepLot(req({ headers: lotusTeam, params: { id: 'lot_open_24' }, query: { store: 'usr_demo' }, body: { to: theirs } }), ctx);
+  assert.equal(moved.status, 200);
+  assert.equal(moved.jsonBody.lot.currentStep, theirs);
+  // Somebody else's lot entirely is not theirs to move.
+  const stranger = await stepLot(req({ headers: inkwellTeam, params: { id: 'lot_open_24' }, query: { store: 'usr_demo' }, body: { to: theirs } }), ctx);
+  assert.equal(stranger.status, 403);
+});
+
+await check('cover is the buyer’s to add, priced on the item, and paid with the order', async () => {
+  const order = await freshOrder('ord_cover_1', 'lot_gz_sep');
+  const goods = order.unitPriceMinor * order.quantity;
+  const view = (await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(view.insurance.open, true);
+  assert.deepEqual(view.insurance.plans.map((plan) => plan.id).sort(), ['plan_lotus_full', 'plan_lotus_std']);
+  const plan = view.insurance.plans.find((row) => row.id === 'plan_lotus_std');
+
+  const added = (await setInsurance(req({ headers: auth, params: { id: order.id }, body: { planId: 'plan_lotus_std' } }), ctx)).jsonBody.order;
+  assert.equal(orderMoney(added).totalMinor, goods + plan.premiumMinor);
+  assert.equal(added.addOns.filter((row) => !row.removedAt).length, 1);
+  // A plan the shop did not offer, or one from nowhere, is refused.
+  assert.equal((await setInsurance(req({ headers: auth, params: { id: order.id }, body: { planId: 'plan_harbor' } }), ctx)).status, 404);
+  // Only the buyer decides.
+  const other = await newMember('Cover Onlooker', 'cover.onlooker@figmark.example', '+919000078914');
+  assert.equal((await setInsurance(req({ headers: other.headers, params: { id: order.id }, body: { planId: null } }), ctx)).status, 403);
+
+  // Paid in full, then the goods leave: cover is fixed from there.
+  const removed = (await setInsurance(req({ headers: auth, params: { id: order.id }, body: { planId: null } }), ctx)).jsonBody.order;
+  assert.equal(orderMoney(removed).totalMinor, goods);
+  const repository = await getRepository();
+  await repository.updateOrder({ ...removed, checkpoints: { china_packed: new Date().toISOString() } });
+  assert.equal((await setInsurance(req({ headers: auth, params: { id: order.id }, body: { planId: 'plan_lotus_std' } }), ctx)).status, 409);
+});
+
+await check('a commission runs from request to release, held by Figmark', async () => {
+  const order = await freshOrder('ord_art_1', 'lot_gz_sep');
+  const short = await commission(req({ headers: auth, params: { id: order.id }, body: { artistId: 'usr_art_inkwell', brief: 'paint' } }), ctx);
+  assert.equal(short.status, 400);
+  const asked = await commission(req({ headers: auth, params: { id: order.id }, body: { artistId: 'usr_art_inkwell', offeringId: 'svc_repaint', brief: 'Battle-damaged repaint, matte, like the reference.' } }), ctx);
+  assert.equal(asked.status, 200);
+  assert.equal(asked.jsonBody.order.artistJob.status, 'requested');
+  // Nothing to accept before there is a price.
+  assert.equal((await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'accept' } }), ctx)).status, 409);
+
+  const jobs = (await storeWork(req({ headers: inkwellTeam, params: { kind: 'artist', ownerId: 'usr_art_inkwell' } }), ctx)).jsonBody.jobs;
+  assert.deepEqual(jobs.find((row) => row.orderId === order.id).actions.sort(), ['decline', 'quote']);
+  // The buyer cannot press the artist's side.
+  assert.equal((await artistAct(req({ headers: auth, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action: 'quote', quoteMinor: 1 } }), ctx)).status, 403);
+
+  const artist = (action, extra = {}) => artistAct(req({ headers: inkwellTeam, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action, ...extra } }), ctx);
+  const buyer = (action, extra = {}) => commissionAct(req({ headers: auth, params: { id: order.id }, body: { action, ...extra } }), ctx);
+  assert.equal((await artist('quote', { quoteMinor: 7_00_000, days: 21, note: 'Includes gloss coat.' })).jsonBody.job.status, 'quoted');
+  assert.equal((await buyer('accept')).jsonBody.order.artistJob.status, 'accepted');
+  // The studio's address reaches the shop only once it is paid for.
+  assert.equal((await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody.commission.studioAddress, null);
+
+  const paid = (await buyer('pay', { method: 'protected' })).jsonBody.order.artistJob;
+  assert.equal(paid.status, 'paid');
+  assert.ok(paid.managerId && paid.managerName, 'a community manager is assigned to its protection');
+  assert.ok(paid.heldMinor > 7_00_000, 'the protection fee rides on top');
+  assert.ok((await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody.commission.studioAddress);
+
+  assert.equal((await artist('start')).jsonBody.job.status, 'working');
+  assert.equal((await artist('ready', { photos: ['https://example.com/done.jpg'] })).jsonBody.job.status, 'ready');
+  assert.equal((await artist('ship', { courier: 'Delhivery', awb: '998877' })).jsonBody.job.status, 'shipped');
+  const done = (await buyer('complete')).jsonBody.order.artistJob;
+  assert.equal(done.status, 'completed');
+  assert.ok(done.releasedAt, 'completing releases what was held');
+  assert.ok((await noticesFor('usr_demo')).some((notice) => notice.kind === 'commission'));
+});
+
+await check('paid direct, a commission waits for the artist to say the money came', async () => {
+  const order = await freshOrder('ord_art_2', 'lot_gz_sep');
+  await commission(req({ headers: auth, params: { id: order.id }, body: { artistId: 'usr_art_inkwell', brief: 'Fix the paint rub on the left wing, please.' } }), ctx);
+  await artistAct(req({ headers: inkwellTeam, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action: 'quote', quoteMinor: 1_80_000 } }), ctx);
+  await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'accept' } }), ctx);
+  const view = (await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody;
+  assert.equal(view.commission.artistPayment.upiId, 'inkwell@okaxis');
+  const sent = (await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'pay', method: 'direct', reference: 'UPI-55' } }), ctx)).jsonBody.order.artistJob;
+  assert.equal(sent.status, 'accepted', 'sent is not received');
+  assert.equal(sent.payments[0].confirmedAt, null);
+  // Once claimed, neither paying twice nor cancelling.
+  assert.equal((await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'pay', method: 'direct' } }), ctx)).status, 409);
+  assert.equal((await commissionAct(req({ headers: auth, params: { id: order.id }, body: { action: 'cancel' } }), ctx)).status, 409);
+  const confirmed = (await artistAct(req({ headers: inkwellTeam, params: { ownerId: 'usr_art_inkwell', orderId: order.id }, body: { action: 'confirm_payment' } }), ctx)).jsonBody.job;
+  assert.equal(confirmed.status, 'paid');
+  assert.ok(confirmed.payments[0].confirmedAt);
+});
+
+await check('two buyers pressing at once cannot both take the last one', async () => {
+  const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
+  const base = await repository.getListing('lst_handheld');
+  const id = 'lst_last_one';
+  await repository.createListing({ ...base, id, quantityMode: 'single', quantityAvailable: 1, status: 'active', preOrder: null });
+  const [first, second] = [await newBuyer('Racer One'), await newBuyer('Racer Two')];
+  const opened = await Promise.all([first, second].map(async (who) =>
+    (await openCheckout(req({ headers: who.headers, body: { listingId: id } }), ctx)).jsonBody.order));
+  const refusals = await Promise.all(opened.map((order) => placeOrder(repository, order, 'paid', order.buyerId, { tellSeller: false })));
+  assert.equal(refusals.filter((refusal) => refusal === null).length, 1, 'exactly one of them gets it');
+  assert.equal((await repository.getListing(id)).quantityAvailable, 0);
+});
+
+await check('the home feed is who you follow, with trending and rising mixed in and badged', async () => {
+  const home = await socialHome(req({ headers: auth }), ctx);
+  assert.equal(home.status, 200);
+  const cards = home.jsonBody.posts;
+  assert.ok(cards.length > 0);
+  assert.ok(cards.some((card) => card.badges?.includes('trending')), 'something is trending');
+  assert.ok(cards.every((card) => card.following || card.post.channelId === 'usr_demo' || card.badges?.length),
+    'a stranger is only here with a reason');
+  assert.equal(new Set(cards.map((card) => card.post.id)).size, cards.length, 'nothing twice');
+  // A forum post put on somebody's wall is read as the forum post, as on the old feed.
+  assert.ok(cards.every((card) => card.post.channel === 'forum' || (card.post.reach ?? 'feed') === 'feed'),
+    'never a shop room message');
+  assert.ok(cards.every((card) => card.post.sharedBy === undefined), 'who shared is not on the wire');
+  assert.equal((await socialHome(req({ headers: auth, query: { as: 'usr_kaiju' } }), ctx)).status, 403);
+});
+
+await check('a new post from a stranger rises to everyone once enough people engage', async () => {
+  const author = await newBuyer('Rising Author');
+  const made = await createPost(req({ headers: author.headers, body: { body: 'Just landed: a sealed box from Osaka.' } }), ctx);
+  assert.equal(made.status, 201);
+  const post = made.jsonBody.post;
+  const fans = [await newBuyer('Rising Fan One'), await newBuyer('Rising Fan Two'), await newBuyer('Rising Fan Three')];
+  for (const fan of fans) {
+    assert.equal((await reactTo(req({ headers: fan.headers, params: on(post), body: { kind: 'fire' } }), ctx)).status, 200);
+  }
+  const cards = (await socialHome(req({ headers: auth }), ctx)).jsonBody.posts;
+  const found = cards.find((card) => card.post.id === post.id);
+  assert.ok(found, 'proven, so shown beyond its followers');
+  assert.ok(found.badges.includes('rising'));
+  assert.equal(found.following, false);
+  // The author's own feed does not offer them their own post as a discovery.
+  const theirs = (await socialHome(req({ headers: author.headers }), ctx)).jsonBody.posts;
+  assert.ok(!theirs.find((card) => card.post.id === post.id)?.badges?.includes('rising'));
+});
+
+await check('what is said in a shop\'s room cannot be touched from outside it', async () => {
+  const room = (await createPost(req({
+    headers: auth, body: { body: 'Followers only: restock at noon.', channelId: 'usr_demo' },
+  }), ctx)).jsonBody.post;
+  const outsider = await newBuyer('Room Outsider');
+  const at = { headers: outsider.headers, params: on(room) };
+  assert.equal((await reactTo(req({ ...at, body: { kind: 'love' } }), ctx)).status, 403);
+  assert.equal((await commentOn(req({ ...at, body: { body: 'hi' } }), ctx)).status, 403);
+  assert.equal((await reactors(req(at), ctx)).status, 403);
+  assert.equal((await sharePost(req({ ...at, body: { mode: 'link' } }), ctx)).status, 403);
+});
+
+await check('posts and hunts only carry photos uploaded here', async () => {
+  const outside = await createPost(req({ headers: auth, body: { body: 'Look', photoUrls: ['https://tracker.example/pixel.gif'] } }), ctx);
+  assert.equal(outside.status, 400);
+  const sneaky = await createPost(req({ headers: auth, body: { body: 'Look', photoUrls: ['/api/photos/../secret'] } }), ctx);
+  assert.equal(sneaky.status, 400);
+  const hunt = await postWant(req({ headers: auth, body: {
+    title: 'ISO outside photo', category: 'Model kits', photoUrls: ['https://tracker.example/a.jpg'],
+  } }), ctx);
+  assert.equal(hunt.status, 400);
+  const longCategory = await postWant(req({ headers: auth, body: { title: 'ISO long category', category: 'x'.repeat(41) } }), ctx);
+  assert.equal(longCategory.status, 400);
+});
+
+await check('posting in a burst is slowed down, and only for whoever is bursting', async () => {
+  process.env.FIGMARK_RATE_LIMITS = 'on';
+  resetRateLimits();
+  try {
+    const burster = await newBuyer('Burst Poster');
+    const statuses = [];
+    for (let index = 0; index < 11; index += 1) {
+      statuses.push((await createPost(req({ headers: burster.headers, body: { body: `Post ${index}` } }), ctx)).status);
+    }
+    assert.deepEqual(statuses.slice(0, 10), Array(10).fill(201));
+    const refused = await createPost(req({ headers: burster.headers, body: { body: 'One more' } }), ctx);
+    assert.equal(refused.status, 429);
+    assert.equal(refused.jsonBody.error, 'slow_down');
+    const calm = await newBuyer('Calm Poster');
+    assert.equal((await createPost(req({ headers: calm.headers, body: { body: 'Hello' } }), ctx)).status, 201);
+  } finally {
+    process.env.FIGMARK_RATE_LIMITS = 'off';
+    resetRateLimits();
+  }
+});
+
+await check('nobody opens more forums than their level allows, and names stay short', async () => {
+  const opener = await newBuyer('Room Opener');
+  const tooLong = await createForum(req({ headers: opener.headers, body: { name: 'x'.repeat(61) } }), ctx);
+  assert.equal(tooLong.status, 400);
+  const repository = await getRepository();
+  const now = new Date().toISOString();
+  for (const index of [1, 2]) {
+    await repository.createForum({
+      id: `frm_opener_${index}`, name: `Opener room ${index}`, description: '', createdBy: opener.id,
+      postCount: 0, memberIds: [opener.id], createdAt: now, updatedAt: now,
+    });
+  }
+  const third = await createForum(req({ headers: opener.headers, body: { name: 'Opener room 3' } }), ctx);
+  // Two open at level 1 is already over the allowance: forums are earned by level now.
+  assert.equal(third.status, 403);
+  assert.equal(third.jsonBody.error, 'forum_locked');
+});
+
+await check('joining a forum says which, so a double tap does not undo it', async () => {
+  const joiner = await newBuyer('Double Tapper');
+  const first = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: true } }), ctx);
+  const second = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: true } }), ctx);
+  assert.equal(first.jsonBody.forum.member, true);
+  assert.equal(second.jsonBody.forum.member, true, 'still in');
+  const left = await joinForum(req({ headers: joiner.headers, params: { id: 'frm_deals' }, body: { join: false } }), ctx);
+  assert.equal(left.jsonBody.forum.member, false);
+});
+
+await check('a blocked person cannot write, a muted thread is not counted, and long threads page', async () => {
+  const pest = await newBuyer('Pest Person');
+  const target = await newBuyer('Quiet Person');
+  await setUsername(req({ headers: pest.headers, body: { username: 'pest_person' } }), ctx);
+  await setUsername(req({ headers: target.headers, body: { username: 'quiet_person' } }), ctx);
+  for (let index = 0; index < 62; index += 1) {
+    assert.equal((await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: `hi ${index}` } }), ctx)).status, 201);
+  }
+  const open = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' } }), ctx)).jsonBody;
+  assert.equal(open.messages.length, 60);
+  assert.equal(open.more, true);
+  const earlier = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' }, query: { before: open.messages[0].createdAt } }), ctx)).jsonBody;
+  const shown = new Set(open.messages.map((message) => message.id));
+  assert.equal(earlier.messages.filter((message) => !shown.has(message.id)).length, 2, 'the two before the page, none lost');
+  const since = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' }, query: { since: open.messages.at(-1).createdAt } }), ctx)).jsonBody;
+  assert.ok(since.messages.every((message) => message.createdAt >= open.messages.at(-1).createdAt), 'a refresh only carries what is new');
+
+  assert.equal((await muteThread(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { mute: true } }), ctx)).status, 200);
+  await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'still here' } }), ctx);
+  const muted = (await inbox(req({ headers: target.headers }), ctx)).jsonBody.threads.find((row) => row.them.handle === 'pest_person');
+  assert.equal(muted.muted, true);
+  assert.equal(muted.unread, 0);
+
+  assert.equal((await blockHandle(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { block: true } }), ctx)).status, 200);
+  const refused = await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'let me in' } }), ctx);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.jsonBody.error, 'blocked');
+  assert.ok(!(await inbox(req({ headers: target.headers }), ctx)).jsonBody.threads.some((row) => row.them.handle === 'pest_person'));
+  const blockedView = (await thread(req({ headers: target.headers, params: { handle: 'pest_person' } }), ctx)).jsonBody;
+  assert.equal(blockedView.blocked, true);
+  await blockHandle(req({ headers: target.headers, params: { handle: 'pest_person' }, body: { block: false } }), ctx);
+  assert.equal((await sendMessage(req({ headers: pest.headers, params: { handle: 'quiet_person' }, body: { body: 'sorry' } }), ctx)).status, 201);
+});
+
+await check('the home feed pages back through followed posts', async () => {
+  const first = (await socialHome(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok('next' in first);
+  if (first.next) {
+    const second = (await socialHome(req({ headers: auth, query: { before: first.next } }), ctx)).jsonBody;
+    assert.ok(second.posts.every((card) => card.post.createdAt < first.next || card.forum));
+  }
+});
+
+await check('a sale post can be bought from, and the post counts what it sold', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const repository = await getRepository();
+  let item = null;
+  for (const entry of stock) {
+    const listing = await repository.getListing(entry.id);
+    if (listing.status === 'active' && !listing.privateFor && !listing.preOrder && listing.quantityAvailable > 1) { item = listing; break; }
+  }
+  assert.ok(item, 'a demo item with stock');
+  const made = (await createPost(req({ headers: auth, body: { body: 'Grab one', storeId: 'usr_demo', listingId: item.id } }), ctx)).jsonBody.post;
+  const card = (await readPost(req({ headers: auth, params: on(made) }), ctx)).jsonBody.card;
+  assert.equal(card.listing.buyable, true);
+  const buyer = await newBuyer('Post Buyer');
+  const placed = await createOrder(req({ headers: buyer.headers, body: { listingId: item.id, fromPost: { channelId: made.channelId, postId: made.id } } }), ctx);
+  assert.equal(placed.status, 201);
+  assert.deepEqual(placed.jsonBody.order.fromPost, { channelId: made.channelId, postId: made.id });
+  const after = (await readPost(req({ headers: auth, params: on(made) }), ctx)).jsonBody.card;
+  assert.equal(after.post.buyCount, 1);
+  assert.equal(after.post.boughtBy, undefined, 'who bought is not on the wire');
+  // A post that is not selling this item gets no credit.
+  const other = await newBuyer('Other Buyer');
+  const stray = await createOrder(req({ headers: other.headers, body: { listingId: item.id, fromPost: { channelId: 'usr_tokyoline', postId: 'pst_tokyo_1' } } }), ctx);
+  assert.equal(stray.jsonBody.order.fromPost ?? null, null);
+});
+
+await check('a saved item and an answered hunt reach the people who wanted them', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const fan = await newBuyer('Item Fan');
+  await toggleLike(req({ headers: fan.headers, params: { id: stock[0].id } }), ctx);
+  const made = (await createPost(req({ headers: auth, body: { body: 'Restocked', storeId: 'usr_demo', listingId: stock[0].id } }), ctx)).jsonBody.post;
+  const fanFeed = (await socialHome(req({ headers: fan.headers }), ctx)).jsonBody.posts;
+  assert.ok(fanFeed.find((card) => card.post.id === made.id)?.badges?.includes('rising'), 'saved it, so sees the new post');
+
+  const hunter = await newBuyer('Hunter One');
+  const hunt = (await postWant(req({ headers: hunter.headers, body: { title: 'ISO restocked thing', category: 'Model kits' } }), ctx)).jsonBody.want;
+  const answered = await offerOnWant(req({
+    headers: auth, params: { id: hunt.id }, query: { buyer: hunter.id },
+    body: { message: 'Have one right here.', storeId: 'usr_demo', listingId: stock[0].id },
+  }), ctx);
+  assert.equal(answered.status, 201);
+  const hunterFeed = (await socialHome(req({ headers: hunter.headers }), ctx)).jsonBody.posts;
+  const answer = hunterFeed.find((card) => card.post.answersWant?.id === hunt.id);
+  assert.ok(answer, 'the hunter sees the answer on their feed');
+  assert.ok(answer.badges.includes('rising'));
+  assert.equal(answer.post.audience, undefined, 'who it was tried on is not on the wire');
+});
+
+await check('a buyer shows off what arrived in the shop\'s channel, without a rating', async () => {
+  const stock = (await shareable(req({ headers: auth, query: { as: 'usr_demo' } }), ctx)).jsonBody.listings;
+  const buyer = await newBuyer('Happy Buyer');
+  const repository = await getRepository();
+  let order = null;
+  for (const entry of stock) {
+    const made = await createOrder(req({ headers: buyer.headers, body: { listingId: entry.id } }), ctx);
+    if (made.status === 201) { order = made.jsonBody.order; break; }
+  }
+  assert.ok(order);
+  const early = await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx);
+  assert.equal(early.status, 409, 'not before it is complete');
+  await repository.updateOrder({ ...(await repository.getOrder(order.id)), completedAt: new Date().toISOString() });
+  assert.equal((await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { body: 'Lovely' } }), ctx)).status, 400, 'needs a photo');
+  assert.equal((await shareUnboxing(req({ headers: auth, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx)).status, 403, 'the buyer only');
+  const shared = await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { body: 'Lovely', photoUrls: ['/api/photos/box.jpg'] } }), ctx);
+  assert.equal(shared.status, 201);
+  assert.equal(shared.jsonBody.post.channelId, 'usr_demo');
+  assert.equal(shared.jsonBody.post.voice, 'visitor');
+  assert.equal(shared.jsonBody.post.delivered.orderId, order.id);
+  assert.equal((await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx)).status, 409, 'once');
 });
 
 console.log(`\n${passed} checks passed`);

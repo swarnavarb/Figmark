@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { compressImage } from '../imageCompress';
 import { ApiRequestError, api } from '../api';
 import { ErrorNotice } from './ui';
 
 /**
  * Payment Reversal Details - where a seller sends this buyer's money back.
  *
- * Lives under My refunds, beside the refunds it is used for. Free text
+ * Lives under My wallet, beside the refunds it is used for. Free text
  * throughout and no provider hard-coded: the platform is not moving this
  * money and must not pretend to have validated an account it cannot see.
  */
@@ -41,13 +42,7 @@ export function ReversalDetailsForm({ onSaved }: { onSaved?: () => void | Promis
     setUploading(true);
     setError(null);
     try {
-      const reader = new FileReader();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error('Could not read that image.'));
-        reader.readAsDataURL(file);
-      });
-      const stored = await api.uploadPhoto(dataUrl);
+      const stored = await api.uploadPhoto(await compressImage(file));
       setQrCodeUrl(stored.url);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That image did not upload.');

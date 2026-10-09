@@ -5,6 +5,9 @@ import type { Want, WantOffer } from '../../../shared/models.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
+import { ownPhotos } from '../storage/index.js';
+import { claimPhotos } from '../storage/release.js';
+import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 
@@ -28,6 +31,7 @@ const WANT_DAYS = 30;
 /** Longest a hunt can be, so the board stays scannable. */
 const MAX_TITLE = 90;
 const MAX_DETAILS = 600;
+const MAX_CATEGORY = 40;
 
 function expiryFrom(now = new Date()): string {
   return new Date(now.getTime() + WANT_DAYS * 86_400_000).toISOString();
@@ -35,18 +39,6 @@ function expiryFrom(now = new Date()): string {
 
 /** One hunt, as a card on the board reads it. */
 const MAX_PHOTOS = 4;
-
-/** Photos from the upload route, or an https link - nothing an <img> should not load. */
-function cleanPhotos(value: unknown): string[] | null {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) return null;
-  const urls = value.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean);
-  if (urls.length > MAX_PHOTOS) return null;
-  const ok = urls.every(
-    (url) => url.length <= 500 && (/^\/api\/photos\/[\w.-]+$/.test(url) || /^https:\/\/[^\s"'<>]+$/.test(url)),
-  );
-  return ok ? urls : null;
-}
 
 function card(want: Want) {
   return {
@@ -135,6 +127,7 @@ async function post(request: HttpRequest, _context: InvocationContext) {
 
   const category = (body.category ?? '').trim();
   if (!category) return error(400, 'invalid_want', 'Pick a category, so sellers can find it.');
+  if (category.length > MAX_CATEGORY) return error(400, 'invalid_want', `Keep the category under ${MAX_CATEGORY} characters.`);
 
   const budget = body.budgetMinor;
   if (budget !== undefined && budget !== null && (!Number.isFinite(budget) || budget <= 0)) {
@@ -146,8 +139,10 @@ async function post(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_want', 'That is not a condition we recognise.');
   }
 
-  const photoUrls = cleanPhotos(body.photoUrls);
+  const photoUrls = await ownPhotos(body.photoUrls, MAX_PHOTOS);
   if (!photoUrls) return error(400, 'invalid_want', `Up to ${MAX_PHOTOS} photos, uploaded here.`);
+  const slow = tooFast(user.id, 'want');
+  if (slow) return slow;
 
   const record = await repository.getUserById(user.id);
   const who = personRef(record ?? user);
@@ -173,7 +168,9 @@ async function post(request: HttpRequest, _context: InvocationContext) {
     updatedAt: now,
   };
 
-  return json(201, { want: card(await repository.saveWant(want)) });
+  const savedWant = await repository.saveWant(want);
+  await claimPhotos(photoUrls, `want:${savedWant.id}`);
+  return json(201, { want: card(savedWant) });
 }
 
 /** The hunt, or the refusal. Reading one needs its partition, which is its buyer. */
@@ -280,6 +277,8 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
   if (message.length < 4) {
     return error(400, 'invalid_offer', 'Say what you have or what you can get.');
   }
+  const slow = tooFast(user.id, 'offer');
+  if (slow) return slow;
 
   // Anybody may answer - a collector who knows where one is, or a shop that
   // stocks it. Answering as a shop needs the right to speak for it.
@@ -350,6 +349,39 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
   // a notification for it would teach people to ignore the rest.
   if (!existing) {
     await notifySeekers(repository, want, who.name);
+  }
+
+  // A shop answering with an item it sells says so on its feed too, and the
+  // post is shown first to everybody hunting for it - the people most likely
+  // to buy it - before it has to earn a wider audience like any new post.
+  if (!existing && voice === 'shop' && listingId) {
+    const seekers = await repository.listWantSeekers(want.id);
+    await repository.createPost({
+      id: `pst_${randomUUID().slice(0, 12)}`,
+      channelId: answerer,
+      channel: 'seller',
+      kind: 'sale',
+      authorId: user.id,
+      authorName: who.name,
+      body: `Found one for a hunt: ${want.title}\n\n${message.slice(0, 400)}`,
+      listingId,
+      photoUrl: null,
+      likeCount: 0,
+      replyCount: 0,
+      voice: 'store',
+      reach: 'feed',
+      announcement: false,
+      photoUrls: [],
+      reactions: [],
+      comments: [],
+      shareCount: 0,
+      poll: null,
+      vibe: null,
+      audience: [...new Set([want.buyerId, ...seekers.map((seeker) => seeker.userId)])].slice(0, 500),
+      answersWant: { id: want.id, buyerId: want.buyerId, title: want.title },
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 
   return json(existing ? 200 : 201, { offer: saved, offerCount: want.offerCount });

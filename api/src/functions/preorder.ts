@@ -3,7 +3,8 @@ import { isCancelledLike } from '../../../shared/orders.js';
 import { personRef, type PartyRef } from '../../../shared/parties.js';
 import { NEARLY_FRACTION, preOrderView, type PreOrderState, type PreOrderView } from '../../../shared/preorder.js';
 import type { getRepository } from '../data/index.js';
-import { notify } from './notify.js';
+import { capital, notify, storeCrew } from './notify.js';
+import { actorName, gistOf, whose } from '../../../shared/notifications.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -110,6 +111,12 @@ export async function reconcilePreOrder(
     ...live.map((pledge) => pledge.userId),
     ...orders.map((order) => order.buyerId),
   ];
+  // Named in every notice: somebody in three pre-orders needs to know whose.
+  const seller = await repository.getUserById(listing.sellerId);
+  const shopName = seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? null;
+  const shop = shopName ? actorName(shopName, seller?.sellerProfile?.username) : 'The shop';
+  const shopCrew = seller?.sellerProfile ? storeCrew(seller, 'lots') : [listing.sellerId];
+  const item = gistOf(listing.title, 'the pre-order', 40);
 
   // Nearly there. The one moment the app asks everybody for something, so it
   // has to be worth the interruption: it names the gap, not the deadline.
@@ -124,8 +131,8 @@ export async function reconcilePreOrder(
     next.nearlyNotifiedAt = iso;
     await notify(repository, audience, {
       kind: 'preorder_nearly',
-      title: `${preOrder.fillThreshold - committed} more and ${listing.title} goes ahead`,
-      body: `${committed} of ${preOrder.fillThreshold} are in. Bring someone in and the seller places the order.`,
+      title: `${preOrder.fillThreshold - committed} more and ${item} at ${shop} goes ahead`,
+      body: `${committed} of ${preOrder.fillThreshold} are in at ${shop}. Bring someone in and they place the order.`,
       link: `/listing/${listing.id}`,
     });
   }
@@ -137,17 +144,24 @@ export async function reconcilePreOrder(
     next.pledgeDueAt = new Date(now.getTime() + PLEDGE_GRACE_HOURS * 3_600_000).toISOString();
     await notify(repository, audience, {
       kind: 'preorder_filled',
-      title: `${listing.title} is going ahead`,
-      body: `${committed} of ${preOrder.fillThreshold} committed. The seller places the order now.`,
+      title: `${item} at ${shop} is going ahead`,
+      body: `${committed} of ${preOrder.fillThreshold} committed. ${shop} places the order now.`,
       link: `/listing/${listing.id}`,
     });
+    // The shop is the one with something to do now.
+    await notify(repository, shopCrew, {
+      kind: 'preorder_filled',
+      title: `${capital(whose(shopName))} pre-order filled`,
+      body: `${item}: ${committed} of ${preOrder.fillThreshold} committed. Place the order with your supplier.`,
+      link: `/listing/${listing.id}`,
+    }, { except: options.actorId });
     if (live.length > 0) {
       await notify(
         repository,
         live.map((pledge) => pledge.userId),
         {
           kind: 'preorder_due',
-          title: `Your place in ${listing.title} is due`,
+          title: `Pay ${shop} for your place in ${item}`,
           body: `It filled, so pledges are being called in. Pay within ${PLEDGE_GRACE_HOURS} hours or the place is offered to whoever is behind you.`,
           link: `/listing/${listing.id}`,
         },
@@ -162,11 +176,17 @@ export async function reconcilePreOrder(
     next.closedAt = iso;
     await notify(repository, audience, {
       kind: 'preorder_closed',
-      title: `${listing.title} closed ${preOrder.fillThreshold - committed} short`,
+      title: `${item} at ${shop} closed ${preOrder.fillThreshold - committed} short`,
       body:
         filledCount > 0
-          ? 'The seller placed no order. Every booking is refunded in full, and pledges were never charged.'
-          : 'The seller placed no order. Nothing was charged.',
+          ? `${shop} placed no order. Every booking is refunded in full, and pledges were never charged.`
+          : `${shop} placed no order. Nothing was charged.`,
+      link: `/listing/${listing.id}`,
+    });
+    await notify(repository, shopCrew, {
+      kind: 'preorder_closed',
+      title: `${capital(whose(shopName))} pre-order closed ${preOrder.fillThreshold - committed} short`,
+      body: filledCount > 0 ? `${item}: refund the bookings in full.` : `${item}: nothing was charged.`,
       link: `/listing/${listing.id}`,
     });
   }
@@ -191,10 +211,31 @@ export async function reconcilePreOrder(
  * campaign: both would turn the count into something to be gamed rather than
  * something to be proud of.
  */
-export function referrer(via: string | undefined, selfId: string, sellerId: string): string | null {
-  const id = via?.trim();
-  if (!id || id === selfId || id === sellerId) return null;
+export function referrer(via: unknown, selfId: string, sellerId: string): string | null {
+  const id = typeof via === 'string' ? via.trim() : '';
+  if (!id || id.length > 100 || id === selfId || id === sellerId) return null;
   return id;
+}
+
+/**
+ * The same, checked against the record: a link only credits somebody who is
+ * actually in the thing they are recommending - pledged to it or ordered it.
+ * Otherwise anybody could put any id in `?via=` and hand out credit.
+ */
+export async function verifiedReferrer(
+  repository: Repo,
+  via: unknown,
+  selfId: string,
+  listing: Pick<Listing, 'id' | 'sellerId'>,
+): Promise<string | null> {
+  const id = referrer(via, selfId, listing.sellerId);
+  if (!id) return null;
+  const [pledges, orders] = await Promise.all([
+    repository.listPledges(listing.id),
+    repository.listOrdersForListing(listing.id),
+  ]);
+  const inIt = pledges.some((entry) => entry.userId === id) || orders.some((entry) => entry.buyerId === id);
+  return inIt ? id : null;
 }
 
 /**

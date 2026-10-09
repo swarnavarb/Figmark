@@ -15,8 +15,63 @@ type Mode = 'signin' | 'signup';
  * bank verification are deferred to the point they actually matter.
  */
 export function AuthPage() {
+  return (
+    <div className="auth">
+      <div className="auth__panel">
+        <AuthBrand />
+        <AuthCard />
+      </div>
+    </div>
+  );
+}
+
+function AuthBrand() {
+  return (
+    <div className="auth__brand">
+      <span className="brand__mark" style={{ width: 44, height: 44, borderRadius: 13 }} aria-hidden="true" />
+      <div>
+        <h1>Figmark</h1>
+        <p className="auth__tag">Pre-orders, verified sellers, Buyer Protection on payments.</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sign in or sign up, over whatever page the guest is on.
+ *
+ * Opened by anything that needs an account. It closes itself once they are
+ * in (see session.tsx), and since the address never changed they are still
+ * on the page they were reading, now able to do the thing they pressed.
+ */
+export function AuthModal({ reason, onClose }: { reason: string | null; onClose: () => void }) {
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    document.addEventListener('keydown', escape);
+    const was = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', escape);
+      document.body.style.overflow = was;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="authpop" role="dialog" aria-modal="true" aria-label="Sign in or create an account"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="authpop__panel">
+        <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
+        <AuthBrand />
+        <p className="authpop__why">🔒 {reason ?? 'Sign in or create a free account to do that.'} You stay on this page.</p>
+        <AuthCard initialMode="signup" />
+      </div>
+    </div>
+  );
+}
+
+function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const { signIn, signUp } = useSession();
-  const [mode, setMode] = useState<Mode>('signin');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demo, setDemo] = useState<DemoAccount[]>([]);
@@ -98,18 +153,8 @@ export function AuthPage() {
   }
 
   return (
-    <div className="auth">
-      <div className="auth__panel">
-        <div className="auth__brand">
-          <span className="brand__mark" style={{ width: 44, height: 44, borderRadius: 13 }} aria-hidden="true" />
-          <div>
-            <h1>Figmark</h1>
-            <p className="auth__tag">Group-buy lots, verified sellers, escrow-held payments.</p>
-          </div>
-        </div>
-
         <div className="card auth__card">
-          <div className="auth__switch" role="tablist">
+                  <div className="auth__switch" role="tablist">
             <button type="button" role="tab" aria-selected={mode === 'signin'}
               className={mode === 'signin' ? 'is-on' : ''} onClick={() => { setMode('signin'); setError(null); }}>
               Sign in
@@ -215,7 +260,5 @@ export function AuthPage() {
             </div>
           )}
         </div>
-      </div>
-    </div>
   );
 }

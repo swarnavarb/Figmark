@@ -1,17 +1,24 @@
 import { ReportButton } from '../components/ReportButton';
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
-import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { Avatar, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { SkeletonText } from '../components/Feedback';
+import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
 import { ListingPosts } from '../components/ListingPosts';
-import { RarityRibbon } from '../components/Quest';
+import { Glyph, RarityRibbon } from '../components/Quest';
+import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
 import { FillBlock } from '../components/FillMeter';
 import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
+import { AffiliateCard, ReferredBy, SimilarItems } from '../components/Affiliate';
+import { AFFILIATE_PARAM } from '@shared/affiliate';
+import { shopBadge, useShareSheet, type ShareSpec } from '../components/ShareKit';
+import { themeOf } from '../components/momentCard';
 
 /** What each verification tier means, in a line. */
 const TIER_NOTES: Record<string, string> = {
@@ -22,33 +29,67 @@ const TIER_NOTES: Record<string, string> = {
 
 export function ListingPage() {
   const { id = '' } = useParams();
-  const { user } = useSession();
+  const { user, gate } = useSession();
   const navigate = useNavigate();
+  const bumpItem = useBump();
+  const location = useLocation();
+  // Anything here a guest reaches for opens the sign-in popup; they stay on this item.
+  const lock = user ? '' : ' is-locked';
+  const lockMark = user ? null : <span className="lockmark" aria-hidden="true">🔒</span>;
   // Who sent them here, if anybody. Carried into the pledge and the order so
   // whoever recruited them is credited for it - the only thing that makes
   // sharing a group-buy worth a person's own reputation.
   const [params] = useSearchParams();
   const via = params.get('via');
+  // Arrived from a post's Buy button: the post gets the credit for the sale.
+  const fromPost = (() => {
+    const [channelId, postId] = (params.get('post') ?? '').split(':');
+    return channelId && postId ? { channelId, postId } : null;
+  })();
+  // An affiliate's signed link. The server checks it and remembers it against
+  // this account, so it is passed through rather than trusted here.
+  const ref = params.get(AFFILIATE_PARAM);
 
   const [data, setData] = useState<ListingDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [action, setAction] = useState<string | null>(null);
+  /** What the last press said, and whether it went through. */
+  const [action, setAction] = useState<{ text: string; ok: boolean } | null>(null);
+  const [quantity, setQuantity] = useState(1);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setData(null);
+    setError(null);
+    setAction(null);
+    setQuantity(1);
     void api
-      .listing(id)
+      .listing(id, ref)
       .then((result) => !cancelled && setData(result))
       .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, ref]);
+
+  const onSaved = useCallback((liked: boolean) => setData((prev) => (prev ? { ...prev, liked } : prev)), []);
+  const [liked, toggleLike] = useSave(id, data?.liked ?? false, onSaved);
+  const shareSheet = useShareSheet();
 
   if (error) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!data) {
+    return (
+      <main className="page lp" role="status" aria-label="Loading the item">
+        <div className="detail">
+          <div>
+            <div className="skel skel-thumb" style={{ borderRadius: 18 }} />
+            <div style={{ marginTop: 18 }}><SkeletonText lines={5} /></div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   const { listing, seller, comments } = data;
   // The primary photo first, then the rest in the order they were added.
@@ -63,9 +104,9 @@ export function ListingPage() {
     setAction(null);
     try {
       await fn();
-      setAction(label);
+      if (label) setAction({ text: label, ok: true });
     } catch (err) {
-      setAction(err instanceof ApiRequestError ? err.message : 'Something went wrong.');
+      setAction({ text: err instanceof ApiRequestError ? err.message : 'Something went wrong.', ok: false });
     } finally {
       setBusy(false);
     }
@@ -79,14 +120,8 @@ export function ListingPage() {
   // looking like a completed one.
   const buy = () =>
     run('', async () => {
-      const placed = await api.order(listing.id, 1, via);
+      const placed = await api.order(listing.id, quantity, via, ref, fromPost);
       navigate(`/order/${placed.order.id}`);
-    });
-
-  const toggleLike = () =>
-    run('', async () => {
-      const result = await api.like(listing.id);
-      setData((prev) => (prev ? { ...prev, liked: result.liked } : prev));
     });
 
   const toggleFollow = () =>
@@ -96,15 +131,29 @@ export function ListingPage() {
       setData((prev) => (prev ? { ...prev, following: result.following } : prev));
     });
 
+  // Spends a bump point; with none left, useBump goes to the quests that earn them.
   const bump = () =>
-    run('Bumped to the top of the feed.', async () => {
-      await api.bump(listing.id);
+    run('', async () => {
+      const result = await bumpItem(listing);
+      if (result) setAction({ text: `Bumped to the top of the feed. ${result.bumps} bump point${result.bumps === 1 ? '' : 's'} left.`, ok: true });
     });
+
+  const shareSpec = listingShareSpec(data);
+  // A link that takes money off is the price this reader pays.
+  const linkOff = data.affiliate?.referredBy && !data.isOwn ? data.affiliate.buyerOffMinor ?? 0 : 0;
+
+  // A pre-order books one place at a time; anything else up to what is left.
+  const maxQuantity = listing.preOrder ? 1 : isMultiple(listing) ? 20 : Math.min(20, listing.quantityAvailable);
 
   const buyBox = (
     <div className="buybox rise" style={{ ['--i' as string]: 1 }}>
       <div className="buybox__top">
-        <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
+        {linkOff > 0 ? (
+          <span className="buybox__price">
+            {formatMoney(Math.max(100, listing.priceMinor - linkOff), listing.currency)}{' '}
+            <s className="buybox__was">{formatMoney(listing.priceMinor, listing.currency)}</s>
+          </span>
+        ) : <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>}
         {isMultiple(listing) || listing.quantityAvailable > 0
           ? <StockChip listing={listing} />
           : <span className="badge badge--danger">Sold out</span>}
@@ -117,39 +166,71 @@ export function ListingPage() {
         </p>
       ) : null}
 
-      {action && <p className={`notice ${action.includes('—') || action.includes('Bumped') ? 'notice--ok' : 'notice--error'}`}>{action}</p>}
+      {action && <p className={`notice ${action.ok ? 'notice--ok' : 'notice--error'}`}>{action.text}</p>}
 
       {data.isOwn ? (
         <div className="buybox__acts">
           <button className="btn buybox__buy" onClick={() => setEditing(true)}>
             {isExpired(listing) ? 'Make available again' : 'Edit, quantity or delete'}
           </button>
-          <button className="btn btn--ghost" onClick={() => void bump()} disabled={busy}>Bump</button>
+          <span className="buybox__bump">
+            <button className="btn btn--ghost" onClick={() => void bump()} disabled={busy}>
+              <Glyph name="bolt" size={14} /> Bump
+            </button>
+            <InfoTip label="What Bump does"><BumpHelp /></InfoTip>
+          </span>
         </div>
       ) : isExpired(listing) ? (
         <p className="notice notice--warn">This item has expired and can no longer be bought.</p>
       ) : (
         <div className="buybox__acts">
+          {/* More than one to be had: how many, before the checkout opens. */}
+          {maxQuantity > 1 && (
+            <span className="qtystep" role="group" aria-label="Quantity">
+              <button type="button" onClick={() => setQuantity((n) => Math.max(1, n - 1))}
+                disabled={busy || quantity <= 1} aria-label="One fewer">−</button>
+              <b aria-live="polite">{quantity}</b>
+              <button type="button" onClick={() => setQuantity((n) => Math.min(maxQuantity, n + 1))}
+                disabled={busy || quantity >= maxQuantity} aria-label="One more">+</button>
+            </span>
+          )}
           {/* No purchase on an expired item. The server refuses it too. */}
-          <button className="btn btn--lg buybox__buy" onClick={() => void buy()}
-            disabled={busy || !user || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
-            {busy ? <span className="buybox__opening">Opening checkout</span> : listing.preOrder ? 'Book a place' : 'Buy now'}
+          <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
+            disabled={busy || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
+            {busy ? <span className="buybox__opening">Opening checkout</span> : <>{lockMark}{listing.preOrder ? 'Book a place' : 'Buy now'}</>}
           </button>
-          <button className={`btn btn--ghost buybox__save${data.liked ? ' is-on' : ''}`} aria-label={data.liked ? 'Saved' : 'Save'}
-            onClick={() => void toggleLike()} disabled={busy || !user}>
+          <button className={`btn btn--ghost buybox__save${liked ? ' is-on' : ''}${lock}`} aria-label={liked ? 'Saved' : 'Save'}
+            aria-pressed={liked} onClick={gate(() => void toggleLike(), 'Sign in to save items.')} disabled={busy}>
             <Icon name="heart" size={18} />
           </button>
         </div>
       )}
+      {/* A question, a bargain, "is it still there" - asked with the item
+          attached, so the shop knows exactly which one. */}
+      {!data.isOwn && seller?.username && (
+        <Link to={`/messages/${encodeURIComponent(seller.username)}?about=${encodeURIComponent(listing.id)}`}
+          className={`buybox__ask${lock}`} onClick={gate(() => undefined, 'Sign in to message the shop.')}>
+          <Icon name="message" size={15} /> Message about this item
+          <small>Ask a question or make an offer</small>
+        </Link>
+      )}
       <p className="buybox__fine">
-        {!user && !data.isOwn ? 'Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
+        {!user && !data.isOwn ? '🔒 Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
       </p>
+      {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy}
+        offLabel={linkOff > 0 ? formatMoney(linkOff, listing.currency) : null} />}
     </div>
   );
 
   return (
     <main className="page lp">
-      <Link to="/" className="btn btn--quiet lp__back">
+      {/* Back to where they were - filters, search and scroll - when they came
+          from inside the app; a link opened cold goes to the catalogue. */}
+      <Link to="/" className="btn btn--quiet lp__back" onClick={(event) => {
+        if (location.key === 'default') return;
+        event.preventDefault();
+        navigate(-1);
+      }}>
         <Icon name="back" size={14} /> Back to browse
       </Link>
 
@@ -166,12 +247,31 @@ export function ListingPage() {
 
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
             <h1 className="lp__title">{listing.title}</h1>
+            {listing.privateFor && (
+              <div className="lp__private">
+                <span className="lp__privateicon" aria-hidden="true">🤝</span>
+                <span>
+                  <b>Private deal{user?.id === listing.privateFor ? ' - made just for you' : ''}</b>
+                  <small>
+                    {user?.id === listing.privateFor
+                      ? 'Only you can see or buy this, at this price, until the clock runs out. It cannot be shared.'
+                      : 'Only your buyer can see this. It is never in your shop, the feed or anyone\'s share links.'}
+                  </small>
+                </span>
+              </div>
+            )}
             <Urgency listing={listing} />
             {buyBox}
-            <DetailBlocks listing={listing} />
-            {listing.privateFor && (
-              <div className="badges"><span className="badge badge--pink">🤝 Private deal - {user?.id === listing.privateFor ? 'made just for you' : 'only your buyer can see this'}</span></div>
+            {/* A price made for one buyer is not a price to pass round. */}
+            {/* With a commission on, the affiliate card is the share block; two would say the same thing twice. */}
+            {!listing.privateFor && !data.affiliate && <ListingShare spec={shareSpec} onOpen={() => shareSheet.open(shareSpec)} />}
+            {data.affiliate && !listing.privateFor && (
+              <AffiliateCard listingId={listing.id} amountMinor={data.affiliate.amountMinor} offMinor={data.affiliate.buyerOffMinor}
+                canShare={data.affiliate.canShare} currency={listing.currency} isOwn={data.isOwn}
+                onShare={() => shareSheet.open(shareSpec)} />
             )}
+            {shareSheet.sheet}
+            <DetailBlocks listing={listing} />
             <div className="lp__about">
               <span className="dtile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
               <p>{listing.description}</p>
@@ -194,7 +294,7 @@ export function ListingPage() {
               listingId={listing.id}
               roster={data.preOrder}
               estimatedDispatchAt={data.estimatedDispatchAt}
-              canJoin={Boolean(user) && !data.isOwn}
+              canJoin={!data.isOwn}
               meId={user?.id ?? null}
               via={via}
               onChange={(roster) => setData((prev) => (prev ? { ...prev, preOrder: roster } : prev))}
@@ -210,20 +310,26 @@ export function ListingPage() {
           {seller && (
             <div className={`lp__seller sellercard storefront__cover--${brandHueFor(seller.username ?? seller.storefrontName)} rise`}
               style={{ ['--i' as string]: 2 }}>
-              {/* The shop's own awning, in the same colour its shop page
+              {/* The shop's own cover runs from the top of the card down to the
+                  bottom edge of its photo, under the same awning its shop page
                   hangs out, so a seller looks like themselves everywhere. */}
+              <div className={`sellercard__hero${seller.coverUrl ? ' has-cover' : ''}`}
+                style={seller.coverUrl ? { ['--cover' as string]: `url("${seller.coverUrl.replace(/"/g, '%22')}")` } : undefined}>
               <div className="sellercard__awning"><Canopy stripes={10} /></div>
               <div className="sellercard__sign">
-                <span className="sellercard__avatar"><Avatar name={seller.storefrontName} size={52} /></span>
+                <span className="sellercard__avatar">
+                  {seller.photoUrl ? <img src={seller.photoUrl} alt="" /> : <Avatar name={seller.storefrontName} size={64} />}
+                </span>
                 <div className="sellercard__who">
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
-                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username }} className="sellercard__name" />
+                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" />
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
                 <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>
                   <Svg name="shield" size={13} /> {seller.tier}
                 </span>
+              </div>
               </div>
 
               <dl className="sellercard__stats">
@@ -249,16 +355,18 @@ export function ListingPage() {
                 </div>
               </dl>
 
-              {user && !data.isOwn && (
+              {!data.isOwn && (
                 <div className="sellercard__acts">
-                  <button className={`btn btn--sm ${data.following ? 'btn--ghost' : ''}`} onClick={() => void toggleFollow()} disabled={busy}>
-                    {data.following ? <><Icon name="check" size={14} /> Following</> : 'Follow'}
+                  <button className={`btn btn--sm ${data.following ? 'btn--ghost' : ''}${lock}`}
+                    onClick={gate(() => toggleFollow(), 'Sign in to follow shops.')} disabled={busy}>
+                    {data.following ? <><Icon name="check" size={14} /> Following</> : <>{lockMark}Follow</>}
                   </button>
                   {/* A question about an item is asked of the shop, not of whoever
                       happens to own it — so the message goes to the shop's handle. */}
                   {seller.username && (
-                    <Link to={`/messages/${encodeURIComponent(seller.username)}`} className="btn btn--ghost btn--sm">
-                      <Icon name="message" size={14} /> Message
+                    <Link to={`/messages/${encodeURIComponent(seller.username)}?about=${encodeURIComponent(listing.id)}`} className={`btn btn--ghost btn--sm${lock}`}
+                      onClick={gate(() => undefined, 'Sign in to message the shop.')}>
+                      {lockMark ?? <Icon name="message" size={14} />} Message
                     </Link>
                   )}
                 </div>
@@ -267,6 +375,7 @@ export function ListingPage() {
           )}
         </aside>
       </div>
+      <SimilarItems listingId={listing.id} />
       {editing && (
         <EditListingDialog listing={listing} onClose={() => setEditing(false)}
           onSaved={(saved) => {
@@ -313,6 +422,7 @@ function PreOrderPanel({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const { user, gate } = useSession();
 
   const view = roster.preOrder;
   const mine = roster.mine;
@@ -403,8 +513,9 @@ function PreOrderPanel({
       {canJoin && open && (
         <div className="stack" style={{ gap: 10 }}>
           <div className="row">
-            <button className={`btn${mine?.pledged ? ' btn--ghost' : ''}`} style={{ flex: 1 }}
-              onClick={() => void change()} disabled={busy}>
+            <button className={`btn${mine?.pledged ? ' btn--ghost' : ''}${user ? '' : ' is-locked'}`} style={{ flex: 1 }}
+              onClick={gate(() => change(), 'Sign in to join this pre-order.')} disabled={busy}>
+              {!user && <span className="lockmark" aria-hidden="true">🔒</span>}
               {mine?.pledged ? (
                 <><Icon name="check" size={14} /> You&rsquo;re in</>
               ) : mine?.booked ? (
@@ -511,4 +622,67 @@ function Roster({ roster }: { roster: PreOrderRoster }) {
   );
 }
 
-export { EmptyState };
+
+/**
+ * The item as a picture to share. A pre-order still filling asks for help
+ * filling it - the reason a friend would open it; the shop's own item reads
+ * as a new drop; anything else as a find. When the shop gives buyers money
+ * off through a link, the sharer's picture and message lead with it.
+ */
+function listingShareSpec(data: ListingDetail): ShareSpec {
+  const { listing, seller } = data;
+  const lead = [...(listing.photos ?? [])].sort((a, b) => Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary)))[0]?.url ?? null;
+  const pre = listing.preOrder && listing.preOrder.fillThreshold > 0 ? listing.preOrder : null;
+  const joined = pre ? Math.min(pre.fillThreshold, pre.filledCount + (pre.pledgedCount ?? 0)) : 0;
+  const left = pre ? pre.fillThreshold - joined : 0;
+  const filling = Boolean(pre && left > 0);
+  const shop = seller?.storefrontName ?? 'Figmark';
+  const price = formatMoney(listing.priceMinor, listing.currency);
+  // Only a sharer's own affiliate link takes money off; the shop sharing its own item sends a plain one.
+  const viaLink = Boolean(data.affiliate?.canShare) && !data.isOwn;
+  const off = viaLink && data.affiliate?.buyerOffMinor ? formatMoney(data.affiliate.buyerOffMinor, listing.currency) : null;
+  const caption = filling
+    ? `${left} spot${left === 1 ? '' : 's'} left in this pre-order: ${listing.title} at ${price}. It ships when it fills 👇`
+    : data.isOwn ? `New drop: ${listing.title} at ${price} 🔥` : `Found this on Figmark: ${listing.title} at ${price} ✨`;
+  return {
+    kind: filling ? 'fill' : 'item',
+    moment: {
+      photo: lead,
+      title: listing.title,
+      detail: pre ? 'Pre-order · Buyer Protection' : 'Buyer Protection on Figmark',
+      price,
+      fill: pre ? { joined, threshold: pre.fillThreshold } : null,
+      headline: filling ? 'Help fill this pre-order' : data.isOwn ? 'New drop' : off ? 'Grab this with me' : 'Look what I found',
+      discount: off,
+      deal: off && data.affiliate?.buyerOffMinor ? formatMoney(Math.max(100, listing.priceMinor - data.affiliate.buyerOffMinor), listing.currency) : null,
+      seed: listing.id,
+      badge: shopBadge(seller, shop),
+    },
+    link: { to: 'item', listingId: listing.id, moment: filling ? 'fill' : undefined, affiliate: viaLink, own: data.isOwn },
+    caption: off ? `🎁 Get ${off} off with my link! ${caption}` : caption,
+    target: listing.id,
+    storeId: data.isOwn ? listing.sellerId : null,
+  };
+}
+
+/** A share bar under the buy box: WhatsApp-first, because that is where pre-orders fill. */
+function ListingShare({ spec, onOpen }: { spec: ShareSpec; onOpen: () => void }) {
+  const theme = themeOf(spec.kind);
+  const filling = spec.kind === 'fill';
+  return (
+    <button type="button" className={`lshare${filling ? ' lshare--fill' : ''}`} onClick={onOpen}
+      style={{ ['--lshare-from' as string]: theme.from, ['--lshare-to' as string]: theme.to }}>
+      <span className="lshare__icon" aria-hidden="true">{filling ? '⏳' : '📣'}</span>
+      <span className="lshare__text">
+        <b>{filling ? `${spotsLeft(spec)} left - help fill it` : 'Share this'}</b>
+        <small>{filling ? 'Send it to a WhatsApp group - friends who join fill it faster.' : 'A picture for your Status or story, or straight to WhatsApp.'}</small>
+      </span>
+      <span className="lshare__go">Share</span>
+    </button>
+  );
+}
+
+function spotsLeft(spec: ShareSpec): string {
+  const left = spec.moment.fill ? spec.moment.fill.threshold - spec.moment.fill.joined : 0;
+  return `${left} spot${left === 1 ? '' : 's'}`;
+}

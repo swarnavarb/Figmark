@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { CommunityNotices } from '../components/CommunityAlerts';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ForumRow, type ForumsResponse, type PostCard } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
@@ -11,6 +12,7 @@ import { useGoBack } from '../components/ScrollManager';
 import { timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { WantedPage } from './WantedPage';
+import { useToast } from '../components/Feedback';
 
 /**
  * The social side.
@@ -40,7 +42,7 @@ export function SocialPage() {
         <SocialTop view={view} onView={setView} />
         <main className="page tab-view social">
           <div className="tab-view" key={view}>
-            {view === 'feed' && <FollowingFeed />}
+            {view === 'feed' && <><CommunityNotices /><FollowingFeed /></>}
             {view === 'wanted' && <WantedPage />}
             {view === 'channels' && <ChannelList />}
             {view === 'forums' && <Forums />}
@@ -54,14 +56,15 @@ export function SocialPage() {
 
 /* ── Feed ───────────────────────────────────────────────────────────────── */
 
-type FeedFilter = 'all' | 'photos' | 'polls' | 'sale' | 'hot';
+type FeedFilter = 'all' | 'photos' | 'polls' | 'sale' | 'trending' | 'rising';
 
 const FILTERS: { id: FeedFilter; label: string }[] = [
   { id: 'all', label: 'Everything' },
+  { id: 'trending', label: '⚡ Trending' },
+  { id: 'rising', label: '↗ Rising' },
   { id: 'photos', label: '📸 Photos' },
   { id: 'polls', label: '📊 Polls' },
   { id: 'sale', label: '🏷️ For sale' },
-  { id: 'hot', label: '🔥 Popular' },
 ];
 
 function matches(card: PostCard, filter: FeedFilter): boolean {
@@ -72,20 +75,19 @@ function matches(card: PostCard, filter: FeedFilter): boolean {
     case 'photos': return hasPhotos(card) || Boolean(inner && hasPhotos(inner));
     case 'polls': return Boolean(social.poll || inner?.social.poll);
     case 'sale': return post.kind === 'sale' || inner?.post.kind === 'sale';
-    case 'hot': return social.reactions.total + social.commentCount * 2 >= 10;
+    case 'trending': return Boolean(card.badges?.includes('trending'));
+    case 'rising': return Boolean(card.badges?.includes('rising'));
     default: return true;
   }
 }
 
-type Stream = 'following' | 'trending';
-
 /**
- * The feed: who you follow, or what everyone is talking about.
+ * The feed: who you follow, with what is catching on mixed in.
  *
- * Two streams rather than one blended one, because they answer different
- * questions - "what did my people say" and "what am I missing" - and mixing
- * them makes the first unreliable. The top of the first still carries a strip
- * of the second, so nobody has to know the tab exists to find something new.
+ * One stream. Followed posts keep their order and every few of them the server
+ * slots in one from outside - trending (a lightning badge) or new and rising (a
+ * rising-line badge) - so nobody has to know a second tab exists to find
+ * something new, and the badge says why a stranger is there.
  *
  * Read in whichever voice is chosen, because "did I react to this" depends on
  * who is asking; switching voice reads it again.
@@ -93,50 +95,51 @@ type Stream = 'following' | 'trending';
 function FollowingFeed() {
   const { voice } = useVoice();
   const as = voice.storeId;
-  const [stream, setStream] = useState<Stream>('following');
   const [posts, setPosts] = useState<PostCard[] | null>(null);
-  const [hot, setHot] = useState<PostCard[] | null>(null);
+  const [next, setNext] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FeedFilter>('all');
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [feed, trending] = await Promise.all([api.socialFeed(as), api.trending(as)]);
-      setPosts(feed.posts);
-      setHot(trending.posts);
+      const page = await api.socialHome(as);
+      setPosts(page.posts);
+      setNext(page.next);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your feed.');
     }
   }, [as]);
+
+  /** The next page of followed posts, under what is already here. */
+  async function loadMore() {
+    if (!next) return;
+    setMore(true);
+    try {
+      const page = await api.socialHome(as, next);
+      setPosts((current) => {
+        const known = new Set((current ?? []).map((card) => card.post.id));
+        return [...(current ?? []), ...page.posts.filter((card) => !known.has(card.post.id))];
+      });
+      setNext(page.next);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load more.');
+    } finally {
+      setMore(false);
+    }
+  }
 
   useEffect(() => {
     setPosts(null);
     void load();
   }, [load]);
 
-  const list = stream === 'trending' ? hot : posts;
-  const shown = (list ?? []).filter((card) => matches(card, filter));
+  const shown = (posts ?? []).filter((card) => matches(card, filter));
 
   return (
     <div className="feed">
       <Composer onPosted={load} />
-
-      {stream === 'following' && hot && hot.length > 0 && (
-        <TrendingStrip cards={hot.slice(0, 8)} onMore={() => setStream('trending')} />
-      )}
-
-      <div className="streams" role="tablist" aria-label="Which posts">
-        {([
-          ['following', 'For you', 'users'],
-          ['trending', 'Trending', 'bolt'],
-        ] as const).map(([id, label, icon]) => (
-          <button key={id} type="button" role="tab" aria-selected={stream === id}
-            className={`streams__tab${stream === id ? ' is-on' : ''}`} onClick={() => setStream(id)}>
-            <Icon name={icon} size={15} /> {label}
-          </button>
-        ))}
-      </div>
 
       <div className="feed__filters" role="toolbar" aria-label="Show">
         {FILTERS.map((entry) => (
@@ -149,70 +152,32 @@ function FollowingFeed() {
 
       {error ? (
         <ErrorNotice message={error} />
-      ) : !list ? (
+      ) : !posts ? (
         <FeedSkeleton />
-      ) : list.length === 0 ? (
-        <EmptyState title={stream === 'trending' ? 'Quiet out there' : 'Nothing here yet'}>
-          {stream === 'trending'
-            ? 'Nothing is catching fire right now. Post something and start it.'
-            : 'Follow a shop or a person from Trending and their posts show up here.'}
+      ) : posts.length === 0 ? (
+        <EmptyState title="Nothing here yet">
+          Nothing is catching fire right now. Post something and start it, or follow a shop or a person.
         </EmptyState>
       ) : shown.length === 0 ? (
         <EmptyState title="Nothing like that yet">
           Nothing matches that filter. Try another, or be the first.
         </EmptyState>
       ) : (
-        shown.map((card, index) => (
+        shown.map((card) => (
           <SocialPostCard key={`${as ?? 'me'}-${card.post.id}`} card={card}
-            rank={stream === 'trending' ? index + 1 : undefined}
-            onRemoved={(id) => {
-              setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null);
-              setHot((all) => all?.filter((entry) => entry.post.id !== id) ?? null);
-            }}
+            onRemoved={(id) => setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null)}
             onReposted={(repost) => setPosts((all) => [repost, ...(all ?? [])])} />
         ))
+      )}
+
+      {posts && next && (
+        <button type="button" className="chmore" disabled={more} onClick={() => void loadMore()}>
+          {more ? 'Loading…' : 'Show older posts'}
+        </button>
       )}
     </div>
   );
 }
-
-/**
- * The hottest few, as a row you swipe along.
- *
- * Numbered like a leaderboard, because that is what it is, and because a
- * number is the fastest way to say "this one is bigger than that one".
- */
-function TrendingStrip({ cards, onMore }: { cards: PostCard[]; onMore: () => void }) {
-  return (
-    <section className="hotstrip" aria-label="Trending now">
-      <div className="hotstrip__head">
-        <h2 className="hotstrip__title"><Icon name="bolt" size={16} /> Trending now</h2>
-        <button type="button" className="hotstrip__more" onClick={onMore}>See all</button>
-      </div>
-      <div className="hotstrip__row">
-        {cards.map((card, index) => {
-          const photo = card.post.photoUrls?.[0] ?? card.post.photoUrl ?? card.listing?.photoUrl ?? null;
-          return (
-            <Link key={card.post.id} to={postHref(card.post)}
-              className={`hotcard${photo ? '' : ` hotcard--${card.post.vibe ?? HOT_TONES[index % HOT_TONES.length]}`}`}>
-              {photo && <img className="hotcard__img" src={photo} alt="" loading="lazy" />}
-              <span className="hotcard__rank">{index + 1}</span>
-              <span className="hotcard__body">
-                <span className="hotcard__who">{card.post.authorName}</span>
-                <span className="hotcard__text">{card.post.body || 'Photo'}</span>
-                <span className="hotcard__stats">
-                  🔥 {card.social.reactions.total} · 💬 {card.social.commentCount}
-                </span>
-              </span>
-            </Link>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-const HOT_TONES = ['warm', 'hero', 'play', 'sea'] as const;
 
 /** Grey shapes where posts are about to be, so the page does not jump when they land. */
 function FeedSkeleton() {
@@ -308,6 +273,7 @@ export const ChannelPage = ChannelRoom;
  * list sells what is inside: how many are in it, and the latest thing said.
  */
 function Forums() {
+  const toast = useToast();
   const { voice, choose } = useVoice();
   const [data, setData] = useState<ForumsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -373,8 +339,15 @@ function Forums() {
           <h2 className="forums__title">Your forums</h2>
           <p className="faint">{mine.length === 0 ? 'Join one below to post in it.' : `${mine.length} joined`}</p>
         </div>
-        {data && data.remaining > 0 && !voice.storeId && (
-          <button type="button" className="followbtn" onClick={() => setCreating(!creating)}>
+        {data && !voice.storeId && (
+          <button type="button" className="followbtn" onClick={() => {
+            // Not there yet: say when they will be, rather than hiding the button.
+            if (!creating && data.slots && !data.slots.canCreate) {
+              toast(data.slots.message ?? 'You will be eligible to create your first forum when you reach level 5.', 'info');
+              return;
+            }
+            setCreating(!creating);
+          }}>
             <Icon name={creating ? 'close' : 'plus'} size={12} /> {creating ? 'Cancel' : 'New forum'}
           </button>
         )}
@@ -389,7 +362,12 @@ function Forums() {
           <button type="submit" className="btn" disabled={busy || !name.trim()}>
             {busy ? 'Creating…' : 'Create forum'}
           </button>
-          <p className="faint">{data?.remaining} of {data?.cap} slots left while forums are being built out.</p>
+          {data?.slots && (
+            <p className="faint">
+              You have opened {data.slots.opened} of {data.slots.allowed} forum{data.slots.allowed === 1 ? '' : 's'} at level {data.slots.level}.
+              {data.slots.nextLevel && ` Another unlocks at level ${data.slots.nextLevel}.`} Forums unlock at levels {data.slots.unlockLevels.join(', ')}.
+            </p>
+          )}
         </form>
       )}
 
@@ -441,7 +419,7 @@ function ForumCard({ row, tone, onChange }: { row: ForumRow; tone: number; onCha
             setBusy(true);
             setError(null);
             try {
-              onChange((await api.joinForum(row.id)).forum);
+              onChange((await api.joinForum(row.id, !row.member)).forum);
             } catch (err) {
               setError(err instanceof ApiRequestError ? err.message : 'Could not join.');
             } finally {

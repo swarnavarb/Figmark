@@ -2,10 +2,12 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
-import { currentStepOf, lotNumberFrom, routeOf } from '../../../shared/routes.js';
+import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
+import { cardButtons, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
 import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
+import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
 import { getAuthService } from '../auth/index.js';
@@ -51,6 +53,13 @@ function safeLink(raw: string | undefined): string | null | undefined {
     return undefined;
   }
 }
+
+/** What a shelf sale walks: no lot, no warehouse, only the last mile. */
+const DIRECT_LADDER: RouteStep[] = [
+  { id: 'placed', name: 'Order placed', description: '', position: 0 },
+  { id: 'dispatched', name: 'Dispatched', description: '', position: 1, trigger: 'dispatched' },
+  { id: 'delivered', name: 'Delivered', description: '', position: 2, trigger: 'delivered' },
+];
 
 /** GET /api/me/storefront - the storefront as it stands, blank profile included. */
 async function getStorefront(request: HttpRequest, _context: InvocationContext) {
@@ -298,11 +307,13 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
      side and each once: one lookup for every buyer, one per lot rather than
      per row, and one query for the shop's listings - so the "add to a lot"
      screen can pre-select the route the Quick Post template set up. */
-  const [people, lotRows, listingRows] = await Promise.all([
+  const [people, lotRows, listingRows, routeRows] = await Promise.all([
     repository.listUsersByIds([...new Set(orders.map((order) => order.buyerId))]),
     Promise.all(lotIds.map((id) => repository.getLot(storeId, id))),
     repository.listListings({ sellerId: storeId, includeHidden: true, limit: 10_000 }),
+    repository.listRoutes(storeId),
   ]);
+  const routes = new Map(routeRows.map((route) => [route.id, route]));
   const buyerById = new Map(people.map((person) => [person.id, person]));
   const buyers = new Map(orders.map((order) => [order.buyerId, personRef(buyerById.get(order.buyerId) ?? null)]));
   /* Where each buyer's money goes back to - shown only in Refunds, beside a
@@ -318,6 +329,78 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   const moneyOf = new Map(orders.map((order) => [order.id, orderMoney(order)]));
   const money = (order: (typeof orders)[number]) => moneyOf.get(order.id)!;
 
+  /*
+   * The seller's next press, on the card itself: the same ladder the order's
+   * timeline draws, so the button here and the one on the timeline are one
+   * button in the same words. An item in a lot reads its lot's route; one
+   * still waiting for a lot reads the steps before it; one sold from the
+   * shelf has only the last mile.
+   */
+  const buttonsFor = (
+    order: (typeof orders)[number],
+    lot: Awaited<ReturnType<typeof repository.getLot>>,
+    template: Awaited<ReturnType<typeof repository.getRoute>>,
+  ) => {
+    if (isDirect(order)) return cardButtons(DIRECT_LADDER, null, undefined, ticksOf(order));
+    if (lot) {
+      const track = withLastMile(withReceivedAs(routeOf(lot).steps, order.receivedAs));
+      return cardButtons(
+        track.steps, track.at(currentStepOf(lot)),
+        typeof order.currentStep === 'number' ? track.at(order.currentStep) : undefined,
+        ticksOf(order), { origin: lot.originCountry, destination: lot.destinationCountry },
+      );
+    }
+    return cardButtons(withReceivedAs(ladderBeforeLot(order, template).steps, order.receivedAs), null, undefined, ticksOf(order));
+  };
+
+  /*
+   * The lot's own next move, offered on every order riding in it - the same
+   * "Move to" the lot's Tracking section has, so a seller working down their
+   * orders can move the crate without leaving the card. `unchecked` counts the
+   * items the move would carry past the warehouse check-in without having been
+   * ticked in there, so the card can stop and say so as the lot screen does.
+   */
+  /** Items riding in a lot that were never ticked in at the warehouse. */
+  const uncheckedIn = (lotId: string) => orders.filter((order) => order.lotId === lotId
+    && !isCancelledLike(order.status) && order.status !== 'delivered' && !order.checkpoints?.china_received).length;
+
+  const lotNextFor = (lot: Awaited<ReturnType<typeof repository.getLot>>) => {
+    if (!lot || lot.status === 'closed') return null;
+    const route = routeOf(lot);
+    /* Never into the half before the lot's own: a lot sitting further back
+       than "filling" moves onto its own first step. */
+    const to = Math.max(currentStepOf(lot) + 1, lotOffset(route));
+    const step = route.steps[to];
+    if (!step || to > lotEndIndex(route)) return null;
+    const gateAt = route.steps.findIndex((entry) => entry.trigger === 'china_received');
+    const unchecked = gateAt >= 0 && to >= gateAt ? uncheckedIn(lot.id) : 0;
+    return {
+      to,
+      label: renderStepText(step.name, { origin: lot.originCountry, destination: lot.destinationCountry }),
+      unchecked,
+    };
+  };
+
+  /*
+   * Every button an item in a lot has - its own presses and the lot's moves -
+   * in the order they happen, so the card lays them out one after another.
+   */
+  const serialFor = (
+    order: (typeof orders)[number],
+    lot: Awaited<ReturnType<typeof repository.getLot>>,
+  ) => {
+    if (!lot || isDirect(order)) return null;
+    const route = routeOf(lot);
+    const unchecked = uncheckedIn(lot.id);
+    const gateAt = route.steps.findIndex((entry) => entry.trigger === 'china_received');
+    return serialButtons(
+      withReceivedAs(route.steps, order.receivedAs), currentStepOf(lot), ticksOf(order),
+      { origin: lot.originCountry, destination: lot.destinationCountry },
+    ).map((button) => (button.kind === 'lot' && !button.done && gateAt >= 0 && button.to >= gateAt
+      ? { ...button, gated: unchecked > 0 }
+      : button));
+  };
+
   const row = (order: (typeof orders)[number]) => {
     const lot = inLot(order) ? lots.get(order.lotId) ?? null : null;
     const listing = listings.get(order.listingId);
@@ -325,6 +408,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     const { paidMinor, outstandingMinor, creditMinor } = money(order);
     const actions = actionsFor(order, storeId);
     return {
+      ...buttonsFor(order, lot, listing?.lotRouteId ? routes.get(listing.lotRouteId) ?? null : null),
       photoUrl: photo?.url ?? null,
       /** Bought from a private deal made in a chat. */
       privateDeal: order.privateDeal === true,
@@ -335,7 +419,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       listingId: order.listingId,
       itemName: order.itemName,
       quantity: order.quantity,
-      totalMinor: order.unitPriceMinor * order.quantity,
+      totalMinor: orderTotalMinor(order),
       currency: order.currency,
       buyer: buyers.get(order.buyerId) ?? personRef(null),
       paymentStatus: order.paymentStatus,
@@ -344,7 +428,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       createdAt: order.createdAt,
       /* Everything the order card shows, so one screen answers "where is this
          and what does it need" without opening anything. */
-      escrowState: order.escrow.state,
+      holdState: order.hold.state,
       /** A domestic sale is in hand by definition: there is nothing to import. */
       inHand: isDirect(order),
       /** The courier and AWB it went out with, once dispatched. */
@@ -353,8 +437,23 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       awaitingLot: awaitingLot(order),
       lotId: lot?.id ?? null,
       lotName: lot?.name ?? null,
-      lotNumber: lot ? lot.lotNumber ?? lotNumberFrom(lot.id, lot.createdAt) : null,
-      lotStep: lot ? routeOf(lot).steps[currentStepOf(lot)]?.name ?? null : null,
+      lotNumber: lot ? lotNo(lot.lotNumber) ?? lotNumberFrom(lot.id, lot.createdAt) : null,
+      lotStep: lot
+        ? renderStepText(routeOf(lot).steps[currentStepOf(lot)]?.name ?? '', { origin: lot.originCountry, destination: lot.destinationCountry }) || null
+        : null,
+      /**
+       * Where this order is on its lot's route, counted over every step of
+       * it - the same "step 3 of 6" the Studio, the lot and the buyer's
+       * timeline count, so no two screens number one route differently.
+       */
+      routeStep: lot ? {
+        at: itemStepOn(routeOf(lot), currentStepOf(lot), order.currentStep, ticksOf(order)),
+        of: routeOf(lot).steps.length,
+      } : null,
+      /** The lot's next move, pressed from the order card - null once it cannot move further. */
+      lotNext: lotNextFor(lot),
+      /** The route's buttons and the lot's moves, in order - null when not in a lot. */
+      serial: serialFor(order, lot),
       /** The one tick a seller makes from this screen. */
       chinaReceivedAt: order.checkpoints?.china_received ?? null,
       /** Ticked on the lot screen, not this one - read here so this screen's
@@ -396,7 +495,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     .sort((a, b) => (a.paymentClaim?.claimedAt ?? a.updatedAt).localeCompare(b.paymentClaim?.claimedAt ?? b.updatedAt));
 
   const placed = orders
-    .filter((order) => order.status === 'pending_payment' && order.paymentStatus === 'unpaid')
+    // The same rule that draws the Accept button, so an order or booking is in
+    // this pile exactly when the seller has a yes or no to give on it.
+    .filter((order) => actionsFor(order, storeId).includes('accept'))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   /*
