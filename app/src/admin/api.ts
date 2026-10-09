@@ -1,5 +1,5 @@
 import type { HealthResponse } from '@shared/contracts';
-import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, SellerTrustSignals, TrustSignals } from '@shared/models';
+import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, SellerTrustSignals, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
@@ -61,8 +61,10 @@ export interface AdminDisputeRow {
   /** The current round: who holds it and by when they decide. */
   round: { n: number; managerId: string; managerName: string; decideBy: string; decided: boolean } | null;
   rounds: number;
-  /** The manager on the current round is past their deadline. */
+  /** The manager on the current round, or the one releasing, is past their deadline. */
   overdue: boolean;
+  /** Agreed by all, and waiting on this manager to release the held payment. */
+  releasePending: ReleaseDuty | null;
   standing: { favour: DisputeDecision['favour']; finalRound: number; decision: DisputeDecision } | null;
 }
 

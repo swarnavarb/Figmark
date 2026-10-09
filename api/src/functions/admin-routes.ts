@@ -1,11 +1,12 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { ManagerRights, User } from '../../../shared/models.js';
-import { currentRound, decisionOverdue, isClosed, roundsOf, standingDecision } from '../../../shared/disputes.js';
+import { currentRound, decisionOverdue, isClosed, releaseOverdue, roundsOf, standingDecision } from '../../../shared/disputes.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import {
-  applySanction, bringUpToDate, commit, excludedFrom, isManager, loadActions, loadLedger, mutateActions, pickManagerFor, reassignRound,
+  applySanction, bringReleaseUpToDate, bringUpToDate, commit, excludedFrom, isManager, loadActions, loadLedger, mutateActions, pickManager,
+  pickManagerFor, reassignRelease, reassignRound,
 } from '../community.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
@@ -390,7 +391,7 @@ async function disputes(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
 
   const all = await Promise.all(
-    (await repository.listDisputes(request.query.get('status') ?? undefined)).map((entry) => bringUpToDate(repository, entry)),
+    (await repository.listDisputes(request.query.get('status') ?? undefined)).map(async (entry) => bringReleaseUpToDate(repository, await bringUpToDate(repository, entry))),
   );
   const rows = await Promise.all(
     all.map(async (dispute) => {
@@ -420,7 +421,9 @@ async function disputes(request: HttpRequest, _context: InvocationContext) {
           : null,
         round: round ? { n: round.n, managerId: round.managerId, managerName: round.managerName, decideBy: round.decideBy, decided: Boolean(round.decision) } : null,
         rounds: roundsOf(dispute).length,
-        overdue: !isClosed(dispute) && decisionOverdue(round),
+        overdue: !isClosed(dispute) ? decisionOverdue(round) : !dispute.release && releaseOverdue(dispute.releaseDuty),
+        /** Agreed, and waiting on a manager to release the held payment. */
+        releasePending: dispute.status === 'resolved' && !dispute.release ? dispute.releaseDuty ?? null : null,
         standing: standingDecision(dispute),
       };
     }),
@@ -436,6 +439,8 @@ async function disputes(request: HttpRequest, _context: InvocationContext) {
  *
  * Named, or - with no `managerId` - whoever the system would pick by
  * availability. Never a party, and never a manager who already held a round.
+ * On a resolved dispute whose held payment is still waiting to be released,
+ * it is the release that moves.
  */
 async function reassign(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
@@ -445,6 +450,23 @@ async function reassign(request: HttpRequest, _context: InvocationContext) {
   if (!id) return error(400, 'invalid_request', 'A dispute id is required.');
   const dispute = await repository.getDisputeById(id);
   if (!dispute) return error(404, 'not_found', 'No such dispute.');
+  const pendingRelease = dispute.status === 'resolved' && !dispute.release && dispute.releaseDuty;
+  if (pendingRelease) {
+    let releaseBody: { managerId?: string };
+    try {
+      releaseBody = (await request.json()) as typeof releaseBody;
+    } catch {
+      releaseBody = {};
+    }
+    const parties = [dispute.raisedBy, dispute.againstUserId, pendingRelease.managerId];
+    const to = releaseBody.managerId
+      ? await repository.getUserById(releaseBody.managerId)
+      : await pickManager(repository, parties);
+    if (!to) return error(409, 'no_manager', 'No other community manager is available.');
+    if (!isManager(to)) return error(400, 'invalid_manager', 'That person is not a community manager.');
+    if (parties.includes(to.id)) return error(400, 'invalid_manager', 'A party, or the manager it is with now, cannot take it.');
+    return json(200, { dispute: await reassignRelease(repository, dispute, to) });
+  }
   if (isClosed(dispute)) return error(409, 'already_resolved', 'That dispute is closed.');
   const round = currentRound(dispute);
   if (!round || round.decision) return error(409, 'nothing_to_reassign', 'The current round has already been decided.');

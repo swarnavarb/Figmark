@@ -1,5 +1,6 @@
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
+import { ManagerMark } from '../components/ManagerBadge';
 import { compressImage } from '../imageCompress';
 import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -566,9 +567,10 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       {(order.paymentStatus === 'paid' || order.paymentStatus === 'refunded') && (
         order.protection ? (
           <p className="notice notice--ok">
-            Held by <strong>Figmark</strong> —{' '}
-            {formatMoney(order.protection.feeMinor, order.currency)} protection fee. Either side can open
-            a dispute, and a community manager decides it before the money moves.
+            Held by <strong>Figmark</strong>, with{' '}
+            <strong>{order.protection.managerName ?? 'a community manager'}<ManagerMark id={order.protection.managerId} /></strong>{' '}
+            assigned — {formatMoney(order.protection.feeMinor, order.currency)} protection fee. Either side can open
+            a dispute: they decide it, and release the money once all three of you agree.
             {order.protection.refundedAt && ' The fee was refunded.'}
           </p>
         ) : (
@@ -906,7 +908,7 @@ function DisputePanel({ state }: { state: OrderState }) {
 
       {/* Anything else about the order: a community manager the raiser picks
           hears it, for the dispute fee. A protected purchase has its own
-          claim above, heard for free. */}
+          claim above, heard by its assigned manager for free. */}
       <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
         onClick={() => setRaising({ label: order.itemName })}>
         ⚖️ Raise a dispute
@@ -957,6 +959,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   if (!quote) return <p className="muted">Loading…</p>;
 
   const protectionFee = quote.protectionFeeMinor;
+  const canProtect = quote.protectionAvailable;
   const canPayDirect = quote.sellerPayment !== null;
 
   /* Credit the seller kept for this buyer counts towards what is due now -
@@ -1038,14 +1041,15 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       </button>
 
       <button type="button" className={`buyway buyway--cool${route === 'protected' ? ' is-on' : ''}`}
-        disabled={coveredByCredit} style={{ ['--i' as string]: 1 }}
+        disabled={!canProtect || coveredByCredit} style={{ ['--i' as string]: 1 }}
         onClick={() => setRoute('protected')}>
         <span className="buyway__icon"><Svg name="shield" size={22} /></span>
         <span className="buyway__title">Add Buyer Protection</span>
         <span className="buyway__tag">Held by: Figmark</span>
         <span className="buyway__note">
-          Figmark holds the payment until you confirm the item arrived, and it is settled before it moves if the two
-          of you disagree. The protection fee is on top.
+          {canProtect
+            ? 'Figmark holds the payment until you confirm the item arrived. A community manager is assigned to your purchase: if the two of you disagree, they decide, and release the money once all three of you agree. The protection fee is on top.'
+            : 'No community manager is available to take on Buyer Protection right now. Try again soon.'}
         </span>
         <span className="buyway__price">{formatMoney(dueNow + protectionFee, quote.currency)}</span>
       </button>
@@ -1064,7 +1068,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       {route === 'protected' && (
         <div className="card card--pad stack">
           <div className="kv">
-            <dt>Buyer protection · held by Figmark</dt>
+            <dt>Buyer protection · held by Figmark, with a community manager assigned</dt>
             <dd>{formatMoney(protectionFee, quote.currency)}</dd>
           </div>
           <div className="kv">

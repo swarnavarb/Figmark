@@ -876,6 +876,7 @@ export function seedOrders(): Order[] {
       stage: 'ordering',
       stageHistory: [{ stage: 'ordering', enteredAt: iso(-5), note: 'Order placed.', recordedBy: 'usr_demo' }],
       protection: {
+        managerId: 'usr_escrow_meera', managerName: 'Meera Iyer',
         feeMinor: 4_350, feeBasisPoints: 150, boughtAt: iso(-5), refundedAt: null,
       },
       hold: { state: 'held', amountMinor: 2_90_000, heldAt: iso(-5), releasedAt: null, autoReleaseAt: iso(31), disputeId: null },
@@ -894,6 +895,7 @@ export function seedOrders(): Order[] {
         { stage: 'india_received', enteredAt: iso(-4), note: 'Awaiting customs assessment.', recordedBy: 'usr_kaiju' },
       ],
       protection: {
+        managerId: 'usr_escrow_meera', managerName: 'Meera Iyer',
         feeMinor: 480, feeBasisPoints: 150, boughtAt: iso(-30), refundedAt: null,
       },
       hold: { state: 'held', amountMinor: 32_000, heldAt: iso(-30), releasedAt: null, autoReleaseAt: iso(12), disputeId: null },
@@ -989,6 +991,7 @@ export function seedOrders(): Order[] {
         { stage: 'ordering', enteredAt: iso(-1), note: 'Buyer opened a dispute.', recordedBy: 'usr_gadgetgrid' },
       ],
       protection: {
+        managerId: 'usr_kaiju', managerName: 'Ravi Krishnan',
         feeMinor: 2_400, feeBasisPoints: 200, boughtAt: iso(-3), refundedAt: null,
       },
       hold: { state: 'disputed', amountMinor: 1_20_000, heldAt: iso(-3), releasedAt: null, autoReleaseAt: null, disputeId: 'dsp_1' },
@@ -1196,8 +1199,10 @@ export function seedLiveSale(): Order {
     status: 'confirmed', paymentStatus: 'paid',
     stage: 'ordering',
     stageHistory: [{ stage: 'ordering', enteredAt: iso(-6), note: 'Order placed.', recordedBy: 'usr_tokyoline' }],
-    /* Same lot as ord_2003, also bought with Buyer Protection. */
+    /* Same lot as ord_2003, also bought with Buyer Protection, with the same
+       community manager assigned. */
     protection: {
+      managerId: 'usr_kaiju', managerName: 'Ravi Krishnan',
       feeMinor: 2_200, feeBasisPoints: 200, boughtAt: iso(-6), refundedAt: null,
     },
     hold: { state: 'held', amountMinor: 1_10_000, heldAt: iso(-6), releasedAt: null, autoReleaseAt: null, disputeId: null },

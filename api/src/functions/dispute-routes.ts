@@ -6,7 +6,7 @@ import type {
   DisputeSubjectType, DisputeTopic, Order, User,
 } from '../../../shared/models.js';
 import {
-  DISPUTE_SUBJECT_LABELS, MAX_ROUNDS, communityActionsFor, currentRound, decisionOverdue, escalationOpen,
+  DISPUTE_SUBJECT_LABELS, MAX_ROUNDS, bothAgreed, communityActionsFor, currentRound, decisionOverdue, escalationOpen, releaseOverdue,
   holdsMoney, inDays, isClosed, isParty, reasonsFor, roundsOf, standingDecision, subjectPartition,
 } from '../../../shared/disputes.js';
 import { REASON_MIN, REPORT_TARGETS, type ReportTarget } from '../../../shared/moderation.js';
@@ -17,8 +17,8 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { countCompleted, dropFromCollection } from '../delivery.js';
 import {
-  Refusal, activeAlert, activeNotices, availableManagers, bringUpToDate, chargeFee, excludedFrom, favouredName, finalizeDecided,
-  Busy, commit, isManager, loadLedger, managerName, newRound, openCaseCount, orderOf, payoutRef, personName, pickManager,
+  Refusal, activeAlert, activeNotices, availableManagers, bringReleaseUpToDate, bringUpToDate, chargeFee, excludedFrom, favouredName, finalizeDecided,
+  commit, isManager, loadLedger, managerName, newRound, openCaseCount, orderOf, payoutRef, personName, pickManager,
   pickManagerFor, recordSettled,
 } from '../community.js';
 import { rupees } from '../../../shared/payments.js';
@@ -40,10 +40,12 @@ import { error, handler, json } from './http.js';
  *
  * Money. Every round is paid through the gateway, by whoever raised or
  * escalated it, and nothing is refunded. A purchase made with buyer protection
- * is the exception for round one: the protection fee already bought it. That
- * is also the only kind of dispute that can move money - Figmark holds the
- * payment until the result is final, then pays it out as decided. A dispute
- * over a purchase paid
+ * is the exception for round one: the protection fee already bought it, and
+ * the community manager assigned to the purchase hears it. That is also the
+ * only kind of dispute that can move money. Figmark holds the payment; it is
+ * released by the manager once all three agree - both parties agreeing with
+ * the decision (or a party who never answered being taken to), or both
+ * settling between themselves. A dispute over a purchase paid
  * directly can only flag and warn: the money has already gone.
  *
  * The two parties can settle between themselves at any point before it is
@@ -74,6 +76,8 @@ function roleOf(dispute: Dispute, viewerId: string): Role | null {
   if (dispute.raisedBy === viewerId) return 'raiser';
   if (dispute.againstUserId === viewerId) return 'respondent';
   if (currentRound(dispute)?.managerId === viewerId) return 'manager';
+  // The manager handed the release reads the case they are releasing.
+  if (dispute.releaseDuty?.managerId === viewerId) return 'manager';
   // A manager who held a round keeps reading it; one only reassigned away
   // for being slow, never having decided, does not.
   if (roundsOf(dispute).some((round) => round.managerId === viewerId)) return 'past_manager';
@@ -101,32 +105,8 @@ async function loadDispute(
 
   const role = roleOf(found, viewerId);
   if (!role) return { refusal: error(403, 'forbidden', 'That dispute is not yours.') };
-  const dispute = await bringUpToDate(repository, found);
-  await releaseIfFinal(repository, dispute);
+  const dispute = await bringReleaseUpToDate(repository, await bringUpToDate(repository, found));
   return { dispute, order: order ? (await repository.getOrder(order.id)) ?? order : null, role };
-}
-
-/**
- * Pays out a final decision's held money. Figmark holds every protected
- * payment, so nobody has to ask: the moment the result is final, it moves.
- */
-async function releaseIfFinal(repository: Repo, dispute: Dispute): Promise<void> {
-  if (dispute.result?.how !== 'decided' || dispute.release || !holdsMoney(dispute)) return;
-  const order = await orderOf(repository, dispute);
-  if (!order || order.hold.state !== 'disputed' || order.hold.disputeId !== dispute.id) return;
-  try {
-    await moveHeld(repository, dispute, order, dispute.resolution?.refundMinor ?? 0,
-      'Dispute settled: released by Figmark on the final decision.', 'system');
-  } catch (error) {
-    if (!(error instanceof Busy)) throw error;
-    return;
-  }
-  await notify(repository, [order.buyerId, order.sellerId], {
-    kind: 'payment_released',
-    title: 'The held payment was released on the final decision',
-    body: order.itemName,
-    link: `/dispute/${dispute.id}`,
-  });
 }
 
 /** Evidence off the wire, with links checked before they are ever rendered. */
@@ -321,11 +301,14 @@ export async function openDisputeRecord(
 
   let round;
   if (protectionActive(order)) {
-    // Bought with the protection: the fee for hearing it was paid at
-    // checkout, and the system assigns whoever is available.
-    const manager = await pickManager(repository, parties);
+    // Bought with the protection: the manager assigned to the purchase hears
+    // it, and the fee for that was paid at checkout. If they are no longer a
+    // manager, or not taking cases, the system picks whoever is available.
+    const assigned = await repository.getUserById(order.protection!.managerId);
+    const usable = isManager(assigned) && assigned.managerRights!.available !== false;
+    const manager = usable ? assigned : await pickManager(repository, parties);
     if (!manager) throw new Refusal(409, 'no_manager', 'No community manager is available to take this right now.');
-    round = newRound(1, manager, 'system', settings, null, null);
+    round = newRound(1, manager, usable ? 'protection' : 'system', settings, null, null);
   } else {
     const manager = input.managerId
       ? await chosenManager(repository, input.managerId, parties)
@@ -742,10 +725,10 @@ async function offer(request: HttpRequest, _context: InvocationContext) {
 /**
  * POST /api/disputes/{id}/accept - take the other side's settlement, and it is over.
  *
- * No manager confirms it: two people who agree do not need a third to agree
- * with them. Nobody won and nobody lost, every decision before it is void, and
- * no sanction from one is carried out. On a protected purchase the agreed
- * split is paid out through the gateway at once.
+ * Nobody won and nobody lost, every decision before it is void, and no
+ * sanction from one is carried out. On a protected purchase the money still
+ * waits for the third agreement: the community manager on the case releases
+ * the agreed split.
  */
 async function accept(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -785,11 +768,10 @@ async function accept(request: HttpRequest, _context: InvocationContext) {
       outcome: proposed.refundMinor >= held ? 'refund_buyer' : proposed.refundMinor === 0 ? 'release_seller' : 'split',
       refundMinor: proposed.refundMinor, note: 'Both sides agreed a settlement.', decidedBy: user.id, byCompany: false, decidedAt: now,
     };
-    order = await moveHeld(repository, dispute, order, proposed.refundMinor, 'Dispute settled: both sides agreed a settlement.', user.id);
   }
   dispute.offer = null;
   dispute.updatedAt = now;
-  const saved = await commit(repository, dispute);
+  const saved = await bringReleaseUpToDate(repository, await commit(repository, dispute));
   await recordSettled(repository, saved, order);
 
   if (order) await tellSettled(repository, order, dispute.id, 'settled', user.id);
@@ -968,6 +950,8 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
   const settings = await marketSettings(repository);
   const now = new Date().toISOString();
   round.decision = { favour: body.favour, reasoning: reasoning.slice(0, 2000), refundMinor, sanctions, decidedAt: now };
+  // A new decision is a new question for both parties.
+  dispute.agreements = [];
   dispute.status = 'decided';
   dispute.respondByAt = null;
   dispute.escalateBy = inDays(settings.escalationWindowDays);
@@ -980,7 +964,7 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
   // or the first two agreeing.
   let saved: Dispute;
   if (!escalationOpen(dispute)) {
-    saved = await finalizeDecided(repository, dispute);
+    saved = await bringReleaseUpToDate(repository, await finalizeDecided(repository, dispute));
   } else {
     saved = await commit(repository, dispute);
     await notify(repository, [dispute.raisedBy, dispute.againstUserId], {
@@ -1057,6 +1041,92 @@ async function escalate(request: HttpRequest, _context: InvocationContext) {
   return json(200, { dispute: saved, payment, simulatedPayment: true });
 }
 
+/**
+ * POST /api/disputes/{id}/agree - a party agrees with the decision on the table.
+ *
+ * When both have, nobody is left to escalate it and it is final at once; the
+ * manager then releases any held money. A party who never answers is taken
+ * to agree when the escalation window closes.
+ */
+async function agree(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await loadDispute(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const { dispute, order } = found;
+
+  if (!communityActionsFor(dispute, user.id).includes('agree')) {
+    return error(409, 'cannot_agree', dispute.status === 'decided'
+      ? 'You have already agreed with this decision.'
+      : 'There is no decision to agree with right now.');
+  }
+  const round = currentRound(dispute)!;
+  const now = new Date().toISOString();
+  dispute.agreements = [...(dispute.agreements ?? []), { userId: user.id, round: round.n, at: now }];
+  dispute.messages = [...dispute.messages, message(user.id, voiceOf(dispute, order, user.id), `Agreed with the round ${round.n} decision.`, [])];
+  dispute.updatedAt = now;
+
+  let saved: Dispute;
+  if (bothAgreed(dispute)) {
+    saved = await bringReleaseUpToDate(repository, await finalizeDecided(repository, dispute));
+  } else {
+    saved = await commit(repository, dispute);
+    const other = dispute.raisedBy === user.id ? dispute.againstUserId : dispute.raisedBy;
+    await notify(repository, [other, round.managerId], {
+      kind: 'dispute_replied',
+      title: 'The other side agreed with the decision',
+      body: dispute.reason.slice(0, 140),
+      link: `/dispute/${dispute.id}`,
+    });
+  }
+  return json(200, { dispute: saved, order: order ? await repository.getOrder(order.id) : null });
+}
+
+/**
+ * POST /api/disputes/{id}/release - the community manager releases the held
+ * payment as agreed: some or all to the buyer, the rest to the seller.
+ *
+ * The third agreement. Only the manager the release is with, only once the
+ * result is agreed, and only once. Figmark moves the money through the
+ * gateway; the manager never holds it.
+ */
+async function release(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await loadDispute(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const { dispute, order } = found;
+
+  if (!order || dispute.releaseDuty?.managerId !== user.id) {
+    return error(403, 'forbidden', 'Only the community manager this release is with can release it.');
+  }
+  if (!isManager(await repository.getUserById(user.id))) {
+    return error(403, 'not_a_manager', 'You are no longer a community manager, so this release is being handed on.');
+  }
+  if (!communityActionsFor(dispute, user.id).includes('release') || order.hold.state !== 'disputed') {
+    return error(409, 'not_releasable', dispute.release
+      ? 'This payment has already been released.'
+      : 'The result is not agreed yet, so the payment stays held.');
+  }
+
+  const toBuyer = dispute.resolution?.refundMinor ?? 0;
+  dispute.updatedAt = new Date().toISOString();
+  dispute.messages = [...dispute.messages, message(user.id, 'manager', 'Released the held payment as agreed.', [])];
+  const saved = await moveHeld(repository, dispute, order, toBuyer,
+    `Dispute settled: released by ${managerName((await repository.getUserById(user.id))!)} as agreed.`, user.id);
+  await notify(repository, [order.buyerId, order.sellerId], {
+    kind: 'payment_released',
+    title: 'The held payment was released as agreed',
+    body: order.itemName,
+    link: `/dispute/${dispute.id}`,
+  });
+  return json(200, { dispute, order: saved });
+}
+
 /* ── The community manager's workspace ───────────────────────────────────── */
 
 /** The person asking, if they are an appointed community manager. */
@@ -1078,7 +1148,8 @@ async function cases(request: HttpRequest, _context: InvocationContext) {
   const me = await asManager(request, repository);
   if (!me) return error(403, 'not_a_manager', 'Only community managers have a Community Service desk.');
 
-  const all = await Promise.all((await repository.listDisputesForManager(me.id)).map((entry) => bringUpToDate(repository, entry)));
+  const all = await Promise.all((await repository.listDisputesForManager(me.id))
+    .map(async (entry) => bringReleaseUpToDate(repository, await bringUpToDate(repository, entry))));
   const people = new Map((await repository.listUsersByIds([
     ...new Set(all.flatMap((dispute) => [dispute.raisedBy, dispute.againstUserId])),
   ])).map((person) => [person.id, person]));
@@ -1086,7 +1157,9 @@ async function cases(request: HttpRequest, _context: InvocationContext) {
   const rows = all.map((dispute) => {
     const round = currentRound(dispute);
     const mine = roundsOf(dispute).filter((entry) => entry.managerId === me.id);
-    const waiting = !isClosed(dispute) && round?.managerId === me.id && !round.decision;
+    const deciding = !isClosed(dispute) && round?.managerId === me.id && !round.decision;
+    const releasing = dispute.status === 'resolved' && !dispute.release && dispute.releaseDuty?.managerId === me.id;
+    const waiting = deciding || releasing;
     return {
       id: dispute.id,
       reason: dispute.reason,
@@ -1098,8 +1171,10 @@ async function cases(request: HttpRequest, _context: InvocationContext) {
       round: round?.n ?? 1,
       myRounds: mine.map((entry) => entry.n),
       waitingOnMe: waiting,
-      decideBy: waiting ? round!.decideBy : null,
-      overdue: waiting && decisionOverdue(round),
+      decideBy: deciding ? round!.decideBy : releasing ? dispute.releaseDuty!.dueBy : null,
+      overdue: deciding ? decisionOverdue(round) : releasing && releaseOverdue(dispute.releaseDuty),
+      /** Agreed by all, waiting for this manager to release the held payment. */
+      releaseDue: releasing,
       result: dispute.result ?? null,
       updatedAt: dispute.updatedAt,
     };
@@ -1220,22 +1295,24 @@ async function standing(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * Every hour, every open dispute is brought up to date: a manager two days
- * past their deadline loses the round to the next available one, and a
- * decision whose escalation window closed becomes final. Reads do the same,
- * so this only matters for disputes nobody opens.
+ * Every hour, every open dispute is brought up to date: a manager past their
+ * deadline is reported to the operators and, two days later, loses the round
+ * to the next available one; a decision both parties agreed with, or whose
+ * escalation window closed, becomes final; and a release left undone is
+ * reported, then reassigned, the same way. Reads do the same, so this only
+ * matters for disputes nobody opens.
  */
 async function clock(_timer: Timer, context: InvocationContext): Promise<void> {
   try {
     const repository = await getRepository();
     for (const status of ['awaiting_response', 'in_discussion', 'decided', 'under_mediation']) {
       for (const dispute of await repository.listDisputes(status)) {
-        await releaseIfFinal(repository, await bringUpToDate(repository, dispute));
+        await bringReleaseUpToDate(repository, await bringUpToDate(repository, dispute));
       }
     }
-    // Final results whose held money Figmark has not paid out yet.
+    // Agreed results whose held money nobody has released yet.
     for (const dispute of await repository.listDisputes('resolved')) {
-      if (dispute.result?.how === 'decided' && !dispute.release && holdsMoney(dispute)) await releaseIfFinal(repository, dispute);
+      if (!dispute.release && holdsMoney(dispute)) await bringReleaseUpToDate(repository, dispute);
     }
   } catch (err) {
     context.error('dispute clock failed', err);
@@ -1251,6 +1328,8 @@ export const acceptDisputeRoute = handler(accept);
 export const withdrawDisputeRoute = handler(withdraw);
 export const escalateDisputeRoute = handler(escalate);
 export const decideDisputeRoute = handler(decide);
+export const agreeDisputeRoute = handler(agree);
+export const releaseDisputeRoute = handler(release);
 export const communityCasesRoute = handler(cases);
 export const communityAvailabilityRoute = handler(availability);
 export const communityManagersRoute = handler(managers);
@@ -1270,6 +1349,8 @@ app.http('dispute-accept', { ...anon, methods: ['POST'], route: 'disputes/{id}/a
 app.http('dispute-withdraw', { ...anon, methods: ['POST'], route: 'disputes/{id}/withdraw', handler: withdrawDisputeRoute });
 app.http('dispute-escalate', { ...anon, methods: ['POST'], route: 'disputes/{id}/escalate', handler: escalateDisputeRoute });
 app.http('dispute-decide', { ...anon, methods: ['POST'], route: 'disputes/{id}/decide', handler: decideDisputeRoute });
+app.http('dispute-agree', { ...anon, methods: ['POST'], route: 'disputes/{id}/agree', handler: agreeDisputeRoute });
+app.http('dispute-release', { ...anon, methods: ['POST'], route: 'disputes/{id}/release', handler: releaseDisputeRoute });
 app.http('community-cases', { ...anon, methods: ['GET'], route: 'community/cases', handler: communityCasesRoute });
 app.http('community-availability', { ...anon, methods: ['POST'], route: 'community/availability', handler: communityAvailabilityRoute });
 app.http('community-managers', { ...anon, methods: ['GET'], route: 'community/managers', handler: communityManagersRoute });

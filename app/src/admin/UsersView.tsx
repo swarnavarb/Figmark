@@ -300,10 +300,11 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
  * Appointing a community manager.
  *
  * A community manager hears disputes - on purchases, reviews, comments,
- * posts and members. They never hold money: Figmark holds every payment
- * bought with buyer protection. Only the people appointed here see Services → My Job → Community Service.
- * Fees are not theirs: every fee is set centrally under Settings, and they
- * are paid a share of it after Figmark's commission.
+ * posts and members - and is assigned to purchases bought with buyer
+ * protection, releasing the held payment once a result is agreed. They never
+ * hold money: Figmark does. Only the people appointed here see Services → My
+ * Job → Community Service. Fees are not theirs: every fee is set centrally
+ * under Settings, and they are paid a share of it after Figmark's commission.
  */
 function ManagerPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
@@ -335,7 +336,7 @@ function ManagerPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =
         </p>
       ) : (
         <p className="faint">
-          Not a community manager. They cannot hear disputes.
+          Not a community manager. They cannot hear disputes or be assigned to protected purchases.
         </p>
       )}
 
@@ -361,9 +362,9 @@ function ManagerPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =
           onCancel={() => setConfirming(false)}
           onConfirm={() => void save(false)}
         >
-          <p>{user.displayName} will no longer be offered to hear new disputes, and loses the Community Service desk.</p>
+          <p>{user.displayName} will no longer be assigned new disputes or protected purchases, and loses the Community Service desk.</p>
           <p>
-            Reassign any dispute round they hold from the Disputes tab.
+            Rounds and releases they hold move to another manager on their own; you can also reassign them from the Disputes tab.
           </p>
         </Confirm>
       )}

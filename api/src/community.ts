@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
-  NEEDS_ADMIN, XP_PENALTY, inDays, autoReassignDue, currentRound, finalDue, isClosed, roundsOf, standingDecision,
+  NEEDS_ADMIN, XP_PENALTY, inDays, autoReassignDue, currentRound, decisionOverdue, finalDue, holdsMoney, isClosed,
+  releaseOverdue, releaseReassignDue, roundsOf, standingDecision,
 } from '../../shared/disputes.js';
 import type { ContentReport, ReportTarget } from '../../shared/moderation.js';
 import type {
@@ -12,6 +13,7 @@ import { loadReports, saveReports } from './moderation.js';
 import { marketSettings } from './settings.js';
 import { notify } from './functions/notify.js';
 import { AuthError } from './auth/errors.js';
+import { config } from './config.js';
 
 /** A refusal thrown from deep in a flow, answered like any other by the route's handler. */
 export class Refusal extends AuthError {}
@@ -20,11 +22,14 @@ export class Refusal extends AuthError {}
  * Community managers, and what their decisions do.
  *
  * A community manager is an account an operator has appointed (the stored
- * grant is `managerRights`). They never hold money - Figmark holds every
- * protected payment. They decide disputes round by round; this module holds what
- * every route needs around that - who may be assigned, the gateway the fees
- * go through, the clock that reassigns a slow manager and makes a decision
- * final, and the sanctions a final decision carries out.
+ * grant is `managerRights`). The system assigns one to every purchase bought
+ * with buyer protection; they decide disputes round by round and release the
+ * held payment once a result is agreed - but never hold money themselves:
+ * Figmark holds every protected payment. This module holds what every route
+ * needs around that - who may be assigned, the gateway the fees go through,
+ * the clock that tells the operators about a slow manager and then reassigns
+ * them, the clock that makes a decision final, and the sanctions a final
+ * decision carries out.
  *
  * The queues an operator works (sanctions awaiting approval, the fee ledger,
  * the warnings shown to everyone) are site-content documents, like content
@@ -92,11 +97,7 @@ export async function chargeFee(
   settings?: MarketSettings,
 ): Promise<FeePayment> {
   const rates = settings ?? await marketSettings(repository);
-  // With no manager doing the work - buyer protection, where Figmark holds
-  // the money - Figmark keeps the whole fee.
-  const { commissionMinor, managerShareMinor } = input.managerId
-    ? splitFee(input.amountMinor, rates.commissionBasisPoints)
-    : { commissionMinor: input.amountMinor, managerShareMinor: 0 };
+  const { commissionMinor, managerShareMinor } = splitFee(input.amountMinor, rates.commissionBasisPoints);
   const payment: FeePayment = {
     id: `fee_${randomUUID().slice(0, 12)}`,
     kind: input.kind,
@@ -299,6 +300,7 @@ export async function reassignRound(
   round.assignedAt = now;
   round.assignedBy = by;
   round.decideBy = inDays(settings.decisionDays);
+  round.adminNotifiedAt = null;
   dispute.managerIds = [...new Set([...(dispute.managerIds ?? []), to.id])];
   dispute.messages = [...dispute.messages, {
     id: `dmsg_${randomUUID().slice(0, 10)}`,
@@ -318,15 +320,29 @@ export async function reassignRound(
   return dispute;
 }
 
+/**
+ * Tells the operators something needs them: the accounts named in
+ * ADMIN_EMAILS, resolved to whoever signs in with those addresses.
+ */
+export async function notifyOperators(
+  repository: Repo,
+  draft: { title: string; body: string; link: string },
+): Promise<void> {
+  const operators = await Promise.all(config.adminEmails.map((email) => repository.getUserByIdentifier(email)));
+  const ids = operators.filter((user): user is User => Boolean(user)).map((user) => user.id);
+  if (ids.length > 0) await notify(repository, ids, { kind: 'dispute_overdue', ...draft });
+}
+
 /* ── The clock ───────────────────────────────────────────────────────────── */
 
 /**
  * Brings a dispute up to date with the clock before anybody reads or acts on it.
  *
- * Two things happen on their own. A manager two days past their deadline,
- * whom no operator has reassigned, loses the round to another available
- * manager. A decision whose escalation window has closed - or which no further
- * round could change - becomes final, and its consequences run.
+ * Three things happen on their own. A manager past their deadline is reported
+ * to the operators; two days later, if no operator has reassigned the round,
+ * it goes to another available manager. A decision both parties agreed with,
+ * whose escalation window has closed, or which no further round could change
+ * becomes final, and its consequences run.
  */
 export async function bringUpToDate(repository: Repo, dispute: Dispute, now = new Date()): Promise<Dispute> {
   if (isClosed(dispute)) return dispute;
@@ -357,6 +373,19 @@ export async function bringUpToDate(repository: Repo, dispute: Dispute, now = ne
       await reassignRound(repository, dispute, next, 'system');
       changed = true;
     }
+  }
+  // Past the deadline: the operators hear about it once, and have two days to
+  // reassign it themselves before the system does.
+  const late = currentRound(dispute);
+  if (late && decisionOverdue(late, now) && !late.adminNotifiedAt) {
+    late.adminNotifiedAt = now.toISOString();
+    dispute.updatedAt = now.toISOString();
+    await notifyOperators(repository, {
+      title: `${late.managerName} has not decided a dispute in time`,
+      body: `Round ${late.n} was due ${late.decideBy.slice(0, 10)}. Reassign it, or it moves to another manager in two days.`,
+      link: `/dispute/${dispute.id}`,
+    });
+    changed = true;
   }
 
   try {
@@ -394,8 +423,8 @@ export async function orderOf(repository: Repo, dispute: Dispute): Promise<Order
  *
  * Counts the result on both records, carries out the standing decision's
  * sanctions (the two that need an operator are queued for one instead), and
- * tells everybody. Held money does not move here: Figmark pays it out as
- * decided, as its own step (see the dispute routes' `releaseIfFinal`).
+ * tells everybody. Held money does not move here: the manager whose decision
+ * stands is given the release, and releases it as decided.
  */
 export async function finalizeDecided(repository: Repo, dispute: Dispute): Promise<Dispute> {
   const standing = standingDecision(dispute);
@@ -450,6 +479,121 @@ export async function finalizeDecided(repository: Repo, dispute: Dispute): Promi
     link: `/dispute/${dispute.id}`,
   });
   return saved;
+}
+
+/* ── Releasing held money ─────────────────────────────────────────────────── */
+
+/**
+ * Who releases a resolved dispute's held money: the manager whose decision
+ * stands, or - for a settlement the parties agreed - the manager on the round
+ * it was agreed in. Their release is the third agreement.
+ */
+function releaserOf(dispute: Dispute): string | null {
+  if (dispute.result?.how === 'decided') {
+    return roundsOf(dispute).find((round) => round.n === dispute.result!.finalRound)?.managerId ?? null;
+  }
+  return currentRound(dispute)?.managerId ?? null;
+}
+
+/** Hands the release to a manager, with the decision deadline to do it in. */
+async function assignRelease(
+  repository: Repo,
+  dispute: Dispute,
+  to: User,
+  by: 'admin' | 'system' | null,
+  now = new Date(),
+): Promise<void> {
+  const settings = await marketSettings(repository);
+  const previous = dispute.releaseDuty ?? null;
+  dispute.releaseDuty = {
+    managerId: to.id,
+    managerName: managerName(to),
+    assignedAt: now.toISOString(),
+    dueBy: inDays(settings.decisionDays, now),
+    adminNotifiedAt: null,
+    reassigned: previous && by
+      ? [...(previous.reassigned ?? []), { fromId: previous.managerId, fromName: previous.managerName, at: now.toISOString(), by }]
+      : previous?.reassigned ?? [],
+  };
+  dispute.managerIds = [...new Set([...(dispute.managerIds ?? []), to.id])];
+  if (previous && by) {
+    dispute.messages = [...dispute.messages, {
+      id: `dmsg_${randomUUID().slice(0, 10)}`,
+      authorId: by === 'admin' ? 'figmark' : 'system',
+      authorRole: 'company',
+      body: `Releasing the payment was handed to ${managerName(to)}${by === 'system' ? ' automatically, as the previous manager did not release it in time' : ' by Figmark'}.`,
+      evidence: [],
+      createdAt: now.toISOString(),
+    }];
+  }
+  dispute.updatedAt = now.toISOString();
+  await notify(repository, [to.id], {
+    kind: 'dispute_assigned',
+    title: 'The result is agreed - release the held payment',
+    body: dispute.reason.slice(0, 140),
+    link: `/dispute/${dispute.id}`,
+  });
+}
+
+/** An operator hands a pending release to another manager. */
+export async function reassignRelease(repository: Repo, dispute: Dispute, to: User): Promise<Dispute> {
+  await assignRelease(repository, dispute, to, 'admin');
+  return commit(repository, dispute);
+}
+
+/**
+ * Brings the release of a resolved dispute's held money up to date.
+ *
+ * Once a result is agreed - both parties and the manager's decision, or a
+ * settlement the parties made - the money is released by a community
+ * manager, never on its own. The responsible manager is given the release
+ * with the decision deadline; missed, the operators are told; two days later
+ * it moves to another active manager.
+ */
+export async function bringReleaseUpToDate(repository: Repo, dispute: Dispute, now = new Date()): Promise<Dispute> {
+  if (dispute.status !== 'resolved' || dispute.release || !holdsMoney(dispute)) return dispute;
+  const order = await orderOf(repository, dispute);
+  if (!order || order.hold.state !== 'disputed' || order.hold.disputeId !== dispute.id) return dispute;
+  const parties = [dispute.raisedBy, dispute.againstUserId];
+  let changed = false;
+
+  const duty = dispute.releaseDuty ?? null;
+  if (!duty) {
+    const responsible = releaserOf(dispute);
+    const holder = responsible ? await repository.getUserById(responsible) : null;
+    const manager = isManager(holder) ? holder : await pickManager(repository, parties);
+    if (!manager) return dispute;
+    await assignRelease(repository, dispute, manager, null, now);
+    changed = true;
+  } else {
+    const gone = !isManager(await repository.getUserById(duty.managerId));
+    if (gone || releaseReassignDue(duty, now)) {
+      const next = await pickManager(repository, [...parties, duty.managerId]);
+      if (next) {
+        await assignRelease(repository, dispute, next, 'system', now);
+        changed = true;
+      }
+    }
+    const current = dispute.releaseDuty!;
+    if (releaseOverdue(current, now) && !current.adminNotifiedAt) {
+      current.adminNotifiedAt = now.toISOString();
+      dispute.updatedAt = now.toISOString();
+      await notifyOperators(repository, {
+        title: `${current.managerName} has not released a held payment in time`,
+        body: `It was due ${current.dueBy.slice(0, 10)}. Reassign it, or it moves to another manager in two days.`,
+        link: `/dispute/${dispute.id}`,
+      });
+      changed = true;
+    }
+  }
+
+  if (!changed) return dispute;
+  try {
+    return await commit(repository, dispute);
+  } catch (error) {
+    if (error instanceof Busy) return (await repository.getDisputeById(dispute.id)) ?? dispute;
+    throw error;
+  }
 }
 
 /** The settlement both parties agreed: nobody won, nobody lost, and both records say so. */

@@ -579,6 +579,8 @@ export interface Checkout {
   sellerPayment: SellerPaymentDetails | null;
   /** Buyer Protection: Figmark holds the payment until the buyer has the item, for this fee. */
   protectionFeeMinor: number;
+  /** False when no community manager can be assigned to it right now. */
+  protectionAvailable: boolean;
 }
 
 /** One order waiting on the seller to say whether the money arrived. */
@@ -750,7 +752,7 @@ export interface MyDisputesResponse {
   community: DisputeRow[];
   orders: {
     id: string; itemName: string; side: 'buyer' | 'seller'; counterpartyName: string; counterpartyId: string;
-    /** Bought with protection and Figmark is still holding the payment: raising is free. */
+    /** Bought with protection and Figmark is still holding the payment: raising is free, and its manager hears it. */
     protectedNow: boolean;
     createdAt: string;
   }[];
@@ -796,6 +798,8 @@ export interface CommunityCase {
   decideBy: string | null;
   overdue: boolean;
   result: Dispute['result'] | null;
+  /** Agreed by all, waiting for this manager to release the held payment. */
+  releaseDue: boolean;
   updatedAt: string;
 }
 
@@ -2450,6 +2454,10 @@ export const api = {
     post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/withdraw`),
   disputeEscalate: (id: string) =>
     post<{ dispute: Dispute; payment: FeePayment }>(`/disputes/${encodeURIComponent(id)}/escalate`),
+  disputeAgree: (id: string) =>
+    post<{ dispute: Dispute; order: Order | null }>(`/disputes/${encodeURIComponent(id)}/agree`),
+  disputeRelease: (id: string) =>
+    post<{ dispute: Dispute; order: Order }>(`/disputes/${encodeURIComponent(id)}/release`),
   disputeDecide: (id: string, body: { favour: 'raiser' | 'respondent'; reasoning: string; refundMinor?: number | null; sanctions: DisputeSanction[] }) =>
     post<{ dispute: Dispute; order: Order | null }>(`/disputes/${encodeURIComponent(id)}/decide`, body),
   /** Raise a dispute about a review, comment, post or person - paid through the gateway. */

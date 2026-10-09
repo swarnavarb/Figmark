@@ -197,20 +197,26 @@ function Outcome({ view }: { view: DisputeView }) {
   if (!result) return null;
   const name = (userId: string | null) =>
     userId === parties.raiser.id ? parties.raiser.name : userId === parties.respondent.id ? parties.respondent.name : 'Nobody';
+  const duty = dispute.releaseDuty;
+  const pendingRelease = duty
+    ? `All three have agreed. Figmark holds the payment until ${duty.managerName} releases it as agreed, by ${formatDateOrdinal(duty.dueBy)}.`
+    : 'All three have agreed. A community manager is being assigned to release the held payment.';
   return (
     <div className={`notice ${result.how === 'decided' ? 'notice--info' : ''}`} style={{ marginBottom: 16 }}>
       {result.how === 'decided' && (
         <>
           <b>Final: {name(result.winnerId)} won.</b> Round {result.finalRound}'s decision stands
-          {dispute.release
-            ? `. The held payment was released: ${formatMoney(dispute.release.toBuyerMinor, view.currency)} to the buyer, ${formatMoney(dispute.release.toSellerMinor, view.currency)} to the seller.`
-            : view.holdsMoney
-              ? '. Figmark is releasing the held payment as decided.'
-              : '.'}
+          {dispute.release ? '.' : view.holdsMoney ? `. ${pendingRelease}` : '.'}
         </>
       )}
       {result.how === 'settled' && (
-        <><b>Settled between the two of them.</b> Nobody won or lost.{result.terms ? ` Terms: ${result.terms}` : ''}</>
+        <>
+          <b>Settled between the two of them.</b> Nobody won or lost.{result.terms ? ` Terms: ${result.terms}` : ''}
+          {!dispute.release && view.holdsMoney && ` ${pendingRelease}`}
+        </>
+      )}
+      {dispute.release && (
+        <> The held payment was released: {formatMoney(dispute.release.toBuyerMinor, view.currency)} to the buyer, {formatMoney(dispute.release.toSellerMinor, view.currency)} to the seller.</>
       )}
       {result.how === 'withdrawn' && (
         <><b>Withdrawn</b> by {parties.raiser.name}. It counts for nobody{view.holdsMoney ? ', and the payment is held again as before' : ''}.</>
@@ -235,7 +241,7 @@ function Rounds({ rounds, currency, nameOf, parties }: {
             <b>Round {round.n}</b>
             <span className="faint">
               {round.managerName}<ManagerMark id={round.managerId} />
-              {round.assignedBy === 'raiser' ? ' · chosen' : ' · assigned by availability'}
+              {round.assignedBy === 'raiser' ? ' · chosen' : round.assignedBy === 'protection' ? ' · assigned to the purchase' : ' · assigned by availability'}
             </span>
           </div>
           <span className="faint">
@@ -335,7 +341,8 @@ function Progress({ view }: { view: DisputeView }) {
 }
 
 /**
- * Write, settle, withdraw, escalate - and, for the manager, decide.
+ * Write, settle, agree, withdraw, escalate - and, for the manager, decide and,
+ * once all three agree, release the held payment.
  */
 function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Promise<void> }) {
   const { dispute, actions } = view;
@@ -396,6 +403,36 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
       )}
 
       <div className="row" style={{ flexWrap: 'wrap' }}>
+        {actions.includes('agree') && (
+          <button className="btn" disabled={busy !== null}
+            onClick={() => void (async () => {
+              const sure = await confirm({
+                title: 'Agree with this decision?',
+                body: view.holdsMoney
+                  ? 'When both of you agree, it is final and the community manager releases the held payment as decided. You will not be able to escalate it.'
+                  : 'When both of you agree, it is final. You will not be able to escalate it.',
+                action: 'Agree',
+              });
+              if (sure) await run('agree', () => api.disputeAgree(dispute.id));
+            })()}>
+            {busy === 'agree' ? 'Agreeing…' : 'Agree with the decision'}
+          </button>
+        )}
+        {actions.includes('release') && (
+          <button className="btn" disabled={busy !== null}
+            onClick={() => void (async () => {
+              const toBuyer = dispute.resolution?.refundMinor ?? 0;
+              const held = view.heldMinor ?? 0;
+              const sure = await confirm({
+                title: 'Release the held payment?',
+                body: `As agreed: ${formatMoney(toBuyer, view.currency)} to the buyer and ${formatMoney(Math.max(0, held - toBuyer), view.currency)} to the seller. Figmark pays it out through the payment gateway.`,
+                action: 'Release it',
+              });
+              if (sure) await run('release', () => api.disputeRelease(dispute.id));
+            })()}>
+            {busy === 'release' ? 'Releasing…' : 'Release the held payment as agreed'}
+          </button>
+        )}
         {actions.includes('propose_settlement') && !offering && (
           <button className="btn btn--ghost" onClick={() => setOffering(true)}>Propose a settlement</button>
         )}
@@ -421,7 +458,7 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
       </div>
       {actions.includes('escalate') && view.escalation.by && (
         <p className="faint" style={{ margin: 0 }}>
-          You can escalate until {formatDateOrdinal(view.escalation.by)}. After that, this decision is final.
+          You can escalate until {formatDateOrdinal(view.escalation.by)}. If you neither agree nor escalate by then, the community manager's decision is final.
         </p>
       )}
 

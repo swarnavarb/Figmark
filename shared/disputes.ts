@@ -5,7 +5,7 @@ import {
   type DisputeReason,
 } from './enums.js';
 import type {
-  Dispute, DisputeDecision, DisputeRound, DisputeSanctionKind, DisputeSubjectType, DisputeTopic, Order,
+  Dispute, DisputeDecision, DisputeRound, ReleaseDuty, DisputeSanctionKind, DisputeSubjectType, DisputeTopic, Order,
 } from './models.js';
 import { ACTION_XP } from './quest.js';
 import { sideOf, type OrderSide } from './orders.js';
@@ -273,13 +273,18 @@ export function escalationOpen(
 }
 
 /**
- * Whether a decided dispute is now final: no further round can be had, or the
- * window to ask for one has closed. Read from the clock, the way auto-release
- * is, so no scheduler has to remember to do it.
+ * Whether a decided dispute is now final: both parties agreed with the
+ * decision, no further round can be had, or the window to ask for one has
+ * closed - a party who never answered is taken to agree with the manager.
+ * Read from the clock, the way auto-release is, so no scheduler has to
+ * remember to do it.
  */
-export function finalDue(dispute: Pick<Dispute, 'status' | 'rounds' | 'escalateBy'>, now = new Date()): boolean {
+export function finalDue(
+  dispute: Pick<Dispute, 'status' | 'rounds' | 'escalateBy' | 'raisedBy' | 'againstUserId'> & Partial<Pick<Dispute, 'agreements'>>,
+  now = new Date(),
+): boolean {
   if (dispute.status !== 'decided') return false;
-  return !escalationOpen(dispute, now);
+  return bothAgreed(dispute) || !escalationOpen(dispute, now);
 }
 
 /** A manager past their deadline, waiting on an operator to reassign. */
@@ -293,18 +298,42 @@ export function autoReassignDue(round: Pick<DisputeRound, 'decideBy' | 'decision
     && new Date(round.decideBy).getTime() + REASSIGN_GRACE_DAYS * DAY_MS <= now.getTime());
 }
 
-export type CommunityAction = 'reply' | 'propose_settlement' | 'accept_settlement' | 'withdraw' | 'escalate' | 'decide';
+/** The release is past due: the operators are told. */
+export function releaseOverdue(duty: Pick<ReleaseDuty, 'dueBy'> | null | undefined, now = new Date()): boolean {
+  return Boolean(duty && new Date(duty.dueBy).getTime() <= now.getTime());
+}
+
+/** Two days past the release deadline with no operator acting: another manager takes it. */
+export function releaseReassignDue(duty: Pick<ReleaseDuty, 'dueBy'> | null | undefined, now = new Date()): boolean {
+  return Boolean(duty && new Date(duty.dueBy).getTime() + REASSIGN_GRACE_DAYS * DAY_MS <= now.getTime());
+}
+
+/** Whether this party has agreed with the decision now on the table. */
+export function hasAgreed(dispute: Pick<Dispute, 'rounds' | 'agreements'>, userId: string): boolean {
+  const round = currentRound(dispute);
+  if (!round?.decision) return false;
+  return (dispute.agreements ?? []).some((entry) => entry.userId === userId && entry.round === round.n);
+}
+
+/** Both parties agreed with the current decision: nobody is left to escalate it. */
+export function bothAgreed(dispute: Pick<Dispute, 'rounds' | 'agreements' | 'raisedBy' | 'againstUserId'>): boolean {
+  return partiesOf(dispute).every((party) => hasAgreed(dispute, party));
+}
+
+export type CommunityAction =
+  | 'reply' | 'propose_settlement' | 'accept_settlement' | 'withdraw' | 'escalate' | 'decide' | 'agree' | 'release';
 
 /**
  * What this person may do now, on the dispute page.
  *
- * The parties talk, settle and escalate; the manager on the current round
- * talks and decides. Held money is Figmark's to release, so nobody here
- * releases it.
+ * The parties talk, settle, agree with a decision or escalate it; the manager
+ * on the current round talks and decides. Once the result is agreed, the
+ * manager responsible releases the held money - Figmark holds it, the
+ * manager says where it goes.
  */
 export function communityActionsFor(
   dispute: Pick<Dispute, 'status' | 'raisedBy' | 'againstUserId' | 'offer' | 'rounds' | 'escalateBy' | 'topic'>
-    & Partial<Pick<Dispute, 'respondByAt'>>,
+    & Partial<Pick<Dispute, 'respondByAt' | 'agreements' | 'releaseDuty' | 'release'>>,
   viewerId: string,
   now = new Date(),
 ): CommunityAction[] {
@@ -313,7 +342,12 @@ export function communityActionsFor(
   const party = isParty(dispute, viewerId);
   const managing = round?.managerId === viewerId;
 
-  if (isClosed(dispute)) return actions;
+  if (isClosed(dispute)) {
+    if (dispute.status === 'resolved' && dispute.releaseDuty?.managerId === viewerId && !dispute.release) {
+      actions.push('release');
+    }
+    return actions;
+  }
 
   if (party || managing) actions.push('reply');
   if (party) {
@@ -322,6 +356,7 @@ export function communityActionsFor(
     // Withdrawing is for before anyone has decided anything: afterwards it
     // would be a way out of a decision that went against you.
     if (dispute.raisedBy === viewerId && decisionsOf(dispute).length === 0) actions.push('withdraw');
+    if (dispute.status === 'decided' && !hasAgreed(dispute, viewerId)) actions.push('agree');
     if (escalationOpen(dispute, now) && losingPartyOfLatest(dispute) === viewerId) actions.push('escalate');
   }
   // Round one waits for the other side to answer, or for their days to run out.

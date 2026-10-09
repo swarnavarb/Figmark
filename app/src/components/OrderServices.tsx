@@ -348,7 +348,7 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
           </div>
           {method === 'protected' ? (
             <>
-              <p className="faint">Figmark holds the money until you mark the finished piece received. {formatMoney(fee)} protection fee.</p>
+              <p className="faint">Figmark holds the money until you mark the finished piece received, and a community manager is assigned to it. {formatMoney(fee)} protection fee.</p>
               <div className="os-total"><span>Total</span><b>{formatMoney(job.quoteMinor + fee)}</b></div>
             </>
           ) : commission.artistPayment && (
@@ -372,7 +372,7 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
         <p className="notice notice--info">You said you sent {formatMoney(jobDueMinor(job))}. Waiting for the artist to confirm it arrived.</p>
       )}
       {job.method === 'protected' && job.heldMinor > 0 && !job.releasedAt && (
-        <p className="notice notice--info">🔒 Figmark is holding {formatMoney(job.heldMinor)} until you mark it received.</p>
+        <p className="notice notice--info">🔒 Figmark is holding {formatMoney(job.heldMinor)} until you mark it received{job.managerName ? ` · ${job.managerName} is the community manager on it` : ''}.</p>
       )}
 
       {buyer && (

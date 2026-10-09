@@ -126,9 +126,15 @@ carrier API pull yet.
   stops retaliatory rating.
 - **`PaymentHold`** (`order.hold`) is embedded in the order rather than stored
   separately: it has the same lifetime and is always read with it. Figmark
-  itself holds every payment bought with Buyer Protection - no third party
-  does. `autoReleaseAt` is the deadline for release when the buyer neither
-  confirms nor disputes.
+  itself holds every payment bought with Buyer Protection. `autoReleaseAt` is
+  the deadline for release when the buyer neither confirms nor disputes.
+- **`OrderProtection.managerId`** is the community manager the system assigns
+  at checkout. They are paid a share of the protection fee (Figmark keeps its
+  commission), hear any dispute on the purchase, and - once the buyer, the
+  seller and the decision agree (`Dispute.agreements`, or a settlement) -
+  release the held money as `Dispute.releaseDuty` says. A missed deadline,
+  to decide or to release, notifies the operators; two days later it moves to
+  another active manager.
 
 ## Conventions
 

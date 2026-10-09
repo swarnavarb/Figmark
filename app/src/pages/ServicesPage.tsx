@@ -424,7 +424,7 @@ export function MyServicesPage() {
                 <span className="svc__glyph"><Icon name="users" size={22} /></span>
                 <span className="svc__body">
                   <span className="svc__name">Community Service</span>
-                  <span className="faint">Disputes waiting on your decision, and what you have earned.</span>
+                  <span className="faint">Disputes waiting on your decision, held payments to release, and what you have earned.</span>
                 </span>
               </Link>
             </>

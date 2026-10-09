@@ -470,9 +470,10 @@ export interface SellerPaymentDetails {
  * row; the id is what any permission check actually uses.
  */
 /**
- * An operator's appointment of this person as a community manager: someone
- * who decides disputes. Managers never hold money - every protected payment
- * is held by Figmark itself.
+ * An operator's appointment of this person as a community manager. Managers
+ * are assigned to purchases bought with buyer protection, decide disputes,
+ * and release held payments once a result is agreed - but never hold money
+ * themselves: every protected payment is held by Figmark.
  *
  * Held rather than derived, because it is a decision about a named person and
  * the marketplace has to be able to point at when it made it.
@@ -1557,6 +1558,9 @@ export interface ArtistJob {
   quoteNote: string;
   turnaroundDays: number | null;
   method: PaymentMethod | null;
+  /** The community manager assigned to its protection; null when paid direct. */
+  managerId?: string | null;
+  managerName?: string | null;
   protectionFeeMinor: number;
   payments: ArtistJobPayment[];
   /** Held by Figmark, released when the buyer marks it complete. */
@@ -1700,8 +1704,16 @@ export interface PaymentClaim {
   excessMinor?: number;
 }
 
-/** Buyer protection, as bought: Figmark holds the payment, on these terms. */
+/**
+ * Buyer protection, as bought. Figmark holds the payment; the community
+ * manager assigned here hears any dispute over it and releases it once the
+ * result is agreed. They are paid a share of the fee, and never hold money.
+ */
 export interface OrderProtection {
+  /** The community manager assigned to this purchase. */
+  managerId: string;
+  /** Their name as it was at purchase, so a later rename cannot rewrite it. */
+  managerName: string;
   /** The fee paid, on top of the item total - a flat amount set by Figmark. */
   feeMinor: number;
   /** Only on orders protected while the fee was a percentage of the total. */
@@ -1897,7 +1909,16 @@ export interface Dispute extends BaseDocument {
   escalateBy?: string | null;
   /** How it ended, once it has. */
   result?: DisputeResult | null;
-  /** Held money Figmark paid out on the final decision. */
+  /**
+   * The parties' agreement with the result on the table: the current
+   * round's decision, or the settlement. Held money is released only when
+   * both parties and the manager agree; a party who does not answer before
+   * the window closes is taken to agree with the manager.
+   */
+  agreements?: DisputeAgreement[];
+  /** Who must release the held money once the result is agreed, and by when. */
+  releaseDuty?: ReleaseDuty | null;
+  /** Held money released by the community manager after the result was agreed. */
   release?: DisputeRelease | null;
   /** Bumped on every write, so two people acting at once cannot both win. */
   version?: number;
@@ -1922,7 +1943,7 @@ export interface DisputeSubjectRef {
   link: string | null;
 }
 
-/** A fee paid through the gateway, split between Figmark and the manager doing the work (Figmark keeps all of a protection fee). */
+/** A fee paid through the gateway, split between Figmark and the manager doing the work. */
 export interface FeePayment {
   id: string;
   kind: 'dispute' | 'escalation' | 'protection';
@@ -1980,7 +2001,7 @@ export interface DisputeRound {
   managerName: string;
   assignedAt: string;
   /** How the manager came to have it. */
-  assignedBy: 'raiser' | 'system' | 'admin';
+  assignedBy: 'raiser' | 'protection' | 'system' | 'admin';
   /** When their decision is due. Past it, an operator is asked; two days later the system reassigns. */
   decideBy: string;
   /** Who paid for this round: the raiser, the escalating party, or nobody on a protected purchase's first round. */
@@ -1988,6 +2009,8 @@ export interface DisputeRound {
   /** Who escalated into this round; null for round one. */
   escalatedBy: string | null;
   decision: DisputeDecision | null;
+  /** When the operators were told this round's manager missed their deadline. */
+  adminNotifiedAt?: string | null;
   /** Managers this round was taken from because they did not decide in time. */
   reassigned?: { fromId: string; fromName: string; at: string; by: 'admin' | 'system' }[];
 }
@@ -2003,6 +2026,27 @@ export interface DisputeResult {
   /** The terms, for a settlement. */
   terms: string | null;
   at: string;
+}
+
+/** A party agreeing with a decision (by round) or with the settlement (round null). */
+export interface DisputeAgreement {
+  userId: string;
+  round: number | null;
+  at: string;
+}
+
+/**
+ * The community manager's last step on held money: releasing it as agreed.
+ * Missed, the operators are told at `dueBy`; two days later it moves to
+ * another active manager - the same clock a round's decision runs on.
+ */
+export interface ReleaseDuty {
+  managerId: string;
+  managerName: string;
+  assignedAt: string;
+  dueBy: string;
+  adminNotifiedAt: string | null;
+  reassigned?: { fromId: string; fromName: string; at: string; by: 'admin' | 'system' }[];
 }
 
 export interface DisputeRelease {
@@ -2413,6 +2457,8 @@ export type NotificationKind =
   | 'dispute_decided'
   | 'dispute_escalated'
   | 'dispute_assigned'
+  /** A community manager missed a deadline: told to the operators. */
+  | 'dispute_overdue'
   | 'dispute_action'
   | 'lot_moved'
   /** One item reached its buyer - the step after a lot is unpacked. */

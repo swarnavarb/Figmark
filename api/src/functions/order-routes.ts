@@ -26,7 +26,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays, marketSettings } from '../settings.js';
-import { bringUpToDate, chargeFee } from '../community.js';
+import { availableManagers, bringUpToDate, chargeFee, managerName, pickManager } from '../community.js';
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
@@ -140,8 +140,10 @@ const settle = (order: Order, repository: Repo): Promise<Order> => settleDue(ord
  * POST /api/orders/{id}/pay - the buyer pays, with or without protection.
  *
  * Protection is what makes Figmark hold the money. Bought, Figmark holds the
- * payment and a dispute over it is settled before it moves; declined, it goes
- * to the seller and the buyer is on their own with them. That is a real choice
+ * payment and the system assigns a community manager to the purchase: they
+ * hear any dispute over it, release the money once the result is agreed, and
+ * are paid a share of the fee. Declined, the money goes to the seller and the
+ * buyer is on their own with them. That is a real choice
  * with a real cost either way, so the checkout states both halves rather than
  * defaulting the buyer into one quietly.
  */
@@ -168,6 +170,12 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   }
 
   const protect = body.protection === true;
+  // Whoever is available, carrying the fewest cases - never either end of
+  // the trade, who cannot be neutral in it.
+  const manager = protect ? await pickManager(repository, [order.buyerId, order.sellerId]) : null;
+  if (protect && !manager) {
+    return error(409, 'protection_unavailable', 'No community manager is available for Buyer Protection right now. Try again soon, or buy directly.');
+  }
 
   const terms = planAmount(order, body.plan);
   if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
@@ -192,16 +200,19 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   order.paymentPlan = terms.plan;
   order.paymentMethod = protect ? 'protected' : 'direct';
 
-  if (protect) {
+  if (manager) {
     // Set centrally by the operators, and paid through the gateway like every
-    // other fee. Figmark holds the money, so Figmark keeps the fee.
+    // other fee: Figmark keeps its commission, the assigned manager the rest.
     const settings = await marketSettings(repository);
     const feeMinor = protectionFeeMinor(totalMinor, settings.protectionFeeMinor);
     const fee = await chargeFee(repository, {
       kind: 'protection', payerId: user.id, amountMinor: feeMinor, currency: order.currency,
-      reference: order.id, managerId: null,
+      reference: order.id, managerId: manager.id,
     }, settings);
     order.protection = {
+      managerId: manager.id,
+      // Their name as it was today: a later rename must not rewrite the terms.
+      managerName: managerName(manager),
       // The fee is copied onto the order, not looked up later: it is a term of
       // this transaction and must not move when the setting changes.
       feeMinor,
@@ -220,7 +231,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       // pay the seller for a box still with their supplier.
       autoReleaseAt: null,
     };
-    note(order, 'Paid with Buyer Protection. Figmark is holding it.', user.id);
+    note(order, `Paid with Buyer Protection. Figmark is holding it; ${order.protection.managerName} is the community manager on it.`, user.id);
   } else {
     order.protection = null;
     order.hold = { ...order.hold, state: 'none', heldAt: null, autoReleaseAt: null };
@@ -276,6 +287,8 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     sellerPayment: payment && hasAnyDetail(payment) ? payment : null,
     /** Buyer Protection: Figmark holds the payment until the buyer has the item. */
     protectionFeeMinor: protectionFeeMinor(totalMinor, protectionFlat),
+    /** False when no community manager could be assigned - neither party, and available. */
+    protectionAvailable: (await availableManagers(repository, [order.buyerId, order.sellerId])).length > 0,
   });
 }
 
@@ -1477,7 +1490,7 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
 
   // While buyer protection still holds the money, every complaint about the
   // purchase goes through the protection claim: it is free, it freezes the
-  // payment Figmark holds, and an available manager hears it. A paid "general" dispute
+  // payment Figmark holds, and the manager assigned to it hears it. A paid "general" dispute
   // here would leave the money on its auto-release clock and block the
   // buyer's own claim.
   if (order.protection && order.hold.state === 'held') {

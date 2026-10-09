@@ -57,8 +57,8 @@ import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcas
  * then behaves as though every password were wrong. Set COSMOS_AUTOSEED=off for
  * a database that is meant to start empty.
  */
-/** Site-content id of the marker left once rows are in the Figmark-held payment shape. */
-const PAYMENT_HOLDS_MARKER = 'migration:figmark-held-payments';
+/** Site-content id of the marker left once rows are in the current buyer-protection shape. */
+const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
 
 function autoSeedEnabled(): boolean {
   return (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase() !== 'off';
@@ -301,30 +301,28 @@ export class CosmosRepository implements Repository {
   }
 
   /**
-   * Rewrites rows stored before Figmark held every protected payment itself.
+   * Rewrites rows stored in an older shape of buyer protection.
    *
-   * Then a buyer picked a third party to hold their money, and rows carried
-   * that party: the user's grant under its old name, the order's hold under
-   * its old name with the holder's id and name on its protection, and a
-   * dispute topic and round source naming them. Each is renamed or dropped
-   * here, once: a marker records that the pass finished, and a row already in
-   * the new shape is never rewritten.
+   * Once a member the buyer picked held the payment, and rows named them as
+   * its holder: the user's grant, the order's hold and the dispute topic all
+   * carried the old name. Now Figmark holds every payment and a community
+   * manager is assigned to the purchase, so the grant and hold are renamed,
+   * the topic moved, and the holder becomes the assigned manager.
+   *
+   * An earlier release of this pass dropped the holder instead of keeping
+   * them. Those orders get their manager back from the fee ledger - the
+   * protection fee was recorded with the manager it paid - or, failing that,
+   * the longest-serving manager who is neither party.
+   *
+   * Once: a marker records that the pass finished, and a row already in the
+   * new shape is never rewritten.
    */
   private async migratePaymentHolds(): Promise<string> {
     if (await this.getSiteContent(PAYMENT_HOLDS_MARKER)) return '';
 
     const LEGACY_HOLD = 'escrow';
     const LEGACY_GRANT = 'escrowRights';
-    const LEGACY_HOLDER = ['escrowAgentId', 'escrowName'];
     type Row = Record<string, unknown> & { id: string };
-    /** Drops the old holder's id and name from a record; true if it had them. */
-    const strip = (record: unknown): boolean => {
-      if (!record || typeof record !== 'object') return false;
-      const fields = record as Record<string, unknown>;
-      const had = LEGACY_HOLDER.some((key) => key in fields);
-      for (const key of LEGACY_HOLDER) delete fields[key];
-      return had;
-    };
     let moved = 0;
 
     const { resources: users } = await this.container('users').items.query<Row>({
@@ -340,19 +338,53 @@ export class CosmosRepository implements Repository {
       moved += 1;
     }
 
+    // Who each protection fee paid, by order: the record of the manager an
+    // order was protected with, if the order itself lost it.
+    const ledger = await this.getSiteContent('fee-ledger');
+    const paidTo = new Map<string, string>();
+    for (const entry of ((ledger?.data as { entries?: { kind?: string; reference?: string; managerId?: string | null }[] } | undefined)?.entries ?? [])) {
+      if (entry.kind === 'protection' && entry.reference && entry.managerId) paidTo.set(entry.reference, entry.managerId);
+    }
+    const managers = (await this.listManagers())
+      .filter((user) => user.managerRights && !user.suspended)
+      .sort((a, b) => (a.managerRights?.grantedAt ?? '').localeCompare(b.managerRights?.grantedAt ?? ''));
+    const named = new Map(managers.map((user) => [user.id, user]));
+    /** Gives a protection record its manager: the holder it named, the ledger's, or a neutral one. */
+    const assign = async (record: Record<string, unknown>, orderId: string, parties: string[]): Promise<boolean> => {
+      const legacyId = record.escrowAgentId as string | undefined;
+      const legacyName = record.escrowName as string | undefined;
+      const had = 'escrowAgentId' in record || 'escrowName' in record;
+      delete record.escrowAgentId;
+      delete record.escrowName;
+      if (record.managerId) return had;
+      const id = legacyId ?? paidTo.get(orderId) ?? managers.find((user) => !parties.includes(user.id))?.id;
+      if (!id) return had;
+      const user = named.get(id) ?? await this.getUserById(id);
+      record.managerId = id;
+      record.managerName = legacyName ?? user?.displayName ?? 'Community manager';
+      return true;
+    };
+
     const { resources: orders } = await this.container('orders').items.query<Row>({
-      query: 'SELECT * FROM c WHERE IS_DEFINED(c.escrow) OR IS_DEFINED(c.protection.escrowAgentId)'
-        + " OR IS_DEFINED(c.artistJob.escrowAgentId) OR ARRAY_CONTAINS(c.disputeLinks, { topic: 'escrow' }, true)",
+      query: 'SELECT * FROM c WHERE IS_DEFINED(c.escrow) OR (IS_DEFINED(c.protection) AND c.protection != null AND NOT IS_DEFINED(c.protection.managerId))'
+        + " OR (c.artistJob.method = 'protected' AND NOT IS_DEFINED(c.artistJob.managerId))"
+        + " OR ARRAY_CONTAINS(c.disputeLinks, { topic: 'escrow' }, true)",
     }).fetchAll();
     for (const order of orders) {
       let changed = false;
+      const parties = [order.buyerId as string, order.sellerId as string];
       if (LEGACY_HOLD in order) {
         order.hold = order.hold ?? order[LEGACY_HOLD];
         delete order[LEGACY_HOLD];
         changed = true;
       }
-      if (strip(order.protection)) changed = true;
-      if (strip(order.artistJob)) changed = true;
+      if (order.protection && typeof order.protection === 'object') {
+        if (await assign(order.protection as Record<string, unknown>, order.id, parties)) changed = true;
+      }
+      const job = order.artistJob as Record<string, unknown> | null | undefined;
+      if (job && job.method === 'protected') {
+        if (await assign(job, order.id, [order.buyerId as string, job.artistId as string])) changed = true;
+      }
       for (const link of (order.disputeLinks as { topic?: string }[] | undefined) ?? []) {
         if (link.topic === LEGACY_HOLD) {
           link.topic = 'held_payment';
@@ -365,27 +397,17 @@ export class CosmosRepository implements Repository {
     }
 
     const { resources: disputes } = await this.container('disputes').items.query<Row>({
-      query: "SELECT * FROM c WHERE c.topic = 'escrow' OR ARRAY_CONTAINS(c.rounds, { assignedBy: 'protection' }, true)",
+      query: "SELECT * FROM c WHERE c.topic = 'escrow'",
     }).fetchAll();
     for (const dispute of disputes) {
-      let changed = false;
-      if (dispute.topic === LEGACY_HOLD) {
-        dispute.topic = 'held_payment';
-        changed = true;
-      }
-      for (const round of (dispute.rounds as { assignedBy?: string }[] | undefined) ?? []) {
-        if (round.assignedBy === 'protection') {
-          round.assignedBy = 'system';
-          changed = true;
-        }
-      }
-      if (!changed) continue;
+      if (dispute.topic !== LEGACY_HOLD) continue;
+      dispute.topic = 'held_payment';
       await this.container('disputes').items.upsert(dispute);
       moved += 1;
     }
 
     await this.markPaymentHoldsMigrated(moved);
-    return moved ? ` Moved ${moved} row(s) to Figmark-held payments.` : '';
+    return moved ? ` Moved ${moved} row(s) to Figmark-held payments with assigned managers.` : '';
   }
 
   /** Records that every row is in the Figmark-held shape, so the pass never runs again. */

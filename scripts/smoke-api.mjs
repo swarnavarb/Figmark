@@ -170,7 +170,7 @@ const {
   openDisputeRoute: openDispute, readDisputeRoute: readDispute, replyDisputeRoute: replyDispute,
   offerDisputeRoute: offerDispute, acceptDisputeRoute: acceptDispute,
   withdrawDisputeRoute: withdrawDispute, escalateDisputeRoute: escalateDispute,
-  decideDisputeRoute: decideDispute,
+  decideDisputeRoute: decideDispute, agreeDisputeRoute: agreeDispute, releaseDisputeRoute: releaseDispute,
   raiseSubjectDisputeRoute: raiseSubjectDispute, communityCasesRoute: communityCases,
   communityAvailabilityRoute: communityAvailability, communityManagersRoute: communityManagers,
   communityNoticesRoute: communityNotices, communityStandingRoute: communityStanding, communityTeamRoute: communityTeam,
@@ -2357,6 +2357,8 @@ await check('the checkout prices Buyer Protection at the flat fee Figmark sets',
   const body = (await checkout(req({ headers: auth, params: { id: 'ord_1005' } }), ctx)).jsonBody;
   // ₹49, whatever the order: Figmark holds the money, and Figmark sets the fee.
   assert.equal(body.protectionFeeMinor, 4_900);
+  // A community manager who is neither party can be assigned to it.
+  assert.equal(body.protectionAvailable, true);
 });
 
 await check('every order in a lot is offered the same protection, held by Figmark', async () => {
@@ -2381,7 +2383,7 @@ await check('every order in a lot is offered the same protection, held by Figmar
   assert.equal(body.protectionFeeMinor, 4_900);
 });
 
-await check('ticking protection is what makes Figmark hold the money', async () => {
+await check('ticking protection makes Figmark hold the money, with a neutral manager assigned', async () => {
   const paid = await payOrder(req({
     headers: auth, params: { id: 'ord_1005' },
     body: { protection: true },
@@ -2389,10 +2391,17 @@ await check('ticking protection is what makes Figmark hold the money', async () 
   assert.equal(paid.status, 200);
   assert.equal(paid.jsonBody.order.paymentMethod, 'protected');
   assert.equal(paid.jsonBody.order.hold.state, 'held');
-  // The central flat fee, paid through the gateway - all of it Figmark's,
-  // since Figmark is the one holding the money.
+  // The system assigns the manager - never the buyer (usr_demo) or the
+  // seller (usr_kaiju), both of whom are managers themselves.
+  const { managerId, managerName } = paid.jsonBody.order.protection;
+  assert.ok(managerId, 'a manager is assigned');
+  assert.notEqual(managerId, 'usr_demo');
+  assert.notEqual(managerId, 'usr_kaiju');
+  assert.ok(managerName);
+  // The central flat fee, paid through the gateway: Figmark keeps its 20%
+  // commission, the assigned manager the rest.
   assert.equal(paid.jsonBody.order.protection.feeMinor, 4_900);
-  assert.equal(paid.jsonBody.order.protection.commissionMinor, 4_900);
+  assert.equal(paid.jsonBody.order.protection.commissionMinor, 980);
   assert.ok(paid.jsonBody.order.protection.gatewayRef);
   // The clock still does not start at checkout.
   assert.equal(paid.jsonBody.order.hold.autoReleaseAt, null);
@@ -2839,20 +2848,20 @@ const managerSession = await login(req({
 const manager = { authorization: `Bearer ${managerSession.jsonBody.token}` };
 const meeraId = managerSession.jsonBody.user.id;
 
-// ord_1001 is held by Figmark under buyer protection, so a claim on it is free
-// - the buyer already paid for the protection. Meera is the one manager who is
-// neither party, so the system gives it to her.
+// ord_1001 is held by Figmark under buyer protection, with Meera assigned to
+// it, so a claim on it is hers to hear - free, because the buyer already paid
+// for the protection.
 const heldDispute = await openDispute(req({
   headers: auth, params: { id: 'ord_1001' },
   body: { reasonCode: 'damaged', reason: 'Both statues arrived with cracked bases.' },
 }), ctx);
 
-await check('a protected purchase goes to an available manager, and costs nothing to raise', async () => {
+await check('a protected purchase goes to the manager assigned to it, and costs nothing to raise', async () => {
   assert.equal(heldDispute.status, 201, JSON.stringify(heldDispute.jsonBody));
   assert.equal(heldDispute.jsonBody.dispute.topic, 'held_payment');
   const round = heldDispute.jsonBody.dispute.rounds[0];
   assert.equal(round.managerId, meeraId);
-  assert.equal(round.assignedBy, 'system');
+  assert.equal(round.assignedBy, 'protection');
   assert.equal(round.payment, null, 'the protection fee already bought this round');
 });
 
@@ -2912,6 +2921,7 @@ await check('a decision cannot be withdrawn from, and only the losing side can e
   assert.equal(out.status, 409);
   const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
   assert.ok(read.actions.includes('escalate'), 'the buyer lost round one');
+  assert.ok(read.actions.includes('agree'), 'or they can agree with it');
   assert.equal(read.escalation.nextRound, 2);
   assert.equal(read.escalation.feeMinor, 19_900, 'the first escalation fee, set centrally');
 });
@@ -2947,7 +2957,7 @@ await check('two decisions that disagree leave one more round to the other side'
   assert.equal(read.actions.includes('escalate'), false, 'the buyer won this round, so it is not theirs to escalate');
 });
 
-await check('when nobody escalates in time, the latest decision stands', async () => {
+await check('when nobody answers in time, the manager\'s decision stands, and the money waits for them', async () => {
   const id = heldDispute.jsonBody.dispute.id;
   const record = await repository_dispute(id);
   record.escalateBy = new Date(Date.now() - 60_000).toISOString();
@@ -2959,16 +2969,13 @@ await check('when nobody escalates in time, the latest decision stands', async (
   assert.equal(read.dispute.result.winnerId, 'usr_demo');
   assert.equal(read.dispute.result.finalRound, 2);
   assert.equal(read.dispute.resolution.outcome, 'split');
-  // Figmark holds the money, so nobody has to ask: it moves the moment the
-  // result is final, through the gateway.
-  assert.equal(read.order.hold.state, 'released');
-  assert.equal(read.order.paymentStatus, 'partially_paid');
-  assert.equal(read.dispute.release.toBuyerMinor, 1_45_000);
-  assert.equal(read.dispute.release.requestedBy, 'system');
-  assert.ok(read.dispute.release.gatewayRef);
-  // No fee comes back, whatever the outcome.
-  assert.equal(read.order.protection.refundedAt, null);
-  assert.equal(read.actions.length, 0, 'nothing left for anybody to do');
+  // Figmark holds the money, and it does not move on its own: the manager
+  // whose decision stands releases it.
+  assert.equal(read.order.hold.state, 'disputed');
+  assert.equal(read.dispute.release ?? null, null);
+  assert.equal(read.dispute.releaseDuty.managerId, helperId, 'the round-two manager, whose decision stands');
+  assert.ok(read.dispute.releaseDuty.dueBy);
+  assert.equal(read.actions.length, 0, 'nothing left for the parties to do');
   // The seller never wrote a word, so the loss counts against them but the
   // win does not count for the buyer: an account that never answers is no
   // way to farm a record of wins.
@@ -2976,6 +2983,29 @@ await check('when nobody escalates in time, the latest decision stands', async (
   assert.equal(buyer.buyerTrust.disputesWon ?? 0, 0, 'an uncontested win is not counted');
   const seller = await repository_user('usr_kaiju');
   assert.ok(seller.sellerTrust.disputesLost >= 1);
+});
+
+await check('the manager releases the held money as agreed, through the gateway, once', async () => {
+  const id = heldDispute.jsonBody.dispute.id;
+  const notTheirs = await releaseDispute(req({ headers: manager, params: { id } }), ctx);
+  assert.equal(notTheirs.status, 403, 'only the manager the release is with');
+  const party = await releaseDispute(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(party.status, 403);
+
+  const read = (await readDispute(req({ headers: helper, params: { id } }), ctx)).jsonBody;
+  assert.ok(read.actions.includes('release'));
+  const released = await releaseDispute(req({ headers: helper, params: { id } }), ctx);
+  assert.equal(released.status, 200, JSON.stringify(released.jsonBody));
+  assert.equal(released.jsonBody.order.hold.state, 'released');
+  assert.equal(released.jsonBody.order.paymentStatus, 'partially_paid');
+  assert.equal(released.jsonBody.dispute.release.toBuyerMinor, 1_45_000);
+  assert.equal(released.jsonBody.dispute.release.requestedBy, helperId);
+  assert.ok(released.jsonBody.dispute.release.gatewayRef);
+  // No fee comes back, whatever the outcome.
+  assert.equal(released.jsonBody.order.protection.refundedAt, null);
+
+  const again = await releaseDispute(req({ headers: helper, params: { id } }), ctx);
+  assert.equal(again.status, 409);
 });
 
 /* ── oversight ─────────────────────────────────────────────────────────── */
@@ -9641,7 +9671,7 @@ await check('a manager whose appointment is taken away cannot decide, and the ro
   }
 });
 
-await check('Figmark releases held money as decided the moment the result is final', async () => {
+await check('both parties agreeing makes a decision final at once; the manager still releases it', async () => {
   const repository = await getRepository();
   const opened = await openDispute(req({
     headers: auth, params: { id: 'ord_1005' },
@@ -9649,9 +9679,12 @@ await check('Figmark releases held money as decided the moment the result is fin
   }), ctx);
   assert.equal(opened.status, 201, JSON.stringify(opened.jsonBody));
   const id = opened.jsonBody.dispute.id;
-  // Whoever the system gave it to decides it; nobody holds the money but Figmark.
+  // The manager assigned at checkout hears it.
+  const order = await (await getRepository()).getOrder('ord_1005');
   const deciderId = opened.jsonBody.dispute.rounds[0].managerId;
-  const decider = deciderId === meeraId ? manager : deciderId === helperId ? helper : null;
+  assert.equal(deciderId, order.protection.managerId);
+  const signedIn = { [meeraId]: manager, [helperId]: helper };
+  const decider = signedIn[deciderId];
   assert.ok(decider, `assigned to a manager this suite can sign in as, not ${deciderId}`);
   const record = await repository_dispute(id);
   record.respondByAt = new Date(Date.now() - 86_400_000).toISOString();
@@ -9662,19 +9695,109 @@ await check('Figmark releases held money as decided the moment the result is fin
   assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
   assert.equal(decided.jsonBody.order.hold.state, 'disputed', 'held while it can still be escalated');
 
-  // The window closes and the result is final: the money moves at once.
-  const late = await repository_dispute(id);
-  late.escalateBy = new Date(Date.now() - 60_000).toISOString();
-  await repository.updateDispute(late);
+  // The seller agrees (they have no sign-in in the fixtures, so it is written
+  // as the route would), then the buyer: all three agree, and it is final.
+  const pending = await repository_dispute(id);
+  pending.agreements = [{ userId: 'usr_kaiju', round: 1, at: new Date().toISOString() }];
+  await repository.updateDispute(pending);
+  const agreed = await agreeDispute(req({ headers: auth, params: { id } }), ctx);
+  assert.equal(agreed.status, 200, JSON.stringify(agreed.jsonBody));
+  assert.equal(agreed.jsonBody.dispute.status, 'resolved', 'final before the escalation window closes');
+  assert.equal(agreed.jsonBody.dispute.result.how, 'decided');
+  assert.equal(agreed.jsonBody.dispute.releaseDuty.managerId, deciderId);
+  assert.equal(agreed.jsonBody.order.hold.state, 'disputed', 'still held until the manager releases it');
+  assert.equal((await agreeDispute(req({ headers: auth, params: { id } }), ctx)).status, 409);
+});
+
+await check('a manager who does not release in time is reported, then replaced after two days', async () => {
+  const repository = await getRepository();
+  const order = await repository.getOrder('ord_1005');
+  const id = order.hold.disputeId;
+  const first = (await repository_dispute(id)).releaseDuty.managerId;
+
+  const overdue = await repository_dispute(id);
+  overdue.releaseDuty.dueBy = new Date(Date.now() - 60_000).toISOString();
+  await repository.updateDispute(overdue);
+  await readDispute(req({ headers: auth, params: { id } }), ctx);
+  // The operators (in the demo, the demo account) are told.
+  assert.ok((await noticesFor('usr_demo')).some((notice) => notice.kind === 'dispute_overdue' && notice.link === `/dispute/${id}`));
+  assert.equal((await repository_dispute(id)).releaseDuty.managerId, first, 'not moved yet: the operators get their two days');
+
+  const stale = await repository_dispute(id);
+  stale.releaseDuty.dueBy = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  await repository.updateDispute(stale);
   const read = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
-  assert.equal(read.dispute.result.how, 'decided');
-  assert.ok(read.dispute.release, 'released by Figmark');
-  assert.equal(read.dispute.release.requestedBy, 'system');
-  assert.equal(read.dispute.release.toBuyerMinor, 10_000);
-  assert.notEqual(read.order.hold.state, 'disputed');
-  // And never twice.
-  const again = (await readDispute(req({ headers: auth, params: { id } }), ctx)).jsonBody;
-  assert.equal(again.dispute.release.gatewayRef, read.dispute.release.gatewayRef);
+  const next = read.dispute.releaseDuty.managerId;
+  assert.notEqual(next, first, 'handed to another manager');
+  assert.ok(!['usr_demo', 'usr_kaiju'].includes(next), 'never a party');
+  assert.equal(read.dispute.releaseDuty.reassigned.at(-1).fromId, first);
+
+  const signedIn = { [meeraId]: manager, [helperId]: helper };
+  assert.ok(signedIn[next], `reassigned to a manager this suite can sign in as, not ${next}`);
+  assert.equal((await releaseDispute(req({ headers: signedIn[first], params: { id } }), ctx)).status, 403, 'the old one can no longer release it');
+  const released = await releaseDispute(req({ headers: signedIn[next], params: { id } }), ctx);
+  assert.equal(released.status, 200, JSON.stringify(released.jsonBody));
+  assert.equal(released.jsonBody.dispute.release.toBuyerMinor, 10_000);
+  assert.notEqual(released.jsonBody.order.hold.state, 'disputed');
+});
+
+await check('a settlement on held money waits for the manager to release the agreed split', async () => {
+  const repository = await getRepository();
+  // Keep the assignment to managers this suite can sign in as.
+  const kaiju = await repository_user('usr_kaiju');
+  const rights = kaiju.managerRights;
+  kaiju.managerRights = { ...rights, available: false };
+  await repository.updateUser(kaiju);
+  try {
+    const listed = await createListing(req({
+      headers: auth, body: { title: 'Settled under protection', priceMinor: 30_000, sourcing: 'in_hand' },
+    }), ctx);
+    const buyer = await newBuyer('Settling Buyer');
+    const order = (await createOrder(req({
+      headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id, quantity: 1 },
+    }), ctx)).jsonBody.order;
+    const paid = await payOrder(req({ headers: buyer.headers, params: { id: order.id }, body: { protection: true } }), ctx);
+    assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+    const assigned = paid.jsonBody.order.protection.managerId;
+    const signedIn = { [meeraId]: manager, [helperId]: helper };
+    assert.ok(signedIn[assigned], `assigned ${assigned}`);
+
+    const raised = await openDispute(req({
+      headers: buyer.headers, params: { id: order.id },
+      body: { reasonCode: 'damaged', reason: 'One arm snapped off in the box.' },
+    }), ctx);
+    assert.equal(raised.status, 201, JSON.stringify(raised.jsonBody));
+    const id = raised.jsonBody.dispute.id;
+    assert.equal(raised.jsonBody.dispute.rounds[0].managerId, assigned, 'the assigned manager hears it');
+
+    const offered = await offerDispute(req({ headers: auth, params: { id }, body: { refundMinor: 10_000, terms: 'Part back for the arm.' } }), ctx);
+    const settled = await acceptDispute(req({
+      headers: buyer.headers, params: { id }, body: { offerId: offered.jsonBody.dispute.offer.id },
+    }), ctx);
+    assert.equal(settled.status, 200, JSON.stringify(settled.jsonBody));
+    assert.equal(settled.jsonBody.dispute.result.how, 'settled');
+    assert.equal(settled.jsonBody.order.hold.state, 'disputed', 'two of three: the manager has not agreed yet');
+    assert.equal(settled.jsonBody.dispute.releaseDuty.managerId, assigned);
+
+    const released = await releaseDispute(req({ headers: signedIn[assigned], params: { id } }), ctx);
+    assert.equal(released.status, 200, JSON.stringify(released.jsonBody));
+    assert.equal(released.jsonBody.dispute.release.toBuyerMinor, 10_000);
+    assert.equal(released.jsonBody.dispute.release.toSellerMinor, 20_000);
+  } finally {
+    kaiju.managerRights = rights;
+    await repository.updateUser(kaiju);
+  }
+});
+
+await check('a manager past their decision deadline is reported to the operators', async () => {
+  const { id } = await contestedComment('Slow manager');
+  const record = await repository_dispute(id);
+  record.rounds.at(-1).decideBy = new Date(Date.now() - 60_000).toISOString();
+  await (await getRepository()).updateDispute(record);
+  await readDispute(req({ headers: auth, params: { id } }), ctx);
+  const round = (await repository_dispute(id)).rounds.at(-1);
+  assert.ok(round.adminNotifiedAt, 'told once');
+  assert.ok((await noticesFor('usr_demo')).some((notice) => notice.kind === 'dispute_overdue' && notice.link === `/dispute/${id}`));
 });
 
 await check('a dispute is about something somebody wrote, not about a person', async () => {
@@ -10337,6 +10460,7 @@ await check('a commission runs from request to release, held by Figmark', async 
 
   const paid = (await buyer('pay', { method: 'protected' })).jsonBody.order.artistJob;
   assert.equal(paid.status, 'paid');
+  assert.ok(paid.managerId && paid.managerName, 'a community manager is assigned to its protection');
   assert.ok(paid.heldMinor > 7_00_000, 'the protection fee rides on top');
   assert.ok((await orderServices(req({ headers: auth, params: { id: order.id } }), ctx)).jsonBody.commission.studioAddress);
 

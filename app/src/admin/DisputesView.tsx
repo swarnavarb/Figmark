@@ -8,9 +8,11 @@ import { formatDate, formatMoney, timeAgo } from '../format';
  * Every dispute, for oversight.
  *
  * Community managers decide disputes; Figmark does not. What an operator
- * watches here is the clock: a manager past their deadline comes first, to be
- * reassigned - and if nobody reassigns it within two days, the system does,
- * to whoever is available. Everything else is here to be read.
+ * watches here is the clock: a manager past their deadline - to decide a
+ * round, or to release a held payment once the result is agreed - comes
+ * first, to be reassigned. Operators are notified at the deadline; if nobody
+ * reassigns it within two days, the system does, to whoever is available.
+ * Everything else is here to be read.
  */
 export function DisputesView() {
   const [rows, setRows] = useState<AdminDisputeRow[] | null>(null);
@@ -81,6 +83,11 @@ export function DisputesView() {
                       Round {row.round.n}/3 · {row.round.managerName} · {row.round.decided ? 'decided, escalation window open' : `decide by ${formatDate(row.round.decideBy)}`}
                     </span>
                   )}
+                  {row.releasePending && (
+                    <span className="userrow__meta">
+                      Agreed · {row.releasePending.managerName} to release by {formatDate(row.releasePending.dueBy)}
+                    </span>
+                  )}
                   {dispute.result && (
                     <span className="userrow__meta">
                       {dispute.result.how === 'settled' ? 'Settled between the parties'
@@ -93,7 +100,7 @@ export function DisputesView() {
                   {row.heldMinor > 0 && !dispute.subjectRef && <span className="badge">{formatMoney(row.heldMinor, row.currency)}</span>}
                   {row.overdue && <span className="badge badge--warn">overdue</span>}
                   <span className="badge">{dispute.result?.how === 'settled' ? 'Settled' : DISPUTE_STATUS_LABELS[dispute.status]}</span>
-                  {!closed(row) && row.round && !row.round.decided && (
+                  {((!closed(row) && row.round && !row.round.decided) || row.releasePending) && (
                     <button className="btn btn--sm btn--ghost" disabled={busy !== null} onClick={() => void reassign(dispute.id)}>
                       {busy === dispute.id ? 'Reassigning…' : 'Reassign'}
                     </button>

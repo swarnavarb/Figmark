@@ -290,7 +290,7 @@ await check('gains the fixtures a later release added, and keeps what it had', a
   assert.equal((await updated.getUserByIdentifier('meera@figmark.in')).id, 'usr_escrow_meera');
 });
 
-await check('rows from before Figmark held every payment are moved to the new shape', async () => {
+await check('rows from older buyer protection are moved to the new shape, holders becoming managers', async () => {
   // Protected payments used to be held by a member the buyer picked, and rows
   // named them. A deployed database still holds those rows, and every read
   // expects the new shape - so they are moved before anybody reads one.
@@ -305,22 +305,30 @@ await check('rows from before Figmark held every payment are moved to the new sh
   const meera = users.get('usr_escrow_meera');
   meera.escrowRights = { ...meera.managerRights, feeBasisPoints: 150 };
   delete meera.managerRights;
+  // The original shape: the holder named on the order.
   const order = orders.get('ord_1001');
   order.escrow = order.hold;
   delete order.hold;
+  delete order.protection.managerId;
+  delete order.protection.managerName;
   order.protection = { ...order.protection, escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera Iyer' };
   order.disputeLinks = [{ id: 'dsp_old', topic: 'escrow', subject: 'dsp_old', raisedBy: 'usr_demo', raisedSide: 'buyer', raisedAt: order.createdAt }];
+  // The shape the release before this one left: the holder dropped, but the
+  // protection fee in the ledger still says who it paid.
+  const dropped = orders.get('ord_1002');
+  delete dropped.protection.managerId;
+  delete dropped.protection.managerName;
+  containers.get('siteContent').set('fee-ledger', {
+    id: 'fee-ledger', data: { entries: [{ kind: 'protection', reference: 'ord_1002', managerId: 'usr_escrow_meera' }] },
+  });
   const dispute = [...disputes.values()][0];
   dispute.topic = 'escrow';
-  dispute.rounds = [{ n: 1, managerId: 'usr_escrow_meera', managerName: 'Meera Iyer', assignedAt: dispute.createdAt,
-    assignedBy: 'protection', decideBy: dispute.createdAt, payment: null, escalatedBy: null, decision: null }];
-  containers.get('siteContent').delete('migration:figmark-held-payments');
+  containers.get('siteContent').delete('migration:protection-managers');
 
   resetCalls();
   const restarted = repositoryOn(containers);
   await restarted.init();
-  // The user, the order and the dispute written back, and the marker.
-  assert.ok(calls.writes >= 4, `expected the moved rows to be written, saw ${calls.writes} writes`);
+  assert.ok(calls.writes >= 5, `expected the moved rows to be written, saw ${calls.writes} writes`);
 
   assert.ok(!('escrowRights' in meera));
   assert.ok(meera.managerRights?.grantedAt, 'the grant is kept, under its new name');
@@ -328,10 +336,12 @@ await check('rows from before Figmark held every payment are moved to the new sh
   assert.ok(!('escrow' in order));
   assert.equal(order.hold.state, 'held');
   assert.ok(!('escrowAgentId' in order.protection) && !('escrowName' in order.protection));
+  assert.equal(order.protection.managerId, 'usr_escrow_meera', 'the holder is now the assigned manager');
+  assert.equal(order.protection.managerName, 'Meera Iyer');
+  assert.equal(dropped.protection.managerId, 'usr_escrow_meera', 'recovered from the fee it paid');
   assert.equal(order.disputeLinks[0].topic, 'held_payment');
   assert.equal(dispute.topic, 'held_payment');
-  assert.equal(dispute.rounds[0].assignedBy, 'system');
-  assert.match(restarted.status().detail, /Moved \d+ row\(s\) to Figmark-held payments/);
+  assert.match(restarted.status().detail, /Moved \d+ row\(s\)/);
 
   // Once, and never again.
   resetCalls();

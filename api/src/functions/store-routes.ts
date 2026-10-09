@@ -15,6 +15,7 @@ import {
 } from '../../../shared/routes.js';
 import { isCancelledLike, protectionFeeMinor } from '../../../shared/orders.js';
 import { marketSettings } from '../settings.js';
+import { availableManagers, chargeFee, managerName, pickManager } from '../community.js';
 import { orderMoney } from '../../../shared/payments.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
@@ -803,8 +804,11 @@ async function orderServices(request: HttpRequest, _context: InvocationContext) 
       .map((owner) => publicStore(owner, 'artist'))
     : [];
   const protectionFlat = (await marketSettings(repository)).protectionFeeMinor;
-  // Buyer Protection on a commission: Figmark holds the payment, for this fee.
+  // Buyer Protection on a commission: Figmark holds the payment and a
+  // community manager is assigned to it, for this fee. Null when no manager
+  // could be - neither the buyer nor the artist, and available.
   const protectionFee = side === 'buyer' && job && ['quoted', 'accepted'].includes(job.status)
+    && (await availableManagers(repository, [order.buyerId, job.artistId])).length > 0
     ? protectionFeeMinor(job.quoteMinor ?? 0, protectionFlat)
     : null;
   const paidUp = job && ['paid', 'working', 'ready', 'shipped', 'completed'].includes(job.status);
@@ -974,13 +978,23 @@ async function commissionAct(request: HttpRequest, _context: InvocationContext) 
       const price = job.quoteMinor ?? 0;
       if (!price) return error(409, 'no_quote', 'There is no agreed price yet.');
       if (input?.method === 'protected') {
+        // Figmark holds the payment; the system assigns a community manager,
+        // who is paid a share of the fee Figmark sets centrally.
+        const manager = await pickManager(repository, [order.buyerId, job.artistId]);
+        if (!manager) return error(409, 'protection_unavailable', 'No community manager is available for Buyer Protection right now. Try again soon, or pay direct.');
+        const settings = await marketSettings(repository);
         job.method = 'protected';
-        // Figmark holds the payment, and sets the protection fee centrally.
-        job.protectionFeeMinor = protectionFeeMinor(price, (await marketSettings(repository)).protectionFeeMinor);
+        job.managerId = manager.id;
+        job.managerName = managerName(manager);
+        job.protectionFeeMinor = protectionFeeMinor(price, settings.protectionFeeMinor);
+        await chargeFee(repository, {
+          kind: 'protection', payerId: user.id, amountMinor: job.protectionFeeMinor, currency: order.currency,
+          reference: order.id, managerId: manager.id,
+        }, settings);
         job.heldMinor = price + job.protectionFeeMinor;
         job.payments = [...job.payments, { at: now, amountMinor: job.heldMinor, method: 'protected', reference: null, confirmedAt: now }];
         job.status = 'paid';
-        jobEvent(job, user.id, 'Paid with Buyer Protection. Figmark is holding it.');
+        jobEvent(job, user.id, `Paid with Buyer Protection. Figmark is holding it; ${job.managerName} is the community manager on it.`);
       } else {
         const artist = await repository.getUserById(job.artistId);
         if (!artist?.artistProfile?.payment) return error(409, 'no_details', 'This artist has not set up direct payment. Pay with protection instead.');

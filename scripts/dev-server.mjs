@@ -102,7 +102,7 @@ const {
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
   acceptDisputeRoute, withdrawDisputeRoute, escalateDisputeRoute,
-  decideDisputeRoute, raiseSubjectDisputeRoute,
+  decideDisputeRoute, agreeDisputeRoute, releaseDisputeRoute, raiseSubjectDisputeRoute,
   communityCasesRoute, communityAvailabilityRoute, communityManagersRoute, communityNoticesRoute, communityStandingRoute, communityTeamRoute,
 } = await import(new URL('dispute-routes.js', apiRoot));
 const {
@@ -259,6 +259,8 @@ const routes = [
   ['POST', '/api/disputes/:id/withdraw', withdrawDisputeRoute],
   ['POST', '/api/disputes/:id/escalate', escalateDisputeRoute],
   ['POST', '/api/disputes/:id/decide', decideDisputeRoute],
+  ['POST', '/api/disputes/:id/agree', agreeDisputeRoute],
+  ['POST', '/api/disputes/:id/release', releaseDisputeRoute],
   ['POST', '/api/disputes', raiseSubjectDisputeRoute],
   ['GET', '/api/community/cases', communityCasesRoute],
   ['POST', '/api/community/availability', communityAvailabilityRoute],

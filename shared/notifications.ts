@@ -93,6 +93,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   dispute_decided: 'payments',
   dispute_escalated: 'payments',
   dispute_assigned: 'payments',
+  dispute_overdue: 'payments',
   dispute_action: 'payments',
   payment_reversal_pending: 'payments',
   reversal_details_needed: 'payments',

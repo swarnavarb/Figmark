@@ -380,7 +380,7 @@ function JobCard({ ownerId, row, onChanged }: { ownerId: string; row: ArtistJobR
           )}
           <div className="sc-job__facts">
             {job.quoteMinor !== null && <span>Quote <b>{formatMoney(job.quoteMinor)}</b>{job.turnaroundDays ? ` · ${job.turnaroundDays} days` : ''}</span>}
-            {job.method && <span>{job.method === 'protected' ? '🔒 Held by Figmark' : '↗ Paid direct'} · {formatMoney(jobDueMinor(job))}</span>}
+            {job.method && <span>{job.method === 'protected' ? `🔒 Held by Figmark${job.managerName ? ` · ${job.managerName}` : ''}` : '↗ Paid direct'} · {formatMoney(jobDueMinor(job))}</span>}
             {job.payments.some((payment) => !payment.confirmedAt) && (
               <span className="sc-job__claim">Buyer says they paid {formatMoney(job.payments.find((p) => !p.confirmedAt)!.amountMinor)}
                 {job.payments.find((p) => !p.confirmedAt)!.reference ? ` · ref ${job.payments.find((p) => !p.confirmedAt)!.reference}` : ''}</span>
