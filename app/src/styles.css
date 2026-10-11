@@ -13964,6 +13964,48 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .svx--forwarder .svx__eyebrow { font-family: var(--mono); letter-spacing: 0.06em; }
 .svx__title { margin: 0; font-family: var(--display); font-size: 24px; font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1.1; }
 .svx__title a { color: inherit; text-decoration: none; }
+
+/* The tab's tiles: the whole block opens the service's page. */
+.svx--tile { transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease); }
+.svx--tile:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--svx), 0 18px 40px color-mix(in srgb, var(--svx) 22%, transparent); }
+.svx--tile:active { transform: scale(0.99); }
+@media (prefers-reduced-motion: reduce) { .svx--tile, .svx__go svg { transition: none; } .svx__face { animation: none; } }
+.svx__open::after { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: 22px; }
+.svx--tile .svx__hero { position: static; }
+.svx--tile .svx__menuwrap { z-index: 2; }
+.svx__foot {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 12px 12px; padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.svx__faces { display: flex; }
+.svx__faces:empty { display: none; }
+.svx__face { display: grid; margin-left: -8px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); animation: svx-rise 420ms var(--ease) both; }
+.svx__face:nth-child(2) { animation-delay: 80ms; }
+.svx__face:nth-child(3) { animation-delay: 160ms; }
+.svx__face:nth-child(4) { animation-delay: 240ms; }
+.svx__face:first-child { margin-left: 0; }
+.svx__face .sk-mark { border-radius: 50%; }
+.svx__face--more {
+  width: 30px; height: 30px; place-items: center;
+  background: var(--svx-soft); color: var(--svx-text);
+  font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+.svx__foot .svx__count { margin: 0; flex: 1; min-width: 0; }
+.svx__go { display: inline-flex; align-items: center; gap: 4px; color: var(--svx-text); font-size: var(--t-sm); font-weight: var(--w-semi); }
+.svx__go svg { transition: transform var(--dur-2) var(--ease); }
+.svx--tile:hover .svx__go svg { transform: translateX(3px); }
+
+/* A service's own page: the banner at full height, the list under it. */
+.svx--page { margin-top: 6px; }
+.svx--page .svx__hero { padding: 26px 18px 22px 22px; min-height: 190px; }
+.svx--page .svx__art { width: 340px; height: 190px; max-width: 75%; opacity: 0.28; }
+.svx--page .svx__mark { width: 58px; height: 58px; border-radius: 18px; }
+.svx--page .svx__title { font-size: clamp(28px, 7vw, 38px); }
+.svx--page .svx__body { padding: 0 14px 16px; }
+.svx--page .svx__search { max-width: none; }
 .svx__line { margin: 0; max-width: 520px; font-size: var(--t-sm); line-height: 1.45; color: var(--text-dim); }
 .svx__count { margin-top: 4px; font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
 

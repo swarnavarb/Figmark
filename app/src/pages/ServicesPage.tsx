@@ -58,8 +58,8 @@ export function ServicesPage() {
 
       <h2 className="ms-section">Find a service</h2>
       <div className="svx-stack">
-        <ServiceSection kind="forwarder" mine={mine} limit={4} />
-        <ServiceSection kind="artist" mine={mine} limit={4} />
+        <ServiceTile kind="forwarder" mine={mine} />
+        <ServiceTile kind="artist" mine={mine} />
       </div>
     </main>
   );
@@ -124,22 +124,9 @@ const THEME: Record<StoreKind, { eyebrow: string; title: string; line: string; i
   },
 };
 
-/**
- * A banner in the service's colours, with Apply tucked under its menu, and the
- * people offering it underneath.
- *
- * `limit` is for the tab, which shows the first few and links to the rest;
- * the category's own page passes none and adds a filter.
- */
-function ServiceSection({ kind, mine, limit, filter = false }: {
-  kind: StoreKind;
-  mine: MyServicesView | null;
-  limit?: number;
-  filter?: boolean;
-}) {
-  const theme = THEME[kind];
+/** Who offers one service, refetched as the filter changes. */
+function useProviders(kind: StoreKind, query = '') {
   const [providers, setProviders] = useState<ProviderCard[] | null>(null);
-  const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -158,63 +145,104 @@ function ServiceSection({ kind, mine, limit, filter = false }: {
     };
   }, [kind, query]);
 
-  const shown = limit ? (providers ?? []).slice(0, limit) : providers ?? [];
-  const more = limit && providers ? providers.length - shown.length : 0;
+  return { providers, error };
+}
 
+/**
+ * One service on the tab, as a door: its colours, what it is, a glimpse of
+ * who offers it - and the whole tile opens the list. Apply stays under ⋯.
+ */
+function ServiceTile({ kind, mine }: { kind: StoreKind; mine: MyServicesView | null }) {
+  const theme = THEME[kind];
+  const { providers } = useProviders(kind);
+  const faces = (providers ?? []).slice(0, 4);
+  const others = (providers?.length ?? 0) - faces.length;
   return (
-    <section className={`svx svx--${kind}`} aria-label={theme.title}>
+    <section className={`svx svx--${kind} svx--tile`} aria-label={theme.title}>
       <header className="svx__hero">
         <span className="svx__art" aria-hidden="true">{kind === 'forwarder' ? <FlightArt /> : <StudioArt />}</span>
         <span className="svx__mark" aria-hidden="true"><Icon name={theme.icon} size={22} /></span>
         <div className="svx__text">
           <span className="svx__eyebrow">{theme.eyebrow}</span>
           <h3 className="svx__title">
-            {limit ? <Link to={`/services/${kind}`}>{theme.title}</Link> : theme.title}
+            {/* Stretched over the whole tile, so anywhere on it opens the list. */}
+            <Link to={`/services/${kind}`} className="svx__open">{theme.title}</Link>
           </h3>
           <p className="svx__line">{theme.line}</p>
+        </div>
+        <ApplyMenu kind={kind} mine={mine} />
+      </header>
+      <div className="svx__foot">
+        <span className="svx__faces" aria-hidden="true">
+          {faces.map((provider) => (
+            <span key={provider.userId} className="svx__face">
+              <StoreMark name={provider.name} logoUrl={provider.logoUrl ?? null} accent={provider.accent ?? undefined} size={30} />
+            </span>
+          ))}
+          {others > 0 && <span className="svx__face svx__face--more">+{others}</span>}
+        </span>
+        <span className="svx__count">
+          {providers === null ? 'Loading…' : providers.length === 0 ? 'Nobody yet' : `${providers.length} on Figmark`}
+        </span>
+        <span className="svx__go">Explore <Icon name="right" size={15} /></span>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A service's own page: the banner at full size, a filter, and everyone
+ * offering it, each with a More to their store.
+ */
+function ServiceSection({ kind, mine }: { kind: StoreKind; mine: MyServicesView | null }) {
+  const theme = THEME[kind];
+  const [query, setQuery] = useState('');
+  const { providers, error } = useProviders(kind, query);
+
+  return (
+    <section className={`svx svx--${kind} svx--page`} aria-label={theme.title}>
+      <header className="svx__hero">
+        <span className="svx__art" aria-hidden="true">{kind === 'forwarder' ? <FlightArt /> : <StudioArt />}</span>
+        <span className="svx__mark" aria-hidden="true"><Icon name={theme.icon} size={26} /></span>
+        <div className="svx__text">
+          <span className="svx__eyebrow">{theme.eyebrow}</span>
+          <h1 className="svx__title">{theme.title}</h1>
+          <p className="svx__line">{theme.line}</p>
           <span className="svx__count">
-            {providers === null ? '…' : `${providers.length} on Figmark`}
+            {providers === null ? '…' : `${providers.length} ${query ? 'matching' : 'on Figmark'}`}
           </span>
         </div>
         <ApplyMenu kind={kind} mine={mine} />
       </header>
 
       <div className="svx__body">
-      {filter && (
         <div className="search svx__search">
           <span className="search__icon"><Icon name="search" /></span>
           <input value={query} onChange={(event) => setQuery(event.target.value)}
             placeholder={kind === 'forwarder' ? 'Filter by route — Guangzhou, Mumbai…' : 'Filter by style — repaint, sculpt…'}
             aria-label={`Filter ${theme.title}`} />
         </div>
-      )}
 
-      {error && <ErrorNotice message={error} />}
+        {error && <ErrorNotice message={error} />}
 
-      {providers === null ? (
-        <div className="svx__list" aria-hidden="true">
-          {[0, 1].map((key) => <div key={key} className="svx-card svx-card--ghost skel" />)}
-        </div>
-      ) : providers.length === 0 ? (
-        <p className="svx__empty">
-          {query ? 'Nobody matches that. Try another city or style.' : `No ${theme.title.toLowerCase()} yet — be the first: apply from the ⋯ menu.`}
-        </p>
-      ) : (
-        <div className="svx__list">
-          {shown.map((provider, index) => (
-            // Each card rises in a beat after the one before it.
-            <div key={provider.userId} className="svx__item" style={{ '--i': Math.min(index, 8) } as CSSProperties}>
-              {kind === 'forwarder' ? <ForwarderCard provider={provider} /> : <ArtistCard provider={provider} />}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {more > 0 && (
-        <Link to={`/services/${kind}`} className="svx__all">
-          See all {providers!.length} {theme.title.toLowerCase()} <Icon name="right" size={14} />
-        </Link>
-      )}
+        {providers === null ? (
+          <div className="svx__list" aria-hidden="true">
+            {[0, 1].map((key) => <div key={key} className="svx-card svx-card--ghost skel" />)}
+          </div>
+        ) : providers.length === 0 ? (
+          <p className="svx__empty">
+            {query ? 'Nobody matches that. Try another city or style.' : `No ${theme.title.toLowerCase()} yet — be the first: apply from the ⋯ menu.`}
+          </p>
+        ) : (
+          <div className="svx__list">
+            {providers.map((provider, index) => (
+              // Each card rises in a beat after the one before it.
+              <div key={provider.userId} className="svx__item" style={{ '--i': Math.min(index, 8) } as CSSProperties}>
+                {kind === 'forwarder' ? <ForwarderCard provider={provider} /> : <ArtistCard provider={provider} />}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -407,7 +435,7 @@ export function ServiceDirectoryPage() {
   return (
     <main className="page">
       <BackLink to="/services">← Services</BackLink>
-      <ServiceSection key={kind} kind={kind} mine={mine} filter />
+      <ServiceSection key={kind} kind={kind} mine={mine} />
     </main>
   );
 }
