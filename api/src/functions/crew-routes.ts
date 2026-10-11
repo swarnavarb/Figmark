@@ -105,6 +105,8 @@ async function addOrderPhoto(request: HttpRequest, _context: InvocationContext) 
   order.photos = [...(order.photos ?? []), photo];
   order.updatedAt = photo.addedAt;
   const saved = await repository.updateOrder(order);
+  // Owned by the order, so no other screen's clean-up can take it.
+  await (await getPhotoStore()).claimPublic(stored.blobName, `order:${order.id}`).catch(() => false);
   return json(201, { photo, photos: photosFor(saved, seat.as, user.id) });
 }
 
@@ -139,7 +141,6 @@ async function updateOrderPhoto(request: HttpRequest, _context: InvocationContex
     if (seat.as !== 'seller' && photo.addedBy !== user.id) {
       return error(403, 'forbidden', 'Only the shop or whoever took it can remove a photo.');
     }
-    // The blob goes with the operator's unused-photo sweep, once nothing names it.
     order.photos = (order.photos ?? []).filter((each) => each.id !== photoId);
   } else if (body.showTo !== undefined) {
     if (seat.as !== 'seller') return error(403, 'forbidden', 'The shop decides who sees a photo.');
@@ -153,6 +154,11 @@ async function updateOrderPhoto(request: HttpRequest, _context: InvocationContex
 
   order.updatedAt = new Date().toISOString();
   const saved = await repository.updateOrder(order);
+  if (body.remove) {
+    // Deleted means deleted: the file goes too, not just the line naming it.
+    // A file that cannot be removed now is still caught by the operator's unused-photo scan.
+    await (await getPhotoStore()).remove('public', photo.blobName).catch(() => false);
+  }
   return json(200, { photos: photosFor(saved, seat.as, user.id) });
 }
 

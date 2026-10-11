@@ -10685,6 +10685,8 @@ await check('the seller tags people, picks their buttons, gates dispatch and sha
     const removed = await updateOrderPhoto(req({ headers: handlerHeaders, params: { id: order.id, photoId }, body: { remove: true } }), ctx);
     assert.equal(removed.status, 200, 'whoever took it can take it down');
     assert.deepEqual(await tracking(), []);
+    const blobName = added.jsonBody.photo.blobName;
+    assert.equal(await (await photoStore()).publicInfo(blobName), null, 'the file is deleted, not just the line naming it');
   } finally {
     // Later checks read this lot as the seed left it.
     const current = await repository.getLot('usr_demo', 'lot_open_24');

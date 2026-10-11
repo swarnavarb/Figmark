@@ -2,7 +2,8 @@ import { useState } from 'react';
 import type { OrderPhoto, PhotoAudience } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { shrink } from './PhotoManager';
-import { Icon } from './ui';
+import { Lightbox } from './SocialPost';
+import { Icon, useConfirm } from './ui';
 
 const AUDIENCE_LABEL: Record<PhotoAudience, string> = { buyer: 'Buyer', supplier: 'Supplier', handler: 'Handler' };
 
@@ -15,7 +16,7 @@ const AUDIENCE_LABEL: Record<PhotoAudience, string> = { buyer: 'Buyer', supplier
  * handler. `audiences` is the choice the seller is offered: a lot with no
  * handler tagged has nobody to show the handler.
  */
-export function OrderPhotos({ orderId, photos, onChange, seller = false, audiences = ['buyer', 'supplier', 'handler'], me }: {
+export function OrderPhotos({ orderId, photos, onChange, seller = false, audiences = ['buyer', 'supplier', 'handler'], me, readOnly = false }: {
   orderId: string;
   photos: OrderPhoto[];
   onChange: (photos: OrderPhoto[]) => void;
@@ -24,9 +25,14 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
   audiences?: readonly PhotoAudience[];
   /** The viewer, so the crew can take down their own photos. */
   me?: string;
+  /** Only to look at - the buyer's timeline. */
+  readOnly?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The photo open full screen, and the thumbnail it grows out of. */
+  const [open, setOpen] = useState<{ at: number; origin: DOMRect } | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   async function run(fn: () => Promise<OrderPhoto[]>) {
     setBusy(true);
@@ -49,9 +55,10 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
     <div className="ophotos">
       {photos.map((photo) => (
         <figure key={photo.id} className="ophotos__item">
-          <a href={photo.url} target="_blank" rel="noopener noreferrer">
+          <button type="button" className="ophotos__open" aria-label="Open photo full screen"
+            onClick={(event) => setOpen({ at: photos.indexOf(photo), origin: event.currentTarget.getBoundingClientRect() })}>
             <img src={photo.url} alt="Photo of this order" loading="lazy" />
-          </a>
+          </button>
           {seller && (
             <figcaption className="ophotos__who">
               {audiences.map((who) => (
@@ -63,17 +70,23 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
               ))}
             </figcaption>
           )}
-          {(seller || photo.addedBy === me) && (
+          {!readOnly && (seller || photo.addedBy === me) && (
             <button type="button" className="ophotos__drop" disabled={busy} aria-label="Remove photo"
-              onClick={() => {
-                if (window.confirm('Remove this photo?')) void run(async () => (await api.removeOrderPhoto(orderId, photo.id)).photos);
-              }}>
+              onClick={() => void (async () => {
+                const yes = await confirm({
+                  title: 'Delete this photo?',
+                  body: 'It is deleted for good, for everyone it was shown to.',
+                  action: 'Delete',
+                  danger: true,
+                });
+                if (yes) await run(async () => (await api.removeOrderPhoto(orderId, photo.id)).photos);
+              })()}>
               <Icon name="close" size={12} />
             </button>
           )}
         </figure>
       ))}
-      <label className={`ophotos__add${busy ? ' is-busy' : ''}`}>
+      {!readOnly && <label className={`ophotos__add${busy ? ' is-busy' : ''}`}>
         <input type="file" accept="image/*" disabled={busy}
           onChange={(event) => {
             const file = event.target.files?.[0];
@@ -82,8 +95,13 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
           }} />
         <Icon name="camera" size={16} />
         <span>{busy ? 'Saving…' : 'Photo'}</span>
-      </label>
+      </label>}
       {error && <span className="ophotos__error">{error}</span>}
+      {open && (
+        <Lightbox photos={photos.map((photo) => photo.url)} start={open.at} origin={open.origin} royal
+          onClose={() => setOpen(null)} />
+      )}
+      {dialog}
     </div>
   );
 }

@@ -329,15 +329,7 @@ export function OrderPage() {
             <OrderPhotos orderId={order.id} photos={order.photos ?? []} seller
               onChange={(photos) => setData((current) => current && { ...current, order: { ...current.order, photos } })} />
           ) : (
-            <div className="ophotos">
-              {(order.photos ?? []).map((photo) => (
-                <figure key={photo.id} className="ophotos__item">
-                  <a href={photo.url} target="_blank" rel="noopener noreferrer">
-                    <img src={photo.url} alt="Your item on its way" loading="lazy" />
-                  </a>
-                </figure>
-              ))}
-            </div>
+            <OrderPhotos orderId={order.id} photos={order.photos ?? []} readOnly onChange={() => {}} />
           )}
         </section>
       )}

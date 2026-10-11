@@ -13104,7 +13104,7 @@ button.sk-plan__pick { cursor: pointer; }
 /* ── Photos on an order ─────────────────────────────────────────────────── */
 .ophotos { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-top: 6px; }
 .ophotos__item { position: relative; display: grid; gap: 4px; margin: 0; width: 84px; }
-.ophotos__item a { display: block; width: 84px; height: 84px; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); }
+.ophotos__open { display: block; width: 84px; height: 84px; padding: 0; border: 0; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); cursor: zoom-in; }
 .ophotos__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ophotos__who { display: flex; flex-wrap: wrap; gap: 3px; }
 .ophotos__chip { padding: 1px 6px; border: 1px solid var(--border); border-radius: var(--r-pill); background: none; color: var(--text-faint); font: inherit; font-size: 10px; cursor: pointer; }
