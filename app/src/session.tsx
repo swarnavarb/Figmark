@@ -76,6 +76,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   userRef.current = user;
   const loadingRef = useRef(true);
   loadingRef.current = loading;
+  /** Set by signing in here, as opposed to a session restored on page load. */
+  const justSignedIn = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +153,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // The warning belongs to the account it was raised for, so signing in as
     // someone else must clear it.
     setWarning(null);
-    setUser((await api.login(identifier, password)).user);
+    const result = await api.login(identifier, password);
+    justSignedIn.current = true;
+    setUser(result.user);
     // The sign-in response can carry only the session cookie; this hands out
     // the device cookie that keeps this browser trusted for the account.
     void api.me().catch(() => undefined);
@@ -161,6 +165,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const result = await api.signup(body);
     setWarning(result.warning ?? null);
     setSignupEmail(result.emailCode ?? null);
+    justSignedIn.current = true;
     setUser(result.user);
     void api.me().catch(() => undefined);
   }, []);
@@ -198,6 +203,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (user) setAuthPrompt(null);
   }, [user]);
+
+  // Just signed in: the page now shows the account's view of it, so it opens
+  // at the top rather than wherever the guest view was scrolled to. Once the
+  // popup is gone, since it holds the page still while open. A session
+  // restored on load is left alone, so a reload keeps its place.
+  useEffect(() => {
+    if (!user || authPrompt || !justSignedIn.current) return;
+    justSignedIn.current = false;
+    window.scrollTo(0, 0);
+  }, [user, authPrompt]);
 
   const promptAuth = useCallback((reason?: string) => setAuthPrompt({ reason: reason ?? null }), []);
   const closeAuth = useCallback(() => setAuthPrompt(null), []);
