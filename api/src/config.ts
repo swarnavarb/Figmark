@@ -305,6 +305,15 @@ function resolveSessionSecret(hasRealBackend: boolean): {
   return { secret: '', source: 'missing' };
 }
 
+// Above `config`: a const is unreadable until its line has run, and `config`
+// calls resolvePublicOrigins() while it is built. Declared below it, this threw
+// on Azure only - the one place the default is read - so the API failed to
+// load and every /api route answered 404.
+const DEFAULT_PUBLIC_ORIGINS = [
+  'https://icy-stone-0498a9900.6.azurestaticapps.net',
+  'https://icy-stone-0498a9900-*.6.azurestaticapps.net',
+];
+
 const cosmos = resolveCosmos();
 const session = resolveSessionSecret(cosmos !== null);
 
@@ -323,11 +332,6 @@ export const config: AppConfig = {
   swaPrincipalTrust: resolveSwaTrust(),
   publicOrigins: resolvePublicOrigins(),
 };
-
-const DEFAULT_PUBLIC_ORIGINS = [
-  'https://icy-stone-0498a9900.6.azurestaticapps.net',
-  'https://icy-stone-0498a9900-*.6.azurestaticapps.net',
-];
 
 function resolvePublicOrigins(): string[] | null {
   const configured = (env('PUBLIC_ORIGIN') ?? '')
