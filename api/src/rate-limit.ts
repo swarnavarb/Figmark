@@ -16,7 +16,7 @@ import { error } from './functions/http.js';
  */
 export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch'
   | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
-  | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account';
+  | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check';
 
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
@@ -49,6 +49,8 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   // address and they must not be refused for each other.
   login: [{ max: 30, ms: MINUTE }, { max: 300, ms: HOUR }],
   signup: [{ max: 20, ms: HOUR }, { max: 100, ms: DAY }],
+  // One per pause in typing a username on the sign-up form.
+  handle_check: [{ max: 60, ms: MINUTE }, { max: 600, ms: HOUR }],
   // Wrong passwords for one account from one address. Keyed by both, so
   // nobody can lock somebody else out by typing their email badly on purpose.
   login_fail: [{ max: 8, ms: 600_000 }],

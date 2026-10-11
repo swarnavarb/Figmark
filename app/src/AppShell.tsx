@@ -14,6 +14,7 @@ import { AuthModal } from './pages/AuthPage';
 import { EmailGate, VerifyPrompt } from './pages/VerifyPage';
 import { inviteCodeFor } from './components/ShareKit';
 import { setPhotoQuery } from './photoQuery';
+import { Preloader } from './components/Preloader';
 
 /**
  * Persistent chrome: brand, search, the cart and who you are.
@@ -159,7 +160,7 @@ export function AppShell() {
 
       {/* Each screen is its own download (see main.tsx), fetched the first
           time it is opened; the chrome around it stays put meanwhile. */}
-      <Suspense fallback={<main className="page"><p className="muted">Loading…</p></main>}>
+      <Suspense fallback={<main className="page pagewait" data-boot-pending><Preloader small /></main>}>
         <Outlet />
       </Suspense>
 

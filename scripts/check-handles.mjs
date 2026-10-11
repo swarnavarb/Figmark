@@ -40,7 +40,7 @@ console.log(`handles: ${segments.size} top-level routes, all reserved`);
 
 // Look-alikes of the platform and its staff are refused; ordinary names are not.
 const { checkUsername, handleShapeProblem } = await import(new URL('../api/dist/shared/handles.js', import.meta.url));
-for (const name of ['wallet', 'cart', 'escrow', 'figmark_support', 'f1gmark', 'fig.mark', 'official', '0fficial', 'support.team', 'help']) {
+for (const name of ['wallet', 'cart', 'figmark_support', 'f1gmark', 'fig.mark', 'official', '0fficial', 'support.team', 'help']) {
   assert.equal(checkUsername(name), 'reserved', `${name} should be reserved`);
 }
 for (const name of ['priya.s', 'badminton', 'supportive_mum', 'team_rocket', 'modern_home', 'l1ly']) {

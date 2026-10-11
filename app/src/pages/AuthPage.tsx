@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { DemoAccount } from '@shared/contracts';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api } from '../api';
@@ -10,8 +10,8 @@ type Mode = 'signin' | 'signup';
 /**
  * The single entry point for signed-out visitors.
  *
- * Sign-in takes an email or a phone number - the server normalises and resolves
- * either. Sign-up collects the minimum that makes an account usable; ID and
+ * Sign-in takes an email, a phone number or a username - the server normalises
+ * and resolves any of them. Sign-up collects the minimum that makes an account usable; ID and
  * bank verification are deferred to the point they actually matter.
  */
 export function AuthPage() {
@@ -129,8 +129,19 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
 
   // What the server would pick if the field is left alone, and what is wrong
   // with it when it is not.
-  const suggested = suggestUsername(displayName);
-  const problem = username.trim() ? checkUsername(username) : null;
+  // Kept per name, not per render: the fallback has a random tail, and a
+  // placeholder that changes on every keystroke elsewhere reads as a glitch.
+  const suggested = useMemo(() => (displayName.trim() ? suggestUsername(displayName) : ''), [displayName]);
+  const wanted = username.trim();
+  const problem = wanted ? checkUsername(wanted) : null;
+  const availability = useUsernameAvailability(mode === 'signup' && !problem ? wanted : '');
+  const usernameState: 'idle' | 'checking' | 'free' | 'taken' = !wanted
+    ? 'idle'
+    : problem
+      ? 'taken'
+      : availability.name !== wanted || availability.state === 'checking'
+        ? 'checking'
+        : availability.state === 'unknown' ? 'idle' : availability.state;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -179,14 +190,28 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
                     because nobody should be stopped at the door by it. */}
                 <label className="field">
                   <span>Username</span>
-                  <input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                    autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                    placeholder={suggested || 'arjun_mehta'} />
-                  <span className="field__hint">
+                  <span className={`handlefield handlefield--${usernameState}`}>
+                    <input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                      autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                      placeholder={suggested || 'arjunmehta'}
+                      aria-invalid={usernameState === 'taken'} aria-describedby="signup-username-hint" />
+                    <span className="handlefield__status" aria-hidden="true">
+                      {usernameState === 'checking' && <span className="handlefield__spin" />}
+                      {usernameState === 'free' && <HandleMark ok />}
+                      {usernameState === 'taken' && <HandleMark ok={false} />}
+                    </span>
+                  </span>
+                  <span id="signup-username-hint" className={`field__hint handlefield__hint--${usernameState}`} aria-live="polite">
                     {problem
                       ? USERNAME_PROBLEMS[problem]
-                      : <>People find you at <code>/{username.trim() || suggested || 'yourname'}</code> and message you at{' '}
-                        <code>@{username.trim() || suggested || 'yourname'}</code>.</>}
+                      : usernameState === 'checking'
+                        ? <>Checking whether <code>@{wanted}</code> is free…</>
+                        : usernameState === 'taken'
+                          ? availability.reason ?? `@${wanted} is already taken.`
+                          : usernameState === 'free'
+                            ? <><code>@{wanted}</code> is available. People find you at <code>/{wanted}</code>.</>
+                            : <>People find you at <code>/{wanted || suggested || 'yourname'}</code> and message you at{' '}
+                              <code>@{wanted || suggested || 'yourname'}</code>.</>}
                   </span>
                 </label>
                 <div className="field-row">
@@ -212,9 +237,10 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
 
             {mode === 'signin' && (
               <label className="field">
-                <span>Email or phone</span>
+                <span>Email, phone or username</span>
                 <input value={identifier} onChange={(e) => setIdentifier(e.target.value)}
-                  autoComplete="username" placeholder="you@example.com" required />
+                  autoComplete="username" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                  placeholder="you@example.com or arjunmehta" required />
               </label>
             )}
 
@@ -243,7 +269,7 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
             )}
 
             <button type="submit" className="btn btn--lg btn--block"
-              disabled={busy || (mode === 'signup' && problem !== null)}>
+              disabled={busy || (mode === 'signup' && (usernameState === 'taken' || usernameState === 'checking'))}>
               {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
           </form>
@@ -268,5 +294,44 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
             </div>
           )}
         </div>
+  );
+}
+
+/**
+ * Whether `name` is still free, asked a moment after the typing stops.
+ *
+ * Each new name cancels the question about the last one, so a slow answer for
+ * "arju" can never land on top of the answer for "arjun". A failed check is
+ * not a refusal: the server checks again when the account is made.
+ */
+function useUsernameAvailability(name: string) {
+  const [result, setResult] = useState<{ name: string; state: 'checking' | 'free' | 'taken' | 'unknown'; reason: string | null }>(
+    { name: '', state: 'free', reason: null },
+  );
+  useEffect(() => {
+    if (!name) return;
+    setResult({ name, state: 'checking', reason: null });
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      api.usernameAvailable(name, controller.signal)
+        .then((answer) => setResult({ name, state: answer.available ? 'free' : 'taken', reason: answer.reason }))
+        .catch(() => {
+          if (!controller.signal.aborted) setResult({ name, state: 'unknown', reason: null });
+        });
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [name]);
+  return result;
+}
+
+function HandleMark({ ok }: { ok: boolean }) {
+  return (
+    <svg className={`handlefield__mark handlefield__mark--${ok ? 'ok' : 'no'}`} viewBox="0 0 20 20" width="20" height="20">
+      <circle cx="10" cy="10" r="9" />
+      {ok ? <path d="M6 10.4l2.6 2.6L14 7.6" /> : <path d="M7 7l6 6M13 7l-6 6" />}
+    </svg>
   );
 }

@@ -14,7 +14,7 @@ import type { User, VerificationState } from '../../../shared/models.js';
 import type { Repository } from '../data/repository.js';
 import { config } from '../config.js';
 import { AuthError } from './errors.js';
-import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
+import { USERNAME_PROBLEMS, checkUsername, handleShapeProblem, suggestUsername } from '../../../shared/handles.js';
 import { PASSWORD_MAX_LENGTH, hashPassword, passwordProblem, verifyPassword } from './passwords.js';
 import { normalizeIndianMobile } from '../../../shared/verification.js';
 import {
@@ -195,7 +195,10 @@ export class MockAuthProvider implements AuthService {
       );
     }
 
-    const user = await this.repository.getUserByIdentifier(identifier);
+    // An email or phone first; failing that, a username - with or without its @.
+    const handle = identifier.replace(/^@/, '');
+    const user = (await this.repository.getUserByIdentifier(identifier))
+      ?? (handleShapeProblem(handle) === null ? (await this.repository.getByHandle(handle))?.user ?? null : null);
 
     // Guessing spread over many addresses is capped per account - but only for
     // devices that have never signed in to it. The owner's browser carries the

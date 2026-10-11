@@ -1126,6 +1126,32 @@ code, kbd, samp, pre {
    is not. */
 .field__hint a { color: var(--accent-text); text-decoration: underline; }
 .field-row { display: grid; gap: 15px; grid-template-columns: 1fr 1fr; }
+/* A username field that answers as it is typed: a spinner while the server is
+   asked, then a tick or a cross inside the field's right edge. */
+.field > .handlefield { position: relative; display: grid; font: inherit; color: inherit; }
+.handlefield input { width: 100%; padding-right: 40px; }
+.field .handlefield--free input, .field .handlefield--free input:focus { border-color: var(--ok); }
+.field .handlefield--taken input, .field .handlefield--taken input:focus { border-color: var(--danger); }
+.handlefield__status {
+  position: absolute; top: 0; bottom: 0; right: 11px;
+  display: grid; place-items: center; pointer-events: none;
+}
+.handlefield__spin {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid var(--border-strong); border-top-color: var(--accent);
+  animation: spin 700ms linear infinite;
+}
+.handlefield__mark { display: block; animation: handle-mark-in 220ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
+.handlefield__mark path { fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.handlefield__mark--ok circle { fill: var(--ok); }
+.handlefield__mark--no circle { fill: var(--danger); }
+.field__hint.handlefield__hint--free { color: var(--ok); }
+.field__hint.handlefield__hint--taken { color: var(--danger-text); }
+@keyframes handle-mark-in { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .handlefield__mark { animation: none; }
+  .handlefield__spin { animation-duration: 1.6s; }
+}
 /* A field tucked inside a row of a list rather than standing in a form. */
 .field--inline { gap: 5px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .field--inline > span:first-child { font-size: var(--t-xs); color: var(--text-dim); }

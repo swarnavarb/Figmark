@@ -1,0 +1,86 @@
+/* The one loading screen.
+ *
+ * Linked from index.html rather than bundled, so it paints before any script
+ * has arrived. It stays over the page until the first screen has its content
+ * (see src/components/Preloader.tsx), which is what keeps a refresh from
+ * showing this and then a skeleton after it. The same mark, smaller, is what
+ * a screen shows while its own code downloads.
+ */
+.boot {
+  position: fixed; inset: 0; z-index: 2147483000;
+  display: grid; place-content: center; justify-items: center; gap: 26px;
+  background: #080B12;
+  transition: opacity 320ms ease, visibility 0s linear 320ms;
+}
+.boot--out { opacity: 0; visibility: hidden; }
+
+.fmload { position: relative; width: 112px; height: 112px; display: grid; place-items: center; }
+.fmload--sm { transform: scale(0.62); }
+
+/* A thin arc chasing round the mark. */
+.fmload__ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(124, 58, 237, 0) 0 48%, #7C3AED 68%, #EC4899 86%, #FF5A5F 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  animation: fmload-spin 1.1s linear infinite;
+}
+.fmload__ring::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05) inset;
+}
+
+/* The brand mark, breathing, with light passing over it. */
+.fmload__mark {
+  position: relative; overflow: hidden;
+  width: 52px; height: 52px; border-radius: 16px;
+  background: linear-gradient(135deg, #7C3AED 0%, #EC4899 52%, #FF5A5F 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset, 0 10px 34px rgba(236, 72, 153, 0.38);
+  animation: fmload-breathe 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.fmload__mark::after {
+  content: ''; position: absolute; inset: -20%;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.55) 50%, transparent 65%);
+  transform: translateX(-110%);
+  animation: fmload-shine 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* Three of the brand's hues in a slow orbit the other way round. */
+.fmload__orbit { position: absolute; inset: -16px; animation: fmload-spin 3.6s linear infinite reverse; }
+.fmload__orbit i {
+  position: absolute; top: 50%; left: 50%;
+  width: 8px; height: 8px; margin: -4px; border-radius: 50%;
+}
+.fmload__orbit i:nth-child(1) { background: #06D6E7; box-shadow: 0 0 10px #06D6E7; transform: rotate(0deg) translateX(72px); }
+.fmload__orbit i:nth-child(2) { background: #A3E635; box-shadow: 0 0 10px #A3E635; transform: rotate(120deg) translateX(72px); width: 6px; height: 6px; margin: -3px; }
+.fmload__orbit i:nth-child(3) { background: #3B82F6; box-shadow: 0 0 10px #3B82F6; transform: rotate(240deg) translateX(72px); width: 7px; height: 7px; margin: -3.5px; }
+
+.boot__word {
+  font: 700 15px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0.32em; text-transform: uppercase; padding-left: 0.32em;
+  background: linear-gradient(90deg, #6B7C96 0%, #6B7C96 40%, #F2F5FA 50%, #6B7C96 60%, #6B7C96 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: fmload-word 2.2s linear infinite;
+}
+
+/* A screen's own code on its way, after the first load. */
+.pagewait { display: grid; place-items: center; min-height: 52vh; }
+
+@keyframes fmload-spin { to { transform: rotate(360deg); } }
+@keyframes fmload-breathe {
+  0%, 100% { transform: scale(0.92) rotate(-6deg); }
+  50% { transform: scale(1.04) rotate(6deg); }
+}
+@keyframes fmload-shine {
+  0%, 35% { transform: translateX(-110%); }
+  75%, 100% { transform: translateX(110%); }
+}
+@keyframes fmload-word { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .fmload__ring, .fmload__orbit, .fmload__mark::after { animation: none; }
+  .fmload__mark { animation: fmload-fade 1.6s ease-in-out infinite; }
+  .boot__word { animation: none; color: #9FB0C9; background: none; }
+  @keyframes fmload-fade { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+}

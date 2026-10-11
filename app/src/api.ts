@@ -2171,6 +2171,11 @@ export const api = {
   signup: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) =>
     post<SignupResponse>('/auth/signup', body),
 
+  /** Whether a username is still free, asked while it is typed on the sign-up form. */
+  usernameAvailable: (name: string, signal?: AbortSignal) =>
+    request<{ username: string; available: boolean; reason: string | null }>(
+      `/auth/username/${encodeURIComponent(name)}`, { signal }),
+
   /* Verification: email code, WhatsApp number, Aadhaar Secure QR. */
   verifyStatus: () => send<VerificationStatus>('/verify/status'),
   sendEmailCode: () => post<{ sentTo: string; devCode?: string; status: VerificationStatus }>('/verify/email/send'),

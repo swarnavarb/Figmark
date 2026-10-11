@@ -16,7 +16,7 @@ process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse, json: jsonResponse } = await import(new URL('http.js', fns));
-const { loginRoute: login, signupRoute: rawSignup, meRoute: me } = await import(new URL('auth-routes.js', fns));
+const { loginRoute: login, signupRoute: rawSignup, meRoute: me, usernameAvailableRoute: usernameAvailable } = await import(new URL('auth-routes.js', fns));
 const { verifiedSignup } = await import('./verified-signup.mjs');
 // Verified on the way out: this suite tests trading, smoke-verify.mjs tests verification.
 const signup = verifiedSignup(rawSignup);
@@ -370,6 +370,34 @@ await check('signs in by phone too', async () => {
   const byPhone = await login(req({ body: { identifier: DEMO_PHONE, password: DEMO_PASSWORD } }), ctx);
   assert.equal(byPhone.status, 200);
   assert.equal(byPhone.jsonBody.user.id, session.jsonBody.user.id);
+});
+
+await check('signs in by username, with or without the @', async () => {
+  for (const identifier of ['arjun', '@Arjun']) {
+    const byHandle = await login(req({ body: { identifier, password: DEMO_PASSWORD } }), ctx);
+    assert.equal(byHandle.status, 200, identifier);
+    assert.equal(byHandle.jsonBody.user.id, session.jsonBody.user.id);
+  }
+  const wrong = await login(req({ body: { identifier: 'arjun', password: 'nope' } }), ctx);
+  assert.equal(wrong.status, 401);
+  const nobody = await login(req({ body: { identifier: 'nobody_has_this', password: DEMO_PASSWORD } }), ctx);
+  assert.equal(nobody.status, 401);
+});
+
+await check('says whether a username is free as it is typed', async () => {
+  const taken = await usernameAvailable(req({ params: { name: 'arjun' } }), ctx);
+  assert.equal(taken.status, 200);
+  assert.equal(taken.jsonBody.available, false);
+  assert.match(taken.jsonBody.reason, /taken/);
+  const store = await usernameAvailable(req({ params: { name: 'Arjun_Collects' } }), ctx);
+  assert.equal(store.jsonBody.available, false, 'a shop holds its name too');
+  const free = await usernameAvailable(req({ params: { name: 'someone_new_42' } }), ctx);
+  assert.equal(free.jsonBody.available, true);
+  assert.equal(free.jsonBody.reason, null);
+  const reserved = await usernameAvailable(req({ params: { name: 'cart' } }), ctx);
+  assert.equal(reserved.jsonBody.available, false);
+  const bad = await usernameAvailable(req({ params: { name: 'no spaces/here' } }), ctx);
+  assert.equal(bad.jsonBody.available, false);
 });
 
 await check('rejects a wrong password with 401', async () => {

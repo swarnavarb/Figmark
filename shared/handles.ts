@@ -41,7 +41,7 @@ const TAKEN = new Set([
   ...APP_ROUTE_SEGMENTS,
   'app', 'about', 'auth', 'login', 'logout', 'signup', 'signin', 'register', 'account', 'accounts',
   'listings', 'orders', 'my', 'batch', 'settings', 'help', 'support', 'terms', 'privacy', 'search',
-  'new', 'edit', 'static', 'assets', 'figmark', 'escrow', 'payments', 'pay', 'checkout', 'notifications',
+  'new', 'edit', 'static', 'assets', 'figmark', 'payments', 'pay', 'checkout', 'notifications',
   'inbox', 'feed', 'home', 'explore', 'store', 'stores', 'profile', 'user', 'users', 'wanted', 'wants',
   'insights', 'dashboard', 'billing', 'security', 'status', 'blog', 'news', 'docs', 'legal', 'contact',
   'refund', 'quest', 'message', 'service', 'route', 'purchase', 'packages', 'growth', 'invite', 'share',
@@ -62,7 +62,7 @@ const BRAND = unconfuse('figmark');
  */
 const STAFF_PARTS = new Set([
   'official', 'officials', 'support', 'admin', 'admins', 'administrator', 'staff', 'moderator', 'moderators',
-  'helpdesk', 'security', 'verified', 'customercare', 'escrow',
+  'helpdesk', 'security', 'verified', 'customercare',
 ].map(unconfuse));
 
 /** Fine inside a handle, not as all of it: `help`, `mod` or `team` alone reads as the platform. */

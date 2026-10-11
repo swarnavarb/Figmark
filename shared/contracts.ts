@@ -58,7 +58,7 @@ export interface AuthUser {
 }
 
 export interface LoginRequest {
-  /** Email or phone; the server normalises and resolves either. */
+  /** Email, phone or username; the server normalises and resolves any of them. */
   identifier: string;
   password: string;
 }
