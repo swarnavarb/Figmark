@@ -10,6 +10,7 @@ import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.j
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
+import { supplierIdOf } from '../../../shared/services.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -454,6 +455,16 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       lotNext: lotNextFor(lot),
       /** The route's buttons and the lot's moves, in order - null when not in a lot. */
       serial: serialFor(order, lot),
+      /** The seller's go-ahead that this customer's parcel can ship. */
+      readyAt: order.checkpoints?.ready_to_dispatch ?? null,
+      /** Who works its lot, so the card offers the ready press and photo audiences that mean something. */
+      lotCrew: lot ? {
+        readyGate: Boolean(lot.crew?.readyGate),
+        supplier: Boolean(supplierIdOf(lot)),
+        handler: Boolean(lot.handler?.handlerUserId),
+      } : null,
+      /** Photos of the piece on its way - the shop sees every one. */
+      photos: order.photos ?? [],
       /** The one tick a seller makes from this screen. */
       chinaReceivedAt: order.checkpoints?.china_received ?? null,
       /** Ticked on the lot screen, not this one - read here so this screen's

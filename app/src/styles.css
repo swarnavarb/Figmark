@@ -13135,6 +13135,10 @@ button.sk-plan__pick { cursor: pointer; }
 .cust__ready span { font-size: var(--t-xs); font-weight: var(--w-normal); letter-spacing: 0; color: var(--text-dim); }
 .cust__ready.is-on { background: var(--ok); color: var(--ok-ink); }
 .cust__ready.is-on span { color: var(--ok-ink); }
+.ocust__body > .cust__ready { margin: 0 0 10px; }
+.ocard__ready { display: inline-flex; align-items: center; gap: 6px; justify-self: start; align-self: start; padding: 7px 12px; border: 1.5px solid var(--ok); border-radius: 999px; background: transparent; color: var(--ok); font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); cursor: pointer; }
+.ocard__ready.is-on { background: var(--ok); color: var(--ok-ink); }
+.ocard__ready:disabled { opacity: 0.55; cursor: default; }
 .trk-photos { margin-top: 14px; }
 
 .stepact__who.is-forwarder { background: var(--blue-soft); color: var(--blue-text); }

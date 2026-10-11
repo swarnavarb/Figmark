@@ -27,7 +27,8 @@ import {
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import type { BuyerReversalDetails, Listing, Lot, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import { OrderPhotos } from '../components/OrderPhotos';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
@@ -1031,6 +1032,23 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     }
   }
 
+  /** The seller's go-ahead for several orders at once - a customer's whole parcel. */
+  async function markReady(rows: SaleRow[], on: boolean) {
+    const todo = rows.filter((row) => Boolean(row.readyAt) !== on);
+    if (todo.length === 0) return;
+    setBusy(todo[0]!.id);
+    setError(null);
+    try {
+      for (const row of todo) await api.setCheckpoint(row.id, 'ready_to_dispatch', on);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function accept(row: SaleRow) {
     setBusy(row.id);
     setError(null);
@@ -1100,6 +1118,11 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       busy={busy === row.id}
       needsAnswer={needsAnswer.has(row.id)}
       onPress={(button, on) => void press(row, button, on)}
+      onReady={(on) => void markReady([row], on)}
+      onPhotos={(photos) => setData((current) => current && {
+        ...current,
+        orders: current.orders.map((entry) => (entry.id === row.id ? { ...entry, photos } : entry)),
+      })}
       onLotTracking={() => (onTracking
         ? onTracking()
         : navigate(`/shop?tab=lots&lot=${encodeURIComponent(row.lotId ?? '')}&view=tracking`))}
@@ -1214,6 +1237,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           {customers.map((customer) => (
             <CustomerOrders key={customer.key} customer={customer}
               open={isOpen(customer)} needsAnswer={needsAnswer}
+              busy={busy !== null} onReadyAll={(on) => void markReady(readyable(customer.rows), on)}
               onToggle={(open) => setOpenOverride((current) => ({ ...current, [customer.key]: open }))}>
               {customer.rows.map((row, index) => card(row, customer.start + index))}
             </CustomerOrders>
@@ -1413,14 +1437,25 @@ function shortStep(row: SaleRow): string {
  * pending, then each order's name and where it has got to - enough to scan a
  * whole lot without the cards.
  */
-function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
+/** The orders a ready press can still mean something for: live, and not gone out yet. */
+function readyable(rows: readonly SaleRow[]): SaleRow[] {
+  return rows.filter((row) => !isClosed(row) && !isCompleted(row) && !row.dispatchedAt && !row.inHand
+    && !(row.bookingOnly && !row.accepted));
+}
+
+function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, onReadyAll, children }: {
   customer: CustomerGroup;
   open: boolean;
   needsAnswer: ReadonlySet<string>;
   onToggle: (open: boolean) => void;
+  busy: boolean;
+  /** Ready to dispatch, for every order of theirs still to go. */
+  onReadyAll: (on: boolean) => void;
   children: ReactNode;
 }) {
   const { buyer, rows } = customer;
+  const toGo = readyable(rows);
+  const allReady = toGo.length > 0 && toGo.every((row) => Boolean(row.readyAt));
   /* Called-off orders owe nothing; they are listed but not counted. */
   const live = rows.filter((row) => !isClosed(row));
   const sum = (pick: (row: SaleRow) => number) =>
@@ -1485,6 +1520,19 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
               total={formatTotals(sum((row) => row.totalMinor), currency)}
               paid={formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}
               balance={formatTotals(sum((row) => row.outstandingMinor), currency)} />
+          )}
+          {/* One press for the whole parcel: everything of theirs can go. With
+              the lot's ready gate on, the handler waits for exactly this. */}
+          {toGo.length > 0 && (
+            <button type="button" className={`cust__ready${allReady ? ' is-on' : ''}`} aria-pressed={allReady}
+              disabled={busy} onClick={() => onReadyAll(!allReady)}>
+              {allReady ? '✓ Ready to dispatch' : `Ready to dispatch all ${toGo.length}`}
+              <span>
+                {allReady
+                  ? 'Everything of theirs can go. Press again to hold it.'
+                  : toGo[0]?.lotCrew?.handler ? 'Tell the handler this parcel can go.' : 'Mark this parcel as cleared to go out.'}
+              </span>
+            </button>
           )}
           <div className="orows">{children}</div>
         </div>
@@ -1849,7 +1897,7 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, inLot = false, glowing, busy, needsAnswer, onPress, onLotTracking, onFile, onReject,
+  index, row, store, from, inLot = false, glowing, busy, needsAnswer, onPress, onReady, onPhotos, onLotTracking, onFile, onReject,
   onAccept, onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -1866,6 +1914,9 @@ function OrderRow({
   busy: boolean;
   needsAnswer: boolean;
   onPress: (button: CardButton, on: boolean) => void;
+  /** This one order cleared to go out, or held back again. */
+  onReady: (on: boolean) => void;
+  onPhotos: (photos: OrderPhoto[]) => void;
   /** The Lot stop on this card's buttons: opens the lot's Tracking, where the crate is moved. */
   onLotTracking: () => void;
   onFile: () => void;
@@ -2015,6 +2066,18 @@ function OrderRow({
           orderLink={{ to: `/order/${row.id}`, state: linkState }}
           stepOf={row.routeStep}
         />
+      )}
+
+      {/* Inside its lot: the seller's go-ahead for this one piece, and its photos. */}
+      {inLot && readyable([row]).length > 0 && (
+        <button type="button" className={`ocard__ready${row.readyAt ? ' is-on' : ''}`} aria-pressed={Boolean(row.readyAt)}
+          disabled={busy} onClick={() => onReady(!row.readyAt)}>
+          <Icon name="check" size={14} /> {row.readyAt ? 'Ready to dispatch' : 'Mark ready to dispatch'}
+        </button>
+      )}
+      {inLot && (
+        <OrderPhotos orderId={row.id} photos={row.photos} seller onChange={onPhotos}
+          audiences={['buyer', ...(row.lotCrew?.supplier ? ['supplier' as const] : []), ...(row.lotCrew?.handler ? ['handler' as const] : [])]} />
       )}
 
       <div className="ocard__acts">

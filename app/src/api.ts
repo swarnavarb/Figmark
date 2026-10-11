@@ -661,6 +661,12 @@ export interface SaleRow {
   serial: SerialButton[] | null;
   /** Where it is on its lot's route, counted over every step: index and total. */
   routeStep: { at: number; of: number } | null;
+  /** When the seller said this customer's parcel can ship. */
+  readyAt: string | null;
+  /** Its lot's crew: the ready gate, and who is tagged to see photos. Null outside a lot. */
+  lotCrew: { readyGate: boolean; supplier: boolean; handler: boolean } | null;
+  /** Photos of the piece on its way. */
+  photos: OrderPhoto[];
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
   /** When the seller ticked it delivered, on the lot's own item list. */
