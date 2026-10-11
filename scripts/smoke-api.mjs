@@ -41,7 +41,7 @@ const createOrder = async (request, ctx) => {
   if (opened.status >= 300 || !order || order.placedAt !== null) return opened;
   const repository = await (await import(new URL('../api/dist/api/src/data/index.js', import.meta.url))).getRepository();
   const refusal = await placeOrder(repository, order, 'paid', order.buyerId, { tellSeller: false });
-  if (refusal) throw new Error(refusal);
+  if (refusal) throw new Error(refusal.message);
   return { ...opened, status: 201, jsonBody: { ...opened.jsonBody, order: await repository.getOrder(order.id) } };
 };
 const {
@@ -7054,6 +7054,52 @@ await check('a seller saving an edit never puts back stock a buyer took meanwhil
   const topped = (await editListing(req({ headers: auth, params: { id: item.id },
     body: { quantityAvailable: 5, quantityWas: 3 } }), ctx)).jsonBody.listing;
   assert.equal(topped.quantityAvailable, 4);
+});
+
+await check('a cart item is charged the price now, and says so before paying', async () => {
+  const item = await list({ title: 'Repriced vase', priceMinor: 2_000, quantityAvailable: 3 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: item.id, quantity: 2 } }), ctx)).jsonBody.order;
+  assert.equal(opened.placedAt, null);
+  assert.equal((await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 2_500 } }), ctx)).status, 200);
+
+  const inCart = () => myItems(req({ headers: payAuth }), ctx)
+    .then((res) => res.jsonBody.groups.flatMap((group) => group.items).find((entry) => entry.id === opened.id));
+  const carted = await inCart();
+  assert.equal(carted.totalMinor, 5_000, 'the cart reads at today\'s price');
+  assert.deepEqual(carted.priceChange, { fromMinor: 4_000, toMinor: 5_000 });
+  assert.equal(carted.unavailable, null);
+
+  const quote = (await checkout(req({ headers: payAuth, params: { id: opened.id } }), ctx)).jsonBody;
+  assert.equal(quote.itemMinor, 5_000);
+  assert.deepEqual(quote.priceChange, { fromMinor: 4_000, toMinor: 5_000 });
+  assert.equal(quote.unavailable, null);
+
+  // Repriced again after the checkout was read: the old total is never charged.
+  await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 3_000 } }), ctx);
+  const refused = await claimPayment(req({ headers: payAuth, params: { id: opened.id }, body: { reference: 'UTR-PRICE' } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'price_changed');
+  assert.match(refused.jsonBody.message, /₹50 is now ₹60/);
+  const placed = await claimPayment(req({ headers: payAuth, params: { id: opened.id }, body: { reference: 'UTR-PRICE' } }), ctx);
+  assert.equal(placed.status, 200, JSON.stringify(placed.jsonBody));
+  const order = await (await getRepository()).getOrder(opened.id);
+  assert.equal(order.unitPriceMinor, 3_000);
+  assert.equal(order.priceChange, null, 'an order is at the price it was placed at');
+  assert.notEqual(order.placedAt, null);
+});
+
+await check('a cart item that sold out or was withdrawn says so and cannot be paid', async () => {
+  const item = await list({ title: 'Withdrawn jug', priceMinor: 1_500, quantityAvailable: 2 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: item.id } }), ctx)).jsonBody.order;
+  await deleteListing(req({ headers: auth, params: { id: item.id } }), ctx);
+  const carted = (await myItems(req({ headers: payAuth }), ctx)).jsonBody.groups
+    .flatMap((group) => group.items).find((entry) => entry.id === opened.id);
+  assert.equal(carted.unavailable, 'This item is no longer for sale.');
+  const quote = (await checkout(req({ headers: payAuth, params: { id: opened.id } }), ctx)).jsonBody;
+  assert.equal(quote.unavailable, 'This item is no longer for sale.');
+  const refused = await claimPayment(req({ headers: payAuth, params: { id: opened.id }, body: { reference: 'UTR-GONE' } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.jsonBody.error, 'unavailable');
 });
 
 await check('a seller can manually expire an item that nobody has bought, never delete it', async () => {

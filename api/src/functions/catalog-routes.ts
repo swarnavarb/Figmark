@@ -22,7 +22,7 @@ import { moderation } from '../moderation.js';
 import { isLive } from '../../../shared/service-stores.js';
 import { claimPhotos, releaseListingPhotos } from '../storage/release.js';
 import { error, handler, json } from './http.js';
-import { placeOrder } from './placement.js';
+import { checkoutUnitPriceMinor, placeOrder, repriceCheckout } from './placement.js';
 import {
   affiliateFor, claimCookieReferrals, offersAffiliate, recordReferral, referralCookie, referralsInCookie,
   resolveShortCode, shortCodeFor, verifyAffiliateToken,
@@ -989,15 +989,12 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     const open = (await repository.listOrdersForBuyer(user.id)).find((entry) =>
       entry.listingId === listing.id && entry.placedAt === null && entry.status === 'pending_payment');
     if (open) {
-      if (affiliate && open.affiliate?.referrerId !== affiliate.referrerId) {
-        // Nothing is paid at a checkout, so its price can still follow the
-        // link that brought the buyer: the old link's discount back on, the new one's off.
-        const base = open.unitPriceMinor + (open.affiliate?.buyerOffMinor ?? 0);
-        open.affiliate = affiliate;
-        open.unitPriceMinor = Math.max(100, base - (affiliate.buyerOffMinor ?? 0));
-      }
+      // Nothing is paid at a checkout, so its price follows both the link
+      // that brought the buyer and whatever the seller charges now.
+      if (affiliate && open.affiliate?.referrerId !== affiliate.referrerId) open.affiliate = affiliate;
       open.quantity = quantity;
       if (fromPost && !open.fromPost) open.fromPost = fromPost;
+      await repriceCheckout(repository, open, listing);
       open.hold = { ...open.hold, amountMinor: open.unitPriceMinor * quantity };
       open.buyClicks = (open.buyClicks ?? 1) + 1;
       open.updatedAt = new Date().toISOString();
@@ -1013,7 +1010,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
 
   const now = new Date().toISOString();
   // A buyer who came through somebody's link pays the shop's link price.
-  const unitPriceMinor = Math.max(100, listing.priceMinor - (affiliate?.buyerOffMinor ?? 0));
+  const unitPriceMinor = checkoutUnitPriceMinor(listing, { affiliate });
   const amountMinor = unitPriceMinor * quantity;
   const now2 = new Date().toISOString();
 
@@ -1112,7 +1109,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   // Book straight from the item page: the choice is made, so it is an order.
   if (body.plan === 'book') {
     const refusal = await placeOrder(repository, placed, 'booked', user.id);
-    if (refusal) return error(409, 'unavailable', refusal);
+    if (refusal) return error(409, refusal.code, refusal.message);
   }
 
   return json(201, { order: placed });

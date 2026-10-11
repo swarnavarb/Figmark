@@ -25,7 +25,7 @@ import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
 import { DirectTrack, TrackHero, endedOf, boxesFor, withLastMile } from '../components/OrderTrack';
 import { useStepActs } from '../components/StepActs';
-import { ItemCard, Svg, Urgency } from '../components/ListingBlocks';
+import { ItemCard, PriceChangeNote, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
@@ -513,6 +513,11 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       setRejecting(false);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
+      // Repriced or sold out while the checkout was open: show it as it is
+      // now, so the next press is on a total the buyer has actually seen.
+      if (err instanceof ApiRequestError && (err.code === 'price_changed' || err.code === 'unavailable')) {
+        await Promise.resolve(onDone()).catch(() => {});
+      }
     } finally {
       setBusy(null);
     }
@@ -953,10 +958,23 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not price this order.'),
       );
-  }, [order.id]);
+    // Again whenever the price on the order moves, so the totals below are
+    // never the ones from before it did.
+  }, [order.id, order.unitPriceMinor, order.quantity]);
 
   if (error) return <ErrorNotice message={error} />;
   if (!quote) return <p className="muted">Loading…</p>;
+
+  if (quote.unavailable) {
+    return (
+      <div className="stack">
+        <p className="cartnote cartnote--gone"><Svg name="box" size={14} /> {quote.unavailable} It cannot be bought right now.</p>
+        <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={onCancel}>
+          Close
+        </button>
+      </div>
+    );
+  }
 
   const protectionFee = quote.protectionFeeMinor;
   const canProtect = quote.protectionAvailable;
@@ -984,6 +1002,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
 
   return (
     <div className="stack">
+      {quote.priceChange && <PriceChangeNote change={quote.priceChange} currency={quote.currency} />}
       <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
       {credit > 0 && (
         <>

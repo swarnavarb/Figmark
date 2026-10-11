@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect, lotIsDone, lotPhase } from '../../../shared/fulfilment.js';
-import type { Lot, Order, StageEvent, User } from '../../../shared/models.js';
+import type { Listing, Lot, Order, StageEvent, User } from '../../../shared/models.js';
+import { repriceCheckout, unavailableReason } from './placement.js';
 import {
   BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNo, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeJoinsLot, routeOf, sameSteps, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
 } from '../../../shared/routes.js';
@@ -1019,10 +1020,22 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
 
   // Photos for the purchase cards, one read per item bought.
   const photoOf = new Map<string, string | null>();
+  const listingOf = new Map<string, Listing | null>();
   for (const listingId of new Set(orders.map((order) => order.listingId))) {
     const listing = await repository.getListing(listingId);
+    listingOf.set(listingId, listing);
     const lead = listing?.photos.find((photo) => photo.isPrimary) ?? listing?.photos[0];
     photoOf.set(listingId, lead?.url || null);
+  }
+
+  // The cart reads at today's price and says what can no longer be had: a
+  // seller may have repriced, sold out or withdrawn an item since Buy.
+  const unavailableOf = new Map<string, string | null>();
+  for (const order of orders) {
+    if (order.placedAt !== null) continue;
+    const listing = listingOf.get(order.listingId) ?? null;
+    unavailableOf.set(order.id, unavailableReason(listing, order));
+    if (listing) await repriceCheckout(repository, order, listing).catch(() => false);
   }
 
   // Store, then lot: two shops' direct sales are two groups, not one.
@@ -1090,6 +1103,12 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
         canPayMore: actionsFor(order, user.id).includes('pay_more'),
         /** False while the buyer has pressed Buy but not yet paid or booked. */
         placed: order.placedAt !== null,
+        /** A cart item that can no longer be bought as it stands, and why. */
+        unavailable: unavailableOf.get(order.id) ?? null,
+        /** A cart item whose price moved since Buy: the total then and now. */
+        priceChange: order.placedAt === null && order.priceChange
+          ? { fromMinor: order.priceChange.fromMinor * order.quantity, toMinor: order.priceChange.toMinor * order.quantity }
+          : null,
         ...orderMoney(order),
         /** Ticked once the seller has this one in hand and is finishing it. */
         checkpoints: order.checkpoints ?? {},

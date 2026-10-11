@@ -30,7 +30,7 @@ import { availableManagers, bringUpToDate, managerName, pickManager, quoteFee, r
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
-import { adjustHeldCredit, heldCreditMinor, placeOrder, returnKeptCredit } from './placement.js';
+import { adjustHeldCredit, heldCreditMinor, placeOrder, repriceCheckout, returnKeptCredit, unavailableReason } from './placement.js';
 import { error, handler, json } from './http.js';
 import { ownPhotos } from '../storage/index.js';
 import { claimPhotos } from '../storage/release.js';
@@ -198,7 +198,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
 
   // Choosing to pay is what makes a checkout an order the seller sees.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id);
-  if (refusal) return error(409, 'unavailable', refusal);
+  if (refusal) return error(409, refusal.code, refusal.message);
 
   const now = new Date().toISOString();
   const totalMinor = orderTotalMinor(order);
@@ -297,6 +297,16 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
+  // A cart item is priced and checked against the item as it is now, not as
+  // it was when Buy was pressed: the seller may have repriced it, sold the
+  // last one or taken it down since.
+  let unavailable: string | null = null;
+  if (order.placedAt === null) {
+    const listing = await repository.getListing(order.listingId);
+    unavailable = unavailableReason(listing, order);
+    if (listing) await repriceCheckout(repository, order, listing);
+  }
+
   const seller = await repository.getUserById(order.sellerId);
   const totalMinor = orderTotalMinor(order);
 
@@ -305,6 +315,12 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     itemMinor: totalMinor,
+    /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
+    unavailable,
+    /** The item's price, for this quantity, when Buy was pressed and now - when the two differ. */
+    priceChange: order.placedAt === null && order.priceChange
+      ? { fromMinor: order.priceChange.fromMinor * order.quantity, toMinor: order.priceChange.toMinor * order.quantity }
+      : null,
     /** Credit this seller kept for this buyer, spent on the order the moment it is placed. */
     creditMinor: Math.min(totalMinor, await heldCreditMinor(repository, order)),
     /** Null when the seller does not take an advance on this item. */
@@ -688,7 +704,7 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
 
   // The claim itself tells the seller, so placing stays quiet.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id, { tellSeller: false });
-  if (refusal) return error(409, 'unavailable', refusal);
+  if (refusal) return error(409, refusal.code, refusal.message);
   if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
   const now = new Date().toISOString();
@@ -2331,7 +2347,7 @@ async function bookOrder(request: HttpRequest, _context: InvocationContext) {
   const refusal = await placeOrder(repository, order, 'booked', user.id);
   if (refusal) {
     order.bookingOnly = false;
-    return error(409, 'unavailable', refusal);
+    return error(409, refusal.code, refusal.message);
   }
 
   order.updatedAt = new Date().toISOString();

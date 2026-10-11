@@ -1442,6 +1442,12 @@ export interface Order extends BaseDocument {
    */
   payKey?: string | null;
   /**
+   * Set while this is still a checkout and the item's price has moved since
+   * Buy was pressed: what it was then and what it is now. The checkout is
+   * charged the price now, and says so before the buyer pays.
+   */
+  priceChange?: { fromMinor: number; toMinor: number; at: string } | null;
+  /**
    * How the first payment was made. Every later payment on the order uses the
    * same one: switching quietly would move money outside what was agreed.
    */

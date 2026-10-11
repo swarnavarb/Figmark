@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Order } from '../../../shared/models.js';
+import type { Listing, Order } from '../../../shared/models.js';
 import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { affiliateCommissionMinor } from '../../../shared/affiliate.js';
@@ -17,6 +17,53 @@ const HOW_TEXT: Record<PlacedHow, string> = {
   advance: 'to pay an advance',
   booked: 'to book',
 };
+
+/** Why a checkout could not be placed. `price_changed` means: look again, then pay. */
+export interface Refusal {
+  code: 'unavailable' | 'price_changed';
+  message: string;
+}
+
+/**
+ * What one of these costs a buyer today: the item's price now, less the
+ * discount of the link the checkout was opened through - the same sum Buy
+ * makes in catalog-routes.ts.
+ */
+export function checkoutUnitPriceMinor(listing: Pick<Listing, 'priceMinor'>, order: Pick<Order, 'affiliate'>): number {
+  return Math.max(100, listing.priceMinor - (order.affiliate?.buyerOffMinor ?? 0));
+}
+
+/** Why this checkout cannot become an order right now, or null when it can. */
+export function unavailableReason(listing: Listing | null, order: Order): string | null {
+  if (!listing || listing.status !== 'active' || isExpired(listing)) return 'This item is no longer for sale.';
+  if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
+  if (!isMultiple(listing) && order.quantity > listing.quantityAvailable) {
+    return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
+  }
+  return null;
+}
+
+/**
+ * Bring a checkout up to the item's price now.
+ *
+ * A cart item keeps the price Buy was pressed at, and a seller can change the
+ * price afterwards - up or down. Nothing is paid at a checkout, so it simply
+ * follows; what changes is recorded on it, so the cart and the checkout can
+ * say so before anyone pays. True when the price moved and the order was saved.
+ */
+export async function repriceCheckout(repository: Repo, order: Order, listing: Listing): Promise<boolean> {
+  if (order.placedAt !== null) return false;
+  const now = checkoutUnitPriceMinor(listing, order);
+  if (now === order.unitPriceMinor) return false;
+  // Measured from the price they first saw, however many times it has moved since.
+  const fromMinor = order.priceChange?.fromMinor ?? order.unitPriceMinor;
+  order.unitPriceMinor = now;
+  order.hold = { ...order.hold, amountMinor: now * order.quantity };
+  order.priceChange = fromMinor === now ? null : { fromMinor, toMinor: now, at: new Date().toISOString() };
+  order.updatedAt = new Date().toISOString();
+  await repository.updateOrder(order);
+  return true;
+}
 
 /**
  * Turns a checkout into an order: the moment the buyer chose pay, advance or
@@ -37,17 +84,25 @@ export async function placeOrder(
   how: PlacedHow,
   actorId: string,
   options: { tellSeller?: boolean } = {},
-): Promise<string | null> {
+): Promise<Refusal | null> {
   if (order.placedAt !== null) return null;
 
-  const listing = await repository.getListing(order.listingId);
-  if (!listing || listing.status !== 'active' || isExpired(listing)) {
-    return 'This item is no longer for sale.';
+  const fetched = await repository.getListing(order.listingId);
+  const unavailable = unavailableReason(fetched, order);
+  if (unavailable) return { code: 'unavailable', message: unavailable };
+  const listing = fetched!;
+
+  // Paid at the price on the item now, never the one from when Buy was
+  // pressed - and never at a price the buyer has not been shown. A change
+  // since they opened the checkout sends them back to look at it again.
+  const was = orderTotalMinor(order);
+  if (await repriceCheckout(repository, order, listing)) {
+    return {
+      code: 'price_changed',
+      message: `The seller changed the price: ${rupees(was)} is now ${rupees(orderTotalMinor(order))}. `
+        + 'Check the new total, then try again.',
+    };
   }
-  if (!isMultiple(listing) && order.quantity > listing.quantityAvailable) {
-    return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
-  }
-  if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
 
   // The order is claimed before anything else moves. The write is checked, so
   // of two requests placing this same checkout at once - a double tap on Pay -
@@ -61,7 +116,7 @@ export async function placeOrder(
   if (!(await repository.takeStock(order))) {
     order.placedAt = null;
     await repository.updateOrder(order);
-    return isMultiple(listing) ? 'This item is no longer for sale.' : 'This item has just sold out.';
+    return { code: 'unavailable', message: isMultiple(listing) ? 'This item is no longer for sale.' : 'This item has just sold out.' };
   }
   if (listing.privateFor) order.privateDeal = true;
 
@@ -71,6 +126,8 @@ export async function placeOrder(
 
   order.createdAt = now;
   order.updatedAt = now;
+  // Shown on the checkout only; an order is at the price it was placed at.
+  order.priceChange = null;
   // The timeline opens when the order did, not when Buy was first pressed.
   order.stageHistory = order.stageHistory.map((event) =>
     event.kind === 'joined' || event.note === 'Order placed.' ? { ...event, enteredAt: now } : event);

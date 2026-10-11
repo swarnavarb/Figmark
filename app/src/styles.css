@@ -10450,6 +10450,18 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .icard__open:hover { background: var(--surface-hover); transform: translateY(-1px); }
 /* Cart: take it out, or keep it for later on Saved. A row of its own under Checkout. */
 .cartacts { flex: 1 1 100%; display: flex; gap: 8px; justify-content: flex-end; }
+/* A cart item that changed since Buy: its price moved, or it can no longer be had. */
+.cartnote {
+  flex: 1 1 100%; margin: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 8px 11px; border-radius: var(--r-sm);
+  font-size: var(--t-sm); line-height: 1.4;
+}
+.cartnote s { color: var(--text-faint); }
+.cartnote b { font-family: var(--mono); }
+.cartnote--up { background: rgba(251, 191, 36, 0.12); color: #FBBF24; }
+.cartnote--down { background: var(--ok-soft); color: var(--ok); }
+.cartnote--gone { background: var(--danger-soft); color: var(--danger-text); }
 @media (max-width: 420px) {
   .icard__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

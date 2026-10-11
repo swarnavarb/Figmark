@@ -591,8 +591,18 @@ export interface Credit {
   tier: string | null;
 }
 
+/** A cart item's total when Buy was pressed, and now. */
+export interface PriceChange {
+  fromMinor: number;
+  toMinor: number;
+}
+
 export interface Checkout {
   itemMinor: number;
+  /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
+  unavailable?: string | null;
+  /** Set when the price moved since Buy was pressed; the checkout is already at the new one. */
+  priceChange?: PriceChange | null;
   /**
    * Credit this seller kept for the buyer from an earlier order. It is spent
    * on this one the moment it is placed, so what is due now is less by it.
@@ -1746,6 +1756,10 @@ export interface ItemGroup {
     canPayMore: boolean;
     /** False while the buyer has pressed Buy but not yet paid or booked. */
     placed: boolean;
+    /** A cart item that can no longer be bought as it stands, and why. */
+    unavailable?: string | null;
+    /** A cart item whose price moved since Buy: the item total then and now. */
+    priceChange?: PriceChange | null;
     /** This item's own step on its lot's route; null outside a lot. */
     stepAt: number | null;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
