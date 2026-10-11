@@ -6,10 +6,12 @@ import {
   type OrderCheckpoint,
 } from '@shared/enums';
 import { countOf } from '@shared/board';
+import type { OrderPhoto, PhotoAudience } from '@shared/models';
 import { ApiRequestError, api, type BoardCustomer, type LotBoard } from '../api';
 import { EmptyState, Icon } from './ui';
 import { formatWeight } from '../format';
 import { useUndo } from './Undo';
+import { OrderPhotos } from './OrderPhotos';
 
 /**
  * One lot, worked customer by customer.
@@ -41,33 +43,52 @@ export function LotPeople({ board, onChanged, onError }: {
    * replaces the guess when it lands; a failure puts the row back.
    */
   async function toggle(orderId: string, checkpoint: OrderCheckpoint, on: boolean) {
-    const key = `${orderId}:${checkpoint}`;
-    if (busy.has(key)) return;
-    setBusy((current) => new Set(current).add(key));
+    await toggleMany([orderId], checkpoint, on);
+  }
+
+  /**
+   * Several items at once - a whole parcel made ready - as one optimistic
+   * change, so the presses cannot each start from the same stale board and
+   * leave only the last one showing.
+   */
+  async function toggleMany(orderIds: string[], checkpoint: OrderCheckpoint, on: boolean) {
+    const keys = orderIds.map((orderId) => `${orderId}:${checkpoint}`);
+    if (keys.some((key) => busy.has(key))) return;
+    setBusy((current) => new Set([...current, ...keys]));
 
     const before = board;
-    onChanged({
+    const stamp = on ? new Date().toISOString() : null;
+    const optimistic: LotBoard = {
       ...before,
       customers: before.customers.map((customer) => ({
         ...customer,
         orders: customer.orders.map((order) =>
-          order.id === orderId
-            ? { ...order, checkpoints: { ...order.checkpoints, [checkpoint]: on ? new Date().toISOString() : null } }
+          orderIds.includes(order.id)
+            ? { ...order, checkpoints: { ...order.checkpoints, [checkpoint]: stamp } }
             : order,
         ),
       })),
-    });
+    };
+    onChanged(optimistic);
 
     try {
-      const result = await api.setCheckpoint(orderId, checkpoint, on);
-      onChanged({ ...before, tally: result.tally });
-      const undo = result.undo;
-      if (undo) {
+      let latest = before.tally;
+      let undo: { id: string; until: string } | undefined;
+      for (const orderId of orderIds) {
+        const result = await api.setCheckpoint(orderId, checkpoint, on);
+        latest = result.tally;
+        undo = result.undo;
+      }
+      onChanged({ ...optimistic, tally: latest });
+      // One press, one undo: a parcel's worth is put right from the board.
+      if (undo && orderIds.length === 1) {
+        const orderId = orderIds[0]!;
+        const tag = undo;
         offerUndo({
           label: 'Tick saved',
-          until: undo.until,
+          until: tag.until,
           undo: async () => {
-            const back = await api.setCheckpoint(orderId, checkpoint, !on, undefined, undo.id);
+            const back = await api.setCheckpoint(orderId, checkpoint, !on, undefined, tag.id);
             onChanged({ ...before, tally: back.tally });
           },
         });
@@ -78,7 +99,7 @@ export function LotPeople({ board, onChanged, onError }: {
     } finally {
       setBusy((current) => {
         const next = new Set(current);
-        next.delete(key);
+        keys.forEach((key) => next.delete(key));
         return next;
       });
     }
@@ -87,6 +108,12 @@ export function LotPeople({ board, onChanged, onError }: {
   const { tally } = board;
   const china = ORDER_CHECKPOINTS.filter((entry) => CHECKPOINT_SIDE[entry] === 'china');
   const india = ORDER_CHECKPOINTS.filter((entry) => CHECKPOINT_SIDE[entry] === 'india');
+  // The buyer always; the crew only where somebody is tagged to see it.
+  const audiences: PhotoAudience[] = [
+    'buyer',
+    ...(board.crew?.supplier ? ['supplier' as const] : []),
+    ...(board.crew?.handler ? ['handler' as const] : []),
+  ];
 
   return (
     <div className="stack">
@@ -117,7 +144,15 @@ export function LotPeople({ board, onChanged, onError }: {
         </EmptyState>
       ) : (
         board.customers.map((customer) => (
-          <CustomerCard key={customer.buyerId} customer={customer} busy={busy} onToggle={toggle} />
+          <CustomerCard key={customer.buyerId} customer={customer} busy={busy} onToggle={toggle} onToggleAll={toggleMany}
+            readyGate={Boolean(board.crew?.readyGate)} audiences={audiences}
+            onPhotos={(orderId, photos) => onChanged({
+              ...board,
+              customers: board.customers.map((each) => ({
+                ...each,
+                orders: each.orders.map((order) => (order.id === orderId ? { ...order, photos } : order)),
+              })),
+            })} />
         ))
       )}
     </div>
@@ -125,12 +160,20 @@ export function LotPeople({ board, onChanged, onError }: {
 }
 
 /** One customer's parcel: their orders, and the ticks that move them. */
-function CustomerCard({ customer, busy, onToggle }: {
+function CustomerCard({ customer, busy, onToggle, onToggleAll, readyGate, audiences, onPhotos }: {
   customer: BoardCustomer;
   busy: Set<string>;
   onToggle: (orderId: string, checkpoint: OrderCheckpoint, on: boolean) => void | Promise<void>;
+  onToggleAll: (orderIds: string[], checkpoint: OrderCheckpoint, on: boolean) => void | Promise<void>;
+  /** The handler waits on this press before dispatching anything of theirs. */
+  readyGate: boolean;
+  audiences: PhotoAudience[];
+  onPhotos: (orderId: string, photos: OrderPhoto[]) => void;
 }) {
   const allReady = customer.orders.every((order) => Boolean(order.checkpoints.ready_to_dispatch));
+  /** The items a ready press changes: the ones not yet in the state it asks for. */
+  const readyIds = (on: boolean) => customer.orders
+    .filter((order) => Boolean(order.checkpoints.ready_to_dispatch) !== on).map((order) => order.id);
 
   return (
     <article className="cust">
@@ -147,18 +190,23 @@ function CustomerCard({ customer, busy, onToggle }: {
 
       {/* One tick for the whole parcel, because that is how it is actually
           decided: everything of theirs is ready, or it is not. */}
-      <label className="cust__all">
-        <input
-          type="checkbox"
-          checked={allReady}
-          onChange={(event) => {
-            for (const order of customer.orders) {
-              void onToggle(order.id, 'ready_to_dispatch', event.target.checked);
-            }
-          }}
-        />
-        <span>Ready to dispatch all {customer.orders.length}</span>
-      </label>
+      {readyGate ? (
+        /* The seller's go-ahead to the handler: everything of theirs can ship. */
+        <button type="button" className={`cust__ready${allReady ? ' is-on' : ''}`} aria-pressed={allReady}
+          onClick={() => void onToggleAll(readyIds(!allReady), 'ready_to_dispatch', !allReady)}>
+          {allReady ? '✓ Ready to dispatch' : 'Ready to dispatch'}
+          <span>{allReady ? 'The handler can ship this parcel.' : 'Tell the handler this parcel can go.'}</span>
+        </button>
+      ) : (
+        <label className="cust__all">
+          <input
+            type="checkbox"
+            checked={allReady}
+            onChange={(event) => void onToggleAll(readyIds(event.target.checked), 'ready_to_dispatch', event.target.checked)}
+          />
+          <span>Ready to dispatch all {customer.orders.length}</span>
+        </label>
+      )}
 
       {customer.orders.map((order, index) => (
         <div key={order.id} className="orderrow">
@@ -188,6 +236,8 @@ function CustomerCard({ customer, busy, onToggle }: {
               );
             })}
           </div>
+          <OrderPhotos orderId={order.id} photos={order.photos ?? []} seller audiences={audiences}
+            onChange={(photos) => onPhotos(order.id, photos)} />
         </div>
       ))}
     </article>

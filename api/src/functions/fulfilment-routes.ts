@@ -4,7 +4,7 @@ import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type Or
 import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
-import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.js';
+import { TAGGED_ROLES, crewMayPress, crewSlots, photosFor, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNo, lotNumberFrom, normaliseSteps,
@@ -18,7 +18,7 @@ import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, is
 import {
   AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, sourcingOf, stagesFor,
 } from '../../../shared/fulfilment.js';
-import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
+import type { Lot, LotCrewSettings, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { bookingFor, forwarderWorks } from '../service-access.js';
@@ -127,11 +127,22 @@ function supplierFrom(body: LotDetailsBody, supplierUserId?: string | null): Lot
 async function userForHandle(
   handle: string | undefined,
   repository: Awaited<ReturnType<typeof getRepository>>,
-): Promise<{ id: string | null; missing: string | null }> {
+): Promise<{ id: string | null; missing: string | null; shop?: boolean }> {
   const wanted = handle?.trim().replace(/^@/, '');
   if (!wanted) return { id: null, missing: null };
   const found = await repository.getByHandle(wanted);
-  return found ? { id: found.user.id, missing: null } : { id: null, missing: wanted };
+  if (!found) return { id: null, missing: wanted };
+  // A shop is not a person who can pack a crate or open a parcel: the crew is
+  // tagged by their own handle, which is what their My services hangs off.
+  if (found.isStore) return { id: null, missing: wanted, shop: true };
+  return { id: found.user.id, missing: null };
+}
+
+/** The refusal for a handle that could not be tagged. */
+function untaggable(tagged: { missing: string | null; shop?: boolean }) {
+  return tagged.shop
+    ? error(400, 'not_a_person', `@${tagged.missing} is a shop. Tag the person by their own handle.`)
+    : error(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
 }
 
 /**
@@ -180,9 +191,7 @@ async function updateLotDetails(request: HttpRequest, _context: InvocationContex
   // The supplier moves as a unit: naming one sets it, clearing the name drops it.
   if (body.supplierName !== undefined || body.supplierHandle !== undefined) {
     const tagged = await userForHandle(body.supplierHandle, repository);
-    if (tagged.missing) {
-      return error(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
-    }
+    if (tagged.missing) return untaggable(tagged);
     lot.supplier = supplierFrom(
       { ...body, supplierName: body.supplierName ?? lot.supplier?.name },
       tagged.id ?? (body.supplierHandle === undefined ? lot.supplier?.supplierUserId ?? null : null),
@@ -368,19 +377,19 @@ export async function buildLot(
   /* The two people who work it, named up front rather than found later on a
      different screen: naming them is part of opening a lot, and a form that
      asks afterwards is a form most sellers never come back to. */
-  let supplierTag: string | null = null;
-  if (body.supplierHandle?.trim()) {
-    const found = await repository.getByHandle(body.supplierHandle.trim().replace(/^@/, ''));
-    if (!found) return refuse(404, 'not_found', `Nobody here goes by ${body.supplierHandle}.`);
-    supplierTag = found.user.id;
-  }
+  const tagRefusal = (tagged: { missing: string | null; shop?: boolean }) => tagged.shop
+    ? refuse(400, 'not_a_person', `@${tagged.missing} is a shop. Tag the person by their own handle.`)
+    : refuse(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
+  const supplierTagged = await userForHandle(body.supplierHandle, repository);
+  if (supplierTagged.missing) return tagRefusal(supplierTagged);
+  const supplierTag: string | null = supplierTagged.id;
   let handlerNamed: Lot['handler'] = null;
   if (body.handlerUserId || body.handlerHandle?.trim() || body.handlerName?.trim()) {
     let handlerId = body.handlerUserId ?? null;
     if (body.handlerHandle?.trim()) {
-      const found = await repository.getByHandle(body.handlerHandle.trim().replace(/^@/, ''));
-      if (!found) return refuse(404, 'not_found', `Nobody here goes by ${body.handlerHandle}.`);
-      handlerId = found.user.id;
+      const tagged = await userForHandle(body.handlerHandle, repository);
+      if (tagged.missing) return tagRefusal(tagged);
+      handlerId = tagged.id;
     }
     const named = handlerId ? await repository.getUserById(handlerId) : null;
     if (handlerId && !named) {
@@ -746,6 +755,11 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
     handlerName?: string;
     handlerContact?: string;
     handlerCity?: string;
+    /** Tick keys, or null to go back to the role's stock buttons. */
+    supplierButtons?: string[] | null;
+    handlerButtons?: string[] | null;
+    handlerSeesPayment?: boolean;
+    readyGate?: boolean;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -762,7 +776,7 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
   if (body.handlerName !== undefined || body.handlerUserId !== undefined || body.handlerHandle !== undefined) {
     // Tagged by handle, as the supplier is; an id still works for older callers.
     const tagged = await userForHandle(body.handlerHandle ?? undefined, repository);
-    if (tagged.missing) return error(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
+    if (tagged.missing) return untaggable(tagged);
     // A blank handle keeps whoever is already tagged; only a name change or a
     // new handle moves the seat.
     const keep = body.handlerHandle === undefined || body.handlerHandle === null || body.handlerHandle.trim() === ''
@@ -793,6 +807,36 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
         }
       : null;
   }
+
+  /* What the two of them may press and see. The gate goes first: it takes
+     "Ready to dispatch" off the handler's side, so a list sent with it is
+     checked against the side as it will be. */
+  const crew: LotCrewSettings = { ...(lot.crew ?? {}) };
+  if (typeof body.readyGate === 'boolean') crew.readyGate = body.readyGate;
+  if (typeof body.handlerSeesPayment === 'boolean') crew.handlerSeesPayment = body.handlerSeesPayment;
+  for (const role of TAGGED_ROLES) {
+    const field = role === 'supplier' ? 'supplierButtons' : 'handlerButtons';
+    const wanted = body[field];
+    if (wanted === undefined) continue;
+    if (wanted === null) {
+      delete crew[field];
+      continue;
+    }
+    if (!Array.isArray(wanted) || wanted.some((key) => typeof key !== 'string')) {
+      return error(400, 'invalid_buttons', 'Send the buttons as a list.');
+    }
+    const slots = new Set(crewSlots({ ...next, crew }, role).map((slot) => slot.key));
+    const stray = wanted.find((key) => !slots.has(key));
+    if (stray) {
+      return error(400, 'invalid_buttons', role === 'supplier'
+        ? 'A supplier can only be handed buttons from before the item joins the lot.'
+        : 'A handler can only be handed buttons from after the item leaves the lot, and never Delivered.');
+    }
+    crew[field] = [...new Set(wanted)];
+  }
+  // A gate turned on takes the ready press back from a list that held it.
+  if (crew.readyGate && crew.handlerButtons) crew.handlerButtons = crew.handlerButtons.filter((key) => key !== 'ready_to_dispatch');
+  next.crew = crew;
 
   return json(200, { lot: await repository.updateLot(next) });
 }
@@ -860,7 +904,12 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
       })),
   ];
   // A step that can still be undone is in effect but on no timeline yet.
-  const orderForClient = { ...order, stageHistory: settledHistory(healedHistory) };
+  const orderForClient = {
+    ...order,
+    stageHistory: settledHistory(healedHistory),
+    // The buyer sees the photos the shop shared with them, and no others.
+    photos: order.sellerId === user.id ? order.photos ?? [] : photosFor(order, 'buyer'),
+  };
 
   /*
    * A checkpoint that has been ticked has happened.
@@ -964,7 +1013,25 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
  * Their own by default; a store they hold `lots` in when they name it. Returns
  * null when they hold nothing there, which every caller turns into a 403.
  */
-async function lotsStoreFor(
+/**
+ * Everyone this lot names who this person is. One person can be more than
+ * one - a forwarder who also packs - and may do what any of their roles may.
+ */
+export async function crewRolesOn(
+  repository: Awaited<ReturnType<typeof getRepository>>,
+  userId: string,
+  order: Pick<Order, 'sellerId'>,
+  lot: Lot | null,
+): Promise<CrewRole[]> {
+  const owner = await repository.getUserById(order.sellerId);
+  const roles: CrewRole[] = [];
+  if ((owner && can(owner, userId, 'export')) || (lot && supplierIdOf(lot) === userId)) roles.push('supplier');
+  if (lot && lot.handler?.handlerUserId === userId) roles.push('handler');
+  if (lot && (await forwarderWorks(repository, lot, userId))) roles.push('forwarder');
+  return roles;
+}
+
+export async function lotsStoreFor(
   request: HttpRequest,
   user: { id: string },
   storeId: string | undefined,
@@ -1057,6 +1124,7 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
         quantity: order.quantity,
         unitWeightGrams: order.unitWeightGrams,
         checkpoints: order.checkpoints ?? {},
+        photos: order.photos ?? [],
       })),
       trackingReference: lot.forwarder?.trackingReference ?? null,
     };
@@ -1078,6 +1146,12 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
       status: lot.status,
       origin: lot.origin ?? '',
       estimatedDispatchAt: lot.estimatedDispatchAt,
+    },
+    // What the board offers beyond the ticks: the ready gate, and whose photos go where.
+    crew: {
+      readyGate: Boolean(lot.crew?.readyGate),
+      supplier: Boolean(supplierIdOf(lot)),
+      handler: Boolean(lot.handler?.handlerUserId),
     },
     tally: tally(orders),
     customers,
@@ -1139,29 +1213,29 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     // may tick their own half of the journey and nothing else - the ticks are
     // the record of work done, so the person who did it is the one who makes
     // them.
-    const owner = await repository.getUserById(order.sellerId);
-    /* Everyone this lot names who this person is. One person can be more
-       than one - a forwarder who also packs - and may press what any of
-       their roles may. */
-    const roles: CrewRole[] = [];
-    if ((owner && can(owner, user.id, 'export')) || (lot && supplierIdOf(lot) === user.id)) roles.push('supplier');
-    if (lot && lot.handler?.handlerUserId === user.id) roles.push('handler');
-    if (lot && (await forwarderWorks(repository, lot, user.id))) roles.push('forwarder');
-    const role: CrewRole | null = roles.find((each) =>
-      (!customId && mayTick(each, checkpoint)) || button?.assignee === each) ?? roles[0] ?? null;
+    const roles = await crewRolesOn(repository, user.id, order, lot);
+    /* Their own half of the journey: the buttons the seller handed them on
+       this lot, or the role's stock ones where the seller has not chosen. */
+    const mayPress = (each: CrewRole) => crewMayPress(lot, each, key, button?.assignee ?? null);
+    const role: CrewRole | null = roles.find(mayPress) ?? roles[0] ?? null;
 
     if (!role) return error(403, 'forbidden', 'That order is not yours to work.');
-    // Their own half of the journey, plus any button the seller handed them.
-    if (!(customId ? false : mayTick(role, checkpoint)) && button?.assignee !== role) {
+    if (!mayPress(role)) {
       return error(
         403,
         'forbidden',
-        role === 'supplier'
-          ? 'You can mark items packed, and nothing else.'
-          : role === 'forwarder'
-            ? 'The shop’s route has not handed that button to the forwarder.'
-            : 'You can work this lot from the moment it lands, and no earlier.',
+        role === 'forwarder'
+          ? 'The shop’s route has not handed that button to the forwarder.'
+          : role === 'handler' && key === 'ready_to_dispatch' && lot?.crew?.readyGate
+            ? 'The shop clears each customer for dispatch on this lot.'
+            : 'The shop has not handed you that button on this lot.',
       );
+    }
+    /* The ready gate: the seller says a customer's parcel can go - paid up,
+       nothing still to add - and until then the handler holds it. */
+    if (role === 'handler' && lot?.crew?.readyGate && checkpoint === 'dispatched' && body.on !== false
+      && !order.checkpoints?.ready_to_dispatch) {
+      return error(409, 'not_cleared', 'The shop has not marked this customer ready to dispatch yet.');
     }
   }
 

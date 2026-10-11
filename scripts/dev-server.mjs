@@ -42,6 +42,7 @@ const {
   lotsBoardRoute, lotBoardRoute, setCheckpointRoute, supplierLotsRoute, supplierLotRoute,
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
+const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
@@ -183,6 +184,9 @@ const routes = [
   ['GET', '/api/me/lots', myLotsRoute],
   ['GET', '/api/lots/:id/board', lotBoardRoute],
   ['POST', '/api/orders/:id/checkpoint', setCheckpointRoute],
+  ['POST', '/api/orders/:id/photos', addOrderPhotoRoute],
+  ['POST', '/api/orders/:id/photos/:photoId', updateOrderPhotoRoute],
+  ['GET', '/api/people/suggest', suggestPeopleRoute],
   ['POST', '/api/lots', createLotRoute],
   ['GET', '/api/lots/:id/contents', lotContentsRoute],
   ['POST', '/api/lots/:id/assign', assignToLotRoute],

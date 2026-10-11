@@ -1,6 +1,6 @@
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type { NotificationCategory } from '@shared/notifications';
-import type { NotificationPrefs } from '@shared/models';
+import type { NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
 import type { VerifiedChecks } from '@shared/verification';
 import type {
   ApiError,
@@ -1875,6 +1875,7 @@ export interface BoardOrder {
   quantity: number;
   unitWeightGrams: number;
   checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+  photos?: OrderPhoto[];
 }
 
 export interface BoardCustomer {
@@ -1887,6 +1888,8 @@ export interface BoardCustomer {
 
 export interface LotBoard {
   lot: BoardLot;
+  /** Only on a single lot's board: what the seller has set up for its crew. */
+  crew?: { readyGate: boolean; supplier: boolean; handler: boolean };
   tally: LotTally;
   customers: BoardCustomer[];
 }
@@ -2077,7 +2080,17 @@ export interface CrewLotView {
     id: string; itemName: string; condition: string; quantity: number; weightGrams: number;
     parcel: string | null; buyer: { name: string; phone: string | null } | null;
     ticks: Record<string, string | null>; covered: boolean; toStudio: boolean;
+    /** The listing's lead photo, for the tiles. */
+    photoUrl: string | null;
+    /** Photos of this piece the shop shared with this role, and the ones they took. */
+    photos: OrderPhoto[];
+    /** Cleared by the shop to go out; null when the shop does not gate dispatch. */
+    cleared: boolean | null;
+    payment: { status: string; totalMinor: number; paidMinor: number; outstandingMinor: number; currency: string } | null;
   }[];
+  settings: { readyGate: boolean; seesPayment: boolean };
+  /** Every lot they work in this role, for the switcher. */
+  lots: { sellerId: string; lotId: string; name: string; number: string }[];
 }
 
 /** Everything a store form edits. */
@@ -2411,7 +2424,19 @@ export const api = {
   setCrew: (id: string, body: {
     handlerUserId?: string | null; handlerHandle?: string | null; handlerName?: string; handlerContact?: string;
     handlerCity?: string; supplierUserId?: string | null; supplierHandle?: string | null;
+    /** Tick keys the seller hands each role, or null for the stock buttons. */
+    supplierButtons?: string[] | null; handlerButtons?: string[] | null;
+    handlerSeesPayment?: boolean; readyGate?: boolean;
   }) => post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/crew`, body),
+  /** People to tag on a lot, by name or handle. Never shops. */
+  suggestPeople: (q: string) =>
+    request<{ people: { id: string; name: string; handle: string }[] }>(`/people/suggest?q=${encodeURIComponent(q)}`),
+  addOrderPhoto: (orderId: string, dataUrl: string) =>
+    post<{ photo: OrderPhoto; photos: OrderPhoto[] }>(`/orders/${encodeURIComponent(orderId)}/photos`, { dataUrl }),
+  showOrderPhoto: (orderId: string, photoId: string, showTo: PhotoAudience[]) =>
+    post<{ photos: OrderPhoto[] }>(`/orders/${encodeURIComponent(orderId)}/photos/${encodeURIComponent(photoId)}`, { showTo }),
+  removeOrderPhoto: (orderId: string, photoId: string) =>
+    post<{ photos: OrderPhoto[] }>(`/orders/${encodeURIComponent(orderId)}/photos/${encodeURIComponent(photoId)}`, { remove: true }),
 
   routes: () => request<RoutesResponse>('/routes'),
   saveRoute: (body: {

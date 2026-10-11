@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { CrewRole } from '@shared/services';
+import type { OrderPhoto } from '@shared/models';
 import { ApiRequestError, api, type CrewLotView } from '../api';
 import { BackLink } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
-import { formatWeight } from '../format';
+import { formatMoney, formatWeight } from '../format';
 import { useUndo } from '../components/Undo';
+import { OrderPhotos } from '../components/OrderPhotos';
+import { shrink } from '../components/PhotoManager';
+import { useSession } from '../session';
 
 /**
  * One lot, as the crew works it.
@@ -23,6 +27,24 @@ import { useUndo } from '../components/Undo';
 
 const ROLE_LABEL: Record<CrewRole, string> = { supplier: 'Supplier', handler: 'Domestic handler', forwarder: 'Forwarder' };
 
+type CrewItem = CrewLotView['items'][number];
+type CrewButtonRef = CrewLotView['buttons'][number];
+
+/**
+ * How the lot is laid out. The supplier packs pieces, so they get tiles; the
+ * handler makes up parcels, so they get customers, and tiles at a toggle for
+ * the unpacking. A forwarder keeps the list.
+ */
+type Layout = 'tiles' | 'customers' | 'list';
+
+/** Why a button cannot be pressed on this item right now, or null. */
+function heldBack(view: CrewLotView, item: CrewItem, button: CrewButtonRef): string | null {
+  if (button.key === 'dispatched' && item.cleared === false && !item.ticks.dispatched) {
+    return 'Waiting for the shop to mark this customer ready to dispatch.';
+  }
+  return null;
+}
+
 export function CrewLotPage() {
   const { sellerId = '', lotId = '' } = useParams<{ sellerId: string; lotId: string }>();
   const [params, setParams] = useSearchParams();
@@ -33,6 +55,8 @@ export function CrewLotPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<string>('all');
+  const navigate = useNavigate();
+  const { user } = useSession();
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +100,11 @@ export function CrewLotPage() {
     }
   }
 
+  /** New photos for one item, as the server returned them. */
+  function setPhotos(id: string, photos: OrderPhoto[]) {
+    setView((current) => current && { ...current, items: current.items.map((item) => (item.id === id ? { ...item, photos } : item)) });
+  }
+
   const groups = useMemo(() => {
     if (!view) return [];
     if (view.role !== 'handler') return [{ id: 'all', title: null as string | null, phone: null as string | null, items: view.items }];
@@ -98,6 +127,9 @@ export function CrewLotPage() {
   const done = (key: string) => view.items.filter((item) => item.ticks[key]).length;
   const visible = (key: string) => filter === 'all' || (filter === `todo:${key}`);
   const weight = view.items.reduce((sum, item) => sum + item.weightGrams, 0);
+  const layout: Layout = view.role === 'supplier' ? 'tiles'
+    : view.role === 'handler' ? (params.get('view') === 'tiles' ? 'tiles' : 'customers')
+      : 'list';
 
   return (
     <main className="page cl-page">
@@ -116,6 +148,22 @@ export function CrewLotPage() {
               ))}
             </span>
           )}
+        </div>
+        <div className="cl-bar">
+          {/* Every lot they work in this role, one tap away - the supplier on
+              three runs does not go back to My services between them. */}
+          <label className="cl-lotpick">
+            <span className="cl-lotpick__no">LOT {view.lot.number}</span>
+            <Icon name="sort" size={15} />
+            <select aria-label="Switch lot" value={`${view.lot.sellerId}/${view.lot.id}`}
+              onChange={(event) => navigate(`/services/crew/${event.target.value}?role=${view.role}`)}>
+              {(view.lots.some((row) => row.lotId === view.lot.id) ? view.lots : [{ sellerId: view.lot.sellerId, lotId: view.lot.id, name: view.lot.name, number: view.lot.number }, ...view.lots])
+                .map((row) => (
+                  <option key={`${row.sellerId}/${row.lotId}`} value={`${row.sellerId}/${row.lotId}`}>LOT {row.number} · {row.name}</option>
+                ))}
+            </select>
+          </label>
+          <span className="cl-orders"><b>{view.items.length}</b> {view.items.length === 1 ? 'Order' : 'Orders'}</span>
         </div>
         <h1>{view.lot.name} <span className="cl-num">{view.lot.number}</span></h1>
         <p className="muted">
@@ -153,16 +201,42 @@ export function CrewLotPage() {
       {view.moves.length > 0 && <CrateMoves view={view} onMoved={load} />}
 
       {view.buttons.length === 0 ? (
-        <EmptyState icon={<Icon name="bolt" size={26} />} title="No buttons handed to you">
-          The shop’s route does not give the {ROLE_LABEL[view.role].toLowerCase()} a button on this lot yet.
-          {view.moves.length > 0 ? ' You can still move the crate above.' : ' Ask them to assign one in the Route Studio.'}
-        </EmptyState>
+        view.role === 'forwarder' ? (
+          <EmptyState icon={<Icon name="bolt" size={26} />} title="No buttons handed to you">
+            The shop’s route does not give the forwarder a button on this lot yet.
+            {view.moves.length > 0 ? ' You can still move the crate above.' : ' Ask them to assign one in the Route Studio.'}
+          </EmptyState>
+        ) : (
+          /* Nothing to press yet, but the pieces are still worth seeing - and
+             photographing - while the shop decides what to hand over. */
+          <>
+            <p className="muted">
+              The shop has not handed the {ROLE_LABEL[view.role].toLowerCase()} a button on this lot yet. You can still
+              see the pieces and add photos; ask them to choose your buttons on the lot’s Crew tab.
+            </p>
+            <CrewTiles view={view} items={view.items} busy={busy} onPress={press} onPhotos={setPhotos} />
+          </>
+        )
       ) : (
         <>
+          {view.role === 'handler' && (
+            <div className="cl-layout" role="group" aria-label="Layout">
+              <button type="button" aria-pressed={layout === 'customers'} className={layout === 'customers' ? 'is-on' : ''}
+                onClick={() => setParams({ role: view.role, view: 'customers' }, { replace: true })}>
+                <Icon name="users" size={14} /> Customers
+              </button>
+              <button type="button" aria-pressed={layout === 'tiles'} className={layout === 'tiles' ? 'is-on' : ''}
+                onClick={() => setParams({ role: view.role, view: 'tiles' }, { replace: true })}>
+                <Icon name="image" size={14} /> Tiles
+              </button>
+            </div>
+          )}
+
           <section className="cl-buttons" aria-label="Your buttons">
             {view.buttons.map((button) => {
               const count = done(button.key);
               const all = count === view.items.length && view.items.length > 0;
+              const pressable = view.items.filter((item) => !item.ticks[button.key] && !heldBack(view, item, button));
               return (
                 <div key={button.key} className={`cl-btncard${all ? ' is-done' : ''}`}>
                   <span className="cl-btncard__label">⚡ {button.label}</span>
@@ -170,10 +244,10 @@ export function CrewLotPage() {
                   <span className="cl-btncard__bar"><span style={{ width: `${view.items.length ? (count / view.items.length) * 100 : 0}%` }} /></span>
                   <span className="cl-btncard__foot">
                     <span><b>{count}</b>/{view.items.length}</span>
-                    {!all && (
+                    {!all && pressable.length > 0 && (
                       <button type="button" className="btn btn--sm" disabled={busy.size > 0}
-                        onClick={() => void press(view.items.filter((item) => !item.ticks[button.key]).map((item) => item.id), button.key, true)}>
-                        Press for all {view.items.length - count}
+                        onClick={() => void press(pressable.map((item) => item.id), button.key, true)}>
+                        Press for all {pressable.length}
                       </button>
                     )}
                     <button type="button" className={`cl-filter${filter === `todo:${button.key}` ? ' is-on' : ''}`}
@@ -186,6 +260,10 @@ export function CrewLotPage() {
             })}
           </section>
 
+          {layout === 'tiles' ? (
+            <CrewTiles view={view} items={view.items.filter((item) => filter === 'all' || view.buttons.some((button) => visible(button.key) && !item.ticks[button.key]))}
+              busy={busy} onPress={press} onPhotos={setPhotos} />
+          ) : (
           <section className="stack">
             {groups.map((group) => {
               const items = group.items.filter((item) => filter === 'all' || view.buttons.some((button) => visible(button.key) && !item.ticks[button.key]));
@@ -196,12 +274,18 @@ export function CrewLotPage() {
                     <div className="cl-parcel__head">
                       <span className="cl-parcel__name"><Icon name="box" size={15} /> {group.title}</span>
                       {group.phone && <a className="faint" href={`tel:${group.phone}`}>{group.phone}</a>}
+                      {view.settings.readyGate && <ClearedBadge items={group.items} />}
+                      {view.settings.seesPayment && <ParcelMoney items={group.items} />}
                       <span className="cl-parcel__all">
                         {view.buttons.map((button) => {
                           const every = group.items.every((item) => item.ticks[button.key]);
+                          // Only what can move: a held parcel's dispatch waits for the shop.
+                          const targets = group.items.filter((item) => (every ? item.ticks[button.key] : !item.ticks[button.key] && !heldBack(view, item, button)));
                           return (
                             <button key={button.key} type="button" className={`tickbtn${every ? ' is-on' : ''}`} aria-pressed={every}
-                              disabled={busy.size > 0} onClick={() => void press(group.items.map((item) => item.id), button.key, !every)}>
+                              disabled={busy.size > 0 || targets.length === 0}
+                              title={targets.length === 0 && !every ? heldBack(view, group.items[0]!, button) ?? undefined : undefined}
+                              onClick={() => void press(targets.map((item) => item.id), button.key, !every)}>
                               {button.label} · parcel
                             </button>
                           );
@@ -218,13 +302,19 @@ export function CrewLotPage() {
                           {item.covered ? ' · 🛡 insured' : ''}
                         </span>
                         {item.toStudio && <span className="cl-item__flag"><Icon name="spark" size={12} /> Going to an artist’s studio</span>}
+                        {view.role !== 'forwarder' && (
+                          <OrderPhotos orderId={item.id} photos={item.photos} me={user?.id}
+                            onChange={(photos) => setPhotos(item.id, photos)} />
+                        )}
                       </span>
                       <span className="cl-item__acts">
                         {view.buttons.map((button) => {
                           const on = Boolean(item.ticks[button.key]);
+                          const held = heldBack(view, item, button);
                           return (
                             <button key={button.key} type="button" className={`tickbtn${on ? ' is-on' : ''}`} aria-pressed={on}
-                              disabled={busy.has(`${item.id}:${button.key}`)} onClick={() => void press([item.id], button.key, !on)}>
+                              disabled={busy.has(`${item.id}:${button.key}`) || Boolean(held)} title={held ?? undefined}
+                              onClick={() => void press([item.id], button.key, !on)}>
                               {button.label}
                             </button>
                           );
@@ -236,6 +326,7 @@ export function CrewLotPage() {
               );
             })}
           </section>
+          )}
         </>
       )}
     </main>
@@ -309,5 +400,112 @@ function CrateMoves({ view, onMoved }: { view: CrewLotView; onMoved: () => Promi
       </div>
       {error && <ErrorNotice message={error} />}
     </section>
+  );
+}
+
+/** Whether the shop has cleared this customer's parcel to go. */
+function ClearedBadge({ items }: { items: CrewItem[] }) {
+  const cleared = items.every((item) => item.cleared);
+  return (
+    <span className={`cl-cleared${cleared ? ' is-on' : ''}`}>
+      {cleared ? '✓ Ready to dispatch' : 'Waiting on the shop'}
+    </span>
+  );
+}
+
+/** What this customer owes and has paid, where the shop lets the handler see it. */
+function ParcelMoney({ items }: { items: CrewItem[] }) {
+  const rows = items.flatMap((item) => (item.payment ? [item.payment] : []));
+  if (rows.length === 0) return null;
+  const currency = rows[0]!.currency;
+  const total = rows.reduce((sum, row) => sum + row.totalMinor, 0);
+  const outstanding = rows.reduce((sum, row) => sum + row.outstandingMinor, 0);
+  return (
+    <span className={`cl-money${outstanding > 0 ? ' is-due' : ''}`}>
+      {outstanding > 0
+        ? <>Due <b>{formatMoney(outstanding, currency)}</b> of {formatMoney(total, currency)}</>
+        : <>Paid <b>{formatMoney(total, currency)}</b></>}
+    </span>
+  );
+}
+
+/**
+ * The lot as tiles: a picture of each piece, its name, and its buttons.
+ *
+ * What a packing floor works from - find the piece by sight, press, next. The
+ * picture is the latest photo the shop shared of this very piece, or the
+ * listing's; the camera on each tile adds one without leaving the grid.
+ */
+function CrewTiles({ view, items, busy, onPress, onPhotos }: {
+  view: CrewLotView;
+  items: CrewItem[];
+  busy: Set<string>;
+  onPress: (ids: string[], key: string, on: boolean) => Promise<void>;
+  onPhotos: (id: string, photos: OrderPhoto[]) => void;
+}) {
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function addPhoto(item: CrewItem, file: File) {
+    setUploading(item.id);
+    setError(null);
+    try {
+      onPhotos(item.id, (await api.addOrderPhoto(item.id, await shrink(file))).photos);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload.');
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  if (items.length === 0) {
+    return view.items.length === 0
+      ? <EmptyState title="Nothing in this lot yet">Pieces appear here as buyers order them into the lot.</EmptyState>
+      : <EmptyState title="Nothing to show">Every piece here is pressed. Tap “Show all” to see them again.</EmptyState>;
+  }
+
+  return (
+    <>
+      {error && <ErrorNotice message={error} />}
+      <div className="ctiles">
+        {items.map((item) => {
+          const picture = item.photos[item.photos.length - 1]?.url ?? item.photoUrl;
+          const allDone = view.buttons.length > 0 && view.buttons.every((button) => item.ticks[button.key]);
+          return (
+            <article key={item.id} className={`ctile${allDone ? ' is-done' : ''}`}>
+              <h3 className="ctile__name" title={item.itemName}>{item.itemName}</h3>
+              <div className="ctile__pic">
+                {picture
+                  ? <img src={picture} alt="" loading="lazy" />
+                  : <span className="ctile__nopic"><Icon name="box" size={30} /></span>}
+                {allDone && <span className="ctile__check" aria-label="Done"><Icon name="check" size={18} /></span>}
+                {item.quantity > 1 && <span className="ctile__qty" aria-label={`${item.quantity} pieces`}>{item.quantity}</span>}
+                {view.settings.readyGate && item.cleared && !item.ticks.dispatched && <span className="ctile__flag">Ready to dispatch</span>}
+                <label className={`ctile__cam${uploading === item.id ? ' is-busy' : ''}`} aria-label="Add a photo">
+                  <input type="file" accept="image/*" capture="environment" disabled={uploading !== null}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = '';
+                      if (file) void addPhoto(item, file);
+                    }} />
+                  <Icon name="camera" size={15} />
+                </label>
+              </div>
+              {view.buttons.map((button) => {
+                const on = Boolean(item.ticks[button.key]);
+                const held = heldBack(view, item, button);
+                return (
+                  <button key={button.key} type="button" className={`ctile__btn${on ? ' is-on' : ''}`} aria-pressed={on}
+                    disabled={busy.has(`${item.id}:${button.key}`) || Boolean(held)} title={held ?? undefined}
+                    onClick={() => void onPress([item.id], button.key, !on)}>
+                    {on ? '✓ ' : ''}{button.label}
+                  </button>
+                );
+              })}
+            </article>
+          );
+        })}
+      </div>
+    </>
   );
 }

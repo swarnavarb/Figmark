@@ -30,6 +30,7 @@ import type { Listing } from '@shared/models';
 import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
 import { MomentBanner, shopBadge, type ShareSpec } from '../components/ShareKit';
+import { OrderPhotos } from '../components/OrderPhotos';
 
 /**
  * One order, as the buyer sees it.
@@ -310,6 +311,35 @@ export function OrderPage() {
             <DirectTrack order={order} actFor={acts.actFor(-1)} />
           )}
         </div>
+      )}
+
+      {/* Photos of this very piece on its way. The buyer gets the ones the
+          shop chose to share; the shop sees them all and chooses here too. */}
+      {placed && tab === 'tracking' && (seller || (order.photos ?? []).length > 0) && (
+        <section className="card card--pad stack trk-photos">
+          <div>
+            <h2>{seller ? 'Photos of this order' : 'Photos of your item'}</h2>
+            <span className="field__hint">
+              {seller
+                ? 'Taken by you or your crew. Tap Buyer on a photo to show it on the buyer’s timeline.'
+                : 'From the shop, as your item made its way to you.'}
+            </span>
+          </div>
+          {seller ? (
+            <OrderPhotos orderId={order.id} photos={order.photos ?? []} seller
+              onChange={(photos) => setData((current) => current && { ...current, order: { ...current.order, photos } })} />
+          ) : (
+            <div className="ophotos">
+              {(order.photos ?? []).map((photo) => (
+                <figure key={photo.id} className="ophotos__item">
+                  <a href={photo.url} target="_blank" rel="noopener noreferrer">
+                    <img src={photo.url} alt="Your item on its way" loading="lazy" />
+                  </a>
+                </figure>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {placed && tab === 'details' && (

@@ -18,6 +18,8 @@ import { Ladder } from '../components/Ladder';
 import { SerialButtons } from '../components/SerialButtons';
 import { serialButtons, withReceivedAs } from '@shared/buttons';
 import { LotPeople } from '../components/LotPeople';
+import { PersonTag } from '../components/PersonTag';
+import { TAGGED_ROLES, crewButtons, crewSlots, type TaggedRole } from '@shared/services';
 import { LotDetailFields, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { Avatar, ErrorNotice, Icon, Modal, type IconName } from '../components/ui';
 import { ItemHead } from '../components/ItemHead';
@@ -76,7 +78,7 @@ function CrewCard({ lot, busy, onRun }: {
         </label>
         <label className="field">
           <span>Their handle here</span>
-          <input value={supplierHandle} onChange={(e) => setSupplierHandle(e.target.value)}
+          <PersonTag value={supplierHandle} onChange={setSupplierHandle}
             placeholder={lot.supplier?.supplierUserId ? 'Tagged. Type another to change it.' : '@their_handle'} />
           <span className="field__hint">
             Optional. Tag them and they get a packing list for this lot — pieces, counts and
@@ -103,7 +105,7 @@ function CrewCard({ lot, busy, onRun }: {
               supplierHandle,
               supplierContact,
               supplierReference,
-            }).then(() => {}))}>
+            }).then(() => setSupplierHandle('')))}>
           Save supplier
         </button>
       </div>
@@ -126,7 +128,7 @@ function CrewCard({ lot, busy, onRun }: {
         </label>
         <label className="field">
           <span>Their handle here</span>
-          <input value={handlerHandle} onChange={(e) => setHandlerHandle(e.target.value)}
+          <PersonTag value={handlerHandle} onChange={setHandlerHandle}
             placeholder={lot.handler?.handlerUserId ? 'Tagged. Type another to change it.' : '@their_handle'} />
           <span className="field__hint">
             Optional. Tag them and this lot appears under their My services, with the parcels to
@@ -171,6 +173,124 @@ function CrewCard({ lot, busy, onRun }: {
           )}
         </div>
       </div>
+
+      <CrewButtonsCard lot={lot} busy={busy} onRun={onRun} />
+    </div>
+  );
+}
+
+/**
+ * What the two tagged people may press and see on this lot.
+ *
+ * The supplier gets the buttons from before an item joins the lot, the handler
+ * the ones from after it leaves - the API holds the same line, so nothing
+ * offered here can be refused there. Until the seller picks, each has the
+ * stock buttons for their role, which is how every lot worked before.
+ */
+function CrewButtonsCard({ lot, busy, onRun }: {
+  lot: Lot;
+  busy: boolean;
+  onRun: (label: string, fn: () => Promise<void>) => Promise<void>;
+}) {
+  const tagged: Record<TaggedRole, boolean> = {
+    supplier: Boolean(lot.supplier?.supplierUserId ?? lot.exporterUserId),
+    handler: Boolean(lot.handler?.handlerUserId),
+  };
+  const [readyGate, setReadyGate] = useState(Boolean(lot.crew?.readyGate));
+  const [seesPayment, setSeesPayment] = useState(Boolean(lot.crew?.handlerSeesPayment));
+  /** The keys picked per role, starting from what they have now. */
+  // Only what is on their side of the lot: a stock button inside it is not theirs to keep.
+  const onSide = (subject: Lot, role: TaggedRole) => {
+    const slots = new Set(crewSlots(subject, role).map((slot) => slot.key));
+    return crewButtons(subject, role).map((button) => button.key).filter((key) => slots.has(key));
+  };
+  const [picked, setPicked] = useState<Record<TaggedRole, string[]>>(() => ({
+    supplier: onSide(lot, 'supplier'),
+    handler: onSide(lot, 'handler'),
+  }));
+  const draft = { ...lot, crew: { ...lot.crew, readyGate } };
+  const keep = (role: TaggedRole) => {
+    const slots = new Set(crewSlots(draft, role).map((slot) => slot.key));
+    return picked[role].filter((key) => slots.has(key));
+  };
+
+  if (!tagged.supplier && !tagged.handler) {
+    return (
+      <div className="card card--pad stack">
+        <h2>What they can press</h2>
+        <span className="field__hint">Tag a supplier or a domestic handler by their handle above, then choose the buttons they get on this lot.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card card--pad stack">
+      <div>
+        <h2>What they can press</h2>
+        <span className="field__hint">
+          The buttons on their screen for this lot. Each press moves the item on its buyer’s timeline, so hand over
+          only what they will actually do.
+        </span>
+      </div>
+
+      {TAGGED_ROLES.filter((role) => tagged[role]).map((role) => {
+        const slots = crewSlots(draft, role);
+        return (
+          <fieldset key={role} className="crewbtns__role">
+            <legend>{role === 'supplier' ? 'Supplier · before the lot' : 'Domestic handler · after the lot'}</legend>
+            {slots.length === 0 ? (
+              <span className="faint">
+                {role === 'supplier'
+                  ? 'This route has no buttons before items join the lot. Add one in the Route Studio.'
+                  : 'This route has no buttons after items leave the lot, besides Delivered.'}
+              </span>
+            ) : slots.map((slot) => {
+              const on = picked[role].includes(slot.key);
+              return (
+                <label key={slot.key} className={`crewbtns__opt${on ? ' is-on' : ''}`}>
+                  <input type="checkbox" checked={on}
+                    onChange={() => setPicked((current) => ({
+                      ...current,
+                      [role]: on ? current[role].filter((key) => key !== slot.key) : [...current[role], slot.key],
+                    }))} />
+                  <span className="crewbtns__label">⚡ {slot.label}</span>
+                  {slot.step !== slot.label && <span className="faint">{slot.step}</span>}
+                </label>
+              );
+            })}
+          </fieldset>
+        );
+      })}
+
+      {tagged.handler && (
+        <fieldset className="crewbtns__role">
+          <legend>Domestic handler · what they see</legend>
+          <label className="crewbtns__opt">
+            <input type="checkbox" checked={seesPayment} onChange={(event) => setSeesPayment(event.target.checked)} />
+            <span className="crewbtns__label">Show them payments</span>
+            <span className="faint">What each customer owes and has paid, so they can collect or hold a parcel.</span>
+          </label>
+          <label className="crewbtns__opt">
+            <input type="checkbox" checked={readyGate} onChange={(event) => setReadyGate(event.target.checked)} />
+            <span className="crewbtns__label">I clear each customer: Ready to dispatch</span>
+            <span className="faint">
+              You press Ready to dispatch for a customer from the People tab, and the handler cannot dispatch their
+              parcel until you have.
+            </span>
+          </label>
+        </fieldset>
+      )}
+
+      <button type="button" className="btn btn--ghost btn--block" disabled={busy}
+        onClick={() => void onRun('Crew buttons saved.', () =>
+          api.setCrew(lot.id, {
+            readyGate,
+            handlerSeesPayment: seesPayment,
+            ...(tagged.supplier ? { supplierButtons: keep('supplier') } : {}),
+            ...(tagged.handler ? { handlerButtons: keep('handler') } : {}),
+          }).then(() => {}))}>
+        Save what they can press
+      </button>
     </div>
   );
 }
@@ -395,8 +515,7 @@ export function NewLotForm({ onDone, onCancel }: {
 
           <label className="field">
             <span>Supplier</span>
-            <input value={supplierHandle} onChange={(e) => setSupplierHandle(e.target.value)}
-              placeholder="@their_handle" />
+            <PersonTag value={supplierHandle} onChange={setSupplierHandle} placeholder="@their_handle" />
             <span className="field__hint">
               Who checks the pieces before the lot leaves. They get a packing list for this lot only.
             </span>
@@ -404,7 +523,7 @@ export function NewLotForm({ onDone, onCancel }: {
 
           <label className="field">
             <span>Domestic handler</span>
-            <input value={handlerHandle} onChange={(e) => setHandlerHandle(e.target.value)}
+            <PersonTag value={handlerHandle} onChange={setHandlerHandle}
               placeholder="@their_handle — or leave empty to dispatch it yourself" />
             <span className="field__hint">
               Who takes delivery in {details.destinationCountry || 'the destination country'} and gets the parcels out.

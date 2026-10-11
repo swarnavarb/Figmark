@@ -154,6 +154,9 @@ const {
 const { orderMoney } = await import(new URL('../api/dist/shared/payments.js', import.meta.url));
 const { setCrewRoute: setCrew } = await import(new URL('fulfilment-routes.js', fns));
 const {
+  suggestPeopleRoute: suggestPeople, addOrderPhotoRoute: addOrderPhoto, updateOrderPhotoRoute: updateOrderPhoto,
+} = await import(new URL('crew-routes.js', fns));
+const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
   lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
   noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
@@ -10611,6 +10614,82 @@ await check('the crew get the lot with exactly the buttons the route handed them
   const mine = (await myServices(req({ headers: handlerHeaders }), ctx)).jsonBody;
   assert.ok(mine.crew.some((row) => row.role === 'handler' && row.lot.id === 'lot_open_24' && row.buttons.length > 0));
   assert.equal((await crewLot(req({ headers: inkwellTeam, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' } }), ctx)).status, 403);
+});
+
+await check('the seller tags people, picks their buttons, gates dispatch and shares photos', async () => {
+  const repository = await getRepository();
+  const original = await repository.getLot('usr_demo', 'lot_open_24');
+  const handlerHeaders = await signInAs(HANDLER_EMAIL);
+  const { crewSlots } = await import(new URL('../api/dist/shared/services.js', import.meta.url));
+  try {
+    // People only: the seller's own handle is a person, their shop's is not.
+    const found = (await suggestPeople(req({ headers: handlerHeaders, query: { q: 'arjun' } }), ctx)).jsonBody.people;
+    assert.ok(found.some((person) => person.handle === 'arjun'));
+    assert.ok(!found.some((person) => person.handle === 'arjun_collects'), 'a shop is never suggested');
+    const shop = await setCrew(req({ headers: auth, params: { id: 'lot_open_24' }, body: { handlerHandle: '@arjun_collects' } }), ctx);
+    assert.equal(shop.status, 400);
+    assert.equal(shop.jsonBody.error, 'not_a_person');
+
+    // A handler is handed buttons from after the lot, never from before it.
+    const before = crewSlots(original, 'supplier').map((slot) => slot.key);
+    if (before.length > 0) {
+      const wrongSide = await setCrew(req({ headers: auth, params: { id: 'lot_open_24' }, body: { handlerButtons: [before[0]] } }), ctx);
+      assert.equal(wrongSide.status, 400);
+    }
+    const after = crewSlots({ ...original, crew: { readyGate: true } }, 'handler').map((slot) => slot.key);
+    assert.ok(after.includes('dispatched'), 'the handler side carries Dispatched');
+    assert.ok(!after.includes('delivered') && !after.includes('ready_to_dispatch'));
+    const saved = await setCrew(req({ headers: auth, params: { id: 'lot_open_24' }, body: {
+      handlerButtons: ['dispatched'], readyGate: true, handlerSeesPayment: true,
+    } }), ctx);
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.jsonBody.lot.crew.handlerButtons, ['dispatched']);
+
+    const view = (await crewLot(req({ headers: handlerHeaders, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' }, query: { role: 'handler' } }), ctx)).jsonBody;
+    assert.deepEqual(view.buttons.map((button) => button.key), ['dispatched'], 'exactly what the seller handed over');
+    assert.deepEqual(view.settings, { readyGate: true, seesPayment: true });
+    assert.ok(view.items.every((item) => item.payment && typeof item.payment.outstandingMinor === 'number'));
+    assert.ok(view.lots.some((row) => row.lotId === 'lot_open_24'));
+
+    // Nothing goes out until the seller clears the customer, and clearing is the seller's.
+    const buyer = await newMember('Crew Photo Buyer', 'crewphoto@figmark.example', '+919000078950');
+    // The copy is of another shop's order; this one is in Lot 24, so it is this shop's.
+    const order = await repository.updateOrder({ ...(await freshOrder('ord_crew_gate', 'lot_open_24', buyer.id)), sellerId: 'usr_demo' });
+    const held = await setCheckpoint(req({ headers: handlerHeaders, params: { id: order.id }, body: { checkpoint: 'dispatched' } }), ctx);
+    assert.equal(held.status, 409);
+    assert.equal(held.jsonBody.error, 'not_cleared');
+    const notTheirs = await setCheckpoint(req({ headers: handlerHeaders, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch' } }), ctx);
+    assert.equal(notTheirs.status, 403);
+    const packedRefused = await setCheckpoint(req({ headers: handlerHeaders, params: { id: order.id }, body: { checkpoint: 'india_received' } }), ctx);
+    assert.equal(packedRefused.status, 403, 'a stock button the seller left off is refused');
+    assert.equal((await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch' } }), ctx)).status, 200);
+    assert.equal((await setCheckpoint(req({ headers: handlerHeaders, params: { id: order.id }, body: { checkpoint: 'dispatched' } }), ctx)).status, 200);
+
+    // A photo from the handler: theirs and the seller's until the seller shares it.
+    const added = await addOrderPhoto(req({ headers: handlerHeaders, params: { id: order.id }, body: { dataUrl: tinyPhoto('crew') } }), ctx);
+    assert.equal(added.status, 201);
+    assert.deepEqual(added.jsonBody.photo.showTo, ['handler']);
+    const stranger = await addOrderPhoto(req({ headers: inkwellTeam, params: { id: order.id }, body: { dataUrl: tinyPhoto('nope') } }), ctx);
+    assert.equal(stranger.status, 403);
+    const photoId = added.jsonBody.photo.id;
+    const tracking = async () => (await orderTracking(req({ headers: buyer.headers, params: { id: order.id } }), ctx)).jsonBody.order.photos;
+    assert.deepEqual(await tracking(), [], 'the buyer sees nothing the shop has not shared');
+    const crewShares = await updateOrderPhoto(req({ headers: handlerHeaders, params: { id: order.id, photoId }, body: { showTo: ['buyer'] } }), ctx);
+    assert.equal(crewShares.status, 403, 'who sees a photo is the seller’s call');
+    const shared = await updateOrderPhoto(req({ headers: auth, params: { id: order.id, photoId }, body: { showTo: ['buyer', 'handler'] } }), ctx);
+    assert.equal(shared.status, 200);
+    assert.equal((await tracking()).length, 1);
+    const board = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+    assert.equal(board.crew.readyGate, true);
+    assert.ok(board.customers.some((row) => row.orders.some((each) => each.photos?.some((photo) => photo.id === photoId))));
+    const removed = await updateOrderPhoto(req({ headers: handlerHeaders, params: { id: order.id, photoId }, body: { remove: true } }), ctx);
+    assert.equal(removed.status, 200, 'whoever took it can take it down');
+    assert.deepEqual(await tracking(), []);
+  } finally {
+    // Later checks read this lot as the seed left it.
+    const current = await repository.getLot('usr_demo', 'lot_open_24');
+    await repository.updateLot({ ...current, crew: original.crew ?? null, handler: original.handler });
+  }
 });
 
 await check('a forwarder moves the crate only onto steps the route gave them', async () => {

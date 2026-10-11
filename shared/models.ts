@@ -1205,6 +1205,49 @@ export interface Lot extends BaseDocument {
   route?: LotRoute | null;
   /** How far along that ladder, as an index. Absent reads from `stage`. */
   currentStep?: number;
+  /** What the tagged supplier and handler may press and see. Absent is the defaults. */
+  crew?: LotCrewSettings | null;
+}
+
+/**
+ * The seller's say over the two people tagged on a lot.
+ *
+ * Tagging somebody hands them a screen; this decides what is on it. The
+ * button lists are tick keys (`stepTickKey`), and only ever the ones on their
+ * side of the lot: the supplier works items before they join it, the handler
+ * works them once they have left it. A list that is absent means the role's
+ * stock buttons, which is how every lot behaved before a seller could choose.
+ */
+export interface LotCrewSettings {
+  supplierButtons?: string[];
+  handlerButtons?: string[];
+  /** Whether the handler sees what each buyer owes and has paid. */
+  handlerSeesPayment?: boolean;
+  /**
+   * The seller clears each customer for dispatch. On, "Ready to dispatch" is
+   * the seller's press rather than the handler's, and the handler cannot mark
+   * anything dispatched for a customer the seller has not cleared.
+   */
+  readyGate?: boolean;
+}
+
+/** Who a photo on an order can be shown to, besides the seller who always sees it. */
+export const PHOTO_AUDIENCES = ['buyer', 'supplier', 'handler'] as const;
+export type PhotoAudience = (typeof PHOTO_AUDIENCES)[number];
+
+/**
+ * A photo taken of one order on its way - in hand at the supplier, unpacked
+ * at the handler's. Never on the listing: it is this piece, not the product,
+ * and the seller decides who else it is shown to.
+ */
+export interface OrderPhoto {
+  id: string;
+  url: string;
+  blobName: string;
+  addedAt: string;
+  addedBy: string;
+  addedAs: 'seller' | 'supplier' | 'handler';
+  showTo: PhotoAudience[];
 }
 
 export interface LotHandler {
@@ -1414,6 +1457,8 @@ export interface Order extends BaseDocument {
    * meanings the rest of the app relies on and these have none.
    */
   customTicks?: Record<string, string | null>;
+  /** Photos of this piece on its way; see `OrderPhoto`. */
+  photos?: OrderPhoto[];
   /**
    * Where this item was received before it had a lot, in the seller's words
    * - "Received at freight forwarder's warehouse" - chosen when the warehouse
