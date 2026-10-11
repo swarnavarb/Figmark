@@ -4,6 +4,7 @@ import { DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { ApiRequestError, api, type CommunityDesk } from '../api';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
+import { BackLink } from '../components/ScrollManager';
 
 type Tab = 'waiting' | 'all' | 'earnings';
 
@@ -55,14 +56,19 @@ export function CommunityServicePage() {
 
   return (
     <main className="page tab-view">
+      <BackLink to="/services/mine">← My services</BackLink>
       <div className="page__head">
         <div>
           <h1>Community Service</h1>
           <p className="muted">{desk.manager.name} · community manager since {formatDateOrdinal(desk.manager.since)}</p>
         </div>
-        <button type="button" className={`btn btn--sm ${desk.manager.available ? 'btn--ghost' : ''}`} disabled={busy}
+        {/* Green when new disputes can reach them, red when they cannot - the
+            one thing on this desk they most need to see at a glance. */}
+        <button type="button" disabled={busy} aria-pressed={desk.manager.available}
+          className={`dutybtn dutybtn--${desk.manager.available ? 'on' : 'off'}`}
           onClick={() => void toggle()}>
-          {desk.manager.available ? '● Taking new disputes' : '○ Not taking new disputes'}
+          <span className="dutybtn__dot" aria-hidden="true" />
+          {desk.manager.available ? 'Taking new disputes' : 'Not taking new disputes'}
         </button>
       </div>
 

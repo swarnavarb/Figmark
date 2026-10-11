@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { CHECKPOINT_COUNT_LABELS, type OrderCheckpoint } from '@shared/enums';
 import { countOf } from '@shared/board';
@@ -179,6 +179,7 @@ function ServiceSection({ kind, mine, limit, filter = false }: {
         <ApplyMenu kind={kind} mine={mine} />
       </header>
 
+      <div className="svx__body">
       {filter && (
         <div className="search svx__search">
           <span className="search__icon"><Icon name="search" /></span>
@@ -200,9 +201,12 @@ function ServiceSection({ kind, mine, limit, filter = false }: {
         </p>
       ) : (
         <div className="svx__list">
-          {shown.map((provider) => kind === 'forwarder'
-            ? <ForwarderCard key={provider.userId} provider={provider} />
-            : <ArtistCard key={provider.userId} provider={provider} />)}
+          {shown.map((provider, index) => (
+            // Each card rises in a beat after the one before it.
+            <div key={provider.userId} className="svx__item" style={{ '--i': Math.min(index, 8) } as CSSProperties}>
+              {kind === 'forwarder' ? <ForwarderCard provider={provider} /> : <ArtistCard provider={provider} />}
+            </div>
+          ))}
         </div>
       )}
 
@@ -211,6 +215,7 @@ function ServiceSection({ kind, mine, limit, filter = false }: {
           See all {providers!.length} {theme.title.toLowerCase()} <Icon name="right" size={14} />
         </Link>
       )}
+      </div>
     </section>
   );
 }
@@ -345,24 +350,29 @@ function ArtistCard({ provider }: { provider: ProviderCard }) {
   );
 }
 
-/** A dotted flight path over the forwarders' banner. */
+/** A dotted flight path over the forwarders' banner, with a plane flying it. */
 function FlightArt() {
   return (
     <svg viewBox="0 0 220 120" fill="none">
-      <path d="M8 104C60 96 92 28 212 14" stroke="currentColor" strokeWidth="2" strokeDasharray="3 7" strokeLinecap="round" />
+      <path className="svx-art__route" d="M8 104C60 96 92 28 212 14" stroke="currentColor" strokeWidth="2" strokeDasharray="3 7" strokeLinecap="round" />
       <circle cx="8" cy="104" r="4" fill="currentColor" />
-      <circle cx="212" cy="14" r="4" fill="currentColor" />
+      <circle className="svx-art__ping" cx="212" cy="14" r="4" fill="currentColor" />
+      <g className="svx-art__plane">
+        <path d="M-7 0 7 0M2-5 7 0 2 5M-4 0-7-4M-4 0-7 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <animateMotion dur="7s" repeatCount="indefinite" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline"
+          keySplines="0.45 0 0.55 1" path="M8 104C60 96 92 28 212 14" />
+      </g>
     </svg>
   );
 }
 
-/** Loose brush strokes over the artists' banner. */
+/** Brush strokes over the artists' banner, painted on and lifted off. */
 function StudioArt() {
   return (
     <svg viewBox="0 0 220 120" fill="none">
-      <path d="M20 90c30-30 60 20 90-10s50-50 90-30" stroke="currentColor" strokeWidth="10" strokeLinecap="round" opacity="0.5" />
-      <path d="M60 110c20-14 50-6 70-20" stroke="currentColor" strokeWidth="6" strokeLinecap="round" opacity="0.35" />
-      <circle cx="186" cy="30" r="9" fill="currentColor" opacity="0.6" />
+      <path className="svx-art__stroke" pathLength={1} d="M20 90c30-30 60 20 90-10s50-50 90-30" stroke="currentColor" strokeWidth="10" strokeLinecap="round" opacity="0.5" />
+      <path className="svx-art__stroke svx-art__stroke--two" pathLength={1} d="M60 110c20-14 50-6 70-20" stroke="currentColor" strokeWidth="6" strokeLinecap="round" opacity="0.35" />
+      <circle className="svx-art__drop" cx="186" cy="30" r="9" fill="currentColor" opacity="0.6" />
     </svg>
   );
 }

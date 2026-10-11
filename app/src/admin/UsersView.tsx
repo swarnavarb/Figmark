@@ -114,8 +114,8 @@ export function UsersView() {
               {!row.signInAccount && <span className="badge">no login</span>}
               {row.store && <span className="badge">store</span>}
               {row.managerRights && (
-                <span className="badge badge--ok">
-                  Community manager{row.managerRights.available === false ? ' · off' : ''}
+                <span className={`badge ${row.managerRights.available === false ? 'badge--danger' : 'badge--ok'}`}>
+                  Community manager · {row.managerRights.available === false ? 'not taking disputes' : 'taking disputes'}
                 </span>
               )}
             </div>
@@ -493,11 +493,16 @@ function ManagerPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =
     <div className="card card--pad stack">
       <span className="card__title">Community manager</span>
       {user.managerRights ? (
-        <p className="faint">
-          🛡️ Appointed {formatDate(user.managerRights.grantedAt)}
-          {user.managerRights.available === false ? ' - currently not taking new disputes' : ''}. Members see them as{' '}
-          <strong>{user.displayName}</strong>, their profile name, with the community manager badge.
-        </p>
+        <>
+          <span className={`dutybtn dutybtn--${user.managerRights.available === false ? 'off' : 'on'} dutybtn--static`}>
+            <span className="dutybtn__dot" aria-hidden="true" />
+            {user.managerRights.available === false ? 'Not taking new disputes' : 'Taking new disputes'}
+          </span>
+          <p className="faint">
+            🛡️ Appointed {formatDate(user.managerRights.grantedAt)}. Members see them as{' '}
+            <strong>{user.displayName}</strong>, their profile name, with the community manager badge.
+          </p>
+        </>
       ) : (
         <p className="faint">
           Not a community manager. They cannot hear disputes or be assigned to protected purchases.

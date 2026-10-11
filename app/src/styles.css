@@ -13906,14 +13906,32 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 .svx-stack { display: grid; gap: 22px; }
 
+/* Each service is one block: its banner, and the people offering it inside. */
 .svx {
   --svx: var(--aqua);
   --svx-text: var(--aqua);
   --svx-soft: var(--aqua-soft);
   --svx-line: var(--aqua-line);
   --svx-grad: var(--grad-sea);
-  display: grid; gap: 12px;
+  position: relative; isolation: isolate;
+  display: grid;
+  border-radius: 22px;
+  background:
+    radial-gradient(110% 60% at 0% 0%, var(--svx-soft), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--svx) 7%, var(--surface)), var(--surface) 55%);
+  box-shadow: inset 0 0 0 1px var(--svx-line);
+  animation: svx-rise 560ms var(--ease) both;
 }
+.svx--artist { animation-delay: 110ms; }
+/* A slow sheen across the block, in the service's own colour. */
+.svx::before {
+  content: ''; position: absolute; z-index: -1; inset: 0; border-radius: inherit;
+  background: linear-gradient(105deg, transparent 42%, color-mix(in srgb, var(--svx) 10%, transparent) 50%, transparent 58%) 0 0 / 300% 100%;
+  animation: svx-sheen 9s ease-in-out infinite;
+  pointer-events: none;
+}
+.svx--artist::before { animation-delay: -4.5s; }
+.svx__body { display: grid; gap: 12px; padding: 0 12px 14px; }
 .svx--artist {
   --svx: var(--pink);
   --svx-text: var(--pink-text);
@@ -13923,18 +13941,13 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 
 .svx__hero {
-  position: relative; isolation: isolate; overflow: hidden;
+  position: relative;
   display: flex; align-items: flex-start; gap: 14px;
-  padding: 18px 16px 18px 18px;
-  border-radius: 20px;
-  background:
-    radial-gradient(110% 120% at 0% 0%, var(--svx-soft), transparent 65%),
-    linear-gradient(180deg, color-mix(in srgb, var(--svx) 8%, var(--surface)), var(--surface));
-  box-shadow: inset 0 0 0 1px var(--svx-line);
+  padding: 18px 16px 16px 18px;
 }
 .svx__art {
-  position: absolute; z-index: -1; right: -10px; bottom: -14px;
-  width: 220px; height: 120px; color: var(--svx); opacity: 0.45;
+  position: absolute; z-index: -1; right: 0; bottom: 0;
+  width: 220px; max-width: 60%; height: 120px; color: var(--svx); opacity: 0.45;
   pointer-events: none;
 }
 .svx__art svg { width: 100%; height: 100%; }
@@ -13944,8 +13957,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   background: var(--svx-grad); color: #fff;
   box-shadow: 0 8px 22px color-mix(in srgb, var(--svx) 35%, transparent);
 }
-.svx--forwarder .svx__mark { transform: rotate(-8deg); }
-.svx--artist .svx__mark { border-radius: 50% 42% 50% 38%; }
+.svx--forwarder .svx__mark { animation: svx-bank 5s ease-in-out infinite; }
+.svx--artist .svx__mark { border-radius: 50% 42% 50% 38%; animation: svx-blob 7s ease-in-out infinite; }
 .svx__text { flex: 1; min-width: 0; display: grid; gap: 4px; }
 .svx__eyebrow { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.12em; text-transform: uppercase; color: var(--svx-text); }
 .svx--forwarder .svx__eyebrow { font-family: var(--mono); letter-spacing: 0.06em; }
@@ -13973,14 +13986,17 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .svx__all:hover { text-decoration: underline; }
 
+.svx__item { min-width: 0; display: grid; animation: svx-rise 480ms var(--ease) both; animation-delay: calc(180ms + var(--i, 0) * 70ms); }
 .svx-card {
   display: grid; gap: 12px; align-content: start; min-width: 0;
   padding: 14px; border-radius: var(--r-lg);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   box-shadow: inset 0 0 0 1px var(--border);
   transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }
-.svx-card:hover { box-shadow: inset 0 0 0 1px var(--svx-line); }
+.svx-card:hover { box-shadow: inset 0 0 0 1px var(--svx-line), 0 10px 26px color-mix(in srgb, var(--svx) 14%, transparent); transform: translateY(-2px); }
+.svx-lane__path { background-position-x: 0; animation: svx-dots 1.6s linear infinite; }
 .svx-card--ghost { min-height: 150px; box-shadow: none; }
 .svx-card__head { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .svx-card__who { flex: 1; min-width: 0; display: grid; gap: 1px; }
@@ -14034,6 +14050,51 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .svx-tag--off { background: var(--surface-2); color: var(--text-faint); }
 
+/* The banners' moving parts. */
+.svx-art__route { animation: svx-dash 1.4s linear infinite; }
+.svx-art__ping { transform-box: fill-box; transform-origin: center; animation: svx-ping 2.4s ease-out infinite; }
+.svx-art__stroke { stroke-dasharray: 1; stroke-dashoffset: 1; animation: svx-paint 6s var(--ease) infinite; }
+.svx-art__stroke--two { animation-delay: 0.6s; }
+.svx-art__drop { transform-box: fill-box; transform-origin: center; animation: svx-drop 6s var(--ease) infinite; }
+
+@keyframes svx-rise { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes svx-sheen { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0% 0; } }
+@keyframes svx-bank { 0%, 100% { transform: rotate(-8deg) translateY(0); } 50% { transform: rotate(-3deg) translateY(-3px); } }
+@keyframes svx-blob {
+  0%, 100% { border-radius: 50% 42% 50% 38%; transform: rotate(0deg); }
+  50% { border-radius: 40% 52% 38% 50%; transform: rotate(6deg); }
+}
+@keyframes svx-dash { to { stroke-dashoffset: -10; } }
+@keyframes svx-dots { to { background-position-x: 7px; } }
+@keyframes svx-ping { 0% { transform: scale(1); opacity: 1; } 70% { transform: scale(2.2); opacity: 0.2; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes svx-paint {
+  0% { stroke-dashoffset: 1; }
+  40%, 75% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -1; }
+}
+@keyframes svx-drop { 0%, 30% { transform: scale(0); } 45%, 80% { transform: scale(1); } 100% { transform: scale(0); } }
+
 @media (prefers-reduced-motion: reduce) {
   .svx-mine, .svx-card { transition: none; }
+  .svx, .svx::before, .svx__item, .svx__mark, .svx-lane__path,
+  .svx-art__route, .svx-art__ping, .svx-art__drop { animation: none !important; }
+  .svx-art__stroke { animation: none; stroke-dashoffset: 0; }
+  .svx-art__plane { display: none; }
 }
+
+/* On duty or not: green when new disputes can reach a manager, red when not. */
+.dutybtn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: var(--r-pill);
+  font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
+  border: 1px solid; transition: background var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+}
+.dutybtn:active:not(.dutybtn--static) { transform: scale(0.97); }
+.dutybtn:disabled { opacity: 0.7; cursor: progress; }
+.dutybtn--static { justify-self: start; cursor: default; }
+.dutybtn--on { background: var(--ok-soft); border-color: rgba(52, 211, 153, 0.5); color: var(--ok); }
+.dutybtn--off { background: var(--danger-soft); border-color: rgba(244, 63, 94, 0.5); color: var(--danger-text); }
+.dutybtn__dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.dutybtn--on .dutybtn__dot { box-shadow: 0 0 0 0 currentColor; animation: duty-pulse 2s ease-out infinite; }
+@keyframes duty-pulse { 0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); } 100% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); } }
+@media (prefers-reduced-motion: reduce) { .dutybtn--on .dutybtn__dot { animation: none; } }
