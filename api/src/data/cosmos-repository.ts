@@ -65,6 +65,8 @@ import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcas
  */
 /** Site-content id of the marker left once rows are in the current buyer-protection shape. */
 const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
+/** Site-content id of the marker left once messages between an owner and their own shop are gone. */
+const SELF_MESSAGES_MARKER = 'migration:self-messages';
 
 function autoSeedEnabled(): boolean {
   return (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase() !== 'off';
@@ -115,6 +117,8 @@ export class CosmosRepository implements Repository {
    * assert on what it did, and so a second `init()` cannot start a second one.
    */
   private maintenance: Promise<void> | null = null;
+  /** The one-off removal of owner-to-own-shop messages, when it is running. */
+  private selfMessages: Promise<void> | null = null;
 
   constructor(private readonly cosmosConfig: CosmosConfig) {
     // A key is used when supplied; otherwise managed identity, which is the
@@ -205,6 +209,17 @@ export class CosmosRepository implements Repository {
       if (signInAccounts > 0) migrated = await this.migratePaymentHolds();
     } catch (error) {
       migrated = ` Payment-hold migration failed: ${describeError(error)}.`;
+    }
+    // Messages between an owner and their own shop: sending one is refused
+    // now, and the ones already written sat unread in the inbox that sent
+    // them. Once, behind a marker - and behind the request rather than in
+    // front of it: nothing reads wrongly while it runs, since the inbox
+    // already leaves those threads out.
+    if (signInAccounts > 0) {
+      // A tick later, so not even the marker read sits on the start-up path.
+      this.selfMessages = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.removeSelfMessages()).catch((error) => {
+        this.state = { ...this.state, detail: `${this.state.detail} Self-message cleanup failed: ${describeError(error)}.` };
+      }).then(() => undefined);
     }
 
     let seeded = '';
@@ -425,6 +440,20 @@ export class CosmosRepository implements Repository {
   }
 
   /** Records that every row is in the Figmark-held shape, so the pass never runs again. */
+  private async removeSelfMessages(): Promise<void> {
+    if (await this.getSiteContent(SELF_MESSAGES_MARKER)) return;
+    const removed = await this.deleteSelfMessages();
+    await this.markSelfMessagesCleared(removed);
+    if (removed > 0) {
+      this.state = { ...this.state, detail: `${this.state.detail} Removed ${removed} message(s) between owners and their own shops.` };
+    }
+  }
+
+  private async markSelfMessagesCleared(removed: number): Promise<void> {
+    const now = new Date().toISOString();
+    await this.saveSiteContent({ id: SELF_MESSAGES_MARKER, data: { removed }, updatedBy: null, createdAt: now, updatedAt: now });
+  }
+
   private async markPaymentHoldsMigrated(moved: number): Promise<void> {
     const now = new Date().toISOString();
     await this.saveSiteContent({ id: PAYMENT_HOLDS_MARKER, data: { moved }, updatedBy: null, createdAt: now, updatedAt: now });
@@ -536,6 +565,7 @@ export class CosmosRepository implements Repository {
    */
   async settled(): Promise<void> {
     await this.maintenance;
+    await this.selfMessages;
   }
 
   /**
@@ -592,6 +622,7 @@ export class CosmosRepository implements Repository {
     const written = await this.seedFixtures();
     // Seeded in the current shape: there is nothing for the migration to move.
     await this.markPaymentHoldsMigrated(0);
+    await this.markSelfMessagesCleared(0);
     this.seeded = true;
     return ` Seeded ${written} fixture records into an empty database.`;
   }
@@ -1249,6 +1280,15 @@ export class CosmosRepository implements Repository {
 
   async deleteMessage(threadId: string, id: string): Promise<void> {
     await this.container('messages').item(id, threadId).delete().catch(() => {});
+  }
+
+  async deleteSelfMessages(): Promise<number> {
+    const { resources } = await this.container('messages').items.query<{ id: string; threadId: string }>({
+      // Bracketed: `from` and `to` are reserved words in Cosmos SQL.
+      query: 'SELECT c.id, c.threadId FROM c WHERE c["from"].userId = c["to"].userId',
+    }).fetchAll();
+    for (const row of resources) await this.deleteMessage(row.threadId, row.id);
+    return resources.length;
   }
 
   async updateMessage(message: Message): Promise<Message> {

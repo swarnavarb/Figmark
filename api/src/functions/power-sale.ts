@@ -257,7 +257,10 @@ export async function advancePowerSale(
       try {
         await repository.createPost(shopPost(
           shop,
-          `✨ Exclusive channel drop, now open to everyone: ${item.title}.`,
+          // A feed post is read outside the room, so it does not talk about it.
+          after.feed
+            ? `✨ Now open to everyone: ${item.title}.`
+            : `✨ Exclusive channel drop, now open to everyone: ${item.title}.`,
           item.listingId,
           true,
           after.feed ? 'feed' : 'channel',

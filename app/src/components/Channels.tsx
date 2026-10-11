@@ -781,10 +781,34 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLTextAreaElement | null>(null);
   const files = useRef<HTMLInputElement | null>(null);
+  const bar = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (replyTo) input.current?.focus();
   }, [replyTo]);
+
+  // The bar is fixed over the bottom of the room and changes height - a reply,
+  // photos, the item, a second line of text. The room pads by what it measures
+  // now rather than by a guess, so the last message always clears it; and if
+  // you were reading the end when it grew, you still are.
+  useLayoutEffect(() => {
+    const node = bar.current;
+    const room = node?.closest<HTMLElement>('.chroom');
+    if (!node || !room) return;
+    const fit = () => {
+      const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 48;
+      room.style.setProperty('--cbar-h', `${Math.ceil(node.getBoundingClientRect().height)}px`);
+      if (atEnd) window.scrollTo({ top: document.documentElement.scrollHeight });
+    };
+    fit();
+    if (typeof ResizeObserver === 'undefined') return;
+    const watch = new ResizeObserver(fit);
+    watch.observe(node);
+    return () => {
+      watch.disconnect();
+      room.style.removeProperty('--cbar-h');
+    };
+  }, []);
 
   const item = shareable.find((entry) => entry.id === itemId) ?? null;
   const uploading = photos.some((photo) => !photo.url && !photo.failed);
@@ -841,7 +865,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
   }
 
   return (
-    <div className="cbar">
+    <div className="cbar" ref={bar}>
       {error && <p className="notice notice--error" onClick={() => setError(null)}>{error}</p>}
 
       {replyTo && (

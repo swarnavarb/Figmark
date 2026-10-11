@@ -229,7 +229,6 @@ function RouteIntro() {
  * rather than offering a shortcut that ends in an error.
  */
 function ShopStart({ onOpen }: { onOpen: () => void }) {
-  const { user } = useSession();
   return (
     <main className="page tab-view">
       <div className="gate">
@@ -245,15 +244,6 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
         </button>
       </div>
 
-      {/* Somebody may hold money for other people's trades without selling a
-          thing themselves. Hiding this would strand them in a tab with one
-          door they do not want - it is a different role, not a second option
-          for a new seller. */}
-      {user?.managerRights && (
-        <Link to="/community-service" className="btn btn--quiet" style={{ justifySelf: 'center', marginTop: 18 }}>
-          {<Icon name="users" size={13} />} Open your Community Service desk instead
-        </Link>
-      )}
     </main>
   );
 }
@@ -266,7 +256,6 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
  * appears for someone who acts in more than one.
  */
 function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: () => void | Promise<void> }) {
-  const { user } = useSession();
   const cameFor = (useLocation().state as { store?: string } | null)?.store;
   const [storeId, setStoreId] = useState(
     stores.some((entry) => entry.ownerId === cameFor) ? cameFor! : stores[0]!.ownerId);
@@ -311,12 +300,6 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       {/* No "list an item" here: the Items section opens with that door, and
           no shop-name header here either - the workflow below already says
           where you are. */}
-      {user?.managerRights && (
-        <Link to="/community-service" className="btn btn--ghost btn--sm" style={{ justifySelf: 'end', marginBottom: 10 }}>
-          {<Icon name="users" size={13} />} Community Service
-        </Link>
-      )}
-
       <SellHome active={active} onGo={setSection} />
 
       {stores.length > 1 && (

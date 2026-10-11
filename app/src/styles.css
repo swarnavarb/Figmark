@@ -8169,7 +8169,9 @@ html:has(.dmscreen), html:has(.dmscreen) body, html:has(.dmscreen) #root {
   padding: 10px max(10px, calc((100% - 720px) / 2 + 10px)) calc(10px + env(safe-area-inset-bottom, 0px));
   transition: none;
 }
-.shell--room .chroom { padding-bottom: 150px; }
+/* Padded by the bar's measured height (set by RoomComposer; it already holds
+   the home indicator) plus breathing room, so the last message clears it. */
+.shell--room .chroom { padding-bottom: calc(var(--cbar-h, 150px) + 24px); }
 /* Held to what is on screen rather than to the browser's idea of the window,
    which an iPhone can leave short or shifted - see ViewportSync. Both are
    zero whenever the two agree.
@@ -8184,8 +8186,8 @@ html:has(.dmscreen), html:has(.dmscreen) body, html:has(.dmscreen) #root {
    bounce carries the pinned bars with it on an iPhone. */
 html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: none; }
 /* The item a message is about makes the bar taller; the last message stays above it. */
-.shell--room .chroom:has(.cbar__about) { padding-bottom: 260px; }
-.shell--room .chnew { bottom: calc(88px + env(safe-area-inset-bottom, 0px) + var(--vv-gap, 0px)); }
+.shell--room .chroom:has(.cbar__about) { padding-bottom: calc(var(--cbar-h, 260px) + 24px); }
+.shell--room .chnew { bottom: calc(var(--cbar-h, 76px) + 12px + var(--vv-gap, 0px)); }
 
 /* The inbox row, with the pen at its end. */
 .inbox__boxes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -13868,3 +13870,170 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   color: var(--text-dim); background: var(--surface-2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 .vfychip.is-ok { color: var(--ok); background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.3); }
+
+/* ── Services tab: one door to your own work, then two services in their own
+   colours. Forwarders read as cargo - sea-blue, dotted flight paths, routes
+   laid out like a boarding pass. Artists read as a studio - warm pink into
+   violet, brush strokes, a little gallery. ───────────────────────────── */
+.svx-mine {
+  position: relative;
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 6px; padding: 16px 18px;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 140% at 100% 0%, var(--violet-soft), transparent 60%),
+    var(--surface);
+  box-shadow: inset 0 0 0 1px var(--violet-line);
+  color: inherit; text-decoration: none;
+  transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
+}
+.svx-mine:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px var(--violet-lit), 0 12px 30px rgba(124, 58, 237, 0.2); }
+.svx-mine:active { transform: scale(0.99); }
+.svx-mine__icon {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 44px; height: 44px; border-radius: 14px;
+  background: var(--grad-hero); color: #fff;
+}
+.svx-mine__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.svx-mine__title { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.02em; }
+.svx-mine__line { font-size: var(--t-sm); color: var(--text-dim); }
+.svx-mine__ping {
+  flex: 0 0 auto; min-width: 22px; height: 22px; padding: 0 7px;
+  display: grid; place-items: center; border-radius: var(--r-pill);
+  background: var(--pink); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+.svx-mine__go { flex: 0 0 auto; color: var(--violet-text); }
+
+.svx-stack { display: grid; gap: 22px; }
+
+.svx {
+  --svx: var(--aqua);
+  --svx-text: var(--aqua);
+  --svx-soft: var(--aqua-soft);
+  --svx-line: var(--aqua-line);
+  --svx-grad: var(--grad-sea);
+  display: grid; gap: 12px;
+}
+.svx--artist {
+  --svx: var(--pink);
+  --svx-text: var(--pink-text);
+  --svx-soft: var(--pink-soft);
+  --svx-line: var(--pink-line);
+  --svx-grad: linear-gradient(135deg, #EC4899 0%, #7C3AED 100%);
+}
+
+.svx__hero {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 18px 16px 18px 18px;
+  border-radius: 20px;
+  background:
+    radial-gradient(110% 120% at 0% 0%, var(--svx-soft), transparent 65%),
+    linear-gradient(180deg, color-mix(in srgb, var(--svx) 8%, var(--surface)), var(--surface));
+  box-shadow: inset 0 0 0 1px var(--svx-line);
+}
+.svx__art {
+  position: absolute; z-index: -1; right: -10px; bottom: -14px;
+  width: 220px; height: 120px; color: var(--svx); opacity: 0.45;
+  pointer-events: none;
+}
+.svx__art svg { width: 100%; height: 100%; }
+.svx__mark {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 48px; height: 48px; border-radius: 15px;
+  background: var(--svx-grad); color: #fff;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--svx) 35%, transparent);
+}
+.svx--forwarder .svx__mark { transform: rotate(-8deg); }
+.svx--artist .svx__mark { border-radius: 50% 42% 50% 38%; }
+.svx__text { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.svx__eyebrow { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.12em; text-transform: uppercase; color: var(--svx-text); }
+.svx--forwarder .svx__eyebrow { font-family: var(--mono); letter-spacing: 0.06em; }
+.svx__title { margin: 0; font-family: var(--display); font-size: 24px; font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1.1; }
+.svx__title a { color: inherit; text-decoration: none; }
+.svx__line { margin: 0; max-width: 520px; font-size: var(--t-sm); line-height: 1.45; color: var(--text-dim); }
+.svx__count { margin-top: 4px; font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+
+.svx__menuwrap { position: relative; flex: 0 0 auto; margin: -4px -4px 0 0; }
+.svx__more {
+  display: grid; place-items: center; width: 36px; height: 36px;
+  border: 0; border-radius: 50%; cursor: pointer;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent); color: var(--text);
+}
+.svx__more:hover, .svx__more[aria-expanded='true'] { background: var(--svx-soft); color: var(--svx-text); }
+.svx__menuwrap .spost__menu { min-width: 230px; }
+.svx__menunote { padding: 2px 10px 6px; }
+
+.svx__search { max-width: 420px; }
+.svx__empty { margin: 0; padding: 16px; border-radius: var(--r-md); border: 1px dashed var(--svx-line); color: var(--text-dim); font-size: var(--t-sm); text-align: center; }
+.svx__list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.svx__all {
+  justify-self: start; display: inline-flex; align-items: center; gap: 4px;
+  color: var(--svx-text); font-size: var(--t-sm); font-weight: var(--w-semi); text-decoration: none;
+}
+.svx__all:hover { text-decoration: underline; }
+
+.svx-card {
+  display: grid; gap: 12px; align-content: start; min-width: 0;
+  padding: 14px; border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+}
+.svx-card:hover { box-shadow: inset 0 0 0 1px var(--svx-line); }
+.svx-card--ghost { min-height: 150px; box-shadow: none; }
+.svx-card__head { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.svx-card__who { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.svx-card__name { font-weight: var(--w-semi); font-size: var(--t-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svx-card__sub { font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svx-card__trust { flex: 0 0 auto; display: grid; justify-items: end; gap: 2px; font-size: var(--t-2xs); color: var(--text-faint); }
+.svx-card__new {
+  flex: 0 0 auto; padding: 3px 9px; border-radius: var(--r-pill);
+  background: var(--svx-soft); color: var(--svx-text);
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase;
+}
+.svx-card__note { font-size: var(--t-sm); color: var(--text-faint); }
+.svx-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.svx-card__foot .btn--quiet { margin-right: auto; }
+.svx-card__more { background: var(--svx-grad); color: #fff; border-color: transparent; }
+.svx-card__from { font-size: var(--t-sm); color: var(--text-dim); }
+.svx-card__from b { color: var(--text); }
+
+/* Routes as a boarding pass: two ends, a dotted path, the plane between. */
+.svx-lanes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.svx-lane {
+  display: grid; gap: 4px; padding: 9px 11px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--svx) 6%, var(--surface-2));
+  border: 1px dashed var(--svx-line);
+}
+.svx-lane__ends { display: flex; align-items: center; gap: 8px; min-width: 0; font-family: var(--mono); font-size: var(--t-sm); }
+.svx-lane__ends b { font-weight: var(--w-semi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+.svx-lane__path {
+  position: relative; flex: 1; min-width: 28px; height: 14px;
+  display: grid; place-items: center;
+  background: radial-gradient(circle, var(--svx-line) 1.2px, transparent 1.6px) 0 50% / 7px 3px repeat-x;
+}
+.svx-lane__path span { padding: 0 4px; background: color-mix(in srgb, var(--svx) 6%, var(--surface-2)); color: var(--svx-text); font-size: 12px; line-height: 1; }
+.svx-lane__facts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--t-2xs); color: var(--text-faint); }
+.svx-lane__rate { color: var(--svx-text); font-weight: var(--w-semi); }
+.svx-lanes__more { font-size: var(--t-2xs); color: var(--text-faint); padding-left: 2px; }
+
+/* The studio: a tilted strip of work, and specialties as paint swatches. */
+.svx-gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.svx-gallery__pic { aspect-ratio: 1; overflow: hidden; border-radius: 10px; background: var(--surface-2); box-shadow: 0 0 0 1px var(--svx-line); }
+.svx-gallery__pic:nth-child(odd) { transform: rotate(-2deg); }
+.svx-gallery__pic:nth-child(even) { transform: rotate(2deg); }
+.svx-gallery__pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.svx-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.svx-tags:empty { display: none; }
+.svx-tag {
+  padding: 4px 10px; border-radius: 999px 999px 999px 4px;
+  background: var(--svx-soft); color: var(--svx-text);
+  font-size: var(--t-2xs); font-weight: var(--w-semi);
+}
+.svx-tag--off { background: var(--surface-2); color: var(--text-faint); }
+
+@media (prefers-reduced-motion: reduce) {
+  .svx-mine, .svx-card { transition: none; }
+}

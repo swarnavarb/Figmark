@@ -101,6 +101,18 @@ async function defaultVoice(
   return latest?.us ?? mine.find((party) => !party.isStore) ?? mine[0]!;
 }
 
+/**
+ * Whether a conversation would be one account talking to itself.
+ *
+ * An owner's own name and their shop's are two handles but one person: a
+ * message between them lands unread in the same inbox that sent it, and is
+ * a conversation with nobody. So is a manager speaking as a shop to the
+ * shop's own owner, or to themselves.
+ */
+function isSelf(callerId: string, us: MessageParty, them: MessageParty): boolean {
+  return them.userId === callerId || them.userId === us.userId;
+}
+
 /** The party a username resolves to, or null when nobody holds it. */
 async function partyFor(username: string, repository: Repo): Promise<MessageParty | null> {
   const found = await repository.getByHandle(username);
@@ -164,7 +176,9 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
       unread: isMuted ? 0 : unread,
       muted: isMuted,
     };
-  }).filter((row) => !blocked.has(row.them.userId));
+  // A thread between two of one account's own handles is nobody's
+  // conversation; any written before that was refused stays out of the list.
+  }).filter((row) => !blocked.has(row.them.userId) && row.them.userId !== row.us.userId);
 
   rows.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
   // The names are snapshots; their levels are read fresh, in one batch.
@@ -207,7 +221,7 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
     ? mine.find((party) => party.handle === asHandle)
     : await defaultVoice(mine, them.handle, repository);
   if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
-  if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
+  if (them.handle === us.handle || isSelf(user.id, us, them)) return error(400, 'invalid_handle', 'You cannot message yourself.');
 
   const threadId = threadIdFor(us.handle, them.handle);
   // `before` pages back through a long conversation; `since` is the refresh
@@ -494,7 +508,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     ? mine.find((party) => party.handle === body.as!.toLowerCase())
     : await defaultVoice(mine, them.handle, repository);
   if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
-  if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
+  if (them.handle === us.handle || isSelf(user.id, us, them)) return error(400, 'invalid_handle', 'You cannot message yourself.');
   const wall = await blockedBetween(user.id, them, repository);
   if (wall === 'you') return error(403, 'blocked', `You blocked @${them.handle}. Unblock them to write.`);
   // Not saying who blocked whom: being told is its own message.

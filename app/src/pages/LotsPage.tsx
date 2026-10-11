@@ -10,7 +10,7 @@ import { COUNTRIES } from '@shared/countries';
 import {
   ApiRequestError, api,
   type LotBoard, type LotContents, type LotDetails, type LotRouteView, type LotsResponse,
-  type ProviderCard, type RoutesResponse, type CandidateItem, type LotItem,
+  type RoutesResponse, type CandidateItem, type LotItem,
 } from '../api';
 import { LotPhaseBadge, lotLabel } from '../components/LotName';
 import { useUndo } from '../components/Undo';
@@ -44,7 +44,6 @@ function CrewCard({ lot, busy, onRun }: {
   busy: boolean;
   onRun: (label: string, fn: () => Promise<void>) => Promise<void>;
 }) {
-  const [handlers, setHandlers] = useState<ProviderCard[]>([]);
 
   const [supplierName, setSupplierName] = useState(lot.supplier?.name ?? '');
   const [supplierHandle, setSupplierHandle] = useState('');
@@ -52,15 +51,13 @@ function CrewCard({ lot, busy, onRun }: {
   const [supplierReference, setSupplierReference] = useState(lot.supplier?.reference ?? '');
 
 
-  const [choice, setChoice] = useState(lot.handler?.handlerUserId ?? (lot.handler ? 'manual' : ''));
-  const [manualName, setManualName] = useState(lot.handler?.handlerUserId ? '' : lot.handler?.name ?? '');
-
-  useEffect(() => {
-    // The public lists only. An unlisted forwarder or handler still works - a
-    // shop names them by typing - they are simply not on offer to strangers.
-    void api.serviceDirectory('handler')
-      .then((result) => setHandlers(result.providers)).catch(() => setHandlers([]));
-  }, []);
+  // The handler is tagged the way the supplier is - a name, and their handle
+  // here if they have one. There is no list to pick from: whoever a shop names
+  // finds the lot under their own My services.
+  const [handlerName, setHandlerName] = useState(lot.handler?.name ?? '');
+  const [handlerHandle, setHandlerHandle] = useState('');
+  const [handlerContact, setHandlerContact] = useState(lot.handler?.contact ?? '');
+  const [handlerCity, setHandlerCity] = useState(lot.handler?.city ?? '');
 
   return (
     <div className="stack">
@@ -123,35 +120,56 @@ function CrewCard({ lot, busy, onRun }: {
         </div>
 
         <label className="field">
-          <span>Handler — takes delivery in India</span>
-          <select value={choice} onChange={(e) => setChoice(e.target.value)}>
-            <option value="">Nobody — you dispatch it yourself</option>
-            {handlers.map((entry) => (
-              <option key={entry.userId} value={entry.userId}>{entry.name} — {entry.line}</option>
-            ))}
-            <option value="manual">Someone not listed…</option>
-          </select>
+          <span>Name</span>
+          <input value={handlerName} onChange={(e) => setHandlerName(e.target.value)}
+            placeholder="Bombay Parcel Works" />
         </label>
-
-        {choice === 'manual' && (
+        <label className="field">
+          <span>Their handle here</span>
+          <input value={handlerHandle} onChange={(e) => setHandlerHandle(e.target.value)}
+            placeholder={lot.handler?.handlerUserId ? 'Tagged. Type another to change it.' : '@their_handle'} />
+          <span className="field__hint">
+            Optional. Tag them and this lot appears under their My services, with the parcels to
+            make up and the buttons your route hands them. A name alone is a note to yourself.
+          </span>
+        </label>
+        <div className="field-row">
           <label className="field">
-            <span>Their name</span>
-            <input value={manualName} onChange={(e) => setManualName(e.target.value)}
-              placeholder="R. Menon" />
-            <span className="field__hint">
-              A name with no account behind it is a note to yourself — they get no screen.
-            </span>
+            <span>Contact</span>
+            <input value={handlerContact} onChange={(e) => setHandlerContact(e.target.value)}
+              placeholder="Phone or email" />
           </label>
-        )}
+          <label className="field">
+            <span>City</span>
+            <input value={handlerCity} onChange={(e) => setHandlerCity(e.target.value)}
+              placeholder="Mumbai" />
+          </label>
+        </div>
 
-        <button type="button" className="btn btn--ghost btn--block" disabled={busy}
-          onClick={() => void onRun('Crew saved.', () =>
-            api.setCrew(lot.id, {
-              handlerUserId: choice === 'manual' || choice === '' ? null : choice,
-              handlerName: choice === 'manual' ? manualName : choice === '' ? '' : undefined,
-            }).then(() => {}))}>
-          Save handler
-        </button>
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="btn btn--ghost" style={{ flex: 1 }} disabled={busy}
+            onClick={() => void onRun('Handler saved.', () =>
+              api.setCrew(lot.id, {
+                handlerName,
+                handlerHandle: handlerHandle.trim() || undefined,
+                handlerContact,
+                handlerCity,
+              }).then(() => setHandlerHandle('')))}>
+            Save handler
+          </button>
+          {lot.handler && (
+            <button type="button" className="btn btn--quiet" disabled={busy}
+              onClick={() => void onRun('Handler removed.', () =>
+                api.setCrew(lot.id, { handlerUserId: null, handlerName: '', handlerHandle: '' }).then(() => {
+                  setHandlerName('');
+                  setHandlerHandle('');
+                  setHandlerContact('');
+                  setHandlerCity('');
+                }))}>
+              Remove
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -211,8 +229,7 @@ export function NewLotForm({ onDone, onCancel }: {
   const [more, setMore] = useState(false);
   const [forwarderName, setForwarderName] = useState('');
   const [supplierHandle, setSupplierHandle] = useState('');
-  const [handlerId, setHandlerId] = useState('');
-  const [handlers, setHandlers] = useState<ProviderCard[]>([]);
+  const [handlerHandle, setHandlerHandle] = useState('');
 
   /*
    * Picking, never designing: routes are written in the Studio, which opens
@@ -256,9 +273,6 @@ export function NewLotForm({ onDone, onCancel }: {
         }));
       }
     }).catch(() => setLibrary(null));
-    void api.serviceDirectory('handler')
-      .then((result) => setHandlers(result.providers))
-      .catch(() => setHandlers([]));
   }, []);
 
   /* A route with nothing in its lot lane is for items shipped one by one; a
@@ -278,7 +292,7 @@ export function NewLotForm({ onDone, onCancel }: {
         // does not care which, and neither does the buyer's tracking.
         forwarderName: forwarderName.trim() || undefined,
         supplierHandle: supplierHandle.trim() || undefined,
-        handlerUserId: handlerId || undefined,
+        handlerHandle: handlerHandle.trim() || undefined,
         // Left unset only when the shop has no route yet: the lot opens on the
         // generic ladder and can be pointed at a route once one exists.
         routeId: routeId || undefined,
@@ -390,14 +404,11 @@ export function NewLotForm({ onDone, onCancel }: {
 
           <label className="field">
             <span>Domestic handler</span>
-            <select value={handlerId} onChange={(e) => setHandlerId(e.target.value)}>
-              <option value="">Nobody — you dispatch it yourself</option>
-              {handlers.map((entry) => (
-                <option key={entry.userId} value={entry.userId}>{entry.name} — {entry.line}</option>
-              ))}
-            </select>
+            <input value={handlerHandle} onChange={(e) => setHandlerHandle(e.target.value)}
+              placeholder="@their_handle — or leave empty to dispatch it yourself" />
             <span className="field__hint">
               Who takes delivery in {details.destinationCountry || 'the destination country'} and gets the parcels out.
+              The lot appears under their My services.
             </span>
           </label>
         </div>

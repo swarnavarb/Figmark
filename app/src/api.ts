@@ -1576,6 +1576,21 @@ export interface ProviderCard {
   tagline?: string;
   logoUrl?: string | null;
   accent?: string | null;
+  /** City and country, as the store gives them. */
+  place?: string | null;
+  /** Forwarders: their routes, as a shop chooses by them. */
+  lanes?: {
+    from: string;
+    to: string;
+    mode: FreightLane['mode'] | null;
+    days: string;
+    ratePerKgMinor: number;
+  }[];
+  /** Artists: what they do, where prices start, a few pieces of work. */
+  specialties?: string[];
+  fromMinor?: number | null;
+  portfolio?: string[];
+  acceptingWork?: boolean;
 }
 
 export interface ServicesHub {
@@ -2335,7 +2350,7 @@ export const api = {
         id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
         stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
       }[];
-      supplierHandle?: string; handlerUserId?: string; handlerName?: string;
+      supplierHandle?: string; handlerUserId?: string; handlerHandle?: string; handlerName?: string;
     },
   ) => post<{ lot: Lot }>('/lots', body),
   updateLotDetails: (id: string, body: Partial<LotDetails>) =>
@@ -2394,7 +2409,7 @@ export const api = {
     request<DistributionLot>(`/me/service/distribution/${encodeURIComponent(id)}`),
   /** Name the people working a lot: who checks it, and who gets it out. */
   setCrew: (id: string, body: {
-    handlerUserId?: string | null; handlerName?: string; handlerContact?: string;
+    handlerUserId?: string | null; handlerHandle?: string | null; handlerName?: string; handlerContact?: string;
     handlerCity?: string; supplierUserId?: string | null; supplierHandle?: string | null;
   }) => post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/crew`, body),
 

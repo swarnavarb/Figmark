@@ -2105,6 +2105,19 @@ await check('you cannot speak as a handle that is not yours, or to nobody', asyn
   assert.equal(self.status, 400);
 });
 
+await check('an owner and their own shop are one person, not a conversation', async () => {
+  // Either way round: two handles, one inbox, and a message between them would
+  // sit unread in the inbox that sent it.
+  for (const [to, as] of [['arjun_collects', 'arjun'], ['arjun', 'arjun_collects']]) {
+    const refused = await sendMessage(req({ headers: auth, params: { handle: to }, body: { body: 'Hello, me.', as } }), ctx);
+    assert.equal(refused.status, 400, `${as} -> ${to} should be refused`);
+    const opened = await thread(req({ headers: auth, params: { handle: to }, query: { as } }), ctx);
+    assert.equal(opened.status, 400);
+  }
+  const mine = (await inbox(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(mine.threads.some((row) => row.us.userId === row.them.userId), false);
+});
+
 await check('your inbox and your shop\'s are two inboxes, not one list', async () => {
   // What the two filter buttons filter on: each row says which of your voices
   // it belongs to, so the client can split them without asking again.

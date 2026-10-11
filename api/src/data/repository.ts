@@ -430,6 +430,11 @@ export interface Repository {
   updateMessage(message: Message): Promise<Message>;
   /** Removes one message from its thread. */
   deleteMessage(threadId: string, id: string): Promise<void>;
+  /**
+   * Removes every message whose two ends are one account - an owner and their
+   * own shop. Returns how many went.
+   */
+  deleteSelfMessages(): Promise<number>;
   /** Marks everything addressed to `handle` in this thread as read. */
   markThreadRead(threadId: string, handle: string): Promise<number>;
 

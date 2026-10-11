@@ -620,7 +620,8 @@ async function home(request: HttpRequest, _context: InvocationContext) {
     if (proven || tried) risingIds.add(post.id);
   }
 
-  const followedPosts = ownFeed;
+  // Room messages never reach the feed, whatever the read let through.
+  const followedPosts = ownFeed.filter((post) => post.channel !== 'seller' || (post.reach ?? 'feed') === 'feed');
   const inFeed = new Set(followedPosts.map((post) => post.id));
   // Trending first, hottest first; then rising, proven before merely tried.
   const found = [

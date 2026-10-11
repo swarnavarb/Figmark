@@ -292,6 +292,8 @@ export interface NewLotBody {
   }[];
   /** Who gets it out when it lands. The supplier is named above. */
   handlerUserId?: string;
+  /** The handler's handle here, tagged as the supplier's is. */
+  handlerHandle?: string;
   handlerName?: string;
 }
 
@@ -373,9 +375,15 @@ export async function buildLot(
     supplierTag = found.user.id;
   }
   let handlerNamed: Lot['handler'] = null;
-  if (body.handlerUserId || body.handlerName?.trim()) {
-    const named = body.handlerUserId ? await repository.getUserById(body.handlerUserId) : null;
-    if (body.handlerUserId && !named) {
+  if (body.handlerUserId || body.handlerHandle?.trim() || body.handlerName?.trim()) {
+    let handlerId = body.handlerUserId ?? null;
+    if (body.handlerHandle?.trim()) {
+      const found = await repository.getByHandle(body.handlerHandle.trim().replace(/^@/, ''));
+      if (!found) return refuse(404, 'not_found', `Nobody here goes by ${body.handlerHandle}.`);
+      handlerId = found.user.id;
+    }
+    const named = handlerId ? await repository.getUserById(handlerId) : null;
+    if (handlerId && !named) {
       return refuse(404, 'not_found', 'No such account to handle this lot.');
     }
     const handlerName = body.handlerName?.trim()
@@ -733,6 +741,8 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
 
   let body: {
     handlerUserId?: string | null;
+    /** Their handle here, tagged the way a supplier is: what gives them a screen. */
+    handlerHandle?: string | null;
     handlerName?: string;
     handlerContact?: string;
     handlerCity?: string;
@@ -749,11 +759,18 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
   // The handler moves as a unit, the way the supplier does: a name clears it,
   // and naming one from the directory carries their id so the lot turns up on
   // their own screen rather than only in the shop's notes.
-  if (body.handlerName !== undefined || body.handlerUserId !== undefined) {
-    const named = body.handlerUserId
-      ? await repository.getUserById(body.handlerUserId)
+  if (body.handlerName !== undefined || body.handlerUserId !== undefined || body.handlerHandle !== undefined) {
+    // Tagged by handle, as the supplier is; an id still works for older callers.
+    const tagged = await userForHandle(body.handlerHandle ?? undefined, repository);
+    if (tagged.missing) return error(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
+    // A blank handle keeps whoever is already tagged; only a name change or a
+    // new handle moves the seat.
+    const keep = body.handlerHandle === undefined || body.handlerHandle === null || body.handlerHandle.trim() === ''
+      ? (body.handlerUserId === undefined ? lot.handler?.handlerUserId ?? null : body.handlerUserId)
       : null;
-    if (body.handlerUserId && !named) {
+    const wantedId = tagged.id ?? keep;
+    const named = wantedId ? await repository.getUserById(wantedId) : null;
+    if (wantedId && !named) {
       return error(404, 'not_found', 'No such account to handle this lot.');
     }
 

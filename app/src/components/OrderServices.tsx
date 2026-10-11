@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom';
 import {
   ARTIST_JOB_FLOW, ARTIST_JOB_LABELS, jobDueMinor, jobIsLive, type ArtistJobAction,
 } from '@shared/service-stores';
-import { ApiRequestError, api, type OrderServicesView, type PublicStore } from '../api';
+import { ApiRequestError, api, type OrderServicesView } from '../api';
 import { formatMoney, timeAgo } from '../format';
 import { ErrorNotice, Icon } from './ui';
-import { OfferingCard, PlanCard, Picture, StoreMark, accentStyle } from './StoreKit';
+import { PlanCard, Picture, StoreMark, accentStyle } from './StoreKit';
 
 /**
  * What a buyer can add to an item, on the order itself.
@@ -152,12 +152,12 @@ function CommissionCard({ orderId, view, onChanged, onError }: {
   const { commission } = view;
   const job = commission.job;
   const buyer = view.side === 'buyer';
-  const [opening, setOpening] = useState(false);
 
-  // A running or finished commission is followed to the end; one that was
-  // declined or called off makes way for asking someone else.
-  if (job && (jobIsLive(job) || job.status === 'completed') && !opening) {
-    return <JobTracker orderId={orderId} view={view} onChanged={onChanged} onError={onError} onAgain={job.status === 'completed' && buyer ? () => setOpening(true) : undefined} />;
+  // A commission already under way is followed to the end, here where it
+  // started. Asking for a new one is not done from the order for now: the
+  // card points at the artists instead, and their studios take it from there.
+  if (job && (jobIsLive(job) || job.status === 'completed')) {
+    return <JobTracker orderId={orderId} view={view} onChanged={onChanged} onError={onError} />;
   }
   if (!buyer || commission.artists.length === 0) return null;
   return (
@@ -169,100 +169,20 @@ function CommissionCard({ orderId, view, onChanged, onError }: {
           <span className="faint">Repaint, custom head, a diorama base, a repair — by a studio Figmark approved.</span>
         </span>
       </div>
-      {job && <p className="faint">Your last commission was {ARTIST_JOB_LABELS[job.status].label.toLowerCase()}.</p>}
-      {opening
-        ? <CommissionForm orderId={orderId} artists={commission.artists} onSent={async () => { setOpening(false); await onChanged(); }} onError={onError} onCancel={() => setOpening(false)} />
-        : (
-          <>
-            <div className="os-artists">
-              {commission.artists.slice(0, 3).map((artist) => (
-                <span key={artist.ownerId} className="os-artist-chip" style={accentStyle(artist.accent)}>
-                  <StoreMark name={artist.name} logoUrl={artist.logoUrl} accent={artist.accent} size={26} /> {artist.name}
-                </span>
-              ))}
-            </div>
-            <button type="button" className="btn btn--ghost" onClick={() => setOpening(true)}>Choose an artist <Icon name="right" size={14} /></button>
-          </>
-        )}
+      <div className="os-artists">
+        {commission.artists.slice(0, 3).map((artist) => (
+          <span key={artist.ownerId} className="os-artist-chip" style={accentStyle(artist.accent)}>
+            <StoreMark name={artist.name} logoUrl={artist.logoUrl} accent={artist.accent} size={26} /> {artist.name}
+          </span>
+        ))}
+      </div>
+      <Link to="/services/artist" className="btn btn--ghost">Browse artists <Icon name="right" size={14} /></Link>
     </article>
   );
 }
 
-function CommissionForm({ orderId, artists, onSent, onError, onCancel }: {
-  orderId: string; artists: PublicStore[]; onSent: () => Promise<void>; onError: (message: string | null) => void; onCancel: () => void;
-}) {
-  const [artistId, setArtistId] = useState<string | null>(artists[0]?.ownerId ?? null);
-  const [offeringId, setOfferingId] = useState<string | null>(null);
-  const [brief, setBrief] = useState('');
-  const [ref, setRef] = useState('');
-  const [busy, setBusy] = useState(false);
-  const artist = artists.find((row) => row.ownerId === artistId) ?? null;
-
-  async function send() {
-    if (!artistId) return;
-    setBusy(true);
-    onError(null);
-    try {
-      await api.commission(orderId, { artistId, offeringId, brief, refUrls: ref ? [ref] : [] });
-      await onSent();
-    } catch (err) {
-      onError(err instanceof ApiRequestError ? err.message : 'That did not send.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="stack os-form">
-      <div className="os-pickrow" role="radiogroup" aria-label="Artist">
-        {artists.map((row) => (
-          <button key={row.ownerId} type="button" role="radio" aria-checked={row.ownerId === artistId}
-            className={`os-pick${row.ownerId === artistId ? ' is-on' : ''}`} style={accentStyle(row.accent)}
-            onClick={() => { setArtistId(row.ownerId); setOfferingId(null); }}>
-            <StoreMark name={row.name} logoUrl={row.logoUrl} accent={row.accent} size={40} />
-            <span className="os-pick__name">{row.name}</span>
-            <span className="faint">{row.city}{row.tagline ? ` · ${row.tagline}` : ''}</span>
-          </button>
-        ))}
-      </div>
-      {artist && (
-        <>
-          {artist.portfolio.length > 0 && (
-            <div className="os-strip">
-              {artist.portfolio.slice(0, 5).map((piece) => <Picture key={piece.id} url={piece.url} label={piece.caption} className="sk-pic os-strip__pic" />)}
-              <Link to={`/services/artist/${artist.slug}`} className="os-strip__more">See the studio <Icon name="right" size={13} /></Link>
-            </div>
-          )}
-          <div className="os-offers">
-            {artist.offerings.map((offering) => (
-              <OfferingCard key={offering.id} offering={offering} picked={offeringId === offering.id}
-                onPick={() => setOfferingId(offeringId === offering.id ? null : offering.id)} />
-            ))}
-          </div>
-        </>
-      )}
-      <label className="field">
-        <span>What you want</span>
-        <textarea rows={3} value={brief} onChange={(e) => setBrief(e.target.value)}
-          placeholder="Battle-damaged repaint in matte, like the reference — keep the base as it is." />
-      </label>
-      <label className="field">
-        <span>Reference picture (link, optional)</span>
-        <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="https://…" />
-      </label>
-      <div className="row">
-        <button type="button" className="btn" disabled={busy || !artistId || brief.trim().length < 10} onClick={() => void send()}>
-          {busy ? 'Sending…' : 'Ask for a quote'}
-        </button>
-        <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
-      </div>
-      <span className="faint">Free to ask. You pay only if you accept their quote.</span>
-    </div>
-  );
-}
-
-function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
-  orderId: string; view: OrderServicesView; onChanged: () => Promise<void>; onError: (message: string | null) => void; onAgain?: () => void;
+function JobTracker({ orderId, view, onChanged, onError }: {
+  orderId: string; view: OrderServicesView; onChanged: () => Promise<void>; onError: (message: string | null) => void;
 }) {
   const { commission } = view;
   const job = commission.job!;
@@ -380,7 +300,7 @@ function JobTracker({ orderId, view, onChanged, onError, onAgain }: {
           {commission.actions.includes('accept') && <button type="button" className="btn" disabled={busy} onClick={() => void act('accept')}>Accept the quote</button>}
           {commission.actions.includes('complete') && <button type="button" className="btn" disabled={busy} onClick={() => void act('complete')}><Icon name="check" size={14} /> I have it — all done</button>}
           {commission.actions.includes('cancel') && !claimed && <button type="button" className="btn btn--quiet" disabled={busy} onClick={() => void act('cancel')}>Cancel the commission</button>}
-          {onAgain && <button type="button" className="btn btn--ghost" onClick={onAgain}>Commission something else</button>}
+          {job.status === 'completed' && <Link to="/services/artist" className="btn btn--ghost">Commission something else</Link>}
         </div>
       )}
 
