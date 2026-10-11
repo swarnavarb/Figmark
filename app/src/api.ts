@@ -188,6 +188,16 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Waits until the browser holds its visitor cookie, before opening a shared link.
+ *
+ * Opening a link can set one cookie only (see `json` in the API): the referral
+ * or the invite. The visitor cookie, which stops a second tap counting twice,
+ * comes from /api/auth/me - the request every page load already makes, so this
+ * shares it rather than adding one.
+ */
+const visitorKnown = () => request<unknown>('/auth/me').catch(() => undefined);
+
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
@@ -2188,7 +2198,10 @@ export const api = {
   similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
   affiliateLink: (listingId: string) =>
     post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),
-  openShortLink: (code: string) => request<{ listingId: string }>(`/r/${encodeURIComponent(code)}`),
+  openShortLink: async (code: string) => {
+    await visitorKnown();
+    return request<{ listingId: string }>(`/r/${encodeURIComponent(code)}`);
+  },
   myAffiliate: () => request<{ earnings: AffiliateEarning[] }>('/me/affiliate'),
   /** Tell the server something went out of the app, so the share quests count it. */
   logShare: (body: { kind: ShareKind; via: ShareEvent['via']; target?: string | null; storeId?: string | null }) =>
@@ -2199,7 +2212,7 @@ export const api = {
     if (page) { query.set('t', page.t); query.set('id', page.id); }
     if (asSeller) query.set('as', 'seller');
     const suffix = query.toString();
-    return request<InviteOpen>(`/i/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`);
+    return visitorKnown().then(() => request<InviteOpen>(`/i/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`));
   },
   growth: (ownerId: string) => request<ShopQuestBoard>(`/growth/${encodeURIComponent(ownerId)}`),
   /** One quest by id, or every one that is ready with `'all'`. */

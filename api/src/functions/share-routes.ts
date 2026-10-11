@@ -112,7 +112,9 @@ async function openInvite(request: HttpRequest, _context: InvocationContext) {
   // Signed-out visitors carry the invite to sign-up. Keep an earlier invite
   // rather than letting every shared page overwrite whose friend this is.
   const keep = viewer || readCookie(request, INVITE_COOKIE);
-  const cookies = keep ? counted : [...counted, inviteCookie(request.params.code ?? '', asSeller)];
+  // One cookie per response (see `json`), and the invite is the one that
+  // matters. The visitor cookie normally came earlier, from /api/auth/me.
+  const cookies = keep ? counted : [inviteCookie(request.params.code ?? '', asSeller)];
   return json(200, {
     inviter: {
       name: inviter.displayName,

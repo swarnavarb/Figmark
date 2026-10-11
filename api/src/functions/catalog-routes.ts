@@ -388,7 +388,9 @@ async function openShortLink(request: HttpRequest, _context: InvocationContext) 
   // Somebody else opening the link is what the sharer's quests count.
   const counted = await recordOpen(repository, request, target.referrerId,
     { kind: 'item', target: listing.id, storeOwnerId: listing.sellerId }, viewer?.id ?? null);
-  return json(200, { listingId: listing.id }, [...cookies, ...counted]);
+  // One cookie per response (see `json`), and the referral is the one that
+  // pays someone. The visitor cookie normally came earlier, from /api/auth/me.
+  return json(200, { listingId: listing.id }, cookies.length > 0 ? cookies : counted);
 }
 
 /** Whether this person may manage the shop a listing belongs to. */

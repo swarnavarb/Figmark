@@ -63,10 +63,28 @@ function cookie(name: string, value: string, days: number): string {
  */
 export function visitorOf(request: HttpRequest, viewerId: string | null): { visitor: string; cookies: string[] } {
   if (viewerId) return { visitor: digest(`u:${viewerId}`), cookies: [] };
-  const known = readCookie(request, VISITOR_COOKIE);
-  if (known && /^[A-Za-z0-9_-]{8,40}$/.test(known)) return { visitor: digest(`v:${known}`), cookies: [] };
+  const known = knownVisitor(request);
+  if (known) return { visitor: digest(`v:${known}`), cookies: [] };
   const fresh = randomBytes(12).toString('base64url');
   return { visitor: digest(`v:${fresh}`), cookies: [cookie(VISITOR_COOKIE, fresh, 365)] };
+}
+
+function knownVisitor(request: HttpRequest): string | null {
+  const known = readCookie(request, VISITOR_COOKIE);
+  return known && /^[A-Za-z0-9_-]{8,40}$/.test(known) ? known : null;
+}
+
+/**
+ * The visitor cookie for a signed-out browser that has none, handed out by
+ * /api/auth/me ahead of any link being opened.
+ *
+ * A response reaches the browser on Azure with one Set-Cookie at most, and
+ * opening a link already needs its one for the referral or the invite. Given
+ * the visitor cookie beforehand, the browser is recognised on its second tap.
+ */
+export function visitorCookieIfMissing(request: HttpRequest): string[] {
+  if (isBot(request) || knownVisitor(request)) return [];
+  return [cookie(VISITOR_COOKIE, randomBytes(12).toString('base64url'), 365)];
 }
 
 function digest(value: string): string {

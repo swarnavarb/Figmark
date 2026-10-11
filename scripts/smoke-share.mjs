@@ -17,7 +17,7 @@ writeFileSync(process.env.FIGMARK_SHELL_FILE, '<!doctype html><html><head><meta 
 
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const shared = new URL('../api/dist/shared/', import.meta.url);
-const { loginRoute: login, signupRoute: rawSignup } = await import(new URL('auth-routes.js', fns));
+const { loginRoute: login, signupRoute: rawSignup, meRoute: me } = await import(new URL('auth-routes.js', fns));
 const { verifiedSignup } = await import('./verified-signup.mjs');
 const signup = verifiedSignup(rawSignup);
 const {
@@ -115,11 +115,17 @@ const sharer = await newPerson('Sharer Sam');
 const { code: refCode } = (await affiliateLink(req({ headers: sharer.headers, params: { id: listing.id }, body: {} }), ctx)).jsonBody;
 
 await check('a friend opening a shared link counts once, however often they tap it', async () => {
-  const first = await openShortLink(req({ headers: { 'user-agent': BROWSER }, params: { code: refCode } }), ctx);
+  // A response carries one cookie on Azure, and opening the link needs it for
+  // the referral - so the visitor cookie comes first, from /api/auth/me.
+  const landed = cookiesOf(await me(req({ headers: { 'user-agent': BROWSER } }), ctx));
+  assert.ok(landed.some((line) => line.startsWith('fm_vid=')), 'a guest gets a visitor cookie so a second tap is recognised');
+  assert.deepEqual(cookiesOf(await me(req({ headers: { 'user-agent': BROWSER, cookie: cookieHeader(landed) } }), ctx)), [], 'and only once');
+  const first = await openShortLink(req({ headers: { 'user-agent': BROWSER, cookie: cookieHeader(landed) }, params: { code: refCode } }), ctx);
   assert.equal(first.status, 200);
-  const visitor = cookiesOf(first).find((line) => line.startsWith('fm_vid='));
-  assert.ok(visitor, 'a guest gets a visitor cookie so a second tap is recognised');
-  await openShortLink(req({ headers: { 'user-agent': BROWSER, cookie: cookieHeader(cookiesOf(first)) }, params: { code: refCode } }), ctx);
+  const sent = cookiesOf(first);
+  assert.equal(sent.length, 1, 'one Set-Cookie per response');
+  assert.ok(sent[0].startsWith('fm_ref='), 'and it is the referral');
+  await openShortLink(req({ headers: { 'user-agent': BROWSER, cookie: cookieHeader([...landed, ...sent]) }, params: { code: refCode } }), ctx);
   assert.equal((await repository.getUserById(sharer.id)).shareOpens.length, 1);
 });
 
@@ -187,7 +193,8 @@ await check('an invite opened signed out files the new account under whoever sen
   assert.equal(opened.jsonBody.inviter.name, 'Sharer Sam');
   assert.equal(opened.jsonBody.asSeller, true);
   const cookies = cookiesOf(opened);
-  assert.ok(cookies.some((line) => line.startsWith('fm_inv=')));
+  assert.equal(cookies.length, 1, 'one Set-Cookie per response');
+  assert.ok(cookies[0].startsWith('fm_inv='), 'and it is the invite, not the visitor cookie');
 
   const joined = await newPerson('Invited Ivy', { cookie: cookieHeader(cookies) });
   const account = await repository.getUserById(joined.id);
@@ -501,6 +508,23 @@ await check('a name with $ in it is written as it is, not read as a replacement 
   }, 'https://figmark.example/x');
   assert.equal((html.match(/<div id="root">/g) ?? []).length, 1, 'the page is not pasted into itself');
   assert.match(html, /<title>Shop \$' and \$&amp; and \$`<\/title>/);
+});
+
+/* ── One cookie per response ───────────────────────────────────────────── */
+console.log('\none cookie per response');
+
+await check('without a visitor cookie, opening a link still keeps the referral', async () => {
+  // Last, and on its own item: a guest without the cookie counts as somebody
+  // new, which would throw off the tallies the checks above rely on.
+  const other = (await createListing(req({
+    headers: shop.headers,
+    body: { title: 'Another Shared Figure', priceMinor: 20_000, quantityAvailable: 2, affiliateMinor: 2_000, category: 'Figures', tags: ['figure'] },
+  }), ctx)).jsonBody.listing;
+  const otherSharer = await newPerson('Sharer Sid');
+  const { code } = (await affiliateLink(req({ headers: otherSharer.headers, params: { id: other.id }, body: {} }), ctx)).jsonBody;
+  const sent = cookiesOf(await openShortLink(req({ headers: { 'user-agent': BROWSER }, params: { code } }), ctx));
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0].startsWith('fm_ref='), 'the referral pays someone; the visitor cookie can wait');
 });
 
 console.log(`\n${passed} checks passed`);

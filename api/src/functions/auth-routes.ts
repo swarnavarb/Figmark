@@ -6,7 +6,7 @@ import { getAuthService } from '../auth/index.js';
 import { error, handler, json } from './http.js';
 import { getRepository } from '../data/index.js';
 import { claimCookieReferrals } from '../affiliate.js';
-import { claimInvite } from '../share.js';
+import { claimInvite, visitorCookieIfMissing } from '../share.js';
 import { clientIp, limited } from '../rate-limit.js';
 import { deviceCookieValue } from '../auth/tokens.js';
 
@@ -139,6 +139,9 @@ async function me(request: HttpRequest, _context: InvocationContext) {
     cookies = user ? await auth.refreshCookies(request) : await auth.staleCookies(request);
     if (user && cookies.length === 0) cookies = await auth.missingDeviceCookies(user.id, request);
   }
+  // A guest with nothing else to set gets the visitor cookie that opening a
+  // shared link has no room for.
+  if (!user && cookies.length === 0) cookies = visitorCookieIfMissing(request);
   return json(200, body, cookies);
 }
 
