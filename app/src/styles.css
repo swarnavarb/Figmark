@@ -13904,7 +13904,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .svx-mine__go { flex: 0 0 auto; color: var(--violet-text); }
 
-.svx-stack { display: grid; gap: 22px; }
+/* Room under the last block for its glow to clear the tab bar. */
+.svx-stack { display: grid; gap: 22px; padding-bottom: 48px; }
 
 /* Each service is one block: its banner, and the people offering it inside. */
 .svx {
@@ -13999,7 +14000,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .svx--tile:hover .svx__go svg { transform: translateX(3px); }
 
 /* A service's own page: the banner at full height, the list under it. */
-.svx--page { margin-top: 6px; }
+.svx--page { margin: 6px 0 48px; }
 .svx--page .svx__hero { padding: 26px 18px 22px 22px; min-height: 190px; }
 .svx--page .svx__art { width: 340px; height: 190px; max-width: 75%; opacity: 0.28; }
 .svx--page .svx__mark { width: 58px; height: 58px; border-radius: 18px; }
