@@ -152,6 +152,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // someone else must clear it.
     setWarning(null);
     setUser((await api.login(identifier, password)).user);
+    // The sign-in response can carry only the session cookie; this hands out
+    // the device cookie that keeps this browser trusted for the account.
+    void api.me().catch(() => undefined);
   }, []);
 
   const signUp = useCallback(async (body: Parameters<SessionValue['signUp']>[0]) => {
@@ -159,6 +162,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setWarning(result.warning ?? null);
     setSignupEmail(result.emailCode ?? null);
     setUser(result.user);
+    void api.me().catch(() => undefined);
   }, []);
 
   const refresh = useCallback(async () => {

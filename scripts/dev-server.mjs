@@ -473,7 +473,10 @@ async function readBody(request) {
  */
 function setCookiesOf(result) {
   const headers = result.headers;
-  const raw = headers instanceof Headers ? headers.getSetCookie() : [];
+  // Like the Functions runtime, which copies headers into a plain object: of
+  // several Set-Cookie headers only the last survives. Forwarding them all
+  // let a sign-in that lost its session cookie on Azure pass every test here.
+  const raw = (headers instanceof Headers ? headers.getSetCookie() : []).slice(-1);
   return raw.map((cookie) =>
     cookie
       .split(';')

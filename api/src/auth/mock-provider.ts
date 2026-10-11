@@ -269,6 +269,20 @@ export class MockAuthProvider implements AuthService {
   }
 
   /**
+   * The device cookie for a signed-in browser that does not yet carry a valid one.
+   *
+   * Not sent with the sign-in itself: a response gets through Azure with only
+   * one Set-Cookie (see `json`), and there it must be the session. The app asks
+   * /api/auth/me straight after signing in, and this is handed out there.
+   */
+  async missingDeviceCookies(userId: string, request: HttpRequest): Promise<string[]> {
+    if (!this.sessionSecret) return [];
+    const user = await this.repository.getUserById(userId);
+    if (!user || this.trustsDevice(user, deviceCookieValue(request.headers.get('cookie')))) return [];
+    return this.deviceCookies(userId, request);
+  }
+
+  /**
    * "Sign out everywhere": ends every session this account has, on every
    * device, this one included.
    *

@@ -12,12 +12,19 @@ import { StaleWriteError } from '../data/concurrency.js';
  * runtime feature: the local dev server implemented it by hand, so every test
  * passed while the deployed host emitted no cookie at all and every
  * authenticated request arrived anonymous. A header is what reaches the browser
- * either way. `Headers` is used rather than a plain object because Set-Cookie
- * is the one header that legitimately repeats.
+ * either way.
+ *
+ * One cookie per response, at most. The Functions runtime copies response
+ * headers into a plain object (`headers[key] = value` in @azure/functions), so
+ * of two Set-Cookie headers only the last reaches the browser. When sign-in
+ * started sending a device cookie after the session cookie, the session was
+ * the one dropped: sign-in answered 200 and the very next request was
+ * anonymous. So only the last is sent here too, and every test sees exactly
+ * what the browser on Azure would get.
  */
 export function json(status: number, body: unknown, cookies: string[] = []): HttpResponseInit {
   const headers = new Headers({ 'Content-Type': 'application/json' });
-  for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+  for (const cookie of cookies.slice(-1)) headers.append('Set-Cookie', cookie);
   return { status, headers, jsonBody: withoutStoreFields(body) };
 }
 

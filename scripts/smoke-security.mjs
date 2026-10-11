@@ -365,6 +365,30 @@ await check('/api/auth/me renews the cookie of a session in use', async () => {
   assert.ok(me.headers.getSetCookie().some((cookie) => cookie.startsWith(`${SESSION_COOKIE_NAME}=`) && !cookie.includes('Max-Age=0')));
 });
 
+await check('sign-in sends the session as its only cookie; /api/auth/me then hands out the device cookie', async () => {
+  // On Azure only the last of several Set-Cookie headers reaches the browser.
+  // Sign-in once sent the device cookie after the session, so the session was
+  // dropped and the next request was anonymous.
+  resetRateLimits();
+  const response = await loginRoute({
+    headers: new Headers({ 'x-azure-clientip': '198.51.100.21' }),
+    json: async () => ({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
+  }, ctx);
+  const sent = response.headers.getSetCookie();
+  assert.equal(sent.length, 1, 'one Set-Cookie per response');
+  assert.ok(sent[0].startsWith(`${SESSION_COOKIE_NAME}=`), 'and it is the session');
+
+  const me = await meRoute(cookieFor(response.jsonBody.token), ctx);
+  assert.ok(me.jsonBody.user);
+  const device = me.headers.getSetCookie();
+  assert.equal(device.length, 1);
+  assert.ok(device[0].startsWith('figmark_device='), 'the device cookie follows on /api/auth/me');
+
+  // Carrying it, the browser is not handed it again.
+  const both = new Headers({ cookie: `${SESSION_COOKIE_NAME}=${response.jsonBody.token}; ${device[0].split(';')[0]}` });
+  assert.deepEqual((await meRoute({ headers: both }, ctx)).headers.getSetCookie(), []);
+});
+
 await check('signing out on one device leaves another signed in, even when both signed in the same second', async () => {
   const one = createSessionToken('usr_demo', 'test-secret', 3600);
   const two = createSessionToken('usr_demo', 'test-secret', 3600);

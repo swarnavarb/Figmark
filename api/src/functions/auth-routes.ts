@@ -68,9 +68,9 @@ async function login(request: HttpRequest, _context: InvocationContext) {
   const device = auth instanceof MockAuthProvider ? deviceCookieValue(request.headers.get('cookie')) : null;
   const result = await auth.login(body, { ip: clientIp(request), device });
   await claimReferrals(request, result.user?.id);
-  const cookies = [...auth.loginCookies(result.token)];
-  if (auth instanceof MockAuthProvider && result.user) cookies.push(...auth.deviceCookies(result.user.id, request));
-  return json(200, result, cookies);
+  // The session cookie only: the device cookie follows on /api/auth/me, since
+  // a response reaches the browser with one Set-Cookie at most (see `json`).
+  return json(200, result, auth.loginCookies(result.token));
 }
 
 /** POST /api/auth/signup - create an account and sign straight in. */
@@ -93,8 +93,7 @@ async function signup(request: HttpRequest, _context: InvocationContext) {
 
   const result = await auth.signup(body);
   await claimReferrals(request, result.user?.id);
-  const cookies = [...auth.loginCookies(result.token), ...(result.user ? auth.deviceCookies(result.user.id, request) : [])];
-  return json(201, { ...result, emailCode: await sendFirstEmailCode(result.user?.id) }, cookies);
+  return json(201, { ...result, emailCode: await sendFirstEmailCode(result.user?.id) }, auth.loginCookies(result.token));
 }
 
 /** POST /api/auth/logout - always succeeds, signed in or not. */
@@ -133,9 +132,13 @@ async function me(request: HttpRequest, _context: InvocationContext) {
   // resend forever, so shed it here rather than only on a failing call.
   // A live one, on the other hand, is renewed while it is in use - every app
   // load asks this - so nobody is signed out in the middle of using it.
-  const cookies = auth instanceof MockAuthProvider
-    ? user ? await auth.refreshCookies(request) : await auth.staleCookies(request)
-    : [];
+  // Then, with no renewal to send, the device cookie the sign-in could not
+  // carry - one cookie per response (see `json`).
+  let cookies: string[] = [];
+  if (auth instanceof MockAuthProvider) {
+    cookies = user ? await auth.refreshCookies(request) : await auth.staleCookies(request);
+    if (user && cookies.length === 0) cookies = await auth.missingDeviceCookies(user.id, request);
+  }
   return json(200, body, cookies);
 }
 
