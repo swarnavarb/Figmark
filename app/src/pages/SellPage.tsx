@@ -462,10 +462,11 @@ export function SellPage() {
         </div>
       </div>
 
-      {/* Verification is friction, not a wall: it gates value, not listing. */}
-      {user && user.verification.governmentId !== 'verified' && (
-        <p className="notice notice--info" style={{ marginBottom: 20 }}>
-          Verifying your ID unlocks higher-value listings and payouts — you can do that any time.
+      {/* Listing is closed until the account is verified; say so before the form is filled in. */}
+      {user && !user.capabilities.canSell && (
+        <p className="notice notice--warn" style={{ marginBottom: 20 }}>
+          To list, verify your email, your WhatsApp number and your Aadhaar first - your Aadhaar-linked mobile must be
+          the same number as your WhatsApp. <Link to="/verify">Verify now</Link>
         </p>
       )}
 

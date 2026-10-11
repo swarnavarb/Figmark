@@ -235,7 +235,12 @@ await check('creates an account and reserves both identifiers', async () => {
     displayName: 'Priya N.', email: 'priya@figmark.example', phone: '+919777000111', password: 'longenough1',
   });
   assert.equal(created.user.sellerProfile, null);
-  assert.equal(created.user.capabilities.canSell, true);
+  // Nothing typed in at sign-up counts as verified, so a new account can
+  // browse but not trade until email, WhatsApp and Aadhaar are done.
+  assert.equal(created.user.capabilities.canSell, false);
+  assert.equal(created.user.capabilities.canBuy, false);
+  assert.equal(created.user.verification.phone, 'unverified');
+  assert.equal(created.user.verification.email, 'pending');
   // Both identifiers must now resolve to the new account.
   for (const id of ['priya@figmark.example', '+919777000111']) {
     assert.equal((await repository.getUserByIdentifier(id)).id, created.user.id);
@@ -298,11 +303,12 @@ await check('a signed-up account still works on a worker that never saw it', asy
   const resolved = await workerB.getCurrentUser(carried);
   assert.ok(resolved, 'the session must survive the worker that never saw the sign-up');
   assert.equal(resolved.displayName, 'Cross Worker');
-  assert.equal(resolved.capabilities.canSell, true);
 
-  // And the capability-gated routes that were logging the user out now pass.
-  const permitted = await workerB.requireCapability(carried, ['sell']);
+  // And authenticated routes that were logging the user out now pass. Selling
+  // is refused as unverified - not as signed out, which was the bug.
+  const permitted = await workerB.requireAuth(carried);
   assert.equal(permitted.id, created.user.id);
+  await assert.rejects(workerB.requireCapability(carried, ['sell']), (err) => err.code === 'verification_required');
 });
 
 await check('the snapshot is a fallback, never an override', async () => {

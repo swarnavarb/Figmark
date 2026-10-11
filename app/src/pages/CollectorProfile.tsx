@@ -13,6 +13,7 @@ import {
 import { SocialPostCard } from '../components/SocialPost';
 import { shrink } from '../components/PhotoManager';
 import { ManagerTag } from '../components/ManagerBadge';
+import { VerifiedChips } from '../components/VerifiedChips';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
 import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
@@ -40,7 +41,7 @@ export interface Person {
 }
 
 export type ProfilePart = Pick<PublicProfile,
-  'sellerId' | 'isStore' | 'handle' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince' | 'rating' | 'followerCount'>;
+  'sellerId' | 'isStore' | 'handle' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince' | 'rating' | 'followerCount' | 'verified'>;
 
 /* ── The header every person page shares ──────────────────────────────── */
 
@@ -105,6 +106,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
               {person.memberSince && `here since ${formatDate(person.memberSince)}`}
               {person.lastSeenAt && ` · seen ${timeAgo(person.lastSeenAt)}`}
             </p>
+            <VerifiedChips checks={page?.verified} />
           </div>
         </header>
 

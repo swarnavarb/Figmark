@@ -3,33 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <!-- An iPhone zooms the page into any field whose text is under 16px, and
-         most of ours are. maximum-scale=1 stops that; iOS still lets a pinch
-         zoom past it, so nothing is lost there. Android would honour it and
-         lose pinch-zoom, so it is added on iPhone and iPad only. -->
-    <script>
-      if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-        document.querySelector('meta[name="viewport"]').content += ', maximum-scale=1';
-      }
-    </script>
+    <!-- iPhone and iPad only: stop the zoom into small fields. -->
+    <script src="/boot/viewport.js"></script>
     <meta name="theme-color" content="#5B5EF1" />
-    <!-- The section's colour before the first paint. Safari takes its status
-         bar colour from the first frame, so waiting for the app to load and
-         set it left every section in Buy's. Keep in step with TONES in
-         src/AppShell.tsx and the tabs' paths in src/components/TabBar.tsx. -->
-    <script>
-      (function () {
-        var path = location.pathname;
-        var starts = function (list) { return list.some(function (p) { return path.indexOf(p) === 0; }); };
-        var tone = starts(['/social', '/messages']) ? ['social', '#FF3471']
-          : starts(['/services', '/forwarders', '/community-service', '/packing']) ? ['services', '#3A8C4E']
-          : starts(['/shop', '/sell', '/lots', '/lot/', '/routes']) ? ['sell', '#177ACE']
-          : ['buy', '#5B5EF1'];
-        if (path.indexOf('/social/f/') === 0) tone[1] = '#C627CB';
-        document.documentElement.setAttribute('data-tone', tone[0]);
-        document.querySelector('meta[name="theme-color"]').content = tone[1];
-      })();
-    </script>
+    <!-- The section's colour before the first paint. -->
+    <script src="/boot/tone.js"></script>
     <title>Figmark</title>
     <!-- Installable: on a phone's home screen it opens like an app, and on an
          iPhone that is what lets it show notifications at all. -->

@@ -12,6 +12,8 @@ import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
+import { verifiedChecks } from '@shared/verification';
+import { VerifiedChips } from '../components/VerifiedChips';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import { PushCard } from '../components/PushControls';
 
@@ -92,7 +94,8 @@ export function ProfilePage() {
   if (asked === 'purchases') return <Navigate to="/purchases" replace />;
   if (!user) return <main className="page"><p className="muted">Signed out.</p></main>;
 
-  const verified = user.verification.governmentId === 'verified';
+  const checks = verifiedChecks(user);
+  const verified = checks.email && checks.phone && checks.aadhaar;
 
   return (
     <main className="storefront qprofile">
@@ -138,16 +141,28 @@ export function ProfilePage() {
           {user.capabilities.canSell && <span className="badge badge--ok">Can sell</span>}
           {user.capabilities.canForward && <span className="badge badge--accent">Forwarder</span>}
           {user.capabilities.isAdmin && <span className="badge badge--accent">Admin</span>}
-          {!verified && <span className="badge badge--warn">ID not verified</span>}
+          {!verified && <span className="badge badge--warn">Not verified</span>}
           <span className="badge">Buyer trust {user.buyerTrust.score}</span>
           {user.sellerProfile && <span className="badge">Seller trust {user.sellerTrust.score}</span>}
         </div>
-        {!verified && (
-          <p className="notice notice--info" style={{ margin: 0 }}>
-            Verify your government ID and payout account to raise your seller tier, lift lot caps and enable
-            high-value listings. You can keep buying and selling meanwhile.
-          </p>
-        )}
+        <div className="card card--pad stack" style={{ margin: 0 }}>
+          <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <span className="card__title">Verification</span>
+            <VerifiedChips checks={checks} />
+          </div>
+          {verified ? (
+            <p className="faint" style={{ margin: 0 }}>Email, WhatsApp and Aadhaar verified - shown on your page and your shop.</p>
+          ) : (
+            <>
+              <p className="faint" style={{ margin: 0 }}>
+                {user.capabilities.canBuy || user.capabilities.canSell
+                  ? 'An operator has opened trading for you; verifying still adds the ticks to your page.'
+                  : 'Buying and selling - including private deals and power sales - open once all three are verified.'}
+              </p>
+              <Link to="/verify" className="btn" style={{ justifySelf: 'start' }}>Verify now</Link>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Notifications for this device, with a test, so "am I getting

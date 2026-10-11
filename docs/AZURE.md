@@ -110,6 +110,19 @@ credentials were present. These steps need a machine that can reach Azure:
    falls back to a constant development secret, and anyone who reads this
    repository can mint a valid session token.
 
+   Two more settings, both optional:
+
+   - `PASSWORD_BREACH_CHECK=on|off` - check new passwords against Have I Been
+     Pwned (on by default in Azure). See [AUTH.md](AUTH.md).
+   - `SWA_PRINCIPAL_TRUST=managed|linked` - required only with `AUTH_MODE=swa`;
+     without it no `x-ms-client-principal` is believed. See [AUTH.md](AUTH.md).
+
+   The site is sent with a Content-Security-Policy, HSTS and a
+   Permissions-Policy (`globalHeaders` in `app/public/staticwebapp.config.json`).
+   The policy allows no inline script, so anything that has to run before the
+   bundle loads lives in `app/public/boot/`. Photos load from any `https:`
+   origin and the API is called only on this one.
+
 6. **Push to `main`.** The workflow builds, runs the smoke tests, and deploys.
    Then visit the site — the status page should show Database and Storage as
    Cosmos DB and Blob Storage rather than in-memory fallbacks.
@@ -141,6 +154,13 @@ az staticwebapp appsettings set \
   --setting-names ADMIN_EMAILS="you@example.com,ops@example.com"
 ```
 
+Every write made from the console - suspending or deleting an account, granting
+rights, appointing managers, reassigning disputes, deciding their actions,
+settings, the Learn page, reports and store reviews - is recorded once it
+succeeds, with the operator, the target and what they sent (secrets redacted).
+It is kept one document per day in `siteContent` (`audit-YYYY-MM-DD`) and shown
+under **Audit trail**, or at `GET /api/ops/audit?days=N`.
+
 On the in-memory store the demo account is an operator by default. That store is
 a throwaway whose password is published in this repository, so admin over data
 that resets on restart grants nothing; a durable store gets nobody.
@@ -167,6 +187,28 @@ want it:
 Either way the DNS record and the Azure custom-domain step are manual: they
 cannot be created from the repository.
 
+## The site's own address
+
+Share cards (`/r/`, `/i/`, `/s/` links and `/api/og/card/...`) carry absolute
+links, and the page they answer with is this site's `index.html`, fetched from
+the site itself. Neither may come from `Host` or `x-forwarded-host`, which the
+caller chooses. On Azure they come from `PUBLIC_ORIGIN`: the origins the site is
+served at, comma-separated, the first used for any request that names none of
+them. One `*` may stand for a single DNS label, to cover the branch and preview
+environments.
+
+Unset on Azure, it defaults to this Static Web App and its environments
+(`https://icy-stone-0498a9900.6.azurestaticapps.net`,
+`https://icy-stone-0498a9900-*.6.azurestaticapps.net`). Set it once a custom
+domain is added, keeping the defaults after it:
+
+```bash
+az staticwebapp appsettings set \
+  --name stapp-figuremarket-dev \
+  --resource-group rg-figuremarket-dev \
+  --setting-names PUBLIC_ORIGIN="https://figmark.in,https://icy-stone-0498a9900.6.azurestaticapps.net,https://icy-stone-0498a9900-*.6.azurestaticapps.net"
+```
+
 ## Preferring managed identity over keys
 
 Both the repository and the storage client fall back to `DefaultAzureCredential`
@@ -188,6 +230,11 @@ the identity instead — no change required.
   secret is missing rather than skipping quietly — a green run that published
   nothing is worse than a red one.
 - **Close preview** tears down the preview environment when a PR closes.
+
+The workflow grants no token permissions by default; each job asks for
+`contents: read` at most, since deploys authenticate to Azure with their own
+token. Every action is pinned to a full commit SHA with its release in a
+trailing comment — bump both together.
 
 Both halves are pre-built in CI and uploaded with `skip_app_build` and
 `skip_api_build`, so Oryx never rebuilds them. That matters because `shared/` is

@@ -3,6 +3,7 @@ import { DEFAULT_LEARN, cleanLearn, type LearnDoc } from '../../../shared/learn.
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { audited } from '../audit.js';
 
 /**
  * The Learn guide.
@@ -80,8 +81,8 @@ async function reset(request: HttpRequest, _context: InvocationContext) {
 
 export const learnRoute = handler(read);
 export const opsLearnRoute = handler(opsRead);
-export const opsLearnSaveRoute = handler(save);
-export const opsLearnResetRoute = handler(reset);
+export const opsLearnSaveRoute = audited('learn.save', handler(save));
+export const opsLearnResetRoute = audited('learn.reset', handler(reset));
 
 const anon = { authLevel: 'anonymous' } as const;
 app.http('learn', { ...anon, methods: ['GET'], route: 'learn', handler: learnRoute });

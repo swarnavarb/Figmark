@@ -1,6 +1,7 @@
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type { NotificationCategory } from '@shared/notifications';
 import type { NotificationPrefs } from '@shared/models';
+import type { VerifiedChecks } from '@shared/verification';
 import type {
   ApiError,
   AuthUser,
@@ -8,6 +9,7 @@ import type {
   HealthResponse,
   LoginResponse,
   MeResponse,
+  SignupResponse,
 } from '@shared/contracts';
 import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
 import type { DealState } from '@shared/deals';
@@ -107,6 +109,17 @@ export function setSessionRejectedHandler(handler: ((method: string) => void) | 
   onSessionRejected = handler;
 }
 
+/**
+ * Called when the server refuses a purchase or a listing because the account
+ * has not finished verifying. Every such refusal opens the same prompt, with
+ * the way to fix it, rather than leaving each screen to word its own error.
+ */
+let onVerificationRequired: ((message: string) => void) | null = null;
+
+export function setVerificationRequiredHandler(handler: ((message: string) => void) | null): void {
+  onVerificationRequired = handler;
+}
+
 /** Endpoints where a 401 is a normal answer rather than a lost session. */
 const EXPECTS_401 = ['/auth/me', '/auth/login', '/auth/signup'];
 
@@ -161,6 +174,11 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
     if (response.status === 401 && !EXPECTS_401.some((prefix) => path.startsWith(prefix))) {
       onSessionRejected?.((init?.method ?? 'GET').toUpperCase());
     }
+    // Only for something they pressed: a screen's own reads refusing would
+    // otherwise pop this up just for looking. Those screens say it inline.
+    if (response.status === 403 && body?.error === 'verification_required' && (init?.method ?? 'GET').toUpperCase() !== 'GET') {
+      onVerificationRequired?.(body.message);
+    }
     throw new ApiRequestError(
       response.status,
       body?.error ?? 'http_error',
@@ -169,6 +187,16 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (await response.json()) as T;
 }
+
+/**
+ * Waits until the browser holds its visitor cookie, before opening a shared link.
+ *
+ * Opening a link can set one cookie only (see `json` in the API): the referral
+ * or the invite. The visitor cookie, which stops a second tap counting twice,
+ * comes from /api/auth/me - the request every page load already makes, so this
+ * shares it rather than adding one.
+ */
+const visitorKnown = () => request<unknown>('/auth/me').catch(() => undefined);
 
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
@@ -1876,6 +1904,17 @@ export type PageSide = 'store' | 'person';
 
 export type ShelfState = 'active' | 'sold' | 'expired';
 
+/** Where each check stands for the signed-in account, and what this server can run. */
+export interface VerificationStatus {
+  checks: VerifiedChecks;
+  email: string;
+  phone: string | null;
+  phoneChallenge: { expiresAt: string; error: string | null } | null;
+  emailCodePending: boolean;
+  aadhaar: { name: string; last4: string; at: string } | null;
+  ready: { email: boolean; whatsapp: boolean; aadhaar: boolean };
+}
+
 export interface PublicProfile {
   handle: string;
   isStore: boolean;
@@ -1903,6 +1942,8 @@ export interface PublicProfile {
   levelTag: { level: number; title: string; shop?: boolean };
   memberSince: string;
   lastSeenAt: string | null;
+  /** Which checks the account behind the page passed; a shop's are its owner's. */
+  verified?: VerifiedChecks;
   counts: { listings: number; onSale: number; sold: number; expired: number };
   /** Active first, then sold out, then expired. */
   listings: {
@@ -2128,9 +2169,20 @@ export const api = {
     post<LoginResponse>('/auth/login', { identifier, password }),
 
   signup: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) =>
-    post<LoginResponse>('/auth/signup', body),
+    post<SignupResponse>('/auth/signup', body),
+
+  /* Verification: email code, WhatsApp number, Aadhaar Secure QR. */
+  verifyStatus: () => send<VerificationStatus>('/verify/status'),
+  sendEmailCode: () => post<{ sentTo: string; devCode?: string; status: VerificationStatus }>('/verify/email/send'),
+  confirmEmailCode: (code: string) => post<{ status: VerificationStatus }>('/verify/email/confirm', { code }),
+  startWhatsApp: () =>
+    post<{ link: string; message: string; businessNumber: string; expiresAt: string; status: VerificationStatus }>('/verify/phone/start'),
+  changePhone: (phone: string) => post<{ status: VerificationStatus }>('/verify/phone/number', { phone }),
+  verifyAadhaar: (qr: string) => post<{ status: VerificationStatus }>('/verify/aadhaar', { qr, consent: true }),
 
   logout: () => post<{ ok: true }>('/auth/logout'),
+  /** Ends every session this account has, on every device - this one too. */
+  logoutAll: () => post<{ ok: true }>('/auth/logout-all'),
 
   feed: (params: Record<string, string | undefined>) => {
     const query = new URLSearchParams();
@@ -2146,7 +2198,10 @@ export const api = {
   similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
   affiliateLink: (listingId: string) =>
     post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),
-  openShortLink: (code: string) => request<{ listingId: string }>(`/r/${encodeURIComponent(code)}`),
+  openShortLink: async (code: string) => {
+    await visitorKnown();
+    return request<{ listingId: string }>(`/r/${encodeURIComponent(code)}`);
+  },
   myAffiliate: () => request<{ earnings: AffiliateEarning[] }>('/me/affiliate'),
   /** Tell the server something went out of the app, so the share quests count it. */
   logShare: (body: { kind: ShareKind; via: ShareEvent['via']; target?: string | null; storeId?: string | null }) =>
@@ -2157,7 +2212,7 @@ export const api = {
     if (page) { query.set('t', page.t); query.set('id', page.id); }
     if (asSeller) query.set('as', 'seller');
     const suffix = query.toString();
-    return request<InviteOpen>(`/i/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`);
+    return visitorKnown().then(() => request<InviteOpen>(`/i/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`));
   },
   growth: (ownerId: string) => request<ShopQuestBoard>(`/growth/${encodeURIComponent(ownerId)}`),
   /** One quest by id, or every one that is ready with `'all'`. */

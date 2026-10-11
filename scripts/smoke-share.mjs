@@ -17,7 +17,9 @@ writeFileSync(process.env.FIGMARK_SHELL_FILE, '<!doctype html><html><head><meta 
 
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const shared = new URL('../api/dist/shared/', import.meta.url);
-const { loginRoute: login, signupRoute: signup } = await import(new URL('auth-routes.js', fns));
+const { loginRoute: login, signupRoute: rawSignup, meRoute: me } = await import(new URL('auth-routes.js', fns));
+const { verifiedSignup } = await import('./verified-signup.mjs');
+const signup = verifiedSignup(rawSignup);
 const {
   createListingRoute: createListing, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,
   createOrderRoute: createOrder, editListingRoute: editListing, bumpListingRoute: bump,
@@ -26,7 +28,7 @@ const {
   logShareRoute: logShare, myInviteRoute: myInvite, openInviteRoute: openInvite,
   growthRoute: growth, growthClaimRoute: claimGrowth,
 } = await import(new URL('share-routes.js', fns));
-const { ogRoute: og, ogCardRoute: ogCard, linkPreviewRoute: linkPreview, injectMeta } = await import(new URL('og-routes.js', fns));
+const { ogRoute: og, ogCardRoute: ogCard, linkPreviewRoute: linkPreview, injectMeta, trustedOrigin } = await import(new URL('og-routes.js', fns));
 const { questMeRoute: questMe, questClaimRoute: questClaim } = await import(new URL('quest-routes.js', fns));
 const { questView, emptyQuestState } = await import(new URL('quest.js', shared));
 const { growthView, claimGrowth: claimRule } = await import(new URL('store-growth.js', shared));
@@ -113,11 +115,17 @@ const sharer = await newPerson('Sharer Sam');
 const { code: refCode } = (await affiliateLink(req({ headers: sharer.headers, params: { id: listing.id }, body: {} }), ctx)).jsonBody;
 
 await check('a friend opening a shared link counts once, however often they tap it', async () => {
-  const first = await openShortLink(req({ headers: { 'user-agent': BROWSER }, params: { code: refCode } }), ctx);
+  // A response carries one cookie on Azure, and opening the link needs it for
+  // the referral - so the visitor cookie comes first, from /api/auth/me.
+  const landed = cookiesOf(await me(req({ headers: { 'user-agent': BROWSER } }), ctx));
+  assert.ok(landed.some((line) => line.startsWith('fm_vid=')), 'a guest gets a visitor cookie so a second tap is recognised');
+  assert.deepEqual(cookiesOf(await me(req({ headers: { 'user-agent': BROWSER, cookie: cookieHeader(landed) } }), ctx)), [], 'and only once');
+  const first = await openShortLink(req({ headers: { 'user-agent': BROWSER, cookie: cookieHeader(landed) }, params: { code: refCode } }), ctx);
   assert.equal(first.status, 200);
-  const visitor = cookiesOf(first).find((line) => line.startsWith('fm_vid='));
-  assert.ok(visitor, 'a guest gets a visitor cookie so a second tap is recognised');
-  await openShortLink(req({ headers: { 'user-agent': BROWSER, cookie: cookieHeader(cookiesOf(first)) }, params: { code: refCode } }), ctx);
+  const sent = cookiesOf(first);
+  assert.equal(sent.length, 1, 'one Set-Cookie per response');
+  assert.ok(sent[0].startsWith('fm_ref='), 'and it is the referral');
+  await openShortLink(req({ headers: { 'user-agent': BROWSER, cookie: cookieHeader([...landed, ...sent]) }, params: { code: refCode } }), ctx);
   assert.equal((await repository.getUserById(sharer.id)).shareOpens.length, 1);
 });
 
@@ -185,7 +193,8 @@ await check('an invite opened signed out files the new account under whoever sen
   assert.equal(opened.jsonBody.inviter.name, 'Sharer Sam');
   assert.equal(opened.jsonBody.asSeller, true);
   const cookies = cookiesOf(opened);
-  assert.ok(cookies.some((line) => line.startsWith('fm_inv=')));
+  assert.equal(cookies.length, 1, 'one Set-Cookie per response');
+  assert.ok(cookies[0].startsWith('fm_inv='), 'and it is the invite, not the visitor cookie');
 
   const joined = await newPerson('Invited Ivy', { cookie: cookieHeader(cookies) });
   const account = await repository.getUserById(joined.id);
@@ -388,6 +397,19 @@ await check('a moment link names it, and an unknown link still gets the brand ca
   assert.equal(tag(await preview('/s/l/nope'), 'og:image'), 'https://figmark.example/og/figmark.jpg');
 });
 
+await check('a spoofed host never reaches a card when the site\'s origins are configured', async () => {
+  const site = ['https://figmark.example', 'https://figmark-*.example'];
+  assert.equal(trustedOrigin('https://evil.example', site), 'https://figmark.example', 'an unknown host gets the real one');
+  assert.equal(trustedOrigin('https://FIGMARK.example', site), 'https://figmark.example');
+  assert.equal(trustedOrigin('https://figmark-development.example', site), 'https://figmark-development.example', 'an environment keeps its own');
+  assert.equal(trustedOrigin('https://figmark-a.b.example', site), 'https://figmark.example', 'a wildcard spans one label only');
+  assert.equal(trustedOrigin('https://figmark-.example', site), 'https://figmark.example');
+  assert.equal(trustedOrigin('http://figmark.example', site), 'https://figmark.example', 'the scheme counts too');
+  assert.equal(trustedOrigin('https://figmark.example:8443', site), 'https://figmark.example', 'and the port');
+  assert.equal(trustedOrigin('not a url', site), 'https://figmark.example');
+  assert.equal(trustedOrigin('http://localhost:4280', null), 'http://localhost:4280', 'unconfigured, the request is believed');
+});
+
 /* ── A discount through a link ─────────────────────────────────────────── */
 console.log('\nlink discount');
 
@@ -486,6 +508,23 @@ await check('a name with $ in it is written as it is, not read as a replacement 
   }, 'https://figmark.example/x');
   assert.equal((html.match(/<div id="root">/g) ?? []).length, 1, 'the page is not pasted into itself');
   assert.match(html, /<title>Shop \$' and \$&amp; and \$`<\/title>/);
+});
+
+/* ── One cookie per response ───────────────────────────────────────────── */
+console.log('\none cookie per response');
+
+await check('without a visitor cookie, opening a link still keeps the referral', async () => {
+  // Last, and on its own item: a guest without the cookie counts as somebody
+  // new, which would throw off the tallies the checks above rely on.
+  const other = (await createListing(req({
+    headers: shop.headers,
+    body: { title: 'Another Shared Figure', priceMinor: 20_000, quantityAvailable: 2, affiliateMinor: 2_000, category: 'Figures', tags: ['figure'] },
+  }), ctx)).jsonBody.listing;
+  const otherSharer = await newPerson('Sharer Sid');
+  const { code } = (await affiliateLink(req({ headers: otherSharer.headers, params: { id: other.id }, body: {} }), ctx)).jsonBody;
+  const sent = cookiesOf(await openShortLink(req({ headers: { 'user-agent': BROWSER }, params: { code } }), ctx));
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0].startsWith('fm_ref='), 'the referral pays someone; the visitor cookie can wait');
 });
 
 console.log(`\n${passed} checks passed`);

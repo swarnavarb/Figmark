@@ -28,7 +28,7 @@ const TAKEN = new Set([
   'api', 'app', 'admin', 'about', 'auth', 'login', 'logout', 'signup', 'signin',
   'sell', 'shop', 'social', 'lot', 'lots', 'listing', 'listings', 'order', 'orders',
   'me', 'my', 'batch', 'batches', 'forwarders', 'settings', 'help', 'support', 'terms',
-  'privacy', 'search', 'new', 'edit', 'static', 'assets', 'figmark',
+  'privacy', 'search', 'new', 'edit', 'static', 'assets', 'figmark', 'verify',
 ]);
 
 export type UsernameProblem = 'too_short' | 'too_long' | 'shape' | 'reserved';

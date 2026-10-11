@@ -127,9 +127,12 @@ await check('a resized copy of a listed photo finds the item first', async () =>
 await check('the route refuses what is not a photo', async () => {
   assert.equal((await photoSearchRoute(req({ body: { dataUrl: 'hello' } }), ctx)).status, 400);
   assert.equal((await photoSearchRoute(req({ body: { dataUrl: 'data:text/plain;base64,aGk=' } }), ctx)).status, 400);
-  // A JPEG that will not decode, with nobody to describe it, cannot be searched with.
+  // Bytes that are not the picture they claim to be are refused before anything reads them.
   const junk = `data:image/jpeg;base64,${Buffer.from('not a jpeg').toString('base64')}`;
-  assert.equal((await photoSearchRoute(req({ body: { dataUrl: junk } }), ctx)).status, 422);
+  assert.equal((await photoSearchRoute(req({ body: { dataUrl: junk } }), ctx)).status, 400);
+  // A JPEG that will not decode, with nobody to describe it, cannot be searched with.
+  const broken = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.from('not a jpeg')]).toString('base64')}`;
+  assert.equal((await photoSearchRoute(req({ body: { dataUrl: broken } }), ctx)).status, 422);
 });
 
 await check('health says photo search is matching by picture only', async () => {

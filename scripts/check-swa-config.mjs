@@ -13,6 +13,7 @@
  * check that needs the network is a check that fails on a bad day.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 const path = new URL('../app/public/staticwebapp.config.json', import.meta.url);
@@ -110,6 +111,35 @@ check('the service worker is always fetched fresh', () => {
   const route = (config.routes ?? []).find((entry) => entry.route === '/sw.js');
   assert.ok(route, '/sw.js needs a route');
   assert.equal(route.headers?.['Cache-Control'], 'no-cache');
+});
+
+check('every page is sent with the security headers', () => {
+  const headers = config.globalHeaders ?? {};
+  for (const name of ['Content-Security-Policy', 'Strict-Transport-Security', 'Permissions-Policy', 'X-Content-Type-Options', 'X-Frame-Options']) {
+    assert.ok(headers[name], `globalHeaders needs ${name}`);
+  }
+  const csp = Object.fromEntries(headers['Content-Security-Policy'].split(';').map((part) => {
+    const [directive, ...values] = part.trim().split(/\s+/);
+    return [directive, values];
+  }));
+  // The point of the policy: a script that got into the page by way of
+  // somebody's listing or message does not run.
+  assert.deepEqual(csp['script-src'], ["'self'"], 'scripts come from this site only, none inline');
+  assert.deepEqual(csp['object-src'], ["'none'"]);
+  assert.deepEqual(csp['frame-ancestors'], ["'none'"]);
+  assert.match(headers['Strict-Transport-Security'], /max-age=\d{7,}/);
+  // Scanning an Aadhaar QR needs the camera; nothing needs the microphone or location.
+  assert.match(headers['Permissions-Policy'], /camera=\(self\)/);
+  assert.match(headers['Permissions-Policy'], /geolocation=\(\)/);
+});
+
+check('neither page carries an inline script the policy would block', () => {
+  for (const page of ['index.html', 'admin.html']) {
+    const html = readFileSync(new URL(`../app/${page}`, import.meta.url), 'utf8');
+    const inline = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
+      .filter(([, attributes, body]) => !/\bsrc=/.test(attributes) && body.trim());
+    assert.deepEqual(inline.map(([tag]) => tag.slice(0, 60)), [], `${page} has an inline script; move it to app/public/boot/`);
+  }
 });
 
 console.log(`\n${passed} checks passed`);

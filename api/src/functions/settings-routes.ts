@@ -4,6 +4,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { SETTINGS_ID, marketSettings } from '../settings.js';
 import { error, handler, json } from './http.js';
+import { audited } from '../audit.js';
 
 /**
  * Marketplace settings: read by anyone, changed only by operators.
@@ -67,7 +68,7 @@ async function save(request: HttpRequest, _context: InvocationContext) {
 
 export const settingsRoute = handler(read);
 export const opsSettingsRoute = handler(opsRead);
-export const opsSettingsSaveRoute = handler(save);
+export const opsSettingsSaveRoute = audited('settings.save', handler(save));
 
 const anon = { authLevel: 'anonymous' } as const;
 app.http('settings', { ...anon, methods: ['GET'], route: 'settings', handler: settingsRoute });

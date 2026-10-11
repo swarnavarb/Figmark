@@ -1,5 +1,8 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { ManagerRights, User } from '../../../shared/models.js';
+import type { ManagerRights, TradeRight, User } from '../../../shared/models.js';
+import { deriveCapabilities } from '../../../shared/capabilities.js';
+import { verifiedChecks } from '../../../shared/verification.js';
+import { emailUsage } from '../verification/email-providers.js';
 import { currentRound, decisionOverdue, isClosed, releaseOverdue, roundsOf, standingDecision } from '../../../shared/disputes.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
@@ -13,6 +16,7 @@ import { error, handler, json } from './http.js';
 import { getPhotoStore } from '../storage/index.js';
 import { releaseListingPhotos, releasePostPhotos } from '../storage/release.js';
 import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
+import { audited, loadAudit } from '../audit.js';
 
 /**
  * Operating the marketplace.
@@ -44,6 +48,7 @@ async function operator(request: HttpRequest) {
 
 /** A one-line summary of an account, as the operator list reads it. */
 function row(user: User) {
+  const capabilities = deriveCapabilities(user);
   return {
     id: user.id,
     displayName: user.displayName,
@@ -67,7 +72,64 @@ function row(user: User) {
     // Whether they can be signed into at all. A catalog fixture is not an
     // account somebody lost access to, and the list should not read as if it is.
     signInAccount: user.passwordHash !== null,
+    // What they have proved, what that lets them do, and any operator say over it.
+    verified: verifiedChecks(user),
+    aadhaar: user.verification.proofs?.aadhaar
+      ? { name: user.verification.proofs.aadhaar.name, last4: user.verification.proofs.aadhaar.last4, at: user.verification.proofs.aadhaar.at }
+      : null,
+    canBuy: capabilities.canBuy,
+    canSell: capabilities.canSell,
+    tradeOverride: user.tradeOverride ?? null,
   };
+}
+
+/** GET /api/ops/email-usage - how much of each free email tier today has used. */
+async function emailUsageToday(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  return json(200, { providers: await emailUsage(await getRepository()) });
+}
+
+const TRADE_RIGHTS: readonly TradeRight[] = ['auto', 'grant', 'block'];
+
+/**
+ * POST /api/ops/users/{id}/rights - { buy, sell, reason }: who may trade.
+ *
+ * `grant` opens buying or selling to an account that has not finished
+ * verifying (somebody with no WhatsApp, an Aadhaar without a linked mobile);
+ * `block` closes it to one that has; `auto` hands it back to verification.
+ * Anything but auto needs a reason, and every change records who and when.
+ */
+async function rights(request: HttpRequest, _context: InvocationContext) {
+  const admin = await operator(request);
+  const repository = await getRepository();
+
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_request', 'A user id is required.');
+
+  let body: { buy?: unknown; sell?: unknown; reason?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const buy = body.buy as TradeRight;
+  const sell = body.sell as TradeRight;
+  if (!TRADE_RIGHTS.includes(buy) || !TRADE_RIGHTS.includes(sell)) {
+    return error(400, 'invalid_rights', 'Buy and sell are each auto, grant or block.');
+  }
+  const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : '';
+  if ((buy !== 'auto' || sell !== 'auto') && !reason) {
+    return error(400, 'reason_required', 'Say why: it is kept with the decision.');
+  }
+
+  const user = await repository.getUserById(id);
+  if (!user) return error(404, 'not_found', 'No such account.');
+
+  user.tradeOverride = buy === 'auto' && sell === 'auto'
+    ? null
+    : { buy, sell, reason, by: admin.id, at: new Date().toISOString() };
+  user.updatedAt = new Date().toISOString();
+  return json(200, { user: row(await repository.updateUser(user)) });
 }
 
 /** GET /api/ops/users - everyone, with the store they run. */
@@ -572,6 +634,18 @@ async function decideAction(request: HttpRequest, _context: InvocationContext) {
   return json(200, { action });
 }
 
+/**
+ * GET /api/ops/audit?days=7 - what operators did, newest first.
+ *
+ * Every write in the console is recorded once it succeeds (see audit.ts): who,
+ * what, to which account or case, and what they sent.
+ */
+async function auditTrail(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const days = Math.min(90, Math.max(1, Math.floor(Number(request.query.get('days') ?? 7)) || 7));
+  return json(200, { days, entries: await loadAudit(days) });
+}
+
 /** GET /api/ops/ledger - every fee paid through the gateway, and Figmark's commission on it. */
 async function ledger(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
@@ -589,16 +663,19 @@ async function ledger(request: HttpRequest, _context: InvocationContext) {
 
 export const adminUsersRoute = handler(users);
 export const adminUserDetailRoute = handler(userDetail);
-export const adminSuspendRoute = handler(suspend);
-export const adminDeleteUserRoute = handler(deleteAccount);
-export const adminDeleteResourceRoute = handler(deleteResource);
+export const adminSuspendRoute = audited('user.suspend', handler(suspend));
+export const adminDeleteUserRoute = audited('user.delete', handler(deleteAccount));
+export const adminDeleteResourceRoute = audited('resource.delete', handler(deleteResource));
 export const adminPhotoScanRoute = handler(scanPhotos);
-export const adminPhotoCleanupRoute = handler(cleanupPhotos);
-export const adminManagerRoute = handler(appointManager);
+export const adminPhotoCleanupRoute = audited('photos.cleanup', handler(cleanupPhotos));
+export const adminManagerRoute = audited('user.manager', handler(appointManager));
+export const adminRightsRoute = audited('user.rights', handler(rights));
+export const adminEmailUsageRoute = handler(emailUsageToday);
 export const adminDisputesRoute = handler(disputes);
-export const adminReassignRoute = handler(reassign);
+export const adminReassignRoute = audited('dispute.reassign', handler(reassign));
 export const adminActionsRoute = handler(actions);
-export const adminDecideActionRoute = handler(decideAction);
+export const adminDecideActionRoute = audited('dispute.action.decide', handler(decideAction));
+export const adminAuditRoute = handler(auditTrail);
 export const adminLedgerRoute = handler(ledger);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -607,6 +684,8 @@ app.http('admin-users', { ...anon, methods: ['GET'], route: 'ops/users', handler
 app.http('admin-user', { ...anon, methods: ['GET'], route: 'ops/users/{id}', handler: adminUserDetailRoute });
 app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'ops/users/{id}/suspend', handler: adminSuspendRoute });
 app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'ops/users/{id}/delete', handler: adminDeleteUserRoute });
+app.http('admin-email-usage', { ...anon, methods: ['GET'], route: 'ops/email-usage', handler: adminEmailUsageRoute });
+app.http('admin-rights', { ...anon, methods: ['POST'], route: 'ops/users/{id}/rights', handler: adminRightsRoute });
 app.http('admin-manager', { ...anon, methods: ['POST'], route: 'ops/users/{id}/manager', handler: adminManagerRoute });
 app.http('admin-delete-resource', { ...anon, methods: ['POST'], route: 'ops/resources/delete', handler: adminDeleteResourceRoute });
 app.http('admin-photo-scan', { ...anon, methods: ['POST'], route: 'ops/photos/scan', handler: adminPhotoScanRoute });
@@ -616,3 +695,4 @@ app.http('admin-reassign', { ...anon, methods: ['POST'], route: 'ops/disputes/{i
 app.http('admin-actions', { ...anon, methods: ['GET'], route: 'ops/actions', handler: adminActionsRoute });
 app.http('admin-action-decide', { ...anon, methods: ['POST'], route: 'ops/actions/{id}/decide', handler: adminDecideActionRoute });
 app.http('admin-ledger', { ...anon, methods: ['GET'], route: 'ops/ledger', handler: adminLedgerRoute });
+app.http('admin-audit', { ...anon, methods: ['GET'], route: 'ops/audit', handler: adminAuditRoute });

@@ -147,7 +147,7 @@ async function test(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
   if (!pushKeys()) return error(409, 'push_off', 'Notifications are not set up on this site yet.');
-  const slow = tooFast(user.id, 'push_test');
+  const slow = await tooFast(user.id, 'push_test');
   if (slow) return slow;
 
   const sent = await pushToUser(repository, user.id, {

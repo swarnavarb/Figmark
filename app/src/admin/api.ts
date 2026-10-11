@@ -1,5 +1,5 @@
 import type { HealthResponse } from '@shared/contracts';
-import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, SellerTrustSignals, TrustSignals } from '@shared/models';
+import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, SellerTrustSignals, TradeOverride, TradeRight, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
@@ -35,6 +35,23 @@ export interface AdminUserRow {
   buyerTrust: TrustSignals;
   sellerTrust: SellerTrustSignals;
   signInAccount: boolean;
+  /** Which of the three checks passed. */
+  verified: { email: boolean; phone: boolean; aadhaar: boolean };
+  aadhaar: { name: string; last4: string; at: string } | null;
+  /** What they may do now: verification, adjusted by any operator decision. */
+  canBuy: boolean;
+  canSell: boolean;
+  tradeOverride: TradeOverride | null;
+}
+
+export interface EmailProviderUsage {
+  name: 'brevo' | 'mailjet' | 'resend';
+  today: number;
+  dailyLimit: number;
+  thisMonth: number;
+  monthlyLimit: number | null;
+  /** Set when the provider refused for quota today. */
+  exhaustedToday: string | null;
 }
 
 export interface AdminUserDetail {
@@ -81,6 +98,18 @@ export interface PendingAction {
   decidedAt: string | null;
   decidedBy: string | null;
   note: string | null;
+}
+
+/** One operator action, as the audit trail recorded it. */
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  action: string;
+  target: Record<string, string>;
+  detail: unknown;
+  status: number;
 }
 
 export interface LedgerEntry extends FeePayment {
@@ -174,6 +203,11 @@ export const admin = {
   /** Appoint or remove a community manager. Fees are not theirs to set. */
   setManager: (id: string, body: { enabled: boolean }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/manager`, body),
+  /** Today's sends against each free email tier, in the order they are used. */
+  emailUsage: () => request<{ providers: EmailProviderUsage[] }>('/ops/email-usage'),
+  /** Grant, block or hand back to verification: who may buy and who may sell. */
+  setRights: (id: string, body: { buy: TradeRight; sell: TradeRight; reason: string }) =>
+    post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/rights`, body),
 
   /** Service stores: applications waiting first, then every store. */
   stores: () => request<{ stores: OpsStoreRow[] }>('/ops/stores'),
@@ -192,6 +226,7 @@ export const admin = {
   decideAction: (id: string, body: { approve: boolean; days?: number; severity?: 'light' | 'severe'; note?: string }) =>
     post<{ action: PendingAction }>(`/ops/actions/${encodeURIComponent(id)}/decide`, body),
   /** Every fee paid through the gateway, with Figmark's commission. */
+  audit: (days = 7) => request<{ days: number; entries: AuditEntry[] }>(`/ops/audit?days=${days}`),
   ledger: () => request<{ entries: LedgerEntry[]; totals: { collectedMinor: number; commissionMinor: number; managerShareMinor: number } }>('/ops/ledger'),
 
   /** The Learn guide, hidden tabs included, and whether it differs from the one that ships. */

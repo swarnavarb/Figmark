@@ -106,6 +106,20 @@ export class AuthError extends Error {
    * unless it is said out loud. It is a property of the deployment rather than
    * of the identifier typed in, so saying it enumerates nothing.
    */
+  /**
+   * Buying or selling before verification is done. Its own code, so the app
+   * can open the verification steps instead of showing a bare refusal.
+   */
+  static verificationRequired(capabilities: readonly string[]): AuthError {
+    const what = capabilities.includes('sell') && !capabilities.includes('buy') ? 'sell' : 'buy';
+    return new AuthError(
+      403,
+      'verification_required',
+      `To ${what} on Figmark, verify your email, your WhatsApp number and your Aadhaar first ` +
+        '(Profile → Verification). Your Aadhaar-linked mobile must be the same number as your WhatsApp.',
+    );
+  }
+
   static signInUnavailable(detail: string): AuthError {
     return new AuthError(503, 'sign_in_unavailable', detail);
   }

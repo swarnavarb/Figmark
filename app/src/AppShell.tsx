@@ -7,10 +7,11 @@ import { ScrollManager } from './components/ScrollManager';
 import { TABS, TabBar } from './components/TabBar';
 import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
-import { Avatar, Icon } from './components/ui';
+import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
 import { AuthModal } from './pages/AuthPage';
+import { EmailGate, VerifyPrompt } from './pages/VerifyPage';
 import { inviteCodeFor } from './components/ShareKit';
 import { setPhotoQuery } from './photoQuery';
 
@@ -44,7 +45,7 @@ export function AppShell() {
   // in the tab bar does; a page outside the four reads as Buy, as the bar does.
   const tone = TONES[Math.max(0, TABS.findIndex((tab) => tab.match(pathname)))] ?? TONES[0];
   // Before paint: Safari picks its status bar colour from the first frame it
-  // sees, so a frame in the wrong tone sticks. (index.html sets the first
+  // sees, so a frame in the wrong tone sticks. (public/boot/tone.js sets the first
   // page's tone before any of this loads.)
   useLayoutEffect(() => {
     document.documentElement.dataset.tone = tone.id;
@@ -167,6 +168,8 @@ export function AppShell() {
       <TabBar />
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
       {authPrompt && <AuthModal reason={authPrompt.reason} onClose={closeAuth} />}
+      <EmailGate />
+      <VerifyPrompt />
     </div>
   );
 }
@@ -175,7 +178,7 @@ export function AppShell() {
  * The colour each section's header runs in, keyed in the stylesheet by
  * `data-tone` on the root, in the order of the tabs. `status` is the phone's
  * status bar under the clock, and the same colour as the header's top edge
- * (--top-rgb in the stylesheet), so the two read as one block. index.html
+ * (--top-rgb in the stylesheet), so the two read as one block. public/boot/tone.js
  * repeats the paths and colours, to set the first page's tone before paint.
  */
 const TONES = [
@@ -228,6 +231,9 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const { pathname } = useLocation();
+  const { signOutEverywhere } = useSession();
+  // One Sign Out, and then the question of where: just here, or everywhere.
+  const [choosing, setChoosing] = useState(false);
 
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -261,10 +267,27 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <Link role="menuitem" to="/wallet" className="pmenu__item">👛 My wallet</Link>
           <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
           <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>
-          <button role="menuitem" type="button" className="pmenu__item pmenu__item--out" onClick={onSignOut}>
+          <button role="menuitem" type="button" className="pmenu__item pmenu__item--out"
+            onClick={() => { setOpen(false); setChoosing(true); }}>
             👋 Sign Out
           </button>
         </div>
+      )}
+      {choosing && (
+        <Modal title="Sign out" onClose={() => setChoosing(false)}>
+          <div className="stack">
+            <p className="muted" style={{ margin: 0 }}>
+              Sign out of this device only, or of every phone and computer this account is signed in on?
+            </p>
+            <button type="button" className="btn" onClick={() => { setChoosing(false); onSignOut(); }}>
+              Sign out from this device
+            </button>
+            <button type="button" className="btn btn--danger" onClick={() => { setChoosing(false); void signOutEverywhere(); }}>
+              Sign out from everywhere
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={() => setChoosing(false)}>Cancel</button>
+          </div>
+        </Modal>
       )}
     </div>
   );

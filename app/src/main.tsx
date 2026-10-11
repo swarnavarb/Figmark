@@ -54,6 +54,7 @@ const OrderPage = page(() => import('./pages/OrderPage'), 'OrderPage');
 const DisputePage = page(() => import('./pages/DisputePage'), 'DisputePage');
 const CommunityServicePage = page(() => import('./pages/CommunityServicePage'), 'CommunityServicePage');
 const ProfilePage = page(() => import('./pages/ProfilePage'), 'ProfilePage');
+const VerifyPage = page(() => import('./pages/VerifyPage'), 'VerifyPage');
 const PurchasesPage = page(() => import('./pages/PurchasesPage'), 'PurchasesPage');
 const CartPage = page(() => import('./pages/PurchasesPage'), 'CartPage');
 const BuyerLotPage = page(() => import('./pages/BuyerLotPage'), 'BuyerLotPage');
@@ -143,6 +144,7 @@ function App() {
         {/* The buyer protection console became part of the Community Service desk. */}
         <Route path="/forwarders" element={<Navigate to="/services/forwarder" replace />} />
         <Route path="/me" element={members(<ProfilePage />)} />
+        <Route path="/verify" element={members(<VerifyPage />)} />
         <Route path="/purchases" element={members(<PurchasesPage />)} />
         <Route path="/purchases/lot/:lotId" element={members(<BuyerLotPage />)} />
         <Route path="/cart" element={members(<CartPage />)} />

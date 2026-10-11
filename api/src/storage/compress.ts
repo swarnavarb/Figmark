@@ -29,6 +29,8 @@ export interface CompressedPhoto {
   originalBytes: number;
   /** True when the recompressed picture was the smaller one and is the one kept. */
   recompressed: boolean;
+  /** Set when a JPEG could not be decoded - which a real photo always can. */
+  undecodable?: true;
 }
 
 interface Raw {
@@ -109,7 +111,7 @@ export function compressPhoto(input: Uint8Array, contentType: string): Compresse
     });
     raw = { data: decoded.data as unknown as Uint8Array, width: decoded.width, height: decoded.height };
   } catch {
-    return untouched;
+    return { ...untouched, undecodable: true };
   }
 
   let candidate: Uint8Array | null = null;

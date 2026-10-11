@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AuthUser } from '@shared/contracts';
+import type { AuthUser, SignupResponse } from '@shared/contracts';
 import { disablePush } from './push';
-import { api, setSessionRejectedHandler } from './api';
+import { api, setSessionRejectedHandler, setVerificationRequiredHandler } from './api';
 
 /**
  * The signed-in user, resolved once and shared.
@@ -27,6 +27,8 @@ interface SessionValue {
   signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Sign out on every device this account is signed in on, this one included. */
+  signOutEverywhere: () => Promise<void>;
   /** Re-read the principal, after something on it has changed server-side. */
   refresh: () => Promise<void>;
   /**
@@ -43,6 +45,14 @@ interface SessionValue {
   /** Non-null while the sign-in popup is open: why it was asked for. */
   authPrompt: { reason: string | null } | null;
   closeAuth: () => void;
+  /** How the email code went out with a sign-up just made; null otherwise. */
+  signupEmail: SignupResponse['emailCode'] | null;
+  /**
+   * Non-null when the server refused a purchase or a listing because this
+   * account has not finished verifying: the message to show with the way out.
+   */
+  verifyPrompt: string | null;
+  closeVerifyPrompt: () => void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -55,10 +65,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessionsInsecure, setSessionsInsecure] = useState(false);
   const [missingContainers, setMissingContainers] = useState<string[]>([]);
   const [authPrompt, setAuthPrompt] = useState<{ reason: string | null } | null>(null);
+  const [signupEmail, setSignupEmail] = useState<SignupResponse['emailCode'] | null>(null);
+  const [verifyPrompt, setVerifyPrompt] = useState<string | null>(null);
+
+  useEffect(() => {
+    setVerificationRequiredHandler((message) => setVerifyPrompt(message));
+    return () => setVerificationRequiredHandler(null);
+  }, []);
   const userRef = useRef<AuthUser | null>(null);
   userRef.current = user;
   const loadingRef = useRef(true);
   loadingRef.current = loading;
+  /** Set by signing in here, as opposed to a session restored on page load. */
+  const justSignedIn = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,13 +153,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // The warning belongs to the account it was raised for, so signing in as
     // someone else must clear it.
     setWarning(null);
-    setUser((await api.login(identifier, password)).user);
+    const result = await api.login(identifier, password);
+    justSignedIn.current = true;
+    setUser(result.user);
+    // The sign-in response can carry only the session cookie; this hands out
+    // the device cookie that keeps this browser trusted for the account.
+    void api.me().catch(() => undefined);
   }, []);
 
   const signUp = useCallback(async (body: Parameters<SessionValue['signUp']>[0]) => {
     const result = await api.signup(body);
     setWarning(result.warning ?? null);
+    setSignupEmail(result.emailCode ?? null);
+    justSignedIn.current = true;
     setUser(result.user);
+    void api.me().catch(() => undefined);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -161,6 +188,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await api.logout();
     setUser(null);
     setWarning(null);
+    setSignupEmail(null);
+  }, []);
+
+  const signOutEverywhere = useCallback(async () => {
+    await disablePush().catch(() => undefined);
+    await api.logoutAll();
+    setUser(null);
+    setWarning(null);
+    setSignupEmail(null);
   }, []);
 
   // Signed in: whatever asked for it is now allowed, so the popup goes.
@@ -168,8 +204,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (user) setAuthPrompt(null);
   }, [user]);
 
+  // Just signed in: the page now shows the account's view of it, so it opens
+  // at the top rather than wherever the guest view was scrolled to. Once the
+  // popup is gone, since it holds the page still while open. A session
+  // restored on load is left alone, so a reload keeps its place.
+  useEffect(() => {
+    if (!user || authPrompt || !justSignedIn.current) return;
+    justSignedIn.current = false;
+    window.scrollTo(0, 0);
+  }, [user, authPrompt]);
+
   const promptAuth = useCallback((reason?: string) => setAuthPrompt({ reason: reason ?? null }), []);
   const closeAuth = useCallback(() => setAuthPrompt(null), []);
+  const closeVerifyPrompt = useCallback(() => setVerifyPrompt(null), []);
   const gate = useCallback(<A extends unknown[]>(fn: (...args: A) => unknown, reason?: string) => (...args: A) => {
     if (userRef.current) {
       void fn(...args);
@@ -184,11 +231,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh,
-      promptAuth, gate, authPrompt, closeAuth,
+      user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, signOutEverywhere, refresh,
+      promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt,
     }),
-    [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, refresh,
-      promptAuth, gate, authPrompt, closeAuth],
+    [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, signOutEverywhere, refresh,
+      promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

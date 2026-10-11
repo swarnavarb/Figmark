@@ -65,7 +65,8 @@ async function read(request: HttpRequest, _context: InvocationContext) {
  */
 async function pledge(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
+  // A pledge is a promise to buy, so it takes what buying takes.
+  const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
   const found = await campaign(request, repository);

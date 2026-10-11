@@ -1,6 +1,7 @@
 import type { HttpResponseInit, InvocationContext } from '@azure/functions';
 import type { ApiError } from '../../../shared/contracts.js';
 import { AuthError } from '../auth/errors.js';
+import { StaleWriteError } from '../data/concurrency.js';
 
 /**
  * JSON response with optional Set-Cookie values.
@@ -11,12 +12,19 @@ import { AuthError } from '../auth/errors.js';
  * runtime feature: the local dev server implemented it by hand, so every test
  * passed while the deployed host emitted no cookie at all and every
  * authenticated request arrived anonymous. A header is what reaches the browser
- * either way. `Headers` is used rather than a plain object because Set-Cookie
- * is the one header that legitimately repeats.
+ * either way.
+ *
+ * One cookie per response, at most. The Functions runtime copies response
+ * headers into a plain object (`headers[key] = value` in @azure/functions), so
+ * of two Set-Cookie headers only the last reaches the browser. When sign-in
+ * started sending a device cookie after the session cookie, the session was
+ * the one dropped: sign-in answered 200 and the very next request was
+ * anonymous. So only the last is sent here too, and every test sees exactly
+ * what the browser on Azure would get.
  */
 export function json(status: number, body: unknown, cookies: string[] = []): HttpResponseInit {
   const headers = new Headers({ 'Content-Type': 'application/json' });
-  for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+  for (const cookie of cookies.slice(-1)) headers.append('Set-Cookie', cookie);
   return { status, headers, jsonBody: withoutStoreFields(body) };
 }
 
@@ -73,6 +81,14 @@ export function toErrorResponse(err: unknown, context: InvocationContext): HttpR
     // Cookies on a refusal exist to clear a session the server just rejected,
     // so they have to reach the browser with it.
     return json(err.status, { error: err.code, message: err.message } satisfies ApiError, err.cookies);
+  }
+
+  // Two requests changed the same thing at once and this one lost. Nothing
+  // was written, so trying again against what won is all it takes.
+  if (err instanceof StaleWriteError || storeStatus(err) === 412) {
+    return error(409, 'changed_meanwhile', err instanceof StaleWriteError
+      ? err.message
+      : 'Someone else changed this at the same moment. Reload and try again.');
   }
 
   context.error('Unhandled error in request handler', err);

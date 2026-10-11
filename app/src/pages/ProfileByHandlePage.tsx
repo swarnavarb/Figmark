@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CommunityAlertBanner } from '../components/CommunityAlerts';
+import { VerifiedChips } from '../components/VerifiedChips';
 import { ManagerTag } from '../components/ManagerBadge';
 import { Link, useParams } from 'react-router-dom';
 import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
@@ -145,6 +146,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
               open since {formatDate(data.memberSince)}
               {data.lastSeenAt && ` · seen ${timeAgo(data.lastSeenAt)}`}
             </p>
+            <VerifiedChips checks={data.verified} />
           </div>
         </header>
 

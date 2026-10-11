@@ -18,6 +18,8 @@
     "WEB_PUSH_PRIVATE_KEY": "<from: npm run push:keys>",
     "WEB_PUSH_SUBJECT": "mailto:you@example.com",
 
+    "PUBLIC_ORIGIN": "<optional: comma-separated origins the site is served at, first one canonical - empty believes the request's host, which is only right on a laptop>",
+
     "ANTHROPIC_API_KEY": "<optional: lets photo search find an item from what is in the photo - empty matches by picture only>"
   }
 }

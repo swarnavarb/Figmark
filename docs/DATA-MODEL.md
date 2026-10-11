@@ -148,6 +148,21 @@ carrier API pull yet.
 - Large or never-queried properties (`description`, `photos`, `stageHistory`,
   `evidence`) are excluded from indexing to keep write RU cost down.
 
+## Concurrent writes
+
+Orders, listings and users are read, changed in memory and written back whole,
+so every such write is conditional on the etag it was read with
+(`api/src/data/concurrency.ts`). When another write got there first, the two
+changes are compared field by field against what both started from: fields
+only this writer changed are applied on top of the winner (a seller's edit
+survives a view being counted), and a field both changed - even to the same
+value - refuses the write with `409 changed_meanwhile`. That is what stops two
+`pay` calls recording two payments, and a stale stock count overwriting a sale.
+`pay` saves the order before the protection fee reaches the ledger, and placing
+an order claims it before taking stock, so the request that loses has charged
+and taken nothing. The in-memory store is one process and writes in place, so
+it has no such check.
+
 ## Not yet modelled
 
 Wishlists and restock notifications, the community feed, the payout ledger,

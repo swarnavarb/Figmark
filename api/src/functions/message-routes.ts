@@ -13,15 +13,15 @@ import { accessFor } from '../../../shared/stores.js';
 import { isReaction, REACTION_META } from '../../../shared/social.js';
 import { actorName, gistOf, toWhom, whose } from '../../../shared/notifications.js';
 import { notify, readGroup, storeCrew } from './notify.js';
-import { getAuthService } from '../auth/index.js';
+import { AuthError, getAuthService } from '../auth/index.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
+import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
 import { getPhotoStore } from '../storage/index.js';
-import { compressPhoto, PHOTO_MAX_BYTES } from '../storage/compress.js';
-import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
+import { readPhoto } from './template-routes.js';
 
 /**
  * The handle namespace, and the messages addressed through it.
@@ -481,7 +481,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_message', 'Write something first.');
   }
   if (text.length > 4000) return error(400, 'invalid_message', 'Keep a message under 4000 characters.');
-  const slow = tooFast(user.id, 'message');
+  const slow = await tooFast(user.id, 'message');
   if (slow) return slow;
 
   const mine = await handlesFor(user.id, repository);
@@ -520,6 +520,8 @@ async function send(request: HttpRequest, _context: InvocationContext) {
   // what they want and roughly for how much, for the shop to answer with one.
   let deal: MessageDeal | null = null;
   if (body.deal?.kind === 'offer') {
+    // Making a private deal is selling, whatever the listing behind it says.
+    if (!user.capabilities.canSell) throw AuthError.verificationRequired(['sell']);
     const listing = body.deal.listingId ? await repository.getListing(body.deal.listingId) : null;
     if (!us.isStore || !listing || listing.privateFor !== them.userId || listing.sellerId !== us.userId) {
       return error(400, 'invalid_deal', 'Make the private deal for this buyer first.');
@@ -625,7 +627,7 @@ function threadKeyOf(threadId: string): string {
 async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
-  const slow = tooFast(user.id, 'chatphoto');
+  const slow = await tooFast(user.id, 'chatphoto');
   if (slow) return slow;
 
   let body: { dataUrl?: string };
@@ -635,22 +637,9 @@ async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const match = /^data:([a-z/+-]+);base64,(.+)$/i.exec(body.dataUrl ?? '');
-  if (!match) return error(400, 'invalid_photo', 'Send the photo as a base64 data URL.');
-  const contentType = match[1]!.toLowerCase();
-  if (!ALLOWED_TYPES.includes(contentType)) {
-    return error(400, 'invalid_photo', 'Photos must be JPEG, PNG, WebP or GIF.');
-  }
-  const bytes = Buffer.from(match[2]!, 'base64');
-  if (bytes.byteLength === 0) return error(400, 'invalid_photo', 'That photo is empty.');
-  if (bytes.byteLength > MAX_PHOTO_BYTES) {
-    return error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.');
-  }
-
-  const photo = compressPhoto(new Uint8Array(bytes), contentType);
-  if (photo.bytes.byteLength > PHOTO_MAX_BYTES) {
-    return error(413, 'photo_too_large', 'That photo could not be made small enough. Try a different one.');
-  }
+  const read = readPhoto(body.dataUrl);
+  if ('refusal' in read) return read.refusal;
+  const photo = read.photo;
   const stored = await (await getPhotoStore()).uploadPrivate(photo.bytes, photo.contentType, user.id);
   return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
 }
@@ -969,6 +958,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     levelTag: isStore ? storeTag(level?.level) : buyerTag(user.quest?.levelCache),
     memberSince: user.createdAt,
     lastSeenAt: user.lastSeenAt ?? null,
+    // Which checks the account behind this page passed - a shop's are its owner's.
+    verified: verifiedChecks(user),
     /** What the tabs and chips count, so neither has to guess. */
     counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },
     // Active first, then sold out, then expired.

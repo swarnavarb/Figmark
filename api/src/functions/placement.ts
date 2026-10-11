@@ -48,9 +48,19 @@ export async function placeOrder(
     return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
   }
   if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
-  // Stock comes off first, in one checked write: the check above can be beaten
+
+  // The order is claimed before anything else moves. The write is checked, so
+  // of two requests placing this same checkout at once - a double tap on Pay -
+  // the second is refused here rather than taking the stock a second time.
+  const now = new Date().toISOString();
+  order.placedAt = now;
+  await repository.updateOrder(order);
+
+  // Stock comes off next, in one checked write: the check above can be beaten
   // by another buyer pressing at the same moment, and this cannot.
   if (!(await repository.takeStock(order))) {
+    order.placedAt = null;
+    await repository.updateOrder(order);
     return isMultiple(listing) ? 'This item is no longer for sale.' : 'This item has just sold out.';
   }
   if (listing.privateFor) order.privateDeal = true;
@@ -59,8 +69,6 @@ export async function placeOrder(
   // followed it - the account remembers, so the credit is not lost.
   if (!order.affiliate) order.affiliate = await affiliateFor(repository, order.buyerId, listing);
 
-  const now = new Date().toISOString();
-  order.placedAt = now;
   order.createdAt = now;
   order.updatedAt = now;
   // The timeline opens when the order did, not when Buy was first pressed.

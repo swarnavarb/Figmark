@@ -83,19 +83,32 @@ const iso = (days = 0, hours = 0) =>
  */
 const soon = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
-/** Phone and email verified so the demo account can transact; nothing heavier. */
+/**
+ * Fixtures that trade are fully verified, so the demo works end to end; the
+ * proofs say they came from the seed rather than from a real check.
+ */
 function verification(transactable: boolean): VerificationState {
   const state = transactable ? 'verified' : 'unverified';
+  const at = '2026-01-01T00:00:00.000Z';
   return {
     phone: state,
     email: state,
-    governmentId: 'unverified',
+    governmentId: state,
     address: 'unverified',
     paymentMethod: 'unverified',
     bankAccountMatch: 'unverified',
     businessRegistration: 'unverified',
     lastReviewedAt: null,
     lastReviewedBy: null,
+    ...(transactable
+      ? {
+          proofs: {
+            email: { address: 'seed', at },
+            phone: { number: 'seed', via: 'seed' as const, at },
+            aadhaar: { name: 'Seed fixture', dob: '', gender: '', last4: '0000', mobile: 'seed', via: 'seed' as const, at },
+          },
+        }
+      : {}),
   };
 }
 

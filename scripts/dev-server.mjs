@@ -21,7 +21,11 @@ process.env.FIGMARK_SHELL_FILE ??= join(staticRoot, 'index.html');
 const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
-const { loginRoute, logoutRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
+const { loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
+const {
+  verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
+  verifyAadhaarRoute, whatsappWebhookRoute,
+} = await import(new URL('verify-routes.js', apiRoot));
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, reactToCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
@@ -107,8 +111,8 @@ const {
 } = await import(new URL('dispute-routes.js', apiRoot));
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
-  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminDisputesRoute,
-  adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute,
+  adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminRightsRoute, adminEmailUsageRoute, adminDisputesRoute,
+  adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute, adminAuditRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
   questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questOpenRoute,
@@ -134,6 +138,15 @@ const routes = [
   ['POST', '/api/auth/login', loginRoute],
   ['POST', '/api/auth/signup', signupRoute],
   ['POST', '/api/auth/logout', logoutRoute],
+  ['POST', '/api/auth/logout-all', logoutAllRoute],
+  ['GET', '/api/verify/status', verifyStatusRoute],
+  ['POST', '/api/verify/email/send', verifyEmailSendRoute],
+  ['POST', '/api/verify/email/confirm', verifyEmailConfirmRoute],
+  ['POST', '/api/verify/phone/start', verifyPhoneStartRoute],
+  ['POST', '/api/verify/phone/number', verifyPhoneNumberRoute],
+  ['POST', '/api/verify/aadhaar', verifyAadhaarRoute],
+  ['GET', '/api/verify/whatsapp/webhook', whatsappWebhookRoute],
+  ['POST', '/api/verify/whatsapp/webhook', whatsappWebhookRoute],
   ['GET', '/api/feed', feedRoute],
   ['GET', '/api/forwarders', forwardersRoute],
   ['GET', '/api/me/activity', myActivityRoute],
@@ -297,6 +310,8 @@ const routes = [
   ['POST', '/api/ops/users/:id/suspend', adminSuspendRoute],
   ['POST', '/api/ops/users/:id/delete', adminDeleteUserRoute],
   ['POST', '/api/ops/users/:id/manager', adminManagerRoute],
+  ['POST', '/api/ops/users/:id/rights', adminRightsRoute],
+  ['GET', '/api/ops/email-usage', adminEmailUsageRoute],
   ['POST', '/api/ops/resources/delete', adminDeleteResourceRoute],
   ['POST', '/api/ops/photos/scan', adminPhotoScanRoute],
   ['POST', '/api/ops/photos/cleanup', adminPhotoCleanupRoute],
@@ -305,6 +320,7 @@ const routes = [
   ['GET', '/api/ops/actions', adminActionsRoute],
   ['POST', '/api/ops/actions/:id/decide', adminDecideActionRoute],
   ['GET', '/api/ops/ledger', adminLedgerRoute],
+  ['GET', '/api/ops/audit', adminAuditRoute],
   ['GET', '/api/wants', wantsBoardRoute],
   ['POST', '/api/wants/new', wantPostRoute],
   ['GET', '/api/wants/:id', wantReadRoute],
@@ -457,7 +473,10 @@ async function readBody(request) {
  */
 function setCookiesOf(result) {
   const headers = result.headers;
-  const raw = headers instanceof Headers ? headers.getSetCookie() : [];
+  // Like the Functions runtime, which copies headers into a plain object: of
+  // several Set-Cookie headers only the last survives. Forwarding them all
+  // let a sign-in that lost its session cookie on Azure pass every test here.
+  const raw = (headers instanceof Headers ? headers.getSetCookie() : []).slice(-1);
   return raw.map((cookie) =>
     cookie
       .split(';')
@@ -476,6 +495,7 @@ const server = createServer((request, response) => {
       const raw = await readBody(request);
       const result = await route.handler(
         {
+          method: request.method,
           headers: new Headers(Object.entries(request.headers).map(([k, v]) => [k, String(v)])),
           query: url.searchParams,
           params: route.params,

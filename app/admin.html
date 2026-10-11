@@ -3,15 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <!-- An iPhone zooms the page into any field whose text is under 16px, and
-         most of ours are. maximum-scale=1 stops that; iOS still lets a pinch
-         zoom past it, so nothing is lost there. Android would honour it and
-         lose pinch-zoom, so it is added on iPhone and iPad only. -->
-    <script>
-      if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-        document.querySelector('meta[name="viewport"]').content += ', maximum-scale=1';
-      }
-    </script>
+    <!-- iPhone and iPad only: stop the zoom into small fields. -->
+    <script src="/boot/viewport.js"></script>
     <title>Figmark operations</title>
     <meta name="robots" content="noindex, nofollow" />
     <meta name="description" content="Internal operations console for the Figmark marketplace." />

@@ -9,6 +9,7 @@ import { offersAffiliate, resolveShortCode } from '../affiliate.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore, ownPhotoName } from '../storage/index.js';
 import { resolveInvite } from '../share.js';
+import { config } from '../config.js';
 import { error, handler } from './http.js';
 import { cardSvg, renderCard } from '../og-card.js';
 import { THEMES, type CardSpec } from '../../../shared/shareCard.js';
@@ -59,10 +60,37 @@ const DEFAULT_IMAGE = '/og/figmark.jpg';
 const RELATIVE = 'http://relative.invalid';
 
 function originOf(request: HttpRequest, original: URL | null): string {
+  return trustedOrigin(claimedOrigin(request, original), config.publicOrigins);
+}
+
+/** Where the request says it was sent - every part of it the caller's to type. */
+function claimedOrigin(request: HttpRequest, original: URL | null): string {
   if (original && original.origin !== RELATIVE) return original.origin;
   const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? 'localhost';
   const proto = request.headers.get('x-forwarded-proto') ?? (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
   return `${proto}://${host.split(',')[0]!.trim()}`;
+}
+
+/**
+ * The claimed origin when it is one of this site's own (see
+ * `config.publicOrigins`), otherwise the first of them. With none configured -
+ * a laptop - the claim stands.
+ */
+export function trustedOrigin(claimed: string, allowed: readonly string[] | null): string {
+  if (!allowed || allowed.length === 0) return claimed;
+  let origin: string;
+  try {
+    origin = new URL(claimed).origin.toLowerCase();
+  } catch {
+    return allowed[0]!;
+  }
+  const match = allowed.some((entry) => {
+    if (!entry.includes('*')) return entry === origin;
+    const [head, tail] = entry.split('*', 2) as [string, string];
+    return origin.length > head.length + tail.length && origin.startsWith(head) && origin.endsWith(tail)
+      && /^[a-z0-9-]+$/.test(origin.slice(head.length, origin.length - tail.length));
+  });
+  return match ? origin : allowed[0]!;
 }
 
 /** The address the visitor actually asked for, before the rewrite. */
