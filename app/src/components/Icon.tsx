@@ -21,7 +21,7 @@ export type IconName =
   | 'tag' | 'bolt' | 'lock' | 'bell' | 'message' | 'mail' | 'megaphone'
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image' | 'camera'
-  | 'trash' | 'sort' | 'filter' | 'external' | 'home'
+  | 'trash' | 'sort' | 'filter' | 'external' | 'home' | 'phone'
   | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy' | 'rising';
 
 const PATHS: Record<IconName, ReactNode> = {
@@ -50,6 +50,8 @@ const PATHS: Record<IconName, ReactNode> = {
   left: <path d="m15 6-6 6 6 6" />,
   right: <path d="m9 6 6 6-6 6" />,
   box: (<><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" /><path d="m4 8.5 8 4.5 8-4.5M12 13v7" /></>),
+  // A handset, for calling a customer.
+  phone: <path d="M5.2 3.6h3.4l1.6 4.2-2.2 1.4a11 11 0 0 0 6.8 6.8l1.4-2.2 4.2 1.6v3.4a1.6 1.6 0 0 1-1.6 1.6A16.6 16.6 0 0 1 3.6 5.2a1.6 1.6 0 0 1 1.6-1.6Z" />,
   truck: (<><path d="M3 6.6h10.4v10H3ZM13.4 10h3.8l2.8 3v3.6h-6.6" /><circle cx="7" cy="18" r="1.8" /><circle cx="16.6" cy="18" r="1.8" /></>),
   users: (<><circle cx="9" cy="8.4" r="3.2" /><path d="M3.6 19.4a5.4 5.4 0 0 1 10.8 0" /><path d="M16 5.6a3.2 3.2 0 0 1 0 6M17.4 19.4a5.4 5.4 0 0 0-2-4.2" /></>),
   // A six-point spark, for "everything" and for anything new.
