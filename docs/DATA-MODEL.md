@@ -13,6 +13,7 @@ shipment, `User` covers both sides of the trade, and `Order` is one manifest lin
 | Container | Partition key | Why |
 |---|---|---|
 | `users` | `/id` | Point reads by id dominate. One record per account, covering buyer, seller and forwarder facets. |
+| `userParts` | `/userId` | The account's growing lists, one document per part: collection and shelves, share and invite logs, affiliate records, push endpoints, devices, calculator sheets. See below. |
 | `usernames` | `/id` | Reservation records making usernames globally unique; see below. |
 | `listings` | `/sellerId` | Storefronts and seller dashboards read one seller at a time. |
 | `lots` | `/sellerId` | Lots are always managed in the context of their seller. |
@@ -162,6 +163,25 @@ value - refuses the write with `409 changed_meanwhile`. That is what stops two
 an order claims it before taking stock, so the request that loses has charged
 and taken nothing. The in-memory store is one process and writes in place, so
 it has no such check.
+
+## An account and its parts
+
+The lists on an account that only grow live in `userParts`, one document per
+part in the account's partition (`api/src/data/user-parts.ts`): `collection`
+(cards and shelves), `sharing`, `affiliate`, `push`, `devices` and `profit`.
+On the `users` row they pushed it toward Cosmos's 2 MB item limit, and every
+screen touching any of them wrote the same document.
+
+`getUserById` reads the row and its parts (one single-partition query) and
+hands back one user. `updateUser` writes only the parts that changed, each
+checked against its own etag, then the row. So saving a collection card and
+turning notifications on never contend; two screens changing the same part
+merge or are refused like any other checked write. Users read from list
+queries carry no parts, and saving one leaves the parts alone.
+
+Rows written before the split still carry these fields inline. They read as
+they are, and move into their part on the account's next save. The game state
+(`quest`) stays on the row: it is capped, and the leaderboard sorts on it.
 
 ## Not yet modelled
 

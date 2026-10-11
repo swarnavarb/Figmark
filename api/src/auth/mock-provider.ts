@@ -457,7 +457,7 @@ export class MockAuthProvider implements AuthService {
       ...(this.storeIsEphemeral
         ? {
             warning:
-              'This server keeps accounts in memory, so this one will be lost when it restarts. The demo account is re-created each time.',
+              'This server keeps accounts in memory, so this one will be lost when it restarts, and on a host with several workers some of them will not know it. The demo account is re-created each time.',
           }
         : {}),
     };

@@ -6160,42 +6160,86 @@ await check('a photo that cannot be recompressed here and is over 90 KB is refus
 });
 
 await check('a listing keeps its photos, in order, with one leading', async () => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
+  const fresh = async (headers = auth) => (await upload(req({ headers, body: { dataUrl: pixel } }), ctx)).jsonBody;
+  const first = await fresh();
   const made = await createListing(req({
     headers: auth,
     body: {
       title: 'Photographed item', priceMinor: 20_000,
       photos: [
-        { blobName: 'a.jpg', url: '/api/photos/a.jpg', isPrimary: false },
+        { blobName: first.blobName, url: first.url, isPrimary: false },
         { blobName: photoFixture.blobName, url: photoFixture.url, isPrimary: true },
       ],
     },
   }), ctx);
-  assert.equal(made.status, 201);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const photos = made.jsonBody.listing.photos;
   assert.equal(photos.length, 2);
-  assert.equal(photos[0].url, '/api/photos/a.jpg', 'the order the seller arranged');
+  assert.equal(photos[0].url, first.url, 'the order the seller arranged');
   assert.equal(photos[1].isPrimary, true, 'and the one they chose to lead');
 
   // Nobody said which leads, so the first does.
+  const [x, y] = [await fresh(), await fresh()];
   const quiet = await createListing(req({
     headers: auth,
     body: {
       title: 'Unchosen', priceMinor: 20_000,
-      photos: [{ blobName: 'x.jpg', url: '/x.jpg', isPrimary: false }, { blobName: 'y.jpg', url: '/y.jpg', isPrimary: false }],
+      photos: [{ blobName: x.blobName, url: x.url, isPrimary: false }, { blobName: y.blobName, url: y.url, isPrimary: false }],
     },
   }), ctx);
   assert.equal(quiet.jsonBody.listing.photos[0].isPrimary, true);
 
   // Six is the cap, because a document with forty images in it fails in
   // production and nowhere else.
+  const nine = [];
+  for (let i = 0; i < 9; i++) nine.push(await fresh());
   const many = await createListing(req({
     headers: auth,
     body: {
       title: 'Too many', priceMinor: 20_000,
-      photos: Array.from({ length: 9 }, (_, i) => ({ blobName: `${i}.jpg`, url: `/${i}.jpg`, isPrimary: false })),
+      photos: nine.map((photo) => ({ blobName: photo.blobName, url: photo.url, isPrimary: false })),
     },
   }), ctx);
   assert.equal(many.jsonBody.listing.photos.length, 6);
+});
+
+await check("a listing, new or edited, carries only this shop's own uploads", async () => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
+  const theirs = (await upload(req({ headers: bystanderAuth, body: { dataUrl: pixel } }), ctx)).jsonBody;
+  const mine = (await upload(req({ headers: auth, body: { dataUrl: pixel } }), ctx)).jsonBody;
+  const outside = [
+    [{ url: 'https://tracker.example/pixel.gif', isPrimary: true }],
+    [{ url: '/api/photos/never-uploaded.jpg', isPrimary: true }],
+    [{ blobName: theirs.blobName, url: theirs.url, isPrimary: true }],
+    [{ blobName: '../etc/passwd', url: mine.url, isPrimary: true }],
+  ];
+  for (const photos of outside) {
+    const refused = await createListing(req({ headers: auth, body: { title: 'Borrowed', priceMinor: 20_000, photos } }), ctx);
+    assert.equal(refused.status, 400, JSON.stringify(photos));
+  }
+
+  const item = (await createListing(req({
+    headers: auth, body: { title: 'Own photo', priceMinor: 20_000, photos: [{ blobName: mine.blobName, url: mine.url, isPrimary: true }] },
+  }), ctx)).jsonBody.listing;
+  // (The made-up name next to the item's own address is just the photo it already has.)
+  for (const photos of outside.slice(0, 3)) {
+    const refused = await editListing(req({ headers: auth, params: { id: item.id }, body: { photos } }), ctx);
+    assert.equal(refused.status, 400, JSON.stringify(photos));
+  }
+  // What the item already shows stays, and a new upload of the shop's own joins it.
+  const added = (await upload(req({ headers: auth, body: { dataUrl: pixel } }), ctx)).jsonBody;
+  const edited = await editListing(req({
+    headers: auth, params: { id: item.id },
+    body: { photos: [item.photos[0], { blobName: added.blobName, url: added.url, isPrimary: false }] },
+  }), ctx);
+  assert.equal(edited.status, 200, JSON.stringify(edited.jsonBody));
+  assert.deepEqual(edited.jsonBody.listing.photos.map((photo) => photo.url), [mine.url, added.url]);
+  // Another of the shop's own items may share a photo it already shows.
+  const twin = await createListing(req({
+    headers: auth, body: { title: 'Same photo', priceMinor: 20_000, photos: [{ blobName: mine.blobName, url: mine.url, isPrimary: true }] },
+  }), ctx);
+  assert.equal(twin.status, 201);
 });
 
 await check('a template’s ladder travels to the listing, and then to the order', async () => {

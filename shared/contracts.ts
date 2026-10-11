@@ -122,6 +122,13 @@ export interface HealthResponse {
   };
   data: {
     backend: BackendKind;
+    /**
+     * True when a hosted deployment runs on the in-memory store. Each worker
+     * then keeps its own copy: an account, listing or order made on one is
+     * missing on the rest, so testers see things appear and vanish between
+     * page loads. Shared environments belong on Cosmos.
+     */
+    perWorker?: boolean;
     connected: boolean;
     database: string | null;
     detail: string;

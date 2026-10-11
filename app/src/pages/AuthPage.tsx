@@ -264,7 +264,8 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
             {mode === 'signup' && !durable && (
               <p className="notice notice--info">
                 This server keeps accounts in memory. An account you create here works now but is lost when the
-                server restarts — sign in with the demo account below for something that always works.
+                server restarts, and a server with several workers may not find it on every visit — sign in with
+                the demo account below for something that always works.
               </p>
             )}
 

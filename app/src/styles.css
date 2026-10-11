@@ -10448,8 +10448,8 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   transition: background 200ms, transform 200ms var(--bounce);
 }
 .icard__open:hover { background: var(--surface-hover); transform: translateY(-1px); }
-/* Cart: take it out, or keep it for later on Saved. A row of its own under Checkout. */
-.cartacts { flex: 1 1 100%; display: flex; gap: 8px; justify-content: flex-end; }
+/* Cart: take it out, or keep it for later on Saved. Sits beside Checkout; the title already opens the listing. */
+.cartacts { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 /* A cart item that changed since Buy: its price moved, or it can no longer be had. */
 .cartnote {
   flex: 1 1 100%; margin: 0;

@@ -21,6 +21,10 @@ import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
 import { photoNamesIn } from '../storage/unused.js';
 import { ReadSnapshots, StaleWriteError, adopt, mergeChanges } from './concurrency.js';
 import {
+  USER_PART_NAMES, fieldsOf, joinUser, mentions, partDoc, partId, rowOf,
+  type JoinedUser, type PartVersion, type UserPartDoc, type UserPartName,
+} from './user-parts.js';
+import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
   DEMO_PHONE,
@@ -837,7 +841,7 @@ export class CosmosRepository implements Repository {
    * it against and it is written as before.
    */
   private async writeChecked<T extends { id: string; _etag?: string }>(
-    name: 'orders' | 'listings' | 'users',
+    name: 'orders' | 'listings' | 'users' | 'userParts',
     partition: string,
     doc: T,
   ): Promise<T> {
@@ -878,14 +882,58 @@ export class CosmosRepository implements Repository {
   }
 
   async getUserById(id: string): Promise<User | null> {
+    let row: User | undefined;
     try {
       // users is partitioned by /id, so this is a point read.
-      const { resource } = await this.container('users').item(id, id).read<User>();
-      return resource ? this.snapshots.remember('users', resource) : null;
+      ({ resource: row } = await this.container('users').item(id, id).read<User>());
     } catch (error) {
       if (isNotFound(error)) return null;
       throw error;
     }
+    if (!row) return null;
+    this.snapshots.remember('users', row);
+    // The account's growing lists live beside it, in its own partition of
+    // userParts: one more single-partition read, and the caller sees one user.
+    return joinUser(row, await this.readParts(id));
+  }
+
+  private async readParts(userId: string): Promise<UserPartDoc[]> {
+    const { resources } = await this.container('userParts')
+      .items.query<UserPartDoc>(
+        { query: 'SELECT * FROM c WHERE c.userId = @userId', parameters: [{ name: '@userId', value: userId }] },
+        { partitionKey: userId },
+      )
+      .fetchAll();
+    return this.snapshots.rememberAll('userParts', resources);
+  }
+
+  /**
+   * Save one part, checked against the version it was read at.
+   *
+   * A part with no document yet is created; losing that race (another screen,
+   * or another worker moving the same account's inline lists) is merged like
+   * any other lost write, against what this one started from.
+   */
+  private async writePart(userId: string, part: UserPartName, fields: Record<string, unknown>, version: PartVersion): Promise<UserPartDoc> {
+    const was = JSON.parse(version.was) as Record<string, unknown>;
+    if (version.etag) {
+      // What it was read as, so a lost race can be merged field by field.
+      this.snapshots.remember('userParts', partDoc(userId, part, was, version.etag));
+      return this.writeChecked('userParts', userId, partDoc(userId, part, fields, version.etag));
+    }
+    const doc = partDoc(userId, part, fields);
+    try {
+      const { resource } = await this.container('userParts').items.create<UserPartDoc>(doc);
+      return this.snapshots.remember('userParts', (resource as UserPartDoc | undefined) ?? doc);
+    } catch (error) {
+      if (!isConflict(error)) throw error;
+    }
+    const { resource: current } = await this.container('userParts').item(doc.id, userId).read<UserPartDoc>();
+    if (!current?._etag) throw new StaleWriteError();
+    const merged = mergeChanges(partDoc(userId, part, was), doc, current);
+    if (!merged) throw new StaleWriteError();
+    this.snapshots.remember('userParts', current);
+    return this.writeChecked('userParts', userId, { ...merged, _etag: current._etag });
   }
 
   async getUserByIdentifier(identifier: string): Promise<User | null> {
@@ -1065,8 +1113,48 @@ export class CosmosRepository implements Repository {
     return resources.sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
 
+  /**
+   * Saves the row and whichever of its parts changed, each checked against
+   * the version it was read at.
+   *
+   * A user read by id knows every part's version. One from a list query does
+   * not, so only the parts it actually carries are saved, against what is
+   * stored now. Parts go first: if the row then fails, the parts already hold
+   * the data, and a row's old inline copy is never read once its part exists.
+   */
   async updateUser(user: User): Promise<User> {
-    return this.writeChecked('users', user.id, user as User & { _etag?: string });
+    const joined = user as JoinedUser & Record<string, unknown>;
+    const versions: Partial<Record<UserPartName, PartVersion>> = { ...joined._parts };
+    for (const part of USER_PART_NAMES) {
+      let version = versions[part];
+      if (!version) {
+        if (!mentions(joined, part)) continue;
+        const stored = await this.container('userParts').item(partId(user.id, part), user.id).read<UserPartDoc>()
+          .then(({ resource }) => resource, (error: unknown) => {
+            if (isNotFound(error)) return undefined;
+            throw error;
+          });
+        version = { etag: stored?._etag ?? null, was: JSON.stringify(stored ? fieldsOf(stored, part) : {}) };
+        // Fields this copy does not carry are taken as they are stored.
+        if (stored) for (const [key, value] of Object.entries(fieldsOf(stored, part))) if (!(key in joined)) joined[key] = value;
+      }
+      const fields = fieldsOf(joined, part);
+      const now = JSON.stringify(fields);
+      if (now === version.was && (version.etag || now === '{}')) {
+        versions[part] = version;
+        continue;
+      }
+      const saved = await this.writePart(user.id, part, fields, version);
+      Object.assign(joined, fieldsOf(saved, part));
+      versions[part] = { etag: saved._etag ?? null, was: JSON.stringify(fieldsOf(saved, part)) };
+    }
+
+    const row = await this.writeChecked('users', user.id, rowOf(joined) as User & { _etag?: string });
+    // The caller keeps using its object: give it the stored row, its parts and their new versions.
+    for (const key of Object.keys(rowOf(joined))) if (!(key in row)) delete joined[key];
+    Object.assign(joined, row);
+    if (joined._parts || Object.keys(versions).length > 0) joined._parts = versions;
+    return joined;
   }
 
   async getByHandle(username: string): Promise<{ user: User; isStore: boolean } | null> {
@@ -1625,24 +1713,46 @@ export class CosmosRepository implements Repository {
   /* Cross-partition over accounts, projected to the two fields the figures
      need; read only when an operator opens the installs page. */
   async listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>> {
-    const { resources } = await this.container('users')
-      .items.query<{ id: string; clientDevices: ClientDevice[] }>({
-        query: 'SELECT c.id, c.clientDevices FROM c WHERE IS_DEFINED(c.clientDevices)',
-      })
-      .fetchAll();
-    return resources;
+    const [moved, inline] = await Promise.all([
+      this.container('userParts')
+        .items.query<{ id: string; clientDevices?: ClientDevice[] }>({
+          query: "SELECT c.userId AS id, c.clientDevices FROM c WHERE c.part = 'devices'",
+        })
+        .fetchAll(),
+      // Accounts not saved since the split still carry theirs on the row.
+      this.container('users')
+        .items.query<{ id: string; clientDevices: ClientDevice[] }>({
+          query: 'SELECT c.id, c.clientDevices FROM c WHERE IS_DEFINED(c.clientDevices)',
+        })
+        .fetchAll(),
+    ]);
+    const byUser = new Map(inline.resources.map((row) => [row.id, row.clientDevices]));
+    for (const row of moved.resources) byUser.set(row.id, row.clientDevices ?? []);
+    return [...byUser].map(([id, clientDevices]) => ({ id, clientDevices }));
   }
 
   /* Cross-partition over accounts, but only run when a device turns
      notifications on, which is once per device. */
   async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {
-    const { resources } = await this.container('users')
-      .items.query<User>({
-        query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
-        parameters: [{ name: '@endpoint', value: endpoint }],
-      })
-      .fetchAll();
-    return resources;
+    const [moved, inline] = await Promise.all([
+      this.container('userParts')
+        .items.query<string>({
+          query: "SELECT VALUE c.userId FROM c WHERE c.part = 'push'"
+            + ' AND ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
+          parameters: [{ name: '@endpoint', value: endpoint }],
+        })
+        .fetchAll(),
+      // Accounts not saved since the split still carry theirs on the row.
+      this.container('users')
+        .items.query<string>({
+          query: 'SELECT VALUE c.id FROM c WHERE ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
+          parameters: [{ name: '@endpoint', value: endpoint }],
+        })
+        .fetchAll(),
+    ]);
+    // Read whole, so the endpoint list a caller edits is the one stored.
+    const users = await Promise.all([...new Set([...moved.resources, ...inline.resources])].map((id) => this.getUserById(id)));
+    return users.filter((user): user is User => user !== null && (user.pushEndpoints ?? []).some((entry) => entry.endpoint === endpoint));
   }
 
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {
@@ -1685,6 +1795,9 @@ export class CosmosRepository implements Repository {
       await this.container('identifiers').item(key, key).delete().catch(() => {});
     }
     await this.container('users').item(id, id).delete().catch(() => {});
+    for (const part of USER_PART_NAMES) {
+      await this.container('userParts').item(partId(id, part), id).delete().catch(() => {});
+    }
   }
 
   async deleteListing(sellerId: string, id: string): Promise<void> {

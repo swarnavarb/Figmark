@@ -287,7 +287,6 @@ export function CartPage() {
               )}
               {!item.unavailable && item.priceChange && <PriceChangeNote change={item.priceChange} currency={item.currency} />}
               {!item.unavailable && <Link to={`/order/${item.id}`} className="btn btn--sm icard__go">Checkout →</Link>}
-              <Link to={`/listing/${item.listingId}`} className="icard__open">View listing <Svg name="open" size={14} /></Link>
               <span className="cartacts">
                 <button type="button" className="btn btn--ghost btn--sm" disabled={busy === item.id}
                   onClick={() => void discard(item, true)}><Svg name="heart" size={13} /> Move to saved</button>

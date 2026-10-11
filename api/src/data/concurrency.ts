@@ -23,8 +23,8 @@
  * has been evicted), a lost race is simply refused: the safe answer.
  */
 
-/** Fields the store writes itself; never part of a change. */
-const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts']);
+/** Fields the store writes itself (and the account-part versions, see user-parts); never part of a change. */
+const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', '_parts']);
 /** Stamped on every write, so it says nothing about what changed. */
 const STAMP_FIELDS = new Set(['updatedAt']);
 

@@ -21,6 +21,7 @@ import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { isLive } from '../../../shared/service-stores.js';
 import { claimPhotos, releaseListingPhotos } from '../storage/release.js';
+import { getPhotoStore, ownPhotoName } from '../storage/index.js';
 import { error, handler, json } from './http.js';
 import { checkoutUnitPriceMinor, placeOrder, repriceCheckout } from './placement.js';
 import {
@@ -470,10 +471,18 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // Made from one of this shop's own items: remembered with its price, so the
   // deal can show what it took off. Anybody else's item is simply not it.
   let dealFrom: Listing['dealFrom'] = null;
+  let dealSource: Listing | null = null;
   if (privateFor && body.dealFromId) {
     const source = await repository.getListing(body.dealFromId);
-    if (source && source.sellerId === sellerId) dealFrom = { listingId: source.id, priceMinor: source.priceMinor };
+    if (source && source.sellerId === sellerId) {
+      dealFrom = { listingId: source.id, priceMinor: source.priceMinor };
+      dealSource = source;
+    }
   }
+
+  // The deal's item lends its photos as they are; anything else must be this shop's.
+  const photos = await sellerPhotos(body.photos, { sellerId, actorId: user.id, kept: dealSource?.photos ?? [], repository });
+  if (!photos) return error(400, 'invalid_photos', 'Use photos uploaded for this shop.');
 
   // What it cost to bring in (Pro), when the seller filled it in while listing.
   let costSheet: Listing['costSheet'] = null;
@@ -552,15 +561,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
        unless the seller said otherwise. The cap is here rather than in the
        browser because a document with forty images in it is the kind of thing
        that only fails in production. */
-    photos: (body.photos ?? [])
-      .slice(0, 6)
-      .map((photo, index, all) => ({
-        blobName: photo.blobName ?? '',
-        url: photo.url,
-        imageHash: null,
-        isPrimary: all.some((row) => row.isPrimary) ? photo.isPrimary === true : index === 0,
-      }))
-      .filter((photo) => photo.blobName || photo.url),
+    photos,
     /* The two ladders, from the Quick Post template the seller listed with.
        The before-lot one is copied because a buyer will read it; the after-lot
        one is a pointer, because nothing is travelling it yet. */
@@ -1226,7 +1227,7 @@ function listingTerms(body: {
 /** The listing, if the caller may manage the store it is in. */
 async function manageable(request: HttpRequest): Promise<
   { refusal: ReturnType<typeof error> }
-  | { listing: Listing; repository: Awaited<ReturnType<typeof getRepository>> }
+  | { listing: Listing; repository: Awaited<ReturnType<typeof getRepository>>; user: { id: string } }
 > {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
@@ -1241,7 +1242,56 @@ async function manageable(request: HttpRequest): Promise<
       return { refusal: error(403, 'forbidden', 'That item is not in a store you manage.') };
     }
   }
-  return { listing, repository };
+  return { listing, repository, user };
+}
+
+/**
+ * The photos a listing may carry: at most six, exactly one primary, and every
+ * one of them this shop's.
+ *
+ * A photo already on the item (or on the item a private deal is made from) is
+ * kept as stored. Anything new must be an upload here - never another server's
+ * picture, which would see every viewer load it - and one the shop can call
+ * its own: uploaded by the seller or the manager saving, or already on another
+ * of the shop's items. Another seller's photo is refused. Null when any photo
+ * fails, so the caller refuses the whole request.
+ */
+async function sellerPhotos(
+  value: unknown,
+  { sellerId, actorId, kept, repository, listingId }: {
+    sellerId: string; actorId: string; kept: Listing['photos'];
+    repository: Awaited<ReturnType<typeof getRepository>>; listingId?: string;
+  },
+): Promise<Listing['photos'] | null> {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return null;
+  const store = await getPhotoStore();
+  const rows: Listing['photos'] = [];
+  for (const entry of value.slice(0, 6) as { blobName?: unknown; url?: unknown; isPrimary?: unknown }[]) {
+    const url = typeof entry?.url === 'string' ? entry.url.trim() : '';
+    const blobName = typeof entry?.blobName === 'string' ? entry.blobName : '';
+    const isPrimary = entry?.isPrimary === true;
+    const already = kept.find((photo) => (url && photo.url === url) || (blobName && photo.blobName === blobName));
+    if (already) {
+      rows.push({ ...already, isPrimary });
+      continue;
+    }
+    if (!url || url.length > 500) return null;
+    const name = await ownPhotoName(url);
+    if (!name || (blobName && blobName !== name)) return null;
+    const info = await store.publicInfo(name);
+    if (!info) return null;
+    const uploader = info.uploadedBy;
+    let ours = uploader === null ? !info.attachedTo : uploader === actorId || uploader === sellerId;
+    if (!ours && info.attachedTo?.startsWith('listing:')) {
+      const other = info.attachedTo.slice('listing:'.length);
+      ours = other === listingId || (await repository.getListing(other))?.sellerId === sellerId;
+    }
+    if (!ours) return null;
+    rows.push({ blobName: name, url, imageHash: null, isPrimary });
+  }
+  const lead = Math.max(0, rows.findIndex((photo) => photo.isPrimary));
+  return rows.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
 }
 
 /**
@@ -1254,7 +1304,7 @@ async function manageable(request: HttpRequest): Promise<
 async function editListing(request: HttpRequest, _context: InvocationContext) {
   const found = await manageable(request);
   if ('refusal' in found) return found.refusal;
-  const { listing, repository } = found;
+  const { listing, repository, user } = found;
 
   let body: {
     title?: string; description?: string; priceMinor?: number; quantityAvailable?: number;
@@ -1284,6 +1334,11 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     ? Math.round(body.quantityAvailable) - Math.round(body.quantityWas ?? listing.quantityAvailable)
     : 0;
   if (!Number.isFinite(stockDelta)) return error(400, 'invalid_listing', 'Stock must be a number.');
+  // Photos already on the item stay; a new one must be this shop's own upload.
+  const photos = Array.isArray(body.photos)
+    ? await sellerPhotos(body.photos, { sellerId: listing.sellerId, actorId: user.id, kept: listing.photos, repository, listingId: listing.id })
+    : undefined;
+  if (photos === null) return error(400, 'invalid_photos', 'Use photos uploaded for this shop.');
 
   let refusal: ReturnType<typeof error> | null = null;
   // Applied to the stored listing as it is at the moment of writing, and again
@@ -1306,15 +1361,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     }
     if (body.title !== undefined) next.title = body.title.trim();
     if (body.description !== undefined) next.description = body.description.trim();
-    if (Array.isArray(body.photos)) {
-      // Same rules as a new listing: at most six, exactly one primary.
-      const kept = body.photos
-        .slice(0, 6)
-        .map((photo) => ({ blobName: photo.blobName ?? '', url: photo.url, imageHash: null, isPrimary: photo.isPrimary === true }))
-        .filter((photo) => photo.blobName || photo.url);
-      const lead = Math.max(0, kept.findIndex((photo) => photo.isPrimary));
-      next.photos = kept.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
-    }
+    if (photos) next.photos = photos;
     if (body.priceMinor !== undefined) {
       next.priceMinor = price;
       // Kept so Insights can say what a price change did to demand.

@@ -1,7 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { HealthResponse } from '../../../shared/contracts.js';
 import { getAuthService } from '../auth/index.js';
-import { config } from '../config.js';
+import { config, runningInAzure } from '../config.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
 import { visionAvailable } from '../vision.js';
@@ -51,6 +51,8 @@ async function health(_request: HttpRequest, _context: InvocationContext) {
     },
     data: {
       backend: repository.backend,
+      // Hosts run several workers, each with its own memory: nothing is shared.
+      perWorker: repository.backend === 'memory' && runningInAzure(),
       connected: data.connected,
       database: data.database,
       detail: data.detail,

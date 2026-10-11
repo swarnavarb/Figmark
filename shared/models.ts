@@ -210,19 +210,17 @@ export interface User extends BaseDocument {
    */
   sellerProfile: SellerProfile | null;
   /**
-   * The shop's profit-calculator cost sheets (Pro). Kept on the account rather
-   * than in a container: a shop has a handful, reads them all at once, and the
-   * database is at its container ceiling. Never sent anywhere but the
-   * calculator's own route.
+   * The shop's profit-calculator cost sheets (Pro). Stored beside the account
+   * in its `profit` part (see api/src/data/user-parts.ts): a shop has a handful
+   * and reads them all at once. Never sent anywhere but the calculator's own route.
    */
   profitTemplates?: ProfitTemplate[];
   /** Calculations kept to list later (Pro). Kept beside the calculators, for the same reason. */
   savedCalcs?: SavedCalc[];
   /**
    * The browsers and installed copies of the site that asked to be woken when
-   * something happens to this account. Kept on the account for the same reason
-   * as the calculators: a person has a handful, they are read all at once, and
-   * the database is at its container ceiling. Never sent to anyone - each one
+   * something happens to this account. Stored in the account's `push` part: a
+   * person has a handful, read all at once. Never sent to anyone - each one
    * is enough to put a message on that person's screen.
    */
   pushEndpoints?: PushEndpoint[];
@@ -295,8 +293,8 @@ export interface User extends BaseDocument {
   quest?: QuestState;
   /**
    * Delivered purchases the person chose to show off, as cards on their page.
-   * On the account for the same reason as `quest`: it is read whole, by the
-   * person or by whoever opens their page, and there is no container to spare.
+   * Stored in the account's `collection` part, since it grows by a card per
+   * delivered order: read whole, by the person or by whoever opens their page.
    */
   collection?: CollectionItem[];
   /** The shelves a collection is grouped into, in the order the owner likes. */
