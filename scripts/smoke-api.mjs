@@ -2412,11 +2412,28 @@ await check('ticking protection makes Figmark hold the money, with a neutral man
 });
 
 await check('declining it pays the seller directly, and holds nothing', async () => {
-  const paid = await payOrder(req({ headers: auth, params: { id: 'ord_1003' }, body: { protection: false } }), ctx);
+  const paid = await payOrder(req({
+    headers: { ...auth, 'idempotency-key': 'pay-ord_1003-a' }, params: { id: 'ord_1003' }, body: { protection: false },
+  }), ctx);
   assert.equal(paid.status, 200);
   assert.equal(paid.jsonBody.order.paymentStatus, 'paid');
   assert.equal(paid.jsonBody.order.hold.state, 'none');
   assert.equal(paid.jsonBody.order.protection, null);
+});
+
+await check('a retried payment with the same key is answered, not charged again', async () => {
+  const before = (await (await getRepository()).getOrder('ord_1003')).payments.length;
+  const again = await payOrder(req({
+    headers: { ...auth, 'idempotency-key': 'pay-ord_1003-a' }, params: { id: 'ord_1003' }, body: { protection: false },
+  }), ctx);
+  assert.equal(again.status, 200);
+  assert.equal(again.jsonBody.replayed, true);
+  assert.equal((await (await getRepository()).getOrder('ord_1003')).payments.length, before, 'no second payment');
+  // A different key is a different attempt, and this order is already paid.
+  const other = await payOrder(req({
+    headers: { ...auth, 'idempotency-key': 'pay-ord_1003-b' }, params: { id: 'ord_1003' }, body: { protection: false },
+  }), ctx);
+  assert.equal(other.status, 409);
 });
 
 await check('an unprotected order has nothing to dispute, and says so', async () => {
@@ -6995,6 +7012,20 @@ await check('only the store can edit or expire an item; nothing a seller does er
   assert.equal(gone.expired, true);
   assert.equal((await buy(item.id)).status, 409);
   assert.ok(await (await getRepository()).getListing(item.id), 'the listing itself still exists, only expired');
+});
+
+await check('a seller saving an edit never puts back stock a buyer took meanwhile', async () => {
+  const item = await list({ title: 'Last few lamps', priceMinor: 2_000, quantityAvailable: 3 });
+  // The seller's form shows 3. A buyer takes one before they press save.
+  assert.equal((await buy(item.id)).status, 201);
+  const titled = (await editListing(req({ headers: auth, params: { id: item.id },
+    body: { title: 'Last few lamps (brass)', quantityAvailable: 3, quantityWas: 3 } }), ctx)).jsonBody.listing;
+  assert.equal(titled.quantityAvailable, 2, 'an unchanged stock field leaves the sale standing');
+  assert.equal(titled.soldCount, 1, 'the sale is not rolled back');
+  // Adding two to what the form showed adds two to what is there now.
+  const topped = (await editListing(req({ headers: auth, params: { id: item.id },
+    body: { quantityAvailable: 5, quantityWas: 3 } }), ctx)).jsonBody.listing;
+  assert.equal(topped.quantityAvailable, 4);
 });
 
 await check('a seller can manually expire an item that nobody has bought, never delete it', async () => {

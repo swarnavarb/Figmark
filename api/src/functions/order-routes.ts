@@ -136,6 +136,13 @@ function dueAfterCredit(order: Order, planMinor: number): number {
 /** Settles an order whose protection window ran out, on the read that notices it. */
 const settle = (order: Order, repository: Repo): Promise<Order> => settleDue(order, repository);
 
+/** A client's idempotency key, if it sent a usable one. */
+function idempotencyKey(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const key = raw.trim();
+  return key && key.length <= 128 ? key : null;
+}
+
 /**
  * POST /api/orders/{id}/pay - the buyer pays, with or without protection.
  *
@@ -156,13 +163,22 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
-  let body: { protection?: boolean; plan?: 'full' | 'advance' };
+  let body: { protection?: boolean; plan?: 'full' | 'advance'; idempotencyKey?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     // Paying without a body is paying without protection. Explicit is better,
     // but a missing body must not become an accidental purchase of it.
     body = {};
+  }
+
+  // A retry of a payment that already went through gets the same answer, not
+  // a second payment and a second protection fee. Two copies racing each
+  // other are settled by the checked write below: both change the same
+  // fields, so the second is refused rather than merged.
+  const payKey = idempotencyKey(request.headers.get('idempotency-key') ?? body.idempotencyKey);
+  if (payKey && order.payKey === payKey && order.buyerId === user.id) {
+    return json(200, { order, simulatedPayment: true, replayed: true });
   }
 
   if (!actionsFor(order, user.id).includes('pay')) {
@@ -193,6 +209,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   order.updatedAt = now;
   order.paymentPlan = terms.plan;
   order.paymentMethod = protect ? 'protected' : 'direct';
+  order.payKey = payKey;
 
   // Worked out now, charged only once the order is saved: of two payments made
   // at the same moment, the one that loses the write must not have paid for

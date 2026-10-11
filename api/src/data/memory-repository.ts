@@ -11,6 +11,7 @@ import type {
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { handleKey } from '../../../shared/handles.js';
+import { STORE_KINDS, storeOf, type StoreKind } from '../../../shared/service-stores.js';
 import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -718,6 +719,15 @@ export class MemoryRepository implements Repository {
     return updated;
   }
 
+  async changeListing(id: string, sellerId: string, change: (listing: Listing) => Listing | null): Promise<Listing | null> {
+    const current = this.listings.get(id);
+    if (!current || current.sellerId !== sellerId) return null;
+    const next = change(structuredClone(current));
+    if (!next) return null;
+    this.listings.set(id, next);
+    return next;
+  }
+
   async listPowerSales(sellerId: string): Promise<PowerSale[]> {
     return [...this.powerSales.values()]
       .filter((sale) => sale.sellerId === sellerId)
@@ -836,6 +846,50 @@ export class MemoryRepository implements Repository {
 
   async listAllUsers(): Promise<User[]> {
     return [...this.users.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async pageUsers(options: { search?: string; limit: number; cursor?: string | null }) {
+    const search = (options.search ?? '').trim().toLowerCase();
+    const all = await this.listAllUsers();
+    const matching = search
+      ? all.filter((user) => [user.displayName, user.email, user.phone, user.username, user.sellerProfile?.storefrontName]
+        .some((field) => (field ?? '').toLowerCase().includes(search)))
+      : all;
+    const from = Math.max(0, Number(options.cursor) || 0);
+    const to = from + options.limit;
+    return { users: matching.slice(from, to), next: to < matching.length ? String(to) : null, total: all.length };
+  }
+
+  async findStoreBySlug(kind: StoreKind, slug: string): Promise<User | null> {
+    return [...this.users.values()].find((user) => storeOf(user, kind)?.directorySlug === slug) ?? null;
+  }
+
+  async listServiceStoreOwners(kind?: StoreKind): Promise<User[]> {
+    const kinds = kind ? [kind] : STORE_KINDS;
+    return [...this.users.values()].filter((user) => kinds.some((each) => storeOf(user, each)));
+  }
+
+  private questRanked(): User[] {
+    return [...this.users.values()]
+      .filter((user) => !user.suspended && (user.quest?.xpCache ?? 0) > 0)
+      .sort((a, b) => (b.quest?.xpCache ?? 0) - (a.quest?.xpCache ?? 0));
+  }
+
+  async questLeaders(limit: number) {
+    const ranked = this.questRanked();
+    return { top: ranked.slice(0, limit), total: ranked.length };
+  }
+
+  async questRankAbove(xp: number): Promise<number> {
+    return this.questRanked().filter((user) => (user.quest?.xpCache ?? 0) > xp).length;
+  }
+
+  async searchUsers(needle: string, limit: number): Promise<User[]> {
+    const hit = (field: string | null | undefined) => (field ?? '').toLowerCase().includes(needle);
+    return [...this.users.values()]
+      .filter((user) => hit(user.displayName) || hit(user.username)
+        || hit(user.sellerProfile?.storefrontName) || hit(user.sellerProfile?.username) || hit(user.sellerProfile?.bio))
+      .slice(0, limit);
   }
 
   async blobReferences(): Promise<Set<string>> {

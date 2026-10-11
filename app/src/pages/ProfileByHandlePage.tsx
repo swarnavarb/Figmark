@@ -3,7 +3,7 @@ import { CommunityAlertBanner } from '../components/CommunityAlerts';
 import { VerifiedChips } from '../components/VerifiedChips';
 import { ManagerTag } from '../components/ManagerBadge';
 import { Link, useParams } from 'react-router-dom';
-import { checkUsername, USERNAME_PROBLEMS } from '@shared/handles';
+import { handleShapeProblem, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api, type FeedListing, type PostCard, type PublicProfile, type ShelfState } from '../api';
 import { listingRarity } from '@shared/quest';
 import { LootCard } from './FeedPage';
@@ -38,7 +38,8 @@ export function ProfileByHandlePage() {
   useEffect(() => {
     if (!username) return;
     // A path that could never be a username is a wrong turn, not a lookup.
-    const problem = checkUsername(username);
+    // Only the shape: a handle claimed before its word was reserved still opens.
+    const problem = handleShapeProblem(username);
     if (problem) {
       setError(`There is no page at /${username}. ${USERNAME_PROBLEMS[problem]}`);
       return;

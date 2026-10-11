@@ -1261,6 +1261,8 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
 
   let body: {
     title?: string; description?: string; priceMinor?: number; quantityAvailable?: number;
+    /** The stock the seller's form showed, so the new number is read as a change from it. */
+    quantityWas?: number;
     quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
     affiliateMinor?: number | null;
     affiliateOffMinor?: number | null;
@@ -1272,59 +1274,77 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const price = body.priceMinor !== undefined && body.priceMinor > 0 ? Math.round(body.priceMinor) : listing.priceMinor;
-  const next: Listing = { ...listing, ...listingTerms(body, price, listing.affiliate), updatedAt: new Date().toISOString() };
-  // A private deal stays one: no commission, and a new clock is at most a day from now.
-  if (listing.privateFor) {
-    next.affiliate = null;
-    if (body.expiresAt !== undefined) next.expiresAt = dealEndsAt(body.expiresAt);
+  if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
+  if (body.priceMinor !== undefined && !(body.priceMinor > 0)) {
+    return error(400, 'invalid_listing', 'A price above zero is required.');
   }
-  // A cheaper price can leave an old commission bigger than the item; it is
-  // brought back under the new price rather than left owing more than it took.
-  if (next.affiliate?.amountMinor && body.affiliateMinor === undefined && body.affiliateOffMinor === undefined) {
-    const kept = cleanAffiliateMinor(next.affiliate.amountMinor, price);
-    const off = kept ? cleanBuyerOffMinor(next.affiliate.buyerOffMinor, price, kept) : null;
-    next.affiliate = kept ? { amountMinor: kept, ...(off ? { buyerOffMinor: off } : {}) } : null;
-  }
-  if (body.title !== undefined) {
-    if (!body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
-    next.title = body.title.trim();
-  }
-  if (body.description !== undefined) next.description = body.description.trim();
-  if (Array.isArray(body.photos)) {
-    // Same rules as a new listing: at most six, exactly one primary.
-    const kept = body.photos
-      .slice(0, 6)
-      .map((photo) => ({ blobName: photo.blobName ?? '', url: photo.url, imageHash: null, isPrimary: photo.isPrimary === true }))
-      .filter((photo) => photo.blobName || photo.url);
-    const lead = Math.max(0, kept.findIndex((photo) => photo.isPrimary));
-    next.photos = kept.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
-  }
-  if (body.priceMinor !== undefined) {
-    if (!(body.priceMinor > 0)) return error(400, 'invalid_listing', 'A price above zero is required.');
-    next.priceMinor = Math.round(body.priceMinor);
-    // Kept so Insights can say what a price change did to demand.
-    if (next.priceMinor !== listing.priceMinor) {
-      const history = listing.priceHistory?.length
-        ? listing.priceHistory
-        : [{ priceMinor: listing.priceMinor, at: listing.createdAt }];
-      next.priceHistory = [...history, { priceMinor: next.priceMinor, at: next.updatedAt }].slice(-20);
-    }
-  }
-  if (body.quantityAvailable !== undefined) {
-    next.quantityAvailable = Math.max(0, Math.round(body.quantityAvailable));
-  }
-  if (next.expiresAt && isExpired(next) && body.expiresAt !== undefined) {
-    return error(400, 'invalid_expiry', 'Pick an expiry in the future, or none.');
-  }
-  // Stock decides whether it is on the shelf; a multiple is never sold out.
-  if (next.status === 'active' || next.status === 'sold_out') {
-    next.status = isMultiple(next) || next.quantityAvailable > 0 ? 'active' : 'sold_out';
-    // Back on the shelf: the people who saved it while it was gone are worth telling.
-    if (listing.status === 'sold_out' && next.status === 'active') next.restockedAt = next.updatedAt;
-  }
+  // Stock is a change, not a count. The form was drawn minutes ago; a sale
+  // since then has already taken its unit, and writing the old number back
+  // would hand that unit to a second buyer. So what the seller moved - from
+  // what their form showed, or failing that from what was read here - is
+  // applied to whatever the listing holds when the write lands.
+  const stockDelta = body.quantityAvailable !== undefined
+    ? Math.round(body.quantityAvailable) - Math.round(body.quantityWas ?? listing.quantityAvailable)
+    : 0;
+  if (!Number.isFinite(stockDelta)) return error(400, 'invalid_listing', 'Stock must be a number.');
 
-  const updated = await repository.updateListing(next);
+  let refusal: ReturnType<typeof error> | null = null;
+  // Applied to the stored listing as it is at the moment of writing, and again
+  // if somebody else wrote it in between: sold count, pre-order fill and stock
+  // a buyer took are never rolled back by a seller saving a title.
+  const change = (current: Listing): Listing | null => {
+    const price = body.priceMinor !== undefined && body.priceMinor > 0 ? Math.round(body.priceMinor) : current.priceMinor;
+    const next: Listing = { ...current, ...listingTerms(body, price, current.affiliate), updatedAt: new Date().toISOString() };
+    // A private deal stays one: no commission, and a new clock is at most a day from now.
+    if (current.privateFor) {
+      next.affiliate = null;
+      if (body.expiresAt !== undefined) next.expiresAt = dealEndsAt(body.expiresAt);
+    }
+    // A cheaper price can leave an old commission bigger than the item; it is
+    // brought back under the new price rather than left owing more than it took.
+    if (next.affiliate?.amountMinor && body.affiliateMinor === undefined && body.affiliateOffMinor === undefined) {
+      const kept = cleanAffiliateMinor(next.affiliate.amountMinor, price);
+      const off = kept ? cleanBuyerOffMinor(next.affiliate.buyerOffMinor, price, kept) : null;
+      next.affiliate = kept ? { amountMinor: kept, ...(off ? { buyerOffMinor: off } : {}) } : null;
+    }
+    if (body.title !== undefined) next.title = body.title.trim();
+    if (body.description !== undefined) next.description = body.description.trim();
+    if (Array.isArray(body.photos)) {
+      // Same rules as a new listing: at most six, exactly one primary.
+      const kept = body.photos
+        .slice(0, 6)
+        .map((photo) => ({ blobName: photo.blobName ?? '', url: photo.url, imageHash: null, isPrimary: photo.isPrimary === true }))
+        .filter((photo) => photo.blobName || photo.url);
+      const lead = Math.max(0, kept.findIndex((photo) => photo.isPrimary));
+      next.photos = kept.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
+    }
+    if (body.priceMinor !== undefined) {
+      next.priceMinor = price;
+      // Kept so Insights can say what a price change did to demand.
+      if (next.priceMinor !== current.priceMinor) {
+        const history = current.priceHistory?.length
+          ? current.priceHistory
+          : [{ priceMinor: current.priceMinor, at: current.createdAt }];
+        next.priceHistory = [...history, { priceMinor: next.priceMinor, at: next.updatedAt }].slice(-20);
+      }
+    }
+    if (stockDelta !== 0) next.quantityAvailable = Math.max(0, current.quantityAvailable + stockDelta);
+    if (next.expiresAt && isExpired(next) && body.expiresAt !== undefined) {
+      refusal = error(400, 'invalid_expiry', 'Pick an expiry in the future, or none.');
+      return null;
+    }
+    // Stock decides whether it is on the shelf; a multiple is never sold out.
+    if (next.status === 'active' || next.status === 'sold_out') {
+      next.status = isMultiple(next) || next.quantityAvailable > 0 ? 'active' : 'sold_out';
+      // Back on the shelf: the people who saved it while it was gone are worth telling.
+      if (current.status === 'sold_out' && next.status === 'active') next.restockedAt = next.updatedAt;
+    }
+    return next;
+  };
+
+  const updated = await repository.changeListing(listing.id, listing.sellerId, change);
+  if (refusal) return refusal;
+  if (!updated) return error(404, 'not_found', 'No such listing.');
   await claimPhotos(updated.photos.map((photo) => photo.blobName || photo.url), `listing:${updated.id}`);
   if (Array.isArray(body.photos)) {
     // Photos taken off the listing leave the blob too, unless something else still names them.

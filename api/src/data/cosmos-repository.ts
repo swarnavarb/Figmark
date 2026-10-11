@@ -12,6 +12,7 @@ import type {
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
+import type { StoreKind } from '../../../shared/service-stores.js';
 import { matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
@@ -78,6 +79,14 @@ const RECENT_TTL_MS = 15_000;
 const FORUM_TTL_MS = 60_000;
 /** Forums made up to here predate admins, and go to the site owner. */
 const FORUM_OWNER_CUTOFF = '2026-10-07T00:00:00.000Z';
+
+/** Accounts holding a service store of one kind, or of either. */
+const STORE_OWNERS: Record<StoreKind, string> = {
+  forwarder: 'SELECT * FROM c WHERE IS_DEFINED(c.forwarderProfile) AND NOT IS_NULL(c.forwarderProfile)',
+  artist: 'SELECT * FROM c WHERE IS_DEFINED(c.artistProfile) AND NOT IS_NULL(c.artistProfile)',
+};
+const STORE_OWNERS_ANY = 'SELECT * FROM c WHERE (IS_DEFINED(c.forwarderProfile) AND NOT IS_NULL(c.forwarderProfile))'
+  + ' OR (IS_DEFINED(c.artistProfile) AND NOT IS_NULL(c.artistProfile))';
 
 export class CosmosRepository implements Repository {
   readonly backend: BackendKind = 'cosmos';
@@ -1306,6 +1315,92 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async pageUsers(options: { search?: string; limit: number; cursor?: string | null }) {
+    const search = (options.search ?? '').trim().toLowerCase();
+    const users = this.container('users');
+    const paging = { maxItemCount: options.limit, continuationToken: options.cursor ?? undefined };
+    const page = search
+      ? users.items.query<User>({
+        query: 'SELECT * FROM c WHERE CONTAINS(LOWER(c.displayName), @q) OR CONTAINS(LOWER(c.email), @q)'
+          + ' OR CONTAINS(c.phone, @q) OR CONTAINS(LOWER(c.username), @q)'
+          + ' OR CONTAINS(LOWER(c.sellerProfile.storefrontName), @q) ORDER BY c.createdAt DESC',
+        parameters: [{ name: '@q', value: search }],
+      }, paging)
+      : users.items.query<User>({ query: 'SELECT * FROM c ORDER BY c.createdAt DESC' }, paging);
+    // The total is everyone, so the list can say "12 of 340"; a count reads the index, not the documents.
+    const [found, counted] = await Promise.all([
+      page.fetchNext(),
+      users.items.query<number>({ query: 'SELECT VALUE COUNT(1) FROM c' }).fetchAll(),
+    ]);
+    return { users: found.resources, next: found.continuationToken ?? null, total: counted.resources[0] ?? 0 };
+  }
+
+  async findStoreBySlug(kind: StoreKind, slug: string): Promise<User | null> {
+    // An indexed equality, not a scan: one document read, whatever the user count.
+    // One fixed statement per kind: the field name is never built from input.
+    const users = this.container('users').items;
+    const { resources } = kind === 'forwarder'
+      ? await users.query<User>({
+        query: 'SELECT TOP 1 * FROM c WHERE c.forwarderProfile.directorySlug = @slug',
+        parameters: [{ name: '@slug', value: slug }],
+      }).fetchAll()
+      : await users.query<User>({
+        query: 'SELECT TOP 1 * FROM c WHERE c.artistProfile.directorySlug = @slug',
+        parameters: [{ name: '@slug', value: slug }],
+      }).fetchAll();
+    return resources[0] ?? null;
+  }
+
+  async listServiceStoreOwners(kind?: StoreKind): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({ query: kind ? STORE_OWNERS[kind] : STORE_OWNERS_ANY })
+      .fetchAll();
+    return resources;
+  }
+
+  async questLeaders(limit: number) {
+    const users = this.container('users');
+    const [top, counted] = await Promise.all([
+      users.items
+        .query<User>({
+          query: 'SELECT TOP @limit * FROM c WHERE c.quest.xpCache > 0'
+            + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true) ORDER BY c.quest.xpCache DESC',
+          parameters: [{ name: '@limit', value: limit }],
+        })
+        .fetchAll(),
+      users.items
+        .query<number>({
+          query: 'SELECT VALUE COUNT(1) FROM c WHERE c.quest.xpCache > 0'
+            + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true)',
+        })
+        .fetchAll(),
+    ]);
+    return { top: top.resources, total: counted.resources[0] ?? 0 };
+  }
+
+  async questRankAbove(xp: number): Promise<number> {
+    const { resources } = await this.container('users')
+      .items.query<number>({
+        query: 'SELECT VALUE COUNT(1) FROM c WHERE c.quest.xpCache > @xp'
+          + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true)',
+        parameters: [{ name: '@xp', value: xp }],
+      })
+      .fetchAll();
+    return resources[0] ?? 0;
+  }
+
+  async searchUsers(needle: string, limit: number): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({
+        query: 'SELECT TOP @limit * FROM c WHERE CONTAINS(LOWER(c.displayName), @q) OR CONTAINS(c.username, @q)'
+          + ' OR CONTAINS(LOWER(c.sellerProfile.storefrontName), @q) OR CONTAINS(c.sellerProfile.username, @q)'
+          + ' OR CONTAINS(LOWER(c.sellerProfile.bio), @q)',
+        parameters: [{ name: '@q', value: needle }, { name: '@limit', value: limit }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async blobReferences(): Promise<Set<string>> {
     const found = new Set<string>();
     for (const definition of CONTAINER_LIST) {
@@ -2180,6 +2275,10 @@ export class CosmosRepository implements Repository {
    * which is what stops two buyers both taking the last one. `change`
    * returns null to refuse, and then nothing is written.
    */
+  async changeListing(id: string, sellerId: string, change: (listing: Listing) => Listing | null): Promise<Listing | null> {
+    return this.mutateListing(id, sellerId, change);
+  }
+
   private async mutateListing(id: string, sellerId: string, change: (listing: Listing) => Listing | null): Promise<Listing | null> {
     const item = this.container('listings').item(id, sellerId);
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -2194,13 +2293,13 @@ export class CosmosRepository implements Repository {
         const { resource: saved } = await item.replace<Listing>(next, {
           accessCondition: { type: 'IfMatch', condition: etag ?? '' },
         });
-        return saved ?? next;
+        return this.snapshots.remember('listings', saved ?? next);
       } catch (error) {
         if ((error as { code?: number }).code === 412) continue;
         throw error;
       }
     }
-    throw new Error('That item is too busy to change right now. Try again.');
+    throw new StaleWriteError('That item is too busy to change right now. Try again.');
   }
 
   async countView(listing: Listing): Promise<void> {

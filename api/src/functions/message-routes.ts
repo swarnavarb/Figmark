@@ -1005,7 +1005,8 @@ async function setUsername(request: HttpRequest, _context: InvocationContext) {
   if (!record) return error(404, 'not_found', 'This account no longer exists.');
 
   const wanted = (body.username ?? '').trim().toLowerCase();
-  const problem = checkUsername(wanted);
+  // Keeping the handle you have is never refused, even one a later rule reserves.
+  const problem = wanted === record.username ? null : checkUsername(wanted);
   if (problem) return error(400, 'invalid_username', USERNAME_PROBLEMS[problem]);
 
   if (wanted !== record.username) {

@@ -1436,6 +1436,12 @@ export interface Order extends BaseDocument {
   /** Full or advance, as the buyer chose at checkout. */
   paymentPlan?: 'full' | 'advance';
   /**
+   * The idempotency key the paying request carried. A retry of that same
+   * request - a double tap, a network retry after the answer was lost - is
+   * answered with the order as it was saved, not charged a second time.
+   */
+  payKey?: string | null;
+  /**
    * How the first payment was made. Every later payment on the order uses the
    * same one: switching quietly would move money outside what was agreed.
    */

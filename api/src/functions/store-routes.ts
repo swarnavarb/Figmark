@@ -655,7 +655,7 @@ async function storePage(request: HttpRequest, _context: InvocationContext) {
   const slug = request.params.slug;
   if (!isKind(kind) || !slug) return error(404, 'not_found', 'No such store.');
   const repository = await getRepository();
-  const owner = (await repository.listAllUsers()).find((user) => storeOf(user, kind)?.directorySlug === slug);
+  const owner = await repository.findStoreBySlug(kind, slug);
   if (!owner) return error(404, 'not_found', 'No such store.');
 
   // Not live yet: only its own team (previewing) and operators may look.
@@ -673,7 +673,7 @@ async function storePage(request: HttpRequest, _context: InvocationContext) {
 
 /** Every live store of one kind, for the directory. */
 export async function liveStores(repository: Repo, kind: StoreKind): Promise<User[]> {
-  const users = kind === 'forwarder' ? await repository.listForwarders() : await repository.listAllUsers();
+  const users = kind === 'forwarder' ? await repository.listForwarders() : await repository.listServiceStoreOwners(kind);
   return users.filter((user) => {
     const store = storeOf(user, kind);
     return store && store.listedInDirectory && isLive(store) && !user.suspended;
@@ -1036,10 +1036,10 @@ interface CrewSeat { role: CrewRole; owner: User; lot: Lot; forwarder: User | nu
 /** Every lot this person works, and as what. */
 async function seatsOf(repository: Repo, userId: string): Promise<CrewSeat[]> {
   const seats: CrewSeat[] = [];
-  const all = await repository.listAllUsers();
-  const forwarders = new Map(all.filter((user) => isLive(user.forwarderProfile) && hasRight(user, 'forwarder', userId, 'work'))
+  const [forwarderOwners, sellers] = await Promise.all([repository.listServiceStoreOwners('forwarder'), repository.listStoreOwners()]);
+  const forwarders = new Map(forwarderOwners.filter((user) => isLive(user.forwarderProfile) && hasRight(user, 'forwarder', userId, 'work'))
     .map((user) => [user.id, user]));
-  for (const owner of all.filter((user) => user.sellerProfile)) {
+  for (const owner of sellers) {
     const packsAll = can(owner, userId, 'export') && owner.id !== userId;
     for (const lot of await repository.listLots({ sellerId: owner.id })) {
       if (supplierIdOf(lot) === userId || (packsAll && lot.status !== 'closed')) seats.push({ role: 'supplier', owner, lot, forwarder: null });
@@ -1078,8 +1078,7 @@ async function myServices(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
-  const all = await repository.listAllUsers();
-  const account = all.find((row) => row.id === user.id) ?? null;
+  const [all, account] = await Promise.all([repository.listServiceStoreOwners(), repository.getUserById(user.id)]);
 
   const stores = await Promise.all(all.flatMap((owner) => STORE_KINDS.flatMap((kind) => {
     const store = storeOf(owner, kind);
@@ -1199,7 +1198,7 @@ async function operator(request: HttpRequest) {
 async function opsStores(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
   const repository = await getRepository();
-  const rows = (await repository.listAllUsers()).flatMap((owner) => STORE_KINDS.flatMap((kind) => {
+  const rows = (await repository.listServiceStoreOwners()).flatMap((owner) => STORE_KINDS.flatMap((kind) => {
     const store = storeOf(owner, kind);
     if (!store) return [];
     return [{

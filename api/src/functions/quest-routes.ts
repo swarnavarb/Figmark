@@ -226,21 +226,34 @@ async function openPack(request: HttpRequest, _context: InvocationContext) {
   }, { card, cardXp: CARD_XP[card.rarity], pack });
 }
 
+/** How long one reading of the board is served before it is read again. */
+const BOARD_TTL_MS = 60_000;
+const BOARD_SIZE = 10;
+let board: { at: number; read: Promise<{ top: User[]; total: number }> } | null = null;
+
 /**
  * GET /api/quest/leaderboard - the top collectors.
  *
  * Ranked from the XP cached the last time each account's own view was worked
  * out. It can lag somebody who has not opened the app since their last order,
  * which is the right trade for a list: nobody's figure is recounted here.
+ *
+ * Read as the top ten by an indexed sort, not by loading every account, and
+ * that reading is shared for a minute: the page is open to anybody, and
+ * reloading it must not cost a pass over the users each time.
  */
 async function leaderboard(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const auth = await getAuthService();
   const viewer = await auth.getCurrentUser(request);
 
-  const ranked = (await repository.listAllUsers())
-    .filter((user) => !user.suspended && (user.quest?.xpCache ?? 0) > 0)
-    .sort((a, b) => (b.quest?.xpCache ?? 0) - (a.quest?.xpCache ?? 0));
+  if (!board || Date.now() - board.at > BOARD_TTL_MS) {
+    const read = repository.questLeaders(BOARD_SIZE);
+    board = { at: Date.now(), read };
+    // A failed read is not kept: the next visitor tries again.
+    read.catch(() => { if (board?.read === read) board = null; });
+  }
+  const { top, total } = await board.read;
 
   const row = (user: User, index: number) => ({
     rank: index + 1,
@@ -252,12 +265,19 @@ async function leaderboard(request: HttpRequest, _context: InvocationContext) {
     cards: user.quest?.cards.length ?? 0,
   });
 
-  const mine = viewer ? ranked.findIndex((user) => user.id === viewer.id) : -1;
-  return json(200, {
-    top: ranked.slice(0, 10).map(row),
-    me: mine >= 0 ? row(ranked[mine]!, mine) : null,
-    total: ranked.length,
-  });
+  // The viewer's own place: their account and one count, not the whole table.
+  let me: ReturnType<typeof row> | null = null;
+  if (viewer) {
+    const mineAt = top.findIndex((user) => user.id === viewer.id);
+    if (mineAt >= 0) {
+      me = row(top[mineAt]!, mineAt);
+    } else {
+      const account = await repository.getUserById(viewer.id);
+      const xp = account?.quest?.xpCache ?? 0;
+      if (account && !account.suspended && xp > 0) me = row(account, await repository.questRankAbove(xp));
+    }
+  }
+  return json(200, { top: top.map(row), me, total });
 }
 
 /** How one dispute ended for one of its two people. */

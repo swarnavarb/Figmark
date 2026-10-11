@@ -132,21 +132,23 @@ async function rights(request: HttpRequest, _context: InvocationContext) {
   return json(200, { user: row(await repository.updateUser(user)) });
 }
 
-/** GET /api/ops/users - everyone, with the store they run. */
+/**
+ * GET /api/ops/users - everyone, with the store they run, a page at a time.
+ *
+ * `?q=` filters in the store, `?limit=` (at most 500) sizes the page and
+ * `?cursor=` continues from the `next` of the page before.
+ */
 async function users(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
   const repository = await getRepository();
 
-  const all = await repository.listAllUsers();
-  const search = (request.query.get('q') ?? '').trim().toLowerCase();
-  const matching = search
-    ? all.filter((user) =>
-        [user.displayName, user.email, user.phone, user.username, user.sellerProfile?.storefrontName]
-          .some((field) => (field ?? '').toLowerCase().includes(search)),
-      )
-    : all;
-
-  return json(200, { users: matching.map(row), total: all.length });
+  const limit = Math.min(500, Math.max(1, Math.round(Number(request.query.get('limit')) || 200)));
+  const page = await repository.pageUsers({
+    search: request.query.get('q') ?? '',
+    limit,
+    cursor: request.query.get('cursor'),
+  });
+  return json(200, { users: page.users.map(row), total: page.total, next: page.next });
 }
 
 /**

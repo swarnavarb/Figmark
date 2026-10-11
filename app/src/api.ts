@@ -2224,7 +2224,8 @@ export const api = {
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
-  editListing: (id: string, body: Partial<NewListing>) =>
+  /** `quantityWas` is the stock the form showed: the server applies the difference, not the number. */
+  editListing: (id: string, body: Partial<NewListing> & { quantityWas?: number }) =>
     post<{ listing: Listing }>(`/listings/${encodeURIComponent(id)}/edit`, body),
   expireListing: (id: string) =>
     post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),

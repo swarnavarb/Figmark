@@ -384,7 +384,12 @@ export class MockAuthProvider implements AuthService {
     const username = (request.username?.trim() || suggestUsername(displayName)).toLowerCase();
     const problem = checkUsername(username);
     if (problem) throw new AuthError(400, 'invalid_signup', USERNAME_PROBLEMS[problem]);
-    if (!(await this.repository.reserveHandle(username, 'pending', false))) {
+    // Reserved once, against the account's real id. It used to be reserved
+    // against a shared 'pending' placeholder, released and claimed again -
+    // and two sign-ups both holding 'pending' each read the other's claim as
+    // their own, while the gap between release and re-claim let a third take it.
+    const userId = `usr_${randomUUID().slice(0, 12)}`;
+    if (!(await this.repository.reserveHandle(username, userId, false))) {
       throw new AuthError(409, 'username_taken', `@${username} is already taken.`);
     }
 
@@ -403,12 +408,6 @@ export class MockAuthProvider implements AuthService {
       lastReviewedAt: null,
       lastReviewedBy: null,
     };
-
-    const userId = `usr_${randomUUID().slice(0, 12)}`;
-    // The handle was reserved against a placeholder to close the race; now that
-    // the id exists, point it at the account it actually belongs to.
-    await this.repository.releaseHandle(username);
-    await this.repository.reserveHandle(username, userId, false);
 
     let created: User;
     try {
@@ -434,6 +433,8 @@ export class MockAuthProvider implements AuthService {
         updatedAt: now,
       });
     } catch (error) {
+      // No account came of it, so the handle goes back.
+      await this.repository.releaseHandle(username).catch(() => undefined);
       throw new AuthError(409, 'identifier_taken', error instanceof Error ? error.message : 'That account already exists.');
     }
 

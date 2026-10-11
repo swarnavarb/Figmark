@@ -14,6 +14,8 @@ import { formatDate, formatMoney } from '../format';
 export function UsersView() {
   const [rows, setRows] = useState<AdminUserRow[] | null>(null);
   const [total, setTotal] = useState(0);
+  const [next, setNext] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,10 +26,27 @@ export function UsersView() {
       const result = await admin.users(query);
       setRows(result.users);
       setTotal(result.total);
+      setNext(result.next);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load the accounts.');
     }
   }, [query]);
+
+  // Accounts come a page at a time: reading every one to draw the list is what
+  // made it slow, and the operator rarely needs past the first page.
+  async function loadMore() {
+    if (!next) return;
+    setMore(true);
+    try {
+      const result = await admin.users(query, next);
+      setRows((current) => [...(current ?? []), ...result.users]);
+      setNext(result.next);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load the accounts.');
+    } finally {
+      setMore(false);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -104,6 +123,11 @@ export function UsersView() {
         ))}
         {rows.length === 0 && <p className="muted" style={{ padding: 16 }}>Nobody matches that.</p>}
       </div>
+      {next && (
+        <button className="btn btn--ghost" style={{ justifySelf: 'start' }} disabled={more} onClick={() => void loadMore()}>
+          {more ? 'Loading…' : 'Show more'}
+        </button>
+      )}
     </div>
   );
 }
