@@ -187,6 +187,28 @@ want it:
 Either way the DNS record and the Azure custom-domain step are manual: they
 cannot be created from the repository.
 
+## The site's own address
+
+Share cards (`/r/`, `/i/`, `/s/` links and `/api/og/card/...`) carry absolute
+links, and the page they answer with is this site's `index.html`, fetched from
+the site itself. Neither may come from `Host` or `x-forwarded-host`, which the
+caller chooses. On Azure they come from `PUBLIC_ORIGIN`: the origins the site is
+served at, comma-separated, the first used for any request that names none of
+them. One `*` may stand for a single DNS label, to cover the branch and preview
+environments.
+
+Unset on Azure, it defaults to this Static Web App and its environments
+(`https://icy-stone-0498a9900.6.azurestaticapps.net`,
+`https://icy-stone-0498a9900-*.6.azurestaticapps.net`). Set it once a custom
+domain is added, keeping the defaults after it:
+
+```bash
+az staticwebapp appsettings set \
+  --name stapp-figuremarket-dev \
+  --resource-group rg-figuremarket-dev \
+  --setting-names PUBLIC_ORIGIN="https://figmark.in,https://icy-stone-0498a9900.6.azurestaticapps.net,https://icy-stone-0498a9900-*.6.azurestaticapps.net"
+```
+
 ## Preferring managed identity over keys
 
 Both the repository and the storage client fall back to `DefaultAzureCredential`
@@ -208,6 +230,11 @@ the identity instead — no change required.
   secret is missing rather than skipping quietly — a green run that published
   nothing is worse than a red one.
 - **Close preview** tears down the preview environment when a PR closes.
+
+The workflow grants no token permissions by default; each job asks for
+`contents: read` at most, since deploys authenticate to Azure with their own
+token. Every action is pinned to a full commit SHA with its release in a
+trailing comment — bump both together.
 
 Both halves are pre-built in CI and uploaded with `skip_app_build` and
 `skip_api_build`, so Oryx never rebuilds them. That matters because `shared/` is

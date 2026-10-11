@@ -28,7 +28,7 @@ const {
   logShareRoute: logShare, myInviteRoute: myInvite, openInviteRoute: openInvite,
   growthRoute: growth, growthClaimRoute: claimGrowth,
 } = await import(new URL('share-routes.js', fns));
-const { ogRoute: og, ogCardRoute: ogCard, linkPreviewRoute: linkPreview, injectMeta } = await import(new URL('og-routes.js', fns));
+const { ogRoute: og, ogCardRoute: ogCard, linkPreviewRoute: linkPreview, injectMeta, trustedOrigin } = await import(new URL('og-routes.js', fns));
 const { questMeRoute: questMe, questClaimRoute: questClaim } = await import(new URL('quest-routes.js', fns));
 const { questView, emptyQuestState } = await import(new URL('quest.js', shared));
 const { growthView, claimGrowth: claimRule } = await import(new URL('store-growth.js', shared));
@@ -388,6 +388,19 @@ await check('a moment link names it, and an unknown link still gets the brand ca
   assert.equal(tag(await preview(`/s/l/${listing.id}?m=delivered&i=${code}`), 'og:title'), 'Sharer\'s Shared Figure just arrived');
   assert.equal(tag(await preview(`/s/l/${listing.id}?m=delivered`), 'og:title'), 'Shared Figure · ₹300', 'nobody to name, so the item speaks');
   assert.equal(tag(await preview('/s/l/nope'), 'og:image'), 'https://figmark.example/og/figmark.jpg');
+});
+
+await check('a spoofed host never reaches a card when the site\'s origins are configured', async () => {
+  const site = ['https://figmark.example', 'https://figmark-*.example'];
+  assert.equal(trustedOrigin('https://evil.example', site), 'https://figmark.example', 'an unknown host gets the real one');
+  assert.equal(trustedOrigin('https://FIGMARK.example', site), 'https://figmark.example');
+  assert.equal(trustedOrigin('https://figmark-development.example', site), 'https://figmark-development.example', 'an environment keeps its own');
+  assert.equal(trustedOrigin('https://figmark-a.b.example', site), 'https://figmark.example', 'a wildcard spans one label only');
+  assert.equal(trustedOrigin('https://figmark-.example', site), 'https://figmark.example');
+  assert.equal(trustedOrigin('http://figmark.example', site), 'https://figmark.example', 'the scheme counts too');
+  assert.equal(trustedOrigin('https://figmark.example:8443', site), 'https://figmark.example', 'and the port');
+  assert.equal(trustedOrigin('not a url', site), 'https://figmark.example');
+  assert.equal(trustedOrigin('http://localhost:4280', null), 'http://localhost:4280', 'unconfigured, the request is believed');
 });
 
 /* ── A discount through a link ─────────────────────────────────────────── */

@@ -78,6 +78,23 @@ export interface AppConfig {
    * with nothing declared it is null, and no principal is accepted at all.
    */
   swaPrincipalTrust: 'managed' | 'linked' | 'local' | null;
+  /**
+   * The addresses this site is served at, for the absolute links in share
+   * cards and for fetching the page shell those cards are written into.
+   *
+   * `Host` and `x-forwarded-host` are whatever the caller typed, so a request
+   * naming somebody else's server must not put that server into a card - or
+   * have its `index.html` served here as ours. PUBLIC_ORIGIN lists the real
+   * ones, comma-separated; the first is used for any request that names none
+   * of them. An entry may hold one `*` for a single DNS label, which covers a
+   * Static Web App's branch and preview environments.
+   *
+   * Unset on Azure, it is this repository's own Static Web App and its
+   * environments. Unset on a laptop it is null, and the request's own host is
+   * believed, so the dev server and the tests work at whatever address they
+   * run on.
+   */
+  publicOrigins: string[] | null;
 }
 
 export interface VerificationConfig {
@@ -304,7 +321,22 @@ export const config: AppConfig = {
   verification: resolveVerification(),
   passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),
   swaPrincipalTrust: resolveSwaTrust(),
+  publicOrigins: resolvePublicOrigins(),
 };
+
+const DEFAULT_PUBLIC_ORIGINS = [
+  'https://icy-stone-0498a9900.6.azurestaticapps.net',
+  'https://icy-stone-0498a9900-*.6.azurestaticapps.net',
+];
+
+function resolvePublicOrigins(): string[] | null {
+  const configured = (env('PUBLIC_ORIGIN') ?? '')
+    .split(',')
+    .map((entry) => entry.trim().replace(/\/+$/, '').toLowerCase())
+    .filter(Boolean);
+  if (configured.length > 0) return configured;
+  return runningInAzure() ? DEFAULT_PUBLIC_ORIGINS : null;
+}
 
 function resolveSwaTrust(): AppConfig['swaPrincipalTrust'] {
   const declared = env('SWA_PRINCIPAL_TRUST')?.toLowerCase();

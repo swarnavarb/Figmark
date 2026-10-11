@@ -8,19 +8,27 @@ on:
     types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pull-requests: write
+# Nothing by default: each job names the least it needs. No job here writes to
+# the repository or comments on pull requests - deploys authenticate to Azure
+# with their own token - so none is granted a write scope.
+#
+# Third-party actions are pinned to a full commit SHA, with the release it was
+# at in the trailing comment: a tag can be moved to other code after review,
+# a commit cannot. Bump them deliberately (e.g. Dependabot), SHA and comment
+# together.
+permissions: {}
 
 jobs:
   build:
     name: Build and verify
+    permissions:
+      contents: read
     if: github.event_name != 'pull_request' || github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           # Matches the apiRuntime pinned in staticwebapp.config.json.
           node-version: '20'
@@ -54,7 +62,7 @@ jobs:
         run: npm prune --omit=dev
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: figmark-build
           path: |
@@ -64,6 +72,8 @@ jobs:
 
   deploy:
     name: Deploy to Static Web Apps
+    permissions:
+      contents: read
     needs: build
     # main is the production branch: only it and manual runs deploy here. Other
     # branches are built and verified above but never published by this job.
@@ -77,14 +87,14 @@ jobs:
       name: production
       url: https://icy-stone-0498a9900.6.azurestaticapps.net
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: figmark-build
 
       - name: Deploy
-        uses: Azure/static-web-apps-deploy@v1
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -109,6 +119,8 @@ jobs:
 
   deploy_development:
     name: Deploy to Static Web Apps (development)
+    permissions:
+      contents: read
     needs: build
     # development is a permanent, stable non-production environment: every
     # push to it deploys here, separately from the production job above.
@@ -118,15 +130,15 @@ jobs:
       name: development
       url: ${{ steps.deploy.outputs.static_web_app_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: figmark-build
 
       - name: Deploy
         id: deploy
-        uses: Azure/static-web-apps-deploy@v1
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -144,11 +156,13 @@ jobs:
 
   close_preview:
     name: Close pull request preview
+    # Talks to Azure only; it needs no access to the repository at all.
+    permissions: {}
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
       - name: Close
-        uses: Azure/static-web-apps-deploy@v1
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           action: close
