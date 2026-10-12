@@ -30,6 +30,7 @@ import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handl
 import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { OrderPhotos } from '../components/OrderPhotos';
 import { ConditionTag } from '../components/ConditionTag';
+import { SlideToConfirm } from '../components/SlideToConfirm';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
@@ -1535,13 +1536,11 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, onReadyAl
 }
 
 /**
- * The seller's Ready to dispatch, with what it is waiting on said beside it.
- *
- * Fully paid, it says so in green and asks for the press. Money still owed,
- * it says how much in amber and offers to tell the customer - a message from
- * the shop in their chat, written for them - and the press stays available,
- * amber, for a seller who will collect on delivery. Either way it names who the
- * press goes to: the lot's domestic handler, who cannot dispatch before it.
+ * The seller's Ready to dispatch: an edge-to-edge strip with where the money
+ * stands, a slide to clear the parcel, and Notify beside it while money is
+ * owed - a message from the shop in the customer's chat. Green when paid,
+ * amber while owed; the slide stays available for cash on delivery. What it
+ * all means (who the press goes to, what Notify sends) is behind the i.
  *
  * One order or every order still to go for one customer ("all 3 orders").
  */
@@ -1550,10 +1549,12 @@ function ReadyPanel({ rows, buyerName, busy, onReady, compact = false }: {
   buyerName: string;
   busy: boolean;
   onReady: (on: boolean) => void;
-  /** On an order card under its customer: the button and one line, not the whole explanation. */
+  /** On an order card under its customer: a slimmer strip. */
   compact?: boolean;
 }) {
   const [notice, setNotice] = useState<{ state: 'busy' | 'sent' | 'error'; text?: string } | null>(null);
+  /** The explanation, behind the i: the panel itself says only where things stand. */
+  const [info, setInfo] = useState(false);
   const done = rows.every((row) => Boolean(row.readyAt));
   const owed = rows.filter((row) => row.outstandingMinor > 0);
   const state = done ? 'done' : owed.length > 0 ? 'due' : 'paid';
@@ -1577,44 +1578,51 @@ function ReadyPanel({ rows, buyerName, busy, onReady, compact = false }: {
   }
 
   const status = state === 'done'
-    ? `Ready to dispatch - ${handler ?? 'your domestic handler'} can send ${them} out now.`
+    ? `Ready · ${handler ?? 'your handler'} can dispatch`
     : state === 'paid'
-      ? `${many ? `All ${rows.length} orders are` : 'It is'} fully paid - please mark ${them} Ready to dispatch.`
-      : `Payment pending - ${due} still due. Notify the customer before ${them === 'it' ? 'it goes' : 'they go'} out.`;
-  const label = done
-    ? '✓ Ready to dispatch'
-    : many ? `Ready to dispatch all ${rows.length} orders` : 'Ready to dispatch';
+      ? many ? `All ${rows.length} fully paid` : 'Fully paid'
+      : `Payment pending · ${due} due`;
+  const label = many ? `Ready to dispatch all ${rows.length} orders` : 'Ready to dispatch';
+  const infoId = `rdy-info-${rows[0]?.id ?? 'x'}`;
 
   return (
     <div className={`rdy rdy--${state}${compact ? ' rdy--compact' : ''}`}>
-      <p className="rdy__status" role="status">
+      <div className="rdy__top">
         <span className="rdy__dot" aria-hidden="true">{state === 'done' ? '✓' : state === 'paid' ? '₹' : '!'}</span>
-        {status}
-      </p>
-      <div className="rdy__acts">
-        {/* Owed money: telling them comes first, so it sits first. */}
+        <span className="rdy__status" role="status">{status}</span>
+        <button type="button" className={`rdy__i${info ? ' is-open' : ''}`} aria-expanded={info} aria-controls={infoId}
+          aria-label="What Ready to dispatch does" onClick={() => setInfo(!info)}>i</button>
+      </div>
+      {info && (
+        <div id={infoId} className="rdy__info">
+          <p>
+            {handler
+              ? <>Ready to dispatch tells your domestic handler, <b>{handler}</b>, to dispatch {them} to {buyerName}.
+                {' '}They cannot send {them} until you slide it.</>
+              : <>Ready to dispatch clears {them} to go out to {buyerName}. Tag a domestic handler on the lot and
+                {' '}they will be told to dispatch {them}.</>}
+          </p>
+          <p>
+            {state === 'due'
+              ? <>{due} is still due. <b>Notify</b> sends {first} a message from your shop asking them to pay - once a day at most.</>
+              : state === 'paid'
+                ? <>{many ? 'Everything is' : 'It is'} fully paid, so {them === 'it' ? 'it is' : 'they are'} good to go.</>
+                : <>Slide back to hold {them} again.</>}
+          </p>
+        </div>
+      )}
+      <div className="rdy__row">
+        <SlideToConfirm on={done} label={label} onLabel={many ? `All ${rows.length} ready to dispatch` : 'Ready to dispatch'}
+          disabled={busy} onChange={onReady} />
         {state === 'due' && (
-          <button type="button" className="rdy__notify" disabled={busy || notice?.state === 'busy' || notice?.state === 'sent'}
-            onClick={() => void remind()}>
-            {notice?.state === 'sent' ? '✓ Customer notified' : notice?.state === 'busy' ? 'Sending…' : `🔔 Notify ${first}`}
+          <button type="button" className={`rdy__notify${notice?.state === 'sent' ? ' is-sent' : ''}`}
+            disabled={busy || notice?.state === 'busy' || notice?.state === 'sent'} onClick={() => void remind()}>
+            <span aria-hidden="true">{notice?.state === 'sent' ? '✓' : '🔔'}</span>
+            {notice?.state === 'sent' ? 'Notified' : notice?.state === 'busy' ? 'Sending…' : 'Notify'}
           </button>
         )}
-        <button type="button" className="rdy__btn" aria-pressed={done} disabled={busy}
-          title={done ? 'Press again to hold it back' : undefined} onClick={() => onReady(!done)}>
-          {label}
-        </button>
       </div>
-      {notice?.text && <small className={`rdy__note${notice.state === 'error' ? ' is-error' : ''}`}>{notice.text}</small>}
-      {!compact && (
-        <p className="rdy__info">
-          {handler
-            ? <>Ready to dispatch tells your domestic handler, <b>{handler}</b>, to dispatch {them} to {buyerName}.
-              {' '}They cannot send {them} until you press it.</>
-            : <>Ready to dispatch clears {them} to go out to {buyerName}. Tag a domestic handler on the lot and
-              {' '}they will be told to dispatch {them}.</>}
-          {done && ' Press again to hold it back.'}
-        </p>
-      )}
+      {notice?.text && !done && <small className={`rdy__note${notice.state === 'error' ? ' is-error' : ''}`} role="status">{notice.text}</small>}
     </div>
   );
 }
