@@ -12,6 +12,8 @@ import { ErrorNotice, PersonLink, Tile } from '../components/ui';
  */
 
 const money = (minor: number) => formatMoney(minor, 'INR');
+/** A sheet cell: rupees without the sign, the header already says ₹. */
+const cell = (minor: number) => (minor / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 type Tab = 'lots' | 'hand';
 
@@ -188,6 +190,8 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
 }) {
   const [extra, setExtra] = useState<Column[]>([]);
   const [adding, setAdding] = useState<string | null>(null);
+  // Deleting a column with costs in it asks once, on the button itself.
+  const [dropping, setDropping] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const columns = useMemo(() => columnsFor(rows, extra), [rows, extra]);
 
@@ -237,6 +241,17 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
     setExtra((now) => [...now, { key: keyOf(label), label, stage: 'selling', id: slug(label) }]);
   }
 
+  async function dropColumn(column: Column) {
+    const holding = rows.filter((row) => row.steps.some((step) => keyOf(step.label) === column.key));
+    if (holding.length > 0 && dropping !== column.key) {
+      setDropping(column.key);
+      return;
+    }
+    setDropping(null);
+    setExtra((now) => now.filter((entry) => entry.key !== column.key));
+    for (const row of holding) await save(row, row.steps.filter((step) => keyOf(step.label) !== column.key));
+  }
+
   const owing = groups.filter((group) => group.totals.pendingMinor > 0);
 
   return (
@@ -258,7 +273,7 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
       )}
 
       <div className="pbook__tools">
-        <span className="faint">Costs are per unit. Type in any cell; the change is for that order only.</span>
+        <span className="faint">₹ per unit. Type in any cell - the change is for that order only. ✕ deletes a cost column from every order here.</span>
         {adding === null ? (
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setAdding('')}>＋ Cost column</button>
         ) : (
@@ -289,8 +304,19 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                   <tr>
                     <th className="pbook__item">Item</th>
                     <th>Qty</th>
-                    <th>Price</th>
-                    {columns.map((column) => <th key={column.key} className="pbook__costhead">{column.label}</th>)}
+                    <th>Price ₹</th>
+                    {columns.map((column) => (
+                      <th key={column.key} className="pbook__costhead">
+                        <span>{column.label}</span>
+                        {column.key !== ITEM_PRICE.key && (
+                          <button type="button" className={`pbook__drop${dropping === column.key ? ' is-asking' : ''}`}
+                            aria-label={`Delete the ${column.label} column`} onClick={() => void dropColumn(column)}
+                            onBlur={() => setDropping((now) => (now === column.key ? null : now))}>
+                            {dropping === column.key ? 'Delete?' : '✕'}
+                          </button>
+                        )}
+                      </th>
+                    ))}
                     <th>Cost</th>
                     <th>Profit</th>
                     <th>Paid</th>
@@ -310,7 +336,7 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                           )}
                         </td>
                         <td className="pbook__num">{row.quantity}</td>
-                        <td className="pbook__num">{money(row.unitPriceMinor)}</td>
+                        <td className="pbook__num">{cell(row.unitPriceMinor)}</td>
                         {columns.map((column) => {
                           const step = row.steps.find((entry) => keyOf(entry.label) === column.key);
                           return (
@@ -320,10 +346,10 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                             </td>
                           );
                         })}
-                        <td className="pbook__num">{costed(row) ? money(costOf(row)) : '—'}</td>
-                        <td className={`pbook__num${costed(row) && profit < 0 ? ' is-loss' : ''}`}>{costed(row) ? money(profit) : '—'}</td>
-                        <td className="pbook__num">{money(row.paidMinor)}</td>
-                        <td className={`pbook__num${row.pendingMinor > 0 ? ' is-owed' : ''}`}>{money(row.pendingMinor)}</td>
+                        <td className="pbook__num">{costed(row) ? cell(costOf(row)) : '—'}</td>
+                        <td className={`pbook__num${costed(row) && profit < 0 ? ' is-loss' : ''}`}>{costed(row) ? cell(profit) : '—'}</td>
+                        <td className="pbook__num">{cell(row.paidMinor)}</td>
+                        <td className={`pbook__num${row.pendingMinor > 0 ? ' is-owed' : ''}`}>{cell(row.pendingMinor)}</td>
                       </tr>
                     );
                   })}
@@ -333,12 +359,12 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                     <tr>
                       <td className="pbook__item">Total</td>
                       <td className="pbook__num">{group.rows.reduce((sum, row) => sum + row.quantity, 0)}</td>
-                      <td className="pbook__num">{money(group.totals.salesMinor)}</td>
+                      <td className="pbook__num">{cell(group.totals.salesMinor)}</td>
                       {columns.map((column) => <td key={column.key} />)}
-                      <td className="pbook__num">{money(group.totals.costMinor)}</td>
-                      <td className="pbook__num">{money(group.totals.profitMinor)}</td>
-                      <td className="pbook__num">{money(group.rows.reduce((sum, row) => sum + row.paidMinor, 0))}</td>
-                      <td className="pbook__num">{money(group.totals.pendingMinor)}</td>
+                      <td className="pbook__num">{cell(group.totals.costMinor)}</td>
+                      <td className="pbook__num">{cell(group.totals.profitMinor)}</td>
+                      <td className="pbook__num">{cell(group.rows.reduce((sum, row) => sum + row.paidMinor, 0))}</td>
+                      <td className="pbook__num">{cell(group.totals.pendingMinor)}</td>
                     </tr>
                   </tfoot>
                 )}

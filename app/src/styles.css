@@ -14618,24 +14618,31 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pbook__who { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .pbook__whofacts { display: flex; align-items: center; gap: 10px; font-size: var(--t-xs); color: var(--text-dim); }
 .pbook__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.pbook__table { border-collapse: collapse; min-width: 100%; font-size: var(--t-sm); }
-.pbook__table th, .pbook__table td { padding: 6px 8px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap; }
+.pbook__table { border-collapse: collapse; min-width: 100%; font-size: var(--t-xs); }
+.pbook__table th, .pbook__table td { padding: 4px 6px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap; }
 .pbook__table th:last-child, .pbook__table td:last-child { border-right: 0; }
-.pbook__table th { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); font-weight: var(--w-semi); text-align: right; background: var(--surface-2); }
+.pbook__table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.2; color: var(--text-faint); font-weight: var(--w-semi); text-align: right; background: var(--surface-2); }
 .pbook__table tfoot td { font-weight: var(--w-bold); background: var(--surface-2); border-bottom: 0; }
 .pbook__table th.pbook__item, .pbook__table td.pbook__item {
-  position: sticky; left: 0; z-index: 1; text-align: left; background: var(--surface); min-width: 120px; max-width: 180px;
+  position: sticky; left: 0; z-index: 1; text-align: left; background: var(--surface); min-width: 96px; max-width: 130px;
   white-space: normal; box-shadow: 1px 0 0 var(--border);
 }
 .pbook__table th.pbook__item, .pbook__table tfoot td.pbook__item { background: var(--surface-2); }
 .pbook__item a { color: var(--text); display: block; overflow-wrap: anywhere; }
-.pbook__costhead { color: #93C5FD; }
+.pbook__table th.pbook__costhead { color: #93C5FD; white-space: normal; max-width: 84px; text-transform: none; letter-spacing: 0; font-size: 11px; }
+.pbook__costhead > span { display: block; overflow-wrap: break-word; }
+.pbook__drop {
+  margin-top: 2px; padding: 0 4px; border: 0; border-radius: 6px; background: none; color: var(--text-faint);
+  font: inherit; font-size: 10px; line-height: 16px; cursor: pointer;
+}
+.pbook__drop:hover { color: #FCA5A5; background: rgba(244, 63, 94, 0.12); }
+.pbook__drop.is-asking { color: #fff; background: #E11D48; }
 .pbook__cell { padding: 0; background: rgba(59, 130, 246, 0.05); }
 .pbook__table td.pbook__cell { padding: 0; }
 .pbook__input {
-  width: 84px; padding: 8px; border: 0; background: transparent; color: var(--text); text-align: right;
-  font-family: var(--mono); font-size: var(--t-sm);
+  width: 58px; padding: 6px 4px; border: 0; background: transparent; color: var(--text); text-align: right;
+  font-family: var(--mono); font-size: var(--t-xs);
 }
 .pbook__input:focus { outline: 2px solid var(--accent-line, #60A5FA); outline-offset: -2px; background: var(--surface-2); }
-.pbook__reset { margin-top: 2px; padding: 0; border: 0; background: none; color: var(--text-faint); font-size: 11px; cursor: pointer; }
+.pbook__reset { margin-top: 2px; padding: 0; border: 0; background: none; color: var(--text-faint); font-size: 10px; cursor: pointer; }
 .pbook__reset:hover { color: var(--text); }
