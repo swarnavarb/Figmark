@@ -10,7 +10,7 @@ import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.j
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
-import { readyGated, supplierIdOf } from '../../../shared/services.js';
+import { hasArrived, readyGated, supplierIdOf } from '../../../shared/services.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -457,6 +457,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       serial: serialFor(order, lot),
       /** The seller's go-ahead that this customer's parcel can ship. */
       readyAt: order.checkpoints?.ready_to_dispatch ?? null,
+      /** Reached the destination, so it can be marked Ready to dispatch. */
+      arrived: hasArrived(order, lot),
       /** Who works its lot, so the card offers the ready press and photo audiences that mean something. */
       lotCrew: lot ? {
         readyGate: readyGated(lot),

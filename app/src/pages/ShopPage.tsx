@@ -1037,7 +1037,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
 
   /** The seller's go-ahead for several orders at once - a customer's whole parcel. */
   async function markReady(rows: SaleRow[], on: boolean) {
-    const todo = rows.filter((row) => Boolean(row.readyAt) !== on);
+    const todo = rows.filter((row) => Boolean(row.readyAt) !== on && (!on || row.arrived));
     if (todo.length === 0) return;
     setBusy(todo[0]!.id);
     setError(null);
@@ -1109,7 +1109,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     openOverride[customer.key] ?? (allOpen || customer.rows.some((row) => row.id === focusOrder));
   const everyOpen = customers ? customers.every(isOpen) : true;
 
-  const card = (row: SaleRow, index: number, readyEach = true) => (
+  const card = (row: SaleRow, index: number) => (
     <OrderRow
       key={row.id}
       index={index}
@@ -1117,12 +1117,10 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       store={store}
       from={here}
       inLot={Boolean(lotId)}
-      readyEach={readyEach}
       glowing={glowing === row.id}
       busy={busy === row.id}
       needsAnswer={needsAnswer.has(row.id)}
       onPress={(button, on) => void press(row, button, on)}
-      onReady={(on) => void markReady([row], on)}
       onPhotos={(photos) => setData((current) => current && {
         ...current,
         orders: current.orders.map((entry) => (entry.id === row.id ? { ...entry, photos } : entry)),
@@ -1242,9 +1240,9 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
             <CustomerOrders key={customer.key} customer={customer}
               open={isOpen(customer)} needsAnswer={needsAnswer}
               busy={busy !== null} working={customer.rows.some((row) => row.id === busy)}
-              onReadyAll={(on) => void markReady(readyable(customer.rows), on)}
+              onReady={(ids, on) => void markReady(customer.rows.filter((row) => ids.includes(row.id)), on)}
               onToggle={(open) => setOpenOverride((current) => ({ ...current, [customer.key]: open }))}>
-              {customer.rows.map((row, index) => card(row, customer.start + index, readyable(customer.rows).length > 1))}
+              {customer.rows.map((row, index) => card(row, customer.start + index))}
             </CustomerOrders>
           ))}
         </div>
@@ -1448,7 +1446,7 @@ function readyable(rows: readonly SaleRow[]): SaleRow[] {
     && !(row.bookingOnly && !row.accepted));
 }
 
-function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working = false, onReadyAll, children }: {
+function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working = false, onReady, children }: {
   customer: CustomerGroup;
   open: boolean;
   needsAnswer: ReadonlySet<string>;
@@ -1456,8 +1454,8 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
   busy: boolean;
   /** One of their orders is saving right now. */
   working?: boolean;
-  /** Ready to dispatch, for every order of theirs still to go. */
-  onReadyAll: (on: boolean) => void;
+  /** Ready to dispatch, for the orders of theirs the seller ticked. */
+  onReady: (ids: string[], on: boolean) => void;
   children: ReactNode;
 }) {
   const { buyer, rows } = customer;
@@ -1530,7 +1528,7 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
           {/* One press for the whole parcel: everything of theirs can go. The
               lot's handler waits for exactly this before dispatching. */}
           {toGo.length > 0 && (
-            <ReadyPanel rows={toGo} buyerName={buyer.name} busy={busy} working={working} onReady={onReadyAll} />
+            <ReadyPanel rows={toGo} buyerName={buyer.name} busy={busy} working={working} onReady={onReady} />
           )}
           <div className="orows">{children}</div>
         </div>
@@ -1540,43 +1538,98 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
 }
 
 /**
- * The seller's Ready to dispatch: an edge-to-edge strip with where the money
- * stands, a slide to clear the parcel, and Notify beside it while money is
- * owed - a message from the shop in the customer's chat. Green when paid,
- * amber while owed; the slide stays available for cash on delivery. What it
- * all means (who the press goes to, what Notify sends) is behind the i.
+ * The seller's Ready to dispatch for one customer: an edge-to-edge strip with
+ * one slide for the whole parcel, and the orders listed inside it so a parcel
+ * can go out in parts.
  *
- * One order or every order still to go for one customer ("all 3 orders").
+ * Every order that has arrived starts ticked - except that when some are paid
+ * and some are not, only the paid ones are, so the usual split (send what is
+ * paid, hold what is owed) is one slide. Untick an order to hold it. Orders
+ * still on their way cannot be ticked: the handler cannot send what they do
+ * not have. Once everything that has arrived is cleared, the same slide,
+ * pulled back, holds the ticked ones again.
+ *
+ * Notify sits beside the slide while anything is owed: a message from the
+ * shop in the customer's chat, with a button to pay. What it all means is
+ * behind the i.
  */
-function ReadyPanel({ rows, buyerName, busy, working = false, onReady, compact = false }: {
+function ReadyPanel({ rows, buyerName, busy, working = false, onReady }: {
   rows: SaleRow[];
   buyerName: string;
   /** Something on this screen is saving: hold still. */
   busy: boolean;
   /** It is this panel's own press that is saving: show the spinner. */
   working?: boolean;
-  onReady: (on: boolean) => void;
-  /** On an order card under its customer: a slimmer strip. */
-  compact?: boolean;
+  /** Clear these orders to go, or hold them again. */
+  onReady: (ids: string[], on: boolean) => void;
 }) {
-  const [notice, setNotice] = useState<{ state: 'busy' | 'sent' | 'error'; text?: string } | null>(null);
+  const [notice, setNotice] = useState<{ state: 'busy' | 'sent' | 'error'; text?: string; thread?: string | null } | null>(null);
   /** The explanation, behind the i: the panel itself says only where things stand. */
   const [info, setInfo] = useState(false);
-  const done = rows.every((row) => Boolean(row.readyAt));
-  const owed = rows.filter((row) => row.outstandingMinor > 0);
-  const state = done ? 'done' : owed.length > 0 ? 'due' : 'paid';
-  const many = rows.length > 1;
-  const them = many ? 'them' : 'it';
+
+  const cleared = rows.filter((row) => row.readyAt);
+  const pending = rows.filter((row) => row.arrived && !row.readyAt);
+  const away = rows.filter((row) => !row.arrived && !row.readyAt);
+  /* What the slide does now: clear what has arrived, hold what is cleared, or wait. */
+  const mode = pending.length > 0 ? 'clear' : cleared.length > 0 ? 'hold' : 'wait';
+  const pool = mode === 'clear' ? pending : mode === 'hold' ? cleared : [];
+  const paidPending = pending.filter((row) => row.outstandingMinor <= 0);
+  const defaults = mode === 'clear' && paidPending.length > 0 && paidPending.length < pending.length ? paidPending : pool;
+  const poolKey = pool.map((row) => row.id).join(',');
+  /** The seller's own ticks, kept only while the same orders are on offer. */
+  const [ticks, setTicks] = useState<{ key: string; ids: Set<string> } | null>(null);
+  const picked = ticks?.key === poolKey ? ticks.ids : new Set(defaults.map((row) => row.id));
+  const chosen = pool.filter((row) => picked.has(row.id));
+  const toggle = (id: string) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setTicks({ key: poolKey, ids: next });
+  };
+
+  const total = rows.length;
+  const owedAll = rows.filter((row) => !row.readyAt && row.outstandingMinor > 0);
+  const owedChosen = mode === 'clear' ? chosen.filter((row) => row.outstandingMinor > 0) : [];
+  const tone = mode === 'wait' ? 'wait' : mode === 'hold' ? 'done' : owedChosen.length > 0 ? 'due' : 'paid';
+  const money = (list: SaleRow[]) => formatTotals(list.map((row) => ({ amountMinor: row.outstandingMinor, currency: row.currency })), rows[0]?.currency);
   const first = buyerName.split(/\s+/)[0] || buyerName;
   const handler = rows.find((row) => row.lotCrew?.handlerName)?.lotCrew?.handlerName ?? null;
-  const due = formatTotals(owed.map((row) => ({ amountMinor: row.outstandingMinor, currency: row.currency })), rows[0]?.currency);
+  const orders = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
+
+  /* One line on where it stands, then what is set aside. */
+  const held = mode === 'clear' ? pending.filter((row) => !picked.has(row.id)) : [];
+  const heldOwed = held.filter((row) => row.outstandingMinor > 0);
+  const lead = mode === 'wait'
+    ? `Not arrived yet · ${orders(away.length)} on the way`
+    : mode === 'hold'
+      ? `Ready · ${handler ?? 'your handler'} can dispatch`
+      : owedChosen.length > 0
+        ? `Payment pending · ${money(owedChosen)} due`
+        : chosen.length === 0 ? 'Tick what can go' : chosen.length === 1 ? 'Fully paid' : `${chosen.length} fully paid`;
+  const extras = [
+    mode === 'clear' && cleared.length > 0 ? `${cleared.length} ready` : null,
+    held.length === 1 && heldOwed.length === 1 ? `${held[0]!.itemName} held, ${money(heldOwed)} due` : held.length > 0 ? `${held.length} held` : null,
+    mode !== 'wait' && away.length > 0 ? `${away.length} not arrived` : null,
+  ].filter(Boolean);
+  const status = [lead, ...extras].join(' · ');
+
+  const label = mode === 'wait'
+    ? 'Ready to dispatch'
+    : chosen.length === 0
+      ? 'Tick an order first'
+      : chosen.length === total
+        ? total === 1 ? 'Ready to dispatch' : `Ready to dispatch all ${total} orders`
+        : `Ready to dispatch ${chosen.length} of ${total} orders`;
+  const onLabel = chosen.length === total
+    ? total === 1 ? 'Ready to dispatch' : `All ${total} ready to dispatch`
+    : `${chosen.length} of ${total} ready to dispatch`;
 
   async function remind() {
     setNotice({ state: 'busy' });
     try {
-      const sent = await api.paymentReminder(owed.map((row) => row.id));
+      const sent = await api.paymentReminder(owedAll.map((row) => row.id));
       setNotice({
         state: 'sent',
+        thread: sent.thread,
         text: sent.via === 'message' ? `Message sent to ${first}.` : `${first} has no chat handle yet, so it went to their notifications.`,
       });
     } catch (err) {
@@ -1584,18 +1637,13 @@ function ReadyPanel({ rows, buyerName, busy, working = false, onReady, compact =
     }
   }
 
-  const status = state === 'done'
-    ? `Ready · ${handler ?? 'your handler'} can dispatch`
-    : state === 'paid'
-      ? many ? `All ${rows.length} fully paid` : 'Fully paid'
-      : `Payment pending · ${due} due`;
-  const label = many ? `Ready to dispatch all ${rows.length} orders` : 'Ready to dispatch';
   const infoId = `rdy-info-${rows[0]?.id ?? 'x'}`;
+  const them = total > 1 ? 'them' : 'it';
 
   return (
-    <div className={`rdy rdy--${state}${compact ? ' rdy--compact' : ''}`}>
+    <div className={`rdy rdy--${tone}`}>
       <div className="rdy__top">
-        <span className="rdy__dot" aria-hidden="true">{state === 'done' ? '✓' : state === 'paid' ? '₹' : '!'}</span>
+        <span className="rdy__dot" aria-hidden="true">{tone === 'done' ? '✓' : tone === 'paid' ? '₹' : tone === 'wait' ? '…' : '!'}</span>
         <span className="rdy__status" role="status">{status}</span>
         <button type="button" className={`rdy__i${info ? ' is-open' : ''}`} aria-expanded={info} aria-controls={infoId}
           aria-label="What Ready to dispatch does" onClick={() => setInfo(!info)}>i</button>
@@ -1605,23 +1653,57 @@ function ReadyPanel({ rows, buyerName, busy, working = false, onReady, compact =
           <p>
             {handler
               ? <>Ready to dispatch tells your domestic handler, <b>{handler}</b>, to dispatch {them} to {buyerName}.
-                {' '}They cannot send {them} until you slide it.</>
+                {' '}They cannot send anything you have not cleared.</>
               : <>Ready to dispatch clears {them} to go out to {buyerName}. Tag a domestic handler on the lot and
                 {' '}they will be told to dispatch {them}.</>}
           </p>
-          <p>
-            {state === 'due'
-              ? <>{due} is still due. <b>Notify</b> sends {first} a message from your shop asking them to pay - once a day at most.</>
-              : state === 'paid'
-                ? <>{many ? 'Everything is' : 'It is'} fully paid, so {them === 'it' ? 'it is' : 'they are'} good to go.</>
-                : <>Slide back to hold {them} again.</>}
-          </p>
+          {total > 1 && (
+            <p>Untick an order to hold it back and send the rest. When some are paid and some are not, only the paid ones
+              {' '}start ticked. An order can be cleared once it reaches the destination.</p>
+          )}
+          {owedAll.length > 0 && (
+            <p>{money(owedAll)} is still due. <b>Notify</b> sends {first} a message from your shop with a button to pay -
+              {' '}once every 24 hrs at most.</p>
+          )}
+          {mode === 'hold' && <p>Slide back to hold the ticked orders again.</p>}
         </div>
       )}
+
+      {total > 1 && (
+        <ul className="rdy__list" aria-label={`${buyerName}'s orders`}>
+          {rows.map((row) => {
+            const inPool = pool.includes(row);
+            const ticked = inPool && picked.has(row.id);
+            const state = row.readyAt ? 'ready' : !row.arrived ? 'away' : 'open';
+            return (
+              <li key={row.id} className={`rdy__item is-${state}${ticked ? ' is-ticked' : ''}`}>
+                <label>
+                  {inPool
+                    ? <input type="checkbox" checked={ticked} disabled={busy} onChange={() => toggle(row.id)} />
+                    : <span className="rdy__mark" aria-hidden="true">{state === 'ready' ? '✓' : '·'}</span>}
+                  <span className="rdy__name">{row.itemName}</span>
+                  {/* Cleared while others still wait: it can be held back on its own. */}
+                  {state === 'ready' && mode === 'clear' && (
+                    <button type="button" className="rdy__hold" disabled={busy}
+                      aria-label={`Hold ${row.itemName} back`} onClick={() => onReady([row.id], false)}>Hold</button>
+                  )}
+                  <span className={`rdy__chip rdy__chip--${state === 'away' ? 'away' : state === 'ready' && mode === 'clear' ? 'ready' : row.outstandingMinor > 0 ? 'due' : 'paid'}`}>
+                    {state === 'away' ? 'Not arrived'
+                      : state === 'ready' && mode === 'clear' ? 'Ready'
+                        : row.outstandingMinor > 0 ? `${formatMoney(row.outstandingMinor, row.currency)} due` : 'Paid'}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
       <div className="rdy__row">
-        <SlideToConfirm on={done} label={label} onLabel={many ? `All ${rows.length} ready to dispatch` : 'Ready to dispatch'}
-          disabled={busy} working={working} onChange={onReady} />
-        {state === 'due' && (
+        <SlideToConfirm on={mode === 'hold'} label={label} onLabel={onLabel}
+          disabled={busy || mode === 'wait' || chosen.length === 0} working={working}
+          onChange={(next) => onReady(chosen.map((row) => row.id), next)} />
+        {owedAll.length > 0 && (
           <button type="button" className={`rdy__notify${notice?.state === 'sent' ? ' is-sent' : ''}`}
             aria-busy={notice?.state === 'busy'}
             disabled={busy || notice?.state === 'busy' || notice?.state === 'sent'} onClick={() => void remind()}>
@@ -1632,9 +1714,21 @@ function ReadyPanel({ rows, buyerName, busy, working = false, onReady, compact =
           </button>
         )}
       </div>
-      {notice?.text && !done && <small className={`rdy__note${notice.state === 'error' ? ' is-error' : ''}`} role="status">{notice.text}</small>}
+      {notice?.text && (
+        <small className={`rdy__note${notice.state === 'error' ? ' is-error' : ''}`} role="status">
+          {notice.text}
+          {notice.thread && <> <Link to={notice.thread} className="rdy__open">Open chat ›</Link></>}
+        </small>
+      )}
     </div>
   );
+}
+
+/** Where one order stands on its customer's Ready to dispatch, as a chip on its card. */
+function ReadyChip({ row }: { row: SaleRow }) {
+  if (readyable([row]).length === 0) return null;
+  const [tone, text] = row.readyAt ? ['ok', '✓ Ready'] : !row.arrived ? ['quiet', 'Not arrived'] : ['warn', 'Held'];
+  return <span className={`badge badge--${tone} readychip`} title={row.readyAt ? 'Cleared to dispatch' : !row.arrived ? 'Still on its way to the destination' : 'Not cleared to dispatch yet'}>{text}</span>;
 }
 
 /**
@@ -1993,7 +2087,7 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, inLot = false, readyEach = true, glowing, busy, needsAnswer, onPress, onReady, onPhotos, onLotTracking, onFile, onReject,
+  index, row, store, from, inLot = false, glowing, busy, needsAnswer, onPress, onPhotos, onLotTracking, onFile, onReject,
   onAccept, onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -2006,14 +2100,10 @@ function OrderRow({
    * lot are already said above it, so the card does not say them again.
    */
   inLot?: boolean;
-  /** Offer Ready to dispatch on the card itself: off when its customer's head is the only place it is needed. */
-  readyEach?: boolean;
   glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
   onPress: (button: CardButton, on: boolean) => void;
-  /** This one order cleared to go out, or held back again. */
-  onReady: (on: boolean) => void;
   onPhotos: (photos: OrderPhoto[]) => void;
   /** The Lot stop on this card's buttons: opens the lot's Tracking, where the crate is moved. */
   onLotTracking: () => void;
@@ -2056,7 +2146,10 @@ function OrderRow({
       className={`ocard ocard--${tone}${needsAnswer ? ' is-urgent' : ''}${glowing ? ' is-glowing' : ''}${busy ? ' is-busy' : ''}`}
       style={{ '--i': Math.min(index, 12) } as CSSProperties}>
       <ItemHead id={row.id} name={row.itemName} photoUrl={row.photoUrl} to={orderLink.pathname} state={linkState}
-        badges={row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
+        badges={<>
+          {row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
+          {inLot && <ReadyChip row={row} />}
+        </>}
         meta={<>
           {!inLot && (row.buyer.handle
             ? <Link to={`/${row.buyer.handle}`} className="ocard__buyer">{row.buyer.name}</Link>
@@ -2167,12 +2260,7 @@ function OrderRow({
         />
       )}
 
-      {/* Inside its lot: the seller's go-ahead for this one piece, and its
-          photos. A customer with a single order to go has it on their head
-          already, so the card does not say it twice. */}
-      {inLot && readyEach && readyable([row]).length > 0 && (
-        <ReadyPanel rows={[row]} buyerName={row.buyer.name} busy={busy} working={busy} onReady={onReady} compact />
-      )}
+      {/* Inside its lot: its photos. Ready to dispatch is on its customer's strip. */}
       {inLot && (
         <OrderPhotos orderId={row.id} photos={row.photos} seller onChange={onPhotos}
           audiences={['buyer', ...(row.lotCrew?.supplier ? ['supplier' as const] : []), ...(row.lotCrew?.handler ? ['handler' as const] : [])]} />

@@ -2828,6 +2828,18 @@ export interface Message extends BaseDocument {
   replyTo?: { id: string; name: string; body: string } | null;
   /** One reaction per handle; reacting again changes it. */
   reactions?: { handle: string; kind: ReactionKind }[];
+  /**
+   * A button under the words, on a message Figmark wrote for a shop - a
+   * payment reminder's "View order & pay". Only ever a path inside the app:
+   * people cannot set it, so it cannot be used to send anyone elsewhere.
+   */
+  link?: MessageLink | null;
+}
+
+export interface MessageLink {
+  /** A path inside Figmark, starting with `/`. */
+  href: string;
+  label: string;
 }
 
 /**

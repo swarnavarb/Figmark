@@ -663,6 +663,8 @@ export interface SaleRow {
   routeStep: { at: number; of: number } | null;
   /** When the seller said this customer's parcel can ship. */
   readyAt: string | null;
+  /** Reached the destination: it can be marked Ready to dispatch. */
+  arrived: boolean;
   /** Its lot's crew: the ready gate, and who is tagged to see photos. Null outside a lot. */
   lotCrew: { readyGate: boolean; supplier: boolean; handler: boolean; handlerName: string | null } | null;
   /** The grade it was sold as: MISB, MIB, BIB or LOOSE. */
@@ -1884,6 +1886,8 @@ export interface BoardOrder {
   unitWeightGrams: number;
   checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
   photos?: OrderPhoto[];
+  /** Reached the destination, so it can be marked Ready to dispatch. */
+  arrived?: boolean;
 }
 
 export interface BoardCustomer {
@@ -2619,7 +2623,7 @@ export const api = {
   /** `checkpoint` is one of the seven, or `custom:<step id>` for a route's own button. */
   /** A message from the shop: these orders are ready to go out once the balance is paid. */
   paymentReminder: (orderIds: string[]) =>
-    post<{ sent: true; via: 'message' | 'bell' }>('/orders/payment-reminder', { orderIds }),
+    post<{ sent: true; via: 'message' | 'bell'; thread: string | null }>('/orders/payment-reminder', { orderIds }),
   setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
     /** The courier and AWB with a dispatch; `label`, where an item with no lot was received. */
     shipment?: { courier?: string; awb?: string; label?: string }, undoOf?: string) =>

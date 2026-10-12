@@ -678,7 +678,7 @@ async function nudge(request: HttpRequest, _context: InvocationContext) {
 
   const recent = await repository.listNotifications(buyerId, 50);
   if (recent.some((row) => row.kind === 'seller_nudge' && row.link === link && Date.now() - Date.parse(row.createdAt) < DAY)) {
-    return error(429, 'too_soon', 'They were reminded about this in the last day.');
+    return error(429, 'too_soon', 'They were reminded about this in the last 24 hrs.');
   }
   await notify(repository, [buyerId], { kind: 'seller_nudge', title, body: text, link }, { except: user.id });
   return json(200, { sent: true });

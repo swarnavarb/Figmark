@@ -1864,16 +1864,26 @@ await check('a customer counts as ready only when everything of theirs is', asyn
   const many = board.customers.find((c) => c.orders.length > 1);
   assert.ok(many, 'expected a customer with several orders');
 
+  // Nothing is ready before it has arrived: the handler cannot send what is not there.
+  assert.ok(many.orders.every((order) => order.arrived === false), 'a filling lot has nothing at the destination');
+  const early = await setCheckpoint(req({
+    headers: auth, params: { id: many.orders[0].id }, body: { checkpoint: 'ready_to_dispatch', on: true },
+  }), ctx);
+  assert.equal(early.status, 409);
+  assert.equal(early.jsonBody.error, 'not_arrived');
+
+  const tick = (order, checkpoint, on) => setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint, on } }), ctx);
+  for (const order of many.orders) assert.equal((await tick(order, 'india_received', true)).status, 200);
   let tally;
   for (const [index, order] of many.orders.entries()) {
-    const result = await setCheckpoint(req({
-      headers: auth, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch', on: true },
-    }), ctx);
+    const result = await tick(order, 'ready_to_dispatch', true);
     tally = result.jsonBody.tally;
     // Not ready until the last one: a parcel goes out whole.
     if (index < many.orders.length - 1) assert.equal(tally.customersReady, 0);
   }
   assert.equal(tally.customersReady, 1);
+  // Later checks read the lot as the seed left it, bar the ready ticks.
+  for (const order of many.orders) await tick(order, 'india_received', false);
 });
 
 await check('an unknown checkpoint is refused rather than stored', async () => {
@@ -10677,9 +10687,19 @@ await check('the seller tags people, picks their buttons, gates dispatch and sha
     const reminded = await paymentReminder(req({ headers: auth, body: { orderIds: [order.id] } }), ctx);
     assert.equal(reminded.status, 200);
     assert.ok(['message', 'bell'].includes(reminded.jsonBody.via));
-    assert.equal((await paymentReminder(req({ headers: auth, body: { orderIds: [order.id] } }), ctx)).status, 429, 'not again the same day');
+    const tooSoon = await paymentReminder(req({ headers: auth, body: { orderIds: [order.id] } }), ctx);
+    assert.equal(tooSoon.status, 429, 'not again within 24 hrs');
+    assert.equal(tooSoon.jsonBody.message, 'They were reminded about this in the last 24 hrs.');
+    if (reminded.jsonBody.via === 'message') {
+      assert.ok(reminded.jsonBody.thread.startsWith('/messages/'), 'the seller gets a link to the chat');
+      const sent = (await repository.listMessagesForHandles([reminded.jsonBody.thread.split('?as=')[1]]))
+        .find((message) => message.link?.href === `/order/${order.id}`);
+      assert.ok(sent, 'the message carries a button to the order');
+      assert.equal(sent.link.label, 'View order & pay');
+    }
     assert.equal((await paymentReminder(req({ headers: inkwellTeam, body: { orderIds: [order.id] } }), ctx)).status, 403);
     assert.equal((await paymentReminder(req({ headers: auth, body: { orderIds: [] } }), ctx)).status, 400);
+    assert.equal((await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'india_received' } }), ctx)).status, 200);
     assert.equal((await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch' } }), ctx)).status, 200);
     assert.equal((await setCheckpoint(req({ headers: handlerHeaders, params: { id: order.id }, body: { checkpoint: 'dispatched' } }), ctx)).status, 200);
 

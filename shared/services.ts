@@ -1,6 +1,6 @@
 import type { OrderCheckpoint } from './enums.js';
 import type { Lot, Order, OrderPhoto, PhotoAudience, User } from './models.js';
-import { itemLeaveIndex, joinIndexOf, renderStepText, routeOf, stepButtonLabel, stepTickKey } from './routes.js';
+import { currentStepOf, itemLeaveIndex, joinIndexOf, lotEndIndex, renderStepText, routeOf, stepButtonLabel, stepTickKey } from './routes.js';
 import { isLive } from './service-stores.js';
 
 /**
@@ -236,6 +236,20 @@ const placesOfLot = (lot: CrewLot) => ({ origin: lot.originCountry ?? null, dest
 export function chosenButtons(lot: CrewLot, role: TaggedRole): string[] | null {
   const list = role === 'supplier' ? lot.crew?.supplierButtons : lot.crew?.handlerButtons;
   return Array.isArray(list) ? list : null;
+}
+
+/**
+ * Whether a piece riding a lot has reached the destination, so "Ready to
+ * dispatch" can mean something: the handler cannot send what they do not
+ * have. Received there, or the crate has made its last move.
+ */
+export function hasArrived(
+  order: Pick<Order, 'checkpoints'>,
+  lot: Pick<Lot, 'route' | 'currentStep' | 'stage'> | null | undefined,
+): boolean {
+  if (!lot) return true;
+  if (order.checkpoints?.india_received) return true;
+  return currentStepOf(lot) >= lotEndIndex(routeOf(lot));
 }
 
 /**

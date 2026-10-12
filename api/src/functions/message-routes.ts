@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
-import type { Listing, Message, MessageDeal, MessageItem, MessageParty, User } from '../../../shared/models.js';
+import type { Listing, Message, MessageDeal, MessageItem, MessageLink, MessageParty, User } from '../../../shared/models.js';
 import type { DealState } from '../../../shared/deals.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { reviewRevealed } from '../../../shared/orders.js';
@@ -475,6 +475,8 @@ export async function messageFromShop(
   buyerId: string,
   text: string,
   senderId: string,
+  /** A button under the words: where the buyer acts on it, inside Figmark. */
+  link?: MessageLink,
 ): Promise<Message | null> {
   const [shop, buyer] = await Promise.all([repository.getUserById(shopId), repository.getUserById(buyerId)]);
   const shopHandle = shop?.sellerProfile?.username;
@@ -494,6 +496,7 @@ export async function messageFromShop(
     to: them,
     body: text,
     readAt: null,
+    ...(link ? { link } : {}),
     createdAt: now,
     updatedAt: now,
   };

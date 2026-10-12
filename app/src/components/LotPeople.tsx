@@ -172,11 +172,14 @@ function CustomerCard({ customer, busy, onToggle, onToggleAll, handlerName, audi
   audiences: PhotoAudience[];
   onPhotos: (orderId: string, photos: OrderPhoto[]) => void;
 }) {
-  const allReady = customer.orders.every((order) => Boolean(order.checkpoints.ready_to_dispatch));
+  /* Only what has reached the destination can be cleared to go. */
+  const here = customer.orders.filter((order) => order.arrived !== false);
+  const allReady = here.length > 0 && here.every((order) => Boolean(order.checkpoints.ready_to_dispatch));
+  const waiting = customer.orders.length - here.length;
   /** The items a ready press changes: the ones not yet in the state it asks for. */
   /** Their ready press is on its way to the server. */
   const saving = customer.orders.some((order) => busy.has(`${order.id}:ready_to_dispatch`));
-  const readyIds = (on: boolean) => customer.orders
+  const readyIds = (on: boolean) => here
     .filter((order) => Boolean(order.checkpoints.ready_to_dispatch) !== on).map((order) => order.id);
 
   return (
@@ -196,15 +199,19 @@ function CustomerCard({ customer, busy, onToggle, onToggleAll, handlerName, audi
           decided: everything of theirs is ready, or it is not. It is the
           seller's go-ahead, and the handler cannot dispatch before it. */}
       <button type="button" className={`cust__ready${allReady ? ' is-on' : ''}`} aria-pressed={allReady}
-        aria-busy={saving} disabled={saving}
+        aria-busy={saving} disabled={saving || here.length === 0}
         onClick={() => void onToggleAll(readyIds(!allReady), 'ready_to_dispatch', !allReady)}>
         {saving && <Spinner size={16} label="Saving" />}
-        {saving ? 'Saving…' : allReady
-          ? '✓ Ready to dispatch'
-          : customer.orders.length > 1 ? `Ready to dispatch all ${customer.orders.length} orders` : 'Ready to dispatch'}
+        {saving ? 'Saving…' : here.length === 0 ? 'Not arrived yet' : allReady
+          ? `✓ Ready to dispatch${waiting ? ` (${here.length} of ${customer.orders.length})` : ''}`
+          : here.length > 1
+            ? `Ready to dispatch ${waiting ? `${here.length} of ${customer.orders.length}` : `all ${here.length}`} orders`
+            : waiting ? `Ready to dispatch 1 of ${customer.orders.length} orders` : 'Ready to dispatch'}
         <span>
-          {allReady
-            ? `${handlerName ?? 'The handler'} can dispatch this parcel. Press again to hold it.`
+          {here.length === 0
+            ? 'You can mark it ready once it reaches the destination.'
+            : allReady
+            ? `${handlerName ?? 'The handler'} can dispatch ${waiting ? 'what has arrived' : 'this parcel'}. Press again to hold it.`
             : `Tells ${handlerName ? `your domestic handler, ${handlerName},` : 'your domestic handler'} to dispatch ${customer.orders.length > 1 ? 'them' : 'it'} to ${customer.name}.`}
         </span>
       </button>

@@ -4,7 +4,7 @@ import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type Or
 import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
-import { TAGGED_ROLES, crewMayPress, crewSlots, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
+import { TAGGED_ROLES, crewMayPress, crewSlots, hasArrived, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNo, lotNumberFrom, normaliseSteps,
@@ -1128,6 +1128,8 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
         unitWeightGrams: order.unitWeightGrams,
         checkpoints: order.checkpoints ?? {},
         photos: order.photos ?? [],
+        /** At the destination, so Ready to dispatch can be pressed. */
+        arrived: hasArrived(order, lot),
       })),
       trackingReference: lot.forwarder?.trackingReference ?? null,
     };
@@ -1245,6 +1247,12 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
 
   const on = body.on !== false;
   const now = new Date().toISOString();
+
+  /* Ready to dispatch tells the handler to send it: not before it is there
+     to send. Holding one back again is always allowed. */
+  if (on && checkpoint === 'ready_to_dispatch' && lot && !hasArrived(order, lot)) {
+    return error(409, 'not_arrived', 'It has not reached the destination yet - mark it ready once it arrives.');
+  }
 
   /* Undoing a press made in the last three minutes: the opposite press, with
      the first one taken off the timeline instead of a second "undone" line
@@ -1591,12 +1599,16 @@ async function paymentReminder(request: HttpRequest, _context: InvocationContext
   const sentMessage = thread
     ? (await repository.listMessages(thread, 30)).some((message) => message.body === text && Date.now() - Date.parse(message.createdAt) < DAY)
     : false;
-  if (sentBell || sentMessage) return error(429, 'too_soon', 'They were reminded about this in the last day.');
+  if (sentBell || sentMessage) return error(429, 'too_soon', 'They were reminded about this in the last 24 hrs.');
 
-  const message = await messageFromShop(repository, first!.sellerId, first!.buyerId, text, user.id);
-  if (message) return json(200, { sent: true, via: 'message' });
+  const message = await messageFromShop(repository, first!.sellerId, first!.buyerId, text, user.id,
+    due.length === 1 ? { href: link, label: 'View order & pay' } : { href: '/purchases', label: `View your ${due.length} orders & pay` });
+  if (message) {
+    // Where the seller can read the conversation it went into.
+    return json(200, { sent: true, via: 'message', thread: `/messages/${encodeURIComponent(message.to.handle)}?as=${encodeURIComponent(message.from.handle)}` });
+  }
   await notify(repository, [first!.buyerId], { kind: 'seller_nudge', title: `A reminder from ${shopName}`, body: text, link }, { except: user.id });
-  return json(200, { sent: true, via: 'bell' });
+  return json(200, { sent: true, via: 'bell', thread: null });
 }
 
 export const supplierLotsRoute = handler(supplierLots);

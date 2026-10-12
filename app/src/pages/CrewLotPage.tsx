@@ -625,6 +625,11 @@ function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
       break;
     }
   }
+  /* Part of the parcel cleared: say which pieces stay, so the box is packed right. */
+  const heldItems = group.items.filter((item) => item.cleared === false && !item.ticks.dispatched);
+  if (!held && heldItems.length > 0 && heldItems.length < group.items.filter((item) => !item.ticks.dispatched).length) {
+    held = `Send only what is cleared. Held by the shop: ${heldItems.map((item) => item.itemName).join(', ')}.`;
+  }
 
   return (
     <article className={`hx-parcel${done ? ' is-done' : ''}`} aria-labelledby={`${id}-name`} aria-busy={working} style={hueOf(group.title)}>
@@ -684,7 +689,14 @@ function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
           {group.items.map((item) => (
             <li key={item.id} className="hx-item">
               <div className="hx-item__body">
-                <span className="hx-item__name">{item.itemName}</span>
+                <span className="hx-item__name">
+                  {item.itemName}
+                  {view.settings.readyGate && !item.ticks.dispatched && (
+                    item.cleared
+                      ? <span className="hx-chip hx-chip--ok hx-item__gate"><Icon name="check" size={11} /> Cleared</span>
+                      : <span className="hx-chip hx-chip--warn hx-item__gate"><Icon name="lock" size={11} /> Held</span>
+                  )}
+                </span>
                 <span className="hx-item__meta">
                   <ConditionTag condition={item.condition} />{item.quantity > 1 ? ` ×${item.quantity}` : ''} · {formatWeight(item.weightGrams)}
                 </span>
@@ -721,12 +733,24 @@ function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
   );
 }
 
-/** Whether the shop has cleared this customer's parcel to go. */
+/**
+ * Whether the shop has cleared this customer's parcel to go - all of it, none
+ * of it, or part: a shop can send what is paid and hold the rest.
+ */
 function ClearedBadge({ items }: { items: CrewItem[] }) {
-  const cleared = items.every((item) => item.cleared);
+  const open = items.filter((item) => !item.ticks.dispatched);
+  const go = open.filter((item) => item.cleared).length;
+  const hold = open.length - go;
+  if (open.length === 0) return null;
+  if (hold === 0) {
+    return <span className="hx-chip hx-chip--ok"><Icon name="check" size={13} /> Ready to dispatch</span>;
+  }
+  if (go === 0) {
+    return <span className="hx-chip hx-chip--warn"><Icon name="lock" size={13} /> Waiting on the shop</span>;
+  }
   return (
-    <span className={`hx-chip ${cleared ? 'hx-chip--ok' : 'hx-chip--warn'}`}>
-      <Icon name={cleared ? 'check' : 'lock'} size={13} /> {cleared ? 'Ready to dispatch' : 'Waiting on the shop'}
+    <span className="hx-chip hx-chip--split">
+      <Icon name="check" size={13} /> Dispatch {go} · <Icon name="lock" size={13} /> {hold} held by the shop
     </span>
   );
 }
