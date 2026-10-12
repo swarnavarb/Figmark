@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import {
-  BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, STAGE_LABELS, calculateProfit, stepsFromResult,
-  type CostBasis, type ProfitResult, type SavedCalc, type CostKind, type CostLine, type CostStage, type ProfitInput, type ProfitTemplate,
+  BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, SCENARIOS, STAGE_LABELS, calculateProfit, paysVia, stepsFromResult, symbolOf,
+  type CostBasis, type ProfitResult, type SavedCalc, type CostKind, type CostLine, type CostStage, type LineCurrency,
+  type ProfitInput, type ProfitTemplate, type Scenario,
 } from '@shared/profit';
 import { ApiRequestError, api, type SheetItem } from '../api';
 import { formatMoney } from '../format';
@@ -11,15 +12,16 @@ import { EmptyState, ErrorNotice } from '../components/ui';
 import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
 import { scrollToTopOf, useGoBack } from '../components/ScrollManager';
 import { CalcIcon } from '../components/CalcIcon';
+import { PriceRoute } from '../components/CostSheetField';
 
 /**
  * The profit calculator (Pro).
  *
- * A shop keeps one cost sheet per way it brings stock in. Pick a sheet, type
- * what the item costs abroad, what it weighs and what you will sell it for,
- * and the landed cost, profit and margin come back as you type. The sheet
- * already lists every charge an import can pick up; switching a line on is
- * how a seller says "this one applies to me".
+ * A shop keeps one cost sheet per way it brings stock in, started from the
+ * scenario closest to it. Type the price abroad and the route to rupees shows
+ * hop by hop - yuan to the dollars the supplier is paid, to rupees - with the
+ * profit beside it. The rates and charges sit underneath, edited in place:
+ * any change is a draft until saved.
  */
 
 const STORAGE_KEY = 'figmark:profit-input';
@@ -47,9 +49,19 @@ const pct = (value: number | null) => (value === null ? '—' : `${value.toFixed
 function freshTemplate(starter: CostLine[], name: string): ProfitTemplate {
   const now = new Date().toISOString();
   return {
-    id: '', name, currency: 'USD', rate: 0, volumetricDivisor: 5000, targetMarginPercent: 25,
+    id: '', name, currency: 'USD', payCurrency: null, payRate: 0, rate: 0, volumetricDivisor: 5000, targetMarginPercent: 25,
     isDefault: false, lines: starter.map((line) => ({ ...line })), createdAt: now, updatedAt: now,
   };
+}
+
+/** A new, unsaved calculator from a scenario, named so it does not clash with one already kept. */
+function fromScenario(scenario: Scenario, taken: ProfitTemplate[]): ProfitTemplate {
+  const now = new Date().toISOString();
+  const sheet = scenario.sheet();
+  const names = new Set(taken.map((entry) => entry.name));
+  let name = sheet.name;
+  for (let n = 2; names.has(name); n += 1) name = `${sheet.name} ${n}`;
+  return { ...sheet, name, id: '', isDefault: false, createdAt: now, updatedAt: now };
 }
 
 export function ProfitCalculator({ store }: { store: StoreAccess }) {
@@ -59,6 +71,8 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   /** The sheet being edited, unsaved. The results follow it live. */
   const [draft, setDraft] = useState<ProfitTemplate | null>(null);
+  /** Choosing how a new calculator starts. */
+  const [picking, setPicking] = useState(false);
   const [input, setInput] = useState<ProfitInput>(readInput);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -83,8 +97,8 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
           window.setTimeout(() => scrollToTopOf(document.querySelector('.pc__editback') ?? document.querySelector('.pc__editor')), 120);
         }
         if (first) setActiveId(first.id);
-        // Nothing saved yet: open a full sheet to fill in rather than an empty page.
-        else setDraft(freshTemplate(result.starter, 'My calculator'));
+        // Nothing saved yet: start by choosing how stock comes in.
+        else setPicking(true);
       })
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your calculators.'));
     void api.savedCalcs(store.ownerId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
@@ -105,6 +119,8 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   if (!templates) return <p className="muted">Loading…</p>;
 
   const set = (patch: Partial<ProfitInput>) => setInput((current) => ({ ...current, ...patch }));
+  /** Any change to the sheet makes it a draft, kept on screen until saved or dropped. */
+  const edit = (patch: Partial<ProfitTemplate>) => active && setDraft({ ...(draft ?? structuredClone(active)), ...patch });
 
   async function save() {
     if (!draft) return;
@@ -152,7 +168,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
       setTemplates(next);
       setDraft(null);
       setActiveId(next.find((entry) => entry.isDefault)?.id ?? next[0]?.id ?? null);
-      if (next.length === 0) setDraft(freshTemplate(starter, 'My calculator'));
+      if (next.length === 0) setPicking(true);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not delete that calculator.');
     } finally {
@@ -160,9 +176,16 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
     }
   }
 
+  function start(scenario: Scenario | null) {
+    setDraft(scenario ? fromScenario(scenario, templates ?? []) : freshTemplate(starter, `Calculator ${(templates?.length ?? 0) + 1}`));
+    setPicking(false);
+    setFlash(null);
+  }
+
   const target = active?.targetMarginPercent ?? 0;
   const losing = result !== null && input.sellingPrice > 0 && result.profit < 0;
   const underTarget = result !== null && !losing && result.marginPercent !== null && result.marginPercent < target;
+  const changed = draft !== null;
 
   return (
     <div className="stack prozone">
@@ -170,142 +193,149 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
         // Opened from "Edit calculator" on a listing: back to it, as it was left.
         <button type="button" className="backlink" onClick={goBack}>← Back to your listing</button>
       )}
-      <section className="inshero">
+      <section className="inshero pc__top">
         <div className="inshero__title">
           <h2><CalcIcon size={24} /> Profit calculator <span className="probadge">PRO</span></h2>
-          <p>Your rates, your charges. Enter the price abroad, the weight and your selling price - the margin follows.</p>
+          <p>Price abroad in, profit out. Each calculator keeps its own rates.</p>
         </div>
         <div className="inssegs" role="tablist" aria-label="Calculators">
           {templates.map((entry) => (
-            <button key={entry.id} type="button" role="tab" aria-selected={!draft && entry.id === activeId}
-              className={`inscat${!draft && entry.id === activeId ? ' is-on' : ''}`}
-              onClick={() => { setDraft(null); setActiveId(entry.id); setFlash(null); }}>
+            <button key={entry.id} type="button" role="tab" aria-selected={!picking && active?.id === entry.id}
+              className={`inscat${!picking && active?.id === entry.id ? ' is-on' : ''}`}
+              onClick={() => { setDraft(null); setPicking(false); setActiveId(entry.id); setFlash(null); }}>
               {entry.isDefault && <span aria-hidden="true">★</span>} {entry.name}
-              <span className="inscat__n">{entry.currency}</span>
+              <span className="inscat__n">{paysVia(entry) ? `${entry.currency}→${entry.payCurrency}` : entry.currency}</span>
             </button>
           ))}
-          {draft && !draft.id && <span className="inscat is-on">✏️ {draft.name || 'New calculator'}</span>}
-          <button type="button" className="inscat" disabled={busy}
-            onClick={() => { setDraft(freshTemplate(starter, `Calculator ${templates.length + 1}`)); setFlash(null); }}>
+          {draft && !draft.id && !picking && <span className="inscat is-on">✏️ {draft.name || 'New calculator'}</span>}
+          <button type="button" className={`inscat${picking ? ' is-on' : ''}`} disabled={busy} onClick={() => setPicking(true)}>
             ＋ New
           </button>
         </div>
       </section>
 
-      <label className="pc__float">
-        <input type="checkbox" checked={floating} onChange={(e) => setFloating(e.target.checked)} />
-        <span>
-          <b>Floating calculator button</b>
-          <small>A <CalcIcon size={13} /> button on every screen, bottom right. Opens this calculator over whatever you are doing.</small>
-        </span>
-      </label>
-
       {flash && <p className="notice notice--ok">{flash}</p>}
       {error && <ErrorNotice message={error} />}
 
-      {!active ? (
+      {picking ? (
+        <ScenarioPicker onPick={start} onCancel={templates.length ? () => setPicking(false) : undefined} />
+      ) : !active || !result ? (
         <EmptyState icon={<CalcIcon size={26} />} title="No calculator yet">Make one with ＋ New.</EmptyState>
       ) : (
         <>
           <div className="pc__grid">
-            <section className="card card--pad stack">
-              <h2>This item</h2>
-              <div className="pc__fields">
-                <Num label={`Price abroad (${active.currency})`} value={input.itemPrice} onChange={(itemPrice) => set({ itemPrice })} />
+            <section className="card card--pad stack pc__calc">
+              <label className="pc__price">
+                <span>Price abroad</span>
+                <span className="pc__pricebox">
+                  <span className="pc__sym" aria-hidden="true">{symbolOf(active.currency).trim()}</span>
+                  <input type="number" inputMode="decimal" min={0} step={0.01} aria-label={`Price abroad (${active.currency})`}
+                    value={input.itemPrice || ''} placeholder="0" onChange={(e) => set({ itemPrice: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                  <span className="pc__code">{active.currency}</span>
+                </span>
+              </label>
+              <PriceRoute template={active} input={input} result={result} />
+              <div className="pc__fields pc__fields--three">
+                <Num label="Selling price ₹" value={input.sellingPrice} onChange={(sellingPrice) => set({ sellingPrice })} />
                 <Num label="Quantity" value={input.quantity} step={1} onChange={(quantity) => set({ quantity: Math.max(1, Math.round(quantity)) })} />
-                <Num label="Weight per item (kg)" value={input.weightKg} step={0.05} onChange={(weightKg) => set({ weightKg })} />
-                <Num label="Selling price (₹ each)" value={input.sellingPrice} onChange={(sellingPrice) => set({ sellingPrice })} />
+                <Num label="Weight kg" value={input.weightKg} step={0.05} onChange={(weightKg) => set({ weightKg })} />
               </div>
-              <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }} onClick={() => setSizeOpen((open) => !open)}>
-                {sizeOpen ? '▾' : '▸'} Packed size, for volumetric weight
-              </button>
+              <div className="pc__links">
+                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setSizeOpen((open) => !open)}>
+                  {sizeOpen ? '▾' : '▸'} Packed size
+                </button>
+                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setInput(BLANK_INPUT)}>Clear</button>
+              </div>
               {sizeOpen && (
-                <div className="pc__fields pc__fields--three">
-                  <Num label="Length (cm)" value={input.lengthCm ?? 0} onChange={(lengthCm) => set({ lengthCm })} />
-                  <Num label="Width (cm)" value={input.widthCm ?? 0} onChange={(widthCm) => set({ widthCm })} />
-                  <Num label="Height (cm)" value={input.heightCm ?? 0} onChange={(heightCm) => set({ heightCm })} />
-                </div>
+                <>
+                  <div className="pc__fields pc__fields--three">
+                    <Num label="Length cm" value={input.lengthCm ?? 0} onChange={(lengthCm) => set({ lengthCm })} />
+                    <Num label="Width cm" value={input.widthCm ?? 0} onChange={(widthCm) => set({ widthCm })} />
+                    <Num label="Height cm" value={input.heightCm ?? 0} onChange={(heightCm) => set({ heightCm })} />
+                  </div>
+                  {result.volumetricKg > 0 && (
+                    <small className="faint">Volumetric {result.volumetricKg.toFixed(2)} kg against {result.actualKg.toFixed(2)} kg actual.</small>
+                  )}
+                </>
               )}
-              <small className="faint">
-                1 {active.currency} = ₹{active.rate || 0} on this calculator.
-                {result && result.volumetricKg > 0 && ` Volumetric ${result.volumetricKg.toFixed(2)} kg against ${result.actualKg.toFixed(2)} kg actual.`}
-              </small>
-              <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={() => setInput(BLANK_INPUT)}>
-                Clear
-              </button>
             </section>
 
-            {result && (
-              <section className={`card card--pad stack pc__result${losing ? ' is-loss' : ''}`}>
-                <div className="pc__headline">
-                  <small>Profit per item</small>
-                  <b>{inr(result.profit)}</b>
-                  <span className="pc__pills">
-                    <span className="badge">Margin {pct(result.marginPercent)}</span>
-                    <span className="badge">Markup {pct(result.markupPercent)}</span>
-                  </span>
+            <section className={`card card--pad stack pc__result${losing ? ' is-loss' : ''}`}>
+              <div className="pc__headline">
+                <small>Profit per item</small>
+                <b>{inr(result.profit)}</b>
+                <span className="pc__pills">
+                  <span className="badge">Margin {pct(result.marginPercent)}</span>
+                  <span className="badge">Markup {pct(result.markupPercent)}</span>
+                </span>
+              </div>
+              {losing && <p className="pc__warn">⚠️ This price loses {inr(-result.profit)} on every item.</p>}
+              {underTarget && <p className="pc__warn pc__warn--soft">Below your {target}% target margin.</p>}
+              <dl className="pc__facts">
+                <div><dt>Landed cost</dt><dd>{inr(result.landed)}</dd></div>
+                <div><dt>Break-even price</dt><dd>{result.breakEven === null ? '—' : inr(result.breakEven)}</dd></div>
+                <div>
+                  <dt>Price for {target}% margin</dt>
+                  <dd>
+                    {result.suggested === null ? '—' : inr(result.suggested)}
+                    {result.suggested !== null && (
+                      <button type="button" className="btn btn--quiet btn--sm pc__use"
+                        onClick={() => set({ sellingPrice: Math.ceil(result.suggested!) })}>Use</button>
+                    )}
+                  </dd>
                 </div>
-                {losing && <p className="pc__warn">⚠️ This price loses {inr(-result.profit)} on every item.</p>}
-                {underTarget && <p className="pc__warn pc__warn--soft">Below your {target}% target margin.</p>}
-                <dl className="pc__facts">
-                  <div><dt>Landed cost</dt><dd>{inr(result.landed)}</dd></div>
-                  <div><dt>Break-even price</dt><dd>{result.breakEven === null ? '—' : inr(result.breakEven)}</dd></div>
-                  <div>
-                    <dt>Price for {target}% margin</dt>
-                    <dd>
-                      {result.suggested === null ? '—' : inr(result.suggested)}
-                      {result.suggested !== null && (
-                        <button type="button" className="btn btn--quiet btn--sm pc__use"
-                          onClick={() => set({ sellingPrice: Math.ceil(result.suggested!) })}>Use</button>
-                      )}
-                    </dd>
-                  </div>
-                  {input.quantity > 1 && (
-                    <>
-                      <div><dt>Revenue × {input.quantity}</dt><dd>{inr(result.totalRevenue)}</dd></div>
-                      <div><dt>Cost × {input.quantity}</dt><dd>{inr(result.totalCost)}</dd></div>
-                      <div><dt>Profit × {input.quantity}</dt><dd>{inr(result.totalProfit)}</dd></div>
-                    </>
-                  )}
-                </dl>
-                <StageBar stages={result.stages} selling={input.sellingPrice} profit={result.profit} />
-              </section>
-            )}
+                {input.quantity > 1 && (
+                  <>
+                    <div><dt>Revenue × {input.quantity}</dt><dd>{inr(result.totalRevenue)}</dd></div>
+                    <div><dt>Cost × {input.quantity}</dt><dd>{inr(result.totalCost)}</dd></div>
+                    <div><dt>Profit × {input.quantity}</dt><dd>{inr(result.totalProfit)}</dd></div>
+                  </>
+                )}
+              </dl>
+              <StageBar stages={result.stages} selling={input.sellingPrice} profit={result.profit} />
+              <details className="pc__more">
+                <summary>Where the money goes</summary>
+                <Breakdown result={result} />
+              </details>
+            </section>
           </div>
 
-          {result && (
-            <section className="card card--pad stack">
-              <h2>Where the money goes</h2>
-              {COST_STAGES.map((stage) => {
-                const rows = result.lines.filter((line) => line.stage === stage && line.enabled);
-                if (stage !== 'buying' && rows.length === 0) return null;
-                return (
-                  <div key={stage} className="pc__stage">
-                    <div className="pc__stagehead">
-                      <span className={`pc__dot pc__dot--${STAGE_TONES[stage]}`} />
-                      <b>{STAGE_LABELS[stage]}</b>
-                      <span>{inr(result.stages[stage])}</span>
-                    </div>
-                    {stage === 'buying' && (
-                      <div className="pc__line">
-                        <span>Item ({input.itemPrice || 0} {active.currency} × ₹{active.rate || 0})</span>
-                        <span>{inr(result.itemCost)}</span>
-                      </div>
-                    )}
-                    {rows.map((line) => (
-                      <div key={line.id} className="pc__line">
-                        <span>{line.label}</span>
-                        <span>{inr(line.perItem)}</span>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-              <div className="pc__line pc__line--total"><span>Landed cost per item</span><span>{inr(result.landed)}</span></div>
-            </section>
+          {draft && params.get('edit') && (
+            <button type="button" className="backlink pc__editback" onClick={goBack}>← Back to your listing, without saving</button>
           )}
 
-          {result && !draft && active.id && (
+          <Rates sheet={active} onChange={edit} />
+          <Charges sheet={active} onChange={edit} />
+
+          {changed ? (
+            <div className="pc__savebar">
+              <span>{draft.id ? 'Unsaved changes' : `New: ${draft.name || 'calculator'}`}</span>
+              <button type="button" className="btn btn--sm" disabled={busy || !draft.name.trim()} onClick={() => void save()}>
+                {busy ? 'Saving…' : 'Save'}
+              </button>
+              {(templates.length > 0) && (
+                <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
+                  onClick={() => { setDraft(null); if (!templates.some((entry) => entry.id === activeId)) setPicking(true); }}>
+                  Discard
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="pc__actions">
+              <button type="button" className="btn btn--ghost btn--sm"
+                onClick={() => setDraft({ ...structuredClone(active), id: '', name: `${active.name} (copy)`, isDefault: false })}>
+                Duplicate
+              </button>
+              {!active.isDefault && (
+                <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => edit({ isDefault: true })}>
+                  ★ Open this one first
+                </button>
+              )}
+              <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void remove(active.id)}>Delete</button>
+            </div>
+          )}
+
+          {!draft && active.id && (
             <SaveToItem template={active} result={result} shop={shop} sellingPrice={input.sellingPrice}
               onPrice={(price) => set({ sellingPrice: price })} />
           )}
@@ -315,7 +345,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
               <h2>Saved to list later <span className="inscat__n">{calcs.length}</span></h2>
               <span className="field__hint">Keep a worked-out item, then list it, add it to a power sale, or send it to the channel or the feed.</span>
             </div>
-            {result && !draft && active.id && (
+            {!draft && active.id && (
               <div className="pc__keep">
                 <input aria-label="Item name" placeholder="Name this item to save it" value={keepTitle} maxLength={120}
                   onChange={(e) => setKeepTitle(e.target.value)} />
@@ -328,31 +358,111 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
           {templates.length > 1 && !draft && (
             <Compare templates={templates} input={input} activeId={activeId} onPick={setActiveId} />
           )}
-
-          {draft && params.get('edit') && (
-            <button type="button" className="backlink pc__editback" onClick={goBack}>← Back to your listing, without saving</button>
-          )}
-          {draft ? (
-            <Editor draft={draft} onChange={setDraft} busy={busy} onSave={save}
-              onCancel={templates.length ? () => setDraft(null) : undefined} />
-          ) : (
-            <div className="pc__actions">
-              <button type="button" className="btn btn--sm" onClick={() => setDraft(structuredClone(active))}>✏️ Edit rates and costs</button>
-              <button type="button" className="btn btn--ghost btn--sm"
-                onClick={() => setDraft({ ...structuredClone(active), id: '', name: `${active.name} (copy)`, isDefault: false })}>
-                Duplicate
-              </button>
-              {!active.isDefault && (
-                <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
-                  onClick={() => { setDraft({ ...structuredClone(active), isDefault: true }); }}>
-                  ★ Make default
-                </button>
-              )}
-              <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void remove(active.id)}>Delete</button>
-            </div>
-          )}
         </>
       )}
+
+      <label className="pc__float">
+        <input type="checkbox" checked={floating} onChange={(e) => setFloating(e.target.checked)} />
+        <span>
+          <b>Floating calculator button</b>
+          <small>A <CalcIcon size={13} /> button on every screen, bottom right. Opens this calculator over whatever you are doing.</small>
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/** How a new calculator starts: one of the usual ways stock comes in, or nothing at all. */
+function ScenarioPicker({ onPick, onCancel }: { onPick: (scenario: Scenario | null) => void; onCancel?: () => void }) {
+  return (
+    <section className="card card--pad stack">
+      <div>
+        <h2>How does this stock come in?</h2>
+        <span className="field__hint">Pick the closest. Every rate and charge stays yours to change.</span>
+      </div>
+      <div className="pc__scens">
+        {SCENARIOS.map((scenario) => (
+          <button key={scenario.id} type="button" className="pc__scen" onClick={() => onPick(scenario)}>
+            <span className="pc__scenicon" aria-hidden="true">{scenario.icon}</span>
+            <b>{scenario.name}</b>
+            <small>{scenario.blurb}</small>
+          </button>
+        ))}
+        <button type="button" className="pc__scen pc__scen--blank" onClick={() => onPick(null)}>
+          <span className="pc__scenicon" aria-hidden="true">＋</span>
+          <b>Start blank</b>
+          <small>Every charge listed, all at zero. Fill in your own.</small>
+        </button>
+      </div>
+      {onCancel && <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} onClick={onCancel}>Cancel</button>}
+    </section>
+  );
+}
+
+/**
+ * The numbers a seller changes most - the rates - one tap away and always in
+ * view. The price currency, whether the supplier is paid in another one, and
+ * what each converts at.
+ */
+function Rates({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch: Partial<ProfitTemplate>) => void }) {
+  const via = Boolean(sheet.payCurrency) && sheet.payCurrency !== sheet.currency;
+  const pay = via ? sheet.payCurrency! : sheet.currency;
+  return (
+    <section className="card card--pad stack">
+      <div className="pc__ratehead">
+        <h2>Rates</h2>
+        <input className="pc__name" aria-label="Calculator name" value={sheet.name} maxLength={60}
+          onChange={(e) => onChange({ name: e.target.value })} placeholder="Name this calculator" />
+      </div>
+      <div className="pc__ratechain">
+        <label className="field">
+          <span>Priced in</span>
+          <input list="pc-currencies" value={sheet.currency} maxLength={6}
+            onChange={(e) => onChange({ currency: e.target.value.toUpperCase() })} />
+        </label>
+        <label className="field">
+          <span>Supplier paid in</span>
+          <select value={via ? sheet.payCurrency! : ''}
+            onChange={(e) => onChange(e.target.value
+              ? { payCurrency: e.target.value, payRate: sheet.payRate || 1 }
+              : { payCurrency: null })}>
+            <option value="">{sheet.currency || 'Same'} (same)</option>
+            {COMMON_CURRENCIES.filter((code) => code !== sheet.currency).map((code) => <option key={code} value={code}>{code}</option>)}
+          </select>
+        </label>
+        {via && (
+          <Num label={`${sheet.currency} for 1 ${pay}`} value={sheet.payRate ?? 0} step={0.01} onChange={(payRate) => onChange({ payRate })} />
+        )}
+        <Num label={`₹ for 1 ${pay || '…'}`} value={sheet.rate} step={0.01} onChange={(rate) => onChange({ rate })} />
+        <Num label="Target margin %" value={sheet.targetMarginPercent} step={1} onChange={(targetMarginPercent) => onChange({ targetMarginPercent })} />
+      </div>
+      <datalist id="pc-currencies">{COMMON_CURRENCIES.map((code) => <option key={code} value={code} />)}</datalist>
+    </section>
+  );
+}
+
+/** Each line switched on, and what it came to per item. */
+function Breakdown({ result }: { result: ProfitResult }) {
+  return (
+    <div className="stack" style={{ gap: 8, marginTop: 10 }}>
+      {COST_STAGES.map((stage) => {
+        const rows = result.lines.filter((line) => line.stage === stage && line.enabled);
+        if (stage !== 'buying' && rows.length === 0) return null;
+        return (
+          <div key={stage} className="pc__stage">
+            <div className="pc__stagehead">
+              <span className={`pc__dot pc__dot--${STAGE_TONES[stage]}`} />
+              <b>{STAGE_LABELS[stage]}</b>
+              <span>{inr(result.stages[stage])}</span>
+            </div>
+            {stage === 'buying' && <div className="pc__line"><span>Item</span><span>{inr(result.itemCost)}</span></div>}
+            {rows.map((line) => (
+              <div key={line.id} className="pc__line"><span>{line.label}</span><span>{inr(line.perItem)}</span></div>
+            ))}
+          </div>
+        );
+      })}
+      <div className="pc__line pc__line--total"><span>Landed cost per item</span><span>{inr(result.landed)}</span></div>
     </div>
   );
 }
@@ -418,141 +528,144 @@ function Compare({ templates, input, activeId, onPick }: {
 const newLineId = () => `c_${Math.random().toString(36).slice(2, 9)}`;
 
 /**
- * The cost sheet itself: the rate, then every line, grouped by where in the
- * journey it is paid. A switched-off line stays on the sheet, greyed, so the
- * seller can see what they chose to leave out.
+ * The charges on the sheet. Only the ones switched on are laid out, grouped by
+ * where in the journey they are paid; the rest wait below as one-tap chips,
+ * so the sheet reads as what this seller pays rather than everything anyone might.
  */
-function Editor({ draft, onChange, busy, onSave, onCancel }: {
-  draft: ProfitTemplate; onChange: (next: ProfitTemplate) => void; busy: boolean;
-  onSave: () => void; onCancel?: () => void;
-}) {
-  const patch = (next: Partial<ProfitTemplate>) => onChange({ ...draft, ...next });
+function Charges({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch: Partial<ProfitTemplate>) => void }) {
+  const [adding, setAdding] = useState(false);
   const setLine = (id: string, next: Partial<CostLine>) =>
-    patch({ lines: draft.lines.map((line) => (line.id === id ? { ...line, ...next } : line)) });
+    onChange({ lines: ordered(sheet.lines.map((line) => (line.id === id ? { ...line, ...next } : line))) });
 
   /** Keep the sheet in journey order: a line joins the end of its stage. */
-  const ordered = (lines: CostLine[]) => COST_STAGES.flatMap((stage) => lines.filter((line) => line.stage === stage));
+  function ordered(lines: CostLine[]) {
+    return COST_STAGES.flatMap((stage) => lines.filter((line) => line.stage === stage));
+  }
+
+  const on = sheet.lines.filter((line) => line.enabled);
+  const off = sheet.lines.filter((line) => !line.enabled);
+  const via = paysVia(sheet);
+  const sized = on.some((line) => line.kind === 'per_kg' && line.volumetric);
 
   const move = (id: string, by: -1 | 1) => {
-    const lines = [...draft.lines];
+    const lines = [...sheet.lines];
     const at = lines.findIndex((line) => line.id === id);
-    const to = at + by;
+    let to = at + by;
+    // Step over switched-off lines: they are not on screen to be stepped past.
+    while (to >= 0 && to < lines.length && !lines[to]!.enabled && lines[to]!.stage === lines[at]!.stage) to += by;
     if (to < 0 || to >= lines.length || lines[to]!.stage !== lines[at]!.stage) return;
     [lines[at], lines[to]] = [lines[to]!, lines[at]!];
-    patch({ lines });
+    onChange({ lines });
   };
-  const add = (stage: CostStage) => patch({
-    lines: ordered([...draft.lines, { id: newLineId(), label: 'New cost', stage, kind: 'per_item', amount: 0, currency: 'INR', enabled: true }]),
+  const addOwn = () => onChange({
+    lines: ordered([...sheet.lines, { id: newLineId(), label: 'New charge', stage: 'domestic', kind: 'per_item', amount: 0, currency: 'INR', enabled: true }]),
   });
-  const drop = (id: string) => patch({ lines: draft.lines.filter((line) => line.id !== id) });
+  const drop = (id: string) => onChange({ lines: sheet.lines.filter((line) => line.id !== id) });
 
   return (
     <section className="card card--pad stack pc__editor">
       <div>
-        <h2>✏️ {draft.id ? 'Edit calculator' : 'New calculator'}</h2>
-        <span className="field__hint">Tick the costs that apply to you. Everything updates the result above as you type; save to keep it.</span>
-      </div>
-
-      <div className="pc__fields">
-        <label className="field">
-          <span>Name</span>
-          <input value={draft.name} maxLength={60} onChange={(e) => patch({ name: e.target.value })} placeholder="Japan by air" />
-        </label>
-        <label className="field">
-          <span>Buying currency</span>
-          <input list="pc-currencies" value={draft.currency} maxLength={6}
-            onChange={(e) => patch({ currency: e.target.value.toUpperCase() })} />
-          <datalist id="pc-currencies">{COMMON_CURRENCIES.map((code) => <option key={code} value={code} />)}</datalist>
-        </label>
-        <Num label={`Your rate (₹ for 1 ${draft.currency || '…'})`} value={draft.rate} step={0.0001} onChange={(rate) => patch({ rate })} />
-        <Num label="Target margin (%)" value={draft.targetMarginPercent} step={1} onChange={(targetMarginPercent) => patch({ targetMarginPercent })} />
-        <Num label="Volumetric divisor (L×W×H ÷)" value={draft.volumetricDivisor} step={100} onChange={(volumetricDivisor) => patch({ volumetricDivisor })} />
-        <label className="field pc__check">
-          <input type="checkbox" checked={draft.isDefault} onChange={(e) => patch({ isDefault: e.target.checked })} />
-          <span>Open this one first</span>
-        </label>
+        <h2>Charges</h2>
+        <span className="field__hint">Everything added on top of the item. Results above follow as you type.</span>
       </div>
 
       {COST_STAGES.map((stage) => {
-        const lines = draft.lines.filter((line) => line.stage === stage);
+        const lines = on.filter((line) => line.stage === stage);
+        if (lines.length === 0) return null;
         return (
-          <fieldset key={stage} className="pc__group">
-            <legend><span className={`pc__dot pc__dot--${STAGE_TONES[stage]}`} /> {STAGE_LABELS[stage]}</legend>
+          <div key={stage} className="pc__group">
+            <span className="pc__grouphead"><span className={`pc__dot pc__dot--${STAGE_TONES[stage]}`} /> {STAGE_LABELS[stage]}</span>
             {lines.map((line, index) => {
-              const earlier = draft.lines.slice(0, draft.lines.indexOf(line));
+              const earlier = sheet.lines.slice(0, sheet.lines.indexOf(line)).filter((prior) => prior.enabled);
               return (
-                <div key={line.id} className={`pc__row${line.enabled ? '' : ' is-off'}`}>
+                <div key={line.id} className="pc__row">
                   <div className="pc__rowtop">
-                    <input type="checkbox" aria-label={`Include ${line.label}`} checked={line.enabled}
-                      onChange={(e) => setLine(line.id, { enabled: e.target.checked })} />
-                    <input className="pc__label" value={line.label} maxLength={80} aria-label="Cost name"
+                    <input className="pc__label" value={line.label} maxLength={80} aria-label="Charge name"
                       onChange={(e) => setLine(line.id, { label: e.target.value })} />
+                    <span className="pc__amount">
+                      <input type="number" inputMode="decimal" min={0} step={0.01} aria-label={`${line.label} amount`}
+                        value={line.amount === 0 ? '' : line.amount} placeholder="0"
+                        onChange={(e) => setLine(line.id, { amount: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                      {line.kind === 'percent' ? (
+                        <span className="pc__unit">%</span>
+                      ) : (
+                        <select value={line.currency === 'pay' && !via ? 'foreign' : line.currency} aria-label="Currency"
+                          onChange={(e) => setLine(line.id, { currency: e.target.value as LineCurrency })}>
+                          <option value="INR">₹</option>
+                          <option value="foreign">{sheet.currency || 'Foreign'}</option>
+                          {via && <option value="pay">{sheet.payCurrency}</option>}
+                        </select>
+                      )}
+                    </span>
+                    <button type="button" className="btn btn--quiet btn--sm" aria-label={`Switch off ${line.label}`}
+                      onClick={() => (line.id.startsWith('c_') ? drop(line.id) : setLine(line.id, { enabled: false }))}>✕</button>
+                  </div>
+                  <div className="pc__rowbody">
+                    <select value={line.kind} aria-label="How it is charged"
+                      onChange={(e) => setLine(line.id, { kind: e.target.value as CostKind, basis: line.basis ?? 'item' })}>
+                      {(Object.keys(KIND_LABELS) as CostKind[]).map((kind) => <option key={kind} value={kind}>{KIND_LABELS[kind]}</option>)}
+                    </select>
+                    {line.kind === 'percent' && (
+                      <select value={line.basis ?? 'item'} aria-label="Percent of"
+                        onChange={(e) => setLine(line.id, { basis: e.target.value as CostBasis })}>
+                        {(Object.keys(BASIS_LABELS) as CostBasis[]).map((basis) => <option key={basis} value={basis}>{BASIS_LABELS[basis]}</option>)}
+                      </select>
+                    )}
+                    {line.kind === 'percent' && line.basis === 'line' && (
+                      <select value={line.basisLineId ?? ''} aria-label="Which line"
+                        onChange={(e) => setLine(line.id, { basisLineId: e.target.value })}>
+                        <option value="">Pick a line above…</option>
+                        {earlier.map((prior) => <option key={prior.id} value={prior.id}>{prior.label}</option>)}
+                      </select>
+                    )}
+                    <select value={line.stage} aria-label="Paid at"
+                      onChange={(e) => setLine(line.id, { stage: e.target.value as CostStage })}>
+                      {COST_STAGES.map((entry) => <option key={entry} value={entry}>{STAGE_LABELS[entry]}</option>)}
+                    </select>
                     <span className="pc__tools">
                       <button type="button" className="btn btn--quiet btn--sm" aria-label="Move up" disabled={index === 0} onClick={() => move(line.id, -1)}>↑</button>
                       <button type="button" className="btn btn--quiet btn--sm" aria-label="Move down" disabled={index === lines.length - 1} onClick={() => move(line.id, 1)}>↓</button>
-                      <button type="button" className="btn btn--quiet btn--sm" aria-label="Remove" onClick={() => drop(line.id)}>✕</button>
                     </span>
-                  </div>
-                  {line.enabled && (
-                    <div className="pc__rowbody">
-                      <select value={line.kind} aria-label="How it is charged"
-                        onChange={(e) => setLine(line.id, { kind: e.target.value as CostKind, basis: line.basis ?? 'item' })}>
-                        {(Object.keys(KIND_LABELS) as CostKind[]).map((kind) => <option key={kind} value={kind}>{KIND_LABELS[kind]}</option>)}
-                      </select>
-                      <span className="pc__amount">
-                        <input type="number" inputMode="decimal" min={0} step={0.01} aria-label="Amount"
-                          value={line.amount === 0 ? '' : line.amount} placeholder="0"
-                          onChange={(e) => setLine(line.id, { amount: e.target.value === '' ? 0 : Number(e.target.value) })} />
-                        {line.kind === 'percent' ? (
-                          <span className="pc__unit">%</span>
-                        ) : (
-                          <select value={line.currency} aria-label="Currency"
-                            onChange={(e) => setLine(line.id, { currency: e.target.value as 'foreign' | 'INR' })}>
-                            <option value="INR">₹</option>
-                            <option value="foreign">{draft.currency || 'Foreign'}</option>
-                          </select>
-                        )}
-                        {line.kind === 'per_kg' && <span className="pc__unit">/ kg</span>}
+                    {line.kind === 'per_kg' && (
+                      <span className="pc__kg">
+                        <label>Min kg <input type="number" min={0} step={0.5} value={line.minKg ?? 0}
+                          onChange={(e) => setLine(line.id, { minKg: Number(e.target.value) || 0 })} /></label>
+                        <label>Round up to <input type="number" min={0} step={0.5} value={line.stepKg ?? 0}
+                          onChange={(e) => setLine(line.id, { stepKg: Number(e.target.value) || 0 })} /> kg</label>
+                        <label className="pc__check"><input type="checkbox" checked={Boolean(line.volumetric)}
+                          onChange={(e) => setLine(line.id, { volumetric: e.target.checked })} /> Volumetric if heavier</label>
                       </span>
-                      {line.kind === 'percent' && (
-                        <select value={line.basis ?? 'item'} aria-label="Percent of"
-                          onChange={(e) => setLine(line.id, { basis: e.target.value as CostBasis })}>
-                          {(Object.keys(BASIS_LABELS) as CostBasis[]).map((basis) => <option key={basis} value={basis}>{BASIS_LABELS[basis]}</option>)}
-                        </select>
-                      )}
-                      {line.kind === 'percent' && line.basis === 'line' && (
-                        <select value={line.basisLineId ?? ''} aria-label="Which line"
-                          onChange={(e) => setLine(line.id, { basisLineId: e.target.value })}>
-                          <option value="">Pick a line above…</option>
-                          {earlier.map((prior) => <option key={prior.id} value={prior.id}>{prior.label}</option>)}
-                        </select>
-                      )}
-                      {line.kind === 'per_kg' && (
-                        <span className="pc__kg">
-                          <label>Min kg <input type="number" min={0} step={0.5} value={line.minKg ?? 0}
-                            onChange={(e) => setLine(line.id, { minKg: Number(e.target.value) || 0 })} /></label>
-                          <label>Round up to <input type="number" min={0} step={0.5} value={line.stepKg ?? 0}
-                            onChange={(e) => setLine(line.id, { stepKg: Number(e.target.value) || 0 })} /> kg</label>
-                          <label className="pc__check"><input type="checkbox" checked={Boolean(line.volumetric)}
-                            onChange={(e) => setLine(line.id, { volumetric: e.target.checked })} /> Use volumetric if heavier</label>
-                        </span>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               );
             })}
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => add(stage)}>＋ Add a cost</button>
-          </fieldset>
+          </div>
         );
       })}
+      {on.length === 0 && <p className="faint">No charges yet - the item price is all it costs.</p>}
 
-      <div className="pc__actions pc__actions--sticky">
-        <button type="button" className="btn" disabled={busy || !draft.name.trim()} onClick={onSave}>
-          {busy ? 'Saving…' : 'Save calculator'}
-        </button>
-        {onCancel && <button type="button" className="btn btn--ghost" disabled={busy} onClick={onCancel}>Cancel</button>}
-      </div>
+      {sized && (
+        <div className="pc__fields">
+          <Num label="Volumetric divisor (L×W×H ÷)" value={sheet.volumetricDivisor} step={100}
+            onChange={(volumetricDivisor) => onChange({ volumetricDivisor })} />
+        </div>
+      )}
+
+      <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }} aria-expanded={adding}
+        onClick={() => setAdding((open) => !open)}>
+        {adding ? '▾' : '＋'} Add a charge
+      </button>
+      {adding && (
+        <div className="pc__chips">
+          {off.map((line) => (
+            <button key={line.id} type="button" className="pc__chip" onClick={() => setLine(line.id, { enabled: true })}>
+              <span className={`pc__dot pc__dot--${STAGE_TONES[line.stage]}`} /> {line.label}
+            </button>
+          ))}
+          <button type="button" className="pc__chip pc__chip--own" onClick={addOwn}>＋ Your own</button>
+        </div>
+      )}
     </section>
   );
 }

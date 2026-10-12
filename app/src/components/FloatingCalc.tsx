@@ -4,7 +4,7 @@ import { calculateProfit, stepsFromResult, type ProfitInput, type ProfitTemplate
 import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
-import { CalcInputs, CalcLines } from './CostSheetField';
+import { CalcInputs, CalcLines, PriceRoute } from './CostSheetField';
 import { ErrorNotice } from './ui';
 import { CalcIcon } from './CalcIcon';
 
@@ -265,6 +265,7 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
             <CalcInputs template={template} input={input} onChange={setInput} withSelling shop={storeId} onLeave={onLeave} />
             {result && (
               <>
+                <PriceRoute template={template} input={input} result={result} />
                 <div className={`fcalc__result${input.sellingPrice > 0 && result.profit < 0 ? ' is-loss' : ''}`}>
                   <span><small>Profit per item</small><b>{formatMoney(Math.round(result.profit * 100))}</b></span>
                   <span><small>Margin</small><b>{result.marginPercent === null ? '—' : `${result.marginPercent.toFixed(1)}%`}</b></span>

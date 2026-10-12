@@ -136,7 +136,7 @@ const {
   deleteProfitTemplateRoute: deleteProfitTemplate,
   listSavedCalcsRoute: listSavedCalcs, saveSavedCalcRoute: saveSavedCalc, deleteSavedCalcRoute: deleteSavedCalc,
 } = await import(new URL('profit-routes.js', fns));
-const { calculateProfit, starterLines, sheetTotal } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
+const { calculateProfit, starterLines, sheetTotal, SCENARIOS } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
 const {
   costsRoute: costsRead, saveCostSheetRoute: saveCostSheet, deepRoute: deepRead, salesReportRoute: salesReport, nudgeRoute: nudge,
 } = await import(new URL('pro-routes.js', fns));
@@ -8207,6 +8207,22 @@ await check('the calculator works a landed cost out line by line, in order', () 
   assert.equal(bulky.landed, 12 * 800, 'a light, large box is charged on its volume');
 });
 
+await check('a yuan price paid in dollars goes yuan → dollars → rupees: (¥ / 6.7) × 1.1 + $2', () => {
+  const scenario = SCENARIOS.find((entry) => entry.id === 'cny_usd');
+  const template = { ...scenario.sheet(), id: 't', isDefault: true, createdAt: '', updatedAt: '' };
+  assert.equal(template.currency, 'CNY');
+  assert.equal(template.payCurrency, 'USD');
+  const result = calculateProfit({ ...template, rate: 88 }, { itemPrice: 134, quantity: 3, weightKg: 0, sellingPrice: 0 });
+  const usd = (134 / 6.7) * 1.1 + 2;
+  assert.ok(Math.abs(result.supplierPay - usd) < 1e-9, `the supplier is paid $${usd.toFixed(2)}, got ${result.supplierPay}`);
+  assert.equal(result.supplierCurrency, 'USD');
+  assert.ok(Math.abs(result.landed - usd * 88) < 1e-9, 'and that, in rupees, is the landed cost when nothing else is on');
+  const dearer = calculateProfit({ ...template, rate: 88, payRate: 7.1 }, { itemPrice: 134, quantity: 1, weightKg: 0, sellingPrice: 0 });
+  assert.ok(Math.abs(dearer.supplierPay - ((134 / 7.1) * 1.1 + 2)) < 1e-9, 'the supplier rate is the seller\'s to change');
+  const plain = calculateProfit({ ...template, payCurrency: null, rate: 12 }, { itemPrice: 100, quantity: 1, weightKg: 0, sellingPrice: 0 });
+  assert.equal(plain.itemCost, 1200, 'with no pay currency the rate is rupees per yuan, as before');
+});
+
 await check('a shop keeps its own calculators, and only its people read them', async () => {
   const first = await listProfitTemplates(req({ headers: auth }), ctx);
   assert.equal(first.status, 200);
@@ -8219,6 +8235,12 @@ await check('a shop keeps its own calculators, and only its people read them', a
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   assert.equal(made.jsonBody.template.currency, 'JPY');
   assert.equal(made.jsonBody.template.isDefault, true, 'the first one is the default');
+  const routed = await saveProfitTemplate(req({ headers: auth, body: { ...SCENARIOS[0].sheet(), payCurrency: 'usd' } }), ctx);
+  assert.equal(routed.status, 201, JSON.stringify(routed.jsonBody));
+  assert.equal(routed.jsonBody.template.payCurrency, 'USD');
+  assert.equal(routed.jsonBody.template.payRate, 6.7);
+  assert.equal(routed.jsonBody.template.lines.find((line) => line.id === 'origin_ship').currency, 'pay', 'a line priced in the pay currency keeps it');
+  await deleteProfitTemplate(req({ headers: auth, params: { id: routed.jsonBody.template.id } }), ctx);
   const second = await saveProfitTemplate(req({ headers: auth, body: {
     name: 'China by sea', currency: 'CNY', rate: 11.6, isDefault: true, lines: starterLines().slice(0, 3),
   } }), ctx);

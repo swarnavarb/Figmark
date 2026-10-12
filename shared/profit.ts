@@ -11,6 +11,11 @@
  * Everything is worked out per item, in rupees, in the order the lines are
  * listed - a percentage line can only lean on what came before it, which is
  * also the order the money is actually spent in.
+ *
+ * Some sellers are quoted in one currency and pay in another: a yuan price,
+ * settled with the supplier in dollars at the supplier's own rate, then the
+ * dollars bought with rupees. A template can say so (`payCurrency`), and the
+ * item price then goes yuan → dollars → rupees, each at its own rate.
  */
 
 export const COST_STAGES = ['buying', 'origin', 'international', 'customs', 'domestic', 'selling'] as const;
@@ -48,6 +53,8 @@ export const BASIS_LABELS: Record<CostBasis, string> = {
   line: 'of another cost line',
 };
 
+export type LineCurrency = 'foreign' | 'pay' | 'INR';
+
 export interface CostLine {
   id: string;
   label: string;
@@ -55,8 +62,12 @@ export interface CostLine {
   kind: CostKind;
   /** Money for fixed and per-kg lines, a percentage for percent lines. */
   amount: number;
-  /** Which currency a money amount is in. Ignored by percent lines. */
-  currency: 'foreign' | 'INR';
+  /**
+   * Which currency a money amount is in. Ignored by percent lines. `foreign`
+   * is the currency items are priced in; `pay` the one the supplier is paid
+   * in, when the template has one (otherwise the same as `foreign`).
+   */
+  currency: LineCurrency;
   basis?: CostBasis;
   /** The line a `line` basis is taken of. Must come earlier in the list. */
   basisLineId?: string | null;
@@ -72,9 +83,19 @@ export interface CostLine {
 export interface ProfitTemplate {
   id: string;
   name: string;
-  /** The currency items are bought in - USD, JPY, CNY... */
+  /** The currency items are priced in - USD, JPY, CNY... */
   currency: string;
-  /** Rupees for one unit of `currency`, at whatever rate this seller actually gets. */
+  /**
+   * The currency the supplier is actually paid in, when it is not `currency`
+   * - a yuan price paid in dollars. Null or absent: paid in `currency`.
+   */
+  payCurrency?: string | null;
+  /** Units of `currency` for one unit of `payCurrency` - 6.7 yuan to the dollar. */
+  payRate?: number;
+  /**
+   * Rupees for one unit of the currency the supplier is paid in (`payCurrency`
+   * when set, else `currency`), at whatever rate this seller actually gets.
+   */
   rate: number;
   /** Divisor for volumetric weight: L × W × H (cm) ÷ this. 5000 for most air couriers. */
   volumetricDivisor: number;
@@ -128,15 +149,37 @@ export interface ProfitResult {
   suggested: number | null;
   actualKg: number;
   volumetricKg: number;
+  /**
+   * Everything in the buying stage - the item and what the supplier adds to
+   * it - in the currency the supplier is paid in. What is sent to them per item.
+   */
+  supplierPay: number;
+  /** The currency `supplierPay` is in. */
+  supplierCurrency: string;
+}
+
+const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+
+/** Whether the supplier is paid in a currency other than the price's. */
+export const paysVia = (template: Pick<ProfitTemplate, 'currency' | 'payCurrency' | 'payRate'>): boolean =>
+  Boolean(template.payCurrency) && template.payCurrency !== template.currency && num(template.payRate) > 0;
+
+/** The currency the supplier is paid in. */
+export const payCurrencyOf = (template: Pick<ProfitTemplate, 'currency' | 'payCurrency' | 'payRate'>): string =>
+  (paysVia(template) ? template.payCurrency! : template.currency);
+
+/** Rupees for one unit of the price currency, through the pay currency when there is one. */
+export function inrPerUnit(template: Pick<ProfitTemplate, 'currency' | 'payCurrency' | 'payRate' | 'rate'>): number {
+  const rate = Math.max(0, num(template.rate));
+  return paysVia(template) ? rate / num(template.payRate) : rate;
 }
 
 const CIF_STAGES: readonly CostStage[] = ['origin', 'international'];
 
-const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
-
 /** Costs for one selling price. */
 function costsAt(template: ProfitTemplate, input: ProfitInput, selling: number) {
-  const rate = Math.max(0, num(template.rate));
+  const rate = inrPerUnit(template);
+  const inrPerPay = Math.max(0, num(template.rate));
   const quantity = Math.max(1, Math.floor(num(input.quantity)) || 1);
   const itemCost = Math.max(0, num(input.itemPrice)) * rate;
   const actualKg = Math.max(0, num(input.weightKg)) * quantity;
@@ -154,7 +197,7 @@ function costsAt(template: ProfitTemplate, input: ProfitInput, selling: number) 
   for (const line of template.lines) {
     let perItem = 0;
     if (line.enabled) {
-      const money = num(line.amount) * (line.currency === 'foreign' ? rate : 1);
+      const money = num(line.amount) * (line.currency === 'foreign' ? rate : line.currency === 'pay' ? inrPerPay : 1);
       switch (line.kind) {
         case 'per_item':
           perItem = money;
@@ -199,6 +242,7 @@ function costsAt(template: ProfitTemplate, input: ProfitInput, selling: number) 
   return { itemCost, lines, landed: itemCost + soFar, quantity, actualKg, volumetricKg };
 }
 
+
 /**
  * The whole sum for one set of inputs.
  *
@@ -238,11 +282,13 @@ export function calculateProfit(template: ProfitTemplate, input: ProfitInput): P
     suggested,
     actualKg: at.actualKg,
     volumetricKg: at.volumetricKg,
+    supplierPay: num(template.rate) > 0 ? stages.buying / num(template.rate) : 0,
+    supplierCurrency: payCurrencyOf(template),
   };
 }
 
 type Seed = Omit<CostLine, 'id' | 'enabled' | 'amount' | 'currency'> & {
-  key: string; on?: boolean; amount?: number; currency?: 'foreign' | 'INR';
+  key: string; on?: boolean; amount?: number; currency?: LineCurrency;
 };
 
 /**
@@ -290,6 +336,123 @@ export function starterLines(): CostLine[] {
 }
 
 export const COMMON_CURRENCIES = ['USD', 'JPY', 'CNY', 'EUR', 'GBP', 'HKD', 'KRW', 'SGD', 'AED', 'THB'] as const;
+
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', JPY: '¥', CNY: '¥', EUR: '€', GBP: '£', HKD: 'HK$', KRW: '₩', SGD: 'S$', AED: 'AED ', THB: '฿', INR: '₹',
+};
+
+/** "¥" for CNY, "$" for USD; the code itself, with a space, for anything else. */
+export const symbolOf = (code: string) => CURRENCY_SYMBOLS[code] ?? `${code} `;
+
+/* ── Scenarios ─────────────────────────────────────────────────────────── */
+
+/** The parts of a template a scenario fills in. */
+export type ScenarioSheet = Pick<ProfitTemplate,
+  'name' | 'currency' | 'payCurrency' | 'payRate' | 'rate' | 'volumetricDivisor' | 'targetMarginPercent' | 'lines'>;
+
+export interface Scenario {
+  id: string;
+  icon: string;
+  name: string;
+  /** One line: how the money moves. */
+  blurb: string;
+  sheet: () => ScenarioSheet;
+}
+
+/** The starter sheet with some lines switched on, priced, or renamed. */
+function linesWith(changes: Record<string, Partial<CostLine>>, onlyThese = false): CostLine[] {
+  return starterLines().map((line) => {
+    const change = changes[line.id];
+    if (change) return { ...line, enabled: true, ...change };
+    return onlyThese ? { ...line, enabled: false } : line;
+  });
+}
+
+/** The agent's markup moved to the top, ahead of what the supplier charges to ship. */
+const markupFirst = (lines: CostLine[]) => [...lines.filter((line) => line.id === 'agent'), ...lines.filter((line) => line.id !== 'agent')];
+
+/**
+ * Ways stock comes in, as a starting sheet each. The rates are a starting
+ * point, not a quote: every one is the seller's to change, and the sheet
+ * keeps whatever they set.
+ */
+export const SCENARIOS: Scenario[] = [
+  {
+    id: 'cny_usd',
+    icon: '🇨🇳',
+    name: 'China, paid in USD',
+    blurb: 'Yuan price → dollars at the supplier\'s rate, + markup, + shipping per item → rupees',
+    sheet: () => ({
+      name: 'China, paid in USD',
+      currency: 'CNY',
+      payCurrency: 'USD',
+      payRate: 6.7,
+      rate: 88,
+      volumetricDivisor: 5000,
+      targetMarginPercent: 25,
+      // The markup is on the converted price, then the shipping is added:
+      // (yuan ÷ 6.7) × 1.1 + 2, in that order.
+      lines: markupFirst(linesWith({
+        agent: { label: 'Supplier markup', amount: 10 },
+        origin_ship: { label: 'Supplier shipping, per item', kind: 'per_item', currency: 'pay', amount: 2 },
+      }, true)),
+    }),
+  },
+  {
+    id: 'cny',
+    icon: '🏮',
+    name: 'China, paid in yuan',
+    blurb: 'Yuan straight to rupees, an agent fee, freight by the kg, duty and IGST',
+    sheet: () => ({
+      name: 'China, paid in yuan',
+      currency: 'CNY',
+      payCurrency: null,
+      rate: 12.3,
+      volumetricDivisor: 6000,
+      targetMarginPercent: 25,
+      lines: linesWith({
+        agent: { label: 'Agent fee', amount: 5 },
+        freight: { amount: 45 },
+      }),
+    }),
+  },
+  {
+    id: 'jpy_air',
+    icon: '🇯🇵',
+    name: 'Japan by air',
+    blurb: 'Yen to rupees, a proxy fee, air freight on volumetric weight, duty and IGST',
+    sheet: () => ({
+      name: 'Japan by air',
+      currency: 'JPY',
+      payCurrency: null,
+      rate: 0.59,
+      volumetricDivisor: 5000,
+      targetMarginPercent: 30,
+      lines: linesWith({
+        agent: { label: 'Proxy fee', amount: 5 },
+        freight: { amount: 1800 },
+      }),
+    }),
+  },
+  {
+    id: 'usd_fwd',
+    icon: '🇺🇸',
+    name: 'USA via a forwarder',
+    blurb: 'Dollars to rupees, sales tax, a forwarder by the kg, duty and IGST',
+    sheet: () => ({
+      name: 'USA via a forwarder',
+      currency: 'USD',
+      payCurrency: null,
+      rate: 88,
+      volumetricDivisor: 5000,
+      targetMarginPercent: 25,
+      lines: linesWith({
+        foreign_tax: { amount: 8 },
+        freight: { amount: 12 },
+      }),
+    }),
+  },
+];
 
 /* ── An item's own costs ───────────────────────────────────────────────── */
 
