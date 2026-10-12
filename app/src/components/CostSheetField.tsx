@@ -222,7 +222,7 @@ export const moneyIn = (code: string, value: number) =>
 /**
  * How the price becomes rupees, step by step: the price abroad, what the
  * supplier is paid (in their currency, with whatever they add to it), and that
- * in rupees. A seller paying in dollars for a yuan price sees each hop, and
+ * in rupees, as a small receipt. A seller paying in dollars for a yuan price sees each hop, and
  * each rate, as the numbers they agreed.
  */
 export function PriceRoute({ template, input, result }: { template: ProfitTemplate; input: ProfitInput; result: ProfitResult }) {
@@ -230,21 +230,8 @@ export function PriceRoute({ template, input, result }: { template: ProfitTempla
   const via = paysVia(template);
   const toPay = (inr: number) => (template.rate > 0 ? inr / template.rate : 0);
   const buying = result.lines.filter((line) => line.stage === 'buying' && line.enabled && line.perItem !== 0);
-  const hops = [
-    { code: template.currency, value: input.itemPrice || 0, label: 'Price' },
-    ...(via || buying.length ? [{ code: pay, value: result.supplierPay, label: 'Supplier' }] : []),
-    { code: 'INR', value: result.stages.buying, label: 'In rupees' },
-  ];
   return (
     <div className="pc__route">
-      <ol className="pc__hops">
-        {hops.map((hop, at) => (
-          <li key={hop.label} className={at === hops.length - 1 ? 'is-last' : ''}>
-            <small>{hop.label}</small>
-            <b>{moneyIn(hop.code, hop.value)}</b>
-          </li>
-        ))}
-      </ol>
       <dl className="pc__receipt">
         <div>
           <dt>{via ? `${symbolOf(template.currency)}${input.itemPrice || 0} ÷ ${template.payRate}` : 'Item'}</dt>

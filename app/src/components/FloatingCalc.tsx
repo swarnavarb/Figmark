@@ -265,12 +265,12 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
             <CalcInputs template={template} input={input} onChange={setInput} withSelling shop={storeId} onLeave={onLeave} />
             {result && (
               <>
-                <PriceRoute template={template} input={input} result={result} />
                 <div className={`fcalc__result${input.sellingPrice > 0 && result.profit < 0 ? ' is-loss' : ''}`}>
                   <span><small>Profit per item</small><b>{formatMoney(Math.round(result.profit * 100))}</b></span>
                   <span><small>Margin</small><b>{result.marginPercent === null ? '—' : `${result.marginPercent.toFixed(1)}%`}</b></span>
                   <span><small>Landed</small><b>{formatMoney(Math.round(result.landed * 100))}</b></span>
                 </div>
+                <PriceRoute template={template} input={input} result={result} />
                 <CalcLines template={template} input={input} result={result} />
               </>
             )}
