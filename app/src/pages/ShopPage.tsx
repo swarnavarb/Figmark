@@ -2162,13 +2162,26 @@ function OrderRow({
           <ReadyChip row={row} />
           {row.quantity > 1 && <span>×{row.quantity}</span>}
           {row.privateDeal && <span>🤝 Private</span>}
-          <span className={row.outstandingMinor > 0 ? 'lrow__due' : undefined}>
-            {row.outstandingMinor > 0
-              ? `${formatMoney(row.outstandingMinor, row.currency)} due of ${formatMoney(row.totalMinor, row.currency)}`
-              : formatMoney(row.totalMinor, row.currency)}
-          </span>
-          {row.creditMinor > 0 && <span className="ocard__extra">{formatMoney(row.creditMinor, row.currency)} extra</span>}
+          <span>{timeAgo(row.createdAt)}</span>
         </div>
+
+        {/* The money, always: what it costs, what has landed, what is left. */}
+        <div className={`lrow__money lrow__wide${row.outstandingMinor > 0 ? ' is-due' : ' is-clear'}`}>
+          <span className="lrow__cell"><small>Total</small><b>{formatMoney(row.totalMinor, row.currency)}</b></span>
+          <span className="lrow__cell lrow__cell--paid"><small>Paid</small><b>{formatMoney(Math.min(row.paidMinor, row.totalMinor), row.currency)}</b></span>
+          <span className="lrow__cell lrow__cell--due"><small>Due</small><b>{formatMoney(Math.max(0, row.outstandingMinor), row.currency)}</b></span>
+          <span className="lrow__bar" aria-hidden="true"><span style={{ width: `${paidShare}%` }} /></span>
+          {row.creditMinor > 0 && <span className="ocard__extra lrow__extra">{formatMoney(row.creditMinor, row.currency)} extra</span>}
+        </div>
+
+        {/* Where it stands, in words: accepted and waiting to be paid, paid, on its way... */}
+        {statusLine && !awaitingClaim && (
+          <div className="lrow__wide lrow__status">
+            {/* In a lot the handler ships it, so paid is just paid. */}
+            <StatusBanner compact line={row.paymentStatus === 'paid' && statusLine.tone === 'ok' && !row.dispatchedAt && row.status !== 'delivered'
+              ? { ...statusLine, title: 'Payment received', note: undefined } : statusLine} />
+          </div>
+        )}
 
         {awaitingClaim && row.claim && (
           <div className="ocard__claim lrow__wide">
@@ -2307,7 +2320,7 @@ function OrderRow({
 
       {awaitingClaim && row.claim && (
         <div className="ocard__claim">
-          💸 Buyer says they paid <b>{formatMoney(row.claim.amountMinor ?? row.totalMinor, row.currency)}</b>
+          💸 Customer says they paid <b>{formatMoney(row.claim.amountMinor ?? row.totalMinor, row.currency)}</b>
           {row.claim.reference && <span className="ocard__ref"> · ref {row.claim.reference}</span>}
         </div>
       )}
