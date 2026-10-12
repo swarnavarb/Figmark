@@ -222,7 +222,8 @@ export function stepButtonLabel(
   vars?: { origin?: string | null; destination?: string | null },
 ): string {
   const own = step.button?.trim();
-  if (own) return own;
+  // Routes saved before the button was renamed still say it the long way.
+  if (own) return own === 'Packed for the buyer' ? 'Packed' : own;
   if (!step.trigger && !step.custom) return '';
   const name = (step.name ?? '').trim();
   if (!name) return step.trigger ? TRIGGER_LABELS[step.trigger].button : 'Done';

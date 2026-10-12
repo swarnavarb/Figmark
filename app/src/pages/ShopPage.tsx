@@ -207,12 +207,12 @@ function RouteIntro() {
       <div className="page__head"><div>
         <h1>How does your stock travel?</h1>
         <p className="muted">
-          A route is the list of steps your buyers read as their tracking — in your words, not
+          A route is the list of steps your customers read as their tracking — in your words, not
           ours. Write it once and every shipment you open uses it.
         </p>
       </div></div>
       <div className="notice notice--info">
-        <strong>Why it is worth a minute.</strong> Buyers ask "where is it?" because nothing
+        <strong>Why it is worth a minute.</strong> Customers ask "where is it?" because nothing
         told them. A route answers before they ask: they see the same steps you work, ticked as
         you tick them, from the day they order to the day it lands. You can change it whenever
         the way you ship changes.
@@ -1149,7 +1149,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     return (
       <EmptyState title="No orders yet">
         Every purchase lands here — the money, the warehouse, the lot it travels in, and the one
-        tick that tells the buyer it has arrived.
+        tick that tells the customer it has arrived.
       </EmptyState>
     );
   }
@@ -1222,7 +1222,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           </b>
           <span className="faint">
             {statusFilter === 'completed'
-              ? 'Orders land here once they reach the buyer.'
+              ? 'Orders land here once they reach the customer.'
               : statusFilter === 'closed'
                 ? 'Good news — every order is still going.'
                 : chip === 'answer'
@@ -2005,7 +2005,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
       {/* One route, not two ladders. The route already says where the item
           stops travelling alone, so both halves come from the same list and
           cannot contradict each other the way two written ones did. */}
-      <LBox icon="🧭" title="Tracking" hint="The journey a buyer of this item follows.">
+      <LBox icon="🧭" title="Tracking" hint="The journey a customer of this item follows.">
         <select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)} aria-label="Route">
           <option value="">
             {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
@@ -2024,7 +2024,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           <Ladder steps={before} current={-1} />
           <span className="field__hint">
             {before.length === 0
-              ? 'No steps before the lot — the buyer waits with no timeline until one is opened.'
+              ? 'No steps before the lot — the customer waits with no timeline until one is opened.'
               : `The other ${chosen.steps.length - before.length} steps arrive with the lot.`}
           </span>
         </div>

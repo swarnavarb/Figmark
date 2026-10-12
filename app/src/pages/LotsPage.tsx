@@ -68,7 +68,7 @@ function CrewCard({ lot, busy, onRun }: {
         <div>
           <h2>Supplier</h2>
           <span className="field__hint">
-            Who you buy this run from, and who checks and packs it before it leaves. Buyers
+            Who you buy this run from, and who checks and packs it before it leaves. Customers
             never see any of it.
           </span>
         </div>
@@ -82,8 +82,8 @@ function CrewCard({ lot, busy, onRun }: {
           <PersonTag value={supplierHandle} onChange={setSupplierHandle}
             placeholder={lot.supplier?.supplierUserId ? 'Tagged. Type another to change it.' : '@their_handle'} />
           <span className="field__hint">
-            Optional. Tag them and they get a packing list for this lot — pieces, counts and
-            weights, never your buyers or prices — and tick each one as they pack it.
+            Optional. Tag them and they get a packing list for this lot — orders, counts and
+            weights, never your customers or prices — and tick each one as they pack it.
           </span>
         </label>
         <div className="field-row">
@@ -228,7 +228,7 @@ function CrewButtonsCard({ lot, busy, onRun }: {
       <div>
         <h2>What they can press</h2>
         <span className="field__hint">
-          The buttons on their screen for this lot. Each press moves the item on its buyer’s timeline, so hand over
+          The buttons on their screen for this lot. Each press moves the item on its customer’s timeline, so hand over
           only what they will actually do.
         </span>
       </div>
@@ -464,7 +464,7 @@ export function NewLotForm({ onDone, onCancel }: {
       <fieldset className="pickset">
         <legend>How this lot travels</legend>
         <span className="field__hint">
-          Every order in the lot follows these steps, and buyers read them as their tracking.
+          Every order in the lot follows these steps, and customers read them as their tracking.
         </span>
 
         {routes.map((route) => (
@@ -516,7 +516,7 @@ export function NewLotForm({ onDone, onCancel }: {
             <span>Supplier</span>
             <PersonTag value={supplierHandle} onChange={setSupplierHandle} placeholder="@their_handle" />
             <span className="field__hint">
-              Who checks the pieces before the lot leaves. They get a packing list for this lot only.
+              Who checks the orders before the lot leaves. They get a packing list for this lot only.
             </span>
           </label>
 
@@ -665,7 +665,7 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
             <textarea value={note} rows={2} onChange={(event) => setNote(event.target.value)}
               placeholder="Forwarder is handling customs now, so the steps changed." />
             <span className="field__hint">
-              Every buyer in this lot reads it, beside the change.
+              Every customer in this lot reads it, beside the change.
             </span>
           </label>
         )}
@@ -1135,7 +1135,7 @@ export function LotDetail({ lotId, onBack, customers }: {
       setAsking({
         title: 'Move the whole lot?',
         text: <><strong>{lot.name}</strong> moves to <strong>{name}</strong>. Every item in it moves with it, and
-          every buyer in it reads the new step.</>,
+          every customer in it reads the new step.</>,
         yes: `🚢 Move lot to ${name}`,
         go: () => requestMove(targetAbsolute, details, label, true),
       });
@@ -1224,13 +1224,13 @@ export function LotDetail({ lotId, onBack, customers }: {
         </div>
         <div className="lothero__foot">
           <span className="lothero__buyers">
-            <span className="lothero__eyebrow">Buyers see</span>
+            <span className="lothero__eyebrow">Customers see</span>
             <LotPhaseBadge phase={phase} />
           </span>
           {(phase === 'filling' || (phase === 'closed' && lotStep < 0)) && (
             <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
               onClick={() => void run(
-                phase === 'filling' ? 'Lot closed. Buyers now see it is being prepped for dispatch.' : 'Lot reopened for orders.',
+                phase === 'filling' ? 'Lot closed. Customers now see it is being prepped for dispatch.' : 'Lot reopened for orders.',
                 async () => { await api.closeLot(lot.id, phase === 'filling'); },
               )}>
               {phase === 'filling' ? 'Close lot' : 'Reopen lot'}
@@ -1334,7 +1334,7 @@ export function LotDetail({ lotId, onBack, customers }: {
               moveUpTo={done ? -1 : crateEnd - route.offset}
               whose={items.length === 0
                 ? 'Nothing is riding in this lot yet, so this is a note to yourself.'
-                : items.length === 1 ? 'The buyer in this lot reads it.' : `Every one of the ${items.length} buyers in this lot reads it.`}
+                : items.length === 1 ? 'The customer in this lot reads it.' : `Every one of the ${items.length} customers in this lot reads it.`}
               onMove={done ? undefined : (to, details) =>
                 requestMove(to + route.offset, details, `Now: ${renderStepText(lotSteps[to]?.name ?? 'moved', lane)}.`)}
               onNote={(text, at) => run('Note added.', () =>
@@ -1348,7 +1348,7 @@ export function LotDetail({ lotId, onBack, customers }: {
                 🚢 Move lot to {renderStepText(nextStep.name, lane)}
               </button>
             ) : done ? (
-              <p className="notice notice--ok">Finished. Every order in this lot has reached its buyer.</p>
+              <p className="notice notice--ok">Finished. Every order in this lot has reached its customer.</p>
             ) : unpacked ? (
               <p className="notice notice--info">
                 📦 Unpacked. Each item now goes to its own buyer: tick <b>Dispatched</b> and then <b>Delivered</b> on
@@ -1495,7 +1495,7 @@ export function LotDetail({ lotId, onBack, customers }: {
             <div>
               <h2>This lot</h2>
               <span className="field__hint">
-                What it is called and where it comes from. Buyers see the lot number, never
+                What it is called and where it comes from. Customers see the lot number, never
                 the name.
               </span>
             </div>
@@ -1518,7 +1518,7 @@ export function LotDetail({ lotId, onBack, customers }: {
             <div>
               <h2>How this lot travels</h2>
               <span className="field__hint">
-                Every item in this lot follows these steps, and buyers read them as their tracking.
+                Every item in this lot follows these steps, and customers read them as their tracking.
               </span>
             </div>
             <div className="row" style={{ gap: 10, alignItems: 'center' }}>

@@ -581,8 +581,8 @@ function CrewCard({ row }: { row: CrewRow }) {
           : row.buttons.map((label) => <span key={label} className="ms-btnchip">⚡ {label}</span>)}
       </span>
       <span className="ms-crew__stats">
-        <span><b>{row.items}</b> items</span>
-        {row.role === 'handler' && <span><b>{row.parcels}</b> parcels</span>}
+        <span><b>{row.items}</b> orders</span>
+        {row.role === 'handler' && <span><b>{row.parcels}</b> customers</span>}
       </span>
     </Link>
   );
@@ -616,7 +616,7 @@ export function ConsignmentsPage() {
       <div className="page__head">
         <div>
           <h1>Consigned to you</h1>
-          <p className="muted">Lots a shop has named you on. Weight and pieces, as loaded.</p>
+          <p className="muted">Lots a shop has named you on. Weight and orders, as loaded.</p>
         </div>
       </div>
 
@@ -640,7 +640,7 @@ export function ConsignmentsPage() {
                 {row.store.name} · {row.lot.origin || 'origin not set'}
               </span>
               <div className="jobcard__stats">
-                <span><b>{row.pieces}</b> pieces</span>
+                <span><b>{row.pieces}</b> orders</span>
                 <span><b>{(row.weightGrams / 1000).toFixed(1)}</b> kg</span>
                 {row.lot.trackingReference && <span className="faint">{row.lot.trackingReference}</span>}
               </div>
@@ -688,7 +688,7 @@ export function DistributionPage() {
         <div>
           <h1>To distribute</h1>
           <p className="muted">
-            Lots named to you. Counted in parcels, not pieces — three items for one buyer is one
+            Lots named to you. Counted in customers — three orders for one customer is one
             job.
           </p>
         </div>
@@ -700,7 +700,7 @@ export function DistributionPage() {
         <p className="muted">Loading…</p>
       ) : rows.length === 0 ? (
         <EmptyState icon="📦" title="Nothing to hand out yet">
-          When a shop names you on a lot it lands here, with the parcels to make up.
+          When a shop names you on a lot it lands here, with the customers to pack and send.
         </EmptyState>
       ) : (
         <div className="stack">
@@ -717,7 +717,7 @@ export function DistributionPage() {
                 {row.store.name}{row.city ? ` · ${row.city}` : ''} · {row.lot.stage.replace(/_/g, ' ')}
               </span>
               <div className="jobcard__stats">
-                <span><b>{row.parcels}</b> parcels</span>
+                <span><b>{row.parcels}</b> customers</span>
                 <span><b>{countOf(row.tally, 'india_received').done}</b> landed</span>
                 <span><b>{countOf(row.tally, 'packed').done}</b> packed</span>
               </div>
@@ -782,7 +782,7 @@ function DistributionDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
         <div>
           <h1>{data.lot.name}</h1>
           <p className="muted">
-            {data.store.name}{data.city ? ` · ${data.city}` : ''} · {data.parcels.length} parcels
+            {data.store.name}{data.city ? ` · ${data.city}` : ''} · {data.parcels.length} customers
           </p>
         </div>
         {data.store.handle && (

@@ -112,7 +112,7 @@ export function CrewLotPage() {
     if (view.role !== 'handler') return [{ id: 'all', title: null as string | null, phone: null as string | null, items: view.items }];
     const byParcel = new Map<string, typeof view.items>();
     for (const item of view.items) byParcel.set(item.parcel ?? item.id, [...(byParcel.get(item.parcel ?? item.id) ?? []), item]);
-    return [...byParcel].map(([id, items]) => ({ id, title: items[0]!.buyer?.name ?? 'A buyer', phone: items[0]!.buyer?.phone ?? null, items }))
+    return [...byParcel].map(([id, items]) => ({ id, title: items[0]!.buyer?.name ?? 'A customer', phone: items[0]!.buyer?.phone ?? null, items }))
       .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
   }, [view]);
 
@@ -187,9 +187,9 @@ export function CrewLotPage() {
           {view.lot.trackingReference ? ` · ${view.lot.trackingReference}` : ''}
         </p>
         <div className="cl-meta">
-          <span><b>{view.items.length}</b> items</span>
+          <span><b>{view.items.length}</b> {view.items.length === 1 ? 'order' : 'orders'}</span>
           <span><b>{formatWeight(weight)}</b></span>
-          {view.role === 'handler' && <span><b>{groups.length}</b> parcels</span>}
+          {view.role === 'handler' && <span><b>{groups.length}</b> {groups.length === 1 ? 'customer' : 'customers'}</span>}
           {view.items.some((item) => item.covered) && <span>🛡 <b>{view.items.filter((item) => item.covered).length}</b> insured</span>}
           {view.store.handle && <Link to={`/messages/${view.store.handle}`} className="btn btn--ghost btn--sm"><Icon name="message" size={13} /> Message the shop</Link>}
         </div>
@@ -226,7 +226,7 @@ export function CrewLotPage() {
           <>
             <p className="muted">
               The shop has not handed the {ROLE_LABEL[view.role].toLowerCase()} a button on this lot yet. You can still
-              see the pieces and add photos; ask them to choose your buttons on the lot’s Crew tab.
+              see the orders and add photos; ask them to choose your buttons on the lot’s Crew tab.
             </p>
             <CrewTiles view={view} items={view.items} busy={busy} onPress={press} onPhotos={setPhotos} />
           </>
@@ -378,7 +378,7 @@ function CrateMoves({ view, onMoved }: { view: CrewLotView; onMoved: () => Promi
         <span className="cl-crate__icon" aria-hidden="true"><Icon name="plane" size={20} /></span>
         <span>
           <b>The crate</b>
-          <span className="faint">Moving it moves every item in the lot, and every buyer is told.</span>
+          <span className="faint">Moving it moves every item in the lot, and every customer is told.</span>
         </span>
       </div>
       <div className="cl-crate__moves">
@@ -488,12 +488,12 @@ function HandlerSummary({ view, groups, busy, filter, onFilter, onPress }: {
         <Ring value={total ? finished / total : 0} />
         <div className="hx-sum__text">
           <h2 id="hx-sum-title" className="hx-sum__title" aria-live="polite">
-            {total === 0 ? 'No parcels yet' : left === 0 ? 'Every parcel is done' : <>{finished} of {total} parcels done</>}
+            {total === 0 ? 'No customers yet' : left === 0 ? 'Every customer is done' : <>{finished} of {total} customers done</>}
           </h2>
           <p className="hx-sum__line">
-            {total === 0 ? 'Parcels appear as buyers order into the lot.'
+            {total === 0 ? 'Customers appear as they order into the lot.'
               : left === 0 ? 'Nothing left to press on this lot. Nice work.'
-                : `${left} ${left === 1 ? 'parcel' : 'parcels'} still to make up and send.`}
+                : `${left} ${left === 1 ? 'customer' : 'customers'} still to pack and send.`}
           </p>
           {(waiting > 0 || due > 0) && (
             <p className="hx-sum__chips">
@@ -514,7 +514,7 @@ function HandlerSummary({ view, groups, busy, filter, onFilter, onPress }: {
             <li key={button.key} className={`hx-step${all ? ' is-done' : ''}`}>
               <div className="hx-step__head">
                 <span className="hx-step__label">{button.label}</span>
-                <span className="hx-step__count"><b>{count}</b> of {view.items.length} items</span>
+                <span className="hx-step__count"><b>{count}</b> of {view.items.length} orders</span>
               </div>
               {/* The step is often the button's own name; say it once. */}
               {(button.step !== button.label || !button.assigned) && (
@@ -522,7 +522,7 @@ function HandlerSummary({ view, groups, busy, filter, onFilter, onPress }: {
                   {[button.step !== button.label ? button.step : null, button.assigned ? null : 'Your part of the trip'].filter(Boolean).join(' · ')}
                 </span>
               )}
-              <span className="hx-meter" role="progressbar" aria-label={`${button.label}: ${count} of ${view.items.length} items`}
+              <span className="hx-meter" role="progressbar" aria-label={`${button.label}: ${count} of ${view.items.length} orders`}
                 aria-valuemin={0} aria-valuemax={view.items.length} aria-valuenow={count}>
                 <span style={{ width: `${view.items.length ? (count / view.items.length) * 100 : 0}%` }} />
               </span>
@@ -552,7 +552,7 @@ function HandlerSummary({ view, groups, busy, filter, onFilter, onPress }: {
   );
 }
 
-/** The handler's customers, one card per box. */
+/** The handler's customers: one section each, the customer first, then their orders. */
 function HandlerParcels({ view, groups, total, query, busy, me, onClear, onPress, onPhotos }: {
   view: CrewLotView;
   groups: ParcelGroup[];
@@ -565,12 +565,12 @@ function HandlerParcels({ view, groups, total, query, busy, me, onClear, onPress
   onPhotos: (id: string, photos: OrderPhoto[]) => void;
 }) {
   if (total === 0) {
-    return <EmptyState icon={<Icon name="box" size={26} />} title="No parcels yet">Each buyer who orders into the lot becomes a parcel here.</EmptyState>;
+    return <EmptyState icon={<Icon name="box" size={26} />} title="No customers yet">Each customer who orders into the lot shows up here.</EmptyState>;
   }
   if (groups.length === 0) {
     return (
       <EmptyState icon={<Icon name="search" size={26} />} title={query.trim() ? 'No customer matches' : 'Nothing left to press'}>
-        {query.trim() ? `Nobody called “${query.trim()}” in this lot. ` : 'Every parcel is pressed for that button. '}
+        {query.trim() ? `Nobody called “${query.trim()}” in this lot. ` : 'Every customer is pressed for that button. '}
         <button type="button" className="hx-link" onClick={onClear}>Show every customer</button>
       </EmptyState>
     );
@@ -592,10 +592,36 @@ function HandlerParcels({ view, groups, total, query, busy, me, onClear, onPress
 }
 
 /**
- * One customer's box: who it is for and how to reach them, whether the shop
- * has let it go, a big button per step that moves the whole box, and the
- * pieces inside - each with its photos, and its own buttons when the box
- * holds more than one.
+ * A button's name, short enough to say "Packed all 3" with. The route's own
+ * wording can run to a sentence ("Received at the destination warehouse");
+ * for the checkpoints everyone knows, the verb is enough.
+ */
+const SHORT: Record<string, string> = {
+  china_received: 'Received', china_packed: 'Packed', india_received: 'Received',
+  ready_to_dispatch: 'Checked', packed: 'Packed', dispatched: 'Dispatched',
+};
+const shortLabel = (button: CrewButtonRef) => SHORT[button.key] ?? button.label;
+
+/**
+ * Whether the shop has let this customer's orders go: all of them, none, or
+ * some - a shop can send what is paid and hold the rest. Null once nothing is
+ * left to send, or when the lot has no ready gate.
+ */
+function gateOf(view: CrewLotView, items: CrewItem[]): { tone: 'ok' | 'warn' | 'split'; text: string } | null {
+  if (!view.settings.readyGate) return null;
+  const open = items.filter((item) => !item.ticks.dispatched);
+  if (open.length === 0) return null;
+  const go = open.filter((item) => item.cleared).length;
+  if (go === open.length) return { tone: 'ok', text: 'Ready to dispatch' };
+  if (go === 0) return { tone: 'warn', text: 'Waiting on the shop' };
+  return { tone: 'split', text: `${go} of ${open.length} ready` };
+}
+
+/**
+ * One customer: who it is for and how to reach them, whether the shop has
+ * let it go, one button per step that moves every order at once ("Packed all
+ * 3"), and then the orders themselves - each on a slim row with its own
+ * buttons when there is more than one, and a camera for a photo.
  */
 function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
   view: CrewLotView;
@@ -607,16 +633,16 @@ function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
 }) {
   const done = parcelDone(view, group.items);
   const [open, setOpen] = useState(!done);
-  const name = group.title ?? 'A buyer';
+  const name = group.title ?? 'A customer';
   const id = `hx-${group.id.replace(/[^a-zA-Z0-9_-]/g, '')}`;
-  const pieces = group.items.reduce((sum, item) => sum + item.quantity, 0);
+  const count = group.items.length;
   const weight = group.items.reduce((sum, item) => sum + item.weightGrams, 0);
-  const stepsDone = view.buttons.filter((button) => group.items.every((item) => item.ticks[button.key])).length;
   const working = group.items.some((item) => view.buttons.some((button) => busy.has(`${item.id}:${button.key}`)));
-  const several = group.items.length > 1;
+  const several = count > 1;
+  const gate = gateOf(view, group.items);
 
-  // The first reason a step cannot move this box, shown in words rather than
-  // left in a tooltip nobody on a phone will ever see.
+  // The first reason a step cannot move this customer, in words rather than
+  // a tooltip nobody on a phone will ever see.
   let held: string | null = null;
   for (const button of view.buttons) {
     const pending = group.items.filter((item) => !item.ticks[button.key]);
@@ -625,133 +651,108 @@ function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
       break;
     }
   }
-  /* Part of the parcel cleared: say which pieces stay, so the box is packed right. */
+  /* The pill in the header already says "Waiting on the shop". */
+  if (gate?.tone === 'warn') held = null;
+  /* Some orders cleared: say which stay, so the right ones go in the box. */
   const heldItems = group.items.filter((item) => item.cleared === false && !item.ticks.dispatched);
   if (!held && heldItems.length > 0 && heldItems.length < group.items.filter((item) => !item.ticks.dispatched).length) {
-    held = `Send only what is cleared. Held by the shop: ${heldItems.map((item) => item.itemName).join(', ')}.`;
+    held = `Send only what is ready. Held by the shop: ${heldItems.map((item) => item.itemName).join(', ')}.`;
   }
 
   return (
     <article className={`hx-parcel${done ? ' is-done' : ''}`} aria-labelledby={`${id}-name`} aria-busy={working} style={hueOf(group.title)}>
       <header className="hx-parcel__head">
-        <span className="hx-avatar" aria-hidden="true">{done ? <Icon name="check" size={18} /> : initials(group.title)}</span>
+        <span className="hx-avatar" aria-hidden="true">{done ? <Icon name="check" size={16} /> : initials(group.title)}</span>
         <div className="hx-parcel__who">
+          <span className="hx-parcel__kicker">Customer</span>
           <h3 id={`${id}-name`} className="hx-parcel__name">{name}</h3>
-          <span className="hx-parcel__sub">
-            {pieces} {pieces === 1 ? 'piece' : 'pieces'} · {formatWeight(weight)}
-          </span>
         </div>
-        <span className={`hx-state${done ? ' is-done' : ''}`}>
-          {done ? <><Icon name="check" size={13} /> Done</> : <>{stepsDone}/{view.buttons.length} steps</>}
-        </span>
+        {done
+          ? <span className="hx-state is-done"><Icon name="check" size={12} /> Done</span>
+          : gate && <span className={`hx-state hx-state--${gate.tone}`}>{gate.text}</span>}
       </header>
 
-      {(group.phone || view.settings.readyGate || view.settings.seesPayment) && (
-        <div className="hx-parcel__info">
-          {group.phone && (
-            <a className="hx-call" href={`tel:${group.phone}`} aria-label={`Call ${name}, ${group.phone}`}>
-              <Icon name="phone" size={15} /> {group.phone}
-            </a>
-          )}
-          {view.settings.readyGate && <ClearedBadge items={group.items} />}
-          {view.settings.seesPayment && <ParcelMoney items={group.items} />}
-        </div>
-      )}
+      <div className="hx-parcel__info">
+        <span>{count} {count === 1 ? 'order' : 'orders'} · {formatWeight(weight)}</span>
+        {group.phone && (
+          <a className="hx-call" href={`tel:${group.phone}`} aria-label={`Call ${name}, ${group.phone}`}>
+            <Icon name="phone" size={13} /> {group.phone}
+          </a>
+        )}
+        {view.settings.seesPayment && <ParcelMoney items={group.items} />}
+      </div>
 
-      <div className="hx-ticks" role="group" aria-label={`Whole parcel for ${name}`}>
+      <div className="hx-ticks" role="group" aria-label={`Every order for ${name}`}>
         {view.buttons.map((button) => {
           const every = group.items.every((item) => item.ticks[button.key]);
-          const count = group.items.filter((item) => item.ticks[button.key]).length;
-          // Only what can move: a held parcel's dispatch waits for the shop.
+          // Only what can move: a held order's dispatch waits for the shop.
           const targets = group.items.filter((item) => (every ? item.ticks[button.key] : !item.ticks[button.key] && !heldBack(view, item, button)));
+          const word = shortLabel(button);
+          const pressed = group.items.filter((item) => item.ticks[button.key]).length;
           return (
             <button key={button.key} type="button" className={`hx-tick${every ? ' is-on' : ''}`} aria-pressed={every}
-              disabled={busy.size > 0 || targets.length === 0}
+              disabled={busy.size > 0 || targets.length === 0} title={button.label}
               aria-describedby={!every && targets.length === 0 && held ? `${id}-held` : undefined}
               onClick={() => void onPress(targets.map((item) => item.id), button.key, !every)}>
-              <span className="hx-tick__box" aria-hidden="true"><Icon name="check" size={14} /></span>
-              <span className="hx-tick__label">{button.label}</span>
-              {several && <span className="hx-tick__count">{count}/{group.items.length}</span>}
+              <span className="hx-tick__box" aria-hidden="true"><Icon name="check" size={13} /></span>
+              {/* "all N" unless the shop holds some back: then say how many will go. */}
+              <span className="hx-tick__label">
+                {!several ? word : !every && targets.length > 0 && targets.length < count - pressed ? `${word} ${targets.length} of ${count}` : `${word} all ${count}`}
+              </span>
+              {several && pressed > 0 && !every && <span className="hx-tick__count">{pressed}/{count}</span>}
             </button>
           );
         })}
       </div>
-      {held && <p id={`${id}-held`} className="hx-held"><Icon name="lock" size={14} /> {held}</p>}
+      {held && <p id={`${id}-held`} className="hx-held"><Icon name="lock" size={13} /> {held}</p>}
 
-      <button type="button" className="hx-more" aria-expanded={open} aria-controls={open ? `${id}-items` : undefined}
-        onClick={() => setOpen(!open)}>
-        <span>{open ? 'Hide' : 'Show'} {group.items.length} {group.items.length === 1 ? 'order' : 'orders'}</span>
-        <Icon name="chevron" size={16} className={`hx-more__chev${open ? ' is-open' : ''}`} />
-      </button>
+      <div className="hx-orders">
+        <button type="button" className="hx-more" aria-expanded={open} aria-controls={open ? `${id}-items` : undefined}
+          onClick={() => setOpen(!open)}>
+          <span>Orders <span className="hx-more__n">{count}</span></span>
+          <Icon name="chevron" size={16} className={`hx-more__chev${open ? ' is-open' : ''}`} />
+        </button>
 
-      {open && (
-        <ul id={`${id}-items`} className="hx-items">
-          {group.items.map((item) => (
-            <li key={item.id} className="hx-item">
-              <div className="hx-item__body">
-                <span className="hx-item__name">
-                  {item.itemName}
-                  {view.settings.readyGate && !item.ticks.dispatched && (
-                    item.cleared
-                      ? <span className="hx-chip hx-chip--ok hx-item__gate"><Icon name="check" size={11} /> Cleared</span>
-                      : <span className="hx-chip hx-chip--warn hx-item__gate"><Icon name="lock" size={11} /> Held</span>
-                  )}
-                </span>
-                <span className="hx-item__meta">
-                  <ConditionTag condition={item.condition} />{item.quantity > 1 ? ` ×${item.quantity}` : ''} · {formatWeight(item.weightGrams)}
-                </span>
-                {(item.covered || item.toStudio) && (
-                  <span className="hx-item__flags">
-                    {item.covered && <span className="hx-chip hx-chip--ok">🛡 Insured</span>}
-                    {item.toStudio && <span className="hx-chip hx-chip--pink"><Icon name="spark" size={12} /> Going to an artist’s studio</span>}
-                  </span>
-                )}
-                <OrderPhotos orderId={item.id} photos={item.photos} me={me} onChange={(photos) => onPhotos(item.id, photos)} />
-              </div>
-              {/* A one-piece box already has these, above, as the parcel's own. */}
-              {several && (
-                <div className="hx-item__acts" role="group" aria-label={`${item.itemName} only`}>
-                  {view.buttons.map((button) => {
-                    const on = Boolean(item.ticks[button.key]);
-                    const reason = heldBack(view, item, button);
-                    return (
-                      <button key={button.key} type="button" className={`hx-mini${on ? ' is-on' : ''}`} aria-pressed={on}
-                        disabled={busy.has(`${item.id}:${button.key}`) || Boolean(reason)}
-                        aria-describedby={reason && held ? `${id}-held` : undefined}
-                        onClick={() => void onPress([item.id], button.key, !on)}>
-                        <Icon name="check" size={12} /> {button.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+        {open && (
+          <ol id={`${id}-items`} className="hx-items">
+            {group.items.map((item) => {
+              const state = !view.settings.readyGate || item.ticks.dispatched ? null : item.cleared ? 'ok' : 'warn';
+              return (
+                <li key={item.id} className="hx-item">
+                  <div className="hx-item__top">
+                    <span className="hx-item__name">{item.itemName}</span>
+                    {state && <span className={`readychip readychip--${state === 'ok' ? 'ok' : 'held'}`}>{state === 'ok' ? 'Ready' : 'Held'}</span>}
+                  </div>
+                  <div className="hx-item__meta">
+                    <ConditionTag condition={item.condition} />
+                    {item.quantity > 1 && <span>×{item.quantity}</span>}
+                    <span>{formatWeight(item.weightGrams)}</span>
+                    {item.covered && <span className="hx-item__flag">🛡 Insured</span>}
+                    {item.toStudio && <span className="hx-item__flag hx-item__flag--pink"><Icon name="spark" size={11} /> To an artist’s studio</span>}
+                  </div>
+                  <div className="hx-item__acts">
+                    {/* A one-order customer already has these above. */}
+                    {several && view.buttons.map((button) => {
+                      const on = Boolean(item.ticks[button.key]);
+                      const reason = heldBack(view, item, button);
+                      return (
+                        <button key={button.key} type="button" className={`hx-mini${on ? ' is-on' : ''}`} aria-pressed={on}
+                          disabled={busy.has(`${item.id}:${button.key}`) || Boolean(reason)} title={reason ?? button.label}
+                          aria-label={`${button.label}: ${item.itemName}`}
+                          onClick={() => void onPress([item.id], button.key, !on)}>
+                          <Icon name="check" size={11} /> {shortLabel(button)}
+                        </button>
+                      );
+                    })}
+                    <OrderPhotos orderId={item.id} photos={item.photos} me={me} compact onChange={(photos) => onPhotos(item.id, photos)} />
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
     </article>
-  );
-}
-
-/**
- * Whether the shop has cleared this customer's parcel to go - all of it, none
- * of it, or part: a shop can send what is paid and hold the rest.
- */
-function ClearedBadge({ items }: { items: CrewItem[] }) {
-  const open = items.filter((item) => !item.ticks.dispatched);
-  const go = open.filter((item) => item.cleared).length;
-  const hold = open.length - go;
-  if (open.length === 0) return null;
-  if (hold === 0) {
-    return <span className="hx-chip hx-chip--ok"><Icon name="check" size={13} /> Ready to dispatch</span>;
-  }
-  if (go === 0) {
-    return <span className="hx-chip hx-chip--warn"><Icon name="lock" size={13} /> Waiting on the shop</span>;
-  }
-  return (
-    <span className="hx-chip hx-chip--split">
-      <Icon name="check" size={13} /> Dispatch {go} · <Icon name="lock" size={13} /> {hold} held by the shop
-    </span>
   );
 }
 
@@ -803,8 +804,8 @@ function CrewTiles({ view, items, busy, onPress, onPhotos }: {
 
   if (items.length === 0) {
     return view.items.length === 0
-      ? <EmptyState title="Nothing in this lot yet">Pieces appear here as buyers order them into the lot.</EmptyState>
-      : <EmptyState title="Nothing to show">Every piece here is pressed. Tap “Show all” to see them again.</EmptyState>;
+      ? <EmptyState title="Nothing in this lot yet">Orders appear here as customers order into the lot.</EmptyState>
+      : <EmptyState title="Nothing to show">Every order here is pressed. Tap “Show all” to see them again.</EmptyState>;
   }
 
   return (
@@ -823,7 +824,7 @@ function CrewTiles({ view, items, busy, onPress, onPhotos }: {
                   ? <img src={picture} alt="" loading="lazy" />
                   : <span className="ctile__nopic"><Icon name="box" size={30} /></span>}
                 {allDone && <span className="ctile__check" aria-label="Done"><Icon name="check" size={18} /></span>}
-                {item.quantity > 1 && <span className="ctile__qty" aria-label={`${item.quantity} pieces`}>{item.quantity}</span>}
+                {item.quantity > 1 && <span className="ctile__qty" aria-label={`${item.quantity} of these`}>{item.quantity}</span>}
                 {view.settings.readyGate && item.cleared && !item.ticks.dispatched && <span className="ctile__flag">Ready to dispatch</span>}
                 <label className={`ctile__cam${uploading === item.id ? ' is-busy' : ''}`} aria-label="Add a photo">
                   <input type="file" accept="image/*" capture="environment" disabled={uploading !== null}

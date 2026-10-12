@@ -5,7 +5,7 @@ import { shrink } from './PhotoManager';
 import { Lightbox } from './SocialPost';
 import { Icon, useConfirm } from './ui';
 
-const AUDIENCE_LABEL: Record<PhotoAudience, string> = { buyer: 'Buyer', supplier: 'Supplier', handler: 'Handler' };
+const AUDIENCE_LABEL: Record<PhotoAudience, string> = { buyer: 'Customer', supplier: 'Supplier', handler: 'Handler' };
 
 /**
  * Photos of one order on its way.
@@ -16,7 +16,7 @@ const AUDIENCE_LABEL: Record<PhotoAudience, string> = { buyer: 'Buyer', supplier
  * handler. `audiences` is the choice the seller is offered: a lot with no
  * handler tagged has nobody to show the handler.
  */
-export function OrderPhotos({ orderId, photos, onChange, seller = false, audiences = ['buyer', 'supplier', 'handler'], me, readOnly = false }: {
+export function OrderPhotos({ orderId, photos, onChange, seller = false, audiences = ['buyer', 'supplier', 'handler'], me, readOnly = false, compact = false }: {
   orderId: string;
   photos: OrderPhoto[];
   onChange: (photos: OrderPhoto[]) => void;
@@ -27,6 +27,8 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
   me?: string;
   /** Only to look at - the buyer's timeline. */
   readOnly?: boolean;
+  /** Small thumbnails and a camera-only add button, for a slim row. */
+  compact?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +54,7 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
   }
 
   return (
-    <div className="ophotos">
+    <div className={`ophotos${compact ? ' ophotos--compact' : ''}`}>
       {photos.map((photo) => (
         <figure key={photo.id} className="ophotos__item">
           <button type="button" className="ophotos__open" aria-label="Open photo full screen"
@@ -86,7 +88,7 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
           )}
         </figure>
       ))}
-      {!readOnly && <label className={`ophotos__add${busy ? ' is-busy' : ''}`}>
+      {!readOnly && <label className={`ophotos__add${busy ? ' is-busy' : ''}`} aria-label={compact ? (busy ? 'Saving photo' : 'Add a photo') : undefined}>
         <input type="file" accept="image/*" disabled={busy}
           onChange={(event) => {
             const file = event.target.files?.[0];
@@ -94,7 +96,7 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
             if (file) void run(async () => (await api.addOrderPhoto(orderId, await shrink(file))).photos);
           }} />
         <Icon name="camera" size={16} />
-        <span>{busy ? 'Saving…' : 'Photo'}</span>
+        {!compact && <span>{busy ? 'Saving…' : 'Photo'}</span>}
       </label>}
       {error && <span className="ophotos__error">{error}</span>}
       {open && (
