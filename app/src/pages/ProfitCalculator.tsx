@@ -416,9 +416,14 @@ function Rates({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch: P
       </div>
       <div className="pc__ratechain">
         <label className="field">
-          <span>Priced in</span>
-          <input list="pc-currencies" value={sheet.currency} maxLength={6}
-            onChange={(e) => onChange({ currency: e.target.value.toUpperCase() })} />
+          <span>Item priced in</span>
+          <select value={sheet.currency}
+            onChange={(e) => onChange({ currency: e.target.value, ...(e.target.value === sheet.payCurrency ? { payCurrency: null } : {}) })}>
+            {/* A code saved before the list had it stays pickable. */}
+            {[...new Set([...COMMON_CURRENCIES, sheet.currency])].filter(Boolean).map((code) => (
+              <option key={code} value={code}>{currencyName(code)}</option>
+            ))}
+          </select>
         </label>
         <label className="field">
           <span>Supplier paid in</span>
@@ -426,8 +431,8 @@ function Rates({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch: P
             onChange={(e) => onChange(e.target.value
               ? { payCurrency: e.target.value, payRate: sheet.payRate || 1 }
               : { payCurrency: null })}>
-            <option value="">{sheet.currency || 'Same'} (same)</option>
-            {COMMON_CURRENCIES.filter((code) => code !== sheet.currency).map((code) => <option key={code} value={code}>{code}</option>)}
+            <option value="">{currencyName(sheet.currency)} (same)</option>
+            {COMMON_CURRENCIES.filter((code) => code !== sheet.currency).map((code) => <option key={code} value={code}>{currencyName(code)}</option>)}
           </select>
         </label>
         {via && (
@@ -436,9 +441,14 @@ function Rates({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch: P
         <Num label={`₹ for 1 ${pay || '…'}`} value={sheet.rate} step={0.01} onChange={(rate) => onChange({ rate })} />
         <Num label="Target margin %" value={sheet.targetMarginPercent} step={1} onChange={(targetMarginPercent) => onChange({ targetMarginPercent })} />
       </div>
-      <datalist id="pc-currencies">{COMMON_CURRENCIES.map((code) => <option key={code} value={code} />)}</datalist>
     </section>
   );
+}
+
+/** "¥ CNY", "$ USD" - or just the code where it is its own symbol. */
+function currencyName(code: string) {
+  const symbol = symbolOf(code).trim();
+  return symbol === code ? code : `${symbol} ${code}`;
 }
 
 /** Each line switched on, and what it came to per item. */

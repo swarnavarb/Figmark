@@ -186,7 +186,7 @@ export function CalcInputs({ template, input, onChange, withSelling = false, sho
   return (
     <>
       <div className="costfield__fill">
-        {num(`Price abroad (${template.currency})`, input.itemPrice, (itemPrice) => ({ itemPrice }))}
+        {num(`Price abroad (${symbolOf(template.currency).trim()} ${template.currency})`, input.itemPrice, (itemPrice) => ({ itemPrice }))}
         {num('Quantity', input.quantity, (quantity) => ({ quantity: Math.max(1, Math.round(quantity)) }), 1)}
         {num('Weight per item (kg)', input.weightKg, (weightKg) => ({ weightKg }), 0.05)}
         {withSelling && num('Selling price (₹ each)', input.sellingPrice, (sellingPrice) => ({ sellingPrice }))}
