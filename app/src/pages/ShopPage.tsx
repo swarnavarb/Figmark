@@ -1470,7 +1470,6 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
   const share = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const currency = rows[0]?.currency;
   const tone = live.length === 0 ? 'quiet' : pending > 0 ? (paid > 0 ? 'purple' : 'warn') : 'ok';
-  /* Open, the head says only where the money stands; the sums sit in the body. */
   const payWord = live.length === 0 ? 'Nothing owed' : pending <= 0 ? 'Paid' : paid > 0 ? 'Partially paid' : 'Not paid';
   const panelId = `ocust-${customer.key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
@@ -1482,7 +1481,7 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
           onClick={() => onToggle(!open)}>
           <Icon name={open ? 'down' : 'right'} size={16} />
         </button>
-        {open && <Avatar name={buyer.name} size={40} />}
+        {open && <Avatar name={buyer.name} size={32} />}
         <div className="ocust__who">
           {buyer.handle
             ? <Link to={`/${buyer.handle}`} className="ocust__name">{buyer.name}</Link>
@@ -1490,13 +1489,21 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
           <span className="ocust__meta">
             {rows.length} {rows.length === 1 ? 'order' : 'orders'}
             {rows.length !== live.length && ` · ${rows.length - live.length} called off`}
+            {/* Open, the sums ride along here instead of taking a row of their own. */}
+            {open && live.length > 0 && paid > 0 && pending > 0 && <> · Paid <b>{formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}</b> of {formatTotals(sum((row) => row.totalMinor), currency)}</>}
+            {open && live.length > 0 && (paid <= 0 || pending <= 0) && <> · Total <b>{formatTotals(sum((row) => row.totalMinor), currency)}</b></>}
           </span>
         </div>
         <div className="ocust__total">
           <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>
-            {open || pending <= 0 ? payWord : `Pending ${formatTotals(sum((row) => row.outstandingMinor), currency)}`}
+            {pending <= 0 ? payWord : `${formatTotals(sum((row) => row.outstandingMinor), currency)} due`}
           </span>
         </div>
+        {open && live.length > 0 && (
+          <div className="ocust__bar" role="progressbar" aria-label="Paid so far" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100}>
+            <span style={{ width: `${share}%` }} />
+          </div>
+        )}
       </header>
 
       {!open && (
@@ -1519,12 +1526,6 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
 
       {open && (
         <div id={panelId} className="ocust__body">
-          {live.length > 0 && (
-            <MoneyLine share={share} due={pending > 0}
-              total={formatTotals(sum((row) => row.totalMinor), currency)}
-              paid={formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}
-              balance={formatTotals(sum((row) => row.outstandingMinor), currency)} />
-          )}
           {/* One press for the whole parcel: everything of theirs can go. The
               lot's handler waits for exactly this before dispatching. */}
           {toGo.length > 0 && (
@@ -1572,14 +1573,16 @@ function ReadyPanel({ rows, buyerName, busy, working = false, onReady }: {
   const away = rows.filter((row) => !row.arrived && !row.readyAt);
   /* What the slide does now: clear what has arrived, hold what is cleared, or wait. */
   const mode = pending.length > 0 ? 'clear' : cleared.length > 0 ? 'hold' : 'wait';
-  const pool = mode === 'clear' ? pending : mode === 'hold' ? cleared : [];
+  /* Ticks only choose what goes next. Once slid, the cleared orders are fixed:
+     each can be held back on its own, or all of them by sliding back. */
+  const pool = mode === 'clear' ? pending : [];
   const paidPending = pending.filter((row) => row.outstandingMinor <= 0);
-  const defaults = mode === 'clear' && paidPending.length > 0 && paidPending.length < pending.length ? paidPending : pool;
+  const defaults = paidPending.length > 0 && paidPending.length < pending.length ? paidPending : pool;
   const poolKey = pool.map((row) => row.id).join(',');
   /** The seller's own ticks, kept only while the same orders are on offer. */
   const [ticks, setTicks] = useState<{ key: string; ids: Set<string> } | null>(null);
   const picked = ticks?.key === poolKey ? ticks.ids : new Set(defaults.map((row) => row.id));
-  const chosen = pool.filter((row) => picked.has(row.id));
+  const chosen = mode === 'hold' ? cleared : pool.filter((row) => picked.has(row.id));
   const toggle = (id: string) => {
     const next = new Set(picked);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -1595,33 +1598,30 @@ function ReadyPanel({ rows, buyerName, busy, working = false, onReady }: {
   const handler = rows.find((row) => row.lotCrew?.handlerName)?.lotCrew?.handlerName ?? null;
   const orders = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
 
-  /* One line on where it stands, then what is set aside. */
-  const held = mode === 'clear' ? pending.filter((row) => !picked.has(row.id)) : [];
-  const heldOwed = held.filter((row) => row.outstandingMinor > 0);
+  /* One short line on where it stands; the list below carries the detail. */
   const lead = mode === 'wait'
     ? `Not arrived yet · ${orders(away.length)} on the way`
     : mode === 'hold'
       ? `Ready · ${handler ?? 'your handler'} can dispatch`
       : owedChosen.length > 0
         ? `Payment pending · ${money(owedChosen)} due`
-        : chosen.length === 0 ? 'Tick what can go' : chosen.length === 1 ? 'Fully paid' : `${chosen.length} fully paid`;
-  const extras = [
-    mode === 'clear' && cleared.length > 0 ? `${cleared.length} ready` : null,
-    held.length === 1 && heldOwed.length === 1 ? `${held[0]!.itemName} held, ${money(heldOwed)} due` : held.length > 0 ? `${held.length} held` : null,
-    mode !== 'wait' && away.length > 0 ? `${away.length} not arrived` : null,
-  ].filter(Boolean);
-  const status = [lead, ...extras].join(' · ');
+        : chosen.length === 0 ? 'Tick what can go' : 'Fully paid';
+  const held = pool.length - chosen.length;
+  const status = [lead, held > 0 ? `${held} held` : null, away.length > 0 && mode !== 'wait' ? `${away.length} not arrived` : null]
+    .filter(Boolean).join(' · ');
 
+  /* Counted as what will be ready once slid, cleared ones included. */
+  const after = cleared.length + chosen.length;
   const label = mode === 'wait'
     ? 'Ready to dispatch'
     : chosen.length === 0
       ? 'Tick an order first'
-      : chosen.length === total
-        ? total === 1 ? 'Ready to dispatch' : `Ready to dispatch all ${total} orders`
-        : `Ready to dispatch ${chosen.length} of ${total} orders`;
-  const onLabel = chosen.length === total
+      : after === total
+        ? total === 1 ? 'Ready to dispatch' : `Ready to dispatch all ${total}`
+        : `Ready to dispatch ${after} of ${total}`;
+  const onLabel = cleared.length === total
     ? total === 1 ? 'Ready to dispatch' : `All ${total} ready to dispatch`
-    : `${chosen.length} of ${total} ready to dispatch`;
+    : `${cleared.length} of ${total} ready to dispatch`;
 
   async function remind() {
     setNotice({ state: 'busy' });
@@ -1665,34 +1665,34 @@ function ReadyPanel({ rows, buyerName, busy, working = false, onReady }: {
             <p>{money(owedAll)} is still due. <b>Notify</b> sends {first} a message from your shop with a button to pay -
               {' '}once every 24 hrs at most.</p>
           )}
-          {mode === 'hold' && <p>Slide back to hold the ticked orders again.</p>}
+          {mode === 'hold' && <p>Slide back to hold them all again{cleared.length > 1 ? ', or press Hold on one order to keep just that one back' : ''}.</p>}
         </div>
       )}
 
       {total > 1 && (
         <ul className="rdy__list" aria-label={`${buyerName}'s orders`}>
           {rows.map((row) => {
-            const inPool = pool.includes(row);
-            const ticked = inPool && picked.has(row.id);
             const state = row.readyAt ? 'ready' : !row.arrived ? 'away' : 'open';
+            const tickable = mode === 'clear' && state === 'open';
+            const ticked = tickable && picked.has(row.id);
+            const Line = tickable ? 'label' : 'div';
             return (
               <li key={row.id} className={`rdy__item is-${state}${ticked ? ' is-ticked' : ''}`}>
-                <label>
-                  {inPool
+                <Line className="rdy__line">
+                  {tickable
                     ? <input type="checkbox" checked={ticked} disabled={busy} onChange={() => toggle(row.id)} />
-                    : <span className="rdy__mark" aria-hidden="true">{state === 'ready' ? '✓' : '·'}</span>}
+                    : <span className="rdy__mark" aria-label={state === 'ready' ? 'Ready' : 'Not arrived'}>{state === 'ready' ? '✓' : ''}</span>}
                   <span className="rdy__name">{row.itemName}</span>
-                  {/* Cleared while others still wait: it can be held back on its own. */}
-                  {state === 'ready' && mode === 'clear' && (
+                  <span className={`rdy__chip rdy__chip--${state === 'away' ? 'away' : row.outstandingMinor > 0 ? 'due' : 'paid'}`}>
+                    {state === 'away' ? 'On the way'
+                      : row.outstandingMinor > 0 ? `${formatMoney(row.outstandingMinor, row.currency)} due` : 'Paid'}
+                  </span>
+                  {/* A cleared order can be taken back on its own. */}
+                  {state === 'ready' && (mode === 'clear' || cleared.length > 1) && (
                     <button type="button" className="rdy__hold" disabled={busy}
                       aria-label={`Hold ${row.itemName} back`} onClick={() => onReady([row.id], false)}>Hold</button>
                   )}
-                  <span className={`rdy__chip rdy__chip--${state === 'away' ? 'away' : state === 'ready' && mode === 'clear' ? 'ready' : row.outstandingMinor > 0 ? 'due' : 'paid'}`}>
-                    {state === 'away' ? 'Not arrived'
-                      : state === 'ready' && mode === 'clear' ? 'Ready'
-                        : row.outstandingMinor > 0 ? `${formatMoney(row.outstandingMinor, row.currency)} due` : 'Paid'}
-                  </span>
-                </label>
+                </Line>
               </li>
             );
           })}
@@ -1727,8 +1727,8 @@ function ReadyPanel({ rows, buyerName, busy, working = false, onReady }: {
 /** Where one order stands on its customer's Ready to dispatch, as a chip on its card. */
 function ReadyChip({ row }: { row: SaleRow }) {
   if (readyable([row]).length === 0) return null;
-  const [tone, text] = row.readyAt ? ['ok', '✓ Ready'] : !row.arrived ? ['quiet', 'Not arrived'] : ['warn', 'Held'];
-  return <span className={`badge badge--${tone} readychip`} title={row.readyAt ? 'Cleared to dispatch' : !row.arrived ? 'Still on its way to the destination' : 'Not cleared to dispatch yet'}>{text}</span>;
+  const [tone, text] = row.readyAt ? ['ok', 'Ready'] : !row.arrived ? ['away', 'Not arrived'] : ['held', 'Held'];
+  return <span className={`readychip readychip--${tone}`} title={row.readyAt ? 'Cleared to dispatch' : !row.arrived ? 'Still on its way to the destination' : 'Not cleared to dispatch yet'}>{text}</span>;
 }
 
 /**
@@ -2148,7 +2148,6 @@ function OrderRow({
       <ItemHead id={row.id} name={row.itemName} photoUrl={row.photoUrl} to={orderLink.pathname} state={linkState}
         badges={<>
           {row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
-          {inLot && <ReadyChip row={row} />}
         </>}
         meta={<>
           {!inLot && (row.buyer.handle
@@ -2158,6 +2157,7 @@ function OrderRow({
           <span>{timeAgo(row.createdAt)}</span>
           {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
           <ConditionTag condition={row.condition} />
+          {inLot && <ReadyChip row={row} />}
         </>}
         side={<span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>} />
 

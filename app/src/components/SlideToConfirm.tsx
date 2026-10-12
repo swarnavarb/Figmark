@@ -100,7 +100,7 @@ export function SlideToConfirm({ on, label, onLabel, disabled = false, working =
         aria-label={shown ? `${onLabel}. Press to hold it back.` : `${label}. Press to confirm.`}
         style={{ transform: `translateX(${x}px)` }}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClick={click}>
-        {working ? <Spinner size={22} label="Saving" /> : shown ? '✓' : '→'}
+        {working ? <Spinner size={18} label="Saving" /> : shown ? '✓' : '→'}
       </button>
     </div>
   );
