@@ -38,6 +38,14 @@ export type SellerTier = (typeof SELLER_TIERS)[number];
 export const CONDITION_TAGS = ['MISB', 'MIB', 'BIB', 'LOOSE'] as const;
 export type ConditionTag = (typeof CONDITION_TAGS)[number];
 
+/** What each grade means, for whoever handles the piece: kept as sold, never "improved" on the way. */
+export const CONDITION_MEANINGS: Record<ConditionTag, string> = {
+  MISB: 'Mint in sealed box - factory seal intact, do not open',
+  MIB: 'Mint in box - opened, complete, box in mint shape',
+  BIB: 'Box in box - opened, back in its box',
+  LOOSE: 'Loose - no box',
+};
+
 /**
  * Where the item comes from, chosen when it is listed.
  *

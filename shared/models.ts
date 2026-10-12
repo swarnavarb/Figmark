@@ -1224,9 +1224,9 @@ export interface LotCrewSettings {
   /** Whether the handler sees what each buyer owes and has paid. */
   handlerSeesPayment?: boolean;
   /**
-   * The seller clears each customer for dispatch. On, "Ready to dispatch" is
-   * the seller's press rather than the handler's, and the handler cannot mark
-   * anything dispatched for a customer the seller has not cleared.
+   * Retired: the seller now clears every customer for dispatch on every lot
+   * (see `readyGated` in services.ts). Older lots may still carry it; it is
+   * ignored either way.
    */
   readyGate?: boolean;
 }

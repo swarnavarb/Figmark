@@ -664,7 +664,9 @@ export interface SaleRow {
   /** When the seller said this customer's parcel can ship. */
   readyAt: string | null;
   /** Its lot's crew: the ready gate, and who is tagged to see photos. Null outside a lot. */
-  lotCrew: { readyGate: boolean; supplier: boolean; handler: boolean } | null;
+  lotCrew: { readyGate: boolean; supplier: boolean; handler: boolean; handlerName: string | null } | null;
+  /** The grade it was sold as: MISB, MIB, BIB or LOOSE. */
+  condition: string;
   /** Photos of the piece on its way. */
   photos: OrderPhoto[];
   /** When the seller ticked it received at the China warehouse. */
@@ -1895,7 +1897,7 @@ export interface BoardCustomer {
 export interface LotBoard {
   lot: BoardLot;
   /** Only on a single lot's board: what the seller has set up for its crew. */
-  crew?: { readyGate: boolean; supplier: boolean; handler: boolean };
+  crew?: { readyGate: boolean; supplier: boolean; handler: boolean; handlerName: string | null };
   tally: LotTally;
   customers: BoardCustomer[];
 }
@@ -2615,6 +2617,9 @@ export const api = {
       `/lots/${encodeURIComponent(id)}/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
     ),
   /** `checkpoint` is one of the seven, or `custom:<step id>` for a route's own button. */
+  /** A message from the shop: these orders are ready to go out once the balance is paid. */
+  paymentReminder: (orderIds: string[]) =>
+    post<{ sent: true; via: 'message' | 'bell' }>('/orders/payment-reminder', { orderIds }),
   setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
     /** The courier and AWB with a dispatch; `label`, where an item with no lot was received. */
     shipment?: { courier?: string; awb?: string; label?: string }, undoOf?: string) =>

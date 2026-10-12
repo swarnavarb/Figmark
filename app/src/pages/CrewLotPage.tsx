@@ -8,6 +8,7 @@ import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatMoney, formatWeight } from '../format';
 import { useUndo } from '../components/Undo';
 import { OrderPhotos } from '../components/OrderPhotos';
+import { ConditionTag } from '../components/ConditionTag';
 import { shrink } from '../components/PhotoManager';
 import { useSession } from '../session';
 
@@ -303,7 +304,7 @@ export function CrewLotPage() {
                       <span className="cl-item__body">
                         <span className="cl-item__name">{item.itemName}</span>
                         <span className="faint">
-                          {item.condition}{item.quantity > 1 ? ` · ×${item.quantity}` : ''} · {formatWeight(item.weightGrams)}
+                          <ConditionTag condition={item.condition} />{item.quantity > 1 ? ` ×${item.quantity}` : ''} · {formatWeight(item.weightGrams)}
                           {item.covered ? ' · 🛡 insured' : ''}
                         </span>
                         {item.toStudio && <span className="cl-item__flag"><Icon name="spark" size={12} /> Going to an artist’s studio</span>}
@@ -685,7 +686,7 @@ function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
               <div className="hx-item__body">
                 <span className="hx-item__name">{item.itemName}</span>
                 <span className="hx-item__meta">
-                  {item.condition}{item.quantity > 1 ? ` · ×${item.quantity}` : ''} · {formatWeight(item.weightGrams)}
+                  <ConditionTag condition={item.condition} />{item.quantity > 1 ? ` ×${item.quantity}` : ''} · {formatWeight(item.weightGrams)}
                 </span>
                 {(item.covered || item.toStudio) && (
                   <span className="hx-item__flags">
@@ -792,6 +793,7 @@ function CrewTiles({ view, items, busy, onPress, onPhotos }: {
           return (
             <article key={item.id} className={`ctile${allDone ? ' is-done' : ''}`}>
               <h3 className="ctile__name" title={item.itemName}>{item.itemName}</h3>
+              <ConditionTag condition={item.condition} />
               <div className="ctile__pic">
                 {picture
                   ? <img src={picture} alt="" loading="lazy" />

@@ -10,7 +10,7 @@ import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.j
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
-import { supplierIdOf } from '../../../shared/services.js';
+import { readyGated, supplierIdOf } from '../../../shared/services.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -459,10 +459,14 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       readyAt: order.checkpoints?.ready_to_dispatch ?? null,
       /** Who works its lot, so the card offers the ready press and photo audiences that mean something. */
       lotCrew: lot ? {
-        readyGate: Boolean(lot.crew?.readyGate),
+        readyGate: readyGated(lot),
         supplier: Boolean(supplierIdOf(lot)),
         handler: Boolean(lot.handler?.handlerUserId),
+        /** Who Ready to dispatch tells to send it, named on the button. */
+        handlerName: lot.handler?.name || null,
       } : null,
+      /** The grade it was sold as - MISB, MIB... - so the shop packs it as sold. */
+      condition: order.condition,
       /** Photos of the piece on its way - the shop sees every one. */
       photos: order.photos ?? [],
       /** The one tick a seller makes from this screen. */

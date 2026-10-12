@@ -4,7 +4,7 @@ import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type Or
 import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
-import { TAGGED_ROLES, crewMayPress, crewSlots, photosFor, supplierIdOf, type CrewRole } from '../../../shared/services.js';
+import { TAGGED_ROLES, crewMayPress, crewSlots, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNo, lotNumberFrom, normaliseSteps,
@@ -30,7 +30,10 @@ import { autoReleaseDays } from '../settings.js';
 import { offersAffiliate } from '../affiliate.js';
 import { linkDiscountMinor } from '../../../shared/affiliate.js';
 import { storeTag } from '../../../shared/storefront.js';
-import { capital, notifyBuyers } from './notify.js';
+import { capital, notify, notifyBuyers } from './notify.js';
+import { messageFromShop } from './message-routes.js';
+import { threadIdFor } from '../../../shared/handles.js';
+import { orderMoney, rupees } from '../../../shared/payments.js';
 import { error, handler, json } from './http.js';
 
 /** What to write on the timeline when a checkpoint is ticked. */
@@ -808,11 +811,11 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
       : null;
   }
 
-  /* What the two of them may press and see. The gate goes first: it takes
-     "Ready to dispatch" off the handler's side, so a list sent with it is
-     checked against the side as it will be. */
+  /* What the two of them may press and see. "Ready to dispatch" is never on
+     the handler's side - the seller clears every customer - so a readyGate
+     sent by an older screen changes nothing. */
   const crew: LotCrewSettings = { ...(lot.crew ?? {}) };
-  if (typeof body.readyGate === 'boolean') crew.readyGate = body.readyGate;
+  delete crew.readyGate;
   if (typeof body.handlerSeesPayment === 'boolean') crew.handlerSeesPayment = body.handlerSeesPayment;
   for (const role of TAGGED_ROLES) {
     const field = role === 'supplier' ? 'supplierButtons' : 'handlerButtons';
@@ -834,8 +837,8 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
     }
     crew[field] = [...new Set(wanted)];
   }
-  // A gate turned on takes the ready press back from a list that held it.
-  if (crew.readyGate && crew.handlerButtons) crew.handlerButtons = crew.handlerButtons.filter((key) => key !== 'ready_to_dispatch');
+  // The ready press is the seller's: never kept on a handler's list.
+  if (crew.handlerButtons) crew.handlerButtons = crew.handlerButtons.filter((key) => key !== 'ready_to_dispatch');
   next.crew = crew;
 
   return json(200, { lot: await repository.updateLot(next) });
@@ -1149,9 +1152,10 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
     },
     // What the board offers beyond the ticks: the ready gate, and whose photos go where.
     crew: {
-      readyGate: Boolean(lot.crew?.readyGate),
+      readyGate: readyGated(lot),
       supplier: Boolean(supplierIdOf(lot)),
       handler: Boolean(lot.handler?.handlerUserId),
+      handlerName: lot.handler?.name || null,
     },
     tally: tally(orders),
     customers,
@@ -1226,14 +1230,14 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
         'forbidden',
         role === 'forwarder'
           ? 'The shop’s route has not handed that button to the forwarder.'
-          : role === 'handler' && key === 'ready_to_dispatch' && lot?.crew?.readyGate
-            ? 'The shop clears each customer for dispatch on this lot.'
+          : role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)
+            ? 'The shop marks each customer Ready to dispatch on this lot.'
             : 'The shop has not handed you that button on this lot.',
       );
     }
     /* The ready gate: the seller says a customer's parcel can go - paid up,
        nothing still to add - and until then the handler holds it. */
-    if (role === 'handler' && lot?.crew?.readyGate && checkpoint === 'dispatched' && body.on !== false
+    if (role === 'handler' && readyGated(lot) && checkpoint === 'dispatched' && body.on !== false
       && !order.checkpoints?.ready_to_dispatch) {
       return error(409, 'not_cleared', 'The shop has not marked this customer ready to dispatch yet.');
     }
@@ -1529,11 +1533,78 @@ async function findExportStoreFor(userId: string, lotId: string, repository: Awa
   return null;
 }
 
+/**
+ * POST /api/orders/payment-reminder - tell a customer their parcel waits on payment.
+ *
+ * Pressed from the Ready to dispatch panel on the lot screen, for one order or
+ * every order of one customer: `{ orderIds }`. It goes as a message from the
+ * shop, in the thread the two of them already have, so the customer can answer
+ * it; a customer with no handle yet gets it on their bell instead. Once a day
+ * for the same orders: a reminder on every tap is how a shop gets muted.
+ */
+async function paymentReminder(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+
+  let body: { orderIds?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const ids = Array.isArray(body.orderIds) ? [...new Set(body.orderIds.filter((id): id is string => typeof id === 'string'))] : [];
+  if (ids.length === 0 || ids.length > 50) return error(400, 'invalid_orders', 'Name the orders to remind them about.');
+
+  const repository = await getRepository();
+  const found = await Promise.all(ids.map((id) => repository.getOrder(id)));
+  const orders = found.filter((order): order is Order => Boolean(order));
+  if (orders.length !== ids.length) return error(404, 'not_found', 'No such order.');
+  const [first] = orders;
+  if (orders.some((order) => order.sellerId !== first!.sellerId || order.buyerId !== first!.buyerId)) {
+    return error(400, 'invalid_orders', 'Remind one customer at a time.');
+  }
+  if (await lotsStoreFor(request, user, first!.sellerId) !== first!.sellerId) {
+    return error(403, 'forbidden', 'Those orders are not yours to chase.');
+  }
+
+  const due = orders.filter((order) => orderMoney(order).outstandingMinor > 0);
+  if (due.length === 0) return error(409, 'nothing_due', 'They have paid in full - mark it Ready to dispatch.');
+  const owedMinor = due.reduce((sum, order) => sum + orderMoney(order).outstandingMinor, 0);
+
+  const [shop, buyer] = await Promise.all([repository.getUserById(first!.sellerId), repository.getUserById(first!.buyerId)]);
+  const shopName = shop?.sellerProfile?.storefrontName || shop?.displayName || 'The shop';
+  const hello = buyer?.displayName ? `Hi ${buyer.displayName.split(/\s+/)[0]}, ` : 'Hi, ';
+  const what = due.length === 1
+    ? `your ${due[0]!.itemName} is ready to go out`
+    : `your ${due.length} orders (${due.map((order) => order.itemName).join(', ')}) are ready to go out`;
+  const text = `${hello}${what}. ${rupees(owedMinor)} is still due - please pay it so we can dispatch `
+    + `${due.length === 1 ? 'it' : 'them'} to you. Thank you! - ${shopName}`;
+  const link = `/order/${due[0]!.id}`;
+
+  /* Once a day. The words carry the orders and the amount, so the same
+     reminder again is the same text - and a changed balance is news. */
+  const DAY = 86_400_000;
+  const recent = await repository.listNotifications(first!.buyerId, 50);
+  const sentBell = recent.some((row) => row.kind === 'seller_nudge' && row.body === text && Date.now() - Date.parse(row.createdAt) < DAY);
+  const handles = [shop?.sellerProfile?.username, buyer?.username];
+  const thread = handles.every(Boolean) ? threadIdFor(handles[0]!, handles[1]!) : null;
+  const sentMessage = thread
+    ? (await repository.listMessages(thread, 30)).some((message) => message.body === text && Date.now() - Date.parse(message.createdAt) < DAY)
+    : false;
+  if (sentBell || sentMessage) return error(429, 'too_soon', 'They were reminded about this in the last day.');
+
+  const message = await messageFromShop(repository, first!.sellerId, first!.buyerId, text, user.id);
+  if (message) return json(200, { sent: true, via: 'message' });
+  await notify(repository, [first!.buyerId], { kind: 'seller_nudge', title: `A reminder from ${shopName}`, body: text, link }, { except: user.id });
+  return json(200, { sent: true, via: 'bell' });
+}
+
 export const supplierLotsRoute = handler(supplierLots);
 export const supplierLotRoute = handler(supplierLot);
 export const lotsBoardRoute = handler(lotsBoard);
 export const lotBoardRoute = handler(lotBoard);
 export const setCheckpointRoute = handler(setCheckpoint);
+export const paymentReminderRoute = handler(paymentReminder);
 export const myLotsRoute = handler(myLots);
 export const createLotRoute = handler(createLot);
 export const lotContentsRoute = handler(lotContents);
@@ -1556,6 +1627,7 @@ app.http('lot-details', { ...anon, methods: ['POST'], route: 'lots/{id}/details'
 app.http('lots-board', { ...anon, methods: ['GET'], route: 'me/lots/board', handler: lotsBoardRoute });
 app.http('lot-board', { ...anon, methods: ['GET'], route: 'lots/{id}/board', handler: lotBoardRoute });
 app.http('order-checkpoint', { ...anon, methods: ['POST'], route: 'orders/{id}/checkpoint', handler: setCheckpointRoute });
+app.http('order-payment-reminder', { ...anon, methods: ['POST'], route: 'orders/payment-reminder', handler: paymentReminderRoute });
 app.http('supplier-lots', { ...anon, methods: ['GET'], route: 'supplier/lots', handler: supplierLotsRoute });
 app.http('supplier-lot', { ...anon, methods: ['GET'], route: 'supplier/lots/{id}', handler: supplierLotRoute });
 app.http('order-tracking', { ...anon, methods: ['GET'], route: 'orders/{id}', handler: orderTrackingRoute });

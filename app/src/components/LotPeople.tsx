@@ -12,6 +12,7 @@ import { EmptyState, Icon } from './ui';
 import { formatWeight } from '../format';
 import { useUndo } from './Undo';
 import { OrderPhotos } from './OrderPhotos';
+import { ConditionTag } from './ConditionTag';
 
 /**
  * One lot, worked customer by customer.
@@ -145,7 +146,7 @@ export function LotPeople({ board, onChanged, onError }: {
       ) : (
         board.customers.map((customer) => (
           <CustomerCard key={customer.buyerId} customer={customer} busy={busy} onToggle={toggle} onToggleAll={toggleMany}
-            readyGate={Boolean(board.crew?.readyGate)} audiences={audiences}
+            handlerName={board.crew?.handlerName ?? null} audiences={audiences}
             onPhotos={(orderId, photos) => onChanged({
               ...board,
               customers: board.customers.map((each) => ({
@@ -160,13 +161,13 @@ export function LotPeople({ board, onChanged, onError }: {
 }
 
 /** One customer's parcel: their orders, and the ticks that move them. */
-function CustomerCard({ customer, busy, onToggle, onToggleAll, readyGate, audiences, onPhotos }: {
+function CustomerCard({ customer, busy, onToggle, onToggleAll, handlerName, audiences, onPhotos }: {
   customer: BoardCustomer;
   busy: Set<string>;
   onToggle: (orderId: string, checkpoint: OrderCheckpoint, on: boolean) => void | Promise<void>;
   onToggleAll: (orderIds: string[], checkpoint: OrderCheckpoint, on: boolean) => void | Promise<void>;
-  /** The handler waits on this press before dispatching anything of theirs. */
-  readyGate: boolean;
+  /** Who Ready to dispatch tells to send it, when the lot names one. */
+  handlerName: string | null;
   audiences: PhotoAudience[];
   onPhotos: (orderId: string, photos: OrderPhoto[]) => void;
 }) {
@@ -188,25 +189,20 @@ function CustomerCard({ customer, busy, onToggle, onToggleAll, readyGate, audien
         </span>
       </div>
 
-      {/* One tick for the whole parcel, because that is how it is actually
-          decided: everything of theirs is ready, or it is not. */}
-      {readyGate ? (
-        /* The seller's go-ahead to the handler: everything of theirs can ship. */
-        <button type="button" className={`cust__ready${allReady ? ' is-on' : ''}`} aria-pressed={allReady}
-          onClick={() => void onToggleAll(readyIds(!allReady), 'ready_to_dispatch', !allReady)}>
-          {allReady ? '✓ Ready to dispatch' : 'Ready to dispatch'}
-          <span>{allReady ? 'The handler can ship this parcel.' : 'Tell the handler this parcel can go.'}</span>
-        </button>
-      ) : (
-        <label className="cust__all">
-          <input
-            type="checkbox"
-            checked={allReady}
-            onChange={(event) => void onToggleAll(readyIds(event.target.checked), 'ready_to_dispatch', event.target.checked)}
-          />
-          <span>Ready to dispatch all {customer.orders.length}</span>
-        </label>
-      )}
+      {/* One press for the whole parcel, because that is how it is actually
+          decided: everything of theirs is ready, or it is not. It is the
+          seller's go-ahead, and the handler cannot dispatch before it. */}
+      <button type="button" className={`cust__ready${allReady ? ' is-on' : ''}`} aria-pressed={allReady}
+        onClick={() => void onToggleAll(readyIds(!allReady), 'ready_to_dispatch', !allReady)}>
+        {allReady
+          ? '✓ Ready to dispatch'
+          : customer.orders.length > 1 ? `Ready to dispatch all ${customer.orders.length} orders` : 'Ready to dispatch'}
+        <span>
+          {allReady
+            ? `${handlerName ?? 'The handler'} can dispatch this parcel. Press again to hold it.`
+            : `Tells ${handlerName ? `your domestic handler, ${handlerName},` : 'your domestic handler'} to dispatch ${customer.orders.length > 1 ? 'them' : 'it'} to ${customer.name}.`}
+        </span>
+      </button>
 
       {customer.orders.map((order, index) => (
         <div key={order.id} className="orderrow">
@@ -215,7 +211,7 @@ function CustomerCard({ customer, busy, onToggle, onToggleAll, readyGate, audien
             <span className="orderrow__item">{order.itemName}</span>
           </div>
           <div className="orderrow__meta">
-            <span className="badge badge--solid">{order.condition}</span>
+            <ConditionTag condition={order.condition} />
             <span className="faint">{formatWeight(order.unitWeightGrams * order.quantity)}</span>
             {order.quantity > 1 && <span className="faint">× {order.quantity}</span>}
           </div>

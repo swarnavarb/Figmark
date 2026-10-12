@@ -82,6 +82,7 @@ const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
   setTrackingRoute: setTracking, orderTrackingRoute: orderTracking,
   lotsBoardRoute: lotsBoard, lotBoardRoute: lotBoard, setCheckpointRoute: setCheckpoint,
+  paymentReminderRoute: paymentReminder,
 } = await import(new URL('fulfilment-routes.js', fns));
 const {
   supplierLotsRoute: supplierLots, supplierLotRoute: supplierLot,
@@ -5195,13 +5196,23 @@ await check('a handler works the India end, and no earlier', async () => {
   }), ctx)).jsonBody;
   const order = body.parcels[0].items[0];
 
-  // Theirs: everything from the moment it lands.
-  for (const checkpoint of ['india_received', 'ready_to_dispatch', 'packed', 'dispatched']) {
+  // Theirs: everything from the moment it lands - except the go-ahead,
+  // which is always the shop's, and before which nothing is dispatched.
+  for (const checkpoint of ['india_received', 'packed']) {
     const ticked = await setCheckpoint(req({
       headers: handlerAuth, params: { id: order.id }, body: { checkpoint, on: true },
     }), ctx);
     assert.equal(ticked.status, 200, `${checkpoint} is the handler's own work`);
   }
+  const ready = await setCheckpoint(req({ headers: handlerAuth, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch', on: true } }), ctx);
+  assert.equal(ready.status, 403, 'Ready to dispatch is the shop’s press on every lot');
+  await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch', on: false } }), ctx);
+  await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'dispatched', on: false } }), ctx);
+  const early = await setCheckpoint(req({ headers: handlerAuth, params: { id: order.id }, body: { checkpoint: 'dispatched', on: true } }), ctx);
+  assert.equal(early.status, 409, 'nothing goes out before the shop clears it');
+  assert.equal((await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch', on: true } }), ctx)).status, 200);
+  const sent = await setCheckpoint(req({ headers: handlerAuth, params: { id: order.id }, body: { checkpoint: 'dispatched', on: true } }), ctx);
+  assert.equal(sent.status, 200, 'cleared, the handler dispatches it');
 
   // Not theirs: the packing floor in Guangzhou.
   for (const checkpoint of ['china_received', 'china_packed']) {
@@ -10662,6 +10673,13 @@ await check('the seller tags people, picks their buttons, gates dispatch and sha
     assert.equal(notTheirs.status, 403);
     const packedRefused = await setCheckpoint(req({ headers: handlerHeaders, params: { id: order.id }, body: { checkpoint: 'india_received' } }), ctx);
     assert.equal(packedRefused.status, 403, 'a stock button the seller left off is refused');
+    // Unpaid, the shop can tell the customer - as a message, once a day.
+    const reminded = await paymentReminder(req({ headers: auth, body: { orderIds: [order.id] } }), ctx);
+    assert.equal(reminded.status, 200);
+    assert.ok(['message', 'bell'].includes(reminded.jsonBody.via));
+    assert.equal((await paymentReminder(req({ headers: auth, body: { orderIds: [order.id] } }), ctx)).status, 429, 'not again the same day');
+    assert.equal((await paymentReminder(req({ headers: inkwellTeam, body: { orderIds: [order.id] } }), ctx)).status, 403);
+    assert.equal((await paymentReminder(req({ headers: auth, body: { orderIds: [] } }), ctx)).status, 400);
     assert.equal((await setCheckpoint(req({ headers: auth, params: { id: order.id }, body: { checkpoint: 'ready_to_dispatch' } }), ctx)).status, 200);
     assert.equal((await setCheckpoint(req({ headers: handlerHeaders, params: { id: order.id }, body: { checkpoint: 'dispatched' } }), ctx)).status, 200);
 

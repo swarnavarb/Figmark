@@ -460,6 +460,48 @@ async function announceMessage(message: Message, senderId: string, repository: R
   }, { except: senderId });
 }
 
+/**
+ * A message from a shop to one of its buyers, written by the server on the
+ * shop's behalf - a payment reminder from the lot screen, say.
+ *
+ * Lands in the same thread the two of them already talk in, so the buyer can
+ * answer it like anything else the shop wrote. Null when it cannot go as a
+ * message: either side has no handle yet, or one of them blocked the other.
+ * The caller decides what to do instead.
+ */
+export async function messageFromShop(
+  repository: Repo,
+  shopId: string,
+  buyerId: string,
+  text: string,
+  senderId: string,
+): Promise<Message | null> {
+  const [shop, buyer] = await Promise.all([repository.getUserById(shopId), repository.getUserById(buyerId)]);
+  const shopHandle = shop?.sellerProfile?.username;
+  if (!shop || !buyer?.username || !shopHandle) return null;
+  const us: MessageParty = {
+    handle: shopHandle.toLowerCase(), userId: shop.id, isStore: true,
+    displayName: shop.sellerProfile!.storefrontName || shop.displayName,
+  };
+  const them = await partyFor(buyer.username, repository);
+  if (!them || isSelf(senderId, us, them) || await blockedBetween(shop.id, them, repository)) return null;
+
+  const now = new Date().toISOString();
+  const message: Message = {
+    id: `msg_${randomUUID().slice(0, 12)}`,
+    threadId: threadIdFor(us.handle, them.handle),
+    from: us,
+    to: them,
+    body: text,
+    readAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const saved = await repository.sendMessage(message);
+  await announceMessage(message, senderId, repository);
+  return saved;
+}
+
 /** POST /api/messages/{handle}/send - say something, as one of your handles. */
 async function send(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();

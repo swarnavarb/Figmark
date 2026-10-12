@@ -27,6 +27,7 @@ import { endedOf } from '../components/OrderTrack';
 import { RouteStudio } from './RouteStudioPage';
 import { ForwarderBooking } from '../components/ForwarderBooking';
 import { formatDate, formatMoney, formatWeight } from '../format';
+import { ConditionTag } from '../components/ConditionTag';
 
 /**
  * Who moves this lot, and how to reach them.
@@ -196,7 +197,6 @@ function CrewButtonsCard({ lot, busy, onRun }: {
     supplier: Boolean(lot.supplier?.supplierUserId ?? lot.exporterUserId),
     handler: Boolean(lot.handler?.handlerUserId),
   };
-  const [readyGate, setReadyGate] = useState(Boolean(lot.crew?.readyGate));
   const [seesPayment, setSeesPayment] = useState(Boolean(lot.crew?.handlerSeesPayment));
   /** The keys picked per role, starting from what they have now. */
   // Only what is on their side of the lot: a stock button inside it is not theirs to keep.
@@ -208,7 +208,7 @@ function CrewButtonsCard({ lot, busy, onRun }: {
     supplier: onSide(lot, 'supplier'),
     handler: onSide(lot, 'handler'),
   }));
-  const draft = { ...lot, crew: { ...lot.crew, readyGate } };
+  const draft = lot;
   const keep = (role: TaggedRole) => {
     const slots = new Set(crewSlots(draft, role).map((slot) => slot.key));
     return picked[role].filter((key) => slots.has(key));
@@ -270,21 +270,20 @@ function CrewButtonsCard({ lot, busy, onRun }: {
             <span className="crewbtns__label">Show them payments</span>
             <span className="faint">What each customer owes and has paid, so they can collect or hold a parcel.</span>
           </label>
-          <label className="crewbtns__opt">
-            <input type="checkbox" checked={readyGate} onChange={(event) => setReadyGate(event.target.checked)} />
-            <span className="crewbtns__label">I clear each customer: Ready to dispatch</span>
+          {/* Not a choice: every customer waits on the seller's go-ahead. */}
+          <div className="crewbtns__opt is-on crewbtns__fixed">
+            <span className="crewbtns__label">✓ You clear each customer: Ready to dispatch</span>
             <span className="faint">
-              You press Ready to dispatch for a customer from the People tab, and the handler cannot dispatch their
-              parcel until you have.
+              Always on. You press Ready to dispatch for each customer on the lot’s Customers list, and
+              {' '}{lot.handler?.name || 'the handler'} cannot dispatch their parcel until you have.
             </span>
-          </label>
+          </div>
         </fieldset>
       )}
 
       <button type="button" className="btn btn--ghost btn--block" disabled={busy}
         onClick={() => void onRun('Crew buttons saved.', () =>
           api.setCrew(lot.id, {
-            readyGate,
             handlerSeesPayment: seesPayment,
             ...(tagged.supplier ? { supplierButtons: keep('supplier') } : {}),
             ...(tagged.handler ? { handlerButtons: keep('handler') } : {}),
@@ -776,7 +775,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
         state={{ from: `/shop?tab=lots&lot=${encodeURIComponent(lotId)}` }}
         badges={item.ownStep && !ended && <span className="badge badge--warn">Own timeline</span>}
         meta={<>
-          <span>{item.condition}</span>
+          <ConditionTag condition={item.condition} />
           {item.quantity > 1 && <><span aria-hidden="true">·</span><span>×{item.quantity}</span></>}
         </>}
         side={ended

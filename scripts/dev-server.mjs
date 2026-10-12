@@ -39,7 +39,7 @@ const { ogRoute, ogCardRoute, linkPreviewRoute } = await import(new URL('og-rout
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
-  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, supplierLotsRoute, supplierLotRoute,
+  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, paymentReminderRoute, supplierLotsRoute, supplierLotRoute,
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
@@ -183,6 +183,7 @@ const routes = [
   ['GET', '/api/me/lots/board', lotsBoardRoute],
   ['GET', '/api/me/lots', myLotsRoute],
   ['GET', '/api/lots/:id/board', lotBoardRoute],
+  ['POST', '/api/orders/payment-reminder', paymentReminderRoute],
   ['POST', '/api/orders/:id/checkpoint', setCheckpointRoute],
   ['POST', '/api/orders/:id/photos', addOrderPhotoRoute],
   ['POST', '/api/orders/:id/photos/:photoId', updateOrderPhotoRoute],

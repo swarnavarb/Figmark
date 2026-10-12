@@ -13259,10 +13259,38 @@ button.sk-plan__pick { cursor: pointer; }
 .cust__ready span { font-size: var(--t-xs); font-weight: var(--w-normal); letter-spacing: 0; color: var(--text-dim); }
 .cust__ready.is-on { background: var(--ok); color: var(--ok-ink); }
 .cust__ready.is-on span { color: var(--ok-ink); }
-.ocust__body > .cust__ready { margin: 0 0 10px; }
-.ocard__ready { display: inline-flex; align-items: center; gap: 6px; justify-self: start; align-self: start; padding: 7px 12px; border: 1.5px solid var(--ok); border-radius: 999px; background: transparent; color: var(--ok); font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); cursor: pointer; }
-.ocard__ready.is-on { background: var(--ok); color: var(--ok-ink); }
-.ocard__ready:disabled { opacity: 0.55; cursor: default; }
+
+/* Ready to dispatch on the shop's lot screen: green when paid, amber while
+   money is owed, solid green once pressed - the colour says what is next. */
+.rdy { --rdy: var(--ok); --rdy-soft: var(--ok-soft); --rdy-ink: var(--ok-ink); display: grid; gap: 8px; margin: 0 0 10px; padding: 12px 14px; border: 1.5px solid var(--rdy); border-radius: var(--r-md); background: var(--rdy-soft); }
+.rdy--due { --rdy: var(--warn); --rdy-soft: var(--warn-soft); --rdy-ink: var(--warn-ink); }
+.rdy--compact { margin: 0; padding: 8px 10px; gap: 6px; border-width: 1px; }
+.rdy__status { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--text); }
+.rdy--compact .rdy__status { font-size: var(--t-xs); }
+.rdy__dot { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rdy); color: var(--rdy-ink); font-size: 11px; font-weight: var(--w-bold); }
+.rdy__acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.rdy__btn, .rdy__notify { min-height: 40px; padding: 8px 16px; border-radius: 999px; font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); cursor: pointer; }
+.rdy--compact .rdy__btn, .rdy--compact .rdy__notify { min-height: 34px; padding: 6px 12px; font-size: var(--t-xs); }
+.rdy__btn { border: 2px solid var(--rdy); background: transparent; color: var(--rdy); }
+.rdy--paid .rdy__btn { background: var(--ok); color: var(--ok-ink); box-shadow: 0 2px 10px rgba(52, 211, 153, 0.36); }
+.rdy--done .rdy__btn { background: var(--ok); color: var(--ok-ink); }
+.rdy__notify { border: 2px solid var(--warn); background: var(--warn); color: var(--warn-ink); }
+.rdy__btn:disabled, .rdy__notify:disabled { opacity: 0.6; cursor: default; }
+.rdy__note { font-size: var(--t-xs); color: var(--text-dim); }
+.rdy__note.is-error { color: var(--danger-text); }
+.rdy__info { margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.rdy__info b { color: var(--text); }
+
+/* The grade a piece was sold as, stamped where it is handled. */
+.cond { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; line-height: 1.6; white-space: nowrap; vertical-align: middle; border: 1px solid currentColor; }
+.cond--misb { color: var(--ok); background: var(--ok-soft); }
+.cond--mib { color: var(--aqua); background: var(--aqua-soft); }
+.cond--bib { color: var(--warn); background: var(--warn-soft); }
+.cond--loose { color: var(--text-dim); background: var(--surface-2); }
+.ctile > .cond { justify-self: center; }
+.crewbtns__fixed { grid-template-columns: 1fr; cursor: default; }
+.crewbtns__fixed:hover { background: var(--accent-soft); }
+.crewbtns__fixed .faint { grid-column: 1; }
 .trk-photos { margin-top: 14px; }
 
 .stepact__who.is-forwarder { background: var(--blue-soft); color: var(--blue-text); }

@@ -9,7 +9,7 @@ import {
   hasRight, insuranceQuote, isLive, jobActionsFor, jobIsLive, laneLabel, liveAddOns, liveLanes, liveOfferings,
   livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, type ArtistJobAction, type StoreKind,
 } from '../../../shared/service-stores.js';
-import { crewButtons, photosFor, supplierIdOf, type CrewRole } from '../../../shared/services.js';
+import { crewButtons, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import {
   currentStepOf, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, stepButtonLabel, stepTickKey, ticksOf,
 } from '../../../shared/routes.js';
@@ -1161,7 +1161,7 @@ async function crewLot(request: HttpRequest, _context: InvocationContext) {
   }));
   // Money only where the seller said the handler may see it, and never to anyone else.
   const seesPayment = role === 'handler' && Boolean(lot.crew?.handlerSeesPayment);
-  const readyGate = role === 'handler' && Boolean(lot.crew?.readyGate);
+  const readyGate = role === 'handler' && readyGated(lot);
   const audience = role === 'forwarder' ? null : role;
   // The other lots they work in the same role, for the switcher at the top.
   const others = (await seatsOf(repository, user.id))

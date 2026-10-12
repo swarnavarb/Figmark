@@ -219,6 +219,17 @@ export interface CrewButton {
 
 type CrewLot = Pick<Lot, 'route' | 'originCountry' | 'destinationCountry' | 'crew'>;
 
+/**
+ * Whether the seller clears each customer before the handler may dispatch.
+ *
+ * Always, for any order riding a lot: "Ready to dispatch" is the seller's
+ * press - paid up, nothing still to add - and the handler holds the parcel
+ * until it is made. It used to be a per-lot switch; it is not optional now.
+ */
+export function readyGated(lot: object | null | undefined): boolean {
+  return Boolean(lot);
+}
+
 const placesOfLot = (lot: CrewLot) => ({ origin: lot.originCountry ?? null, destination: lot.destinationCountry ?? null });
 
 /** The seller's chosen list for this role, or null for the stock buttons. */
@@ -233,8 +244,8 @@ export function chosenButtons(lot: CrewLot, role: TaggedRole): string[] | null {
  * Each role's side of the lot and nothing else: the supplier presses what
  * happens to an item before it joins the lot, the handler what happens once
  * it has left it. Inside the lot the crate moves its items together, and
- * Delivered stays the seller's - it is the press that settles the money. With
- * the ready gate on, "Ready to dispatch" is the seller's too.
+ * Delivered stays the seller's - it is the press that settles the money, and
+ * so is "Ready to dispatch" (see `readyGated`).
  */
 export function crewSlots(lot: CrewLot, role: TaggedRole): Omit<CrewButton, 'assigned'>[] {
   const route = routeOf(lot);
@@ -246,7 +257,7 @@ export function crewSlots(lot: CrewLot, role: TaggedRole): Omit<CrewButton, 'ass
     if (!key || step.trigger === 'delivered') return [];
     const onSide = role === 'supplier' ? index < join : join < route.steps.length && index >= leave;
     if (!onSide) return [];
-    if (role === 'handler' && key === 'ready_to_dispatch' && lot.crew?.readyGate) return [];
+    if (role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)) return [];
     return [{ key, label: stepButtonLabel(step, places), step: renderStepText(step.name, places), index }];
   });
 }
@@ -268,7 +279,7 @@ export function crewButtons(lot: CrewLot, role: CrewRole): CrewButton[] {
   return routeOf(lot).steps.flatMap((step, index) => {
     const key = stepTickKey(step);
     if (!key) return [];
-    if (role === 'handler' && key === 'ready_to_dispatch' && lot.crew?.readyGate) return [];
+    if (role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)) return [];
     const mine = step.assignee === role || (step.trigger && CREW_CHECKPOINTS[role].includes(step.trigger));
     return mine
       ? [{ key, label: stepButtonLabel(step, places), step: renderStepText(step.name, places), index, assigned: step.assignee === role }]
@@ -287,7 +298,7 @@ export function crewButtons(lot: CrewLot, role: CrewRole): CrewButton[] {
 export function crewMayPress(lot: CrewLot | null, role: CrewRole, key: string, assignee?: string | null): boolean {
   const custom = key.startsWith('custom:');
   if (!lot) return !custom && mayTick(role, key as OrderCheckpoint);
-  if (role === 'handler' && key === 'ready_to_dispatch' && lot.crew?.readyGate) return false;
+  if (role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)) return false;
   if (crewButtons(lot, role).some((button) => button.key === key)) return true;
   if (role !== 'forwarder' && chosenButtons(lot, role)) return false;
   return (!custom && mayTick(role, key as OrderCheckpoint)) || assignee === role;

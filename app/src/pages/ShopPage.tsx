@@ -29,6 +29,7 @@ import {
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { OrderPhotos } from '../components/OrderPhotos';
+import { ConditionTag } from '../components/ConditionTag';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
@@ -1106,7 +1107,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     openOverride[customer.key] ?? (allOpen || customer.rows.some((row) => row.id === focusOrder));
   const everyOpen = customers ? customers.every(isOpen) : true;
 
-  const card = (row: SaleRow, index: number) => (
+  const card = (row: SaleRow, index: number, readyEach = true) => (
     <OrderRow
       key={row.id}
       index={index}
@@ -1114,6 +1115,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       store={store}
       from={here}
       inLot={Boolean(lotId)}
+      readyEach={readyEach}
       glowing={glowing === row.id}
       busy={busy === row.id}
       needsAnswer={needsAnswer.has(row.id)}
@@ -1239,7 +1241,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
               open={isOpen(customer)} needsAnswer={needsAnswer}
               busy={busy !== null} onReadyAll={(on) => void markReady(readyable(customer.rows), on)}
               onToggle={(open) => setOpenOverride((current) => ({ ...current, [customer.key]: open }))}>
-              {customer.rows.map((row, index) => card(row, customer.start + index))}
+              {customer.rows.map((row, index) => card(row, customer.start + index, readyable(customer.rows).length > 1))}
             </CustomerOrders>
           ))}
         </div>
@@ -1455,7 +1457,6 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, onReadyAl
 }) {
   const { buyer, rows } = customer;
   const toGo = readyable(rows);
-  const allReady = toGo.length > 0 && toGo.every((row) => Boolean(row.readyAt));
   /* Called-off orders owe nothing; they are listed but not counted. */
   const live = rows.filter((row) => !isClosed(row));
   const sum = (pick: (row: SaleRow) => number) =>
@@ -1521,23 +1522,100 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, onReadyAl
               paid={formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}
               balance={formatTotals(sum((row) => row.outstandingMinor), currency)} />
           )}
-          {/* One press for the whole parcel: everything of theirs can go. With
-              the lot's ready gate on, the handler waits for exactly this. */}
+          {/* One press for the whole parcel: everything of theirs can go. The
+              lot's handler waits for exactly this before dispatching. */}
           {toGo.length > 0 && (
-            <button type="button" className={`cust__ready${allReady ? ' is-on' : ''}`} aria-pressed={allReady}
-              disabled={busy} onClick={() => onReadyAll(!allReady)}>
-              {allReady ? '✓ Ready to dispatch' : `Ready to dispatch all ${toGo.length}`}
-              <span>
-                {allReady
-                  ? 'Everything of theirs can go. Press again to hold it.'
-                  : toGo[0]?.lotCrew?.handler ? 'Tell the handler this parcel can go.' : 'Mark this parcel as cleared to go out.'}
-              </span>
-            </button>
+            <ReadyPanel rows={toGo} buyerName={buyer.name} busy={busy} onReady={onReadyAll} />
           )}
           <div className="orows">{children}</div>
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The seller's Ready to dispatch, with what it is waiting on said beside it.
+ *
+ * Fully paid, it says so in green and asks for the press. Money still owed,
+ * it says how much in amber and offers to tell the customer - a message from
+ * the shop in their chat, written for them - and the press stays available,
+ * amber, for a seller who will collect on delivery. Either way it names who the
+ * press goes to: the lot's domestic handler, who cannot dispatch before it.
+ *
+ * One order or every order still to go for one customer ("all 3 orders").
+ */
+function ReadyPanel({ rows, buyerName, busy, onReady, compact = false }: {
+  rows: SaleRow[];
+  buyerName: string;
+  busy: boolean;
+  onReady: (on: boolean) => void;
+  /** On an order card under its customer: the button and one line, not the whole explanation. */
+  compact?: boolean;
+}) {
+  const [notice, setNotice] = useState<{ state: 'busy' | 'sent' | 'error'; text?: string } | null>(null);
+  const done = rows.every((row) => Boolean(row.readyAt));
+  const owed = rows.filter((row) => row.outstandingMinor > 0);
+  const state = done ? 'done' : owed.length > 0 ? 'due' : 'paid';
+  const many = rows.length > 1;
+  const them = many ? 'them' : 'it';
+  const first = buyerName.split(/\s+/)[0] || buyerName;
+  const handler = rows.find((row) => row.lotCrew?.handlerName)?.lotCrew?.handlerName ?? null;
+  const due = formatTotals(owed.map((row) => ({ amountMinor: row.outstandingMinor, currency: row.currency })), rows[0]?.currency);
+
+  async function remind() {
+    setNotice({ state: 'busy' });
+    try {
+      const sent = await api.paymentReminder(owed.map((row) => row.id));
+      setNotice({
+        state: 'sent',
+        text: sent.via === 'message' ? `Message sent to ${first}.` : `${first} has no chat handle yet, so it went to their notifications.`,
+      });
+    } catch (err) {
+      setNotice({ state: 'error', text: err instanceof ApiRequestError ? err.message : 'Could not send that.' });
+    }
+  }
+
+  const status = state === 'done'
+    ? `Ready to dispatch - ${handler ?? 'your domestic handler'} can send ${them} out now.`
+    : state === 'paid'
+      ? `${many ? `All ${rows.length} orders are` : 'It is'} fully paid - please mark ${them} Ready to dispatch.`
+      : `Payment pending - ${due} still due. Notify the customer before ${them === 'it' ? 'it goes' : 'they go'} out.`;
+  const label = done
+    ? '✓ Ready to dispatch'
+    : many ? `Ready to dispatch all ${rows.length} orders` : 'Ready to dispatch';
+
+  return (
+    <div className={`rdy rdy--${state}${compact ? ' rdy--compact' : ''}`}>
+      <p className="rdy__status" role="status">
+        <span className="rdy__dot" aria-hidden="true">{state === 'done' ? '✓' : state === 'paid' ? '₹' : '!'}</span>
+        {status}
+      </p>
+      <div className="rdy__acts">
+        {/* Owed money: telling them comes first, so it sits first. */}
+        {state === 'due' && (
+          <button type="button" className="rdy__notify" disabled={busy || notice?.state === 'busy' || notice?.state === 'sent'}
+            onClick={() => void remind()}>
+            {notice?.state === 'sent' ? '✓ Customer notified' : notice?.state === 'busy' ? 'Sending…' : `🔔 Notify ${first}`}
+          </button>
+        )}
+        <button type="button" className="rdy__btn" aria-pressed={done} disabled={busy}
+          title={done ? 'Press again to hold it back' : undefined} onClick={() => onReady(!done)}>
+          {label}
+        </button>
+      </div>
+      {notice?.text && <small className={`rdy__note${notice.state === 'error' ? ' is-error' : ''}`}>{notice.text}</small>}
+      {!compact && (
+        <p className="rdy__info">
+          {handler
+            ? <>Ready to dispatch tells your domestic handler, <b>{handler}</b>, to dispatch {them} to {buyerName}.
+              {' '}They cannot send {them} until you press it.</>
+            : <>Ready to dispatch clears {them} to go out to {buyerName}. Tag a domestic handler on the lot and
+              {' '}they will be told to dispatch {them}.</>}
+          {done && ' Press again to hold it back.'}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1897,7 +1975,7 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, inLot = false, glowing, busy, needsAnswer, onPress, onReady, onPhotos, onLotTracking, onFile, onReject,
+  index, row, store, from, inLot = false, readyEach = true, glowing, busy, needsAnswer, onPress, onReady, onPhotos, onLotTracking, onFile, onReject,
   onAccept, onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -1910,6 +1988,8 @@ function OrderRow({
    * lot are already said above it, so the card does not say them again.
    */
   inLot?: boolean;
+  /** Offer Ready to dispatch on the card itself: off when its customer's head is the only place it is needed. */
+  readyEach?: boolean;
   glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
@@ -1966,6 +2046,7 @@ function OrderRow({
           {!inLot && <span aria-hidden="true">·</span>}
           <span>{timeAgo(row.createdAt)}</span>
           {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
+          <ConditionTag condition={row.condition} />
         </>}
         side={<span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>} />
 
@@ -2068,12 +2149,11 @@ function OrderRow({
         />
       )}
 
-      {/* Inside its lot: the seller's go-ahead for this one piece, and its photos. */}
-      {inLot && readyable([row]).length > 0 && (
-        <button type="button" className={`ocard__ready${row.readyAt ? ' is-on' : ''}`} aria-pressed={Boolean(row.readyAt)}
-          disabled={busy} onClick={() => onReady(!row.readyAt)}>
-          <Icon name="check" size={14} /> {row.readyAt ? 'Ready to dispatch' : 'Mark ready to dispatch'}
-        </button>
+      {/* Inside its lot: the seller's go-ahead for this one piece, and its
+          photos. A customer with a single order to go has it on their head
+          already, so the card does not say it twice. */}
+      {inLot && readyEach && readyable([row]).length > 0 && (
+        <ReadyPanel rows={[row]} buyerName={row.buyer.name} busy={busy} onReady={onReady} compact />
       )}
       {inLot && (
         <OrderPhotos orderId={row.id} photos={row.photos} seller onChange={onPhotos}

@@ -21,6 +21,7 @@ import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName } from '../com
 import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
+import { ConditionTag } from '../components/ConditionTag';
 
 /**
  * The trades around the trade.
@@ -827,7 +828,7 @@ function DistributionDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
                   <li key={item.id}>
                     <span>{item.itemName}</span>
                     <span className="faint">
-                      {item.condition}{item.quantity > 1 ? ` · ×${item.quantity}` : ''}
+                      <ConditionTag condition={item.condition} />{item.quantity > 1 ? ` ×${item.quantity}` : ''}
                     </span>
                   </li>
                 ))}
