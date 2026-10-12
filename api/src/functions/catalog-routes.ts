@@ -138,7 +138,7 @@ async function canSee(repository: Awaited<ReturnType<typeof getRepository>>, lis
  * is all that leaves; every other change of price stays the shop's.
  */
 function publicListing(listing: Listing): Listing {
-  const { costSheet: _cost, costSheetPrevious: _history, priceHistory, ...rest } = listing;
+  const { costSheet: _cost, costSheetPrevious: _history, orderCosts: _orders, priceHistory, ...rest } = listing;
   const highest = Math.max(0, ...(priceHistory ?? []).map((entry) => entry.priceMinor));
   return highest > listing.priceMinor
     ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }

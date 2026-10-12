@@ -1,4 +1,4 @@
-import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
+import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
@@ -928,6 +928,13 @@ export interface Listing extends BaseDocument {
    * seller did not mean is one tap from undone.
    */
   costSheetPrevious?: ItemCostSheet[];
+  /**
+   * One order's own cost steps, per unit, by order id - typed into the profit
+   * book when that order cost something different from the item's sheet.
+   * Kept here rather than on the order because the order is the buyer's to
+   * read, and this is the shop's.
+   */
+  orderCosts?: Record<string, CostStep[]>;
   /**
    * Every price this item has been on sale at, oldest first, appended when the
    * seller edits the price. Absent for items never repriced.

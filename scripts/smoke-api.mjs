@@ -138,7 +138,7 @@ const {
 } = await import(new URL('profit-routes.js', fns));
 const { calculateProfit, starterLines, sheetTotal, SCENARIOS } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
 const {
-  costsRoute: costsRead, saveCostSheetRoute: saveCostSheet, deepRoute: deepRead, salesReportRoute: salesReport, nudgeRoute: nudge,
+  costsRoute: costsRead, saveCostSheetRoute: saveCostSheet, saveOrderCostsRoute: saveOrderCosts, deepRoute: deepRead, salesReportRoute: salesReport, nudgeRoute: nudge,
 } = await import(new URL('pro-routes.js', fns));
 const {
   servicesHubRoute: servicesHub, serviceDirectoryRoute: serviceDirectory,
@@ -8338,10 +8338,11 @@ const bookFor = async (buyer, listingId) => {
   return orderId;
 };
 
-await check('an item keeps its own cost steps, and profit follows per item and customer', async () => {
+await check('the profit book: every order with its costs, an order can have its own, and what is still owed', async () => {
   const listingId = await listItem('Costed Figure', 12_000);
   const buyer = await newBuyer('Costed Buyer');
-  await bookFor(buyer, listingId);
+  const orderId = await bookFor(buyer, listingId);
+  const other = await bookFor(await newBuyer('Second Costed Buyer'), listingId);
 
   const steps = [
     { id: 'item', label: 'Item price', stage: 'buying', amountMinor: 5_000 },
@@ -8352,37 +8353,44 @@ await check('an item keeps its own cost steps, and profit follows per item and c
   assert.equal(saved.jsonBody.costMinor, 6_000);
 
   const read = (await costsRead(req({ headers: auth }), ctx)).jsonBody;
-  const item = read.items.active.find((row) => row.key === listingId);
-  assert.ok(item, 'an item on sale is active');
-  assert.equal(item.revenueMinor, 12_000);
-  assert.equal(item.costMinor, 6_000);
-  assert.equal(item.profitMinor, 6_000);
-  assert.equal(item.marginPercent, 50);
-  assert.equal(item.stages.international, 1_000);
-  assert.deepEqual(item.steps.map((step) => step.label), ['Item price', 'Freight'], 'only the steps the seller kept');
-  const customer = [...read.customers.active, ...read.customers.closed].find((row) => row.name === 'Costed Buyer');
-  assert.ok(customer && customer.profitMinor >= 6_000, 'and the customer who bought it');
-  assert.ok(read.sheets.some((row) => row.listingId === listingId && row.sheet), 'listed among the items to cost');
+  const row = read.rows.find((entry) => entry.orderId === orderId);
+  assert.ok(row, 'every kept order is a row');
+  assert.equal(row.lotId, null, 'sold from hand');
+  assert.equal(row.unitPriceMinor, 12_000);
+  assert.equal(row.pendingMinor, 12_000, 'a booking is still owed in full');
+  assert.deepEqual(row.steps.map((step) => step.amountMinor), [5_000, 1_000], 'the item’s costs until the order has its own');
+  assert.equal(row.own, false);
+  assert.equal(read.customers[row.buyerId].name, 'Costed Buyer');
+  assert.ok(Array.isArray(read.lots));
+  assert.ok(read.sheets.some((entry) => entry.listingId === listingId && entry.sheet), 'listed among the items to cost');
+
+  const typed = await saveOrderCosts(req({ headers: auth, params: { id: orderId }, body: { steps: [{ ...steps[0], amountMinor: 4_500 }, steps[1], { id: 'pack', label: 'Packing', stage: 'selling', amountMinor: 200 }] } }), ctx);
+  assert.equal(typed.status, 200, JSON.stringify(typed.jsonBody));
+  assert.equal(typed.jsonBody.own, true);
+  const after = (await costsRead(req({ headers: auth }), ctx)).jsonBody.rows;
+  assert.deepEqual(after.find((entry) => entry.orderId === orderId).steps.map((step) => step.amountMinor), [4_500, 1_000, 200], 'that order only');
+  assert.deepEqual(after.find((entry) => entry.orderId === other).steps.map((step) => step.amountMinor), [5_000, 1_000], 'not the other');
+
+  const stranger = await newBuyer('Cost Snoop');
+  assert.equal((await saveOrderCosts(req({ headers: stranger.headers, params: { id: orderId }, body: { steps: [] } }), ctx)).status, 404, 'another shop cannot touch it');
+  const seen = (await listingDetail(req({ headers: stranger.headers, params: { id: listingId } }), ctx)).jsonBody.listing;
+  assert.equal(seen.costSheet, undefined, 'a buyer never sees what the item cost the shop');
+  assert.equal(seen.orderCosts, undefined, 'nor what one order cost');
+  assert.equal(seen.costSheetPrevious, undefined);
+
+  const back = await saveOrderCosts(req({ headers: auth, params: { id: orderId }, body: { steps: null } }), ctx);
+  assert.equal(back.jsonBody.own, false, 'back to the item’s costs');
+  assert.equal(back.jsonBody.steps.length, 2);
 
   const edited = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { steps: [{ ...steps[0], amountMinor: 7_000 }] } } }), ctx);
   assert.equal(edited.jsonBody.costMinor, 7_000, 'a step can be changed, and a step dropped');
-  const stranger = await newBuyer('Cost Snoop');
-  const seen = (await listingDetail(req({ headers: stranger.headers, params: { id: listingId } }), ctx)).jsonBody.listing;
-  assert.equal(seen.costSheet, undefined, 'a buyer never sees what the item cost the shop');
-  assert.equal(seen.costSheetPrevious, undefined);
-  assert.equal((await listingDetail(req({ headers: auth, params: { id: listingId } }), ctx)).jsonBody.listing.costSheet.steps.length, 1);
-
   const stepped = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { restore: true } }), ctx);
   assert.equal(stepped.jsonBody.costMinor, sheetTotal({ steps }), 'removing steps back to the costs saved before');
-  const sheetRow = (await costsRead(req({ headers: auth }), ctx)).jsonBody.sheets.find((row) => row.listingId === listingId);
-  assert.equal(sheetRow.previousCostMinor, null, 'and there is nothing before those');
-  await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: { steps: [{ ...steps[0], amountMinor: 7_000 }] } } }), ctx);
   assert.equal((await saveCostSheet(req({ headers: stranger.headers, params: { id: listingId }, body: { sheet: null } }), ctx)).status, 404);
   const cleared = await saveCostSheet(req({ headers: auth, params: { id: listingId }, body: { sheet: null } }), ctx);
   assert.equal(cleared.jsonBody.sheet, null);
-  const after = (await costsRead(req({ headers: auth }), ctx)).jsonBody.items.active.find((row) => row.key === listingId);
-  assert.equal(after.uncostedUnits, 1, 'without costs, no profit is claimed');
-  assert.equal(after.profitMinor, 0);
+  const bare = (await costsRead(req({ headers: auth }), ctx)).jsonBody.rows.find((entry) => entry.orderId === other);
+  assert.equal(bare.steps.length, 0, 'without costs, nothing is made up');
 });
 
 await check('a cheaper or restocked item finds the people who saved it, once a day', async () => {

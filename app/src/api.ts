@@ -11,7 +11,7 @@ import type {
   MeResponse,
   SignupResponse,
 } from '@shared/contracts';
-import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
+import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, OrderStatus, Sourcing, StorePermission } from '@shared/enums';
 import type { DealState } from '@shared/deals';
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
@@ -21,7 +21,7 @@ import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, Trackin
 import type { CardButton, SerialButton } from '@shared/buttons';
 import type { LevelTag, MergedRating, StoreLevel } from '@shared/storefront';
 import type { GrowthView } from '@shared/store-growth';
-import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
+import type { CostLine, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { LotBuyerPhase } from '@shared/fulfilment';
 import type { PreOrderView } from '@shared/preorder';
@@ -1341,25 +1341,6 @@ export interface TrendingRow {
   soldOut: boolean; stockLeft: number | null; daysLeft: number | null; perWeek: number;
 }
 
-/** One lot, item or customer's real profit, from each item's saved costs. */
-export interface ProfitRow {
-  key: string;
-  name: string;
-  sub: string | null;
-  photo: string | null;
-  orders: number;
-  units: number;
-  revenueMinor: number;
-  costMinor: number;
-  profitMinor: number;
-  marginPercent: number | null;
-  uncostedUnits: number;
-  stages: Record<CostStage, number>;
-  steps: { id: string; label: string; stage: CostStage; amountMinor: number }[];
-}
-
-export interface ProfitSplit { active: ProfitRow[]; closed: ProfitRow[] }
-
 export interface SheetItem {
   listingId: string;
   title: string;
@@ -1371,17 +1352,43 @@ export interface SheetItem {
   sold: number;
   sheet: ItemCostSheet | null;
   costMinor: number;
-  /** What Remove steps back to; null when removing clears the costs. */
-  previousCostMinor: number | null;
 }
 
-/** `GET /api/me/costs` - real profit per lot, item and customer. */
+/** One order in the profit book. Money in paise; `steps` are per unit. */
+export interface BookRow {
+  orderId: string;
+  listingId: string;
+  /** Null when sold from hand. */
+  lotId: string | null;
+  itemName: string;
+  photo: string | null;
+  buyerId: string;
+  status: OrderStatus;
+  placedAt: string;
+  quantity: number;
+  unitPriceMinor: number;
+  totalMinor: number;
+  paidMinor: number;
+  pendingMinor: number;
+  steps: CostStep[];
+  /** The steps are this order's own rather than the item's. */
+  own: boolean;
+}
+
+export interface BookLot {
+  id: string;
+  name: string;
+  number: string | null;
+  status: string;
+  createdAt: string;
+  orders: number;
+}
+
+/** `GET /api/me/costs` - the profit book: every order, its costs and what is owed. */
 export interface CostsResponse {
-  totals: { active: ProfitRow; closed: ProfitRow };
-  lots: ProfitSplit;
-  items: ProfitSplit;
-  customers: ProfitSplit;
-  handles: Record<string, string | null>;
+  lots: BookLot[];
+  rows: BookRow[];
+  customers: Record<string, { name: string; handle: string | null }>;
   sheets: SheetItem[];
 }
 
@@ -2723,9 +2730,9 @@ export const api = {
     post<{ calc: SavedCalc; calcs: SavedCalc[] }>(`/me/calcs/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, calc),
   deleteCalc: (id: string, storeId?: string) =>
     post<{ calcs: SavedCalc[] }>(`/me/calcs/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
-  restoreCostSheet: (listingId: string, storeId?: string) =>
-    post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
-      `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { restore: true }),
+  saveOrderCosts: (orderId: string, steps: CostStep[] | null, storeId?: string) =>
+    post<{ orderId: string; own: boolean; steps: CostStep[] }>(
+      `/me/orders/${encodeURIComponent(orderId)}/costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { steps }),
   saveCostSheet: (listingId: string, sheet: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null, storeId?: string) =>
     post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
       `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { sheet }),
