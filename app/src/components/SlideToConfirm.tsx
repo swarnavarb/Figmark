@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { Spinner } from './Spinner';
 
 /**
  * A press that has to be meant: drag the knob across to say yes, drag it
@@ -9,7 +10,7 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 
  * The knob is a real switch, so a keyboard (Enter or Space) or a screen
  * reader does the same thing in one press - sliding is for fingers.
  */
-export function SlideToConfirm({ on, label, onLabel, disabled = false, onChange }: {
+export function SlideToConfirm({ on, label, onLabel, disabled = false, working = false, onChange }: {
   /** Already done: the knob sits at the far end, and sliding back undoes it. */
   on: boolean;
   /** What sliding does, shown in the track: "Ready to dispatch all 3 orders". */
@@ -17,6 +18,8 @@ export function SlideToConfirm({ on, label, onLabel, disabled = false, onChange 
   /** The track once done: "Ready to dispatch". */
   onLabel: string;
   disabled?: boolean;
+  /** This press is saving: the knob turns into a spinner until it lands. */
+  working?: boolean;
   onChange: (on: boolean) => void;
 }) {
   const track = useRef<HTMLDivElement>(null);
@@ -85,18 +88,19 @@ export function SlideToConfirm({ on, label, onLabel, disabled = false, onChange 
   }
 
   return (
-    <div ref={track} className={`slide${shown ? ' is-on' : ''}${drag !== null ? ' is-dragging' : ''}${disabled ? ' is-disabled' : ''}`}>
+    <div ref={track} aria-busy={working}
+      className={`slide${shown ? ' is-on' : ''}${drag !== null ? ' is-dragging' : ''}${disabled ? ' is-disabled' : ''}${working ? ' is-working' : ''}`}>
       <span className="slide__fill" aria-hidden="true" style={{ width: `calc(${x}px + 44px)` }} />
-      <span className="slide__label" aria-hidden="true" style={{ opacity: shown ? 1 : Math.max(0, 1 - share * 1.6) }}>
-        {shown ? `✓ ${onLabel}` : label}
+      <span className="slide__label" aria-hidden="true" style={{ opacity: shown || working ? 1 : Math.max(0, 1 - share * 1.6) }}>
+        {working ? 'Saving…' : shown ? `✓ ${onLabel}` : label}
       </span>
-      {!shown && <span className="slide__hint" aria-hidden="true">›››</span>}
+      {!shown && !working && <span className="slide__hint" aria-hidden="true">›››</span>}
       <button ref={knob} type="button" className="slide__knob" disabled={disabled}
         role="switch" aria-checked={shown}
         aria-label={shown ? `${onLabel}. Press to hold it back.` : `${label}. Press to confirm.`}
         style={{ transform: `translateX(${x}px)` }}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClick={click}>
-        {shown ? '✓' : '→'}
+        {working ? <Spinner size={22} label="Saving" /> : shown ? '✓' : '→'}
       </button>
     </div>
   );

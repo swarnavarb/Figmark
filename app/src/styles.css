@@ -13302,6 +13302,26 @@ button.sk-plan__pick { cursor: pointer; }
   .slide__hint, .rdy__info { animation: none; }
 }
 
+/* A ring turning inside a pressed button while its work is under way. It
+   fades in after a beat so a save that lands at once never flickers one. */
+.spinner { display: inline-grid; flex: none; vertical-align: middle; color: currentColor; animation: spinner-in 160ms var(--ease) 140ms both; }
+.spinner svg { width: 100%; height: 100%; animation: spin 800ms linear infinite; }
+.spinner circle { fill: none; stroke: currentColor; stroke-width: 3; }
+.spinner__track { opacity: 0.22; }
+.spinner__arc { stroke-linecap: round; stroke-dasharray: 60; stroke-dashoffset: 42; }
+@keyframes spinner-in { from { opacity: 0; transform: scale(0.6); } }
+.slide__knob .spinner { margin: auto; }
+.slide.is-working .slide__knob { cursor: progress; }
+.slide.is-working .slide__label { color: var(--rdy-ink, var(--ok-ink)); }
+.cust__ready .spinner { position: absolute; right: 14px; top: 50%; margin-top: -8px; }
+.cust__ready { position: relative; }
+.cust__ready:disabled { cursor: progress; }
+@media (prefers-reduced-motion: reduce) {
+  /* Still turning - it is the only sign the work is happening - just slower. */
+  .spinner svg { animation-duration: 1.6s; }
+  .spinner { animation: none; }
+}
+
 /* The grade a piece was sold as, stamped where it is handled. */
 .cond { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; line-height: 1.6; white-space: nowrap; vertical-align: middle; border: 1px solid currentColor; }
 .cond--misb { color: var(--ok); background: var(--ok-soft); }

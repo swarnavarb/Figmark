@@ -31,6 +31,7 @@ import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetai
 import { OrderPhotos } from '../components/OrderPhotos';
 import { ConditionTag } from '../components/ConditionTag';
 import { SlideToConfirm } from '../components/SlideToConfirm';
+import { Spinner } from '../components/Spinner';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
@@ -1240,7 +1241,8 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           {customers.map((customer) => (
             <CustomerOrders key={customer.key} customer={customer}
               open={isOpen(customer)} needsAnswer={needsAnswer}
-              busy={busy !== null} onReadyAll={(on) => void markReady(readyable(customer.rows), on)}
+              busy={busy !== null} working={customer.rows.some((row) => row.id === busy)}
+              onReadyAll={(on) => void markReady(readyable(customer.rows), on)}
               onToggle={(open) => setOpenOverride((current) => ({ ...current, [customer.key]: open }))}>
               {customer.rows.map((row, index) => card(row, customer.start + index, readyable(customer.rows).length > 1))}
             </CustomerOrders>
@@ -1446,12 +1448,14 @@ function readyable(rows: readonly SaleRow[]): SaleRow[] {
     && !(row.bookingOnly && !row.accepted));
 }
 
-function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, onReadyAll, children }: {
+function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working = false, onReadyAll, children }: {
   customer: CustomerGroup;
   open: boolean;
   needsAnswer: ReadonlySet<string>;
   onToggle: (open: boolean) => void;
   busy: boolean;
+  /** One of their orders is saving right now. */
+  working?: boolean;
   /** Ready to dispatch, for every order of theirs still to go. */
   onReadyAll: (on: boolean) => void;
   children: ReactNode;
@@ -1526,7 +1530,7 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, onReadyAl
           {/* One press for the whole parcel: everything of theirs can go. The
               lot's handler waits for exactly this before dispatching. */}
           {toGo.length > 0 && (
-            <ReadyPanel rows={toGo} buyerName={buyer.name} busy={busy} onReady={onReadyAll} />
+            <ReadyPanel rows={toGo} buyerName={buyer.name} busy={busy} working={working} onReady={onReadyAll} />
           )}
           <div className="orows">{children}</div>
         </div>
@@ -1544,10 +1548,13 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, onReadyAl
  *
  * One order or every order still to go for one customer ("all 3 orders").
  */
-function ReadyPanel({ rows, buyerName, busy, onReady, compact = false }: {
+function ReadyPanel({ rows, buyerName, busy, working = false, onReady, compact = false }: {
   rows: SaleRow[];
   buyerName: string;
+  /** Something on this screen is saving: hold still. */
   busy: boolean;
+  /** It is this panel's own press that is saving: show the spinner. */
+  working?: boolean;
   onReady: (on: boolean) => void;
   /** On an order card under its customer: a slimmer strip. */
   compact?: boolean;
@@ -1613,12 +1620,15 @@ function ReadyPanel({ rows, buyerName, busy, onReady, compact = false }: {
       )}
       <div className="rdy__row">
         <SlideToConfirm on={done} label={label} onLabel={many ? `All ${rows.length} ready to dispatch` : 'Ready to dispatch'}
-          disabled={busy} onChange={onReady} />
+          disabled={busy} working={working} onChange={onReady} />
         {state === 'due' && (
           <button type="button" className={`rdy__notify${notice?.state === 'sent' ? ' is-sent' : ''}`}
+            aria-busy={notice?.state === 'busy'}
             disabled={busy || notice?.state === 'busy' || notice?.state === 'sent'} onClick={() => void remind()}>
-            <span aria-hidden="true">{notice?.state === 'sent' ? '✓' : '🔔'}</span>
-            {notice?.state === 'sent' ? 'Notified' : notice?.state === 'busy' ? 'Sending…' : 'Notify'}
+            {notice?.state === 'busy'
+              ? <Spinner size={16} label="Sending" />
+              : <span aria-hidden="true">{notice?.state === 'sent' ? '✓' : '🔔'}</span>}
+            {notice?.state === 'sent' ? 'Notified' : notice?.state === 'busy' ? 'Sending' : 'Notify'}
           </button>
         )}
       </div>
@@ -2161,7 +2171,7 @@ function OrderRow({
           photos. A customer with a single order to go has it on their head
           already, so the card does not say it twice. */}
       {inLot && readyEach && readyable([row]).length > 0 && (
-        <ReadyPanel rows={[row]} buyerName={row.buyer.name} busy={busy} onReady={onReady} compact />
+        <ReadyPanel rows={[row]} buyerName={row.buyer.name} busy={busy} working={busy} onReady={onReady} compact />
       )}
       {inLot && (
         <OrderPhotos orderId={row.id} photos={row.photos} seller onChange={onPhotos}

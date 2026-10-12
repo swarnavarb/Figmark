@@ -13,6 +13,7 @@ import { formatWeight } from '../format';
 import { useUndo } from './Undo';
 import { OrderPhotos } from './OrderPhotos';
 import { ConditionTag } from './ConditionTag';
+import { Spinner } from './Spinner';
 
 /**
  * One lot, worked customer by customer.
@@ -173,6 +174,8 @@ function CustomerCard({ customer, busy, onToggle, onToggleAll, handlerName, audi
 }) {
   const allReady = customer.orders.every((order) => Boolean(order.checkpoints.ready_to_dispatch));
   /** The items a ready press changes: the ones not yet in the state it asks for. */
+  /** Their ready press is on its way to the server. */
+  const saving = customer.orders.some((order) => busy.has(`${order.id}:ready_to_dispatch`));
   const readyIds = (on: boolean) => customer.orders
     .filter((order) => Boolean(order.checkpoints.ready_to_dispatch) !== on).map((order) => order.id);
 
@@ -193,8 +196,10 @@ function CustomerCard({ customer, busy, onToggle, onToggleAll, handlerName, audi
           decided: everything of theirs is ready, or it is not. It is the
           seller's go-ahead, and the handler cannot dispatch before it. */}
       <button type="button" className={`cust__ready${allReady ? ' is-on' : ''}`} aria-pressed={allReady}
+        aria-busy={saving} disabled={saving}
         onClick={() => void onToggleAll(readyIds(!allReady), 'ready_to_dispatch', !allReady)}>
-        {allReady
+        {saving && <Spinner size={16} label="Saving" />}
+        {saving ? 'Saving…' : allReady
           ? '✓ Ready to dispatch'
           : customer.orders.length > 1 ? `Ready to dispatch all ${customer.orders.length} orders` : 'Ready to dispatch'}
         <span>
