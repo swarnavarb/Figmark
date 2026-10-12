@@ -1533,7 +1533,6 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
           )}
           {/* Then their orders, in a tray of their own under the customer. */}
           <div className="ocust__orders">
-            <span className="ocust__ordershead">Orders <b>{rows.length}</b></span>
             <div className="lrows">{children}</div>
           </div>
         </div>

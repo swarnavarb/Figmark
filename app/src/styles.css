@@ -14465,9 +14465,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
    The customer's head and Ready strip sit above; their orders follow in a
    tray of their own, a picture on the left of each. */
 .ocust__orders { margin: 2px -10px -10px; border-top: 1px solid rgb(var(--tone) / 0.2); background: color-mix(in srgb, var(--bg) 55%, var(--surface)); }
-.ocust__ordershead { display: flex; align-items: center; gap: 6px; padding: 10px 12px 2px; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
-.ocust__ordershead b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text); font-family: var(--mono); letter-spacing: 0; }
-.lrows { display: grid; padding: 0 12px 6px; }
+.lrows { display: grid; padding: 4px 12px 6px; }
 .lrow { position: relative; display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 10px; row-gap: 5px; padding: 10px 0; border-top: 1px solid var(--border); }
 .lrow:first-child { border-top: 0; }
 .lrow.is-busy { opacity: 0.6; pointer-events: none; }
@@ -14512,3 +14510,14 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .lrow__status .sbanner { padding: 7px 10px; }
 .lrow__status .sbanner__icon { font-size: 16px; }
 .lrow__status .sbanner__note { font-size: var(--t-2xs); }
+
+/* Each order's name sits on two thin waves, so the eye finds where one order starts. */
+.lrow__name, .hx-item__name { position: relative; flex: 0 1 auto; max-width: 100%; padding-bottom: 7px; }
+.lrow__name::after, .hx-item__name::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 6px;
+  background: linear-gradient(90deg, var(--accent-text), var(--aqua));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6' viewBox='0 0 12 6'%3E%3Cpath d='M0 1.5 Q3 -0.5 6 1.5 T12 1.5 M0 4.5 Q3 2.5 6 4.5 T12 4.5' fill='none' stroke='black' stroke-width='1.1'/%3E%3C/svg%3E") repeat-x left center / 12px 6px;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6' viewBox='0 0 12 6'%3E%3Cpath d='M0 1.5 Q3 -0.5 6 1.5 T12 1.5 M0 4.5 Q3 2.5 6 4.5 T12 4.5' fill='none' stroke='black' stroke-width='1.1'/%3E%3C/svg%3E") repeat-x left center / 12px 6px;
+  opacity: 0.8; pointer-events: none;
+}
+.lrow__top .badge, .hx-item__top .readychip { margin-left: auto; }

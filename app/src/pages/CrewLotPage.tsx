@@ -5,7 +5,7 @@ import type { OrderPhoto } from '@shared/models';
 import { shortButtonLabel } from '@shared/routes';
 import { ApiRequestError, api, type CrewLotView } from '../api';
 import { BackLink } from '../components/ScrollManager';
-import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, Modal, Thumb } from '../components/ui';
 import { formatMoney, formatWeight } from '../format';
 import { useUndo } from '../components/Undo';
 import { OrderPhotos } from '../components/OrderPhotos';
@@ -73,8 +73,24 @@ export function CrewLotPage() {
     void load();
   }, [load]);
 
-  /** Press (or take back) one button on some items, and show it at once. */
+  /** The orders waiting on a courier and AWB before they are marked dispatched. */
+  const [shipping, setShipping] = useState<{ ids: string[] } | null>(null);
+
+  /**
+   * Press (or take back) one button on some items. Dispatched asks first for
+   * the courier and AWB, as the shop's own Dispatched does, so the customer
+   * gets their tracking with the news.
+   */
   async function press(ids: string[], key: string, on: boolean) {
+    if (key === 'dispatched' && on) {
+      setShipping({ ids });
+      return;
+    }
+    await save(ids, key, on);
+  }
+
+  /** Save one button on some items, and show it at once. */
+  async function save(ids: string[], key: string, on: boolean, shipment?: { courier?: string; awb?: string }) {
     if (!view) return;
     const tags = ids.map((id) => `${id}:${key}`);
     setBusy((current) => new Set([...current, ...tags]));
@@ -84,7 +100,7 @@ export function CrewLotPage() {
     setError(null);
     try {
       for (const id of ids) {
-        const result = await api.setCheckpoint(id, key, on);
+        const result = await api.setCheckpoint(id, key, on, shipment);
         if (ids.length === 1 && result.undo) {
           const undo = result.undo;
           offerUndo({
@@ -336,7 +352,60 @@ export function CrewLotPage() {
           )}
         </>
       )}
+
+      {shipping && (
+        <ShipDialog view={view} ids={shipping.ids} onClose={() => setShipping(null)}
+          onSave={(shipment) => { const { ids } = shipping; setShipping(null); void save(ids, 'dispatched', true, shipment); }} />
+      )}
     </main>
+  );
+}
+
+/**
+ * Courier and AWB, asked as Dispatched is pressed. One customer's box gets
+ * one AWB; several customers at once share a courier at most, since each box
+ * has its own tracking number.
+ */
+function ShipDialog({ view, ids, onClose, onSave }: {
+  view: CrewLotView;
+  ids: string[];
+  onClose: () => void;
+  onSave: (shipment: { courier?: string; awb?: string }) => void;
+}) {
+  const items = view.items.filter((item) => ids.includes(item.id));
+  const people = [...new Set(items.map((item) => item.parcel ?? item.id))];
+  const one = people.length === 1;
+  const who = items[0]?.buyer?.name ?? 'the customer';
+  const [courier, setCourier] = useState('');
+  const [awb, setAwb] = useState('');
+  return (
+    <Modal title="🚚 Dispatch it" onClose={onClose}>
+      <form className="stack" onSubmit={(event) => {
+        event.preventDefault();
+        onSave({ courier: courier.trim() || undefined, awb: one ? awb.trim() || undefined : undefined });
+      }}>
+        <p style={{ margin: 0 }}>
+          {one
+            ? <>{items.length === 1 ? <b>{items[0]!.itemName}</b> : <><b>{items.length} orders</b></>} for <b>{who}</b>. Add the courier and AWB so they can track their parcel.</>
+            : <>{items.length} orders for {people.length} customers. Each box has its own AWB, so add those one customer at a time; a courier name here goes on all of them.</>}
+        </p>
+        <label className="field">
+          <span>Courier name</span>
+          <input value={courier} onChange={(event) => setCourier(event.target.value)} maxLength={80}
+            placeholder="Delhivery, Blue Dart, DTDC…" autoFocus />
+        </label>
+        {one && (
+          <label className="field">
+            <span>AWB / tracking number</span>
+            <input value={awb} onChange={(event) => setAwb(event.target.value)} maxLength={80}
+              placeholder="e.g. 1234567890" className="mono" />
+          </label>
+        )}
+        <span className="field__hint">No AWB yet? Dispatch now; the shop can add it later.</span>
+        <button type="submit" className="btn btn--block">🚚 Mark dispatched</button>
+        <button type="button" className="btn btn--quiet btn--block" onClick={onClose}>Cancel</button>
+      </form>
+    </Modal>
   );
 }
 
