@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import type { SerialButton } from '@shared/buttons';
+import { shortButtonLabel } from '@shared/routes';
 import { Modal } from './ui';
 
 type ItemButton = Extract<SerialButton, { kind: 'item' }>;
@@ -21,7 +22,7 @@ type Entry =
  * where the crate is moved. Every press of the item's own asks first: each
  * one changes what a buyer reads.
  */
-export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, stepOf }: {
+export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, stepOf, compact = false }: {
   buttons: readonly SerialButton[];
   busy: boolean;
   /** Named in every confirmation, so nobody confirms the wrong parcel. */
@@ -37,6 +38,8 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
    * fold into one stop), so their own tally is never the headline.
    */
   stepOf?: { at: number; of: number } | null;
+  /** Small pills in a row, for an order on a slim row. */
+  compact?: boolean;
 }) {
   const [asking, setAsking] = useState<{ button: ItemButton; on: boolean } | null>(null);
 
@@ -66,7 +69,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
   }
 
   return (
-    <div className="serial">
+    <div className={`serial${compact ? ' serial--compact' : ''}`}>
       <div className="serial__head">
         <span>{stepOf ? `Step ${Math.min(stepOf.at + 1, stepOf.of)} of ${stepOf.of}` : 'Route'}</span>
         {doneCount === entries.length
@@ -102,7 +105,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
           const body = (
             <>
               <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
-              <span className="serial__label">{button.label}</span>
+              <span className="serial__label">{compact ? shortButtonLabel(button.key, button.label) : button.label}</span>
             </>
           );
           /* Dispatched is pressed on the order, where the courier and AWB go in. */

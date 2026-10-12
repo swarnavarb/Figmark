@@ -13102,40 +13102,53 @@ button.sk-plan__pick { cursor: pointer; }
    well as a colour, and the focus ring is always visible from the keyboard. */
 .cl-page--handler .cl-route { margin-bottom: var(--s4); }
 
-.hx-sum { display: grid; gap: var(--s4); margin-bottom: var(--s4); padding: var(--s4); border: 1px solid var(--border); border-radius: var(--r-lg); background: radial-gradient(120% 140% at 0% 0%, var(--violet-soft), transparent 55%), var(--surface); box-shadow: var(--shadow); }
-.hx-sum__top { display: flex; align-items: center; gap: var(--s4); }
-.hx-sum__text { display: grid; gap: var(--s1); min-width: 0; }
-.hx-sum__title { margin: 0; font-size: var(--t-lg); line-height: 1.2; letter-spacing: -0.01em; }
-.hx-sum__line { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
-.hx-sum__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--s1) 0 0; }
 
-.hx-ring { flex: none; width: 76px; height: 76px; transform: rotate(-90deg); }
 .hx-ring circle { fill: none; stroke-width: 7; }
 .hx-ring__track { stroke: var(--border-strong); }
 .hx-ring__fill { stroke: var(--ok); stroke-linecap: round; transition: stroke-dashoffset var(--dur-2) var(--ease); }
 .hx-ring__pct { transform: rotate(90deg); transform-origin: 32px 32px; fill: var(--text); font-family: var(--mono); font-size: 14px; font-weight: var(--w-bold); }
 
-.hx-steps { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); margin: 0; padding: 0; list-style: none; }
-.hx-step { display: grid; gap: 6px; padding: var(--s3) 14px; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); }
-.hx-step.is-done { border-color: rgba(52, 211, 153, 0.45); background: linear-gradient(150deg, var(--ok-soft), transparent 70%), var(--surface-2); }
-.hx-step__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
-.hx-step__label { font-size: var(--t-md); font-weight: var(--w-semi); }
-.hx-step__count { font-size: var(--t-sm); color: var(--text-dim); }
-.hx-step__count b { color: var(--text); font-family: var(--mono); }
-.hx-step__sub { font-size: var(--t-xs); color: var(--text-dim); }
-.hx-meter { display: block; height: 8px; border-radius: var(--r-pill); background: var(--bg); overflow: hidden; }
+
+/* The lot at a glance: a small ring, one line, then a slim row per button. */
+.hx-sum { display: grid; gap: 10px; margin-bottom: var(--s3); padding: 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: radial-gradient(120% 140% at 0% 0%, var(--violet-soft), transparent 55%), var(--surface); }
+.hx-sum__top { display: flex; align-items: center; gap: 12px; }
+.hx-sum__text { display: grid; gap: 2px; min-width: 0; }
+.hx-sum__title { margin: 0; font-size: var(--t-md); line-height: 1.2; letter-spacing: -0.01em; }
+.hx-sum__line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.hx-sum__warn { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); font-weight: var(--w-semi); }
+.hx-ring { flex: none; width: 48px; height: 48px; transform: rotate(-90deg); }
+.hx-steps { display: grid; margin: 0; padding: 0; list-style: none; border-radius: var(--r-md); background: var(--surface-2); overflow: hidden; }
+.hx-step { display: grid; grid-template-columns: minmax(0, 7.5rem) 1fr auto auto; align-items: center; gap: 10px; min-height: 44px; padding: 4px 6px 4px 12px; border-top: 1px solid var(--border); }
+.hx-step:first-child { border-top: 0; }
+.hx-step__label { overflow: hidden; font-size: var(--t-sm); font-weight: var(--w-semi); text-overflow: ellipsis; white-space: nowrap; }
+.hx-step__count { font-family: var(--mono); font-size: var(--t-xs); color: var(--text-dim); }
+.hx-step__count b { color: var(--text); }
+.hx-meter { display: block; height: 6px; border-radius: var(--r-pill); background: var(--bg); overflow: hidden; }
 .hx-meter span { display: block; height: 100%; border-radius: inherit; background: var(--grad-cool); transition: width var(--dur-2) var(--ease); }
 .hx-step.is-done .hx-meter span { background: var(--ok); }
-.hx-step__acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: 2px; }
-.hx-step__done, .hx-step__wait { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: var(--t-sm); font-weight: var(--w-semi); }
-.hx-step__done { color: var(--ok); }
-.hx-step__wait { color: var(--warn); }
+.hx-step__acts { display: flex; align-items: center; gap: 4px; }
+.hx-step__done, .hx-step__wait { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; }
+.hx-step__done { background: var(--ok-soft); color: var(--ok); }
+.hx-step__wait { background: var(--warn-soft); color: var(--warn); }
+.hx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 32px; padding: 0 12px; border: 1.5px solid transparent; border-radius: var(--r-pill); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); white-space: nowrap; cursor: pointer; transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.hx-btn--solid { background: var(--grad-blue); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22); }
+.hx-btn--toggle { width: 32px; padding: 0; border-color: var(--border-strong); background: transparent; color: var(--text-dim); }
 
-.hx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 var(--s4); border: 1.5px solid transparent; border-radius: var(--r-md); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer; transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+/* The whole-customer buttons: side by side, small. */
+.hx-ticks { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr)); }
+.hx-tick { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px; border: 1.5px solid var(--border-strong); border-radius: var(--r-pill); background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); text-align: left; cursor: pointer; transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.hx-tick__box { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border: 1.5px solid var(--text-faint); border-radius: 50%; color: transparent; transition: inherit; }
+
+/* An order: its picture, then name, tags and buttons beside it. */
+.hx-items { display: grid; margin: 0; padding: 0 12px 10px 16px; list-style: none; }
+.hx-item { display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 10px; row-gap: 4px; padding: 8px 0; border-top: 1px solid var(--border); }
+.hx-item:first-child { border-top: 0; padding-top: 2px; }
+.hx-item__pic { grid-row: 1 / span 3; width: 44px; height: 44px; border-radius: var(--r-sm); font-size: var(--t-2xs); }
+.hx-item__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hx-item__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--t-2xs); color: var(--text-dim); }
+.hx-item__acts { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .hx-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.hx-btn--solid { flex: 1 1 auto; background: var(--grad-blue); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 10px rgba(124, 58, 237, 0.3); }
 .hx-btn--solid:hover:not(:disabled) { filter: brightness(1.1); }
-.hx-btn--toggle { margin-left: auto; border-color: var(--border-strong); background: transparent; color: var(--text-dim); }
 .hx-btn--toggle:hover { color: var(--text); border-color: var(--text-faint); }
 .hx-btn--toggle[aria-pressed='true'] { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }
 .hx-btn:active:not(:disabled) { transform: translateY(1px); }
@@ -13174,8 +13187,6 @@ button.sk-plan__pick { cursor: pointer; }
 .hx-state--split { background: var(--ok-soft); color: var(--ok); box-shadow: inset 0 0 0 1px var(--warn); }
 
 .hx-parcel__info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: var(--t-xs); color: var(--text-dim); }
-.hx-call { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--r-pill); background: var(--surface-2); color: var(--text); font-family: var(--mono); font-size: var(--t-xs); text-decoration: none; }
-.hx-call:hover { border-color: var(--ok); color: var(--ok); }
 
 .hx-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-semi); line-height: 1.3; }
 .hx-chip b { font-weight: var(--w-bold); }
@@ -13184,12 +13195,9 @@ button.sk-plan__pick { cursor: pointer; }
 .hx-chip--pink { background: var(--pink-soft); color: var(--pink-text); }
 
 /* The whole-customer buttons: side by side, one per step. */
-.hx-ticks { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); }
-.hx-tick { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1.5px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); text-align: left; cursor: pointer; transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
 .hx-tick:hover:not(:disabled) { border-color: var(--ok); }
 .hx-tick:active:not(:disabled) { transform: scale(0.985); }
 .hx-tick:disabled { opacity: 0.5; cursor: not-allowed; }
-.hx-tick__box { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border: 2px solid var(--text-faint); border-radius: 6px; color: transparent; transition: inherit; }
 .hx-tick__label { flex: 1; min-width: 0; }
 .hx-tick.is-on { border-color: var(--ok); background: var(--ok); color: var(--ok-ink); }
 .hx-tick.is-on .hx-tick__box { border-color: var(--ok-ink); background: var(--ok-ink); color: var(--ok); }
@@ -13205,19 +13213,10 @@ button.sk-plan__pick { cursor: pointer; }
 .hx-more__chev { transition: transform var(--dur-2) var(--ease); }
 .hx-more__chev.is-open { transform: rotate(180deg); }
 
-.hx-items { display: grid; margin: 0; padding: 0 12px 10px 16px; list-style: none; counter-reset: hx-order; }
-.hx-item { display: grid; gap: 4px; padding: 8px 0 8px 26px; border-top: 1px solid var(--border); position: relative; counter-increment: hx-order; }
-.hx-item:first-child { border-top: 0; padding-top: 2px; }
-.hx-item::before { content: counter(hx-order); position: absolute; left: 0; top: 9px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--surface-2); color: var(--text-dim); font-family: var(--mono); font-size: 10px; font-weight: var(--w-bold); }
-.hx-item:first-child::before { top: 3px; }
-.hx-item__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .hx-item__name { flex: 1; min-width: 0; overflow: hidden; font-size: var(--t-sm); font-weight: var(--w-semi); text-overflow: ellipsis; white-space: nowrap; }
-.hx-item__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--t-2xs); color: var(--text-dim); }
 .hx-item__flag { color: var(--ok); font-weight: var(--w-semi); }
 .hx-item__flag--pink { display: inline-flex; align-items: center; gap: 3px; color: var(--pink-text); }
-.hx-item__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.hx-item__acts .ophotos { margin: 0 0 0 auto; }
-.hx-mini { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; border: 1.5px solid var(--border-strong); border-radius: var(--r-pill); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer; }
+.hx-mini { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 10px; border: 1.5px solid var(--border-strong); border-radius: var(--r-pill); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer; }
 .hx-mini svg { opacity: 0.35; }
 .hx-mini:hover:not(:disabled) { color: var(--text); border-color: var(--ok); }
 .hx-mini:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -13231,7 +13230,7 @@ button.sk-plan__pick { cursor: pointer; }
 .ophotos--compact .ophotos__drop { top: -6px; right: -6px; width: 18px; height: 18px; }
 
 .hx-btn:focus-visible, .hx-layout button:focus-visible, .hx-tick:focus-visible, .hx-mini:focus-visible,
-.hx-more:focus-visible, .hx-call:focus-visible, .hx-link:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
+.hx-more:focus-visible, .hx-link:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
 
 @media (max-width: 420px) {
   .hx-sum { padding: 14px; }
@@ -14461,3 +14460,36 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 @keyframes duty-pulse { 0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); } 100% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); } }
 @media (prefers-reduced-motion: reduce) { .dutybtn--on .dutybtn__dot { animation: none; } }
 .hx-tick__count { font-family: var(--mono); font-size: var(--t-2xs); color: var(--text-dim); }
+
+/* ── An order inside its lot: one slim row, like the handler's ───────────
+   The customer's head and Ready strip sit above; their orders follow in a
+   tray of their own, a picture on the left of each. */
+.ocust__orders { margin: 2px -10px -10px; border-top: 1px solid rgb(var(--tone) / 0.2); background: color-mix(in srgb, var(--bg) 55%, var(--surface)); }
+.ocust__ordershead { display: flex; align-items: center; gap: 6px; padding: 10px 12px 2px; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
+.ocust__ordershead b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text); font-family: var(--mono); letter-spacing: 0; }
+.lrows { display: grid; padding: 0 12px 6px; }
+.lrow { position: relative; display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 10px; row-gap: 5px; padding: 10px 0; border-top: 1px solid var(--border); }
+.lrow:first-child { border-top: 0; }
+.lrow.is-busy { opacity: 0.6; pointer-events: none; }
+.lrow.is-urgent { box-shadow: inset 3px 0 0 var(--warn); padding-left: 8px; margin-left: -8px; }
+.lrow.is-glowing { animation: ocard-found 1.6s var(--ease) both; }
+.lrow__pic { grid-row: 1 / span 2; display: block; }
+.lrow__img { width: 44px; height: 44px; border-radius: var(--r-sm); font-size: var(--t-2xs); }
+.lrow__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lrow__name { flex: 1; min-width: 0; overflow: hidden; color: var(--text); font-size: var(--t-sm); font-weight: var(--w-semi); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.lrow__badge { flex: none; font-size: var(--t-2xs); }
+.lrow__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--t-2xs); color: var(--text-dim); }
+.lrow__due { color: var(--warn); font-weight: var(--w-semi); }
+.lrow__wide { grid-column: 1 / -1; }
+.lrow__acts { display: flex; align-items: center; gap: 6px; }
+.lrow__acts .ophotos { margin: 0; }
+.lrow__icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--border-strong); border-radius: 50%; color: var(--text-dim); }
+.lrow__icon:hover { color: var(--text); }
+
+/* The route's buttons as small pills in a row. */
+.serial--compact { gap: 0; }
+.serial--compact .serial__head { display: none; }
+.serial--compact .serial__list { display: flex; flex-wrap: wrap; gap: 5px; }
+.serial--compact .serial__btn { width: auto; min-height: 28px; gap: 5px; padding: 2px 10px 2px 3px; border-radius: 14px; font-size: var(--t-2xs); }
+.serial--compact .serial__n { width: 20px; height: 20px; font-size: 10px; }
+.serial--compact .serial__label { display: block; max-width: 10rem; text-overflow: ellipsis; white-space: nowrap; }

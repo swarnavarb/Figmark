@@ -1531,7 +1531,11 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
           {toGo.length > 0 && (
             <ReadyPanel rows={toGo} buyerName={buyer.name} busy={busy} working={working} onReady={onReady} />
           )}
-          <div className="orows">{children}</div>
+          {/* Then their orders, in a tray of their own under the customer. */}
+          <div className="ocust__orders">
+            <span className="ocust__ordershead">Orders <b>{rows.length}</b></span>
+            <div className="lrows">{children}</div>
+          </div>
         </div>
       )}
     </section>
@@ -2140,6 +2144,100 @@ function OrderRow({
     disputed: row.holdState === 'disputed',
     claimOpen: awaitingClaim,
   });
+
+  /* Inside its lot: a slim row like the handler's - picture, name, tags, buttons. */
+  if (inLot) {
+    return (
+      <article id={`order-${row.id}`}
+        className={`lrow lrow--${tone}${needsAnswer ? ' is-urgent' : ''}${glowing ? ' is-glowing' : ''}${busy ? ' is-busy' : ''}`}>
+        <Link to={orderLink} state={linkState} className="lrow__pic" tabIndex={-1} aria-hidden="true">
+          <Thumb seed={row.id} label={row.itemName} photo={row.photoUrl ? { url: row.photoUrl } : null} className="thumb lrow__img" />
+        </Link>
+        <div className="lrow__top">
+          <Link to={orderLink} state={linkState} className="lrow__name">{row.itemName}</Link>
+          <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone} lrow__badge`}>{label}</span>
+        </div>
+        <div className="lrow__meta">
+          <ConditionTag condition={row.condition} />
+          <ReadyChip row={row} />
+          {row.quantity > 1 && <span>×{row.quantity}</span>}
+          {row.privateDeal && <span>🤝 Private</span>}
+          <span className={row.outstandingMinor > 0 ? 'lrow__due' : undefined}>
+            {row.outstandingMinor > 0
+              ? `${formatMoney(row.outstandingMinor, row.currency)} due of ${formatMoney(row.totalMinor, row.currency)}`
+              : formatMoney(row.totalMinor, row.currency)}
+          </span>
+          {row.creditMinor > 0 && <span className="ocard__extra">{formatMoney(row.creditMinor, row.currency)} extra</span>}
+        </div>
+
+        {awaitingClaim && row.claim && (
+          <div className="ocard__claim lrow__wide">
+            💸 Customer says they paid <b>{formatMoney(row.claim.amountMinor ?? row.totalMinor, row.currency)}</b>
+            {row.claim.reference && <span className="ocard__ref"> · ref {row.claim.reference}</span>}
+          </div>
+        )}
+        {(row.canAccept || awaitingClaim) && (
+          <div className="ocard__decide lrow__wide">
+            {row.canAccept ? (
+              <>
+                <button type="button" className="orow__decide orow__decide--ok" disabled={busy} onClick={onAccept}>
+                  <Icon name="check" size={15} /> Accept
+                </button>
+                <button type="button" className="orow__decide orow__decide--danger" disabled={busy} onClick={onReject}>
+                  <Icon name="close" size={15} /> Reject
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
+                  aria-label="Confirm the payment arrived" onClick={onSettleReceived}>
+                  <Icon name="check" size={15} /> Received
+                </button>
+                <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
+                  aria-label="Say the payment has not arrived" onClick={onSettleDenied}>
+                  <Icon name="close" size={15} /> Not received
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {working && row.serial && row.serial.length > 0 && (
+          <div className="lrow__wide">
+            <SerialButtons compact
+              buttons={row.serial}
+              busy={busy}
+              who={{ itemName: row.itemName, buyerName: row.buyer.name }}
+              onItem={(key, on) => {
+                const button = row.serial!.find((entry) => entry.kind === 'item' && entry.key === key);
+                onPress({ checkpoint: key, label: button?.label ?? key, step: button?.step ?? key }, on);
+              }}
+              onLot={onLotTracking}
+              orderLink={{ to: `/order/${row.id}`, state: linkState }}
+              stepOf={row.routeStep}
+            />
+          </div>
+        )}
+
+        <div className="lrow__acts lrow__wide">
+          <OrderPhotos orderId={row.id} photos={row.photos} seller compact onChange={onPhotos}
+            audiences={['buyer', ...(row.lotCrew?.supplier ? ['supplier' as const] : []), ...(row.lotCrew?.handler ? ['handler' as const] : [])]} />
+          <span className="ocard__spacer" />
+          <Link to={`/listing/${row.listingId}`} className="lrow__icon" aria-label="See the listing as it was listed" title="Listing">
+            <Svg name="open" size={13} />
+          </Link>
+          {row.canCancel && !awaitingClaim && (
+            <button type="button" className="ocard__x" aria-label="Cancel this order" disabled={busy} onClick={onCancel}>
+              <Icon name="close" size={14} />
+            </button>
+          )}
+          <Link to={orderLink} state={linkState} className="ocard__open" aria-label="Open this order">
+            Open <Icon name="right" size={13} />
+          </Link>
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article id={`order-${row.id}`}

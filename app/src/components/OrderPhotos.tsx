@@ -61,7 +61,7 @@ export function OrderPhotos({ orderId, photos, onChange, seller = false, audienc
             onClick={(event) => setOpen({ at: photos.indexOf(photo), origin: event.currentTarget.getBoundingClientRect() })}>
             <img src={photo.url} alt="Photo of this order" loading="lazy" />
           </button>
-          {seller && (
+          {seller && !compact && (
             <figcaption className="ophotos__who">
               {audiences.map((who) => (
                 <button key={who} type="button" disabled={busy} aria-pressed={photo.showTo.includes(who)}

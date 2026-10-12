@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { CrewRole } from '@shared/services';
 import type { OrderPhoto } from '@shared/models';
+import { shortButtonLabel } from '@shared/routes';
 import { ApiRequestError, api, type CrewLotView } from '../api';
 import { BackLink } from '../components/ScrollManager';
-import { EmptyState, ErrorNotice, Icon } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatMoney, formatWeight } from '../format';
 import { useUndo } from '../components/Undo';
 import { OrderPhotos } from '../components/OrderPhotos';
@@ -492,18 +493,15 @@ function HandlerSummary({ view, groups, busy, filter, onFilter, onPress }: {
           </h2>
           <p className="hx-sum__line">
             {total === 0 ? 'Customers appear as they order into the lot.'
-              : left === 0 ? 'Nothing left to press on this lot. Nice work.'
-                : `${left} ${left === 1 ? 'customer' : 'customers'} still to pack and send.`}
+              : left === 0 ? 'Nothing left to press on this lot.'
+                : `${left} still to pack and send`}
+            {waiting > 0 && <span className="hx-sum__warn"><Icon name="lock" size={12} /> {waiting} waiting on the shop</span>}
+            {due > 0 && <span className="hx-sum__warn"><Icon name="bank" size={12} /> {due} with money due</span>}
           </p>
-          {(waiting > 0 || due > 0) && (
-            <p className="hx-sum__chips">
-              {waiting > 0 && <span className="hx-chip hx-chip--warn"><Icon name="lock" size={13} /> {waiting} waiting on the shop</span>}
-              {due > 0 && <span className="hx-chip hx-chip--warn"><Icon name="bank" size={13} /> {due} with money due</span>}
-            </p>
-          )}
         </div>
       </div>
 
+      {/* One slim row per button: its name, a meter, the count, and the press for everything. */}
       <ul className="hx-steps" aria-label="Your buttons">
         {view.buttons.map((button) => {
           const count = view.items.filter((item) => item.ticks[button.key]).length;
@@ -511,39 +509,32 @@ function HandlerSummary({ view, groups, busy, filter, onFilter, onPress }: {
           const pressable = view.items.filter((item) => !item.ticks[button.key] && !heldBack(view, item, button));
           const only = filter === `todo:${button.key}`;
           return (
-            <li key={button.key} className={`hx-step${all ? ' is-done' : ''}`}>
-              <div className="hx-step__head">
-                <span className="hx-step__label">{button.label}</span>
-                <span className="hx-step__count"><b>{count}</b> of {view.items.length} orders</span>
-              </div>
-              {/* The step is often the button's own name; say it once. */}
-              {(button.step !== button.label || !button.assigned) && (
-                <span className="hx-step__sub">
-                  {[button.step !== button.label ? button.step : null, button.assigned ? null : 'Your part of the trip'].filter(Boolean).join(' · ')}
-                </span>
-              )}
+            <li key={button.key} className={`hx-step${all ? ' is-done' : ''}`} title={button.step}>
+              <span className="hx-step__label">{shortLabel(button)}</span>
               <span className="hx-meter" role="progressbar" aria-label={`${button.label}: ${count} of ${view.items.length} orders`}
                 aria-valuemin={0} aria-valuemax={view.items.length} aria-valuenow={count}>
                 <span style={{ width: `${view.items.length ? (count / view.items.length) * 100 : 0}%` }} />
               </span>
-              <div className="hx-step__acts">
+              <span className="hx-step__count"><b>{count}</b>/{view.items.length}</span>
+              <span className="hx-step__acts">
                 {all ? (
-                  <span className="hx-step__done"><Icon name="check" size={15} /> All pressed</span>
+                  <span className="hx-step__done" aria-label="All pressed"><Icon name="check" size={14} /></span>
                 ) : pressable.length > 0 ? (
                   <button type="button" className="hx-btn hx-btn--solid" disabled={busy}
                     onClick={() => void onPress(pressable.map((item) => item.id), button.key, true)}>
-                    Press for all {pressable.length}
+                    All {pressable.length}
                   </button>
                 ) : (
-                  <span className="hx-step__wait"><Icon name="lock" size={14} /> Rest waiting on the shop</span>
+                  <span className="hx-step__wait" title="The rest are waiting on the shop" aria-label="The rest are waiting on the shop"><Icon name="lock" size={14} /></span>
                 )}
                 {!all && (
                   <button type="button" className="hx-btn hx-btn--toggle" aria-pressed={only}
+                    aria-label={only ? 'Show every customer' : `Only customers not yet ${button.label}`} title="Only not yet"
                     onClick={() => onFilter(only ? 'all' : `todo:${button.key}`)}>
-                    <Icon name="filter" size={14} /> Only not yet
+                    <Icon name="filter" size={14} />
                   </button>
                 )}
-              </div>
+              </span>
             </li>
           );
         })}
@@ -591,16 +582,7 @@ function HandlerParcels({ view, groups, total, query, busy, me, onClear, onPress
   );
 }
 
-/**
- * A button's name, short enough to say "Packed all 3" with. The route's own
- * wording can run to a sentence ("Received at the destination warehouse");
- * for the checkpoints everyone knows, the verb is enough.
- */
-const SHORT: Record<string, string> = {
-  china_received: 'Received', china_packed: 'Packed', india_received: 'Received',
-  ready_to_dispatch: 'Checked', packed: 'Packed', dispatched: 'Dispatched',
-};
-const shortLabel = (button: CrewButtonRef) => SHORT[button.key] ?? button.label;
+const shortLabel = (button: CrewButtonRef) => shortButtonLabel(button.key, button.label);
 
 /**
  * Whether the shop has let this customer's orders go: all of them, none, or
@@ -674,11 +656,6 @@ function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
 
       <div className="hx-parcel__info">
         <span>{count} {count === 1 ? 'order' : 'orders'} · {formatWeight(weight)}</span>
-        {group.phone && (
-          <a className="hx-call" href={`tel:${group.phone}`} aria-label={`Call ${name}, ${group.phone}`}>
-            <Icon name="phone" size={13} /> {group.phone}
-          </a>
-        )}
         {view.settings.seesPayment && <ParcelMoney items={group.items} />}
       </div>
 
@@ -719,6 +696,8 @@ function HandlerParcel({ view, group, busy, me, onPress, onPhotos }: {
               const state = !view.settings.readyGate || item.ticks.dispatched ? null : item.cleared ? 'ok' : 'warn';
               return (
                 <li key={item.id} className="hx-item">
+                  <Thumb seed={item.id} label={item.itemName} className="thumb hx-item__pic"
+                    photo={{ url: item.photos[item.photos.length - 1]?.url ?? item.photoUrl ?? undefined }} />
                   <div className="hx-item__top">
                     <span className="hx-item__name">{item.itemName}</span>
                     {state && <span className={`readychip readychip--${state === 'ok' ? 'ok' : 'held'}`}>{state === 'ok' ? 'Ready' : 'Held'}</span>}
