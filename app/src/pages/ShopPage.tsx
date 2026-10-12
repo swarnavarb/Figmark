@@ -19,6 +19,7 @@ import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import type { CardButton } from '@shared/buttons';
 import { ReceivedDialog } from '../components/ReceivedDialog';
 import { SerialButtons } from '../components/SerialButtons';
+import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { RoutesList } from './RoutesPage';
 import { RouteStudio } from './RouteStudioPage';
@@ -1007,7 +1008,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     onChanged?.();
   }
 
-  async function press(row: SaleRow, button: CardButton, on: boolean, label?: string) {
+  async function press(row: SaleRow, button: CardButton, on: boolean, label?: string, shipment?: Shipment) {
     /* No lot yet: ask where it was received, or offer to put it in a lot. */
     if (on && button.checkpoint === 'china_received' && !row.lotId && !row.inHand && label === undefined) {
       setReceiving({ row, button });
@@ -1016,7 +1017,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     setBusy(row.id);
     setError(null);
     try {
-      const result = await api.setCheckpoint(row.id, button.checkpoint, on, label ? { label } : undefined);
+      const result = await api.setCheckpoint(row.id, button.checkpoint, on, label ? { label } : shipment);
       setReceiving(null);
       const undo = result.undo;
       if (undo) {
@@ -1120,7 +1121,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       glowing={glowing === row.id}
       busy={busy === row.id}
       needsAnswer={needsAnswer.has(row.id)}
-      onPress={(button, on) => void press(row, button, on)}
+      onPress={(button, on, shipment) => void press(row, button, on, undefined, shipment)}
       onPhotos={(photos) => setData((current) => current && {
         ...current,
         orders: current.orders.map((entry) => (entry.id === row.id ? { ...entry, photos } : entry)),
@@ -2106,7 +2107,7 @@ function OrderRow({
   glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
-  onPress: (button: CardButton, on: boolean) => void;
+  onPress: (button: CardButton, on: boolean, shipment?: Shipment) => void;
   onPhotos: (photos: OrderPhoto[]) => void;
   /** The Lot stop on this card's buttons: opens the lot's Tracking, where the crate is moved. */
   onLotTracking: () => void;
@@ -2216,13 +2217,13 @@ function OrderRow({
 
         {working && row.serial && row.serial.length > 0 && (
           <div className="lrow__wide">
-            <SerialButtons compact
+            <SerialButtons compact shipHere
               buttons={row.serial}
               busy={busy}
               who={{ itemName: row.itemName, buyerName: row.buyer.name }}
-              onItem={(key, on) => {
+              onItem={(key, on, shipment) => {
                 const button = row.serial!.find((entry) => entry.kind === 'item' && entry.key === key);
-                onPress({ checkpoint: key, label: button?.label ?? key, step: button?.step ?? key }, on);
+                onPress({ checkpoint: key, label: button?.label ?? key, step: button?.step ?? key }, on, shipment);
               }}
               onLot={onLotTracking}
               orderLink={{ to: `/order/${row.id}`, state: linkState }}

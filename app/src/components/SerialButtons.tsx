@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { SerialButton } from '@shared/buttons';
 import { shortButtonLabel } from '@shared/routes';
 import { Modal } from './ui';
+import { ShipDialog, type Shipment } from './ShipDialog';
 
 type ItemButton = Extract<SerialButton, { kind: 'item' }>;
 
@@ -22,12 +23,12 @@ type Entry =
  * where the crate is moved. Every press of the item's own asks first: each
  * one changes what a buyer reads.
  */
-export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, stepOf, compact = false }: {
+export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, stepOf, compact = false, shipHere = false }: {
   buttons: readonly SerialButton[];
   busy: boolean;
   /** Named in every confirmation, so nobody confirms the wrong parcel. */
   who: { itemName: string; buyerName: string };
-  onItem: (key: string, on: boolean) => void | Promise<void>;
+  onItem: (key: string, on: boolean, shipment?: Shipment) => void | Promise<void>;
   /** The Lot stop: takes the seller to the lot's Tracking. */
   onLot: () => void;
   /** Dispatched asks for the courier and AWB, which the order page takes. */
@@ -40,8 +41,11 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
   stepOf?: { at: number; of: number } | null;
   /** Small pills in a row, for an order on a slim row. */
   compact?: boolean;
+  /** Dispatched asks for the courier and AWB right here, instead of on the order page. */
+  shipHere?: boolean;
 }) {
   const [asking, setAsking] = useState<{ button: ItemButton; on: boolean } | null>(null);
+  const [shipping, setShipping] = useState<ItemButton | null>(null);
 
   /* The lot's moves fold into one stop, where the first of them falls. */
   const entries: Entry[] = [];
@@ -109,6 +113,16 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
             </>
           );
           /* Dispatched is pressed on the order, where the courier and AWB go in. */
+          if (button.lastMile === 'dispatched' && !done && shipHere) {
+            return (
+              <li key={button.key} style={style}>
+                <button type="button" className={className} disabled={busy} title="Asks for the courier and AWB"
+                  onClick={() => setShipping(button)}>
+                  {body}
+                </button>
+              </li>
+            );
+          }
           if (button.lastMile === 'dispatched' && !done && orderLink) {
             return (
               <li key={button.key} style={style}>
@@ -130,6 +144,12 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
           );
         })}
       </ol>
+
+      {shipping && (
+        <ShipDialog busy={busy} onClose={() => setShipping(null)}
+          intro={<><b>{who.itemName}</b> for <b>{who.buyerName}</b>. Add the courier and AWB so they can track their parcel.</>}
+          onSave={(shipment) => { const button = shipping; setShipping(null); void onItem(button.key, true, shipment); }} />
+      )}
 
       {asking && (
         <Modal title={asking.on ? 'Confirm this step' : 'Undo this step?'} onClose={() => setAsking(null)}>
