@@ -14709,3 +14709,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pbook__money input { flex: 1 1 auto; min-width: 0; width: 100%; }
 .pbook__splitrow > *, .pbook__formularow > * { min-width: 0; }
 .pbook__split { overflow: hidden; }
+.pbook__step { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pbook__step select, .pbook__of {
+  width: auto; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+  font: inherit; font-size: var(--t-xs);
+}
+.field .pbook__sum select.pbook__of, .field .pbook__step select { width: auto; flex: 0 1 auto; }

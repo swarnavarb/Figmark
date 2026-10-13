@@ -474,18 +474,30 @@ export interface CostStep {
 }
 
 /**
- * A cost as it was in another currency, and the sum that turns it into
- * rupees: `amount` is `x` in `expr` - "x / 6.7 * 88" for a yuan price paid in
- * dollars at ₹88. A copy, kept on the cost itself: editing it never touches
- * the calculator it came from, and changing the calculator never rewrites it.
+ * A cost in the currency it is priced in, and the sums that take it to
+ * rupees, as its calculator line does: a yuan item price paid in dollars is
+ * `amount` ¥120, `via` USD by "x / 6.7", then "x * 88" to rupees. A dollar
+ * charge has no `via`. A percentage line - the agent's 10% - is `percentOf`
+ * another cost on the order, in that cost's paid currency, and follows it.
+ *
+ * A copy, kept on the cost itself: editing it never touches the calculator
+ * it came from, and changing the calculator never rewrites it.
  */
 export interface CostFormula {
+  /** The currency `amount` is in. */
   currency: string;
   /** Per unit, in `currency`. */
   amount: number;
-  /** Rupees per unit, from `x`. Numbers, x, + - * / and brackets. */
+  /** When it is paid in another currency: that currency, and the sum from `amount` into it. */
+  via?: { currency: string; expr: string } | null;
+  /** Rupees per unit from what is paid - `via`'s result, or `amount`. Numbers, x, + - * / and brackets. */
   expr: string;
+  /** A percentage of another cost on the same order (by step id), worked in what that cost is paid in. */
+  percentOf?: { id: string; percent: number } | null;
 }
+
+/** A formula without its amount: what a cost with none starts from. */
+export type FormulaSeed = Omit<CostFormula, 'amount'>;
 
 type FormulaOp = '+' | '-' | '*' | '/';
 type FormulaNode =
@@ -593,33 +605,132 @@ export function solveFormula(expr: string, rupees: number): number | null {
   return Number.isFinite(x) && x >= 0 ? x : null;
 }
 
+const CODE = /^[A-Z]{3}$/;
+const cleanExpr = (raw: unknown) => (typeof raw === 'string' && evalFormula(raw.trim(), 1) !== null ? raw.trim().slice(0, 200) : null);
+const round4 = (value: number) => Math.round(value * 1e4) / 1e4;
+
 /** A formula as a client sent it, made safe to keep - or null. */
 export function cleanFormula(raw: unknown): CostFormula | null {
   if (!raw || typeof raw !== 'object') return null;
   const body = raw as Partial<CostFormula>;
   const currency = typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : '';
-  const expr = typeof body.expr === 'string' ? body.expr.trim() : '';
+  const expr = cleanExpr(body.expr);
   const amount = typeof body.amount === 'number' && Number.isFinite(body.amount) ? body.amount : NaN;
-  if (!/^[A-Z]{3}$/.test(currency) || !(amount >= 0) || amount > 1e9) return null;
-  if (evalFormula(expr, amount) === null) return null;
-  return { currency, amount: Math.round(amount * 1e4) / 1e4, expr: expr.slice(0, 200) };
+  if (!CODE.test(currency) || !(amount >= 0) || amount > 1e9 || !expr) return null;
+  const formula: CostFormula = { currency, amount: round4(amount), expr };
+  const via = body.via as Partial<NonNullable<CostFormula['via']>> | null | undefined;
+  if (via && typeof via === 'object') {
+    const viaCurrency = typeof via.currency === 'string' ? via.currency.trim().toUpperCase() : '';
+    const viaExpr = cleanExpr(via.expr);
+    if (CODE.test(viaCurrency) && viaExpr) formula.via = { currency: viaCurrency, expr: viaExpr };
+  }
+  const of = body.percentOf as Partial<NonNullable<CostFormula['percentOf']>> | null | undefined;
+  if (of && typeof of === 'object' && typeof of.id === 'string' && /^[\w-]{1,40}$/.test(of.id)
+    && typeof of.percent === 'number' && Number.isFinite(of.percent) && of.percent >= 0 && of.percent <= 1000) {
+    formula.percentOf = { id: of.id, percent: round4(of.percent) };
+  }
+  return formulaRupees(formula) === null ? null : formula;
+}
+
+/** What is paid, per unit, in the currency it is paid in: through `via` when there is one. */
+export const formulaPaid = (formula: Pick<CostFormula, 'amount' | 'via'>): number | null =>
+  (formula.via ? evalFormula(formula.via.expr, formula.amount) : formula.amount);
+
+/** The currency a cost is paid in. */
+export const paidCurrency = (formula: Pick<CostFormula, 'currency' | 'via'>): string => formula.via?.currency ?? formula.currency;
+
+/** Rupees per unit from a formula, or null when its sums do not work out. */
+export function formulaRupees(formula: Pick<CostFormula, 'amount' | 'via' | 'expr'>): number | null {
+  const paid = formulaPaid(formula);
+  return paid === null ? null : evalFormula(formula.expr, paid);
 }
 
 /** Rupees in paise from a formula; what a step with one is always worth. */
-export const formulaMinor = (formula: CostFormula): number =>
-  Math.min(1e11, Math.max(0, Math.round((evalFormula(formula.expr, formula.amount) ?? 0) * 100)));
+export const formulaMinor = (formula: Pick<CostFormula, 'amount' | 'via' | 'expr'>): number =>
+  Math.min(1e11, Math.max(0, Math.round((formulaRupees(formula) ?? 0) * 100)));
+
+/** The `amount` that is paid as `paid` - the sum run back through `via`. */
+export const amountForPaid = (formula: Pick<CostFormula, 'via'>, paid: number): number | null =>
+  (formula.via ? solveFormula(formula.via.expr, paid) : paid);
+
+/** The `amount` that comes to `rupees`, run back through both sums. */
+export function amountForRupees(formula: Pick<CostFormula, 'via' | 'expr'>, rupees: number): number | null {
+  const paid = solveFormula(formula.expr, rupees);
+  return paid === null ? null : amountForPaid(formula, paid);
+}
+
+/**
+ * Every percentage cost worked out again from the cost it is a percentage of,
+ * so the agent's 10% follows the item price. One whose cost is gone keeps
+ * the rupees it last came to, without a formula.
+ */
+export function settleSteps(steps: CostStep[]): CostStep[] {
+  let out = steps;
+  // A percentage of a percentage settles in as many passes as it is deep.
+  for (let pass = 0; pass < 4; pass += 1) {
+    let moved = false;
+    out = out.map((step) => {
+      const of = step.formula?.percentOf;
+      if (!of) return step;
+      const source = out.find((entry) => entry.id === of.id && entry !== step);
+      if (!source) {
+        const { formula: _gone, ...rest } = step;
+        moved = true;
+        return rest;
+      }
+      const base = source.formula ? formulaPaid(source.formula) : source.amountMinor / 100;
+      if (base === null) return step;
+      const formula: CostFormula = {
+        currency: source.formula ? paidCurrency(source.formula) : 'INR',
+        amount: round4((base * of.percent) / 100),
+        expr: source.formula?.expr ?? 'x',
+        percentOf: of,
+      };
+      const amountMinor = formulaMinor(formula);
+      if (amountMinor === step.amountMinor && JSON.stringify(formula) === JSON.stringify(step.formula)) return step;
+      moved = true;
+      return { ...step, amountMinor, formula };
+    });
+    if (!moved) break;
+  }
+  return out;
+}
 
 /** Plain numbers in a sum: 6.7, 88, 0.59 - never 6.700000001. */
 const term = (value: number) => String(Math.round(value * 1e6) / 1e6);
 
+/** The parts of a calculator a formula is read from. */
+export type FormulaSource = Pick<ProfitTemplate, 'currency' | 'payCurrency' | 'payRate' | 'rate' | 'lines'>;
+
 /**
- * The sum from a price abroad to rupees, as a template does it, written out:
- * "x / 6.7 * 88" when paid through another currency, "x * 12.3" when not.
- * `pay` is for a line priced in the currency the supplier is paid in.
+ * How a calculator takes one of its lines to rupees, as a formula without
+ * its amount: the item price (`lineId` null) and lines priced abroad from the
+ * price's currency, through the paid currency when there is one; lines priced
+ * in the paid currency straight from it; a percentage of the item price (or of
+ * another line) as `percentOf`. Null for a line in rupees, or one this cannot say.
  */
-export function templateExpr(template: Pick<ProfitTemplate, 'currency' | 'payCurrency' | 'payRate' | 'rate'>, pay = false): string {
-  const rate = term(Math.max(0, num(template.rate)));
-  return paysVia(template) && !pay ? `x / ${term(num(template.payRate))} * ${rate}` : `x * ${rate}`;
+export function seedFromTemplate(template: FormulaSource, lineId: string | null): FormulaSeed | null {
+  const rate = Math.max(0, num(template.rate));
+  if (rate <= 0) return null;
+  const expr = `x * ${term(rate)}`;
+  const via = paysVia(template) ? { currency: template.payCurrency!, expr: `x / ${term(num(template.payRate))}` } : null;
+  const priced: FormulaSeed = { currency: template.currency, ...(via ? { via } : {}), expr };
+  if (lineId === null) return priced;
+  const line = template.lines.find((entry) => entry.id === lineId);
+  if (!line) return null;
+  if (line.kind === 'percent') {
+    const basis = line.basis ?? 'item';
+    const of = basis === 'item' ? 'item' : basis === 'line' && line.basisLineId ? line.basisLineId : null;
+    return of ? { currency: payCurrencyOf(template), expr, percentOf: { id: of, percent: num(line.amount) } } : null;
+  }
+  if (line.currency === 'INR') return null;
+  return line.currency === 'pay' ? { currency: payCurrencyOf(template), expr } : priced;
+}
+
+/** A seed given its amount: from rupees it already comes to, run back through its sums. */
+export function seedAt(seed: FormulaSeed, rupees: number): CostFormula | null {
+  const amount = amountForRupees(seed, rupees);
+  return amount === null ? null : { ...seed, amount: round4(amount) };
 }
 
 /** The costs saved against a listing. Only the steps the seller kept. */
@@ -644,26 +755,26 @@ export const sheetTotal = (sheet: ItemCostSheet | null | undefined): number =>
  */
 export function stepsFromResult(result: ProfitResult, template?: ProfitTemplate, itemPrice?: number): CostStep[] {
   const steps: CostStep[] = [];
+  const formulaFor = (lineId: string | null, rupees: number): CostFormula | null => {
+    const seed = template ? seedFromTemplate(template, lineId) : null;
+    if (!seed) return null;
+    // A percentage is worked out from its cost below; the rest from what they came to.
+    if (seed.percentOf) return { ...seed, amount: 0 };
+    if (lineId === null && num(itemPrice) > 0) return { ...seed, amount: num(itemPrice) };
+    return seedAt(seed, rupees);
+  };
   if (result.itemCost > 0) {
-    const formula = template && num(itemPrice) > 0
-      ? { currency: template.currency, amount: num(itemPrice), expr: templateExpr(template) }
-      : null;
+    const formula = formulaFor(null, result.itemCost);
     steps.push({ id: 'item', label: 'Item price', stage: 'buying', amountMinor: Math.round(result.itemCost * 100), ...(formula ? { formula } : {}) });
   }
   for (const line of result.lines) {
     if (line.enabled && line.perItem > 0) {
-      const source = template?.lines.find((entry) => entry.id === line.id);
-      const formula = template && source?.kind === 'per_item' && source.currency !== 'INR'
-        ? {
-          currency: source.currency === 'pay' ? payCurrencyOf(template) : template.currency,
-          amount: num(source.amount),
-          expr: templateExpr(template, source.currency === 'pay'),
-        }
-        : null;
+      const formula = formulaFor(line.id, line.perItem);
       steps.push({ id: line.id, label: line.label, stage: line.stage, amountMinor: Math.round(line.perItem * 100), ...(formula ? { formula } : {}) });
     }
   }
-  return steps;
+  // The item price as typed is what its rupees come from; percentages follow it.
+  return settleSteps(steps.map((step) => (step.formula && !step.formula.percentOf ? { ...step, amountMinor: formulaMinor(step.formula) } : step)));
 }
 
 const MAX_SHEET_STEPS = 40;
@@ -697,7 +808,7 @@ export function cleanCostSheet(raw: unknown, now: string): ItemCostSheet | null 
   return {
     templateId: typeof body.templateId === 'string' ? body.templateId.slice(0, 40) : null,
     templateName: typeof body.templateName === 'string' ? body.templateName.slice(0, 60) : null,
-    steps,
+    steps: settleSteps(steps),
     savedAt: now,
   };
 }

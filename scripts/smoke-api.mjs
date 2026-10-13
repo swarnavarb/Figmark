@@ -8392,6 +8392,16 @@ await check('the profit book: every order with its costs, an order can have its 
   assert.equal(plain[0].amountMinor, 3_000, 'both orders of the one item kept');
   assert.equal(plain[1].formula, undefined, 'a formula that is not a sum is dropped');
   assert.equal((await saveOrderCostsBatch(req({ headers: stranger.headers, body: { changes: [{ orderId, steps: [] }] } }), ctx)).status, 404, 'nor in a batch');
+  // As the calculator has it: yuan, paid in dollars, then rupees - and the agent's 10% of the dollars follows.
+  const chained = await saveOrderCostsBatch(req({ headers: auth, body: { changes: [{ orderId, steps: [
+    { id: 'item', label: 'Item price', stage: 'buying', amountMinor: 1, formula: { currency: 'CNY', amount: 134, via: { currency: 'USD', expr: 'x / 6.7' }, expr: 'x * 88' } },
+    { id: 'agent', label: 'Agent fee', stage: 'buying', amountMinor: 1, formula: { currency: 'USD', amount: 0, expr: 'x * 88', percentOf: { id: 'item', percent: 10 } } },
+  ] }] } }), ctx);
+  const [item, agent] = chained.jsonBody.rows[0].steps;
+  assert.equal(item.amountMinor, 176_000, '¥134 is $20 is ₹1,760');
+  assert.equal(item.formula.via.currency, 'USD');
+  assert.equal(agent.formula.amount, 2, 'the 10% is of the dollars');
+  assert.equal(agent.amountMinor, 17_600);
   await saveOrderCostsBatch(req({ headers: auth, body: { changes: [{ orderId: other, steps: null }] } }), ctx);
 
   const back = await saveOrderCosts(req({ headers: auth, params: { id: orderId }, body: { steps: null } }), ctx);
