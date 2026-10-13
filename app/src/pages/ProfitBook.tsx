@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  COMMON_CURRENCIES, evalFormula, formulaMinor, solveFormula, symbolOf,
-  type CostFormula, type CostStage, type CostStep,
+  COMMON_CURRENCIES, SCENARIOS, evalFormula, formulaMinor, formulaWorking, payCurrencyOf, solveFormula, symbolOf, templateExpr,
+  type CostFormula, type CostStage, type CostStep, type ProfitTemplate,
 } from '@shared/profit';
 import { ApiRequestError, api, type BookLot, type BookRow, type CostsResponse } from '../api';
 import { formatMoney } from '../format';
@@ -173,6 +173,8 @@ interface Column { key: string; label: string; stage: CostStage; id: string }
 const keyOf = (label: string) => label.trim().toLowerCase();
 const slug = (label: string) => keyOf(label).replace(/[^\w-]+/g, '_').slice(0, 40) || 'cost';
 const stepIn = (row: BookRow, column: Column) => row.steps.find((step) => keyOf(step.label) === column.key);
+const round4 = (value: number) => Math.round(value * 1e4) / 1e4;
+const sym = (currency: string) => symbolOf(currency).trim();
 
 /** Always there, so a sheet with no costs yet still has a cell to type the first into. */
 const ITEM_PRICE: Column = { key: 'item price', label: 'Item price', stage: 'buying', id: 'item' };
@@ -189,9 +191,58 @@ function columnsFor(rows: BookRow[], extra: Column[]): Column[] {
   return [...found.values()];
 }
 
-/** "¥120", "$2.5" - an amount abroad, as short as it goes. */
-const abroad = (formula: Pick<CostFormula, 'currency' | 'amount'>) =>
-  `${symbolOf(formula.currency).trim()}${formula.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+/**
+ * What the sheet shows of a cost: its price abroad, or its rupees. A cost
+ * with a price abroad anywhere in view gets both, side by side, in one colour.
+ */
+interface Part {
+  column: Column;
+  abroad: boolean;
+  /** What hiding it remembers. */
+  key: string;
+  /** The currency the price abroad is in; ₹ for the rupee part. */
+  currency: string;
+  tone: number;
+}
+
+const TONES = 6;
+
+function partsFor(columns: Column[], rows: BookRow[]): Part[] {
+  const parts: Part[] = [];
+  columns.forEach((column, at) => {
+    const tone = at % TONES;
+    const formula = rows.map((row) => stepIn(row, column)?.formula).find(Boolean);
+    if (formula) parts.push({ column, abroad: true, key: `${column.key}·abroad`, currency: formula.currency, tone });
+    parts.push({ column, abroad: false, key: column.key, currency: 'INR', tone });
+  });
+  return parts;
+}
+
+const partName = (part: Part) => `${part.column.label} ${sym(part.currency)}`;
+
+/**
+ * The price abroad and sum a cost starts from when it has none: the same
+ * cost on another order here, else the calculator's own - a copy either way.
+ */
+type Seed = Pick<CostFormula, 'currency' | 'expr'>;
+function seedFor(column: Column, rows: BookRow[], template: ProfitTemplate | null): Seed {
+  for (const row of rows) {
+    const formula = stepIn(row, column)?.formula;
+    if (formula) return formula;
+  }
+  if (template) {
+    const line = template.lines.find((entry) => keyOf(entry.label) === column.key && entry.currency !== 'INR');
+    if (line) {
+      const pay = line.currency === 'pay';
+      return { currency: pay ? payCurrencyOf(template) : template.currency, expr: templateExpr(template, pay) };
+    }
+    return { currency: template.currency, expr: templateExpr(template) };
+  }
+  for (const row of rows) for (const step of row.steps) if (step.formula) return step.formula;
+  // No calculator of the shop's own yet: the calculator's first way in.
+  const starter = SCENARIOS[0]!.sheet();
+  return { currency: starter.currency, expr: templateExpr(starter) };
+}
 
 /** Which columns are folded away, kept in this browser only. */
 const HIDDEN_KEY = 'figmark.pbook.hidden';
@@ -210,8 +261,26 @@ interface Change { before: BookRow; after: BookRow; steps: CostStep[] | null }
 /** How to put a change back: the orders as they were, and the columns. */
 interface Undo { label: string; rows: BookRow[]; extra: Column[]; hidden: string[] }
 
-/** Where the formula editor is open. */
-interface Editing { row: BookRow; column: Column }
+/** A row's steps with one cost set - its rupees, and its price abroad or none. */
+function withCost(row: BookRow, column: Column, amountMinor: number, formula: CostFormula | null): CostStep[] {
+  const at = row.steps.findIndex((step) => keyOf(step.label) === column.key);
+  const base = at >= 0 ? row.steps[at]! : { id: column.id, label: column.label, stage: column.stage, amountMinor: 0 };
+  const { formula: _old, ...rest } = base;
+  const next: CostStep = formula ? { ...rest, amountMinor, formula } : { ...rest, amountMinor };
+  return at >= 0 ? row.steps.map((step, index) => (index === at ? next : step)) : [...row.steps, next];
+}
+
+/** Rupees for a cost; with a price abroad that the sum can be run back from, that moves too. */
+function rupeesInto(row: BookRow, column: Column, amountMinor: number): CostStep[] {
+  const formula = stepIn(row, column)?.formula;
+  const x = formula ? solveFormula(formula.expr, amountMinor / 100) : null;
+  if (!formula || x === null) return withCost(row, column, amountMinor, null);
+  const moved = { ...formula, amount: round4(x) };
+  return withCost(row, column, formulaMinor(moved), moved);
+}
+
+/** A supplier payment being shared out: over which orders, into what, how much. */
+interface Split { partKey: string; amount: string; picked: string[]; base: BookRow[] }
 
 function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
   rows: BookRow[];
@@ -228,12 +297,13 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
   // Deleting a column with costs in it asks once, on the button itself.
   const [dropping, setDropping] = useState<string | null>(null);
   const [showColumns, setShowColumns] = useState(false);
-  const [editing, setEditing] = useState<Editing | null>(null);
-  const [splitting, setSplitting] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
+  const [editing, setEditing] = useState<{ orderId: string; column: Column } | null>(null);
+  const [split, setSplit] = useState<Split | null>(null);
+  const [template, setTemplate] = useState<ProfitTemplate | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
-  const columns = useMemo(() => columnsFor(rows, extra), [rows, extra]);
-  const shown = columns.filter((column) => !hidden.includes(column.key));
+  const columns = useMemo(() => columnsFor(split?.base ?? rows, extra), [rows, split, extra]);
+  const parts = useMemo(() => partsFor(columns, rows), [columns, rows]);
+  const shown = parts.filter((part) => !hidden.includes(part.key));
 
   useEffect(() => {
     try {
@@ -242,6 +312,13 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
       // Private window: the columns fold for this visit only.
     }
   }, [hidden]);
+
+  // The calculator's own sum, to start a price abroad from where there is none.
+  useEffect(() => {
+    void api.profitTemplates(shop)
+      .then((result) => setTemplate(result.templates.find((entry) => entry.isDefault) ?? result.templates[0] ?? null))
+      .catch(() => setTemplate(null));
+  }, [shop]);
 
   const groups = useMemo(() => {
     const byBuyer = new Map<string, BookRow[]>();
@@ -265,6 +342,52 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // The fields a split can go into, from the orders as they were when it opened -
+  // not as it is showing them, or every keystroke would feed on its own result.
+  const splitBase = split?.base;
+  const splitParts = useMemo(() => (splitBase ? partsFor(columnsFor(splitBase, extra), splitBase) : []), [splitBase, extra]);
+
+  /** A split as it stands: what each ticked order's costs become. */
+  const splitChanges = useMemo((): Change[] => {
+    if (!split) return [];
+    const part = splitParts.find((entry) => entry.key === split.partKey);
+    const paid = Number(split.amount.replace(/[,\s]/g, ''));
+    if (!part || !(paid > 0) || !Number.isFinite(paid)) return [];
+    const chosen = split.base.filter((row) => split.picked.includes(row.orderId));
+    // Shared by what each was worth in that field; equally per unit when none has a value yet.
+    const worth = (row: BookRow) => {
+      const step = stepIn(row, part.column);
+      return (part.abroad ? step?.formula?.amount ?? 0 : (step?.amountMinor ?? 0) / 100) * row.quantity;
+    };
+    const total = chosen.reduce((sum, row) => sum + worth(row), 0);
+    const weight = total > 0 ? worth : (row: BookRow) => row.quantity;
+    const sum = total > 0 ? total : chosen.reduce((all, row) => all + row.quantity, 0);
+    const changes: Change[] = [];
+    for (const row of chosen) {
+      // Shared by value, an order with none in that field takes none of it.
+      if (weight(row) === 0) continue;
+      const each = (paid * weight(row)) / sum / row.quantity;
+      let steps: CostStep[];
+      if (part.abroad) {
+        const seed = stepIn(row, part.column)?.formula ?? seedFor(part.column, split.base, template);
+        const formula = { currency: seed.currency, amount: round4(each), expr: seed.expr };
+        steps = withCost(row, part.column, formulaMinor(formula), formula);
+      } else {
+        steps = rupeesInto(row, part.column, Math.round(each * 100));
+      }
+      changes.push({ before: row, after: { ...row, steps, own: true }, steps });
+    }
+    return changes;
+  }, [split, splitParts, template]);
+
+  // As the amount is typed, the sheet and every sum on it follow - saved on Done.
+  useEffect(() => {
+    if (!split) return;
+    const after = new Map(splitChanges.map((change) => [change.after.orderId, change.after]));
+    for (const row of split.base) onChange(after.get(row.orderId) ?? row);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitChanges]);
 
   if (rows.length === 0) return <p className="muted">{empty}</p>;
 
@@ -299,7 +422,7 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
 
   function undo() {
     const last = history[history.length - 1];
-    if (!last) return;
+    if (!last || split) return;
     setFailed(null);
     setHistory((now) => now.slice(0, -1));
     setExtra(last.extra);
@@ -314,32 +437,31 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
   }
   undoRef.current = undo;
 
-  /** One cell: a new amount (and price abroad), or null to clear it. */
-  function setCell(row: BookRow, column: Column, amountMinor: number | null, formula?: CostFormula | null) {
-    const at = row.steps.findIndex((step) => keyOf(step.label) === column.key);
-    const steps = [...row.steps];
-    if (amountMinor === null) {
-      if (at < 0) return;
-      steps.splice(at, 1);
-    } else {
-      const base = at >= 0 ? steps[at]! : { id: column.id, label: column.label, stage: column.stage, amountMinor: 0 };
-      const { formula: _old, ...rest } = base;
-      const next: CostStep = formula ? { ...rest, amountMinor, formula } : { ...rest, amountMinor };
-      if (at >= 0 && JSON.stringify(next) === JSON.stringify(base)) return;
-      if (at >= 0) steps[at] = next;
-      else steps.push(next);
-    }
-    void commit(`${column.label} for ${row.itemName}`, [withSteps(row, steps)]);
+  function save(label: string, row: BookRow, steps: CostStep[]) {
+    if (JSON.stringify(steps) === JSON.stringify(row.steps)) return;
+    void commit(label, [withSteps(row, steps)]);
   }
 
-  /** Rupees typed over a cost with a price abroad move the price abroad too, when the sum allows. */
-  function typeCell(row: BookRow, column: Column, amountMinor: number | null) {
-    const formula = stepIn(row, column)?.formula;
-    if (amountMinor === null || !formula) return setCell(row, column, amountMinor);
-    const x = solveFormula(formula.expr, amountMinor / 100);
-    if (x === null) return setCell(row, column, amountMinor);
-    const moved = { ...formula, amount: Math.round(x * 1e4) / 1e4 };
-    setCell(row, column, formulaMinor(moved), moved);
+  /** Rupees typed into a cell, or cleared. */
+  function typeRupees(row: BookRow, column: Column, amountMinor: number | null) {
+    if (amountMinor === null) {
+      if (!stepIn(row, column)) return;
+      return save(`${column.label} for ${row.itemName}`, row, row.steps.filter((step) => keyOf(step.label) !== column.key));
+    }
+    save(`${column.label} for ${row.itemName}`, row, rupeesInto(row, column, amountMinor));
+  }
+
+  /** A price abroad typed into a cell: the rupees follow its formula. Cleared, the rupees stay as they are. */
+  function typeAbroad(row: BookRow, column: Column, amount: number | null) {
+    const step = stepIn(row, column);
+    const label = `${column.label} abroad for ${row.itemName}`;
+    if (amount === null) {
+      if (step?.formula) save(label, row, withCost(row, column, step.amountMinor, null));
+      return;
+    }
+    const seed = step?.formula ?? seedFor(column, rows, template);
+    const formula = { currency: seed.currency, amount: round4(amount), expr: seed.expr };
+    save(label, row, withCost(row, column, formulaMinor(formula), formula));
   }
 
   function addColumn() {
@@ -366,8 +488,27 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
     void commit(hidden.includes(key) ? 'show a column' : 'hide a column', [], { hidden: next });
   }
 
+  function openSplit() {
+    setDropping(null);
+    const first = parts.find((part) => part.abroad) ?? parts.find((part) => part.column.key === ITEM_PRICE.key)!;
+    setSplit({ partKey: first.key, amount: '', picked: rows.map((row) => row.orderId), base: rows });
+  }
+
+  function closeSplit(keep: boolean) {
+    if (!split) return;
+    const part = splitParts.find((entry) => entry.key === split.partKey);
+    if (keep && splitChanges.length > 0 && part) {
+      void commit(`split ${sym(part.currency)}${split.amount} into ${partName(part)}`, splitChanges);
+    } else {
+      for (const row of split.base) onChange(row);
+    }
+    setSplit(null);
+  }
+
   const owing = groups.filter((group) => group.totals.pendingMinor > 0);
   const last = history[history.length - 1];
+  const splitPart = split ? splitParts.find((part) => part.key === split.partKey) : undefined;
+  const editRow = editing ? rows.find((row) => row.orderId === editing.orderId) : undefined;
 
   return (
     <div className="stack">
@@ -388,16 +529,16 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
       )}
 
       <div className="pbook__tools">
-        <button type="button" className="btn btn--ghost btn--sm" disabled={!last} onClick={undo}
+        <button type="button" className="btn btn--ghost btn--sm" disabled={!last || Boolean(split)} onClick={undo}
           title={last ? `Undo: ${last.label}` : 'Nothing to undo'}>
           ↶ Undo{last ? <span className="pbook__undo">{last.label}</span> : null}
         </button>
         <button type="button" className={`btn btn--ghost btn--sm${showColumns ? ' is-on' : ''}`} onClick={() => setShowColumns((now) => !now)}>
-          Columns{hidden.some((key) => columns.some((column) => column.key === key))
-            ? ` · ${columns.filter((column) => hidden.includes(column.key)).length} hidden` : ''}
+          Columns{parts.some((part) => hidden.includes(part.key))
+            ? ` · ${parts.filter((part) => hidden.includes(part.key)).length} hidden` : ''}
         </button>
-        <button type="button" className={`btn btn--ghost btn--sm${splitting ? ' is-on' : ''}`}
-          onClick={() => { setSplitting((now) => !now); setPicked([]); }}>
+        <button type="button" className={`btn btn--ghost btn--sm${split ? ' is-on' : ''}`}
+          onClick={() => (split ? closeSplit(false) : openSplit())}>
           ⇄ Split a payment
         </button>
         {adding === null ? (
@@ -414,36 +555,55 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
         <div className="card card--pad pbook__cols">
           <span className="faint">What makes up the cost price. A hidden column still counts in it.</span>
           <div className="chips">
-            {columns.map((column) => (
-              <button key={column.key} type="button" className={`chip${hidden.includes(column.key) ? '' : ' is-on'}`}
-                aria-pressed={!hidden.includes(column.key)} onClick={() => toggleColumn(column.key)}>
-                {hidden.includes(column.key) ? '○' : '●'} {column.label}
+            {parts.map((part) => (
+              <button key={part.key} type="button"
+                className={`chip pbook__chip pbook__tone--${part.tone}${hidden.includes(part.key) ? '' : ' is-on'}`}
+                aria-pressed={!hidden.includes(part.key)} onClick={() => toggleColumn(part.key)}>
+                {hidden.includes(part.key) ? '○' : '●'} {partName(part)}
               </button>
             ))}
           </div>
           <div className="row">
-            <button type="button" className="btn btn--quiet btn--sm" disabled={shown.length === columns.length}
+            <button type="button" className="btn btn--quiet btn--sm" disabled={shown.length === parts.length}
               onClick={() => void commit('show all columns', [], { hidden: [] })}>Show all</button>
             <button type="button" className="btn btn--quiet btn--sm" disabled={shown.length === 0}
-              onClick={() => void commit('hide all columns', [], { hidden: [...new Set([...hidden, ...columns.map((column) => column.key)])] })}>
+              onClick={() => void commit('hide all columns', [], { hidden: [...new Set([...hidden, ...parts.map((part) => part.key)])] })}>
               Hide all
             </button>
           </div>
         </div>
       )}
 
-      {splitting && (
-        <SplitPayment rows={rows} columns={columns} picked={picked} customers={customers} onPick={setPicked}
-          onClose={() => { setSplitting(false); setPicked([]); }}
-          onApply={(label, changes) => {
-            void commit(label, changes);
-            setSplitting(false);
-            setPicked([]);
-          }} />
+      {split && splitPart && (
+        <form className="card card--pad pbook__split" onSubmit={(event) => { event.preventDefault(); closeSplit(true); }}>
+          <div className="pbook__splitrow">
+            <label className="field">
+              <span>Field</span>
+              <select value={split.partKey} onChange={(event) => setSplit({ ...split, partKey: event.target.value })}>
+                {splitParts.map((part) => <option key={part.key} value={part.key}>{partName(part)}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Paid</span>
+              <span className={`pbook__money pbook__tone--${splitPart.tone}`}>
+                <b>{sym(splitPart.currency)}</b>
+                <input inputMode="decimal" autoFocus value={split.amount} placeholder="0"
+                  onChange={(event) => setSplit({ ...split, amount: event.target.value })} />
+              </span>
+            </label>
+          </div>
+          <div className="row">
+            <button type="submit" className="btn btn--sm" disabled={splitChanges.length === 0}>Done</button>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => closeSplit(false)}>Cancel</button>
+            <span className="faint">
+              Over the {split.picked.length} ticked order{split.picked.length === 1 ? '' : 's'}, by their {partName(splitPart)}
+            </span>
+          </div>
+        </form>
       )}
 
       <p className="faint pbook__hint">
-        ₹ per unit, for that order only - saved as soon as you leave a cell. Tap the line under a cost for its price abroad and formula.
+        Per unit, for that order only - saved as soon as you leave a cell. Same colour, same cost: abroad and in ₹. ƒx shows how it is worked out.
       </p>
 
       {groups.map((group) => {
@@ -467,17 +627,17 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                     <th className="pbook__item">Item</th>
                     <th>Qty</th>
                     <th>Selling price</th>
-                    {shown.map((column) => (
-                      <th key={column.key} className="pbook__costhead">
-                        <span>{column.label}</span>
+                    {shown.map((part) => (
+                      <th key={part.key} className={`pbook__costhead pbook__tone--${part.tone}`}>
+                        <span>{part.column.label} <b className="pbook__cur">{sym(part.currency)}</b></span>
                         <span className="pbook__headtools">
-                          <button type="button" className="pbook__drop" aria-label={`Hide the ${column.label} column`}
-                            title="Hide" onClick={() => toggleColumn(column.key)}>–</button>
-                          {column.key !== ITEM_PRICE.key && (
-                            <button type="button" className={`pbook__drop${dropping === column.key ? ' is-asking' : ''}`}
-                              aria-label={`Delete the ${column.label} column`} title="Delete" onClick={() => dropColumn(column)}
-                              onBlur={() => setDropping((now) => (now === column.key ? null : now))}>
-                              {dropping === column.key ? 'Delete?' : '✕'}
+                          <button type="button" className="pbook__drop" aria-label={`Hide ${partName(part)}`}
+                            title="Hide" onClick={() => toggleColumn(part.key)}>–</button>
+                          {!part.abroad && part.column.key !== ITEM_PRICE.key && (
+                            <button type="button" className={`pbook__drop${dropping === part.column.key ? ' is-asking' : ''}`}
+                              aria-label={`Delete the ${part.column.label} column`} title="Delete" onClick={() => dropColumn(part.column)}
+                              onBlur={() => setDropping((now) => (now === part.column.key ? null : now))}>
+                              {dropping === part.column.key ? 'Delete?' : '✕'}
                             </button>
                           )}
                         </span>
@@ -492,17 +652,19 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                 <tbody>
                   {group.rows.map((row) => {
                     const profit = salesOf(row) - costOf(row);
+                    const picked = split?.picked.includes(row.orderId) ?? false;
                     return (
-                      <tr key={row.orderId} className={picked.includes(row.orderId) ? 'is-picked' : undefined}>
+                      <tr key={row.orderId} className={picked ? 'is-picked' : undefined}>
                         <td className="pbook__item">
-                          {splitting && (
-                            <input type="checkbox" className="pbook__pick" checked={picked.includes(row.orderId)}
-                              aria-label={`Include ${row.itemName}`}
-                              onChange={() => setPicked((now) => (now.includes(row.orderId)
-                                ? now.filter((id) => id !== row.orderId) : [...now, row.orderId]))} />
+                          {split && (
+                            <input type="checkbox" className="pbook__pick" checked={picked} aria-label={`Include ${row.itemName}`}
+                              onChange={() => setSplit({
+                                ...split,
+                                picked: picked ? split.picked.filter((id) => id !== row.orderId) : [...split.picked, row.orderId],
+                              })} />
                           )}
                           <Link to={`/listing/${row.listingId}`}>{row.itemName}</Link>
-                          {row.own && (
+                          {row.own && !split && (
                             <button type="button" className="pbook__reset" title="Use the item’s costs again"
                               onClick={() => void commit(`reset ${row.itemName}`, [{ before: row, after: row, steps: null }])}>
                               ↺ item costs
@@ -511,16 +673,25 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                         </td>
                         <td className="pbook__num">{row.quantity}</td>
                         <td className="pbook__num">{cell(row.unitPriceMinor)}</td>
-                        {shown.map((column) => {
-                          const step = stepIn(row, column);
+                        {shown.map((part) => {
+                          const step = stepIn(row, part.column);
+                          const label = `${partName(part)} for ${row.itemName}`;
+                          if (part.abroad) {
+                            const foreign = step?.formula && step.formula.currency !== part.currency ? sym(step.formula.currency) : '';
+                            return (
+                              <td key={part.key} className={`pbook__cell pbook__tone--${part.tone}`}>
+                                <NumberCell value={step?.formula?.amount ?? null} label={label} prefix={foreign}
+                                  disabled={Boolean(split)} onCommit={(amount) => typeAbroad(row, part.column, amount)} />
+                              </td>
+                            );
+                          }
                           return (
-                            <td key={column.key} className="pbook__cell">
-                              <CostCell value={step ? step.amountMinor : null} label={`${column.label} for ${row.itemName}`}
-                                onCommit={(amount) => typeCell(row, column, amount)} />
+                            <td key={part.key} className={`pbook__cell pbook__tone--${part.tone}`}>
+                              <NumberCell value={step ? step.amountMinor / 100 : null} label={label} disabled={Boolean(split)}
+                                onCommit={(rupees) => typeRupees(row, part.column, rupees === null ? null : Math.round(rupees * 100))} />
                               <button type="button" className={`pbook__fx${step?.formula ? ' has-formula' : ''}`}
-                                title="Price abroad and formula" onClick={() => setEditing({ row, column })}>
-                                {step?.formula ? abroad(step.formula) : 'ƒx'}
-                              </button>
+                                title="How this is worked out" disabled={Boolean(split)}
+                                onClick={() => setEditing({ orderId: row.orderId, column: part.column })}>ƒx</button>
                             </td>
                           );
                         })}
@@ -538,7 +709,7 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                       <td className="pbook__item">Total</td>
                       <td className="pbook__num">{group.rows.reduce((sum, row) => sum + row.quantity, 0)}</td>
                       <td className="pbook__num">{cell(group.totals.salesMinor)}</td>
-                      {shown.map((column) => <td key={column.key} />)}
+                      {shown.map((part) => <td key={part.key} />)}
                       <td className="pbook__num">{cell(group.totals.costMinor)}</td>
                       <td className="pbook__num">{cell(group.totals.profitMinor)}</td>
                       <td className="pbook__num">{cell(group.rows.reduce((sum, row) => sum + row.paidMinor, 0))}</td>
@@ -552,11 +723,12 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
         );
       })}
 
-      {editing && (
-        <FormulaEditor row={editing.row} column={editing.column} rows={rows} onClose={() => setEditing(null)}
+      {editing && editRow && (
+        <FormulaEditor row={editRow} column={editing.column} seed={seedFor(editing.column, rows, template)}
+          onClose={() => setEditing(null)}
           onSave={(amountMinor, formula) => {
-            const row = rows.find((entry) => entry.orderId === editing.row.orderId) ?? editing.row;
-            setCell(row, editing.column, amountMinor, formula);
+            save(formula ? `${editing.column.label} formula for ${editRow.itemName}` : `${editing.column.label} for ${editRow.itemName}`,
+              editRow, withCost(editRow, editing.column, amountMinor, formula));
             setEditing(null);
           }} />
       )}
@@ -564,284 +736,164 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
   );
 }
 
-/** One cost cell: rupees per unit, saved when you leave it; empty removes the cost. */
-function CostCell({ value, label, onCommit }: { value: number | null; label: string; onCommit: (amountMinor: number | null) => void }) {
-  const shown = value === null ? '' : String(value / 100);
+/** One number cell, saved when you leave it; empty clears it. */
+function NumberCell({ value, label, prefix, disabled, onCommit }: {
+  value: number | null; label: string; prefix?: string; disabled?: boolean; onCommit: (value: number | null) => void;
+}) {
+  const shown = value === null ? '' : String(round4(value));
   const [text, setText] = useState(shown);
   useEffect(() => setText(shown), [shown]);
   function commit() {
-    const clean = text.replace(/[₹,\s]/g, '');
+    const clean = text.replace(/[₹¥$€£,\s]/g, '');
     if (clean === shown) return;
     if (clean === '') return onCommit(null);
-    const rupees = Number(clean);
-    if (!Number.isFinite(rupees) || rupees < 0) return setText(shown);
-    onCommit(Math.round(rupees * 100));
+    const number = Number(clean);
+    if (!Number.isFinite(number) || number < 0) return setText(shown);
+    onCommit(number);
   }
   return (
-    <input className="pbook__input" inputMode="decimal" value={text} aria-label={label} placeholder="—"
-      onChange={(event) => setText(event.target.value)} onBlur={commit}
-      onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); }} />
+    <span className="pbook__numcell">
+      {prefix ? <span className="pbook__cur">{prefix}</span> : null}
+      <input className="pbook__input" inputMode="decimal" value={text} aria-label={label} placeholder="—" disabled={disabled}
+        onChange={(event) => setText(event.target.value)} onBlur={commit}
+        onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); }} />
+    </span>
   );
 }
 
-/** A formula to start from: this column's elsewhere in view, else any. */
-function startingFormula(rows: BookRow[], column: Column): Omit<CostFormula, 'amount'> | null {
-  let any: CostFormula | null = null;
-  for (const row of rows) {
-    for (const step of row.steps) {
-      if (!step.formula) continue;
-      if (keyOf(step.label) === column.key) return step.formula;
-      any ??= step.formula;
-    }
-  }
-  return any;
+/** A formula in pieces: numbers to type over, x, and the signs between. */
+interface Token { text: string; kind: 'num' | 'x' | 'sign' }
+
+function tokenize(expr: string): Token[] {
+  return (expr.match(/\d*\.?\d+(?:e[+-]?\d+)?|x|X|\s+|./g) ?? []).map((text) => ({
+    text,
+    kind: /^\d*\.?\d+/.test(text) ? 'num' : /^x$/i.test(text) ? 'x' : 'sign',
+  }));
 }
 
-const currencyChoices = (current: string) => [...new Set([current, ...COMMON_CURRENCIES])].filter(Boolean);
+const SIGNS: Record<string, string> = { '*': '×', '/': '÷', '-': '−' };
+const short = (value: number) => value.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 /**
- * A cost's price abroad and the sum that makes it rupees, for this one order.
- * Its own copy: the calculator, its rates and other orders stay as they are.
+ * How a cost comes to its rupees: the price abroad put through its formula,
+ * every number in it there to type over, and each step of the working. Or a
+ * plain rupee amount instead. Only this order changes - not the calculator.
  */
-function FormulaEditor({ row, column, rows, onClose, onSave }: {
+function FormulaEditor({ row, column, seed, onClose, onSave }: {
   row: BookRow;
   column: Column;
-  rows: BookRow[];
+  seed: Seed;
   onClose: () => void;
-  onSave: (amountMinor: number | null, formula: CostFormula | null) => void;
+  onSave: (amountMinor: number, formula: CostFormula | null) => void;
 }) {
   const step = stepIn(row, column);
-  const start = step?.formula ?? startingFormula(rows, column);
-  const [currency, setCurrency] = useState(start?.currency ?? 'CNY');
-  const [expr, setExpr] = useState(start?.expr ?? '');
+  const start = step?.formula ?? seed;
+  const [currency, setCurrency] = useState(start.currency);
+  const [tokens, setTokens] = useState<Token[]>(() => tokenize(start.expr));
+  const [writing, setWriting] = useState(false);
   // With no price abroad yet, what the rupees already there come back to.
   const [amount, setAmount] = useState(() => {
     if (step?.formula) return String(step.formula.amount);
-    const solved = step && start ? solveFormula(start.expr, step.amountMinor / 100) : null;
+    const solved = step ? solveFormula(start.expr, step.amountMinor / 100) : null;
     return solved === null ? '' : String(Math.round(solved * 100) / 100);
   });
+  const [fixed, setFixed] = useState(step ? String(step.amountMinor / 100) : '');
+
+  const expr = tokens.map((token) => token.text).join('');
   const x = Number(amount.replace(/[,\s]/g, ''));
-  const rupees = amount.trim() && Number.isFinite(x) && x >= 0 ? evalFormula(expr, x) : null;
+  const known = amount.trim() !== '' && Number.isFinite(x) && x >= 0;
+  const rupees = known ? evalFormula(expr, x) : null;
+  const working = known ? formulaWorking(expr, x) ?? [] : [];
   const usable = rupees !== null && rupees >= 0;
+  const fixedRupees = Number(fixed.replace(/[₹,\s]/g, ''));
+
+  const setToken = (at: number, text: string) => setTokens((now) => now.map((token, index) => (index === at ? { ...token, text } : token)));
 
   return (
     <Modal title={`${column.label} · ${row.itemName}`} onClose={onClose}>
-      <form className="stack pbook__formula" onSubmit={(event) => {
-        event.preventDefault();
-        if (!usable) return;
-        const formula = { currency, amount: Math.round(x * 1e4) / 1e4, expr: expr.trim() };
-        onSave(formulaMinor(formula), formula);
-      }}>
+      <div className="stack pbook__formula">
         <div className="pbook__formularow">
           <label className="field">
             <span>Price abroad, per unit</span>
-            <input inputMode="decimal" autoFocus value={amount} placeholder="120" onChange={(event) => setAmount(event.target.value)} />
+            <input inputMode="decimal" value={amount} placeholder="120" onChange={(event) => setAmount(event.target.value)} />
           </label>
           <label className="field">
             <span>Currency</span>
             <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
-              {currencyChoices(currency).map((code) => <option key={code} value={code}>{code} {symbolOf(code).trim()}</option>)}
+              {[...new Set([currency, ...COMMON_CURRENCIES])].map((code) => <option key={code} value={code}>{code} {sym(code)}</option>)}
             </select>
           </label>
         </div>
-        <label className="field">
-          <span>Formula to rupees</span>
-          <input value={expr} placeholder="x / 6.7 * 1.1 * 88 + 176" spellCheck={false} onChange={(event) => setExpr(event.target.value)} />
-          <span className="field__hint">
-            x is the price abroad. Numbers, + − × ÷ and brackets. Only this order’s cost changes - not the calculator.
-          </span>
-        </label>
-        <p className="pbook__result">
-          {usable
-            ? <>{abroad({ currency, amount: x })} → <b>{money(Math.round(rupees * 100))}</b> per unit</>
-            : <span className="faint">{expr.trim() && amount.trim() ? 'That formula does not work out.' : 'Fill in the price and formula.'}</span>}
-        </p>
-        <div className="row">
-          <button type="submit" className="btn btn--sm" disabled={!usable}>Save</button>
-          {step?.formula && (
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => onSave(step.amountMinor, null)}>
-              Keep ₹ only
+
+        <div className="field">
+          <span>How it is worked out</span>
+          <div className="pbook__sum" aria-label="The formula, with its numbers">
+            {tokens.map((token, at) => {
+              if (token.kind === 'x') {
+                return (
+                  <span key={at} className="pbook__x">
+                    {sym(currency)}
+                    <input inputMode="decimal" value={amount} size={Math.max(2, amount.length)} aria-label="Price abroad"
+                      onChange={(event) => setAmount(event.target.value)} />
+                  </span>
+                );
+              }
+              if (token.kind === 'num') {
+                return (
+                  <input key={at} className="pbook__term" inputMode="decimal" value={token.text} size={Math.max(2, token.text.length)}
+                    aria-label="A number in the formula" onChange={(event) => setToken(at, event.target.value)} />
+                );
+              }
+              return token.text.trim() ? <span key={at} className="pbook__sign">{SIGNS[token.text] ?? token.text}</span> : null;
+            })}
+            <span className="pbook__sign">=</span>
+            <b className="pbook__answer">{usable ? money(Math.round(rupees * 100)) : '?'}</b>
+          </div>
+          {working.length > 0 && (
+            <ol className="pbook__working">
+              {working.map((line, at) => (
+                <li key={at}>{short(line.left)} {line.op} {short(line.right)} = <b>{short(line.value)}</b></li>
+              ))}
+            </ol>
+          )}
+          {writing ? (
+            <input className="pbook__exprinput" value={expr} spellCheck={false} aria-label="Formula"
+              onChange={(event) => setTokens(tokenize(event.target.value))} />
+          ) : (
+            <button type="button" className="btn btn--quiet btn--sm pbook__rewrite" onClick={() => setWriting(true)}>
+              Change the formula itself
             </button>
           )}
+          <span className="field__hint">
+            {sym(currency)} is the price abroad. Only this order’s cost changes - the calculator stays as it is.
+          </span>
+        </div>
+
+        <div className="row">
+          <button type="button" className="btn btn--sm" disabled={!usable}
+            onClick={() => {
+              const formula = { currency, amount: round4(x), expr: expr.trim() };
+              onSave(formulaMinor(formula), formula);
+            }}>
+            Save
+          </button>
           <button type="button" className="btn btn--quiet btn--sm" onClick={onClose}>Cancel</button>
         </div>
-      </form>
-    </Modal>
-  );
-}
 
-type SplitBy = 'abroad' | 'rupees' | 'equal';
-
-/**
- * One payment to a supplier covering several orders - often different
- * customers' - shared out over them by what each was worth: its price abroad,
- * its rupees, or equally per unit. Written into one cost column of each, all
- * in one change, so one undo puts it back.
- */
-function SplitPayment({ rows, columns, picked, customers, onPick, onClose, onApply }: {
-  rows: BookRow[];
-  columns: Column[];
-  picked: string[];
-  customers: CostsResponse['customers'];
-  onPick: (ids: string[]) => void;
-  onClose: () => void;
-  onApply: (label: string, changes: Change[]) => void;
-}) {
-  const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('INR');
-  const [rate, setRate] = useState('');
-  const [intoKey, setIntoKey] = useState(ITEM_PRICE.key);
-  const [byKey, setByKey] = useState(ITEM_PRICE.key);
-  const [by, setBy] = useState<SplitBy>('abroad');
-
-  const into = columns.find((column) => column.key === intoKey) ?? ITEM_PRICE;
-  const basisColumn = columns.find((column) => column.key === byKey) ?? ITEM_PRICE;
-  const chosen = rows.filter((row) => picked.includes(row.orderId));
-  const paid = Number(amount.replace(/[,\s]/g, ''));
-  const perUnit = currency === 'INR' ? 1 : Number(rate.replace(/[,\s]/g, ''));
-  const ready = paid > 0 && Number.isFinite(paid) && perUnit > 0 && Number.isFinite(perUnit);
-
-  // Each order's weight is its value per unit times how many.
-  const weightOf = (row: BookRow) => {
-    if (by === 'equal') return row.quantity;
-    const step = stepIn(row, basisColumn);
-    const each = by === 'abroad' ? step?.formula?.amount ?? 0 : (step?.amountMinor ?? 0) / 100;
-    return each * row.quantity;
-  };
-  const weights = chosen.map(weightOf);
-  const total = weights.reduce((sum, weight) => sum + weight, 0);
-  const unweighted = chosen.filter((_, at) => weights[at] === 0).length;
-  const abroadCurrencies = new Set(chosen.map((row) => stepIn(row, basisColumn)?.formula?.currency).filter(Boolean));
-  const currencies = [...new Set(['INR', 'USD', 'CNY', ...abroadCurrencies as Set<string>, ...COMMON_CURRENCIES])];
-
-  const shares = chosen.map((row, at) => {
-    const share = total > 0 ? (paid * weights[at]!) / total : 0;
-    return { row, share, each: share / row.quantity };
-  });
-
-  function apply() {
-    if (!ready || total <= 0) return;
-    const changes = shares.map(({ row, each }) => {
-      const formula: CostFormula | null = currency === 'INR'
-        ? null
-        : { currency, amount: Math.round(each * 1e4) / 1e4, expr: `x * ${Math.round(perUnit * 1e6) / 1e6}` };
-      const amountMinor = formula ? formulaMinor(formula) : Math.round(each * 100);
-      const at = row.steps.findIndex((step) => keyOf(step.label) === into.key);
-      const base = at >= 0 ? row.steps[at]! : { id: into.id, label: into.label, stage: into.stage, amountMinor: 0 };
-      const { formula: _old, ...rest } = base;
-      const next: CostStep = formula ? { ...rest, amountMinor, formula } : { ...rest, amountMinor };
-      const steps = at >= 0 ? row.steps.map((step, index) => (index === at ? next : step)) : [...row.steps, next];
-      return { before: row, after: { ...row, steps, own: true }, steps };
-    });
-    onApply(`split ${abroad({ currency, amount: paid })} into ${into.label}`, changes);
-  }
-
-  const sym = symbolOf(currency).trim();
-  return (
-    <section className="card card--pad stack pbook__split">
-      <div className="row row--between">
-        <b>Split a supplier payment</b>
-        <button type="button" className="btn btn--quiet btn--sm" onClick={onClose}>Close</button>
-      </div>
-      <p className="faint">
-        Tick the orders it paid for below - any customers. The amount is shared by what each order was worth and written as
-        the cost per unit.
-      </p>
-      <div className="pbook__splitrow">
-        <label className="field">
-          <span>Paid</span>
-          <input inputMode="decimal" value={amount} placeholder="0" onChange={(event) => setAmount(event.target.value)} />
-        </label>
-        <label className="field">
-          <span>In</span>
-          <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
-            {currencies.map((code) => <option key={code} value={code}>{code} {symbolOf(code).trim()}</option>)}
-          </select>
-        </label>
-        {currency !== 'INR' && (
+        <div className="pbook__static">
           <label className="field">
-            <span>₹ per {sym}1</span>
-            <input inputMode="decimal" value={rate} placeholder="88" onChange={(event) => setRate(event.target.value)} />
+            <span>Or a fixed ₹ value, no formula</span>
+            <span className="pbook__money">
+              <b>₹</b>
+              <input inputMode="decimal" value={fixed} placeholder="0" onChange={(event) => setFixed(event.target.value)} />
+            </span>
           </label>
-        )}
-      </div>
-      <div className="pbook__splitrow">
-        <label className="field">
-          <span>Write it into</span>
-          <select value={intoKey} onChange={(event) => setIntoKey(event.target.value)}>
-            {columns.map((column) => <option key={column.key} value={column.key}>{column.label}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span>Share it by</span>
-          <select value={by} onChange={(event) => setBy(event.target.value as SplitBy)}>
-            <option value="abroad">Price abroad (¥, $…)</option>
-            <option value="rupees">Value in ₹</option>
-            <option value="equal">Equally per unit</option>
-          </select>
-        </label>
-        {by !== 'equal' && (
-          <label className="field">
-            <span>Of</span>
-            <select value={byKey} onChange={(event) => setByKey(event.target.value)}>
-              {columns.map((column) => <option key={column.key} value={column.key}>{column.label}</option>)}
-            </select>
-          </label>
-        )}
-      </div>
-      <div className="row">
-        <button type="button" className="btn btn--quiet btn--sm" onClick={() => onPick(rows.map((row) => row.orderId))}>Tick all</button>
-        <button type="button" className="btn btn--quiet btn--sm" disabled={picked.length === 0} onClick={() => onPick([])}>Clear</button>
-        <span className="faint">{chosen.length} order{chosen.length === 1 ? '' : 's'} ticked</span>
-      </div>
-
-      {chosen.length > 0 && (
-        <div className="pbook__scroll">
-          <table className="pbook__table">
-            <thead>
-              <tr>
-                <th className="pbook__item">Item</th>
-                <th>Qty</th>
-                <th>{by === 'equal' ? 'Units' : by === 'abroad' ? 'Abroad' : '₹ value'}</th>
-                <th>Share {sym}</th>
-                <th>Per unit {sym}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shares.map(({ row, share, each }, at) => (
-                <tr key={row.orderId}>
-                  <td className="pbook__item">
-                    {row.itemName}
-                    <small className="pbook__whom">{customers[row.buyerId]?.name ?? 'Customer'}</small>
-                  </td>
-                  <td className="pbook__num">{row.quantity}</td>
-                  <td className="pbook__num">{weights[at]!.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
-                  <td className="pbook__num">{ready ? share.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}</td>
-                  <td className="pbook__num">{ready ? each.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <button type="button" className="btn btn--ghost btn--sm" disabled={!(fixedRupees >= 0) || fixed.trim() === ''}
+            onClick={() => onSave(Math.round(fixedRupees * 100), null)}>
+            Use fixed ₹
+          </button>
         </div>
-      )}
-
-      {chosen.length > 0 && total <= 0 && (
-        <p className="faint">
-          None of these has a {by === 'abroad' ? 'price abroad' : '₹ value'} in {basisColumn.label} to share by. Pick another
-          column, or share equally.
-        </p>
-      )}
-      {total > 0 && unweighted > 0 && (
-        <p className="faint">{unweighted} ticked order{unweighted === 1 ? ' has' : 's have'} nothing in {basisColumn.label}, so {unweighted === 1 ? 'gets' : 'get'} no share.</p>
-      )}
-      {by === 'abroad' && abroadCurrencies.size > 1 && (
-        <p className="faint">These prices abroad are in different currencies, so the shares mix them.</p>
-      )}
-      <div className="row">
-        <button type="button" className="btn btn--sm" disabled={!ready || total <= 0} onClick={apply}>
-          Split {ready ? abroad({ currency, amount: paid }) : ''} over {chosen.length} order{chosen.length === 1 ? '' : 's'}
-        </button>
       </div>
-    </section>
+    </Modal>
   );
 }

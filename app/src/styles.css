@@ -14629,7 +14629,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .pbook__table th.pbook__item, .pbook__table tfoot td.pbook__item { background: var(--surface-2); }
 .pbook__item a { color: var(--text); display: block; overflow-wrap: anywhere; }
-.pbook__table th.pbook__costhead { color: #93C5FD; white-space: normal; max-width: 84px; text-transform: none; letter-spacing: 0; font-size: 11px; }
+.pbook__table th.pbook__costhead { white-space: normal; max-width: 84px; text-transform: none; letter-spacing: 0; font-size: 11px; }
 .pbook__costhead > span { display: block; overflow-wrap: break-word; }
 .pbook__drop {
   margin-top: 2px; padding: 0 4px; border: 0; border-radius: 6px; background: none; color: var(--text-faint);
@@ -14637,7 +14637,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .pbook__drop:hover { color: #FCA5A5; background: rgba(244, 63, 94, 0.12); }
 .pbook__drop.is-asking { color: #fff; background: #E11D48; }
-.pbook__cell { padding: 0; background: rgba(59, 130, 246, 0.05); }
+.pbook__cell { padding: 0; }
 .pbook__table td.pbook__cell { padding: 0; }
 .pbook__input {
   width: 58px; padding: 6px 4px; border: 0; background: transparent; color: var(--text); text-align: right;
@@ -14663,8 +14663,49 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pbook__fx.has-formula { opacity: 1; color: #93C5FD; }
 .pbook__formula { gap: 12px; }
 .pbook__formularow, .pbook__splitrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
-.pbook__formula input[spellcheck] { font-family: var(--mono); }
-.pbook__result { margin: 0; font-family: var(--mono); font-size: var(--t-sm); color: var(--text); }
 .pbook__split { border: 1px solid rgba(96, 165, 250, 0.4); }
-.pbook__split > p { margin: 0; font-size: var(--t-xs); }
-.pbook__whom { display: block; color: var(--text-faint); font-size: 10px; }
+
+/* One colour per cost: its price abroad and its rupees read as a pair. */
+.pbook__tone--0 { --tone: #93C5FD; --tone-tint: rgba(147, 197, 253, 0.07); --tone-line: rgba(147, 197, 253, 0.55); }
+.pbook__tone--1 { --tone: #FCD34D; --tone-tint: rgba(252, 211, 77, 0.07); --tone-line: rgba(252, 211, 77, 0.55); }
+.pbook__tone--2 { --tone: #86EFAC; --tone-tint: rgba(134, 239, 172, 0.07); --tone-line: rgba(134, 239, 172, 0.55); }
+.pbook__tone--3 { --tone: #F9A8D4; --tone-tint: rgba(249, 168, 212, 0.07); --tone-line: rgba(249, 168, 212, 0.55); }
+.pbook__tone--4 { --tone: #C4B5FD; --tone-tint: rgba(196, 181, 253, 0.07); --tone-line: rgba(196, 181, 253, 0.55); }
+.pbook__tone--5 { --tone: #5EEAD4; --tone-tint: rgba(94, 234, 212, 0.07); --tone-line: rgba(94, 234, 212, 0.55); }
+.pbook__table th.pbook__costhead { color: var(--tone, #93C5FD); box-shadow: inset 0 2px 0 var(--tone-line, transparent); }
+.pbook__table td.pbook__cell { background: var(--tone-tint, rgba(59, 130, 246, 0.05)); }
+.pbook__cur { font-weight: var(--w-bold); opacity: 0.85; }
+.pbook__numcell { display: flex; align-items: center; }
+.pbook__numcell .pbook__cur { padding-left: 4px; font-size: 10px; color: var(--tone, var(--text-faint)); }
+.pbook__input:disabled { opacity: 0.85; }
+.pbook__fx:disabled { visibility: hidden; }
+.pbook__chip.is-on { border-color: var(--tone-line); color: var(--tone); }
+.pbook__money {
+  display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+}
+.pbook__money b { color: var(--tone, var(--text-dim)); font-family: var(--mono); }
+.field .pbook__money input { border: 0; background: transparent; padding-left: 0; box-shadow: none; }
+.pbook__sum {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 10px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); font-family: var(--mono); font-size: var(--t-sm);
+}
+.pbook__sum input {
+  min-width: 2.5ch; width: auto; padding: 3px 5px; border-radius: 6px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text); font: inherit; text-align: center;
+}
+.pbook__x { display: inline-flex; align-items: center; gap: 2px; color: #FCD34D; font-weight: var(--w-bold); }
+.pbook__x input { border-color: rgba(252, 211, 77, 0.6); color: #FCD34D; }
+.pbook__sign { color: var(--text-dim); }
+.pbook__term { color: #BFDBFE; }
+.pbook__answer { color: #86EFAC; }
+.pbook__working { margin: 4px 0 0; padding-left: 20px; font-family: var(--mono); font-size: var(--t-xs); color: var(--text-dim); display: grid; gap: 2px; }
+.pbook__working b { color: var(--text); font-weight: var(--w-semi); }
+.field .pbook__exprinput { font-family: var(--mono); }
+.pbook__rewrite { justify-self: start; }
+.pbook__static { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--border); }
+.pbook__static .field { flex: 1 1 160px; }
+.pbook__split { display: grid; gap: 10px; }
+.pbook__money input { flex: 1 1 auto; min-width: 0; width: 100%; }
+.pbook__splitrow > *, .pbook__formularow > * { min-width: 0; }
+.pbook__split { overflow: hidden; }

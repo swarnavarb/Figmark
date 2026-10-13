@@ -487,51 +487,94 @@ export interface CostFormula {
   expr: string;
 }
 
+type FormulaOp = '+' | '-' | '*' | '/';
+type FormulaNode =
+  | { kind: 'num'; value: number }
+  | { kind: 'x' }
+  | { kind: 'neg'; of: FormulaNode }
+  | { kind: 'op'; op: FormulaOp; left: FormulaNode; right: FormulaNode };
+
 /**
- * `expr` worked out for one `x`, or null when it is not a sum this reads -
+ * A formula read into its parts, or null when it is not a sum this reads -
  * numbers, x, + - * / (× ÷ too) and brackets, nothing else. Parsed by hand
  * rather than handed to eval, as it comes from whoever typed it.
  */
-export function evalFormula(expr: string, x: number): number | null {
-  const text = expr.replace(/×/g, '*').replace(/÷/g, '/').replace(/\s+/g, '').toLowerCase();
+function parseFormula(expr: string): FormulaNode | null {
+  const text = expr.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').replace(/\s+/g, '').toLowerCase();
   if (!text || text.length > 200) return null;
   let at = 0;
   const peek = () => text[at];
-  function sum(): number {
-    let value = product();
-    while (peek() === '+' || peek() === '-') value = text[at++] === '+' ? value + product() : value - product();
-    return value;
+  function sum(): FormulaNode {
+    let node = product();
+    while (peek() === '+' || peek() === '-') node = { kind: 'op', op: text[at++] as FormulaOp, left: node, right: product() };
+    return node;
   }
-  function product(): number {
-    let value = unary();
-    while (peek() === '*' || peek() === '/') value = text[at++] === '*' ? value * unary() : value / unary();
-    return value;
+  function product(): FormulaNode {
+    let node = unary();
+    while (peek() === '*' || peek() === '/') node = { kind: 'op', op: text[at++] as FormulaOp, left: node, right: unary() };
+    return node;
   }
-  function unary(): number {
-    if (peek() === '-') { at += 1; return -unary(); }
+  function unary(): FormulaNode {
+    if (peek() === '-') { at += 1; return { kind: 'neg', of: unary() }; }
     if (peek() === '+') { at += 1; return unary(); }
     return atom();
   }
-  function atom(): number {
+  function atom(): FormulaNode {
     if (peek() === '(') {
       at += 1;
-      const value = sum();
+      const node = sum();
       if (peek() !== ')') throw new Error('bracket');
       at += 1;
-      return value;
+      return node;
     }
-    if (peek() === 'x') { at += 1; return x; }
+    if (peek() === 'x') { at += 1; return { kind: 'x' }; }
     const match = /^\d*\.?\d+(e[+-]?\d+)?/.exec(text.slice(at));
     if (!match) throw new Error('number');
     at += match[0].length;
-    return Number(match[0]);
+    return { kind: 'num', value: Number(match[0]) };
   }
   try {
-    const value = sum();
-    return at === text.length && Number.isFinite(value) ? value : null;
+    const node = sum();
+    return at === text.length ? node : null;
   } catch {
     return null;
   }
+}
+
+/** One step of working a formula out: 120 ÷ 6.7 = 17.91. */
+export interface FormulaWorking { left: number; op: '+' | '−' | '×' | '÷'; right: number; value: number }
+
+const OP_SIGNS: Record<FormulaOp, FormulaWorking['op']> = { '+': '+', '-': '−', '*': '×', '/': '÷' };
+
+function evalNode(node: FormulaNode, x: number, steps?: FormulaWorking[]): number {
+  switch (node.kind) {
+    case 'num': return node.value;
+    case 'x': return x;
+    case 'neg': return -evalNode(node.of, x, steps);
+    case 'op': {
+      const left = evalNode(node.left, x, steps);
+      const right = evalNode(node.right, x, steps);
+      const value = node.op === '+' ? left + right : node.op === '-' ? left - right : node.op === '*' ? left * right : left / right;
+      steps?.push({ left, op: OP_SIGNS[node.op], right, value });
+      return value;
+    }
+  }
+}
+
+/** `expr` worked out for one `x`, or null when it is not a sum this reads. */
+export function evalFormula(expr: string, x: number): number | null {
+  const node = parseFormula(expr);
+  if (!node) return null;
+  const value = evalNode(node, x);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** How `expr` comes to its answer for one `x`, a step at a time, in the order it is worked. */
+export function formulaWorking(expr: string, x: number): FormulaWorking[] | null {
+  const node = parseFormula(expr);
+  if (!node) return null;
+  const steps: FormulaWorking[] = [];
+  return Number.isFinite(evalNode(node, x, steps)) ? steps : null;
 }
 
 /**
