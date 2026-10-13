@@ -1375,6 +1375,7 @@ export interface BookRow {
   own: boolean;
   /** The calculator the item's costs came from, if any. */
   templateId: string | null;
+  templateName: string | null;
 }
 
 export interface BookLot {

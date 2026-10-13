@@ -106,6 +106,7 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
       own: Boolean(own),
       /** The calculator the item's costs came from, for the sums of costs saved without them. */
       templateId: listing?.costSheet?.templateId ?? null,
+      templateName: listing?.costSheet?.templateName ?? null,
     };
   });
   const orderCount = new Map<string, number>();

@@ -14729,3 +14729,5 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .pbook__nudge b { color: var(--text); }
 .pbook__table tfoot td.pbook__num { color: var(--text-dim); }
+.pbook__table td.pbook__na { background: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255, 255, 255, 0.025) 6px 12px); }
+.pbook__calc { display: block; margin-top: 2px; color: var(--text-faint); font-size: 10px; line-height: 1.3; }
