@@ -195,7 +195,7 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
         templateId: template.id,
         templateName: template.name,
         input,
-        steps: stepsFromResult(result),
+        steps: stepsFromResult(result, template, input.itemPrice),
         sellingPriceMinor: Math.round(input.sellingPrice * 100),
       }, storeId);
       setCalcs(saved.calcs);

@@ -5,7 +5,7 @@ import type { OrderStatus } from '../../../shared/enums.js';
 import { isExpired, orderMoney } from '../../../shared/payments.js';
 import {
   cleanCostSheet, sheetTotal,
-  type ItemCostSheet,
+  type CostStep, type ItemCostSheet,
 } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -179,6 +179,61 @@ async function saveOrderCosts(request: HttpRequest, _context: InvocationContext)
   const saved = await repository.updateListing({ ...listing, orderCosts, updatedAt: now });
   const own = saved.orderCosts?.[order.id];
   return json(200, { orderId: order.id, own: Boolean(own), steps: own ?? saved.costSheet?.steps ?? [] });
+}
+
+/**
+ * POST /api/me/order-costs - several orders' costs in one go: a supplier paid
+ * once for many items, split across them, or an undo of a change that touched
+ * many. Body `{ changes: [{ orderId, steps }] }`, `steps: null` for back to the
+ * item's costs. All checked before any is kept, and each item written once, so
+ * two orders of one item cannot overwrite each other.
+ */
+async function saveOrderCostsBatch(request: HttpRequest, _context: InvocationContext) {
+  const { repository, shopId } = await open(request);
+  if (!shopId) return error(403, 'forbidden', 'You cannot change the costs for that shop.');
+  let body: { changes?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const changes = Array.isArray(body.changes) ? (body.changes as { orderId?: unknown; steps?: unknown }[]) : [];
+  if (changes.length === 0) return error(400, 'invalid_body', 'Send the changes to save.');
+  if (changes.length > 500) return error(400, 'invalid_body', 'Up to 500 orders at a time.');
+
+  const now = new Date().toISOString();
+  const byListing = new Map<string, { listing: Listing; orderCosts: Record<string, CostStep[]>; orderIds: string[] }>();
+  for (const change of changes) {
+    const order = typeof change.orderId === 'string' ? await repository.getOrder(change.orderId) : null;
+    if (!order || order.sellerId !== shopId) return error(404, 'not_found', 'No such order in this shop.');
+    let entry = byListing.get(order.listingId);
+    if (!entry) {
+      const listing = await repository.getListing(order.listingId);
+      if (!listing || listing.sellerId !== shopId) return error(404, 'not_found', 'That order’s item is gone.');
+      entry = { listing, orderCosts: { ...(listing.orderCosts ?? {}) }, orderIds: [] };
+      byListing.set(order.listingId, entry);
+    }
+    if (change.steps === null) {
+      delete entry.orderCosts[order.id];
+    } else {
+      try {
+        entry.orderCosts[order.id] = cleanCostSheet({ steps: change.steps }, now)?.steps ?? [];
+      } catch (err) {
+        return error(400, 'invalid_sheet', (err as Error).message);
+      }
+    }
+    entry.orderIds.push(order.id);
+  }
+
+  const rows: { orderId: string; own: boolean; steps: CostStep[] }[] = [];
+  for (const { listing, orderCosts, orderIds } of byListing.values()) {
+    const saved = await repository.updateListing({ ...listing, orderCosts, updatedAt: now });
+    for (const orderId of new Set(orderIds)) {
+      const own = saved.orderCosts?.[orderId];
+      rows.push({ orderId, own: Boolean(own), steps: own ?? saved.costSheet?.steps ?? [] });
+    }
+  }
+  return json(200, { rows });
 }
 
 /** POST /api/me/listings/{id}/cost-sheet - save, correct or clear one item's costs. */
@@ -658,6 +713,7 @@ async function nudge(request: HttpRequest, _context: InvocationContext) {
 export const costsRoute = handler(costs);
 export const saveCostSheetRoute = handler(saveCostSheet);
 export const saveOrderCostsRoute = handler(saveOrderCosts);
+export const saveOrderCostsBatchRoute = handler(saveOrderCostsBatch);
 export const deepRoute = handler(deep);
 export const salesReportRoute = handler(sales);
 export const nudgeRoute = handler(nudge);
@@ -668,6 +724,9 @@ app.http('me-cost-sheet', {
 });
 app.http('me-order-costs', {
   authLevel: 'anonymous', methods: ['POST'], route: 'me/orders/{id}/costs', handler: saveOrderCostsRoute,
+});
+app.http('me-order-costs-batch', {
+  authLevel: 'anonymous', methods: ['POST'], route: 'me/order-costs', handler: saveOrderCostsBatchRoute,
 });
 app.http('me-deep', { authLevel: 'anonymous', methods: ['GET'], route: 'me/deep', handler: deepRoute });
 app.http('me-sales-report', { authLevel: 'anonymous', methods: ['GET'], route: 'me/sales-report', handler: salesReportRoute });

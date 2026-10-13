@@ -469,6 +469,114 @@ export interface CostStep {
   label: string;
   stage: CostStage;
   amountMinor: number;
+  /** How the rupees came from a price abroad, when they did. */
+  formula?: CostFormula | null;
+}
+
+/**
+ * A cost as it was in another currency, and the sum that turns it into
+ * rupees: `amount` is `x` in `expr` - "x / 6.7 * 88" for a yuan price paid in
+ * dollars at ₹88. A copy, kept on the cost itself: editing it never touches
+ * the calculator it came from, and changing the calculator never rewrites it.
+ */
+export interface CostFormula {
+  currency: string;
+  /** Per unit, in `currency`. */
+  amount: number;
+  /** Rupees per unit, from `x`. Numbers, x, + - * / and brackets. */
+  expr: string;
+}
+
+/**
+ * `expr` worked out for one `x`, or null when it is not a sum this reads -
+ * numbers, x, + - * / (× ÷ too) and brackets, nothing else. Parsed by hand
+ * rather than handed to eval, as it comes from whoever typed it.
+ */
+export function evalFormula(expr: string, x: number): number | null {
+  const text = expr.replace(/×/g, '*').replace(/÷/g, '/').replace(/\s+/g, '').toLowerCase();
+  if (!text || text.length > 200) return null;
+  let at = 0;
+  const peek = () => text[at];
+  function sum(): number {
+    let value = product();
+    while (peek() === '+' || peek() === '-') value = text[at++] === '+' ? value + product() : value - product();
+    return value;
+  }
+  function product(): number {
+    let value = unary();
+    while (peek() === '*' || peek() === '/') value = text[at++] === '*' ? value * unary() : value / unary();
+    return value;
+  }
+  function unary(): number {
+    if (peek() === '-') { at += 1; return -unary(); }
+    if (peek() === '+') { at += 1; return unary(); }
+    return atom();
+  }
+  function atom(): number {
+    if (peek() === '(') {
+      at += 1;
+      const value = sum();
+      if (peek() !== ')') throw new Error('bracket');
+      at += 1;
+      return value;
+    }
+    if (peek() === 'x') { at += 1; return x; }
+    const match = /^\d*\.?\d+(e[+-]?\d+)?/.exec(text.slice(at));
+    if (!match) throw new Error('number');
+    at += match[0].length;
+    return Number(match[0]);
+  }
+  try {
+    const value = sum();
+    return at === text.length && Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The `x` that makes `expr` come to `rupees`, so typing rupees over a cost
+ * that has a price abroad moves the price abroad with it. Only for sums that
+ * are a straight line in x (all the usual ones); null for anything else.
+ */
+export function solveFormula(expr: string, rupees: number): number | null {
+  const at0 = evalFormula(expr, 0);
+  const at1 = evalFormula(expr, 1);
+  const at2 = evalFormula(expr, 2);
+  if (at0 === null || at1 === null || at2 === null) return null;
+  const slope = at1 - at0;
+  if (Math.abs(slope) < 1e-12 || Math.abs((at2 - at1) - slope) > 1e-9 * Math.max(1, Math.abs(slope))) return null;
+  const x = (rupees - at0) / slope;
+  return Number.isFinite(x) && x >= 0 ? x : null;
+}
+
+/** A formula as a client sent it, made safe to keep - or null. */
+export function cleanFormula(raw: unknown): CostFormula | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const body = raw as Partial<CostFormula>;
+  const currency = typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : '';
+  const expr = typeof body.expr === 'string' ? body.expr.trim() : '';
+  const amount = typeof body.amount === 'number' && Number.isFinite(body.amount) ? body.amount : NaN;
+  if (!/^[A-Z]{3}$/.test(currency) || !(amount >= 0) || amount > 1e9) return null;
+  if (evalFormula(expr, amount) === null) return null;
+  return { currency, amount: Math.round(amount * 1e4) / 1e4, expr: expr.slice(0, 200) };
+}
+
+/** Rupees in paise from a formula; what a step with one is always worth. */
+export const formulaMinor = (formula: CostFormula): number =>
+  Math.min(1e11, Math.max(0, Math.round((evalFormula(formula.expr, formula.amount) ?? 0) * 100)));
+
+/** Plain numbers in a sum: 6.7, 88, 0.59 - never 6.700000001. */
+const term = (value: number) => String(Math.round(value * 1e6) / 1e6);
+
+/**
+ * The sum from a price abroad to rupees, as a template does it, written out:
+ * "x / 6.7 * 88" when paid through another currency, "x * 12.3" when not.
+ * `pay` is for a line priced in the currency the supplier is paid in.
+ */
+export function templateExpr(template: Pick<ProfitTemplate, 'currency' | 'payCurrency' | 'payRate' | 'rate'>, pay = false): string {
+  const rate = term(Math.max(0, num(template.rate)));
+  return paysVia(template) && !pay ? `x / ${term(num(template.payRate))} * ${rate}` : `x * ${rate}`;
 }
 
 /** The costs saved against a listing. Only the steps the seller kept. */
@@ -486,22 +594,42 @@ export const sheetTotal = (sheet: ItemCostSheet | null | undefined): number =>
 
 /**
  * A calculator result as the steps to save against an item: the item price
- * first, then each line that is switched on and came to something.
+ * first, then each line that is switched on and came to something. Given the
+ * template and the item's price abroad, the item price - and every fixed
+ * per-item line priced abroad - keeps its foreign amount and the sum that
+ * made it rupees, as a copy.
  */
-export function stepsFromResult(result: ProfitResult): CostStep[] {
+export function stepsFromResult(result: ProfitResult, template?: ProfitTemplate, itemPrice?: number): CostStep[] {
   const steps: CostStep[] = [];
   if (result.itemCost > 0) {
-    steps.push({ id: 'item', label: 'Item price', stage: 'buying', amountMinor: Math.round(result.itemCost * 100) });
+    const formula = template && num(itemPrice) > 0
+      ? { currency: template.currency, amount: num(itemPrice), expr: templateExpr(template) }
+      : null;
+    steps.push({ id: 'item', label: 'Item price', stage: 'buying', amountMinor: Math.round(result.itemCost * 100), ...(formula ? { formula } : {}) });
   }
   for (const line of result.lines) {
     if (line.enabled && line.perItem > 0) {
-      steps.push({ id: line.id, label: line.label, stage: line.stage, amountMinor: Math.round(line.perItem * 100) });
+      const source = template?.lines.find((entry) => entry.id === line.id);
+      const formula = template && source?.kind === 'per_item' && source.currency !== 'INR'
+        ? {
+          currency: source.currency === 'pay' ? payCurrencyOf(template) : template.currency,
+          amount: num(source.amount),
+          expr: templateExpr(template, source.currency === 'pay'),
+        }
+        : null;
+      steps.push({ id: line.id, label: line.label, stage: line.stage, amountMinor: Math.round(line.perItem * 100), ...(formula ? { formula } : {}) });
     }
   }
   return steps;
 }
 
 const MAX_SHEET_STEPS = 40;
+
+/** A step with its formula, if it has a good one - and then the rupees are what the formula says. */
+function withFormula(step: CostStep, raw: unknown): CostStep {
+  const formula = cleanFormula(raw);
+  return formula ? { ...step, amountMinor: formulaMinor(formula), formula } : step;
+}
 
 /**
  * Whatever a client sent as an item's costs, made safe to keep - or null when
@@ -515,14 +643,14 @@ export function cleanCostSheet(raw: unknown, now: string): ItemCostSheet | null 
   const rows = Array.isArray(body.steps) ? body.steps : [];
   if (rows.length === 0) return null;
   if (rows.length > MAX_SHEET_STEPS) throw new Error(`An item holds up to ${MAX_SHEET_STEPS} cost steps.`);
-  const steps: CostStep[] = rows.map((step: Partial<CostStep>, at) => ({
+  const steps: CostStep[] = rows.map((step: Partial<CostStep>, at) => withFormula({
     id: typeof step.id === 'string' && /^[\w-]{1,40}$/.test(step.id) ? step.id : `step_${at}`,
     label: (typeof step.label === 'string' ? step.label.trim() : '').slice(0, 80) || 'Cost',
     stage: COST_STAGES.includes(step.stage as CostStage) ? (step.stage as CostStage) : 'selling',
     amountMinor: typeof step.amountMinor === 'number' && Number.isFinite(step.amountMinor)
       ? Math.min(1e11, Math.max(0, Math.round(step.amountMinor)))
       : 0,
-  }));
+  }, step.formula));
   return {
     templateId: typeof body.templateId === 'string' ? body.templateId.slice(0, 40) : null,
     templateName: typeof body.templateName === 'string' ? body.templateName.slice(0, 60) : null,

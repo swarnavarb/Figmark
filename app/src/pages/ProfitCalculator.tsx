@@ -148,7 +148,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
     try {
       const saved = await api.saveCalc({
         title: keepTitle.trim(), templateId: active.id, templateName: active.name, input,
-        steps: stepsFromResult(result), sellingPriceMinor: Math.round(input.sellingPrice * 100),
+        steps: stepsFromResult(result, active, input.itemPrice), sellingPriceMinor: Math.round(input.sellingPrice * 100),
       }, store.ownerId);
       setCalcs(saved.calcs);
       setKeepTitle('');
@@ -336,7 +336,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
           )}
 
           {!draft && active.id && (
-            <SaveToItem template={active} result={result} shop={shop} sellingPrice={input.sellingPrice}
+            <SaveToItem template={active} result={result} shop={shop} itemPrice={input.itemPrice} sellingPrice={input.sellingPrice}
               onPrice={(price) => set({ sellingPrice: price })} />
           )}
 
@@ -684,8 +684,8 @@ function Charges({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch:
  * Keep this result as an item's own costs. Only the lines switched on come
  * across, and each can be changed afterwards under Insights → Real profit.
  */
-function SaveToItem({ template, result, shop, sellingPrice, onPrice }: {
-  template: ProfitTemplate; result: ProfitResult; shop?: string; sellingPrice: number; onPrice: (price: number) => void;
+function SaveToItem({ template, result, shop, itemPrice, sellingPrice, onPrice }: {
+  template: ProfitTemplate; result: ProfitResult; shop?: string; itemPrice: number; sellingPrice: number; onPrice: (price: number) => void;
 }) {
   const navigate = useNavigate();
   const [items, setItems] = useState<SheetItem[] | null>(null);
@@ -698,7 +698,7 @@ function SaveToItem({ template, result, shop, sellingPrice, onPrice }: {
   }, [shop]);
 
   const item = items?.find((row) => row.listingId === pick);
-  const steps = stepsFromResult(result);
+  const steps = stepsFromResult(result, template, itemPrice);
 
   // A new item through the ordinary listing form, with this price and these
   // costs already filled in - everything else about listing stays the same.

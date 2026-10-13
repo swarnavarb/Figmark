@@ -138,7 +138,7 @@ const {
 } = await import(new URL('profit-routes.js', fns));
 const { calculateProfit, starterLines, sheetTotal, SCENARIOS } = await import(new URL('../api/dist/shared/profit.js', import.meta.url));
 const {
-  costsRoute: costsRead, saveCostSheetRoute: saveCostSheet, saveOrderCostsRoute: saveOrderCosts, deepRoute: deepRead, salesReportRoute: salesReport, nudgeRoute: nudge,
+  costsRoute: costsRead, saveCostSheetRoute: saveCostSheet, saveOrderCostsRoute: saveOrderCosts, saveOrderCostsBatchRoute: saveOrderCostsBatch, deepRoute: deepRead, salesReportRoute: salesReport, nudgeRoute: nudge,
 } = await import(new URL('pro-routes.js', fns));
 const {
   servicesHubRoute: servicesHub, serviceDirectoryRoute: serviceDirectory,
@@ -8377,6 +8377,22 @@ await check('the profit book: every order with its costs, an order can have its 
   assert.equal(seen.costSheet, undefined, 'a buyer never sees what the item cost the shop');
   assert.equal(seen.orderCosts, undefined, 'nor what one order cost');
   assert.equal(seen.costSheetPrevious, undefined);
+
+  // A supplier paid once for both, split: one call, one item, neither lost.
+  const split = await saveOrderCostsBatch(req({ headers: auth, body: { changes: [
+    { orderId, steps: [{ id: 'item', label: 'Item price', stage: 'buying', amountMinor: 1, formula: { currency: 'CNY', amount: 120, expr: 'x / 6.7 * 88' } }] },
+    { orderId: other, steps: [{ id: 'item', label: 'Item price', stage: 'buying', amountMinor: 3_000 }, { id: 'bad', label: 'Odd', stage: 'buying', amountMinor: 10, formula: { currency: 'CNY', amount: 1, expr: 'alert(1)' } }] },
+  ] } }), ctx);
+  assert.equal(split.status, 200, JSON.stringify(split.jsonBody));
+  const both = (await costsRead(req({ headers: auth }), ctx)).jsonBody.rows;
+  const priced = both.find((entry) => entry.orderId === orderId).steps[0];
+  assert.equal(priced.amountMinor, Math.round((120 / 6.7) * 88 * 100), 'a formula decides the rupees');
+  assert.deepEqual(priced.formula, { currency: 'CNY', amount: 120, expr: 'x / 6.7 * 88' }, 'and keeps the price abroad');
+  const plain = both.find((entry) => entry.orderId === other).steps;
+  assert.equal(plain[0].amountMinor, 3_000, 'both orders of the one item kept');
+  assert.equal(plain[1].formula, undefined, 'a formula that is not a sum is dropped');
+  assert.equal((await saveOrderCostsBatch(req({ headers: stranger.headers, body: { changes: [{ orderId, steps: [] }] } }), ctx)).status, 404, 'nor in a batch');
+  await saveOrderCostsBatch(req({ headers: auth, body: { changes: [{ orderId: other, steps: null }] } }), ctx);
 
   const back = await saveOrderCosts(req({ headers: auth, params: { id: orderId }, body: { steps: null } }), ctx);
   assert.equal(back.jsonBody.own, false, 'back to the item’s costs');

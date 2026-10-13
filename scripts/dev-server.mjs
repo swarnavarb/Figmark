@@ -81,7 +81,7 @@ const {
   listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute,
   listSavedCalcsRoute, saveSavedCalcRoute, deleteSavedCalcRoute,
 } = await import(new URL('profit-routes.js', apiRoot));
-const { costsRoute, saveCostSheetRoute, saveOrderCostsRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
+const { costsRoute, saveCostSheetRoute, saveOrderCostsRoute, saveOrderCostsBatchRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
 const {
   listRoutesRoute, saveRouteRoute, deleteRouteRoute, applyRouteRoute, closeLotRoute,
   lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, setLotRouteRoute,
@@ -345,6 +345,7 @@ const routes = [
   ['GET', '/api/me/costs', costsRoute],
   ['POST', '/api/me/listings/:id/cost-sheet', saveCostSheetRoute],
   ['POST', '/api/me/orders/:id/costs', saveOrderCostsRoute],
+  ['POST', '/api/me/order-costs', saveOrderCostsBatchRoute],
   ['GET', '/api/me/deep', deepRoute],
   ['GET', '/api/me/sales-report', salesReportRoute],
   ['POST', '/api/me/nudge', nudgeRoute],

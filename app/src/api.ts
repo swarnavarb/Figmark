@@ -2733,6 +2733,10 @@ export const api = {
   saveOrderCosts: (orderId: string, steps: CostStep[] | null, storeId?: string) =>
     post<{ orderId: string; own: boolean; steps: CostStep[] }>(
       `/me/orders/${encodeURIComponent(orderId)}/costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { steps }),
+  /** Several orders' costs at once - a split supplier payment, an undo. `steps: null` is back to the item's. */
+  saveOrderCostsBatch: (changes: { orderId: string; steps: CostStep[] | null }[], storeId?: string) =>
+    post<{ rows: { orderId: string; own: boolean; steps: CostStep[] }[] }>(
+      `/me/order-costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { changes }),
   saveCostSheet: (listingId: string, sheet: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null, storeId?: string) =>
     post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
       `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { sheet }),

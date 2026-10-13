@@ -14646,3 +14646,25 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pbook__input:focus { outline: 2px solid var(--accent-line, #60A5FA); outline-offset: -2px; background: var(--surface-2); }
 .pbook__reset { margin-top: 2px; padding: 0; border: 0; background: none; color: var(--text-faint); font-size: 10px; cursor: pointer; }
 .pbook__reset:hover { color: var(--text); }
+.pbook__undo { margin-left: 6px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); font-size: 11px; display: inline-block; vertical-align: bottom; }
+.pbook__tools .btn.is-on { border-color: #60A5FA; color: #BFDBFE; background: rgba(59, 130, 246, 0.12); }
+.pbook__tools { justify-content: flex-start; }
+.pbook__hint { margin: 0; font-size: var(--t-xs); }
+.pbook__cols { display: grid; gap: 10px; font-size: var(--t-xs); }
+.pbook__headtools { display: flex; justify-content: flex-end; gap: 2px; }
+.pbook__pick { margin: 0 6px 0 0; vertical-align: middle; accent-color: #60A5FA; }
+.pbook__item .pbook__pick + a { display: inline; }
+.pbook__table tr.is-picked td { background: rgba(59, 130, 246, 0.14); }
+.pbook__fx {
+  display: block; width: 100%; padding: 0 4px 3px; border: 0; background: none; text-align: right; cursor: pointer;
+  font-family: var(--mono); font-size: 10px; line-height: 13px; color: var(--text-faint); opacity: 0.55;
+}
+.pbook__fx:hover, .pbook__fx:focus-visible { opacity: 1; color: #93C5FD; }
+.pbook__fx.has-formula { opacity: 1; color: #93C5FD; }
+.pbook__formula { gap: 12px; }
+.pbook__formularow, .pbook__splitrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.pbook__formula input[spellcheck] { font-family: var(--mono); }
+.pbook__result { margin: 0; font-family: var(--mono); font-size: var(--t-sm); color: var(--text); }
+.pbook__split { border: 1px solid rgba(96, 165, 250, 0.4); }
+.pbook__split > p { margin: 0; font-size: var(--t-xs); }
+.pbook__whom { display: block; color: var(--text-faint); font-size: 10px; }
