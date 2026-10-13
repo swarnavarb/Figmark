@@ -1373,6 +1373,8 @@ export interface BookRow {
   steps: CostStep[];
   /** The steps are this order's own rather than the item's. */
   own: boolean;
+  /** The calculator the item's costs came from, if any. */
+  templateId: string | null;
 }
 
 export interface BookLot {

@@ -700,9 +700,8 @@ export function amountForRupees(formula: Pick<CostFormula, 'via' | 'perKg' | 'sh
 
 /**
  * Every percentage cost worked out again from what it is a percentage of, so
- * the agent's 10% follows the item price and duty follows CIF. Of costs all
- * paid alike - in dollars, by one rate - it is worked in that currency;
- * otherwise in rupees. Of the selling price only when `sellingRupees` is
+ * the agent's 10% follows the item price and duty follows CIF - in rupees,
+ * as the calculator works them. Of the selling price only when `sellingRupees` is
  * known; left as it is when not. One whose costs are all gone keeps the
  * rupees it last came to, without a formula.
  */
@@ -728,18 +727,9 @@ export function settleSteps(steps: CostStep[], sellingRupees?: number): CostStep
           moved = true;
           return rest;
         }
-        const first = sources[0]!.formula;
-        const alike = first && sources.every((entry) => entry.formula
-          && paidCurrency(entry.formula) === paidCurrency(first) && entry.formula.expr === first.expr);
-        const base = alike
-          ? sources.reduce((sum, entry) => sum + (formulaPaid(entry.formula!) ?? 0), 0)
-          : sources.reduce((sum, entry) => sum + entry.amountMinor / 100, 0);
-        formula = {
-          currency: alike ? paidCurrency(first) : 'INR',
-          amount: round4((base * of.percent) / 100),
-          expr: alike ? first.expr : 'x',
-          percentOf: of,
-        };
+        // In rupees, as the calculator takes a percentage: of what the costs come to here.
+        const base = sources.reduce((sum, entry) => sum + entry.amountMinor / 100, 0);
+        formula = { currency: 'INR', amount: round4((base * of.percent) / 100), expr: 'x', percentOf: of };
       }
       const amountMinor = formulaMinor(formula);
       if (amountMinor === step.amountMinor && JSON.stringify(formula) === JSON.stringify(step.formula)) return step;

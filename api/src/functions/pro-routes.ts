@@ -104,6 +104,8 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
       steps: own ?? listing?.costSheet?.steps ?? [],
       /** The steps are this order's own, not the item's. */
       own: Boolean(own),
+      /** The calculator the item's costs came from, for the sums of costs saved without them. */
+      templateId: listing?.costSheet?.templateId ?? null,
     };
   });
   const orderCount = new Map<string, number>();

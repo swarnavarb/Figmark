@@ -342,6 +342,30 @@ function fitPercent(row: BookRow, column: Column, formula: CostFormula, rupees: 
   return base > 0 ? { ...formula, percentOf: { ...of, percent: round4((rupees * 100 * 100) / base) } } : formula;
 }
 
+const columnOf = (step: CostStep): Column => ({ key: keyOf(step.label), label: step.label, stage: step.stage, id: step.id });
+
+/**
+ * An order as the sheet shows it: a cost saved with only its rupees takes on
+ * its calculator line's sums, worked back from those rupees - so the item
+ * price shows in its own currency too. Nothing moves and nothing is saved
+ * until a cell is typed into.
+ */
+function derive(row: BookRow, source: Source): BookRow {
+  if (row.steps.every((step) => step.formula)) return row;
+  let steps = row.steps;
+  for (const step of row.steps) {
+    if (step.formula) continue;
+    const column = columnOf(step);
+    const lineId = lineIdFor(column, source);
+    const rupees = step.amountMinor / 100;
+    const found = lineId === undefined ? null : formulaForLine(source, lineId, rupees);
+    if (!found) continue;
+    const formula = found.percentOf ? { ...fitPercent({ ...row, steps }, column, found, rupees), amount: rupees } : found;
+    steps = steps.map((entry) => (entry === step ? { ...entry, formula } : entry));
+  }
+  return steps === row.steps ? row : { ...row, steps };
+}
+
 /** Which columns are folded away, kept in this browser only. */
 const HIDDEN_KEY = 'figmark.pbook.hidden';
 function readHidden(): string[] {
@@ -408,7 +432,7 @@ function setPart(row: BookRow, part: Part, value: number | null, guess: CostForm
 /** A supplier payment being shared out: over which orders, into what, how much. */
 interface Split { partKey: string; amount: string; picked: string[]; base: BookRow[] }
 
-function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empty }: {
+function CustomerSheets({ title, rows: given, customers, shop, onChange, onFailed, empty }: {
   title: string;
   rows: BookRow[];
   customers: CostsResponse['customers'];
@@ -426,8 +450,13 @@ function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empt
   const [showColumns, setShowColumns] = useState(false);
   const [editing, setEditing] = useState<{ orderId: string; column: Column } | null>(null);
   const [split, setSplit] = useState<Split | null>(null);
-  const [source, setSource] = useState<Source>(STARTER);
+  const [templates, setTemplates] = useState<{ list: Source[]; main: Source }>({ list: [], main: STARTER });
   const [failed, setFailed] = useState<string | null>(null);
+  // Each order's sums from the calculator its item was costed with; the shop's default for the rest.
+  const sourceFor = (row: BookRow): Source => templates.list.find((entry) => 'id' in entry && entry.id === row.templateId) ?? templates.main;
+  const rows = useMemo(() => given.map((row) => derive(row, sourceFor(row))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [given, templates]);
   const columns = useMemo(() => columnsFor(split?.base ?? rows, extra), [rows, split, extra]);
   const parts = useMemo(() => partsFor(columns, rows), [columns, rows]);
   const shown = parts.filter((part) => !hidden.includes(part.key));
@@ -444,8 +473,8 @@ function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empt
   useEffect(() => {
     void api.profitTemplates(shop)
       .then((result) => {
-        const mine = result.templates.find((entry) => entry.isDefault) ?? result.templates[0];
-        if (mine) setSource(mine);
+        const main = result.templates.find((entry) => entry.isDefault) ?? result.templates[0] ?? STARTER;
+        setTemplates({ list: result.templates, main });
       })
       .catch(() => undefined);
   }, [shop]);
@@ -497,11 +526,12 @@ function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empt
     for (const row of chosen) {
       // Shared by value, an order with none in that field takes none of it.
       if (weight(row) === 0) continue;
-      const steps = setPart(row, part, (paid * weight(row)) / sum / row.quantity, formulaOf(row, part.column, split.base, source));
+      const steps = setPart(row, part, (paid * weight(row)) / sum / row.quantity, formulaOf(row, part.column, split.base, sourceFor(row)));
       if (steps) changes.push({ before: row, after: { ...row, steps, own: true }, steps });
     }
     return changes;
-  }, [split, splitParts, source]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [split, splitParts, templates]);
 
   // As the amount is typed, the sheet and every sum on it follow - saved on Done.
   useEffect(() => {
@@ -565,27 +595,7 @@ function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empt
   }
 
   function typePart(row: BookRow, part: Part, value: number | null) {
-    save(`${partName(part)} for ${row.itemName}`, row, setPart(row, part, value, formulaOf(row, part.column, rows, source)));
-  }
-
-  /** Every cost without sums gets its calculator line's, worked back from the rupees it already is. */
-  function fillFromCalculator() {
-    const changes: Change[] = [];
-    for (const row of rows) {
-      // One cost at a time, so a percentage is fitted against the costs it is of as they now stand.
-      let steps = row.steps;
-      for (const step of row.steps) {
-        if (step.formula) continue;
-        const column = columns.find((entry) => entry.key === keyOf(step.label));
-        const lineId = lineIdFor(column, source);
-        const formula = column && lineId !== undefined ? formulaForLine(source, lineId, step.amountMinor / 100) : null;
-        if (!column || !formula) continue;
-        const current = { ...row, steps };
-        steps = withFormula(current, column, fitPercent(current, column, formula, step.amountMinor / 100));
-      }
-      if (JSON.stringify(steps) !== JSON.stringify(row.steps)) changes.push(withSteps(row, steps));
-    }
-    if (changes.length > 0) void commit(`sums from ${source.name}`, changes);
+    save(`${partName(part)} for ${row.itemName}`, row, setPart(row, part, value, formulaOf(row, part.column, rows, sourceFor(row))));
   }
 
   function addColumn() {
@@ -656,8 +666,6 @@ function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empt
   const editRow = editing ? rows.find((row) => row.orderId === editing.orderId) : undefined;
   // The rupees of costs shown abroad: what "only what is paid" folds away.
   const conversions = parts.filter((part) => part.kind === 'inr' && parts.some((other) => other.column === part.column && other.kind !== 'inr'));
-  const bare = rows.some((row) => row.steps.some((step) =>
-    !step.formula && lineIdFor(columns.find((column) => column.key === keyOf(step.label)), source) !== undefined));
 
   /** A column's total over some orders, when its numbers add up: rupees always, a currency when all are in it. */
   const columnTotal = (list: BookRow[], part: Part): string => {
@@ -715,13 +723,6 @@ function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empt
         )}
         <button type="button" className="btn btn--quiet btn--sm" onClick={download}>⬇ CSV</button>
       </div>
-
-      {bare && !split && (
-        <div className="pbook__nudge">
-          <span>Some costs here are only in ₹. Give them the currencies and sums of <b>{source.name}</b>, worked back from the ₹ - totals stay the same.</span>
-          <button type="button" className="btn btn--sm" onClick={fillFromCalculator}>Use the calculator’s sums</button>
-        </div>
-      )}
 
       {showColumns && (
         <div className="card card--pad pbook__cols">
@@ -902,7 +903,7 @@ function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empt
       })}
 
       {editing && editRow && (
-        <FormulaEditor row={editRow} column={editing.column} start={formulaOf(editRow, editing.column, rows, source)}
+        <FormulaEditor row={editRow} column={editing.column} start={formulaOf(editRow, editing.column, rows, sourceFor(editRow))}
           onClose={() => setEditing(null)}
           onSave={(steps, label) => {
             save(`${editing.column.label} ${label} for ${editRow.itemName}`, editRow, steps);
