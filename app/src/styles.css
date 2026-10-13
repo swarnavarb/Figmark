@@ -14731,3 +14731,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pbook__table tfoot td.pbook__num { color: var(--text-dim); }
 .pbook__table td.pbook__na { background: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255, 255, 255, 0.025) 6px 12px); }
 .pbook__calc { display: block; margin-top: 2px; color: var(--text-faint); font-size: 10px; line-height: 1.3; }
+.pc__addhere {
+  margin-left: 4px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-strong); background: none;
+  color: var(--text-dim); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+}
+.pc__addhere:hover { color: var(--text); border-color: var(--accent-line); }
+.pc__paidin { display: inline-flex; align-items: center; gap: 6px; color: var(--text-faint); font-size: var(--t-xs); }
+.pc__conv { font-family: var(--mono); font-size: var(--t-xs); color: #93C5FD; }
+.pc__more summary { cursor: pointer; color: var(--text-faint); font-size: var(--t-xs); }
+.pc__more[open] summary { margin-bottom: 8px; }

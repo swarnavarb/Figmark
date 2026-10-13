@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import {
-  BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, SCENARIOS, STAGE_LABELS, calculateProfit, paysVia, stepsFromResult, symbolOf,
+  BASIS_LABELS, COMMON_CURRENCIES, COST_STAGES, KIND_LABELS, SCENARIOS, STAGE_LABELS, calculateProfit, inrPerUnit, paysVia, stepsFromResult, symbolOf,
   type CostBasis, type ProfitResult, type SavedCalc, type CostKind, type CostLine, type CostStage, type LineCurrency,
   type ProfitInput, type ProfitTemplate, type Scenario,
 } from '@shared/profit';
@@ -305,7 +305,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
           )}
 
           <Rates sheet={active} onChange={edit} />
-          <Charges sheet={active} onChange={edit} />
+          <Charges sheet={active} result={result} onChange={edit} />
 
           {changed ? (
             <div className="pc__savebar">
@@ -542,7 +542,9 @@ const newLineId = () => `c_${Math.random().toString(36).slice(2, 9)}`;
  * where in the journey they are paid; the rest wait below as one-tap chips,
  * so the sheet reads as what this seller pays rather than everything anyone might.
  */
-function Charges({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch: Partial<ProfitTemplate>) => void }) {
+function Charges({ sheet, result, onChange }: {
+  sheet: ProfitTemplate; result: ProfitResult | null; onChange: (patch: Partial<ProfitTemplate>) => void;
+}) {
   const [adding, setAdding] = useState(false);
   const setLine = (id: string, next: Partial<CostLine>) =>
     onChange({ lines: ordered(sheet.lines.map((line) => (line.id === id ? { ...line, ...next } : line))) });
@@ -556,37 +558,77 @@ function Charges({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch:
   const off = sheet.lines.filter((line) => !line.enabled);
   const via = paysVia(sheet);
   const sized = on.some((line) => line.kind === 'per_kg' && line.volumetric);
+  const shown = COST_STAGES.filter((stage) => on.some((line) => line.stage === stage));
 
+  /**
+   * Up or down the sheet. Past the top or bottom of its group a line moves
+   * into the next group - which is all "where it is paid" ever needed to be.
+   */
   const move = (id: string, by: -1 | 1) => {
     const lines = [...sheet.lines];
     const at = lines.findIndex((line) => line.id === id);
+    const line = lines[at]!;
     let to = at + by;
     // Step over switched-off lines: they are not on screen to be stepped past.
-    while (to >= 0 && to < lines.length && !lines[to]!.enabled && lines[to]!.stage === lines[at]!.stage) to += by;
-    if (to < 0 || to >= lines.length || lines[to]!.stage !== lines[at]!.stage) return;
-    [lines[at], lines[to]] = [lines[to]!, lines[at]!];
-    onChange({ lines });
+    while (to >= 0 && to < lines.length && !lines[to]!.enabled && lines[to]!.stage === line.stage) to += by;
+    if (to >= 0 && to < lines.length && lines[to]!.stage === line.stage) {
+      [lines[at], lines[to]] = [lines[to]!, lines[at]!];
+      onChange({ lines });
+      return;
+    }
+    const next = COST_STAGES[COST_STAGES.indexOf(line.stage) + by];
+    if (next) setLine(id, { stage: next });
   };
-  const addOwn = () => onChange({
-    lines: ordered([...sheet.lines, { id: newLineId(), label: 'New charge', stage: 'domestic', kind: 'per_item', amount: 0, currency: 'INR', enabled: true }]),
+  const addOwn = (stage: CostStage) => onChange({
+    lines: ordered([...sheet.lines, { id: newLineId(), label: 'New charge', stage, kind: 'per_item', amount: 0, currency: 'INR', enabled: true }]),
   });
   const drop = (id: string) => onChange({ lines: sheet.lines.filter((line) => line.id !== id) });
+
+  // What one unit of each currency a line can be paid in is worth in rupees.
+  const inrPer: Record<LineCurrency, number> = { INR: 1, foreign: inrPerUnit(sheet), pay: Math.max(0, sheet.rate || 0) };
+  const codeOf = (currency: LineCurrency) => (currency === 'INR' ? 'INR' : currency === 'pay' && via ? sheet.payCurrency! : sheet.currency);
+  const sign = (currency: LineCurrency) => symbolOf(codeOf(currency)).trim();
+  const amountIn = (rupees: number, currency: LineCurrency) => (inrPer[currency] > 0 ? rupees / inrPer[currency] : 0);
+  const fmt = (value: number) => value.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+  /** One line's cost per item, in what it is paid in and on into rupees: "¥12 → $1.79 → ₹157.61". */
+  function conversion(line: CostLine): string | null {
+    const rupees = result?.lines.find((entry) => entry.id === line.id)?.perItem ?? 0;
+    if (!rupees) return null;
+    const currency: LineCurrency = line.currency === 'pay' && !via ? 'foreign' : line.currency;
+    if (currency === 'INR') return `₹${fmt(rupees)} per item`;
+    const chain = currency === 'foreign' && via
+      ? [`${sign('foreign')}${fmt(amountIn(rupees, 'foreign'))}`, `${sign('pay')}${fmt(amountIn(rupees, 'pay'))}`]
+      : [`${sign(currency)}${fmt(amountIn(rupees, currency))}`];
+    return `${[...chain, `₹${fmt(rupees)}`].join(' → ')} per item`;
+  }
+
+  const unitOf = (line: CostLine) => {
+    if (line.kind === 'percent') return '%';
+    const per = line.kind === 'per_kg' ? '/kg' : line.kind === 'per_shipment' ? '/shipment' : '';
+    return `${sign(line.currency === 'pay' && !via ? 'foreign' : line.currency)}${per}`;
+  };
 
   return (
     <section className="card card--pad stack pc__editor">
       <div>
         <h2>Charges</h2>
-        <span className="field__hint">Everything added on top of the item. Results above follow as you type.</span>
+        <span className="field__hint">Everything added on top of the item, each in the currency you pay it in. Results above follow as you type.</span>
       </div>
 
-      {COST_STAGES.map((stage) => {
+      {shown.map((stage, groupAt) => {
         const lines = on.filter((line) => line.stage === stage);
-        if (lines.length === 0) return null;
         return (
           <div key={stage} className="pc__group">
-            <span className="pc__grouphead"><span className={`pc__dot pc__dot--${STAGE_TONES[stage]}`} /> {STAGE_LABELS[stage]}</span>
+            <span className="pc__grouphead">
+              <span className={`pc__dot pc__dot--${STAGE_TONES[stage]}`} /> {STAGE_LABELS[stage]}
+              <button type="button" className="pc__addhere" aria-label={`Add a charge to ${STAGE_LABELS[stage]}`} onClick={() => addOwn(stage)}>＋</button>
+            </span>
             {lines.map((line, index) => {
               const earlier = sheet.lines.slice(0, sheet.lines.indexOf(line)).filter((prior) => prior.enabled);
+              const first = groupAt === 0 && index === 0 && COST_STAGES.indexOf(stage) === 0;
+              const last = groupAt === shown.length - 1 && index === lines.length - 1 && stage === COST_STAGES[COST_STAGES.length - 1];
+              const converted = conversion(line);
               return (
                 <div key={line.id} className="pc__row">
                   <div className="pc__rowtop">
@@ -596,16 +638,7 @@ function Charges({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch:
                       <input type="number" inputMode="decimal" min={0} step={0.01} aria-label={`${line.label} amount`}
                         value={line.amount === 0 ? '' : line.amount} placeholder="0"
                         onChange={(e) => setLine(line.id, { amount: e.target.value === '' ? 0 : Number(e.target.value) })} />
-                      {line.kind === 'percent' ? (
-                        <span className="pc__unit">%</span>
-                      ) : (
-                        <select value={line.currency === 'pay' && !via ? 'foreign' : line.currency} aria-label="Currency"
-                          onChange={(e) => setLine(line.id, { currency: e.target.value as LineCurrency })}>
-                          <option value="INR">₹</option>
-                          <option value="foreign">{sheet.currency || 'Foreign'}</option>
-                          {via && <option value="pay">{sheet.payCurrency}</option>}
-                        </select>
-                      )}
+                      <span className="pc__unit">{unitOf(line)}</span>
                     </span>
                     <button type="button" className="btn btn--quiet btn--sm" aria-label={`Switch off ${line.label}`}
                       onClick={() => (line.id.startsWith('c_') ? drop(line.id) : setLine(line.id, { enabled: false }))}>✕</button>
@@ -628,15 +661,31 @@ function Charges({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch:
                         {earlier.map((prior) => <option key={prior.id} value={prior.id}>{prior.label}</option>)}
                       </select>
                     )}
-                    <select value={line.stage} aria-label="Paid at"
-                      onChange={(e) => setLine(line.id, { stage: e.target.value as CostStage })}>
-                      {COST_STAGES.map((entry) => <option key={entry} value={entry}>{STAGE_LABELS[entry]}</option>)}
-                    </select>
+                    <label className="pc__paidin">
+                      paid in
+                      <select value={line.currency === 'pay' && !via ? 'foreign' : line.currency} aria-label="Paid in"
+                        onChange={(e) => setLine(line.id, { currency: e.target.value as LineCurrency })}>
+                        <option value="INR">₹ INR</option>
+                        <option value="foreign">{symbolOf(sheet.currency).trim()} {sheet.currency}</option>
+                        {via && <option value="pay">{symbolOf(sheet.payCurrency!).trim()} {sheet.payCurrency}</option>}
+                      </select>
+                    </label>
                     <span className="pc__tools">
-                      <button type="button" className="btn btn--quiet btn--sm" aria-label="Move up" disabled={index === 0} onClick={() => move(line.id, -1)}>↑</button>
-                      <button type="button" className="btn btn--quiet btn--sm" aria-label="Move down" disabled={index === lines.length - 1} onClick={() => move(line.id, 1)}>↓</button>
+                      <button type="button" className="btn btn--quiet btn--sm" aria-label="Move up" disabled={first}
+                        title={index === 0 ? 'Move to the group above' : 'Move up'} onClick={() => move(line.id, -1)}>↑</button>
+                      <button type="button" className="btn btn--quiet btn--sm" aria-label="Move down" disabled={last}
+                        title={index === lines.length - 1 ? 'Move to the group below' : 'Move down'} onClick={() => move(line.id, 1)}>↓</button>
                     </span>
-                    {line.kind === 'per_kg' && (
+                  </div>
+                  {converted && <span className="pc__conv">{converted}</span>}
+                  {line.kind === 'per_kg' && (
+                    <details className="pc__more">
+                      <summary>
+                        Weight rules{line.minKg || line.stepKg || line.volumetric
+                          ? ` · ${[line.minKg ? `min ${line.minKg} kg` : '', line.stepKg ? `rounded to ${line.stepKg} kg` : '', line.volumetric ? 'volumetric' : '']
+                            .filter(Boolean).join(' · ')}`
+                          : ''}
+                      </summary>
                       <span className="pc__kg">
                         <label>Min kg <input type="number" min={0} step={0.5} value={line.minKg ?? 0}
                           onChange={(e) => setLine(line.id, { minKg: Number(e.target.value) || 0 })} /></label>
@@ -645,8 +694,8 @@ function Charges({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch:
                         <label className="pc__check"><input type="checkbox" checked={Boolean(line.volumetric)}
                           onChange={(e) => setLine(line.id, { volumetric: e.target.checked })} /> Volumetric if heavier</label>
                       </span>
-                    )}
-                  </div>
+                    </details>
+                  )}
                 </div>
               );
             })}
@@ -673,7 +722,7 @@ function Charges({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch:
               <span className={`pc__dot pc__dot--${STAGE_TONES[line.stage]}`} /> {line.label}
             </button>
           ))}
-          <button type="button" className="pc__chip pc__chip--own" onClick={addOwn}>＋ Your own</button>
+          <button type="button" className="pc__chip pc__chip--own" onClick={() => addOwn('domestic')}>＋ Your own</button>
         </div>
       )}
     </section>

@@ -8400,7 +8400,8 @@ await check('the profit book: every order with its costs, an order can have its 
   const [item, agent] = chained.jsonBody.rows[0].steps;
   assert.equal(item.amountMinor, 176_000, '¥134 is $20 is ₹1,760');
   assert.equal(item.formula.via.currency, 'USD');
-  assert.equal(agent.formula.currency, 'INR', 'a percentage is in rupees, as the calculator has it');
+  assert.equal(agent.formula.currency, 'USD', 'a percentage stays in what it is paid in');
+  assert.equal(agent.formula.amount, 2, 'the 10% of ₹1,760, in dollars');
   assert.equal(agent.amountMinor, 17_600);
   await saveOrderCostsBatch(req({ headers: auth, body: { changes: [{ orderId: other, steps: null }] } }), ctx);
 

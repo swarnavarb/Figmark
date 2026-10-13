@@ -713,12 +713,12 @@ export function settleSteps(steps: CostStep[], sellingRupees?: number): CostStep
     out = out.map((step) => {
       const of = step.formula?.percentOf;
       if (!of) return step;
-      let formula: CostFormula;
+      let rupees: number;
       if (of.selling) {
         if (sellingRupees === undefined) return step;
         const rate = of.percent / 100;
         const base = of.selling === 'inside' ? (rate > -1 ? sellingRupees / (1 + rate) : 0) : sellingRupees;
-        formula = { currency: 'INR', amount: round4((base * of.percent) / 100), expr: 'x', percentOf: of };
+        rupees = (base * of.percent) / 100;
       } else {
         const sources = percentIds(of).map((id) => out.find((entry) => entry.id === id && entry !== step))
           .filter((entry): entry is CostStep => Boolean(entry));
@@ -728,9 +728,13 @@ export function settleSteps(steps: CostStep[], sellingRupees?: number): CostStep
           return rest;
         }
         // In rupees, as the calculator takes a percentage: of what the costs come to here.
-        const base = sources.reduce((sum, entry) => sum + entry.amountMinor / 100, 0);
-        formula = { currency: 'INR', amount: round4((base * of.percent) / 100), expr: 'x', percentOf: of };
+        rupees = (sources.reduce((sum, entry) => sum + entry.amountMinor / 100, 0) * of.percent) / 100;
       }
+      // Then in the currency it is paid in, through its own sums.
+      const shape = step.formula!;
+      const plain = { currency: shape.currency, ...(shape.via ? { via: shape.via } : {}), expr: shape.expr };
+      const amount = plain.currency === 'INR' && !plain.via ? rupees : amountForRupees(plain, rupees) ?? rupees;
+      const formula: CostFormula = { ...plain, amount: round4(amount), percentOf: of };
       const amountMinor = formulaMinor(formula);
       if (amountMinor === step.amountMinor && JSON.stringify(formula) === JSON.stringify(step.formula)) return step;
       moved = true;
@@ -797,7 +801,8 @@ export function seedFromTemplate(template: FormulaSource, lineId: string | null,
   switch (line.kind) {
     case 'percent': {
       const of = percentFor(template, line);
-      return of ? { currency: 'INR', expr: 'x', percentOf: of } : null;
+      // Worked in rupees as the calculator does, then shown in what it is paid in.
+      return of ? { ...priced(line.currency)!, percentOf: of } : null;
     }
     case 'per_kg': return { ...priced(line.currency)!, perKg: 1 };
     case 'per_shipment':

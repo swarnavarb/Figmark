@@ -268,10 +268,10 @@ function currenciesIn(rows: BookRow[]): string[] {
 
 /** Whether a formula is shown in an amount part of this currency - a price, not a percentage. */
 const pricedIn = (formula: CostFormula | null | undefined, currency: string) =>
-  Boolean(formula && !formula.percentOf && formula.currency === currency && (currency !== 'INR' || formula.via || formula.perKg || formula.shared));
+  Boolean(formula && formula.currency === currency && (currency !== 'INR' || formula.via || formula.perKg || formula.shared));
 /** Whether a formula is shown in a paid part of this currency: through another, or a total by weight or shipment. */
 const paidIn = (formula: CostFormula | null | undefined, currency: string) =>
-  Boolean(formula && !formula.percentOf && paidCurrency(formula) === currency && currency !== 'INR'
+  Boolean(formula && paidCurrency(formula) === currency && currency !== 'INR'
     && (formula.via || formula.perKg || formula.shared));
 
 function partsFor(columns: Column[], rows: BookRow[], tones: Map<string, number>, all: string[]): Part[] {
@@ -391,7 +391,11 @@ function derive(row: BookRow, source: Source): BookRow {
     const rupees = step.amountMinor / 100;
     const found = lineId === undefined ? null : formulaForLine(source, lineId, rupees);
     if (!found) continue;
-    const formula = found.percentOf ? { ...fitPercent({ ...row, steps }, column, found, rupees), amount: rupees } : found;
+    const fitted = found.percentOf ? fitPercent({ ...row, steps }, column, found, rupees) : found;
+    // A percentage is shown in what it is paid in: its rupees, through its sums.
+    const formula = fitted.percentOf && (fitted.currency !== 'INR' || fitted.via)
+      ? { ...fitted, amount: round4(amountForRupees(fitted, rupees) ?? rupees) }
+      : fitted.percentOf ? { ...fitted, amount: rupees } : fitted;
     steps = steps.map((entry) => (entry === step ? { ...entry, formula } : entry));
   }
   return steps === row.steps ? row : { ...row, steps };
@@ -1114,7 +1118,11 @@ function FormulaEditor({ row, column, start, onClose, onSave }: {
   let draft: CostFormula | null = null;
   if (percent) {
     if (share !== null && share >= 0 && (percent.selling || percent.ids.length > 0)) {
-      draft = { currency: 'INR', amount: 0, expr: 'x', percentOf: { percent: share, ...(percent.selling ? { selling: percent.selling } : { ids: percent.ids }) } };
+      // Paid in the currency the cost already is, through the same sums.
+      draft = {
+        currency, amount: 0, ...(via ? { via: { currency: via.currency, expr: joined(via.tokens) } } : {}), expr: joined(tokens),
+        percentOf: { percent: share, ...(percent.selling ? { selling: percent.selling } : { ids: percent.ids }) },
+      };
     }
   } else if (x !== null && x >= 0 && (per === 'unit' || (howMany !== null && howMany > 0))) {
     draft = {
