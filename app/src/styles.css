@@ -14715,3 +14715,17 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   font: inherit; font-size: var(--t-xs);
 }
 .field .pbook__sum select.pbook__of, .field .pbook__step select { width: auto; flex: 0 1 auto; }
+.pbook__name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.pbook__find {
+  width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--text); font: inherit;
+}
+.pbook__meter { display: block; height: 3px; margin-top: 10px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.pbook__meter > span { display: block; height: 100%; background: #60A5FA; }
+.pbook__nudge {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px;
+  border-radius: 12px; border: 1px dashed rgba(96, 165, 250, 0.5); background: rgba(59, 130, 246, 0.08); font-size: var(--t-xs);
+  color: var(--text-dim);
+}
+.pbook__nudge b { color: var(--text); }
+.pbook__table tfoot td.pbook__num { color: var(--text-dim); }

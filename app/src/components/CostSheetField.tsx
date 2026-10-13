@@ -65,7 +65,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
 
   function fill() {
     if (!template || !preview) return;
-    const next = stepsFromResult(preview, template, input.itemPrice);
+    const next = stepsFromResult(preview, template, input.itemPrice, worked ?? undefined);
     onChange(next.length ? { templateId: template.id, templateName: template.name, steps: next } : null);
   }
 

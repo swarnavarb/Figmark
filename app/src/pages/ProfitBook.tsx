@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  COMMON_CURRENCIES, SCENARIOS, amountForPaid, amountForRupees, evalFormula, formulaMinor, formulaPaid, formulaWorking,
-  paidCurrency, seedAt, seedFromTemplate, settleSteps, symbolOf,
-  type CostFormula, type CostStage, type CostStep, type FormulaSeed, type FormulaSource,
+  COMMON_CURRENCIES, SCENARIOS, amountForPaid, amountForRupees, formulaBase, formulaForLine, formulaMinor, formulaPaid,
+  formulaWorking, paidCurrency, percentIds, seedAt, settleSteps, symbolOf,
+  type CostFormula, type CostStage, type CostStep, type FormulaSource, type PercentOf,
 } from '@shared/profit';
 import { ApiRequestError, api, type BookLot, type BookRow, type CostsResponse } from '../api';
 import { formatMoney } from '../format';
@@ -11,18 +11,22 @@ import { ErrorNotice, Modal, PersonLink, Tile } from '../components/ui';
 
 /**
  * Real profit as a book: lots, and what was sold from hand. A lot opens to
- * its orders, one sheet per customer, a row per order and a column per cost -
- * every cost cell typed straight into, per unit, for that one order. Selling
- * price less cost price is the profit.
+ * its orders, one sheet per customer, a row per order and columns per cost -
+ * each cost as its calculator line works it out (priced in yuan, paid in
+ * dollars, into rupees; weight × rate; a percentage of what it is of), every
+ * cell typed straight into, per unit, for that one order. Selling price less
+ * cost price is the profit.
  *
  * Each change is saved as it is made (a cell when you leave it) as that
- * order's own costs, and can be undone - a column added or deleted, a payment
- * split, a reset - one step at a time.
+ * order's own costs, never the calculator's, and can be undone one step at a
+ * time - a column added or deleted, a payment split, a reset.
  */
 
 const money = (minor: number) => formatMoney(minor, 'INR');
 /** A sheet cell: rupees without the sign, the header already says ₹. */
 const cell = (minor: number) => (minor / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const short = (value: number, places = 2) => value.toLocaleString('en-IN', { maximumFractionDigits: places });
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 type Tab = 'lots' | 'hand';
 
@@ -39,6 +43,7 @@ const unitCost = (row: Pick<BookRow, 'steps'>) => row.steps.reduce((sum, step) =
 const salesOf = (row: BookRow) => row.quantity * row.unitPriceMinor;
 const costOf = (row: BookRow) => unitCost(row) * row.quantity;
 const costed = (row: BookRow) => row.steps.length > 0;
+const sellingOf = (row: BookRow) => row.unitPriceMinor / 100;
 
 /** Sales, costs, profit (on costed orders only) and what is still owed, across some orders. */
 export function bookTotals(rows: BookRow[]): BookTotals {
@@ -56,6 +61,12 @@ export function bookTotals(rows: BookRow[]): BookTotals {
   return totals;
 }
 
+/** Profit as a share of what the costed orders sold for. */
+function marginOf(rows: BookRow[], totals: BookTotals): number | null {
+  const sold = rows.reduce((sum, row) => sum + (costed(row) ? salesOf(row) : 0), 0);
+  return sold > 0 ? Math.round((totals.profitMinor / sold) * 100) : null;
+}
+
 export function ProfitBook({ shop, data, reload }: { shop?: string; data: CostsResponse | null; reload: () => void }) {
   const [tab, setTab] = useState<Tab>('lots');
   const [lotId, setLotId] = useState<string | null>(null);
@@ -64,12 +75,15 @@ export function ProfitBook({ shop, data, reload }: { shop?: string; data: CostsR
   useEffect(() => setRows(data?.rows ?? []), [data]);
   useEffect(() => window.scrollTo(0, 0), [lotId]);
 
+  const { inHand, inLots } = useMemo(() => ({
+    inHand: rows.filter((row) => !row.lotId),
+    inLots: rows.filter((row) => row.lotId),
+  }), [rows]);
+
   if (!data) return <p className="muted">Loading…</p>;
 
-  const inHand = rows.filter((row) => !row.lotId);
-  const inLots = rows.filter((row) => row.lotId);
   const lot = lotId ? data.lots.find((entry) => entry.id === lotId) ?? null : null;
-  const scope = lot ? rows.filter((row) => row.lotId === lot.id) : tab === 'lots' ? inLots : inHand;
+  const scope = lot ? inLots.filter((row) => row.lotId === lot.id) : tab === 'lots' ? inLots : inHand;
   const change = (next: BookRow) => setRows((now) => now.map((row) => (row.orderId === next.orderId ? next : row)));
 
   return (
@@ -96,8 +110,8 @@ export function ProfitBook({ shop, data, reload }: { shop?: string; data: CostsR
       <Totals rows={scope} />
 
       {lot || tab === 'hand' ? (
-        <CustomerSheets key={lot?.id ?? 'hand'} rows={scope} customers={data.customers} shop={shop} onChange={change}
-          onFailed={reload} empty={lot ? 'No orders in this lot yet.' : 'Nothing sold from hand yet.'} />
+        <CustomerSheets key={lot?.id ?? 'hand'} title={lot?.name ?? 'In hand'} rows={scope} customers={data.customers} shop={shop}
+          onChange={change} onFailed={reload} empty={lot ? 'No orders in this lot yet.' : 'Nothing sold from hand yet.'} />
       ) : (
         <LotList lots={data.lots} rows={inLots} onOpen={setLotId} />
       )}
@@ -110,21 +124,19 @@ function statusName(status: string) {
 }
 
 function Totals({ rows }: { rows: BookRow[] }) {
-  const totals = bookTotals(rows);
-  // The margin is of what the costed orders sold for, as the profit is.
-  const margin = rows.filter(costed).reduce((sum, row) => sum + salesOf(row), 0);
+  const totals = useMemo(() => bookTotals(rows), [rows]);
+  const margin = marginOf(rows, totals);
   return (
     <>
       <div className="tiles tiles--four">
         <Tile value={money(totals.costMinor)} label="Cost price" tone="blue" />
-        <Tile value={money(totals.profitMinor)}
-          label={margin > 0 ? `Profit · ${Math.round((totals.profitMinor / margin) * 100)}%` : 'Profit'} tone="green" />
+        <Tile value={money(totals.profitMinor)} label={margin !== null ? `Profit · ${margin}%` : 'Profit'} tone="green" />
         <Tile value={money(totals.salesMinor)} label="Selling price" />
         <Tile value={money(totals.pendingMinor)} label="Pending" />
       </div>
       {totals.uncosted > 0 && (
         <p className="faint">
-          {totals.uncosted} order{totals.uncosted === 1 ? ' has' : 's have'} no costs yet, so no profit is counted on
+          {plural(totals.uncosted, 'order')} {totals.uncosted === 1 ? 'has' : 'have'} no costs yet, so no profit is counted on
           {totals.uncosted === 1 ? ' it' : ' them'}. Type the cost price into the sheet.
         </p>
       )}
@@ -133,13 +145,33 @@ function Totals({ rows }: { rows: BookRow[] }) {
 }
 
 function LotList({ lots, rows, onOpen }: { lots: BookLot[]; rows: BookRow[]; onOpen: (id: string) => void }) {
+  const [query, setQuery] = useState('');
+  // Every lot's sums in one pass over the orders.
+  const byLot = useMemo(() => {
+    const mine = new Map<string, BookRow[]>();
+    for (const row of rows) if (row.lotId) mine.set(row.lotId, [...(mine.get(row.lotId) ?? []), row]);
+    return new Map([...mine].map(([id, list]) => {
+      const totals = bookTotals(list);
+      return [id, { list, totals, margin: marginOf(list, totals), customers: new Set(list.map((row) => row.buyerId)).size }];
+    }));
+  }, [rows]);
+
   if (lots.length === 0) return <p className="muted">No lots yet.</p>;
+  const needle = query.trim().toLowerCase();
+  const shown = needle ? lots.filter((lot) => `${lot.name} ${lot.number ?? ''}`.toLowerCase().includes(needle)) : lots;
+
   return (
     <div className="stack">
-      {lots.map((lot) => {
-        const mine = rows.filter((row) => row.lotId === lot.id);
-        const totals = bookTotals(mine);
-        const customers = new Set(mine.map((row) => row.buyerId)).size;
+      {lots.length > 5 && (
+        <input className="pbook__find" type="search" value={query} placeholder="Find a lot" aria-label="Find a lot"
+          onChange={(event) => setQuery(event.target.value)} />
+      )}
+      {shown.length === 0 && <p className="muted">No lot called that.</p>}
+      {shown.map((lot) => {
+        const entry = byLot.get(lot.id);
+        const totals = entry?.totals ?? bookTotals([]);
+        const count = entry?.list.length ?? 0;
+        const costedShare = count > 0 ? (count - totals.uncosted) / count : 0;
         return (
           <button key={lot.id} type="button" className={`inscard pbook__lot${totals.profitMinor < 0 ? ' inscard--loss' : ''}`}
             onClick={() => onOpen(lot.id)}>
@@ -147,12 +179,12 @@ function LotList({ lots, rows, onOpen }: { lots: BookLot[]; rows: BookRow[]; onO
               <span>
                 <span className="inscard__title">{lot.name}</span>
                 <small>
-                  {[lot.number, statusName(lot.status), `${mine.length} order${mine.length === 1 ? '' : 's'}`,
-                    `${customers} customer${customers === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
+                  {[lot.number, statusName(lot.status), plural(count, 'order'), plural(entry?.customers ?? 0, 'customer')]
+                    .filter(Boolean).join(' · ')}
                 </small>
               </span>
               <span className={`inscard__big${totals.profitMinor < 0 ? ' is-loss' : ''}`}>
-                {money(totals.profitMinor)}<small>profit</small>
+                {money(totals.profitMinor)}<small>{entry && entry.margin !== null ? `profit · ${entry.margin}%` : 'profit'}</small>
               </span>
             </span>
             <span className="inscard__facts">
@@ -161,6 +193,11 @@ function LotList({ lots, rows, onOpen }: { lots: BookLot[]; rows: BookRow[]; onO
               {totals.pendingMinor > 0 && <span className="badge badge--warn">{money(totals.pendingMinor)} pending</span>}
               {totals.uncosted > 0 && <span className="badge">{totals.uncosted} not costed</span>}
             </span>
+            {count > 0 && (
+              <span className="pbook__meter" title={`${Math.round(costedShare * 100)}% of orders costed`}>
+                <span style={{ width: `${costedShare * 100}%` }} />
+              </span>
+            )}
           </button>
         );
       })}
@@ -176,7 +213,6 @@ const slug = (label: string) => keyOf(label).replace(/[^\w-]+/g, '_').slice(0, 4
 const stepIn = (row: BookRow, column: Column) => row.steps.find((step) => keyOf(step.label) === column.key);
 const round4 = (value: number) => Math.round(value * 1e4) / 1e4;
 const sym = (currency: string) => symbolOf(currency).trim();
-const short = (value: number) => value.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 /** Always there, so a sheet with no costs yet still has a cell to type the first into. */
 const ITEM_PRICE: Column = { key: 'item price', label: 'Item price', stage: 'buying', id: 'item' };
@@ -194,11 +230,12 @@ function columnsFor(rows: BookRow[], extra: Column[]): Column[] {
 }
 
 /**
- * What the sheet shows of a cost, as its calculator line has it: the price in
- * the currency it is priced in, what that is paid as when paid in another,
- * and the rupees. All three in the cost's own colour.
+ * What the sheet shows of a cost, as its calculator line has it: the kg (or
+ * units a shipment is shared over), the price in the currency it is priced
+ * in, what is paid in the currency it is paid in, and the rupees. All in the
+ * cost's own colour.
  */
-type PartKind = 'amount' | 'paid' | 'inr';
+type PartKind = 'count' | 'amount' | 'paid' | 'inr';
 interface Part {
   column: Column;
   kind: PartKind;
@@ -206,8 +243,12 @@ interface Part {
   key: string;
   currency: string;
   tone: number;
-  /** A percentage cost: how much, for the header. */
+  /** The unit its number is in, for the header: "kg", "$/kg", "¥". */
+  unit: string;
+  /** A percentage cost: how much, on the first of its parts. */
   percent: number | null;
+  /** A count part: what it counts. */
+  counts?: 'kg' | 'shared';
 }
 
 const TONES = 6;
@@ -217,54 +258,88 @@ function partsFor(columns: Column[], rows: BookRow[]): Part[] {
   columns.forEach((column, at) => {
     const tone = at % TONES;
     const formulas = rows.map((row) => stepIn(row, column)?.formula).filter((entry): entry is CostFormula => Boolean(entry));
-    const first = formulas[0];
-    const percent = first?.percentOf?.percent ?? null;
-    if (first && !(first.currency === 'INR' && !first.via)) {
-      parts.push({ column, kind: 'amount', key: `${column.key}·abroad`, currency: first.currency, tone, percent });
+    const first = formulas.find((entry) => !entry.percentOf) ?? formulas[0];
+    let percent = formulas.find((entry) => entry.percentOf)?.percentOf?.percent ?? null;
+    const take = () => {
+      const value = percent;
+      percent = null;
+      return value;
+    };
+    const kg = formulas.some((entry) => entry.perKg);
+    const shared = !kg && formulas.some((entry) => entry.shared);
+    if (kg || shared) {
+      parts.push({ column, kind: 'count', key: `${column.key}·count`, currency: '', tone, unit: kg ? 'kg' : 'units', percent: take(), counts: kg ? 'kg' : 'shared' });
     }
-    const via = formulas.find((entry) => entry.via)?.via;
-    if (via) parts.push({ column, kind: 'paid', key: `${column.key}·paid`, currency: via.currency, tone, percent: null });
-    parts.push({ column, kind: 'inr', key: column.key, currency: 'INR', tone, percent: null });
+    if (first && (first.currency !== 'INR' || first.via || kg || shared)) {
+      const per = kg ? '/kg' : shared ? '/shipment' : '';
+      parts.push({ column, kind: 'amount', key: `${column.key}·abroad`, currency: first.currency, tone, unit: `${sym(first.currency)}${per}`, percent: take() });
+    }
+    const paying = formulas.find((entry) => entry.via) ?? (kg || shared ? first : undefined);
+    if (paying && (paying.via || ((kg || shared) && paidCurrency(paying) !== 'INR'))) {
+      const currency = paidCurrency(paying);
+      parts.push({ column, kind: 'paid', key: `${column.key}·paid`, currency, tone, unit: sym(currency), percent: null });
+    }
+    parts.push({ column, kind: 'inr', key: column.key, currency: 'INR', tone, unit: '₹', percent: take() });
   });
   return parts;
 }
 
-const partName = (part: Part) =>
-  `${part.column.label}${part.percent !== null && part.kind === 'amount' ? ` ${short(part.percent)}%` : ''} ${sym(part.currency)}`;
+const partName = (part: Part) => `${part.column.label}${part.percent !== null ? ` ${short(part.percent)}%` : ''} ${part.unit}`;
 
 /** A cost's value as one part shows it. */
 function partValue(step: CostStep | undefined, kind: PartKind): number | null {
   if (!step) return null;
   if (kind === 'inr') return step.amountMinor / 100;
-  if (!step.formula) return null;
-  if (kind === 'amount') return step.formula.amount;
-  return step.formula.via ? formulaPaid(step.formula) : null;
+  const formula = step.formula;
+  if (!formula) return null;
+  if (kind === 'count') return formula.perKg ?? formula.shared ?? null;
+  if (kind === 'amount') return formula.amount;
+  return formulaPaid(formula);
 }
 
 /** The calculator a cost's sums come from: the shop's default, else the calculator's first way in. */
 type Source = FormulaSource & { name: string };
 const STARTER: Source = SCENARIOS[0]!.sheet();
 
-/** The calculator line a column is, by its label or its id; null for the item price. */
-const lineFor = (column: Column, source: Source) =>
-  source.lines.find((line) => keyOf(line.label) === column.key || line.id === column.id);
+/** The calculator line a column is, by its label or its id: null for the item price, undefined for none. */
+function lineIdFor(column: Column | undefined, source: Source): string | null | undefined {
+  if (!column) return undefined;
+  if (column.key === ITEM_PRICE.key) return null;
+  return source.lines.find((line) => keyOf(line.label) === column.key || line.id === column.id)?.id;
+}
 
 /**
- * The sums a cost with none starts from: the same cost on another order here,
- * else its line in the calculator - a copy either way. Null for a cost the
- * calculator has in rupees, or does not have.
+ * A cost's formula, or the one it would have: its calculator line's, worked
+ * back from the rupees it already is - else the same cost's on another order
+ * here. A copy either way. Null for a cost the calculator keeps in rupees.
  */
-function seedFor(column: Column, rows: BookRow[], source: Source): FormulaSeed | null {
-  for (const row of rows) {
-    const formula = stepIn(row, column)?.formula;
-    if (formula) {
-      const { amount: _amount, ...seed } = formula;
-      return seed;
-    }
+function formulaOf(row: BookRow, column: Column, rows: BookRow[], source: Source): CostFormula | null {
+  const step = stepIn(row, column);
+  if (step?.formula) return step.formula;
+  const rupees = (step?.amountMinor ?? 0) / 100;
+  const lineId = lineIdFor(column, source);
+  if (lineId !== undefined) {
+    const formula = formulaForLine(source, lineId, rupees);
+    return formula ? fitPercent(row, column, formula, rupees) : null;
   }
-  if (column.key === ITEM_PRICE.key) return seedFromTemplate(source, null);
-  const line = lineFor(column, source);
-  return line ? seedFromTemplate(source, line.id) : null;
+  for (const other of rows) {
+    const formula = stepIn(other, column)?.formula;
+    if (formula && !formula.percentOf) return seedAt(formula, rupees, formula.perKg || formula.shared ? formula.amount : undefined);
+  }
+  return null;
+}
+
+/**
+ * A percentage cost given the share that makes it what it already costs, so
+ * taking on the calculator's sums never moves the rupees. The calculator's
+ * own share when there is nothing to keep, or nothing to take it of.
+ */
+function fitPercent(row: BookRow, column: Column, formula: CostFormula, rupees: number): CostFormula {
+  const of = formula.percentOf;
+  if (!of || rupees <= 0) return formula;
+  const whole = { ...formula, percentOf: { ...of, percent: 100 } };
+  const base = stepIn({ ...row, steps: withFormula(row, column, whole) }, column)?.amountMinor ?? 0;
+  return base > 0 ? { ...formula, percentOf: { ...of, percent: round4((rupees * 100 * 100) / base) } } : formula;
 }
 
 /** Which columns are folded away, kept in this browser only. */
@@ -290,8 +365,10 @@ function withCost(row: BookRow, column: Column, amountMinor: number, formula: Co
   const base = at >= 0 ? row.steps[at]! : { id: column.id, label: column.label, stage: column.stage, amountMinor: 0 };
   const { formula: _old, ...rest } = base;
   const next: CostStep = formula ? { ...rest, amountMinor, formula } : { ...rest, amountMinor };
-  return settleSteps(at >= 0 ? row.steps.map((step, index) => (index === at ? next : step)) : [...row.steps, next]);
+  return settleSteps(at >= 0 ? row.steps.map((step, index) => (index === at ? next : step)) : [...row.steps, next], sellingOf(row));
 }
+
+const withFormula = (row: BookRow, column: Column, formula: CostFormula) => withCost(row, column, formulaMinor(formula), formula);
 
 /** A formula without its percentage: typed over, a percentage cost becomes a fixed one. */
 function fixed(formula: CostFormula): CostFormula {
@@ -303,36 +380,36 @@ function fixed(formula: CostFormula): CostFormula {
  * One part of a cost typed in, or cleared: the other parts follow through its
  * sums, and so does every percentage of it. Null when nothing changes.
  */
-function setPart(row: BookRow, column: Column, kind: PartKind, value: number | null, seed: FormulaSeed | null): CostStep[] | null {
+function setPart(row: BookRow, part: Part, value: number | null, guess: CostFormula | null): CostStep[] | null {
+  const { column, kind } = part;
   const step = stepIn(row, column);
   if (value === null) {
-    if (!step) return null;
-    if (kind === 'inr') return settleSteps(row.steps.filter((entry) => entry !== step));
+    if (!step || kind === 'count') return null;
+    if (kind === 'inr') return settleSteps(row.steps.filter((entry) => entry !== step), sellingOf(row));
     // A price abroad cleared: the rupees stay, as a fixed amount.
     return step.formula ? withCost(row, column, step.amountMinor, null) : null;
   }
+  const formula = step?.formula ? fixed(step.formula) : guess ? fixed(guess) : null;
   if (kind === 'inr') {
-    const formula = step?.formula ? fixed(step.formula) : null;
     const amount = formula ? amountForRupees(formula, value) : null;
-    if (formula && amount !== null) {
-      const moved = { ...formula, amount: round4(amount) };
-      return withCost(row, column, formulaMinor(moved), moved);
-    }
-    return withCost(row, column, Math.round(value * 100), null);
+    return formula && amount !== null
+      ? withFormula(row, column, { ...formula, amount: round4(amount) })
+      : withCost(row, column, Math.round(value * 100), null);
   }
-  const base = step?.formula ?? (seed ? { ...seed, amount: 0 } : null);
-  if (!base) return null;
-  const plain = fixed(base);
-  const amount = kind === 'amount' ? value : amountForPaid(plain, value);
-  if (amount === null) return null;
-  const formula = { ...plain, amount: round4(amount) };
-  return withCost(row, column, formulaMinor(formula), formula);
+  if (!formula) return null;
+  if (kind === 'count') {
+    if (!(value > 0)) return null;
+    return withFormula(row, column, part.counts === 'kg' ? { ...formula, perKg: round4(value) } : { ...formula, shared: round4(value) });
+  }
+  const amount = kind === 'amount' ? value : amountForPaid(formula, value);
+  return amount === null ? null : withFormula(row, column, { ...formula, amount: round4(amount) });
 }
 
 /** A supplier payment being shared out: over which orders, into what, how much. */
 interface Split { partKey: string; amount: string; picked: string[]; base: BookRow[] }
 
-function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
+function CustomerSheets({ title, rows, customers, shop, onChange, onFailed, empty }: {
+  title: string;
   rows: BookRow[];
   customers: CostsResponse['customers'];
   shop?: string;
@@ -399,7 +476,10 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
   // The fields a split can go into, from the orders as they were when it opened -
   // not as it is showing them, or every keystroke would feed on its own result.
   const splitBase = split?.base;
-  const splitParts = useMemo(() => (splitBase ? partsFor(columnsFor(splitBase, extra), splitBase) : []), [splitBase, extra]);
+  const splitParts = useMemo(
+    () => (splitBase ? partsFor(columnsFor(splitBase, extra), splitBase).filter((part) => part.kind !== 'count') : []),
+    [splitBase, extra],
+  );
 
   /** A split as it stands: what each ticked order's costs become. */
   const splitChanges = useMemo((): Change[] => {
@@ -413,12 +493,11 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
     const total = chosen.reduce((sum, row) => sum + worth(row), 0);
     const weight = total > 0 ? worth : (row: BookRow) => row.quantity;
     const sum = total > 0 ? total : chosen.reduce((all, row) => all + row.quantity, 0);
-    const seed = seedFor(part.column, split.base, source);
     const changes: Change[] = [];
     for (const row of chosen) {
       // Shared by value, an order with none in that field takes none of it.
       if (weight(row) === 0) continue;
-      const steps = setPart(row, part.column, part.kind, (paid * weight(row)) / sum / row.quantity, seed);
+      const steps = setPart(row, part, (paid * weight(row)) / sum / row.quantity, formulaOf(row, part.column, split.base, source));
       if (steps) changes.push({ before: row, after: { ...row, steps, own: true }, steps });
     }
     return changes;
@@ -486,25 +565,24 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
   }
 
   function typePart(row: BookRow, part: Part, value: number | null) {
-    save(`${partName(part)} for ${row.itemName}`, row, setPart(row, part.column, part.kind, value, seedFor(part.column, rows, source)));
+    save(`${partName(part)} for ${row.itemName}`, row, setPart(row, part, value, formulaOf(row, part.column, rows, source)));
   }
 
   /** Every cost without sums gets its calculator line's, worked back from the rupees it already is. */
   function fillFromCalculator() {
     const changes: Change[] = [];
     for (const row of rows) {
+      // One cost at a time, so a percentage is fitted against the costs it is of as they now stand.
       let steps = row.steps;
       for (const step of row.steps) {
         if (step.formula) continue;
         const column = columns.find((entry) => entry.key === keyOf(step.label));
-        const seed = column
-          ? column.key === ITEM_PRICE.key ? seedFromTemplate(source, null) : (lineFor(column, source) && seedFromTemplate(source, lineFor(column, source)!.id))
-          : null;
-        if (!seed) continue;
-        const formula = seed.percentOf ? { ...seed, amount: 0 } : seedAt(seed, step.amountMinor / 100);
-        if (formula) steps = steps.map((entry) => (entry === step ? { ...entry, formula } : entry));
+        const lineId = lineIdFor(column, source);
+        const formula = column && lineId !== undefined ? formulaForLine(source, lineId, step.amountMinor / 100) : null;
+        if (!column || !formula) continue;
+        const current = { ...row, steps };
+        steps = withFormula(current, column, fitPercent(current, column, formula, step.amountMinor / 100));
       }
-      steps = settleSteps(steps.map((entry) => (entry.formula && !entry.formula.percentOf ? { ...entry, amountMinor: formulaMinor(entry.formula) } : entry)));
       if (JSON.stringify(steps) !== JSON.stringify(row.steps)) changes.push(withSteps(row, steps));
     }
     if (changes.length > 0) void commit(`sums from ${source.name}`, changes);
@@ -525,7 +603,7 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
     }
     setDropping(null);
     void commit(`delete ${column.label}`,
-      holding.map((row) => withSteps(row, settleSteps(row.steps.filter((step) => keyOf(step.label) !== column.key)))),
+      holding.map((row) => withSteps(row, settleSteps(row.steps.filter((step) => keyOf(step.label) !== column.key), sellingOf(row)))),
       { extra: extra.filter((entry) => entry.key !== column.key) });
   }
 
@@ -552,13 +630,49 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
     setSplit(null);
   }
 
+  /** The sheet as a spreadsheet file: every order, the columns in view. */
+  function download() {
+    const quote = (value: string | number) => (/[",\n]/.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value));
+    const head = ['Customer', 'Item', 'Qty', 'Selling price ₹', ...shown.map(partName), 'Cost price ₹', 'Profit ₹', 'Paid ₹', 'Pending ₹'];
+    const lines = groups.flatMap((group) => group.rows.map((row) => [
+      customers[row.buyerId]?.name ?? 'Customer', row.itemName, row.quantity, row.unitPriceMinor / 100,
+      ...shown.map((part) => {
+        const value = partValue(stepIn(row, part.column), part.kind);
+        return value === null ? '' : round4(value);
+      }),
+      costed(row) ? unitCost(row) / 100 : '', costed(row) ? (salesOf(row) - costOf(row)) / 100 : '', row.paidMinor / 100, row.pendingMinor / 100,
+    ]));
+    const csv = [head, ...lines].map((line) => line.map(quote).join(',')).join('\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }));
+    link.download = `${slug(title) || 'profit'}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
   const owing = groups.filter((group) => group.totals.pendingMinor > 0);
   const last = history[history.length - 1];
   const splitPart = split ? splitParts.find((part) => part.key === split.partKey) : undefined;
   const editRow = editing ? rows.find((row) => row.orderId === editing.orderId) : undefined;
   // The rupees of costs shown abroad: what "only what is paid" folds away.
   const conversions = parts.filter((part) => part.kind === 'inr' && parts.some((other) => other.column === part.column && other.kind !== 'inr'));
-  const bare = rows.some((row) => row.steps.some((step) => !step.formula));
+  const bare = rows.some((row) => row.steps.some((step) =>
+    !step.formula && lineIdFor(columns.find((column) => column.key === keyOf(step.label)), source) !== undefined));
+
+  /** A column's total over some orders, when its numbers add up: rupees always, a currency when all are in it. */
+  const columnTotal = (list: BookRow[], part: Part): string => {
+    if (part.kind === 'count') return '';
+    let sum = 0;
+    for (const row of list) {
+      const step = stepIn(row, part.column);
+      const value = partValue(step, part.kind);
+      if (value === null) continue;
+      const own = part.kind === 'amount' ? step?.formula?.currency : part.kind === 'paid' && step?.formula ? paidCurrency(step.formula) : 'INR';
+      if (own !== part.currency || (part.kind === 'amount' && (step?.formula?.perKg || step?.formula?.shared))) return '';
+      sum += value * row.quantity;
+    }
+    return sum ? short(sum) : '';
+  };
 
   return (
     <div className="stack">
@@ -599,7 +713,15 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
               onChange={(event) => setAdding(event.target.value)} onBlur={addColumn} />
           </form>
         )}
+        <button type="button" className="btn btn--quiet btn--sm" onClick={download}>⬇ CSV</button>
       </div>
+
+      {bare && !split && (
+        <div className="pbook__nudge">
+          <span>Some costs here are only in ₹. Give them the currencies and sums of <b>{source.name}</b>, worked back from the ₹ - totals stay the same.</span>
+          <button type="button" className="btn btn--sm" onClick={fillFromCalculator}>Use the calculator’s sums</button>
+        </div>
+      )}
 
       {showColumns && (
         <div className="card card--pad pbook__cols">
@@ -625,14 +747,6 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
               Hide all
             </button>
           </div>
-          {bare && (
-            <div className="row">
-              <button type="button" className="btn btn--ghost btn--sm" onClick={fillFromCalculator}>
-                Use the sums from {source.name}
-              </button>
-              <span className="faint">Each cost in ₹ gets its line’s currencies, worked back from the ₹.</span>
-            </div>
-          )}
         </div>
       )}
 
@@ -658,15 +772,15 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
             <button type="submit" className="btn btn--sm" disabled={splitChanges.length === 0}>Done</button>
             <button type="button" className="btn btn--quiet btn--sm" onClick={() => closeSplit(false)}>Cancel</button>
             <span className="faint">
-              Over the {split.picked.length} ticked order{split.picked.length === 1 ? '' : 's'}, by their {partName(splitPart)}
+              Over the {plural(split.picked.length, 'ticked order')}, by their {partName(splitPart)}
             </span>
           </div>
         </form>
       )}
 
       <p className="faint pbook__hint">
-        Per unit, for that order only - saved as soon as you leave a cell. Each cost in the currency it is priced and paid in,
-        then ₹, in its own colour. ƒx shows how it is worked out.
+        Per unit, for that order only - saved as you leave a cell, Enter moves down. Each cost as its calculator line works it
+        out, in its own colour; ƒx shows the sums. The calculator itself never changes.
       </p>
 
       {groups.map((group) => {
@@ -674,10 +788,12 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
         return (
           <section key={group.buyerId} id={`pbook-${group.buyerId}`} className="card pbook__sheet">
             <header className="pbook__who">
-              <PersonLink party={who ? { name: who.name, handle: who.handle } : { name: 'Customer', handle: null }}
-                className="inscard__title" bare />
+              <span className="pbook__name">
+                <PersonLink party={who ? { name: who.name, handle: who.handle } : { name: 'Customer', handle: null }}
+                  className="inscard__title" bare />
+              </span>
               <span className="pbook__whofacts">
-                <span>Profit <b className="pbook__num">{money(group.totals.profitMinor)}</b></span>
+                <span>Profit <b className={`pbook__num${group.totals.profitMinor < 0 ? ' is-loss' : ''}`}>{money(group.totals.profitMinor)}</b></span>
                 <span className={group.totals.pendingMinor > 0 ? 'badge badge--warn' : 'badge badge--ok'}>
                   {group.totals.pendingMinor > 0 ? `${money(group.totals.pendingMinor)} pending` : 'Paid up'}
                 </span>
@@ -693,9 +809,8 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                     {shown.map((part) => (
                       <th key={part.key} className={`pbook__costhead pbook__tone--${part.tone}`}>
                         <span>
-                          {part.column.label}
-                          {part.percent !== null && part.kind === 'amount' ? ` ${short(part.percent)}%` : ''}{' '}
-                          <b className="pbook__cur">{sym(part.currency)}</b>
+                          {part.column.label}{part.percent !== null ? ` ${short(part.percent)}%` : ''}{' '}
+                          <b className="pbook__cur">{part.unit}</b>
                         </span>
                         <span className="pbook__headtools">
                           <button type="button" className="pbook__drop" aria-label={`Hide ${partName(part)}`}
@@ -742,10 +857,12 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                         <td className="pbook__num">{cell(row.unitPriceMinor)}</td>
                         {shown.map((part) => {
                           const step = stepIn(row, part.column);
-                          const own = part.kind === 'amount' ? step?.formula?.currency : part.kind === 'paid' ? step?.formula?.via?.currency : 'INR';
+                          const own = part.kind === 'amount' ? step?.formula?.currency
+                            : part.kind === 'paid' && step?.formula ? paidCurrency(step.formula) : undefined;
                           return (
                             <td key={part.key} className={`pbook__cell pbook__tone--${part.tone}`}>
                               <NumberCell value={partValue(step, part.kind)} label={`${partName(part)} for ${row.itemName}`}
+                                column={part.key} places={part.kind === 'count' ? 3 : 2}
                                 prefix={own && own !== part.currency ? sym(own) : ''} disabled={Boolean(split)}
                                 onCommit={(value) => typePart(row, part, value)} />
                               {part.kind === 'inr' && (
@@ -770,7 +887,7 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
                       <td className="pbook__item">Total</td>
                       <td className="pbook__num">{group.rows.reduce((sum, row) => sum + row.quantity, 0)}</td>
                       <td className="pbook__num">{cell(group.totals.salesMinor)}</td>
-                      {shown.map((part) => <td key={part.key} />)}
+                      {shown.map((part) => <td key={part.key} className="pbook__num">{columnTotal(group.rows, part)}</td>)}
                       <td className="pbook__num">{cell(group.totals.costMinor)}</td>
                       <td className="pbook__num">{cell(group.totals.profitMinor)}</td>
                       <td className="pbook__num">{cell(group.rows.reduce((sum, row) => sum + row.paidMinor, 0))}</td>
@@ -785,8 +902,7 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
       })}
 
       {editing && editRow && (
-        <FormulaEditor row={editRow} column={editing.column} columns={columns}
-          seed={seedFor(editing.column, rows, source) ?? seedFromTemplate(source, null)}
+        <FormulaEditor row={editRow} column={editing.column} start={formulaOf(editRow, editing.column, rows, source)}
           onClose={() => setEditing(null)}
           onSave={(steps, label) => {
             save(`${editing.column.label} ${label} for ${editRow.itemName}`, editRow, steps);
@@ -797,12 +913,19 @@ function CustomerSheets({ rows, customers, shop, onChange, onFailed, empty }: {
   );
 }
 
-/** One number cell, saved when you leave it; empty clears it. */
-function NumberCell({ value, label, prefix, disabled, onCommit }: {
-  value: number | null; label: string; prefix?: string; disabled?: boolean; onCommit: (value: number | null) => void;
+/** One number cell, saved when you leave it; empty clears it. Enter goes to the same cell a row down. */
+function NumberCell({ value, label, column, places = 2, prefix, disabled, onCommit }: {
+  value: number | null;
+  label: string;
+  /** Cells of one column share it, for Enter to find the next. */
+  column?: string;
+  places?: number;
+  prefix?: string;
+  disabled?: boolean;
+  onCommit: (value: number | null) => void;
 }) {
-  // Two places to read; what is kept underneath stays exact unless the cell is typed over.
-  const shown = value === null ? '' : String(Math.round(value * 100) / 100);
+  // Rounded to read; what is kept underneath stays exact unless the cell is typed over.
+  const shown = value === null ? '' : String(Math.round(value * 10 ** places) / 10 ** places);
   const [text, setText] = useState(shown);
   useEffect(() => setText(shown), [shown]);
   function commit() {
@@ -813,12 +936,22 @@ function NumberCell({ value, label, prefix, disabled, onCommit }: {
     if (!Number.isFinite(number) || number < 0) return setText(shown);
     onCommit(number);
   }
+  function next(input: HTMLInputElement) {
+    input.blur();
+    if (!column) return;
+    const all = [...document.querySelectorAll<HTMLInputElement>(`input[data-col="${CSS.escape(column)}"]`)];
+    all[all.indexOf(input) + 1]?.focus();
+  }
   return (
     <span className="pbook__numcell">
       {prefix ? <span className="pbook__cur">{prefix}</span> : null}
       <input className="pbook__input" inputMode="decimal" value={text} aria-label={label} placeholder="—" disabled={disabled}
-        onChange={(event) => setText(event.target.value)} onBlur={commit}
-        onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); }} />
+        data-col={column} onChange={(event) => setText(event.target.value)} onBlur={commit}
+        onFocus={(event) => event.target.select()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') next(event.target as HTMLInputElement);
+          if (event.key === 'Escape') { setText(shown); (event.target as HTMLInputElement).blur(); }
+        }} />
     </span>
   );
 }
@@ -835,6 +968,14 @@ function tokenize(expr: string): Token[] {
 
 const joined = (tokens: Token[]) => tokens.map((token) => token.text).join('').trim();
 const SIGNS: Record<string, string> = { '*': '×', '/': '÷', '-': '−' };
+
+/** A number typed inline in a sum, as wide as it is. */
+function Term({ value, label, onChange }: { value: string; label: string; onChange: (value: string) => void }) {
+  return (
+    <input className="pbook__term" inputMode="decimal" value={value} size={Math.max(2, value.length)} aria-label={label}
+      onChange={(event) => onChange(event.target.value)} />
+  );
+}
 
 /** One sum, laid out with its numbers to type over, x in its place, and what it comes to - then each step. */
 function Sum({ tokens, onTokens, x, value, answer }: {
@@ -854,9 +995,8 @@ function Sum({ tokens, onTokens, x, value, answer }: {
           if (token.kind === 'x') return <span key={at} className="pbook__x">{x}</span>;
           if (token.kind === 'num') {
             return (
-              <input key={at} className="pbook__term" inputMode="decimal" value={token.text} size={Math.max(2, token.text.length)}
-                aria-label="A number in the formula"
-                onChange={(event) => onTokens(tokens.map((entry, index) => (index === at ? { ...entry, text: event.target.value } : entry)))} />
+              <Term key={at} value={token.text} label="A number in the formula"
+                onChange={(text) => onTokens(tokens.map((entry, index) => (index === at ? { ...entry, text } : entry)))} />
             );
           }
           return token.text.trim() ? <span key={at} className="pbook__sign">{SIGNS[token.text] ?? token.text}</span> : null;
@@ -874,155 +1014,225 @@ function Sum({ tokens, onTokens, x, value, answer }: {
 }
 
 const CURRENCIES = (current: string) => [...new Set([current, 'INR', ...COMMON_CURRENCIES])];
+type Per = 'unit' | 'kg' | 'shipment';
+const parse = (text: string) => {
+  const value = Number(text.replace(/[,\s]/g, ''));
+  return text.trim() !== '' && Number.isFinite(value) ? value : null;
+};
 
 /**
  * How a cost comes to its rupees, as its calculator line does it: the price
- * in the currency it is priced in, into the currency it is paid in, into
- * rupees - or a percentage of another cost. Every number is there to type
- * over, each step worked out. Or a plain rupee amount instead. Only this
+ * in the currency it is priced in - per unit, a rate × weight, or a shipment
+ * charge shared - into the currency it is paid in, into rupees; or a
+ * percentage of other costs or of the selling price. Every number there to
+ * type over, each step worked out. Or a plain rupee amount instead. Only this
  * order changes - not the calculator.
  */
-function FormulaEditor({ row, column, columns, seed, onClose, onSave }: {
+function FormulaEditor({ row, column, start, onClose, onSave }: {
   row: BookRow;
   column: Column;
-  columns: Column[];
-  seed: FormulaSeed | null;
+  start: CostFormula | null;
   onClose: () => void;
   onSave: (steps: CostStep[], label: string) => void;
 }) {
   const step = stepIn(row, column);
-  const start = step?.formula ?? seed;
-  const startAmount = step?.formula?.amount ?? (step && seed ? amountForRupees(seed, step.amountMinor / 100) : null);
-  const [currency, setCurrency] = useState(start?.currency ?? 'CNY');
-  const [amount, setAmount] = useState(startAmount === null ? '' : String(Math.round(startAmount * 100) / 100));
+  const others = row.steps.filter((entry) => entry !== step);
+  const [currency, setCurrency] = useState(start?.currency ?? 'INR');
+  const [amount, setAmount] = useState(start ? String(round4(start.amount)) : step ? String(step.amountMinor / 100) : '');
+  const [per, setPer] = useState<Per>(start?.perKg ? 'kg' : start?.shared ? 'shipment' : 'unit');
+  const [count, setCount] = useState(String(start?.perKg ?? start?.shared ?? 1));
   const [via, setVia] = useState<{ currency: string; tokens: Token[] } | null>(
     start?.via ? { currency: start.via.currency, tokens: tokenize(start.via.expr) } : null);
-  const [tokens, setTokens] = useState<Token[]>(() => tokenize(start?.expr ?? 'x * 1'));
-  const [percentOf, setPercentOf] = useState(start?.percentOf ? { id: start.percentOf.id, percent: String(start.percentOf.percent) } : null);
+  const [tokens, setTokens] = useState<Token[]>(() => tokenize(start?.expr ?? 'x'));
+  const [percent, setPercent] = useState<{ text: string; ids: string[]; selling: PercentOf['selling'] } | null>(
+    start?.percentOf ? { text: String(start.percentOf.percent), ids: percentIds(start.percentOf), selling: start.percentOf.selling ?? null } : null);
   const [writing, setWriting] = useState(false);
   const [fixedText, setFixedText] = useState(step ? String(step.amountMinor / 100) : '');
 
-  const x = Number(amount.replace(/[,\s]/g, ''));
-  const known = amount.trim() !== '' && Number.isFinite(x) && x >= 0;
-  const percent = percentOf ? Number(percentOf.percent) : NaN;
-  const sourceStep = percentOf ? row.steps.find((entry) => entry.id === percentOf.id && entry !== step) : undefined;
+  const x = parse(amount);
+  const howMany = parse(count);
+  const share = parse(percent?.text ?? '');
 
   // The formula as it stands, put through the order's other costs so a percentage comes out.
-  const draft: CostFormula | null = percentOf
-    ? (Number.isFinite(percent) && percent >= 0 && sourceStep
-      ? { currency, amount: 0, expr: joined(tokens), percentOf: { id: percentOf.id, percent } } : null)
-    : known ? { currency, amount: round4(x), ...(via ? { via: { currency: via.currency, expr: joined(via.tokens) } } : {}), expr: joined(tokens) } : null;
-  const settled = draft ? stepIn({ ...row, steps: withCost(row, column, formulaMinor(draft), draft) }, column) : undefined;
+  let draft: CostFormula | null = null;
+  if (percent) {
+    if (share !== null && share >= 0 && (percent.selling || percent.ids.length > 0)) {
+      draft = { currency: 'INR', amount: 0, expr: 'x', percentOf: { percent: share, ...(percent.selling ? { selling: percent.selling } : { ids: percent.ids }) } };
+    }
+  } else if (x !== null && x >= 0 && (per === 'unit' || (howMany !== null && howMany > 0))) {
+    draft = {
+      currency, amount: round4(x),
+      ...(per === 'kg' ? { perKg: howMany! } : per === 'shipment' ? { shared: howMany! } : {}),
+      ...(via ? { via: { currency: via.currency, expr: joined(via.tokens) } } : {}),
+      expr: joined(tokens),
+    };
+  }
+  const settled = draft ? stepIn({ ...row, steps: withFormula(row, column, draft) }, column) : undefined;
   const result = settled?.formula ?? null;
+  const base = result ? formulaBase(result) : null;
   const paid = result ? formulaPaid(result) : null;
-  const rupees = settled && result && paid !== null && evalFormula(result.expr, paid) !== null ? settled.amountMinor : null;
+  const works = Boolean(settled && result && paid !== null);
   const paidIn = result ? paidCurrency(result) : via?.currency ?? currency;
-  const fixedRupees = Number(fixedText.replace(/[₹,\s]/g, ''));
+  const fixedRupees = parse(fixedText);
+  const percentBase = percent && !percent.selling
+    ? others.filter((entry) => percent.ids.includes(entry.id)).reduce((sum, entry) => sum + entry.amountMinor, 0) : 0;
 
   const priceBox = (
     <>
       {sym(currency)}
-      <input inputMode="decimal" value={amount} size={Math.max(2, amount.length)} aria-label="Price" placeholder="0"
-        onChange={(event) => setAmount(event.target.value)} />
+      <Term value={amount} label="Price" onChange={setAmount} />
     </>
   );
 
   return (
     <Modal title={`${column.label} · ${row.itemName}`} onClose={onClose}>
       <div className="stack pbook__formula">
-        {percentOf ? (
+        <div className="inssegs" role="tablist" aria-label="How this cost is worked out">
+          <button type="button" role="tab" aria-selected={!percent} className={`inscat${!percent ? ' is-on' : ''}`}
+            onClick={() => {
+              if (!percent) return;
+              setPercent(null);
+              if (result) { setAmount(String(round4(result.amount))); setCurrency(result.currency); setTokens(tokenize(result.expr)); }
+            }}>
+            A price
+          </button>
+          <button type="button" role="tab" aria-selected={Boolean(percent)} className={`inscat${percent ? ' is-on' : ''}`}
+            onClick={() => !percent && setPercent({ text: '10', ids: others.some((entry) => entry.id === 'item') ? ['item'] : [], selling: null })}>
+            A percentage
+          </button>
+        </div>
+
+        {percent ? (
           <div className="field">
-            <span>A percentage of another cost</span>
+            <span>Of</span>
+            <div className="chips">
+              {others.map((entry) => (
+                <button key={entry.id} type="button" className={`chip${!percent.selling && percent.ids.includes(entry.id) ? ' is-on' : ''}`}
+                  onClick={() => setPercent({
+                    ...percent, selling: null,
+                    ids: percent.ids.includes(entry.id) ? percent.ids.filter((id) => id !== entry.id) : [...percent.ids, entry.id],
+                  })}>
+                  {entry.label}
+                </button>
+              ))}
+              <button type="button" className={`chip${percent.selling === 'on' ? ' is-on' : ''}`}
+                onClick={() => setPercent({ ...percent, selling: percent.selling === 'on' ? null : 'on' })}>Selling price</button>
+              <button type="button" className={`chip${percent.selling === 'inside' ? ' is-on' : ''}`}
+                onClick={() => setPercent({ ...percent, selling: percent.selling === 'inside' ? null : 'inside' })}>
+                Inside the selling price (GST)
+              </button>
+            </div>
             <div className="pbook__sum">
-              <input className="pbook__term" inputMode="decimal" value={percentOf.percent} size={Math.max(2, percentOf.percent.length)}
-                aria-label="Percent" onChange={(event) => setPercentOf({ ...percentOf, percent: event.target.value })} />
+              <Term value={percent.text} label="Percent" onChange={(text) => setPercent({ ...percent, text })} />
               <span className="pbook__sign">% of</span>
-              <select className="pbook__of" value={percentOf.id} aria-label="Of which cost"
-                onChange={(event) => setPercentOf({ ...percentOf, id: event.target.value })}>
-                {row.steps.filter((entry) => entry !== step).map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
-              </select>
-              {sourceStep?.formula && (
-                <span className="pbook__sign">({sym(paidCurrency(sourceStep.formula))}{short(formulaPaid(sourceStep.formula) ?? 0)})</span>
-              )}
+              <span className="pbook__x">
+                {percent.selling
+                  ? `${money(row.unitPriceMinor)}${percent.selling === 'inside' ? ', tax inside' : ''}`
+                  : result && result.currency !== 'INR' && share
+                    ? `${sym(result.currency)}${short((result.amount * 100) / share)}`
+                    : money(percentBase)}
+              </span>
               <span className="pbook__sign">=</span>
               <b className="pbook__answer">{result ? `${sym(result.currency)}${short(result.amount)}` : '?'}</b>
             </div>
+            {result && result.currency !== 'INR' && (
+              <div className="pbook__sum">
+                <span className="pbook__x">{sym(result.currency)}{short(result.amount)}</span>
+                {tokenize(result.expr).filter((token) => token.kind !== 'x' && token.text.trim()).map((token, at) => (
+                  <span key={at} className="pbook__sign">{SIGNS[token.text] ?? token.text}</span>
+                ))}
+                <span className="pbook__sign">=</span>
+                <b className="pbook__answer">{settled ? money(settled.amountMinor) : '?'}</b>
+              </div>
+            )}
+            <span className="field__hint">
+              Follows what it is a percentage of{result && result.currency !== 'INR' ? `, in ${result.currency} like them` : ''}.
+            </span>
           </div>
         ) : (
-          <div className="pbook__formularow">
-            <label className="field">
-              <span>{column.label}, per unit</span>
-              <input inputMode="decimal" value={amount} placeholder="0" onChange={(event) => setAmount(event.target.value)} />
-            </label>
-            <label className="field">
-              <span>Priced in</span>
-              <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
-                {CURRENCIES(currency).map((code) => <option key={code} value={code}>{code} {sym(code)}</option>)}
-              </select>
-            </label>
-          </div>
+          <>
+            <div className="pbook__formularow">
+              <label className="field">
+                <span>Priced in</span>
+                <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
+                  {CURRENCIES(currency).map((code) => <option key={code} value={code}>{code} {sym(code)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Charged</span>
+                <select value={per} onChange={(event) => setPer(event.target.value as Per)}>
+                  <option value="unit">Per unit</option>
+                  <option value="kg">By weight - rate × kg</option>
+                  <option value="shipment">Per shipment - shared</option>
+                </select>
+              </label>
+            </div>
+
+            {per !== 'unit' && (
+              <div className="field">
+                <span>{per === 'kg' ? 'Rate × weight' : 'Shipment charge, shared'}</span>
+                <div className="pbook__sum">
+                  <span className="pbook__x">{priceBox}</span>
+                  <span className="pbook__sign">{per === 'kg' ? '/kg ×' : '÷'}</span>
+                  <Term value={count} label={per === 'kg' ? 'Kg for one unit' : 'Units sharing it'} onChange={setCount} />
+                  <span className="pbook__sign">{per === 'kg' ? 'kg' : 'units'} =</span>
+                  <b className="pbook__answer">{base !== null ? `${sym(currency)}${short(base)}` : '?'}</b>
+                </div>
+              </div>
+            )}
+
+            {via && (
+              <div className="field">
+                <span className="pbook__step">
+                  Paid in
+                  <select value={via.currency} aria-label="Paid in" onChange={(event) => setVia({ ...via, currency: event.target.value })}>
+                    {CURRENCIES(via.currency).map((code) => <option key={code} value={code}>{code} {sym(code)}</option>)}
+                  </select>
+                  <button type="button" className="btn btn--quiet btn--sm" onClick={() => setVia(null)}>Remove this step</button>
+                </span>
+                <Sum tokens={via.tokens} onTokens={(next) => setVia({ ...via, tokens: next })}
+                  x={per === 'unit' ? priceBox : <>{sym(currency)}{base !== null ? short(base) : '?'}</>}
+                  value={per === 'unit' ? x : base}
+                  answer={paid !== null ? `${sym(via.currency)}${short(paid)}` : '?'} />
+                {writing && (
+                  <input className="pbook__exprinput" value={joined(via.tokens)} spellCheck={false} aria-label="Formula to the paid currency"
+                    onChange={(event) => setVia({ ...via, tokens: tokenize(event.target.value) })} />
+                )}
+              </div>
+            )}
+
+            <div className="field">
+              <span className="pbook__step">
+                Into ₹
+                {!via && (
+                  <button type="button" className="btn btn--quiet btn--sm"
+                    onClick={() => setVia({ currency: currency === 'USD' ? 'CNY' : 'USD', tokens: tokenize('x / 6.7') })}>
+                    ＋ Paid in another currency
+                  </button>
+                )}
+              </span>
+              <Sum tokens={tokens} onTokens={setTokens}
+                x={!via && per === 'unit' ? priceBox : <>{sym(paidIn)}{paid !== null ? short(paid) : '?'}</>}
+                value={!via && per === 'unit' ? x : paid} answer={works && settled ? money(settled.amountMinor) : '?'} />
+              {writing ? (
+                <input className="pbook__exprinput" value={joined(tokens)} spellCheck={false} aria-label="Formula to rupees"
+                  onChange={(event) => setTokens(tokenize(event.target.value))} />
+              ) : (
+                <button type="button" className="btn btn--quiet btn--sm pbook__rewrite" onClick={() => setWriting(true)}>
+                  Change the formulas themselves
+                </button>
+              )}
+            </div>
+          </>
         )}
 
-        {!percentOf && via && (
-          <div className="field">
-            <span className="pbook__step">
-              Paid in
-              <select value={via.currency} aria-label="Paid in" onChange={(event) => setVia({ ...via, currency: event.target.value })}>
-                {CURRENCIES(via.currency).map((code) => <option key={code} value={code}>{code} {sym(code)}</option>)}
-              </select>
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setVia(null)}>Remove this step</button>
-            </span>
-            <Sum tokens={via.tokens} onTokens={(next) => setVia({ ...via, tokens: next })} x={priceBox} value={known ? x : null}
-              answer={paid !== null ? `${sym(via.currency)}${short(paid)}` : '?'} />
-            {writing && (
-              <input className="pbook__exprinput" value={joined(via.tokens)} spellCheck={false} aria-label="Formula to the paid currency"
-                onChange={(event) => setVia({ ...via, tokens: tokenize(event.target.value) })} />
-            )}
-          </div>
-        )}
-
-        <div className="field">
-          <span className="pbook__step">
-            Into ₹
-            {!percentOf && !via && (
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setVia({ currency: 'USD', tokens: tokenize('x / 6.7') })}>
-                ＋ Paid in another currency
-              </button>
-            )}
-          </span>
-          <Sum tokens={tokens} onTokens={setTokens}
-            x={!percentOf && !via ? priceBox : <>{sym(paidIn)}{paid !== null ? short(paid) : '?'}</>}
-            value={paid} answer={rupees !== null ? money(rupees) : '?'} />
-          {writing ? (
-            <input className="pbook__exprinput" value={joined(tokens)} spellCheck={false} aria-label="Formula to rupees"
-              onChange={(event) => setTokens(tokenize(event.target.value))} />
-          ) : (
-            <button type="button" className="btn btn--quiet btn--sm pbook__rewrite" onClick={() => setWriting(true)}>
-              Change the formulas themselves
-            </button>
-          )}
-          <span className="field__hint">
-            {percentOf ? 'Follows the cost it is a percentage of.' : `${sym(currency)} is the price.`} Only this order changes - the
-            calculator stays as it is.
-          </span>
-        </div>
+        <span className="field__hint">Only this order changes - the calculator stays as it is.</span>
 
         <div className="row">
-          <button type="button" className="btn btn--sm" disabled={!draft || rupees === null}
-            onClick={() => draft && onSave(withCost(row, column, formulaMinor(draft), draft), 'formula')}>
+          <button type="button" className="btn btn--sm" disabled={!draft || !works}
+            onClick={() => draft && onSave(withFormula(row, column, draft), 'formula')}>
             Save
           </button>
-          {percentOf ? (
-            <button type="button" className="btn btn--quiet btn--sm"
-              onClick={() => { setPercentOf(null); setAmount(result ? String(result.amount) : ''); setCurrency(result?.currency ?? currency); }}>
-              Make it a fixed amount
-            </button>
-          ) : columns.length > 1 && (
-            <button type="button" className="btn btn--quiet btn--sm"
-              onClick={() => setPercentOf({ id: row.steps.find((entry) => entry !== step)?.id ?? 'item', percent: '10' })}>
-              Make it a percentage
-            </button>
-          )}
           <button type="button" className="btn btn--quiet btn--sm" onClick={onClose}>Cancel</button>
         </div>
 
@@ -1034,8 +1244,8 @@ function FormulaEditor({ row, column, columns, seed, onClose, onSave }: {
               <input inputMode="decimal" value={fixedText} placeholder="0" onChange={(event) => setFixedText(event.target.value)} />
             </span>
           </label>
-          <button type="button" className="btn btn--ghost btn--sm" disabled={!(fixedRupees >= 0) || fixedText.trim() === ''}
-            onClick={() => onSave(withCost(row, column, Math.round(fixedRupees * 100), null), 'fixed')}>
+          <button type="button" className="btn btn--ghost btn--sm" disabled={fixedRupees === null || fixedRupees < 0}
+            onClick={() => fixedRupees !== null && onSave(withCost(row, column, Math.round(fixedRupees * 100), null), 'fixed')}>
             Use fixed ₹
           </button>
         </div>

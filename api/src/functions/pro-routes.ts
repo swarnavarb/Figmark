@@ -107,6 +107,8 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
     };
   });
   const orderCount = new Map<string, number>();
+  const unitsSold = new Map<string, number>();
+  for (const order of kept) unitsSold.set(order.listingId, (unitsSold.get(order.listingId) ?? 0) + order.quantity);
   for (const row of rows) if (row.lotId) orderCount.set(row.lotId, (orderCount.get(row.lotId) ?? 0) + 1);
 
   return json(200, {
@@ -134,7 +136,7 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
         currency: listing.currency,
         lotName: listing.lotId ? lotById.get(listing.lotId)?.name ?? null : null,
         onSale: onSale(listing),
-        sold: kept.filter((order) => order.listingId === listing.id).reduce((sum, order) => sum + order.quantity, 0),
+        sold: unitsSold.get(listing.id) ?? 0,
         sheet: listing.costSheet ?? null,
         costMinor: sheetTotal(listing.costSheet),
       })),
@@ -169,7 +171,7 @@ async function saveOrderCosts(request: HttpRequest, _context: InvocationContext)
   } else {
     let sheet: ItemCostSheet | null;
     try {
-      sheet = cleanCostSheet({ steps: body.steps }, now);
+      sheet = cleanCostSheet({ steps: body.steps }, now, order.unitPriceMinor / 100);
     } catch (err) {
       return error(400, 'invalid_sheet', (err as Error).message);
     }
@@ -217,7 +219,7 @@ async function saveOrderCostsBatch(request: HttpRequest, _context: InvocationCon
       delete entry.orderCosts[order.id];
     } else {
       try {
-        entry.orderCosts[order.id] = cleanCostSheet({ steps: change.steps }, now)?.steps ?? [];
+        entry.orderCosts[order.id] = cleanCostSheet({ steps: change.steps }, now, order.unitPriceMinor / 100)?.steps ?? [];
       } catch (err) {
         return error(400, 'invalid_sheet', (err as Error).message);
       }
@@ -258,7 +260,7 @@ async function saveCostSheet(request: HttpRequest, _context: InvocationContext) 
     sheet = history.pop() ?? null;
   } else if (body.sheet) {
     try {
-      sheet = cleanCostSheet(body.sheet, now);
+      sheet = cleanCostSheet(body.sheet, now, listing.priceMinor / 100);
     } catch (err) {
       return error(400, 'invalid_sheet', (err as Error).message);
     }
