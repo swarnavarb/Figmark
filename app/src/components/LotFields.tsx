@@ -1,8 +1,7 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
-import { ApiRequestError, api, type LotDetails } from '../api';
-import { ErrorNotice } from './ui';
+import type { LotDetails } from '../api';
 
 /**
  * The details that describe a lot, in one place.
@@ -148,59 +147,6 @@ export const lotDetailsOf = (lot: Lot): LotDetails => ({
   supplierContact: lot.supplier?.contact ?? '',
   supplierReference: lot.supplier?.reference ?? '',
 });
-
-/**
- * Open a lot without leaving the page you are on.
- *
- * A seller listing their first imported item has no lot to file it into, and
- * sending them to another screen to make one loses the listing they were half
- * way through writing.
- */
-export function NewLotDialog({ onCreated, onCancel }: {
-  onCreated: (lot: Lot) => void;
-  onCancel: () => void;
-}) {
-  const [details, setDetails] = useState<LotDetails>(emptyLotDetails);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Escape closes it, as every dialog should.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && onCancel();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api.createLot({ ...details, name: details.name.trim() });
-      onCreated(result.lot);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not create the lot.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal title="New lot" onClose={onCancel}>
-      <form className="form" onSubmit={submit}>
-        <LotDetailFields value={details} onChange={setDetails} />
-        {error && <ErrorNotice message={error} />}
-        <div className="row">
-          <button type="submit" className="btn" disabled={busy || !details.name.trim()}>
-            {busy ? 'Creating…' : 'Create lot'}
-          </button>
-          <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
-        </div>
-        <span className="field__hint">Everything here can be changed later from My lots.</span>
-      </form>
-    </Modal>
-  );
-}
 
 /** A centred panel over a scrim; on a phone it becomes a sheet from the bottom. */
 export function Modal({ title, onClose, children }: {

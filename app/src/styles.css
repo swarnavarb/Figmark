@@ -4538,6 +4538,15 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   font-weight: var(--w-semi);
 }
 .pickset .field__hint { margin-bottom: var(--s1); }
+/* "Your routes" / "Or start from a sample": names a run of picks. */
+.pickset__sub {
+  margin-top: var(--s1);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semi);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
 
 .pick {
   display: grid;

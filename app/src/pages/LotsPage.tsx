@@ -428,9 +428,7 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
         forwarderName: forwarderName.trim() || undefined,
         supplierHandle: supplierHandle.trim() || undefined,
         handlerHandle: handlerHandle.trim() || undefined,
-        // Left unset only when the shop has no route yet and picked none: the
-        // lot opens on the standard steps and can be pointed at a route later.
-        routeId: chosen || undefined,
+        routeId: chosen,
       });
       onDone(lot);
     } catch (err) {
@@ -477,12 +475,18 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
         </label>
       </div>
 
+      {/* Every lot travels a route: its steps are the buyer's tracking. A shop
+          with routes picks one of its own; a shop without one writes one or
+          starts from a sample. */}
       <fieldset className="pickset">
-        <legend>How this lot travels</legend>
+        <legend>Route *</legend>
         <span className="field__hint">
           Every order in the lot follows these steps, and customers read them as their tracking.
         </span>
 
+        {library && routes.length > 0 && (
+          <span className="pickset__sub">Your routes</span>
+        )}
         {routes.map((route) => (
           <label key={route.id} className={`pick${routeId === route.id ? ' is-on' : ''}`}>
             <input type="radio" name="route" checked={routeId === route.id}
@@ -497,6 +501,19 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
           </label>
         ))}
 
+        {library && routes.length === 0 && (
+          <p className="field__hint" style={{ margin: 0 }}>
+            You have no routes yet. Create a new one, or pick a sample below - it is saved as
+            your route and you can edit it any time.
+          </p>
+        )}
+
+        <button type="button" className="silkcta" onClick={() => setDesigning(true)}>
+          <span className="silkcta__label">+ Create a new route</span>
+          <span className="silkcta__note">Your own steps, without leaving this lot</span>
+        </button>
+
+        {readyMade.length > 0 && <span className="pickset__sub">Or start from a sample</span>}
         {readyMade.map((route) => (
           <label key={route.id} className={`pick${routeId === `${READY}${route.id}` ? ' is-on' : ''}`}>
             <input type="radio" name="route" checked={routeId === `${READY}${route.id}`}
@@ -509,17 +526,9 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
           </label>
         ))}
 
-        {library && routes.length === 0 && (
-          <p className="field__hint" style={{ margin: 0 }}>
-            Pick the one closest to how you ship - it is saved as your route and you can edit it any time.
-            Not sure? Leave it, and the lot uses Figmark&apos;s standard steps until you choose.
-          </p>
+        {!library && (
+          <p className="field__hint" style={{ margin: 0 }}>Loading routes…</p>
         )}
-
-        <button type="button" className="silkcta" onClick={() => setDesigning(true)}>
-          <span className="silkcta__label">+ Write your own route</span>
-          <span className="silkcta__note">Your own steps, without leaving this lot</span>
-        </button>
       </fieldset>
 
       {/* A forwarder, a supplier and a handler are all things a lot may
@@ -563,11 +572,11 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
       {error && <ErrorNotice message={error} />}
       <div className="row">
         <button type="submit" className="btn"
-          disabled={busy || !details.name.trim() || (routes.length > 0 && !routeId)}>
+          disabled={busy || !details.name.trim() || !routeId}>
           {busy ? 'Opening…' : 'Open the lot'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
-        {routes.length > 0 && !routeId && <span className="field__hint">Pick how it travels first.</span>}
+        {!routeId && <span className="field__hint">Pick a route first.</span>}
       </div>
     </form>
 

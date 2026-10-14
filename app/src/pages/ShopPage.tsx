@@ -118,8 +118,8 @@ const SECTION_GROUPS: Record<Group, Section[]> = {
 const GROUP_TABS: { id: Group; label: string; icon: IconName }[] = [
   { id: 'items', label: 'Listings', icon: 'tag' },
   { id: 'orders', label: 'Orders', icon: 'box' },
-  { id: 'lots', label: 'Lots', icon: 'truck' },
-  { id: 'money', label: 'Money', icon: 'spark' },
+  { id: 'lots', label: 'Shipments', icon: 'truck' },
+  { id: 'money', label: 'Data', icon: 'spark' },
   { id: 'settings', label: 'Shop settings', icon: 'bank' },
 ];
 

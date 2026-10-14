@@ -7,7 +7,7 @@ import { can } from '../../../shared/stores.js';
 import { TAGGED_ROLES, crewMayPress, crewSlots, hasArrived, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
-  BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNo, lotNumberFrom, normaliseSteps,
+  atSellerYet, coarseStage, currentStepOf, lotNo, lotNumberFrom, normaliseSteps,
   itemStepOn, joinIndexOf, lotEndIndex, lotOffset, routeJoinsLot, routeOf, stepForStage, stepTickKey, triggeredStep,
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, ticksOf
 } from '../../../shared/routes.js';
@@ -339,7 +339,11 @@ export async function buildLot(
   /* The ladder this lot travels, settled before anything is written: a lot
      created against a template that turns out not to exist should not exist
      either, tracking whatever the fallback happened to be. */
-  let route: LotRoute = BUILT_IN_ROUTE;
+  // Required: a lot's route is its buyers' tracking, so none opens without one.
+  if (!body.routeId && !(body.routeSteps && body.routeSteps.length > 0)) {
+    return refuse(400, 'route_required', 'Pick a route for this lot: one of yours, a new one, or a sample.');
+  }
+  let route: LotRoute;
   if (body.routeId) {
     const template = await repository.getRoute(userId, body.routeId);
     if (!template) return refuse(404, 'not_found', 'No such route.');
@@ -351,9 +355,9 @@ export async function buildLot(
     // Given its buttons on the way in, so a template saved before they were
     // handed out still travels with them in order.
     route = { routeId: template.id, name: template.name, steps: withButtons(template.steps) };
-  } else if (body.routeSteps && body.routeSteps.length > 0) {
+  } else {
     const steps = normaliseSteps(
-      body.routeSteps.map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
+      body.routeSteps!.map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
     );
     if (steps.length < 2) return refuse(400, 'invalid_route', 'A route needs at least two steps.');
     route = { routeId: null, name: body.routeName?.trim() || 'Route', steps: withButtons(steps) };

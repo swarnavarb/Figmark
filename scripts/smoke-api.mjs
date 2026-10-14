@@ -55,11 +55,19 @@ const {
  * wants to test the requirement itself passes its own (possibly empty)
  * `originCountry`/`destinationCountry` and this leaves it alone.
  */
+/*
+ * Every lot now needs a route. Fixtures that are not about routes travel
+ * Figmark's standard steps, injected here as with the countries; one that
+ * names its own route (or tests the requirement) is left alone.
+ */
+const { BUILT_IN_ROUTE } = await import(new URL('../api/dist/shared/routes.js', import.meta.url));
+const standardRoute = { routeName: BUILT_IN_ROUTE.name, routeSteps: BUILT_IN_ROUTE.steps };
 const createLot = (request, ctx) => {
   const patched = {
     json: async () => {
       const body = await request.json().catch(() => ({}));
-      return { originCountry: 'China', destinationCountry: 'India', ...body };
+      const route = body.routeId || body.routeSteps || body.noRoute ? {} : standardRoute;
+      return { originCountry: 'China', destinationCountry: 'India', ...route, ...body };
     },
   };
   return createLotHandler({ ...request, ...patched }, ctx);
@@ -744,6 +752,12 @@ await check('the two countries are all a lot insists on', async () => {
   assert.equal(nameless.jsonBody.error, 'invalid_lot');
 });
 
+await check('a lot needs a route', async () => {
+  const routeless = await createLot(req({ headers: auth, body: { name: 'No route', noRoute: true } }), ctx);
+  assert.equal(routeless.status, 400);
+  assert.equal(routeless.jsonBody.error, 'route_required');
+});
+
 await check('a lot needs both an origin and a destination country', async () => {
   const noCountries = await createLotHandler(req({
     headers: auth, body: { name: 'No countries' },
@@ -757,7 +771,7 @@ await check('a lot needs both an origin and a destination country', async () => 
   assert.equal(badCountry.status, 400);
 
   const ok = await createLotHandler(req({
-    headers: auth, body: { name: 'Good countries', originCountry: 'Vietnam', destinationCountry: 'United Arab Emirates' },
+    headers: auth, body: { name: 'Good countries', originCountry: 'Vietnam', destinationCountry: 'United Arab Emirates', ...standardRoute },
   }), ctx);
   assert.equal(ok.status, 201);
   assert.equal(ok.jsonBody.lot.originCountry, 'Vietnam');
@@ -5934,20 +5948,21 @@ await check('the two ways to move a lot cannot disagree about where it is', asyn
   // names a step. They are two doors onto one lot, so both have to set its
   // position - otherwise a lot advanced through the old door reads as still
   // at step zero and every buyer in it is told nothing happened.
+  // Short of the landing: on a route the lot ends there and items go on alone.
   const made = await createLot(req({ headers: auth, body: { name: 'Two doors' } }), ctx);
   const id = made.jsonBody.lot.id;
 
   const moved = await advanceStage(req({
-    headers: auth, params: { id }, body: { stage: 'india_received' },
+    headers: auth, params: { id }, body: { stage: 'dispatched_from_china' },
   }), ctx);
   assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
 
   const body = (await lotContents(req({ headers: auth, params: { id } }), ctx)).jsonBody;
-  assert.equal(body.lot.stage, 'india_received');
-  assert.equal(body.route.steps[body.route.currentStep].name, 'India received / customs');
+  assert.equal(body.lot.stage, 'dispatched_from_china');
+  assert.equal(body.route.steps[body.route.currentStep].name, 'Dispatched from China');
   // And the history says what happened in the same words the ladder shows.
   const last = body.lot.stageHistory[body.lot.stageHistory.length - 1];
-  assert.equal(last.step, 'India received / customs');
+  assert.equal(last.step, 'Dispatched from China');
 });
 
 await check('a route can be dropped, and the lots on it carry on', async () => {
@@ -6385,7 +6400,7 @@ await check('one order, one move: a lot opened and the order filed into it', asy
     body: {
       newLot: {
         name: 'Opened from an order', origin: 'Guangzhou, CN', originCountry: 'China', destinationCountry: 'India',
-        routeId: undefined,
+        ...standardRoute,
       },
     },
   }), ctx);
