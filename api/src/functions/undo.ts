@@ -50,14 +50,18 @@ export function withoutUndo(history: readonly StageEvent[], undoId: string): Sta
 /** Said when the window has closed, or the action was never undoable. */
 export const UNDO_EXPIRED = 'Too late to undo - the 3 minutes are up and buyers can see it now. Move it back as a normal step instead.';
 
-/** Take back the notices an undone action had queued. */
+/**
+ * Take back the notices an undone action had queued.
+ *
+ * Deleted rather than flagged: a taken-back notice is never shown or sent, so
+ * keeping it only spent space.
+ */
 export async function withdrawNotices(repository: Repo, userIds: readonly string[], undoId: string): Promise<void> {
-  const now = new Date().toISOString();
   await Promise.all([...new Set(userIds)].map(async (userId) => {
     try {
       const rows = await repository.listNotifications(userId, 50);
-      await Promise.all(rows.filter((row) => row.undoId === undoId && !row.withdrawn)
-        .map((row) => repository.saveNotification({ ...row, withdrawn: true, updatedAt: now })));
+      await Promise.all(rows.filter((row) => row.undoId === undoId)
+        .map((row) => repository.deleteNotification(userId, row.id)));
     } catch {
       // A notice that could not be withdrawn still shows a step that was
       // undone; the timeline, which is the record, is already right.

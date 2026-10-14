@@ -10528,13 +10528,13 @@ await check('a step forward can be undone for three minutes, and shows nowhere u
   let told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
   assert.ok(!told.some((row) => row.body.includes('Undo box')), 'the buyer is not told yet');
 
-  // Undone: back where it was, no trace, the held notice withdrawn.
+  // Undone: back where it was, no trace, the held notice gone.
   const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
   assert.equal(back.status, 200, JSON.stringify(back.jsonBody));
   const board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
   assert.equal(board.route.currentStep, startAt);
   assert.ok(!board.history.some((event) => event.undoId === undo.id));
-  assert.ok((await noticesFor(buyer.id)).filter((row) => row.undoId === undo.id).every((row) => row.withdrawn));
+  assert.deepEqual((await noticesFor(buyer.id)).filter((row) => row.undoId === undo.id), [], 'the held notice is deleted');
   const twice = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
   assert.equal(twice.status, 409);
   assert.equal(twice.jsonBody.error, 'undo_expired');

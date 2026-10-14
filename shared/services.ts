@@ -123,12 +123,6 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
 /** In the order the goods actually move. */
 export const SERVICE_ORDER: readonly ServiceKind[] = ['supplier', 'forwarder', 'handler', 'artist'];
 
-/** How somebody becomes one, in one line, for the category screen. */
-export const ENTRY_NOTE: Record<ServiceEntry, string> = {
-  listed: 'Anyone can offer this. Put yourself on the list from My services.',
-  approved: 'Apply with your details from My services. Figmark reviews it and opens your store.',
-  named: 'Named by a shop on one lot. There is no list to join.',
-};
 
 /** Whether this account provides that service right now. */
 export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'artistProfile'>, kind: ServiceKind): boolean {

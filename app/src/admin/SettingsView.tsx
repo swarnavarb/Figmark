@@ -3,7 +3,7 @@ import { SETTING_RULES, type MarketSettings } from '@shared/settings';
 import { ApiRequestError, admin } from './api';
 import { formatMoney, timeAgo } from '../format';
 
-type Editable = Exclude<keyof MarketSettings, 'updatedAt' | 'updatedBy'>;
+type Editable = Exclude<keyof MarketSettings, 'updatedAt' | 'updatedBy' | 'auditTrail'>;
 
 /** How each number is typed in: rupees, percent or days, stored as minor units, basis points or days. */
 const FIELDS: { key: Editable; unit: 'rupees' | 'percent' | 'days'; hint: string }[] = [

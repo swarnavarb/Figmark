@@ -67,13 +67,6 @@ export type StepTrigger = OrderCheckpoint;
 export const STAGE_ICONS = ['supplier', 'warehouse', 'transit', 'customs', 'delivery'] as const;
 export type StageIcon = (typeof STAGE_ICONS)[number];
 
-export const STAGE_ICON_LABELS: Record<StageIcon, string> = {
-  supplier: 'Supplier / exporter',
-  warehouse: 'Warehouse / forwarder',
-  transit: 'In transit',
-  customs: 'Customs',
-  delivery: 'Delivery',
-};
 
 /** What each trigger button says, and what pressing it means. */
 export const TRIGGER_LABELS: Record<StepTrigger, { button: string; means: string }> = {

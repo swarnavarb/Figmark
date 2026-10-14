@@ -179,12 +179,6 @@ export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
 export const DISPUTE_OUTCOMES = ['refund_buyer', 'release_seller', 'split', 'withdrawn'] as const;
 export type DisputeOutcome = (typeof DISPUTE_OUTCOMES)[number];
 
-export const DISPUTE_OUTCOME_LABELS: Record<DisputeOutcome, string> = {
-  refund_buyer: 'Refunded to the buyer',
-  release_seller: 'Released to the seller',
-  split: 'Split between both',
-  withdrawn: 'Withdrawn',
-};
 
 /**
  * Why a dispute was opened, from each side.

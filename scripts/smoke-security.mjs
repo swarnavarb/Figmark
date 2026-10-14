@@ -27,6 +27,7 @@ const { resetRateLimits, clientIp } = await import(new URL('api/src/rate-limit.j
 const { DEMO_EMAIL, DEMO_PASSWORD } = await import(new URL('api/src/data/seed.js', base));
 const { loginRoute, meRoute } = await import(new URL('auth-routes.js', fns));
 const { adminSuspendRoute, adminAuditRoute } = await import(new URL('admin-routes.js', fns));
+const { opsSettingsSaveRoute } = await import(new URL('settings-routes.js', fns));
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 
@@ -496,6 +497,23 @@ await check('an operator action is recorded with who, what and to whom', async (
     headers: new Headers(headers), params, query: new URLSearchParams(),
     json: async () => body,
   });
+  const readTrail = async () =>
+    (await adminAuditRoute({ headers: new Headers(headers), params: {}, query: new URLSearchParams() }, ctx)).jsonBody.entries;
+  const setRecording = async (on) => {
+    const saved = await opsSettingsSaveRoute({ headers: new Headers(headers), params: {}, query: new URLSearchParams(), json: async () => ({ auditTrail: on }) }, ctx);
+    assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+    assert.equal(saved.jsonBody.auditTrail, on);
+  };
+
+  // Off until an operator turns it on: an action taken now leaves no trace.
+  const quiet = await adminSuspendRoute(request({ id: 'usr_packer' }), ctx);
+  assert.equal(quiet.status, 200, JSON.stringify(quiet.jsonBody));
+  assert.deepEqual(await readTrail(), [], 'nothing is recorded while the trail is off');
+
+  // Turning it on is the first thing it records.
+  await setRecording(true);
+  assert.ok((await readTrail()).some((entry) => entry.action === 'settings.save' && entry.detail.auditTrail === true));
+
   const suspended = await adminSuspendRoute(request({ id: 'usr_packer' }), ctx);
   assert.equal(suspended.status, 200, JSON.stringify(suspended.jsonBody));
 
@@ -514,6 +532,11 @@ await check('an operator action is recorded with who, what and to whom', async (
   assert.equal(refused.status, 404);
   const after = (await adminAuditRoute({ headers: new Headers(headers), params: {}, query: new URLSearchParams() }, ctx)).jsonBody.entries.length;
   assert.equal(after, before);
+
+  // Turning it off is not recorded, and neither is anything after it.
+  await setRecording(false);
+  await adminSuspendRoute(request({ id: 'usr_packer' }), ctx);
+  assert.equal((await readTrail()).length, before, 'turning it off, and what follows, leave no trace');
 });
 
 console.log(`\n${passed} security checks passed`);

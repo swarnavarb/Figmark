@@ -1,4 +1,4 @@
-import { isPersonFollow } from '../../../shared/storefront.js';
+import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { ROUTE_TEMPLATES, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
@@ -555,6 +555,10 @@ export class MemoryRepository implements Repository {
     this.siteContent.delete(id);
   }
 
+  async listSiteContentRange(from: string, to: string): Promise<SiteContent[]> {
+    return [...this.siteContent.values()].filter((content) => content.id >= from && content.id < to);
+  }
+
   async listFollowsBy(followerId: string): Promise<Follow[]> {
     return [...this.follows.values()].filter((follow) => follow.followerId === followerId);
   }
@@ -771,6 +775,10 @@ export class MemoryRepository implements Repository {
     return notification;
   }
 
+  async deleteNotification(userId: string, id: string): Promise<void> {
+    if (this.notifications.get(id)?.userId === userId) this.notifications.delete(id);
+  }
+
   async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {
     return [...this.notifications.values()].filter((entry) =>
       entry.notBefore !== undefined && entry.notBefore >= from && entry.notBefore <= until
@@ -935,10 +943,31 @@ export class MemoryRepository implements Repository {
     if (user.username) this.handles.delete(handleKey(user.username));
     if (user.sellerProfile?.username) this.handles.delete(handleKey(user.sellerProfile.username));
     this.users.delete(id);
+    // What only made sense with the account, as the Cosmos store does it.
+    const drop = <T>(map: Map<string, T>, gone: (row: T) => boolean) => {
+      for (const [key, row] of map) if (gone(row)) map.delete(key);
+    };
+    drop(this.notifications, (row) => row.userId === id);
+    for (const like of [...this.likes.values()]) if (like.userId === id) await this.toggleLike(id, like.listingId);
+    for (const follow of [...this.follows.values()].filter((row) => row.followerId === id)) {
+      const person = isPersonFollow(follow.sellerId);
+      const target = this.users.get(person ? follow.sellerId.slice(personFollowId('').length) : follow.sellerId);
+      if (target && person) target.followerCount = Math.max(0, (target.followerCount ?? 0) - 1);
+      else if (target?.sellerProfile) target.sellerProfile.followerCount = Math.max(0, target.sellerProfile.followerCount - 1);
+    }
+    drop(this.follows, (row) => row.followerId === id || row.sellerId === id || row.sellerId === personFollowId(id));
+    const wants = new Set([...this.wants.values()].filter((want) => want.buyerId === id).map((want) => want.id));
+    drop(this.wantOffers, (row) => wants.has(row.wantId));
+    drop(this.wantSeekers, (row) => wants.has(row.wantId));
+    drop(this.wants, (row) => wants.has(row.id));
+    drop(this.storeReviews, (row) => row.subjectId === id);
   }
 
   async deleteListing(_sellerId: string, id: string): Promise<void> {
     this.listings.delete(id);
+    for (const map of [this.comments, this.pledges, this.likes] as Map<string, { listingId: string }>[]) {
+      for (const [key, row] of map) if (row.listingId === id) map.delete(key);
+    }
   }
 
   async deletePost(_channelId: string, id: string): Promise<void> {

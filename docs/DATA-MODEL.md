@@ -21,6 +21,8 @@ shipment, `User` covers both sides of the trade, and `Order` is one manifest lin
 | `reviews` | `/subjectId` | Reviews are read as "everything about this user" — exactly one partition. |
 | `disputes` | `/orderId` | A dispute belongs to one order and is always fetched with it. |
 | `sessions` | `/id` | Mock-auth revocation list. TTL-expiring, so it stays tiny. |
+| `notifications` | `/userId` | "Everything waiting for me". Expires 90 days after its last write. |
+| `siteContent` | `/id` | Operator-written pages, settings, and the logs kept as lists (fee ledger, audit trail). TTL enabled per document. |
 
 Throughput is provisioned on the *database* (1000 RU/s shared) rather than per
 container, which fits the Cosmos free tier exactly.
@@ -52,6 +54,43 @@ container, which fits the Cosmos free tier exactly.
 - **`filledCount` on `Lot` is denormalised** from the orders in that lot, so
   listing lots does not require counting orders per lot. It must be updated in
   the same operation that creates or cancels an order.
+
+## Keeping the database small
+
+- **Indexing is opt-out per path.** Every field is indexed unless the
+  container excludes it, and the index costs storage like the data does. So
+  anything read whole and never filtered or sorted by - an order's timeline,
+  photos and payments; a user's verification, trust and profile prose; a
+  notice's words; every `siteContent` document's `data` - is excluded in
+  `shared/containers.ts`. Composite indexes exist only where a query sorts on
+  them. Before excluding a path, check no query in `cosmos-repository.ts`
+  filters or sorts on it.
+- **Policies reach existing containers.** Creating a container applies its
+  policy, but a container created earlier keeps the old one. The API compares
+  each container's indexing and TTL with the schema on start-up (remembered by
+  a hash, so it is one point read once done) and replaces what differs;
+  `npm run azure:provision` does the same. Unique keys cannot change after
+  creation and are kept.
+- **Expiry instead of sweeping.** Notifications expire 90 days after their
+  last write; a notice taken back by an undo is deleted at once. Audit-trail
+  days carry their own 90-day `ttl`.
+- **Logs are split by period, never trimmed.** The fee ledger is one
+  `siteContent` document per month (`fee-ledger-YYYY-MM`) and the audit trail
+  one per day (`audit-YYYY-MM-DD`); a period that outgrows 512 KB carries on in
+  `<id>.2`, `<id>.3` (`api/src/site-log.ts`). The queues that are trimmed
+  (dispute actions, community notices, content reports) are also held under
+  1.5 MB, well inside Cosmos's 2 MB item limit.
+- **The audit trail is off by default.** An operator turns it on from the
+  console's Audit trail tab. While off nothing is written - not even the switch
+  being turned off.
+- **Deleting takes the leftovers along.** Deleting an account deletes its
+  notifications, saves (dropping each listing's saved count), follows both ways
+  (dropping follower counts), hunts with their answers and seekers, and the
+  reviews on its page. Deleting a listing deletes its comments, pledges and
+  saves. Pledges, answers and reviews the account left on other people's pages
+  stay, like its orders. A one-off pass on start-up removed what deletions
+  before this left behind, along with withdrawn notices and audit days older
+  than 90 days.
 
 ## Money and weight
 
@@ -179,9 +218,10 @@ turning notifications on never contend; two screens changing the same part
 merge or are refused like any other checked write. Users read from list
 queries carry no parts, and saving one leaves the parts alone.
 
-Rows written before the split still carry these fields inline. They read as
-they are, and move into their part on the account's next save. The game state
-(`quest`) stays on the row: it is capped, and the leaderboard sorts on it.
+Rows written before the split carried these fields inline; a one-off pass on
+start-up saves each such account once, which moves them into their parts. The
+game state (`quest`) stays on the row: it is capped, and the leaderboard sorts
+on it.
 
 ## Not yet modelled
 

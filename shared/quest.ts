@@ -206,10 +206,6 @@ export function actionXp(count: number, each = ACTION_XP): number {
   return Math.min(Math.max(count, 0), ACTION_CAP) * each;
 }
 
-/** A milestone ladder's worth for the steps reached. */
-export function tierXp(reached: number): number {
-  return TIER_XP.slice(0, reached).reduce((sum, xp) => sum + xp, 0);
-}
 
 export function levelFor(xp: number): number {
   let level = 1;

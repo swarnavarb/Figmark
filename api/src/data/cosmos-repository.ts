@@ -1,9 +1,10 @@
-import { isPersonFollow } from '../../../shared/storefront.js';
+import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
-import { CosmosClient, type Container, type ContainerRequest, type Database } from '@azure/cosmos';
+import { createHash } from 'node:crypto';
+import { CosmosClient, type Container, type ContainerRequest, type Database, type IndexingPolicy } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
@@ -19,6 +20,7 @@ import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
 import { photoNamesIn } from '../storage/unused.js';
+import { AUDIT_KEEP_DAYS, AUDIT_PREFIX } from '../site-log.js';
 import { ReadSnapshots, StaleWriteError, adopt, mergeChanges } from './concurrency.js';
 import {
   USER_PART_NAMES, fieldsOf, joinUser, mentions, partDoc, partId, rowOf,
@@ -67,6 +69,12 @@ import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcas
 const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
 /** Site-content id of the marker left once messages between an owner and their own shop are gone. */
 const SELF_MESSAGES_MARKER = 'migration:self-messages';
+/** Site-content id of the marker left once the one-off storage clean-up has run. */
+const STORAGE_CLEANUP_MARKER = 'migration:storage-cleanup';
+/** Site-content id recording which container policies were last applied to the database. */
+const CONTAINER_POLICY_MARKER = 'migration:container-policies';
+/** How long a refused policy update waits before it is tried again. */
+const POLICY_RETRY_MS = 24 * 60 * 60 * 1000;
 
 function autoSeedEnabled(): boolean {
   return (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase() !== 'off';
@@ -94,6 +102,20 @@ const STORE_OWNERS: Record<StoreKind, string> = {
 const STORE_OWNERS_ANY = 'SELECT * FROM c WHERE (IS_DEFINED(c.forwarderProfile) AND NOT IS_NULL(c.forwarderProfile))'
   + ' OR (IS_DEFINED(c.artistProfile) AND NOT IS_NULL(c.artistProfile))';
 
+/** Whether a container already has the indexing and expiry the schema asks for. */
+function samePolicy(
+  current: { indexingPolicy?: IndexingPolicy; defaultTtl?: number },
+  wanted: { indexingPolicy: IndexingPolicy; defaultTtl?: number },
+): boolean {
+  const shape = (policy: IndexingPolicy | undefined) => JSON.stringify({
+    excluded: (policy?.excludedPaths ?? []).map((entry) => entry.path).sort(),
+    composite: (policy?.compositeIndexes ?? [])
+      .map((index) => index.map((entry) => `${entry.path} ${entry.order ?? 'ascending'}`).join(','))
+      .sort(),
+  });
+  return shape(current.indexingPolicy) === shape(wanted.indexingPolicy) && (current.defaultTtl ?? null) === (wanted.defaultTtl ?? null);
+}
+
 export class CosmosRepository implements Repository {
   readonly backend: BackendKind = 'cosmos';
 
@@ -119,6 +141,7 @@ export class CosmosRepository implements Repository {
   private maintenance: Promise<void> | null = null;
   /** The one-off removal of owner-to-own-shop messages, when it is running. */
   private selfMessages: Promise<void> | null = null;
+  private storage: Promise<void> | null = null;
 
   constructor(private readonly cosmosConfig: CosmosConfig) {
     // A key is used when supplied; otherwise managed identity, which is the
@@ -221,6 +244,12 @@ export class CosmosRepository implements Repository {
         this.state = { ...this.state, detail: `${this.state.detail} Self-message cleanup failed: ${describeError(error)}.` };
       }).then(() => undefined);
     }
+
+    // Space: what earlier releases left behind, once, and then the indexing and
+    // expiry the schema declares, applied to containers created before it said
+    // so. Both behind the request; both cost one marker read once done.
+    const populated = signInAccounts > 0;
+    this.storage = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.tidyStorage(populated)).catch(() => undefined);
 
     let seeded = '';
     if (autoSeedEnabled()) {
@@ -369,9 +398,12 @@ export class CosmosRepository implements Repository {
 
     // Who each protection fee paid, by order: the record of the manager an
     // order was protected with, if the order itself lost it.
-    const ledger = await this.getSiteContent('fee-ledger');
+    // The ledger is `fee-ledger` before its split into months and
+    // `fee-ledger-YYYY-MM` after; this range holds either.
+    const ledger = await this.listSiteContentRange('fee-ledger', 'fee-ledger-~');
     const paidTo = new Map<string, string>();
-    for (const entry of ((ledger?.data as { entries?: { kind?: string; reference?: string; managerId?: string | null }[] } | undefined)?.entries ?? [])) {
+    const fees = ledger.flatMap((month) => (month.data as { entries?: { kind?: string; reference?: string; managerId?: string | null }[] } | undefined)?.entries ?? []);
+    for (const entry of fees) {
       if (entry.kind === 'protection' && entry.reference && entry.managerId) paidTo.set(entry.reference, entry.managerId);
     }
     const managers = (await this.listManagers())
@@ -452,6 +484,174 @@ export class CosmosRepository implements Repository {
   private async markSelfMessagesCleared(removed: number): Promise<void> {
     const now = new Date().toISOString();
     await this.saveSiteContent({ id: SELF_MESSAGES_MARKER, data: { removed }, updatedBy: null, createdAt: now, updatedAt: now });
+  }
+
+  private async tidyStorage(populated: boolean): Promise<void> {
+    // The clean-up first: it reads fields the new policy stops indexing.
+    const cleaned = populated
+      ? await this.cleanUpStorage().catch((error) => ` Storage clean-up failed: ${describeError(error)}.`)
+      : '';
+    const applied = await this.applyContainerPolicies().catch((error) => ` Container policies were not applied: ${describeError(error)}.`);
+    if (cleaned || applied) this.state = { ...this.state, detail: `${this.state.detail}${cleaned}${applied}` };
+  }
+
+  /**
+   * Brings existing containers' indexing and expiry in line with the schema.
+   *
+   * `ensureContainers` only creates what is missing, so a container made
+   * before an excluded path or a TTL was declared never picks either up. This
+   * replaces the policy of each container that differs - the partition key and
+   * unique keys cannot change and are kept as they are. Cosmos re-indexes in
+   * the background while the container keeps serving.
+   *
+   * Remembered by a hash of the schema, so a start-up with nothing new costs
+   * one point read. Replacing a container is a management-plane call that a
+   * data-plane identity is refused; a refusal is reported and tried again a
+   * day later, not on every cold start.
+   */
+  private async applyContainerPolicies(): Promise<string> {
+    const wanted = createHash('sha256').update(JSON.stringify(CONTAINER_LIST.map(containerBody))).digest('hex');
+    const marker = await this.getSiteContent(CONTAINER_POLICY_MARKER);
+    const last = marker?.data as { hash?: string; failedHash?: string; failedAt?: string } | undefined;
+    if (last?.hash === wanted) return '';
+    if (last?.failedHash === wanted && last.failedAt && Date.now() - Date.parse(last.failedAt) < POLICY_RETRY_MS) return '';
+
+    const now = new Date().toISOString();
+    const updated: string[] = [];
+    try {
+      for (const definition of CONTAINER_LIST) {
+        const handle = this.database.container(definition.name);
+        const { resource } = await handle.read();
+        if (!resource) continue;
+        const body = containerBody(definition) as { indexingPolicy: IndexingPolicy; defaultTtl?: number };
+        if (samePolicy(resource, body)) continue;
+        await handle.replace({
+          id: resource.id,
+          partitionKey: resource.partitionKey,
+          ...(resource.uniqueKeyPolicy ? { uniqueKeyPolicy: resource.uniqueKeyPolicy } : {}),
+          indexingPolicy: body.indexingPolicy,
+          ...(body.defaultTtl !== undefined ? { defaultTtl: body.defaultTtl } : {}),
+        });
+        updated.push(definition.name);
+      }
+    } catch (error) {
+      await this.saveSiteContent({
+        id: CONTAINER_POLICY_MARKER, data: { ...last, failedHash: wanted, failedAt: now }, updatedBy: null,
+        createdAt: marker?.createdAt ?? now, updatedAt: now,
+      });
+      throw error;
+    }
+    await this.saveSiteContent({
+      id: CONTAINER_POLICY_MARKER, data: { hash: wanted, updated }, updatedBy: null, createdAt: marker?.createdAt ?? now, updatedAt: now,
+    });
+    return updated.length > 0 ? ` Applied indexing and expiry policy to: ${updated.join(', ')}.` : '';
+  }
+
+  /**
+   * Removes what earlier releases left behind, once.
+   *
+   * - Notices taken back by an undo, which used to be kept with a flag.
+   * - Audit days written before they expired on their own.
+   * - Collection, devices and the other growing lists still inline on account
+   *   rows from before `userParts`: each such account is saved once, which
+   *   moves them into their parts.
+   * - Rows pointing at an account or listing that was deleted before deleting
+   *   took them along.
+   */
+  private async cleanUpStorage(): Promise<string> {
+    if (await this.getSiteContent(STORAGE_CLEANUP_MARKER)) return '';
+    const withdrawn = await this.deleteMatching('notifications', {
+      query: 'SELECT c.id, c.userId AS pk FROM c WHERE c.withdrawn = true',
+    });
+    const audit = await this.expireAuditDays();
+    const moved = await this.moveInlineParts();
+    const orphans = await this.deleteOrphans();
+    await this.markStorageCleaned({ withdrawn, audit, moved, orphans });
+    const said = [
+      withdrawn && `${withdrawn} withdrawn notice(s)`,
+      audit && `${audit} expired audit day(s)`,
+      orphans && `${orphans} row(s) left by deleted accounts and listings`,
+    ].filter(Boolean);
+    return (said.length > 0 ? ` Removed ${said.join(', ')}.` : '') + (moved > 0 ? ` Moved ${moved} account(s) to separate parts.` : '');
+  }
+
+  private async markStorageCleaned(counts: Record<string, number>): Promise<void> {
+    const now = new Date().toISOString();
+    await this.saveSiteContent({ id: STORAGE_CLEANUP_MARKER, data: counts, updatedBy: null, createdAt: now, updatedAt: now });
+  }
+
+  /** Audit days from before they carried an expiry: the expired ones go, the rest get theirs. */
+  private async expireAuditDays(): Promise<number> {
+    const keepMs = AUDIT_KEEP_DAYS * 86_400_000;
+    let removed = 0;
+    for (const day of await this.listSiteContentRange(AUDIT_PREFIX, `${AUDIT_PREFIX}~`)) {
+      if (day.ttl !== undefined) continue;
+      const left = keepMs - (Date.now() - Date.parse(day.updatedAt));
+      if (!(left > 0)) {
+        await this.deleteSiteContent(day.id);
+        removed += 1;
+      } else {
+        await this.saveSiteContent({ ...day, ttl: Math.ceil(left / 1000) });
+      }
+    }
+    return removed;
+  }
+
+  /** Accounts still carrying a part on the row, each saved once so it moves out. */
+  private async moveInlineParts(): Promise<number> {
+    // Projected rather than filtered: the policy this pass precedes stops
+    // indexing these fields, and a projection reads the document either way.
+    // Every field in USER_PARTS, spelled out so the statement stays checkable.
+    const { resources } = await this.container('users')
+      .items.query<{ id: string; legacy: boolean }>({
+        query: 'SELECT c.id, (IS_DEFINED(c.collection) OR IS_DEFINED(c.collectionGroups) OR IS_DEFINED(c.shareOpens)'
+          + ' OR IS_DEFINED(c.shareLog) OR IS_DEFINED(c.invitees) OR IS_DEFINED(c.referrals) OR IS_DEFINED(c.affiliateOrderIds)'
+          + ' OR IS_DEFINED(c.affiliateLinks) OR IS_DEFINED(c.pushEndpoints) OR IS_DEFINED(c.clientDevices)'
+          + ' OR IS_DEFINED(c.profitTemplates) OR IS_DEFINED(c.savedCalcs)) AS legacy FROM c',
+      })
+      .fetchAll();
+    let moved = 0;
+    for (const { id } of resources.filter((row) => row.legacy)) {
+      const user = await this.getUserById(id);
+      if (!user) continue;
+      await this.updateUser(user);
+      moved += 1;
+    }
+    return moved;
+  }
+
+  /** Rows whose account or listing is gone. Projections only; each deletion is a point delete. */
+  private async deleteOrphans(): Promise<number> {
+    const users = await this.existingIds('users');
+    const listings = await this.existingIds('listings');
+    const account = (id: string) => users.has(isPersonFollow(id) ? id.slice(personFollowId('').length) : id);
+    type Row = { id: string; pk: string; ref?: string };
+    const sweep = async (name: keyof typeof CONTAINERS, query: string, gone: (row: Row) => boolean) => {
+      const { resources } = await this.container(name).items.query<Row>({ query }).fetchAll();
+      let count = 0;
+      for (const row of resources.filter(gone)) {
+        await this.container(name).item(row.id, row.pk).delete().catch((error: unknown) => {
+          if (!isNotFound(error)) throw error;
+        });
+        count += 1;
+      }
+      return count;
+    };
+    let removed = 0;
+    removed += await sweep('notifications', 'SELECT c.id, c.userId AS pk FROM c', (row) => !users.has(row.pk));
+    removed += await sweep('userParts', 'SELECT c.id, c.userId AS pk FROM c', (row) => !users.has(row.pk));
+    removed += await sweep('likes', 'SELECT c.id, c.userId AS pk, c.listingId AS ref FROM c',
+      (row) => !users.has(row.pk) || !listings.has(row.ref ?? ''));
+    removed += await sweep('follows', 'SELECT c.id, c.followerId AS pk, c.sellerId AS ref FROM c',
+      (row) => !users.has(row.pk) || !account(row.ref ?? ''));
+    removed += await sweep('wants', 'SELECT c.id, c.buyerId AS pk FROM c', (row) => !users.has(row.pk));
+    const wants = await this.existingIds('wants');
+    removed += await sweep('wantOffers', 'SELECT c.id, c.wantId AS pk FROM c', (row) => !wants.has(row.pk));
+    removed += await sweep('wantSeekers', 'SELECT c.id, c.wantId AS pk FROM c', (row) => !wants.has(row.pk));
+    removed += await sweep('storeReviews', 'SELECT c.id, c.subjectId AS pk FROM c', (row) => !users.has(row.pk));
+    removed += await sweep('comments', 'SELECT c.id, c.listingId AS pk FROM c', (row) => !listings.has(row.pk));
+    removed += await sweep('pledges', 'SELECT c.id, c.listingId AS pk FROM c', (row) => !listings.has(row.pk));
+    return removed;
   }
 
   private async markPaymentHoldsMigrated(moved: number): Promise<void> {
@@ -566,6 +766,7 @@ export class CosmosRepository implements Repository {
   async settled(): Promise<void> {
     await this.maintenance;
     await this.selfMessages;
+    await this.storage;
   }
 
   /**
@@ -623,6 +824,7 @@ export class CosmosRepository implements Repository {
     // Seeded in the current shape: there is nothing for the migration to move.
     await this.markPaymentHoldsMigrated(0);
     await this.markSelfMessagesCleared(0);
+    await this.markStorageCleaned({});
     this.seeded = true;
     return ` Seeded ${written} fixture records into an empty database.`;
   }
@@ -1737,6 +1939,12 @@ export class CosmosRepository implements Repository {
     return resource!;
   }
 
+  async deleteNotification(userId: string, id: string): Promise<void> {
+    await this.container('notifications').item(id, userId).delete().catch((error: unknown) => {
+      if (!isNotFound(error)) throw error;
+    });
+  }
+
   /* Cross-partition, but bounded to a few minutes of holds, and a clock that
      finds nothing costs one small query. */
   async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {
@@ -1753,45 +1961,26 @@ export class CosmosRepository implements Repository {
   /* Cross-partition over accounts, projected to the two fields the figures
      need; read only when an operator opens the installs page. */
   async listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>> {
-    const [moved, inline] = await Promise.all([
-      this.container('userParts')
-        .items.query<{ id: string; clientDevices?: ClientDevice[] }>({
-          query: "SELECT c.userId AS id, c.clientDevices FROM c WHERE c.part = 'devices'",
-        })
-        .fetchAll(),
-      // Accounts not saved since the split still carry theirs on the row.
-      this.container('users')
-        .items.query<{ id: string; clientDevices: ClientDevice[] }>({
-          query: 'SELECT c.id, c.clientDevices FROM c WHERE IS_DEFINED(c.clientDevices)',
-        })
-        .fetchAll(),
-    ]);
-    const byUser = new Map(inline.resources.map((row) => [row.id, row.clientDevices]));
-    for (const row of moved.resources) byUser.set(row.id, row.clientDevices ?? []);
-    return [...byUser].map(([id, clientDevices]) => ({ id, clientDevices }));
+    const { resources } = await this.container('userParts')
+      .items.query<{ id: string; clientDevices?: ClientDevice[] }>({
+        query: "SELECT c.userId AS id, c.clientDevices FROM c WHERE c.part = 'devices'",
+      })
+      .fetchAll();
+    return resources.map((row) => ({ id: row.id, clientDevices: row.clientDevices ?? [] }));
   }
 
   /* Cross-partition over accounts, but only run when a device turns
      notifications on, which is once per device. */
   async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {
-    const [moved, inline] = await Promise.all([
-      this.container('userParts')
-        .items.query<string>({
-          query: "SELECT VALUE c.userId FROM c WHERE c.part = 'push'"
-            + ' AND ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
-          parameters: [{ name: '@endpoint', value: endpoint }],
-        })
-        .fetchAll(),
-      // Accounts not saved since the split still carry theirs on the row.
-      this.container('users')
-        .items.query<string>({
-          query: 'SELECT VALUE c.id FROM c WHERE ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
-          parameters: [{ name: '@endpoint', value: endpoint }],
-        })
-        .fetchAll(),
-    ]);
+    const { resources } = await this.container('userParts')
+      .items.query<string>({
+        query: "SELECT VALUE c.userId FROM c WHERE c.part = 'push'"
+          + ' AND ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
+        parameters: [{ name: '@endpoint', value: endpoint }],
+      })
+      .fetchAll();
     // Read whole, so the endpoint list a caller edits is the one stored.
-    const users = await Promise.all([...new Set([...moved.resources, ...inline.resources])].map((id) => this.getUserById(id)));
+    const users = await Promise.all([...new Set(resources)].map((id) => this.getUserById(id)));
     return users.filter((user): user is User => user !== null && (user.pushEndpoints ?? []).some((entry) => entry.endpoint === endpoint));
   }
 
@@ -1838,10 +2027,74 @@ export class CosmosRepository implements Repository {
     for (const part of USER_PART_NAMES) {
       await this.container('userParts').item(partId(id, part), id).delete().catch(() => {});
     }
+    await this.deleteBelongings(id);
+  }
+
+  /**
+   * What only made sense with the account: its notices, saves, hunts, who it
+   * followed and who followed it, and what was said about it. What it took
+   * part in on somebody else's page - a pledge, an answer to a hunt, a review
+   * it wrote - stays, the way its orders do: those are counted there.
+   */
+  private async deleteBelongings(userId: string): Promise<void> {
+    await this.deleteMatching('notifications', { query: 'SELECT c.id, c.userId AS pk FROM c' }, userId);
+    // Through toggleLike, so each listing's saved count drops with it.
+    for (const like of await this.listLikesBy(userId)) await this.toggleLike(userId, like.listingId);
+    // And each page or shop it followed counts one follower fewer.
+    for (const follow of await this.listFollowsBy(userId)) {
+      await this.container('follows').item(follow.id, userId).delete().catch(() => {});
+      const person = isPersonFollow(follow.sellerId);
+      const target = await this.getUserById(person ? follow.sellerId.slice(personFollowId('').length) : follow.sellerId);
+      if (!target || (!person && !target.sellerProfile)) continue;
+      if (person) target.followerCount = Math.max(0, (target.followerCount ?? 0) - 1);
+      else target.sellerProfile!.followerCount = Math.max(0, target.sellerProfile!.followerCount - 1);
+      await this.updateUser(target).catch(() => undefined);
+    }
+    await this.deleteMatching('follows', {
+      query: 'SELECT c.id, c.followerId AS pk FROM c WHERE c.sellerId = @shop OR c.sellerId = @person',
+      parameters: [{ name: '@shop', value: userId }, { name: '@person', value: personFollowId(userId) }],
+    });
+    const wants = await this.container('wants')
+      .items.query<string>({ query: 'SELECT VALUE c.id FROM c' }, { partitionKey: userId })
+      .fetchAll();
+    for (const wantId of wants.resources) {
+      await this.deleteMatching('wantOffers', { query: 'SELECT c.id, c.wantId AS pk FROM c' }, wantId);
+      await this.deleteMatching('wantSeekers', { query: 'SELECT c.id, c.wantId AS pk FROM c' }, wantId);
+      await this.container('wants').item(wantId, userId).delete().catch(() => {});
+    }
+    await this.deleteMatching('storeReviews', { query: 'SELECT c.id, c.subjectId AS pk FROM c' }, userId);
+  }
+
+  /**
+   * Deletes every row the query finds. The query projects `id` and the
+   * partition key as `pk`; given a partition, it runs inside that one.
+   */
+  private async deleteMatching(
+    name: keyof typeof CONTAINERS,
+    spec: { query: string; parameters?: { name: string; value: string }[] },
+    partition?: string,
+  ): Promise<number> {
+    const { resources } = await this.container(name)
+      .items.query<{ id: string; pk: string }>(spec, partition === undefined ? {} : { partitionKey: partition })
+      .fetchAll();
+    for (const row of resources) {
+      await this.container(name).item(row.id, row.pk).delete().catch((error: unknown) => {
+        if (!isNotFound(error)) throw error;
+      });
+    }
+    return resources.length;
   }
 
   async deleteListing(sellerId: string, id: string): Promise<void> {
     await this.container('listings').item(id, sellerId).delete().catch(() => {});
+    // Its thread and its campaign have nothing left to hang from; the saves
+    // pointing at it would only ever be skipped.
+    await this.deleteMatching('comments', { query: 'SELECT c.id, c.listingId AS pk FROM c' }, id);
+    await this.deleteMatching('pledges', { query: 'SELECT c.id, c.listingId AS pk FROM c' }, id);
+    await this.deleteMatching('likes', {
+      query: 'SELECT c.id, c.userId AS pk FROM c WHERE c.listingId = @listingId',
+      parameters: [{ name: '@listingId', value: id }],
+    });
   }
 
   async deletePost(channelId: string, id: string): Promise<void> {
@@ -2589,6 +2842,18 @@ export class CosmosRepository implements Repository {
     } catch (error) {
       if (!isNotFound(error)) throw error;
     }
+  }
+
+  /* Cross-partition, since each document is its own partition, but the
+     container holds a few dozen documents and the id is always indexed. */
+  async listSiteContentRange(from: string, to: string): Promise<SiteContent[]> {
+    const { resources } = await this.container('siteContent')
+      .items.query<SiteContent>({
+        query: 'SELECT * FROM c WHERE c.id >= @from AND c.id < @to',
+        parameters: [{ name: '@from', value: from }, { name: '@to', value: to }],
+      })
+      .fetchAll();
+    return resources;
   }
 
   async listFollowsBy(followerId: string): Promise<Follow[]> {

@@ -22,7 +22,8 @@ async function operator(request: HttpRequest) {
 
 /** GET /api/settings - what the rules and fees currently are, for the words on screen. */
 async function read(_request: HttpRequest, _context: InvocationContext) {
-  const { updatedAt: _at, updatedBy: _by, ...settings } = await marketSettings(await getRepository());
+  // Whether operators are being audited is the operators' business.
+  const { updatedAt: _at, updatedBy: _by, auditTrail: _audit, ...settings } = await marketSettings(await getRepository());
   return json(200, settings);
 }
 

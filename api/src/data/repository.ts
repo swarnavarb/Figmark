@@ -274,6 +274,7 @@ export interface Repository {
   /** Newest first; with `before`, only those written before that moment - the next page. */
   listNotifications(userId: string, limit?: number, before?: string): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;
+  deleteNotification(userId: string, id: string): Promise<void>;
   /**
    * Held notices whose hold ended between `from` and `until`, not yet sent to
    * anybody's devices and not taken back - across everybody, for the clock
@@ -388,6 +389,8 @@ export interface Repository {
   /** Read, change and write back one document without losing a write made in between. */
   mutateSiteContent(id: string, change: (current: SiteContent | null) => SiteContent): Promise<SiteContent>;
   deleteSiteContent(id: string): Promise<void>;
+  /** Every site-content document whose id falls in [from, to) - a log's periods, say. */
+  listSiteContentRange(from: string, to: string): Promise<SiteContent[]>;
 
   /** Saves an edited account - the storefront editor is the only caller. */
   updateUser(user: User): Promise<User>;

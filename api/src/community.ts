@@ -11,6 +11,7 @@ import { splitFee, type MarketSettings } from '../../shared/settings.js';
 import type { getRepository } from './data/index.js';
 import { loadReports, saveReports } from './moderation.js';
 import { marketSettings } from './settings.js';
+import { appendToLog, readLog, withinBudget } from './site-log.js';
 import { notify } from './functions/notify.js';
 import { AuthError } from './auth/errors.js';
 import { config } from './config.js';
@@ -137,10 +138,20 @@ export function payoutRef(): string {
 
 /* ── Site-content queues ─────────────────────────────────────────────────── */
 
-export const LEDGER_ID = 'fee-ledger';
+/**
+ * The fee ledger is one document per calendar month (`fee-ledger-2026-10`),
+ * split further only if a month outgrows a document - see site-log.ts. It is a
+ * financial record, so nothing is ever trimmed from it.
+ *
+ * Before the split it was the single document `fee-ledger`, trimmed to its
+ * newest 5,000 entries. Whatever that still holds moves into its months the
+ * first time the ledger is read or written, and the old document goes.
+ */
+const LEGACY_LEDGER_ID = 'fee-ledger';
+const LEDGER_PREFIX = 'fee-ledger-';
+const ledgerMonthId = (paidAt: string) => `${LEDGER_PREFIX}${paidAt.slice(0, 7)}`;
 export const ACTIONS_ID = 'dispute-actions';
 export const NOTICES_ID = 'community-notices';
-const LEDGER_KEEP = 5_000;
 const ACTIONS_KEEP = 2_000;
 const NOTICES_KEEP = 500;
 
@@ -198,7 +209,7 @@ export async function mutateList<T>(
     const list = (current?.data as Record<string, unknown> | undefined)?.[key];
     return {
       id,
-      data: { [key]: change(Array.isArray(list) ? (list as T[]) : []).slice(-keep) },
+      data: { [key]: withinBudget(change(Array.isArray(list) ? (list as T[]) : []).slice(-keep)) },
       updatedBy: by,
       createdAt: current?.createdAt ?? now,
       updatedAt: now,
@@ -206,9 +217,34 @@ export async function mutateList<T>(
   });
 }
 
-export const loadLedger = (repository: Repo) => loadList<LedgerEntry>(repository, LEDGER_ID, 'entries');
+/** Moves the pre-split ledger into its months, once; a no-op point read after that. */
+async function migrateLegacyLedger(repository: Repo): Promise<void> {
+  const saved = await repository.getSiteContent(LEGACY_LEDGER_ID);
+  if (!saved) return;
+  const legacy = (saved.data as { entries?: unknown } | undefined)?.entries;
+  if (Array.isArray(legacy) && legacy.length > 0) {
+    const byMonth = new Map<string, LedgerEntry[]>();
+    for (const entry of legacy as LedgerEntry[]) {
+      const id = ledgerMonthId(entry.paidAt);
+      byMonth.set(id, [...(byMonth.get(id) ?? []), entry]);
+    }
+    // Appends skip ids already there, so a pass cut short and run again
+    // records nothing twice.
+    for (const [id, entries] of byMonth) await appendToLog(repository, id, 'entries', entries, 'system');
+  }
+  await repository.deleteSiteContent(LEGACY_LEDGER_ID);
+}
+
+/** Every fee ever paid, oldest first. */
+export async function loadLedger(repository: Repo): Promise<LedgerEntry[]> {
+  await migrateLegacyLedger(repository);
+  const entries = await readLog<LedgerEntry>(repository, LEDGER_PREFIX, `${LEDGER_PREFIX}~`, 'entries');
+  return entries.sort((a, b) => a.paidAt.localeCompare(b.paidAt));
+}
+
 async function recordLedger(repository: Repo, entry: LedgerEntry): Promise<void> {
-  await mutateList<LedgerEntry>(repository, LEDGER_ID, 'entries', LEDGER_KEEP, entry.payerId, (entries) => [...entries, entry]);
+  await migrateLegacyLedger(repository);
+  await appendToLog(repository, ledgerMonthId(entry.paidAt), 'entries', [entry], entry.payerId);
 }
 
 export const loadActions = (repository: Repo) => loadList<PendingAction>(repository, ACTIONS_ID, 'actions');

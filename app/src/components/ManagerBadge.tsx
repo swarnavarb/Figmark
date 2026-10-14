@@ -45,11 +45,6 @@ export function useCommunityManager(who: { id?: string | null; handle?: string |
     || null;
 }
 
-/** Forget the list, after an operator appoints or removes somebody. */
-export function refreshCommunityTeam() {
-  team = null;
-  load();
-}
 
 function Shield({ size }: { size: number }) {
   // Each its own gradient: a shared id breaks when the first copy is hidden.

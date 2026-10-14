@@ -411,6 +411,8 @@ export interface SiteContent extends BaseDocument {
   data: unknown;
   /** The operator who last saved it. */
   updatedBy: string | null;
+  /** Seconds after its last write before Cosmos removes it; absent keeps it. */
+  ttl?: number;
 }
 
 export interface CollectionGroup {
@@ -2495,7 +2497,10 @@ export interface Notification extends BaseDocument {
   notBefore?: string;
   /** The undoable action it reports, so undoing it can take the notice back. */
   undoId?: string;
-  /** Taken back because what it reported was undone. Never shown. */
+  /**
+   * Taken back because what it reported was undone. Never shown. Only rows
+   * written before take-backs became deletes carry it; start-up removes them.
+   */
   withdrawn?: boolean;
   /**
    * When it went out to the person's devices. Set as it is written for an
