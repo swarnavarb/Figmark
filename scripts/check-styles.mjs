@@ -116,6 +116,10 @@ check('a class the app writes is a class the sheet defines', () => {
   for (const rule of parsed) {
     for (const name of rule.selector.match(/\.[a-zA-Z0-9_-]+/g) ?? []) defined.add(name.slice(1));
   }
+  // The loading screen's sheet, linked from index.html so it paints before
+  // the bundle arrives; the app reuses its classes for the same mark.
+  const loader = readFileSync(new URL('../app/public/boot/loader.css', import.meta.url), 'utf8');
+  for (const name of loader.match(/\.[a-zA-Z][a-zA-Z0-9_-]*(?=[^{}]*\{)/g) ?? []) defined.add(name.slice(1));
 
   const sources = readdirSync(new URL('../app/src/', import.meta.url), { recursive: true })
     .filter((name) => typeof name === 'string' && name.endsWith('.tsx'));

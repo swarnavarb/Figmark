@@ -19,6 +19,7 @@ import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import type { CardButton } from '@shared/buttons';
 import { ReceivedDialog } from '../components/ReceivedDialog';
 import { SerialButtons } from '../components/SerialButtons';
+import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { RoutesList } from './RoutesPage';
 import { RouteStudio } from './RouteStudioPage';
@@ -27,7 +28,11 @@ import {
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import type { BuyerReversalDetails, Listing, Lot, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
+import { OrderPhotos } from '../components/OrderPhotos';
+import { ConditionTag } from '../components/ConditionTag';
+import { SlideToConfirm } from '../components/SlideToConfirm';
+import { Spinner } from '../components/Spinner';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
@@ -203,12 +208,12 @@ function RouteIntro() {
       <div className="page__head"><div>
         <h1>How does your stock travel?</h1>
         <p className="muted">
-          A route is the list of steps your buyers read as their tracking — in your words, not
+          A route is the list of steps your customers read as their tracking — in your words, not
           ours. Write it once and every shipment you open uses it.
         </p>
       </div></div>
       <div className="notice notice--info">
-        <strong>Why it is worth a minute.</strong> Buyers ask "where is it?" because nothing
+        <strong>Why it is worth a minute.</strong> Customers ask "where is it?" because nothing
         told them. A route answers before they ask: they see the same steps you work, ticked as
         you tick them, from the day they order to the day it lands. You can change it whenever
         the way you ship changes.
@@ -229,7 +234,6 @@ function RouteIntro() {
  * rather than offering a shortcut that ends in an error.
  */
 function ShopStart({ onOpen }: { onOpen: () => void }) {
-  const { user } = useSession();
   return (
     <main className="page tab-view">
       <div className="gate">
@@ -245,15 +249,6 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
         </button>
       </div>
 
-      {/* Somebody may hold money for other people's trades without selling a
-          thing themselves. Hiding this would strand them in a tab with one
-          door they do not want - it is a different role, not a second option
-          for a new seller. */}
-      {user?.managerRights && (
-        <Link to="/community-service" className="btn btn--quiet" style={{ justifySelf: 'center', marginTop: 18 }}>
-          {<Icon name="users" size={13} />} Open your Community Service desk instead
-        </Link>
-      )}
     </main>
   );
 }
@@ -266,7 +261,6 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
  * appears for someone who acts in more than one.
  */
 function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: () => void | Promise<void> }) {
-  const { user } = useSession();
   const cameFor = (useLocation().state as { store?: string } | null)?.store;
   const [storeId, setStoreId] = useState(
     stores.some((entry) => entry.ownerId === cameFor) ? cameFor! : stores[0]!.ownerId);
@@ -311,12 +305,6 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       {/* No "list an item" here: the Items section opens with that door, and
           no shop-name header here either - the workflow below already says
           where you are. */}
-      {user?.managerRights && (
-        <Link to="/community-service" className="btn btn--ghost btn--sm" style={{ justifySelf: 'end', marginBottom: 10 }}>
-          {<Icon name="users" size={13} />} Community Service
-        </Link>
-      )}
-
       <SellHome active={active} onGo={setSection} />
 
       {stores.length > 1 && (
@@ -1020,7 +1008,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     onChanged?.();
   }
 
-  async function press(row: SaleRow, button: CardButton, on: boolean, label?: string) {
+  async function press(row: SaleRow, button: CardButton, on: boolean, label?: string, shipment?: Shipment) {
     /* No lot yet: ask where it was received, or offer to put it in a lot. */
     if (on && button.checkpoint === 'china_received' && !row.lotId && !row.inHand && label === undefined) {
       setReceiving({ row, button });
@@ -1029,7 +1017,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     setBusy(row.id);
     setError(null);
     try {
-      const result = await api.setCheckpoint(row.id, button.checkpoint, on, label ? { label } : undefined);
+      const result = await api.setCheckpoint(row.id, button.checkpoint, on, label ? { label } : shipment);
       setReceiving(null);
       const undo = result.undo;
       if (undo) {
@@ -1043,6 +1031,23 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       await refresh();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** The seller's go-ahead for several orders at once - a customer's whole parcel. */
+  async function markReady(rows: SaleRow[], on: boolean) {
+    const todo = rows.filter((row) => Boolean(row.readyAt) !== on && (!on || row.arrived));
+    if (todo.length === 0) return;
+    setBusy(todo[0]!.id);
+    setError(null);
+    try {
+      for (const row of todo) await api.setCheckpoint(row.id, 'ready_to_dispatch', on);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+      await load();
     } finally {
       setBusy(null);
     }
@@ -1116,7 +1121,11 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       glowing={glowing === row.id}
       busy={busy === row.id}
       needsAnswer={needsAnswer.has(row.id)}
-      onPress={(button, on) => void press(row, button, on)}
+      onPress={(button, on, shipment) => void press(row, button, on, undefined, shipment)}
+      onPhotos={(photos) => setData((current) => current && {
+        ...current,
+        orders: current.orders.map((entry) => (entry.id === row.id ? { ...entry, photos } : entry)),
+      })}
       onLotTracking={() => (onTracking
         ? onTracking()
         : navigate(`/shop?tab=lots&lot=${encodeURIComponent(row.lotId ?? '')}&view=tracking`))}
@@ -1141,7 +1150,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     return (
       <EmptyState title="No orders yet">
         Every purchase lands here — the money, the warehouse, the lot it travels in, and the one
-        tick that tells the buyer it has arrived.
+        tick that tells the customer it has arrived.
       </EmptyState>
     );
   }
@@ -1214,7 +1223,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           </b>
           <span className="faint">
             {statusFilter === 'completed'
-              ? 'Orders land here once they reach the buyer.'
+              ? 'Orders land here once they reach the customer.'
               : statusFilter === 'closed'
                 ? 'Good news — every order is still going.'
                 : chip === 'answer'
@@ -1231,6 +1240,8 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           {customers.map((customer) => (
             <CustomerOrders key={customer.key} customer={customer}
               open={isOpen(customer)} needsAnswer={needsAnswer}
+              busy={busy !== null} working={customer.rows.some((row) => row.id === busy)}
+              onReady={(ids, on) => void markReady(customer.rows.filter((row) => ids.includes(row.id)), on)}
               onToggle={(open) => setOpenOverride((current) => ({ ...current, [customer.key]: open }))}>
               {customer.rows.map((row, index) => card(row, customer.start + index))}
             </CustomerOrders>
@@ -1430,14 +1441,26 @@ function shortStep(row: SaleRow): string {
  * pending, then each order's name and where it has got to - enough to scan a
  * whole lot without the cards.
  */
-function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
+/** The orders a ready press can still mean something for: live, and not gone out yet. */
+function readyable(rows: readonly SaleRow[]): SaleRow[] {
+  return rows.filter((row) => !isClosed(row) && !isCompleted(row) && !row.dispatchedAt && !row.inHand
+    && !(row.bookingOnly && !row.accepted));
+}
+
+function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working = false, onReady, children }: {
   customer: CustomerGroup;
   open: boolean;
   needsAnswer: ReadonlySet<string>;
   onToggle: (open: boolean) => void;
+  busy: boolean;
+  /** One of their orders is saving right now. */
+  working?: boolean;
+  /** Ready to dispatch, for the orders of theirs the seller ticked. */
+  onReady: (ids: string[], on: boolean) => void;
   children: ReactNode;
 }) {
   const { buyer, rows } = customer;
+  const toGo = readyable(rows);
   /* Called-off orders owe nothing; they are listed but not counted. */
   const live = rows.filter((row) => !isClosed(row));
   const sum = (pick: (row: SaleRow) => number) =>
@@ -1448,7 +1471,6 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
   const share = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const currency = rows[0]?.currency;
   const tone = live.length === 0 ? 'quiet' : pending > 0 ? (paid > 0 ? 'purple' : 'warn') : 'ok';
-  /* Open, the head says only where the money stands; the sums sit in the body. */
   const payWord = live.length === 0 ? 'Nothing owed' : pending <= 0 ? 'Paid' : paid > 0 ? 'Partially paid' : 'Not paid';
   const panelId = `ocust-${customer.key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
@@ -1460,7 +1482,7 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
           onClick={() => onToggle(!open)}>
           <Icon name={open ? 'down' : 'right'} size={16} />
         </button>
-        {open && <Avatar name={buyer.name} size={40} />}
+        {open && <Avatar name={buyer.name} size={32} />}
         <div className="ocust__who">
           {buyer.handle
             ? <Link to={`/${buyer.handle}`} className="ocust__name">{buyer.name}</Link>
@@ -1468,13 +1490,21 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
           <span className="ocust__meta">
             {rows.length} {rows.length === 1 ? 'order' : 'orders'}
             {rows.length !== live.length && ` · ${rows.length - live.length} called off`}
+            {/* Open, the sums ride along here instead of taking a row of their own. */}
+            {open && live.length > 0 && paid > 0 && pending > 0 && <> · Paid <b>{formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}</b> of {formatTotals(sum((row) => row.totalMinor), currency)}</>}
+            {open && live.length > 0 && (paid <= 0 || pending <= 0) && <> · Total <b>{formatTotals(sum((row) => row.totalMinor), currency)}</b></>}
           </span>
         </div>
         <div className="ocust__total">
           <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>
-            {open || pending <= 0 ? payWord : `Pending ${formatTotals(sum((row) => row.outstandingMinor), currency)}`}
+            {pending <= 0 ? payWord : `${formatTotals(sum((row) => row.outstandingMinor), currency)} due`}
           </span>
         </div>
+        {open && live.length > 0 && (
+          <div className="ocust__bar" role="progressbar" aria-label="Paid so far" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100}>
+            <span style={{ width: `${share}%` }} />
+          </div>
+        )}
       </header>
 
       {!open && (
@@ -1497,17 +1527,212 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, children }: {
 
       {open && (
         <div id={panelId} className="ocust__body">
-          {live.length > 0 && (
-            <MoneyLine share={share} due={pending > 0}
-              total={formatTotals(sum((row) => row.totalMinor), currency)}
-              paid={formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}
-              balance={formatTotals(sum((row) => row.outstandingMinor), currency)} />
+          {/* One press for the whole parcel: everything of theirs can go. The
+              lot's handler waits for exactly this before dispatching. */}
+          {toGo.length > 0 && (
+            <ReadyPanel rows={toGo} buyerName={buyer.name} busy={busy} working={working} onReady={onReady} />
           )}
-          <div className="orows">{children}</div>
+          {/* Then their orders, in a tray of their own under the customer. */}
+          <div className="ocust__orders">
+            <div className="lrows">{children}</div>
+          </div>
         </div>
       )}
     </section>
   );
+}
+
+/**
+ * The seller's Ready to dispatch for one customer: an edge-to-edge strip with
+ * one slide for the whole parcel, and the orders listed inside it so a parcel
+ * can go out in parts.
+ *
+ * Every order that has arrived starts ticked - except that when some are paid
+ * and some are not, only the paid ones are, so the usual split (send what is
+ * paid, hold what is owed) is one slide. Untick an order to hold it. Orders
+ * still on their way cannot be ticked: the handler cannot send what they do
+ * not have. Once everything that has arrived is cleared, the same slide,
+ * pulled back, holds the ticked ones again.
+ *
+ * Notify sits beside the slide while anything is owed: a message from the
+ * shop in the customer's chat, with a button to pay. What it all means is
+ * behind the i.
+ */
+function ReadyPanel({ rows, buyerName, busy, working = false, onReady }: {
+  rows: SaleRow[];
+  buyerName: string;
+  /** Something on this screen is saving: hold still. */
+  busy: boolean;
+  /** It is this panel's own press that is saving: show the spinner. */
+  working?: boolean;
+  /** Clear these orders to go, or hold them again. */
+  onReady: (ids: string[], on: boolean) => void;
+}) {
+  const [notice, setNotice] = useState<{ state: 'busy' | 'sent' | 'error'; text?: string; thread?: string | null } | null>(null);
+  /** The explanation, behind the i: the panel itself says only where things stand. */
+  const [info, setInfo] = useState(false);
+
+  const cleared = rows.filter((row) => row.readyAt);
+  const pending = rows.filter((row) => row.arrived && !row.readyAt);
+  const away = rows.filter((row) => !row.arrived && !row.readyAt);
+  /* What the slide does now: clear what has arrived, hold what is cleared, or wait. */
+  const mode = pending.length > 0 ? 'clear' : cleared.length > 0 ? 'hold' : 'wait';
+  /* Ticks only choose what goes next. Once slid, the cleared orders are fixed:
+     each can be held back on its own, or all of them by sliding back. */
+  const pool = mode === 'clear' ? pending : [];
+  const paidPending = pending.filter((row) => row.outstandingMinor <= 0);
+  const defaults = paidPending.length > 0 && paidPending.length < pending.length ? paidPending : pool;
+  const poolKey = pool.map((row) => row.id).join(',');
+  /** The seller's own ticks, kept only while the same orders are on offer. */
+  const [ticks, setTicks] = useState<{ key: string; ids: Set<string> } | null>(null);
+  const picked = ticks?.key === poolKey ? ticks.ids : new Set(defaults.map((row) => row.id));
+  const chosen = mode === 'hold' ? cleared : pool.filter((row) => picked.has(row.id));
+  const toggle = (id: string) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setTicks({ key: poolKey, ids: next });
+  };
+
+  const total = rows.length;
+  const owedAll = rows.filter((row) => !row.readyAt && row.outstandingMinor > 0);
+  const owedChosen = mode === 'clear' ? chosen.filter((row) => row.outstandingMinor > 0) : [];
+  const tone = mode === 'wait' ? 'wait' : mode === 'hold' ? 'done' : owedChosen.length > 0 ? 'due' : 'paid';
+  const money = (list: SaleRow[]) => formatTotals(list.map((row) => ({ amountMinor: row.outstandingMinor, currency: row.currency })), rows[0]?.currency);
+  const first = buyerName.split(/\s+/)[0] || buyerName;
+  const handler = rows.find((row) => row.lotCrew?.handlerName)?.lotCrew?.handlerName ?? null;
+  const orders = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
+
+  /* One short line on where it stands; the list below carries the detail. */
+  const lead = mode === 'wait'
+    ? `Not arrived yet · ${orders(away.length)} on the way`
+    : mode === 'hold'
+      ? `Ready · ${handler ?? 'your handler'} can dispatch`
+      : owedChosen.length > 0
+        ? `Payment pending · ${money(owedChosen)} due`
+        : chosen.length === 0 ? 'Tick what can go' : 'Fully paid';
+  const held = pool.length - chosen.length;
+  const status = [lead, held > 0 ? `${held} held` : null, away.length > 0 && mode !== 'wait' ? `${away.length} not arrived` : null]
+    .filter(Boolean).join(' · ');
+
+  /* Counted as what will be ready once slid, cleared ones included. */
+  const after = cleared.length + chosen.length;
+  const label = mode === 'wait'
+    ? 'Ready to dispatch'
+    : chosen.length === 0
+      ? 'Tick an order first'
+      : after === total
+        ? total === 1 ? 'Ready to dispatch' : `Ready to dispatch all ${total}`
+        : `Ready to dispatch ${after} of ${total}`;
+  const onLabel = cleared.length === total
+    ? total === 1 ? 'Ready to dispatch' : `All ${total} ready to dispatch`
+    : `${cleared.length} of ${total} ready to dispatch`;
+
+  async function remind() {
+    setNotice({ state: 'busy' });
+    try {
+      const sent = await api.paymentReminder(owedAll.map((row) => row.id));
+      setNotice({
+        state: 'sent',
+        thread: sent.thread,
+        text: sent.via === 'message' ? `Message sent to ${first}.` : `${first} has no chat handle yet, so it went to their notifications.`,
+      });
+    } catch (err) {
+      setNotice({ state: 'error', text: err instanceof ApiRequestError ? err.message : 'Could not send that.' });
+    }
+  }
+
+  const infoId = `rdy-info-${rows[0]?.id ?? 'x'}`;
+  const them = total > 1 ? 'them' : 'it';
+
+  return (
+    <div className={`rdy rdy--${tone}`}>
+      <div className="rdy__top">
+        <span className="rdy__dot" aria-hidden="true">{tone === 'done' ? '✓' : tone === 'paid' ? '₹' : tone === 'wait' ? '…' : '!'}</span>
+        <span className="rdy__status" role="status">{status}</span>
+        <button type="button" className={`rdy__i${info ? ' is-open' : ''}`} aria-expanded={info} aria-controls={infoId}
+          aria-label="What Ready to dispatch does" onClick={() => setInfo(!info)}>i</button>
+      </div>
+      {info && (
+        <div id={infoId} className="rdy__info">
+          <p>
+            {handler
+              ? <>Ready to dispatch tells your domestic handler, <b>{handler}</b>, to dispatch {them} to {buyerName}.
+                {' '}They cannot send anything you have not cleared.</>
+              : <>Ready to dispatch clears {them} to go out to {buyerName}. Tag a domestic handler on the lot and
+                {' '}they will be told to dispatch {them}.</>}
+          </p>
+          {total > 1 && (
+            <p>Untick an order to hold it back and send the rest. When some are paid and some are not, only the paid ones
+              {' '}start ticked. An order can be cleared once it reaches the destination.</p>
+          )}
+          {owedAll.length > 0 && (
+            <p>{money(owedAll)} is still due. <b>Notify</b> sends {first} a message from your shop with a button to pay -
+              {' '}once every 24 hrs at most.</p>
+          )}
+          {mode === 'hold' && <p>Slide back to hold them all again{cleared.length > 1 ? ', or press Hold on one order to keep just that one back' : ''}.</p>}
+        </div>
+      )}
+
+      {total > 1 && (
+        <ul className="rdy__list" aria-label={`${buyerName}'s orders`}>
+          {rows.map((row) => {
+            const state = row.readyAt ? 'ready' : !row.arrived ? 'away' : 'open';
+            const tickable = mode === 'clear' && state === 'open';
+            const ticked = tickable && picked.has(row.id);
+            const Line = tickable ? 'label' : 'div';
+            return (
+              <li key={row.id} className={`rdy__item is-${state}${ticked ? ' is-ticked' : ''}`}>
+                <Line className="rdy__line">
+                  {tickable
+                    ? <input type="checkbox" checked={ticked} disabled={busy} onChange={() => toggle(row.id)} />
+                    : <span className="rdy__mark" aria-label={state === 'ready' ? 'Ready' : 'Not arrived'}>{state === 'ready' ? '✓' : ''}</span>}
+                  <span className="rdy__name">{row.itemName}</span>
+                  <span className={`rdy__chip rdy__chip--${state === 'away' ? 'away' : row.outstandingMinor > 0 ? 'due' : 'paid'}`}>
+                    {state === 'away' ? 'On the way'
+                      : row.outstandingMinor > 0 ? `${formatMoney(row.outstandingMinor, row.currency)} due` : 'Paid'}
+                  </span>
+                  {/* A cleared order can be taken back on its own. */}
+                  {state === 'ready' && (mode === 'clear' || cleared.length > 1) && (
+                    <button type="button" className="rdy__hold" disabled={busy}
+                      aria-label={`Hold ${row.itemName} back`} onClick={() => onReady([row.id], false)}>Hold</button>
+                  )}
+                </Line>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="rdy__row">
+        <SlideToConfirm on={mode === 'hold'} label={label} onLabel={onLabel}
+          disabled={busy || mode === 'wait' || chosen.length === 0} working={working}
+          onChange={(next) => onReady(chosen.map((row) => row.id), next)} />
+        {owedAll.length > 0 && (
+          <button type="button" className={`rdy__notify${notice?.state === 'sent' ? ' is-sent' : ''}`}
+            aria-busy={notice?.state === 'busy'}
+            disabled={busy || notice?.state === 'busy' || notice?.state === 'sent'} onClick={() => void remind()}>
+            {notice?.state === 'busy'
+              ? <Spinner size={16} label="Sending" />
+              : <span aria-hidden="true">{notice?.state === 'sent' ? '✓' : '🔔'}</span>}
+            {notice?.state === 'sent' ? 'Notified' : notice?.state === 'busy' ? 'Sending' : 'Notify'}
+          </button>
+        )}
+      </div>
+      {notice?.text && (
+        <small className={`rdy__note${notice.state === 'error' ? ' is-error' : ''}`} role="status">
+          {notice.text}
+          {notice.thread && <> <Link to={notice.thread} className="rdy__open">Open chat ›</Link></>}
+        </small>
+      )}
+    </div>
+  );
+}
+
+/** Where one order stands on its customer's Ready to dispatch, as a chip on its card. */
+function ReadyChip({ row }: { row: SaleRow }) {
+  if (readyable([row]).length === 0) return null;
+  const [tone, text] = row.readyAt ? ['ok', 'Ready'] : !row.arrived ? ['away', 'Not arrived'] : ['held', 'Held'];
+  return <span className={`readychip readychip--${tone}`} title={row.readyAt ? 'Cleared to dispatch' : !row.arrived ? 'Still on its way to the destination' : 'Not cleared to dispatch yet'}>{text}</span>;
 }
 
 /**
@@ -1784,7 +2009,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
       {/* One route, not two ladders. The route already says where the item
           stops travelling alone, so both halves come from the same list and
           cannot contradict each other the way two written ones did. */}
-      <LBox icon="🧭" title="Tracking" hint="The journey a buyer of this item follows.">
+      <LBox icon="🧭" title="Tracking" hint="The journey a customer of this item follows.">
         <select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)} aria-label="Route">
           <option value="">
             {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
@@ -1803,7 +2028,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           <Ladder steps={before} current={-1} />
           <span className="field__hint">
             {before.length === 0
-              ? 'No steps before the lot — the buyer waits with no timeline until one is opened.'
+              ? 'No steps before the lot — the customer waits with no timeline until one is opened.'
               : `The other ${chosen.steps.length - before.length} steps arrive with the lot.`}
           </span>
         </div>
@@ -1866,7 +2091,7 @@ const LAST_MILE = new Set<string>(['dispatched', 'delivered']);
  * guess.
  */
 function OrderRow({
-  index, row, store, from, inLot = false, glowing, busy, needsAnswer, onPress, onLotTracking, onFile, onReject,
+  index, row, store, from, inLot = false, glowing, busy, needsAnswer, onPress, onPhotos, onLotTracking, onFile, onReject,
   onAccept, onCancel, onSettleReceived, onSettleDenied,
 }: {
   index: number;
@@ -1882,7 +2107,8 @@ function OrderRow({
   glowing: boolean;
   busy: boolean;
   needsAnswer: boolean;
-  onPress: (button: CardButton, on: boolean) => void;
+  onPress: (button: CardButton, on: boolean, shipment?: Shipment) => void;
+  onPhotos: (photos: OrderPhoto[]) => void;
   /** The Lot stop on this card's buttons: opens the lot's Tracking, where the crate is moved. */
   onLotTracking: () => void;
   onFile: () => void;
@@ -1919,12 +2145,121 @@ function OrderRow({
     claimOpen: awaitingClaim,
   });
 
+  /* Inside its lot: a slim row like the handler's - picture, name, tags, buttons. */
+  if (inLot) {
+    return (
+      <article id={`order-${row.id}`}
+        className={`lrow lrow--${tone}${needsAnswer ? ' is-urgent' : ''}${glowing ? ' is-glowing' : ''}${busy ? ' is-busy' : ''}`}>
+        <Link to={orderLink} state={linkState} className="lrow__pic" tabIndex={-1} aria-hidden="true">
+          <Thumb seed={row.id} label={row.itemName} photo={row.photoUrl ? { url: row.photoUrl } : null} className="thumb lrow__img" />
+        </Link>
+        <div className="lrow__top">
+          <Link to={orderLink} state={linkState} className="lrow__name">{row.itemName}</Link>
+          <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone} lrow__badge`}>{label}</span>
+        </div>
+        <div className="lrow__meta">
+          <ConditionTag condition={row.condition} />
+          <ReadyChip row={row} />
+          {row.quantity > 1 && <span>×{row.quantity}</span>}
+          {row.privateDeal && <span>🤝 Private</span>}
+          <span>{timeAgo(row.createdAt)}</span>
+        </div>
+
+        {/* The money, always: what it costs, what has landed, what is left. */}
+        <div className={`lrow__money lrow__wide${row.outstandingMinor > 0 ? ' is-due' : ' is-clear'}`}>
+          <span className="lrow__cell"><small>Total</small><b>{formatMoney(row.totalMinor, row.currency)}</b></span>
+          <span className="lrow__cell lrow__cell--paid"><small>Paid</small><b>{formatMoney(Math.min(row.paidMinor, row.totalMinor), row.currency)}</b></span>
+          <span className="lrow__cell lrow__cell--due"><small>Due</small><b>{formatMoney(Math.max(0, row.outstandingMinor), row.currency)}</b></span>
+          <span className="lrow__bar" aria-hidden="true"><span style={{ width: `${paidShare}%` }} /></span>
+          {row.creditMinor > 0 && <span className="ocard__extra lrow__extra">{formatMoney(row.creditMinor, row.currency)} extra</span>}
+        </div>
+
+        {/* Where it stands, in words: accepted and waiting to be paid, paid, on its way... */}
+        {statusLine && !awaitingClaim && (
+          <div className="lrow__wide lrow__status">
+            {/* In a lot the handler ships it, so paid is just paid. */}
+            <StatusBanner compact line={row.paymentStatus === 'paid' && statusLine.tone === 'ok' && !row.dispatchedAt && row.status !== 'delivered'
+              ? { ...statusLine, title: 'Payment received', note: undefined } : statusLine} />
+          </div>
+        )}
+
+        {awaitingClaim && row.claim && (
+          <div className="ocard__claim lrow__wide">
+            💸 Customer says they paid <b>{formatMoney(row.claim.amountMinor ?? row.totalMinor, row.currency)}</b>
+            {row.claim.reference && <span className="ocard__ref"> · ref {row.claim.reference}</span>}
+          </div>
+        )}
+        {(row.canAccept || awaitingClaim) && (
+          <div className="ocard__decide lrow__wide">
+            {row.canAccept ? (
+              <>
+                <button type="button" className="orow__decide orow__decide--ok" disabled={busy} onClick={onAccept}>
+                  <Icon name="check" size={15} /> Accept
+                </button>
+                <button type="button" className="orow__decide orow__decide--danger" disabled={busy} onClick={onReject}>
+                  <Icon name="close" size={15} /> Reject
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="orow__decide orow__decide--ok" disabled={busy}
+                  aria-label="Confirm the payment arrived" onClick={onSettleReceived}>
+                  <Icon name="check" size={15} /> Received
+                </button>
+                <button type="button" className="orow__decide orow__decide--danger" disabled={busy}
+                  aria-label="Say the payment has not arrived" onClick={onSettleDenied}>
+                  <Icon name="close" size={15} /> Not received
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {working && row.serial && row.serial.length > 0 && (
+          <div className="lrow__wide">
+            <SerialButtons compact shipHere
+              buttons={row.serial}
+              busy={busy}
+              who={{ itemName: row.itemName, buyerName: row.buyer.name }}
+              onItem={(key, on, shipment) => {
+                const button = row.serial!.find((entry) => entry.kind === 'item' && entry.key === key);
+                onPress({ checkpoint: key, label: button?.label ?? key, step: button?.step ?? key }, on, shipment);
+              }}
+              onLot={onLotTracking}
+              orderLink={{ to: `/order/${row.id}`, state: linkState }}
+              stepOf={row.routeStep}
+            />
+          </div>
+        )}
+
+        <div className="lrow__acts lrow__wide">
+          <OrderPhotos orderId={row.id} photos={row.photos} seller compact onChange={onPhotos}
+            audiences={['buyer', ...(row.lotCrew?.supplier ? ['supplier' as const] : []), ...(row.lotCrew?.handler ? ['handler' as const] : [])]} />
+          <span className="ocard__spacer" />
+          <Link to={`/listing/${row.listingId}`} className="lrow__icon" aria-label="See the listing as it was listed" title="Listing">
+            <Svg name="open" size={13} />
+          </Link>
+          {row.canCancel && !awaitingClaim && (
+            <button type="button" className="ocard__x" aria-label="Cancel this order" disabled={busy} onClick={onCancel}>
+              <Icon name="close" size={14} />
+            </button>
+          )}
+          <Link to={orderLink} state={linkState} className="ocard__open" aria-label="Open this order">
+            Open <Icon name="right" size={13} />
+          </Link>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <article id={`order-${row.id}`}
       className={`ocard ocard--${tone}${needsAnswer ? ' is-urgent' : ''}${glowing ? ' is-glowing' : ''}${busy ? ' is-busy' : ''}`}
       style={{ '--i': Math.min(index, 12) } as CSSProperties}>
       <ItemHead id={row.id} name={row.itemName} photoUrl={row.photoUrl} to={orderLink.pathname} state={linkState}
-        badges={row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
+        badges={<>
+          {row.privateDeal && <span className="badge badge--pink">🤝 Private deal</span>}
+        </>}
         meta={<>
           {!inLot && (row.buyer.handle
             ? <Link to={`/${row.buyer.handle}`} className="ocard__buyer">{row.buyer.name}</Link>
@@ -1932,6 +2267,8 @@ function OrderRow({
           {!inLot && <span aria-hidden="true">·</span>}
           <span>{timeAgo(row.createdAt)}</span>
           {row.quantity > 1 && <><span aria-hidden="true">·</span><span>×{row.quantity}</span></>}
+          <ConditionTag condition={row.condition} />
+          {inLot && <ReadyChip row={row} />}
         </>}
         side={<span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>{label}</span>} />
 
@@ -1983,7 +2320,7 @@ function OrderRow({
 
       {awaitingClaim && row.claim && (
         <div className="ocard__claim">
-          💸 Buyer says they paid <b>{formatMoney(row.claim.amountMinor ?? row.totalMinor, row.currency)}</b>
+          💸 Customer says they paid <b>{formatMoney(row.claim.amountMinor ?? row.totalMinor, row.currency)}</b>
           {row.claim.reference && <span className="ocard__ref"> · ref {row.claim.reference}</span>}
         </div>
       )}
@@ -2032,6 +2369,12 @@ function OrderRow({
           orderLink={{ to: `/order/${row.id}`, state: linkState }}
           stepOf={row.routeStep}
         />
+      )}
+
+      {/* Inside its lot: its photos. Ready to dispatch is on its customer's strip. */}
+      {inLot && (
+        <OrderPhotos orderId={row.id} photos={row.photos} seller onChange={onPhotos}
+          audiences={['buyer', ...(row.lotCrew?.supplier ? ['supplier' as const] : []), ...(row.lotCrew?.handler ? ['handler' as const] : [])]} />
       )}
 
       <div className="ocard__acts">

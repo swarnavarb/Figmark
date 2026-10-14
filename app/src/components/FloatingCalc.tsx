@@ -4,7 +4,7 @@ import { calculateProfit, stepsFromResult, type ProfitInput, type ProfitTemplate
 import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
-import { CalcInputs, CalcLines } from './CostSheetField';
+import { CalcInputs, CalcLines, PriceRoute } from './CostSheetField';
 import { ErrorNotice } from './ui';
 import { CalcIcon } from './CalcIcon';
 
@@ -195,7 +195,7 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
         templateId: template.id,
         templateName: template.name,
         input,
-        steps: stepsFromResult(result),
+        steps: stepsFromResult(result, template, input.itemPrice, input),
         sellingPriceMinor: Math.round(input.sellingPrice * 100),
       }, storeId);
       setCalcs(saved.calcs);
@@ -270,6 +270,7 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
                   <span><small>Margin</small><b>{result.marginPercent === null ? '—' : `${result.marginPercent.toFixed(1)}%`}</b></span>
                   <span><small>Landed</small><b>{formatMoney(Math.round(result.landed * 100))}</b></span>
                 </div>
+                <PriceRoute template={template} input={input} result={result} />
                 <CalcLines template={template} input={input} result={result} />
               </>
             )}

@@ -21,8 +21,9 @@ import { getRepository } from '../data/index.js';
 import { moderation } from '../moderation.js';
 import { isLive } from '../../../shared/service-stores.js';
 import { claimPhotos, releaseListingPhotos } from '../storage/release.js';
+import { getPhotoStore, ownPhotoName } from '../storage/index.js';
 import { error, handler, json } from './http.js';
-import { placeOrder } from './placement.js';
+import { checkoutUnitPriceMinor, placeOrder, repriceCheckout } from './placement.js';
 import {
   affiliateFor, claimCookieReferrals, offersAffiliate, recordReferral, referralCookie, referralsInCookie,
   resolveShortCode, shortCodeFor, verifyAffiliateToken,
@@ -137,7 +138,7 @@ async function canSee(repository: Awaited<ReturnType<typeof getRepository>>, lis
  * is all that leaves; every other change of price stays the shop's.
  */
 function publicListing(listing: Listing): Listing {
-  const { costSheet: _cost, costSheetPrevious: _history, priceHistory, ...rest } = listing;
+  const { costSheet: _cost, costSheetPrevious: _history, orderCosts: _orders, priceHistory, ...rest } = listing;
   const highest = Math.max(0, ...(priceHistory ?? []).map((entry) => entry.priceMinor));
   return highest > listing.priceMinor
     ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }
@@ -470,10 +471,18 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // Made from one of this shop's own items: remembered with its price, so the
   // deal can show what it took off. Anybody else's item is simply not it.
   let dealFrom: Listing['dealFrom'] = null;
+  let dealSource: Listing | null = null;
   if (privateFor && body.dealFromId) {
     const source = await repository.getListing(body.dealFromId);
-    if (source && source.sellerId === sellerId) dealFrom = { listingId: source.id, priceMinor: source.priceMinor };
+    if (source && source.sellerId === sellerId) {
+      dealFrom = { listingId: source.id, priceMinor: source.priceMinor };
+      dealSource = source;
+    }
   }
+
+  // The deal's item lends its photos as they are; anything else must be this shop's.
+  const photos = await sellerPhotos(body.photos, { sellerId, actorId: user.id, kept: dealSource?.photos ?? [], repository });
+  if (!photos) return error(400, 'invalid_photos', 'Use photos uploaded for this shop.');
 
   // What it cost to bring in (Pro), when the seller filled it in while listing.
   let costSheet: Listing['costSheet'] = null;
@@ -552,15 +561,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
        unless the seller said otherwise. The cap is here rather than in the
        browser because a document with forty images in it is the kind of thing
        that only fails in production. */
-    photos: (body.photos ?? [])
-      .slice(0, 6)
-      .map((photo, index, all) => ({
-        blobName: photo.blobName ?? '',
-        url: photo.url,
-        imageHash: null,
-        isPrimary: all.some((row) => row.isPrimary) ? photo.isPrimary === true : index === 0,
-      }))
-      .filter((photo) => photo.blobName || photo.url),
+    photos,
     /* The two ladders, from the Quick Post template the seller listed with.
        The before-lot one is copied because a buyer will read it; the after-lot
        one is a pointer, because nothing is travelling it yet. */
@@ -989,15 +990,12 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     const open = (await repository.listOrdersForBuyer(user.id)).find((entry) =>
       entry.listingId === listing.id && entry.placedAt === null && entry.status === 'pending_payment');
     if (open) {
-      if (affiliate && open.affiliate?.referrerId !== affiliate.referrerId) {
-        // Nothing is paid at a checkout, so its price can still follow the
-        // link that brought the buyer: the old link's discount back on, the new one's off.
-        const base = open.unitPriceMinor + (open.affiliate?.buyerOffMinor ?? 0);
-        open.affiliate = affiliate;
-        open.unitPriceMinor = Math.max(100, base - (affiliate.buyerOffMinor ?? 0));
-      }
+      // Nothing is paid at a checkout, so its price follows both the link
+      // that brought the buyer and whatever the seller charges now.
+      if (affiliate && open.affiliate?.referrerId !== affiliate.referrerId) open.affiliate = affiliate;
       open.quantity = quantity;
       if (fromPost && !open.fromPost) open.fromPost = fromPost;
+      await repriceCheckout(repository, open, listing);
       open.hold = { ...open.hold, amountMinor: open.unitPriceMinor * quantity };
       open.buyClicks = (open.buyClicks ?? 1) + 1;
       open.updatedAt = new Date().toISOString();
@@ -1013,7 +1011,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
 
   const now = new Date().toISOString();
   // A buyer who came through somebody's link pays the shop's link price.
-  const unitPriceMinor = Math.max(100, listing.priceMinor - (affiliate?.buyerOffMinor ?? 0));
+  const unitPriceMinor = checkoutUnitPriceMinor(listing, { affiliate });
   const amountMinor = unitPriceMinor * quantity;
   const now2 = new Date().toISOString();
 
@@ -1112,7 +1110,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   // Book straight from the item page: the choice is made, so it is an order.
   if (body.plan === 'book') {
     const refusal = await placeOrder(repository, placed, 'booked', user.id);
-    if (refusal) return error(409, 'unavailable', refusal);
+    if (refusal) return error(409, refusal.code, refusal.message);
   }
 
   return json(201, { order: placed });
@@ -1229,7 +1227,7 @@ function listingTerms(body: {
 /** The listing, if the caller may manage the store it is in. */
 async function manageable(request: HttpRequest): Promise<
   { refusal: ReturnType<typeof error> }
-  | { listing: Listing; repository: Awaited<ReturnType<typeof getRepository>> }
+  | { listing: Listing; repository: Awaited<ReturnType<typeof getRepository>>; user: { id: string } }
 > {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
@@ -1244,7 +1242,56 @@ async function manageable(request: HttpRequest): Promise<
       return { refusal: error(403, 'forbidden', 'That item is not in a store you manage.') };
     }
   }
-  return { listing, repository };
+  return { listing, repository, user };
+}
+
+/**
+ * The photos a listing may carry: at most six, exactly one primary, and every
+ * one of them this shop's.
+ *
+ * A photo already on the item (or on the item a private deal is made from) is
+ * kept as stored. Anything new must be an upload here - never another server's
+ * picture, which would see every viewer load it - and one the shop can call
+ * its own: uploaded by the seller or the manager saving, or already on another
+ * of the shop's items. Another seller's photo is refused. Null when any photo
+ * fails, so the caller refuses the whole request.
+ */
+async function sellerPhotos(
+  value: unknown,
+  { sellerId, actorId, kept, repository, listingId }: {
+    sellerId: string; actorId: string; kept: Listing['photos'];
+    repository: Awaited<ReturnType<typeof getRepository>>; listingId?: string;
+  },
+): Promise<Listing['photos'] | null> {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return null;
+  const store = await getPhotoStore();
+  const rows: Listing['photos'] = [];
+  for (const entry of value.slice(0, 6) as { blobName?: unknown; url?: unknown; isPrimary?: unknown }[]) {
+    const url = typeof entry?.url === 'string' ? entry.url.trim() : '';
+    const blobName = typeof entry?.blobName === 'string' ? entry.blobName : '';
+    const isPrimary = entry?.isPrimary === true;
+    const already = kept.find((photo) => (url && photo.url === url) || (blobName && photo.blobName === blobName));
+    if (already) {
+      rows.push({ ...already, isPrimary });
+      continue;
+    }
+    if (!url || url.length > 500) return null;
+    const name = await ownPhotoName(url);
+    if (!name || (blobName && blobName !== name)) return null;
+    const info = await store.publicInfo(name);
+    if (!info) return null;
+    const uploader = info.uploadedBy;
+    let ours = uploader === null ? !info.attachedTo : uploader === actorId || uploader === sellerId;
+    if (!ours && info.attachedTo?.startsWith('listing:')) {
+      const other = info.attachedTo.slice('listing:'.length);
+      ours = other === listingId || (await repository.getListing(other))?.sellerId === sellerId;
+    }
+    if (!ours) return null;
+    rows.push({ blobName: name, url, imageHash: null, isPrimary });
+  }
+  const lead = Math.max(0, rows.findIndex((photo) => photo.isPrimary));
+  return rows.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
 }
 
 /**
@@ -1257,10 +1304,12 @@ async function manageable(request: HttpRequest): Promise<
 async function editListing(request: HttpRequest, _context: InvocationContext) {
   const found = await manageable(request);
   if ('refusal' in found) return found.refusal;
-  const { listing, repository } = found;
+  const { listing, repository, user } = found;
 
   let body: {
     title?: string; description?: string; priceMinor?: number; quantityAvailable?: number;
+    /** The stock the seller's form showed, so the new number is read as a change from it. */
+    quantityWas?: number;
     quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
     affiliateMinor?: number | null;
     affiliateOffMinor?: number | null;
@@ -1272,59 +1321,74 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const price = body.priceMinor !== undefined && body.priceMinor > 0 ? Math.round(body.priceMinor) : listing.priceMinor;
-  const next: Listing = { ...listing, ...listingTerms(body, price, listing.affiliate), updatedAt: new Date().toISOString() };
-  // A private deal stays one: no commission, and a new clock is at most a day from now.
-  if (listing.privateFor) {
-    next.affiliate = null;
-    if (body.expiresAt !== undefined) next.expiresAt = dealEndsAt(body.expiresAt);
+  if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
+  if (body.priceMinor !== undefined && !(body.priceMinor > 0)) {
+    return error(400, 'invalid_listing', 'A price above zero is required.');
   }
-  // A cheaper price can leave an old commission bigger than the item; it is
-  // brought back under the new price rather than left owing more than it took.
-  if (next.affiliate?.amountMinor && body.affiliateMinor === undefined && body.affiliateOffMinor === undefined) {
-    const kept = cleanAffiliateMinor(next.affiliate.amountMinor, price);
-    const off = kept ? cleanBuyerOffMinor(next.affiliate.buyerOffMinor, price, kept) : null;
-    next.affiliate = kept ? { amountMinor: kept, ...(off ? { buyerOffMinor: off } : {}) } : null;
-  }
-  if (body.title !== undefined) {
-    if (!body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
-    next.title = body.title.trim();
-  }
-  if (body.description !== undefined) next.description = body.description.trim();
-  if (Array.isArray(body.photos)) {
-    // Same rules as a new listing: at most six, exactly one primary.
-    const kept = body.photos
-      .slice(0, 6)
-      .map((photo) => ({ blobName: photo.blobName ?? '', url: photo.url, imageHash: null, isPrimary: photo.isPrimary === true }))
-      .filter((photo) => photo.blobName || photo.url);
-    const lead = Math.max(0, kept.findIndex((photo) => photo.isPrimary));
-    next.photos = kept.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
-  }
-  if (body.priceMinor !== undefined) {
-    if (!(body.priceMinor > 0)) return error(400, 'invalid_listing', 'A price above zero is required.');
-    next.priceMinor = Math.round(body.priceMinor);
-    // Kept so Insights can say what a price change did to demand.
-    if (next.priceMinor !== listing.priceMinor) {
-      const history = listing.priceHistory?.length
-        ? listing.priceHistory
-        : [{ priceMinor: listing.priceMinor, at: listing.createdAt }];
-      next.priceHistory = [...history, { priceMinor: next.priceMinor, at: next.updatedAt }].slice(-20);
-    }
-  }
-  if (body.quantityAvailable !== undefined) {
-    next.quantityAvailable = Math.max(0, Math.round(body.quantityAvailable));
-  }
-  if (next.expiresAt && isExpired(next) && body.expiresAt !== undefined) {
-    return error(400, 'invalid_expiry', 'Pick an expiry in the future, or none.');
-  }
-  // Stock decides whether it is on the shelf; a multiple is never sold out.
-  if (next.status === 'active' || next.status === 'sold_out') {
-    next.status = isMultiple(next) || next.quantityAvailable > 0 ? 'active' : 'sold_out';
-    // Back on the shelf: the people who saved it while it was gone are worth telling.
-    if (listing.status === 'sold_out' && next.status === 'active') next.restockedAt = next.updatedAt;
-  }
+  // Stock is a change, not a count. The form was drawn minutes ago; a sale
+  // since then has already taken its unit, and writing the old number back
+  // would hand that unit to a second buyer. So what the seller moved - from
+  // what their form showed, or failing that from what was read here - is
+  // applied to whatever the listing holds when the write lands.
+  const stockDelta = body.quantityAvailable !== undefined
+    ? Math.round(body.quantityAvailable) - Math.round(body.quantityWas ?? listing.quantityAvailable)
+    : 0;
+  if (!Number.isFinite(stockDelta)) return error(400, 'invalid_listing', 'Stock must be a number.');
+  // Photos already on the item stay; a new one must be this shop's own upload.
+  const photos = Array.isArray(body.photos)
+    ? await sellerPhotos(body.photos, { sellerId: listing.sellerId, actorId: user.id, kept: listing.photos, repository, listingId: listing.id })
+    : undefined;
+  if (photos === null) return error(400, 'invalid_photos', 'Use photos uploaded for this shop.');
 
-  const updated = await repository.updateListing(next);
+  let refusal: ReturnType<typeof error> | null = null;
+  // Applied to the stored listing as it is at the moment of writing, and again
+  // if somebody else wrote it in between: sold count, pre-order fill and stock
+  // a buyer took are never rolled back by a seller saving a title.
+  const change = (current: Listing): Listing | null => {
+    const price = body.priceMinor !== undefined && body.priceMinor > 0 ? Math.round(body.priceMinor) : current.priceMinor;
+    const next: Listing = { ...current, ...listingTerms(body, price, current.affiliate), updatedAt: new Date().toISOString() };
+    // A private deal stays one: no commission, and a new clock is at most a day from now.
+    if (current.privateFor) {
+      next.affiliate = null;
+      if (body.expiresAt !== undefined) next.expiresAt = dealEndsAt(body.expiresAt);
+    }
+    // A cheaper price can leave an old commission bigger than the item; it is
+    // brought back under the new price rather than left owing more than it took.
+    if (next.affiliate?.amountMinor && body.affiliateMinor === undefined && body.affiliateOffMinor === undefined) {
+      const kept = cleanAffiliateMinor(next.affiliate.amountMinor, price);
+      const off = kept ? cleanBuyerOffMinor(next.affiliate.buyerOffMinor, price, kept) : null;
+      next.affiliate = kept ? { amountMinor: kept, ...(off ? { buyerOffMinor: off } : {}) } : null;
+    }
+    if (body.title !== undefined) next.title = body.title.trim();
+    if (body.description !== undefined) next.description = body.description.trim();
+    if (photos) next.photos = photos;
+    if (body.priceMinor !== undefined) {
+      next.priceMinor = price;
+      // Kept so Insights can say what a price change did to demand.
+      if (next.priceMinor !== current.priceMinor) {
+        const history = current.priceHistory?.length
+          ? current.priceHistory
+          : [{ priceMinor: current.priceMinor, at: current.createdAt }];
+        next.priceHistory = [...history, { priceMinor: next.priceMinor, at: next.updatedAt }].slice(-20);
+      }
+    }
+    if (stockDelta !== 0) next.quantityAvailable = Math.max(0, current.quantityAvailable + stockDelta);
+    if (next.expiresAt && isExpired(next) && body.expiresAt !== undefined) {
+      refusal = error(400, 'invalid_expiry', 'Pick an expiry in the future, or none.');
+      return null;
+    }
+    // Stock decides whether it is on the shelf; a multiple is never sold out.
+    if (next.status === 'active' || next.status === 'sold_out') {
+      next.status = isMultiple(next) || next.quantityAvailable > 0 ? 'active' : 'sold_out';
+      // Back on the shelf: the people who saved it while it was gone are worth telling.
+      if (current.status === 'sold_out' && next.status === 'active') next.restockedAt = next.updatedAt;
+    }
+    return next;
+  };
+
+  const updated = await repository.changeListing(listing.id, listing.sellerId, change);
+  if (refusal) return refusal;
+  if (!updated) return error(404, 'not_found', 'No such listing.');
   await claimPhotos(updated.photos.map((photo) => photo.blobName || photo.url), `listing:${updated.id}`);
   if (Array.isArray(body.photos)) {
     // Photos taken off the listing leave the blob too, unless something else still names them.

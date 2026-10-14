@@ -4,7 +4,7 @@ import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type Or
 import { byCustomer, tally } from '../../../shared/board.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
 import { can } from '../../../shared/stores.js';
-import { mayTick, supplierIdOf, type CrewRole } from '../../../shared/services.js';
+import { TAGGED_ROLES, crewMayPress, crewSlots, hasArrived, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import { preLotRouteOf } from '../../../shared/templates.js';
 import {
   BUILT_IN_ROUTE, atSellerYet, coarseStage, currentStepOf, lotNo, lotNumberFrom, normaliseSteps,
@@ -18,7 +18,7 @@ import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, is
 import {
   AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, sourcingOf, stagesFor,
 } from '../../../shared/fulfilment.js';
-import type { Lot, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
+import type { Lot, LotCrewSettings, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { bookingFor, forwarderWorks } from '../service-access.js';
@@ -30,7 +30,10 @@ import { autoReleaseDays } from '../settings.js';
 import { offersAffiliate } from '../affiliate.js';
 import { linkDiscountMinor } from '../../../shared/affiliate.js';
 import { storeTag } from '../../../shared/storefront.js';
-import { capital, notifyBuyers } from './notify.js';
+import { capital, notify, notifyBuyers } from './notify.js';
+import { messageFromShop } from './message-routes.js';
+import { threadIdFor } from '../../../shared/handles.js';
+import { orderMoney, rupees } from '../../../shared/payments.js';
 import { error, handler, json } from './http.js';
 
 /** What to write on the timeline when a checkpoint is ticked. */
@@ -127,11 +130,22 @@ function supplierFrom(body: LotDetailsBody, supplierUserId?: string | null): Lot
 async function userForHandle(
   handle: string | undefined,
   repository: Awaited<ReturnType<typeof getRepository>>,
-): Promise<{ id: string | null; missing: string | null }> {
+): Promise<{ id: string | null; missing: string | null; shop?: boolean }> {
   const wanted = handle?.trim().replace(/^@/, '');
   if (!wanted) return { id: null, missing: null };
   const found = await repository.getByHandle(wanted);
-  return found ? { id: found.user.id, missing: null } : { id: null, missing: wanted };
+  if (!found) return { id: null, missing: wanted };
+  // A shop is not a person who can pack a crate or open a parcel: the crew is
+  // tagged by their own handle, which is what their My services hangs off.
+  if (found.isStore) return { id: null, missing: wanted, shop: true };
+  return { id: found.user.id, missing: null };
+}
+
+/** The refusal for a handle that could not be tagged. */
+function untaggable(tagged: { missing: string | null; shop?: boolean }) {
+  return tagged.shop
+    ? error(400, 'not_a_person', `@${tagged.missing} is a shop. Tag the person by their own handle.`)
+    : error(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
 }
 
 /**
@@ -180,9 +194,7 @@ async function updateLotDetails(request: HttpRequest, _context: InvocationContex
   // The supplier moves as a unit: naming one sets it, clearing the name drops it.
   if (body.supplierName !== undefined || body.supplierHandle !== undefined) {
     const tagged = await userForHandle(body.supplierHandle, repository);
-    if (tagged.missing) {
-      return error(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
-    }
+    if (tagged.missing) return untaggable(tagged);
     lot.supplier = supplierFrom(
       { ...body, supplierName: body.supplierName ?? lot.supplier?.name },
       tagged.id ?? (body.supplierHandle === undefined ? lot.supplier?.supplierUserId ?? null : null),
@@ -292,6 +304,8 @@ export interface NewLotBody {
   }[];
   /** Who gets it out when it lands. The supplier is named above. */
   handlerUserId?: string;
+  /** The handler's handle here, tagged as the supplier's is. */
+  handlerHandle?: string;
   handlerName?: string;
 }
 
@@ -366,16 +380,22 @@ export async function buildLot(
   /* The two people who work it, named up front rather than found later on a
      different screen: naming them is part of opening a lot, and a form that
      asks afterwards is a form most sellers never come back to. */
-  let supplierTag: string | null = null;
-  if (body.supplierHandle?.trim()) {
-    const found = await repository.getByHandle(body.supplierHandle.trim().replace(/^@/, ''));
-    if (!found) return refuse(404, 'not_found', `Nobody here goes by ${body.supplierHandle}.`);
-    supplierTag = found.user.id;
-  }
+  const tagRefusal = (tagged: { missing: string | null; shop?: boolean }) => tagged.shop
+    ? refuse(400, 'not_a_person', `@${tagged.missing} is a shop. Tag the person by their own handle.`)
+    : refuse(404, 'not_found', `Nobody here goes by @${tagged.missing}.`);
+  const supplierTagged = await userForHandle(body.supplierHandle, repository);
+  if (supplierTagged.missing) return tagRefusal(supplierTagged);
+  const supplierTag: string | null = supplierTagged.id;
   let handlerNamed: Lot['handler'] = null;
-  if (body.handlerUserId || body.handlerName?.trim()) {
-    const named = body.handlerUserId ? await repository.getUserById(body.handlerUserId) : null;
-    if (body.handlerUserId && !named) {
+  if (body.handlerUserId || body.handlerHandle?.trim() || body.handlerName?.trim()) {
+    let handlerId = body.handlerUserId ?? null;
+    if (body.handlerHandle?.trim()) {
+      const tagged = await userForHandle(body.handlerHandle, repository);
+      if (tagged.missing) return tagRefusal(tagged);
+      handlerId = tagged.id;
+    }
+    const named = handlerId ? await repository.getUserById(handlerId) : null;
+    if (handlerId && !named) {
       return refuse(404, 'not_found', 'No such account to handle this lot.');
     }
     const handlerName = body.handlerName?.trim()
@@ -733,9 +753,16 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
 
   let body: {
     handlerUserId?: string | null;
+    /** Their handle here, tagged the way a supplier is: what gives them a screen. */
+    handlerHandle?: string | null;
     handlerName?: string;
     handlerContact?: string;
     handlerCity?: string;
+    /** Tick keys, or null to go back to the role's stock buttons. */
+    supplierButtons?: string[] | null;
+    handlerButtons?: string[] | null;
+    handlerSeesPayment?: boolean;
+    readyGate?: boolean;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -749,11 +776,18 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
   // The handler moves as a unit, the way the supplier does: a name clears it,
   // and naming one from the directory carries their id so the lot turns up on
   // their own screen rather than only in the shop's notes.
-  if (body.handlerName !== undefined || body.handlerUserId !== undefined) {
-    const named = body.handlerUserId
-      ? await repository.getUserById(body.handlerUserId)
+  if (body.handlerName !== undefined || body.handlerUserId !== undefined || body.handlerHandle !== undefined) {
+    // Tagged by handle, as the supplier is; an id still works for older callers.
+    const tagged = await userForHandle(body.handlerHandle ?? undefined, repository);
+    if (tagged.missing) return untaggable(tagged);
+    // A blank handle keeps whoever is already tagged; only a name change or a
+    // new handle moves the seat.
+    const keep = body.handlerHandle === undefined || body.handlerHandle === null || body.handlerHandle.trim() === ''
+      ? (body.handlerUserId === undefined ? lot.handler?.handlerUserId ?? null : body.handlerUserId)
       : null;
-    if (body.handlerUserId && !named) {
+    const wantedId = tagged.id ?? keep;
+    const named = wantedId ? await repository.getUserById(wantedId) : null;
+    if (wantedId && !named) {
       return error(404, 'not_found', 'No such account to handle this lot.');
     }
 
@@ -776,6 +810,36 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
         }
       : null;
   }
+
+  /* What the two of them may press and see. "Ready to dispatch" is never on
+     the handler's side - the seller clears every customer - so a readyGate
+     sent by an older screen changes nothing. */
+  const crew: LotCrewSettings = { ...(lot.crew ?? {}) };
+  delete crew.readyGate;
+  if (typeof body.handlerSeesPayment === 'boolean') crew.handlerSeesPayment = body.handlerSeesPayment;
+  for (const role of TAGGED_ROLES) {
+    const field = role === 'supplier' ? 'supplierButtons' : 'handlerButtons';
+    const wanted = body[field];
+    if (wanted === undefined) continue;
+    if (wanted === null) {
+      delete crew[field];
+      continue;
+    }
+    if (!Array.isArray(wanted) || wanted.some((key) => typeof key !== 'string')) {
+      return error(400, 'invalid_buttons', 'Send the buttons as a list.');
+    }
+    const slots = new Set(crewSlots({ ...next, crew }, role).map((slot) => slot.key));
+    const stray = wanted.find((key) => !slots.has(key));
+    if (stray) {
+      return error(400, 'invalid_buttons', role === 'supplier'
+        ? 'A supplier can only be handed buttons from before the item joins the lot.'
+        : 'A handler can only be handed buttons from after the item leaves the lot, and never Delivered.');
+    }
+    crew[field] = [...new Set(wanted)];
+  }
+  // The ready press is the seller's: never kept on a handler's list.
+  if (crew.handlerButtons) crew.handlerButtons = crew.handlerButtons.filter((key) => key !== 'ready_to_dispatch');
+  next.crew = crew;
 
   return json(200, { lot: await repository.updateLot(next) });
 }
@@ -843,7 +907,12 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
       })),
   ];
   // A step that can still be undone is in effect but on no timeline yet.
-  const orderForClient = { ...order, stageHistory: settledHistory(healedHistory) };
+  const orderForClient = {
+    ...order,
+    stageHistory: settledHistory(healedHistory),
+    // The buyer sees the photos the shop shared with them, and no others.
+    photos: order.sellerId === user.id ? order.photos ?? [] : photosFor(order, 'buyer'),
+  };
 
   /*
    * A checkpoint that has been ticked has happened.
@@ -947,7 +1016,25 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
  * Their own by default; a store they hold `lots` in when they name it. Returns
  * null when they hold nothing there, which every caller turns into a 403.
  */
-async function lotsStoreFor(
+/**
+ * Everyone this lot names who this person is. One person can be more than
+ * one - a forwarder who also packs - and may do what any of their roles may.
+ */
+export async function crewRolesOn(
+  repository: Awaited<ReturnType<typeof getRepository>>,
+  userId: string,
+  order: Pick<Order, 'sellerId'>,
+  lot: Lot | null,
+): Promise<CrewRole[]> {
+  const owner = await repository.getUserById(order.sellerId);
+  const roles: CrewRole[] = [];
+  if ((owner && can(owner, userId, 'export')) || (lot && supplierIdOf(lot) === userId)) roles.push('supplier');
+  if (lot && lot.handler?.handlerUserId === userId) roles.push('handler');
+  if (lot && (await forwarderWorks(repository, lot, userId))) roles.push('forwarder');
+  return roles;
+}
+
+export async function lotsStoreFor(
   request: HttpRequest,
   user: { id: string },
   storeId: string | undefined,
@@ -1040,6 +1127,9 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
         quantity: order.quantity,
         unitWeightGrams: order.unitWeightGrams,
         checkpoints: order.checkpoints ?? {},
+        photos: order.photos ?? [],
+        /** At the destination, so Ready to dispatch can be pressed. */
+        arrived: hasArrived(order, lot),
       })),
       trackingReference: lot.forwarder?.trackingReference ?? null,
     };
@@ -1061,6 +1151,13 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
       status: lot.status,
       origin: lot.origin ?? '',
       estimatedDispatchAt: lot.estimatedDispatchAt,
+    },
+    // What the board offers beyond the ticks: the ready gate, and whose photos go where.
+    crew: {
+      readyGate: readyGated(lot),
+      supplier: Boolean(supplierIdOf(lot)),
+      handler: Boolean(lot.handler?.handlerUserId),
+      handlerName: lot.handler?.name || null,
     },
     tally: tally(orders),
     customers,
@@ -1122,34 +1219,40 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     // may tick their own half of the journey and nothing else - the ticks are
     // the record of work done, so the person who did it is the one who makes
     // them.
-    const owner = await repository.getUserById(order.sellerId);
-    /* Everyone this lot names who this person is. One person can be more
-       than one - a forwarder who also packs - and may press what any of
-       their roles may. */
-    const roles: CrewRole[] = [];
-    if ((owner && can(owner, user.id, 'export')) || (lot && supplierIdOf(lot) === user.id)) roles.push('supplier');
-    if (lot && lot.handler?.handlerUserId === user.id) roles.push('handler');
-    if (lot && (await forwarderWorks(repository, lot, user.id))) roles.push('forwarder');
-    const role: CrewRole | null = roles.find((each) =>
-      (!customId && mayTick(each, checkpoint)) || button?.assignee === each) ?? roles[0] ?? null;
+    const roles = await crewRolesOn(repository, user.id, order, lot);
+    /* Their own half of the journey: the buttons the seller handed them on
+       this lot, or the role's stock ones where the seller has not chosen. */
+    const mayPress = (each: CrewRole) => crewMayPress(lot, each, key, button?.assignee ?? null);
+    const role: CrewRole | null = roles.find(mayPress) ?? roles[0] ?? null;
 
     if (!role) return error(403, 'forbidden', 'That order is not yours to work.');
-    // Their own half of the journey, plus any button the seller handed them.
-    if (!(customId ? false : mayTick(role, checkpoint)) && button?.assignee !== role) {
+    if (!mayPress(role)) {
       return error(
         403,
         'forbidden',
-        role === 'supplier'
-          ? 'You can mark items packed, and nothing else.'
-          : role === 'forwarder'
-            ? 'The shop’s route has not handed that button to the forwarder.'
-            : 'You can work this lot from the moment it lands, and no earlier.',
+        role === 'forwarder'
+          ? 'The shop’s route has not handed that button to the forwarder.'
+          : role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)
+            ? 'The shop marks each customer Ready to dispatch on this lot.'
+            : 'The shop has not handed you that button on this lot.',
       );
+    }
+    /* The ready gate: the seller says a customer's parcel can go - paid up,
+       nothing still to add - and until then the handler holds it. */
+    if (role === 'handler' && readyGated(lot) && checkpoint === 'dispatched' && body.on !== false
+      && !order.checkpoints?.ready_to_dispatch) {
+      return error(409, 'not_cleared', 'The shop has not marked this customer ready to dispatch yet.');
     }
   }
 
   const on = body.on !== false;
   const now = new Date().toISOString();
+
+  /* Ready to dispatch tells the handler to send it: not before it is there
+     to send. Holding one back again is always allowed. */
+  if (on && checkpoint === 'ready_to_dispatch' && lot && !hasArrived(order, lot)) {
+    return error(409, 'not_arrived', 'It has not reached the destination yet - mark it ready once it arrives.');
+  }
 
   /* Undoing a press made in the last three minutes: the opposite press, with
      the first one taken off the timeline instead of a second "undone" line
@@ -1438,11 +1541,82 @@ async function findExportStoreFor(userId: string, lotId: string, repository: Awa
   return null;
 }
 
+/**
+ * POST /api/orders/payment-reminder - tell a customer their parcel waits on payment.
+ *
+ * Pressed from the Ready to dispatch panel on the lot screen, for one order or
+ * every order of one customer: `{ orderIds }`. It goes as a message from the
+ * shop, in the thread the two of them already have, so the customer can answer
+ * it; a customer with no handle yet gets it on their bell instead. Once a day
+ * for the same orders: a reminder on every tap is how a shop gets muted.
+ */
+async function paymentReminder(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+
+  let body: { orderIds?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const ids = Array.isArray(body.orderIds) ? [...new Set(body.orderIds.filter((id): id is string => typeof id === 'string'))] : [];
+  if (ids.length === 0 || ids.length > 50) return error(400, 'invalid_orders', 'Name the orders to remind them about.');
+
+  const repository = await getRepository();
+  const found = await Promise.all(ids.map((id) => repository.getOrder(id)));
+  const orders = found.filter((order): order is Order => Boolean(order));
+  if (orders.length !== ids.length) return error(404, 'not_found', 'No such order.');
+  const [first] = orders;
+  if (orders.some((order) => order.sellerId !== first!.sellerId || order.buyerId !== first!.buyerId)) {
+    return error(400, 'invalid_orders', 'Remind one customer at a time.');
+  }
+  if (await lotsStoreFor(request, user, first!.sellerId) !== first!.sellerId) {
+    return error(403, 'forbidden', 'Those orders are not yours to chase.');
+  }
+
+  const due = orders.filter((order) => orderMoney(order).outstandingMinor > 0);
+  if (due.length === 0) return error(409, 'nothing_due', 'They have paid in full - mark it Ready to dispatch.');
+  const owedMinor = due.reduce((sum, order) => sum + orderMoney(order).outstandingMinor, 0);
+
+  const [shop, buyer] = await Promise.all([repository.getUserById(first!.sellerId), repository.getUserById(first!.buyerId)]);
+  const shopName = shop?.sellerProfile?.storefrontName || shop?.displayName || 'The shop';
+  const hello = buyer?.displayName ? `Hi ${buyer.displayName.split(/\s+/)[0]}, ` : 'Hi, ';
+  const what = due.length === 1
+    ? `your ${due[0]!.itemName} is ready to go out`
+    : `your ${due.length} orders (${due.map((order) => order.itemName).join(', ')}) are ready to go out`;
+  const text = `${hello}${what}. ${rupees(owedMinor)} is still due - please pay it so we can dispatch `
+    + `${due.length === 1 ? 'it' : 'them'} to you. Thank you! - ${shopName}`;
+  const link = `/order/${due[0]!.id}`;
+
+  /* Once a day. The words carry the orders and the amount, so the same
+     reminder again is the same text - and a changed balance is news. */
+  const DAY = 86_400_000;
+  const recent = await repository.listNotifications(first!.buyerId, 50);
+  const sentBell = recent.some((row) => row.kind === 'seller_nudge' && row.body === text && Date.now() - Date.parse(row.createdAt) < DAY);
+  const handles = [shop?.sellerProfile?.username, buyer?.username];
+  const thread = handles.every(Boolean) ? threadIdFor(handles[0]!, handles[1]!) : null;
+  const sentMessage = thread
+    ? (await repository.listMessages(thread, 30)).some((message) => message.body === text && Date.now() - Date.parse(message.createdAt) < DAY)
+    : false;
+  if (sentBell || sentMessage) return error(429, 'too_soon', 'They were reminded about this in the last 24 hrs.');
+
+  const message = await messageFromShop(repository, first!.sellerId, first!.buyerId, text, user.id,
+    due.length === 1 ? { href: link, label: 'View order & pay' } : { href: '/purchases', label: `View your ${due.length} orders & pay` });
+  if (message) {
+    // Where the seller can read the conversation it went into.
+    return json(200, { sent: true, via: 'message', thread: `/messages/${encodeURIComponent(message.to.handle)}?as=${encodeURIComponent(message.from.handle)}` });
+  }
+  await notify(repository, [first!.buyerId], { kind: 'seller_nudge', title: `A reminder from ${shopName}`, body: text, link }, { except: user.id });
+  return json(200, { sent: true, via: 'bell', thread: null });
+}
+
 export const supplierLotsRoute = handler(supplierLots);
 export const supplierLotRoute = handler(supplierLot);
 export const lotsBoardRoute = handler(lotsBoard);
 export const lotBoardRoute = handler(lotBoard);
 export const setCheckpointRoute = handler(setCheckpoint);
+export const paymentReminderRoute = handler(paymentReminder);
 export const myLotsRoute = handler(myLots);
 export const createLotRoute = handler(createLot);
 export const lotContentsRoute = handler(lotContents);
@@ -1465,6 +1639,7 @@ app.http('lot-details', { ...anon, methods: ['POST'], route: 'lots/{id}/details'
 app.http('lots-board', { ...anon, methods: ['GET'], route: 'me/lots/board', handler: lotsBoardRoute });
 app.http('lot-board', { ...anon, methods: ['GET'], route: 'lots/{id}/board', handler: lotBoardRoute });
 app.http('order-checkpoint', { ...anon, methods: ['POST'], route: 'orders/{id}/checkpoint', handler: setCheckpointRoute });
+app.http('order-payment-reminder', { ...anon, methods: ['POST'], route: 'orders/payment-reminder', handler: paymentReminderRoute });
 app.http('supplier-lots', { ...anon, methods: ['GET'], route: 'supplier/lots', handler: supplierLotsRoute });
 app.http('supplier-lot', { ...anon, methods: ['GET'], route: 'supplier/lots/{id}', handler: supplierLotRoute });
 app.http('order-tracking', { ...anon, methods: ['GET'], route: 'orders/{id}', handler: orderTrackingRoute });

@@ -21,7 +21,7 @@ process.env.FIGMARK_SHELL_FILE ??= join(staticRoot, 'index.html');
 const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
-const { loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute } = await import(new URL('auth-routes.js', apiRoot));
+const { loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute, usernameAvailableRoute } = await import(new URL('auth-routes.js', apiRoot));
 const {
   verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
   verifyAadhaarRoute, whatsappWebhookRoute,
@@ -39,9 +39,10 @@ const { ogRoute, ogCardRoute, linkPreviewRoute } = await import(new URL('og-rout
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
-  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, supplierLotsRoute, supplierLotRoute,
+  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, paymentReminderRoute, supplierLotsRoute, supplierLotRoute,
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
+const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
 const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
@@ -80,7 +81,7 @@ const {
   listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute,
   listSavedCalcsRoute, saveSavedCalcRoute, deleteSavedCalcRoute,
 } = await import(new URL('profit-routes.js', apiRoot));
-const { costsRoute, saveCostSheetRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
+const { costsRoute, saveCostSheetRoute, saveOrderCostsRoute, saveOrderCostsBatchRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
 const {
   listRoutesRoute, saveRouteRoute, deleteRouteRoute, applyRouteRoute, closeLotRoute,
   lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, setLotRouteRoute,
@@ -136,6 +137,7 @@ const routes = [
   ['GET', '/api/health', healthRoute],
   ['GET', '/api/auth/me', meRoute],
   ['POST', '/api/auth/login', loginRoute],
+  ['GET', '/api/auth/username/:name', usernameAvailableRoute],
   ['POST', '/api/auth/signup', signupRoute],
   ['POST', '/api/auth/logout', logoutRoute],
   ['POST', '/api/auth/logout-all', logoutAllRoute],
@@ -181,7 +183,11 @@ const routes = [
   ['GET', '/api/me/lots/board', lotsBoardRoute],
   ['GET', '/api/me/lots', myLotsRoute],
   ['GET', '/api/lots/:id/board', lotBoardRoute],
+  ['POST', '/api/orders/payment-reminder', paymentReminderRoute],
   ['POST', '/api/orders/:id/checkpoint', setCheckpointRoute],
+  ['POST', '/api/orders/:id/photos', addOrderPhotoRoute],
+  ['POST', '/api/orders/:id/photos/:photoId', updateOrderPhotoRoute],
+  ['GET', '/api/people/suggest', suggestPeopleRoute],
   ['POST', '/api/lots', createLotRoute],
   ['GET', '/api/lots/:id/contents', lotContentsRoute],
   ['POST', '/api/lots/:id/assign', assignToLotRoute],
@@ -338,6 +344,8 @@ const routes = [
   ['POST', '/api/me/calcs/:id/delete', deleteSavedCalcRoute],
   ['GET', '/api/me/costs', costsRoute],
   ['POST', '/api/me/listings/:id/cost-sheet', saveCostSheetRoute],
+  ['POST', '/api/me/orders/:id/costs', saveOrderCostsRoute],
+  ['POST', '/api/me/order-costs', saveOrderCostsBatchRoute],
   ['GET', '/api/me/deep', deepRoute],
   ['GET', '/api/me/sales-report', salesReportRoute],
   ['POST', '/api/me/nudge', nudgeRoute],

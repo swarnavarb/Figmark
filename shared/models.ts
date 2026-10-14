@@ -1,4 +1,4 @@
-import type { ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
+import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
@@ -210,19 +210,17 @@ export interface User extends BaseDocument {
    */
   sellerProfile: SellerProfile | null;
   /**
-   * The shop's profit-calculator cost sheets (Pro). Kept on the account rather
-   * than in a container: a shop has a handful, reads them all at once, and the
-   * database is at its container ceiling. Never sent anywhere but the
-   * calculator's own route.
+   * The shop's profit-calculator cost sheets (Pro). Stored beside the account
+   * in its `profit` part (see api/src/data/user-parts.ts): a shop has a handful
+   * and reads them all at once. Never sent anywhere but the calculator's own route.
    */
   profitTemplates?: ProfitTemplate[];
   /** Calculations kept to list later (Pro). Kept beside the calculators, for the same reason. */
   savedCalcs?: SavedCalc[];
   /**
    * The browsers and installed copies of the site that asked to be woken when
-   * something happens to this account. Kept on the account for the same reason
-   * as the calculators: a person has a handful, they are read all at once, and
-   * the database is at its container ceiling. Never sent to anyone - each one
+   * something happens to this account. Stored in the account's `push` part: a
+   * person has a handful, read all at once. Never sent to anyone - each one
    * is enough to put a message on that person's screen.
    */
   pushEndpoints?: PushEndpoint[];
@@ -295,8 +293,8 @@ export interface User extends BaseDocument {
   quest?: QuestState;
   /**
    * Delivered purchases the person chose to show off, as cards on their page.
-   * On the account for the same reason as `quest`: it is read whole, by the
-   * person or by whoever opens their page, and there is no container to spare.
+   * Stored in the account's `collection` part, since it grows by a card per
+   * delivered order: read whole, by the person or by whoever opens their page.
    */
   collection?: CollectionItem[];
   /** The shelves a collection is grouped into, in the order the owner likes. */
@@ -931,6 +929,13 @@ export interface Listing extends BaseDocument {
    */
   costSheetPrevious?: ItemCostSheet[];
   /**
+   * One order's own cost steps, per unit, by order id - typed into the profit
+   * book when that order cost something different from the item's sheet.
+   * Kept here rather than on the order because the order is the buyer's to
+   * read, and this is the shop's.
+   */
+  orderCosts?: Record<string, CostStep[]>;
+  /**
    * Every price this item has been on sale at, oldest first, appended when the
    * seller edits the price. Absent for items never repriced.
    */
@@ -1207,6 +1212,49 @@ export interface Lot extends BaseDocument {
   route?: LotRoute | null;
   /** How far along that ladder, as an index. Absent reads from `stage`. */
   currentStep?: number;
+  /** What the tagged supplier and handler may press and see. Absent is the defaults. */
+  crew?: LotCrewSettings | null;
+}
+
+/**
+ * The seller's say over the two people tagged on a lot.
+ *
+ * Tagging somebody hands them a screen; this decides what is on it. The
+ * button lists are tick keys (`stepTickKey`), and only ever the ones on their
+ * side of the lot: the supplier works items before they join it, the handler
+ * works them once they have left it. A list that is absent means the role's
+ * stock buttons, which is how every lot behaved before a seller could choose.
+ */
+export interface LotCrewSettings {
+  supplierButtons?: string[];
+  handlerButtons?: string[];
+  /** Whether the handler sees what each buyer owes and has paid. */
+  handlerSeesPayment?: boolean;
+  /**
+   * Retired: the seller now clears every customer for dispatch on every lot
+   * (see `readyGated` in services.ts). Older lots may still carry it; it is
+   * ignored either way.
+   */
+  readyGate?: boolean;
+}
+
+/** Who a photo on an order can be shown to, besides the seller who always sees it. */
+export const PHOTO_AUDIENCES = ['buyer', 'supplier', 'handler'] as const;
+export type PhotoAudience = (typeof PHOTO_AUDIENCES)[number];
+
+/**
+ * A photo taken of one order on its way - in hand at the supplier, unpacked
+ * at the handler's. Never on the listing: it is this piece, not the product,
+ * and the seller decides who else it is shown to.
+ */
+export interface OrderPhoto {
+  id: string;
+  url: string;
+  blobName: string;
+  addedAt: string;
+  addedBy: string;
+  addedAs: 'seller' | 'supplier' | 'handler';
+  showTo: PhotoAudience[];
 }
 
 export interface LotHandler {
@@ -1416,6 +1464,8 @@ export interface Order extends BaseDocument {
    * meanings the rest of the app relies on and these have none.
    */
   customTicks?: Record<string, string | null>;
+  /** Photos of this piece on its way; see `OrderPhoto`. */
+  photos?: OrderPhoto[];
   /**
    * Where this item was received before it had a lot, in the seller's words
    * - "Received at freight forwarder's warehouse" - chosen when the warehouse
@@ -1435,6 +1485,18 @@ export interface Order extends BaseDocument {
   paymentClaim?: PaymentClaim | null;
   /** Full or advance, as the buyer chose at checkout. */
   paymentPlan?: 'full' | 'advance';
+  /**
+   * The idempotency key the paying request carried. A retry of that same
+   * request - a double tap, a network retry after the answer was lost - is
+   * answered with the order as it was saved, not charged a second time.
+   */
+  payKey?: string | null;
+  /**
+   * Set while this is still a checkout and the item's price has moved since
+   * Buy was pressed: what it was then and what it is now. The checkout is
+   * charged the price now, and says so before the buyer pays.
+   */
+  priceChange?: { fromMinor: number; toMinor: number; at: string } | null;
   /**
    * How the first payment was made. Every later payment on the order uses the
    * same one: switching quietly would move money outside what was agreed.
@@ -2773,6 +2835,18 @@ export interface Message extends BaseDocument {
   replyTo?: { id: string; name: string; body: string } | null;
   /** One reaction per handle; reacting again changes it. */
   reactions?: { handle: string; kind: ReactionKind }[];
+  /**
+   * A button under the words, on a message Figmark wrote for a shop - a
+   * payment reminder's "View order & pay". Only ever a path inside the app:
+   * people cannot set it, so it cannot be used to send anyone elsewhere.
+   */
+  link?: MessageLink | null;
+}
+
+export interface MessageLink {
+  /** A path inside Figmark, starting with `/`. */
+  href: string;
+  label: string;
 }
 
 /**

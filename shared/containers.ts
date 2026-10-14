@@ -45,6 +45,17 @@ export const CONTAINERS = {
       ],
     ],
   },
+  userParts: {
+    name: 'userParts',
+    partitionKeyPath: '/userId',
+    rationale:
+      'The parts of an account that only grow - the collection and its shelves, share and invite logs, affiliate records, push endpoints, devices, calculator sheets - one document per part, all in the account\'s own partition. Off the `users` row so the row stays small and far from the 2 MB item limit, and so saving a collection card and turning on notifications write different documents with their own etags instead of contending for one. Read together with a single-partition query.',
+    excludedPaths: [
+      '/collection/*', '/collectionGroups/*', '/shareOpens/*', '/shareLog/*', '/invitees/*',
+      '/referrals/*', '/affiliateOrderIds/*', '/affiliateLinks/*', '/clientDevices/*',
+      '/profitTemplates/*', '/savedCalcs/*',
+    ],
+  },
   identifiers: {
     name: 'identifiers',
     partitionKeyPath: '/id',

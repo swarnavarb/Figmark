@@ -14,6 +14,7 @@ import { AuthModal } from './pages/AuthPage';
 import { EmailGate, VerifyPrompt } from './pages/VerifyPage';
 import { inviteCodeFor } from './components/ShareKit';
 import { setPhotoQuery } from './photoQuery';
+import { Preloader } from './components/Preloader';
 
 /**
  * Persistent chrome: brand, search, the cart and who you are.
@@ -26,7 +27,7 @@ import { setPhotoQuery } from './photoQuery';
 const FORUM_STATUS = '#C627CB';
 
 export function AppShell() {
-  const { user, warning, sessionsInsecure, missingContainers, signOut, authPrompt, closeAuth, promptAuth } = useSession();
+  const { user, warning, sessionsInsecure, missingContainers, dataPerWorker, signOut, authPrompt, closeAuth, promptAuth } = useSession();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const query = params.get('q') ?? '';
@@ -151,6 +152,17 @@ export function AppShell() {
         </div>
       )}
 
+      {/* Each worker has its own memory, so a tester's new account or item is
+          there on one page load and gone on the next. Say so before it reads as a bug. */}
+      {dataPerWorker && (
+        <div className="page page--notice">
+          <p className="notice notice--warn notice--standing">
+            This test server keeps its data in memory on each of its workers, so something you create can be
+            missing on the next page load and is lost on restart. Point it at Cosmos DB for shared testing.
+          </p>
+        </div>
+      )}
+
       {warning && (
         <div className="page page--notice">
           <p className="notice notice--info notice--standing">{warning}</p>
@@ -159,7 +171,7 @@ export function AppShell() {
 
       {/* Each screen is its own download (see main.tsx), fetched the first
           time it is opened; the chrome around it stays put meanwhile. */}
-      <Suspense fallback={<main className="page"><p className="muted">Loading…</p></main>}>
+      <Suspense fallback={<main className="page pagewait" data-boot-pending><Preloader small /></main>}>
         <Outlet />
       </Suspense>
 

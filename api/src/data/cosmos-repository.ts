@@ -12,6 +12,7 @@ import type {
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
+import type { StoreKind } from '../../../shared/service-stores.js';
 import { matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
@@ -19,6 +20,10 @@ import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
 import { photoNamesIn } from '../storage/unused.js';
 import { ReadSnapshots, StaleWriteError, adopt, mergeChanges } from './concurrency.js';
+import {
+  USER_PART_NAMES, fieldsOf, joinUser, mentions, partDoc, partId, rowOf,
+  type JoinedUser, type PartVersion, type UserPartDoc, type UserPartName,
+} from './user-parts.js';
 import {
   DEMO_EMAIL,
   DEMO_PASSWORD,
@@ -60,6 +65,8 @@ import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcas
  */
 /** Site-content id of the marker left once rows are in the current buyer-protection shape. */
 const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
+/** Site-content id of the marker left once messages between an owner and their own shop are gone. */
+const SELF_MESSAGES_MARKER = 'migration:self-messages';
 
 function autoSeedEnabled(): boolean {
   return (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase() !== 'off';
@@ -78,6 +85,14 @@ const RECENT_TTL_MS = 15_000;
 const FORUM_TTL_MS = 60_000;
 /** Forums made up to here predate admins, and go to the site owner. */
 const FORUM_OWNER_CUTOFF = '2026-10-07T00:00:00.000Z';
+
+/** Accounts holding a service store of one kind, or of either. */
+const STORE_OWNERS: Record<StoreKind, string> = {
+  forwarder: 'SELECT * FROM c WHERE IS_DEFINED(c.forwarderProfile) AND NOT IS_NULL(c.forwarderProfile)',
+  artist: 'SELECT * FROM c WHERE IS_DEFINED(c.artistProfile) AND NOT IS_NULL(c.artistProfile)',
+};
+const STORE_OWNERS_ANY = 'SELECT * FROM c WHERE (IS_DEFINED(c.forwarderProfile) AND NOT IS_NULL(c.forwarderProfile))'
+  + ' OR (IS_DEFINED(c.artistProfile) AND NOT IS_NULL(c.artistProfile))';
 
 export class CosmosRepository implements Repository {
   readonly backend: BackendKind = 'cosmos';
@@ -102,6 +117,8 @@ export class CosmosRepository implements Repository {
    * assert on what it did, and so a second `init()` cannot start a second one.
    */
   private maintenance: Promise<void> | null = null;
+  /** The one-off removal of owner-to-own-shop messages, when it is running. */
+  private selfMessages: Promise<void> | null = null;
 
   constructor(private readonly cosmosConfig: CosmosConfig) {
     // A key is used when supplied; otherwise managed identity, which is the
@@ -192,6 +209,17 @@ export class CosmosRepository implements Repository {
       if (signInAccounts > 0) migrated = await this.migratePaymentHolds();
     } catch (error) {
       migrated = ` Payment-hold migration failed: ${describeError(error)}.`;
+    }
+    // Messages between an owner and their own shop: sending one is refused
+    // now, and the ones already written sat unread in the inbox that sent
+    // them. Once, behind a marker - and behind the request rather than in
+    // front of it: nothing reads wrongly while it runs, since the inbox
+    // already leaves those threads out.
+    if (signInAccounts > 0) {
+      // A tick later, so not even the marker read sits on the start-up path.
+      this.selfMessages = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.removeSelfMessages()).catch((error) => {
+        this.state = { ...this.state, detail: `${this.state.detail} Self-message cleanup failed: ${describeError(error)}.` };
+      }).then(() => undefined);
     }
 
     let seeded = '';
@@ -412,6 +440,20 @@ export class CosmosRepository implements Repository {
   }
 
   /** Records that every row is in the Figmark-held shape, so the pass never runs again. */
+  private async removeSelfMessages(): Promise<void> {
+    if (await this.getSiteContent(SELF_MESSAGES_MARKER)) return;
+    const removed = await this.deleteSelfMessages();
+    await this.markSelfMessagesCleared(removed);
+    if (removed > 0) {
+      this.state = { ...this.state, detail: `${this.state.detail} Removed ${removed} message(s) between owners and their own shops.` };
+    }
+  }
+
+  private async markSelfMessagesCleared(removed: number): Promise<void> {
+    const now = new Date().toISOString();
+    await this.saveSiteContent({ id: SELF_MESSAGES_MARKER, data: { removed }, updatedBy: null, createdAt: now, updatedAt: now });
+  }
+
   private async markPaymentHoldsMigrated(moved: number): Promise<void> {
     const now = new Date().toISOString();
     await this.saveSiteContent({ id: PAYMENT_HOLDS_MARKER, data: { moved }, updatedBy: null, createdAt: now, updatedAt: now });
@@ -523,6 +565,7 @@ export class CosmosRepository implements Repository {
    */
   async settled(): Promise<void> {
     await this.maintenance;
+    await this.selfMessages;
   }
 
   /**
@@ -579,6 +622,7 @@ export class CosmosRepository implements Repository {
     const written = await this.seedFixtures();
     // Seeded in the current shape: there is nothing for the migration to move.
     await this.markPaymentHoldsMigrated(0);
+    await this.markSelfMessagesCleared(0);
     this.seeded = true;
     return ` Seeded ${written} fixture records into an empty database.`;
   }
@@ -828,7 +872,7 @@ export class CosmosRepository implements Repository {
    * it against and it is written as before.
    */
   private async writeChecked<T extends { id: string; _etag?: string }>(
-    name: 'orders' | 'listings' | 'users',
+    name: 'orders' | 'listings' | 'users' | 'userParts',
     partition: string,
     doc: T,
   ): Promise<T> {
@@ -869,14 +913,58 @@ export class CosmosRepository implements Repository {
   }
 
   async getUserById(id: string): Promise<User | null> {
+    let row: User | undefined;
     try {
       // users is partitioned by /id, so this is a point read.
-      const { resource } = await this.container('users').item(id, id).read<User>();
-      return resource ? this.snapshots.remember('users', resource) : null;
+      ({ resource: row } = await this.container('users').item(id, id).read<User>());
     } catch (error) {
       if (isNotFound(error)) return null;
       throw error;
     }
+    if (!row) return null;
+    this.snapshots.remember('users', row);
+    // The account's growing lists live beside it, in its own partition of
+    // userParts: one more single-partition read, and the caller sees one user.
+    return joinUser(row, await this.readParts(id));
+  }
+
+  private async readParts(userId: string): Promise<UserPartDoc[]> {
+    const { resources } = await this.container('userParts')
+      .items.query<UserPartDoc>(
+        { query: 'SELECT * FROM c WHERE c.userId = @userId', parameters: [{ name: '@userId', value: userId }] },
+        { partitionKey: userId },
+      )
+      .fetchAll();
+    return this.snapshots.rememberAll('userParts', resources);
+  }
+
+  /**
+   * Save one part, checked against the version it was read at.
+   *
+   * A part with no document yet is created; losing that race (another screen,
+   * or another worker moving the same account's inline lists) is merged like
+   * any other lost write, against what this one started from.
+   */
+  private async writePart(userId: string, part: UserPartName, fields: Record<string, unknown>, version: PartVersion): Promise<UserPartDoc> {
+    const was = JSON.parse(version.was) as Record<string, unknown>;
+    if (version.etag) {
+      // What it was read as, so a lost race can be merged field by field.
+      this.snapshots.remember('userParts', partDoc(userId, part, was, version.etag));
+      return this.writeChecked('userParts', userId, partDoc(userId, part, fields, version.etag));
+    }
+    const doc = partDoc(userId, part, fields);
+    try {
+      const { resource } = await this.container('userParts').items.create<UserPartDoc>(doc);
+      return this.snapshots.remember('userParts', (resource as UserPartDoc | undefined) ?? doc);
+    } catch (error) {
+      if (!isConflict(error)) throw error;
+    }
+    const { resource: current } = await this.container('userParts').item(doc.id, userId).read<UserPartDoc>();
+    if (!current?._etag) throw new StaleWriteError();
+    const merged = mergeChanges(partDoc(userId, part, was), doc, current);
+    if (!merged) throw new StaleWriteError();
+    this.snapshots.remember('userParts', current);
+    return this.writeChecked('userParts', userId, { ...merged, _etag: current._etag });
   }
 
   async getUserByIdentifier(identifier: string): Promise<User | null> {
@@ -1056,8 +1144,48 @@ export class CosmosRepository implements Repository {
     return resources.sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
 
+  /**
+   * Saves the row and whichever of its parts changed, each checked against
+   * the version it was read at.
+   *
+   * A user read by id knows every part's version. One from a list query does
+   * not, so only the parts it actually carries are saved, against what is
+   * stored now. Parts go first: if the row then fails, the parts already hold
+   * the data, and a row's old inline copy is never read once its part exists.
+   */
   async updateUser(user: User): Promise<User> {
-    return this.writeChecked('users', user.id, user as User & { _etag?: string });
+    const joined = user as JoinedUser & Record<string, unknown>;
+    const versions: Partial<Record<UserPartName, PartVersion>> = { ...joined._parts };
+    for (const part of USER_PART_NAMES) {
+      let version = versions[part];
+      if (!version) {
+        if (!mentions(joined, part)) continue;
+        const stored = await this.container('userParts').item(partId(user.id, part), user.id).read<UserPartDoc>()
+          .then(({ resource }) => resource, (error: unknown) => {
+            if (isNotFound(error)) return undefined;
+            throw error;
+          });
+        version = { etag: stored?._etag ?? null, was: JSON.stringify(stored ? fieldsOf(stored, part) : {}) };
+        // Fields this copy does not carry are taken as they are stored.
+        if (stored) for (const [key, value] of Object.entries(fieldsOf(stored, part))) if (!(key in joined)) joined[key] = value;
+      }
+      const fields = fieldsOf(joined, part);
+      const now = JSON.stringify(fields);
+      if (now === version.was && (version.etag || now === '{}')) {
+        versions[part] = version;
+        continue;
+      }
+      const saved = await this.writePart(user.id, part, fields, version);
+      Object.assign(joined, fieldsOf(saved, part));
+      versions[part] = { etag: saved._etag ?? null, was: JSON.stringify(fieldsOf(saved, part)) };
+    }
+
+    const row = await this.writeChecked('users', user.id, rowOf(joined) as User & { _etag?: string });
+    // The caller keeps using its object: give it the stored row, its parts and their new versions.
+    for (const key of Object.keys(rowOf(joined))) if (!(key in row)) delete joined[key];
+    Object.assign(joined, row);
+    if (joined._parts || Object.keys(versions).length > 0) joined._parts = versions;
+    return joined;
   }
 
   async getByHandle(username: string): Promise<{ user: User; isStore: boolean } | null> {
@@ -1152,6 +1280,15 @@ export class CosmosRepository implements Repository {
 
   async deleteMessage(threadId: string, id: string): Promise<void> {
     await this.container('messages').item(id, threadId).delete().catch(() => {});
+  }
+
+  async deleteSelfMessages(): Promise<number> {
+    const { resources } = await this.container('messages').items.query<{ id: string; threadId: string }>({
+      // Bracketed: `from` and `to` are reserved words in Cosmos SQL.
+      query: 'SELECT c.id, c.threadId FROM c WHERE c["from"].userId = c["to"].userId',
+    }).fetchAll();
+    for (const row of resources) await this.deleteMessage(row.threadId, row.id);
+    return resources.length;
   }
 
   async updateMessage(message: Message): Promise<Message> {
@@ -1302,6 +1439,92 @@ export class CosmosRepository implements Repository {
   async listAllUsers(): Promise<User[]> {
     const { resources } = await this.container('users')
       .items.query<User>({ query: 'SELECT * FROM c ORDER BY c.createdAt DESC' })
+      .fetchAll();
+    return resources;
+  }
+
+  async pageUsers(options: { search?: string; limit: number; cursor?: string | null }) {
+    const search = (options.search ?? '').trim().toLowerCase();
+    const users = this.container('users');
+    const paging = { maxItemCount: options.limit, continuationToken: options.cursor ?? undefined };
+    const page = search
+      ? users.items.query<User>({
+        query: 'SELECT * FROM c WHERE CONTAINS(LOWER(c.displayName), @q) OR CONTAINS(LOWER(c.email), @q)'
+          + ' OR CONTAINS(c.phone, @q) OR CONTAINS(LOWER(c.username), @q)'
+          + ' OR CONTAINS(LOWER(c.sellerProfile.storefrontName), @q) ORDER BY c.createdAt DESC',
+        parameters: [{ name: '@q', value: search }],
+      }, paging)
+      : users.items.query<User>({ query: 'SELECT * FROM c ORDER BY c.createdAt DESC' }, paging);
+    // The total is everyone, so the list can say "12 of 340"; a count reads the index, not the documents.
+    const [found, counted] = await Promise.all([
+      page.fetchNext(),
+      users.items.query<number>({ query: 'SELECT VALUE COUNT(1) FROM c' }).fetchAll(),
+    ]);
+    return { users: found.resources, next: found.continuationToken ?? null, total: counted.resources[0] ?? 0 };
+  }
+
+  async findStoreBySlug(kind: StoreKind, slug: string): Promise<User | null> {
+    // An indexed equality, not a scan: one document read, whatever the user count.
+    // One fixed statement per kind: the field name is never built from input.
+    const users = this.container('users').items;
+    const { resources } = kind === 'forwarder'
+      ? await users.query<User>({
+        query: 'SELECT TOP 1 * FROM c WHERE c.forwarderProfile.directorySlug = @slug',
+        parameters: [{ name: '@slug', value: slug }],
+      }).fetchAll()
+      : await users.query<User>({
+        query: 'SELECT TOP 1 * FROM c WHERE c.artistProfile.directorySlug = @slug',
+        parameters: [{ name: '@slug', value: slug }],
+      }).fetchAll();
+    return resources[0] ?? null;
+  }
+
+  async listServiceStoreOwners(kind?: StoreKind): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({ query: kind ? STORE_OWNERS[kind] : STORE_OWNERS_ANY })
+      .fetchAll();
+    return resources;
+  }
+
+  async questLeaders(limit: number) {
+    const users = this.container('users');
+    const [top, counted] = await Promise.all([
+      users.items
+        .query<User>({
+          query: 'SELECT TOP @limit * FROM c WHERE c.quest.xpCache > 0'
+            + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true) ORDER BY c.quest.xpCache DESC',
+          parameters: [{ name: '@limit', value: limit }],
+        })
+        .fetchAll(),
+      users.items
+        .query<number>({
+          query: 'SELECT VALUE COUNT(1) FROM c WHERE c.quest.xpCache > 0'
+            + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true)',
+        })
+        .fetchAll(),
+    ]);
+    return { top: top.resources, total: counted.resources[0] ?? 0 };
+  }
+
+  async questRankAbove(xp: number): Promise<number> {
+    const { resources } = await this.container('users')
+      .items.query<number>({
+        query: 'SELECT VALUE COUNT(1) FROM c WHERE c.quest.xpCache > @xp'
+          + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true)',
+        parameters: [{ name: '@xp', value: xp }],
+      })
+      .fetchAll();
+    return resources[0] ?? 0;
+  }
+
+  async searchUsers(needle: string, limit: number): Promise<User[]> {
+    const { resources } = await this.container('users')
+      .items.query<User>({
+        query: 'SELECT TOP @limit * FROM c WHERE CONTAINS(LOWER(c.displayName), @q) OR CONTAINS(c.username, @q)'
+          + ' OR CONTAINS(LOWER(c.sellerProfile.storefrontName), @q) OR CONTAINS(c.sellerProfile.username, @q)'
+          + ' OR CONTAINS(LOWER(c.sellerProfile.bio), @q)',
+        parameters: [{ name: '@q', value: needle }, { name: '@limit', value: limit }],
+      })
       .fetchAll();
     return resources;
   }
@@ -1530,24 +1753,46 @@ export class CosmosRepository implements Repository {
   /* Cross-partition over accounts, projected to the two fields the figures
      need; read only when an operator opens the installs page. */
   async listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>> {
-    const { resources } = await this.container('users')
-      .items.query<{ id: string; clientDevices: ClientDevice[] }>({
-        query: 'SELECT c.id, c.clientDevices FROM c WHERE IS_DEFINED(c.clientDevices)',
-      })
-      .fetchAll();
-    return resources;
+    const [moved, inline] = await Promise.all([
+      this.container('userParts')
+        .items.query<{ id: string; clientDevices?: ClientDevice[] }>({
+          query: "SELECT c.userId AS id, c.clientDevices FROM c WHERE c.part = 'devices'",
+        })
+        .fetchAll(),
+      // Accounts not saved since the split still carry theirs on the row.
+      this.container('users')
+        .items.query<{ id: string; clientDevices: ClientDevice[] }>({
+          query: 'SELECT c.id, c.clientDevices FROM c WHERE IS_DEFINED(c.clientDevices)',
+        })
+        .fetchAll(),
+    ]);
+    const byUser = new Map(inline.resources.map((row) => [row.id, row.clientDevices]));
+    for (const row of moved.resources) byUser.set(row.id, row.clientDevices ?? []);
+    return [...byUser].map(([id, clientDevices]) => ({ id, clientDevices }));
   }
 
   /* Cross-partition over accounts, but only run when a device turns
      notifications on, which is once per device. */
   async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {
-    const { resources } = await this.container('users')
-      .items.query<User>({
-        query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
-        parameters: [{ name: '@endpoint', value: endpoint }],
-      })
-      .fetchAll();
-    return resources;
+    const [moved, inline] = await Promise.all([
+      this.container('userParts')
+        .items.query<string>({
+          query: "SELECT VALUE c.userId FROM c WHERE c.part = 'push'"
+            + ' AND ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
+          parameters: [{ name: '@endpoint', value: endpoint }],
+        })
+        .fetchAll(),
+      // Accounts not saved since the split still carry theirs on the row.
+      this.container('users')
+        .items.query<string>({
+          query: 'SELECT VALUE c.id FROM c WHERE ARRAY_CONTAINS(c.pushEndpoints, { "endpoint": @endpoint }, true)',
+          parameters: [{ name: '@endpoint', value: endpoint }],
+        })
+        .fetchAll(),
+    ]);
+    // Read whole, so the endpoint list a caller edits is the one stored.
+    const users = await Promise.all([...new Set([...moved.resources, ...inline.resources])].map((id) => this.getUserById(id)));
+    return users.filter((user): user is User => user !== null && (user.pushEndpoints ?? []).some((entry) => entry.endpoint === endpoint));
   }
 
   async listStoreReviews(subjectId: string): Promise<StoreReview[]> {
@@ -1590,6 +1835,9 @@ export class CosmosRepository implements Repository {
       await this.container('identifiers').item(key, key).delete().catch(() => {});
     }
     await this.container('users').item(id, id).delete().catch(() => {});
+    for (const part of USER_PART_NAMES) {
+      await this.container('userParts').item(partId(id, part), id).delete().catch(() => {});
+    }
   }
 
   async deleteListing(sellerId: string, id: string): Promise<void> {
@@ -2180,6 +2428,10 @@ export class CosmosRepository implements Repository {
    * which is what stops two buyers both taking the last one. `change`
    * returns null to refuse, and then nothing is written.
    */
+  async changeListing(id: string, sellerId: string, change: (listing: Listing) => Listing | null): Promise<Listing | null> {
+    return this.mutateListing(id, sellerId, change);
+  }
+
   private async mutateListing(id: string, sellerId: string, change: (listing: Listing) => Listing | null): Promise<Listing | null> {
     const item = this.container('listings').item(id, sellerId);
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -2194,13 +2446,13 @@ export class CosmosRepository implements Repository {
         const { resource: saved } = await item.replace<Listing>(next, {
           accessCondition: { type: 'IfMatch', condition: etag ?? '' },
         });
-        return saved ?? next;
+        return this.snapshots.remember('listings', saved ?? next);
       } catch (error) {
         if ((error as { code?: number }).code === 412) continue;
         throw error;
       }
     }
-    throw new Error('That item is too busy to change right now. Try again.');
+    throw new StaleWriteError('That item is too busy to change right now. Try again.');
   }
 
   async countView(listing: Listing): Promise<void> {

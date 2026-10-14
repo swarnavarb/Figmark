@@ -13,6 +13,7 @@ import { PushHost } from './components/PushControls';
 import { FreshOnNavigate, NotificationLinks } from './components/Notifications';
 import { keepFresh } from './freshness';
 import { PullToRefresh } from './components/PullToRefresh';
+import { Preloader, liftBootScreen } from './components/Preloader';
 import './styles.css';
 
 /**
@@ -21,7 +22,7 @@ import './styles.css';
  * Every page used to ship in one 650 KB script that had to arrive before the
  * app drew anything - the Sell console, the order page and the route studio
  * included, for somebody who only came to browse. Each is its own chunk now;
- * AppShell shows "Loading…" in the page area while one arrives.
+ * AppShell shows the loading mark in the page area while one arrives.
  */
 function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
   return lazy(() => load().then((module) => ({ default: module[name] as ComponentType })));
@@ -79,8 +80,8 @@ function App() {
 
   if (loading) {
     return (
-      <div className="auth">
-        <p className="muted">Loading…</p>
+      <div className="pagewait" data-boot-pending>
+        <Preloader />
       </div>
     );
   }
@@ -175,6 +176,8 @@ keepFresh();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element #root is missing from index.html.');
+
+liftBootScreen();
 
 createRoot(container).render(
   <StrictMode>

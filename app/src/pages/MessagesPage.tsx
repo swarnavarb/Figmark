@@ -806,6 +806,12 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
               <p className="cmsg__body">{message.body}</p>
             )
           )}
+          {/* A button Figmark wrote under a shop's reminder: only ever a path inside the app. */}
+          {message.link && message.link.href.startsWith('/') && !message.link.href.startsWith('//') && (
+            <Link to={message.link.href} className="cmsg__link">
+              {message.link.label} <Icon name="right" size={14} />
+            </Link>
+          )}
           {message.photos && message.photos.length > 0 && (
             <div className={`cmsg__photos cmsg__photos--${Math.min(message.photos.length, 4)}`}>
               {message.photos.map((name) => (

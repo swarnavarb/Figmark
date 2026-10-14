@@ -18,7 +18,7 @@ const base = new URL('../api/dist/', import.meta.url);
 const fns = new URL('api/src/functions/', base);
 const { CosmosRepository } = await import(new URL('api/src/data/cosmos-repository.js', base));
 const { StaleWriteError, mergeChanges } = await import(new URL('api/src/data/concurrency.js', base));
-const { toErrorResponse } = await import(new URL('http.js', fns));
+const { toErrorResponse, json: jsonResponse } = await import(new URL('http.js', fns));
 const { MemoryRepository } = await import(new URL('api/src/data/memory-repository.js', base));
 const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js', base));
 const { StaticWebAppsAuthProvider } = await import(new URL('api/src/auth/swa-provider.js', base));
@@ -53,7 +53,10 @@ function etagContainer(store) {
         return {
           async fetchAll() {
             const id = spec.parameters?.find((parameter) => parameter.name === '@id')?.value;
-            const docs = [...store.values()].filter((doc) => id === undefined || doc.id === id);
+            const userId = spec.parameters?.find((parameter) => parameter.name === '@userId')?.value;
+            const docs = [...store.values()]
+              .filter((doc) => id === undefined || doc.id === id)
+              .filter((doc) => userId === undefined || doc.userId === userId);
             return { resources: docs.map((doc) => structuredClone(doc)) };
           },
         };
@@ -113,7 +116,11 @@ function cosmosOn(containers) {
 
 const orders = new Map();
 const listings = new Map();
-const cosmos = cosmosOn(new Map([['orders', orders], ['listings', listings], ['users', new Map()], ['sessions', new Map()]]));
+const users = new Map();
+const userParts = new Map();
+const cosmos = cosmosOn(new Map([
+  ['orders', orders], ['listings', listings], ['users', users], ['userParts', userParts], ['sessions', new Map()],
+]));
 await cosmos.container('orders').items.create({
   id: 'ord_1', lotId: 'lot_1', listingId: 'lst_1', quantity: 1, status: 'pending', note: '', payments: [], updatedAt: '',
 });
@@ -198,6 +205,64 @@ await check('a shared counter counts across calls, reads without creating, and t
 });
 
 /* ── Sign-in throttling ────────────────────────────────────────────────── */
+console.log('\nan account and its parts');
+
+const card = (orderId) => ({ orderId, listingId: 'lst_1', name: 'Card', itemName: 'Card', photos: [], groupId: null, deliveredAt: '', addedAt: '' });
+const endpoint = (url) => ({ endpoint: url, keys: { p256dh: 'k', auth: 'a' }, createdAt: '' });
+
+await check('a row written before the split reads as it did, and moves its lists out on the next save', async () => {
+  await cosmos.container('users').items.create({
+    id: 'usr_old', displayName: 'Old', updatedAt: '', collection: [card('ord_a')], pushEndpoints: [endpoint('https://push/1')],
+  });
+  const read = await cosmos.getUserById('usr_old');
+  assert.deepEqual(read.collection.map((entry) => entry.orderId), ['ord_a']);
+  read.displayName = 'Renamed';
+  await cosmos.updateUser(read);
+  assert.equal('collection' in users.get('usr_old'), false, 'the row no longer carries the collection');
+  assert.equal('pushEndpoints' in users.get('usr_old'), false);
+  assert.deepEqual(userParts.get('usr_old__collection').collection.map((entry) => entry.orderId), ['ord_a']);
+  const again = await cosmos.getUserById('usr_old');
+  assert.equal(again.displayName, 'Renamed');
+  assert.equal(again.pushEndpoints[0].endpoint, 'https://push/1');
+});
+
+await check('two screens saving different parts of one account both land', async () => {
+  const shelf = await cosmos.getUserById('usr_old');
+  const bell = await cosmos.getUserById('usr_old');
+  shelf.collection = [...shelf.collection, card('ord_b')];
+  await cosmos.updateUser(shelf);
+  bell.pushEndpoints = [...bell.pushEndpoints, endpoint('https://push/2')];
+  await cosmos.updateUser(bell);
+  const stored = await cosmos.getUserById('usr_old');
+  assert.deepEqual(stored.collection.map((entry) => entry.orderId), ['ord_a', 'ord_b']);
+  assert.deepEqual(stored.pushEndpoints.map((entry) => entry.endpoint), ['https://push/1', 'https://push/2']);
+});
+
+await check('two screens changing the same part: the second is refused, never dropped silently', async () => {
+  const one = await cosmos.getUserById('usr_old');
+  const two = await cosmos.getUserById('usr_old');
+  one.collection = [...one.collection, card('ord_c')];
+  await cosmos.updateUser(one);
+  two.collection = [...two.collection, card('ord_d')];
+  await assert.rejects(cosmos.updateUser(two), StaleWriteError);
+  assert.deepEqual((await cosmos.getUserById('usr_old')).collection.map((entry) => entry.orderId), ['ord_a', 'ord_b', 'ord_c']);
+});
+
+await check('a user read from a list saves its row and leaves the parts it never carried alone', async () => {
+  const listed = structuredClone(users.get('usr_old'));
+  listed.displayName = 'From a list';
+  await cosmos.updateUser(listed);
+  const stored = await cosmos.getUserById('usr_old');
+  assert.equal(stored.displayName, 'From a list');
+  assert.equal(stored.collection.length, 3);
+  assert.equal(stored.pushEndpoints.length, 2);
+});
+
+await check('the bookkeeping of the join never reaches a response', () => {
+  const body = jsonResponse(200, { user: { id: 'u', _parts: { push: { etag: '"1"', was: '{}' } } } }).jsonBody;
+  assert.deepEqual(body, { user: { id: 'u' } });
+});
+
 console.log('\nsign-in throttling');
 
 const repository = new MemoryRepository();

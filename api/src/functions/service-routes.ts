@@ -1,7 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { tally } from '../../../shared/board.js';
 import { isCancelledLike } from '../../../shared/orders.js';
-import type { HandlerProfile, Lot, Order, User } from '../../../shared/models.js';
+import type { FreightLane, HandlerProfile, Lot, Order, User } from '../../../shared/models.js';
 import {
   SERVICES,
   SERVICE_ORDER,
@@ -13,7 +13,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { liveStores } from './store-routes.js';
-import { liveOfferings } from '../../../shared/service-stores.js';
+import { liveLanes, liveOfferings, transitLabel } from '../../../shared/service-stores.js';
 
 /**
  * The trades around the trade: who offers them, and the screens for doing them.
@@ -48,13 +48,47 @@ interface ProviderCard {
   tagline?: string;
   logoUrl?: string | null;
   accent?: string | null;
+  /** Where the store is, as it says. */
+  place?: string | null;
+  /** Forwarders: the lanes a shop can book, as the directory lists them. */
+  lanes?: ProviderLane[];
+  /** Artists: what they do, the cheapest thing on the menu, a few pieces. */
+  specialties?: string[];
+  fromMinor?: number | null;
+  portfolio?: string[];
+  acceptingWork?: boolean;
 }
+
+/** One lane on a forwarder's card: enough to choose by, not to book from. */
+interface ProviderLane {
+  from: string;
+  to: string;
+  mode: FreightLane['mode'] | null;
+  days: string;
+  ratePerKgMinor: number;
+}
+
+/** A store's city and country, or nothing. */
+const placeOf = (store: { city?: string; country?: string }) =>
+  [store.city, store.country].filter(Boolean).join(', ') || null;
 
 function forwarderCard(user: User): ProviderCard {
   const profile = user.forwarderProfile!;
   const routes = profile.routes
     .map((route) => `${route.originCity} → ${route.destinationCity}`)
     .slice(0, 3);
+  // Priced lanes where the store has them; the older route list otherwise.
+  const priced = liveLanes(profile);
+  const lanes: ProviderLane[] = priced.length > 0
+    ? priced.map((lane) => ({
+        from: lane.originCity, to: lane.destinationCity, mode: lane.mode,
+        days: transitLabel(lane), ratePerKgMinor: lane.ratePerKgMinor,
+      }))
+    : profile.routes.map((route) => ({
+        from: route.originCity, to: route.destinationCity, mode: null,
+        days: route.claimedTurnaroundDays ? `${route.claimedTurnaroundDays} days` : 'Transit on request',
+        ratePerKgMinor: route.ratePerKgMinor,
+      }));
   return {
     userId: user.id,
     name: profile.companyName,
@@ -68,6 +102,8 @@ function forwarderCard(user: User): ProviderCard {
     tagline: profile.tagline ?? '',
     logoUrl: profile.logoUrl ?? null,
     accent: profile.accent ?? 'aqua',
+    place: placeOf(profile),
+    lanes,
   };
 }
 
@@ -90,6 +126,11 @@ function artistCard(user: User): ProviderCard {
     tagline: profile.tagline ?? '',
     logoUrl: profile.logoUrl ?? null,
     accent: profile.accent ?? 'pink',
+    place: placeOf(profile),
+    specialties: profile.specialties,
+    fromMinor: from.length ? Math.min(...from) : null,
+    portfolio: profile.portfolio.slice(0, 4).map((piece) => piece.url),
+    acceptingWork: profile.acceptingWork,
   };
 }
 

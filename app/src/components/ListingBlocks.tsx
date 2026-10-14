@@ -8,6 +8,7 @@ import { SOURCING_LABELS } from '@shared/enums';
 import { isMultiple } from '@shared/payments';
 import type { Listing } from '@shared/models';
 import { formatMoney } from '../format';
+import type { PriceChange } from '../api';
 import { Lightbox } from './SocialPost';
 
 /**
@@ -396,5 +397,20 @@ export function ItemCard({ to, photo, name, meta, eyebrow, facts, children, head
       </dl>
       {children && <div className="icard__foot">{children}</div>}
     </article>
+  );
+}
+
+/**
+ * A cart item whose price moved since Buy was pressed, said before checkout
+ * rather than discovered in it. The cart already shows the new total.
+ */
+export function PriceChangeNote({ change, currency }: { change: PriceChange; currency: string }) {
+  const up = change.toMinor > change.fromMinor;
+  return (
+    <p className={`cartnote ${up ? 'cartnote--up' : 'cartnote--down'}`}>
+      <Svg name="tag" size={14} />{' '}
+      {up ? 'Price went up' : 'Price dropped'} since you added it: <s>{formatMoney(change.fromMinor, currency)}</s>{' '}
+      → <b>{formatMoney(change.toMinor, currency)}</b>
+    </p>
   );
 }

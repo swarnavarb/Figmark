@@ -222,7 +222,8 @@ export function stepButtonLabel(
   vars?: { origin?: string | null; destination?: string | null },
 ): string {
   const own = step.button?.trim();
-  if (own) return own;
+  // Routes saved before the button was renamed still say it the long way.
+  if (own) return own === 'Packed for the buyer' ? 'Packed' : own;
   if (!step.trigger && !step.custom) return '';
   const name = (step.name ?? '').trim();
   if (!name) return step.trigger ? TRIGGER_LABELS[step.trigger].button : 'Done';
@@ -1066,3 +1067,17 @@ export function laneOf(lot: Pick<Lot, 'originCountry' | 'destinationCountry'>): 
   return `${lot.originCountry?.trim() || 'Origin'} → ${lot.destinationCountry?.trim() || 'Destination'}`;
 }
 
+
+/**
+ * A button's name short enough for a small pill or "Packed all 3". The
+ * route's own wording can run to a sentence ("Received at the destination
+ * warehouse"); for the checkpoints everyone knows, a word or two is enough.
+ * Anything else - a seller's own button - keeps its own name.
+ */
+const SHORT_BUTTON: Record<string, string> = {
+  china_received: 'At origin', china_packed: 'Packed at origin', india_received: 'Received',
+  ready_to_dispatch: 'Checked', packed: 'Packed', dispatched: 'Dispatched', delivered: 'Delivered',
+};
+export function shortButtonLabel(key: string, label: string): string {
+  return SHORT_BUTTON[key] ?? label;
+}

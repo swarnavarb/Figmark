@@ -9,7 +9,7 @@ import {
   hasRight, insuranceQuote, isLive, jobActionsFor, jobIsLive, laneLabel, liveAddOns, liveLanes, liveOfferings,
   livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, type ArtistJobAction, type StoreKind,
 } from '../../../shared/service-stores.js';
-import { CREW_CHECKPOINTS, supplierIdOf, type CrewRole } from '../../../shared/services.js';
+import { crewButtons, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import {
   currentStepOf, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, stepButtonLabel, stepTickKey, ticksOf,
 } from '../../../shared/routes.js';
@@ -655,7 +655,7 @@ async function storePage(request: HttpRequest, _context: InvocationContext) {
   const slug = request.params.slug;
   if (!isKind(kind) || !slug) return error(404, 'not_found', 'No such store.');
   const repository = await getRepository();
-  const owner = (await repository.listAllUsers()).find((user) => storeOf(user, kind)?.directorySlug === slug);
+  const owner = await repository.findStoreBySlug(kind, slug);
   if (!owner) return error(404, 'not_found', 'No such store.');
 
   // Not live yet: only its own team (previewing) and operators may look.
@@ -673,7 +673,7 @@ async function storePage(request: HttpRequest, _context: InvocationContext) {
 
 /** Every live store of one kind, for the directory. */
 export async function liveStores(repository: Repo, kind: StoreKind): Promise<User[]> {
-  const users = kind === 'forwarder' ? await repository.listForwarders() : await repository.listAllUsers();
+  const users = kind === 'forwarder' ? await repository.listForwarders() : await repository.listServiceStoreOwners(kind);
   return users.filter((user) => {
     const store = storeOf(user, kind);
     return store && store.listedInDirectory && isLive(store) && !user.suspended;
@@ -1036,10 +1036,10 @@ interface CrewSeat { role: CrewRole; owner: User; lot: Lot; forwarder: User | nu
 /** Every lot this person works, and as what. */
 async function seatsOf(repository: Repo, userId: string): Promise<CrewSeat[]> {
   const seats: CrewSeat[] = [];
-  const all = await repository.listAllUsers();
-  const forwarders = new Map(all.filter((user) => isLive(user.forwarderProfile) && hasRight(user, 'forwarder', userId, 'work'))
+  const [forwarderOwners, sellers] = await Promise.all([repository.listServiceStoreOwners('forwarder'), repository.listStoreOwners()]);
+  const forwarders = new Map(forwarderOwners.filter((user) => isLive(user.forwarderProfile) && hasRight(user, 'forwarder', userId, 'work'))
     .map((user) => [user.id, user]));
-  for (const owner of all.filter((user) => user.sellerProfile)) {
+  for (const owner of sellers) {
     const packsAll = can(owner, userId, 'export') && owner.id !== userId;
     for (const lot of await repository.listLots({ sellerId: owner.id })) {
       if (supplierIdOf(lot) === userId || (packsAll && lot.status !== 'closed')) seats.push({ role: 'supplier', owner, lot, forwarder: null });
@@ -1051,16 +1051,8 @@ async function seatsOf(repository: Repo, userId: string): Promise<CrewSeat[]> {
   return seats;
 }
 
-/** The buttons the shop's route hands this role, in route order. */
-function buttonsFor(lot: Lot, role: CrewRole) {
-  const steps = routeOf(lot).steps;
-  return steps.flatMap((step, index) => {
-    const key = stepTickKey(step);
-    if (!key) return [];
-    const mine = step.assignee === role || (step.trigger && CREW_CHECKPOINTS[role].includes(step.trigger));
-    return mine ? [{ key, label: stepButtonLabel(step, placesOf(lot)), step: renderStepText(step.name, placesOf(lot)), index, assigned: step.assignee === role }] : [];
-  });
-}
+/** The buttons this role has on the lot: the seller's choice, or the role's stock ones. */
+const buttonsFor = (lot: Lot, role: CrewRole) => crewButtons(lot, role);
 
 /** The lot moves handed to a forwarder: whole-crate steps the route gives them. */
 function movesFor(lot: Lot, role: CrewRole) {
@@ -1078,8 +1070,7 @@ async function myServices(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
-  const all = await repository.listAllUsers();
-  const account = all.find((row) => row.id === user.id) ?? null;
+  const [all, account] = await Promise.all([repository.listServiceStoreOwners(), repository.getUserById(user.id)]);
 
   const stores = await Promise.all(all.flatMap((owner) => STORE_KINDS.flatMap((kind) => {
     const store = storeOf(owner, kind);
@@ -1160,6 +1151,22 @@ async function crewLot(request: HttpRequest, _context: InvocationContext) {
   const buyers = role === 'handler' ? await repository.listUsersByIds([...new Set(orders.map((order) => order.buyerId))]) : [];
   const byId = new Map(buyers.map((buyer) => [buyer.id, buyer]));
   const route = routeOf(lot);
+  /* The piece's picture, for the tiles: the listing's lead photo, the same
+     one the buyer bought from. Read once per listing, not once per order. */
+  const listings = await Promise.all([...new Set(orders.map((order) => order.listingId))].map((id) => repository.getListing(id)));
+  const leadPhoto = new Map(listings.flatMap((listing) => {
+    if (!listing) return [];
+    const lead = listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0];
+    return lead ? [[listing.id, lead.url] as const] : [];
+  }));
+  // Money only where the seller said the handler may see it, and never to anyone else.
+  const seesPayment = role === 'handler' && Boolean(lot.crew?.handlerSeesPayment);
+  const readyGate = role === 'handler' && readyGated(lot);
+  const audience = role === 'forwarder' ? null : role;
+  // The other lots they work in the same role, for the switcher at the top.
+  const others = (await seatsOf(repository, user.id))
+    .filter((row) => row.role === role && row.lot.status !== 'cancelled')
+    .map((row) => ({ sellerId: row.owner.id, lotId: row.lot.id, name: row.lot.name, number: lotRef(row.lot).number }));
 
   return json(200, {
     role,
@@ -1183,8 +1190,26 @@ async function crewLot(request: HttpRequest, _context: InvocationContext) {
         ticks: ticksOf(order),
         covered: liveAddOns(order).some((addOn) => addOn.kind === 'insurance'),
         toStudio: jobIsLive(order.artistJob) && ['paid', 'working'].includes(order.artistJob!.status),
+        photoUrl: leadPhoto.get(order.listingId) ?? null,
+        photos: audience ? photosFor(order, audience, user.id) : [],
+        // Cleared by the shop to go out; only meaningful with the gate on.
+        cleared: readyGate ? Boolean(order.checkpoints?.ready_to_dispatch) : null,
+        payment: seesPayment
+          ? (() => {
+              const money = orderMoney(order);
+              return {
+                status: order.paymentStatus,
+                totalMinor: money.totalMinor,
+                paidMinor: money.paidMinor,
+                outstandingMinor: money.outstandingMinor,
+                currency: order.currency,
+              };
+            })()
+          : null,
       };
     }),
+    settings: { readyGate, seesPayment },
+    lots: others,
   });
 }
 
@@ -1199,7 +1224,7 @@ async function operator(request: HttpRequest) {
 async function opsStores(request: HttpRequest, _context: InvocationContext) {
   await operator(request);
   const repository = await getRepository();
-  const rows = (await repository.listAllUsers()).flatMap((owner) => STORE_KINDS.flatMap((kind) => {
+  const rows = (await repository.listServiceStoreOwners()).flatMap((owner) => STORE_KINDS.flatMap((kind) => {
     const store = storeOf(owner, kind);
     if (!store) return [];
     return [{

@@ -277,7 +277,7 @@ export type SessionSecretSource = 'configured' | 'derived' | 'development' | 'mi
 const DEV_SESSION_SECRET = 'figmark-dev-insecure-session-secret';
 
 /** True on Azure: App Service and Functions hosts set these, a laptop does not. */
-function runningInAzure(): boolean {
+export function runningInAzure(): boolean {
   return Boolean(env('WEBSITE_INSTANCE_ID') ?? env('WEBSITE_SITE_NAME') ?? env('WEBSITE_HOSTNAME'));
 }
 

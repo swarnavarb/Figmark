@@ -8,6 +8,8 @@
     <meta name="theme-color" content="#5B5EF1" />
     <!-- The section's colour before the first paint. -->
     <script src="/boot/tone.js"></script>
+    <!-- The loading screen, before the app's own script and styles arrive. -->
+    <link rel="stylesheet" href="/boot/loader.css" />
     <title>Figmark</title>
     <!-- Installable: on a phone's home screen it opens like an app, and on an
          iPhone that is what lets it show notifications at all. -->
@@ -42,6 +44,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot" class="boot" role="status" aria-label="Loading Figmark">
+      <div class="fmload" aria-hidden="true">
+        <div class="fmload__orbit"><i></i><i></i><i></i></div>
+        <div class="fmload__ring"></div>
+        <div class="fmload__mark"></div>
+      </div>
+      <div class="boot__word" aria-hidden="true">Figmark</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

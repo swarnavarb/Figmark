@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
-import type { Listing, Message, MessageDeal, MessageItem, MessageParty, User } from '../../../shared/models.js';
+import type { Listing, Message, MessageDeal, MessageItem, MessageLink, MessageParty, User } from '../../../shared/models.js';
 import type { DealState } from '../../../shared/deals.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { reviewRevealed } from '../../../shared/orders.js';
@@ -101,6 +101,18 @@ async function defaultVoice(
   return latest?.us ?? mine.find((party) => !party.isStore) ?? mine[0]!;
 }
 
+/**
+ * Whether a conversation would be one account talking to itself.
+ *
+ * An owner's own name and their shop's are two handles but one person: a
+ * message between them lands unread in the same inbox that sent it, and is
+ * a conversation with nobody. So is a manager speaking as a shop to the
+ * shop's own owner, or to themselves.
+ */
+function isSelf(callerId: string, us: MessageParty, them: MessageParty): boolean {
+  return them.userId === callerId || them.userId === us.userId;
+}
+
 /** The party a username resolves to, or null when nobody holds it. */
 async function partyFor(username: string, repository: Repo): Promise<MessageParty | null> {
   const found = await repository.getByHandle(username);
@@ -164,7 +176,9 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
       unread: isMuted ? 0 : unread,
       muted: isMuted,
     };
-  }).filter((row) => !blocked.has(row.them.userId));
+  // A thread between two of one account's own handles is nobody's
+  // conversation; any written before that was refused stays out of the list.
+  }).filter((row) => !blocked.has(row.them.userId) && row.them.userId !== row.us.userId);
 
   rows.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
   // The names are snapshots; their levels are read fresh, in one batch.
@@ -207,7 +221,7 @@ async function thread(request: HttpRequest, _context: InvocationContext) {
     ? mine.find((party) => party.handle === asHandle)
     : await defaultVoice(mine, them.handle, repository);
   if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
-  if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
+  if (them.handle === us.handle || isSelf(user.id, us, them)) return error(400, 'invalid_handle', 'You cannot message yourself.');
 
   const threadId = threadIdFor(us.handle, them.handle);
   // `before` pages back through a long conversation; `since` is the refresh
@@ -446,6 +460,51 @@ async function announceMessage(message: Message, senderId: string, repository: R
   }, { except: senderId });
 }
 
+/**
+ * A message from a shop to one of its buyers, written by the server on the
+ * shop's behalf - a payment reminder from the lot screen, say.
+ *
+ * Lands in the same thread the two of them already talk in, so the buyer can
+ * answer it like anything else the shop wrote. Null when it cannot go as a
+ * message: either side has no handle yet, or one of them blocked the other.
+ * The caller decides what to do instead.
+ */
+export async function messageFromShop(
+  repository: Repo,
+  shopId: string,
+  buyerId: string,
+  text: string,
+  senderId: string,
+  /** A button under the words: where the buyer acts on it, inside Figmark. */
+  link?: MessageLink,
+): Promise<Message | null> {
+  const [shop, buyer] = await Promise.all([repository.getUserById(shopId), repository.getUserById(buyerId)]);
+  const shopHandle = shop?.sellerProfile?.username;
+  if (!shop || !buyer?.username || !shopHandle) return null;
+  const us: MessageParty = {
+    handle: shopHandle.toLowerCase(), userId: shop.id, isStore: true,
+    displayName: shop.sellerProfile!.storefrontName || shop.displayName,
+  };
+  const them = await partyFor(buyer.username, repository);
+  if (!them || isSelf(senderId, us, them) || await blockedBetween(shop.id, them, repository)) return null;
+
+  const now = new Date().toISOString();
+  const message: Message = {
+    id: `msg_${randomUUID().slice(0, 12)}`,
+    threadId: threadIdFor(us.handle, them.handle),
+    from: us,
+    to: them,
+    body: text,
+    readAt: null,
+    ...(link ? { link } : {}),
+    createdAt: now,
+    updatedAt: now,
+  };
+  const saved = await repository.sendMessage(message);
+  await announceMessage(message, senderId, repository);
+  return saved;
+}
+
 /** POST /api/messages/{handle}/send - say something, as one of your handles. */
 async function send(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -494,7 +553,7 @@ async function send(request: HttpRequest, _context: InvocationContext) {
     ? mine.find((party) => party.handle === body.as!.toLowerCase())
     : await defaultVoice(mine, them.handle, repository);
   if (!us) return error(403, 'forbidden', 'That is not one of your handles.');
-  if (them.handle === us.handle) return error(400, 'invalid_handle', 'You cannot message yourself.');
+  if (them.handle === us.handle || isSelf(user.id, us, them)) return error(400, 'invalid_handle', 'You cannot message yourself.');
   const wall = await blockedBetween(user.id, them, repository);
   if (wall === 'you') return error(403, 'blocked', `You blocked @${them.handle}. Unblock them to write.`);
   // Not saying who blocked whom: being told is its own message.
@@ -1005,7 +1064,8 @@ async function setUsername(request: HttpRequest, _context: InvocationContext) {
   if (!record) return error(404, 'not_found', 'This account no longer exists.');
 
   const wanted = (body.username ?? '').trim().toLowerCase();
-  const problem = checkUsername(wanted);
+  // Keeping the handle you have is never refused, even one a later rule reserves.
+  const problem = wanted === record.username ? null : checkUsername(wanted);
   if (problem) return error(400, 'invalid_username', USERNAME_PROBLEMS[problem]);
 
   if (wanted !== record.username) {

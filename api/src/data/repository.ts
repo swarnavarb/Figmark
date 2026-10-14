@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { TrackingRoute } from '../../../shared/routes.js';
+import type { StoreKind } from '../../../shared/service-stores.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
@@ -246,6 +247,16 @@ export interface Repository {
    */
   updateListing(listing: Listing): Promise<Listing>;
   /**
+   * Change one listing against what is stored at the moment of writing.
+   *
+   * `change` is handed the current listing and may be run more than once: if
+   * somebody else (a buyer taking stock) wrote it in between, it is read again
+   * and the change redone on top, so their write is never undone. Returning
+   * null refuses, and nothing is written; null comes back for that or for a
+   * listing that is gone.
+   */
+  changeListing(id: string, sellerId: string, change: (listing: Listing) => Listing | null): Promise<Listing | null>;
+  /**
    * A shop's scheduled sales, newest first.
    *
    * One partition. Read by the shop's own console, which advances what it
@@ -303,8 +314,23 @@ export interface Repository {
 
   /* ── Operating the marketplace ───────────────────────────────────────── */
 
-  /** Every account, for the admin list. Bounded by how many people signed up. */
+  /**
+   * Every account. Reads every user document whole, so nothing a visitor can
+   * reach calls it: those use the narrower reads below.
+   */
   listAllUsers(): Promise<User[]>;
+  /** One page of accounts, newest first, optionally matching a search - the admin list. `total` is everyone. */
+  pageUsers(options: { search?: string; limit: number; cursor?: string | null }): Promise<{ users: User[]; next: string | null; total: number }>;
+  /** The account whose store of this kind lives at this directory slug, by index rather than by scan. */
+  findStoreBySlug(kind: StoreKind, slug: string): Promise<User | null>;
+  /** Accounts holding a service store of this kind - or of any kind - in whatever state it is. */
+  listServiceStoreOwners(kind?: StoreKind): Promise<User[]>;
+  /** The top collectors by cached XP, suspended accounts left out, and how many are ranked at all. */
+  questLeaders(limit: number): Promise<{ top: User[]; total: number }>;
+  /** How many ranked accounts have more XP than this. */
+  questRankAbove(xp: number): Promise<number>;
+  /** People and shops whose name or handle contains `needle` (lower case), at most `limit`. */
+  searchUsers(needle: string, limit: number): Promise<User[]>;
   /**
    * Every photo name any record still mentions, lower-cased.
    *
@@ -404,6 +430,11 @@ export interface Repository {
   updateMessage(message: Message): Promise<Message>;
   /** Removes one message from its thread. */
   deleteMessage(threadId: string, id: string): Promise<void>;
+  /**
+   * Removes every message whose two ends are one account - an owner and their
+   * own shop. Returns how many went.
+   */
+  deleteSelfMessages(): Promise<number>;
   /** Marks everything addressed to `handle` in this thread as read. */
   markThreadRead(threadId: string, handle: string): Promise<number>;
 

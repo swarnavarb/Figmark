@@ -4,8 +4,8 @@ import type { Listing, Lot, Order, User } from '../../../shared/models.js';
 import type { OrderStatus } from '../../../shared/enums.js';
 import { isExpired, orderMoney } from '../../../shared/payments.js';
 import {
-  COST_STAGES, cleanCostSheet, sheetTotal,
-  type CostStage, type ItemCostSheet,
+  cleanCostSheet, sheetTotal,
+  type CostStep, type ItemCostSheet,
 } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -19,7 +19,7 @@ const MAX_COST_HISTORY = 10;
 /**
  * The numbers underneath the shop.
  *
- * Real profit per lot, item and customer from each item's saved costs; the
+ * The profit book - every order with its costs and what is still owed; the
  * deeper Pro figures (retention, customer value, price changes, demand
  * forecast, reminders, bundles, returns); the free sales figures Analytics
  * shows; and the one write - a nudge to a buyer.
@@ -58,71 +58,13 @@ const onSale = (listing: Listing) => listing.status === 'active' && !isExpired(l
 
 /* ── Real profit ─────────────────────────────────────────────────────────── */
 
-interface ProfitRow {
-  key: string;
-  name: string;
-  sub: string | null;
-  photo: string | null;
-  orders: number;
-  units: number;
-  revenueMinor: number;
-  /** What the costed units cost. */
-  costMinor: number;
-  /** Revenue on units with costs saved, less those costs. */
-  profitMinor: number;
-  marginPercent: number | null;
-  /** Sold units whose item has no costs saved yet, so no profit is counted for them. */
-  uncostedUnits: number;
-  stages: Record<CostStage, number>;
-  /** Per step, for the breakdown: label, stage and paise across every unit. */
-  steps: { id: string; label: string; stage: CostStage; amountMinor: number }[];
-}
-
-function blankRow(key: string, name: string, sub: string | null, photo: string | null): ProfitRow & { costedRevenue: number } {
-  return {
-    key, name, sub, photo, orders: 0, units: 0, revenueMinor: 0, costMinor: 0, profitMinor: 0,
-    marginPercent: null, uncostedUnits: 0,
-    stages: Object.fromEntries(COST_STAGES.map((stage) => [stage, 0])) as Record<CostStage, number>,
-    steps: [], costedRevenue: 0,
-  };
-}
-
-function addOrder(row: ProfitRow & { costedRevenue: number }, order: Order, sheet: ItemCostSheet | null | undefined) {
-  row.orders += 1;
-  row.units += order.quantity;
-  row.revenueMinor += valueOf(order);
-  if (!sheet || sheet.steps.length === 0) {
-    row.uncostedUnits += order.quantity;
-    return;
-  }
-  row.costedRevenue += valueOf(order);
-  for (const step of sheet.steps) {
-    const amount = step.amountMinor * order.quantity;
-    row.costMinor += amount;
-    row.stages[step.stage] += amount;
-    const found = row.steps.find((entry) => entry.label === step.label && entry.stage === step.stage);
-    if (found) found.amountMinor += amount;
-    else row.steps.push({ id: step.id, label: step.label, stage: step.stage, amountMinor: amount });
-  }
-}
-
-function finish(row: ProfitRow & { costedRevenue: number }): ProfitRow {
-  const { costedRevenue, ...rest } = row;
-  rest.profitMinor = costedRevenue - rest.costMinor;
-  rest.marginPercent = percent(rest.profitMinor, costedRevenue);
-  rest.steps.sort((a, b) => COST_STAGES.indexOf(a.stage) - COST_STAGES.indexOf(b.stage));
-  return rest;
-}
-
-const byProfit = (a: ProfitRow, b: ProfitRow) => b.profitMinor - a.profitMinor || b.revenueMinor - a.revenueMinor;
-
 /**
- * GET /api/me/costs - what the shop actually made, per lot, per item and per
- * customer, each split into what is still running and what is done.
+ * GET /api/me/costs - the profit book: every order the shop kept, with what
+ * one unit cost (the order's own costs where the seller changed them, the
+ * item's otherwise), what it sold for, and what is still to be paid.
  *
- * Profit is counted only on units whose item has costs saved; the rest is
- * shown as revenue with a count of what is missing, rather than as a profit
- * that pretends the item was free.
+ * Grouped on the page - by lot, or in hand; then by customer - so the server
+ * sends the rows once and the lots and names they point at.
  */
 async function costs(request: HttpRequest, _context: InvocationContext) {
   const { repository, shopId } = await open(request);
@@ -135,61 +77,57 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
   ]);
   const listingById = new Map(listings.map((listing) => [listing.id, listing]));
   const lotById = new Map(lots.map((lot) => [lot.id, lot]));
-  const kept = orders.filter((order) => !GONE.has(order.status));
+  const kept = orders.filter((order) => !GONE.has(order.status) && order.placedAt !== null)
+    .sort((a, b) => placedAt(a).localeCompare(placedAt(b)));
+  const who = await names(repository, kept.map((order) => order.buyerId));
 
-  // A lot is done once it is closed, or everything in it has been delivered.
-  const lotOrders = new Map<string, Order[]>();
-  for (const order of kept) lotOrders.set(order.lotId, [...(lotOrders.get(order.lotId) ?? []), order]);
-  const lotDone = (lot: Lot) => {
-    const rows = lotOrders.get(lot.id) ?? [];
-    return lot.status === 'closed' || lot.status === 'cancelled'
-      || (rows.length > 0 && rows.every((order) => order.status === 'delivered'));
-  };
-  const customerOrders = new Map<string, Order[]>();
-  for (const order of kept) customerOrders.set(order.buyerId, [...(customerOrders.get(order.buyerId) ?? []), order]);
-
-  const lotRows = new Map<string, ReturnType<typeof blankRow>>();
-  const itemRows = new Map<string, ReturnType<typeof blankRow>>();
-  const customerRows = new Map<string, ReturnType<typeof blankRow>>();
-  const totals = { active: blankRow('active', 'Active', null, null), closed: blankRow('closed', 'Closed', null, null) };
-  const who = await names(repository, customerOrders.keys());
-
-  for (const order of kept) {
+  const rows = kept.map((order) => {
     const listing = listingById.get(order.listingId);
-    const sheet = listing?.costSheet;
-    const lot = lotById.get(order.lotId);
-    if (lot) {
-      const row = lotRows.get(lot.id) ?? blankRow(lot.id, lot.name, lot.lotNumber ? `#${lotNo(lot.lotNumber)}` : null, null);
-      addOrder(row, order, sheet);
-      lotRows.set(lot.id, row);
-    }
-    const item = itemRows.get(order.listingId)
-      ?? blankRow(order.listingId, listing?.title ?? order.itemName, lot?.name ?? null, photoOf(listing));
-    addOrder(item, order, sheet);
-    itemRows.set(order.listingId, item);
-    const person = who.get(order.buyerId)!;
-    const customer = customerRows.get(order.buyerId) ?? blankRow(order.buyerId, person.name, person.handle, null);
-    addOrder(customer, order, sheet);
-    customerRows.set(order.buyerId, customer);
-    addOrder(order.status === 'delivered' ? totals.closed : totals.active, order, sheet);
-  }
-
-  const split = (rows: Map<string, ReturnType<typeof blankRow>>, done: (key: string) => boolean) => {
-    const active: ProfitRow[] = [];
-    const closed: ProfitRow[] = [];
-    for (const [key, row] of rows) (done(key) ? closed : active).push(finish(row));
-    return { active: active.sort(byProfit), closed: closed.sort(byProfit) };
-  };
+    const own = listing?.orderCosts?.[order.id];
+    const money = orderMoney(order);
+    return {
+      orderId: order.id,
+      listingId: order.listingId,
+      /** Null for an item sold from hand, or from a lot that is gone. */
+      lotId: lotById.has(order.lotId) ? order.lotId : null,
+      itemName: order.itemName || listing?.title || 'Item',
+      photo: photoOf(listing),
+      buyerId: order.buyerId,
+      status: order.status,
+      placedAt: placedAt(order),
+      quantity: order.quantity,
+      unitPriceMinor: order.unitPriceMinor,
+      totalMinor: money.totalMinor,
+      paidMinor: money.paidMinor,
+      pendingMinor: money.outstandingMinor,
+      /** What one unit cost, step by step. */
+      steps: own ?? listing?.costSheet?.steps ?? [],
+      /** The steps are this order's own, not the item's. */
+      own: Boolean(own),
+      /** The calculator the item's costs came from, for the sums of costs saved without them. */
+      templateId: listing?.costSheet?.templateId ?? null,
+      templateName: listing?.costSheet?.templateName ?? null,
+    };
+  });
+  const orderCount = new Map<string, number>();
+  const unitsSold = new Map<string, number>();
+  for (const order of kept) unitsSold.set(order.listingId, (unitsSold.get(order.listingId) ?? 0) + order.quantity);
+  for (const row of rows) if (row.lotId) orderCount.set(row.lotId, (orderCount.get(row.lotId) ?? 0) + 1);
 
   return json(200, {
-    /** By order: delivered is closed, anything still moving is active. */
-    totals: { active: finish(totals.active), closed: finish(totals.closed) },
-    lots: split(lotRows, (id) => { const lot = lotById.get(id); return lot ? lotDone(lot) : true; }),
-    items: split(itemRows, (id) => { const listing = listingById.get(id); return !listing || !onSale(listing); }),
-    // A customer is active while anything of theirs is still on its way.
-    customers: split(customerRows, (id) => (customerOrders.get(id) ?? []).every((order) => order.status === 'delivered')),
-    handles: Object.fromEntries([...who].map(([id, ref]) => [id, ref.handle])),
-    /** Every item, for choosing which to cost. Newest first. */
+    lots: lots
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((lot) => ({
+        id: lot.id,
+        name: lot.name,
+        number: lot.lotNumber ? `#${lotNo(lot.lotNumber)}` : null,
+        status: lot.status,
+        createdAt: lot.createdAt,
+        orders: orderCount.get(lot.id) ?? 0,
+      })),
+    rows,
+    customers: Object.fromEntries([...who].map(([id, ref]) => [id, { name: ref.name, handle: ref.handle }])),
+    /** Every item, for saving a calculator's costs onto. Newest first. */
     sheets: listings
       .filter((listing) => listing.status !== 'draft')
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -201,13 +139,106 @@ async function costs(request: HttpRequest, _context: InvocationContext) {
         currency: listing.currency,
         lotName: listing.lotId ? lotById.get(listing.lotId)?.name ?? null : null,
         onSale: onSale(listing),
-        sold: (kept.filter((order) => order.listingId === listing.id)).reduce((sum, order) => sum + order.quantity, 0),
+        sold: unitsSold.get(listing.id) ?? 0,
         sheet: listing.costSheet ?? null,
         costMinor: sheetTotal(listing.costSheet),
-        /** What Remove steps back to: the costs saved before these, if any. */
-        previousCostMinor: listing.costSheetPrevious?.length ? sheetTotal(listing.costSheetPrevious.at(-1)) : null,
       })),
   });
+}
+
+/**
+ * POST /api/me/orders/{id}/costs - one order's own cost steps, per unit, as
+ * typed into the profit book; `steps: null` goes back to the item's costs.
+ *
+ * Kept on the item, keyed by order, because the item is where costs already
+ * live out of a buyer's sight - the order itself is read by the buyer.
+ */
+async function saveOrderCosts(request: HttpRequest, _context: InvocationContext) {
+  const { repository, shopId } = await open(request);
+  if (!shopId) return error(403, 'forbidden', 'You cannot change the costs for that shop.');
+  const order = await repository.getOrder(request.params.id ?? '');
+  if (!order || order.sellerId !== shopId) return error(404, 'not_found', 'No such order in this shop.');
+  const listing = await repository.getListing(order.listingId);
+  if (!listing || listing.sellerId !== shopId) return error(404, 'not_found', 'That order’s item is gone.');
+
+  let body: { steps?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const now = new Date().toISOString();
+  const orderCosts = { ...(listing.orderCosts ?? {}) };
+  if (body.steps === null) {
+    delete orderCosts[order.id];
+  } else {
+    let sheet: ItemCostSheet | null;
+    try {
+      sheet = cleanCostSheet({ steps: body.steps }, now, order.unitPriceMinor / 100);
+    } catch (err) {
+      return error(400, 'invalid_sheet', (err as Error).message);
+    }
+    // No steps at all is a real answer for one order: it cost nothing more.
+    orderCosts[order.id] = sheet?.steps ?? [];
+  }
+  const saved = await repository.updateListing({ ...listing, orderCosts, updatedAt: now });
+  const own = saved.orderCosts?.[order.id];
+  return json(200, { orderId: order.id, own: Boolean(own), steps: own ?? saved.costSheet?.steps ?? [] });
+}
+
+/**
+ * POST /api/me/order-costs - several orders' costs in one go: a supplier paid
+ * once for many items, split across them, or an undo of a change that touched
+ * many. Body `{ changes: [{ orderId, steps }] }`, `steps: null` for back to the
+ * item's costs. All checked before any is kept, and each item written once, so
+ * two orders of one item cannot overwrite each other.
+ */
+async function saveOrderCostsBatch(request: HttpRequest, _context: InvocationContext) {
+  const { repository, shopId } = await open(request);
+  if (!shopId) return error(403, 'forbidden', 'You cannot change the costs for that shop.');
+  let body: { changes?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const changes = Array.isArray(body.changes) ? (body.changes as { orderId?: unknown; steps?: unknown }[]) : [];
+  if (changes.length === 0) return error(400, 'invalid_body', 'Send the changes to save.');
+  if (changes.length > 500) return error(400, 'invalid_body', 'Up to 500 orders at a time.');
+
+  const now = new Date().toISOString();
+  const byListing = new Map<string, { listing: Listing; orderCosts: Record<string, CostStep[]>; orderIds: string[] }>();
+  for (const change of changes) {
+    const order = typeof change.orderId === 'string' ? await repository.getOrder(change.orderId) : null;
+    if (!order || order.sellerId !== shopId) return error(404, 'not_found', 'No such order in this shop.');
+    let entry = byListing.get(order.listingId);
+    if (!entry) {
+      const listing = await repository.getListing(order.listingId);
+      if (!listing || listing.sellerId !== shopId) return error(404, 'not_found', 'That order’s item is gone.');
+      entry = { listing, orderCosts: { ...(listing.orderCosts ?? {}) }, orderIds: [] };
+      byListing.set(order.listingId, entry);
+    }
+    if (change.steps === null) {
+      delete entry.orderCosts[order.id];
+    } else {
+      try {
+        entry.orderCosts[order.id] = cleanCostSheet({ steps: change.steps }, now, order.unitPriceMinor / 100)?.steps ?? [];
+      } catch (err) {
+        return error(400, 'invalid_sheet', (err as Error).message);
+      }
+    }
+    entry.orderIds.push(order.id);
+  }
+
+  const rows: { orderId: string; own: boolean; steps: CostStep[] }[] = [];
+  for (const { listing, orderCosts, orderIds } of byListing.values()) {
+    const saved = await repository.updateListing({ ...listing, orderCosts, updatedAt: now });
+    for (const orderId of new Set(orderIds)) {
+      const own = saved.orderCosts?.[orderId];
+      rows.push({ orderId, own: Boolean(own), steps: own ?? saved.costSheet?.steps ?? [] });
+    }
+  }
+  return json(200, { rows });
 }
 
 /** POST /api/me/listings/{id}/cost-sheet - save, correct or clear one item's costs. */
@@ -232,7 +263,7 @@ async function saveCostSheet(request: HttpRequest, _context: InvocationContext) 
     sheet = history.pop() ?? null;
   } else if (body.sheet) {
     try {
-      sheet = cleanCostSheet(body.sheet, now);
+      sheet = cleanCostSheet(body.sheet, now, listing.priceMinor / 100);
     } catch (err) {
       return error(400, 'invalid_sheet', (err as Error).message);
     }
@@ -678,7 +709,7 @@ async function nudge(request: HttpRequest, _context: InvocationContext) {
 
   const recent = await repository.listNotifications(buyerId, 50);
   if (recent.some((row) => row.kind === 'seller_nudge' && row.link === link && Date.now() - Date.parse(row.createdAt) < DAY)) {
-    return error(429, 'too_soon', 'They were reminded about this in the last day.');
+    return error(429, 'too_soon', 'They were reminded about this in the last 24 hrs.');
   }
   await notify(repository, [buyerId], { kind: 'seller_nudge', title, body: text, link }, { except: user.id });
   return json(200, { sent: true });
@@ -686,6 +717,8 @@ async function nudge(request: HttpRequest, _context: InvocationContext) {
 
 export const costsRoute = handler(costs);
 export const saveCostSheetRoute = handler(saveCostSheet);
+export const saveOrderCostsRoute = handler(saveOrderCosts);
+export const saveOrderCostsBatchRoute = handler(saveOrderCostsBatch);
 export const deepRoute = handler(deep);
 export const salesReportRoute = handler(sales);
 export const nudgeRoute = handler(nudge);
@@ -693,6 +726,12 @@ export const nudgeRoute = handler(nudge);
 app.http('me-costs', { authLevel: 'anonymous', methods: ['GET'], route: 'me/costs', handler: costsRoute });
 app.http('me-cost-sheet', {
   authLevel: 'anonymous', methods: ['POST'], route: 'me/listings/{id}/cost-sheet', handler: saveCostSheetRoute,
+});
+app.http('me-order-costs', {
+  authLevel: 'anonymous', methods: ['POST'], route: 'me/orders/{id}/costs', handler: saveOrderCostsRoute,
+});
+app.http('me-order-costs-batch', {
+  authLevel: 'anonymous', methods: ['POST'], route: 'me/order-costs', handler: saveOrderCostsBatchRoute,
 });
 app.http('me-deep', { authLevel: 'anonymous', methods: ['GET'], route: 'me/deep', handler: deepRoute });
 app.http('me-sales-report', { authLevel: 'anonymous', methods: ['GET'], route: 'me/sales-report', handler: salesReportRoute });

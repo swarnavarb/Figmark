@@ -29,7 +29,7 @@ export function json(status: number, body: unknown, cookies: string[] = []): Htt
 }
 
 /** What Cosmos adds to every document it hands back: how it is stored, which no reader needs. */
-const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts']);
+const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', '_parts']);
 
 /**
  * The body with Cosmos's own fields taken out, at any depth. Routes return

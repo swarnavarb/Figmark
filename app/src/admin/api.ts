@@ -184,10 +184,14 @@ export const admin = {
   signIn: marketplace.login,
   signOut: marketplace.logout,
 
-  users: (query: string) =>
-    request<{ users: AdminUserRow[]; total: number }>(
-      `/ops/users${query ? `?q=${encodeURIComponent(query)}` : ''}`,
-    ),
+  /** One page; pass the `next` of the last page as `cursor` for the one after. */
+  users: (query: string, cursor?: string | null) => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (cursor) params.set('cursor', cursor);
+    const suffix = params.toString();
+    return request<{ users: AdminUserRow[]; total: number; next: string | null }>(`/ops/users${suffix ? `?${suffix}` : ''}`);
+  },
   user: (id: string) => request<AdminUserDetail>(`/ops/users/${encodeURIComponent(id)}`),
   suspend: (id: string, suspended: boolean) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/suspend`, { suspended }),

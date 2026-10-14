@@ -620,7 +620,8 @@ async function home(request: HttpRequest, _context: InvocationContext) {
     if (proven || tried) risingIds.add(post.id);
   }
 
-  const followedPosts = ownFeed;
+  // Room messages never reach the feed, whatever the read let through.
+  const followedPosts = ownFeed.filter((post) => post.channel !== 'seller' || (post.reach ?? 'feed') === 'feed');
   const inFeed = new Set(followedPosts.map((post) => post.id));
   // Trending first, hottest first; then rising, proven before merely tried.
   const found = [
@@ -1807,8 +1808,8 @@ async function joinForum(request: HttpRequest, _context: InvocationContext) {
  * GET /api/social/search?q= - people, shops and forums by name or handle.
  *
  * The social tab's search is for finding somebody, not something: items have
- * the marketplace search. Everybody is read and filtered here, which is fine
- * at this size and is the one place to swap for an index later.
+ * the marketplace search. The store filters and caps what it hands back, so
+ * a search costs the matches, not the whole user table.
  */
 async function search(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -1816,8 +1817,9 @@ async function search(request: HttpRequest, _context: InvocationContext) {
   const needle = (request.query?.get('q') ?? '').trim().toLowerCase().replace(/^@/, '');
   if (needle.length < 1) return json(200, { people: [], shops: [], forums: [] });
   const repository = await getRepository();
+  // A bounded, filtered read rather than every account: twelve of each are shown.
   const [everyone, followed, forums] = await Promise.all([
-    repository.listAllUsers(),
+    repository.searchUsers(needle, 60),
     repository.listFollowedSellerIds(user.id),
     repository.listForums(),
   ]);

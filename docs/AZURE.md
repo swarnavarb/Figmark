@@ -135,6 +135,20 @@ credentials were present. These steps need a machine that can reach Azure:
    `main` under Settings → General → Default branch. Check that the Static Web
    App's own production branch setting in Azure matches.
 
+## Shared test environments
+
+The in-memory store is per worker. A Functions host runs several, and each one
+keeps its own copy of every account, listing and order, so something a tester
+creates on one is missing on the next request that lands elsewhere. Sign-in
+hides this (the session token carries a snapshot of the account), nothing else
+does. Fine for a demo; confusing for anyone testing.
+
+Any environment more than one person tests against should run on Cosmos DB.
+The serverless tier costs little at test volumes: set `COSMOS_ENDPOINT` and
+`COSMOS_KEY`, then `npm run azure:provision` to create the containers. A
+deployment still on memory says so in a standing banner on every page, and
+`/api/health` reports `data.perWorker: true`.
+
 ## The operations console
 
 The console is a second bundle in the same deployment, served at `/admin`. It

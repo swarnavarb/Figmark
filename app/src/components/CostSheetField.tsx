@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  COST_STAGES, STAGE_LABELS, calculateProfit, stepsFromResult,
+  COST_STAGES, STAGE_LABELS, calculateProfit, inrPerUnit, payCurrencyOf, paysVia, stepsFromResult, symbolOf,
   type CostStage, type CostStep, type ProfitInput, type ProfitResult, type ProfitTemplate,
 } from '@shared/profit';
 import { api } from '../api';
@@ -65,7 +65,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
 
   function fill() {
     if (!template || !preview) return;
-    const next = stepsFromResult(preview);
+    const next = stepsFromResult(preview, template, input.itemPrice, worked ?? undefined);
     onChange(next.length ? { templateId: template.id, templateName: template.name, steps: next } : null);
   }
 
@@ -186,7 +186,7 @@ export function CalcInputs({ template, input, onChange, withSelling = false, sho
   return (
     <>
       <div className="costfield__fill">
-        {num(`Price abroad (${template.currency})`, input.itemPrice, (itemPrice) => ({ itemPrice }))}
+        {num(`Price abroad (${symbolOf(template.currency).trim()} ${template.currency})`, input.itemPrice, (itemPrice) => ({ itemPrice }))}
         {num('Quantity', input.quantity, (quantity) => ({ quantity: Math.max(1, Math.round(quantity)) }), 1)}
         {num('Weight per item (kg)', input.weightKg, (weightKg) => ({ weightKg }), 0.05)}
         {withSelling && num('Selling price (₹ each)', input.sellingPrice, (sellingPrice) => ({ sellingPrice }))}
@@ -199,10 +199,53 @@ export function CalcInputs({ template, input, onChange, withSelling = false, sho
         </div>
       )}
       <div className="costfield__row">
-        <small className="faint">1 {template.currency} = ₹{template.rate || 0} on “{template.name}”.</small>
+        <small className="faint">{rateText(template)} on “{template.name}”.</small>
         <EditCalcLink templateId={template.id} shop={shop} onLeave={onLeave} />
       </div>
     </>
+  );
+}
+
+const round = (value: number, places = 2) => Number(value.toFixed(places));
+
+/** The rates a calculator converts at, as one line: "1 USD = 6.7 CNY · 1 USD = ₹88". */
+export function rateText(template: ProfitTemplate) {
+  const pay = payCurrencyOf(template);
+  const head = paysVia(template) ? `1 ${pay} = ${template.payRate} ${template.currency} · ` : '';
+  return `${head}1 ${pay} = ₹${template.rate || 0}`;
+}
+
+/** Money in any currency, to the cent. */
+export const moneyIn = (code: string, value: number) =>
+  `${value < 0 ? '−' : ''}${code === 'INR' ? '₹' : symbolOf(code)}${Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * How the price becomes rupees, step by step: the price abroad, what the
+ * supplier is paid (in their currency, with whatever they add to it), and that
+ * in rupees, as a small receipt. A seller paying in dollars for a yuan price sees each hop, and
+ * each rate, as the numbers they agreed.
+ */
+export function PriceRoute({ template, input, result }: { template: ProfitTemplate; input: ProfitInput; result: ProfitResult }) {
+  const pay = payCurrencyOf(template);
+  const via = paysVia(template);
+  const toPay = (inr: number) => (template.rate > 0 ? inr / template.rate : 0);
+  const buying = result.lines.filter((line) => line.stage === 'buying' && line.enabled && line.perItem !== 0);
+  return (
+    <div className="pc__route">
+      <dl className="pc__receipt">
+        <div>
+          <dt>{via ? `${symbolOf(template.currency)}${input.itemPrice || 0} ÷ ${template.payRate}` : 'Item'}</dt>
+          <dd>{moneyIn(pay, toPay(result.itemCost))}</dd>
+        </div>
+        {buying.map((line) => (
+          <div key={line.id}><dt>+ {line.label}</dt><dd>{moneyIn(pay, toPay(line.perItem))}</dd></div>
+        ))}
+        <div className="is-sum">
+          <dt>{moneyIn(pay, result.supplierPay)} × ₹{template.rate || 0}</dt>
+          <dd>{moneyIn('INR', result.stages.buying)}</dd>
+        </div>
+      </dl>
+    </div>
   );
 }
 
@@ -225,7 +268,7 @@ export function CalcLines({ template, input, result }: { template: ProfitTemplat
             </div>
             {stage === 'buying' && (
               <div className="pc__line">
-                <span>Item ({input.itemPrice || 0} {template.currency} × ₹{template.rate || 0})</span>
+                <span>Item ({symbolOf(template.currency)}{input.itemPrice || 0} × ₹{round(inrPerUnit(template), 4)})</span>
                 <span>{rupees(result.itemCost)}</span>
               </div>
             )}

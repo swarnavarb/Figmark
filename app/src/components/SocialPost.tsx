@@ -403,7 +403,9 @@ export function SocialPostCard({
           <span className="spost__meta">
             <Link to={postHref(post)} className="spost__time">{timeAgo(post.createdAt)}</Link>
             {badges.map((kind) => <BoostBadge key={kind} kind={kind} />)}
-            {card.shop && !nested && (
+            {/* Only a message said in the room points back at the room. A post
+                that went to the feed is a feed post, wherever else it shows. */}
+            {card.shop && !nested && post.reach === 'channel' && (
               <>
                 <span aria-hidden="true">·</span>
                 <Link to={`/social/c/${post.channelId}`} className="spost__time">channel</Link>

@@ -5,7 +5,7 @@ import { ApiRequestError, api, type ItemGroup } from '../api';
 import { BuyerLotBox, ItemRow, LotPeek, ShelfTrack } from '../components/BuyerLots';
 import { Modal } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Thumb } from '../components/ui';
-import { ItemCard, Svg } from '../components/ListingBlocks';
+import { ItemCard, PriceChangeNote, Svg } from '../components/ListingBlocks';
 import { formatMoney, timeAgo } from '../format';
 import { useToast } from '../components/Feedback';
 
@@ -238,7 +238,8 @@ export function CartPage() {
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your cart.'));
   }, []);
 
-  const total = (items ?? []).reduce((sumMinor, { item }) => sumMinor + item.totalMinor, 0);
+  // What can still be bought; an item that sold out is shown but not counted.
+  const total = (items ?? []).reduce((sumMinor, { item }) => sumMinor + (item.unavailable ? 0 : item.totalMinor), 0);
 
   return (
     <main className="page">
@@ -277,10 +278,15 @@ export function CartPage() {
                 { label: 'Total', value: formatMoney(item.totalMinor, item.currency), tone: 'accent' },
                 { label: 'Qty', value: item.quantity },
                 { label: 'Stock', value: item.inHand ? <><Svg name="home" size={13} /> In hand</> : <><Svg name="ship" size={13} /> Import</>, tone: item.inHand ? 'ok' : undefined },
-                { label: 'Status', value: 'Not placed', tone: 'warn' },
+                item.unavailable
+                  ? { label: 'Status', value: 'Unavailable', tone: 'danger' }
+                  : { label: 'Status', value: 'Not placed', tone: 'warn' },
               ]}>
-              <Link to={`/order/${item.id}`} className="btn btn--sm icard__go">Checkout →</Link>
-              <Link to={`/listing/${item.listingId}`} className="icard__open">View listing <Svg name="open" size={14} /></Link>
+              {item.unavailable && (
+                <p className="cartnote cartnote--gone"><Svg name="box" size={14} /> {item.unavailable}</p>
+              )}
+              {!item.unavailable && item.priceChange && <PriceChangeNote change={item.priceChange} currency={item.currency} />}
+              {!item.unavailable && <Link to={`/order/${item.id}`} className="btn btn--sm icard__go">Checkout →</Link>}
               <span className="cartacts">
                 <button type="button" className="btn btn--ghost btn--sm" disabled={busy === item.id}
                   onClick={() => void discard(item, true)}><Svg name="heart" size={13} /> Move to saved</button>

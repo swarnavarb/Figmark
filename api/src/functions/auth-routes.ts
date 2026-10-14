@@ -9,6 +9,7 @@ import { claimCookieReferrals } from '../affiliate.js';
 import { claimInvite, visitorCookieIfMissing } from '../share.js';
 import { clientIp, limited } from '../rate-limit.js';
 import { deviceCookieValue } from '../auth/tokens.js';
+import { USERNAME_PROBLEMS, checkUsername } from '../../../shared/handles.js';
 
 /** One address trying too many sign-ins or sign-ups, whichever accounts they name. */
 async function addressLimited(request: HttpRequest, action: 'login' | 'signup') {
@@ -147,7 +148,26 @@ async function me(request: HttpRequest, _context: InvocationContext) {
 
 export const loginRoute = handler(login);
 export const signupRoute = handler(signup);
+/**
+ * GET /api/auth/username/{name} - whether a username can still be claimed.
+ *
+ * Asked as somebody types it on the sign-up form, so the answer arrives before
+ * they press the button rather than as a refusal after. Who holds a name is
+ * no secret - every handle is a public page - so this says only yes or no.
+ */
+async function usernameAvailable(request: HttpRequest, _context: InvocationContext) {
+  const wait = await limited(clientIp(request), 'handle_check');
+  if (wait) return error(429, 'too_many_attempts', `Too many checks from this network. Try again in ${wait}.`);
+  const wanted = (request.params.name ?? '').trim().toLowerCase();
+  const problem = checkUsername(wanted);
+  if (problem) return json(200, { username: wanted, available: false, reason: USERNAME_PROBLEMS[problem] });
+  const repository = await getRepository();
+  const taken = (await repository.getByHandle(wanted)) !== null;
+  return json(200, { username: wanted, available: !taken, reason: taken ? `@${wanted} is already taken.` : null });
+}
+
 export const logoutRoute = handler(logout);
+export const usernameAvailableRoute = handler(usernameAvailable);
 export const meRoute = handler(me);
 export const logoutAllRoute = handler(logoutAll);
 
@@ -184,4 +204,11 @@ app.http('auth-me', {
   authLevel: 'anonymous',
   route: 'auth/me',
   handler: meRoute,
+});
+
+app.http('auth-username', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'auth/username/{name}',
+  handler: usernameAvailableRoute,
 });

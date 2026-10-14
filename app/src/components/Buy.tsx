@@ -387,6 +387,8 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
     event.preventDefault();
     void run(async () => (await api.editListing(listing.id, {
       title: title.trim(), priceMinor: Math.round(Number(price) * 100), photos, ...termsBody(terms),
+      // Sales made while this was open have already taken their units; only the change here is applied.
+      quantityWas: listing.quantityAvailable,
       // A deal keeps its clock unless a new one was picked.
       ...(privateDeal ? {
         affiliateMinor: null, affiliateOffMinor: null,

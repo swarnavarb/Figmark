@@ -231,7 +231,7 @@ export function routeFromAnswers(a: PipAnswers): RouteStep[] {
     last.push(make('Received by the seller', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'Got it' }));
   }
   if (a.lastPack !== undefined) {
-    if (a.lastPack) last.push(make('Packed for you', 'Boxed for the courier.', { trigger: 'packed', button: 'Packed for the buyer' }));
+    if (a.lastPack) last.push(make('Packed for you', 'Boxed for the courier.', { trigger: 'packed', button: 'Packed' }));
     last.push(make('Dispatched to you', 'Handed to the courier for the last leg.', { trigger: 'dispatched', button: 'Dispatched' }));
   }
 

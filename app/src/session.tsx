@@ -24,6 +24,8 @@ interface SessionValue {
    * rounds undiagnosed. Said out loud, in the same banner as the session key.
    */
   missingContainers: string[];
+  /** True when a hosted deployment keeps its data in each worker's memory. */
+  dataPerWorker: boolean;
   signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -64,6 +66,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [warning, setWarning] = useState<string | null>(null);
   const [sessionsInsecure, setSessionsInsecure] = useState(false);
   const [missingContainers, setMissingContainers] = useState<string[]>([]);
+  const [dataPerWorker, setDataPerWorker] = useState(false);
   const [authPrompt, setAuthPrompt] = useState<{ reason: string | null } | null>(null);
   const [signupEmail, setSignupEmail] = useState<SignupResponse['emailCode'] | null>(null);
   const [verifyPrompt, setVerifyPrompt] = useState<string | null>(null);
@@ -107,6 +110,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setSessionsInsecure(h.auth.sessionSecretSource === 'development');
         setMissingContainers(h.data.missingContainers ?? []);
+        setDataPerWorker(h.data.perWorker === true);
       })
       .catch(() => undefined);
     return () => {
@@ -231,10 +235,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, signOutEverywhere, refresh,
+      user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, signIn, signUp, signOut, signOutEverywhere, refresh,
       promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt,
     }),
-    [user, loading, warning, sessionsInsecure, missingContainers, signIn, signUp, signOut, signOutEverywhere, refresh,
+    [user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, signIn, signUp, signOut, signOutEverywhere, refresh,
       promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt],
   );
 

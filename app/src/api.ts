@@ -1,6 +1,6 @@
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type { NotificationCategory } from '@shared/notifications';
-import type { NotificationPrefs } from '@shared/models';
+import type { NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
 import type { VerifiedChecks } from '@shared/verification';
 import type {
   ApiError,
@@ -11,7 +11,7 @@ import type {
   MeResponse,
   SignupResponse,
 } from '@shared/contracts';
-import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, Sourcing, StorePermission } from '@shared/enums';
+import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, OrderStatus, Sourcing, StorePermission } from '@shared/enums';
 import type { DealState } from '@shared/deals';
 import type { LotTally } from '@shared/board';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
@@ -21,7 +21,7 @@ import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, Trackin
 import type { CardButton, SerialButton } from '@shared/buttons';
 import type { LevelTag, MergedRating, StoreLevel } from '@shared/storefront';
 import type { GrowthView } from '@shared/store-growth';
-import type { CostLine, CostStage, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
+import type { CostLine, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from '@shared/profit';
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { LotBuyerPhase } from '@shared/fulfilment';
 import type { PreOrderView } from '@shared/preorder';
@@ -591,8 +591,18 @@ export interface Credit {
   tier: string | null;
 }
 
+/** A cart item's total when Buy was pressed, and now. */
+export interface PriceChange {
+  fromMinor: number;
+  toMinor: number;
+}
+
 export interface Checkout {
   itemMinor: number;
+  /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
+  unavailable?: string | null;
+  /** Set when the price moved since Buy was pressed; the checkout is already at the new one. */
+  priceChange?: PriceChange | null;
   /**
    * Credit this seller kept for the buyer from an earlier order. It is spent
    * on this one the moment it is placed, so what is due now is less by it.
@@ -651,6 +661,16 @@ export interface SaleRow {
   serial: SerialButton[] | null;
   /** Where it is on its lot's route, counted over every step: index and total. */
   routeStep: { at: number; of: number } | null;
+  /** When the seller said this customer's parcel can ship. */
+  readyAt: string | null;
+  /** Reached the destination: it can be marked Ready to dispatch. */
+  arrived: boolean;
+  /** Its lot's crew: the ready gate, and who is tagged to see photos. Null outside a lot. */
+  lotCrew: { readyGate: boolean; supplier: boolean; handler: boolean; handlerName: string | null } | null;
+  /** The grade it was sold as: MISB, MIB, BIB or LOOSE. */
+  condition: string;
+  /** Photos of the piece on its way. */
+  photos: OrderPhoto[];
   /** When the seller ticked it received at the China warehouse. */
   chinaReceivedAt: string | null;
   /** When the seller ticked it delivered, on the lot's own item list. */
@@ -1321,25 +1341,6 @@ export interface TrendingRow {
   soldOut: boolean; stockLeft: number | null; daysLeft: number | null; perWeek: number;
 }
 
-/** One lot, item or customer's real profit, from each item's saved costs. */
-export interface ProfitRow {
-  key: string;
-  name: string;
-  sub: string | null;
-  photo: string | null;
-  orders: number;
-  units: number;
-  revenueMinor: number;
-  costMinor: number;
-  profitMinor: number;
-  marginPercent: number | null;
-  uncostedUnits: number;
-  stages: Record<CostStage, number>;
-  steps: { id: string; label: string; stage: CostStage; amountMinor: number }[];
-}
-
-export interface ProfitSplit { active: ProfitRow[]; closed: ProfitRow[] }
-
 export interface SheetItem {
   listingId: string;
   title: string;
@@ -1351,17 +1352,46 @@ export interface SheetItem {
   sold: number;
   sheet: ItemCostSheet | null;
   costMinor: number;
-  /** What Remove steps back to; null when removing clears the costs. */
-  previousCostMinor: number | null;
 }
 
-/** `GET /api/me/costs` - real profit per lot, item and customer. */
+/** One order in the profit book. Money in paise; `steps` are per unit. */
+export interface BookRow {
+  orderId: string;
+  listingId: string;
+  /** Null when sold from hand. */
+  lotId: string | null;
+  itemName: string;
+  photo: string | null;
+  buyerId: string;
+  status: OrderStatus;
+  placedAt: string;
+  quantity: number;
+  unitPriceMinor: number;
+  totalMinor: number;
+  paidMinor: number;
+  pendingMinor: number;
+  steps: CostStep[];
+  /** The steps are this order's own rather than the item's. */
+  own: boolean;
+  /** The calculator the item's costs came from, if any. */
+  templateId: string | null;
+  templateName: string | null;
+}
+
+export interface BookLot {
+  id: string;
+  name: string;
+  number: string | null;
+  status: string;
+  createdAt: string;
+  orders: number;
+}
+
+/** `GET /api/me/costs` - the profit book: every order, its costs and what is owed. */
 export interface CostsResponse {
-  totals: { active: ProfitRow; closed: ProfitRow };
-  lots: ProfitSplit;
-  items: ProfitSplit;
-  customers: ProfitSplit;
-  handles: Record<string, string | null>;
+  lots: BookLot[];
+  rows: BookRow[];
+  customers: Record<string, { name: string; handle: string | null }>;
   sheets: SheetItem[];
 }
 
@@ -1566,6 +1596,21 @@ export interface ProviderCard {
   tagline?: string;
   logoUrl?: string | null;
   accent?: string | null;
+  /** City and country, as the store gives them. */
+  place?: string | null;
+  /** Forwarders: their routes, as a shop chooses by them. */
+  lanes?: {
+    from: string;
+    to: string;
+    mode: FreightLane['mode'] | null;
+    days: string;
+    ratePerKgMinor: number;
+  }[];
+  /** Artists: what they do, where prices start, a few pieces of work. */
+  specialties?: string[];
+  fromMinor?: number | null;
+  portfolio?: string[];
+  acceptingWork?: boolean;
 }
 
 export interface ServicesHub {
@@ -1746,6 +1791,10 @@ export interface ItemGroup {
     canPayMore: boolean;
     /** False while the buyer has pressed Buy but not yet paid or booked. */
     placed: boolean;
+    /** A cart item that can no longer be bought as it stands, and why. */
+    unavailable?: string | null;
+    /** A cart item whose price moved since Buy: the item total then and now. */
+    priceChange?: PriceChange | null;
     /** This item's own step on its lot's route; null outside a lot. */
     stepAt: number | null;
     checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
@@ -1846,6 +1895,9 @@ export interface BoardOrder {
   quantity: number;
   unitWeightGrams: number;
   checkpoints: Partial<Record<OrderCheckpoint, string | null>>;
+  photos?: OrderPhoto[];
+  /** Reached the destination, so it can be marked Ready to dispatch. */
+  arrived?: boolean;
 }
 
 export interface BoardCustomer {
@@ -1858,6 +1910,8 @@ export interface BoardCustomer {
 
 export interface LotBoard {
   lot: BoardLot;
+  /** Only on a single lot's board: what the seller has set up for its crew. */
+  crew?: { readyGate: boolean; supplier: boolean; handler: boolean; handlerName: string | null };
   tally: LotTally;
   customers: BoardCustomer[];
 }
@@ -2048,7 +2102,17 @@ export interface CrewLotView {
     id: string; itemName: string; condition: string; quantity: number; weightGrams: number;
     parcel: string | null; buyer: { name: string; phone: string | null } | null;
     ticks: Record<string, string | null>; covered: boolean; toStudio: boolean;
+    /** The listing's lead photo, for the tiles. */
+    photoUrl: string | null;
+    /** Photos of this piece the shop shared with this role, and the ones they took. */
+    photos: OrderPhoto[];
+    /** Cleared by the shop to go out; null when the shop does not gate dispatch. */
+    cleared: boolean | null;
+    payment: { status: string; totalMinor: number; paidMinor: number; outstandingMinor: number; currency: string } | null;
   }[];
+  settings: { readyGate: boolean; seesPayment: boolean };
+  /** Every lot they work in this role, for the switcher. */
+  lots: { sellerId: string; lotId: string; name: string; number: string }[];
 }
 
 /** Everything a store form edits. */
@@ -2171,6 +2235,11 @@ export const api = {
   signup: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) =>
     post<SignupResponse>('/auth/signup', body),
 
+  /** Whether a username is still free, asked while it is typed on the sign-up form. */
+  usernameAvailable: (name: string, signal?: AbortSignal) =>
+    request<{ username: string; available: boolean; reason: string | null }>(
+      `/auth/username/${encodeURIComponent(name)}`, { signal }),
+
   /* Verification: email code, WhatsApp number, Aadhaar Secure QR. */
   verifyStatus: () => send<VerificationStatus>('/verify/status'),
   sendEmailCode: () => post<{ sentTo: string; devCode?: string; status: VerificationStatus }>('/verify/email/send'),
@@ -2224,7 +2293,8 @@ export const api = {
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
-  editListing: (id: string, body: Partial<NewListing>) =>
+  /** `quantityWas` is the stock the form showed: the server applies the difference, not the number. */
+  editListing: (id: string, body: Partial<NewListing> & { quantityWas?: number }) =>
     post<{ listing: Listing }>(`/listings/${encodeURIComponent(id)}/edit`, body),
   expireListing: (id: string) =>
     post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
@@ -2315,7 +2385,7 @@ export const api = {
         id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
         stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
       }[];
-      supplierHandle?: string; handlerUserId?: string; handlerName?: string;
+      supplierHandle?: string; handlerUserId?: string; handlerHandle?: string; handlerName?: string;
     },
   ) => post<{ lot: Lot }>('/lots', body),
   updateLotDetails: (id: string, body: Partial<LotDetails>) =>
@@ -2374,9 +2444,21 @@ export const api = {
     request<DistributionLot>(`/me/service/distribution/${encodeURIComponent(id)}`),
   /** Name the people working a lot: who checks it, and who gets it out. */
   setCrew: (id: string, body: {
-    handlerUserId?: string | null; handlerName?: string; handlerContact?: string;
+    handlerUserId?: string | null; handlerHandle?: string | null; handlerName?: string; handlerContact?: string;
     handlerCity?: string; supplierUserId?: string | null; supplierHandle?: string | null;
+    /** Tick keys the seller hands each role, or null for the stock buttons. */
+    supplierButtons?: string[] | null; handlerButtons?: string[] | null;
+    handlerSeesPayment?: boolean; readyGate?: boolean;
   }) => post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/crew`, body),
+  /** People to tag on a lot, by name or handle. Never shops. */
+  suggestPeople: (q: string) =>
+    request<{ people: { id: string; name: string; handle: string }[] }>(`/people/suggest?q=${encodeURIComponent(q)}`),
+  addOrderPhoto: (orderId: string, dataUrl: string) =>
+    post<{ photo: OrderPhoto; photos: OrderPhoto[] }>(`/orders/${encodeURIComponent(orderId)}/photos`, { dataUrl }),
+  showOrderPhoto: (orderId: string, photoId: string, showTo: PhotoAudience[]) =>
+    post<{ photos: OrderPhoto[] }>(`/orders/${encodeURIComponent(orderId)}/photos/${encodeURIComponent(photoId)}`, { showTo }),
+  removeOrderPhoto: (orderId: string, photoId: string) =>
+    post<{ photos: OrderPhoto[] }>(`/orders/${encodeURIComponent(orderId)}/photos/${encodeURIComponent(photoId)}`, { remove: true }),
 
   routes: () => request<RoutesResponse>('/routes'),
   saveRoute: (body: {
@@ -2549,6 +2631,9 @@ export const api = {
       `/lots/${encodeURIComponent(id)}/board${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
     ),
   /** `checkpoint` is one of the seven, or `custom:<step id>` for a route's own button. */
+  /** A message from the shop: these orders are ready to go out once the balance is paid. */
+  paymentReminder: (orderIds: string[]) =>
+    post<{ sent: true; via: 'message' | 'bell'; thread: string | null }>('/orders/payment-reminder', { orderIds }),
   setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
     /** The courier and AWB with a dispatch; `label`, where an item with no lot was received. */
     shipment?: { courier?: string; awb?: string; label?: string }, undoOf?: string) =>
@@ -2648,9 +2733,13 @@ export const api = {
     post<{ calc: SavedCalc; calcs: SavedCalc[] }>(`/me/calcs/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, calc),
   deleteCalc: (id: string, storeId?: string) =>
     post<{ calcs: SavedCalc[] }>(`/me/calcs/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
-  restoreCostSheet: (listingId: string, storeId?: string) =>
-    post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
-      `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { restore: true }),
+  saveOrderCosts: (orderId: string, steps: CostStep[] | null, storeId?: string) =>
+    post<{ orderId: string; own: boolean; steps: CostStep[] }>(
+      `/me/orders/${encodeURIComponent(orderId)}/costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { steps }),
+  /** Several orders' costs at once - a split supplier payment, an undo. `steps: null` is back to the item's. */
+  saveOrderCostsBatch: (changes: { orderId: string; steps: CostStep[] | null }[], storeId?: string) =>
+    post<{ rows: { orderId: string; own: boolean; steps: CostStep[] }[] }>(
+      `/me/order-costs${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { changes }),
   saveCostSheet: (listingId: string, sheet: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null, storeId?: string) =>
     post<{ listingId: string; sheet: ItemCostSheet | null; costMinor: number }>(
       `/me/listings/${encodeURIComponent(listingId)}/cost-sheet${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { sheet }),

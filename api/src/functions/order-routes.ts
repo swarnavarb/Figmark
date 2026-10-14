@@ -30,7 +30,7 @@ import { availableManagers, bringUpToDate, managerName, pickManager, quoteFee, r
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
-import { adjustHeldCredit, heldCreditMinor, placeOrder, returnKeptCredit } from './placement.js';
+import { adjustHeldCredit, heldCreditMinor, placeOrder, repriceCheckout, returnKeptCredit, unavailableReason } from './placement.js';
 import { error, handler, json } from './http.js';
 import { ownPhotos } from '../storage/index.js';
 import { claimPhotos } from '../storage/release.js';
@@ -136,6 +136,13 @@ function dueAfterCredit(order: Order, planMinor: number): number {
 /** Settles an order whose protection window ran out, on the read that notices it. */
 const settle = (order: Order, repository: Repo): Promise<Order> => settleDue(order, repository);
 
+/** A client's idempotency key, if it sent a usable one. */
+function idempotencyKey(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const key = raw.trim();
+  return key && key.length <= 128 ? key : null;
+}
+
 /**
  * POST /api/orders/{id}/pay - the buyer pays, with or without protection.
  *
@@ -156,13 +163,22 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
-  let body: { protection?: boolean; plan?: 'full' | 'advance' };
+  let body: { protection?: boolean; plan?: 'full' | 'advance'; idempotencyKey?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     // Paying without a body is paying without protection. Explicit is better,
     // but a missing body must not become an accidental purchase of it.
     body = {};
+  }
+
+  // A retry of a payment that already went through gets the same answer, not
+  // a second payment and a second protection fee. Two copies racing each
+  // other are settled by the checked write below: both change the same
+  // fields, so the second is refused rather than merged.
+  const payKey = idempotencyKey(request.headers.get('idempotency-key') ?? body.idempotencyKey);
+  if (payKey && order.payKey === payKey && order.buyerId === user.id) {
+    return json(200, { order, simulatedPayment: true, replayed: true });
   }
 
   if (!actionsFor(order, user.id).includes('pay')) {
@@ -182,7 +198,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
 
   // Choosing to pay is what makes a checkout an order the seller sees.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id);
-  if (refusal) return error(409, 'unavailable', refusal);
+  if (refusal) return error(409, refusal.code, refusal.message);
 
   const now = new Date().toISOString();
   const totalMinor = orderTotalMinor(order);
@@ -193,6 +209,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   order.updatedAt = now;
   order.paymentPlan = terms.plan;
   order.paymentMethod = protect ? 'protected' : 'direct';
+  order.payKey = payKey;
 
   // Worked out now, charged only once the order is saved: of two payments made
   // at the same moment, the one that loses the write must not have paid for
@@ -280,6 +297,16 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
+  // A cart item is priced and checked against the item as it is now, not as
+  // it was when Buy was pressed: the seller may have repriced it, sold the
+  // last one or taken it down since.
+  let unavailable: string | null = null;
+  if (order.placedAt === null) {
+    const listing = await repository.getListing(order.listingId);
+    unavailable = unavailableReason(listing, order);
+    if (listing) await repriceCheckout(repository, order, listing);
+  }
+
   const seller = await repository.getUserById(order.sellerId);
   const totalMinor = orderTotalMinor(order);
 
@@ -288,6 +315,12 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     itemMinor: totalMinor,
+    /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
+    unavailable,
+    /** The item's price, for this quantity, when Buy was pressed and now - when the two differ. */
+    priceChange: order.placedAt === null && order.priceChange
+      ? { fromMinor: order.priceChange.fromMinor * order.quantity, toMinor: order.priceChange.toMinor * order.quantity }
+      : null,
     /** Credit this seller kept for this buyer, spent on the order the moment it is placed. */
     creditMinor: Math.min(totalMinor, await heldCreditMinor(repository, order)),
     /** Null when the seller does not take an advance on this item. */
@@ -671,7 +704,7 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
 
   // The claim itself tells the seller, so placing stays quiet.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id, { tellSeller: false });
-  if (refusal) return error(409, 'unavailable', refusal);
+  if (refusal) return error(409, refusal.code, refusal.message);
   if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
   const now = new Date().toISOString();
@@ -2314,7 +2347,7 @@ async function bookOrder(request: HttpRequest, _context: InvocationContext) {
   const refusal = await placeOrder(repository, order, 'booked', user.id);
   if (refusal) {
     order.bookingOnly = false;
-    return error(409, 'unavailable', refusal);
+    return error(409, refusal.code, refusal.message);
   }
 
   order.updatedAt = new Date().toISOString();

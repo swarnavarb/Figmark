@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { CHECKPOINT_COUNT_LABELS, type OrderCheckpoint } from '@shared/enums';
 import { countOf } from '@shared/board';
-import {
-  CREW_CHECKPOINTS, ENTRY_NOTE, SERVICES, SERVICE_ORDER,
-  type CrewRole, type ServiceKind,
-} from '@shared/services';
+import { CREW_CHECKPOINTS, SERVICES, type CrewRole } from '@shared/services';
 import type { StoreStatus } from '@shared/models';
-import { STORE_KIND_LABELS, type StoreKind } from '@shared/service-stores';
+import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, type StoreKind } from '@shared/service-stores';
 import {
   ApiRequestError,
   api,
@@ -18,41 +15,29 @@ import {
   type MyServicesView,
   type MyStoreRow,
   type ProviderCard,
-  type ServicesHub,
 } from '../api';
+import { formatMoney } from '../format';
 import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName } from '../components/ui';
 import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
+import { ConditionTag } from '../components/ConditionTag';
 
 /**
  * The trades around the trade.
  *
- * A lot of figures reaches a buyer in Kochi because different people each did
- * one job: somebody checked the pieces in Guangzhou, somebody flew the crate,
- * and somebody took delivery in Mumbai and broke it into fifteen parcels. Those
- * jobs were already in here - a forwarder directory, a packing list - but only
- * ever as something a seller reached into from their own console. The people
- * doing the work had no door of their own.
+ * Two halves. At the top, one door - My services - for everybody: whatever a
+ * person does for somebody else on Figmark is behind it, and if they do
+ * nothing yet it says so. Under it, the services anyone can hire, each in its
+ * own colours: the freight forwarders who fly a lot, and the artists who make a
+ * piece one of a kind.
  *
- * This is that door, on the bar, next to the two it sits between: you buy, you
- * sell, and this is everyone who makes the middle of it happen. Whoever does
- * one of these jobs finds their own work first, above the directory.
+ * Suppliers and domestic handlers have no list here. A shop names them on a
+ * lot, under Crew, and the lot turns up under that person's My services.
  */
 export function ServicesPage() {
   const { user } = useSession();
-  const [hub, setHub] = useState<ServicesHub | null>(null);
   const [mine, setMine] = useState<MyServicesView | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void api
-      .services()
-      .then(setHub)
-      .catch((err: unknown) =>
-        setError(err instanceof ApiRequestError ? err.message : 'Could not load the services.'),
-      );
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -65,36 +50,359 @@ export function ServicesPage() {
         <div>
           <h1>Services</h1>
           <p className="muted">
-            The people around the trade. Someone checks the goods, someone flies them, someone gets
-            them to the door — and someone makes it one of a kind.
+            The people around the trade — who flies the crate, and who makes the piece one of a kind.
           </p>
         </div>
       </div>
 
-      {error && <ErrorNotice message={error} />}
-
-      {/* Whoever provides one is here to work, not to browse. Their door goes
-          above the directory rather than under it. */}
-      <MyServicesStrip mine={mine} signedIn={Boolean(user)} />
+      <MyServicesButton mine={mine} signedIn={Boolean(user)} />
 
       <h2 className="ms-section">Find a service</h2>
-      <div className="ms-cats">
-        {(hub?.categories ?? SERVICE_ORDER.map((kind) => ({ ...SERVICES[kind], count: null }))).map(
-          (category) => (
-            <Link key={category.kind} to={`/services/${category.kind}`} className={`ms-cat ms-cat--${category.kind}`}>
-              <span className="ms-cat__glyph"><Icon name={category.icon} size={22} /></span>
-              <span className="ms-cat__name">{category.plural}</span>
-              <span className="ms-cat__blurb">{category.blurb}</span>
-              {/* No count where there is no list: "0 suppliers" would be a
-                  lie about a category that deliberately has no roster. */}
-              <span className="ms-cat__count">
-                {category.count !== null ? `${category.count} on Figmark` : 'Named per lot'}
-              </span>
-            </Link>
-          ),
-        )}
+      <div className="svx-stack">
+        <ServiceTile kind="forwarder" mine={mine} />
+        <ServiceTile kind="artist" mine={mine} />
       </div>
     </main>
+  );
+}
+
+/** Whether this person has anything at all behind My services. */
+function enrolled(mine: MyServicesView | null): boolean {
+  return Boolean(mine && (mine.stores.length > 0 || mine.crew.length > 0 || mine.communityManager));
+}
+
+/** The one door at the top of the tab, the same for everybody. */
+function MyServicesButton({ mine, signedIn }: { mine: MyServicesView | null; signedIn: boolean }) {
+  const waiting = (mine?.stores ?? []).reduce((sum, row) => sum + row.waiting, 0)
+    + (mine?.crew ?? []).filter((row) => row.toPress > 0).length;
+  const line = !signedIn
+    ? 'Sign in to see the work you do for others'
+    : mine === null
+      ? 'Loading…'
+      : !enrolled(mine)
+        ? 'You’re not enrolled in any services'
+        : waiting > 0
+          ? `${waiting} waiting on you`
+          : `${countOf3(mine)} · all caught up`;
+  return (
+    <Link to="/services/mine" className="svx-mine">
+      <span className="svx-mine__icon" aria-hidden="true"><Icon name="users" size={20} /></span>
+      <span className="svx-mine__body">
+        <span className="svx-mine__title">My services</span>
+        <span className="svx-mine__line">{line}</span>
+      </span>
+      {waiting > 0 && <span className="svx-mine__ping">{waiting}</span>}
+      <Icon name="right" size={18} className="svx-mine__go" />
+    </Link>
+  );
+}
+
+/** "2 stores, 3 lots", for the line under the button. */
+function countOf3(mine: MyServicesView): string {
+  const parts: string[] = [];
+  if (mine.stores.length) parts.push(`${mine.stores.length} ${mine.stores.length === 1 ? 'store' : 'stores'}`);
+  if (mine.crew.length) parts.push(`${mine.crew.length} ${mine.crew.length === 1 ? 'lot' : 'lots'}`);
+  if (mine.communityManager) parts.push('Community Service');
+  return parts.join(', ');
+}
+
+/* ── One service, in its own colours ───────────────────────────────────── */
+
+const THEME: Record<StoreKind, { eyebrow: string; title: string; line: string; icon: IconName; apply: string }> = {
+  forwarder: {
+    eyebrow: 'Cargo · China → India',
+    title: 'Freight forwarders',
+    line: 'They consolidate the crate, fly or ship it, and clear customs at both ends. Pick by lane, rate and transit.',
+    icon: 'plane',
+    apply: 'Apply as a freight forwarder',
+  },
+  artist: {
+    eyebrow: 'Studio · Customs & repaints',
+    title: 'Artists',
+    line: 'Painters, sculptors and restorers who work on figures — a repaint, a custom head, a broken part made good.',
+    icon: 'spark',
+    apply: 'Apply as an artist',
+  },
+};
+
+/** Who offers one service, refetched as the filter changes. */
+function useProviders(kind: StoreKind, query = '') {
+  const [providers, setProviders] = useState<ProviderCard[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void api
+        .serviceDirectory(kind, query || undefined)
+        .then((result) => !cancelled && setProviders(result.providers))
+        .catch((err: unknown) => {
+          if (!cancelled) setError(err instanceof ApiRequestError ? err.message : 'Could not load that list.');
+        });
+    }, query ? 180 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [kind, query]);
+
+  return { providers, error };
+}
+
+/**
+ * One service on the tab, as a door: its colours, what it is, a glimpse of
+ * who offers it - and the whole tile opens the list. Apply stays under ⋯.
+ */
+function ServiceTile({ kind, mine }: { kind: StoreKind; mine: MyServicesView | null }) {
+  const theme = THEME[kind];
+  const { providers } = useProviders(kind);
+  const faces = (providers ?? []).slice(0, 4);
+  const others = (providers?.length ?? 0) - faces.length;
+  return (
+    <section className={`svx svx--${kind} svx--tile`} aria-label={theme.title}>
+      <header className="svx__hero">
+        <span className="svx__art" aria-hidden="true">{kind === 'forwarder' ? <FlightArt /> : <StudioArt />}</span>
+        <span className="svx__mark" aria-hidden="true"><Icon name={theme.icon} size={22} /></span>
+        <div className="svx__text">
+          <span className="svx__eyebrow">{theme.eyebrow}</span>
+          <h3 className="svx__title">
+            {/* Stretched over the whole tile, so anywhere on it opens the list. */}
+            <Link to={`/services/${kind}`} className="svx__open">{theme.title}</Link>
+          </h3>
+          <p className="svx__line">{theme.line}</p>
+        </div>
+        <ApplyMenu kind={kind} mine={mine} />
+      </header>
+      <div className="svx__foot">
+        <span className="svx__faces" aria-hidden="true">
+          {faces.map((provider) => (
+            <span key={provider.userId} className="svx__face">
+              <StoreMark name={provider.name} logoUrl={provider.logoUrl ?? null} accent={provider.accent ?? undefined} size={30} />
+            </span>
+          ))}
+          {others > 0 && <span className="svx__face svx__face--more">+{others}</span>}
+        </span>
+        <span className="svx__count">
+          {providers === null ? 'Loading…' : providers.length === 0 ? 'Nobody yet' : `${providers.length} on Figmark`}
+        </span>
+        <span className="svx__go">Explore <Icon name="right" size={15} /></span>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A service's own page: the banner at full size, a filter, and everyone
+ * offering it, each with a More to their store.
+ */
+function ServiceSection({ kind, mine }: { kind: StoreKind; mine: MyServicesView | null }) {
+  const theme = THEME[kind];
+  const [query, setQuery] = useState('');
+  const { providers, error } = useProviders(kind, query);
+
+  return (
+    <section className={`svx svx--${kind} svx--page`} aria-label={theme.title}>
+      <header className="svx__hero">
+        <span className="svx__art" aria-hidden="true">{kind === 'forwarder' ? <FlightArt /> : <StudioArt />}</span>
+        <span className="svx__mark" aria-hidden="true"><Icon name={theme.icon} size={26} /></span>
+        <div className="svx__text">
+          <span className="svx__eyebrow">{theme.eyebrow}</span>
+          <h1 className="svx__title">{theme.title}</h1>
+          <p className="svx__line">{theme.line}</p>
+          <span className="svx__count">
+            {providers === null ? '…' : `${providers.length} ${query ? 'matching' : 'on Figmark'}`}
+          </span>
+        </div>
+        <ApplyMenu kind={kind} mine={mine} />
+      </header>
+
+      <div className="svx__body">
+        <div className="search svx__search">
+          <span className="search__icon"><Icon name="search" /></span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)}
+            placeholder={kind === 'forwarder' ? 'Filter by route — Guangzhou, Mumbai…' : 'Filter by style — repaint, sculpt…'}
+            aria-label={`Filter ${theme.title}`} />
+        </div>
+
+        {error && <ErrorNotice message={error} />}
+
+        {providers === null ? (
+          <div className="svx__list" aria-hidden="true">
+            {[0, 1].map((key) => <div key={key} className="svx-card svx-card--ghost skel" />)}
+          </div>
+        ) : providers.length === 0 ? (
+          <p className="svx__empty">
+            {query ? 'Nobody matches that. Try another city or style.' : `No ${theme.title.toLowerCase()} yet — be the first: apply from the ⋯ menu.`}
+          </p>
+        ) : (
+          <div className="svx__list">
+            {providers.map((provider, index) => (
+              // Each card rises in a beat after the one before it.
+              <div key={provider.userId} className="svx__item" style={{ '--i': Math.min(index, 8) } as CSSProperties}>
+                {kind === 'forwarder' ? <ForwarderCard provider={provider} /> : <ArtistCard provider={provider} />}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** The ⋯ on a service's banner: apply, or carry on with an application or a store. */
+function ApplyMenu({ kind, mine }: { kind: StoreKind; mine: MyServicesView | null }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement | null>(null);
+  const status: StoreStatus | null = mine?.own[kind] ?? null;
+  const own = mine?.stores.find((row) => row.kind === kind && row.isOwner) ?? null;
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (box.current && !box.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+
+  const live = status === 'approved' || status === 'suspended';
+  const target = live ? `/services/store/${kind}/${own?.ownerId ?? ''}` : `/services/apply/${kind}`;
+  const label = status === null ? THEME[kind].apply
+    : live ? 'Open your store console'
+      : status === 'pending' ? 'View your application'
+        : status === 'changes' ? 'Fix and resend your application'
+          : status === 'rejected' ? 'Edit and reapply' : 'View your store';
+
+  return (
+    <div className="svx__menuwrap" ref={box}>
+      <button type="button" className="svx__more" aria-label={`More for ${THEME[kind].title}`}
+        aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name="more" size={18} />
+      </button>
+      {open && (
+        <div className="spost__menu" role="menu">
+          <Link role="menuitem" to={target} onClick={() => setOpen(false)}>
+            <Icon name={live ? 'external' : 'compose'} size={15} /> {label}
+          </Link>
+          {status && !live && <span className="svx__menunote"><StatusPill status={status} /></span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The store's own name and mark, linking to its page. */
+function CardHead({ provider, kind }: { provider: ProviderCard; kind: StoreKind }) {
+  return (
+    <div className="svx-card__head">
+      <StoreMark name={provider.name} logoUrl={provider.logoUrl ?? null} accent={provider.accent ?? undefined} size={44} />
+      <span className="svx-card__who">
+        <span className="svx-card__name">{provider.name}</span>
+        <span className="svx-card__sub">
+          {[provider.tagline, provider.place].filter(Boolean).join(' · ') || SERVICES[kind].label}
+        </span>
+      </span>
+      {provider.trustScore !== null && (provider.completed ?? 0) > 0 ? (
+        <span className="svx-card__trust"><TrustBadge score={provider.trustScore} /><span>{provider.completed} done</span></span>
+      ) : (
+        <span className="svx-card__new">New</span>
+      )}
+    </div>
+  );
+}
+
+/** A forwarder as a shop chooses one: the lanes, how long, how much a kilo. */
+function ForwarderCard({ provider }: { provider: ProviderCard }) {
+  const lanes = provider.lanes ?? [];
+  const extra = lanes.length - 3;
+  const href = provider.slug ? `/services/forwarder/${provider.slug}` : null;
+  return (
+    <article className="svx-card" style={accentStyle(provider.accent ?? 'aqua')}>
+      <CardHead provider={provider} kind="forwarder" />
+      {lanes.length === 0 ? (
+        <span className="svx-card__note">Routes on request</span>
+      ) : (
+        <ul className="svx-lanes" aria-label="Routes">
+          {lanes.slice(0, 3).map((lane, index) => (
+            <li key={`${lane.from}-${lane.to}-${index}`} className="svx-lane">
+              <span className="svx-lane__ends">
+                <b>{lane.from || '?'}</b>
+                <span className="svx-lane__path" aria-hidden="true">
+                  <span>{lane.mode ? FREIGHT_MODE_LABELS[lane.mode].glyph : '✈'}</span>
+                </span>
+                <b>{lane.to || '?'}</b>
+              </span>
+              <span className="svx-lane__facts">
+                {lane.mode && <span>{FREIGHT_MODE_LABELS[lane.mode].label}</span>}
+                <span>{lane.days}</span>
+                {lane.ratePerKgMinor > 0 && <span className="svx-lane__rate">{formatMoney(lane.ratePerKgMinor, 'INR')}/kg</span>}
+              </span>
+            </li>
+          ))}
+          {extra > 0 && <li className="svx-lanes__more">+{extra} more {extra === 1 ? 'route' : 'routes'}</li>}
+        </ul>
+      )}
+      <div className="svx-card__foot">
+        {provider.handle && <Link to={`/messages/${provider.handle}`} className="btn btn--quiet btn--sm">Message</Link>}
+        {href && <Link to={href} className="btn btn--sm svx-card__more">More <Icon name="right" size={13} /></Link>}
+      </div>
+    </article>
+  );
+}
+
+/** An artist as a buyer chooses one: what they do, a few pieces, where prices start. */
+function ArtistCard({ provider }: { provider: ProviderCard }) {
+  const pieces = provider.portfolio ?? [];
+  const href = provider.slug ? `/services/artist/${provider.slug}` : null;
+  return (
+    <article className="svx-card" style={accentStyle(provider.accent ?? 'pink')}>
+      <CardHead provider={provider} kind="artist" />
+      {pieces.length > 0 && (
+        <div className="svx-gallery">
+          {pieces.slice(0, 4).map((url) => (
+            <span key={url} className="svx-gallery__pic">
+              {/* A piece that will not load leaves an empty frame, not a broken picture. */}
+              <img src={url} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.visibility = 'hidden'; }} />
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="svx-tags">
+        {(provider.specialties ?? []).slice(0, 4).map((tag) => <span key={tag} className="svx-tag">{tag}</span>)}
+        {provider.acceptingWork === false && <span className="svx-tag svx-tag--off">Not taking work</span>}
+      </div>
+      <div className="svx-card__foot">
+        {provider.fromMinor ? <span className="svx-card__from">from <b>{formatMoney(provider.fromMinor, 'INR')}</b></span> : <span />}
+        {href && <Link to={href} className="btn btn--sm svx-card__more">More <Icon name="right" size={13} /></Link>}
+      </div>
+    </article>
+  );
+}
+
+/** A dotted flight path over the forwarders' banner, with a plane flying it. */
+function FlightArt() {
+  return (
+    <svg viewBox="0 0 220 120" fill="none">
+      <path className="svx-art__route" d="M8 104C60 96 92 28 212 14" stroke="currentColor" strokeWidth="2" strokeDasharray="3 7" strokeLinecap="round" />
+      <circle cx="8" cy="104" r="4" fill="currentColor" />
+      <circle className="svx-art__ping" cx="212" cy="14" r="4" fill="currentColor" />
+      <g className="svx-art__plane">
+        <path d="M-7 0 7 0M2-5 7 0 2 5M-4 0-7-4M-4 0-7 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <animateMotion dur="7s" repeatCount="indefinite" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline"
+          keySplines="0.45 0 0.55 1" path="M8 104C60 96 92 28 212 14" />
+      </g>
+    </svg>
+  );
+}
+
+/** Brush strokes over the artists' banner, painted on and lifted off. */
+function StudioArt() {
+  return (
+    <svg viewBox="0 0 220 120" fill="none">
+      <path className="svx-art__stroke" pathLength={1} d="M20 90c30-30 60 20 90-10s50-50 90-30" stroke="currentColor" strokeWidth="10" strokeLinecap="round" opacity="0.5" />
+      <path className="svx-art__stroke svx-art__stroke--two" pathLength={1} d="M60 110c20-14 50-6 70-20" stroke="currentColor" strokeWidth="6" strokeLinecap="round" opacity="0.35" />
+      <circle className="svx-art__drop" cx="186" cy="30" r="9" fill="currentColor" opacity="0.6" />
+    </svg>
   );
 }
 
@@ -104,70 +412,6 @@ const ROLE_COPY: Record<CrewRole, { label: string; icon: IconName }> = {
   forwarder: { label: 'Forwarder', icon: 'plane' },
 };
 
-/** The top of the Services tab: your own work, or the invitation to do some. */
-function MyServicesStrip({ mine, signedIn }: { mine: MyServicesView | null; signedIn: boolean }) {
-  const roles = mine ? mine.stores.length + new Set(mine.crew.map((row) => `${row.role}`)).size : 0;
-  if (!signedIn || (mine && roles === 0 && !mine.communityManager)) {
-    return (
-      <Link to="/services/mine" className="ms-invite">
-        <span className="ms-invite__glow" aria-hidden="true" />
-        <span className="ms-invite__eyebrow">My services</span>
-        <span className="ms-invite__title">Run a service store on Figmark</span>
-        <span className="ms-invite__line">
-          Fly lots for shops as a freight forwarder, or take commissions as an artist. Apply once —
-          we review it and open your store.
-        </span>
-        <span className="ms-invite__chips">
-          <span className="ms-chip ms-chip--aqua"><Icon name="plane" size={14} /> Forwarding company</span>
-          <span className="ms-chip ms-chip--pink"><Icon name="spark" size={14} /> Artist studio</span>
-        </span>
-      </Link>
-    );
-  }
-  const waiting = (mine?.stores ?? []).reduce((sum, row) => sum + row.waiting, 0)
-    + (mine?.crew ?? []).reduce((sum, row) => sum + (row.toPress > 0 ? 1 : 0), 0);
-  return (
-    <section className="ms-strip" aria-label="My services">
-      <Link to="/services/mine" className="ms-strip__head">
-        <span>
-          <span className="ms-strip__title">My services</span>
-          <span className="faint">
-            {mine === null ? 'Loading…' : waiting > 0 ? `${waiting} waiting on you` : 'All caught up'}
-          </span>
-        </span>
-        <span className="ms-strip__go">Open <Icon name="right" size={14} /></span>
-      </Link>
-      <div className="ms-strip__row">
-        {(mine?.stores ?? []).map((row) => (
-          <Link key={`${row.kind}-${row.ownerId}`} to={`/services/store/${row.kind}/${row.ownerId}`} className="ms-tile" style={accentStyle(row.accent)}>
-            <StoreMark name={row.name} logoUrl={row.logoUrl} accent={row.accent} size={36} />
-            <span className="ms-tile__name">{row.name}</span>
-            <span className="ms-tile__meta">{STORE_KIND_LABELS[row.kind].store}</span>
-            {row.status === 'approved'
-              ? row.waiting > 0 && <span className="ms-tile__ping">{row.waiting}</span>
-              : <StatusPill status={row.status} />}
-          </Link>
-        ))}
-        {groupCrew(mine?.crew ?? []).map(({ role, rows }) => (
-          <Link key={role} to="/services/mine" className="ms-tile">
-            <span className="ms-tile__icon"><Icon name={ROLE_COPY[role].icon} size={18} /></span>
-            <span className="ms-tile__name">{ROLE_COPY[role].label}</span>
-            <span className="ms-tile__meta">{rows.length} {rows.length === 1 ? 'lot' : 'lots'}</span>
-            {rows.some((row) => row.toPress > 0) && <span className="ms-tile__ping">{rows.filter((row) => row.toPress > 0).length}</span>}
-          </Link>
-        ))}
-        {mine?.communityManager && (
-          <Link to="/community-service" className="ms-tile">
-            <span className="ms-tile__icon"><Icon name="users" size={18} /></span>
-            <span className="ms-tile__name">Community Service</span>
-            <span className="ms-tile__meta">My job · disputes</span>
-          </Link>
-        )}
-      </div>
-    </section>
-  );
-}
-
 function groupCrew(rows: CrewRow[]): { role: CrewRole; rows: CrewRow[] }[] {
   const order: CrewRole[] = ['supplier', 'forwarder', 'handler'];
   return order.map((role) => ({ role, rows: rows.filter((row) => row.role === role) })).filter((group) => group.rows.length > 0);
@@ -175,140 +419,24 @@ function groupCrew(rows: CrewRow[]): { role: CrewRole; rows: CrewRow[] }[] {
 
 /* ── One category ───────────────────────────────────────────────────────── */
 
-/**
- * Everyone who offers one service.
- *
- * The text comes from the shared register rather than the response, so the
- * private category can explain itself without asking the API for a list it is
- * never going to hand over.
- */
+/** Everyone offering one of the two services anyone can hire, with a filter. */
 export function ServiceDirectoryPage() {
   const { kind } = useParams<{ kind: string }>();
-  const meta = kind && kind in SERVICES ? SERVICES[kind as ServiceKind] : null;
-
-  const [providers, setProviders] = useState<ProviderCard[] | null>(null);
-  const [query, setQuery] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const { user } = useSession();
+  const [mine, setMine] = useState<MyServicesView | null>(null);
 
   useEffect(() => {
-    if (!meta?.browsable) return;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void api
-        .serviceDirectory(meta.kind, query || undefined)
-        .then((result) => !cancelled && setProviders(result.providers))
-        .catch((err: unknown) => {
-          if (!cancelled) {
-            setError(err instanceof ApiRequestError ? err.message : 'Could not load that list.');
-          }
-        });
-    }, 180);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [meta, query]);
+    if (!user) return;
+    void api.myServices().then(setMine).catch(() => setMine(null));
+  }, [user]);
 
-  if (!meta) {
-    return (
-      <main className="page">
-        <EmptyState icon="◌" title="No such service">
-          <Link to="/services">Back to services</Link>
-        </EmptyState>
-      </main>
-    );
-  }
+  // Suppliers and handlers are named on a lot, not picked from a list.
+  if (kind !== 'forwarder' && kind !== 'artist') return <Navigate to="/services" replace />;
 
   return (
     <main className="page">
       <BackLink to="/services">← Services</BackLink>
-      <div className="page__head">
-        <div>
-          <h1>{meta.plural}</h1>
-          <p className="muted">{meta.detail}</p>
-        </div>
-      </div>
-
-      <div className="note-row" style={{ marginBottom: 16 }}>
-        <div style={{ minWidth: 0 }}>
-          <span className="card__title"><Icon name={meta.icon} size={15} /> How you become one</span>
-          <span className="faint">{ENTRY_NOTE[meta.entry]}</span>
-        </div>
-      </div>
-
-      {!meta.browsable ? (
-        <EmptyState icon="🔒" title="There is no list">
-          {meta.plural} are named by a shop on one lot, so nobody is on offer here. If a shop has
-          named you, the lot is waiting under My services.
-        </EmptyState>
-      ) : (
-        <>
-          <div className="search" style={{ maxWidth: 380, marginBottom: 18 }}>
-            <span className="search__icon"><Icon name="search" /></span>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={
-                meta.kind === 'forwarder'
-                  ? 'Filter by route — Guangzhou, Mumbai…'
-                  : meta.kind === 'handler'
-                    ? 'Filter by city or name…'
-                    : meta.kind === 'artist'
-                      ? 'Filter by style — repaint, sculpt…'
-                      : 'Filter by name…'
-              }
-              aria-label={`Filter ${meta.plural}`}
-            />
-          </div>
-
-          {error && <ErrorNotice message={error} />}
-
-          {providers === null ? (
-            <p className="muted">Loading…</p>
-          ) : providers.length === 0 ? (
-            <EmptyState icon={<Icon name={meta.icon} size={26} />} title="Nobody here yet">
-              {query ? 'Try a different city or name.' : ENTRY_NOTE[meta.entry]}
-            </EmptyState>
-          ) : (
-            <div className="stack">
-              {providers.map((provider) => (
-                <article key={provider.userId} className="provider">
-                  <div className="provider__top">
-                    {provider.slug && (meta.kind === 'forwarder' || meta.kind === 'artist') ? (
-                      <Link to={`/services/${meta.kind}/${provider.slug}`} className="provider__name provider__name--store">
-                        <StoreMark name={provider.name} logoUrl={provider.logoUrl} accent={provider.accent} size={34} />
-                        <span>{provider.name}{provider.tagline && <span className="faint provider__tag">{provider.tagline}</span>}</span>
-                      </Link>
-                    ) : provider.handle ? (
-                      <Link to={`/${provider.handle}`} className="provider__name">{provider.name}</Link>
-                    ) : (
-                      <span className="provider__name">{provider.name}</span>
-                    )}
-                    {provider.trustScore !== null && (
-                      <span className="provider__trust">
-                        <TrustBadge score={provider.trustScore} />
-                        {/* The count behind the score, so a new entry reads as
-                            new rather than as bad. */}
-                        <span className="faint">{provider.completed ?? 0} done</span>
-                      </span>
-                    )}
-                  </div>
-                  <span className="faint">{provider.line}</span>
-                  {provider.description && <p className="provider__note">{provider.description}</p>}
-                  <div className="provider__foot">
-                    {provider.contact && <span className="faint">{provider.contact}</span>}
-                    {provider.handle && (
-                      <Link to={`/messages/${provider.handle}`} className="btn btn--quiet btn--sm">
-                        Message
-                      </Link>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+      <ServiceSection key={kind} kind={kind} mine={mine} />
     </main>
   );
 }
@@ -318,17 +446,14 @@ export function ServiceDirectoryPage() {
 /**
  * Everything this person does for somebody else, on one screen.
  *
- * Three ways in, and they are genuinely different: a store you applied for
- * and run with a team; a lot a shop named you on, with the buttons its route
- * handed you; and the open handler list. Each gets its own block, busiest
- * first, and the invitation to open a store sits under the work rather than
- * over it.
+ * The stores they run or help run, and the lots a shop named them on - each
+ * under the job they were named for. Nothing else: somebody with none of it is
+ * told so, and where to apply.
  */
 export function MyServicesPage() {
   const { user } = useSession();
   const [mine, setMine] = useState<MyServicesView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [offering, setOffering] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -345,14 +470,13 @@ export function MyServicesPage() {
   if (!user) {
     return (
       <main className="page">
-        <EmptyState icon="◍" title="Sign in to offer a service">
+        <BackLink to="/services">← Services</BackLink>
+        <EmptyState icon="◍" title="Sign in to see your services">
           <Link to="/" className="btn">Sign in</Link>
         </EmptyState>
       </main>
     );
   }
-
-  const owned = (kind: StoreKind) => mine?.stores.find((row) => row.kind === kind && row.isOwner) ?? null;
 
   return (
     <main className="page">
@@ -360,14 +484,20 @@ export function MyServicesPage() {
       <div className="page__head">
         <div>
           <h1>My services</h1>
-          <p className="muted">The stores you run, and the lots other shops have handed you.</p>
+          <p className="muted">The stores you run, and the lots shops have named you on.</p>
         </div>
       </div>
 
       {error && <ErrorNotice message={error} />}
 
       {mine === null ? (
-        <p className="muted">Loading…</p>
+        !error && <p className="muted">Loading…</p>
+      ) : !enrolled(mine) ? (
+        <EmptyState icon={<Icon name="users" size={26} />} title="You’re not enrolled in any services">
+          When a shop names you on a lot — as its supplier or handler — the lot appears here. To run
+          a forwarding company or an artist studio, apply from the ⋯ menu on{' '}
+          <Link to="/services/forwarder">Freight forwarders</Link> or <Link to="/services/artist">Artists</Link>.
+        </EmptyState>
       ) : (
         <div className="stack ms-page">
           {mine.stores.length > 0 && (
@@ -377,48 +507,18 @@ export function MyServicesPage() {
             </section>
           )}
 
-          {mine.crew.length > 0 && (
-            <section className="stack">
-              <h2 className="ms-section">Lots you work on</h2>
-              {groupCrew(mine.crew).map(({ role, rows }) => (
-                <div key={role} className="stack ms-crew-group">
-                  <span className="ms-role">
-                    <Icon name={ROLE_COPY[role].icon} size={14} /> {ROLE_COPY[role].label}
-                  </span>
-                  {rows.map((row) => <CrewCard key={`${row.role}-${row.lot.id}`} row={row} />)}
-                </div>
-              ))}
+          {groupCrew(mine.crew).map(({ role, rows }) => (
+            <section key={role} className="stack ms-crew-group">
+              <h2 className="ms-section">
+                <Icon name={ROLE_COPY[role].icon} size={15} /> {ROLE_COPY[role].label}
+              </h2>
+              {rows.map((row) => <CrewCard key={`${row.role}-${row.lot.id}`} row={row} />)}
             </section>
-          )}
-
-          <section className="stack">
-            <h2 className="ms-section">Open a service store</h2>
-            <div className="ms-apply">
-              <ApplyCard kind="forwarder" row={owned('forwarder')} status={mine.own.forwarder} />
-              <ApplyCard kind="artist" row={owned('artist')} status={mine.own.artist} />
-            </div>
-          </section>
-
-          <section className="card card--pad stack">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div>
-                <h3>Domestic handling</h3>
-                <span className="field__hint">
-                  {mine.handler
-                    ? 'You are on the handler list. Shops name you on a lot and it appears above.'
-                    : 'Take delivery in India and get parcels out. Open to anyone — no store needed.'}
-                </span>
-              </div>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => setOffering(!offering)}>
-                {offering ? 'Close' : mine.handler ? 'Edit' : 'List me'}
-              </button>
-            </div>
-            {offering && <OfferForm onSaved={() => { setOffering(false); void load(); }} />}
-          </section>
+          ))}
 
           {/* Only for the people Figmark has appointed community managers. */}
           {mine.communityManager && (
-            <>
+            <section className="stack">
               <h2 className="ms-section">My job</h2>
               <Link to="/community-service" className="svc">
                 <span className="svc__glyph"><Icon name="users" size={22} /></span>
@@ -427,7 +527,7 @@ export function MyServicesPage() {
                   <span className="faint">Disputes waiting on your decision, held payments to release, and what you have earned.</span>
                 </span>
               </Link>
-            </>
+            </section>
           )}
         </div>
       )}
@@ -481,119 +581,10 @@ function CrewCard({ row }: { row: CrewRow }) {
           : row.buttons.map((label) => <span key={label} className="ms-btnchip">⚡ {label}</span>)}
       </span>
       <span className="ms-crew__stats">
-        <span><b>{row.items}</b> items</span>
-        {row.role === 'handler' && <span><b>{row.parcels}</b> parcels</span>}
+        <span><b>{row.items}</b> orders</span>
+        {row.role === 'handler' && <span><b>{row.parcels}</b> customers</span>}
       </span>
     </Link>
-  );
-}
-
-const APPLY_COPY: Record<StoreKind, { title: string; line: string; points: string[]; icon: IconName; accent: string }> = {
-  forwarder: {
-    title: 'Forwarding company',
-    line: 'Fly or ship lots for shops, sell transit cover to their buyers.',
-    points: ['Priced lanes shops book on a lot', 'Transit insurance buyers can add', 'Your team works the lots'],
-    icon: 'plane',
-    accent: 'aqua',
-  },
-  artist: {
-    title: 'Artist studio',
-    line: 'Take commissions on what people bought — repaints, customs, repairs.',
-    points: ['A menu with your prices', 'A portfolio on your store page', 'Paid held or direct, per job'],
-    icon: 'spark',
-    accent: 'pink',
-  },
-};
-
-function ApplyCard({ kind, row, status }: { kind: StoreKind; row: MyStoreRow | null; status: StoreStatus | null }) {
-  const copy = APPLY_COPY[kind];
-  const target = status === 'approved' || status === 'suspended'
-    ? `/services/store/${kind}/${row?.ownerId ?? ''}` : `/services/apply/${kind}`;
-  const action = status === null ? 'Apply' : status === 'approved' ? 'Open console'
-    : status === 'pending' ? 'View application' : status === 'changes' ? 'Fix and resend'
-      : status === 'rejected' ? 'Edit and reapply' : 'View store';
-  return (
-    <Link to={target} className={`ms-applycard ms-applycard--${kind}`} style={accentStyle(copy.accent)}>
-      <span className="ms-applycard__icon"><Icon name={copy.icon} size={22} /></span>
-      <span className="ms-applycard__title">{copy.title}</span>
-      <span className="ms-applycard__line">{copy.line}</span>
-      <ul className="ms-applycard__points">
-        {copy.points.map((point) => <li key={point}>{point}</li>)}
-      </ul>
-      <span className="ms-applycard__foot">
-        {status ? <StatusPill status={status} /> : <span className="faint">Reviewed by Figmark</span>}
-        <span className="ms-applycard__cta">{action} <Icon name="right" size={14} /></span>
-      </span>
-    </Link>
-  );
-}
-
-/** The open handler list: the one service you sign yourself up for. */
-function OfferForm({ onSaved }: { onSaved: () => void }) {
-  const [companyName, setCompanyName] = useState('');
-  const [description, setDescription] = useState('');
-  const [places, setPlaces] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
-  const [listed, setListed] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await api.offerService({
-        kind: 'handler',
-        companyName: companyName.trim() || undefined,
-        description: description.trim() || undefined,
-        places: places.split(',').map((part) => part.trim()).filter(Boolean),
-        contactPhone: contactPhone.trim() || undefined,
-        listed,
-      });
-      onSaved();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form className="stack" onSubmit={submit}>
-      {error && <ErrorNotice message={error} />}
-      <label className="field">
-        <span>Trading name</span>
-        <input value={companyName} onChange={(e) => setCompanyName(e.target.value)}
-          placeholder="Bombay Parcel Works" />
-      </label>
-      <label className="field">
-        <span>Cities you cover</span>
-        <input value={places} onChange={(e) => setPlaces(e.target.value)} placeholder="Mumbai, Pune" />
-        <span className="field__hint">Comma separated.</span>
-      </label>
-      <label className="field">
-        <span>What you do</span>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
-          placeholder="Take delivery, break the crate down, book the courier same day." />
-      </label>
-      <label className="field">
-        <span>Contact</span>
-        <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+91…" />
-      </label>
-      <label className="tick">
-        <input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} />
-        <span>
-          List me publicly
-          <span className="faint">
-            {' '}— off means shops can still name you, you just aren’t on the directory.
-          </span>
-        </span>
-      </label>
-      <button type="submit" className="btn" disabled={busy}>
-        {busy ? 'Saving…' : 'Save'}
-      </button>
-    </form>
   );
 }
 
@@ -625,7 +616,7 @@ export function ConsignmentsPage() {
       <div className="page__head">
         <div>
           <h1>Consigned to you</h1>
-          <p className="muted">Lots a shop has named you on. Weight and pieces, as loaded.</p>
+          <p className="muted">Lots a shop has named you on. Weight and orders, as loaded.</p>
         </div>
       </div>
 
@@ -649,7 +640,7 @@ export function ConsignmentsPage() {
                 {row.store.name} · {row.lot.origin || 'origin not set'}
               </span>
               <div className="jobcard__stats">
-                <span><b>{row.pieces}</b> pieces</span>
+                <span><b>{row.pieces}</b> orders</span>
                 <span><b>{(row.weightGrams / 1000).toFixed(1)}</b> kg</span>
                 {row.lot.trackingReference && <span className="faint">{row.lot.trackingReference}</span>}
               </div>
@@ -697,7 +688,7 @@ export function DistributionPage() {
         <div>
           <h1>To distribute</h1>
           <p className="muted">
-            Lots named to you. Counted in parcels, not pieces — three items for one buyer is one
+            Lots named to you. Counted in customers — three orders for one customer is one
             job.
           </p>
         </div>
@@ -709,7 +700,7 @@ export function DistributionPage() {
         <p className="muted">Loading…</p>
       ) : rows.length === 0 ? (
         <EmptyState icon="📦" title="Nothing to hand out yet">
-          When a shop names you on a lot it lands here, with the parcels to make up.
+          When a shop names you on a lot it lands here, with the customers to pack and send.
         </EmptyState>
       ) : (
         <div className="stack">
@@ -726,7 +717,7 @@ export function DistributionPage() {
                 {row.store.name}{row.city ? ` · ${row.city}` : ''} · {row.lot.stage.replace(/_/g, ' ')}
               </span>
               <div className="jobcard__stats">
-                <span><b>{row.parcels}</b> parcels</span>
+                <span><b>{row.parcels}</b> customers</span>
                 <span><b>{countOf(row.tally, 'india_received').done}</b> landed</span>
                 <span><b>{countOf(row.tally, 'packed').done}</b> packed</span>
               </div>
@@ -791,7 +782,7 @@ function DistributionDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
         <div>
           <h1>{data.lot.name}</h1>
           <p className="muted">
-            {data.store.name}{data.city ? ` · ${data.city}` : ''} · {data.parcels.length} parcels
+            {data.store.name}{data.city ? ` · ${data.city}` : ''} · {data.parcels.length} customers
           </p>
         </div>
         {data.store.handle && (
@@ -837,7 +828,7 @@ function DistributionDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
                   <li key={item.id}>
                     <span>{item.itemName}</span>
                     <span className="faint">
-                      {item.condition}{item.quantity > 1 ? ` · ×${item.quantity}` : ''}
+                      <ConditionTag condition={item.condition} />{item.quantity > 1 ? ` ×${item.quantity}` : ''}
                     </span>
                   </li>
                 ))}

@@ -35,7 +35,7 @@ function cleanLine(raw: Partial<CostLine>, index: number): CostLine {
     stage,
     kind,
     amount: clampNumber(raw.amount, 0, 1e9),
-    currency: raw.currency === 'foreign' ? 'foreign' : 'INR',
+    currency: raw.currency === 'foreign' || raw.currency === 'pay' ? raw.currency : 'INR',
     ...(kind === 'percent' ? { basis, basisLineId: basis === 'line' ? String(raw.basisLineId ?? '') : null } : {}),
     ...(kind === 'per_kg'
       ? { minKg: clampNumber(raw.minKg, 0, 10_000), stepKg: clampNumber(raw.stepKg, 0, 100), volumetric: Boolean(raw.volumetric) }
@@ -95,10 +95,14 @@ async function saveProfitTemplate(request: HttpRequest, _context: InvocationCont
     }
   }
 
+  const currency = (body.currency ?? 'USD').toString().trim().toUpperCase().slice(0, 6) || 'USD';
+  const payCurrency = (body.payCurrency ?? '').toString().trim().toUpperCase().slice(0, 6);
   const template: ProfitTemplate = {
     id: existing?.id ?? `pt_${randomUUID().slice(0, 10)}`,
     name,
-    currency: (body.currency ?? 'USD').toString().trim().toUpperCase().slice(0, 6) || 'USD',
+    currency,
+    payCurrency: payCurrency && payCurrency !== currency ? payCurrency : null,
+    payRate: clampNumber(body.payRate, 0, 1e6),
     rate: clampNumber(body.rate, 0, 1e6),
     volumetricDivisor: clampNumber(body.volumetricDivisor, 1, 100_000, 5000),
     targetMarginPercent: clampNumber(body.targetMarginPercent, 0, 95, 25),

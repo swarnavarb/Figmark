@@ -1,5 +1,6 @@
 import type { OrderCheckpoint } from './enums.js';
-import type { Lot, User } from './models.js';
+import type { Lot, Order, OrderPhoto, PhotoAudience, User } from './models.js';
+import { currentStepOf, itemLeaveIndex, joinIndexOf, lotEndIndex, renderStepText, routeOf, stepButtonLabel, stepTickKey } from './routes.js';
 import { isLive } from './service-stores.js';
 
 /**
@@ -197,4 +198,133 @@ export const CREW_CHECKPOINTS: Record<CrewRole, readonly OrderCheckpoint[]> = {
 
 export function mayTick(role: CrewRole, checkpoint: OrderCheckpoint): boolean {
   return CREW_CHECKPOINTS[role].includes(checkpoint);
+}
+
+/* ── What the seller hands the people they tag ───────────────────────── */
+
+/** The two roles a seller tags by hand, and so the two whose buttons they choose. */
+export type TaggedRole = 'supplier' | 'handler';
+export const TAGGED_ROLES: readonly TaggedRole[] = ['supplier', 'handler'];
+
+/** One button on a lot's route, as a crew member is shown it. */
+export interface CrewButton {
+  key: string;
+  label: string;
+  /** The step it moves the item to, in the lot's own words. */
+  step: string;
+  index: number;
+  /** Handed over by the seller, rather than the role's stock buttons. */
+  assigned: boolean;
+}
+
+type CrewLot = Pick<Lot, 'route' | 'originCountry' | 'destinationCountry' | 'crew'>;
+
+/**
+ * Whether the seller clears each customer before the handler may dispatch.
+ *
+ * Always, for any order riding a lot: "Ready to dispatch" is the seller's
+ * press - paid up, nothing still to add - and the handler holds the parcel
+ * until it is made. It used to be a per-lot switch; it is not optional now.
+ */
+export function readyGated(lot: object | null | undefined): boolean {
+  return Boolean(lot);
+}
+
+const placesOfLot = (lot: CrewLot) => ({ origin: lot.originCountry ?? null, destination: lot.destinationCountry ?? null });
+
+/** The seller's chosen list for this role, or null for the stock buttons. */
+export function chosenButtons(lot: CrewLot, role: TaggedRole): string[] | null {
+  const list = role === 'supplier' ? lot.crew?.supplierButtons : lot.crew?.handlerButtons;
+  return Array.isArray(list) ? list : null;
+}
+
+/**
+ * Whether a piece riding a lot has reached the destination, so "Ready to
+ * dispatch" can mean something: the handler cannot send what they do not
+ * have. Received there, or the crate has made its last move.
+ */
+export function hasArrived(
+  order: Pick<Order, 'checkpoints'>,
+  lot: Pick<Lot, 'route' | 'currentStep' | 'stage'> | null | undefined,
+): boolean {
+  if (!lot) return true;
+  if (order.checkpoints?.india_received) return true;
+  return currentStepOf(lot) >= lotEndIndex(routeOf(lot));
+}
+
+/**
+ * The buttons a seller may hand this role on this lot.
+ *
+ * Each role's side of the lot and nothing else: the supplier presses what
+ * happens to an item before it joins the lot, the handler what happens once
+ * it has left it. Inside the lot the crate moves its items together, and
+ * Delivered stays the seller's - it is the press that settles the money, and
+ * so is "Ready to dispatch" (see `readyGated`).
+ */
+export function crewSlots(lot: CrewLot, role: TaggedRole): Omit<CrewButton, 'assigned'>[] {
+  const route = routeOf(lot);
+  const join = joinIndexOf(route);
+  const leave = Math.max(join, itemLeaveIndex(route));
+  const places = placesOfLot(lot);
+  return route.steps.flatMap((step, index) => {
+    const key = stepTickKey(step);
+    if (!key || step.trigger === 'delivered') return [];
+    const onSide = role === 'supplier' ? index < join : join < route.steps.length && index >= leave;
+    if (!onSide) return [];
+    if (role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)) return [];
+    return [{ key, label: stepButtonLabel(step, places), step: renderStepText(step.name, places), index }];
+  });
+}
+
+/**
+ * The buttons this role has on this lot, in route order.
+ *
+ * The seller's list where they made one, kept to the role's side of the lot so
+ * a route edited since cannot carry a button across. Otherwise the stock
+ * buttons: whatever the route's steps assign the role, and the checkpoints the
+ * role has always been able to press.
+ */
+export function crewButtons(lot: CrewLot, role: CrewRole): CrewButton[] {
+  const chosen = role === 'forwarder' ? null : chosenButtons(lot, role);
+  if (chosen && role !== 'forwarder') {
+    return crewSlots(lot, role).filter((slot) => chosen.includes(slot.key)).map((slot) => ({ ...slot, assigned: true }));
+  }
+  const places = placesOfLot(lot);
+  return routeOf(lot).steps.flatMap((step, index) => {
+    const key = stepTickKey(step);
+    if (!key) return [];
+    if (role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)) return [];
+    const mine = step.assignee === role || (step.trigger && CREW_CHECKPOINTS[role].includes(step.trigger));
+    return mine
+      ? [{ key, label: stepButtonLabel(step, places), step: renderStepText(step.name, places), index, assigned: step.assignee === role }]
+      : [];
+  });
+}
+
+/**
+ * Whether this role may press this key on this lot - the rule the API applies,
+ * so a button the screen offers is a button that saves.
+ *
+ * Stock buttons also cover a role's checkpoints the route has no step for (a
+ * supplier marking pieces packed on a route that never says so), as they
+ * always have. A seller's own list is exactly that list.
+ */
+export function crewMayPress(lot: CrewLot | null, role: CrewRole, key: string, assignee?: string | null): boolean {
+  const custom = key.startsWith('custom:');
+  if (!lot) return !custom && mayTick(role, key as OrderCheckpoint);
+  if (role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)) return false;
+  if (crewButtons(lot, role).some((button) => button.key === key)) return true;
+  if (role !== 'forwarder' && chosenButtons(lot, role)) return false;
+  return (!custom && mayTick(role, key as OrderCheckpoint)) || assignee === role;
+}
+
+/**
+ * The photos of an order this viewer may see: every one for the shop, the
+ * ones shared with them for anyone else - and, for the crew, the ones they
+ * took themselves, which are theirs to see until the seller says otherwise.
+ */
+export function photosFor(order: Pick<Order, 'photos'>, as: 'seller' | PhotoAudience, userId?: string): OrderPhoto[] {
+  const all = order.photos ?? [];
+  if (as === 'seller') return all;
+  return all.filter((photo) => photo.showTo.includes(as) || (as !== 'buyer' && userId !== undefined && photo.addedBy === userId));
 }

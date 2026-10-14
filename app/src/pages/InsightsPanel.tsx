@@ -10,7 +10,8 @@ import { formatDate, formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
 import { NudgeButton } from '../components/NudgeButton';
 import { scrollToTopOf, useBack } from '../components/ScrollManager';
-import { Bundles, Digest, Forecast, Loyalty, Pricing, RealProfit, Reminders, Returns } from './ProPanels';
+import { Bundles, Digest, Forecast, Loyalty, Pricing, Reminders, Returns } from './ProPanels';
+import { ProfitBook, bookTotals } from './ProfitBook';
 import { CalcIcon } from '../components/CalcIcon';
 
 /**
@@ -120,7 +121,7 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
         {view === 'packing' && <Packing data={lots} />}
         {view === 'lots' && <Lots data={lots} />}
         {view === 'timing' && <Timing data={data} />}
-        {view === 'profit' && <RealProfit shop={shop} data={costs} reload={reloadCosts} />}
+        {view === 'profit' && <ProfitBook shop={shop} data={costs} reload={reloadCosts} />}
         {DEEP_VIEWS.includes(view) && !deep && <p className="muted">Loading…</p>}
         {deep && view === 'loyalty' && <Loyalty deep={deep} />}
         {deep && view === 'pricing' && <Pricing deep={deep} />}
@@ -215,9 +216,9 @@ function Dashboard({ data, lots, deep, costs, open }: {
     lots: { big: String(lots?.headline.openLots ?? 0), line: lots ? `${formatMoney(lots.headline.valueInFlightMinor)} moving` : 'No lots yet' },
     timing: { big: peakHour === null ? '—' : HOUR(peakHour), line: 'your busiest hour' },
     profit: costs
-      ? { big: formatMoney(costs.totals.active.profitMinor + costs.totals.closed.profitMinor, 'INR'),
-        line: `per lot, item and customer · ${costs.sheets.filter((row) => row.sheet).length}/${costs.sheets.length} items costed` }
-      : { big: '₹', line: 'per lot, item and customer' },
+      ? { big: formatMoney(bookTotals(costs.rows).profitMinor, 'INR'),
+        line: `${formatMoney(bookTotals(costs.rows).pendingMinor, 'INR')} still to collect` }
+      : { big: '₹', line: 'per lot and in hand, order by order' },
     loyalty: deep
       ? { big: String(deep.value.counts.vip), line: `VIPs · ${deep.value.counts.at_risk} at risk` }
       : { big: '—', line: 'who comes back, and what they are worth' },

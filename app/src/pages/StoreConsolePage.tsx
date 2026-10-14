@@ -284,7 +284,7 @@ function LotHead({ row }: { row: ForwarderLotRow }) {
       {row.laneLabel && <span className="sc-lot__lane"><Icon name="plane" size={13} /> {row.laneLabel}</span>}
       <span className="ms-crew__bar" aria-hidden="true"><span style={{ width: `${Math.round(progress * 100)}%` }} /></span>
       <span className="sc-lot__stats">
-        <span><b>{row.pieces}</b> pieces</span>
+        <span><b>{row.pieces}</b> orders</span>
         <span><b>{formatWeight(row.weightGrams)}</b></span>
         <span className={row.covered ? 'sc-lot__cov' : ''}>🛡 <b>{row.covered}</b> insured{row.premiumsMinor ? ` · ${formatMoney(row.premiumsMinor)}` : ''}</span>
         <span className="faint">{row.lot.step}</span>

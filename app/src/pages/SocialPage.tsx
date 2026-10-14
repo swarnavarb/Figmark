@@ -81,6 +81,11 @@ function matches(card: PostCard, filter: FeedFilter): boolean {
   }
 }
 
+/** A message that stays in a shop's channel or a forum, as opposed to a broadcast. */
+function inRoomOnly(card: PostCard): boolean {
+  return card.post.channel === 'seller' && card.post.reach === 'channel';
+}
+
 /**
  * The feed: who you follow, with what is catching on mixed in.
  *
@@ -135,7 +140,9 @@ function FollowingFeed() {
     void load();
   }, [load]);
 
-  const shown = (posts ?? []).filter((card) => matches(card, filter));
+  // A channel message is said to the room, never to the feed - whatever the
+  // server sends, a room message is not drawn here.
+  const shown = (posts ?? []).filter((card) => !inRoomOnly(card) && matches(card, filter));
 
   return (
     <div className="feed">

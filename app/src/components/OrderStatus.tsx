@@ -145,11 +145,11 @@ export function sellerStatus(f: StatusFacts & { claimOpen: boolean }): StatusLin
 
   if (f.status === 'delivered') {
     return f.receivedAt
-      ? { tone: 'ok', icon: '📬', title: 'Delivered — the buyer confirmed it' }
-      : { tone: 'ok', icon: '📬', title: 'Delivered', note: 'Waiting for the buyer to confirm.' };
+      ? { tone: 'ok', icon: '📬', title: 'Delivered — the customer confirmed it' }
+      : { tone: 'ok', icon: '📬', title: 'Delivered', note: 'Waiting for the customer to confirm.' };
   }
   if (f.claimOpen || f.paymentStatus === 'claimed') {
-    return { tone: 'urgent', icon: '💸', title: 'Buyer says they paid', note: 'Check your account, then confirm.' };
+    return { tone: 'urgent', icon: '💸', title: 'Customer says they paid', note: 'Check your account, then confirm.' };
   }
   const fresh = f.status === 'pending_payment' && f.paymentStatus === 'unpaid' && !f.accepted;
   if (fresh) {
@@ -158,10 +158,10 @@ export function sellerStatus(f: StatusFacts & { claimOpen: boolean }): StatusLin
       : { tone: 'urgent', icon: '🆕', title: 'New order — accept or decline' };
   }
   if (f.accepted && f.paymentStatus === 'unpaid') {
-    return { tone: 'wait', icon: '⏳', title: 'Accepted — waiting for the buyer to pay' };
+    return { tone: 'wait', icon: '⏳', title: 'Accepted — waiting for the customer to pay' };
   }
   if (f.dispatched) {
-    return { tone: 'info', icon: '🚚', title: 'Dispatched', note: courierLine(f.shipment) ?? (f.inHand ? 'Add the courier and AWB so the buyer can track it.' : undefined) };
+    return { tone: 'info', icon: '🚚', title: 'Dispatched', note: courierLine(f.shipment) ?? (f.inHand ? 'Add the courier and AWB so the customer can track it.' : undefined) };
   }
   if (f.paymentStatus === 'partially_paid') {
     return { tone: 'sent', icon: '💳', title: `Advance received · ${formatMoney(f.outstandingMinor, f.currency)} still due` };
@@ -171,6 +171,10 @@ export function sellerStatus(f: StatusFacts & { claimOpen: boolean }): StatusLin
       tone: 'ok', icon: '✅', title: 'Payment received — ship it!',
       note: f.inHand ? 'Mark it dispatched and add the courier and AWB.' : undefined,
     };
+  }
+  /* Nothing paid yet and no answer owed: say what it is waiting on. */
+  if (f.paymentStatus === 'unpaid' && f.outstandingMinor > 0) {
+    return { tone: 'wait', icon: '⏳', title: 'Waiting for the customer to pay' };
   }
   return null;
 }

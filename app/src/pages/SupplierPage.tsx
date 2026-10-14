@@ -193,7 +193,7 @@ export function PackingLotPage() {
 
       {items.length === 0 ? (
         <EmptyState title={only ? 'Everything is packed' : 'Nothing in this lot yet'}>
-          {only ? 'Untick "hide packed" to see the whole list again.' : 'Orders land here as buyers take the items tagged into it.'}
+          {only ? 'Untick "hide packed" to see the whole list again.' : 'Orders land here as customers take the items tagged into it.'}
         </EmptyState>
       ) : (
         <div className="packgrid">
