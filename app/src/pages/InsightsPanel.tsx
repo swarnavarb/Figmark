@@ -4,7 +4,7 @@ import type { StoreAccess } from '@shared/stores';
 import { PHASE_LABELS, SEGMENTS, SEGMENT_LABELS } from '@shared/insights';
 import {
   ApiRequestError, api, type CostsResponse, type CustomerRow, type DeepResponse, type InsightsResponse, type InterestResponse, type MarketResponse,
-  type PartyRef, type TrendingRow,
+  type PartyRef, type TrendingRow, type TagInsights,
 } from '../api';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
@@ -13,6 +13,7 @@ import { scrollToTopOf, useBack } from '../components/ScrollManager';
 import { Bundles, Digest, Forecast, Loyalty, Pricing, Reminders, Returns } from './ProPanels';
 import { ProfitBook, bookTotals } from './ProfitBook';
 import { CalcIcon } from '../components/CalcIcon';
+import { tagPath } from '../components/ShopCards';
 
 /**
  * Insights (Pro): who wants what, before and after they buy.
@@ -26,12 +27,13 @@ import { CalcIcon } from '../components/CalcIcon';
 
 type Category =
   | 'saved' | 'checkout' | 'funnel' | 'trending' | 'market' | 'customers' | 'leads' | 'packing' | 'lots' | 'timing'
-  | 'profit' | 'loyalty' | 'pricing' | 'forecast' | 'reminders' | 'bundles' | 'returns';
+  | 'profit' | 'loyalty' | 'pricing' | 'forecast' | 'reminders' | 'bundles' | 'returns' | 'tags';
 
 const CATEGORIES: { id: Category; icon: string; label: string; tone: string }[] = [
   { id: 'profit', icon: '💰', label: 'Real profit', tone: 'gold' },
   { id: 'trending', icon: '🔥', label: 'Trending', tone: 'hot' },
   { id: 'market', icon: '🌐', label: 'Market trends', tone: 'aqua' },
+  { id: 'tags', icon: '#️⃣', label: 'Your tags', tone: 'violet' },
   { id: 'saved', icon: '❤️', label: 'Saved', tone: 'pink' },
   { id: 'checkout', icon: '🛒', label: 'Stopped at Buy', tone: 'warn' },
   { id: 'funnel', icon: '📈', label: 'Funnel', tone: 'violet' },
@@ -116,6 +118,7 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
         {view === 'funnel' && <Funnel data={data} />}
         {view === 'trending' && <Trending data={data} />}
         {view === 'market' && <Market shop={shop} />}
+        {view === 'tags' && <Tags shop={shop} />}
         {view === 'customers' && <Customers data={data} lots={lots} />}
         {view === 'leads' && <Leads data={data} />}
         {view === 'packing' && <Packing data={lots} />}
@@ -207,6 +210,7 @@ function Dashboard({ data, lots, deep, costs, open }: {
       ? { big: `#1`, line: hottest.title }
       : { big: '—', line: 'Nothing heating up yet' },
     market: { big: '🌐', line: 'What sells in your categories elsewhere' },
+    tags: { big: '#', line: 'Which of your tags draw buyers' },
     saved: { big: String(summary.saves), line: data.saved[0] ? `Most saved: ${data.saved[0].title}` : 'No saves yet' },
     checkout: { big: String(summary.stalled), line: summary.stalled ? `${formatMoney(summary.stalledMinor, 'INR')} waiting` : 'Nobody stuck' },
     funnel: { big: summary.placedPercent === null ? '—' : `${summary.placedPercent}%`, line: 'of Buy presses became orders' },
@@ -719,6 +723,78 @@ const POSITION = {
  * What is moving in this shop's categories across Figmark. Items only, as
  * rough levels: never a seller, never a count, never a link.
  */
+const TAG_VERDICT: Record<TagInsights['tags'][number]['verdict'], { tone: string; text: string }> = {
+  ahead: { tone: 'ok', text: 'Ahead of the market' },
+  level: { tone: 'quiet', text: 'Level with the market' },
+  behind: { tone: 'warn', text: 'Behind the market' },
+  open: { tone: 'purple', text: 'Few others - room to lead' },
+  none_live: { tone: 'quiet', text: 'Nothing live with it' },
+};
+
+/**
+ * What the shop is known for, tag by tag: how its items with each tag draw
+ * likes against the same tag across Figmark, what sold, and how crowded the
+ * tag is. Then tags doing well on items like this shop's that it never uses.
+ */
+function Tags({ shop }: { shop: string | undefined }) {
+  const [data, setData] = useState<TagInsights | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void api.tagInsights(shop).then(setData)
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your tags.'));
+  }, [shop]);
+
+  if (error) return <ErrorNotice message={error} />;
+  if (!data) return <p className="muted">Loading…</p>;
+  if (data.tags.length === 0) {
+    return <EmptyState icon="#️⃣" title="No tags yet">Add tags to your shop in Shop settings, or to the items you list.</EmptyState>;
+  }
+
+  return (
+    <div className="stack">
+      <p className="faint">
+        Your shop is known for its own tags and the tags on what you list. Buyers find shops by these in search and on
+        each tag's page. Likes per item compare your items with the same tag against everyone else's.
+      </p>
+
+      <div className="card card--pad stack">
+        <h2>Your tags</h2>
+        {data.tags.map((row) => (
+          <div key={row.key} className="tagins">
+            <div className="tagins__head">
+              <Link to={tagPath(row.label)} className="tagins__name">#{row.label}</Link>
+              {row.own && <span className="badge badge--quiet">Your tag</span>}
+              <span className={`badge badge--${TAG_VERDICT[row.verdict].tone}`}>{TAG_VERDICT[row.verdict].text}</span>
+            </div>
+            <div className="tagins__nums">
+              <span><b>{row.yourItems}</b><small>your items</small></span>
+              <span><b>{row.yourLikesPerItem}</b><small>likes / item</small></span>
+              <span><b>{row.marketLikesPerItem}</b><small>market likes / item</small></span>
+              <span><b>{row.sold}</b><small>sold</small></span>
+              <span><b>{row.shopsSharing}</b><small>other shops</small></span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {data.ideas.length > 0 && (
+        <div className="card card--pad stack">
+          <div>
+            <h2>Tags worth trying</h2>
+            <span className="field__hint">Doing well on items like yours, and not one you use yet.</span>
+          </div>
+          {data.ideas.map((idea) => (
+            <div key={idea.key} className="ins__row">
+              <Link to={tagPath(idea.label)} className="ins__name">#{idea.label}</Link>
+              <span className="faint">{idea.likesPerItem} likes / item · on {idea.items} items</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Market({ shop }: { shop: string | undefined }) {
   const [data, setData] = useState<MarketResponse | null>(null);
   const [error, setError] = useState<string | null>(null);

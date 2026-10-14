@@ -11194,4 +11194,111 @@ await check('a buyer shows off what arrived in the shop\'s channel, without a ra
   assert.equal((await shareUnboxing(req({ headers: buyer.headers, params: { id: order.id }, body: { photoUrls: ['/api/photos/box.jpg'] } }), ctx)).status, 409, 'once');
 });
 
+/* ── shops by what they are about ──────────────────────────────────────── */
+console.log('\nshop tags');
+{
+  const tagsLib = await import(new URL('../api/dist/shared/shop-tags.js', import.meta.url));
+  const {
+    searchShopsRoute: searchShops, shopsByTagRoute: shopsByTag, similarShopsRoute: similarShops,
+    shopsForYouRoute: shopsForYou, shopTagsRoute: shopTags, tagInsightsRoute: tagInsights,
+  } = await import(new URL('shop-tag-routes.js', fns));
+  const { forgetIndex } = await import(new URL('../api/dist/api/src/shop-identity.js', import.meta.url));
+
+  await check('a tag is matched by meaning, not by spelling', () => {
+    assert.equal(tagsLib.tagKey('Resin Kits!'), tagsLib.tagKey('resin kit'));
+    assert.equal(tagsLib.tagKey('Gundam kits'), 'gunpla');
+    assert.equal(tagsLib.tagKey('Glass'), 'glass');
+    assert.equal(tagsLib.tagFromSlug('resin-kit'), 'resin kit');
+    assert.equal(tagsLib.tidyLabel('garage-kit'), 'Garage kit');
+  });
+
+  await check("a shop's identity is its own tags first, then what it lists, and stays small", () => {
+    const listings = Array.from({ length: 30 }, (_, i) => ({ tags: [`tag ${i}`, 'Resin kits'], category: 'Model kits' }));
+    // The category counts half a tag.
+    assert.equal(tagsLib.buildIdentity([], listings).find((tag) => tag.k === 'model kit').n, 15);
+    const identity = tagsLib.buildIdentity(['Custom painting'], [...listings, { tags: ['resin kit'], expired: true }]);
+    assert.equal(identity.length, tagsLib.IDENTITY_SIZE);
+    assert.equal(identity[0].k, 'resin kit');
+    assert.equal(identity[0].n, 30.5, 'an expired listing counts half');
+    assert.equal(identity[0].l, 'Resin kits', 'the commonest spelling');
+    const own = identity.find((tag) => tag.k === 'custom painting');
+    assert.equal(own.own, 1);
+    assert.ok(JSON.stringify(identity).length < 800, 'small enough to keep on the profile');
+  });
+
+  await check('earned badges come from orders, not from typing', () => {
+    const at = (days) => new Date(Date.parse('2026-01-10') + days * 86_400_000).toISOString();
+    const fast = Array.from({ length: 12 }, () => ({
+      status: 'delivered', createdAt: at(0), placedAt: at(0), checkpoints: { dispatched: at(1) },
+    }));
+    const labels = tagsLib.earnedTags(fast).map((tag) => tag.label);
+    assert.deepEqual(labels, ['Ships within 2 days', '10+ orders delivered']);
+    assert.deepEqual(tagsLib.earnedTags(fast.slice(0, 3)), [], 'too few to say');
+  });
+
+  const tagSeller = await newBuyer('Tag Seller');
+  await check("listing an item adds its tags to the shop's identity", async () => {
+    const opened = await saveStorefront(req({
+      headers: tagSeller.headers, body: { storefrontName: 'Zeta Works', username: 'zeta_works' },
+    }), ctx);
+    assert.equal(opened.status, 200, JSON.stringify(opened.jsonBody));
+    const made = await createListing(req({
+      headers: tagSeller.headers,
+      body: { title: 'Tag test kit', priceMinor: 9_900, sourcing: 'import', tags: ['Zeta Gundam Kits', 'Resin kits'] },
+    }), ctx);
+    assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+    const owner = await repository_user(tagSeller.id);
+    assert.ok(owner.sellerProfile.identity.some((tag) => tag.k === 'zeta gundam kit'), JSON.stringify(owner.sellerProfile.identity));
+    const offered = (await shopTags(req({ params: { id: tagSeller.id } }), ctx)).jsonBody.tags;
+    assert.ok(offered.includes('Zeta Gundam Kits'));
+  });
+
+  await check("the shop's own tags weigh most, recounted when settings are saved", async () => {
+    const saved = await saveStorefront(req({ headers: auth, body: { tags: ['Weekly drops'] } }), ctx);
+    assert.equal(saved.status, 200);
+    const tag = saved.jsonBody.storefront.identity.find((row) => row.k === 'weekly drop');
+    assert.ok(tag && tag.own === 1 && tag.n >= tagsLib.OWN_WEIGHT);
+  });
+
+  await check('search finds shops by their tags and names, signed in or not', async () => {
+    forgetIndex();
+    const byTag = (await searchShops(req({ query: { q: 'zeta gundam kits' } }), ctx)).jsonBody.shops;
+    assert.ok(byTag.some((shop) => shop.id === tagSeller.id), JSON.stringify(byTag));
+    assert.ok(byTag.find((shop) => shop.id === tagSeller.id).matched.length > 0, 'says why it matched');
+    const byName = (await searchShops(req({ query: { q: 'arjun' } }), ctx)).jsonBody.shops;
+    assert.ok(byName.some((shop) => shop.id === 'usr_demo'));
+    assert.deepEqual((await searchShops(req({ query: { q: 'x' } }), ctx)).jsonBody.shops, []);
+  });
+
+  await check("a tag's page lists the shops that carry it", async () => {
+    const page = (await shopsByTag(req({ params: { slug: 'weekly-drops' } }), ctx)).jsonBody;
+    assert.equal(page.tag.key, 'weekly drop');
+    assert.equal(page.tag.label, 'Weekly drops');
+    assert.equal(page.shops[0].id, 'usr_demo');
+  });
+
+  await check('similar shops and shops for you leave out the shop itself, and work signed out', async () => {
+    const similar = (await similarShops(req({ params: { id: 'usr_demo' } }), ctx)).jsonBody.shops;
+    assert.equal(similar.some((shop) => shop.id === 'usr_demo'), false);
+    const mine = (await shopsForYou(req({ headers: auth }), ctx)).jsonBody;
+    assert.equal(mine.shops.some((shop) => shop.id === 'usr_demo'), false, 'never your own shop');
+    const anyone = (await shopsForYou(req(), ctx)).jsonBody.shops;
+    assert.ok(Array.isArray(anyone));
+  });
+
+  await check('a shop page carries its identity and earned badges', async () => {
+    const page = (await publicProfile(req({ params: { handle: 'arjun_collects' } }), ctx)).jsonBody;
+    assert.ok(Array.isArray(page.identity) && page.identity.length > 0);
+    assert.ok(Array.isArray(page.earned));
+  });
+
+  await check('the Data tab reads every tag against the market, for the shop only', async () => {
+    const body = (await tagInsights(req({ headers: auth }), ctx)).jsonBody;
+    assert.ok(body.tags.length > 0);
+    for (const row of body.tags) assert.ok(['none_live', 'open', 'ahead', 'behind', 'level'].includes(row.verdict));
+    assert.equal((await tagInsights(req(), ctx)).status, 401);
+    assert.equal((await tagInsights(req({ headers: auth, query: { store: 'usr_nobody' } }), ctx)).status, 403);
+  });
+}
+
 console.log(`\n${passed} checks passed`);

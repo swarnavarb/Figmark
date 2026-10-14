@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ApiRequestError, api, type FeedListing, type SocialSearchResult } from '../api';
+import { ApiRequestError, api, type FeedListing, type ShopCard, type SocialSearchResult } from '../api';
 import { formatMoney } from '../format';
 import { compressImage } from '../imageCompress';
-import { Icon, Thumb, leadPhoto } from './ui';
+import { Avatar, Icon, Thumb, leadPhoto } from './ui';
 import { SocialMatches, useSearchSheet } from './SocialChrome';
 
 /** Items shown in the sheet; the rest are a tap away on the catalogue. */
@@ -32,6 +32,8 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
   const [q, setQ] = useState(initial);
   const [items, setItems] = useState<FeedListing[] | null>(null);
   const [others, setOthers] = useState<SocialSearchResult | null>(null);
+  /** Shops known for what was typed: by name, their own tags, or what they list. */
+  const [shops, setShops] = useState<ShopCard[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -57,6 +59,7 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
     if (!needle) {
       setItems(null);
       setOthers(null);
+      setShops(null);
       setBusy(false);
       return;
     }
@@ -64,10 +67,16 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
     setBusy(true);
     const timer = window.setTimeout(() => {
       // Either half can fail on its own; whatever came back is still shown.
-      void Promise.allSettled([api.feed({ q: needle }), api.socialSearch(needle)]).then(([feed, social]) => {
+      void Promise.allSettled([api.feed({ q: needle }), api.socialSearch(needle), api.searchShops(needle)]).then(([feed, social, found]) => {
         if (!live) return;
         setItems(feed.status === 'fulfilled' ? feed.value.listings : []);
-        setOthers(social.status === 'fulfilled' ? social.value : null);
+        const tagged = found.status === 'fulfilled' ? found.value.shops : [];
+        setShops(tagged);
+        // A shop shown above for its tags is not shown again by name below.
+        const shown = new Set(tagged.map((shop) => shop.id));
+        setOthers(social.status === 'fulfilled'
+          ? { ...social.value, shops: social.value.shops.filter((shop) => !shown.has(shop.id)) }
+          : null);
         const failed = feed.status === 'rejected' ? feed.reason : null;
         setError(failed ? (failed instanceof ApiRequestError ? failed.message : 'Search failed.') : null);
         setBusy(false);
@@ -90,7 +99,7 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
   };
 
   const needle = q.trim();
-  const found = (items?.length ?? 0)
+  const found = (items?.length ?? 0) + (shops?.length ?? 0)
     + (others ? others.people.length + others.shops.length + others.forums.length : 0);
   const settled = needle && !busy && items !== null;
 
@@ -131,6 +140,28 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
           </div>
         )}
         {settled && found === 0 && !error && <p className="socsearch__none">Nothing matches that yet.</p>}
+
+        {shops && shops.length > 0 && (
+          <section className="socsearch__group">
+            <h2>Shops</h2>
+            {shops.slice(0, 4).map((shop) => (
+              <div key={shop.id} className="socsearch__row">
+                <button type="button" className="socsearch__open" onClick={() => shop.handle && open(`/${shop.handle}`)}>
+                  {shop.photoUrl
+                    ? <img className="mktsearch__shop" src={shop.photoUrl} alt="" />
+                    : <Avatar name={shop.name} size={40} />}
+                  <span className="socsearch__who">
+                    <strong>{shop.name}</strong>
+                    <span className="faint">
+                      {shop.matched.length > 0 ? `Known for ${shop.matched.slice(0, 2).join(', ')}` : shop.tags.slice(0, 2).join(' · ')}
+                      {` · ${shop.followerCount} follower${shop.followerCount === 1 ? '' : 's'}`}
+                    </span>
+                  </span>
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
 
         {items && items.length > 0 && (
           <section className="socsearch__group">

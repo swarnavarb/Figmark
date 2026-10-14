@@ -12,7 +12,8 @@ import {
 import { sourcingOf } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
-import { api, type FeedListing, type FeedResponse } from '../api';
+import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
+import { ShopStrip } from '../components/ShopCards';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import {
@@ -254,6 +255,21 @@ export function FeedPage() {
   }, [shown.length, demand, endingSoon, earn, preOrders, now]);
   const fillingLots = useFillingLots();
 
+  /* Shops alongside items: the ones known for what was searched, and when
+     just browsing, the ones this buyer's likes and purchases point to. */
+  const [searchShops, setSearchShops] = useState<ShopCard[] | null>(null);
+  const [forYou, setForYou] = useState<ShopCard[] | null>(null);
+  useEffect(() => {
+    setSearchShops(null);
+    if (!search) return;
+    const controller = new AbortController();
+    void api.searchShops(search, controller.signal).then((result) => setSearchShops(result.shops)).catch(() => undefined);
+    return () => controller.abort();
+  }, [search]);
+  useEffect(() => {
+    void api.shopsForYou().then((result) => setForYou(result.shops)).catch(() => setForYou(null));
+  }, []);
+
   const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView;
   const counts = useMemo(() => Object.fromEntries(
     RARITY_FILTERS.map((tier) => [tier, rated.filter((listing) => listing.rarity.tier === tier).length]),
@@ -315,6 +331,9 @@ export function FeedPage() {
       </div>
 
       {browsing && <FillingBoxes lots={fillingLots} />}
+
+      {search && !photo && <ShopStrip title={`Shops for “${search}”`} sub="Known for it by name, tags or what they list" shops={searchShops} />}
+      {browsing && <ShopStrip title="Shops for you" sub="From what you like, buy and follow" shops={forYou} />}
 
       {error && <ErrorNotice message={error} />}
 

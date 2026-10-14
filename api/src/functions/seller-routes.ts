@@ -19,6 +19,7 @@ import { tooFast } from '../rate-limit.js';
 import { readPhoto } from './template-routes.js';
 import { clientIp } from '../rate-limit.js';
 import { guessRegion } from '../region.js';
+import { forgetIndex, identityFor } from '../shop-identity.js';
 
 /**
  * The seller's own side of the app: storefront, tracking, analytics.
@@ -260,9 +261,12 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     existing.payment = payment && Object.values(payment).some(Boolean) ? payment : null;
   }
 
+  // The shop's own tags weigh most in what it is known for; recounted with the save.
+  existing.identity = await identityFor(repository, record, existing.tags ?? []);
   record.sellerProfile = existing;
   record.updatedAt = new Date().toISOString();
   const saved = await repository.updateUser(record);
+  forgetIndex();
   return json(200, { storefront: saved.sellerProfile });
 }
 

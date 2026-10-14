@@ -61,6 +61,7 @@ const MyRefundsPage = page(() => import('./pages/MyRefundsPage'), 'MyRefundsPage
 const MyDisputesPage = page(() => import('./pages/MyDisputesPage'), 'MyDisputesPage');
 const QuestsPage = page(() => import('./pages/QuestsPage'), 'QuestsPage');
 const LearnPage = page(() => import('./pages/LearnPage'), 'LearnPage');
+const TagPage = page(() => import('./pages/TagPage'), 'TagPage');
 const ProfileByHandlePage = page(() => import('./pages/ProfileByHandlePage'), 'ProfileByHandlePage');
 const ShortLinkPage = page(() => import('./pages/ShortLinkPage'), 'ShortLinkPage');
 const InvitePage = page(() => import('./pages/InvitePage'), 'InvitePage');
@@ -153,6 +154,7 @@ function App() {
         <Route path="/disputes" element={members(<MyDisputesPage />)} />
         <Route path="/quests" element={members(<QuestsPage />)} />
         <Route path="/learn" element={<LearnPage />} />
+        <Route path="/tags/:slug" element={<TagPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
         <Route path="/:username" element={<ProfileByHandlePage />} />

@@ -1969,6 +1969,32 @@ export interface VerificationStatus {
   ready: { email: boolean; whatsapp: boolean; aadhaar: boolean };
 }
 
+/** A shop as search and suggestions show it. */
+export interface ShopCard {
+  id: string;
+  name: string;
+  handle: string | null;
+  photoUrl: string | null;
+  followerCount: number;
+  tier: string;
+  dispatchRegion: string;
+  /** The few tags that say most about it. */
+  tags: string[];
+  /** The tags that matched what was searched or liked. */
+  matched: string[];
+}
+
+/** How each of a shop's tags does, for the Data tab. */
+export interface TagInsights {
+  tags: {
+    key: string; label: string; own: boolean;
+    yourItems: number; yourLikesPerItem: number; sold: number;
+    marketItems: number; marketLikesPerItem: number; shopsSharing: number;
+    verdict: 'none_live' | 'open' | 'ahead' | 'behind' | 'level';
+  }[];
+  ideas: { key: string; label: string; items: number; likesPerItem: number }[];
+}
+
 export interface PublicProfile {
   handle: string;
   isStore: boolean;
@@ -1977,6 +2003,10 @@ export interface PublicProfile {
   photoUrl: string | null;
   coverUrl: string | null;
   tags: string[];
+  /** The shop's identity: its own tags and what it lists, most telling first. */
+  identity: { key: string; label: string; own: boolean }[];
+  /** Badges the shop earned from its orders. */
+  earned: { id: string; label: string }[];
   link: string | null;
   dispatchRegion: string;
   followerCount: number;
@@ -2490,6 +2520,19 @@ export const api = {
   uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
   /** The shop's photo or banner: open to any signed-in account, unlike listing photos. */
   uploadStorefrontPhoto: (dataUrl: string) => post<StoredPhoto>('/me/storefront/photo', { dataUrl }),
+  /** Shops whose name or tags match a search. */
+  searchShops: (q: string, signal?: AbortSignal) =>
+    request<{ shops: ShopCard[] }>(`/shops/search?q=${encodeURIComponent(q)}`, { signal }),
+  /** Every shop carrying one tag. */
+  shopsByTag: (slug: string) =>
+    request<{ tag: { key: string; label: string }; shops: ShopCard[] }>(`/shop-tags/${encodeURIComponent(slug)}`),
+  similarShops: (id: string) => request<{ shops: ShopCard[] }>(`/shops/${encodeURIComponent(id)}/similar`),
+  /** Shops to follow, from what this buyer likes and buys. */
+  shopsForYou: () => request<{ shops: ShopCard[]; basis: string[] }>('/shops/for-you'),
+  /** A shop's tags, most used first, for filling in a listing. */
+  shopTags: (id: string) => request<{ tags: string[] }>(`/shops/${encodeURIComponent(id)}/tags`),
+  tagInsights: (store?: string) =>
+    request<TagInsights>(`/me/tag-insights${store ? `?store=${encodeURIComponent(store)}` : ''}`),
   /** A dispatch region guessed from the connection on the server; null when it cannot tell. */
   regionGuess: () => request<{ region: string | null }>('/me/region-guess'),
   /**

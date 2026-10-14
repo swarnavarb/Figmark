@@ -3,6 +3,7 @@ import type { Listing, Post, PowerSale, PowerSaleItem, User } from '../../../sha
 import type { getRepository } from '../data/index.js';
 import { actorName } from '../../../shared/notifications.js';
 import { notify } from './notify.js';
+import { refreshIdentity } from '../shop-identity.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -277,6 +278,7 @@ export async function advancePowerSale(
   if (next !== -1 && dueAt(sale, next) <= now.getTime()) {
     const item = sale.items[next]!;
     const listing = await repository.createListing(listingFor(sale, item, stamp));
+    await refreshIdentity(repository, sale.sellerId);
     const endsAt = new Date(now.getTime() + minutes(sale.windowMinutes)).toISOString();
 
     const rises = item.listPriceMinor > item.priceMinor;

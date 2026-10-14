@@ -32,7 +32,7 @@ export const USERNAME_PATTERN = /^[a-z0-9](?:[a-z0-9_.]{1,28}[a-z0-9])$/;
 export const APP_ROUTE_SEGMENTS: readonly string[] = [
   'admin', 'api', 'batches', 'boot', 'buyer-settings', 'cart', 'community-service', 'dispute', 'disputes',
   'forwarders', 'i', 'index.html', 'learn', 'listing', 'lot', 'lots', 'me', 'messages', 'order', 'packing',
-  'purchases', 'quests', 'r', 'refunds', 'routes', 's', 'sell', 'services', 'shop', 'social', 'sw.js',
+  'purchases', 'quests', 'r', 'refunds', 'routes', 's', 'sell', 'services', 'shop', 'social', 'sw.js', 'tags',
   'verify', 'wallet',
 ];
 

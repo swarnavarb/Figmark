@@ -14791,3 +14791,52 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .sfpic--qr .sfpic__empty { background: var(--surface-2); }
 .payqr { display: grid; justify-items: center; gap: 6px; margin: 4px 0; }
 .payqr__img { width: min(220px, 70vw); aspect-ratio: 1; object-fit: contain; padding: 8px; border-radius: var(--r-md); background: #fff; }
+
+/* ── Shops by what they are about ─────────────────────────────────────── */
+/* A row of shops that scrolls sideways: search results, shops for you, similar shops. */
+.shopstrip { display: grid; gap: var(--s2); margin: 0 0 18px; min-width: 0; }
+.shopstrip__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.shopstrip__title { margin: 0; font-size: var(--t-md, 16px); }
+.shopstrip__sub { font-size: var(--t-xs); color: var(--text-faint); }
+.shopstrip__row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 170px); gap: 10px;
+  overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; scrollbar-width: none;
+}
+.shopstrip__row::-webkit-scrollbar { display: none; }
+.shoptile {
+  display: grid; justify-items: start; align-content: start; gap: 4px; scroll-snap-align: start; min-width: 0;
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
+  color: var(--text); text-decoration: none;
+}
+.shoptile:hover { border-color: var(--border-strong); }
+.shoptile__photo { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+.shoptile__name { max-width: 100%; font-weight: var(--w-semi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shoptile__meta { font-size: var(--t-xs); color: var(--text-faint); }
+.shoptile__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.shoptile__tag {
+  padding: 2px 8px; border-radius: 999px; background: var(--surface-2);
+  font-size: 11px; color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.shoptile__tag.is-hit { background: var(--accent-soft); color: var(--text); }
+.mktsearch__shop { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+
+/* One tag's own page. */
+.tagpage__title { display: flex; align-items: baseline; gap: 2px; }
+.tagpage__title > span { color: var(--accent); }
+.tagpage__grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+/* On a shop: badges it earned, and what its listings say it sells. */
+.earnedtag { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); cursor: default; }
+.alsosells { align-items: center; }
+.alsosells__label { font-size: var(--t-xs); color: var(--text-faint); margin-right: 2px; }
+.alsosells__tag { border-style: dashed; }
+
+/* The Data tab's view of each tag. */
+.tagins { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
+.tagins:first-of-type { border-top: 0; padding-top: 0; }
+.tagins__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tagins__name { font-weight: var(--w-semi); color: var(--text); text-decoration: none; margin-right: auto; }
+.tagins__nums { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.tagins__nums span { display: grid; text-align: center; padding: 6px 2px; border-radius: var(--r-sm); background: var(--surface-2); }
+.tagins__nums b { font-size: var(--t-md, 16px); }
+.tagins__nums small { font-size: 10px; color: var(--text-faint); line-height: 1.2; }

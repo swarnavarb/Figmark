@@ -78,6 +78,9 @@ const {
 const { fillingLotsRoute, dropsRoute, dropRoute, remindRoute } = await import(new URL('showcase-routes.js', apiRoot));
 const { insightsRoute, interestRoute, marketRoute } = await import(new URL('insight-routes.js', apiRoot));
 const {
+  searchShopsRoute, shopsByTagRoute, similarShopsRoute, shopsForYouRoute, shopTagsRoute, tagInsightsRoute,
+} = await import(new URL('shop-tag-routes.js', apiRoot));
+const {
   listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute,
   listSavedCalcsRoute, saveSavedCalcRoute, deleteSavedCalcRoute,
 } = await import(new URL('profit-routes.js', apiRoot));
@@ -338,6 +341,12 @@ const routes = [
   ['GET', '/api/me/insights', insightsRoute],
   ['GET', '/api/me/interest', interestRoute],
   ['GET', '/api/me/market', marketRoute],
+  ['GET', '/api/shops/search', searchShopsRoute],
+  ['GET', '/api/shops/for-you', shopsForYouRoute],
+  ['GET', '/api/shops/:id/similar', similarShopsRoute],
+  ['GET', '/api/shops/:id/tags', shopTagsRoute],
+  ['GET', '/api/shop-tags/:slug', shopsByTagRoute],
+  ['GET', '/api/me/tag-insights', tagInsightsRoute],
   ['GET', '/api/me/profit-templates', listProfitTemplatesRoute],
   ['POST', '/api/me/profit-templates/save', saveProfitTemplateRoute],
   ['POST', '/api/me/profit-templates/:id/delete', deleteProfitTemplateRoute],

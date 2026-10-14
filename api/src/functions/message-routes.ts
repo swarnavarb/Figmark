@@ -22,6 +22,7 @@ import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
 import { getPhotoStore } from '../storage/index.js';
 import { readPhoto } from './template-routes.js';
+import { earnedTags } from '../../../shared/shop-tags.js';
 
 /**
  * The handle namespace, and the messages addressed through it.
@@ -1000,6 +1001,10 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     photoUrl: shop?.photoUrl ?? null,
     coverUrl: (isStore ? shop?.coverUrl : user.coverUrl) ?? null,
     tags: (isStore ? shop?.tags : user.tags) ?? [],
+    // What the shop is known for beyond its own tags, from what it lists;
+    // and badges read off its orders, worked out here and never stored.
+    identity: (shop?.identity ?? []).map((tag) => ({ key: tag.k, label: tag.l, own: Boolean(tag.own) })),
+    earned: isStore ? earnedTags(sales) : [],
     link: shop?.link ?? null,
     dispatchRegion: shop?.dispatchRegion ?? '',
     followerCount,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { tagKey } from '@shared/shop-tags';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
 import { CATEGORIES } from '@shared/catalog';
@@ -169,6 +170,9 @@ const WHERE_OPTIONS: { id: 'in_hand' | 'import'; icon: string; title: string; no
 const LOT_LATER = '';
 const LOT_NEW = '__new';
 
+/** Comma-typed tags as a list. */
+const splitTags = (text: string) => text.split(',').map((tag) => tag.trim()).filter(Boolean);
+
 export function SellPage() {
   const { user } = useSession();
   const navigate = useNavigate();
@@ -280,6 +284,16 @@ export function SellPage() {
   useEffect(() => {
     void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
   }, [storeId]);
+
+  /** The tags this shop is known for, offered while listing. */
+  const [shopTags, setShopTags] = useState<string[]>([]);
+  const shopId = storeId ?? user?.id;
+  useEffect(() => {
+    if (!shopId) return;
+    void api.shopTags(shopId).then((result) => setShopTags(result.tags)).catch(() => setShopTags([]));
+  }, [shopId]);
+  const typedTags = new Set(splitTags(tags).map(tagKey));
+  const tagIdeas = shopTags.filter((tag) => !typedTags.has(tagKey(tag))).slice(0, 6);
 
   /** Fill the form from a saved calculation: its name, price and costs. */
   function fillFromSaved(id: string) {
@@ -642,10 +656,19 @@ export function SellPage() {
                   {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
                 </select>
               </label>
-              <label className="field">
-                <span>Tags</span>
-                <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, sealed" />
-              </label>
+              <div className="field">
+                <label htmlFor="sell-tags">Tags</label>
+                <input id="sell-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, sealed" />
+                {/* The shop's own tags, one tap each: listings and shop speak the same words. */}
+                {tagIdeas.length > 0 && (
+                  <div className="taginput__ideas">
+                    {tagIdeas.map((idea) => (
+                      <button key={idea} type="button" className="taginput__idea"
+                        onClick={() => setTags((now) => [...splitTags(now), idea].join(', '))}>+ {idea}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </LBox>
 

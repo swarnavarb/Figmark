@@ -2,6 +2,7 @@ import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profi
 import type { DealState } from './deals.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
+import type { ShopTag } from './shop-tags.js';
 import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
 import type {
   ConditionTag,
@@ -511,6 +512,12 @@ export interface SellerProfile {
    * because they are scanned, not read, and a paragraph gets skipped.
    */
   tags?: string[];
+  /**
+   * What the shop is about, folded from its own tags and every listing's
+   * (see shared/shop-tags.ts). At most ten short entries; rewritten when a
+   * listing or the tags change, and read by search and suggestions.
+   */
+  identity?: ShopTag[];
   /** The shop's level as last worked out, so names elsewhere can show it without a recount. */
   levelCache?: number;
   /** Growth quests and the bump points they earned. Absent until the shop first plays. */

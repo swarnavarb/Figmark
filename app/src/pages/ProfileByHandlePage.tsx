@@ -17,6 +17,9 @@ import {
   Bio, FollowButton, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
 } from '../components/ProfileParts';
 import { CollectorProfile } from './CollectorProfile';
+import { ShopStrip, tagPath } from '../components/ShopCards';
+import { tagKey } from '@shared/shop-tags';
+import type { ShopCard } from '../api';
 
 /**
  * Whatever lives at `/<username>`.
@@ -110,6 +113,13 @@ function Storefront({ data, isMe, onFollow, reload }: {
       .catch(() => setLive(new Map()));
   }, [data.sellerId]);
   const now = Date.now();
+  const [similar, setSimilar] = useState<ShopCard[] | null>(null);
+  useEffect(() => {
+    void api.similarShops(data.sellerId).then((result) => setSimilar(result.shops)).catch(() => setSimilar(null));
+  }, [data.sellerId]);
+  // Identity tags the shop did not choose itself: what its listings say.
+  const chosen = new Set(data.tags.map(tagKey));
+  const alsoSells = data.identity.filter((tag) => !tag.own && !chosen.has(tag.key)).slice(0, 4);
 
   const shown = data.listings.filter((listing) => shelf === 'all' || listing.state === shelf);
   const filters = ([
@@ -161,9 +171,19 @@ function Storefront({ data, isMe, onFollow, reload }: {
           <span><b className={`ptrust ptrust--${trustTone(data.trustScore)}`}>{data.trustScore ?? '—'}</b><small>trust</small></span>
         </div>
 
+        {/* Earned, not typed: read off the shop's orders. */}
+        {data.earned.length > 0 && (
+          <div className="chips chips--tight">
+            {data.earned.map((badge) => (
+              <span key={badge.id} className="chip earnedtag">✓ {badge.label}</span>
+            ))}
+          </div>
+        )}
+
         {(data.tags.length > 0 || data.dispatchRegion || data.link || data.ownerHandle) && (
           <div className="chips chips--tight">
-            {data.tags.map((tag) => <span key={tag} className="chip chip--static">{tag}</span>)}
+            {/* Each tag opens every shop that carries it. */}
+            {data.tags.map((tag) => <Link key={tag} to={tagPath(tag)} className="chip">{tag}</Link>)}
             {data.dispatchRegion && <span className="chip chip--static">📦 ships from {data.dispatchRegion}</span>}
             {data.link && (
               <a className="chip" href={withScheme(data.link)} target="_blank" rel="noreferrer noopener">
@@ -172,6 +192,14 @@ function Storefront({ data, isMe, onFollow, reload }: {
             )}
             {/* The person behind a shop is a separate page, rated as a buyer. */}
             {data.ownerHandle && <Link to={`/${data.ownerHandle}`} className="chip">👤 @{data.ownerHandle}</Link>}
+          </div>
+        )}
+
+        {/* What its listings say it sells, beyond the tags it chose. */}
+        {alsoSells.length > 0 && (
+          <div className="chips chips--tight alsosells">
+            <span className="alsosells__label">Also sells</span>
+            {alsoSells.map((tag) => <Link key={tag.key} to={tagPath(tag.label)} className="chip alsosells__tag">{tag.label}</Link>)}
           </div>
         )}
 
@@ -223,6 +251,8 @@ function Storefront({ data, isMe, onFollow, reload }: {
           </>
         )}
       </div>
+
+      <ShopStrip title="Similar shops" sub="About the same things as this one" shops={similar} />
 
       {ratingOpen && (
         <RatingSheet profile={data} rating={data.rating} onClose={() => setRatingOpen(false)} onReviews={() => setTab('reviews')} />
