@@ -6023,7 +6023,7 @@ let photoFixture;
 let templatedOrder;
 let templatedBuyer;
 
-await check('a Quick Post template is the stationery, not a straitjacket', async () => {
+await check('a Quick Fill template is the stationery, not a straitjacket', async () => {
   const made = await saveTemplate(req({
     headers: auth,
     body: {

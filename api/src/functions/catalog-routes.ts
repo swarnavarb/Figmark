@@ -421,7 +421,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     shareToChannel?: boolean;
     /** Announce it in the feed, to everyone. */
     shareToFeed?: boolean;
-    /** The before-lot ladder from the Quick Post template, if it had one. */
+    /** The before-lot ladder from the Quick Fill template, if it had one. */
     preLotSteps?: { id?: string; name?: string; description?: string }[];
     preLotName?: string;
     /** A private deal made from one of the shop's items: which one. */
@@ -562,7 +562,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
        browser because a document with forty images in it is the kind of thing
        that only fails in production. */
     photos,
-    /* The two ladders, from the Quick Post template the seller listed with.
+    /* The two ladders, from the Quick Fill template the seller listed with.
        The before-lot one is copied because a buyer will read it; the after-lot
        one is a pointer, because nothing is travelling it yet. */
     preLotRoute: preLot,

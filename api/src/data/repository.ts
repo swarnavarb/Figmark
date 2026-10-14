@@ -107,7 +107,7 @@ export interface Repository {
   listLots(query?: CatalogQuery): Promise<Lot[]>;
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;
 
-  /** The Quick Post templates a shop lists from. */
+  /** The Quick Fill templates a shop lists from. */
   listTemplates(sellerId: string): Promise<PostTemplate[]>;
   getTemplate(sellerId: string, templateId: string): Promise<PostTemplate | null>;
   saveTemplate(template: PostTemplate): Promise<PostTemplate>;

@@ -1454,10 +1454,7 @@ async function supplierLots(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  // One shop's lots when the Sell tab asks for its own Packing section, so the
-  // filtering happens here rather than after every shop's lots are sent.
-  const only = request.query.get('store');
-  const owners = (await repository.listStoreOwners()).filter((owner) => !only || owner.id === only);
+  const owners = await repository.listStoreOwners();
 
   // Every shop, and every lot within one, read side by side rather than in turn.
   const perOwner = await Promise.all(owners.map(async (owner) => {

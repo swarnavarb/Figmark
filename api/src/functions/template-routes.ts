@@ -19,7 +19,7 @@ import { gistOf } from '../../../shared/notifications.js';
 import { error, handler, json } from './http.js';
 
 /**
- * Quick Post templates, photo uploads, and putting one order in a lot.
+ * Quick Fill templates, photo uploads, and putting one order in a lot.
  *
  * Three things that look unrelated and are the same thing: the work a shop does
  * over and over that nothing was helping with. Forty listings a month with the
@@ -29,7 +29,7 @@ import { error, handler, json } from './http.js';
  * the order in front of you.
  */
 
-/* ── Quick Post templates ──────────────────────────────────────────────── */
+/* ── Quick Fill templates ──────────────────────────────────────────────── */
 
 /** GET /api/templates - the stationery this shop lists from. */
 async function listTemplates(request: HttpRequest, _context: InvocationContext) {

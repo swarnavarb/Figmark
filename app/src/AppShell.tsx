@@ -11,7 +11,7 @@ import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
 import { AuthModal } from './pages/AuthPage';
-import { EmailGate, VerifyPrompt } from './pages/VerifyPage';
+import { VerifyNudge, VerifyPrompt } from './pages/VerifyPage';
 import { inviteCodeFor } from './components/ShareKit';
 import { setPhotoQuery } from './photoQuery';
 import { Preloader } from './components/Preloader';
@@ -129,6 +129,8 @@ export function AppShell() {
           )}
         </nav>
       </header>
+      {/* Not a dialog: browsing needs no verification, so the reminder waits up here. */}
+      {!room && <VerifyNudge />}
 
       {sessionsInsecure && (
         <div className="page page--notice">
@@ -180,7 +182,6 @@ export function AppShell() {
       <TabBar />
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
       {authPrompt && <AuthModal reason={authPrompt.reason} onClose={closeAuth} />}
-      <EmailGate />
       <VerifyPrompt />
     </div>
   );

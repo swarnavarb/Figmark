@@ -29,13 +29,8 @@ export function SupplierPage() {
   );
 }
 
-/**
- * The lots waiting on a packer.
- *
- * Also the sell tab's Packing section, hence the store filter: from inside one
- * shop's console the other shops you pack for are noise.
- */
-export function PackingList({ storeId }: { storeId?: string } = {}) {
+/** The lots waiting on a packer, across every shop they pack for. */
+function PackingList() {
   const [rows, setRows] = useState<
     { store: SupplierStore; lot: SupplierLot['lot']; tally: SupplierLot['tally'] }[] | null
   >(null);
@@ -43,12 +38,12 @@ export function PackingList({ storeId }: { storeId?: string } = {}) {
 
   useEffect(() => {
     void api
-      .supplierLots(storeId)
+      .supplierLots()
       .then((result) => setRows(result.lots))
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.'),
       );
-  }, [storeId]);
+  }, []);
 
   if (error) return <ErrorNotice message={error} />;
   if (!rows) return <p className="muted">Loading…</p>;
@@ -68,9 +63,7 @@ export function PackingList({ storeId }: { storeId?: string } = {}) {
                 <div className="lotcard__head">
                   <span className="lotcard__name">{row.lot.name}</span>
                   <span className="lotcard__state">
-                    {/* Inside one shop's console the shop's own name on every
-                        card is noise; across shops it is the thing you need. */}
-                    {storeId ? '' : `${row.store.name} — `}
+                    {`${row.store.name} — `}
                     {LOT_CARD_LABELS[row.lot.stage as keyof typeof LOT_CARD_LABELS]}
                   </span>
                   <Link

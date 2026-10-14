@@ -675,7 +675,7 @@ export interface SaleRow {
   chinaReceivedAt: string | null;
   /** When the seller ticked it delivered, on the lot's own item list. */
   deliveredAt: string | null;
-  /** The route its Quick Post template set up for the lot that will carry it. */
+  /** The route its Quick Fill template set up for the lot that will carry it. */
   lotRouteId: string | null;
   /** The seller's next press on this order, in its route's words - null when there is none to make yet. */
   next: CardButton | null;
@@ -1061,7 +1061,7 @@ export interface NewListing {
   tags: string[];
   /** In the order the manager arranged them; the first leads unless told otherwise. */
   photos?: { blobName: string; url: string; isPrimary: boolean }[];
-  /** The before-lot ladder a Quick Post template gave it. */
+  /** The before-lot ladder a Quick Fill template gave it. */
   preLotSteps?: { name: string; description?: string }[];
   preLotName?: string;
   /** The route template a lot made from this item should travel. */
@@ -1825,7 +1825,7 @@ export interface ItemGroup {
   })[];
 }
 
-/* ── Quick Post templates and photos ───────────────────────────────────── */
+/* ── Quick Fill templates and photos ───────────────────────────────────── */
 
 /** A photo as the manager holds it: uploaded, or a link somebody pasted. */
 /** One of a shop's items, as the private-deal picker lists it. */
@@ -2698,11 +2698,9 @@ export const api = {
     post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
   setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
 
-  /** Lots to pack; one store's only when `storeId` is given, filtered on the server. */
-  supplierLots: (storeId?: string) =>
-    request<{ lots: { store: SupplierStore; lot: SupplierLot['lot']; tally: LotTally }[] }>(
-      `/supplier/lots${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
-    ),
+  /** Lots to pack, across every shop this account packs for. */
+  supplierLots: () =>
+    request<{ lots: { store: SupplierStore; lot: SupplierLot['lot']; tally: LotTally }[] }>('/supplier/lots'),
   supplierLot: (id: string) => request<SupplierLot>(`/supplier/lots/${encodeURIComponent(id)}`),
 
   storefront: () =>

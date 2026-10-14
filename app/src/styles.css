@@ -1877,80 +1877,6 @@ code, kbd, samp, pre {
 /* The flag sits in the top-right corner, so the title stops before it. */
 .door--pro .door__title { padding-right: 42px; }
 
-/* Sell-home cards: same shape as a `.door`, coloured so the two primary
-   actions read as clearly different things at a glance. */
-.door--card { border-width: 1px; }
-.door--analytics { border-color: var(--aqua-line); background: linear-gradient(160deg, var(--aqua-soft), transparent 65%); }
-.door--analytics:hover { border-color: var(--aqua); }
-.door--analytics .door__glyph { color: var(--aqua); }
-.door--manage { border-color: var(--violet-line); background: linear-gradient(160deg, var(--violet-soft), transparent 65%); }
-.door--manage:hover { border-color: var(--violet-lit); }
-.door--manage .door__glyph { color: var(--violet-text); }
-.door--card.is-on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--border-strong); }
-
-/* Items → Lots → Routes, drawn as one connected process rather than three
-   unrelated buttons - visually distinct from the two business cards above,
-   so a seller reads it as "the workflow", not "two more doors". */
-.workflow {
-  display: grid;
-  gap: 12px;
-  padding: 18px 16px;
-  border: 1px dashed var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface-2);
-}
-.workflow__label {
-  font-size: var(--t-xs);
-  font-weight: var(--w-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
-}
-.workflow__row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-}
-.workflow__step {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 16px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  color: inherit;
-  text-decoration: none;
-  font: inherit;
-  cursor: pointer;
-  text-align: center;
-  transition: border-color 0.18s, transform 0.18s;
-}
-.workflow__step:hover { transform: translateY(-2px); }
-.workflow__step--items { border-color: var(--coral-line); }
-.workflow__step--items .workflow__glyph { color: var(--coral); }
-.workflow__step--lots { border-color: var(--blue-line); }
-.workflow__step--lots .workflow__glyph { color: var(--blue-text); }
-.workflow__step--routes { border-color: var(--lime-line); }
-.workflow__step--routes .workflow__glyph { color: var(--lime); }
-.workflow__step.is-on { background: var(--surface-3, var(--surface-2)); box-shadow: inset 0 0 0 1px currentColor; }
-.workflow__title { font-size: var(--t-sm); font-weight: var(--w-bold); }
-.workflow__arrow {
-  display: flex;
-  align-items: center;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
-.workflow__hint { margin: 0; text-align: center; }
-@media (max-width: 480px) {
-  .workflow__row { gap: 4px; }
-  .workflow__step { padding: 12px 4px; }
-  .workflow__arrow svg { width: 12px; height: 12px; }
-}
-
 /* The shop's sections: seven of them wrap into two ragged rows on a phone, so
    they scroll like every other row of choices in the app. */
 .sections {
@@ -3835,7 +3761,7 @@ a.order__name:hover { color: var(--accent-text); }
   margin-top: 8px; padding-top: 9px; border-top: 1px solid var(--border);
 }
 
-/* The Quick Post row, first in the form because it fills in what is below it. */
+/* The Quick Fill row, first in the form because it fills in what is below it. */
 .quickpost {
   display: grid; gap: 10px;
   padding: 12px 13px;
@@ -11748,20 +11674,6 @@ a.ocust__name:hover { color: var(--accent-text); }
 .badge--link { font: inherit; font-size: var(--t-2xs); cursor: pointer; border: 1px solid var(--border-strong, rgba(255,255,255,0.18)); }
 .badge--link:hover { filter: brightness(1.15); }
 
-/* The Sell page's top cards while a section is open: titles only. */
-.sellhome--compact .door__note,
-.sellhome--compact .workflow__hint,
-.sellhome--compact .workflow__label { display: none; }
-.sellhome--compact .door--card {
-  padding-block: 10px;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  column-gap: 8px;
-}
-.sellhome--compact .door__glyph { display: inline-flex; }
-.sellhome--compact .workflow { padding-block: 10px; }
-.sellhome--compact .workflow__step { padding-block: 8px; }
-
 /* A lot's name, then its number in small, quiet type. */
 .lotname { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
 .lotname__name { font-weight: inherit; min-width: 0; overflow-wrap: anywhere; }
@@ -14740,3 +14652,121 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pc__conv { font-family: var(--mono); font-size: var(--t-xs); color: #93C5FD; }
 .pc__more summary { cursor: pointer; color: var(--text-faint); font-size: var(--t-xs); }
 .pc__more[open] summary { margin-bottom: 8px; }
+
+/* ── Getting started, and the Sell tab's top ───────────────────────────── */
+
+/* The reminder to confirm an email: a line under the header, not a dialog. */
+.vnudge {
+  display: flex; align-items: center; gap: 10px;
+  margin: 8px var(--page-pad) 0; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); font-size: var(--t-sm);
+}
+.vnudge__text { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.vnudge .btn { flex: 0 0 auto; }
+.vnudge__close { flex: 0 0 auto; }
+
+/* Everything between a new account and its first sale, as one list. */
+.setupcheck { display: grid; gap: 10px; margin-bottom: 16px; }
+.setupcheck__bar { display: block; height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.setupcheck__bar > span { display: block; height: 100%; border-radius: inherit; background: var(--grad-hero); transition: width 0.3s ease; }
+.setupcheck__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.setupcheck__row { display: flex; align-items: center; gap: 10px; min-height: 32px; font-size: var(--t-sm); }
+.setupcheck__row.is-done .setupcheck__label { color: var(--text-faint); text-decoration: line-through; }
+.setupcheck__row.is-next .setupcheck__label { font-weight: var(--w-bold); }
+.setupcheck__label { flex: 1; min-width: 0; }
+.setupcheck__row a { color: var(--accent-text); text-decoration: underline; }
+.setupcheck__tick {
+  display: inline-grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px;
+  border: 1.5px solid var(--border-strong); border-radius: 50%; font-size: 12px;
+}
+.setupcheck__row.is-done .setupcheck__tick { border-color: transparent; background: var(--lime); color: #0b0b0b; }
+
+/* A button that reads as a link, for a row whose action is one word. */
+.linkbtn {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; color: var(--accent-text); text-decoration: underline;
+}
+
+/* List an item first, then what is waiting on the shop. */
+.sellhome { display: grid; gap: 12px; }
+.sellhome__list { justify-self: stretch; justify-content: center; gap: 8px; }
+.todo { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.todo__tile {
+  display: grid; gap: 2px; padding: 12px 14px; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+}
+.todo__tile:hover { border-color: var(--border-strong); }
+.todo__tile.is-hot { border-color: var(--coral-line); background: linear-gradient(160deg, var(--coral-soft, var(--surface-2)), transparent 70%); }
+.todo__count { font-size: var(--t-xl, 1.5rem); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.todo__label { font-size: var(--t-xs); color: var(--text-dim); }
+
+/* The five places a shop's work lives. Scrolls on a phone like .sections. */
+.selltabs {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin: 18px calc(var(--page-pad) * -1) 0; padding: 0 var(--page-pad) 2px;
+  border-bottom: 1px solid var(--border);
+}
+.selltabs::-webkit-scrollbar { display: none; }
+.selltabs__tab {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: 10px 12px; border: 0; border-bottom: 2px solid transparent; background: none;
+  color: var(--text-dim); font: inherit; font-size: var(--t-sm); font-weight: var(--w-medium); cursor: pointer;
+}
+.selltabs__tab:hover { color: var(--text); }
+.selltabs__tab.is-on { color: var(--text); border-bottom-color: var(--accent, var(--violet-lit)); font-weight: var(--w-bold); }
+
+/* ── The listing form ──────────────────────────────────────────────────── */
+
+/* Quick Fill's templates: one tap each, "None" set apart at the end. */
+.qfill { display: flex; flex-wrap: wrap; gap: 6px; }
+.qfill__chip {
+  padding: 7px 12px; border: 1px solid var(--border); border-radius: 99px;
+  background: var(--surface); color: inherit; font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.qfill__chip.is-on { border-color: transparent; background: var(--gold-soft, var(--surface-2)); box-shadow: inset 0 0 0 2px var(--gold, var(--accent)); font-weight: var(--w-bold); }
+.qfill__chip--none { color: var(--text-dim); }
+
+/* The fold over everything past the basics, saying what is switched on. */
+.sellmore { flex-wrap: wrap; text-align: left; }
+.sellmore__chips { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.sellmore__chip {
+  padding: 2px 8px; border-radius: 99px; background: var(--surface-2);
+  font-size: var(--t-2xs); color: var(--text-dim); white-space: nowrap;
+}
+
+/* Publish, always in reach: pinned above the tab bar on a phone. */
+.sellform__bar { display: grid; }
+@media (max-width: 719px) {
+  .sellform__bar {
+    position: sticky; bottom: calc(var(--tabbar-h) + 8px); z-index: 5;
+    padding: 8px; margin-inline: -8px; border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+}
+
+/* ── Lots and routes ───────────────────────────────────────────────────── */
+
+.pick__note { font-size: var(--t-xs); color: var(--text-dim); }
+
+/* The route builder's start: the other two ways in, after the ready-made ones. */
+.rsstart__other { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.rshead__mode { justify-self: start; }
+.rshead__mode button { white-space: nowrap; }
+
+/* "Steps" view: names and lines only. The buttons, who presses them, the
+   waits between steps and where the lot starts and ends are handed out
+   already, and wait behind "All details". */
+.rsstudio--simple .rsmap,
+.rsstudio--simple .rshead__stats,
+.rsstudio--simple .rsjoin__acts .iconbtn,
+.rsstudio--simple .rsgap__wait,
+.rsstudio--simple .rsbtn__words,
+.rsstudio--simple .rsbtn__note,
+.rsstudio--simple .rsbtn__ship,
+.rsstudio--simple .rsbtn__who,
+.rsstudio--simple .rsbtn__add,
+.rsstudio--simple .stepact__skip { display: none; }

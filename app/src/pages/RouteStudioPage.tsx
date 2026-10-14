@@ -45,6 +45,37 @@ function ensureDelivered(steps: readonly RouteStep[]): RouteStep[] {
   }];
 }
 
+/** Whether the Studio opens with every detail showing, remembered per browser. */
+const DETAIL_KEY = 'figmark:route-studio-details';
+
+/**
+ * A ready-made route's steps, put in order the way the Studio would before
+ * saving: Delivered last, buttons handed out, the lot's two lines placed.
+ *
+ * So the new-lot form can save a template as the shop's own route in one tap,
+ * without opening the Studio, and get exactly what opening it there and
+ * pressing Save would have given.
+ */
+export function routeStepsFrom(from: readonly RouteStep[]) {
+  const withSides = ensureDelivered(from).map((step, index) => ({ ...step, position: index, side: sideOf(step, index) }));
+  const given = assignButtons(withSides).steps;
+  const join = joinIndexOf({ steps: given });
+  const dispatched = given.findIndex((step) => step.trigger === 'dispatched');
+  const leave = dispatched >= 0 ? Math.min(leaveIndexOf({ steps: given }), dispatched) : leaveIndexOf({ steps: given });
+  const sided = given.map((step, index) => ({
+    ...step,
+    side: index < join ? ('pre' as const) : ('post' as const),
+    lastMile: index >= leave ? true : undefined,
+  }));
+  return assignButtons(sided).steps
+    .filter((step) => step.name.trim())
+    .map((step) => ({
+      id: step.id, name: step.name.trim(), description: step.description.trim(), side: step.side,
+      trigger: step.trigger, forward: step.forward, waitMessage: step.waitMessage, lastMile: step.lastMile,
+      button: step.button, custom: step.custom, assignee: step.assignee,
+    }));
+}
+
 /**
  * Where a route is written: a vertical chain of nodes in three lanes - before
  * the lot, in it, after it - with a "+" between any two, and a scrubbable
@@ -97,6 +128,24 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const [pipSaid, setPipSaid] = useState('');
   const [tipAt, setTipAt] = useState(0);
   const [previewing, setPreviewing] = useState(false);
+  /* Most edits are words: a step's name and its line. Buttons, who presses
+     them, the waits between steps and where the lot starts and ends are all
+     handed out sensibly already, so they wait behind "All details". */
+  const [detailed, setDetailed] = useState(() => {
+    try {
+      return localStorage.getItem(DETAIL_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const showDetails = (next: boolean) => {
+    setDetailed(next);
+    try {
+      localStorage.setItem(DETAIL_KEY, next ? '1' : '0');
+    } catch {
+      /* A private window: it starts simple next time. */
+    }
+  };
   /** Where a step is being added: the index it will take, and which part of the journey. */
   const [adding, setAdding] = useState<{ at: number; zone: StepZone } | null>(null);
   /** The shop's own lane, so the preview reads in its countries rather than ours. */
@@ -379,8 +428,8 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
             <div>
               <h1>{editing ? 'Edit route' : 'New route'}</h1>
               <p className="muted">
-                One node per step, top to bottom, with a preview of what a buyer actually sees.
-                Start with Pip, from a blank chain, or from a shape close to yours.
+                The steps your buyers read as their tracking. Pick a ready-made route and change
+                any words you like - you can preview exactly what a buyer sees before saving.
               </p>
             </div>
           </div>
@@ -391,17 +440,10 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 
         {library && (
           <div className="stack">
-            <PipSays mood="happy"
-              text="Hi, I'm Pip! 📦 I can build your tracking timeline with you - a few quick questions and every answer becomes a step. Or pick a starting point below."
-              choices={[{ id: 'go', label: "🤖 Let's build it together", primary: true, onPick: startPip }]} />
-            <button type="button" className="silkcta silkcta--wide"
-              onClick={() => open(library.suggested, '')}>
-              <span className="silkcta__label">✨ Start a blank chain</span>
-              <span className="silkcta__note">
-                {library.suggested.length} common steps as nodes, all editable.
-              </span>
-            </button>
-
+            {/* Most shops ship one of a handful of ways, so those lead: one
+                tap opens a whole route to look over. Pip and a blank chain are
+                for the shop whose way is not among them. */}
+            <span className="card__title">Start from the one closest to how you ship</span>
             <div className="rsgrid">
               {library.routeTemplates.map((template) => (
                 <button key={template.id} type="button" className="rscard"
@@ -422,6 +464,16 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
                 </button>
               ))}
             </div>
+
+            <div className="rsstart__other">
+              <span className="faint">None of these?</span>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={startPip}>
+                🤖 Answer a few questions
+              </button>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => open(library.suggested, '')}>
+                Start from common steps
+              </button>
+            </div>
           </div>
         )}
 
@@ -434,7 +486,8 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 
   return (
     <PreviewVarsContext.Provider value={vars}>
-    <form className="rsstudio" onSubmit={save}>
+    {/* Something to fix shows everything, so the field it is about is there to fix. */}
+    <form className={`rsstudio${detailed || blocking.length > 0 ? '' : ' rsstudio--simple'}`} onSubmit={save}>
       {pipDock}
 
       {/* The route itself: its name, and a map of its three parts at a glance. */}
@@ -442,6 +495,12 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
         <input id="rs-name" className="rshead__name" value={name} onChange={(event) => setName(event.target.value)}
           placeholder="Name this route - e.g. Guangzhou air" aria-label="Route name" required autoFocus />
         <span className="rshead__hint">For your own lists - buyers see the steps, not this name.</span>
+        <div className="seg rshead__mode" role="tablist" aria-label="How much to show">
+          <button type="button" role="tab" aria-selected={!detailed} className={detailed ? '' : 'is-on'}
+            onClick={() => showDetails(false)}>Steps</button>
+          <button type="button" role="tab" aria-selected={detailed} className={detailed ? 'is-on' : ''}
+            onClick={() => showDetails(true)}>All details</button>
+        </div>
         <div className="rsmap" aria-label="The route's three parts">
           {lanes.map((lane) => (
             <a key={lane.zone} href={`#rs-lane-${lane.zone}`} className={`rsmap__seg rsmap__seg--${lane.zone}`}

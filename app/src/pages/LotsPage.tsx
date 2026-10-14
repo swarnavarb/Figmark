@@ -24,7 +24,7 @@ import { LotDetailFields, emptyLotDetails, lotDetailsOf } from '../components/Lo
 import { Avatar, ErrorNotice, Icon, Modal, type IconName } from '../components/ui';
 import { ItemHead } from '../components/ItemHead';
 import { endedOf } from '../components/OrderTrack';
-import { RouteStudio } from './RouteStudioPage';
+import { RouteStudio, routeStepsFrom } from './RouteStudioPage';
 import { ForwarderBooking } from '../components/ForwarderBooking';
 import { formatDate, formatMoney, formatWeight } from '../format';
 import { ConditionTag } from '../components/ConditionTag';
@@ -327,6 +327,9 @@ export function RouteSheet({ onSaved, onClose }: {
   );
 }
 
+/** Marks a ready-made route in the picker, as against one the shop has saved. */
+const READY = 'ready:';
+
 /**
  * Open a lot.
  *
@@ -338,10 +341,12 @@ export function RouteSheet({ onSaved, onClose }: {
  * where the next one starts, since most shops run the same lane again. The
  * name is asked for first: it is how the shop finds this lot again.
  */
-export function NewLotForm({ onDone, onCancel }: {
+export function NewLotForm({ onDone, onCancel, bare = false }: {
   /** Handed the lot just opened, for a caller that has something to put in it. */
   onDone: (lot: Lot) => void;
   onCancel: () => void;
+  /** Inside a dialog that already says "New lot": no card, no heading of its own. */
+  bare?: boolean;
 }) {
   const [details, setDetails] = useState<LotDetails>(() => ({ ...emptyLotDetails, name: '' }));
   /** Everything that is not a decision, folded away until asked for. */
@@ -397,6 +402,11 @@ export function NewLotForm({ onDone, onCancel }: {
   /* A route with nothing in its lot lane is for items shipped one by one; a
      lot put on it would have nothing of its own to move. */
   const routes = (library?.routes ?? []).filter(routeJoinsLot);
+  /* A shop with no route of its own yet picks from ready-made ones, saved as
+     its own the moment the lot opens - one tap, rather than a trip through
+     the Studio before the first lot can exist. */
+  const readyMade = routes.length > 0 ? [] : [...(library?.routeTemplates ?? []), ...(library?.presets ?? [])]
+    .filter(routeJoinsLot);
   const vars = { origin: details.originCountry, destination: details.destinationCountry };
 
   async function submit(event: FormEvent) {
@@ -404,6 +414,12 @@ export function NewLotForm({ onDone, onCancel }: {
     setBusy(true);
     setError(null);
     try {
+      // A ready-made route becomes the shop's own first, so the lot - and
+      // every lot after - can be pointed at it.
+      const template = routeId.startsWith(READY) ? readyMade.find((row) => `${READY}${row.id}` === routeId) : null;
+      const chosen = template
+        ? (await api.saveRoute({ name: template.name, steps: routeStepsFrom(template.steps) })).route.id
+        : routeId;
       const { lot } = await api.createLot({
         ...details,
         name: details.name.trim(),
@@ -412,9 +428,9 @@ export function NewLotForm({ onDone, onCancel }: {
         forwarderName: forwarderName.trim() || undefined,
         supplierHandle: supplierHandle.trim() || undefined,
         handlerHandle: handlerHandle.trim() || undefined,
-        // Left unset only when the shop has no route yet: the lot opens on the
-        // generic ladder and can be pointed at a route once one exists.
-        routeId: routeId || undefined,
+        // Left unset only when the shop has no route yet and picked none: the
+        // lot opens on the standard steps and can be pointed at a route later.
+        routeId: chosen || undefined,
       });
       onDone(lot);
     } catch (err) {
@@ -426,8 +442,8 @@ export function NewLotForm({ onDone, onCancel }: {
 
   return (
     <>
-    <form className="card card--pad form" onSubmit={submit} style={{ marginBottom: 22 }}>
-      <h2>New lot</h2>
+    <form className={bare ? 'form' : 'card card--pad form'} onSubmit={submit} style={bare ? undefined : { marginBottom: 22 }}>
+      {!bare && <h2>New lot</h2>}
       <p className="muted" style={{ marginTop: -6 }}>
         A lot is one shipment. Say where it goes and how it travels, then add orders to it.
       </p>
@@ -481,16 +497,28 @@ export function NewLotForm({ onDone, onCancel }: {
           </label>
         ))}
 
+        {readyMade.map((route) => (
+          <label key={route.id} className={`pick${routeId === `${READY}${route.id}` ? ' is-on' : ''}`}>
+            <input type="radio" name="route" checked={routeId === `${READY}${route.id}`}
+              onChange={() => setRouteId(`${READY}${route.id}`)} />
+            <span className="pick__body">
+              <span className="pick__name">{route.name}</span>
+              <span className="pick__note">{route.blurb}</span>
+              <span className="pick__steps">{summarise(route.steps, vars)}</span>
+            </span>
+          </label>
+        ))}
+
         {library && routes.length === 0 && (
           <p className="field__hint" style={{ margin: 0 }}>
-            You have no route for lots yet. Opening the lot now uses a generic ladder — write your
-            own any time and point this lot (or the next one) at it.
+            Pick the one closest to how you ship - it is saved as your route and you can edit it any time.
+            Not sure? Leave it, and the lot uses Figmark&apos;s standard steps until you choose.
           </p>
         )}
 
         <button type="button" className="silkcta" onClick={() => setDesigning(true)}>
-          <span className="silkcta__label">✨ Define your Silk Route</span>
-          <span className="silkcta__note">Write a new route without leaving this lot</span>
+          <span className="silkcta__label">+ Write your own route</span>
+          <span className="silkcta__note">Your own steps, without leaving this lot</span>
         </button>
       </fieldset>
 
@@ -653,7 +681,7 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
 
         <button type="button" className="silkcta silkcta--sm" style={{ justifySelf: 'start' }}
           onClick={() => setDesigning(true)}>
-          <span className="silkcta__label">✨ Define your Silk Route</span>
+          <span className="silkcta__label">+ Write your own route</span>
         </button>
 
         {picked && <p className="field__hint" style={{ margin: 0 }}>{summarise(picked.steps, vars)}</p>}

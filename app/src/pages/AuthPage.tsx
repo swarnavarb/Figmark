@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { DemoAccount } from '@shared/contracts';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api } from '../api';
-import { ErrorNotice } from '../components/ui';
+import { ErrorNotice, Icon } from '../components/ui';
 import { useSession } from '../session';
 
 type Mode = 'signin' | 'signup';
@@ -86,6 +86,8 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  /** Whether the username field is unfolded; most people keep the one made from their name. */
+  const [pickHandle, setPickHandle] = useState(false);
 
   // The seeded sign-in hint, shown only while the mock provider is active.
   useEffect(() => {
@@ -186,52 +188,18 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
                   <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
                     autoComplete="name" placeholder="Arjun Mehta" required />
                 </label>
-                {/* Your address here. Left blank it is taken from your name,
-                    because nobody should be stopped at the door by it. */}
                 <label className="field">
-                  <span>Username</span>
-                  <span className={`handlefield handlefield--${usernameState}`}>
-                    <input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                      autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                      placeholder={suggested || 'arjunmehta'}
-                      aria-invalid={usernameState === 'taken'} aria-describedby="signup-username-hint" />
-                    <span className="handlefield__status" aria-hidden="true">
-                      {usernameState === 'checking' && <span className="handlefield__spin" />}
-                      {usernameState === 'free' && <HandleMark ok />}
-                      {usernameState === 'taken' && <HandleMark ok={false} />}
-                    </span>
-                  </span>
-                  <span id="signup-username-hint" className={`field__hint handlefield__hint--${usernameState}`} aria-live="polite">
-                    {problem
-                      ? USERNAME_PROBLEMS[problem]
-                      : usernameState === 'checking'
-                        ? <>Checking whether <code>@{wanted}</code> is free…</>
-                        : usernameState === 'taken'
-                          ? availability.reason ?? `@${wanted} is already taken.`
-                          : usernameState === 'free'
-                            ? <><code>@{wanted}</code> is available. People find you at <code>/{wanted}</code>.</>
-                            : <>People find you at <code>/{wanted || suggested || 'yourname'}</code> and message you at{' '}
-                              <code>@{wanted || suggested || 'yourname'}</code>.</>}
-                  </span>
+                  <span>Mobile (WhatsApp)</span>
+                  <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                    autoComplete="tel" inputMode="tel" placeholder="+91 98765 43210" required />
+                  <span className="field__hint">Use the number you have on WhatsApp.</span>
                 </label>
-                <div className="field-row">
-                  <label className="field">
-                    <span>Email</span>
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                      autoComplete="email" placeholder="you@example.com" required />
-                    <span className="field__hint">We email you a code to confirm it.</span>
-                  </label>
-                  <label className="field">
-                    <span>Mobile (WhatsApp)</span>
-                    <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                      autoComplete="tel" placeholder="+91 98765 43210" required />
-                  </label>
-                </div>
-                <p className="notice notice--warn" style={{ margin: 0 }}>
-                  <strong>Use the mobile number linked to your Aadhaar</strong>, and that you use on WhatsApp. To buy or
-                  sell you verify this number on WhatsApp and then your Aadhaar - and the Aadhaar check only passes if
-                  its linked mobile is this same number.
-                </p>
+                <label className="field">
+                  <span>Email</span>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email" placeholder="you@example.com" required />
+                  <span className="field__hint">We email you a code to confirm it.</span>
+                </label>
               </>
             )}
 
@@ -249,13 +217,47 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder={mode === 'signup' ? 'At least 8 characters' : ''} required />
-              {mode === 'signup' && (
-                <span className="field__hint">
-                  You can browse straight away. Buying and selling open once your email, WhatsApp number and Aadhaar
-                  are verified.
-                </span>
-              )}
             </label>
+
+            {mode === 'signup' && (
+              <>
+                {/* Your address here. Left alone it is taken from your name,
+                    because nobody should be stopped at the door by it - so it
+                    stays folded away until somebody wants to pick their own. */}
+                <button type="button" className="disclose" aria-expanded={pickHandle}
+                  onClick={() => setPickHandle(!pickHandle)}>
+                  <Icon name={pickHandle ? 'down' : 'right'} size={14} />
+                  {pickHandle ? 'Username' : <>Suggested username: <code>@{wanted || suggested || 'yourname'}</code></>}
+                  <span className="faint">optional, change it any time</span>
+                </button>
+                {pickHandle && (
+                  <label className="field">
+                    <span className={`handlefield handlefield--${usernameState}`}>
+                      <input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                        autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                        placeholder={suggested || 'arjunmehta'} aria-label="Username"
+                        aria-invalid={usernameState === 'taken'} aria-describedby="signup-username-hint" />
+                      <span className="handlefield__status" aria-hidden="true">
+                        {usernameState === 'checking' && <span className="handlefield__spin" />}
+                        {usernameState === 'free' && <HandleMark ok />}
+                        {usernameState === 'taken' && <HandleMark ok={false} />}
+                      </span>
+                    </span>
+                    <span id="signup-username-hint" className={`field__hint handlefield__hint--${usernameState}`} aria-live="polite">
+                      {problem
+                        ? USERNAME_PROBLEMS[problem]
+                        : usernameState === 'checking'
+                          ? <>Checking whether <code>@{wanted}</code> is free…</>
+                          : usernameState === 'taken'
+                            ? availability.reason ?? `@${wanted} is already taken.`
+                            : usernameState === 'free'
+                              ? <><code>@{wanted}</code> is available. People find you at <code>/{wanted}</code>.</>
+                              : <>Left empty, you are <code>@{suggested || 'yourname'}</code>.</>}
+                    </span>
+                  </label>
+                )}
+              </>
+            )}
 
             {blocked && !error && <p className="notice notice--warn">{blocked}</p>}
 

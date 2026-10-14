@@ -22,7 +22,7 @@ import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { RoutesList } from './RoutesPage';
-import { RouteStudio } from './RouteStudioPage';
+import { SetupChecklist } from './VerifyPage';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
@@ -60,7 +60,6 @@ import { SkeletonText, useToast } from '../components/Feedback';
 import { InsightsPanel } from './InsightsPanel';
 import { ProfitCalculator } from './ProfitCalculator';
 import { SalesPanel } from './SalesPanel';
-import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
 import {
   currencySymbol, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
@@ -70,7 +69,7 @@ import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 
-type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -88,7 +87,6 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'refunds', label: 'Refunds' },
   { id: 'lots', label: 'Lots' },
   { id: 'routes', label: 'Routes' },
-  { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
@@ -102,16 +100,31 @@ const PRO_SECTIONS: readonly Section[] = ['insights', 'calculator'];
  * card only ever shows the handful of screens that card promised - not all
  * eight at once.
  */
-const SECTION_GROUPS: Record<string, Section[]> = {
-  items: ['items', 'payments', 'insights', 'calculator', 'refunds'],
-  manage: ['storefront', 'people', 'packing'],
-  lots: ['lots'],
-  routes: ['routes'],
-  analytics: ['analytics'],
+/**
+ * The five places a shop's work lives, named after the job rather than the
+ * screen. Each opens on its first section; the rest of its sections are chips
+ * under it. Packing is not here: a packer works from their own console.
+ */
+type Group = 'items' | 'orders' | 'lots' | 'money' | 'settings';
+
+const SECTION_GROUPS: Record<Group, Section[]> = {
+  items: ['items'],
+  orders: ['payments', 'refunds'],
+  lots: ['lots', 'routes'],
+  money: ['analytics', 'insights', 'calculator'],
+  settings: ['storefront', 'people'],
 };
 
-function groupOf(section: Section): string {
-  return Object.entries(SECTION_GROUPS).find(([, ids]) => ids.includes(section))?.[0] ?? 'items';
+const GROUP_TABS: { id: Group; label: string; icon: IconName }[] = [
+  { id: 'items', label: 'Listings', icon: 'tag' },
+  { id: 'orders', label: 'Orders', icon: 'box' },
+  { id: 'lots', label: 'Lots', icon: 'truck' },
+  { id: 'money', label: 'Money', icon: 'spark' },
+  { id: 'settings', label: 'Shop settings', icon: 'bank' },
+];
+
+function groupOf(section: Section): Group {
+  return (Object.entries(SECTION_GROUPS) as [Group, Section[]][]).find(([, ids]) => ids.includes(section))?.[0] ?? 'items';
 }
 
 /**
@@ -126,8 +139,6 @@ export function ShopPage() {
   const [stores, setStores] = useState<StoreAccess[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
-  /** The one question after the shop exists: how does your stock travel? */
-  const [routing, setRouting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -144,32 +155,9 @@ export function ShopPage() {
   if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
   if (!stores) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
 
-  if (stores.length === 0 && !opening && !routing) {
+  if (stores.length === 0 && !opening) {
     return <ShopStart onOpen={() => setOpening(true)} />;
   }
-  /*
-   * Opened, and now asked the one question a shop cannot answer later without
-   * having already got it wrong: how does your stock actually travel?
-   *
-   * Here rather than buried in a settings screen, because the route is what
-   * every buyer of this shop will read for six weeks, and a shop that never
-   * finds the screen ships everybody the built-in seven words. Skippable,
-   * because a shop that does not know yet should not be held at the door.
-   */
-  if (routing) {
-    return (
-      <main className="page tab-view">
-        <RouteStudio
-          editing={null}
-          intro={<RouteIntro />}
-          cancelLabel="Skip for now"
-          onSaved={() => { setRouting(false); void load(); }}
-          onCancel={() => { setRouting(false); void load(); }}
-        />
-      </main>
-    );
-  }
-
   if (stores.length === 0) {
     return (
       <main className="page tab-view">
@@ -185,45 +173,15 @@ export function ShopPage() {
             </p>
           </div>
         </div>
-        {/* Saving is what makes the account a shop. Then one more question,
-            before the console, about how the stock travels. */}
-        <StorefrontEditor onSaved={() => { setOpening(false); setRouting(true); }} />
+        {/* Saving is what makes the account a shop, and the console opens
+            straight after. How the stock travels is asked when the first lot
+            is opened, which is when it starts to matter. */}
+        <StorefrontEditor onSaved={() => { setOpening(false); void load(); }} />
       </main>
     );
   }
 
   return <ShopConsole stores={stores} onChanged={load} />;
-}
-
-/**
- * What a route is, for somebody meeting one for the first time.
- *
- * Said in the words of the thing it produces rather than in the words of the
- * feature: a seller does not want "a configurable fulfilment pipeline", they
- * want their buyers to stop asking where it is.
- */
-function RouteIntro() {
-  return (
-    <div className="stack" style={{ marginBottom: 18 }}>
-      <div className="page__head"><div>
-        <h1>How does your stock travel?</h1>
-        <p className="muted">
-          A route is the list of steps your customers read as their tracking — in your words, not
-          ours. Write it once and every shipment you open uses it.
-        </p>
-      </div></div>
-      <div className="notice notice--info">
-        <strong>Why it is worth a minute.</strong> Customers ask "where is it?" because nothing
-        told them. A route answers before they ask: they see the same steps you work, ticked as
-        you tick them, from the day they order to the day it lands. You can change it whenever
-        the way you ship changes.
-      </div>
-      <p className="muted" style={{ marginTop: 0 }}>
-        Let Pip ask you a few questions, or start from a shape close to yours — everything in it
-        is editable — or skip and do it later from Sell → Routes.
-      </p>
-    </div>
-  );
 }
 
 /**
@@ -236,6 +194,7 @@ function RouteIntro() {
 function ShopStart({ onOpen }: { onOpen: () => void }) {
   return (
     <main className="page tab-view">
+      <SetupChecklist hasStore={false} onOpenStore={onOpen} />
       <div className="gate">
         <span className="gate__mark" aria-hidden="true">{<Icon name="bank" size={19} />}</span>
         <h1 className="gate__title">Open your storefront</h1>
@@ -273,14 +232,15 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
    */
   const [params, setParams] = useSearchParams();
   const requested = params.get('tab');
-  const setSection = (next: Section) =>
+  const setSection = (next: Section, extra: Record<string, string> = {}) =>
     setParams((current) => {
       const copy = new URLSearchParams(current);
       copy.set('tab', next);
       // A sub-view belongs to the tab it was opened in, and so does an order
-      // waiting to be filed into a lot about to be opened.
-      copy.delete('view');
-      copy.delete('file');
+      // waiting to be filed into a lot about to be opened, an open lot, and
+      // a list's filter.
+      for (const key of ['view', 'file', 'lot', 'show', 'state']) copy.delete(key);
+      for (const [key, value] of Object.entries(extra)) copy.set(key, value);
       return copy;
     }, { replace: true });
 
@@ -291,21 +251,23 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     if (entry.id === 'items') return store.permissions.includes('listings');
     if (entry.id === 'analytics' || entry.id === 'insights' || entry.id === 'calculator') return store.permissions.includes('analytics');
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
-    if (entry.id === 'packing') return store.permissions.includes('export');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     return true;
   });
-  // No tab, or a tab this store cannot open: nothing renders below the
-  // workflow buttons.
-  const active = visible.find((entry) => entry.id === requested)?.id ?? null;
-  const chips = active ? visible.filter((entry) => SECTION_GROUPS[groupOf(active)]!.includes(entry.id)) : [];
+  // No tab, or a tab this store cannot open: the first section it can, so
+  // the Sell tab never opens on an empty space under its buttons.
+  const active = visible.find((entry) => entry.id === requested)?.id ?? visible[0]?.id ?? null;
+  const chips = active ? visible.filter((entry) => SECTION_GROUPS[groupOf(active)].includes(entry.id)) : [];
+  const groups = GROUP_TABS.filter((group) => visible.some((entry) => SECTION_GROUPS[group.id].includes(entry.id)));
+  const openGroup = (group: Group) => {
+    const first = visible.find((entry) => SECTION_GROUPS[group].includes(entry.id));
+    if (first) setSection(first.id);
+  };
 
   return (
     <main className="page tab-view">
-      {/* No "list an item" here: the Items section opens with that door, and
-          no shop-name header here either - the workflow below already says
-          where you are. */}
-      <SellHome active={active} onGo={setSection} />
+      <SetupChecklist hasStore />
+      <SellHome store={store} canList={store.permissions.includes('listings')} onGo={setSection} />
 
       {stores.length > 1 && (
         <label className="field" style={{ marginBlock: 14 }}>
@@ -320,8 +282,19 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </label>
       )}
 
+      <div className="selltabs" role="tablist" aria-label="Shop">
+        {groups.map((group) => (
+          <button key={group.id} type="button" role="tab" aria-selected={active ? groupOf(active) === group.id : false}
+            className={`selltabs__tab${active && groupOf(active) === group.id ? ' is-on' : ''}`}
+            onClick={() => openGroup(group.id)}>
+            <Icon name={group.icon} size={16} />
+            {group.label}
+          </button>
+        ))}
+      </div>
+
       {active && chips.length > 1 && (
-        <div className="sections" role="tablist" aria-label="Shop sections" style={{ marginTop: 18 }}>
+        <div className="sections" role="tablist" aria-label="Shop sections" style={{ marginTop: 12 }}>
           {chips.map((entry) => (
             <button
               key={entry.id}
@@ -351,7 +324,6 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}
-          {active === 'packing' && <PackingList storeId={store.ownerId} />}
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
@@ -362,62 +334,90 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
 }
 
 /**
- * The Sell tab's front door: five cards, always on screen.
+ * The top of the Sell tab: the thing a shop does most, and what is waiting.
  *
- * Two primary actions up top - the business, not the stock - then the
- * workflow every import actually follows, drawn as the three things it is:
- * items become part of a lot, and a lot follows a route. All five stay in
- * place; picking one only changes what appears in the area below them, so
- * the Sell page itself is never left.
+ * It used to lead with Analytics and Manage Store and a diagram of how items,
+ * lots and routes relate, with "list an item" one section down. Now the
+ * button comes first, then the counts that are somebody's next job - each one
+ * a tap to the list it counts.
  */
-function SellHome({ active, onGo }: { active: Section | null; onGo: (section: Section) => void }) {
-  const on = (section: Section) => (active ? groupOf(active) === groupOf(section) : false);
-  return (
-    /* Once a section is open the cards shrink to one line each, so on a
-       phone what was picked starts near the top instead of below the fold. */
-    <div className={`stack${active ? ' sellhome--compact' : ''}`}>
-      <div className="doors doors--two">
-        <button type="button" className={`door door--card door--analytics${on('analytics') ? ' is-on' : ''}`}
-          onClick={() => onGo('analytics')}>
-          <span className="door__glyph" aria-hidden="true"><Icon name="spark" size={22} /></span>
-          <span className="door__title">Analytics</span>
-          <span className="door__note">Sales, views and trends for your shop.</span>
-        </button>
-        <button type="button" className={`door door--card door--manage${on('storefront') ? ' is-on' : ''}`}
-          onClick={() => onGo('storefront')}>
-          <span className="door__glyph" aria-hidden="true"><Icon name="bank" size={22} /></span>
-          <span className="door__title">Manage Store</span>
-          <span className="door__note">Your storefront, your team, and packing.</span>
-        </button>
-      </div>
+function SellHome({ store, canList, onGo }: {
+  store: StoreAccess;
+  canList: boolean;
+  onGo: (section: Section, extra?: Record<string, string>) => void;
+}) {
+  const [todo, setTodo] = useState<{ answer: number; noLot: number; lots: number } | null>(null);
+  const seesLots = store.permissions.includes('lots');
 
-      <div className="workflow">
-        <span className="workflow__label">Workflow</span>
-        <div className="workflow__row">
-          <button type="button" className={`workflow__step workflow__step--items${on('items') ? ' is-on' : ''}`}
-            onClick={() => onGo('items')}>
-            <span className="workflow__glyph" aria-hidden="true"><Icon name="tag" size={20} /></span>
-            <span className="workflow__title">Items</span>
-          </button>
-          <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
-          <button type="button" className={`workflow__step workflow__step--lots${on('lots') ? ' is-on' : ''}`}
-            onClick={() => onGo('lots')}>
-            <span className="workflow__glyph" aria-hidden="true"><Icon name="box" size={20} /></span>
-            <span className="workflow__title">Lots</span>
-          </button>
-          <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
-          <button type="button" className={`workflow__step workflow__step--routes${on('routes') ? ' is-on' : ''}`}
-            onClick={() => onGo('routes')}>
-            <span className="workflow__glyph" aria-hidden="true"><Icon name="truck" size={20} /></span>
-            <span className="workflow__title">Routes</span>
-          </button>
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      api.sales(store.ownerId).catch(() => null),
+      seesLots ? api.myLots(store.isOwner ? undefined : store.ownerId).catch(() => null) : Promise.resolve(null),
+    ]).then(([sales, lots]) => {
+      // Nothing to count yet - an unverified shop is refused both - says nothing rather than zeros.
+      if (cancelled || (!sales && !lots)) return;
+      const active = sales?.orders.filter((row) => stateOf(row) === 'active') ?? [];
+      const waiting = new Set([...(sales?.waiting ?? []), ...(sales?.placed ?? [])].map((row) => row.id));
+      setTodo({
+        answer: active.filter((row) => waiting.has(row.id)).length,
+        noLot: active.filter((row) => row.awaitingLot).length,
+        lots: lots?.lots.filter((entry) => !lotIsDone(entry.lot)).length ?? 0,
+      });
+    });
+    return () => { cancelled = true; };
+  }, [store.ownerId, store.isOwner, seesLots]);
+
+  const tiles: { id: string; count: number; label: string; hot: boolean; go: () => void }[] = todo ? [
+    { id: 'answer', count: todo.answer, label: todo.answer === 1 ? 'order to answer' : 'orders to answer',
+      hot: todo.answer > 0, go: () => onGo('payments', { show: 'answer' }) },
+    ...(seesLots ? [
+      { id: 'nolot', count: todo.noLot, label: todo.noLot === 1 ? 'order not in a lot' : 'orders not in a lot',
+        hot: todo.noLot > 0, go: () => onGo('lots') },
+      { id: 'lots', count: todo.lots, label: todo.lots === 1 ? 'lot on the move' : 'lots on the move',
+        hot: false, go: () => onGo('lots') },
+    ] : []),
+  ] : [];
+
+  return (
+    <div className="sellhome">
+      {canList && (
+        <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn btn--lg sellhome__list">
+          <Icon name="plus" size={18} /> List an item
+        </Link>
+      )}
+      {tiles.length > 0 && (
+        <div className="todo" aria-label="Waiting on you">
+          {tiles.map((tile) => (
+            <button key={tile.id} type="button" className={`todo__tile${tile.hot ? ' is-hot' : ''}`} onClick={tile.go}>
+              <b className="todo__count">{tile.count}</b>
+              <span className="todo__label">{tile.label}</span>
+            </button>
+          ))}
         </div>
-        <p className="faint workflow__hint">
-          Items are added → items become part of a lot → lots follow a route.
-        </p>
-      </div>
+      )}
     </div>
   );
+}
+
+/**
+ * The handle a new shop is offered.
+ *
+ * Made from the same name the person's own handle was, so on its own it is
+ * often that handle - already theirs - or another shop's of the same name,
+ * and refused the moment the shop is saved. So the name is tried, then the
+ * name with "_shop", then with a short tail, and the first one free is offered.
+ */
+async function shopHandleFor(name: string, own: string | null): Promise<string> {
+  const plain = suggestUsername(name);
+  const tries = [plain, suggestUsername(`${name} shop`), `${plain.slice(0, 25)}_${Math.random().toString(36).slice(2, 6)}`];
+  for (const handle of tries) {
+    if (handle === own) continue;
+    const free = await api.usernameAvailable(handle).then((answer) => answer.available).catch(() => null);
+    // Unknown is not a refusal: offer it, and the save says if it is taken.
+    if (free !== false) return handle;
+  }
+  return tries[tries.length - 1]!;
 }
 
 /* ── Storefront ─────────────────────────────────────────────────────────── */
@@ -443,12 +443,13 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
   useEffect(() => {
     void api
       .storefront()
-      .then((result) => {
+      .then(async (result) => {
+        const handle = result.storefront?.username ?? await shopHandleFor(result.displayName, user?.username ?? null);
         setSaved(result.storefront);
         setChipsText((result.storefront?.tags ?? []).join(', '));
         setDraft({
           storefrontName: result.storefront?.storefrontName ?? result.displayName,
-          username: result.storefront?.username ?? suggestUsername(result.displayName),
+          username: handle,
           bio: result.storefront?.bio ?? '',
           dispatchRegion: result.storefront?.dispatchRegion ?? '',
           photoUrl: result.storefront?.photoUrl ?? '',
@@ -463,7 +464,9 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
       );
   }, []);
 
-  if (error) return <ErrorNotice message={error} />;
+  // Only a failed load stands in for the form; a failed save is said beside
+  // Save, with everything typed still there to fix.
+  if (error && !draft) return <ErrorNotice message={error} />;
   if (!draft) return <p className="muted">Loading…</p>;
 
   const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) =>
@@ -709,13 +712,9 @@ function MyItems({ store }: { store: StoreAccess }) {
       {/* Two ways to sell, and they are genuinely different jobs. One item put
           up for whoever finds it, or a run of them dropped into the channel on
           a timer. Both are here because a shop does both, at different hours. */}
-      <div className="doors doors--two">
-        <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="door">
-          <span className="door__glyph" aria-hidden="true"><Icon name="tag" size={19} /></span>
-          <span className="door__title">List an item</span>
-          <span className="door__note">One thing, up for anyone browsing.</span>
-        </Link>
-
+      {/* "List an item" leads the Sell tab itself; what stays here is the
+          other way to sell, a run of items dropped into the channel on a timer. */}
+      <div className="doors">
         <button type="button" className="door door--pro"
           onClick={() => navigate(`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
           <span className="probadge door__flag">PRO</span>
@@ -1762,7 +1761,7 @@ function MoneyLine({ total, paid, balance, share, due, children }: {
   );
 }
 
-/* ── Quick Post templates ───────────────────────────────────────────────── */
+/* ── Quick Fill templates ───────────────────────────────────────────────── */
 
 /**
  * The stationery a shop lists from.
@@ -3418,11 +3417,19 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
   /** An order sent here from Orders to be filed into the lot about to be opened. */
   const fileOrder = params.get('file');
   const [creating, setCreating] = useState(Boolean(fileOrder));
+  /** Opening a lot for every order waiting on one, from "Ship them together". */
+  const [gathering, setGathering] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   /* The lot is open; put the order that asked for it inside, and take the
      seller back to that order on the Orders screen. */
   async function created(lot: Lot) {
     setCreating(false);
+    if (gathering) {
+      setGathering(false);
+      await gather(lot);
+      return;
+    }
     if (!fileOrder) {
       void load();
       return;
@@ -3438,6 +3445,33 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
         ? `The lot is open, but the order was not filed into it: ${err.message}`
         : 'The lot is open, but the order was not filed into it.');
     }
+  }
+  /* Every active order waiting for a lot, filed into the one just opened. One
+     the server refuses (a different lane, say) stays waiting, and is counted
+     rather than failing the rest. */
+  async function gather(lot: Lot) {
+    try {
+      const sales = await api.sales(store.ownerId);
+      const waiting = sales.orders.filter((row) => row.awaitingLot && stateOf(row) === 'active');
+      let filed = 0;
+      for (const row of waiting) {
+        try {
+          await api.assignOrderToLot(row.id, { lotId: lot.id });
+          filed += 1;
+        } catch {
+          /* Left waiting; said below. */
+        }
+      }
+      const left = waiting.length - filed;
+      setNotice(`${filed === 1 ? '1 order' : `${filed} orders`} filed into ${lot.name}.${
+        left > 0 ? ` ${left === 1 ? '1 order' : `${left} orders`} could not go in and ${left === 1 ? 'is' : 'are'} still waiting.` : ''}`);
+      setOpenId(lot.id);
+    } catch (err) {
+      setError(err instanceof ApiRequestError
+        ? `The lot is open, but the orders were not filed into it: ${err.message}`
+        : 'The lot is open, but the orders were not filed into it.');
+    }
+    void load();
   }
   const dropFileOrder = () =>
     setParams((current) => {
@@ -3472,10 +3506,13 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
 
   if (openId) {
     return (
-      <LotDetail lotId={openId} onBack={() => { setOpenId(null); void load(); }}
+      <>
+      {notice && <p className="notice notice--ok" role="status">{notice}</p>}
+      <LotDetail lotId={openId} onBack={() => { setNotice(null); setOpenId(null); void load(); }}
         customers={({ onChanged, onTracking }) => (
           <Orders store={store} lotId={openId} onChanged={onChanged} onTracking={onTracking} />
         )} />
+      </>
     );
   }
 
@@ -3493,7 +3530,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
       {creating ? (
         <NewLotForm
           onDone={(lot) => void created(lot)}
-          onCancel={() => { setCreating(false); dropFileOrder(); }}
+          onCancel={() => { setCreating(false); setGathering(false); dropFileOrder(); }}
         />
       ) : (
         // Routes now live on their own Sell-home card, not beside this button.
@@ -3519,9 +3556,16 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
             </span>
             <span className="faint">Their buyers see no shipment tracking until they are in one.</span>
           </div>
-          <button type="button" className="btn btn--sm" onClick={() => navigate('/shop?tab=payments&show=nolot')}>
-            Add to a lot
-          </button>
+          <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {!creating && (
+              <button type="button" className="btn btn--sm" onClick={() => { setGathering(true); setCreating(true); }}>
+                Ship them together
+              </button>
+            )}
+            <button type="button" className="btn btn--sm btn--quiet" onClick={() => navigate('/shop?tab=payments&show=nolot')}>
+              Pick one by one
+            </button>
+          </span>
         </div>
       )}
 

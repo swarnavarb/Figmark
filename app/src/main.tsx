@@ -115,7 +115,7 @@ function App() {
             these both just point there so nothing bookmarked or linked breaks. */}
         <Route path="/lots" element={<Navigate to="/shop?tab=lots" replace />} />
         <Route path="/batches" element={<Navigate to="/shop?tab=lots" replace />} />
-        {/* The route list lives in Sell → Routes, and every route is written
+        {/* The route list lives in Sell → Lots → Routes, and every route is written
             in the Studio. The old addresses still land in the right place. */}
         <Route path="/routes" element={<Navigate to="/shop?tab=routes" replace />} />
         <Route path="/routes/studio/new" element={members(<RouteStudioPage />)} />

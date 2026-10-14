@@ -887,7 +887,7 @@ export interface Listing extends BaseDocument {
   /**
    * The ladder a buyer reads before this item is in a lot.
    *
-   * Set from the Quick Post template it was listed with, and snapshotted onto
+   * Set from the Quick Fill template it was listed with, and snapshotted onto
    * the order at purchase for the same reason a lot snapshots its route: the
    * template is a template, and editing it must not rewrite a timeline
    * somebody is already reading. Absent means the built-in two steps.

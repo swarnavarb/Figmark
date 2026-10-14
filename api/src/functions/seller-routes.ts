@@ -307,7 +307,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   /* The buyers, the lots and the listings behind these orders, read side by
      side and each once: one lookup for every buyer, one per lot rather than
      per row, and one query for the shop's listings - so the "add to a lot"
-     screen can pre-select the route the Quick Post template set up. */
+     screen can pre-select the route the Quick Fill template set up. */
   const [people, lotRows, listingRows, routeRows] = await Promise.all([
     repository.listUsersByIds([...new Set(orders.map((order) => order.buyerId))]),
     Promise.all(lotIds.map((id) => repository.getLot(storeId, id))),
@@ -482,7 +482,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
        * The route the item's template said a lot carrying it should travel.
        *
        * Pre-selected when the seller opens a lot from this order, which is
-       * the last link in the chain a Quick Post template sets up: pick the
+       * the last link in the chain a Quick Fill template sets up: pick the
        * template once, and the buyer's whole journey is configured.
        */
       lotRouteId: listing?.lotRouteId ?? null,

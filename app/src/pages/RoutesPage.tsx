@@ -103,7 +103,7 @@ export function RoutesList({ spotlightNew = false }: {
 
       {data && data.routes.length > 0 && (
         <div className="rlist">
-          <span className="rlist__label">My designed Silk Routes</span>
+          <span className="rlist__label">Your routes</span>
           {data.routes.map((route) => {
             const use = data.usage?.[route.id];
             return (
@@ -157,7 +157,7 @@ function RoutesFaq() {
       <details className="faq__item">
         <summary>What is a route?</summary>
         <p className="muted">
-          A ladder of steps you write once, here, and reuse on every lot that travels the same
+          A list of steps you write once, here, and reuse on every lot that travels the same
           way. When you save an edit, you are asked whether the lots already on that route should
           take the new steps. Finished lots always keep the steps they ended on.
         </p>
@@ -177,7 +177,7 @@ function RoutesFaq() {
         <summary>What happens when an item joins a lot? (auto tracking)</summary>
         <p className="muted">
           It is tracked automatically from the moment it joins — before the lot exists, the
-          moment it sells, or halfway down the ladder, it makes no difference. It is placed at
+          moment it sells, or halfway along its steps, it makes no difference. It is placed at
           the correct step from two things: how far the lot it joins has already moved, and
           anything already ticked for that item on its own (its "China WH received" tick, say).
           Nobody has to re-position it by hand.
@@ -191,7 +191,7 @@ function RoutesFaq() {
           "Dispatched" and so on) is marked <strong>⚡ Activity Triggered</strong>: pressing that
           button on an order moves its tracking to that step automatically, with no separate
           edit to the timeline. A step with nothing bound is marked <strong>✋ Manual</strong> —
-          moved only by hand, from the lot's or the item's own ladder. A "hand-over" step can
+          moved only by hand, from the lot's or the item's own steps. A "hand-over" step can
           also ask for a tracking ID and courier when the lot is moved onto it (see below); that
           is where a live carrier lookup would plug in once one is connected.
         </p>
@@ -200,7 +200,7 @@ function RoutesFaq() {
       <details className="faq__item">
         <summary>What does the seller see?</summary>
         <p className="muted">
-          The lot's own ladder, in Sell → Lots: which step it is on, a button to move it to the
+          The lot's own steps, in Sell → Lots: which step it is on, a button to move it to the
           next one, and a place to add a note without moving it — the ordinary way to say
           "still waiting on the airline, booked for Thursday" without inventing a step for it.
           Handing a lot to a carrier also asks for that carrier's tracking ID and name, recorded
@@ -211,7 +211,7 @@ function RoutesFaq() {
       <details className="faq__item">
         <summary>What does the buyer see?</summary>
         <p className="muted">
-          The same ladder, on their own order, in the seller's own words — never the lot itself,
+          The same steps, on their own order, in the seller's own words — never the lot itself,
           or who else is travelling in it. They see which steps are done, which one is current,
           any notes the seller wrote along the way, and the tracking ID and courier once the lot
           has been handed over to one.
