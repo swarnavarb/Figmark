@@ -133,7 +133,10 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   // with it when it is not.
   // Kept per name, not per render: the fallback has a random tail, and a
   // placeholder that changes on every keystroke elsewhere reads as a glitch.
-  const suggested = useMemo(() => (displayName.trim() ? suggestUsername(displayName) : ''), [displayName]);
+  const plainSuggestion = useMemo(() => (displayName.trim() ? suggestUsername(displayName) : ''), [displayName]);
+  // The first variant of it nobody holds yet, so what is shown is what they get.
+  const free = useFreeHandle(mode === 'signup' && !pickHandle ? plainSuggestion : '');
+  const suggested = free.base === plainSuggestion && free.handle ? free.handle : plainSuggestion;
   const wanted = username.trim();
   const problem = wanted ? checkUsername(wanted) : null;
   const availability = useUsernameAvailability(mode === 'signup' && !problem ? wanted : '');
@@ -151,7 +154,8 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
     setError(null);
     try {
       if (mode === 'signin') await signIn(identifier, password);
-      else await signUp({ displayName, username: username.trim() || undefined, email, phone, password });
+      else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password });
+      else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
     } finally {
@@ -327,6 +331,41 @@ function useUsernameAvailability(name: string) {
       controller.abort();
     };
   }, [name]);
+  return result;
+}
+
+/**
+ * The suggestion made from a name, or the first variant of it that is free.
+ *
+ * Tried in order - the plain one, then with a short tail - a moment after the
+ * name stops changing. The tails are drawn once per name, so the line under
+ * the form does not flicker between guesses. A failed check offers the plain
+ * one: the server settles a clash on a suggestion itself.
+ */
+function useFreeHandle(base: string) {
+  const [result, setResult] = useState<{ base: string; handle: string | null }>({ base: '', handle: null });
+  useEffect(() => {
+    if (!base) return;
+    const stem = base.slice(0, 25);
+    const tries = [base, ...Array.from({ length: 4 }, () => `${stem}_${Math.random().toString(36).slice(2, 6)}`)];
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      for (const handle of tries) {
+        if (checkUsername(handle)) continue;
+        const answer = await api.usernameAvailable(handle, controller.signal).catch(() => null);
+        if (controller.signal.aborted) return;
+        if (!answer || answer.available) {
+          setResult({ base, handle });
+          return;
+        }
+      }
+      setResult({ base, handle: tries[tries.length - 1]! });
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [base]);
   return result;
 }
 

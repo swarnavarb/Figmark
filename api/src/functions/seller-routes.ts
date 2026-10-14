@@ -14,6 +14,9 @@ import { hasArrived, readyGated, supplierIdOf } from '../../../shared/services.j
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { getPhotoStore, ownPhotoName } from '../storage/index.js';
+import { tooFast } from '../rate-limit.js';
+import { readPhoto } from './template-routes.js';
 
 /**
  * The seller's own side of the app: storefront, tracking, analytics.
@@ -75,6 +78,49 @@ async function getStorefront(request: HttpRequest, _context: InvocationContext) 
     storefront: record.sellerProfile,
     displayName: record.displayName,
   });
+}
+
+/**
+ * A storefront picture as saved: cleared, kept as it was, or a photo this
+ * account uploaded here. Undefined refuses it - a link to somewhere else is a
+ * picture that can change, vanish or track whoever opens the shop.
+ */
+async function storefrontPhoto(value: string, current: string | null, userId: string): Promise<string | null | undefined> {
+  const url = value.trim();
+  if (!url) return null;
+  if (url === current) return current;
+  if (url.length > 500) return undefined;
+  const name = await ownPhotoName(url);
+  if (!name) return undefined;
+  const info = await (await getPhotoStore()).publicInfo(name);
+  if (!info || (info.uploadedBy !== null && info.uploadedBy !== userId)) return undefined;
+  return url;
+}
+
+/**
+ * POST /api/me/storefront/photo - upload the shop's photo or banner.
+ *
+ * Any signed-in account: a storefront is opened before the account is
+ * verified, and its pictures are part of opening it. Listing photos stay
+ * behind verification. The same checks as every other upload - the bytes
+ * decide what it is, it is rebuilt and compressed - and the same rate limit.
+ */
+async function uploadStorefrontPhoto(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const slow = await tooFast(user.id, 'upload');
+  if (slow) return slow;
+
+  let body: { dataUrl?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const read = readPhoto(body.dataUrl);
+  if ('refusal' in read) return read.refusal;
+  const stored = await (await getPhotoStore()).upload(read.photo.bytes, read.photo.contentType, user.id);
+  return json(201, { ...stored, size: read.photo.bytes.byteLength });
 }
 
 /**
@@ -156,8 +202,8 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
   if (body.bio !== undefined) existing.bio = body.bio.trim().slice(0, 600);
   if (body.dispatchRegion !== undefined) existing.dispatchRegion = body.dispatchRegion.trim();
   if (body.photoUrl !== undefined) {
-    const photo = safeLink(body.photoUrl);
-    if (photo === undefined) return error(400, 'invalid_storefront', 'The photo link is not a valid http(s) URL.');
+    const photo = await storefrontPhoto(body.photoUrl, existing.photoUrl ?? null, record.id);
+    if (photo === undefined) return error(400, 'invalid_storefront', 'Upload the shop photo here; links to photos are not accepted.');
     existing.photoUrl = photo;
   }
   if (body.link !== undefined) {
@@ -166,8 +212,8 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     existing.link = link;
   }
   if (body.coverUrl !== undefined) {
-    const cover = safeLink(body.coverUrl);
-    if (cover === undefined) return error(400, 'invalid_storefront', 'The banner link is not a valid http(s) URL.');
+    const cover = await storefrontPhoto(body.coverUrl, existing.coverUrl ?? null, record.id);
+    if (cover === undefined) return error(400, 'invalid_storefront', 'Upload the banner here; links to photos are not accepted.');
     existing.coverUrl = cover;
   }
   if (body.tags !== undefined) {
@@ -701,6 +747,7 @@ export const myStoresRoute = handler(myStores);
 export const updateManagersRoute = handler(updateManagers);
 export const storefrontRoute = handler(getStorefront);
 export const updateStorefrontRoute = handler(updateStorefront);
+export const storefrontPhotoRoute = handler(uploadStorefrontPhoto);
 export const dashboardRoute = handler(dashboard);
 export const salesRoute = handler(sales);
 
@@ -708,6 +755,7 @@ const anon = { authLevel: 'anonymous' } as const;
 
 app.http('me-storefront', { ...anon, methods: ['GET'], route: 'me/storefront', handler: storefrontRoute });
 app.http('me-storefront-save', { ...anon, methods: ['POST'], route: 'me/storefront/save', handler: updateStorefrontRoute });
+app.http('me-storefront-photo', { ...anon, methods: ['POST'], route: 'me/storefront/photo', handler: storefrontPhotoRoute });
 app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', handler: dashboardRoute });
 app.http('me-sales', { ...anon, methods: ['GET'], route: 'me/sales', handler: salesRoute });
 app.http('me-stores', { ...anon, methods: ['GET'], route: 'me/stores', handler: myStoresRoute });

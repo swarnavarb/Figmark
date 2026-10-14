@@ -2008,33 +2008,6 @@ export interface PublicProfile {
   }[];
 }
 
-/* ── Supplier ──────────────────────────────────────────────────────────── */
-
-export interface SupplierItem {
-  id: string;
-  itemName: string;
-  condition: string;
-  quantity: number;
-  unitWeightGrams: number;
-  received: boolean;
-  packed: boolean;
-}
-
-export interface SupplierStore {
-  ownerId: string;
-  name: string;
-  /** The shop's handle, so the packer can tell it a crate has landed. */
-  handle: string | null;
-}
-
-export interface SupplierLot {
-  store: SupplierStore;
-  lot: { id: string; name: string; stage: FulfilmentStage; origin: string };
-  tally: LotTally;
-  items: SupplierItem[];
-}
-
-
 /* ── Service stores ──────────────────────────────────────────────────── */
 
 /** A store as the person running it sees it in My services. */
@@ -2232,7 +2205,7 @@ export const api = {
   login: (identifier: string, password: string) =>
     post<LoginResponse>('/auth/login', { identifier, password }),
 
-  signup: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) =>
+  signup: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) =>
     post<SignupResponse>('/auth/signup', body),
 
   /** Whether a username is still free, asked while it is typed on the sign-up form. */
@@ -2515,6 +2488,8 @@ export const api = {
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
   uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
+  /** The shop's photo or banner: open to any signed-in account, unlike listing photos. */
+  uploadStorefrontPhoto: (dataUrl: string) => post<StoredPhoto>('/me/storefront/photo', { dataUrl }),
   /**
    * Throw away a photo that was picked and then taken out again before saving.
    * Quiet on purpose: the server refuses anything that is not a draft of yours,
@@ -2697,11 +2672,6 @@ export const api = {
   saveProfile: (body: { bio?: string; coverUrl?: string; tags?: string[] }) =>
     post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
   setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
-
-  /** Lots to pack, across every shop this account packs for. */
-  supplierLots: () =>
-    request<{ lots: { store: SupplierStore; lot: SupplierLot['lot']; tally: LotTally }[] }>('/supplier/lots'),
-  supplierLot: (id: string) => request<SupplierLot>(`/supplier/lots/${encodeURIComponent(id)}`),
 
   storefront: () =>
     request<{ storefront: SellerProfile | null; displayName: string }>('/me/storefront'),

@@ -1438,111 +1438,6 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
 }
 
 /**
- * GET /api/supplier/lots - the lots this account packs for somebody.
- *
- * The supplier is who the shop buys the run from: they hold `export` in a store
- * they do not own, and their whole job here is the packing list. They get the
- * lots and nothing else - no customers, no prices, no analytics.
- */
-/**
- * The stages a lot is still the packer's to work.
- *
- * Once it has left China there is nothing for them to pack and no reason for
- * them to keep reading it, so the list and the lot itself agree on one rule
- * rather than each deciding for itself.
- */
-const PACKABLE_STAGES: readonly LotStage[] = ['ordering', 'china_wh_received'];
-
-async function supplierLots(request: HttpRequest, _context: InvocationContext) {
-  const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
-  const repository = await getRepository();
-
-  const owners = await repository.listStoreOwners();
-
-  // Every shop, and every lot within one, read side by side rather than in turn.
-  const perOwner = await Promise.all(owners.map(async (owner) => {
-    const standing = can(owner, user.id, 'export');
-    const lots = (await repository.listLots({ sellerId: owner.id }))
-      // Two ways to be here: the shop's standing packer, or named on this one
-      // lot. The second is how a shop asks somebody to check a single run
-      // without handing over the rest of the shop. And only what is still on
-      // their side of the water.
-      .filter((lot) => (standing || supplierIdOf(lot) === user.id) && PACKABLE_STAGES.includes(lot.stage));
-    const store = {
-      ownerId: owner.id,
-      name: owner.sellerProfile?.storefrontName ?? owner.displayName,
-      handle: owner.sellerProfile?.username ?? null,
-    };
-    return Promise.all(lots.map(async (lot) => ({
-      store,
-      lot: { id: lot.id, name: lot.name, stage: lot.stage, origin: lot.origin ?? '' },
-      tally: tally(await repository.listOrdersForLot(lot.id)),
-    })));
-  }));
-
-  return json(200, { lots: perOwner.flat() });
-}
-
-/**
- * GET /api/supplier/lots/{id} - one lot as a packing list.
- *
- * A flat grid of items rather than the owner's customer-by-customer board: the
- * supplier packs pieces, and grouping by buyer would hand them a customer list
- * they have no business holding. Prices are left out for the same reason.
- */
-async function supplierLot(request: HttpRequest, _context: InvocationContext) {
-  const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
-  const lotId = request.params.id;
-  if (!lotId) return error(400, 'invalid_lot', 'A lot id is required.');
-
-  const repository = await getRepository();
-  const owner = await findExportStoreFor(user.id, lotId, repository);
-  if (!owner) return error(403, 'forbidden', 'You do not pack for that lot.');
-
-  const lot = await repository.getLot(owner.id, lotId);
-  if (!lot) return error(404, 'not_found', 'No such lot.');
-  if (!PACKABLE_STAGES.includes(lot.stage)) {
-    return error(403, 'forbidden', 'That lot has left China. There is nothing left to pack.');
-  }
-
-  const orders = await repository.listOrdersForLot(lot.id);
-  return json(200, {
-    // The handle too: telling the shop a crate has landed is a message, and
-    // this screen is where the packer is standing when they need to send it.
-    store: {
-      ownerId: owner.id,
-      name: owner.sellerProfile?.storefrontName ?? owner.displayName,
-      handle: owner.sellerProfile?.username ?? null,
-    },
-    lot: { id: lot.id, name: lot.name, stage: lot.stage, origin: lot.origin ?? '' },
-    tally: tally(orders),
-    items: orders.map((order) => ({
-      id: order.id,
-      itemName: order.itemName,
-      condition: order.condition,
-      quantity: order.quantity,
-      unitWeightGrams: order.unitWeightGrams,
-      received: Boolean(order.checkpoints?.china_received),
-      packed: Boolean(order.checkpoints?.china_packed),
-    })),
-  });
-}
-
-/** The store whose lot this is, when the caller packs for it. */
-async function findExportStoreFor(userId: string, lotId: string, repository: Awaited<ReturnType<typeof getRepository>>) {
-  for (const owner of await repository.listStoreOwners()) {
-    const lot = await repository.getLot(owner.id, lotId);
-    if (!lot) continue;
-    // Named on the lot, or packing for the whole shop. Either way it is this
-    // one lot they are being handed.
-    if (supplierIdOf(lot) === userId || can(owner, userId, 'export')) return owner;
-  }
-  return null;
-}
-
-/**
  * POST /api/orders/payment-reminder - tell a customer their parcel waits on payment.
  *
  * Pressed from the Ready to dispatch panel on the lot screen, for one order or
@@ -1612,8 +1507,6 @@ async function paymentReminder(request: HttpRequest, _context: InvocationContext
   return json(200, { sent: true, via: 'bell', thread: null });
 }
 
-export const supplierLotsRoute = handler(supplierLots);
-export const supplierLotRoute = handler(supplierLot);
 export const lotsBoardRoute = handler(lotsBoard);
 export const lotBoardRoute = handler(lotBoard);
 export const setCheckpointRoute = handler(setCheckpoint);
@@ -1641,6 +1534,4 @@ app.http('lots-board', { ...anon, methods: ['GET'], route: 'me/lots/board', hand
 app.http('lot-board', { ...anon, methods: ['GET'], route: 'lots/{id}/board', handler: lotBoardRoute });
 app.http('order-checkpoint', { ...anon, methods: ['POST'], route: 'orders/{id}/checkpoint', handler: setCheckpointRoute });
 app.http('order-payment-reminder', { ...anon, methods: ['POST'], route: 'orders/payment-reminder', handler: paymentReminderRoute });
-app.http('supplier-lots', { ...anon, methods: ['GET'], route: 'supplier/lots', handler: supplierLotsRoute });
-app.http('supplier-lot', { ...anon, methods: ['GET'], route: 'supplier/lots/{id}', handler: supplierLotRoute });
 app.http('order-tracking', { ...anon, methods: ['GET'], route: 'orders/{id}', handler: orderTrackingRoute });

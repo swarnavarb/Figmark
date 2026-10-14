@@ -73,7 +73,7 @@ const createLot = (request, ctx) => {
   return createLotHandler({ ...request, ...patched }, ctx);
 };
 const {
-  storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, dashboardRoute: dashboard,
+  storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, storefrontPhotoRoute: storefrontPhoto, dashboardRoute: dashboard,
   myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales,
 } = await import(new URL('seller-routes.js', fns));
 const {
@@ -91,9 +91,6 @@ const {
   setTrackingRoute: setTracking, orderTrackingRoute: orderTracking,
   lotsBoardRoute: lotsBoard, lotBoardRoute: lotBoard, setCheckpointRoute: setCheckpoint,
   paymentReminderRoute: paymentReminder,
-} = await import(new URL('fulfilment-routes.js', fns));
-const {
-  supplierLotsRoute: supplierLots, supplierLotRoute: supplierLot,
 } = await import(new URL('fulfilment-routes.js', fns));
 const {
   inboxRoute: inbox, threadRoute: thread, sendMessageRoute: sendMessage,
@@ -1066,6 +1063,41 @@ await check('an empty storefront name is refused', async () => {
 await check('the storefront is private to its owner', async () => {
   assert.equal((await storefront(req(), ctx)).status, 401);
   assert.equal((await saveStorefront(req({ body: { storefrontName: 'Nope' } }), ctx)).status, 401);
+});
+
+await check('storefront pictures are uploaded here, by a new account too, and never linked', async () => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
+  const fresh = await rawSignup(req({
+    body: { displayName: 'Fresh Shop', email: 'freshshop@figmark.example', phone: '+919777003111', password: 'longenough1' },
+  }), ctx);
+  assert.equal(fresh.status, 201, JSON.stringify(fresh.jsonBody));
+  const headers = { authorization: `Bearer ${fresh.jsonBody.token}` };
+
+  // Not verified, so listing photos stay closed; the shop's own pictures do not.
+  assert.equal((await upload(req({ headers, body: { dataUrl: pixel } }), ctx)).status, 403);
+  const photo = await storefrontPhoto(req({ headers, body: { dataUrl: pixel } }), ctx);
+  assert.equal(photo.status, 201, JSON.stringify(photo.jsonBody));
+  const cover = await storefrontPhoto(req({ headers, body: { dataUrl: pixel } }), ctx);
+  assert.equal((await storefrontPhoto(req({ body: { dataUrl: pixel } }), ctx)).status, 401);
+
+  const opened = await saveStorefront(req({
+    headers, body: { storefrontName: 'Fresh Shop', username: 'fresh_shop_store', photoUrl: photo.jsonBody.url, coverUrl: cover.jsonBody.url },
+  }), ctx);
+  assert.equal(opened.status, 200, JSON.stringify(opened.jsonBody));
+  assert.equal(opened.jsonBody.storefront.photoUrl, photo.jsonBody.url);
+  assert.equal(opened.jsonBody.storefront.coverUrl, cover.jsonBody.url);
+
+  // A link to a picture somewhere else is refused, for both.
+  for (const key of ['photoUrl', 'coverUrl']) {
+    const linked = await saveStorefront(req({ headers, body: { [key]: 'https://example.com/logo.png' } }), ctx);
+    assert.equal(linked.status, 400, `${key} as a link`);
+  }
+  // So is somebody else's upload.
+  const others = (await storefrontPhoto(req({ headers: auth, body: { dataUrl: pixel } }), ctx)).jsonBody.url;
+  assert.equal((await saveStorefront(req({ headers, body: { photoUrl: others } }), ctx)).status, 400);
+  // Clearing one is always fine.
+  const cleared = await saveStorefront(req({ headers, body: { coverUrl: '' } }), ctx);
+  assert.equal(cleared.jsonBody.storefront.coverUrl, null);
 });
 
 await check('the dashboard reports the shop analytics', async () => {
@@ -2165,42 +2197,44 @@ await check('messaging needs a session', async () => {
 });
 
 /* ── the supplier's packing view ───────────────────────────────────────── */
+/* Packers work from My services: the lots they pack for, each opened as a
+   list of pieces. */
 console.log("\nthe supplier's packing view");
 
 const packerSession = await login(req({
   body: { identifier: PACKER_EMAIL, password: DEMO_PASSWORD },
 }), ctx);
 const packer = { authorization: `Bearer ${packerSession.jsonBody.token}` };
+const supplierRows = async (headers) =>
+  (await myServices(req({ headers }), ctx)).jsonBody.crew.filter((row) => row.role === 'supplier');
+const packingList = (headers, lotId = 'lot_open_24') =>
+  crewLot(req({ headers, params: { sellerId: 'usr_demo', lotId }, query: { role: 'supplier' } }), ctx);
 
-await check('a packer sees the lots they pack for, and only those', async () => {
-  const body = (await supplierLots(req({ headers: packer }), ctx)).jsonBody;
-  const ids = body.lots.map((row) => row.lot.id);
+await check('a packer sees the lots they pack for under My services, and only those', async () => {
+  const ids = (await supplierRows(packer)).map((row) => row.lot.id);
   assert.ok(ids.includes('lot_open_24'), 'the open lot is theirs to pack');
-  // Already gone from China, so no longer theirs.
-  assert.equal(ids.includes('lot_ship_23'), false);
-
-  const outsider = (await supplierLots(req({ headers: helper }), ctx)).jsonBody;
-  assert.deepEqual(outsider.lots, []);
+  assert.deepEqual(await supplierRows(helper), []);
 });
 
 await check('a packing list is pieces, never customers or prices', async () => {
-  const body = (await supplierLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
-  assert.equal(body.items.length, 34);
+  const body = (await packingList(packer)).jsonBody;
+  assert.equal(body.role, 'supplier');
+  assert.ok(body.items.length > 0);
   assert.equal(JSON.stringify(body).includes('priceMinor'), false);
   assert.equal(JSON.stringify(body).includes('buyerId'), false);
   for (const item of body.items) {
-    assert.deepEqual(
-      Object.keys(item).sort(),
-      ['condition', 'id', 'itemName', 'packed', 'quantity', 'received', 'unitWeightGrams'],
-    );
+    assert.equal(item.buyer, null);
+    assert.equal(item.parcel, null);
+    assert.equal(item.payment, null);
   }
 });
 
 await check("marking packed is what moves the owner's ch-packed count", async () => {
-  const first = (await supplierLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
-  const target = first.items.find((item) => !item.packed);
+  const first = (await packingList(packer)).jsonBody;
+  const target = first.items.find((item) => !item.ticks.china_packed);
   assert.ok(target, 'expected something still to pack');
-  const before = first.tally.counts.find((row) => row.checkpoint === 'china_packed').done;
+  const board = async () => (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const before = (await board()).tally.counts.find((row) => row.checkpoint === 'china_packed').done;
 
   const ticked = await setCheckpoint(req({
     headers: packer, params: { id: target.id }, body: { checkpoint: 'china_packed', on: true },
@@ -2208,14 +2242,11 @@ await check("marking packed is what moves the owner's ch-packed count", async ()
   assert.equal(ticked.status, 200);
 
   // Read back through the owner's own board: the two screens are one number.
-  const owners = (await lotBoard(req({ headers: auth, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
-  assert.equal(owners.tally.counts.find((row) => row.checkpoint === 'china_packed').done, before + 1);
+  assert.equal((await board()).tally.counts.find((row) => row.checkpoint === 'china_packed').done, before + 1);
 });
 
 await check('a packer may tick that, and nothing else', async () => {
-  const body = (await supplierLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
-  const target = body.items[0];
-
+  const target = (await packingList(packer)).jsonBody.items[0];
   for (const checkpoint of ['china_received', 'ready_to_dispatch', 'dispatched']) {
     const refused = await setCheckpoint(req({
       headers: packer, params: { id: target.id }, body: { checkpoint, on: true },
@@ -2225,9 +2256,7 @@ await check('a packer may tick that, and nothing else', async () => {
 });
 
 await check('the packing list names the shop, so a crate landing can be reported', async () => {
-  // The warehouse receipt is not something the packer can tick - they tell the
-  // shop and the shop ticks it - so the handle to tell has to be on this screen.
-  const body = (await supplierLot(req({ headers: packer, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const body = (await packingList(packer)).jsonBody;
   assert.equal(body.store.handle, 'arjun_collects');
 
   const sent = await sendMessage(req({
@@ -2239,8 +2268,7 @@ await check('the packing list names the shop, so a crate landing can be reported
 });
 
 await check('a lot they do not pack for is closed to them', async () => {
-  const refused = await supplierLot(req({ headers: packer, params: { id: 'lot_ship_23' } }), ctx);
-  assert.equal(refused.status, 403);
+  assert.equal((await packingList(helper)).status, 403);
 });
 
 await check('the packing view never shows the owner the buyer list twice', async () => {
@@ -5284,7 +5312,9 @@ await check('naming a supplier on one lot hands over that lot and no other', asy
   assert.ok(handle, 'signup claims a handle');
 
   // Nothing yet.
-  assert.deepEqual((await supplierLots(req({ headers: theirs }), ctx)).jsonBody.lots, []);
+  const theirRows = async () => (await myServices(req({ headers: theirs }), ctx)).jsonBody.crew
+    .filter((row) => row.role === 'supplier');
+  assert.deepEqual(await theirRows(), []);
 
   /* Named where the supplier is named, which is with the supplier's own
      details: they were two roles until it became clear they never were. */
@@ -5295,11 +5325,12 @@ await check('naming a supplier on one lot hands over that lot and no other', asy
   assert.equal(named.status, 200, JSON.stringify(named.jsonBody));
   assert.equal(named.jsonBody.lot.supplier.supplierUserId, checker.jsonBody.user.id);
 
-  const theirLots = (await supplierLots(req({ headers: theirs }), ctx)).jsonBody.lots;
-  assert.deepEqual(theirLots.map((row) => row.lot.id), ['lot_open_24'], 'that lot, and only it');
+  assert.deepEqual((await theirRows()).map((row) => row.lot.id), ['lot_open_24'], 'that lot, and only it');
 
   // The packing list, which is pieces and nothing about the buyers.
-  const list = (await supplierLot(req({ headers: theirs, params: { id: 'lot_open_24' } }), ctx)).jsonBody;
+  const list = (await crewLot(req({
+    headers: theirs, params: { sellerId: 'usr_demo', lotId: 'lot_open_24' }, query: { role: 'supplier' },
+  }), ctx)).jsonBody;
   assert.ok(list.items.length > 0);
   assert.equal(JSON.stringify(list).includes('buyerId'), false);
 

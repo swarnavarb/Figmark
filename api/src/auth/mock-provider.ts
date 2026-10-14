@@ -384,8 +384,10 @@ export class MockAuthProvider implements AuthService {
     // A handle is how this account is addressed and messaged, so it is picked
     // at sign-up rather than bolted on later. Offered as a suggestion from the
     // name, and typed over if they would rather.
-    const chosen = request.username?.trim().toLowerCase() || null;
-    let username = chosen ?? suggestUsername(displayName).toLowerCase();
+    const typed = request.username?.trim().toLowerCase() || null;
+    // A suggestion the form checked and showed is still ours, not theirs.
+    const chosen = request.usernameSuggested ? null : typed;
+    let username = typed ?? suggestUsername(displayName).toLowerCase();
     const problem = checkUsername(username);
     if (problem) throw new AuthError(400, 'invalid_signup', USERNAME_PROBLEMS[problem]);
     // Reserved once, against the account's real id. It used to be reserved

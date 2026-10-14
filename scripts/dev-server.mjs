@@ -39,11 +39,11 @@ const { ogRoute, ogCardRoute, linkPreviewRoute } = await import(new URL('og-rout
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
-  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, paymentReminderRoute, supplierLotsRoute, supplierLotRoute,
+  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, paymentReminderRoute,
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
+const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
@@ -197,6 +197,7 @@ const routes = [
   ['GET', '/api/orders/:id', orderTrackingRoute],
   ['GET', '/api/me/storefront', storefrontRoute],
   ['POST', '/api/me/storefront/save', updateStorefrontRoute],
+  ['POST', '/api/me/storefront/photo', storefrontPhotoRoute],
   ['GET', '/api/me/dashboard', dashboardRoute],
   ['GET', '/api/me/sales', salesRoute],
   ['GET', '/api/me/stores', myStoresRoute],
@@ -417,8 +418,6 @@ const routes = [
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],
   ['POST', '/api/users/:id/page-reviews/new', writePageReviewRoute],
-  ['GET', '/api/supplier/lots', supplierLotsRoute],
-  ['GET', '/api/supplier/lots/:id', supplierLotRoute],
 ];
 
 const MIME = {

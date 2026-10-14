@@ -49,8 +49,6 @@ const ChannelPage = page(() => import('./pages/SocialPage'), 'ChannelPage');
 const PostPage = page(() => import('./pages/SocialPage'), 'PostPage');
 const ForumRoom = page(() => import('./components/ForumRoom'), 'ForumRoom');
 const ThreadPage = page(() => import('./pages/MessagesPage'), 'ThreadPage');
-const SupplierPage = page(() => import('./pages/SupplierPage'), 'SupplierPage');
-const PackingLotPage = page(() => import('./pages/SupplierPage'), 'PackingLotPage');
 const OrderPage = page(() => import('./pages/OrderPage'), 'OrderPage');
 const DisputePage = page(() => import('./pages/DisputePage'), 'DisputePage');
 const CommunityServicePage = page(() => import('./pages/CommunityServicePage'), 'CommunityServicePage');
@@ -137,8 +135,6 @@ function App() {
         <Route path="/social/f/:id" element={members(<ForumRoom />)} />
         <Route path="/social/p/:channel/:id" element={members(<PostPage />)} />
         <Route path="/messages/:handle" element={members(<ThreadPage />)} />
-        <Route path="/packing" element={members(<SupplierPage />)} />
-        <Route path="/packing/:id" element={members(<PackingLotPage />)} />
         <Route path="/order/:id" element={members(<OrderPage />)} />
         <Route path="/dispute/:id" element={members(<DisputePage />)} />
         <Route path="/community-service" element={members(<CommunityServicePage />)} />

@@ -27,7 +27,7 @@ interface SessionValue {
   /** True when a hosted deployment keeps its data in each worker's memory. */
   dataPerWorker: boolean;
   signIn: (identifier: string, password: string) => Promise<void>;
-  signUp: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) => Promise<void>;
+  signUp: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
   /** Sign out on every device this account is signed in on, this one included. */
   signOutEverywhere: () => Promise<void>;

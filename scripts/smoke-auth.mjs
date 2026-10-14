@@ -274,6 +274,14 @@ await expectAuthError('a username somebody typed is still refused when taken', '
   }),
 );
 
+await check("the form's own suggestion is settled with a tail if it was taken a moment ago", async () => {
+  const late = await auth.signup({
+    displayName: 'Fourth', username: 'same_name', usernameSuggested: true,
+    email: 'same4@figmark.example', phone: '+919777002888', password: 'longenough1',
+  });
+  assert.match(late.user.username, /^same_name_[a-z0-9]{4}$/);
+});
+
 console.log('\nsecurity');
 
 await check('with a durable store, a deleted account ends the session honestly', async () => {

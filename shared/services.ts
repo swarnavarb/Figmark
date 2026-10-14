@@ -107,7 +107,7 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     // Nobody applies to be somebody's supplier, so a list of them would be a
     // list of people who never asked to be on one.
     browsable: false,
-    console: '/packing',
+    console: '/services/mine',
   },
   artist: {
     kind: 'artist',

@@ -36,6 +36,7 @@ import { Spinner } from '../components/Spinner';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
+import { shrink } from '../components/PhotoManager';
 import type { StoreAccess } from '@shared/stores';
 import type { SavedCalc } from '@shared/profit';
 import {
@@ -103,7 +104,7 @@ const PRO_SECTIONS: readonly Section[] = ['insights', 'calculator'];
 /**
  * The five places a shop's work lives, named after the job rather than the
  * screen. Each opens on its first section; the rest of its sections are chips
- * under it. Packing is not here: a packer works from their own console.
+ * under it. Packing is not here: a packer works from My services.
  */
 type Group = 'items' | 'orders' | 'lots' | 'money' | 'settings';
 
@@ -169,14 +170,14 @@ export function ShopPage() {
           <div>
             <h1>Open your storefront</h1>
             <p className="muted">
-              A name, a handle and a line about what you sell. Everything here can change later.
+              Five short steps. Only the name is needed; everything else can be skipped and changed later.
             </p>
           </div>
         </div>
         {/* Saving is what makes the account a shop, and the console opens
             straight after. How the stock travels is asked when the first lot
             is opened, which is when it starts to matter. */}
-        <StorefrontEditor onSaved={() => { setOpening(false); void load(); }} />
+        <StorefrontEditor wizard onSaved={() => { setOpening(false); void load(); }} />
       </main>
     );
   }
@@ -422,13 +423,28 @@ async function shopHandleFor(name: string, own: string | null): Promise<string> 
 
 /* ── Storefront ─────────────────────────────────────────────────────────── */
 
+/** The walkthrough's steps, in order. */
+const SHOP_STEPS = [
+  { id: 'name', label: 'Name' },
+  { id: 'photos', label: 'Photos' },
+  { id: 'about', label: 'About' },
+  { id: 'payment', label: 'Payment' },
+  { id: 'review', label: 'Review' },
+] as const;
+type ShopStep = (typeof SHOP_STEPS)[number]['id'];
+
 /**
  * Design the storefront.
  *
  * A name, a picture, what you sell, and one link. The single link is the point:
  * a row of them is a link farm, one is a front door.
+ *
+ * Opening a shop is a walkthrough - one thing per screen, with a timeline of
+ * what is done and what is still to come - and editing one later is the same
+ * fields on a single form. Pictures are uploaded, never linked: a linked
+ * picture can change, vanish or track whoever opens the shop.
  */
-function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
+function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; wizard?: boolean } = {}) {
   const { user } = useSession();
   const [draft, setDraft] = useState<StorefrontDraft | null>(null);
   const [saved, setSaved] = useState<SellerProfile | null>(null);
@@ -439,6 +455,11 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
      keystroke threw away a comma or a trailing space the moment it was
      typed, so a second chip - or a two-word one - could only be pasted in. */
   const [chipsText, setChipsText] = useState('');
+  const [step, setStep] = useState<ShopStep>('name');
+  /** The furthest step reached, so the timeline can say what is done. */
+  const [reached, setReached] = useState(0);
+  /** Whether the shop username is free, asked a moment after typing stops. */
+  const [handleFree, setHandleFree] = useState<{ name: string; free: boolean | null } | null>(null);
 
   useEffect(() => {
     void api
@@ -464,6 +485,23 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
       );
   }, []);
 
+  const handle = draft?.username ?? '';
+  const handleProblem = draft ? checkUsername(handle) : null;
+  const handleIsSaved = handle === (saved?.username ?? null);
+  useEffect(() => {
+    if (!handle || handleProblem || handleIsSaved) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      api.usernameAvailable(handle, controller.signal)
+        .then((answer) => setHandleFree({ name: handle, free: answer.available }))
+        .catch(() => { if (!controller.signal.aborted) setHandleFree({ name: handle, free: null }); });
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [handle, handleProblem, handleIsSaved]);
+
   // Only a failed load stands in for the form; a failed save is said beside
   // Save, with everything typed still there to fix.
   if (error && !draft) return <ErrorNotice message={error} />;
@@ -476,12 +514,12 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
   const setPayment = (key: keyof SellerPaymentDetails, value: string) =>
     setDraft({ ...draft, payment: { ...(draft.payment ?? {}), [key]: value } });
 
-  // The same rules the server enforces, so a bad handle is caught while it is
-  // being typed rather than on save.
-  const handleProblem = checkUsername(draft.username ?? '');
+  // Unknown is not a refusal: the save checks again.
+  const handleTaken = !handleIsSaved && handleFree?.name === handle && handleFree.free === false;
+  const handleChecking = !handleIsSaved && !handleProblem && handleFree?.name !== handle;
+  const nameReady = Boolean(draft.storefrontName?.trim()) && !handleProblem && !handleTaken;
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function save() {
     setBusy(true);
     setFlash(null);
     setError(null);
@@ -492,172 +530,353 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
       onSaved?.();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save your storefront.');
+      // A clash on the handle is fixed on the first screen.
+      if (wizard && err instanceof ApiRequestError && err.code === 'username_taken') setStep('name');
     } finally {
       setBusy(false);
     }
   }
 
   const name = draft.storefrontName?.trim() || user?.displayName || 'Your storefront';
+  const hasPayment = Boolean(draft.payment?.upiId?.trim() || draft.payment?.accountNumber?.trim());
 
-  return (
-    <div className="detail">
-      <form className="form" onSubmit={submit}>
-        <label className="field">
-          <span>Storefront name</span>
-          <input value={draft.storefrontName ?? ''} onChange={(e) => set('storefrontName', e.target.value)}
-            placeholder="Kaiju Imports" required />
-          <span className="field__hint">What buyers see instead of your own name.</span>
-        </label>
+  const nameFields = (
+    <>
+      <label className="field">
+        <span>Storefront name *</span>
+        <input value={draft.storefrontName ?? ''} onChange={(e) => set('storefrontName', e.target.value)}
+          placeholder="Kaiju Imports" required />
+        <span className="field__hint">What buyers see instead of your own name.</span>
+      </label>
 
-        {/* The shop's own address, not the owner's: a shop is followed,
-            linked to and messaged as itself, and the person behind it keeps a
-            separate handle of their own. */}
-        <label className="field">
-          <span>Shop username</span>
-          <input value={draft.username ?? ''} onChange={(e) => set('username', e.target.value.toLowerCase())}
-            placeholder="kaiju_imports" autoCapitalize="off" autoCorrect="off" spellCheck={false} required />
-          <span className="field__hint">
-            {handleProblem
-              ? USERNAME_PROBLEMS[handleProblem]
+      {/* The shop's own address, not the owner's: a shop is followed,
+          linked to and messaged as itself, and the person behind it keeps a
+          separate handle of their own. */}
+      <label className="field">
+        <span>Shop username *</span>
+        <input value={handle} onChange={(e) => set('username', e.target.value.toLowerCase())}
+          placeholder="kaiju_imports" autoCapitalize="off" autoCorrect="off" spellCheck={false} required
+          aria-invalid={Boolean(handleProblem) || handleTaken} />
+        <span className="field__hint" aria-live="polite">
+          {handleProblem
+            ? USERNAME_PROBLEMS[handleProblem]
+            : handleTaken
+              ? <>@{handle} is already taken. Try another.</>
               : (
                 <>
-                  Your shop lives at <code>/{draft.username}</code> and is messaged at <code>@{draft.username}</code>.
+                  {handleChecking ? 'Checking… ' : !handleIsSaved && handleFree?.free ? <>@{handle} is free. </> : null}
+                  Your shop lives at <code>/{handle}</code> and is messaged at <code>@{handle}</code>.
                   This is the shop's, not yours —{' '}
                   {user?.username
                     ? <>you are <code>@{user.username}</code>.</>
                     : <Link to="/me?tab=settings">pick your own username</Link>}
                 </>
               )}
-          </span>
-        </label>
+        </span>
+      </label>
+    </>
+  );
 
+  const photoFields = (
+    <>
+      <ShopPictureField label="Shop photo" shape="square" value={draft.photoUrl ?? ''}
+        onChange={(url) => set('photoUrl', url)}
+        hint="Your logo, or a photo of your shelf. Square works best." />
+      <ShopPictureField label="Banner" shape="wide" value={draft.coverUrl ?? ''}
+        onChange={(url) => set('coverUrl', url)}
+        hint="The wide band behind your shop's name." />
+    </>
+  );
+
+  const aboutFields = (
+    <>
+      <label className="field">
+        <span>Description</span>
+        <textarea value={draft.bio ?? ''} onChange={(e) => set('bio', e.target.value)}
+          placeholder="What you sell, where you import from, how often you run a lot." rows={4} />
+      </label>
+
+      <label className="field">
+        <span>Chips</span>
+        <input value={chipsText} onChange={(e) => setChipsText(e.target.value)}
+          placeholder="Custom painter, Fujian, ships weekly" />
+        <span className="field__hint">
+          Up to six, separated by commas. These are scanned, not read — a paragraph gets skipped,
+          three short facts do not.
+        </span>
+      </label>
+
+      <div className="field-row">
         <label className="field">
-          <span>Photo</span>
-          <input value={draft.photoUrl ?? ''} onChange={(e) => set('photoUrl', e.target.value)}
-            placeholder="https://…" inputMode="url" />
-          <span className="field__hint">A link to an image of your shop or logo.</span>
+          <span>Dispatch region</span>
+          <input value={draft.dispatchRegion ?? ''} onChange={(e) => set('dispatchRegion', e.target.value)}
+            placeholder="Mumbai, MH" />
         </label>
-
         <label className="field">
-          <span>Banner</span>
-          <input value={draft.coverUrl ?? ''} onChange={(e) => set('coverUrl', e.target.value)}
-            placeholder="https://…" inputMode="url" />
-          <span className="field__hint">
-            The band behind your name, as a link to an image, same as the picture.
-          </span>
+          <span>Link</span>
+          <input value={draft.link ?? ''} onChange={(e) => set('link', e.target.value)}
+            placeholder="instagram.com/yourshop" inputMode="url" />
+          <span className="field__hint">One only. Instagram, a group, a price list.</span>
         </label>
+      </div>
+    </>
+  );
 
+  const paymentFields = (
+    <fieldset className="fieldset">
+      <legend>How buyers pay you directly</legend>
+      <p className="faint" style={{ marginTop: 0 }}>
+        Shown only to somebody checking out an order with you, never on the storefront. Without
+        at least one of these, buyers cannot buy from you directly at all. Figmark does not move
+        this money and does not check the account exists.
+      </p>
+      <label className="field">
+        <span>UPI ID</span>
+        <input value={draft.payment?.upiId ?? ''}
+          onChange={(e) => setPayment('upiId', e.target.value)}
+          placeholder="yourshop@okhdfcbank" />
+      </label>
+      <div className="field-row">
         <label className="field">
-          <span>Chips</span>
-          <input value={chipsText} onChange={(e) => setChipsText(e.target.value)}
-            placeholder="Custom painter, Fujian, ships weekly" />
-          <span className="field__hint">
-            Up to six, separated by commas. These are scanned, not read — a paragraph gets skipped,
-            three short facts do not.
-          </span>
+          <span>Account name</span>
+          <input value={draft.payment?.accountName ?? ''}
+            onChange={(e) => setPayment('accountName', e.target.value)} />
         </label>
-
         <label className="field">
-          <span>Description</span>
-          <textarea value={draft.bio ?? ''} onChange={(e) => set('bio', e.target.value)}
-            placeholder="What you sell, where you import from, how often you run a lot." rows={4} />
+          <span>Account number</span>
+          <input value={draft.payment?.accountNumber ?? ''}
+            onChange={(e) => setPayment('accountNumber', e.target.value)} />
         </label>
+      </div>
+      <div className="field-row">
+        <label className="field">
+          <span>IFSC</span>
+          <input value={draft.payment?.ifsc ?? ''}
+            onChange={(e) => setPayment('ifsc', e.target.value.toUpperCase())} />
+        </label>
+        <label className="field">
+          <span>Anything else they should do</span>
+          <input value={draft.payment?.instructions ?? ''}
+            onChange={(e) => setPayment('instructions', e.target.value)}
+            placeholder="Quote the order number in the note" />
+        </label>
+      </div>
+    </fieldset>
+  );
 
-        <div className="field-row">
-          <label className="field">
-            <span>Dispatch region</span>
-            <input value={draft.dispatchRegion ?? ''} onChange={(e) => set('dispatchRegion', e.target.value)}
-              placeholder="Mumbai, MH" />
-          </label>
-          <label className="field">
-            <span>Link</span>
-            <input value={draft.link ?? ''} onChange={(e) => set('link', e.target.value)}
-              placeholder="instagram.com/yourshop" inputMode="url" />
-            <span className="field__hint">One only. Instagram, a group, a price list.</span>
-          </label>
+  const preview = (
+    <div className="card sfpreview">
+      {draft.coverUrl
+        ? <img className="sfpreview__cover" src={draft.coverUrl} alt="" />
+        : <div className="sfpreview__cover sfpreview__cover--empty" />}
+      <div className="sfpreview__body stack">
+        <div className="row">
+          {draft.photoUrl ? (
+            <img className="channel__photo" src={draft.photoUrl} alt=""
+              onError={(e) => ((e.currentTarget.style.display = 'none'))} />
+          ) : (
+            <Avatar name={name} size={46} />
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700 }}>{name}</div>
+            <span className="faint">@{handle} · {draft.dispatchRegion || 'No dispatch region yet'}</span>
+          </div>
         </div>
-
-        <fieldset className="fieldset">
-          <legend>How buyers pay you directly</legend>
-          <p className="faint" style={{ marginTop: 0 }}>
-            Shown only to somebody checking out an order with you, never on the storefront. Without
-            at least one of these, buyers cannot buy from you directly at all. Figmark does not move
-            this money and does not check the account exists.
-          </p>
-          <label className="field">
-            <span>UPI ID</span>
-            <input value={draft.payment?.upiId ?? ''}
-              onChange={(e) => setPayment('upiId', e.target.value)}
-              placeholder="yourshop@okhdfcbank" />
-          </label>
-          <div className="field-row">
-            <label className="field">
-              <span>Account name</span>
-              <input value={draft.payment?.accountName ?? ''}
-                onChange={(e) => setPayment('accountName', e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Account number</span>
-              <input value={draft.payment?.accountNumber ?? ''}
-                onChange={(e) => setPayment('accountNumber', e.target.value)} />
-            </label>
+        <p className="muted" style={{ fontSize: 'var(--t-sm)', margin: 0 }}>
+          {draft.bio || 'No description yet — buyers use this to decide whether to follow you.'}
+        </p>
+        {draft.link && <span className="badge">{draft.link.replace(/^https?:\/\//, '')}</span>}
+        {/* The chips as they will be saved, so the cap of six shows before saving. */}
+        {chipsOf(chipsText).length > 0 && (
+          <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+            {chipsOf(chipsText).map((chip) => <span key={chip} className="badge badge--quiet">{chip}</span>)}
           </div>
-          <div className="field-row">
-            <label className="field">
-              <span>IFSC</span>
-              <input value={draft.payment?.ifsc ?? ''}
-                onChange={(e) => setPayment('ifsc', e.target.value.toUpperCase())} />
-            </label>
-            <label className="field">
-              <span>Anything else they should do</span>
-              <input value={draft.payment?.instructions ?? ''}
-                onChange={(e) => setPayment('instructions', e.target.value)}
-                placeholder="Quote the order number in the note" />
-            </label>
-          </div>
-        </fieldset>
+        )}
+        <div className="row">
+          <span className="badge">{saved?.tier ?? 'unverified'}</span>
+          <span className="faint">{saved?.followerCount ?? 0} followers</span>
+        </div>
+      </div>
+    </div>
+  );
 
-        {flash && <p className="notice notice--ok">{flash}</p>}
+  if (!wizard) {
+    return (
+      <div className="detail">
+        <form className="form" onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }}>
+          {nameFields}
+          {photoFields}
+          {aboutFields}
+          {paymentFields}
+
+          {flash && <p className="notice notice--ok">{flash}</p>}
+          {error && <ErrorNotice message={error} />}
+
+          <button type="submit" className="btn btn--lg"
+            disabled={busy || !nameReady}>
+            {busy ? 'Saving…' : 'Save storefront'}
+          </button>
+        </form>
+
+        <aside className="stack">
+          <span className="muted">Preview</span>
+          {preview}
+        </aside>
+      </div>
+    );
+  }
+
+  const index = SHOP_STEPS.findIndex((row) => row.id === step);
+  const go = (to: number) => {
+    setError(null);
+    setStep(SHOP_STEPS[to]!.id);
+    setReached((was) => Math.max(was, to));
+    window.scrollTo?.({ top: 0, behavior: 'smooth' });
+  };
+  // A step counts as done once it has been left behind going forward.
+  const doneAt = (at: number) => at < reached && at !== index;
+  /** An optional step with nothing filled in: passed, but not done. */
+  const emptyAt = (id: ShopStep) => (id === 'photos' && !draft.photoUrl && !draft.coverUrl)
+    || (id === 'about' && !draft.bio?.trim() && !chipsText.trim() && !draft.dispatchRegion?.trim() && !draft.link?.trim())
+    || (id === 'payment' && !hasPayment);
+  const optionalEmpty = emptyAt(step);
+
+  return (
+    <div className="sfwiz">
+      <ol className="sfwiz__line" aria-label="Storefront set-up">
+        {SHOP_STEPS.map((row, at) => {
+          const state = at === index ? 'on' : !doneAt(at) ? 'todo' : emptyAt(row.id) ? 'skipped' : 'done';
+          return (
+            <li key={row.id} className={`sfwiz__step is-${state}`}>
+              <button type="button" className="sfwiz__jump" disabled={at > reached || (at > 0 && !nameReady)}
+                aria-current={at === index ? 'step' : undefined} onClick={() => go(at)}>
+                <span className="sfwiz__dot" aria-hidden="true">{state === 'done' ? '✓' : state === 'skipped' ? '–' : at + 1}</span>
+                <span className="sfwiz__label">{row.label}</span>
+                <span className="sfwiz__state">
+                  {{ done: 'Done', skipped: 'Skipped', on: 'Now', todo: 'Pending' }[state]}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      <form className="form card card--pad sfwiz__card" onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        if (index < SHOP_STEPS.length - 1) {
+          if (index === 0 && !nameReady) return;
+          go(index + 1);
+        } else void save();
+      }}>
+        <p className="sfwiz__count">Step {index + 1} of {SHOP_STEPS.length}</p>
+        {step === 'name' && (
+          <>
+            <h2 className="sfwiz__title">Name your shop</h2>
+            <p className="muted sfwiz__lede">What buyers will follow, and the handle they find you at.</p>
+            {nameFields}
+          </>
+        )}
+        {step === 'photos' && (
+          <>
+            <h2 className="sfwiz__title">Add your photos</h2>
+            <p className="muted sfwiz__lede">Upload from your phone or computer. You can skip this and add them later.</p>
+            {photoFields}
+          </>
+        )}
+        {step === 'about' && (
+          <>
+            <h2 className="sfwiz__title">Tell buyers about it</h2>
+            <p className="muted sfwiz__lede">A few lines and facts so people know whether to follow you. All optional.</p>
+            {aboutFields}
+          </>
+        )}
+        {step === 'payment' && (
+          <>
+            <h2 className="sfwiz__title">How you get paid</h2>
+            <p className="muted sfwiz__lede">Optional now, but buyers cannot pay you directly until one of these is filled.</p>
+            {paymentFields}
+          </>
+        )}
+        {step === 'review' && (
+          <>
+            <h2 className="sfwiz__title">Check and open</h2>
+            <p className="muted sfwiz__lede">This is how buyers will see your shop. Everything can be changed later.</p>
+            {preview}
+            {!hasPayment && (
+              <p className="notice">No payment details yet — add them from Shop settings before your first sale.</p>
+            )}
+          </>
+        )}
+
         {error && <ErrorNotice message={error} />}
 
-        <button type="submit" className="btn btn--lg"
-          disabled={busy || !draft.storefrontName?.trim() || handleProblem !== null}>
-          {busy ? 'Saving…' : 'Save storefront'}
-        </button>
-      </form>
-
-      <aside className="stack">
-        <span className="muted">Preview</span>
-        <div className="card card--pad stack">
-          <div className="row">
-            {draft.photoUrl ? (
-              <img className="channel__photo" src={draft.photoUrl} alt=""
-                onError={(e) => ((e.currentTarget.style.display = 'none'))} />
-            ) : (
-              <Avatar name={name} size={46} />
-            )}
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700 }}>{name}</div>
-              <span className="faint">{draft.dispatchRegion || 'No dispatch region yet'}</span>
-            </div>
-          </div>
-          <p className="muted" style={{ fontSize: 'var(--t-sm)' }}>
-            {draft.bio || 'No description yet — buyers use this to decide whether to follow you.'}
-          </p>
-          {draft.username && <span className="faint">@{draft.username}</span>}
-          {draft.link && <span className="badge">{draft.link.replace(/^https?:\/\//, '')}</span>}
-          {/* The chips as they will be saved, so the cap of six shows before saving. */}
-          {chipsOf(chipsText).length > 0 && (
-            <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-              {chipsOf(chipsText).map((chip) => <span key={chip} className="badge badge--quiet">{chip}</span>)}
-            </div>
+        <div className="sfwiz__nav">
+          {index > 0 && (
+            <button type="button" className="btn btn--quiet" onClick={() => go(index - 1)}>
+              <Icon name="back" size={14} /> Back
+            </button>
           )}
-          <div className="row">
-            <span className="badge">{saved?.tier ?? 'unverified'}</span>
-            <span className="faint">{saved?.followerCount ?? 0} followers</span>
-          </div>
+          <button type="submit" className="btn btn--lg sfwiz__next"
+            disabled={busy || (index === 0 && (!nameReady || handleChecking))}>
+            {index === SHOP_STEPS.length - 1
+              ? (busy ? 'Opening…' : 'Open my storefront')
+              : optionalEmpty ? 'Skip for now' : 'Next'}
+          </button>
         </div>
-      </aside>
+      </form>
+    </div>
+  );
+}
+
+/**
+ * One storefront picture: uploaded from the device, never typed as a link.
+ *
+ * Shrunk on the phone first, so a 12 MB camera photo goes up as a few hundred
+ * kilobytes, and shown back as it will look on the shop.
+ */
+function ShopPictureField({ label, hint, value, onChange, shape }: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (url: string) => void;
+  shape: 'square' | 'wide';
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onChange((await api.uploadStorefrontPhoto(await shrink(file))).url);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload. Try another.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="field">
+      <span>{label}</span>
+      <div className={`sfpic sfpic--${shape}`}>
+        {value
+          ? <img className="sfpic__img" src={value} alt={label} />
+          : <span className="sfpic__empty" aria-hidden="true"><Icon name="camera" size={20} /></span>}
+        <div className="sfpic__acts">
+          <label className={`btn btn--quiet btn--sm sfpic__pick${busy ? ' is-busy' : ''}`}>
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={busy}
+              onChange={(event) => { void pick(event.target.files?.[0]); event.target.value = ''; }} />
+            {busy ? 'Uploading…' : value ? 'Change' : 'Upload photo'}
+          </label>
+          {value && !busy && (
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => onChange('')}>Remove</button>
+          )}
+        </div>
+      </div>
+      {error ? <span className="field__hint" style={{ color: 'var(--danger-text)' }}>{error}</span>
+        : <span className="field__hint">{hint}</span>}
     </div>
   );
 }
