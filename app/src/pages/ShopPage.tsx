@@ -473,8 +473,6 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** The dispatch region was guessed from the connection, not typed. */
-  const [regionGuessed, setRegionGuessed] = useState(false);
   const [step, setStep] = useState<ShopStep>('name');
   /** The furthest step reached, so the timeline can say what is done. */
   const [reached, setReached] = useState(0);
@@ -505,10 +503,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
         // connection - never by asking the browser for a location.
         if (!result.storefront?.dispatchRegion) {
           const guess = await api.regionGuess().then((answer) => answer.region).catch(() => null);
-          if (guess) {
-            setDraft((now) => (now && !now.dispatchRegion ? { ...now, dispatchRegion: guess } : now));
-            setRegionGuessed(true);
-          }
+          if (guess) setDraft((now) => (now && !now.dispatchRegion ? { ...now, dispatchRegion: guess } : now));
         }
       })
       .catch((err: unknown) =>
@@ -636,11 +631,8 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
         <label className="field">
           <span>Dispatch region</span>
           <input value={draft.dispatchRegion ?? ''}
-            onChange={(e) => { set('dispatchRegion', e.target.value); setRegionGuessed(false); }}
+            onChange={(e) => set('dispatchRegion', e.target.value)}
             placeholder="Mumbai, MH" />
-          {regionGuessed && (
-            <span className="field__hint">Guessed from your internet connection. Change it if it is wrong.</span>
-          )}
         </label>
         <label className="field">
           <span>Link</span>
