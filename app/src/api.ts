@@ -2490,6 +2490,8 @@ export const api = {
   uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
   /** The shop's photo or banner: open to any signed-in account, unlike listing photos. */
   uploadStorefrontPhoto: (dataUrl: string) => post<StoredPhoto>('/me/storefront/photo', { dataUrl }),
+  /** A dispatch region guessed from the connection on the server; null when it cannot tell. */
+  regionGuess: () => request<{ region: string | null }>('/me/region-guess'),
   /**
    * Throw away a photo that was picked and then taken out again before saving.
    * Quiet on purpose: the server refuses anything that is not a draft of yours,

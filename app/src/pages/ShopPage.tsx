@@ -409,11 +409,33 @@ function SellHome({ store, canList, onGo }: {
  * and refused the moment the shop is saved. So the name is tried, then the
  * name with "_shop", then with a short tail, and the first one free is offered.
  */
-async function shopHandleFor(name: string, own: string | null): Promise<string> {
-  const plain = suggestUsername(name);
-  const tries = [plain, suggestUsername(`${name} shop`), `${plain.slice(0, 25)}_${Math.random().toString(36).slice(2, 6)}`];
+/** A new shop's name: the owner's, as theirs. "Messi" opens "Messi's Shop". */
+function shopNameFor(displayName: string): string {
+  const name = displayName.trim() || 'My';
+  return `${name}${/s$/i.test(name) ? "'" : "'s"} Shop`;
+}
+
+/** A new shop's description, generic enough to keep and easy to replace. */
+function defaultShopBio(shopName: string): string {
+  return `Welcome to ${shopName}! We sell collectibles and figures, checked and packed with care, `
+    + 'and ship across India. Follow the shop to catch new drops first, and message us with any questions.';
+}
+
+/** Short facts a shop often says about itself, offered as one-tap tags. */
+const TAG_IDEAS = ['Ships weekly', 'Pre-orders open', 'Authentic only', 'Imports', 'Sealed boxes',
+  'Custom painting', 'Bundles', ...CATEGORIES.slice(0, 4)];
+
+/**
+ * A handle for a shop nobody has named yet: the owner's own, plus "_shop".
+ *
+ * "@messi" opens "@messi_shop". A shop shares one namespace with people, so
+ * the owner's handle itself is never offered; a taken one gets a short tail.
+ */
+async function shopHandleFor(own: string | null, displayName: string): Promise<string> {
+  const base = (own || suggestUsername(displayName)).slice(0, 25).replace(/[._]+$/, '');
+  const tries = [`${base}_shop`, `${base.slice(0, 20)}_shop_${Math.random().toString(36).slice(2, 6)}`];
   for (const handle of tries) {
-    if (handle === own) continue;
+    if (checkUsername(handle)) continue;
     const free = await api.usernameAvailable(handle).then((answer) => answer.available).catch(() => null);
     // Unknown is not a refusal: offer it, and the save says if it is taken.
     if (free !== false) return handle;
@@ -451,10 +473,8 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /* The chips as typed, commas, spaces and all. Parsing them on every
-     keystroke threw away a comma or a trailing space the moment it was
-     typed, so a second chip - or a two-word one - could only be pasted in. */
-  const [chipsText, setChipsText] = useState('');
+  /** The dispatch region was guessed from the connection, not typed. */
+  const [regionGuessed, setRegionGuessed] = useState(false);
   const [step, setStep] = useState<ShopStep>('name');
   /** The furthest step reached, so the timeline can say what is done. */
   const [reached, setReached] = useState(0);
@@ -465,13 +485,15 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
     void api
       .storefront()
       .then(async (result) => {
-        const handle = result.storefront?.username ?? await shopHandleFor(result.displayName, user?.username ?? null);
+        const fresh = !result.storefront;
+        const shopName = shopNameFor(result.displayName);
+        const handle = result.storefront?.username ?? await shopHandleFor(user?.username ?? null, result.displayName);
         setSaved(result.storefront);
-        setChipsText((result.storefront?.tags ?? []).join(', '));
         setDraft({
-          storefrontName: result.storefront?.storefrontName ?? result.displayName,
+          storefrontName: result.storefront?.storefrontName ?? shopName,
           username: handle,
-          bio: result.storefront?.bio ?? '',
+          // A new shop starts with words it can keep or replace, not a blank box.
+          bio: result.storefront?.bio ?? (fresh ? defaultShopBio(shopName) : ''),
           dispatchRegion: result.storefront?.dispatchRegion ?? '',
           photoUrl: result.storefront?.photoUrl ?? '',
           link: result.storefront?.link ?? '',
@@ -479,6 +501,15 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           coverUrl: result.storefront?.coverUrl ?? '',
           tags: result.storefront?.tags ?? [],
         });
+        // Where the shop dispatches from, guessed on the server from the
+        // connection - never by asking the browser for a location.
+        if (!result.storefront?.dispatchRegion) {
+          const guess = await api.regionGuess().then((answer) => answer.region).catch(() => null);
+          if (guess) {
+            setDraft((now) => (now && !now.dispatchRegion ? { ...now, dispatchRegion: guess } : now));
+            setRegionGuessed(true);
+          }
+        }
       })
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your storefront.'),
@@ -524,7 +555,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
     setFlash(null);
     setError(null);
     try {
-      const result = await api.saveStorefront({ ...draft!, tags: chipsOf(chipsText) });
+      const result = await api.saveStorefront(draft!);
       setSaved(result.storefront);
       setFlash('Storefront saved.');
       onSaved?.();
@@ -538,7 +569,10 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   }
 
   const name = draft.storefrontName?.trim() || user?.displayName || 'Your storefront';
-  const hasPayment = Boolean(draft.payment?.upiId?.trim() || draft.payment?.accountNumber?.trim());
+  const hasPayment = Boolean(draft.payment?.upiId?.trim() || draft.payment?.accountNumber?.trim() || draft.payment?.qrUrl);
+  const tags = draft.tags ?? [];
+  const city = draft.dispatchRegion?.split(',')[0]?.trim();
+  const tagIdeas = [...(city ? [`Ships from ${city}`] : []), ...TAG_IDEAS];
 
   const nameFields = (
     <>
@@ -596,21 +630,17 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           placeholder="What you sell, where you import from, how often you run a lot." rows={4} />
       </label>
 
-      <label className="field">
-        <span>Chips</span>
-        <input value={chipsText} onChange={(e) => setChipsText(e.target.value)}
-          placeholder="Custom painter, Fujian, ships weekly" />
-        <span className="field__hint">
-          Up to six, separated by commas. These are scanned, not read — a paragraph gets skipped,
-          three short facts do not.
-        </span>
-      </label>
+      <TagInput value={tags} onChange={(next) => set('tags', next)} ideas={tagIdeas} />
 
       <div className="field-row">
         <label className="field">
           <span>Dispatch region</span>
-          <input value={draft.dispatchRegion ?? ''} onChange={(e) => set('dispatchRegion', e.target.value)}
+          <input value={draft.dispatchRegion ?? ''}
+            onChange={(e) => { set('dispatchRegion', e.target.value); setRegionGuessed(false); }}
             placeholder="Mumbai, MH" />
+          {regionGuessed && (
+            <span className="field__hint">Guessed from your internet connection. Change it if it is wrong.</span>
+          )}
         </label>
         <label className="field">
           <span>Link</span>
@@ -636,6 +666,9 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           onChange={(e) => setPayment('upiId', e.target.value)}
           placeholder="yourshop@okhdfcbank" />
       </label>
+      <ShopPictureField label="UPI QR code" shape="qr" value={draft.payment?.qrUrl ?? ''}
+        onChange={(url) => setPayment('qrUrl', url)}
+        hint="A screenshot of the QR from your UPI app. Buyers scan it at checkout." />
       <div className="field-row">
         <label className="field">
           <span>Account name</span>
@@ -686,10 +719,9 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           {draft.bio || 'No description yet — buyers use this to decide whether to follow you.'}
         </p>
         {draft.link && <span className="badge">{draft.link.replace(/^https?:\/\//, '')}</span>}
-        {/* The chips as they will be saved, so the cap of six shows before saving. */}
-        {chipsOf(chipsText).length > 0 && (
+        {tags.length > 0 && (
           <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-            {chipsOf(chipsText).map((chip) => <span key={chip} className="badge badge--quiet">{chip}</span>)}
+            {tags.map((tag) => <span key={tag} className="badge badge--quiet">{tag}</span>)}
           </div>
         )}
         <div className="row">
@@ -703,19 +735,27 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   if (!wizard) {
     return (
       <div className="detail">
-        <form className="form" onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }}>
-          {nameFields}
-          {photoFields}
-          {aboutFields}
-          {paymentFields}
+        <form className="form sfsettings" onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }}>
+          <SettingsSection icon="home" title="Name and username" note="How buyers find and follow you.">
+            {nameFields}
+          </SettingsSection>
+          <SettingsSection icon="image" title="Photos" note="Your shop photo and the banner behind it.">
+            {photoFields}
+          </SettingsSection>
+          <SettingsSection icon="tag" title="About your shop" note="What you sell, in a few lines and tags.">
+            {aboutFields}
+          </SettingsSection>
+          <SettingsSection icon="bank" title="Getting paid" note="Only shown to a buyer paying you directly.">
+            {paymentFields}
+          </SettingsSection>
 
-          {flash && <p className="notice notice--ok">{flash}</p>}
-          {error && <ErrorNotice message={error} />}
-
-          <button type="submit" className="btn btn--lg"
-            disabled={busy || !nameReady}>
-            {busy ? 'Saving…' : 'Save storefront'}
-          </button>
+          <div className="sfsettings__bar">
+            {flash && <span className="sfsettings__flash" role="status"><Icon name="check" size={14} /> {flash}</span>}
+            {error && <ErrorNotice message={error} />}
+            <button type="submit" className="btn btn--lg" disabled={busy || !nameReady}>
+              {busy ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </form>
 
         <aside className="stack">
@@ -737,7 +777,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const doneAt = (at: number) => at < reached && at !== index;
   /** An optional step with nothing filled in: passed, but not done. */
   const emptyAt = (id: ShopStep) => (id === 'photos' && !draft.photoUrl && !draft.coverUrl)
-    || (id === 'about' && !draft.bio?.trim() && !chipsText.trim() && !draft.dispatchRegion?.trim() && !draft.link?.trim())
+    || (id === 'about' && !draft.bio?.trim() && tags.length === 0 && !draft.dispatchRegion?.trim() && !draft.link?.trim())
     || (id === 'payment' && !hasPayment);
   const optionalEmpty = emptyAt(step);
 
@@ -839,7 +879,7 @@ function ShopPictureField({ label, hint, value, onChange, shape }: {
   hint: string;
   value: string;
   onChange: (url: string) => void;
-  shape: 'square' | 'wide';
+  shape: 'square' | 'wide' | 'qr';
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -881,11 +921,91 @@ function ShopPictureField({ label, hint, value, onChange, shape }: {
   );
 }
 
-/** Typed chips as the server keeps them: trimmed, deduplicated, at most six of 24 characters. */
-function chipsOf(text: string): string[] {
-  return [...new Set(text.split(',').map((chip) => chip.trim()).filter(Boolean))]
-    .map((chip) => chip.slice(0, 24))
-    .slice(0, 6);
+/**
+ * Tags as pills: typing a comma (or Enter) turns what was typed into one.
+ *
+ * Backspace in the empty box takes the last one back off; suggestions below
+ * add with a tap. Six at most, 24 characters each - the rule the server keeps.
+ */
+function TagInput({ value, onChange, ideas }: { value: string[]; onChange: (tags: string[]) => void; ideas: string[] }) {
+  const [text, setText] = useState('');
+  const full = value.length >= 6;
+  const has = (tag: string) => value.some((row) => row.toLowerCase() === tag.toLowerCase());
+
+  const add = (raw: string[]) => {
+    const next = [...value];
+    for (const piece of raw) {
+      const tag = piece.trim().slice(0, 24);
+      if (tag && next.length < 6 && !next.some((row) => row.toLowerCase() === tag.toLowerCase())) next.push(tag);
+    }
+    if (next.length !== value.length) onChange(next);
+  };
+
+  const type = (input: string) => {
+    if (!input.includes(',')) return setText(input);
+    const parts = input.split(',');
+    add(parts.slice(0, -1));
+    setText(parts[parts.length - 1]!.trimStart());
+  };
+
+  const suggestions = ideas.filter((idea) => !has(idea)).slice(0, 8);
+
+  return (
+    <div className="field">
+      <span id="shop-tags-label">Tags</span>
+      <div className="taginput" onClick={(event) => event.currentTarget.querySelector('input')?.focus()}>
+        {value.map((tag) => (
+          <span key={tag} className="taginput__tag">
+            {tag}
+            <button type="button" className="taginput__x" aria-label={`Remove ${tag}`}
+              onClick={(event) => { event.stopPropagation(); onChange(value.filter((row) => row !== tag)); }}>
+              ×
+            </button>
+          </span>
+        ))}
+        {!full && (
+          <input className="taginput__box" value={text} aria-labelledby="shop-tags-label"
+            placeholder={value.length === 0 ? 'Type a tag, then a comma' : 'Add another'}
+            onChange={(event) => type(event.target.value)}
+            onBlur={() => { if (text.trim()) { add([text]); setText(''); } }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                if (text.trim()) { add([text]); setText(''); }
+              } else if (event.key === 'Backspace' && !text && value.length > 0) {
+                onChange(value.slice(0, -1));
+              }
+            }} />
+        )}
+      </div>
+      <span className="field__hint">
+        {full ? 'Six tags is the most a shop shows.' : `Up to six short facts buyers scan at a glance. ${6 - value.length} left.`}
+      </span>
+      {!full && suggestions.length > 0 && (
+        <div className="taginput__ideas" aria-label="Suggested tags">
+          {suggestions.map((idea) => (
+            <button key={idea} type="button" className="taginput__idea" onClick={() => add([idea])}>+ {idea}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One titled block of Shop settings. */
+function SettingsSection({ icon, title, note, children }: { icon: IconName; title: string; note: string; children: ReactNode }) {
+  return (
+    <section className="sfsec">
+      <header className="sfsec__head">
+        <span className="sfsec__icon" aria-hidden="true"><Icon name={icon} size={17} /></span>
+        <span>
+          <h3 className="sfsec__title">{title}</h3>
+          <span className="sfsec__note">{note}</span>
+        </span>
+      </header>
+      <div className="sfsec__body">{children}</div>
+    </section>
+  );
 }
 
 /* ── Items ──────────────────────────────────────────────────────────────── */

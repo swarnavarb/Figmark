@@ -43,7 +43,7 @@ const {
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
+const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
@@ -198,6 +198,7 @@ const routes = [
   ['GET', '/api/me/storefront', storefrontRoute],
   ['POST', '/api/me/storefront/save', updateStorefrontRoute],
   ['POST', '/api/me/storefront/photo', storefrontPhotoRoute],
+  ['GET', '/api/me/region-guess', regionGuessRoute],
   ['GET', '/api/me/dashboard', dashboardRoute],
   ['GET', '/api/me/sales', salesRoute],
   ['GET', '/api/me/stores', myStoresRoute],

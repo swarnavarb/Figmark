@@ -533,6 +533,8 @@ export interface SellerPaymentDetails {
   ifsc?: string | null;
   /** Anything the buyer needs to do besides send it - a reference to quote. */
   instructions?: string | null;
+  /** A UPI QR code to scan, uploaded here like the shop's photo. */
+  qrUrl?: string | null;
 }
 
 /**

@@ -254,7 +254,6 @@ function ApplyMenu({ kind, mine }: { kind: StoreKind; mine: MyServicesView | nul
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
   const status: StoreStatus | null = mine?.own[kind] ?? null;
-  const own = mine?.stores.find((row) => row.kind === kind && row.isOwner) ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -266,9 +265,10 @@ function ApplyMenu({ kind, mine }: { kind: StoreKind; mine: MyServicesView | nul
   }, [open]);
 
   const live = status === 'approved' || status === 'suspended';
-  const target = live ? `/services/store/${kind}/${own?.ownerId ?? ''}` : `/services/apply/${kind}`;
+  // A live store is run from My services, like every other job.
+  const target = live ? '/services/mine' : `/services/apply/${kind}`;
   const label = status === null ? THEME[kind].apply
-    : live ? 'Open your store console'
+    : live ? 'Open in My services'
       : status === 'pending' ? 'View your application'
         : status === 'changes' ? 'Fix and resend your application'
           : status === 'rejected' ? 'Edit and reapply' : 'View your store';

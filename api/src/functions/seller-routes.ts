@@ -17,6 +17,8 @@ import { error, handler, json } from './http.js';
 import { getPhotoStore, ownPhotoName } from '../storage/index.js';
 import { tooFast } from '../rate-limit.js';
 import { readPhoto } from './template-routes.js';
+import { clientIp } from '../rate-limit.js';
+import { guessRegion } from '../region.js';
 
 /**
  * The seller's own side of the app: storefront, tracking, analytics.
@@ -124,6 +126,17 @@ async function uploadStorefrontPhoto(request: HttpRequest, _context: InvocationC
 }
 
 /**
+ * GET /api/me/region-guess - a dispatch region to pre-fill, from the IP address.
+ *
+ * Null whenever it cannot tell. Never asks the browser for a location.
+ */
+async function regionGuess(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  await auth.requireAuth(request);
+  return json(200, { region: await guessRegion(clientIp(request)) });
+}
+
+/**
  * POST /api/me/storefront - design the storefront.
  *
  * Creates the profile on first save rather than requiring a separate "become a
@@ -149,6 +162,7 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
       accountNumber?: string;
       ifsc?: string;
       instructions?: string;
+      qrUrl?: string;
     } | null;
   };
   try {
@@ -228,9 +242,15 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     // verify an account exists, so validating the shape of it would only
     // suggest it had checked something. Length is capped; nothing else.
     const trim = (value: string | undefined) => (value ?? '').trim().slice(0, 120) || null;
+    // The QR is a picture like the shop's own: uploaded here, never a link.
+    const qrUrl = body.payment
+      ? await storefrontPhoto(body.payment.qrUrl ?? '', existing.payment?.qrUrl ?? null, record.id)
+      : null;
+    if (qrUrl === undefined) return error(400, 'invalid_storefront', 'Upload the payment QR code here; links to images are not accepted.');
     const payment = body.payment
       ? {
           upiId: trim(body.payment.upiId),
+          qrUrl,
           accountName: trim(body.payment.accountName),
           accountNumber: trim(body.payment.accountNumber),
           ifsc: trim(body.payment.ifsc),
@@ -748,6 +768,7 @@ export const updateManagersRoute = handler(updateManagers);
 export const storefrontRoute = handler(getStorefront);
 export const updateStorefrontRoute = handler(updateStorefront);
 export const storefrontPhotoRoute = handler(uploadStorefrontPhoto);
+export const regionGuessRoute = handler(regionGuess);
 export const dashboardRoute = handler(dashboard);
 export const salesRoute = handler(sales);
 
@@ -755,6 +776,7 @@ const anon = { authLevel: 'anonymous' } as const;
 
 app.http('me-storefront', { ...anon, methods: ['GET'], route: 'me/storefront', handler: storefrontRoute });
 app.http('me-storefront-save', { ...anon, methods: ['POST'], route: 'me/storefront/save', handler: updateStorefrontRoute });
+app.http('me-region-guess', { ...anon, methods: ['GET'], route: 'me/region-guess', handler: regionGuessRoute });
 app.http('me-storefront-photo', { ...anon, methods: ['POST'], route: 'me/storefront/photo', handler: storefrontPhotoRoute });
 app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', handler: dashboardRoute });
 app.http('me-sales', { ...anon, methods: ['GET'], route: 'me/sales', handler: salesRoute });

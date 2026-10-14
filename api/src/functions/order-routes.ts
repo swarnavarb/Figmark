@@ -342,7 +342,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
 
 /** True once a seller has filled in at least one way to be paid. */
 function hasAnyDetail(payment: SellerPaymentDetails): boolean {
-  return Boolean(payment.upiId?.trim() || (payment.accountNumber?.trim() && payment.ifsc?.trim()));
+  return Boolean(payment.upiId?.trim() || payment.qrUrl || (payment.accountNumber?.trim() && payment.ifsc?.trim()));
 }
 
 /**

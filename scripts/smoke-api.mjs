@@ -73,7 +73,7 @@ const createLot = (request, ctx) => {
   return createLotHandler({ ...request, ...patched }, ctx);
 };
 const {
-  storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, storefrontPhotoRoute: storefrontPhoto, dashboardRoute: dashboard,
+  storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, storefrontPhotoRoute: storefrontPhoto, regionGuessRoute: regionGuess, dashboardRoute: dashboard,
   myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales,
 } = await import(new URL('seller-routes.js', fns));
 const {
@@ -1098,6 +1098,35 @@ await check('storefront pictures are uploaded here, by a new account too, and ne
   // Clearing one is always fine.
   const cleared = await saveStorefront(req({ headers, body: { coverUrl: '' } }), ctx);
   assert.equal(cleared.jsonBody.storefront.coverUrl, null);
+});
+
+await check('a payment QR is an uploaded picture, never a link, and alone is a way to be paid', async () => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
+  const qr = (await storefrontPhoto(req({ headers: auth, body: { dataUrl: pixel } }), ctx)).jsonBody.url;
+  const saved = await saveStorefront(req({ headers: auth, body: { payment: { qrUrl: qr } } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.equal(saved.jsonBody.storefront.payment.qrUrl, qr);
+  assert.equal(saved.jsonBody.storefront.payment.upiId, null);
+
+  const linked = await saveStorefront(req({
+    headers: auth, body: { payment: { upiId: 'x@upi', qrUrl: 'https://example.com/qr.png' } },
+  }), ctx);
+  assert.equal(linked.status, 400);
+});
+
+await check('the dispatch region guess never asks the browser, and says nothing for a local address', async () => {
+  const guessed = await regionGuess(req({ headers: { ...auth, 'x-azure-clientip': '127.0.0.1' } }), ctx);
+  assert.equal(guessed.status, 200);
+  assert.equal(guessed.jsonBody.region, null);
+  assert.equal((await regionGuess(req(), ctx)).status, 401);
+
+  const region = await import(new URL('../api/dist/api/src/region.js', import.meta.url));
+  for (const ip of ['10.1.2.3', '192.168.0.4', '172.20.0.1', '::1', 'unknown']) assert.ok(region.isPrivateIp(ip), ip);
+  assert.equal(region.isPrivateIp('49.36.10.1'), false);
+  assert.equal(region.regionFrom({ city: 'Pune', region_code: 'MH', country_code: 'IN' }), 'Pune, MH');
+  assert.equal(region.regionFrom({ city: 'Dubai', country_code: 'AE', country_name: 'United Arab Emirates' }), 'Dubai, United Arab Emirates');
+  assert.equal(region.regionFrom({ error: true }), null);
+  assert.equal(region.regionFrom({ city: '', country_code: 'IN' }), null);
 });
 
 await check('the dashboard reports the shop analytics', async () => {

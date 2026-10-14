@@ -14728,3 +14728,66 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .sfpreview__cover { display: block; width: 100%; aspect-ratio: 3 / 1; object-fit: cover; }
 .sfpreview__cover--empty { background: linear-gradient(135deg, var(--accent-soft), var(--surface-2)); }
 .sfpreview__body { padding: var(--s4); }
+
+/* ── Shop settings: one card per part of the shop ────────────────────── */
+.sfsettings { gap: var(--s4); }
+.sfsec {
+  display: grid; gap: var(--s3);
+  padding: var(--s4); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+}
+.sfsec__head { display: flex; align-items: center; gap: var(--s3); }
+.sfsec__icon {
+  flex: 0 0 auto; width: 36px; height: 36px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+}
+.sfsec__title { margin: 0; font-size: var(--t-md, 16px); }
+.sfsec__note { display: block; font-size: var(--t-xs); color: var(--text-faint); }
+.sfsec__body { display: grid; gap: var(--s3); }
+/* The payment fieldset sits inside its card without a second frame. */
+.sfsec__body .fieldset { border: 0; padding: 0; margin: 0; }
+.sfsec__body .fieldset > legend { display: none; }
+/* Save stays in reach while the sections scroll past. */
+.sfsettings__bar {
+  position: sticky; bottom: 8px; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s3);
+  padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+}
+.sfsettings__flash { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--ok); font-size: var(--t-sm); }
+@media (max-width: 719px) {
+  .sfsettings__bar { bottom: calc(var(--tabbar-h) + 8px); }
+}
+
+/* Tags: what was typed becomes a pill at each comma. */
+.taginput {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  min-height: 44px; padding: 6px 8px; cursor: text;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2);
+}
+.taginput:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.taginput__tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 4px 4px 10px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--text); font-size: var(--t-sm); font-weight: var(--w-semi);
+}
+.taginput__x {
+  width: 20px; height: 20px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--text-dim); font: inherit; line-height: 1; cursor: pointer;
+}
+.taginput__x:hover { background: var(--surface-hover); color: var(--text); }
+.taginput__box {
+  flex: 1 1 120px; min-width: 0; padding: 4px 2px;
+  border: 0; outline: 0; background: transparent; color: var(--text); font: inherit;
+}
+.taginput__ideas { display: flex; flex-wrap: wrap; gap: 6px; }
+.taginput__idea {
+  padding: 5px 10px; border: 1px dashed var(--border-strong); border-radius: 999px;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: var(--t-xs); cursor: pointer;
+}
+.taginput__idea:hover { border-style: solid; border-color: var(--accent); color: var(--text); }
+
+/* A payment QR: square and large enough to check before a buyer scans it. */
+.sfpic--qr .sfpic__img, .sfpic--qr .sfpic__empty { width: 96px; height: 96px; object-fit: contain; background: #fff; }
+.sfpic--qr .sfpic__empty { background: var(--surface-2); }
+.payqr { display: grid; justify-items: center; gap: 6px; margin: 4px 0; }
+.payqr__img { width: min(220px, 70vw); aspect-ratio: 1; object-fit: contain; padding: 8px; border-radius: var(--r-md); background: #fff; }

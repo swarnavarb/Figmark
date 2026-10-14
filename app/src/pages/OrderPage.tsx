@@ -1195,6 +1195,12 @@ function DirectPay({ quote, payment, busy, onPaid, onBack }: {
             <dd><code>{value}</code></dd>
           </div>
         ))}
+        {payment.qrUrl && (
+          <figure className="payqr">
+            <img src={payment.qrUrl} alt={`QR code to pay ${quote.seller.name ?? 'the seller'}`} className="payqr__img" />
+            <figcaption className="faint">Scan with any UPI app</figcaption>
+          </figure>
+        )}
         {payment.instructions && <p className="faint" style={{ margin: 0 }}>{payment.instructions}</p>}
       </div>
 
