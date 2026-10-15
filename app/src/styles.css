@@ -14996,29 +14996,35 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* ── Profile header: the name on the cover, the rest in order under it ── */
 .phead {
   --phead-face: 96px; --phead-below: 30px;
-  position: relative; z-index: 2; display: grid; gap: 10px; margin-bottom: 14px;
+  position: relative; z-index: 2; display: grid; margin: calc(var(--phead-below) - var(--phead-face)) 0 14px;
+  grid-template-columns: var(--phead-face) minmax(0, 1fr);
+  /* The first row is the part of the face that sits on the cover. */
+  grid-template-rows: calc(var(--phead-face) - var(--phead-below)) auto;
+  grid-template-areas: 'face name' 'face details';
+  column-gap: 14px;
 }
 .phead--shop { --phead-face: 76px; --phead-below: 22px; }
-.phead__top {
-  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 14px;
-  margin-top: calc(var(--phead-below) - var(--phead-face));
+.phead__face { grid-area: face; align-self: start; position: relative; z-index: 1; }
+/* Lifted so its last line ends just above the cover's edge; a long name grows upward, over the cover. */
+.phead__name {
+  grid-area: name; min-width: 0; min-height: 0; padding-bottom: 10px;
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 2px;
 }
-/* Lifted so its last line ends just above the cover's edge, on the cover's dark foot. */
-.phead__name { display: grid; gap: 2px; min-width: 0; padding-bottom: calc(var(--phead-below) + 10px); }
 .phead__name h1 {
   margin: 0; color: #fff; font-size: var(--t-xl); line-height: 1.08; letter-spacing: -0.015em; overflow-wrap: anywhere;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.5);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .phead__handle {
   font-size: var(--t-sm); font-weight: var(--w-semi); color: rgba(255, 255, 255, 0.82);
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.phead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.phead__meta:empty { display: none; }
-.phead__since { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
-.phead .qprofile__avatar, .phead .storefront__avatar { position: relative; z-index: 1; }
+/* Since when, what passed, and the role - all under the name, never under the face. */
+.phead__details { grid-area: details; display: grid; justify-items: start; gap: 8px; padding-top: 10px; min-width: 0; }
+.phead__since { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--text-faint); }
+.phead__tier { font-size: 10.5px; padding: 1px 8px; }
+.phead .vfychip { font-size: 11px; padding: 2px 8px; }
 .phead .qprofile__face { background: var(--bg); }
+.vtick { display: inline-flex; vertical-align: -0.1em; margin-left: 6px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.45)); }
 @media (min-width: 720px) { .phead__name h1 { font-size: var(--t-2xl); } }
 
 /* The shop's "open" sign moves off the cover's foot, where the name now sits. */
@@ -15043,3 +15049,6 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .phead__line .lvtag { filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.45)); }
 .phead__line .lvtag--inline { margin-left: 0; }
 .phead__line .lvtag__title { color: rgba(255, 255, 255, 0.88); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+/* Small tags in the About panel. */
+.ppanel .chips--tight { gap: 6px; }
+.ppanel .chip { padding: 3px 10px; font-size: var(--t-xs); }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CommunityAlertBanner } from '../components/CommunityAlerts';
-import { VerifiedChips } from '../components/VerifiedChips';
+import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
 import { Link, useParams } from 'react-router-dom';
 import { handleShapeProblem, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api, type FeedListing, type PostCard, type PublicProfile, type ShelfState } from '../api';
@@ -139,30 +139,26 @@ function Storefront({ data, isMe, onFollow, reload }: {
       </div>
 
       <div className="storefront__body">
-        {/* The shop's name sits on its cover, just above the edge, beside its logo. */}
+        {/* The shop's name sits on its cover, just above the edge; its details line up under it. */}
         <header className="phead phead--shop">
-          <div className="phead__top">
-            <div className="storefront__avatar">
-              {data.photoUrl ? <img src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
-            </div>
-            <div className="phead__name">
-              <h1>{data.displayName}</h1>
-              <span className="phead__line">
-                <span className="phead__handle">@{data.handle}</span>
-                <LevelChip tag={data.levelTag} inline />
-              </span>
-            </div>
+          <div className="phead__face storefront__avatar">
+            {data.photoUrl ? <img src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
           </div>
-          {data.tier && (
-            <div className="phead__meta">
-              <span className="badge">{data.tier}</span>
-            </div>
-          )}
-          <p className="phead__since">
-            Open since {formatDate(data.memberSince)}
-            {data.lastSeenAt && ` · seen ${timeAgo(data.lastSeenAt)}`}
-          </p>
-          <VerifiedChips checks={data.verified} />
+          <div className="phead__name">
+            <h1>{data.displayName}<VerifiedTick checks={data.verified} /></h1>
+            <span className="phead__line">
+              <span className="phead__handle">@{data.handle}</span>
+              <LevelChip tag={data.levelTag} inline />
+            </span>
+          </div>
+          <div className="phead__details">
+            <p className="phead__since">
+              Open since {formatDate(data.memberSince)}
+              {data.lastSeenAt && ` · seen ${timeAgo(data.lastSeenAt)}`}
+              {data.tier && <span className="badge phead__tier">{data.tier}</span>}
+            </p>
+            <VerifiedChips checks={data.verified} passedOnly />
+          </div>
         </header>
 
         <PageActions profile={data} isMe={isMe} onFollow={onFollow}

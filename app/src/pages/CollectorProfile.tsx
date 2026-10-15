@@ -13,7 +13,7 @@ import {
 import { SocialPostCard } from '../components/SocialPost';
 import { shrink } from '../components/PhotoManager';
 import { ManagerTag } from '../components/ManagerBadge';
-import { VerifiedChips } from '../components/VerifiedChips';
+import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
 import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
@@ -81,38 +81,36 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
       </div>
 
       <div className="storefront__body">
-        {/* The name sits on the cover, just above its edge, beside the face. */}
+        {/* The name sits on the cover, just above its edge; everything about them lines up under it. */}
         <header className="phead">
-          <div className="phead__top">
-            <div className="qprofile__avatar">
-              {collector && <LevelRing level={collector.level} progress={collector.progress} size={96} />}
-              <span className="qprofile__face">
-                {person.photoUrl ? <img src={person.photoUrl} alt="" /> : <Avatar name={person.displayName} size={72} />}
-              </span>
-              {collector && <span className="qprofile__lv">Lv {collector.level}</span>}
-            </div>
-            <div className="phead__name">
-              <h1>{person.displayName}</h1>
-              <span className="phead__line">
-                {person.handle && <span className="phead__handle">@{person.handle}</span>}
-                {collector && <LevelChip tag={{ level: collector.level, title: collector.title }} inline />}
-                {collector && collector.streak.current > 1 && (
-                  <span className="qchip__streak"><Glyph name="flame" size={12} />{collector.streak.current}</span>
-                )}
-              </span>
-            </div>
+          <div className="phead__face qprofile__avatar">
+            {collector && <LevelRing level={collector.level} progress={collector.progress} size={96} />}
+            <span className="qprofile__face">
+              {person.photoUrl ? <img src={person.photoUrl} alt="" /> : <Avatar name={person.displayName} size={72} />}
+            </span>
+            {collector && <span className="qprofile__lv">Lv {collector.level}</span>}
           </div>
-          <div className="phead__meta">
+          <div className="phead__name">
+            <h1>{person.displayName}<VerifiedTick checks={page?.verified} /></h1>
+            <span className="phead__line">
+              {person.handle && <span className="phead__handle">@{person.handle}</span>}
+              {collector && <LevelChip tag={{ level: collector.level, title: collector.title }} inline />}
+              {collector && collector.streak.current > 1 && (
+                <span className="qchip__streak"><Glyph name="flame" size={12} />{collector.streak.current}</span>
+              )}
+            </span>
+          </div>
+          <div className="phead__details">
+            {(person.memberSince || person.lastSeenAt) && (
+              <p className="phead__since">
+                {person.memberSince && `Here since ${formatDate(person.memberSince)}`}
+                {person.memberSince && person.lastSeenAt && ' · '}
+                {person.lastSeenAt && `seen ${timeAgo(person.lastSeenAt)}`}
+              </p>
+            )}
+            <VerifiedChips checks={page?.verified} passedOnly />
             <ManagerTag id={person.userId} />
           </div>
-          {(person.memberSince || person.lastSeenAt) && (
-            <p className="phead__since">
-              {person.memberSince && `Here since ${formatDate(person.memberSince)}`}
-              {person.memberSince && person.lastSeenAt && ' · '}
-              {person.lastSeenAt && `seen ${timeAgo(person.lastSeenAt)}`}
-            </p>
-          )}
-          <VerifiedChips checks={page?.verified} />
         </header>
 
         {actions}
