@@ -93,15 +93,17 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
             </div>
             <div className="phead__name">
               <h1>{person.displayName}</h1>
-              {person.handle && <span className="phead__handle">@{person.handle}</span>}
+              <span className="phead__line">
+                {person.handle && <span className="phead__handle">@{person.handle}</span>}
+                {collector && <LevelChip tag={{ level: collector.level, title: collector.title }} inline />}
+                {collector && collector.streak.current > 1 && (
+                  <span className="qchip__streak"><Glyph name="flame" size={12} />{collector.streak.current}</span>
+                )}
+              </span>
             </div>
           </div>
           <div className="phead__meta">
             <ManagerTag id={person.userId} />
-            {collector && <LevelChip tag={{ level: collector.level, title: collector.title }} />}
-            {collector && collector.streak.current > 1 && (
-              <span className="qchip__streak"><Glyph name="flame" size={12} />{collector.streak.current}</span>
-            )}
           </div>
           {(person.memberSince || person.lastSeenAt) && (
             <p className="phead__since">

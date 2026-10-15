@@ -15038,3 +15038,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .ppanel .pbio::before { top: 2px; bottom: 2px; }
 .ppanel .chips--tight { margin-bottom: 0; }
 .ppanel .alsosells { margin-top: 0; }
+/* The handle and the level on one line, on the cover. */
+.phead__line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.phead__line .lvtag { filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.45)); }
+.phead__line .lvtag--inline { margin-left: 0; }
+.phead__line .lvtag__title { color: rgba(255, 255, 255, 0.88); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }

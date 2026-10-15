@@ -147,13 +147,17 @@ function Storefront({ data, isMe, onFollow, reload }: {
             </div>
             <div className="phead__name">
               <h1>{data.displayName}</h1>
-              <span className="phead__handle">@{data.handle}</span>
+              <span className="phead__line">
+                <span className="phead__handle">@{data.handle}</span>
+                <LevelChip tag={data.levelTag} inline />
+              </span>
             </div>
           </div>
-          <div className="phead__meta">
-            <LevelChip tag={data.levelTag} />
-            {data.tier && <span className="badge">{data.tier}</span>}
-          </div>
+          {data.tier && (
+            <div className="phead__meta">
+              <span className="badge">{data.tier}</span>
+            </div>
+          )}
           <p className="phead__since">
             Open since {formatDate(data.memberSince)}
             {data.lastSeenAt && ` · seen ${timeAgo(data.lastSeenAt)}`}
