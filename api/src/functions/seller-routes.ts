@@ -6,7 +6,7 @@ import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset
 import { cardButtons, holdsLotBack, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
-import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
+import { creditIsLive, creditLeft, isExpired, orderMoney } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
@@ -749,11 +749,13 @@ async function sellTodo(request: HttpRequest, _context: InvocationContext) {
       ? waiting.map((order) => order.paymentClaim?.claimedAt ?? order.placedAt ?? order.createdAt)
       : null,
     noLot: active ? active.filter((order) => awaitingLot(order)).length : null,
-    /* Imports on sale that no lot carries yet. An order is not the first sign
-       of one: a listing marked import and left out of every lot is already
-       the seller's next job, before anybody buys it. */
+    /* Active imports on sale that no lot carries yet. An order is not the
+       first sign of one: a listing marked import and left out of every lot is
+       already the seller's next job, before anybody buys it. Sold out, expired
+       or archived ones are nobody's job. */
     noLotListings: listings
-      ? listings.filter((listing) => !listing.lotId && sourcingOf(listing) === 'import').length
+      ? listings.filter((listing) => !listing.lotId && sourcingOf(listing) === 'import'
+        && listing.status === 'active' && !isExpired(listing)).length
       : null,
     lots: lots ? lots.filter((lot) => !lotIsDone(lot)).length : null,
   });

@@ -399,15 +399,12 @@ function SellHome({ store, canList, onGo, section }: {
     { id: 'answer', count: todo.answer, label: todo.answer === 1 ? 'order to answer' : 'orders to answer',
       hot: todo.answer > 0, fresh, go: () => onGo('payments', { show: 'answer' }) },
     ...(seesLots ? [
-      /* Orders waiting for a lot, and imports on sale that no lot carries yet:
-         either one is a job on the lots. Orders first - somebody paid. */
-      todo.noLot > 0 || todo.noLotListings === 0
-        ? { id: 'nolot', count: todo.noLot + todo.noLotListings,
-          label: todo.noLotListings > 0 ? 'orders & imports not in a lot' : todo.noLot === 1 ? 'order not in a lot' : 'orders not in a lot',
-          hot: todo.noLot > 0, go: () => onGo('lots') }
-        : { id: 'nolot', count: todo.noLotListings,
-          label: todo.noLotListings === 1 ? 'import not in a lot' : 'imports not in a lot',
-          hot: true, go: () => onGo('items') },
+      /* Active orders waiting for a lot, and active imports on sale that no
+         lot carries yet: either one is a job on the lots, and one page lists
+         both. */
+      { id: 'nolot', count: todo.noLot + todo.noLotListings,
+        label: 'active orders & listings not in a lot',
+        hot: todo.noLot + todo.noLotListings > 0, go: () => onGo('lots', { view: 'unlotted' }) },
       { id: 'lots', count: todo.lots, label: todo.lots === 1 ? 'lot on the move' : 'lots on the move',
         hot: false, go: () => onGo('lots') },
     ] : []),
@@ -3825,6 +3822,112 @@ function CancelOrderRow({ row, onClose, onDone }: {
 }
 
 /**
+ * Everything of the shop's that is still not in a lot: active orders sold and
+ * bound for one, and active import listings no lot carries yet. The Sell-home
+ * tile and the Lots tab's waiting note both open this, so the whole job is on
+ * one screen rather than split between Orders and Listings.
+ */
+function Unlotted({ store, onBack, onShipTogether }: {
+  store: StoreAccess;
+  onBack: () => void;
+  /** Open one lot for every waiting order, back on the Lots screen. */
+  onShipTogether: () => void;
+}) {
+  const navigate = useNavigate();
+  const [orders, setOrders] = useState<SaleRow[] | null>(null);
+  const [listings, setListings] = useState<Listing[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Listing | null>(null);
+  const [tagging, setTagging] = useState<Listing | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setError(null);
+    void Promise.all([api.sales(store.ownerId), api.myListings()])
+      .then(([sales, mine]) => {
+        setOrders(sales.orders.filter((row) => row.awaitingLot && stateOf(row) === 'active'));
+        // Only an import travels in a lot; a piece in hand never waits on one.
+        setListings(mine.listings.filter((listing) => listing.sellerId === store.ownerId
+          && !listing.lotId && sourcingOf(listing) === 'import'
+          && listing.status === 'active' && !isExpired(listing)));
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof ApiRequestError ? err.message : 'Could not load what is waiting for a lot.'));
+  }, [store.ownerId]);
+  useEffect(load, [load]);
+
+  return (
+    <div className="stack">
+      <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={onBack}>
+        <Icon name="back" size={14} /> All lots
+      </button>
+      <div>
+        <h2 className="card__title" style={{ fontSize: '1.2rem' }}>Not in a lot yet</h2>
+        <p className="faint">Their buyers see no shipment tracking until they are in one.</p>
+      </div>
+      {error && <ErrorNotice message={error} />}
+      {notice && <p className="notice notice--ok" role="status">{notice}</p>}
+
+      {!orders || !listings ? (
+        !error && <p className="muted">Loading…</p>
+      ) : (
+        <>
+          <section className="stack">
+            <span className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <h3 className="card__title">Active orders · {orders.length}</h3>
+              {orders.length > 0 && (
+                <button type="button" className="btn btn--sm" onClick={onShipTogether}>
+                  Ship them together
+                </button>
+              )}
+            </span>
+            {orders.length === 0 ? (
+              <p className="faint">Every active order is in a lot.</p>
+            ) : orders.map((row) => (
+              <div key={row.id} className="note-row">
+                <div style={{ minWidth: 0 }}>
+                  <span className="card__title">{row.itemName}{row.quantity > 1 ? ` × ${row.quantity}` : ''}</span>
+                  <span className="faint">
+                    {row.buyer.name} · {formatMoney(row.totalMinor, row.currency)} · {timeAgo(row.createdAt)}
+                  </span>
+                </div>
+                <button type="button" className="btn btn--sm btn--quiet"
+                  onClick={() => navigate('/shop?tab=payments&show=nolot', { state: { focusOrder: row.id } })}>
+                  Open order
+                </button>
+              </div>
+            ))}
+          </section>
+
+          <section className="stack">
+            <h3 className="card__title">Active listings · {listings.length}</h3>
+            {listings.length === 0 ? (
+              <p className="faint">Every active import listing is in a lot.</p>
+            ) : (
+              <div className="grid qgrid">
+                {listings.map((listing) => (
+                  <ShelfCard key={listing.id} listing={listing} onEdit={() => setEditing(listing)}
+                    onOpenLot={(lotId) => navigate(`/shop?tab=lots&lot=${encodeURIComponent(lotId)}`)}
+                    onTag={() => { setNotice(null); setTagging(listing); }} />
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+      {editing && (
+        <EditListingDialog listing={editing} onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }} />
+      )}
+      {tagging && (
+        <ListingIntoLot listing={tagging} store={store} onClose={() => setTagging(null)}
+          onDone={(said) => { setTagging(null); setNotice(said); load(); }} />
+      )}
+    </div>
+  );
+}
+
+/**
  * Consignments: opening them, filling them, and watching them move.
  *
  * These were two screens - "Manage lots" out on its own page, and a tracking
@@ -3930,6 +4033,28 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
     void load();
   }, [load]);
 
+  /* Everything not in a lot yet - active orders and active import listings -
+     on one page, opened from the Sell-home tile and the waiting note. */
+  const openUnlotted = () =>
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      copy.set('view', 'unlotted');
+      return copy;
+    }, { replace: true });
+  const closeUnlotted = () =>
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      copy.delete('view');
+      return copy;
+    }, { replace: true });
+
+  if (!openId && params.get('view') === 'unlotted') {
+    return (
+      <Unlotted store={store} onBack={() => { closeUnlotted(); void load(); }}
+        onShipTogether={() => { closeUnlotted(); setNotice(null); setGathering(true); setCreating(true); }} />
+    );
+  }
+
   if (openId) {
     return (
       <>
@@ -3982,16 +4107,9 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
             </span>
             <span className="faint">Their buyers see no shipment tracking until they are in one.</span>
           </div>
-          <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            {!creating && (
-              <button type="button" className="btn btn--sm" onClick={() => { setGathering(true); setCreating(true); }}>
-                Ship them together
-              </button>
-            )}
-            <button type="button" className="btn btn--sm btn--quiet" onClick={() => navigate('/shop?tab=payments&show=nolot')}>
-              Pick one by one
-            </button>
-          </span>
+          <button type="button" className="btn btn--sm" onClick={openUnlotted}>
+            See what is not in a lot
+          </button>
         </div>
       )}
 
