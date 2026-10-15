@@ -3838,6 +3838,8 @@ function Unlotted({ store, onBack }: {
   const [editing, setEditing] = useState<Listing | null>(null);
   const [tagging, setTagging] = useState<Listing | null>(null);
   const [shipping, setShipping] = useState(false);
+  /** One order being put in a lot from its own card. */
+  const [filing, setFiling] = useState<SaleRow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -3881,20 +3883,15 @@ function Unlotted({ store, onBack }: {
             <h3 className="card__title">Active orders · {orders.length}</h3>
             {orders.length === 0 ? (
               <p className="faint">Every active order is in a lot.</p>
-            ) : orders.map((row) => (
-              <div key={row.id} className="note-row">
-                <div style={{ minWidth: 0 }}>
-                  <span className="card__title">{row.itemName}{row.quantity > 1 ? ` × ${row.quantity}` : ''}</span>
-                  <span className="faint">
-                    {row.buyer.name} · {formatMoney(row.totalMinor, row.currency)} · {timeAgo(row.createdAt)}
-                  </span>
-                </div>
-                <button type="button" className="btn btn--sm btn--quiet"
-                  onClick={() => navigate('/shop?tab=payments&show=nolot', { state: { focusOrder: row.id } })}>
-                  Open order
-                </button>
+            ) : (
+              <div className="wcards">
+                {orders.map((row) => (
+                  <WaitingOrderCard key={row.id} row={row}
+                    onFile={() => { setNotice(null); setFiling(row); }}
+                    onOpen={() => navigate('/shop?tab=payments&show=nolot', { state: { focusOrder: row.id } })} />
+                ))}
               </div>
-            ))}
+            )}
           </section>
 
           <section className="stack">
@@ -3921,11 +3918,76 @@ function Unlotted({ store, onBack }: {
         <ListingIntoLot listing={tagging} store={store} onClose={() => setTagging(null)}
           onDone={(said) => { setTagging(null); setNotice(said); load(); }} />
       )}
+      {filing && (
+        <FileIntoLot row={filing} store={store} onClose={() => setFiling(null)}
+          onDone={(said) => { setFiling(null); setNotice(said); load(); }} />
+      )}
       {shipping && orders && listings && (
         <ShipTogether store={store} orders={orders} listings={listings} onClose={() => setShipping(false)}
           onDone={(said) => { setShipping(false); setNotice(said); load(); }} />
       )}
     </div>
+  );
+}
+
+/** Days since an order was placed, whole. */
+function daysSince(at: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(at).getTime()) / 86_400_000));
+}
+
+/**
+ * An order sold and waiting for a lot, as a card: what was bought, by whom,
+ * whether the money is in, and how long it has waited - with the one job it
+ * needs, putting it in a lot, as the main button. A week without a lot turns
+ * its edge amber, since the buyer has been without tracking that long.
+ */
+function WaitingOrderCard({ row, onFile, onOpen }: {
+  row: SaleRow;
+  onFile: () => void;
+  onOpen: () => void;
+}) {
+  const days = daysSince(row.createdAt);
+  const late = days >= 7;
+  const due = row.outstandingMinor > 0;
+  return (
+    <article className={`wcard${late ? ' wcard--late' : ''}`}>
+      <div className="wcard__top">
+        <Thumb seed={row.listingId} label={row.itemName} photo={row.photoUrl ? { url: row.photoUrl } : null}
+          className="thumb wcard__thumb" />
+        <div className="wcard__body">
+          <span className="wcard__title">{row.itemName}</span>
+          <span className="wcard__tags">
+            <ConditionTag condition={row.condition} />
+            {row.quantity > 1 && <span className="badge">× {row.quantity}</span>}
+            {row.privateDeal && <span className="badge badge--accent">Private deal</span>}
+          </span>
+          <span className="wcard__buyer">
+            <Avatar name={row.buyer.name} size={20} />
+            <span className="wcard__who">{row.buyer.name}{row.buyer.handle ? <span className="faint"> · @{row.buyer.handle}</span> : null}</span>
+          </span>
+        </div>
+      </div>
+      <div className="wcard__facts">
+        <span className="wcard__fact">
+          <span className="wcard__label">Total</span>
+          <b>{formatMoney(row.totalMinor, row.currency)}</b>
+        </span>
+        <span className="wcard__fact">
+          <span className="wcard__label">Payment</span>
+          {due
+            ? <span className="badge badge--warn">{formatMoney(row.outstandingMinor, row.currency)} due</span>
+            : <span className="badge badge--ok">Paid</span>}
+        </span>
+        <span className="wcard__fact">
+          <span className="wcard__label">Waiting</span>
+          <span className={late ? 'wcard__late' : ''}>{days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`}</span>
+        </span>
+      </div>
+      <div className="wcard__actions">
+        <button type="button" className="btn btn--sm" onClick={onFile}>📦 Add to a lot</button>
+        <button type="button" className="btn btn--sm btn--quiet" onClick={onOpen}>Open order</button>
+      </div>
+    </article>
   );
 }
 
