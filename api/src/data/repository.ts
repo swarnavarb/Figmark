@@ -72,6 +72,14 @@ export interface CatalogQuery {
  * Cosmos is not configured. Handlers depend on this interface so the app is
  * runnable and demonstrable with no cloud resources attached.
  */
+/** What `listOrderFiguresForSeller` reads of each order. */
+export const ORDER_FIGURE_FIELDS = [
+  'id', 'lotId', 'sellerId', 'buyerId', 'listingId', 'status', 'paymentStatus', 'hold', 'completedAt',
+  'protection', 'credits', 'accepted', 'paymentClaim', 'reversal', 'bookingOnly', 'payments', 'detailsCheck',
+  'placedAt', 'receivedAt', 'createdAt', 'updatedAt', 'quantity', 'unitPriceMinor', 'currency', 'checkpoints',
+] as const;
+export type OrderFigures = Pick<Order, (typeof ORDER_FIGURE_FIELDS)[number]>;
+
 export interface Repository {
   readonly backend: BackendKind;
 
@@ -107,7 +115,7 @@ export interface Repository {
   listLots(query?: CatalogQuery): Promise<Lot[]>;
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;
 
-  /** The Quick Post templates a shop lists from. */
+  /** The Quick Fill templates a shop lists from. */
   listTemplates(sellerId: string): Promise<PostTemplate[]>;
   getTemplate(sellerId: string, templateId: string): Promise<PostTemplate | null>;
   saveTemplate(template: PostTemplate): Promise<PostTemplate>;
@@ -274,6 +282,7 @@ export interface Repository {
   /** Newest first; with `before`, only those written before that moment - the next page. */
   listNotifications(userId: string, limit?: number, before?: string): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;
+  deleteNotification(userId: string, id: string): Promise<void>;
   /**
    * Held notices whose hold ended between `from` and `until`, not yet sent to
    * anybody's devices and not taken back - across everybody, for the clock
@@ -388,6 +397,8 @@ export interface Repository {
   /** Read, change and write back one document without losing a write made in between. */
   mutateSiteContent(id: string, change: (current: SiteContent | null) => SiteContent): Promise<SiteContent>;
   deleteSiteContent(id: string): Promise<void>;
+  /** Every site-content document whose id falls in [from, to) - a log's periods, say. */
+  listSiteContentRange(from: string, to: string): Promise<SiteContent[]>;
 
   /** Saves an edited account - the storefront editor is the only caller. */
   updateUser(user: User): Promise<User>;
@@ -440,6 +451,18 @@ export interface Repository {
 
   /** Every order a seller has taken, for the tracking and analytics views. */
   listOrdersForSeller(sellerId: string): Promise<Order[]>;
+  /**
+   * The same orders, as only the fields totals and to-do counts read - none
+   * of the timeline, photos or shipment that make an order heavy. For screens
+   * that count the book rather than draw it.
+   */
+  listOrderFiguresForSeller(sellerId: string): Promise<OrderFigures[]>;
+  /**
+   * One shop's placed orders filed under one lot id - a single partition. For
+   * the sentinels (direct sales, awaiting a lot), which every shop shares, so
+   * reading the whole partition would read everybody's.
+   */
+  listSellerOrdersIn(lotId: string, sellerId: string): Promise<Order[]>;
   /** Every order carrying a commission with this artist, newest first. */
   listOrdersCommissionedFrom(artistId: string): Promise<Order[]>;
 

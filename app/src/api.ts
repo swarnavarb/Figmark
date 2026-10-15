@@ -675,7 +675,7 @@ export interface SaleRow {
   chinaReceivedAt: string | null;
   /** When the seller ticked it delivered, on the lot's own item list. */
   deliveredAt: string | null;
-  /** The route its Quick Post template set up for the lot that will carry it. */
+  /** The route its Quick Fill template set up for the lot that will carry it. */
   lotRouteId: string | null;
   /** The seller's next press on this order, in its route's words - null when there is none to make yet. */
   next: CardButton | null;
@@ -890,6 +890,39 @@ export interface SalesResponse {
   placed: SaleRow[];
   /** Every purchase, newest first: the shop's whole book, cancelled and rejected ones included. */
   orders: SaleRow[];
+  /** Finished orders older than the window, left out until asked for with `history: 'all'`. */
+  olderCount?: number;
+  /** An answer for a few orders only: its rows replace their own, and nothing else changed. */
+  partial?: boolean;
+}
+
+/**
+ * A partial sales answer laid over the book already on screen.
+ *
+ * Its rows replace their own where they are and join the top where they are
+ * new; an order asked for and not returned has gone. Each answer pile
+ * (`waiting`, `placed`) keeps its place for orders still in it. The money
+ * lists are left as they were: a partial answer only covers a press.
+ */
+export function mergeSales(current: SalesResponse, update: SalesResponse, asked: readonly string[]): SalesResponse {
+  const fresh = new Map(update.orders.map((row) => [row.id, row]));
+  const gone = new Set(asked.filter((id) => !fresh.has(id)));
+  const touched = new Set([...fresh.keys(), ...gone]);
+  const pile = (rows: SaleRow[], next: SaleRow[]) => {
+    const still = new Map(next.map((row) => [row.id, row]));
+    const kept = rows.filter((row) => !touched.has(row.id) || still.has(row.id)).map((row) => still.get(row.id) ?? row);
+    return [...kept, ...next.filter((row) => !rows.some((existing) => existing.id === row.id))];
+  };
+  const known = new Set(current.orders.map((row) => row.id));
+  return {
+    ...current,
+    waiting: pile(current.waiting, update.waiting),
+    placed: pile(current.placed, update.placed),
+    orders: [
+      ...update.orders.filter((row) => !known.has(row.id)),
+      ...current.orders.filter((row) => !gone.has(row.id)).map((row) => fresh.get(row.id) ?? row),
+    ],
+  };
 }
 
 /* ── Power selling ─────────────────────────────────────────────────────── */
@@ -1061,7 +1094,7 @@ export interface NewListing {
   tags: string[];
   /** In the order the manager arranged them; the first leads unless told otherwise. */
   photos?: { blobName: string; url: string; isPrimary: boolean }[];
-  /** The before-lot ladder a Quick Post template gave it. */
+  /** The before-lot ladder a Quick Fill template gave it. */
   preLotSteps?: { name: string; description?: string }[];
   preLotName?: string;
   /** The route template a lot made from this item should travel. */
@@ -1825,7 +1858,7 @@ export interface ItemGroup {
   })[];
 }
 
-/* ── Quick Post templates and photos ───────────────────────────────────── */
+/* ── Quick Fill templates and photos ───────────────────────────────────── */
 
 /** A photo as the manager holds it: uploaded, or a link somebody pasted. */
 /** One of a shop's items, as the private-deal picker lists it. */
@@ -1969,6 +2002,32 @@ export interface VerificationStatus {
   ready: { email: boolean; whatsapp: boolean; aadhaar: boolean };
 }
 
+/** A shop as search and suggestions show it. */
+export interface ShopCard {
+  id: string;
+  name: string;
+  handle: string | null;
+  photoUrl: string | null;
+  followerCount: number;
+  tier: string;
+  dispatchRegion: string;
+  /** The few tags that say most about it. */
+  tags: string[];
+  /** The tags that matched what was searched or liked. */
+  matched: string[];
+}
+
+/** How each of a shop's tags does, for the Data tab. */
+export interface TagInsights {
+  tags: {
+    key: string; label: string; own: boolean;
+    yourItems: number; yourLikesPerItem: number; sold: number;
+    marketItems: number; marketLikesPerItem: number; shopsSharing: number;
+    verdict: 'none_live' | 'open' | 'ahead' | 'behind' | 'level';
+  }[];
+  ideas: { key: string; label: string; items: number; likesPerItem: number }[];
+}
+
 export interface PublicProfile {
   handle: string;
   isStore: boolean;
@@ -1977,6 +2036,10 @@ export interface PublicProfile {
   photoUrl: string | null;
   coverUrl: string | null;
   tags: string[];
+  /** The shop's identity: its own tags and what it lists, most telling first. */
+  identity: { key: string; label: string; own: boolean }[];
+  /** Badges the shop earned from its orders. */
+  earned: { id: string; label: string }[];
   link: string | null;
   dispatchRegion: string;
   followerCount: number;
@@ -2007,33 +2070,6 @@ export interface PublicProfile {
     photos?: { url?: string; isPrimary?: boolean }[];
   }[];
 }
-
-/* ── Supplier ──────────────────────────────────────────────────────────── */
-
-export interface SupplierItem {
-  id: string;
-  itemName: string;
-  condition: string;
-  quantity: number;
-  unitWeightGrams: number;
-  received: boolean;
-  packed: boolean;
-}
-
-export interface SupplierStore {
-  ownerId: string;
-  name: string;
-  /** The shop's handle, so the packer can tell it a crate has landed. */
-  handle: string | null;
-}
-
-export interface SupplierLot {
-  store: SupplierStore;
-  lot: { id: string; name: string; stage: FulfilmentStage; origin: string };
-  tally: LotTally;
-  items: SupplierItem[];
-}
-
 
 /* ── Service stores ──────────────────────────────────────────────────── */
 
@@ -2232,7 +2268,7 @@ export const api = {
   login: (identifier: string, password: string) =>
     post<LoginResponse>('/auth/login', { identifier, password }),
 
-  signup: (body: { displayName: string; username?: string; email: string; phone: string; password: string }) =>
+  signup: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) =>
     post<SignupResponse>('/auth/signup', body),
 
   /** Whether a username is still free, asked while it is typed on the sign-up form. */
@@ -2515,6 +2551,23 @@ export const api = {
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
   uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
+  /** The shop's photo or banner: open to any signed-in account, unlike listing photos. */
+  uploadStorefrontPhoto: (dataUrl: string) => post<StoredPhoto>('/me/storefront/photo', { dataUrl }),
+  /** Shops whose name or tags match a search. */
+  searchShops: (q: string, signal?: AbortSignal) =>
+    request<{ shops: ShopCard[] }>(`/shops/search?q=${encodeURIComponent(q)}`, { signal }),
+  /** Every shop carrying one tag. */
+  shopsByTag: (slug: string) =>
+    request<{ tag: { key: string; label: string }; shops: ShopCard[] }>(`/shop-tags/${encodeURIComponent(slug)}`),
+  similarShops: (id: string) => request<{ shops: ShopCard[] }>(`/shops/${encodeURIComponent(id)}/similar`),
+  /** Shops to follow, from what this buyer likes and buys. */
+  shopsForYou: () => request<{ shops: ShopCard[]; basis: string[] }>('/shops/for-you'),
+  /** A shop's tags, most used first, for filling in a listing. */
+  shopTags: (id: string) => request<{ tags: string[] }>(`/shops/${encodeURIComponent(id)}/tags`),
+  tagInsights: (store?: string) =>
+    request<TagInsights>(`/me/tag-insights${store ? `?store=${encodeURIComponent(store)}` : ''}`),
+  /** A dispatch region guessed from the connection on the server; null when it cannot tell. */
+  regionGuess: () => request<{ region: string | null }>('/me/region-guess'),
   /**
    * Throw away a photo that was picked and then taken out again before saving.
    * Quiet on purpose: the server refuses anything that is not a draft of yours,
@@ -2534,8 +2587,23 @@ export const api = {
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/claim-payment`, body),
   settleClaim: (id: string, body: { accept: boolean; reason?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/settle-claim`, body),
-  sales: (storeId?: string) =>
-    request<SalesResponse>(`/me/sales${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  /**
+   * The shop's sales book. `ids` asks for just those orders and the rest of
+   * their lots (a `partial` answer, merged with `mergeSales`); `history: 'all'`
+   * includes finished orders older than the window.
+   */
+  sales: (storeId?: string, options: { ids?: readonly string[]; history?: 'all' } = {}) => {
+    const query = new URLSearchParams();
+    if (storeId) query.set('store', storeId);
+    if (options.ids?.length) query.set('ids', options.ids.join(','));
+    if (options.history) query.set('history', options.history);
+    const search = query.toString();
+    return request<SalesResponse>(`/me/sales${search ? `?${search}` : ''}`);
+  },
+  /** The Sell tab's three counts; null where this person may not see one. */
+  sellTodo: (storeId?: string) =>
+    request<{ answer: number | null; noLot: number | null; lots: number | null }>(
+      `/me/sell/todo${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
 
   /** The seller cannot serve an order. Puts the stock and the place back. */
   rejectOrder: (id: string, reason: string) =>
@@ -2634,6 +2702,14 @@ export const api = {
   /** A message from the shop: these orders are ready to go out once the balance is paid. */
   paymentReminder: (orderIds: string[]) =>
     post<{ sent: true; via: 'message' | 'bell'; thread: string | null }>('/orders/payment-reminder', { orderIds }),
+  /** The same tick on several orders in one request; each one refused is listed with why. */
+  setCheckpoints: (orderIds: readonly string[], checkpoint: OrderCheckpoint | string, on: boolean) =>
+    post<{
+      results: ({ id: string; ok: true; order: { id: string; checkpoints: BoardOrder['checkpoints']; status: string } }
+        | { id: string; ok: false; error: string; message: string })[];
+      done: number;
+      failed: number;
+    }>('/orders/checkpoints', { orderIds, checkpoint, on }),
   setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
     /** The courier and AWB with a dispatch; `label`, where an item with no lot was received. */
     shipment?: { courier?: string; awb?: string; label?: string }, undoOf?: string) =>
@@ -2697,13 +2773,6 @@ export const api = {
   saveProfile: (body: { bio?: string; coverUrl?: string; tags?: string[] }) =>
     post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
   setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
-
-  /** Lots to pack; one store's only when `storeId` is given, filtered on the server. */
-  supplierLots: (storeId?: string) =>
-    request<{ lots: { store: SupplierStore; lot: SupplierLot['lot']; tally: LotTally }[] }>(
-      `/supplier/lots${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`,
-    ),
-  supplierLot: (id: string) => request<SupplierLot>(`/supplier/lots/${encodeURIComponent(id)}`),
 
   storefront: () =>
     request<{ storefront: SellerProfile | null; displayName: string }>('/me/storefront'),

@@ -89,7 +89,7 @@ export function StoreApplyPage() {
     return (
       <main className="page">
         <EmptyState icon={<Icon name="check" size={26} />} title="Your store is open">
-          <Link to={`/services/store/${kind}/${user.id}`} className="btn">Open the console</Link>
+          <Link to="/services/mine" className="btn">Go to My services</Link>
         </EmptyState>
       </main>
     );

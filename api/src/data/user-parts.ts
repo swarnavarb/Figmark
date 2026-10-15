@@ -15,8 +15,9 @@ import type { User } from '../../../shared/models.js';
  * read by query come back without them - those are for names and shops, not
  * for anybody's collection.
  *
- * Rows written before the split still carry these fields inline. They are read
- * as they are until the account's next save moves them into their part.
+ * Rows written before the split carried these fields inline. They are read as
+ * they are, and the one-off storage clean-up on start-up saves each such
+ * account once, which moves them into their parts.
  */
 export const USER_PARTS = {
   collection: ['collection', 'collectionGroups'],

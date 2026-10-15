@@ -49,8 +49,6 @@ const ChannelPage = page(() => import('./pages/SocialPage'), 'ChannelPage');
 const PostPage = page(() => import('./pages/SocialPage'), 'PostPage');
 const ForumRoom = page(() => import('./components/ForumRoom'), 'ForumRoom');
 const ThreadPage = page(() => import('./pages/MessagesPage'), 'ThreadPage');
-const SupplierPage = page(() => import('./pages/SupplierPage'), 'SupplierPage');
-const PackingLotPage = page(() => import('./pages/SupplierPage'), 'PackingLotPage');
 const OrderPage = page(() => import('./pages/OrderPage'), 'OrderPage');
 const DisputePage = page(() => import('./pages/DisputePage'), 'DisputePage');
 const CommunityServicePage = page(() => import('./pages/CommunityServicePage'), 'CommunityServicePage');
@@ -63,6 +61,7 @@ const MyRefundsPage = page(() => import('./pages/MyRefundsPage'), 'MyRefundsPage
 const MyDisputesPage = page(() => import('./pages/MyDisputesPage'), 'MyDisputesPage');
 const QuestsPage = page(() => import('./pages/QuestsPage'), 'QuestsPage');
 const LearnPage = page(() => import('./pages/LearnPage'), 'LearnPage');
+const TagPage = page(() => import('./pages/TagPage'), 'TagPage');
 const ProfileByHandlePage = page(() => import('./pages/ProfileByHandlePage'), 'ProfileByHandlePage');
 const ShortLinkPage = page(() => import('./pages/ShortLinkPage'), 'ShortLinkPage');
 const InvitePage = page(() => import('./pages/InvitePage'), 'InvitePage');
@@ -115,7 +114,7 @@ function App() {
             these both just point there so nothing bookmarked or linked breaks. */}
         <Route path="/lots" element={<Navigate to="/shop?tab=lots" replace />} />
         <Route path="/batches" element={<Navigate to="/shop?tab=lots" replace />} />
-        {/* The route list lives in Sell → Routes, and every route is written
+        {/* The route list lives in Sell → Lots → Routes, and every route is written
             in the Studio. The old addresses still land in the right place. */}
         <Route path="/routes" element={<Navigate to="/shop?tab=routes" replace />} />
         <Route path="/routes/studio/new" element={members(<RouteStudioPage />)} />
@@ -137,8 +136,6 @@ function App() {
         <Route path="/social/f/:id" element={members(<ForumRoom />)} />
         <Route path="/social/p/:channel/:id" element={members(<PostPage />)} />
         <Route path="/messages/:handle" element={members(<ThreadPage />)} />
-        <Route path="/packing" element={members(<SupplierPage />)} />
-        <Route path="/packing/:id" element={members(<PackingLotPage />)} />
         <Route path="/order/:id" element={members(<OrderPage />)} />
         <Route path="/dispute/:id" element={members(<DisputePage />)} />
         <Route path="/community-service" element={members(<CommunityServicePage />)} />
@@ -157,6 +154,7 @@ function App() {
         <Route path="/disputes" element={members(<MyDisputesPage />)} />
         <Route path="/quests" element={members(<QuestsPage />)} />
         <Route path="/learn" element={<LearnPage />} />
+        <Route path="/tags/:slug" element={<TagPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
         <Route path="/:username" element={<ProfileByHandlePage />} />

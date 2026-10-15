@@ -39,6 +39,7 @@ import { fingerprint } from '../image-hash.js';
 import { rankByPhoto } from '../photo-search.js';
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
+import { refreshIdentity } from '../shop-identity.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
 function toSellerCard(user: User) {
@@ -421,7 +422,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     shareToChannel?: boolean;
     /** Announce it in the feed, to everyone. */
     shareToFeed?: boolean;
-    /** The before-lot ladder from the Quick Post template, if it had one. */
+    /** The before-lot ladder from the Quick Fill template, if it had one. */
     preLotSteps?: { id?: string; name?: string; description?: string }[];
     preLotName?: string;
     /** A private deal made from one of the shop's items: which one. */
@@ -562,7 +563,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
        browser because a document with forty images in it is the kind of thing
        that only fails in production. */
     photos,
-    /* The two ladders, from the Quick Post template the seller listed with.
+    /* The two ladders, from the Quick Fill template the seller listed with.
        The before-lot one is copied because a buyer will read it; the after-lot
        one is a pointer, because nothing is travelling it yet. */
     preLotRoute: preLot,
@@ -584,6 +585,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
 
   const created = await repository.createListing(listing);
   await claimPhotos(created.photos.map((photo) => photo.blobName || photo.url), `listing:${created.id}`);
+  // What a shop lists is what it is about: its tags count toward its identity.
+  if (!privateFor) await refreshIdentity(repository, created.sellerId);
 
   // Telling people is part of listing, not a second job to remember. The
   // channel is where a shop's followers already are; the feed is everybody.
@@ -1396,6 +1399,8 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     const dropped = listing.photos.filter((photo) => !names.has(photo.url) && !(photo.blobName && names.has(photo.blobName)));
     if (dropped.length > 0) await releaseListingPhotos([{ ...listing, photos: dropped }], repository);
   }
+  // A new expiry moves the item between counting fully and counting half.
+  if (body.expiresAt !== undefined) await refreshIdentity(repository, updated.sellerId);
   return json(200, { listing: updated });
 }
 
@@ -1414,6 +1419,7 @@ async function deleteListing(request: HttpRequest, _context: InvocationContext) 
 
   const now = new Date().toISOString();
   await repository.updateListing({ ...listing, expiresAt: now, updatedAt: now });
+  await refreshIdentity(repository, listing.sellerId);
   return json(200, { expired: true });
 }
 

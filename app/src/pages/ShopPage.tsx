@@ -22,7 +22,7 @@ import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { RoutesList } from './RoutesPage';
-import { RouteStudio } from './RouteStudioPage';
+import { SetupChecklist } from './VerifyPage';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
@@ -36,11 +36,13 @@ import { Spinner } from '../components/Spinner';
 import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
+import { shrink } from '../components/PhotoManager';
 import type { StoreAccess } from '@shared/stores';
 import type { SavedCalc } from '@shared/profit';
 import {
   ApiRequestError,
   api,
+  mergeSales,
   type DashboardResponse,
   type InsightsResponse,
   type PartyRef,
@@ -60,7 +62,6 @@ import { SkeletonText, useToast } from '../components/Feedback';
 import { InsightsPanel } from './InsightsPanel';
 import { ProfitCalculator } from './ProfitCalculator';
 import { SalesPanel } from './SalesPanel';
-import { PackingList } from './SupplierPage';
 import { LotDetail, NewLotForm } from './LotsPage';
 import {
   currencySymbol, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
@@ -70,7 +71,7 @@ import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 
-type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'packing' | 'analytics' | 'storefront' | 'people';
+type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -88,7 +89,6 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'refunds', label: 'Refunds' },
   { id: 'lots', label: 'Lots' },
   { id: 'routes', label: 'Routes' },
-  { id: 'packing', label: 'Packing' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
@@ -102,16 +102,31 @@ const PRO_SECTIONS: readonly Section[] = ['insights', 'calculator'];
  * card only ever shows the handful of screens that card promised - not all
  * eight at once.
  */
-const SECTION_GROUPS: Record<string, Section[]> = {
-  items: ['items', 'payments', 'insights', 'calculator', 'refunds'],
-  manage: ['storefront', 'people', 'packing'],
-  lots: ['lots'],
-  routes: ['routes'],
-  analytics: ['analytics'],
+/**
+ * The five places a shop's work lives, named after the job rather than the
+ * screen. Each opens on its first section; the rest of its sections are chips
+ * under it. Packing is not here: a packer works from My services.
+ */
+type Group = 'items' | 'orders' | 'lots' | 'money' | 'settings';
+
+const SECTION_GROUPS: Record<Group, Section[]> = {
+  items: ['items'],
+  orders: ['payments', 'refunds'],
+  lots: ['lots', 'routes'],
+  money: ['analytics', 'insights', 'calculator'],
+  settings: ['storefront', 'people'],
 };
 
-function groupOf(section: Section): string {
-  return Object.entries(SECTION_GROUPS).find(([, ids]) => ids.includes(section))?.[0] ?? 'items';
+const GROUP_TABS: { id: Group; label: string; icon: IconName }[] = [
+  { id: 'items', label: 'Listings', icon: 'tag' },
+  { id: 'orders', label: 'Orders', icon: 'box' },
+  { id: 'lots', label: 'Shipments', icon: 'truck' },
+  { id: 'money', label: 'Data', icon: 'spark' },
+  { id: 'settings', label: 'Shop settings', icon: 'bank' },
+];
+
+function groupOf(section: Section): Group {
+  return (Object.entries(SECTION_GROUPS) as [Group, Section[]][]).find(([, ids]) => ids.includes(section))?.[0] ?? 'items';
 }
 
 /**
@@ -126,8 +141,6 @@ export function ShopPage() {
   const [stores, setStores] = useState<StoreAccess[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
-  /** The one question after the shop exists: how does your stock travel? */
-  const [routing, setRouting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -144,32 +157,9 @@ export function ShopPage() {
   if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
   if (!stores) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
 
-  if (stores.length === 0 && !opening && !routing) {
+  if (stores.length === 0 && !opening) {
     return <ShopStart onOpen={() => setOpening(true)} />;
   }
-  /*
-   * Opened, and now asked the one question a shop cannot answer later without
-   * having already got it wrong: how does your stock actually travel?
-   *
-   * Here rather than buried in a settings screen, because the route is what
-   * every buyer of this shop will read for six weeks, and a shop that never
-   * finds the screen ships everybody the built-in seven words. Skippable,
-   * because a shop that does not know yet should not be held at the door.
-   */
-  if (routing) {
-    return (
-      <main className="page tab-view">
-        <RouteStudio
-          editing={null}
-          intro={<RouteIntro />}
-          cancelLabel="Skip for now"
-          onSaved={() => { setRouting(false); void load(); }}
-          onCancel={() => { setRouting(false); void load(); }}
-        />
-      </main>
-    );
-  }
-
   if (stores.length === 0) {
     return (
       <main className="page tab-view">
@@ -181,49 +171,19 @@ export function ShopPage() {
           <div>
             <h1>Open your storefront</h1>
             <p className="muted">
-              A name, a handle and a line about what you sell. Everything here can change later.
+              Five short steps. Only the name is needed; everything else can be skipped and changed later.
             </p>
           </div>
         </div>
-        {/* Saving is what makes the account a shop. Then one more question,
-            before the console, about how the stock travels. */}
-        <StorefrontEditor onSaved={() => { setOpening(false); setRouting(true); }} />
+        {/* Saving is what makes the account a shop, and the console opens
+            straight after. How the stock travels is asked when the first lot
+            is opened, which is when it starts to matter. */}
+        <StorefrontEditor wizard onSaved={() => { setOpening(false); void load(); }} />
       </main>
     );
   }
 
   return <ShopConsole stores={stores} onChanged={load} />;
-}
-
-/**
- * What a route is, for somebody meeting one for the first time.
- *
- * Said in the words of the thing it produces rather than in the words of the
- * feature: a seller does not want "a configurable fulfilment pipeline", they
- * want their buyers to stop asking where it is.
- */
-function RouteIntro() {
-  return (
-    <div className="stack" style={{ marginBottom: 18 }}>
-      <div className="page__head"><div>
-        <h1>How does your stock travel?</h1>
-        <p className="muted">
-          A route is the list of steps your customers read as their tracking — in your words, not
-          ours. Write it once and every shipment you open uses it.
-        </p>
-      </div></div>
-      <div className="notice notice--info">
-        <strong>Why it is worth a minute.</strong> Customers ask "where is it?" because nothing
-        told them. A route answers before they ask: they see the same steps you work, ticked as
-        you tick them, from the day they order to the day it lands. You can change it whenever
-        the way you ship changes.
-      </div>
-      <p className="muted" style={{ marginTop: 0 }}>
-        Let Pip ask you a few questions, or start from a shape close to yours — everything in it
-        is editable — or skip and do it later from Sell → Routes.
-      </p>
-    </div>
-  );
 }
 
 /**
@@ -236,6 +196,7 @@ function RouteIntro() {
 function ShopStart({ onOpen }: { onOpen: () => void }) {
   return (
     <main className="page tab-view">
+      <SetupChecklist hasStore={false} onOpenStore={onOpen} />
       <div className="gate">
         <span className="gate__mark" aria-hidden="true">{<Icon name="bank" size={19} />}</span>
         <h1 className="gate__title">Open your storefront</h1>
@@ -273,14 +234,15 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
    */
   const [params, setParams] = useSearchParams();
   const requested = params.get('tab');
-  const setSection = (next: Section) =>
+  const setSection = (next: Section, extra: Record<string, string> = {}) =>
     setParams((current) => {
       const copy = new URLSearchParams(current);
       copy.set('tab', next);
       // A sub-view belongs to the tab it was opened in, and so does an order
-      // waiting to be filed into a lot about to be opened.
-      copy.delete('view');
-      copy.delete('file');
+      // waiting to be filed into a lot about to be opened, an open lot, and
+      // a list's filter.
+      for (const key of ['view', 'file', 'lot', 'show', 'state']) copy.delete(key);
+      for (const [key, value] of Object.entries(extra)) copy.set(key, value);
       return copy;
     }, { replace: true });
 
@@ -291,21 +253,23 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     if (entry.id === 'items') return store.permissions.includes('listings');
     if (entry.id === 'analytics' || entry.id === 'insights' || entry.id === 'calculator') return store.permissions.includes('analytics');
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
-    if (entry.id === 'packing') return store.permissions.includes('export');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     return true;
   });
-  // No tab, or a tab this store cannot open: nothing renders below the
-  // workflow buttons.
-  const active = visible.find((entry) => entry.id === requested)?.id ?? null;
-  const chips = active ? visible.filter((entry) => SECTION_GROUPS[groupOf(active)]!.includes(entry.id)) : [];
+  // No tab, or a tab this store cannot open: the first section it can, so
+  // the Sell tab never opens on an empty space under its buttons.
+  const active = visible.find((entry) => entry.id === requested)?.id ?? visible[0]?.id ?? null;
+  const chips = active ? visible.filter((entry) => SECTION_GROUPS[groupOf(active)].includes(entry.id)) : [];
+  const groups = GROUP_TABS.filter((group) => visible.some((entry) => SECTION_GROUPS[group.id].includes(entry.id)));
+  const openGroup = (group: Group) => {
+    const first = visible.find((entry) => SECTION_GROUPS[group].includes(entry.id));
+    if (first) setSection(first.id);
+  };
 
   return (
     <main className="page tab-view">
-      {/* No "list an item" here: the Items section opens with that door, and
-          no shop-name header here either - the workflow below already says
-          where you are. */}
-      <SellHome active={active} onGo={setSection} />
+      <SetupChecklist hasStore />
+      <SellHome store={store} canList={store.permissions.includes('listings')} onGo={setSection} />
 
       {stores.length > 1 && (
         <label className="field" style={{ marginBlock: 14 }}>
@@ -320,8 +284,19 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </label>
       )}
 
+      <div className="selltabs" role="tablist" aria-label="Shop">
+        {groups.map((group) => (
+          <button key={group.id} type="button" role="tab" aria-selected={active ? groupOf(active) === group.id : false}
+            className={`selltabs__tab${active && groupOf(active) === group.id ? ' is-on' : ''}`}
+            onClick={() => openGroup(group.id)}>
+            <Icon name={group.icon} size={16} />
+            {group.label}
+          </button>
+        ))}
+      </div>
+
       {active && chips.length > 1 && (
-        <div className="sections" role="tablist" aria-label="Shop sections" style={{ marginTop: 18 }}>
+        <div className="sections" role="tablist" aria-label="Shop sections" style={{ marginTop: 12 }}>
           {chips.map((entry) => (
             <button
               key={entry.id}
@@ -351,7 +326,6 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}
-          {active === 'packing' && <PackingList storeId={store.ownerId} />}
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
@@ -362,94 +336,160 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
 }
 
 /**
- * The Sell tab's front door: five cards, always on screen.
+ * The top of the Sell tab: the thing a shop does most, and what is waiting.
  *
- * Two primary actions up top - the business, not the stock - then the
- * workflow every import actually follows, drawn as the three things it is:
- * items become part of a lot, and a lot follows a route. All five stay in
- * place; picking one only changes what appears in the area below them, so
- * the Sell page itself is never left.
+ * It used to lead with Analytics and Manage Store and a diagram of how items,
+ * lots and routes relate, with "list an item" one section down. Now the
+ * button comes first, then the counts that are somebody's next job - each one
+ * a tap to the list it counts.
  */
-function SellHome({ active, onGo }: { active: Section | null; onGo: (section: Section) => void }) {
-  const on = (section: Section) => (active ? groupOf(active) === groupOf(section) : false);
-  return (
-    /* Once a section is open the cards shrink to one line each, so on a
-       phone what was picked starts near the top instead of below the fold. */
-    <div className={`stack${active ? ' sellhome--compact' : ''}`}>
-      <div className="doors doors--two">
-        <button type="button" className={`door door--card door--analytics${on('analytics') ? ' is-on' : ''}`}
-          onClick={() => onGo('analytics')}>
-          <span className="door__glyph" aria-hidden="true"><Icon name="spark" size={22} /></span>
-          <span className="door__title">Analytics</span>
-          <span className="door__note">Sales, views and trends for your shop.</span>
-        </button>
-        <button type="button" className={`door door--card door--manage${on('storefront') ? ' is-on' : ''}`}
-          onClick={() => onGo('storefront')}>
-          <span className="door__glyph" aria-hidden="true"><Icon name="bank" size={22} /></span>
-          <span className="door__title">Manage Store</span>
-          <span className="door__note">Your storefront, your team, and packing.</span>
-        </button>
-      </div>
+function SellHome({ store, canList, onGo }: {
+  store: StoreAccess;
+  canList: boolean;
+  onGo: (section: Section, extra?: Record<string, string>) => void;
+}) {
+  const [todo, setTodo] = useState<{ answer: number; noLot: number; lots: number } | null>(null);
+  const seesLots = store.permissions.includes('lots');
 
-      <div className="workflow">
-        <span className="workflow__label">Workflow</span>
-        <div className="workflow__row">
-          <button type="button" className={`workflow__step workflow__step--items${on('items') ? ' is-on' : ''}`}
-            onClick={() => onGo('items')}>
-            <span className="workflow__glyph" aria-hidden="true"><Icon name="tag" size={20} /></span>
-            <span className="workflow__title">Items</span>
-          </button>
-          <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
-          <button type="button" className={`workflow__step workflow__step--lots${on('lots') ? ' is-on' : ''}`}
-            onClick={() => onGo('lots')}>
-            <span className="workflow__glyph" aria-hidden="true"><Icon name="box" size={20} /></span>
-            <span className="workflow__title">Lots</span>
-          </button>
-          <span className="workflow__arrow" aria-hidden="true"><Icon name="right" size={16} /></span>
-          <button type="button" className={`workflow__step workflow__step--routes${on('routes') ? ' is-on' : ''}`}
-            onClick={() => onGo('routes')}>
-            <span className="workflow__glyph" aria-hidden="true"><Icon name="truck" size={20} /></span>
-            <span className="workflow__title">Routes</span>
-          </button>
+  useEffect(() => {
+    let cancelled = false;
+    /* Three numbers, counted on the server: this used to fetch the whole
+       sales book and every lot with its orders to count them here. */
+    void api.sellTodo(store.ownerId).catch(() => null).then((counts) => {
+      // Nothing to count yet - an unverified shop is refused both - says nothing rather than zeros.
+      if (cancelled || !counts || (counts.answer === null && counts.lots === null)) return;
+      setTodo({
+        answer: counts.answer ?? 0,
+        noLot: counts.noLot ?? 0,
+        lots: seesLots ? counts.lots ?? 0 : 0,
+      });
+    });
+    return () => { cancelled = true; };
+  }, [store.ownerId, seesLots]);
+
+  const tiles: { id: string; count: number; label: string; hot: boolean; go: () => void }[] = todo ? [
+    { id: 'answer', count: todo.answer, label: todo.answer === 1 ? 'order to answer' : 'orders to answer',
+      hot: todo.answer > 0, go: () => onGo('payments', { show: 'answer' }) },
+    ...(seesLots ? [
+      { id: 'nolot', count: todo.noLot, label: todo.noLot === 1 ? 'order not in a lot' : 'orders not in a lot',
+        hot: todo.noLot > 0, go: () => onGo('lots') },
+      { id: 'lots', count: todo.lots, label: todo.lots === 1 ? 'lot on the move' : 'lots on the move',
+        hot: false, go: () => onGo('lots') },
+    ] : []),
+  ] : [];
+
+  return (
+    <div className="sellhome">
+      {canList && (
+        <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn btn--lg sellhome__list">
+          <Icon name="plus" size={18} /> List an item
+        </Link>
+      )}
+      {tiles.length > 0 && (
+        <div className="todo" aria-label="Waiting on you">
+          {tiles.map((tile) => (
+            <button key={tile.id} type="button" className={`todo__tile${tile.hot ? ' is-hot' : ''}`} onClick={tile.go}>
+              <b className="todo__count">{tile.count}</b>
+              <span className="todo__label">{tile.label}</span>
+            </button>
+          ))}
         </div>
-        <p className="faint workflow__hint">
-          Items are added → items become part of a lot → lots follow a route.
-        </p>
-      </div>
+      )}
     </div>
   );
 }
 
+/**
+ * The handle a new shop is offered.
+ *
+ * Made from the same name the person's own handle was, so on its own it is
+ * often that handle - already theirs - or another shop's of the same name,
+ * and refused the moment the shop is saved. So the name is tried, then the
+ * name with "_shop", then with a short tail, and the first one free is offered.
+ */
+/** A new shop's name: the owner's, as theirs. "Messi" opens "Messi's Shop". */
+function shopNameFor(displayName: string): string {
+  const name = displayName.trim() || 'My';
+  return `${name}${/s$/i.test(name) ? "'" : "'s"} Shop`;
+}
+
+/** A new shop's description, generic enough to keep and easy to replace. */
+function defaultShopBio(shopName: string): string {
+  return `Welcome to ${shopName}! We sell collectibles and figures, checked and packed with care, `
+    + 'and ship across India. Follow the shop to catch new drops first, and message us with any questions.';
+}
+
+/** Short facts a shop often says about itself, offered as one-tap tags. */
+const TAG_IDEAS = ['Ships weekly', 'Pre-orders open', 'Authentic only', 'Imports', 'Sealed boxes',
+  'Custom painting', 'Bundles', ...CATEGORIES.slice(0, 4)];
+
+/**
+ * A handle for a shop nobody has named yet: the owner's own, plus "_shop".
+ *
+ * "@messi" opens "@messi_shop". A shop shares one namespace with people, so
+ * the owner's handle itself is never offered; a taken one gets a short tail.
+ */
+async function shopHandleFor(own: string | null, displayName: string): Promise<string> {
+  const base = (own || suggestUsername(displayName)).slice(0, 25).replace(/[._]+$/, '');
+  const tries = [`${base}_shop`, `${base.slice(0, 20)}_shop_${Math.random().toString(36).slice(2, 6)}`];
+  for (const handle of tries) {
+    if (checkUsername(handle)) continue;
+    const free = await api.usernameAvailable(handle).then((answer) => answer.available).catch(() => null);
+    // Unknown is not a refusal: offer it, and the save says if it is taken.
+    if (free !== false) return handle;
+  }
+  return tries[tries.length - 1]!;
+}
+
 /* ── Storefront ─────────────────────────────────────────────────────────── */
+
+/** The walkthrough's steps, in order. */
+const SHOP_STEPS = [
+  { id: 'name', label: 'Name' },
+  { id: 'photos', label: 'Photos' },
+  { id: 'about', label: 'About' },
+  { id: 'payment', label: 'Payment' },
+  { id: 'review', label: 'Review' },
+] as const;
+type ShopStep = (typeof SHOP_STEPS)[number]['id'];
 
 /**
  * Design the storefront.
  *
  * A name, a picture, what you sell, and one link. The single link is the point:
  * a row of them is a link farm, one is a front door.
+ *
+ * Opening a shop is a walkthrough - one thing per screen, with a timeline of
+ * what is done and what is still to come - and editing one later is the same
+ * fields on a single form. Pictures are uploaded, never linked: a linked
+ * picture can change, vanish or track whoever opens the shop.
  */
-function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
+function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; wizard?: boolean } = {}) {
   const { user } = useSession();
   const [draft, setDraft] = useState<StorefrontDraft | null>(null);
   const [saved, setSaved] = useState<SellerProfile | null>(null);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /* The chips as typed, commas, spaces and all. Parsing them on every
-     keystroke threw away a comma or a trailing space the moment it was
-     typed, so a second chip - or a two-word one - could only be pasted in. */
-  const [chipsText, setChipsText] = useState('');
+  const [step, setStep] = useState<ShopStep>('name');
+  /** The furthest step reached, so the timeline can say what is done. */
+  const [reached, setReached] = useState(0);
+  /** Whether the shop username is free, asked a moment after typing stops. */
+  const [handleFree, setHandleFree] = useState<{ name: string; free: boolean | null } | null>(null);
 
   useEffect(() => {
     void api
       .storefront()
-      .then((result) => {
+      .then(async (result) => {
+        const fresh = !result.storefront;
+        const shopName = shopNameFor(result.displayName);
+        const handle = result.storefront?.username ?? await shopHandleFor(user?.username ?? null, result.displayName);
         setSaved(result.storefront);
-        setChipsText((result.storefront?.tags ?? []).join(', '));
         setDraft({
-          storefrontName: result.storefront?.storefrontName ?? result.displayName,
-          username: result.storefront?.username ?? suggestUsername(result.displayName),
-          bio: result.storefront?.bio ?? '',
+          storefrontName: result.storefront?.storefrontName ?? shopName,
+          username: handle,
+          // A new shop starts with words it can keep or replace, not a blank box.
+          bio: result.storefront?.bio ?? (fresh ? defaultShopBio(shopName) : ''),
           dispatchRegion: result.storefront?.dispatchRegion ?? '',
           photoUrl: result.storefront?.photoUrl ?? '',
           link: result.storefront?.link ?? '',
@@ -457,13 +497,38 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
           coverUrl: result.storefront?.coverUrl ?? '',
           tags: result.storefront?.tags ?? [],
         });
+        // Where the shop dispatches from, guessed on the server from the
+        // connection - never by asking the browser for a location.
+        if (!result.storefront?.dispatchRegion) {
+          const guess = await api.regionGuess().then((answer) => answer.region).catch(() => null);
+          if (guess) setDraft((now) => (now && !now.dispatchRegion ? { ...now, dispatchRegion: guess } : now));
+        }
       })
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your storefront.'),
       );
   }, []);
 
-  if (error) return <ErrorNotice message={error} />;
+  const handle = draft?.username ?? '';
+  const handleProblem = draft ? checkUsername(handle) : null;
+  const handleIsSaved = handle === (saved?.username ?? null);
+  useEffect(() => {
+    if (!handle || handleProblem || handleIsSaved) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      api.usernameAvailable(handle, controller.signal)
+        .then((answer) => setHandleFree({ name: handle, free: answer.available }))
+        .catch(() => { if (!controller.signal.aborted) setHandleFree({ name: handle, free: null }); });
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [handle, handleProblem, handleIsSaved]);
+
+  // Only a failed load stands in for the form; a failed save is said beside
+  // Save, with everything typed still there to fix.
+  if (error && !draft) return <ErrorNotice message={error} />;
   if (!draft) return <p className="muted">Loading…</p>;
 
   const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) =>
@@ -473,197 +538,464 @@ function StorefrontEditor({ onSaved }: { onSaved?: () => void } = {}) {
   const setPayment = (key: keyof SellerPaymentDetails, value: string) =>
     setDraft({ ...draft, payment: { ...(draft.payment ?? {}), [key]: value } });
 
-  // The same rules the server enforces, so a bad handle is caught while it is
-  // being typed rather than on save.
-  const handleProblem = checkUsername(draft.username ?? '');
+  // Unknown is not a refusal: the save checks again.
+  const handleTaken = !handleIsSaved && handleFree?.name === handle && handleFree.free === false;
+  const handleChecking = !handleIsSaved && !handleProblem && handleFree?.name !== handle;
+  const nameReady = Boolean(draft.storefrontName?.trim()) && !handleProblem && !handleTaken;
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function save() {
     setBusy(true);
     setFlash(null);
     setError(null);
     try {
-      const result = await api.saveStorefront({ ...draft!, tags: chipsOf(chipsText) });
+      const result = await api.saveStorefront(draft!);
       setSaved(result.storefront);
       setFlash('Storefront saved.');
       onSaved?.();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save your storefront.');
+      // A clash on the handle is fixed on the first screen.
+      if (wizard && err instanceof ApiRequestError && err.code === 'username_taken') setStep('name');
     } finally {
       setBusy(false);
     }
   }
 
   const name = draft.storefrontName?.trim() || user?.displayName || 'Your storefront';
+  const hasPayment = Boolean(draft.payment?.upiId?.trim() || draft.payment?.accountNumber?.trim() || draft.payment?.qrUrl);
+  const tags = draft.tags ?? [];
+  const city = draft.dispatchRegion?.split(',')[0]?.trim();
+  const tagIdeas = [...(city ? [`Ships from ${city}`] : []), ...TAG_IDEAS];
 
-  return (
-    <div className="detail">
-      <form className="form" onSubmit={submit}>
-        <label className="field">
-          <span>Storefront name</span>
-          <input value={draft.storefrontName ?? ''} onChange={(e) => set('storefrontName', e.target.value)}
-            placeholder="Kaiju Imports" required />
-          <span className="field__hint">What buyers see instead of your own name.</span>
-        </label>
+  const nameFields = (
+    <>
+      <label className="field">
+        <span>Storefront name *</span>
+        <input value={draft.storefrontName ?? ''} onChange={(e) => set('storefrontName', e.target.value)}
+          placeholder="Kaiju Imports" required />
+        <span className="field__hint">What buyers see instead of your own name.</span>
+      </label>
 
-        {/* The shop's own address, not the owner's: a shop is followed,
-            linked to and messaged as itself, and the person behind it keeps a
-            separate handle of their own. */}
-        <label className="field">
-          <span>Shop username</span>
-          <input value={draft.username ?? ''} onChange={(e) => set('username', e.target.value.toLowerCase())}
-            placeholder="kaiju_imports" autoCapitalize="off" autoCorrect="off" spellCheck={false} required />
-          <span className="field__hint">
-            {handleProblem
-              ? USERNAME_PROBLEMS[handleProblem]
+      {/* The shop's own address, not the owner's: a shop is followed,
+          linked to and messaged as itself, and the person behind it keeps a
+          separate handle of their own. */}
+      <label className="field">
+        <span>Shop username *</span>
+        <input value={handle} onChange={(e) => set('username', e.target.value.toLowerCase())}
+          placeholder="kaiju_imports" autoCapitalize="off" autoCorrect="off" spellCheck={false} required
+          aria-invalid={Boolean(handleProblem) || handleTaken} />
+        <span className="field__hint" aria-live="polite">
+          {handleProblem
+            ? USERNAME_PROBLEMS[handleProblem]
+            : handleTaken
+              ? <>@{handle} is already taken. Try another.</>
               : (
                 <>
-                  Your shop lives at <code>/{draft.username}</code> and is messaged at <code>@{draft.username}</code>.
+                  {handleChecking ? 'Checking… ' : !handleIsSaved && handleFree?.free ? <>@{handle} is free. </> : null}
+                  Your shop lives at <code>/{handle}</code> and is messaged at <code>@{handle}</code>.
                   This is the shop's, not yours —{' '}
                   {user?.username
                     ? <>you are <code>@{user.username}</code>.</>
                     : <Link to="/me?tab=settings">pick your own username</Link>}
                 </>
               )}
-          </span>
-        </label>
+        </span>
+      </label>
+    </>
+  );
 
+  const photoFields = (
+    <>
+      <ShopPictureField label="Shop photo" shape="square" value={draft.photoUrl ?? ''}
+        onChange={(url) => set('photoUrl', url)}
+        hint="Your logo, or a photo of your shelf. Square works best." />
+      <ShopPictureField label="Banner" shape="wide" value={draft.coverUrl ?? ''}
+        onChange={(url) => set('coverUrl', url)}
+        hint="The wide band behind your shop's name." />
+    </>
+  );
+
+  const aboutFields = (
+    <>
+      <label className="field">
+        <span>Description</span>
+        <textarea value={draft.bio ?? ''} onChange={(e) => set('bio', e.target.value)}
+          placeholder="What you sell, where you import from, how often you run a lot." rows={4} />
+      </label>
+
+      <TagInput value={tags} onChange={(next) => set('tags', next)} ideas={tagIdeas} />
+
+      <div className="field-row">
         <label className="field">
-          <span>Photo</span>
-          <input value={draft.photoUrl ?? ''} onChange={(e) => set('photoUrl', e.target.value)}
-            placeholder="https://…" inputMode="url" />
-          <span className="field__hint">A link to an image of your shop or logo.</span>
+          <span>Dispatch region</span>
+          <input value={draft.dispatchRegion ?? ''}
+            onChange={(e) => set('dispatchRegion', e.target.value)}
+            placeholder="Mumbai, MH" />
         </label>
-
         <label className="field">
-          <span>Banner</span>
-          <input value={draft.coverUrl ?? ''} onChange={(e) => set('coverUrl', e.target.value)}
-            placeholder="https://…" inputMode="url" />
-          <span className="field__hint">
-            The band behind your name, as a link to an image, same as the picture.
-          </span>
+          <span>Link</span>
+          <input value={draft.link ?? ''} onChange={(e) => set('link', e.target.value)}
+            placeholder="instagram.com/yourshop" inputMode="url" />
+          <span className="field__hint">One only. Instagram, a group, a price list.</span>
         </label>
+      </div>
+    </>
+  );
 
+  const paymentFields = (
+    <fieldset className="fieldset">
+      <legend>How buyers pay you directly</legend>
+      <p className="faint" style={{ marginTop: 0 }}>
+        Shown only to somebody checking out an order with you, never on the storefront. Without
+        at least one of these, buyers cannot buy from you directly at all. Figmark does not move
+        this money and does not check the account exists.
+      </p>
+      <label className="field">
+        <span>UPI ID</span>
+        <input value={draft.payment?.upiId ?? ''}
+          onChange={(e) => setPayment('upiId', e.target.value)}
+          placeholder="yourshop@okhdfcbank" />
+      </label>
+      <ShopPictureField label="UPI QR code" shape="qr" value={draft.payment?.qrUrl ?? ''}
+        onChange={(url) => setPayment('qrUrl', url)}
+        hint="A screenshot of the QR from your UPI app. Buyers scan it at checkout." />
+      <div className="field-row">
         <label className="field">
-          <span>Chips</span>
-          <input value={chipsText} onChange={(e) => setChipsText(e.target.value)}
-            placeholder="Custom painter, Fujian, ships weekly" />
-          <span className="field__hint">
-            Up to six, separated by commas. These are scanned, not read — a paragraph gets skipped,
-            three short facts do not.
-          </span>
+          <span>Account name</span>
+          <input value={draft.payment?.accountName ?? ''}
+            onChange={(e) => setPayment('accountName', e.target.value)} />
         </label>
-
         <label className="field">
-          <span>Description</span>
-          <textarea value={draft.bio ?? ''} onChange={(e) => set('bio', e.target.value)}
-            placeholder="What you sell, where you import from, how often you run a lot." rows={4} />
+          <span>Account number</span>
+          <input value={draft.payment?.accountNumber ?? ''}
+            onChange={(e) => setPayment('accountNumber', e.target.value)} />
         </label>
+      </div>
+      <div className="field-row">
+        <label className="field">
+          <span>IFSC</span>
+          <input value={draft.payment?.ifsc ?? ''}
+            onChange={(e) => setPayment('ifsc', e.target.value.toUpperCase())} />
+        </label>
+        <label className="field">
+          <span>Anything else they should do</span>
+          <input value={draft.payment?.instructions ?? ''}
+            onChange={(e) => setPayment('instructions', e.target.value)}
+            placeholder="Quote the order number in the note" />
+        </label>
+      </div>
+    </fieldset>
+  );
 
-        <div className="field-row">
-          <label className="field">
-            <span>Dispatch region</span>
-            <input value={draft.dispatchRegion ?? ''} onChange={(e) => set('dispatchRegion', e.target.value)}
-              placeholder="Mumbai, MH" />
-          </label>
-          <label className="field">
-            <span>Link</span>
-            <input value={draft.link ?? ''} onChange={(e) => set('link', e.target.value)}
-              placeholder="instagram.com/yourshop" inputMode="url" />
-            <span className="field__hint">One only. Instagram, a group, a price list.</span>
-          </label>
+  const preview = (
+    <div className="card sfpreview">
+      {draft.coverUrl
+        ? <img className="sfpreview__cover" src={draft.coverUrl} alt="" />
+        : <div className="sfpreview__cover sfpreview__cover--empty" />}
+      <div className="sfpreview__body stack">
+        <div className="row">
+          {draft.photoUrl ? (
+            <img className="channel__photo" src={draft.photoUrl} alt=""
+              onError={(e) => ((e.currentTarget.style.display = 'none'))} />
+          ) : (
+            <Avatar name={name} size={46} />
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700 }}>{name}</div>
+            <span className="faint">@{handle} · {draft.dispatchRegion || 'No dispatch region yet'}</span>
+          </div>
         </div>
-
-        <fieldset className="fieldset">
-          <legend>How buyers pay you directly</legend>
-          <p className="faint" style={{ marginTop: 0 }}>
-            Shown only to somebody checking out an order with you, never on the storefront. Without
-            at least one of these, buyers cannot buy from you directly at all. Figmark does not move
-            this money and does not check the account exists.
-          </p>
-          <label className="field">
-            <span>UPI ID</span>
-            <input value={draft.payment?.upiId ?? ''}
-              onChange={(e) => setPayment('upiId', e.target.value)}
-              placeholder="yourshop@okhdfcbank" />
-          </label>
-          <div className="field-row">
-            <label className="field">
-              <span>Account name</span>
-              <input value={draft.payment?.accountName ?? ''}
-                onChange={(e) => setPayment('accountName', e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Account number</span>
-              <input value={draft.payment?.accountNumber ?? ''}
-                onChange={(e) => setPayment('accountNumber', e.target.value)} />
-            </label>
+        <p className="muted" style={{ fontSize: 'var(--t-sm)', margin: 0 }}>
+          {draft.bio || 'No description yet — buyers use this to decide whether to follow you.'}
+        </p>
+        {draft.link && <span className="badge">{draft.link.replace(/^https?:\/\//, '')}</span>}
+        {tags.length > 0 && (
+          <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+            {tags.map((tag) => <span key={tag} className="badge badge--quiet">{tag}</span>)}
           </div>
-          <div className="field-row">
-            <label className="field">
-              <span>IFSC</span>
-              <input value={draft.payment?.ifsc ?? ''}
-                onChange={(e) => setPayment('ifsc', e.target.value.toUpperCase())} />
-            </label>
-            <label className="field">
-              <span>Anything else they should do</span>
-              <input value={draft.payment?.instructions ?? ''}
-                onChange={(e) => setPayment('instructions', e.target.value)}
-                placeholder="Quote the order number in the note" />
-            </label>
-          </div>
-        </fieldset>
+        )}
+        <div className="row">
+          <span className="badge">{saved?.tier ?? 'unverified'}</span>
+          <span className="faint">{saved?.followerCount ?? 0} followers</span>
+        </div>
+      </div>
+    </div>
+  );
 
-        {flash && <p className="notice notice--ok">{flash}</p>}
+  if (!wizard) {
+    return (
+      <div className="detail">
+        <form className="form sfsettings" onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }}>
+          <SettingsSection icon="home" title="Name and username" note="How buyers find and follow you.">
+            {nameFields}
+          </SettingsSection>
+          <SettingsSection icon="image" title="Photos" note="Your shop photo and the banner behind it.">
+            {photoFields}
+          </SettingsSection>
+          <SettingsSection icon="tag" title="About your shop" note="What you sell, in a few lines and tags.">
+            {aboutFields}
+          </SettingsSection>
+          <SettingsSection icon="bank" title="Getting paid" note="Only shown to a buyer paying you directly.">
+            {paymentFields}
+          </SettingsSection>
+
+          <div className="sfsettings__bar">
+            {flash && <span className="sfsettings__flash" role="status"><Icon name="check" size={14} /> {flash}</span>}
+            {error && <ErrorNotice message={error} />}
+            <button type="submit" className="btn btn--lg" disabled={busy || !nameReady}>
+              {busy ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </form>
+
+        <aside className="stack">
+          <span className="muted">Preview</span>
+          {preview}
+        </aside>
+      </div>
+    );
+  }
+
+  const index = SHOP_STEPS.findIndex((row) => row.id === step);
+  const go = (to: number) => {
+    setError(null);
+    setStep(SHOP_STEPS[to]!.id);
+    setReached((was) => Math.max(was, to));
+    window.scrollTo?.({ top: 0, behavior: 'smooth' });
+  };
+  // A step counts as done once it has been left behind going forward.
+  const doneAt = (at: number) => at < reached && at !== index;
+  /** An optional step with nothing filled in: passed, but not done. */
+  const emptyAt = (id: ShopStep) => (id === 'photos' && !draft.photoUrl && !draft.coverUrl)
+    || (id === 'about' && !draft.bio?.trim() && tags.length === 0 && !draft.dispatchRegion?.trim() && !draft.link?.trim())
+    || (id === 'payment' && !hasPayment);
+  const optionalEmpty = emptyAt(step);
+
+  return (
+    <div className="sfwiz">
+      <ol className="sfwiz__line" aria-label="Storefront set-up">
+        {SHOP_STEPS.map((row, at) => {
+          const state = at === index ? 'on' : !doneAt(at) ? 'todo' : emptyAt(row.id) ? 'skipped' : 'done';
+          return (
+            <li key={row.id} className={`sfwiz__step is-${state}`}>
+              <button type="button" className="sfwiz__jump" disabled={at > reached || (at > 0 && !nameReady)}
+                aria-current={at === index ? 'step' : undefined} onClick={() => go(at)}>
+                <span className="sfwiz__dot" aria-hidden="true">{state === 'done' ? '✓' : state === 'skipped' ? '–' : at + 1}</span>
+                <span className="sfwiz__label">{row.label}</span>
+                <span className="sfwiz__state">
+                  {{ done: 'Done', skipped: 'Skipped', on: 'Now', todo: 'Pending' }[state]}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      <form className="form card card--pad sfwiz__card" onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        if (index < SHOP_STEPS.length - 1) {
+          if (index === 0 && !nameReady) return;
+          go(index + 1);
+        } else void save();
+      }}>
+        <p className="sfwiz__count">Step {index + 1} of {SHOP_STEPS.length}</p>
+        {step === 'name' && (
+          <>
+            <h2 className="sfwiz__title">Name your shop</h2>
+            <p className="muted sfwiz__lede">What buyers will follow, and the handle they find you at.</p>
+            {nameFields}
+          </>
+        )}
+        {step === 'photos' && (
+          <>
+            <h2 className="sfwiz__title">Add your photos</h2>
+            <p className="muted sfwiz__lede">Upload from your phone or computer. You can skip this and add them later.</p>
+            {photoFields}
+          </>
+        )}
+        {step === 'about' && (
+          <>
+            <h2 className="sfwiz__title">Tell buyers about it</h2>
+            <p className="muted sfwiz__lede">A few lines and facts so people know whether to follow you. All optional.</p>
+            {aboutFields}
+          </>
+        )}
+        {step === 'payment' && (
+          <>
+            <h2 className="sfwiz__title">How you get paid</h2>
+            <p className="muted sfwiz__lede">Optional now, but buyers cannot pay you directly until one of these is filled.</p>
+            {paymentFields}
+          </>
+        )}
+        {step === 'review' && (
+          <>
+            <h2 className="sfwiz__title">Check and open</h2>
+            <p className="muted sfwiz__lede">This is how buyers will see your shop. Everything can be changed later.</p>
+            {preview}
+            {!hasPayment && (
+              <p className="notice">No payment details yet — add them from Shop settings before your first sale.</p>
+            )}
+          </>
+        )}
+
         {error && <ErrorNotice message={error} />}
 
-        <button type="submit" className="btn btn--lg"
-          disabled={busy || !draft.storefrontName?.trim() || handleProblem !== null}>
-          {busy ? 'Saving…' : 'Save storefront'}
-        </button>
-      </form>
-
-      <aside className="stack">
-        <span className="muted">Preview</span>
-        <div className="card card--pad stack">
-          <div className="row">
-            {draft.photoUrl ? (
-              <img className="channel__photo" src={draft.photoUrl} alt=""
-                onError={(e) => ((e.currentTarget.style.display = 'none'))} />
-            ) : (
-              <Avatar name={name} size={46} />
-            )}
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700 }}>{name}</div>
-              <span className="faint">{draft.dispatchRegion || 'No dispatch region yet'}</span>
-            </div>
-          </div>
-          <p className="muted" style={{ fontSize: 'var(--t-sm)' }}>
-            {draft.bio || 'No description yet — buyers use this to decide whether to follow you.'}
-          </p>
-          {draft.username && <span className="faint">@{draft.username}</span>}
-          {draft.link && <span className="badge">{draft.link.replace(/^https?:\/\//, '')}</span>}
-          {/* The chips as they will be saved, so the cap of six shows before saving. */}
-          {chipsOf(chipsText).length > 0 && (
-            <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-              {chipsOf(chipsText).map((chip) => <span key={chip} className="badge badge--quiet">{chip}</span>)}
-            </div>
+        <div className="sfwiz__nav">
+          {index > 0 && (
+            <button type="button" className="btn btn--quiet" onClick={() => go(index - 1)}>
+              <Icon name="back" size={14} /> Back
+            </button>
           )}
-          <div className="row">
-            <span className="badge">{saved?.tier ?? 'unverified'}</span>
-            <span className="faint">{saved?.followerCount ?? 0} followers</span>
-          </div>
+          <button type="submit" className="btn btn--lg sfwiz__next"
+            disabled={busy || (index === 0 && (!nameReady || handleChecking))}>
+            {index === SHOP_STEPS.length - 1
+              ? (busy ? 'Opening…' : 'Open my storefront')
+              : optionalEmpty ? 'Skip for now' : 'Next'}
+          </button>
         </div>
-      </aside>
+      </form>
     </div>
   );
 }
 
-/** Typed chips as the server keeps them: trimmed, deduplicated, at most six of 24 characters. */
-function chipsOf(text: string): string[] {
-  return [...new Set(text.split(',').map((chip) => chip.trim()).filter(Boolean))]
-    .map((chip) => chip.slice(0, 24))
-    .slice(0, 6);
+/**
+ * One storefront picture: uploaded from the device, never typed as a link.
+ *
+ * Shrunk on the phone first, so a 12 MB camera photo goes up as a few hundred
+ * kilobytes, and shown back as it will look on the shop.
+ */
+function ShopPictureField({ label, hint, value, onChange, shape }: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (url: string) => void;
+  shape: 'square' | 'wide' | 'qr';
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onChange((await api.uploadStorefrontPhoto(await shrink(file))).url);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload. Try another.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="field">
+      <span>{label}</span>
+      <div className={`sfpic sfpic--${shape}`}>
+        {value
+          ? <img className="sfpic__img" src={value} alt={label} />
+          : <span className="sfpic__empty" aria-hidden="true"><Icon name="camera" size={20} /></span>}
+        <div className="sfpic__acts">
+          <label className={`btn btn--quiet btn--sm sfpic__pick${busy ? ' is-busy' : ''}`}>
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={busy}
+              onChange={(event) => { void pick(event.target.files?.[0]); event.target.value = ''; }} />
+            {busy ? 'Uploading…' : value ? 'Change' : 'Upload photo'}
+          </label>
+          {value && !busy && (
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => onChange('')}>Remove</button>
+          )}
+        </div>
+      </div>
+      {error ? <span className="field__hint" style={{ color: 'var(--danger-text)' }}>{error}</span>
+        : <span className="field__hint">{hint}</span>}
+    </div>
+  );
+}
+
+/**
+ * Tags as pills: typing a comma (or Enter) turns what was typed into one.
+ *
+ * Backspace in the empty box takes the last one back off; suggestions below
+ * add with a tap. Six at most, 24 characters each - the rule the server keeps.
+ */
+function TagInput({ value, onChange, ideas }: { value: string[]; onChange: (tags: string[]) => void; ideas: string[] }) {
+  const [text, setText] = useState('');
+  const full = value.length >= 6;
+  const has = (tag: string) => value.some((row) => row.toLowerCase() === tag.toLowerCase());
+
+  const add = (raw: string[]) => {
+    const next = [...value];
+    for (const piece of raw) {
+      const tag = piece.trim().slice(0, 24);
+      if (tag && next.length < 6 && !next.some((row) => row.toLowerCase() === tag.toLowerCase())) next.push(tag);
+    }
+    if (next.length !== value.length) onChange(next);
+  };
+
+  const type = (input: string) => {
+    if (!input.includes(',')) return setText(input);
+    const parts = input.split(',');
+    add(parts.slice(0, -1));
+    setText(parts[parts.length - 1]!.trimStart());
+  };
+
+  const suggestions = ideas.filter((idea) => !has(idea)).slice(0, 8);
+
+  return (
+    <div className="field">
+      <span id="shop-tags-label">Tags</span>
+      <div className="taginput" onClick={(event) => event.currentTarget.querySelector('input')?.focus()}>
+        {value.map((tag) => (
+          <span key={tag} className="taginput__tag">
+            {tag}
+            <button type="button" className="taginput__x" aria-label={`Remove ${tag}`}
+              onClick={(event) => { event.stopPropagation(); onChange(value.filter((row) => row !== tag)); }}>
+              ×
+            </button>
+          </span>
+        ))}
+        {!full && (
+          <input className="taginput__box" value={text} aria-labelledby="shop-tags-label"
+            placeholder={value.length === 0 ? 'Type a tag, then a comma' : 'Add another'}
+            onChange={(event) => type(event.target.value)}
+            onBlur={() => { if (text.trim()) { add([text]); setText(''); } }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                if (text.trim()) { add([text]); setText(''); }
+              } else if (event.key === 'Backspace' && !text && value.length > 0) {
+                onChange(value.slice(0, -1));
+              }
+            }} />
+        )}
+      </div>
+      <span className="field__hint">
+        {full ? 'Six tags is the most a shop shows.' : `Up to six short facts buyers scan at a glance. ${6 - value.length} left.`}
+      </span>
+      {!full && suggestions.length > 0 && (
+        <div className="taginput__ideas" aria-label="Suggested tags">
+          {suggestions.map((idea) => (
+            <button key={idea} type="button" className="taginput__idea" onClick={() => add([idea])}>+ {idea}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One titled block of Shop settings. */
+function SettingsSection({ icon, title, note, children }: { icon: IconName; title: string; note: string; children: ReactNode }) {
+  return (
+    <section className="sfsec">
+      <header className="sfsec__head">
+        <span className="sfsec__icon" aria-hidden="true"><Icon name={icon} size={17} /></span>
+        <span>
+          <h3 className="sfsec__title">{title}</h3>
+          <span className="sfsec__note">{note}</span>
+        </span>
+      </header>
+      <div className="sfsec__body">{children}</div>
+    </section>
+  );
 }
 
 /* ── Items ──────────────────────────────────────────────────────────────── */
@@ -709,13 +1041,9 @@ function MyItems({ store }: { store: StoreAccess }) {
       {/* Two ways to sell, and they are genuinely different jobs. One item put
           up for whoever finds it, or a run of them dropped into the channel on
           a timer. Both are here because a shop does both, at different hours. */}
-      <div className="doors doors--two">
-        <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="door">
-          <span className="door__glyph" aria-hidden="true"><Icon name="tag" size={19} /></span>
-          <span className="door__title">List an item</span>
-          <span className="door__note">One thing, up for anyone browsing.</span>
-        </Link>
-
+      {/* "List an item" leads the Sell tab itself; what stays here is the
+          other way to sell, a run of items dropped into the channel on a timer. */}
+      <div className="doors">
         <button type="button" className="door door--pro"
           onClick={() => navigate(`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
           <span className="probadge door__flag">PRO</span>
@@ -962,18 +1290,33 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     writeCustomersOpen(open);
   };
 
+  /* Finished orders from the last ninety days, until the seller asks for the rest. */
+  const [allHistory, setAllHistory] = useState(false);
   const load = useCallback(async () => {
     setError(null);
     try {
-      setData(await api.sales(store.ownerId));
+      setData(await api.sales(store.ownerId, allHistory ? { history: 'all' } : {}));
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your orders.');
     }
-  }, [store.ownerId]);
+  }, [store.ownerId, allHistory]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * After a press: those orders and the rest of their lots, laid over the
+   * book on screen - not the shop's whole book read again for one tick.
+   */
+  const refreshRows = useCallback(async (ids: string[]) => {
+    try {
+      const update = await api.sales(store.ownerId, { ids });
+      setData((current) => (current ? mergeSales(current, update, ids) : update));
+    } catch {
+      await load();
+    }
+  }, [store.ownerId, load]);
 
   /* Coming back from an order: put it in the middle of the screen and let it
      glow for a moment, then forget the request so a reload does not repeat it. */
@@ -1003,8 +1346,8 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   /** The order whose warehouse button was pressed with no lot to say what that means. */
   const [receiving, setReceiving] = useState<{ row: SaleRow; button: CardButton } | null>(null);
 
-  async function refresh() {
-    await load();
+  async function refresh(ids: string[]) {
+    await refreshRows(ids);
     onChanged?.();
   }
 
@@ -1025,10 +1368,10 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           label: `${row.itemName}: ${button.label}${on ? '' : ' (undone)'}`,
           until: undo.until,
           undo: async () => { await api.setCheckpoint(row.id, button.checkpoint, !on, undefined, undo.id); },
-          onUndone: () => void refresh(),
+          onUndone: () => void refresh([row.id]),
         });
       }
-      await refresh();
+      await refresh([row.id]);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {
@@ -1043,8 +1386,12 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     setBusy(todo[0]!.id);
     setError(null);
     try {
-      for (const row of todo) await api.setCheckpoint(row.id, 'ready_to_dispatch', on);
-      await refresh();
+      // The whole parcel in one request; any one refused is said, not swallowed.
+      const result = await api.setCheckpoints(todo.map((row) => row.id), 'ready_to_dispatch', on);
+      await refresh(todo.map((row) => row.id));
+      if (result.failed > 0) {
+        setError(result.results.find((entry) => !entry.ok)?.message ?? `${result.failed} could not be marked.`);
+      }
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
       await load();
@@ -1253,6 +1600,13 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
         </div>
       )}
 
+      {statusFilter !== 'active' && !allHistory && (data.olderCount ?? 0) > 0 && (
+        <button type="button" className="btn btn--quiet btn--sm" onClick={() => setAllHistory(true)}>
+          {/* The count is the shop's, so a lot's own list does not quote it. */}
+          {lotId ? 'Show older orders' : `Show ${data.olderCount} older ${data.olderCount === 1 ? 'order' : 'orders'}`}
+        </button>
+      )}
+
       {rejecting && (
         <RejectOrder
           row={rejecting}
@@ -1289,7 +1643,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           row={filing}
           store={store}
           onClose={() => setFiling(null)}
-          onDone={(said) => { setFiling(null); setNotice(said); void refresh(); }}
+          onDone={(said) => { const id = filing.id; setFiling(null); setNotice(said); void refresh([id]); }}
         />
       )}
     </div>
@@ -1762,7 +2116,7 @@ function MoneyLine({ total, paid, balance, share, due, children }: {
   );
 }
 
-/* ── Quick Post templates ───────────────────────────────────────────────── */
+/* ── Quick Fill templates ───────────────────────────────────────────────── */
 
 /**
  * The stationery a shop lists from.
@@ -3418,11 +3772,19 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
   /** An order sent here from Orders to be filed into the lot about to be opened. */
   const fileOrder = params.get('file');
   const [creating, setCreating] = useState(Boolean(fileOrder));
+  /** Opening a lot for every order waiting on one, from "Ship them together". */
+  const [gathering, setGathering] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   /* The lot is open; put the order that asked for it inside, and take the
      seller back to that order on the Orders screen. */
   async function created(lot: Lot) {
     setCreating(false);
+    if (gathering) {
+      setGathering(false);
+      await gather(lot);
+      return;
+    }
     if (!fileOrder) {
       void load();
       return;
@@ -3438,6 +3800,28 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
         ? `The lot is open, but the order was not filed into it: ${err.message}`
         : 'The lot is open, but the order was not filed into it.');
     }
+  }
+  /* Every active order waiting for a lot, filed into the one just opened. One
+     the server refuses (a different lane, say) stays waiting, and is counted
+     rather than failing the rest. */
+  async function gather(lot: Lot) {
+    try {
+      const sales = await api.sales(store.ownerId);
+      const waiting = sales.orders.filter((row) => row.awaitingLot && stateOf(row) === 'active');
+      // One request for all of them, not one per order.
+      const filed = waiting.length > 0
+        ? (await api.addItemsToLot(lot.id, waiting.map((row) => row.id))).added
+        : 0;
+      const left = waiting.length - filed;
+      setNotice(`${filed === 1 ? '1 order' : `${filed} orders`} filed into ${lot.name}.${
+        left > 0 ? ` ${left === 1 ? '1 order' : `${left} orders`} could not go in and ${left === 1 ? 'is' : 'are'} still waiting.` : ''}`);
+      setOpenId(lot.id);
+    } catch (err) {
+      setError(err instanceof ApiRequestError
+        ? `The lot is open, but the orders were not filed into it: ${err.message}`
+        : 'The lot is open, but the orders were not filed into it.');
+    }
+    void load();
   }
   const dropFileOrder = () =>
     setParams((current) => {
@@ -3472,10 +3856,13 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
 
   if (openId) {
     return (
-      <LotDetail lotId={openId} onBack={() => { setOpenId(null); void load(); }}
+      <>
+      {notice && <p className="notice notice--ok" role="status">{notice}</p>}
+      <LotDetail lotId={openId} onBack={() => { setNotice(null); setOpenId(null); void load(); }}
         customers={({ onChanged, onTracking }) => (
           <Orders store={store} lotId={openId} onChanged={onChanged} onTracking={onTracking} />
         )} />
+      </>
     );
   }
 
@@ -3493,7 +3880,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
       {creating ? (
         <NewLotForm
           onDone={(lot) => void created(lot)}
-          onCancel={() => { setCreating(false); dropFileOrder(); }}
+          onCancel={() => { setCreating(false); setGathering(false); dropFileOrder(); }}
         />
       ) : (
         // Routes now live on their own Sell-home card, not beside this button.
@@ -3519,9 +3906,16 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
             </span>
             <span className="faint">Their buyers see no shipment tracking until they are in one.</span>
           </div>
-          <button type="button" className="btn btn--sm" onClick={() => navigate('/shop?tab=payments&show=nolot')}>
-            Add to a lot
-          </button>
+          <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {!creating && (
+              <button type="button" className="btn btn--sm" onClick={() => { setGathering(true); setCreating(true); }}>
+                Ship them together
+              </button>
+            )}
+            <button type="button" className="btn btn--sm btn--quiet" onClick={() => navigate('/shop?tab=payments&show=nolot')}>
+              Pick one by one
+            </button>
+          </span>
         </div>
       )}
 

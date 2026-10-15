@@ -1877,80 +1877,6 @@ code, kbd, samp, pre {
 /* The flag sits in the top-right corner, so the title stops before it. */
 .door--pro .door__title { padding-right: 42px; }
 
-/* Sell-home cards: same shape as a `.door`, coloured so the two primary
-   actions read as clearly different things at a glance. */
-.door--card { border-width: 1px; }
-.door--analytics { border-color: var(--aqua-line); background: linear-gradient(160deg, var(--aqua-soft), transparent 65%); }
-.door--analytics:hover { border-color: var(--aqua); }
-.door--analytics .door__glyph { color: var(--aqua); }
-.door--manage { border-color: var(--violet-line); background: linear-gradient(160deg, var(--violet-soft), transparent 65%); }
-.door--manage:hover { border-color: var(--violet-lit); }
-.door--manage .door__glyph { color: var(--violet-text); }
-.door--card.is-on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--border-strong); }
-
-/* Items → Lots → Routes, drawn as one connected process rather than three
-   unrelated buttons - visually distinct from the two business cards above,
-   so a seller reads it as "the workflow", not "two more doors". */
-.workflow {
-  display: grid;
-  gap: 12px;
-  padding: 18px 16px;
-  border: 1px dashed var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface-2);
-}
-.workflow__label {
-  font-size: var(--t-xs);
-  font-weight: var(--w-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
-}
-.workflow__row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-}
-.workflow__step {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 16px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  color: inherit;
-  text-decoration: none;
-  font: inherit;
-  cursor: pointer;
-  text-align: center;
-  transition: border-color 0.18s, transform 0.18s;
-}
-.workflow__step:hover { transform: translateY(-2px); }
-.workflow__step--items { border-color: var(--coral-line); }
-.workflow__step--items .workflow__glyph { color: var(--coral); }
-.workflow__step--lots { border-color: var(--blue-line); }
-.workflow__step--lots .workflow__glyph { color: var(--blue-text); }
-.workflow__step--routes { border-color: var(--lime-line); }
-.workflow__step--routes .workflow__glyph { color: var(--lime); }
-.workflow__step.is-on { background: var(--surface-3, var(--surface-2)); box-shadow: inset 0 0 0 1px currentColor; }
-.workflow__title { font-size: var(--t-sm); font-weight: var(--w-bold); }
-.workflow__arrow {
-  display: flex;
-  align-items: center;
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
-.workflow__hint { margin: 0; text-align: center; }
-@media (max-width: 480px) {
-  .workflow__row { gap: 4px; }
-  .workflow__step { padding: 12px 4px; }
-  .workflow__arrow svg { width: 12px; height: 12px; }
-}
-
 /* The shop's sections: seven of them wrap into two ragged rows on a phone, so
    they scroll like every other row of choices in the app. */
 .sections {
@@ -2198,70 +2124,6 @@ code, kbd, samp, pre {
 }
 .note-row .faint { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── Lot cards (tracking) ──────────────────────────────────────────────── */
-
-.lotcard {
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  overflow: hidden;
-}
-/* A lot already on its way is one line: the thing you do with it is open it. */
-.lotcard--moving { display: flex; align-items: stretch; border-color: rgba(251, 191, 36, 0.35); }
-.lotcard--moving .lotcard__head { background: rgba(251, 191, 36, 0.08); }
-
-/* Name and state share a column so the arrow keeps its width and the state
-   truncates against the whole card rather than against whatever is left after
-   a long lot name. */
-.lotcard__head {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  column-gap: 10px;
-  padding: 12px 0 12px 16px;
-  border-bottom: 1px dashed var(--border);
-  min-width: 0;
-}
-.lotcard--moving .lotcard__head { border-bottom: none; flex: 1; }
-.lotcard__name {
-  grid-column: 1;
-  font-weight: var(--w-bold);
-  letter-spacing: 0.02em;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lotcard__state {
-  grid-column: 1;
-  grid-row: 2;
-  min-width: 0;
-  color: var(--text-dim);
-  font-size: var(--t-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* A lot in transit is one line, so its state sits beside the name. */
-.lotcard--moving .lotcard__state { grid-column: 2; grid-row: 1; text-align: right; }
-.lotcard--moving .lotcard__name { grid-column: 1; }
-.lotcard__go { grid-column: 2; grid-row: 1 / -1; }
-/* The way in. Deliberately the loudest thing on the card. */
-.lotcard__go {
-  display: grid;
-  place-items: center;
-  width: 62px;
-  align-self: stretch;
-  background: var(--accent);
-  color: #fff;
-  font-size: 22px;
-  text-decoration: none;
-  transition: filter 0.15s;
-}
-.lotcard__go:hover { filter: brightness(1.08); }
-
-.lotcard__body { padding: 14px 16px 16px; display: grid; gap: 12px; }
-
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(3, 1fr); }
 .tiles--big { grid-template-columns: repeat(2, 1fr); }
 .tile {
@@ -2430,59 +2292,6 @@ code, kbd, samp, pre {
 @media (prefers-reduced-motion: reduce) { .bubble { animation: none; } }
 .bubble__body { font-size: var(--t-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 .bubble__meta { margin-top: 4px; font-size: var(--t-xs); color: var(--text-faint); }
-
-/* ── Packing (the exporter's side) ─────────────────────────────────────── */
-
-.packbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 14px 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-}
-.packbar__count { font-size: var(--t-sm); color: var(--text-dim); }
-.packbar__count strong { font-size: var(--t-lg); color: var(--text); }
-.packbar__filter { display: flex; align-items: center; gap: 8px; font-size: var(--t-xs); cursor: pointer; }
-.packbar__filter input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
-
-.packgrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-.packcard {
-  display: grid;
-  gap: 7px;
-  align-content: start;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-}
-.packcard.is-packed { border-color: rgba(52, 211, 153, 0.45); background: var(--ok-soft); }
-.packcard__name { font-weight: var(--w-semi); font-size: var(--t-sm); overflow-wrap: anywhere; }
-.packcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.packcard__state { font-size: var(--t-xs); color: var(--text-faint); }
-
-/* One button per piece, thumb-sized: this screen is worked standing up. */
-.packbtn {
-  padding: 11px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  color: var(--text-dim);
-  font: inherit;
-  font-size: var(--t-xs);
-  font-weight: var(--w-bold);
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.packbtn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
-/* Also matched while hovered: a piece that is packed must not read as unpacked
-   simply because the finger that packed it is still on the button. */
-.packbtn.is-on, .packbtn.is-on:hover { background: var(--ok); border-color: var(--ok); color: var(--ok-ink); }
-.packbtn:disabled { opacity: 0.55; cursor: progress; }
 
 /* ── A username's page ─────────────────────────────────────────────────── */
 
@@ -3835,7 +3644,7 @@ a.order__name:hover { color: var(--accent-text); }
   margin-top: 8px; padding-top: 9px; border-top: 1px solid var(--border);
 }
 
-/* The Quick Post row, first in the form because it fills in what is below it. */
+/* The Quick Fill row, first in the form because it fills in what is below it. */
 .quickpost {
   display: grid; gap: 10px;
   padding: 12px 13px;
@@ -4612,6 +4421,15 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   font-weight: var(--w-semi);
 }
 .pickset .field__hint { margin-bottom: var(--s1); }
+/* "Your routes" / "Or start from a sample": names a run of picks. */
+.pickset__sub {
+  margin-top: var(--s1);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semi);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
 
 .pick {
   display: grid;
@@ -11748,20 +11566,6 @@ a.ocust__name:hover { color: var(--accent-text); }
 .badge--link { font: inherit; font-size: var(--t-2xs); cursor: pointer; border: 1px solid var(--border-strong, rgba(255,255,255,0.18)); }
 .badge--link:hover { filter: brightness(1.15); }
 
-/* The Sell page's top cards while a section is open: titles only. */
-.sellhome--compact .door__note,
-.sellhome--compact .workflow__hint,
-.sellhome--compact .workflow__label { display: none; }
-.sellhome--compact .door--card {
-  padding-block: 10px;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  column-gap: 8px;
-}
-.sellhome--compact .door__glyph { display: inline-flex; }
-.sellhome--compact .workflow { padding-block: 10px; }
-.sellhome--compact .workflow__step { padding-block: 8px; }
-
 /* A lot's name, then its number in small, quiet type. */
 .lotname { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
 .lotname__name { font-weight: inherit; min-width: 0; overflow-wrap: anywhere; }
@@ -14740,3 +14544,299 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pc__conv { font-family: var(--mono); font-size: var(--t-xs); color: #93C5FD; }
 .pc__more summary { cursor: pointer; color: var(--text-faint); font-size: var(--t-xs); }
 .pc__more[open] summary { margin-bottom: 8px; }
+
+/* ── Getting started, and the Sell tab's top ───────────────────────────── */
+
+/* The reminder to confirm an email: a line under the header, not a dialog. */
+.vnudge {
+  display: flex; align-items: center; gap: 10px;
+  margin: 8px var(--page-pad) 0; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); font-size: var(--t-sm);
+}
+.vnudge__text { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.vnudge .btn { flex: 0 0 auto; }
+.vnudge__close { flex: 0 0 auto; }
+
+/* Everything between a new account and its first sale, as one list. */
+.setupcheck { display: grid; gap: 10px; margin-bottom: 16px; }
+.setupcheck__bar { display: block; height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.setupcheck__bar > span { display: block; height: 100%; border-radius: inherit; background: var(--grad-hero); transition: width 0.3s ease; }
+.setupcheck__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.setupcheck__row { display: flex; align-items: center; gap: 10px; min-height: 32px; font-size: var(--t-sm); }
+.setupcheck__row.is-done .setupcheck__label { color: var(--text-faint); text-decoration: line-through; }
+.setupcheck__row.is-next .setupcheck__label { font-weight: var(--w-bold); }
+.setupcheck__label { flex: 1; min-width: 0; }
+.setupcheck__row a { color: var(--accent-text); text-decoration: underline; }
+.setupcheck__tick {
+  display: inline-grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px;
+  border: 1.5px solid var(--border-strong); border-radius: 50%; font-size: 12px;
+}
+.setupcheck__row.is-done .setupcheck__tick { border-color: transparent; background: var(--lime); color: #0b0b0b; }
+
+/* A button that reads as a link, for a row whose action is one word. */
+.linkbtn {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; color: var(--accent-text); text-decoration: underline;
+}
+
+/* List an item first, then what is waiting on the shop. */
+.sellhome { display: grid; gap: 12px; }
+.sellhome__list { justify-self: stretch; justify-content: center; gap: 8px; }
+.todo { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.todo__tile {
+  display: grid; gap: 2px; padding: 12px 14px; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+}
+.todo__tile:hover { border-color: var(--border-strong); }
+.todo__tile.is-hot { border-color: var(--coral-line); background: linear-gradient(160deg, var(--coral-soft, var(--surface-2)), transparent 70%); }
+.todo__count { font-size: var(--t-xl, 1.5rem); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.todo__label { font-size: var(--t-xs); color: var(--text-dim); }
+
+/* The five places a shop's work lives. Scrolls on a phone like .sections. */
+.selltabs {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin: 18px calc(var(--page-pad) * -1) 0; padding: 0 var(--page-pad) 2px;
+  border-bottom: 1px solid var(--border);
+}
+.selltabs::-webkit-scrollbar { display: none; }
+.selltabs__tab {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: 10px 12px; border: 0; border-bottom: 2px solid transparent; background: none;
+  color: var(--text-dim); font: inherit; font-size: var(--t-sm); font-weight: var(--w-medium); cursor: pointer;
+}
+.selltabs__tab:hover { color: var(--text); }
+.selltabs__tab.is-on { color: var(--text); border-bottom-color: var(--accent, var(--violet-lit)); font-weight: var(--w-bold); }
+
+/* ── The listing form ──────────────────────────────────────────────────── */
+
+/* Quick Fill's templates: one tap each, "None" set apart at the end. */
+.qfill { display: flex; flex-wrap: wrap; gap: 6px; }
+.qfill__chip {
+  padding: 7px 12px; border: 1px solid var(--border); border-radius: 99px;
+  background: var(--surface); color: inherit; font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.qfill__chip.is-on { border-color: transparent; background: var(--gold-soft, var(--surface-2)); box-shadow: inset 0 0 0 2px var(--gold, var(--accent)); font-weight: var(--w-bold); }
+.qfill__chip--none { color: var(--text-dim); }
+
+/* The fold over everything past the basics, saying what is switched on. */
+.sellmore { flex-wrap: wrap; text-align: left; }
+.sellmore__chips { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.sellmore__chip {
+  padding: 2px 8px; border-radius: 99px; background: var(--surface-2);
+  font-size: var(--t-2xs); color: var(--text-dim); white-space: nowrap;
+}
+
+/* Publish, always in reach: pinned above the tab bar on a phone. */
+.sellform__bar { display: grid; }
+@media (max-width: 719px) {
+  .sellform__bar {
+    position: sticky; bottom: calc(var(--tabbar-h) + 8px); z-index: 5;
+    padding: 8px; margin-inline: -8px; border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+}
+
+/* ── Lots and routes ───────────────────────────────────────────────────── */
+
+.pick__note { font-size: var(--t-xs); color: var(--text-dim); }
+
+/* The route builder's start: the other two ways in, after the ready-made ones. */
+.rsstart__other { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.rshead__mode { justify-self: start; }
+.rshead__mode button { white-space: nowrap; }
+
+/* "Steps" view: names and lines only. The buttons, who presses them, the
+   waits between steps and where the lot starts and ends are handed out
+   already, and wait behind "All details". */
+.rsstudio--simple .rsmap,
+.rsstudio--simple .rshead__stats,
+.rsstudio--simple .rsjoin__acts .iconbtn,
+.rsstudio--simple .rsgap__wait,
+.rsstudio--simple .rsbtn__words,
+.rsstudio--simple .rsbtn__note,
+.rsstudio--simple .rsbtn__ship,
+.rsstudio--simple .rsbtn__who,
+.rsstudio--simple .rsbtn__add,
+.rsstudio--simple .stepact__skip { display: none; }
+
+/* ── Opening a storefront: a walkthrough ─────────────────────────────── */
+/* The timeline on top: every step, done ones ticked, the rest pending. */
+.sfwiz { display: grid; gap: var(--s4); max-width: 640px; }
+.sfwiz__line {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.sfwiz__step { position: relative; display: grid; justify-items: center; }
+/* The rail between dots, lit up to the furthest step done. */
+.sfwiz__step + .sfwiz__step::before {
+  content: ''; position: absolute; top: 15px; right: 50%; width: 100%; height: 2px;
+  background: var(--border-strong); z-index: 0;
+}
+.sfwiz__step.is-done + .sfwiz__step::before,
+.sfwiz__step.is-done + .sfwiz__step.is-on::before { background: var(--ok); }
+.sfwiz__jump {
+  position: relative; z-index: 1; display: grid; justify-items: center; gap: 3px;
+  padding: 0; border: 0; background: none; color: var(--text-faint); font: inherit; cursor: pointer;
+}
+.sfwiz__jump:disabled { cursor: default; }
+.sfwiz__dot {
+  width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%;
+  border: 2px solid var(--border-strong); background: var(--surface);
+  font-size: var(--t-sm); font-weight: var(--w-bold);
+}
+.sfwiz__label { font-size: var(--t-xs); font-weight: var(--w-semi); }
+.sfwiz__state { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.sfwiz__step.is-done .sfwiz__jump { color: var(--text-dim); }
+.sfwiz__step.is-done .sfwiz__dot { background: var(--ok); border-color: var(--ok); color: var(--ok-ink); }
+.sfwiz__step.is-done .sfwiz__state { color: var(--ok); }
+/* Passed without filling in: behind you, but not finished. */
+.sfwiz__step.is-skipped .sfwiz__jump { color: var(--text-dim); }
+.sfwiz__step.is-skipped .sfwiz__dot { border-style: dashed; }
+.sfwiz__step.is-skipped + .sfwiz__step::before { background: var(--ok); }
+.sfwiz__step.is-on .sfwiz__jump { color: var(--text); }
+.sfwiz__step.is-on .sfwiz__dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.sfwiz__card { gap: var(--s4); }
+.sfwiz__count { margin: 0; font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; }
+.sfwiz__title { margin: 0; }
+.sfwiz__lede { margin: -8px 0 0; }
+.sfwiz__nav { display: flex; gap: var(--s2); align-items: center; justify-content: space-between; }
+.sfwiz__next { margin-left: auto; }
+
+/* A storefront picture: shown as it will sit on the shop, uploaded in place. */
+.sfpic {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3); border: 1px dashed var(--border-strong); border-radius: var(--r-md);
+}
+.sfpic--wide { flex-direction: column; align-items: stretch; }
+.sfpic__img, .sfpic__empty {
+  flex: 0 0 auto; border-radius: var(--r-sm); background: var(--surface-2); object-fit: cover;
+}
+.sfpic--square .sfpic__img, .sfpic--square .sfpic__empty { width: 72px; height: 72px; border-radius: 50%; }
+.sfpic--wide .sfpic__img, .sfpic--wide .sfpic__empty { width: 100%; aspect-ratio: 3 / 1; }
+.sfpic__empty { display: grid; place-items: center; color: var(--text-faint); }
+.sfpic__acts { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.sfpic__pick { position: relative; overflow: hidden; cursor: pointer; }
+.sfpic__pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.sfpic__pick.is-busy { opacity: .7; cursor: progress; }
+
+/* The shop as buyers will see it: banner, then the card. */
+.sfpreview { overflow: hidden; padding: 0; }
+.sfpreview__cover { display: block; width: 100%; aspect-ratio: 3 / 1; object-fit: cover; }
+.sfpreview__cover--empty { background: linear-gradient(135deg, var(--accent-soft), var(--surface-2)); }
+.sfpreview__body { padding: var(--s4); }
+
+/* ── Shop settings: one card per part of the shop ────────────────────── */
+.sfsettings { gap: var(--s4); }
+.sfsec {
+  display: grid; gap: var(--s3);
+  padding: var(--s4); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+}
+.sfsec__head { display: flex; align-items: center; gap: var(--s3); }
+.sfsec__icon {
+  flex: 0 0 auto; width: 36px; height: 36px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+}
+.sfsec__title { margin: 0; font-size: var(--t-md, 16px); }
+.sfsec__note { display: block; font-size: var(--t-xs); color: var(--text-faint); }
+.sfsec__body { display: grid; gap: var(--s3); }
+/* The payment fieldset sits inside its card without a second frame. */
+.sfsec__body .fieldset { border: 0; padding: 0; margin: 0; }
+.sfsec__body .fieldset > legend { display: none; }
+/* Save stays in reach while the sections scroll past. */
+.sfsettings__bar {
+  position: sticky; bottom: 8px; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s3);
+  padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+}
+.sfsettings__flash { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--ok); font-size: var(--t-sm); }
+@media (max-width: 719px) {
+  .sfsettings__bar { bottom: calc(var(--tabbar-h) + 8px); }
+}
+
+/* Tags: what was typed becomes a pill at each comma. */
+.taginput {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  min-height: 44px; padding: 6px 8px; cursor: text;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2);
+}
+.taginput:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.taginput__tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 4px 4px 10px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--text); font-size: var(--t-sm); font-weight: var(--w-semi);
+}
+.taginput__x {
+  width: 20px; height: 20px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--text-dim); font: inherit; line-height: 1; cursor: pointer;
+}
+.taginput__x:hover { background: var(--surface-hover); color: var(--text); }
+.taginput__box {
+  flex: 1 1 120px; min-width: 0; padding: 4px 2px;
+  border: 0; outline: 0; background: transparent; color: var(--text); font: inherit;
+}
+.taginput__ideas { display: flex; flex-wrap: wrap; gap: 6px; }
+.taginput__idea {
+  padding: 5px 10px; border: 1px dashed var(--border-strong); border-radius: 999px;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: var(--t-xs); cursor: pointer;
+}
+.taginput__idea:hover { border-style: solid; border-color: var(--accent); color: var(--text); }
+
+/* A payment QR: square and large enough to check before a buyer scans it. */
+.sfpic--qr .sfpic__img, .sfpic--qr .sfpic__empty { width: 96px; height: 96px; object-fit: contain; background: #fff; }
+.sfpic--qr .sfpic__empty { background: var(--surface-2); }
+.payqr { display: grid; justify-items: center; gap: 6px; margin: 4px 0; }
+.payqr__img { width: min(220px, 70vw); aspect-ratio: 1; object-fit: contain; padding: 8px; border-radius: var(--r-md); background: #fff; }
+
+/* ── Shops by what they are about ─────────────────────────────────────── */
+/* A row of shops that scrolls sideways: search results, shops for you, similar shops. */
+.shopstrip { display: grid; gap: var(--s2); margin: 0 0 18px; min-width: 0; }
+.shopstrip__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.shopstrip__title { margin: 0; font-size: var(--t-md, 16px); }
+.shopstrip__sub { font-size: var(--t-xs); color: var(--text-faint); }
+.shopstrip__row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 170px); gap: 10px;
+  overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; scrollbar-width: none;
+}
+.shopstrip__row::-webkit-scrollbar { display: none; }
+.shoptile {
+  display: grid; justify-items: start; align-content: start; gap: 4px; scroll-snap-align: start; min-width: 0;
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
+  color: var(--text); text-decoration: none;
+}
+.shoptile:hover { border-color: var(--border-strong); }
+.shoptile__photo { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+.shoptile__name { max-width: 100%; font-weight: var(--w-semi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shoptile__meta { font-size: var(--t-xs); color: var(--text-faint); }
+.shoptile__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.shoptile__tag {
+  padding: 2px 8px; border-radius: 999px; background: var(--surface-2);
+  font-size: 11px; color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.shoptile__tag.is-hit { background: var(--accent-soft); color: var(--text); }
+.mktsearch__shop { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+
+/* One tag's own page. */
+.tagpage__title { display: flex; align-items: baseline; gap: 2px; }
+.tagpage__title > span { color: var(--accent); }
+.tagpage__grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+/* On a shop: badges it earned, and what its listings say it sells. */
+.earnedtag { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); cursor: default; }
+.alsosells { align-items: center; }
+.alsosells__label { font-size: var(--t-xs); color: var(--text-faint); margin-right: 2px; }
+.alsosells__tag { border-style: dashed; }
+
+/* The Data tab's view of each tag. */
+.tagins { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
+.tagins:first-of-type { border-top: 0; padding-top: 0; }
+.tagins__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tagins__name { font-weight: var(--w-semi); color: var(--text); text-decoration: none; margin-right: auto; }
+.tagins__nums { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.tagins__nums span { display: grid; text-align: center; padding: 6px 2px; border-radius: var(--r-sm); background: var(--surface-2); }
+.tagins__nums b { font-size: var(--t-md, 16px); }
+.tagins__nums small { font-size: 10px; color: var(--text-faint); line-height: 1.2; }

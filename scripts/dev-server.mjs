@@ -39,11 +39,11 @@ const { ogRoute, ogCardRoute, linkPreviewRoute } = await import(new URL('og-rout
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
-  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, paymentReminderRoute, supplierLotsRoute, supplierLotRoute,
+  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, setCheckpointsRoute, paymentReminderRoute,
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
+const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute, sellTodoRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
@@ -77,6 +77,9 @@ const {
 } = await import(new URL('power-sale-routes.js', apiRoot));
 const { fillingLotsRoute, dropsRoute, dropRoute, remindRoute } = await import(new URL('showcase-routes.js', apiRoot));
 const { insightsRoute, interestRoute, marketRoute } = await import(new URL('insight-routes.js', apiRoot));
+const {
+  searchShopsRoute, shopsByTagRoute, similarShopsRoute, shopsForYouRoute, shopTagsRoute, tagInsightsRoute,
+} = await import(new URL('shop-tag-routes.js', apiRoot));
 const {
   listProfitTemplatesRoute, saveProfitTemplateRoute, deleteProfitTemplateRoute,
   listSavedCalcsRoute, saveSavedCalcRoute, deleteSavedCalcRoute,
@@ -184,6 +187,7 @@ const routes = [
   ['GET', '/api/me/lots', myLotsRoute],
   ['GET', '/api/lots/:id/board', lotBoardRoute],
   ['POST', '/api/orders/payment-reminder', paymentReminderRoute],
+  ['POST', '/api/orders/checkpoints', setCheckpointsRoute],
   ['POST', '/api/orders/:id/checkpoint', setCheckpointRoute],
   ['POST', '/api/orders/:id/photos', addOrderPhotoRoute],
   ['POST', '/api/orders/:id/photos/:photoId', updateOrderPhotoRoute],
@@ -197,8 +201,11 @@ const routes = [
   ['GET', '/api/orders/:id', orderTrackingRoute],
   ['GET', '/api/me/storefront', storefrontRoute],
   ['POST', '/api/me/storefront/save', updateStorefrontRoute],
+  ['POST', '/api/me/storefront/photo', storefrontPhotoRoute],
+  ['GET', '/api/me/region-guess', regionGuessRoute],
   ['GET', '/api/me/dashboard', dashboardRoute],
   ['GET', '/api/me/sales', salesRoute],
+  ['GET', '/api/me/sell/todo', sellTodoRoute],
   ['GET', '/api/me/stores', myStoresRoute],
   ['POST', '/api/me/storefront/managers', updateManagersRoute],
   ['GET', '/api/social/feed', socialFeedRoute],
@@ -336,6 +343,12 @@ const routes = [
   ['GET', '/api/me/insights', insightsRoute],
   ['GET', '/api/me/interest', interestRoute],
   ['GET', '/api/me/market', marketRoute],
+  ['GET', '/api/shops/search', searchShopsRoute],
+  ['GET', '/api/shops/for-you', shopsForYouRoute],
+  ['GET', '/api/shops/:id/similar', similarShopsRoute],
+  ['GET', '/api/shops/:id/tags', shopTagsRoute],
+  ['GET', '/api/shop-tags/:slug', shopsByTagRoute],
+  ['GET', '/api/me/tag-insights', tagInsightsRoute],
   ['GET', '/api/me/profit-templates', listProfitTemplatesRoute],
   ['POST', '/api/me/profit-templates/save', saveProfitTemplateRoute],
   ['POST', '/api/me/profit-templates/:id/delete', deleteProfitTemplateRoute],
@@ -417,8 +430,6 @@ const routes = [
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],
   ['POST', '/api/users/:id/page-reviews/new', writePageReviewRoute],
-  ['GET', '/api/supplier/lots', supplierLotsRoute],
-  ['GET', '/api/supplier/lots/:id', supplierLotRoute],
 ];
 
 const MIME = {

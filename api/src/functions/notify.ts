@@ -5,6 +5,7 @@ import { expandPermissions } from '../../../shared/stores.js';
 import type { StorePermission } from '../../../shared/enums.js';
 import type { getRepository } from '../data/index.js';
 import { isVisibleNotice, pushNotice, sendHeldPushesAt } from '../push.js';
+import { mapLimit } from '../data/lot-view.js';
 
 /**
  * Telling somebody something happened.
@@ -60,20 +61,30 @@ export async function notify(
   repository: Repo,
   audience: readonly (string | null | undefined)[],
   draft: NoticeDraft,
-  options: { except?: string; notBefore?: string; undoId?: string } = {},
+  options: { except?: string; notBefore?: string; undoId?: string; pushLater?: boolean } = {},
 ): Promise<void> {
   const now = new Date().toISOString();
   // Held while its step can still be undone: the clock sends it when the hold
   // ends, unless it has been taken back by then.
   const held = Boolean(options.notBefore && Date.parse(options.notBefore) > Date.now());
+  /* In the bell now, on the phone a moment later. Pushing to forty buyers'
+     devices inside the seller's request kept the seller waiting on the
+     slowest push service; this writes the bell and leaves the push to the
+     same clock that sends held notices (a timer in this instance at once,
+     the minute clock and every bell read after it), already the guarantee. */
+  const later = !held && options.pushLater === true;
   const people = new Set(
     audience.filter((id): id is string => Boolean(id) && id !== options.except),
   );
 
-  await Promise.all(
-    [...people].map(async (userId) => {
+  // A few at a time: a lot of forty is forty bells written, not forty at once.
+  await mapLimit(
+    [...people],
+    8,
+    async (userId) => {
       try {
-        const folded = draft.group && !held ? await foldInto(repository, userId, draft, now) : null;
+        const fold = draft.group && !held ? await foldInto(repository, userId, draft, now) : null;
+        const folded = fold && later ? { ...withoutPushed(fold), notBefore: now } : fold;
         const notice: Notification = folded ?? {
           id: `ntf_${randomUUID().slice(0, 12)}`,
           userId,
@@ -82,22 +93,29 @@ export async function notify(
           body: draft.body,
           link: draft.link,
           readAt: null,
-          ...(options.notBefore ? { notBefore: options.notBefore } : {}),
+          ...(options.notBefore ? { notBefore: options.notBefore } : later ? { notBefore: now } : {}),
           ...(options.undoId ? { undoId: options.undoId } : {}),
-          ...(held ? {} : { pushedAt: now }),
+          ...(held || later ? {} : { pushedAt: now }),
           ...(draft.group ? { group: draft.group.key, count: 1, actors: [draft.group.actor] } : {}),
           createdAt: now,
           updatedAt: now,
         };
         await repository.saveNotification(notice);
-        if (!held) await pushNotice(repository, notice);
+        if (!held && !later) await pushNotice(repository, notice);
       } catch {
         // One person's missing notice is not a reason to fail the thing it was
         // about, which is already done.
       }
-    }),
+    },
   );
   if (held && people.size > 0) sendHeldPushesAt(repository, options.notBefore!);
+  if (later && people.size > 0) sendHeldPushesAt(repository, now);
+}
+
+/** A notice not yet sent to a phone, for the clock to send. */
+function withoutPushed(notice: Notification): Notification {
+  const { pushedAt: _sent, ...rest } = notice;
+  return rest;
 }
 
 /**
@@ -234,13 +252,16 @@ export async function notifyBuyers(
   if (byBuyer.size === 0) return;
   const first = orders[0]!;
   const names = await orderNames(repository, first);
-  await Promise.all([...byBuyer.entries()].map(([buyerId, theirs]) => {
+  // News for a whole lot reaches phones off the seller's request; news for
+  // one buyer still goes straight out.
+  const crowd = byBuyer.size > 1;
+  await mapLimit([...byBuyer.entries()], 8, ([buyerId, theirs]) => {
     const items = theirs.length === 1 ? gistOf(theirs[0]!.itemName, 'your item', 40) : `your ${theirs.length} items`;
     const draft = make({ items, shop: names.shop });
     return notify(repository, [buyerId], {
       ...draft,
       link: theirs.length === 1 ? `/order/${encodeURIComponent(theirs[0]!.id)}` : '/me?tab=purchases',
       ...(options.track ? { group: { key: `track:${options.track}`, actor: names.shop, title: () => draft.title } } : {}),
-    }, options);
-  }));
+    }, { ...options, pushLater: crowd });
+  });
 }

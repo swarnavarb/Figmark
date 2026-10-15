@@ -384,7 +384,10 @@ export class MockAuthProvider implements AuthService {
     // A handle is how this account is addressed and messaged, so it is picked
     // at sign-up rather than bolted on later. Offered as a suggestion from the
     // name, and typed over if they would rather.
-    const username = (request.username?.trim() || suggestUsername(displayName)).toLowerCase();
+    const typed = request.username?.trim().toLowerCase() || null;
+    // A suggestion the form checked and showed is still ours, not theirs.
+    const chosen = request.usernameSuggested ? null : typed;
+    let username = typed ?? suggestUsername(displayName).toLowerCase();
     const problem = checkUsername(username);
     if (problem) throw new AuthError(400, 'invalid_signup', USERNAME_PROBLEMS[problem]);
     // Reserved once, against the account's real id. It used to be reserved
@@ -392,7 +395,17 @@ export class MockAuthProvider implements AuthService {
     // and two sign-ups both holding 'pending' each read the other's claim as
     // their own, while the gap between release and re-claim let a third take it.
     const userId = `usr_${randomUUID().slice(0, 12)}`;
-    if (!(await this.repository.reserveHandle(username, userId, false))) {
+    let reserved = await this.repository.reserveHandle(username, userId, false);
+    // A handle somebody typed is theirs to change. One we made from their name
+    // is ours: the sign-up form keeps it folded away, so a clash with another
+    // Arjun Mehta is settled here with a short tail rather than sent back as
+    // an error about a field they never opened.
+    const base = username.slice(0, 25);
+    for (let attempt = 0; !reserved && !chosen && attempt < 5; attempt += 1) {
+      username = `${base}_${randomUUID().replace(/-/g, '').slice(0, 4)}`;
+      reserved = checkUsername(username) === null && await this.repository.reserveHandle(username, userId, false);
+    }
+    if (!reserved) {
       throw new AuthError(409, 'username_taken', `@${username} is already taken.`);
     }
 

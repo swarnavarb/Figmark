@@ -61,7 +61,6 @@ export function themeOf(kind: ShareKind): Theme {
   return THEMES[kind];
 }
 
-export const MOMENT_SIZE = CARD_SIZE;
 
 const RARITY_HUES: Record<CardDef['rarity'], [string, string]> = {
   common: ['#6B7C96', '#9FB0C9'],

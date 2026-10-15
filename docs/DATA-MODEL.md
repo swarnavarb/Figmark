@@ -21,6 +21,8 @@ shipment, `User` covers both sides of the trade, and `Order` is one manifest lin
 | `reviews` | `/subjectId` | Reviews are read as "everything about this user" — exactly one partition. |
 | `disputes` | `/orderId` | A dispute belongs to one order and is always fetched with it. |
 | `sessions` | `/id` | Mock-auth revocation list. TTL-expiring, so it stays tiny. |
+| `notifications` | `/userId` | "Everything waiting for me". Expires 90 days after its last write. |
+| `siteContent` | `/id` | Operator-written pages, settings, and the logs kept as lists (fee ledger, audit trail). TTL enabled per document. |
 
 Throughput is provisioned on the *database* (1000 RU/s shared) rather than per
 container, which fits the Cosmos free tier exactly.
@@ -49,9 +51,55 @@ container, which fits the Cosmos free tier exactly.
 
   The unique key on `reviews` *is* meaningful: it is scoped to `/subjectId`, and
   every review of one order in one direction shares that subject.
+- **Lot writes are checked like order writes.** `updateLot` is conditional on
+  the etag it was read with, so the shop and its forwarder moving a lot at
+  once, or a note landing while it moves, merge or are refused - never one
+  quietly losing the other's event.
+- **Lookups by id are point reads once seen.** `getOrder` and `getListing` know
+  only an id, and orders are partitioned by lot, so each was a query across
+  every partition. The repository remembers which partition each id was last
+  read or written in (bounded) and reads it directly, falling back to the
+  query when it has not seen it or it has moved.
 - **`filledCount` on `Lot` is denormalised** from the orders in that lot, so
   listing lots does not require counting orders per lot. It must be updated in
   the same operation that creates or cancels an order.
+
+## Keeping the database small
+
+- **Indexing is opt-out per path.** Every field is indexed unless the
+  container excludes it, and the index costs storage like the data does. So
+  anything read whole and never filtered or sorted by - an order's timeline,
+  photos and payments; a user's verification, trust and profile prose; a
+  notice's words; every `siteContent` document's `data` - is excluded in
+  `shared/containers.ts`. Composite indexes exist only where a query sorts on
+  them. Before excluding a path, check no query in `cosmos-repository.ts`
+  filters or sorts on it.
+- **Policies reach existing containers.** Creating a container applies its
+  policy, but a container created earlier keeps the old one. The API compares
+  each container's indexing and TTL with the schema on start-up (remembered by
+  a hash, so it is one point read once done) and replaces what differs;
+  `npm run azure:provision` does the same. Unique keys cannot change after
+  creation and are kept.
+- **Expiry instead of sweeping.** Notifications expire 90 days after their
+  last write; a notice taken back by an undo is deleted at once. Audit-trail
+  days carry their own 90-day `ttl`.
+- **Logs are split by period, never trimmed.** The fee ledger is one
+  `siteContent` document per month (`fee-ledger-YYYY-MM`) and the audit trail
+  one per day (`audit-YYYY-MM-DD`); a period that outgrows 512 KB carries on in
+  `<id>.2`, `<id>.3` (`api/src/site-log.ts`). The queues that are trimmed
+  (dispute actions, community notices, content reports) are also held under
+  1.5 MB, well inside Cosmos's 2 MB item limit.
+- **The audit trail is off by default.** An operator turns it on from the
+  console's Audit trail tab. While off nothing is written - not even the switch
+  being turned off.
+- **Deleting takes the leftovers along.** Deleting an account deletes its
+  notifications, saves (dropping each listing's saved count), follows both ways
+  (dropping follower counts), hunts with their answers and seekers, and the
+  reviews on its page. Deleting a listing deletes its comments, pledges and
+  saves. Pledges, answers and reviews the account left on other people's pages
+  stay, like its orders. A one-off pass on start-up removed what deletions
+  before this left behind, along with withdrawn notices and audit days older
+  than 90 days.
 
 ## Money and weight
 
@@ -72,6 +120,35 @@ Progress is computed from the index, so the seller's working view and the
 buyer's tracking timeline render from one array. Every transition appends a
 `StageEvent` with who recorded it and when, which is what buyer status pings and
 the time-in-stage analytics will read.
+
+### The lot holds the step
+
+The lot is the one record of where a consignment is. Moving a lot, noting
+something on it or giving it a new route writes the lot and nothing else, so a
+crate of forty items is one write rather than forty-one - and there is no
+half-moved lot when one of those writes fails.
+
+Each order stores only what is its own: paid, ticked in at the warehouse,
+dispatched, delivered, a step this one item took. The repository reads every
+order with its lot applied and writes back only what the caller changed
+(`api/src/data/lot-view.ts`, wrapped around whichever store loads):
+
+- **News.** Lot events buyers should read carry `seq`, the lot's running count
+  (`Lot.seq`). An order remembers the last one it already holds
+  (`Order.lotSeenSeq`) and reads the rest off the lot. Events the lot keeps to
+  itself - closing, reopening - carry no `seq` and reach no timeline. A counter
+  rather than a time, because a join and a move can land in the same
+  millisecond.
+- **Position.** An item follows its lot once the lot has moved
+  (`Lot.movedSeq`) since the item was last placed on its own
+  (`Order.positionSeq` - it joined, or the seller moved it alone).
+- **Reach.** An item called off or refunded hears nothing more; one delivered
+  on its own hears notes but not moves; everything else travels with the lot.
+- **Leaving.** An item that joins another lot, leaves one, or stops keeps
+  what it was told as its own history, since it will not read that lot again.
+
+Orders written before this hold copies of every lot event and no counters, so
+they read exactly as they did, and the next move of their lot reaches them.
 
 `LotStatus` (`draft`/`open`/`filled`/`closed`/`cancelled`) is deliberately
 separate: it describes the group-buy's commercial lifecycle, which moves
@@ -179,9 +256,10 @@ turning notifications on never contend; two screens changing the same part
 merge or are refused like any other checked write. Users read from list
 queries carry no parts, and saving one leaves the parts alone.
 
-Rows written before the split still carry these fields inline. They read as
-they are, and move into their part on the account's next save. The game state
-(`quest`) stays on the row: it is capped, and the leaderboard sorts on it.
+Rows written before the split carried these fields inline; a one-off pass on
+start-up saves each such account once, which moves them into their parts. The
+game state (`quest`) stays on the row: it is capped, and the leaderboard sorts
+on it.
 
 ## Not yet modelled
 

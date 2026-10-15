@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { DemoAccount } from '@shared/contracts';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api } from '../api';
-import { ErrorNotice } from '../components/ui';
+import { ErrorNotice, Icon } from '../components/ui';
 import { useSession } from '../session';
 
 type Mode = 'signin' | 'signup';
@@ -86,6 +86,8 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  /** Whether the username field is unfolded; most people keep the one made from their name. */
+  const [pickHandle, setPickHandle] = useState(false);
 
   // The seeded sign-in hint, shown only while the mock provider is active.
   useEffect(() => {
@@ -131,7 +133,10 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   // with it when it is not.
   // Kept per name, not per render: the fallback has a random tail, and a
   // placeholder that changes on every keystroke elsewhere reads as a glitch.
-  const suggested = useMemo(() => (displayName.trim() ? suggestUsername(displayName) : ''), [displayName]);
+  const plainSuggestion = useMemo(() => (displayName.trim() ? suggestUsername(displayName) : ''), [displayName]);
+  // The first variant of it nobody holds yet, so what is shown is what they get.
+  const free = useFreeHandle(mode === 'signup' && !pickHandle ? plainSuggestion : '');
+  const suggested = free.base === plainSuggestion && free.handle ? free.handle : plainSuggestion;
   const wanted = username.trim();
   const problem = wanted ? checkUsername(wanted) : null;
   const availability = useUsernameAvailability(mode === 'signup' && !problem ? wanted : '');
@@ -149,7 +154,8 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
     setError(null);
     try {
       if (mode === 'signin') await signIn(identifier, password);
-      else await signUp({ displayName, username: username.trim() || undefined, email, phone, password });
+      else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password });
+      else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
     } finally {
@@ -186,52 +192,18 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
                   <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
                     autoComplete="name" placeholder="Arjun Mehta" required />
                 </label>
-                {/* Your address here. Left blank it is taken from your name,
-                    because nobody should be stopped at the door by it. */}
                 <label className="field">
-                  <span>Username</span>
-                  <span className={`handlefield handlefield--${usernameState}`}>
-                    <input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                      autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                      placeholder={suggested || 'arjunmehta'}
-                      aria-invalid={usernameState === 'taken'} aria-describedby="signup-username-hint" />
-                    <span className="handlefield__status" aria-hidden="true">
-                      {usernameState === 'checking' && <span className="handlefield__spin" />}
-                      {usernameState === 'free' && <HandleMark ok />}
-                      {usernameState === 'taken' && <HandleMark ok={false} />}
-                    </span>
-                  </span>
-                  <span id="signup-username-hint" className={`field__hint handlefield__hint--${usernameState}`} aria-live="polite">
-                    {problem
-                      ? USERNAME_PROBLEMS[problem]
-                      : usernameState === 'checking'
-                        ? <>Checking whether <code>@{wanted}</code> is free…</>
-                        : usernameState === 'taken'
-                          ? availability.reason ?? `@${wanted} is already taken.`
-                          : usernameState === 'free'
-                            ? <><code>@{wanted}</code> is available. People find you at <code>/{wanted}</code>.</>
-                            : <>People find you at <code>/{wanted || suggested || 'yourname'}</code> and message you at{' '}
-                              <code>@{wanted || suggested || 'yourname'}</code>.</>}
-                  </span>
+                  <span>Mobile (WhatsApp)</span>
+                  <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                    autoComplete="tel" inputMode="tel" placeholder="+91 98765 43210" required />
+                  <span className="field__hint">Use the number you have on WhatsApp.</span>
                 </label>
-                <div className="field-row">
-                  <label className="field">
-                    <span>Email</span>
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                      autoComplete="email" placeholder="you@example.com" required />
-                    <span className="field__hint">We email you a code to confirm it.</span>
-                  </label>
-                  <label className="field">
-                    <span>Mobile (WhatsApp)</span>
-                    <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                      autoComplete="tel" placeholder="+91 98765 43210" required />
-                  </label>
-                </div>
-                <p className="notice notice--warn" style={{ margin: 0 }}>
-                  <strong>Use the mobile number linked to your Aadhaar</strong>, and that you use on WhatsApp. To buy or
-                  sell you verify this number on WhatsApp and then your Aadhaar - and the Aadhaar check only passes if
-                  its linked mobile is this same number.
-                </p>
+                <label className="field">
+                  <span>Email</span>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email" placeholder="you@example.com" required />
+                  <span className="field__hint">We email you a code to confirm it.</span>
+                </label>
               </>
             )}
 
@@ -249,13 +221,47 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder={mode === 'signup' ? 'At least 8 characters' : ''} required />
-              {mode === 'signup' && (
-                <span className="field__hint">
-                  You can browse straight away. Buying and selling open once your email, WhatsApp number and Aadhaar
-                  are verified.
-                </span>
-              )}
             </label>
+
+            {mode === 'signup' && (
+              <>
+                {/* Your address here. Left alone it is taken from your name,
+                    because nobody should be stopped at the door by it - so it
+                    stays folded away until somebody wants to pick their own. */}
+                <button type="button" className="disclose" aria-expanded={pickHandle}
+                  onClick={() => setPickHandle(!pickHandle)}>
+                  <Icon name={pickHandle ? 'down' : 'right'} size={14} />
+                  {pickHandle ? 'Username' : <>Suggested username: <code>@{wanted || suggested || 'yourname'}</code></>}
+                  <span className="faint">optional, change it any time</span>
+                </button>
+                {pickHandle && (
+                  <label className="field">
+                    <span className={`handlefield handlefield--${usernameState}`}>
+                      <input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                        autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                        placeholder={suggested || 'arjunmehta'} aria-label="Username"
+                        aria-invalid={usernameState === 'taken'} aria-describedby="signup-username-hint" />
+                      <span className="handlefield__status" aria-hidden="true">
+                        {usernameState === 'checking' && <span className="handlefield__spin" />}
+                        {usernameState === 'free' && <HandleMark ok />}
+                        {usernameState === 'taken' && <HandleMark ok={false} />}
+                      </span>
+                    </span>
+                    <span id="signup-username-hint" className={`field__hint handlefield__hint--${usernameState}`} aria-live="polite">
+                      {problem
+                        ? USERNAME_PROBLEMS[problem]
+                        : usernameState === 'checking'
+                          ? <>Checking whether <code>@{wanted}</code> is free…</>
+                          : usernameState === 'taken'
+                            ? availability.reason ?? `@${wanted} is already taken.`
+                            : usernameState === 'free'
+                              ? <><code>@{wanted}</code> is available. People find you at <code>/{wanted}</code>.</>
+                              : <>Left empty, you are <code>@{suggested || 'yourname'}</code>.</>}
+                    </span>
+                  </label>
+                )}
+              </>
+            )}
 
             {blocked && !error && <p className="notice notice--warn">{blocked}</p>}
 
@@ -325,6 +331,41 @@ function useUsernameAvailability(name: string) {
       controller.abort();
     };
   }, [name]);
+  return result;
+}
+
+/**
+ * The suggestion made from a name, or the first variant of it that is free.
+ *
+ * Tried in order - the plain one, then with a short tail - a moment after the
+ * name stops changing. The tails are drawn once per name, so the line under
+ * the form does not flicker between guesses. A failed check offers the plain
+ * one: the server settles a clash on a suggestion itself.
+ */
+function useFreeHandle(base: string) {
+  const [result, setResult] = useState<{ base: string; handle: string | null }>({ base: '', handle: null });
+  useEffect(() => {
+    if (!base) return;
+    const stem = base.slice(0, 25);
+    const tries = [base, ...Array.from({ length: 4 }, () => `${stem}_${Math.random().toString(36).slice(2, 6)}`)];
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      for (const handle of tries) {
+        if (checkUsername(handle)) continue;
+        const answer = await api.usernameAvailable(handle, controller.signal).catch(() => null);
+        if (controller.signal.aborted) return;
+        if (!answer || answer.available) {
+          setResult({ base, handle });
+          return;
+        }
+      }
+      setResult({ base, handle: tries[tries.length - 1]! });
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [base]);
   return result;
 }
 

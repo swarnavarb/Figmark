@@ -55,11 +55,6 @@ export function isLive(store: Pick<StoreCore, 'status'> | null | undefined): boo
   return statusOf(store) === 'approved';
 }
 
-/** The owner may still edit and resubmit. */
-export function canResubmit(store: Pick<StoreCore, 'status'> | null | undefined): boolean {
-  const status = statusOf(store);
-  return status === 'changes' || status === 'rejected' || status === 'pending';
-}
 
 /** The store of one kind on an account, whatever its state. */
 export function storeOf(user: Pick<User, 'forwarderProfile' | 'artistProfile'>, kind: StoreKind): StoreCore | null {
@@ -302,4 +297,3 @@ export function partId(prefix: string): string {
 
 /** Accents a store can wear on its page, as the app's own hues. */
 export const STORE_ACCENTS = ['violet', 'aqua', 'coral', 'lime', 'blue', 'pink'] as const;
-export type StoreAccent = (typeof STORE_ACCENTS)[number];

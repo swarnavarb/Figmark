@@ -61,6 +61,12 @@ export interface AppConfig {
    */
   passwordBreachCheck: boolean;
   /**
+   * Whether a new shop's dispatch region is guessed from the IP address it
+   * opens from (one lookup per address, at ipapi.co). On in Azure, off
+   * locally; REGION_GUESS=on|off overrides it.
+   */
+  regionGuess: boolean;
+  /**
    * Why `x-ms-client-principal` can be believed, under AUTH_MODE=swa.
    *
    * Static Web Apps sets that header, but nothing about the header says so:
@@ -329,6 +335,7 @@ export const config: AppConfig = {
   vision: resolveVision(),
   verification: resolveVerification(),
   passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),
+  regionGuess: env('REGION_GUESS') ? env('REGION_GUESS') === 'on' : runningInAzure(),
   swaPrincipalTrust: resolveSwaTrust(),
   publicOrigins: resolvePublicOrigins(),
 };

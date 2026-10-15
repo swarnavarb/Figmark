@@ -11,6 +11,7 @@ import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { forwarderWorks } from '../service-access.js';
 import { getRepository } from '../data/index.js';
+import { followsItsLot, mapLimit, tellLot } from '../data/lot-view.js';
 import {
   afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, settleAll, syncLotDelivery, undeliver,
 } from '../delivery.js';
@@ -299,19 +300,18 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
   const index = currentStepOf(lot);
   const now = new Date().toISOString();
 
-  const added: Order[] = [];
-  for (const orderId of wanted) {
-    const order = await repository.getOrder(orderId);
-    if (!order) continue;
+  /* Everything this shop has waiting for a lot is one single-partition read,
+     where looking each order up by id was a query across every partition,
+     one after another. Somebody else's item, a domestic sale, or one already
+     riding in a lot is simply not in it: all three are refusals, and none is
+     worth failing the whole request over when the other nine are fine. */
+  const want = new Set(wanted);
+  const waiting = (await repository.listOrdersAwaitingLot(lot.sellerId)).filter((order) => want.has(order.id));
+  const added = await mapLimit(waiting, 6, (order) => {
     /* Filed where the item is, not where the lot is. A parcel already counted
        into the warehouse joined its lot there, and recording the lot's own
        step put "travelling with lot" above an arrival that happened first. */
     const at = itemStepOn(route, index, undefined, ticksOf(order));
-    // Somebody else's item, a domestic sale, or one already riding in a lot:
-    // all three are refusals, and none of them is worth failing the whole
-    // request over when the other nine are fine.
-    if (order.sellerId !== lot.sellerId) continue;
-    if (order.lotId !== AWAITING_LOT_ID) continue;
 
     const event: StageEvent = {
       stage: coarseStage(route, at),
@@ -322,7 +322,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
       note: null,
       recordedBy: userId,
     };
-    const moved = await repository.moveOrderToLot(
+    return repository.moveOrderToLot(
       {
         ...order,
         lotId: lot.id,
@@ -334,8 +334,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
       },
       AWAITING_LOT_ID,
     );
-    added.push(moved);
-  }
+  });
 
   if (added.length > 0) {
     await notifyBuyers(repository, added, ({ items, shop }) => ({
@@ -398,6 +397,11 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     const repository = await getRepository();
     const now = new Date().toISOString();
     const stage = coarseStage(route, target);
+    /* The lot alone: every item still following it reads the position it
+       is back at, and the move it no longer has. `movedSeq` stays the
+       undone move's, so an item placed on its own since keeps its place. */
+    const touched = (await repository.listOrdersForLot(lot.id))
+      .filter((order) => order.stageHistory.some((event) => event.undoId === undoId));
     const restored = await repository.updateLot({
       ...lot,
       currentStep: target,
@@ -405,17 +409,6 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
       stageHistory: withoutUndo(lot.stageHistory, undoId),
       updatedAt: now,
     });
-    const touched = (await repository.listOrdersForLot(lot.id))
-      .filter((order) => order.stageHistory.some((event) => event.undoId === undoId));
-    await Promise.all(touched.map((order) => repository.updateOrder({
-      ...order,
-      stage,
-      // Back to filling, an item rides its own buttons again rather than a
-      // position that would read as received before it was.
-      currentStep: target < lotOffset(route) ? undefined : target,
-      stageHistory: withoutUndo(order.stageHistory, undoId),
-      updatedAt: now,
-    })));
     await withdrawNotices(repository, touched.map((order) => order.buyerId), undoId);
     return json(200, { lot: restored, ordersUpdated: touched.length, undone: true });
   }
@@ -468,37 +461,24 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     ...undoTag(now),
   };
 
+  /* One write, however many items are in the crate. Every item still in it
+     reads its position and this event off the lot (data/lot-view.ts) - and
+     an item the seller had moved on its own is brought back in line by this
+     move. Called-off and refunded orders stay where they stopped, an item
+     already delivered on its own has left the crate, and one already on its
+     way keeps `shipped`; one not yet paid for keeps its Pay. */
   const repository = await getRepository();
   const updated = await repository.updateLot({
     ...lot,
     currentStep: target,
     stage,
-    stageHistory: [...lot.stageHistory, event],
+    ...tellLot(lot, event, { moved: true }),
     status: lot.status === 'closed' ? 'open' : lot.status,
     updatedAt: now,
   });
 
-  // Every item still in the crate moves with it. Called-off and refunded
-  // orders are left where they stopped, and an item already delivered on its
-  // own has left the crate. One already on its way keeps `shipped` (and its
-  // buyer keeps the "It arrived" button); one not yet paid for keeps its Pay.
   const orders = await repository.listOrdersForLot(lot.id);
   const live = orders.filter((order) => !isStopped(order.status) && order.status !== 'delivered');
-  await Promise.all(
-    live.map((order) =>
-      repository.updateOrder({
-        ...order,
-        stage,
-        // Written on the item as well as the lot: an item the seller had moved
-        // on its own is brought back in line by the next move of the lot,
-        // rather than staying stuck at a position nobody remembers setting.
-        currentStep: target < lotOffset(route) ? undefined : target,
-        stageHistory: [...order.stageHistory, event],
-        status: travellingStatus(order.status),
-        updatedAt: now,
-      }),
-    ),
-  );
 
   // The notification the whole product is really for: twenty people paid for
   // one shipment weeks ago and have no way of knowing it cleared customs
@@ -619,42 +599,42 @@ async function rerouteLot(repository: Repo, lot: Lot, next: LotRoute, userId: st
      lot's history and the buyers' inboxes stay quiet unless the seller said
      something. A different route is a change the buyer should hear about. */
   const quiet = updatedRoute && !note?.trim();
+  /* Read before the lot changes, while it still says which items hold a
+     place of their own rather than following the lot. */
+  const orders = (await repository.listOrdersForLot(lot.id))
+    .filter((order) => !isCancelledLike(order.status) && order.status !== 'delivered');
   const updated = await repository.updateLot({
     ...lot,
     route: next,
     currentStep: at,
     stage,
-    stageHistory: quiet ? lot.stageHistory : [...lot.stageHistory, event],
+    ...tellLot(lot, quiet ? null : event, { moved: true }),
     updatedAt: now,
   });
 
-  /* Every item still travelling, because an order's own position indexes
-     into the lot's ladder and a position left pointing at the old one is a
-     buyer reading a step that is no longer on their timeline. One already
-     delivered keeps where it ended. */
-  const orders = (await repository.listOrdersForLot(lot.id))
-    .filter((order) => !isCancelledLike(order.status) && order.status !== 'delivered');
-  await Promise.all(orders.map((order) => {
-    /* An item that rides its lot keeps riding it: no position of its own is
-       invented for it, or it would stop following the lot (and, on a lot
-       still filling, read as received before it was). One the seller placed
-       keeps that step when the step survived the edit, and otherwise joins
-       the lot - or, on a lot still filling, its own buttons. */
-    const placed = order.currentStep;
-    const kept = typeof placed === 'number' && updatedRoute
-      ? next.steps.findIndex((step) => step.id === before.steps[placed]?.id)
-      : -1;
-    const itemAt = typeof placed !== 'number'
-      ? undefined
-      : kept >= 0 ? kept : at >= lotOffset(next) ? at : undefined;
-    return repository.updateOrder({
-      ...order,
-      stage: itemAt === undefined || itemAt === at ? stage : coarseStage(next, itemAt),
-      currentStep: itemAt,
-      stageHistory: quiet ? order.stageHistory : [...order.stageHistory, event],
-      updatedAt: now,
-    });
-  }));
+  /* An item following its lot reads the new ladder off the lot. Only one the
+     seller placed on its own needs writing, because its position indexes into
+     the old ladder: it keeps that step when the step survived the edit, and
+     otherwise joins the lot - or, on a lot still filling, its own buttons. A
+     delivered one keeps where it ended. */
+  await mapLimit(
+    orders.filter((order) => !followsItsLot(order) && typeof order.currentStep === 'number'),
+    8,
+    (order) => {
+      const placed = order.currentStep!;
+      const kept = updatedRoute ? next.steps.findIndex((step) => step.id === before.steps[placed]?.id) : -1;
+      const itemAt = kept >= 0 ? kept : at >= lotOffset(next) ? at : undefined;
+      return repository.updateOrder({
+        ...order,
+        stage: itemAt === undefined || itemAt === at ? stage : coarseStage(next, itemAt),
+        currentStep: itemAt,
+        // Placed against the new ladder now, so the lot's move here does not
+        // take it back off that place.
+        positionSeq: updated.seq,
+        updatedAt: now,
+      });
+    },
+  );
 
   if (!quiet) await notifyBuyers(repository, orders, ({ items, shop }) => ({
     kind: 'lot_moved',
@@ -813,22 +793,17 @@ async function noteOnLot(request: HttpRequest, _context: InvocationContext) {
   };
 
   const repository = await getRepository();
-  // The lot's own history and every item's, because the item's history is what
-  // the buyer reads and a note only the seller can see is not a note.
+  // Lot news, so every item's timeline reads it off the lot: the item's
+  // history is what the buyer reads, and a note only the seller can see is
+  // not a note. One write, however many items.
   const updated = await repository.updateLot({
     ...lot,
-    stageHistory: [...lot.stageHistory, event],
+    ...tellLot(lot, event),
     updatedAt: now,
   });
 
   const orders = (await repository.listOrdersForLot(lot.id))
     .filter((order) => !isCancelledLike(order.status));
-  await Promise.all(orders.map((order) =>
-    repository.updateOrder({
-      ...order,
-      stageHistory: [...order.stageHistory, event],
-      updatedAt: now,
-    })));
 
   await notifyBuyers(repository, orders, ({ items, shop }) => ({
     kind: 'lot_moved',
@@ -997,36 +972,40 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
   // delivered here too, and not only on its own page.
   const orders = (await settleAll(await repository.listOrdersForBuyer(user.id), repository))
     .filter((order) => !isCancelledLike(order.status));
-  const collected = new Set(
-    ((await repository.getUserById(user.id))?.collection ?? []).map((item) => item.orderId),
-  );
-
   // One read per lot rather than one per item: three items in one lot are
   // one journey, and asking three times would be three chances to disagree.
-  const lots = new Map<string, Lot | null>();
-  /** How many people are in each lot, this buyer included: a box is shared. */
-  const peopleIn = new Map<string, number>();
-  for (const order of orders) {
-    if (!inLot(order) || lots.has(order.lotId)) continue;
-    lots.set(order.lotId, await repository.getLot(order.sellerId, order.lotId));
-    try {
-      const everyone = (await repository.listOrdersForLot(order.lotId))
-        .filter((row) => !isCancelledLike(row.status));
-      peopleIn.set(order.lotId, new Set(everyone.map((row) => row.buyerId)).size);
-    } catch {
-      peopleIn.set(order.lotId, 1);
-    }
-  }
+  // Lots, their head-counts and the listings are read side by side, a few at
+  // a time, rather than one after another.
+  const lotOrders = new Map<string, Order>();
+  for (const order of orders) if (inLot(order) && !lotOrders.has(order.lotId)) lotOrders.set(order.lotId, order);
+  const listingIds = [...new Set(orders.map((order) => order.listingId))];
+  const [owner, lotRows, listingRows] = await Promise.all([
+    repository.getUserById(user.id),
+    mapLimit([...lotOrders.values()], 6, async (order) => {
+      const [lot, people] = await Promise.all([
+        repository.getLot(order.sellerId, order.lotId),
+        /** How many people are in each lot, this buyer included: a box is shared. */
+        repository.listOrdersForLot(order.lotId)
+          .then((everyone) => new Set(everyone.filter((row) => !isCancelledLike(row.status)).map((row) => row.buyerId)).size)
+          .catch(() => 1),
+      ]);
+      return { lotId: order.lotId, lot, people };
+    }),
+    mapLimit(listingIds, 8, (id) => repository.getListing(id)),
+  ]);
+  const collected = new Set((owner?.collection ?? []).map((item) => item.orderId));
+  const lots = new Map<string, Lot | null>(lotRows.map((row) => [row.lotId, row.lot]));
+  const peopleIn = new Map<string, number>(lotRows.map((row) => [row.lotId, row.people]));
 
   // Photos for the purchase cards, one read per item bought.
   const photoOf = new Map<string, string | null>();
   const listingOf = new Map<string, Listing | null>();
-  for (const listingId of new Set(orders.map((order) => order.listingId))) {
-    const listing = await repository.getListing(listingId);
+  listingIds.forEach((listingId, index) => {
+    const listing = listingRows[index] ?? null;
     listingOf.set(listingId, listing);
     const lead = listing?.photos.find((photo) => photo.isPrimary) ?? listing?.photos[0];
     photoOf.set(listingId, lead?.url || null);
-  }
+  });
 
   // The cart reads at today's price and says what can no longer be had: a
   // seller may have repriced, sold out or withdrawn an item since Buy.

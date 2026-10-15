@@ -1,5 +1,6 @@
 import { moderationIndex, type ContentReport } from '../../shared/moderation.js';
 import type { getRepository } from './data/index.js';
+import { DOC_BUDGET_BYTES, sizeOf } from './site-log.js';
 
 /**
  * Where content reports are kept: one site-content document, like the Learn
@@ -33,6 +34,22 @@ export async function saveReports(repository: Repo, reports: ContentReport[], by
       .filter((report) => report.status === 'kept' || report.status === 'declined')
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const drop = new Set(disposable.slice(0, kept.length - KEEP).map((report) => report.id));
+    kept = kept.filter((report) => !drop.has(report.id));
+  }
+  // The count alone does not bound the document: long report notes could
+  // still push it toward Cosmos's 2 MB item limit. The same disposable ones go
+  // first, oldest first, until it fits.
+  if (sizeOf(kept) > DOC_BUDGET_BYTES) {
+    const disposable = kept
+      .filter((report) => report.status === 'kept' || report.status === 'declined')
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const drop = new Set<string>();
+    let size = sizeOf(kept);
+    for (const report of disposable) {
+      if (size <= DOC_BUDGET_BYTES) break;
+      drop.add(report.id);
+      size -= sizeOf(report) + 1;
+    }
     kept = kept.filter((report) => !drop.has(report.id));
   }
   const now = new Date().toISOString();

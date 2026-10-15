@@ -68,6 +68,23 @@ function fakeContainer(store) {
             if (/^SELECT VALUE c\.id\b/i.test(query)) {
               return { resources: [...store.keys()] };
             }
+            const params = Object.fromEntries((spec.parameters ?? []).map((entry) => [entry.name, entry.value]));
+            // A range of ids, as the logs kept in site content are read.
+            if (/WHERE c\.id >= @from AND c\.id < @to$/.test(query)) {
+              return { resources: [...store.values()].filter((doc) => doc.id >= params['@from'] && doc.id < params['@to']) };
+            }
+            // `SELECT c.id, c.<key> AS pk[, c.<field> AS ref] FROM c [WHERE c.withdrawn = true]`
+            const projected = query.match(/^SELECT c\.id, c\.(\w+) AS pk(?:, c\.(\w+) AS ref)? FROM c( WHERE c\.withdrawn = true)?$/);
+            if (projected) {
+              const [, pk, ref, withdrawnOnly] = projected;
+              return {
+                resources: [...store.values()]
+                  .filter((doc) => !withdrawnOnly || doc.withdrawn === true)
+                  .map((doc) => ({ id: doc.id, pk: doc[pk], ...(ref ? { ref: doc[ref] } : {}) })),
+              };
+            }
+            // The legacy-parts projection: nothing in these fixtures is inline.
+            if (/AS legacy FROM c$/.test(query)) return { resources: [...store.values()].map((doc) => ({ id: doc.id, legacy: false })) };
             return { resources: [...store.values()] };
           },
         };
@@ -81,10 +98,18 @@ function fakeContainer(store) {
           if (!resource) throw { code: 404 };
           return { resource };
         },
+        async delete() {
+          calls.writes += 1;
+          if (!store.delete(id)) throw { code: 404 };
+          return {};
+        },
       };
     },
   };
 }
+
+/** Each fake container's definition, as the policy pass would find it. */
+const policies = new Map();
 
 /** A repository wired to fake containers, with control over whether it connects. */
 function repositoryOn(containers, { reachable = true } = {}) {
@@ -113,9 +138,22 @@ function repositoryOn(containers, { reachable = true } = {}) {
       }),
       async createIfNotExists(body) {
         containers.set(body.id, new Map());
+        policies.set(body.id, body);
         return { statusCode: 201 };
       },
     },
+    // Container metadata, as the policy pass reads and replaces it.
+    container: (id) => ({
+      async read() {
+        calls.reads += 1;
+        return { resource: policies.get(id) ?? { id, partitionKey: { paths: ['/id'] }, indexingPolicy: {} } };
+      },
+      async replace(body) {
+        calls.writes += 1;
+        policies.set(id, body);
+        return { resource: body };
+      },
+    }),
   };
   repository.client = { database: () => database };
   // Every container access goes through container(), which this shadows.
@@ -504,6 +542,58 @@ await check('a database of real accounts is never topped up with fixtures', asyn
   assert.equal(real.get('users').size, 1, 'nothing was added');
   assert.equal(real.get('listings').size, 0);
   assert.equal(/Added \d+ fixture record/.test(repository.status().detail), false);
+});
+
+console.log('\na database from before the space savings');
+
+await check('leftovers are removed once, and existing containers take the new policy', async () => {
+  const containers = provisioned();
+  const seeded = repositoryOn(containers);
+  await seeded.init();
+  await seeded.settled();
+
+  // What an older release left: a taken-back notice kept with a flag, a
+  // notice and a save belonging to an account deleted without them, audit
+  // days with no expiry, and containers created before TTL and exclusions.
+  const site = containers.get('siteContent');
+  site.delete('migration:storage-cleanup');
+  site.delete('migration:container-policies');
+  const notifications = containers.get('notifications');
+  const at = new Date().toISOString();
+  notifications.set('ntf_withdrawn', { id: 'ntf_withdrawn', userId: 'usr_demo', withdrawn: true, createdAt: at });
+  notifications.set('ntf_kept', { id: 'ntf_kept', userId: 'usr_demo', createdAt: at });
+  notifications.set('ntf_orphan', { id: 'ntf_orphan', userId: 'usr_deleted', createdAt: at });
+  const listingId = [...containers.get('listings').keys()][0];
+  containers.get('likes').set('usr_deleted__x', { id: 'usr_deleted__x', userId: 'usr_deleted', listingId });
+  containers.get('comments').set('cmt_orphan', { id: 'cmt_orphan', listingId: 'lst_deleted', body: 'hello' });
+  const old = new Date(Date.now() - 120 * 86_400_000).toISOString();
+  site.set('audit-2000-01-01', { id: 'audit-2000-01-01', data: { entries: [] }, createdAt: old, updatedAt: old });
+  site.set('audit-recent', { id: 'audit-recent', data: { entries: [] }, createdAt: at, updatedAt: at });
+  policies.set('notifications', { id: 'notifications', partitionKey: { paths: ['/userId'] }, indexingPolicy: {} });
+
+  const restarted = repositoryOn(containers);
+  await restarted.init();
+  await restarted.settled();
+
+  assert.ok(!notifications.has('ntf_withdrawn'), 'a taken-back notice is deleted');
+  assert.ok(!notifications.has('ntf_orphan'), "a deleted account's notice is deleted");
+  assert.ok(notifications.has('ntf_kept'), 'an ordinary notice stays');
+  assert.ok(!containers.get('likes').has('usr_deleted__x'));
+  assert.ok(!containers.get('comments').has('cmt_orphan'));
+  assert.ok(!site.has('audit-2000-01-01'), 'an audit day past its 90 is deleted');
+  assert.ok(site.get('audit-recent').ttl > 89 * 86_400, 'a recent one is given its expiry');
+  const notificationsPolicy = policies.get('notifications');
+  assert.equal(notificationsPolicy.defaultTtl, 90 * 86_400, 'notifications now expire');
+  assert.ok(notificationsPolicy.indexingPolicy.excludedPaths.some((entry) => entry.path === '/body/?'));
+  assert.deepEqual(notificationsPolicy.partitionKey, { paths: ['/userId'] }, 'the partition key is kept');
+  assert.match(restarted.status().detail, /Removed .*withdrawn notice/);
+
+  // Once, and never again.
+  resetCalls();
+  const again = repositoryOn(containers);
+  await again.init();
+  await again.settled();
+  assert.equal(calls.writes, 0, `nothing left to do, but wrote ${calls.writes} times`);
 });
 
 console.log('\na database provisioned before a container existed');

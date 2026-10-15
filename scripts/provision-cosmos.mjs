@@ -16,8 +16,11 @@
  * comes from shared/containers.ts, so this script and the repository can never
  * disagree about a partition key.
  *
- * Note: unique key policies can only be set when a container is created. If a
- * container already exists, its unique keys are left as they are.
+ * A container that already exists has its indexing and expiry (TTL) policy
+ * brought in line with the schema; Cosmos re-indexes in the background. Unique
+ * key policies can only be set when a container is created, so an existing
+ * container's unique keys are left as they are. The API applies the same
+ * policies itself on start-up when its identity is allowed to.
  */
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -88,12 +91,28 @@ console.log(
 for (const definition of CONTAINER_LIST) {
   // The same body the API builds when it finds a container missing, so running
   // this script and letting the API heal itself produce the same container.
-  const result = await database.containers.createIfNotExists(containerBody(definition));
-  console.log(
-    `  container ${definition.name.padEnd(10)} ${
-      result.statusCode === 201 ? 'created' : 'already existed'
-    }  pk=${definition.partitionKeyPath}`,
-  );
+  const body = containerBody(definition);
+  const result = await database.containers.createIfNotExists(body);
+  let state = result.statusCode === 201 ? 'created' : 'already existed';
+  if (result.statusCode !== 201) {
+    const { resource } = await result.container.read();
+    const shape = (policy, ttl) => JSON.stringify({
+      excluded: (policy?.excludedPaths ?? []).map((entry) => entry.path).sort(),
+      composite: (policy?.compositeIndexes ?? []).map((index) => index.map((entry) => `${entry.path} ${entry.order ?? 'ascending'}`).join(',')).sort(),
+      ttl: ttl ?? null,
+    });
+    if (shape(resource.indexingPolicy, resource.defaultTtl) !== shape(body.indexingPolicy, body.defaultTtl)) {
+      await result.container.replace({
+        id: resource.id,
+        partitionKey: resource.partitionKey,
+        ...(resource.uniqueKeyPolicy ? { uniqueKeyPolicy: resource.uniqueKeyPolicy } : {}),
+        indexingPolicy: body.indexingPolicy,
+        ...(body.defaultTtl !== undefined ? { defaultTtl: body.defaultTtl } : {}),
+      });
+      state = 'policy updated';
+    }
+  }
+  console.log(`  container ${definition.name.padEnd(10)} ${state}  pk=${definition.partitionKeyPath}`);
 }
 
 /* Blob containers ---------------------------------------------------------- */

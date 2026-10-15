@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { tagKey } from '@shared/shop-tags';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
 import { CATEGORIES } from '@shared/catalog';
@@ -7,20 +8,22 @@ import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
-import { LotName } from '../components/LotName';
 import { PhotoManager } from '../components/PhotoManager';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
-import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
 import { AdvanceStrip, DealClock, TermsFields, termsBody, termsDraft } from '../components/Buy';
 import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
-  LBox, OptionTiles, PreOrderBox, SHAPE_OPTIONS, Switch, ToggleRow, isoInDays, type Shape,
+  LBox, OptionTiles, PreOrderBox, ToggleRow, isoInDays, type Shape,
 } from '../components/ListingForm';
 import { RarityRibbon } from '../components/Quest';
 import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
 import { useGoBack } from '../components/ScrollManager';
+import { lotLabel } from '../components/LotName';
+import { NewLotForm } from './LotsPage';
+import { SetupChecklist } from './VerifyPage';
 
 /**
  * The template this browser used last.
@@ -79,7 +82,7 @@ type SellDraft = {
   title: string; description: string; category: string; condition: string; price: string;
   costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>;
   shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; preOrderDays: string;
-  tags: string; calc: SavedCalc | null; quickPost: boolean; templateId: string; photos: PhotoDraft[];
+  tags: string; calc: SavedCalc | null; templateId: string; photos: PhotoDraft[];
   preLot: RouteStep[] | null; shape: Shape; lotId: string;
   /** The listing already made from this form, when only the step after it failed. */
   createdListingId?: string | null;
@@ -126,10 +129,49 @@ function pruneDrafts(current: string) {
 function clearDraft(key: string) {
   try {
     sessionStorage.removeItem(key);
+    localStorage.removeItem(PENDING_KEY);
   } catch {
     /* Nothing kept, nothing to clear. */
   }
 }
+
+/**
+ * A listing filled in before its seller was verified.
+ *
+ * Kept in this browser rather than this visit, because verifying is a trip
+ * out to WhatsApp and an Aadhaar QR that can take a day: the form should be
+ * waiting, as it was left, whenever they come back to publish it.
+ */
+const PENDING_KEY = 'figmark:sell-draft:pending';
+
+function readPending(): SellDraft | null {
+  try {
+    return JSON.parse(localStorage.getItem(PENDING_KEY) ?? 'null') as SellDraft | null;
+  } catch {
+    return null;
+  }
+}
+
+function writePending(draft: SellDraft) {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify({ ...draft, savedAt: Date.now() }));
+  } catch {
+    /* A private window: nothing outlives the visit. */
+  }
+}
+
+/** Where the item is, which decides whether it travels in a lot at all. */
+const WHERE_OPTIONS: { id: 'in_hand' | 'import'; icon: string; title: string; note: string }[] = [
+  { id: 'in_hand', icon: '🏠', title: 'In hand', note: 'On your shelf, ready to ship' },
+  { id: 'import', icon: '✈️', title: 'Importing', note: 'Coming in from abroad' },
+];
+
+/** The lot picker's own choices, beside the lots themselves. */
+const LOT_LATER = '';
+const LOT_NEW = '__new';
+
+/** Comma-typed tags as a list. */
+const splitTags = (text: string) => text.split(',').map((tag) => tag.trim()).filter(Boolean);
 
 export function SellPage() {
   const { user } = useSession();
@@ -159,7 +201,14 @@ export function SellPage() {
   // calculator and coming back finds the form exactly as it was left.
   const location = useLocation();
   const draftKey = `${DRAFT_KEY}:${location.key}`;
-  const [restored] = useState(() => readDraft(draftKey));
+  // This visit's draft; failing that, one saved while waiting on verification -
+  // unless this visit came with something of its own to list.
+  const [restored] = useState(() => {
+    const visit = readDraft(draftKey);
+    const pending = location.state ? null : readPending();
+    // A fresh page load reuses the same visit key, so the newer of the two wins.
+    return (pending?.savedAt ?? 0) > (visit?.savedAt ?? 0) ? pending : visit ?? pending;
+  });
 
   const [title, setTitle] = useState(restored?.title ?? prefill?.title ?? '');
   const [description, setDescription] = useState(restored?.description ?? prefill?.description ?? '');
@@ -185,19 +234,22 @@ export function SellPage() {
   const [calc, setCalc] = useState<SavedCalc | null>(restored?.calc ?? prefill?.calc ?? null);
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
 
-  /* Quick Post is on by default and remembers the last template used, because
-     a shop lists forty of the same kind of thing a month and typing the same
-     category, tags and two lines each time is how a listing screen becomes a
-     chore. Everything it fills in stays editable. */
-  // Off when the form starts from an existing item: that item is the template.
-  const [quickPost, setQuickPost] = useState(restored?.quickPost ?? !prefill?.fromItem);
+  /* Quick Fill starts on the last template used, because a shop lists forty of
+     the same kind of thing a month and typing the same category, tags and two
+     lines each time is how a listing screen becomes a chore. Everything it
+     fills in stays editable, and "None" lets it go. */
   const [templates, setTemplates] = useState<PostTemplate[]>([]);
-  const [templateId, setTemplateId] = useState<string>(() => restored?.templateId ?? lastTemplate() ?? '');
+  // None when the form starts from an existing item: that item is the template.
+  const [templateId, setTemplateId] = useState<string>(() => restored?.templateId ?? (prefill?.fromItem ? '' : lastTemplate() ?? ''));
   const [photos, setPhotos] = useState<PhotoDraft[]>(restored?.photos ?? prefill?.photos ?? []);
   const [preLot, setPreLot] = useState<RouteStep[] | null>(restored?.preLot ?? null);
   const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
   const [lots, setLots] = useState<LotSummary[]>([]);
   const [lotId, setLotId] = useState(restored?.lotId ?? '');
+  /** The new-lot form, open over this one. */
+  const [openingLot, setOpeningLot] = useState(false);
+  /** Everything past the basics, folded until asked for. */
+  const [more, setMore] = useState(() => Boolean(restored?.preOrderMode || prefill?.costSheet || prefill?.quantity));
   /* The listing this form already made, when publishing got that far and the
      private-deal message after it did not. Publishing again then only retries
      the message, rather than making a second copy of the item. */
@@ -214,7 +266,7 @@ export function SellPage() {
   const published = useRef(false);
   latest.current = {
     title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, preOrderDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    preOrderMode, fillThreshold, preOrderDays, tags, calc, templateId, photos, preLot, shape, lotId,
     createdListingId,
   };
   useEffect(() => {
@@ -223,7 +275,7 @@ export function SellPage() {
     }, 400);
     return () => window.clearTimeout(timer);
   }, [draftKey, title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, preOrderDays, tags, calc, quickPost, templateId, photos, preLot, shape, lotId,
+    preOrderMode, fillThreshold, preOrderDays, tags, calc, templateId, photos, preLot, shape, lotId,
     createdListingId]);
   useEffect(() => () => {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
@@ -232,6 +284,16 @@ export function SellPage() {
   useEffect(() => {
     void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
   }, [storeId]);
+
+  /** The tags this shop is known for, offered while listing. */
+  const [shopTags, setShopTags] = useState<string[]>([]);
+  const shopId = storeId ?? user?.id;
+  useEffect(() => {
+    if (!shopId) return;
+    void api.shopTags(shopId).then((result) => setShopTags(result.tags)).catch(() => setShopTags([]));
+  }, [shopId]);
+  const typedTags = new Set(splitTags(tags).map(tagKey));
+  const tagIdeas = shopTags.filter((tag) => !typedTags.has(tagKey(tag))).slice(0, 6);
 
   /** Fill the form from a saved calculation: its name, price and costs. */
   function fillFromSaved(id: string) {
@@ -251,9 +313,7 @@ export function SellPage() {
       .myLots()
       .then((result) => {
         if (cancelled) return;
-        const open = result.lots.filter((entry) => entry.lot.status === 'open');
-        setLots(open);
-        setLotId((current) => current || (open[0]?.lot.id ?? ''));
+        setLots(result.lots.filter((entry) => entry.lot.status === 'open'));
       })
       .catch(() => undefined);
     return () => {
@@ -333,6 +393,50 @@ export function SellPage() {
   // The lot is the answer: in one means import, out of one means in hand.
   const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
   const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;
+  /** Quick Fill is on while a template is picked; its lot steps only travel then. */
+  const quickFill = Boolean(chosenTemplate);
+  const verified = Boolean(user?.capabilities.canSell);
+
+  /** Where it is, as one answer: the lot picker under "Importing" says the rest. */
+  const where: 'in_hand' | 'import' = shape === 'single' ? 'in_hand' : 'import';
+  function pickWhere(next: 'in_hand' | 'import') {
+    if (next === 'in_hand') setShape('single');
+    else setShape(lotId && lots.some((entry) => entry.lot.id === lotId) ? 'lot' : 'waiting');
+  }
+  function pickLot(value: string) {
+    if (value === LOT_NEW) { setOpeningLot(true); return; }
+    setLotId(value);
+    setShape(value === LOT_LATER ? 'waiting' : 'lot');
+  }
+
+  /** What is switched on under "More options", said on the fold. */
+  function moreSummary(): string[] {
+    const preOrdering = preOrderMode && !deal;
+    return [
+      preOrdering ? `Pre-order · ${fillThreshold || 2} bookings` : null,
+      !preOrdering ? (terms.quantityMode === 'multiple' ? 'No fixed count' : `${Number(terms.quantity) || 0} in stock`) : null,
+      terms.advance ? `${Number(terms.advancePercent) || 20}% advance` : null,
+      terms.limited && !deal ? `Ends in ${terms.days} days` : null,
+      terms.affiliate && !deal ? 'Affiliate commission' : null,
+      !deal ? (shareToChannel || shareToFeed
+        ? `Posts to ${[shareToChannel && 'channel', shareToFeed && 'feed'].filter(Boolean).join(' & ')}`
+        : 'Not announced') : null,
+      costSheet ? 'Cost sheet' : null,
+    ].filter((text): text is string => Boolean(text));
+  }
+
+  /** Not yet verified: keep the form for later, and go and verify. */
+  function saveForLater() {
+    if (latest.current) writePending(latest.current);
+    // Kept for later now, so this visit's own copy has nothing left to do.
+    try {
+      sessionStorage.removeItem(draftKey);
+    } catch {
+      /* Nothing kept. */
+    }
+    published.current = true;
+    navigate('/verify');
+  }
 
   const closesAt = isoInDays(preOrderDays || 14);
 
@@ -373,7 +477,7 @@ export function SellPage() {
             }
           : null,
         sourcing: effectiveSourcing,
-        lotId: shape === 'lot' ? lotId : null,
+        lotId: shape === 'lot' && lotId ? lotId : null,
         ...(storeId ? { storeId } : {}),
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
         photos: photos.map((photo) => ({
@@ -381,15 +485,15 @@ export function SellPage() {
           url: photo.url,
           isPrimary: photo.isPrimary,
         })),
-        ...(quickPost && preLot
+        ...(quickFill && preLot
           ? { preLotSteps: preLot.map((step) => ({ name: step.name, description: step.description })) }
           : {}),
-        ...(quickPost && chosenTemplate?.lotRouteId ? { lotRouteId: chosenTemplate.lotRouteId } : {}),
+        ...(quickFill && chosenTemplate?.lotRouteId ? { lotRouteId: chosenTemplate.lotRouteId } : {}),
       })).listing.id;
       if (!createdListingId) {
         setCreatedListingId(listingId);
         // Remembered for the next item, which is the point of a template.
-        if (quickPost && templateId) rememberTemplate(templateId);
+        if (quickFill) rememberTemplate(templateId);
         if (calc) {
           await api.saveCalc({ ...calc, listingId }, storeId).catch(() => undefined);
         }
@@ -430,6 +534,7 @@ export function SellPage() {
             <p className="muted">Every item is listed from a storefront.</p>
           </div>
         </div>
+        <SetupChecklist hasStore={false} onOpenStore={() => navigate('/shop')} />
         <EmptyState title="You need a storefront first">
           It takes a minute: a username, a name buyers follow, and a line about what you sell. Everything
           you list afterwards goes out under it.
@@ -462,50 +567,62 @@ export function SellPage() {
         </div>
       </div>
 
-      {/* Listing is closed until the account is verified; say so before the form is filled in. */}
-      {user && !user.capabilities.canSell && (
-        <p className="notice notice--warn" style={{ marginBottom: 20 }}>
-          To list, verify your email, your WhatsApp number and your Aadhaar first - your Aadhaar-linked mobile must be
-          the same number as your WhatsApp. <Link to="/verify">Verify now</Link>
+      {/* Listing is closed until the account is verified. Say so before the
+          form is filled in - and let it be filled in anyway, kept as a draft. */}
+      {user && !verified && (
+        <p className="notice notice--info" style={{ marginBottom: 20 }}>
+          You can fill this in now - it is kept as a draft in this browser. It goes live once your email, WhatsApp
+          and Aadhaar are verified. <Link to="/verify">Verify now</Link>
         </p>
       )}
 
       <div className="sellgrid">
         <form className="sellform" onSubmit={publish}>
-          {/* First, because it fills in most of what is below it. On by
-              default and remembering the last one used: a template nobody has
-              to go and switch on is a template that gets used. */}
-          <LBox icon="⚡" title="Quick Post" hint="Fill this in from a template."
-            right={<Switch checked={quickPost} onChange={setQuickPost} label="Quick Post" />}>
-            {quickPost && (templates.length === 0 ? (
-              <span className="lbox__hint">
-                No templates yet — make one in <Link to="/shop?tab=items">Items → Quick Fill</Link>.
-              </span>
-            ) : (
-              <select value={templateId} aria-label="Template" onChange={(e) => {
-                setTemplateId(e.target.value);
-                const picked = templates.find((row) => row.id === e.target.value);
-                if (picked) applyTemplate(picked);
-              }}>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>{template.name}</option>
-                ))}
-              </select>
-            ))}
-            {calcs.length > 0 && (
-              <select value={calc?.id ?? ''} aria-label="From your saved items" onChange={(e) => fillFromSaved(e.target.value)}>
-                <option value="">🧮 Fill from a saved calculation…</option>
-                {calcs.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.title} · {formatMoney(entry.sellingPriceMinor)}{entry.listingId ? ' (listed)' : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-          </LBox>
+          {/* Quick Fill first, because it fills in most of what is below it,
+              and already on the last template used. A row of names to tap
+              rather than a switch and a dropdown: one tap, and "None" to let
+              it go. */}
+          {verified && (templates.length > 0 || calcs.length > 0) && (
+            <LBox icon="⚡" title="Quick Fill" hint="Start from a template - everything stays editable.">
+              {templates.length > 0 && (
+                <div className="qfill" role="radiogroup" aria-label="Quick Fill template">
+                  {templates.map((template) => (
+                    <button key={template.id} type="button" role="radio" aria-checked={templateId === template.id}
+                      className={`qfill__chip${templateId === template.id ? ' is-on' : ''}`}
+                      onClick={() => { setTemplateId(template.id); applyTemplate(template); }}>
+                      {template.name}
+                    </button>
+                  ))}
+                  <button type="button" role="radio" aria-checked={!quickFill}
+                    className={`qfill__chip qfill__chip--none${quickFill ? '' : ' is-on'}`}
+                    onClick={() => { setTemplateId(''); setPreLot(null); }}>
+                    None
+                  </button>
+                </div>
+              )}
+              {calcs.length > 0 && (
+                <select value={calc?.id ?? ''} aria-label="From your saved items" onChange={(e) => fillFromSaved(e.target.value)}>
+                  <option value="">🧮 Fill from a saved calculation…</option>
+                  {calcs.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.title} · {formatMoney(entry.sellingPriceMinor)}{entry.listingId ? ' (listed)' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </LBox>
+          )}
+          {verified && templates.length === 0 && calcs.length === 0 && (
+            <span className="lbox__hint">
+              ⚡ Listing the same kind of thing often? Save a Quick Fill template in{' '}
+              <Link to="/shop?tab=items">Listings → Quick Fill</Link>.
+            </span>
+          )}
 
-          <LBox icon="📸" title="Photos" hint="The first one leads the listing.">
-            <PhotoManager photos={photos} onChange={setPhotos} label={null} />
+          <LBox icon="📸" title="Photos" hint={verified ? 'The first one leads the listing.' : undefined}>
+            {verified
+              ? <PhotoManager photos={photos} onChange={setPhotos} label={null} />
+              : <span className="lbox__hint">Add photos once you are verified - the rest of the draft is kept.</span>}
           </LBox>
 
           <LBox icon="🏷️" title="The item">
@@ -514,6 +631,19 @@ export function SellPage() {
               <input value={title} onChange={(e) => setTitle(e.target.value)}
                 placeholder="1/7 scale figure, sealed" required />
             </label>
+            <div className="field-row">
+              <label className="field">
+                <span>Price (₹)</span>
+                <input type="number" min="1" step="1" value={price} inputMode="numeric"
+                  onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
+              </label>
+              <label className="field">
+                <span>Condition</span>
+                <select value={condition} onChange={(e) => setCondition(e.target.value)}>
+                  {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+                </select>
+              </label>
+            </div>
             <label className="field">
               <span>Description</span>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
@@ -526,80 +656,104 @@ export function SellPage() {
                   {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
                 </select>
               </label>
-              <label className="field">
-                <span>Condition</span>
-                <select value={condition} onChange={(e) => setCondition(e.target.value)}>
-                  {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="field-row">
-              <label className="field">
-                <span>Price (₹)</span>
-                <input type="number" min="1" step="1" value={price} inputMode="numeric"
-                  onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
-              </label>
-              <label className="field">
-                <span>Tags</span>
-                <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, sealed" />
-              </label>
+              <div className="field">
+                <label htmlFor="sell-tags">Tags</label>
+                <input id="sell-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, sealed" />
+                {/* The shop's own tags, one tap each: listings and shop speak the same words. */}
+                {tagIdeas.length > 0 && (
+                  <div className="taginput__ideas">
+                    {tagIdeas.map((idea) => (
+                      <button key={idea} type="button" className="taginput__idea"
+                        onClick={() => setTags((now) => [...splitTags(now), idea].join(', '))}>+ {idea}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </LBox>
 
-          <LBox icon="🚚" title="Ships from">
-            <OptionTiles label="How are you selling this?" value={shape} onChange={setShape} options={SHAPE_OPTIONS} />
-            {shape === 'lot' && (
-              <div className="lotpick" role="radiogroup" aria-label="Lot">
-                {lots.map(({ lot, orderCount }) => (
-                  <button key={lot.id} type="button" role="radio" aria-checked={lotId === lot.id}
-                    className={`lotpick__row${lotId === lot.id ? ' is-on' : ''}`} onClick={() => setLotId(lot.id)}>
-                    <b><LotName name={lot.name} number={lot.lotNumber} /></b>
-                    <span className="lotpick__meta">
-                      {[lot.originCountry && lot.destinationCountry ? `${lot.originCountry} → ${lot.destinationCountry}` : lot.origin,
+          {/* One question - where is it? - and the lot only for an import,
+              as a choice with "later" first: filing it is bookkeeping the
+              shop often does weeks after the item goes up. */}
+          <LBox icon="🚚" title="Where is it?">
+            <OptionTiles label="Where is it?" value={where} onChange={pickWhere} options={WHERE_OPTIONS} />
+            {where === 'import' && (
+              <label className="field">
+                <span>Lot</span>
+                <select value={shape === 'lot' ? lotId : LOT_LATER} onChange={(e) => pickLot(e.target.value)}>
+                  <option value={LOT_LATER}>Add to a lot later</option>
+                  {lots.map(({ lot, orderCount }) => (
+                    <option key={lot.id} value={lot.id}>
+                      {[lotLabel(lot),
+                        lot.originCountry && lot.destinationCountry ? `${lot.originCountry} → ${lot.destinationCountry}` : lot.origin,
                         lotWhere(lot),
                         lot.estimatedDispatchAt ? `ships ${formatDate(lot.estimatedDispatchAt)}` : null,
                         `${orderCount} order${orderCount === 1 ? '' : 's'}`,
                       ].filter(Boolean).join(' · ')}
-                    </span>
-                  </button>
-                ))}
-                {/* A lot has a route, a forwarder and costs - too much for a
-                    box here, so this points at the real "New lot" button. The
-                    draft is kept, so coming back finds the form as it was. */}
-                <Link to="/shop?tab=lots&spotlight=new" className="lotpick__new">
-                  + New lot <span aria-hidden="true">→</span> <small>opens Lots, draft kept</small>
-                </Link>
-              </div>
+                    </option>
+                  ))}
+                  {verified && <option value={LOT_NEW}>+ Open a new lot…</option>}
+                </select>
+                <span className="field__hint">
+                  {shape === 'lot'
+                    ? 'Buyers follow this lot’s tracking from the day they order.'
+                    : 'Buyers see it as an import; file it into a lot whenever the shipment is packed.'}
+                </span>
+              </label>
             )}
           </LBox>
 
-          {!deal && (
-            <PreOrderBox on={preOrderMode} onToggle={setPreOrderMode}
-              units={fillThreshold} onUnits={setFillThreshold}
-              closes={preOrderDays} onCloses={setPreOrderDays} />
-          )}
-
-          <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} />
           {deal && <DealClock hours={dealHours} onChange={setDealHours} />}
 
-          {/* Telling people is part of listing, not a second job to remember
-              afterwards. Both on unless the seller says otherwise. */}
-          {!deal && (
-            <LBox icon="📣" title="Tell people">
-              <ToggleRow icon="💬" title="Post in your channel" hint="Your followers see it in the room."
-                checked={shareToChannel} onChange={setShareToChannel} />
-              <ToggleRow icon="🌐" title="Post in the feed" hint="Everyone who follows you sees it."
-                checked={shareToFeed} onChange={setShareToFeed} />
-            </LBox>
-          )}
+          {/* Everything a first listing can do without: folded, with what is
+              switched on said on the fold so nothing set is hidden. */}
+          <button type="button" className="disclose sellmore" aria-expanded={more} onClick={() => setMore(!more)}>
+            <Icon name={more ? 'down' : 'right'} size={14} />
+            <span>More options</span>
+            <span className="sellmore__chips">
+              {moreSummary().map((text) => <span key={text} className="sellmore__chip">{text}</span>)}
+            </span>
+          </button>
 
-          <CostSheetField value={costSheet} onChange={setCostSheet} sellingPriceMinor={priceMinor} shop={storeId} />
+          {more && (
+            <>
+              {!deal && (
+                <PreOrderBox on={preOrderMode} onToggle={setPreOrderMode}
+                  units={fillThreshold} onUnits={setFillThreshold}
+                  closes={preOrderDays} onCloses={setPreOrderDays} />
+              )}
+
+              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} />
+
+              {/* Telling people is part of listing, not a second job to remember
+                  afterwards. Both on unless the seller says otherwise. */}
+              {!deal && (
+                <LBox icon="📣" title="Tell people">
+                  <ToggleRow icon="💬" title="Post in your channel" hint="Your followers see it in the room."
+                    checked={shareToChannel} onChange={setShareToChannel} />
+                  <ToggleRow icon="🌐" title="Post in the feed" hint="Everyone who follows you sees it."
+                    checked={shareToFeed} onChange={setShareToFeed} />
+                </LBox>
+              )}
+
+              {verified && <CostSheetField value={costSheet} onChange={setCostSheet} sellingPriceMinor={priceMinor} shop={storeId} />}
+            </>
+          )}
 
           {error && <ErrorNotice message={error} />}
 
-          <button type="submit" className="btn btn--lg btn--block sellform__go" disabled={busy || !canPublish}>
-            {busy ? (deal ? 'Sending…' : 'Publishing…') : deal ? '🤝 Send private deal' : '🚀 Publish listing'}
-          </button>
+          {/* Pinned to the bottom of a phone screen, so it is never a scroll away. */}
+          <div className="sellform__bar">
+            {verified ? (
+              <button type="submit" className="btn btn--lg btn--block sellform__go" disabled={busy || !canPublish}>
+                {busy ? (deal ? 'Sending…' : 'Publishing…') : deal ? '🤝 Send private deal' : '🚀 Publish listing'}
+              </button>
+            ) : (
+              <button type="button" className="btn btn--lg btn--block sellform__go" onClick={saveForLater}>
+                Save draft and verify
+              </button>
+            )}
+          </div>
         </form>
 
         {/* The same card the Buy tab draws, so what the seller sees here is
@@ -630,6 +784,22 @@ export function SellPage() {
         </aside>
       </div>
 
+      {/* Over the listing, not instead of it: the half-filled form waits
+          underneath and the new lot comes back already picked. */}
+      {openingLot && (
+        <Modal title="New lot" onClose={() => setOpeningLot(false)}>
+          <NewLotForm bare
+            onCancel={() => setOpeningLot(false)}
+            onDone={(lot) => {
+              setOpeningLot(false);
+              setLotId(lot.id);
+              void api.myLots()
+                .then((result) => setLots(result.lots.filter((entry) => entry.lot.status === 'open')))
+                .catch(() => undefined);
+              setShape('lot');
+            }} />
+        </Modal>
+      )}
     </main>
   );
 }

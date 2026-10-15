@@ -38,11 +38,15 @@ export const CONTAINERS = {
     partitionKeyPath: '/id',
     rationale:
       'Point reads by user id dominate. Note the absence of a unique key on the identifier fields: Cosmos enforces unique keys within a logical partition, and with /id as the partition key every user is alone in its own partition, so such a constraint would guarantee nothing. Global uniqueness is enforced by the `identifiers` reservation container instead.',
-    compositeIndexes: [
-      [
-        { path: '/role', order: 'ascending' },
-        { path: '/createdAt', order: 'descending' },
-      ],
+    // Read whole by id; no query filters or sorts on these. The part fields
+    // are listed too for rows not yet moved into `userParts`.
+    excludedPaths: [
+      '/verification/*', '/buyerTrust/*', '/sellerTrust/*', '/notificationPrefs/*', '/standing/*',
+      '/challenges/*', '/reversalDetails/*', '/tradeOverride/*', '/bio/?', '/coverUrl/?',
+      '/messageBlocks/*', '/mutedThreads/*', '/invitedBy/*',
+      '/collection/*', '/collectionGroups/*', '/shareOpens/*', '/shareLog/*', '/invitees/*',
+      '/referrals/*', '/affiliateOrderIds/*', '/affiliateLinks/*', '/clientDevices/*',
+      '/pushEndpoints/*', '/profitTemplates/*', '/savedCalcs/*',
     ],
   },
   userParts: {
@@ -84,26 +88,23 @@ export const CONTAINERS = {
     partitionKeyPath: '/sellerId',
     rationale: 'Lots are always listed and managed in the context of their seller.',
     excludedPaths: ['/description/?', '/stageHistory/*'],
-    compositeIndexes: [
-      [
-        { path: '/status', order: 'ascending' },
-        { path: '/cutoffAt', order: 'ascending' },
-      ],
-    ],
   },
   orders: {
     name: 'orders',
     partitionKeyPath: '/lotId',
     rationale:
       'Generating a lot manifest is the hot path and becomes a single-partition read. Buyer order history is cross-partition; revisit with a materialised view if it gets hot.',
+    // What an order records about itself - its timeline, photos, payments,
+    // shipment - is read with the order and never searched by.
+    excludedPaths: [
+      '/stageHistory/*', '/photos/*', '/checkpoints/*', '/customTicks/*', '/preLotRoute/*',
+      '/payments/*', '/credits/*', '/addOns/*', '/shipment/*', '/hold/*', '/paymentClaim/*',
+      '/reversal/*', '/priceChange/*', '/detailsCheck/*', '/affiliate/*', '/itemName/?', '/cancelReason/?',
+    ],
     compositeIndexes: [
       [
         { path: '/buyerId', order: 'ascending' },
         { path: '/createdAt', order: 'descending' },
-      ],
-      [
-        { path: '/sellerId', order: 'ascending' },
-        { path: '/status', order: 'ascending' },
       ],
     ],
   },
@@ -113,12 +114,6 @@ export const CONTAINERS = {
     rationale:
       'Reviews are read as "everything written about this user", which is exactly one partition.',
     uniqueKeyPaths: [['/orderId', '/direction']],
-    compositeIndexes: [
-      [
-        { path: '/revealed', order: 'ascending' },
-        { path: '/createdAt', order: 'descending' },
-      ],
-    ],
   },
   wants: {
     name: 'wants',
@@ -151,13 +146,10 @@ export const CONTAINERS = {
     name: 'notifications',
     partitionKeyPath: '/userId',
     rationale:
-      'Read as "everything waiting for me", which is exactly one partition. Written at the moment something happens rather than derived from a read cursor per person per kind, which is a query that gets slower as the app grows.',
-    compositeIndexes: [
-      [
-        { path: '/readAt', order: 'ascending' },
-        { path: '/createdAt', order: 'descending' },
-      ],
-    ],
+      'Read as "everything waiting for me", which is exactly one partition. Written at the moment something happens rather than derived from a read cursor per person per kind, which is a query that gets slower as the app grows. Expires 90 days after its last write: the bell shows the newest forty, so an older notice is only taking up space.',
+    // The words are shown, never searched.
+    excludedPaths: ['/title/?', '/body/?', '/link/?', '/actors/*'],
+    defaultTtlSeconds: 90 * 24 * 60 * 60,
   },
   storeReviews: {
     name: 'storeReviews',
@@ -198,17 +190,12 @@ export const CONTAINERS = {
     // container it is attached to simply never gets created. It failed exactly
     // that way on the deployed database, and nothing before then said so.
     excludedPaths: ['/items/[]/description/?'],
-    compositeIndexes: [
-      [
-        { path: '/status', order: 'ascending' },
-        { path: '/openingAt', order: 'ascending' },
-      ],
-    ],
   },
   comments: {
     name: 'comments',
     partitionKeyPath: '/listingId',
     rationale: 'A listing page renders every comment on that listing, which is exactly one partition.',
+    excludedPaths: ['/body/?', '/authorName/?', '/reactions/*'],
   },
   likes: {
     name: 'likes',
@@ -236,12 +223,6 @@ export const CONTAINERS = {
     rationale:
       "A channel thread and a forum are each exactly one partition, which is how both are read. The cross-partition query is the 'everyone I follow' feed, which is bounded by how many sellers a person follows and is the accepted cost of keeping the two thread views single-partition.",
     excludedPaths: ['/body/?'],
-    compositeIndexes: [
-      [
-        { path: '/channel', order: 'ascending' },
-        { path: '/createdAt', order: 'descending' },
-      ],
-    ],
   },
   forums: {
     name: 'forums',
@@ -267,7 +248,10 @@ export const CONTAINERS = {
     name: 'siteContent',
     partitionKeyPath: '/id',
     rationale:
-      'Pages the operators write rather than the code - the Learn guide first. A handful of documents read whole by id, so each is its own partition and every read is a point read.',
+      'Pages the operators write rather than the code - the Learn guide first - and the logs and queues kept as lists: the fee ledger by month, the audit trail by day. Each document is its own partition and is read whole by id, or as a range of ids for a log. TTL is enabled without a default, so a log document can set its own expiry.',
+    // Read whole, never searched: only the id needs an index.
+    excludedPaths: ['/data/*'],
+    defaultTtlSeconds: -1,
   },
 } as const satisfies Record<string, ContainerDefinition>;
 

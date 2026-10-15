@@ -67,6 +67,11 @@ export interface SignupRequest {
   displayName: string;
   /** Optional: suggested from the name when left blank. */
   username?: string;
+  /**
+   * The username is the form's own suggestion, not something typed: a clash
+   * found at the last moment is settled with a short tail, not refused.
+   */
+  usernameSuggested?: boolean;
   email: string;
   phone: string;
   password: string;

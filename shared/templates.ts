@@ -3,7 +3,7 @@ import type { BaseDocument } from './models.js';
 import type { LotRoute } from './routes.js';
 
 /**
- * A Quick Post template: everything a shop types the same way every time.
+ * A Quick Fill template: everything a shop types the same way every time.
  *
  * A shop that sells Marvel Legends lists forty of them a month, and every one
  * of those listings has the same category, the same three tags, the same two
@@ -50,7 +50,7 @@ export interface PostTemplate extends BaseDocument {
   lotRouteName: string | null;
   /**
    * 'power' is a power sale's quick fill: what every item in a run shares.
-   * Absent on older templates, which are all Quick Post ones.
+   * Absent on older templates, which are all Quick Fill ones.
    */
   kind?: 'post' | 'power';
   /** A power quick fill's stock and payment terms. */

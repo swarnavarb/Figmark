@@ -36,6 +36,12 @@ export interface MarketSettings {
   decisionDays: number;
   /** Days the losing side has to escalate a decision before it is final. */
   escalationWindowDays: number;
+  /**
+   * Whether operator actions are written to the audit trail. Off by default:
+   * while off, nothing is recorded at all - not even the switch being turned
+   * off. Turning it on is the first thing it records.
+   */
+  auditTrail: boolean;
   updatedAt?: string | null;
   updatedBy?: string | null;
 }
@@ -45,7 +51,6 @@ export const AUTO_RELEASE_MAX_DAYS = 60;
 
 /** Fees are flat amounts in minor units; the ceiling keeps a typo from charging somebody ₹1,00,000. */
 export const FEE_MAX_MINOR = 10_00_000;
-export const BASIS_POINTS_MAX = 5_000;
 export const DAYS_MIN = 1;
 export const DAYS_MAX = 30;
 
@@ -59,9 +64,10 @@ export const DEFAULT_SETTINGS: MarketSettings = {
   responseDays: 3,
   decisionDays: 5,
   escalationWindowDays: 3,
+  auditTrail: false,
 };
 
-type Numeric = Exclude<keyof MarketSettings, 'updatedAt' | 'updatedBy'>;
+type Numeric = Exclude<keyof MarketSettings, 'updatedAt' | 'updatedBy' | 'auditTrail'>;
 
 /** Each number an operator may set: its range, and how the console names it. */
 export const SETTING_RULES: Record<Numeric, { min: number; max: number; label: string }> = {
@@ -102,6 +108,10 @@ export function cleanSettings(input: unknown): { settings: MarketSettings } | { 
       };
     }
     settings[key] = value;
+  }
+  if (raw.auditTrail !== undefined && raw.auditTrail !== null) {
+    if (typeof raw.auditTrail !== 'boolean') return { error: 'The audit trail switch is on or off.' };
+    settings.auditTrail = raw.auditTrail;
   }
   return { settings };
 }

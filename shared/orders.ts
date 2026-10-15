@@ -44,8 +44,6 @@ export const DEFAULT_AUTO_RELEASE_DAYS = 10;
  */
 export const REVIEW_REVEAL_DAYS = 14;
 
-/** Days a seller has to answer a dispute before it needs a human. */
-export const DISPUTE_RESPONSE_DAYS = 3;
 
 export type OrderAction =
   | 'pay' | 'settle_claim' | 'confirm' | 'dispute' | 'review' | 'reject' | 'pay_more' | 'refund_credit'

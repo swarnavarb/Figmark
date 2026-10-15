@@ -254,6 +254,34 @@ await expectAuthError('refuses a short password', 'invalid_signup', () =>
   auth.signup({ displayName: 'X', email: 'x@figmark.example', phone: '+919777000333', password: 'short' }),
 );
 
+await check('two people with one name both get in, without either picking a username', async () => {
+  // The sign-up form folds the username away, so a clash on the one made
+  // from the name has to be settled here rather than sent back as an error.
+  const first = await auth.signup({
+    displayName: 'Same Name', email: 'same1@figmark.example', phone: '+919777002555', password: 'longenough1',
+  });
+  const second = await auth.signup({
+    displayName: 'Same Name', email: 'same2@figmark.example', phone: '+919777002666', password: 'longenough1',
+  });
+  assert.equal(first.user.username, 'same_name');
+  assert.match(second.user.username, /^same_name_[a-z0-9]{4}$/);
+});
+
+await expectAuthError('a username somebody typed is still refused when taken', 'username_taken', () =>
+  auth.signup({
+    displayName: 'Third', username: 'same_name', email: 'same3@figmark.example', phone: '+919777002777',
+    password: 'longenough1',
+  }),
+);
+
+await check("the form's own suggestion is settled with a tail if it was taken a moment ago", async () => {
+  const late = await auth.signup({
+    displayName: 'Fourth', username: 'same_name', usernameSuggested: true,
+    email: 'same4@figmark.example', phone: '+919777002888', password: 'longenough1',
+  });
+  assert.match(late.user.username, /^same_name_[a-z0-9]{4}$/);
+});
+
 console.log('\nsecurity');
 
 await check('with a durable store, a deleted account ends the session honestly', async () => {

@@ -15,8 +15,8 @@ import { isLive } from './service-stores.js';
  * directory entry and no way to see what had been consigned to them.
  *
  * This is the register of those jobs: what each is called, how somebody comes
- * to do one, whether there is a public list of them, and where the person doing
- * it goes to actually do it. The directory and the consoles both read it, so a
+ * to do one, and whether there is a public list of them. The work itself is
+ * always under My services. The directory and the consoles both read it, so a
  * category on the tab and the screen it opens can never disagree about what the
  * job is.
  */
@@ -57,8 +57,6 @@ export interface ServiceMeta {
   entry: ServiceEntry;
   /** Whether anyone can browse a list of them. */
   browsable: boolean;
-  /** Where somebody who provides this goes to do the work. */
-  console: string;
 }
 
 export const SERVICES: Record<ServiceKind, ServiceMeta> = {
@@ -75,7 +73,6 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
       + 'turnaround are the forwarder’s own claims until they have shipped lots here.',
     entry: 'approved',
     browsable: true,
-    console: '/services/store/forwarder',
   },
   handler: {
     kind: 'handler',
@@ -90,7 +87,6 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
       + 'door. A handler can stay unlisted and work only for shops that already know them.',
     entry: 'listed',
     browsable: true,
-    console: '/services/mine/handler',
   },
   supplier: {
     kind: 'supplier',
@@ -107,7 +103,6 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
     // Nobody applies to be somebody's supplier, so a list of them would be a
     // list of people who never asked to be on one.
     browsable: false,
-    console: '/packing',
   },
   artist: {
     kind: 'artist',
@@ -122,19 +117,12 @@ export const SERVICES: Record<ServiceKind, ServiceMeta> = {
       + 'you pay held or direct, and the finished piece comes back to you.',
     entry: 'approved',
     browsable: true,
-    console: '/services/store/artist',
   },
 };
 
 /** In the order the goods actually move. */
 export const SERVICE_ORDER: readonly ServiceKind[] = ['supplier', 'forwarder', 'handler', 'artist'];
 
-/** How somebody becomes one, in one line, for the category screen. */
-export const ENTRY_NOTE: Record<ServiceEntry, string> = {
-  listed: 'Anyone can offer this. Put yourself on the list from My services.',
-  approved: 'Apply with your details from My services. Figmark reviews it and opens your store.',
-  named: 'Named by a shop on one lot. There is no list to join.',
-};
 
 /** Whether this account provides that service right now. */
 export function provides(user: Pick<User, 'forwarderProfile' | 'handlerProfile' | 'artistProfile'>, kind: ServiceKind): boolean {

@@ -47,11 +47,38 @@ export class ReadSnapshots {
   /** Keyed by kind, id and etag: two requests may hold two versions of one document. */
   private readonly entries = new Map<string, string>();
 
-  constructor(private readonly limit = 1000) {}
+  /**
+   * Which partition each document was last seen in, by kind and id. Far
+   * smaller than a snapshot, so it holds far more: it is what lets a lookup by
+   * id alone be a point read rather than a query across every partition.
+   */
+  private readonly partitions = new Map<string, string>();
+
+  constructor(
+    private readonly limit = 1000,
+    private readonly partitionOf: (kind: string, doc: StoredDocument) => string | undefined = () => undefined,
+    private readonly partitionLimit = 20_000,
+  ) {}
+
+  /** The partition this document was last seen in, if it has been seen. */
+  whereIs(kind: string, id: string): string | undefined {
+    return this.partitions.get(`${kind}:${id}`);
+  }
 
   remember<T>(kind: string, doc: T): T {
     const stored = doc as unknown as StoredDocument | null | undefined;
-    if (!stored?.id || !stored._etag) return doc;
+    if (!stored?.id) return doc;
+    const partition = this.partitionOf(kind, stored);
+    if (partition !== undefined) {
+      const where = `${kind}:${stored.id}`;
+      this.partitions.delete(where);
+      this.partitions.set(where, partition);
+      if (this.partitions.size > this.partitionLimit) {
+        const oldest = this.partitions.keys().next().value;
+        if (oldest !== undefined) this.partitions.delete(oldest);
+      }
+    }
+    if (!stored._etag) return doc;
     const key = `${kind}:${stored.id}:${stored._etag}`;
     // Re-inserting moves it to the newest end, so eviction drops the coldest.
     this.entries.delete(key);
