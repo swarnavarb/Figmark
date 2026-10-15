@@ -16,6 +16,7 @@ import { PhotosView } from './PhotosView';
 import { RoutesView } from './RoutesView';
 import { BackButton, goOps, useOpsPath } from './nav';
 import '../styles.css';
+import '../styles/admin.css';
 
 /**
  * The operations console.

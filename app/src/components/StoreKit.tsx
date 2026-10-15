@@ -4,6 +4,7 @@ import {
   FREIGHT_MODE_LABELS, STORE_STATUS_LABELS, laneQuoteMinor, transitLabel, type FreightMode,
 } from '@shared/service-stores';
 import { formatMoney, fromMinor, gradientFor, initialsOf, toMinor } from '../format';
+import '../styles/StoreKit.css';
 
 /**
  * The pieces every service-store screen is built from.

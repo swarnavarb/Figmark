@@ -1,5 +1,6 @@
 import { lotNo } from '@shared/routes';
 import { LOT_PHASE_LABELS, type LotBuyerPhase } from '@shared/fulfilment';
+import '../styles/LotName.css';
 
 /**
  * A lot as people say it: its name, then the number the shop gave it, small

@@ -1,0 +1,50 @@
+/*
+ * Styles only pages/StorePage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.sp-page { max-width: 1080px; }
+/* ==========================================================================
+   A store's public page.
+   ========================================================================== */
+.sp-hero { display: grid; gap: 0; margin-bottom: 20px; }
+.sp-hero .sk-cover { height: 160px; }
+@media (min-width: 720px) {
+  .sp-hero .sk-cover { height: 230px; }
+}
+.sp-hero__card {
+  position: relative; display: grid; gap: 14px; margin: -48px 12px 0; padding: 18px;
+  border: 1px solid var(--border); border-radius: 20px;
+  background: linear-gradient(160deg, var(--sk-soft), transparent 45%), rgba(15, 20, 32, 0.94); backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+}
+@media (min-width: 720px) {
+  .sp-hero__card { grid-template-columns: auto 1fr auto; align-items: center; margin: -64px 24px 0; padding: 22px; }
+}
+.sp-hero__kind { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.12em; color: var(--sk-text); font-weight: var(--w-semi); }
+.sp-hero__tag { margin: 0; color: var(--text-dim); font-size: var(--t-md); }
+.sp-hero__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.sp-hero__cta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (min-width: 720px) {
+  .sp-hero__cta { flex-direction: column; align-items: stretch; }
+}
+.sp-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-dim); font-size: var(--t-xs); }
+.sp-chip--ok { background: var(--ok-soft); color: var(--ok); }
+.sp-proof { display: flex; gap: 1px; margin: 14px 12px 0; border-radius: var(--r-lg); overflow: hidden; background: var(--border); border: 1px solid var(--border); }
+@media (min-width: 720px) {
+  .sp-proof { margin: 14px 24px 0; }
+}
+.sp-proof__cell { flex: 1; display: grid; gap: 0; padding: 12px 14px; background: var(--surface); }
+.sp-layout { display: grid; gap: 22px; }
+@media (min-width: 900px) {
+  .sp-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+  .sp-side { position: sticky; top: calc(var(--nav-h) + 16px); }
+}
+.sp-main { gap: 26px; }
+.sp-sechead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.sp-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.sp-plans, .sp-menu { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.sp-box { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.sp-about { font-size: var(--t-sm); line-height: 1.6; color: var(--text-dim); white-space: pre-line; }
+.sp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.sp-steps { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: var(--t-sm); color: var(--text-dim); }

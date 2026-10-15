@@ -7,6 +7,7 @@ import type { ItemGroup } from '../api';
 import { formatMoney } from '../format';
 import { buyerStatus, type StatusFacts } from './OrderStatus';
 import { Modal, Thumb } from './ui';
+import '../styles/PurchasesPage.css';
 
 /**
  * The buyer's side of a lot: the same box the seller packs, seen from the

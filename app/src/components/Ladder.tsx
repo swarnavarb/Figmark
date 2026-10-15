@@ -11,6 +11,7 @@ import { Icon } from './Icon';
 import { StepMark, WaveLoader } from './ui';
 import { InfoTip } from './InfoTip';
 import { STAGE_ICON_META } from './RouteBuilder';
+import '../styles/Ladder.css';
 
 /**
  * A route, drawn.

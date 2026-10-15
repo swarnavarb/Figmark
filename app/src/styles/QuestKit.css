@@ -1,0 +1,83 @@
+/*
+ * Styles only components/QuestKit.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.qarcade__head { display: flex; align-items: center; gap: 8px; }
+.qarcade__title {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: var(--t-sm);
+  text-transform: uppercase; letter-spacing: 0.1em; color: #fff; text-shadow: 0 0 10px rgba(167, 139, 250, 0.7);
+}
+/* ── Quests page ───────────────────────────────────────────────────────── */
+.qhero {
+  display: flex; gap: 18px; align-items: center; margin-bottom: 14px; padding: 18px; border-radius: 20px;
+  background: radial-gradient(120% 120% at 0% 0%, rgba(124, 58, 237, 0.42), transparent 60%), linear-gradient(160deg, #171233, var(--surface));
+  border: 1px solid var(--violet-line);
+}
+.qhero__eyebrow { margin: 0; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet-text); }
+.qhero__xp { margin: 0 0 4px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-xs); color: var(--text-dim); }
+.qtask { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.qtask.is-claimed { opacity: 0.6; }
+.qtask__progress { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10.5px; }
+.qtask__act { flex: none; }
+.qtask__step {
+  margin-left: 6px; padding: 0 6px; border-radius: 6px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 9.5px; font-weight: var(--w-medium);
+  color: var(--text-faint); background: var(--surface-hover); vertical-align: middle;
+}
+/* Bump points, beside the level. */
+.qbump {
+  flex: none; display: grid; grid-template-columns: auto 1fr; align-items: center; justify-items: start;
+  position: relative; column-gap: 8px; padding: 10px 28px 10px 12px; border-radius: 16px;
+  background: linear-gradient(160deg, rgba(250, 204, 21, 0.16), rgba(250, 204, 21, 0.04)); border: 1px solid var(--q-gold-line);
+}
+.qbump__icon {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: var(--q-gold); color: var(--q-gold-ink); box-shadow: 0 0 16px rgba(250, 204, 21, 0.45);
+}
+.qbump__count { display: grid; line-height: 1.1; }
+.qbump .qinfo { position: absolute; top: 6px; right: 6px; }
+.qbump.is-empty .qbump__icon { background: var(--surface-hover); color: var(--text-faint); box-shadow: none; }
+.qbump.is-empty { background: var(--surface-2); border-color: var(--border); }
+/* The hero on either board: ring, level, and the bump wallet, which drops below on a phone. */
+.qhero--shop {
+  background: radial-gradient(120% 120% at 0% 0%, rgba(59, 130, 246, 0.36), transparent 60%), linear-gradient(160deg, #0F1A33, var(--surface));
+  border-color: var(--blue-line);
+}
+.qhero__title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--t-xl); }
+.qhero__who { color: var(--text); text-transform: none; letter-spacing: 0.02em; font-weight: var(--w-semi); text-decoration: none; }
+.qhero__who:hover { text-decoration: underline; }
+/* Invite & earn, and a shop's Grow: one slim line. */
+.qstrip {
+  display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--r-lg);
+  background: linear-gradient(100deg, rgba(236, 72, 153, 0.12), var(--surface) 70%); border: 1px solid var(--pink-line);
+  scroll-margin-top: 80px;
+}
+.qstrip__title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.qstrip__stats { display: inline-flex; gap: 10px; font-size: var(--t-xs); color: var(--text-faint); }
+.qstrip__acts { display: inline-flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+/* A quest row's parts. */
+.qtask__head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.qtask__count { color: var(--text-faint); white-space: nowrap; }
+.qtask__pay { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+.qpay {
+  display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: var(--r-pill);
+  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: var(--w-semi);
+  background: rgba(167, 139, 250, 0.16); color: #C4B5FD;
+}
+.qpay--bump { background: rgba(250, 204, 21, 0.16); color: #FDE047; }
+.qpay--pack { background: rgba(236, 72, 153, 0.16); color: #F9A8D4; }
+.qtag {
+  padding: 0 7px; border-radius: var(--r-pill); font-size: 9.5px; font-weight: var(--w-semi); letter-spacing: 0.04em;
+  text-transform: uppercase; border: 1px solid currentColor; opacity: 0.9;
+}
+.qtag--reviews { color: #C4B5FD; }
+.qtag--popularity { color: #F9A8D4; }
+.qtag--sales { color: #86EFAC; }
+.qtag--marketing { color: #93C5FD; }
+.qtag--upkeep { color: #A39BD0; }
+@media (min-width: 720px) {
+  .qnobump { left: 50%; right: auto; width: min(440px, calc(100vw - 32px)); transform: translateX(-50%); bottom: var(--s5); }
+}
+.qnobump__x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: 20px; cursor: pointer; }
+.qnobump__x:hover { color: var(--text); background: var(--surface-hover); }

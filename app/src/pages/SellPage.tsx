@@ -24,6 +24,7 @@ import { useGoBack } from '../components/ScrollManager';
 import { lotLabel } from '../components/LotName';
 import { NewLotForm } from './LotsPage';
 import { SetupChecklist } from './VerifyPage';
+import '../styles/SellPage.css';
 
 /**
  * The template this browser used last.

@@ -22,6 +22,7 @@ import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
 import { ConditionTag } from '../components/ConditionTag';
+import '../styles/ServicesPage.css';
 
 /**
  * The trades around the trade.

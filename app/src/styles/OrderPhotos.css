@@ -1,0 +1,22 @@
+/*
+ * Styles only components/OrderPhotos.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+/* Photos on a slim row: small thumbnails, a camera-only add. */
+.ophotos--compact { gap: 6px; margin-top: 0; }
+.ophotos--compact .ophotos__item, .ophotos--compact .ophotos__open { width: 32px; height: 32px; }
+.ophotos--compact .ophotos__add { width: 32px; height: 32px; border-width: 1.5px; border-radius: var(--r-pill); }
+.ophotos--compact .ophotos__drop { top: -6px; right: -6px; width: 18px; height: 18px; }
+/* ── Photos on an order ─────────────────────────────────────────────────── */
+.ophotos { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-top: 6px; }
+.ophotos__item { position: relative; display: grid; gap: 4px; margin: 0; width: 84px; }
+.ophotos__open { display: block; width: 84px; height: 84px; padding: 0; border: 0; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); cursor: zoom-in; }
+.ophotos__who { display: flex; flex-wrap: wrap; gap: 3px; }
+.ophotos__chip { padding: 1px 6px; border: 1px solid var(--border); border-radius: var(--r-pill); background: none; color: var(--text-faint); font: inherit; font-size: 10px; cursor: pointer; }
+.ophotos__chip.is-on { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
+.ophotos__drop { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgba(8, 11, 18, 0.75); color: #fff; cursor: pointer; }
+.ophotos__add { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 84px; height: 84px; border: 1.5px dashed var(--border-strong); border-radius: var(--r-sm); color: var(--text-dim); font-size: var(--t-2xs); cursor: pointer; }
+.ophotos__add.is-busy { opacity: 0.6; cursor: progress; }
+.ophotos__add:focus-within { outline: 2px solid var(--accent); }
+.ophotos__error { flex-basis: 100%; font-size: var(--t-xs); color: var(--danger-text); }

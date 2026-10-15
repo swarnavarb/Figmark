@@ -6,6 +6,7 @@ import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../a
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
+import '../styles/MyRefundsPage.css';
 
 /**
  * My wallet - the money owed to this person: refunds from shops they bought

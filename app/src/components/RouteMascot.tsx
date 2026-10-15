@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { RouteProblem } from '@shared/buttons';
 import { renderStepText, stepButtonLabel, type RouteStep } from '@shared/routes';
+import '../styles/RouteStudioPage.css';
 
 /**
  * Pip, the parcel who helps write a tracking timeline.

@@ -19,6 +19,7 @@ import { AffiliateCard, ReferredBy, SimilarItems } from '../components/Affiliate
 import { AFFILIATE_PARAM } from '@shared/affiliate';
 import { shopBadge, useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { themeOf } from '../components/momentCard';
+import '../styles/ListingPage.css';
 
 /** What each verification tier means, in a line. */
 const TIER_NOTES: Record<string, string> = {

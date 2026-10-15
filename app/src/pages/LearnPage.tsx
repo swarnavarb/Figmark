@@ -6,6 +6,7 @@ import { SkeletonText } from '../components/Feedback';
 import { LearnText } from '../components/LearnText';
 import { Lightbox } from '../components/SocialPost';
 import { ErrorNotice } from '../components/ui';
+import '../styles/LearnPage.css';
 
 /**
  * Learn: how to use Figmark, one side tab per part of the app.

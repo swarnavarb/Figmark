@@ -5,6 +5,7 @@ import { settledHistory } from '@shared/fulfilment';
 import { formatDateOrdinal, timeAgo } from '../format';
 import { ShipmentChip } from './OrderStatus';
 import { Ladder } from './Ladder';
+import '../styles/StepActs.css';
 
 const STAGE_EMOJI: Record<StageIcon, string> = {
   supplier: '🏭', warehouse: '🏬', transit: '✈️', customs: '🛃', delivery: '🏠',

@@ -11,6 +11,7 @@ import {
 } from '@shared/social';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
+import '../styles/SocialComposer.css';
 
 /** How long a poll runs, as offered. */
 const POLL_LENGTHS: { hours: number; label: string }[] = [

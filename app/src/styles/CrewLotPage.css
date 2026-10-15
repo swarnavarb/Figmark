@@ -1,0 +1,33 @@
+/*
+ * Styles only pages/CrewLotPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.cl-move--done { opacity: 0.65; }
+.ctile__cam.is-busy { opacity: 0.5; cursor: progress; }
+.ctile__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ctile__btn:active:not(:disabled) { transform: scale(0.98); }
+/* ── The domestic handler's lot ─────────────────────────────────────────
+   One card per customer, because a handler's job is which box goes to whom.
+   Every control is at least 44px tall, every state has a word or an icon as
+   well as a colour, and the focus ring is always visible from the keyboard. */
+.cl-page--handler .cl-route { margin-bottom: var(--s4); }
+.hx-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.hx-btn--solid:hover:not(:disabled) { filter: brightness(1.1); }
+.hx-btn:active:not(:disabled) { transform: translateY(1px); }
+.hx-search input::placeholder { color: var(--text-faint); }
+.hx-tick:active:not(:disabled) { transform: scale(0.985); }
+.hx-tick:disabled { opacity: 0.5; cursor: not-allowed; }
+.hx-more__chev.is-open { transform: rotate(180deg); }
+.hx-mini:disabled { opacity: 0.5; cursor: not-allowed; }
+.hx-mini.is-on svg { opacity: 1; }
+.hx-btn:focus-visible, .hx-layout button:focus-visible, .hx-tick:focus-visible, .hx-mini:focus-visible,
+.hx-more:focus-visible, .hx-link:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
+@media (max-width: 420px) {
+  .hx-btn--toggle { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-tick:active:not(:disabled), .hx-btn:active:not(:disabled) { transform: none; }
+}
+.ctile > .cond { justify-self: center; }
+.hx-tick__count { font-family: var(--mono); font-size: var(--t-2xs); color: var(--text-dim); }

@@ -15,6 +15,7 @@ import { Avatar } from '../components/ui';
 import { QuestShooter } from '../components/QuestShooter';
 import { ShopQuests } from '../components/ShopQuests';
 import { useSession } from '../session';
+import '../styles/QuestsPage.css';
 
 /**
  * Quests: where the collector game is played rather than glimpsed.

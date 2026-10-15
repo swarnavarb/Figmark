@@ -4,6 +4,7 @@ import { api, type InviteOpen } from '../api';
 import { ShareButton, type ShareSpec } from '../components/ShareKit';
 import { SkeletonText } from '../components/Feedback';
 import { useSession } from '../session';
+import '../styles/InvitePage.css';
 
 /**
  * `/i/<code>`: somebody's invite.

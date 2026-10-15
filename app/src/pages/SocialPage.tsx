@@ -13,6 +13,7 @@ import { timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { WantedPage } from './WantedPage';
 import { useToast } from '../components/Feedback';
+import '../styles/SocialPage.css';
 
 /**
  * The social side.

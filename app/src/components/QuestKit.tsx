@@ -13,6 +13,7 @@ import { Glyph, LevelRing, XpBar } from './Quest';
  */
 
 import { InfoTip } from './InfoTip';
+import '../styles/QuestKit.css';
 
 export { InfoTip };
 

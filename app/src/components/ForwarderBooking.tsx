@@ -6,6 +6,7 @@ import { api, type PublicStore } from '../api';
 import { formatMoney, formatWeight } from '../format';
 import { Icon, TrustBadge } from './ui';
 import { LaneTicket, PlanCard, StoreMark, accentStyle } from './StoreKit';
+import '../styles/LotsPage.css';
 
 /**
  * Who flies this lot.

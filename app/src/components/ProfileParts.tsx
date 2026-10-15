@@ -16,6 +16,7 @@ import { StarRow } from './ListingBlocks';
 import { LevelRing, Sticker, StickerSheet, XpBar } from './Quest';
 import { ReportButton } from './ReportButton';
 import { Avatar, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from './ui';
+import '../styles/CollectorProfile.css';
 
 /**
  * The parts a person's page and a shop's page share: the buttons under the

@@ -1,0 +1,56 @@
+/*
+ * Styles only components/SocialComposer.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.vibe--edit .writer__text {
+  background: transparent; border: 0; color: inherit; text-align: center;
+  font-family: var(--display); font-weight: var(--w-bold); font-size: 24px; line-height: 1.25;
+}
+.writer__fake:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.writer__text:focus { outline: none; }
+.writer--closed .writer__tools { padding-top: 8px; border-top: 1px solid var(--border); justify-content: space-around; }
+.writer__tool:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.writer__tool:disabled { opacity: 0.4; cursor: default; }
+.writer__tool.is-on { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.writer__swatch:hover { transform: scale(1.1); }
+.writer__swatch.is-on { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.writer__left { margin-left: auto; font-family: var(--mono); }
+.writer__failed {
+  position: absolute; left: 6px; bottom: 6px; padding: 1px 6px; border-radius: var(--r-pill);
+  background: var(--danger-solid); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-semi);
+}
+.writer__addphoto:hover { border-color: var(--lime); color: var(--lime); }
+@media (min-width: 720px) {
+  .writer { padding: 16px 20px; }
+}
+@media (max-width: 480px) {
+  .writer__foot .writer__tool { padding: 9px; }
+}
+.social .writer:not(.writer--closed) { box-shadow: var(--sx-glow); }
+.social .writer__fake {
+  background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim); font-weight: var(--w-medium);
+}
+.social .writer__fake:hover { border-color: var(--sx-line); background: rgba(255, 255, 255, 0.06); }
+.social .writer--closed .writer__tools { border-top-color: rgba(255, 255, 255, 0.06); }
+.social .writer__foot { border-top-color: rgba(255, 255, 255, 0.06); }
+.social .writer__post {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--sx-grad); border-color: transparent;
+  font-style: italic; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800;
+  box-shadow: var(--sx-glow);
+}
+.social .writer:not(.writer--closed)::before { animation-duration: 2.4s; padding: 2.5px; }
+.forumav--sm { width: 30px; height: 30px; border-radius: 10px; }
+.forumpick__item:hover { background: var(--surface-hover); }
+.writer__switch {
+  position: relative; flex: 0 0 auto; width: 38px; height: 22px; border-radius: var(--r-pill);
+  background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--border-strong);
+  transition: background var(--dur-1) var(--ease);
+}
+.writer__wall input:checked + .writer__switch::after { transform: translateX(16px); }
+.writer--closed .writer__tool { padding: 7px 8px; gap: 5px; font-size: var(--t-xs); }
+.forumpick__item.is-on { box-shadow: inset 0 0 0 1px var(--sx-blaze); background: var(--sx-wash), var(--surface); }
+.forumpick__item:disabled { opacity: 0.45; cursor: default; }
+.forumpick__item.is-on .forumpick__tick { background: var(--sx-volt); border-color: var(--sx-volt); }

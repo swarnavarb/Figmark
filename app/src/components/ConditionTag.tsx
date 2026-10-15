@@ -1,4 +1,5 @@
 import { CONDITION_MEANINGS, type ConditionTag as Grade } from '@shared/enums';
+import '../styles/ConditionTag.css';
 
 /**
  * The grade a piece was sold as - MISB, MIB, BIB, LOOSE - as one coloured

@@ -4,6 +4,7 @@ import { ApiRequestError, api, type ShopCard } from '../api';
 import { ShopTile } from '../components/ShopCards';
 import { BackLink } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice } from '../components/ui';
+import '../styles/TagPage.css';
 
 /**
  * One tag's page: every shop that carries it, the ones most about it first.

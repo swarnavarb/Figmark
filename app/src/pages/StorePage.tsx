@@ -8,6 +8,7 @@ import { formatMoney } from '../format';
 import {
   LaneTicket, OfferingCard, PlanCard, PortfolioGrid, StatusPill, StoreCover, StoreMark, accentStyle,
 } from '../components/StoreKit';
+import '../styles/StorePage.css';
 
 /**
  * A service store's own page.

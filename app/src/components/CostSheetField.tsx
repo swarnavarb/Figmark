@@ -8,6 +8,7 @@ import { api } from '../api';
 import { formatMoney } from '../format';
 import { STAGE_TONES } from '../pages/ProfitCalculator';
 import { CalcIcon } from './CalcIcon';
+import '../styles/FloatingCalc.css';
 
 /**
  * An item's costs (Pro), wherever an item is made or kept.

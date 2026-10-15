@@ -1,0 +1,41 @@
+/*
+ * Styles only components/StoreKit.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.sk-cover__plane { filter: drop-shadow(0 0 8px currentColor); }
+@media (min-width: 720px) {
+  .sk-cover { height: 170px; }
+}
+.sk-ticket__mode { font-size: var(--t-2xs); font-weight: var(--w-semi); text-transform: uppercase; letter-spacing: 0.09em; color: var(--sk-text, var(--accent-text)); }
+.sk-ticket__end--to { text-align: right; }
+.sk-ticket__path { position: relative; height: 2px; background: repeating-linear-gradient(90deg, var(--sk-line, var(--border-strong)) 0 6px, transparent 6px 11px); }
+.sk-ticket__note { font-size: var(--t-xs); color: var(--text-faint); }
+.sk-ticket__rate { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); color: var(--text); letter-spacing: -0.02em; }
+.sk-ticket__ok { color: var(--ok); }
+.sk-ticket__quote { margin-left: auto; padding: 3px 9px; border-radius: var(--r-pill); background: var(--sk-soft, var(--accent-soft)); color: var(--sk-text, var(--accent-text)); font-weight: var(--w-semi); }
+@media (min-width: 640px) {
+  .sk-ticket__quote { margin-left: 0; }
+}
+.sk-plan.is-on { border-color: rgba(52, 211, 153, 0.6); box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.5), 0 10px 28px rgba(52, 211, 153, 0.14); }
+.sk-plan.is-on .sk-plan__shield { background: var(--ok); color: var(--ok-ink); }
+.sk-plan__name { font-weight: var(--w-semi); }
+.sk-plan__line { font-size: var(--t-xs); color: var(--text-dim); }
+.sk-plan__terms { margin: 0; font-size: var(--t-xs); color: var(--text-dim); line-height: 1.5; }
+.sk-offer--tap { cursor: pointer; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+.sk-offer--tap:hover { border-color: var(--sk-line, var(--border-strong)); }
+.sk-offer.is-on { border-color: var(--sk, var(--accent)); background: var(--sk-soft, var(--accent-soft)); }
+.sk-offer__name { font-weight: var(--w-semi); }
+.sk-offer__price { flex: 0 0 auto; font-family: var(--display); font-weight: var(--w-bold); color: var(--sk-text, var(--accent-text)); }
+.sk-offer__desc { font-size: var(--t-xs); color: var(--text-dim); line-height: 1.5; }
+.sk-offer__days { font-size: var(--t-2xs); color: var(--text-faint); }
+.sk-folio__cell { position: relative; margin: 0; }
+.sk-folio__cell--hero { grid-column: span 2; grid-row: span 2; }
+.sk-money:focus-within { border-color: var(--accent-line); }
+.sk-money__sym { padding: 0 2px 0 11px; color: var(--text-faint); }
+.sk-stat__value { font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold); line-height: 1.05; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-stat__label { font-size: var(--t-xs); color: var(--text-faint); }
+.sk-stat--warn { border-color: rgba(251, 191, 36, 0.4); background: linear-gradient(160deg, var(--warn-soft), transparent 70%), var(--surface); }
+.sk-stat--warn .sk-stat__value { color: var(--warn); }
+.sk-stat--ok .sk-stat__value { color: var(--ok); }
+.sk-stat--accent .sk-stat__value { color: var(--sk-text, var(--accent-text)); }

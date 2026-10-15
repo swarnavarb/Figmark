@@ -18,6 +18,7 @@ import {
   type SectionProps,
 } from '../components/StoreForm';
 import { Timeline } from './StoreApplyPage';
+import '../styles/StoreConsolePage.css';
 
 /**
  * A service store, from the inside.

@@ -19,6 +19,7 @@ import { CollectorProfile } from './CollectorProfile';
 import { ShopStrip, tagPath } from '../components/ShopCards';
 import { tagKey } from '@shared/shop-tags';
 import type { ShopCard } from '../api';
+import '../styles/ProfileByHandlePage.css';
 
 /**
  * Whatever lives at `/<username>`.

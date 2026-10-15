@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import '../styles/InfoTip.css';
 
 /** A small ⓘ that opens a note beside it. Escape, a tap elsewhere or scrolling closes it. */
 export function InfoTip({ label, children }: { label: string; children: ReactNode }) {

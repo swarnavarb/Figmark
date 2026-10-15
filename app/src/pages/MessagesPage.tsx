@@ -16,6 +16,7 @@ import { VoicePicker, VoiceScope } from '../components/SocialVoice';
 import { RoomBar, useLongPress } from '../components/SocialChrome';
 import { useGoBack } from '../components/ScrollManager';
 import { shrink } from '../components/PhotoManager';
+import '../styles/MessagesPage.css';
 
 /**
  * The inbox.

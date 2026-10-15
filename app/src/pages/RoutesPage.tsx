@@ -6,6 +6,7 @@ import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
 import { InfoTip } from '../components/InfoTip';
 import { MoreMenu } from '../components/MoreMenu';
+import '../styles/RoutesPage.css';
 
 /**
  * The routes a shop can send a lot along.

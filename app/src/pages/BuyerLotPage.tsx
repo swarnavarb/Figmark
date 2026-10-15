@@ -11,6 +11,7 @@ import { buyerStatus, ShipmentChip } from '../components/OrderStatus';
 import { ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatDate } from '../format';
 import { PayMore } from './PurchasesPage';
+import '../styles/BuyerLotPage.css';
 
 /**
  * One lot, from inside: everything a buyer in it could want to know, and

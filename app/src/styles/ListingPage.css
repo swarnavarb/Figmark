@@ -1,0 +1,109 @@
+/*
+ * Styles only pages/ListingPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.meter.is-warm .meter__fill { background: var(--grad-warm); }
+.meter.is-hot .meter__fill { background: linear-gradient(135deg, #FF5A5F, #FBBF24); }
+.meter.is-full .meter__fill { background: var(--grad-play); }
+/* Dashed: they are in, but they have not paid. The bar says the same thing. */
+.pile b.pile__soft { border-style: dashed; border-color: var(--text-faint); opacity: 0.8; }
+.roster__row:last-child { border-bottom: 0; }
+.lp__title { margin: 0; font-family: var(--display); font-size: clamp(26px, 4vw, 38px); line-height: 1.1; letter-spacing: -0.02em; }
+.buybox__price { font-family: var(--display); font-size: 30px; font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1; }
+.buybox__was { font-size: 16px; font-weight: var(--w-medium); color: var(--text-faint); letter-spacing: 0; }
+.buybox__buy:active:not(:disabled) { transform: scale(0.97); }
+.buybox__fine { margin: 0; font-size: var(--t-2xs); color: var(--text-faint); }
+.pocard__title { font-family: var(--display); font-size: var(--t-lg); line-height: 1.15; }
+.pocard__note { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.55; }
+.fillring__track { fill: none; stroke: rgba(255, 255, 255, 0.08); stroke-width: 6; }
+.gallery__badges .qribbon { position: static; transform: none; border-radius: var(--r-pill); padding: 4px 10px; }
+.hashtag__hash {
+  font-weight: var(--w-bold); background: linear-gradient(120deg, var(--aqua), var(--pink));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.posts__hint, .posts__empty { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.posts__empty { padding: 14px; border-radius: 12px; text-align: center; background: var(--surface-2); color: var(--text-dim); }
+.posts__problem { margin: 0; font-size: var(--t-xs); color: #F87171; }
+/* The ⋮ sits at the top right of the comment, clear of the bubble's press-and-hold. */
+.post--menu { grid-template-columns: auto minmax(0, 1fr) auto; }
+.post__more { display: flex; justify-content: flex-end; align-items: flex-start; }
+.post--reply { margin-left: 26px; }
+.post__bubble {
+  max-width: 100%; padding: 9px 12px; border-radius: 4px 16px 16px 16px; background: var(--surface-2);
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: default;
+  transition: transform 180ms var(--bounce), box-shadow 180ms;
+}
+.post--reply .post__bubble { background: rgba(168, 85, 247, 0.1); }
+.post.is-open .post__bubble { transform: scale(1.02); box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.55), 0 10px 24px rgba(0, 0, 0, 0.35); }
+.post__seller {
+  padding: 1px 7px; border-radius: var(--r-pill); font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
+  color: #fff; background: var(--grad-hero);
+}
+.post__time { font-size: var(--t-2xs); color: var(--text-faint); }
+.post__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-2xs); }
+.post__chip.is-mine { box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.7); background: rgba(168, 85, 247, 0.16); }
+.post__picker { display: inline-flex; gap: 2px; }
+.post__picker button:hover { transform: scale(1.25) translateY(-3px); }
+.posts__compose { display: grid; gap: 6px; margin-top: 4px; }
+.posts__field {
+  display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 22px;
+  border: 1px solid transparent;
+  background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
+    linear-gradient(120deg, rgba(6, 214, 231, 0.4), rgba(168, 85, 247, 0.4), rgba(236, 72, 153, 0.4)) border-box;
+}
+.posts__send {
+  display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 0; border-radius: 50%; color: #fff;
+  background: var(--grad-hero); cursor: pointer; transition: transform 200ms var(--bounce), opacity 200ms;
+}
+.posts__send:disabled { opacity: 0.4; cursor: default; }
+.posts__send:not(:disabled):hover { transform: scale(1.08) rotate(-8deg); }
+.sellercard__hero.has-cover {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 30%, rgba(0, 0, 0, 0.55)), var(--cover) center / cover no-repeat, var(--sf-grad, var(--grad-hero));
+}
+.sellercard__awning .canopy { height: 40px; }
+.sellercard__sign .sellercard__who { padding-bottom: 8px; }
+.sellercard__sign .sellercard__tier { align-self: center; }
+.sellercard__avatar {
+  display: grid; padding: 3px; border-radius: 50%; margin-bottom: -1px;
+  background: var(--sf-grad, var(--grad-hero)); box-shadow: 0 0 0 3px var(--surface), 0 8px 18px rgba(0, 0, 0, 0.4);
+}
+.sellercard__who .dtile__label { opacity: 0.8; }
+.sellercard__tier {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: var(--r-pill); text-transform: capitalize;
+  font-size: var(--t-xs); font-weight: var(--w-bold); color: #fff; background: rgba(0, 0, 0, 0.28); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+.sellercard__where { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-xs); color: var(--text-dim); }
+.sellercard__stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.sellercard__stat { display: grid; gap: 1px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); box-shadow: inset 3px 0 0 var(--sf-hue, var(--pink)); }
+.sellercard__stat--ok dd { color: #34D399; }
+.sellercard__stat--warn dd { color: #FBBF24; }
+.sellercard__stat--low dd { color: #F87171; }
+.sellercard__acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lp__about .hashtags { margin-top: 2px; }
+.posts__compose--locked {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 12px 16px; border: 0; border-radius: var(--r-pill);
+  font: inherit; font-size: var(--t-sm); text-align: left; color: var(--text-faint); background: var(--surface-2); cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+/* Bump on an item's own page, with its ⓘ. */
+.buybox__bump { display: inline-flex; align-items: center; gap: 6px; }
+.lshare {
+  display: flex; align-items: center; gap: 12px; width: 100%; margin: 12px 0; padding: 12px 14px;
+  border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: border-color 160ms ease, transform 120ms ease;
+}
+/* ── The listing page's share bar ──────────────────────────────────────── */
+.lshare:hover { border-color: var(--lshare-from); }
+.lshare:active { transform: scale(0.99); }
+.lshare--fill {
+  border-color: transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(135deg, var(--lshare-from), var(--lshare-to)) border-box;
+}
+.lshare__icon { font-size: 22px; line-height: 1; }
+.lshare__go {
+  flex: 0 0 auto; padding: 7px 14px; border-radius: var(--r-pill); font-weight: 700; font-size: var(--t-sm);
+  color: #fff; background: linear-gradient(135deg, var(--lshare-from), var(--lshare-to));
+}

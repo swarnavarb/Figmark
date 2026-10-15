@@ -5,6 +5,7 @@ import { ApiRequestError, api, type CommunityDesk } from '../api';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 import { BackLink } from '../components/ScrollManager';
+import '../styles/CommunityServicePage.css';
 
 type Tab = 'waiting' | 'all' | 'earnings';
 

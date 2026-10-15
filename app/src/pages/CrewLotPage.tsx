@@ -13,6 +13,7 @@ import { OrderPhotos } from '../components/OrderPhotos';
 import { ConditionTag } from '../components/ConditionTag';
 import { shrink } from '../components/PhotoManager';
 import { useSession } from '../session';
+import '../styles/CrewLotPage.css';
 
 /**
  * One lot, as the crew works it.

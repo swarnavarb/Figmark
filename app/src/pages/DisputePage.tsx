@@ -10,6 +10,7 @@ import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumR
 import { ScreenshotPicker } from '../components/DisputeFlows';
 import { Avatar, ErrorNotice, Icon, useConfirm } from '../components/ui';
 import { formatDateOrdinal, formatMoney, timeAgo } from '../format';
+import '../styles/DisputePage.css';
 
 /**
  * One dispute: a three-way thread between the person who raised it, the

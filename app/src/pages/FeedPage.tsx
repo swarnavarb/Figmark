@@ -26,6 +26,7 @@ import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../c
 import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
 import { clearPhotoQuery, usePhotoQuery } from '../photoQuery';
+import '../styles/FeedPage.css';
 
 export const PRICE_BANDS = [
   { label: 'Under ₹500', value: '50000' },

@@ -1,0 +1,41 @@
+/*
+ * Styles only pages/BuyerLotPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+/* The lot from inside: the box open, its name on the front. */
+.blot { display: grid; gap: 18px; }
+.blot__hero { position: relative; padding-top: 18px; --card: #F4E6C8; --card-ink: #362A1A; --card-dim: #7D6A50; --tape: rgba(234, 200, 115, 0.85); }
+.blot__lid {
+  position: absolute; z-index: 1; top: 0; left: 0; right: 0; height: 26px;
+  border-radius: 8px 8px 3px 3px; background: var(--lid, var(--violet));
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18), 0 3px 6px rgba(0, 0, 0, 0.28);
+  transform-origin: 0% 100%; transform: rotate(-4deg) translateY(-6px);
+}
+.blot__front {
+  position: relative; display: grid; gap: 10px; justify-items: start;
+  padding: 22px 18px 18px; border-radius: 3px 3px 14px 14px;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08), transparent 16px),
+    linear-gradient(90deg, rgba(90, 60, 20, 0.12), transparent 12px, transparent calc(100% - 12px), rgba(90, 60, 20, 0.12)),
+    var(--card);
+  color: var(--card-ink); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+.blot__front .ptrack { width: 100%; color: var(--card-ink); margin-top: 4px; }
+.blot__name { margin: 0; font-size: var(--t-xl, 24px); line-height: 1.15; letter-spacing: -0.02em; }
+.blot__ids { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: var(--t-xs); color: var(--card-dim); }
+.blot__ids .lotname__no { opacity: 1; }
+.blot__hint { margin: 0; font-size: var(--t-sm); color: var(--card-dim); }
+.blot__facts { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.blot__front .lotphase { background: rgba(124, 58, 237, 0.12); color: #5B21B6; border-color: rgba(124, 58, 237, 0.35); }
+.blot__front .lotphase--filling { background: rgba(217, 119, 6, 0.14); color: #8A4B05; border-color: rgba(217, 119, 6, 0.35); }
+.blot__front .lotphase--in_transit { background: rgba(37, 99, 235, 0.12); color: #1E4FB8; border-color: rgba(37, 99, 235, 0.35); }
+.blot__front .lotphase--received { background: rgba(5, 150, 105, 0.13); color: #05684A; border-color: rgba(5, 150, 105, 0.35); }
+.blot__h { margin: 0; font-size: var(--t-lg); }
+.blot__now { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.inside__main { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; }
+.inside__status { font-size: var(--t-xs); color: var(--text-dim); }
+.inside__step { font-size: var(--t-xs); color: var(--text-faint); }
+.inside__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.inside__link { margin-left: auto; font-size: var(--t-xs); color: var(--accent-text); text-decoration: none; }
+.inside__track { border-top: 1px dashed var(--border); padding-top: 10px; }

@@ -6,6 +6,7 @@ import { ManagerMark } from '../components/ManagerBadge';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
+import '../styles/MyDisputesPage.css';
 
 type Tab = 'buyer' | 'store' | 'community';
 

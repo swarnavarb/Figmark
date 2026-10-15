@@ -1,0 +1,20 @@
+/*
+ * Styles only pages/InvitePage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.invp { display: grid; gap: 18px; max-width: 560px; margin: 0 auto; width: 100%; }
+/* ── The invite landing page ───────────────────────────────────────────── */
+.invp__hero {
+  position: relative; overflow: hidden; display: grid; gap: 12px; justify-items: center; text-align: center;
+  padding: 36px 20px 28px; border-radius: 24px; border: 1px solid var(--border-strong);
+  background: radial-gradient(90% 80% at 50% 0%, rgba(124, 58, 237, 0.35), transparent 70%), var(--surface);
+}
+.invp__hero--seller { background: radial-gradient(90% 80% at 50% 0%, rgba(163, 230, 53, 0.28), transparent 70%), var(--surface); }
+.invp__chip {
+  padding: 4px 12px; border-radius: var(--r-pill); font-size: var(--t-xs); font-weight: 600;
+  background: var(--violet-soft); border: 1px solid var(--violet-line); color: var(--violet-text);
+}
+.invp__acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
+.invp__why { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.invp__icon { font-size: 22px; line-height: 1.2; }

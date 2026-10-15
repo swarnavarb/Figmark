@@ -13,6 +13,7 @@ import { Modal } from './LotFields';
 import { PhotoManager } from './PhotoManager';
 import { ErrorNotice } from './ui';
 import { LBox, OptionTiles, Switch, ToggleRow, daysUntil, isoInDays } from './ListingForm';
+import '../styles/Buy.css';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and

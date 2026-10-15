@@ -4,6 +4,7 @@ import { ApiRequestError, api } from '../api';
 import { shrink } from './PhotoManager';
 import { Lightbox } from './SocialPost';
 import { Icon, useConfirm } from './ui';
+import '../styles/OrderPhotos.css';
 
 const AUDIENCE_LABEL: Record<PhotoAudience, string> = { buyer: 'Customer', supplier: 'Supplier', handler: 'Handler' };
 
