@@ -18,6 +18,7 @@ import { LBox, OptionTiles } from '../components/ListingForm';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import type { CardButton } from '@shared/buttons';
 import { ReceivedDialog } from '../components/ReceivedDialog';
+import { SALES_NEWS_EVENT } from '../components/Notifications';
 import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
@@ -360,10 +361,9 @@ function SellHome({ store, canList, onGo, section }: {
 
   useEffect(() => {
     let cancelled = false;
-    /* Three numbers, counted on the server: this used to fetch the whole
-       sales book and every lot with its orders to count them here. Read
-       again every minute and whenever the app comes back to the front, so a
-       new order shows up without a reload. */
+    /* Three numbers, counted on the server. Read when the Sell tab opens or
+       changes section, and again only when the bell brings news of an order
+       or a payment - no clock of its own. */
     const read = () => void api.sellTodo(store.ownerId).catch(() => null).then((counts) => {
       // Nothing to count yet - an unverified shop is refused both - says nothing rather than zeros.
       if (cancelled || !counts || (counts.answer === null && counts.lots === null)) return;
@@ -375,14 +375,10 @@ function SellHome({ store, canList, onGo, section }: {
       });
     });
     read();
-    /* Only while the app is on screen: a phone in a pocket asks nothing. */
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') read(); }, 60_000);
-    const onShow = () => { if (document.visibilityState === 'visible') read(); };
-    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener(SALES_NEWS_EVENT, read);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', onShow);
+      window.removeEventListener(SALES_NEWS_EVENT, read);
     };
   }, [store.ownerId, seesLots, section]);
 
@@ -2655,9 +2651,9 @@ function OrderRow({
 
         {working && row.serial && row.serial.length > 0 && (
           <div className="lrow__wide">
-            {/* Every step stays in view in a lot: the pills are small, and a
-                lot is worked step by step across its orders. */}
-            <SerialButtons compact shipHere
+            {/* Folded as on the Orders tab: where it is and the next press,
+                with All steps for the rest. */}
+            <SerialButtons fold shipHere
               buttons={row.serial}
               busy={busy}
               who={{ itemName: row.itemName, buyerName: row.buyer.name }}

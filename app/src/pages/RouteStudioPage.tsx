@@ -552,7 +552,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
       <header className="rshead">
         <div className="rshead__top">
         <input id="rs-name" className="rshead__name" value={name} onChange={(event) => setName(event.target.value)}
-          placeholder="Name this route - e.g. Guangzhou air" aria-label="Route name" required autoFocus />
+          placeholder="Name this route - e.g. Guangzhou air" aria-label="Route name" required />
         <span className="rshead__hint">
           <InfoTip label="About the route name">For your own lists - buyers see the steps, not this name.</InfoTip>
           {(editing || sample?.onDelete) && (
@@ -918,7 +918,7 @@ function WaitMessageEditor({ step, onChange, onDone }: {
         <option value="Custom">Custom…</option>
       </select>
       {customMode && (
-        <input value={step.waitMessage ?? ''} placeholder="e.g. Leaving {origin}" autoFocus
+        <input value={step.waitMessage ?? ''} placeholder="e.g. Leaving {origin}"
           aria-label="Custom wait message"
           onChange={(event) => onChange({ waitMessage: event.target.value })} />
       )}
@@ -953,7 +953,6 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
   onMove: (to: number) => void;
 }) {
   const vars = useContext(PreviewVarsContext);
-  const [open, setOpen] = useState(false);
 
   /* Always first, never renamed, moved or removed - "Order Placed" reads as
      a fact about every route, and it is the one place a real order's payment
@@ -965,7 +964,7 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
         <div className="rsnode__card rsnode__card--locked">
           <Scene step={step} index={index} />
           <div className="rsnode__top">
-            <span className="rsnode__no">Step 1 · always first</span>
+            <span className="rsnode__no is-fixed">Step 1 · always first</span>
           </div>
           <div className="rsnode__top">
             <span className="rsnode__name rsnode__name--static">{step.name}</span>
@@ -992,17 +991,23 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
       <span className="rsnode__dot" aria-hidden="true">{stepEmoji(step, index)}</span>
       <div className={`rsnode__card${isDelivered ? ' rsnode__card--delivered' : ''}`}>
         <Scene step={step} index={index} />
-        <span className="rsnode__no">Step {index + 1}{fixed ? (isDelivered ? ' · always last' : ' · always before Delivered') : ''}</span>
+        <span className={`rsnode__no${fixed ? ' is-fixed' : ''}`}>Step {index + 1}{fixed ? (isDelivered ? ' · always last' : ' · always before Delivered') : ''}</span>
         <div className="rsnode__top">
           <input className="rsnode__name" value={step.name} placeholder="What happens here"
             aria-label={`Step ${index + 1} name`} disabled={isDelivered}
             onChange={(event) => onChange({ name: event.target.value })} />
           {fixed && <Icon name="lock" size={13} />}
           {!fixed && (
-            <button type="button" className="iconbtn" aria-label={open ? 'Collapse node' : 'Expand node'}
-              onClick={() => setOpen((value) => !value)}>
-              <Icon name="chevron" size={13} />
-            </button>
+            <MoreMenu label={`More for step ${index + 1}`} items={[
+              { label: 'Move up', disabled: index === 0 || lockedAbove, onClick: () => onMove(index - 1) },
+              { label: 'Move down', disabled: index === count - 1 || lockedBelow, onClick: () => onMove(index + 1) },
+              zone === 'lot' && {
+                label: step.forward ? 'No courier hand-over here' : 'Hand-over to a courier here',
+                onClick: () => onChange({ forward: !step.forward }),
+              },
+              step.custom && { label: 'Take its button off', onClick: () => onChange({ custom: undefined, button: undefined, assignee: undefined }) },
+              { label: 'Delete step', danger: true, onClick: onRemove },
+            ]} />
           )}
         </div>
 
@@ -1029,42 +1034,17 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
                 <input disabled placeholder="AWB - e.g. 1234567890" aria-label="Example AWB" />
               </span>
             )}
-            {step.trigger !== 'delivered' && (
-              <span className="rsbtn__who" role="group" aria-label="Who else can press it">
-                <span className="rsbtn__who-label">Who presses it</span>
-                {WHO.map((who) => (
-                  <button key={who.id} type="button" aria-pressed={(step.assignee ?? 'seller') === who.id}
-                    className={`rsbtn__whochip${(step.assignee ?? 'seller') === who.id ? ' is-on' : ''}`}
-                    onClick={() => onChange({ assignee: who.id === 'seller' ? undefined : who.id })}>
-                    {who.label}
-                  </button>
-                ))}
-              </span>
-            )}
-            {step.custom && (
-              <button type="button" className="stepact__skip" onClick={() => onChange({ custom: undefined, button: undefined, assignee: undefined })}>
-                Take this button off
-              </button>
-            )}
+            {step.trigger !== 'delivered' && <WhoPresses step={step} zone={zone} onChange={onChange} />}
             {problems.map((text) => <span key={text} className="rsbtn__wrong">{text}</span>)}
           </div>
         ) : step.name.trim() && (
           <span className="rsbtn__none">
-            {zone === 'lot' ? '🚢 The lot moves this step - items in a lot move together' : '↪ No button - ticked off with the next one'}
+            <span className="rsbtn__nonetext">
+              {zone === 'lot' ? '🚢 The lot moves this step - items in a lot move together' : '↪ No button - ticked off with the next one'}
+            </span>
             {/* Moving the crate is the forwarder's job, so a lot step can be
-                theirs to press - every buyer in the lot is told when it is. */}
-            {zone === 'lot' && !fixed && (
-              <span className="rsbtn__who" role="group" aria-label="Who moves the lot here">
-                <span className="rsbtn__who-label">Who moves it</span>
-                {LOT_WHO.map((who) => (
-                  <button key={who.id} type="button" aria-pressed={(step.assignee ?? 'seller') === who.id}
-                    className={`rsbtn__whochip${(step.assignee ?? 'seller') === who.id ? ' is-on' : ''}`}
-                    onClick={() => onChange({ assignee: who.id === 'seller' ? undefined : 'forwarder' })}>
-                    {who.label}
-                  </button>
-                ))}
-              </span>
-            )}
+                theirs to press too - every buyer in the lot is told when it is. */}
+            {zone === 'lot' && !fixed && <WhoPresses step={step} zone={zone} onChange={onChange} />}
             {zone !== 'lot' && !fixed && (
               <button type="button" className="rsbtn__add" onClick={() => onChange({ custom: true })}>
                 ✨ Give it its own button
@@ -1073,54 +1053,58 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
           </span>
         )}
 
-        {open && !fixed && (
-          <div className="rsnode__more">
-            {zone === 'lot' && (
-              <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
-                <input type="checkbox" checked={Boolean(step.forward)}
-                  onChange={(event) => onChange({ forward: event.target.checked })} />
-                <span>Hand-over to a courier — ask for a tracking ID and courier name when the lot moves here</span>
-              </label>
-            )}
-
-            {zone === 'lot' && step.forward && (
-              <div className="rsnode__forward">
-                <span className="field__hint">
-                  Asked for when the lot reaches this step. Both optional - if you leave them blank, buyers see nothing extra, not empty fields.
-                </span>
-                <input disabled placeholder="Tracking ID / AWB — e.g. DHL1234567890" aria-label="Example tracking ID or AWB" />
-                <input disabled placeholder="Courier — e.g. DHL" aria-label="Example courier name" />
-              </div>
-            )}
-
-            <div className="rsnode__acts">
-              <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
-                disabled={index === 0 || lockedAbove} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
-              <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
-                disabled={index === count - 1 || lockedBelow} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
-              <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${index + 1}`}
-                onClick={onRemove}><Icon name="trash" size={12} /></button>
-            </div>
-          </div>
+        {zone === 'lot' && step.forward && !fixed && (
+          <span className="rsnode__handover">
+            📦 Courier hand-over: the tracking ID and courier are asked for when the lot moves here (both optional).
+          </span>
         )}
       </div>
     </div>
   );
 }
 
-/** Who can press a button: the seller always, and one crew member besides if handed it. */
-const WHO: { id: 'seller' | StepAssignee; label: string }[] = [
-  { id: 'seller', label: '🧑‍💼 Only you' },
-  { id: 'supplier', label: '🏭 + Supplier' },
-  { id: 'forwarder', label: '✈️ + Forwarder' },
-  { id: 'handler', label: '🧑‍🔧 + Handler' },
-];
+/**
+ * Who presses a step: you always, and the crew member that part of the
+ * journey belongs to - the supplier before the lot, the forwarder in it, the
+ * handler after. Both can be on at once; one handed out elsewhere before
+ * still shows, so it can be taken off.
+ */
+function WhoPresses({ step, zone, onChange }: {
+  step: RouteStep;
+  zone: StepZone;
+  onChange: (patch: Partial<RouteStep>) => void;
+}) {
+  const crew = ZONE_CREW[zone];
+  const shown = step.assignee && step.assignee !== crew.id ? [crew, CREW[step.assignee]] : [crew];
+  return (
+    <span className="rsbtn__who" role="group" aria-label="Who presses it">
+      <span className="rsbtn__whochip is-on is-fixed" title="You can always press it">🧑‍💼 You</span>
+      {shown.map((who) => {
+        const on = step.assignee === who.id;
+        return (
+          <button key={who.id} type="button" aria-pressed={on} className={`rsbtn__whochip${on ? ' is-on' : ''}`}
+            onClick={() => onChange({ assignee: on ? undefined : who.id })}>
+            {on ? '✓ ' : '+ '}{who.label}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
 
-/** Who may move the whole lot onto a step inside it. */
-const LOT_WHO: { id: 'seller' | 'forwarder'; label: string }[] = [
-  { id: 'seller', label: '🧑‍💼 Only you' },
-  { id: 'forwarder', label: '✈️ + Forwarder' },
-];
+/** The crew who can press a step besides the seller. */
+const CREW: Record<StepAssignee, { id: StepAssignee; label: string }> = {
+  supplier: { id: 'supplier', label: '🏭 Supplier' },
+  forwarder: { id: 'forwarder', label: '✈️ Forwarder' },
+  handler: { id: 'handler', label: '🧑‍🔧 Handler' },
+};
+
+/** Whose part of the journey each zone is. */
+const ZONE_CREW: Record<StepZone, { id: StepAssignee; label: string }> = {
+  pre: CREW.supplier,
+  lot: CREW.forwarder,
+  post: CREW.handler,
+};
 
 /** What pressing each button does, said under it in the Studio. */
 const BUTTON_NOTE: Record<StepTrigger, string> = {

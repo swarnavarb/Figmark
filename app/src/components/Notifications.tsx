@@ -33,6 +33,11 @@ import { isReloading, isStale, loadFresh } from '../freshness';
  */
 const POLL_MS = 60_000;
 
+/** Said on the window when the bell brings news of an order or a payment, so
+    the Sell tab's counts read again then rather than on a clock of their own. */
+export const SALES_NEWS_EVENT = 'figmark:sales-news';
+const SALES_NEWS: readonly NotificationCategory[] = ['orders', 'payments'];
+
 const CATEGORY_ICON: Record<NotificationCategory, IconName> = {
   messages: 'message',
   orders: 'truck',
@@ -90,6 +95,8 @@ export function Notifications() {
   const asked = useRef<NotificationCategory | null>(null);
   const shown = useRef<AppNotification[]>([]);
   shown.current = rows;
+  // Order and payment rows already seen (id and count), so only a new one is news.
+  const salesSeen = useRef<Set<string> | null>(null);
 
   const counts = (page: NotificationPage) => {
     setUnread(page.unread);
@@ -104,6 +111,9 @@ export function Notifications() {
       const page = await api.notifications({ category });
       if (asked.current !== category) return;
       counts(page);
+      const sales = page.notifications.filter((row) => SALES_NEWS.includes(row.category)).map((row) => `${row.id}:${row.count}`);
+      if (salesSeen.current && sales.some((key) => !salesSeen.current!.has(key))) window.dispatchEvent(new Event(SALES_NEWS_EVENT));
+      salesSeen.current = new Set([...(salesSeen.current ?? []), ...sales]);
       const fresh = new Set(page.notifications.map((row) => row.id));
       const oldest = page.notifications[page.notifications.length - 1]?.createdAt;
       const older = oldest ? shown.current.filter((row) => !fresh.has(row.id) && row.createdAt < oldest) : [];
