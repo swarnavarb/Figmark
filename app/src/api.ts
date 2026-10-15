@@ -2602,7 +2602,7 @@ export const api = {
   },
   /** The Sell tab's three counts; null where this person may not see one. */
   sellTodo: (storeId?: string) =>
-    request<{ answer: number | null; noLot: number | null; lots: number | null }>(
+    request<{ answer: number | null; answerSince?: string[] | null; noLot: number | null; lots: number | null }>(
       `/me/sell/todo${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
 
   /** The seller cannot serve an order. Puts the stock and the place back. */

@@ -2731,6 +2731,9 @@ await check('the Sell tab counts on the server what it used to count from the wh
   assert.equal(counts.answer, active.filter((row) => waiting.has(row.id)).length);
   assert.equal(counts.noLot, active.filter((row) => row.awaitingLot).length);
   assert.ok(counts.answer > 0, 'with something to answer in it');
+  // One time per order waiting, so the tab can mark the ones newer than the seller's last look.
+  assert.equal(counts.answerSince.length, counts.answer);
+  assert.ok(counts.answerSince.every((at) => typeof at === 'string' && !Number.isNaN(Date.parse(at))));
   assert.equal(typeof counts.lots, 'number');
   const refused = await sellTodo(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
   assert.equal(refused.status, 403);

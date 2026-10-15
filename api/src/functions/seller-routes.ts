@@ -741,8 +741,14 @@ async function sellTodo(request: HttpRequest, _context: InvocationContext) {
     ((order.paymentStatus === 'claimed' || order.status === 'payment_reversal_pending') && !isCancelledLike(order.status))
     || actionsFor(order, storeId).includes('accept');
 
+  const waiting = active ? active.filter(waitsOnShop) : null;
   return json(200, {
-    answer: active ? active.filter(waitsOnShop).length : null,
+    answer: waiting ? waiting.length : null,
+    /* When each one started waiting - a claim, or the order itself - so the
+       Sell tab can mark the ones that arrived since the seller last looked. */
+    answerSince: waiting
+      ? waiting.map((order) => order.paymentClaim?.claimedAt ?? order.placedAt ?? order.createdAt)
+      : null,
     noLot: active ? active.filter((order) => awaitingLot(order)).length : null,
     lots: lots ? lots.filter((lot) => !lotIsDone(lot)).length : null,
   });

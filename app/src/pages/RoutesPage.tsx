@@ -4,6 +4,8 @@ import { routePartsLine, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
+import { InfoTip } from '../components/InfoTip';
+import { MoreMenu } from '../components/MoreMenu';
 
 /**
  * The routes a shop can send a lot along.
@@ -76,14 +78,7 @@ export function RoutesList({ spotlightNew = false }: {
 
   return (
     <div className="stack">
-      <div className="page__head">
-        <div>
-          <h1>Routes</h1>
-          <p className="muted">
-            The steps a lot travels. Buyers read these words as their tracking, so write them
-            the way you would say them.
-          </p>
-        </div>
+      <div className="rhead">
         <span className="spotlight-row">
           <Link to="/routes/studio/new" className="btn"><Icon name="plus" size={14} /> New route</Link>
           {spotlightNew && (
@@ -91,8 +86,14 @@ export function RoutesList({ spotlightNew = false }: {
               <Icon name="left" size={18} />
             </span>
           )}
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setShowFaq(!showFaq)} aria-label="FAQ" title="How routes and tracking work">
-            <Icon name="message" size={14} />
+        </span>
+        <span className="rhead__help">
+          <InfoTip label="What a route is">
+            The steps a lot travels. Buyers read these words as their tracking, so write them
+            the way you would say them.
+          </InfoTip>
+          <button type="button" className="linkbtn" aria-expanded={showFaq} onClick={() => setShowFaq(!showFaq)}>
+            {showFaq ? 'Hide help' : 'How it works'}
           </button>
         </span>
       </div>
@@ -108,22 +109,22 @@ export function RoutesList({ spotlightNew = false }: {
             const use = data.usage?.[route.id];
             return (
               <div key={route.id} className="stack" style={{ gap: 6 }}>
-                <RouteRow to={`/routes/studio/${encodeURIComponent(route.id)}`} name={route.name} steps={route.steps}
-                  note={use && use.lots > 0
-                    ? `On ${use.lots} ${use.lots === 1 ? 'lot' : 'lots'}${use.behind > 0 ? ` · ${use.behind} on older steps` : ''}`
-                    : undefined} />
-                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  {use && use.behind > 0 && (
-                    <button type="button" className="btn btn--ghost btn--sm"
-                      disabled={applying === route.id} onClick={() => void apply(route.id, use.behind)}>
-                      {applying === route.id ? 'Updating…' : `Update ${use.behind === 1 ? 'that lot' : `${use.behind} lots`} to these steps`}
-                    </button>
-                  )}
-                  <button type="button" className="btn btn--ghost btn--danger btn--sm"
-                    disabled={applying === route.id} onClick={() => void remove(route.id, route.name)}>
-                    <Icon name="trash" size={13} /> Delete
-                  </button>
+                <div className="rlist__item">
+                  <RouteRow to={`/routes/studio/${encodeURIComponent(route.id)}`} name={route.name} steps={route.steps}
+                    note={use && use.lots > 0
+                      ? `On ${use.lots} ${use.lots === 1 ? 'lot' : 'lots'}${use.behind > 0 ? ` · ${use.behind} on older steps` : ''}`
+                      : undefined} />
+                  {/* Rare and final, so it is behind the ⋯ rather than a red button under every route. */}
+                  <MoreMenu label={`More for ${route.name}`} items={[
+                    { label: 'Delete route', danger: true, disabled: applying === route.id, onClick: () => void remove(route.id, route.name) },
+                  ]} />
                 </div>
+                {use && use.behind > 0 && (
+                  <button type="button" className="btn btn--ghost btn--sm" style={{ justifySelf: 'start' }}
+                    disabled={applying === route.id} onClick={() => void apply(route.id, use.behind)}>
+                    {applying === route.id ? 'Updating…' : `Update ${use.behind === 1 ? 'that lot' : `${use.behind} lots`} to these steps`}
+                  </button>
+                )}
               </div>
             );
           })}

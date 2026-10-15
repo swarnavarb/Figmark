@@ -9,6 +9,7 @@ import { trackingSearchUrl } from '@shared/tracking-links';
 import { formatDateOrdinal } from '../format';
 import { Icon } from './Icon';
 import { StepMark, WaveLoader } from './ui';
+import { InfoTip } from './InfoTip';
 import { STAGE_ICON_META } from './RouteBuilder';
 
 /**
@@ -27,7 +28,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, actFor, lockFrom, zones, moveUpTo, ended,
+  leaveAt, leaveNote, actFor, lockFrom, zones, moveUpTo, ended, brief = false,
 }: {
   steps: RouteStep[];
   current: number;
@@ -100,6 +101,8 @@ export function Ladder({
    * how it ended: nothing further is going to happen to it.
    */
   ended?: { label: string; at?: string | null; note?: string | null } | null;
+  /** Each step's description behind an ⓘ by its name, so the timeline reads as a list of steps. */
+  brief?: boolean;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -198,8 +201,13 @@ export function Ladder({
             <span className="ladder__body">
               <span className="ladder__name">
                 {renderStepText(step.name, vars ?? {})}
+                {brief && step.description && (
+                  <InfoTip label={`About ${renderStepText(step.name, vars ?? {})}`}>
+                    {renderStepText(step.description, vars ?? {})}
+                  </InfoTip>
+                )}
               </span>
-              {step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
+              {!brief && step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
               {actFor?.(step, index, steps)}
 
               {said.map((event, at) => (

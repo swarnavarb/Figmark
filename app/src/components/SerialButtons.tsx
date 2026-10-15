@@ -23,7 +23,7 @@ type Entry =
  * where the crate is moved. Every press of the item's own asks first: each
  * one changes what a buyer reads.
  */
-export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, stepOf, compact = false, shipHere = false }: {
+export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, stepOf, compact = false, shipHere = false, fold = false }: {
   buttons: readonly SerialButton[];
   busy: boolean;
   /** Named in every confirmation, so nobody confirms the wrong parcel. */
@@ -43,8 +43,14 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
   compact?: boolean;
   /** Dispatched asks for the courier and AWB right here, instead of on the order page. */
   shipHere?: boolean;
+  /**
+   * Folded to the one button that is next, with every step a tap away - for
+   * a list, where a whole line of pills on every card is more than anyone reads.
+   */
+  fold?: boolean;
 }) {
   const [asking, setAsking] = useState<{ button: ItemButton; on: boolean } | null>(null);
+  const [unfolded, setUnfolded] = useState(false);
   const [shipping, setShipping] = useState<ItemButton | null>(null);
 
   /* The lot's moves fold into one stop, where the first of them falls. */
@@ -72,79 +78,8 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
     void onItem(button.key, on);
   }
 
-  return (
-    <div className={`serial${compact ? ' serial--compact' : ''}`}>
-      <div className="serial__head">
-        <span>{stepOf ? `Step ${Math.min(stepOf.at + 1, stepOf.of)} of ${stepOf.of}` : 'Route'}</span>
-        {doneCount === entries.length
-          ? <span className="serial__count serial__count--all">✓ All done</span>
-          : (
-            <span className="serial__count" title="Buttons pressed">
-              {doneCount} of {entries.length} {entries.length === 1 ? 'button' : 'buttons'} done
-            </span>
-          )}
-      </div>
-      <ol className="serial__list">
-        {entries.map((entry, index) => {
-          const done = doneOf(entry);
-          const state = done ? 'done' : index === nextAt ? 'next' : 'later';
-          const className = `serial__btn serial__btn--${state} serial__btn--${entry.kind}`;
-          /* Each stop comes in after the one before it. */
-          const style = { '--s': index } as CSSProperties;
-
-          if (entry.kind === 'lot') {
-            return (
-              <li key="lot" style={style}>
-                <button type="button" className={className}
-                  title={done ? 'The lot has done its part — open its Tracking' : `Open the lot's Tracking to move it — next: ${entry.step}`}
-                  onClick={onLot}>
-                  <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
-                  <span className="serial__label">Lot</span>
-                </button>
-              </li>
-            );
-          }
-
-          const { button } = entry;
-          const body = (
-            <>
-              <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
-              <span className="serial__label">{compact ? shortButtonLabel(button.key, button.label) : button.label}</span>
-            </>
-          );
-          /* Dispatched is pressed on the order, where the courier and AWB go in. */
-          if (button.lastMile === 'dispatched' && !done && shipHere) {
-            return (
-              <li key={button.key} style={style}>
-                <button type="button" className={className} disabled={busy} title="Asks for the courier and AWB"
-                  onClick={() => setShipping(button)}>
-                  {body}
-                </button>
-              </li>
-            );
-          }
-          if (button.lastMile === 'dispatched' && !done && orderLink) {
-            return (
-              <li key={button.key} style={style}>
-                <Link to={orderLink.to} state={{ ...(orderLink.state as object | undefined), act: 'dispatched' }}
-                  className={className} title="Opens the order for the courier and AWB">
-                  {body}
-                </Link>
-              </li>
-            );
-          }
-          return (
-            <li key={button.key} style={style}>
-              <button type="button" className={className} disabled={busy}
-                title={done ? `Done — press to undo: ${button.step}` : `Moves this item to: ${button.step}`}
-                onClick={() => setAsking({ button, on: !done })}>
-                {body}
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-
+  const dialogs = (
+    <>
       {shipping && (
         <ShipDialog busy={busy} onClose={() => setShipping(null)}
           intro={<><b>{who.itemName}</b> for <b>{who.buyerName}</b>. Add the courier and AWB so they can track their parcel.</>}
@@ -179,6 +114,109 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
           </div>
         </Modal>
       )}
+    </>
+  );
+
+  /* One stop on the line, drawn the same folded or open. */
+  const stop = (entry: Entry, index: number) => {
+    const done = doneOf(entry);
+    const state = done ? 'done' : index === nextAt ? 'next' : 'later';
+    const className = `serial__btn serial__btn--${state} serial__btn--${entry.kind}`;
+    /* Each stop comes in after the one before it. */
+    const style = { '--s': index } as CSSProperties;
+
+    if (entry.kind === 'lot') {
+      return (
+        <li key="lot" style={style}>
+          <button type="button" className={className}
+            title={done ? 'The lot has done its part — open its Tracking' : `Open the lot's Tracking to move it — next: ${entry.step}`}
+            onClick={onLot}>
+            <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
+            <span className="serial__label">{fold && !unfolded ? 'Move lot' : 'Lot'}</span>
+          </button>
+        </li>
+      );
+    }
+
+    const { button } = entry;
+    const body = (
+      <>
+        <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
+        <span className="serial__label">{compact ? shortButtonLabel(button.key, button.label) : button.label}</span>
+      </>
+    );
+    /* Dispatched is pressed on the order, where the courier and AWB go in. */
+    if (button.lastMile === 'dispatched' && !done && shipHere) {
+      return (
+        <li key={button.key} style={style}>
+          <button type="button" className={className} disabled={busy} title="Asks for the courier and AWB"
+            onClick={() => setShipping(button)}>
+            {body}
+          </button>
+        </li>
+      );
+    }
+    if (button.lastMile === 'dispatched' && !done && orderLink) {
+      return (
+        <li key={button.key} style={style}>
+          <Link to={orderLink.to} state={{ ...(orderLink.state as object | undefined), act: 'dispatched' }}
+            className={className} title="Opens the order for the courier and AWB">
+            {body}
+          </Link>
+        </li>
+      );
+    }
+    return (
+      <li key={button.key} style={style}>
+        <button type="button" className={className} disabled={busy}
+          title={done ? `Done — press to undo: ${button.step}` : `Moves this item to: ${button.step}`}
+          onClick={() => setAsking({ button, on: !done })}>
+          {body}
+        </button>
+      </li>
+    );
+  };
+
+  const folded = fold && !unfolded;
+  const allDone = doneCount === entries.length;
+  const stepWord = stepOf ? `Step ${Math.min(stepOf.at + 1, stepOf.of)} of ${stepOf.of}` : 'Route';
+  const tally = `${doneCount} of ${entries.length} ${entries.length === 1 ? 'button' : 'buttons'} done`;
+
+  if (folded) {
+    return (
+      <div className={`serial serial--folded${compact ? ' serial--compact' : ''}`}>
+        <div className="serial__fold">
+          <span className="serial__where" title={tally}>
+            {allDone ? '✓ All done' : stepWord}
+            <span className="serial__meter" aria-hidden="true">
+              <span style={{ width: `${entries.length ? (doneCount / entries.length) * 100 : 0}%` }} />
+            </span>
+          </span>
+          {!allDone && nextAt >= 0 && <ol className="serial__list serial__list--one">{stop(entries[nextAt]!, nextAt)}</ol>}
+          <button type="button" className="serial__more" aria-expanded={false} onClick={() => setUnfolded(true)}>
+            All steps
+          </button>
+        </div>
+        {dialogs}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`serial${compact ? ' serial--compact' : ''}`}>
+      <div className="serial__head">
+        <span>{stepWord}</span>
+        {fold
+          ? <button type="button" className="serial__more" aria-expanded onClick={() => setUnfolded(false)}>Fewer</button>
+          : allDone
+            ? <span className="serial__count serial__count--all">✓ All done</span>
+            : <span className="serial__count" title="Buttons pressed">{tally}</span>}
+      </div>
+      <ol className="serial__list">
+        {entries.map(stop)}
+      </ol>
+      {dialogs}
     </div>
   );
 }
+

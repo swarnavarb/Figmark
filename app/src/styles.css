@@ -1994,6 +1994,8 @@ code, kbd, samp, pre {
 .lotbox__count { font-size: var(--t-2xs); color: var(--card-dim); }
 .lotbox__bar { height: 4px; border-radius: 4px; background: rgba(54, 42, 26, 0.12); overflow: hidden; }
 .lotbox__bar > span { display: block; height: 100%; border-radius: inherit; background: #4C9A6A; }
+.lotbox__value { font-size: var(--t-sm); color: var(--card-ink, inherit); font-variant-numeric: tabular-nums; }
+.lotbox__packed { font-size: var(--t-2xs); color: var(--card-dim); margin-top: -4px; }
 /* The buyer-facing status, darkened to read on cardboard. */
 .lotbox .lotphase { padding: 2px 8px; font-size: var(--t-2xs); gap: 4px; background: rgba(217, 119, 6, 0.14); color: #8A4B05; border-color: rgba(217, 119, 6, 0.35); }
 .lotbox .lotphase--closed { background: rgba(124, 58, 237, 0.12); color: #5B21B6; border-color: rgba(124, 58, 237, 0.35); }
@@ -14367,6 +14369,23 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .serial--compact .serial__btn { width: auto; min-height: 28px; gap: 5px; padding: 2px 10px 2px 3px; border-radius: 14px; font-size: var(--t-2xs); }
 .serial--compact .serial__n { width: 20px; height: 20px; font-size: 10px; }
 .serial--compact .serial__label { display: block; max-width: 10rem; text-overflow: ellipsis; white-space: nowrap; }
+/* Folded: where it is, the one button that is next, and a way to see the rest. */
+.serial__fold { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.serial__where {
+  display: grid; gap: 4px; flex: none; min-width: 4.5rem;
+  font-size: var(--t-2xs); font-weight: var(--w-semi); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint);
+}
+.serial__meter { display: block; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.serial__meter > span { display: block; height: 100%; border-radius: inherit; background: var(--ok); }
+.serial__list--one { display: flex; flex: 1 1 9rem; min-width: 0; }
+.serial__list--one > li { flex: 1; }
+.serial__more {
+  flex: none; margin-left: auto; padding: 4px 2px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--t-2xs); color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px;
+}
+.serial__head .serial__more { text-transform: none; letter-spacing: 0; font-weight: var(--w-semi); }
+.serial--compact.serial--folded .serial__btn { width: 100%; }
+.cmenu__list > button.is-danger { color: var(--danger, #ff6b6b); }
 
 /* The customer's coloured edge, as on the handler's screen. */
 .ocust { position: relative; }
@@ -14562,6 +14581,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .setupcheck { display: grid; gap: 10px; margin-bottom: 16px; }
 .setupcheck__bar { display: block; height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .setupcheck__bar > span { display: block; height: 100%; border-radius: inherit; background: var(--grad-hero); transition: width 0.3s ease; }
+.setupcheck__head {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0;
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.setupcheck__head .card__title { flex: 1; }
+.setupcheck.is-folded { gap: 8px; }
 .setupcheck__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .setupcheck__row { display: flex; align-items: center; gap: 10px; min-height: 32px; font-size: var(--t-sm); }
 .setupcheck__row.is-done .setupcheck__label { color: var(--text-faint); text-decoration: line-through; }
@@ -14593,6 +14618,18 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .todo__tile.is-hot { border-color: var(--coral-line); background: linear-gradient(160deg, var(--coral-soft, var(--surface-2)), transparent 70%); }
 .todo__count { font-size: var(--t-xl, 1.5rem); line-height: 1.1; font-variant-numeric: tabular-nums; }
 .todo__label { font-size: var(--t-xs); color: var(--text-dim); }
+/* A new order since the seller last opened Orders: a sticker on the corner of its tile. */
+.todo__tile { position: relative; }
+.todo__new {
+  position: absolute; top: -8px; right: -4px; padding: 2px 8px; border-radius: 999px;
+  background: var(--coral, #ff5a5f); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-bold, 700);
+  letter-spacing: .02em; text-transform: uppercase; transform: rotate(6deg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35); animation: todo-new-pop .4s var(--ease, ease-out) both;
+}
+@keyframes todo-new-pop { from { transform: rotate(6deg) scale(.4); opacity: 0; } to { transform: rotate(6deg) scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .todo__new { animation: none; } }
+/* Off the Listings tab, List an item steps back to an ordinary button. */
+.sellhome__list--slim { justify-self: start; }
 
 /* The five places a shop's work lives. Scrolls on a phone like .sections. */
 .selltabs {
@@ -14661,7 +14698,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .rsstudio--simple .rsbtn__ship,
 .rsstudio--simple .rsbtn__who,
 .rsstudio--simple .rsbtn__add,
-.rsstudio--simple .stepact__skip { display: none; }
+.rsstudio--simple .stepact__skip,
+.rsstudio--simple .rsbtn__none { display: none; }
 
 /* ── Opening a storefront: a walkthrough ─────────────────────────────── */
 /* The timeline on top: every step, done ones ticked, the rest pending. */
@@ -14840,3 +14878,47 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .tagins__nums span { display: grid; text-align: center; padding: 6px 2px; border-radius: var(--r-sm); background: var(--surface-2); }
 .tagins__nums b { font-size: var(--t-md, 16px); }
 .tagins__nums small { font-size: 10px; color: var(--text-faint); line-height: 1.2; }
+
+/*
+ * Seller screens, simplified: a lot's pulse as one line of counts, the money
+ * line every order card uses, and a strip of steps; the lot's tabs stacked
+ * icon over word on a phone so no label is cut short.
+ */
+.lpulse--slim { display: grid; gap: 10px; }
+.lpulse__sum { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-sm); color: var(--text-dim); }
+.lpulse__sum b { color: var(--text); font-variant-numeric: tabular-nums; }
+.lpulse__sum .is-due b { color: #FBBF24; }
+.lpulse__strip {
+  display: flex; gap: 6px; margin: 0; padding: 0 0 2px; list-style: none;
+  overflow-x: auto; scrollbar-width: none;
+}
+.lpulse__strip::-webkit-scrollbar { display: none; }
+.lpulse__chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 4px 10px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  font-size: var(--t-2xs); color: var(--text-faint); white-space: nowrap;
+}
+.lpulse__chip b { font-family: var(--mono); color: var(--text-dim); }
+.lpulse__chip--some { border-color: var(--accent-line); }
+.lpulse__chip--some b { color: var(--accent-text); }
+.lpulse__chip--all { border-color: rgba(52, 211, 153, 0.35); }
+.lpulse__chip--all b { color: var(--ok); }
+.lpulse__chipname { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 520px) {
+  .lotnav__tab { grid-auto-flow: row; gap: 2px; padding: 6px 2px; }
+  .lotnav__label { font-size: var(--t-2xs); }
+}
+/* A notice that is one line and an ⓘ. */
+.notice--line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.notice__tag { margin-left: 8px; vertical-align: middle; }
+.order-cancel { justify-self: end; }
+/* Routes: New route, then the help behind an ⓘ; each route with its ⋯ beside it. */
+.rhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.rhead__help { display: inline-flex; align-items: center; gap: 10px; font-size: var(--t-sm); }
+.rlist__item { display: flex; align-items: center; gap: 6px; }
+.rlist__item > .rrow { flex: 1; min-width: 0; }
+/* The route name's note and the ⋯ beside it. */
+.rshead__hint { display: inline-flex; align-items: center; gap: 8px; }
+/* An ⓘ beside a heading or a step's name sits just after the words. */
+.ladder__name .qinfo, .rszone__text .qinfo { margin-left: 6px; vertical-align: middle; }
+.trk-photos__title { display: flex; align-items: center; gap: 8px; margin: 0; }

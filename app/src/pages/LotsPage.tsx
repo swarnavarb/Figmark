@@ -23,6 +23,7 @@ import { TAGGED_ROLES, crewButtons, crewSlots, type TaggedRole } from '@shared/s
 import { LotDetailFields, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { Avatar, ErrorNotice, Icon, Modal, type IconName } from '../components/ui';
 import { ItemHead } from '../components/ItemHead';
+import { InfoTip } from '../components/InfoTip';
 import { endedOf } from '../components/OrderTrack';
 import { RouteStudio, routeStepsFrom } from './RouteStudioPage';
 import { ForwarderBooking } from '../components/ForwarderBooking';
@@ -1253,16 +1254,23 @@ export function LotDetail({ lotId, onBack, customers }: {
         <div className="lothero__now">
           <span className="lothero__pulse" aria-hidden="true" />
           <span className="lothero__state">{status}</span>
-          <span className="lothero__step">{Math.max(0, lotStep + 1)}/{lotSteps.length}</span>
+          <InfoTip label="What customers see">
+            Customers see this lot as <b><LotPhaseBadge phase={phase} /></b> on their order&apos;s tracking.
+            {phase === 'filling' && ' Close the lot when nothing more is going in; they then see it being prepped for dispatch.'}
+          </InfoTip>
+          <span className="lothero__step">Step {Math.max(0, lotStep + 1)}/{lotSteps.length}</span>
         </div>
         <div className="lothero__bar" aria-hidden="true">
           <span style={{ width: `${((lotStep + 1) / Math.max(1, lotSteps.length)) * 100}%` }} />
         </div>
         <div className="lothero__foot">
-          <span className="lothero__buyers">
-            <span className="lothero__eyebrow">Customers see</span>
-            <LotPhaseBadge phase={phase} />
-          </span>
+          <p className="lothero__line">
+            {[
+              `${items.length} ${items.length === 1 ? 'order' : 'orders'}`,
+              totals.valueMinor > 0 ? formatMoney(totals.valueMinor) : null,
+              totals.weightGrams > 0 ? formatWeight(totals.weightGrams) : null,
+            ].filter(Boolean).join(' · ')}
+          </p>
           {(phase === 'filling' || (phase === 'closed' && lotStep < 0)) && (
             <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
               onClick={() => void run(
@@ -1273,15 +1281,7 @@ export function LotDetail({ lotId, onBack, customers }: {
             </button>
           )}
         </div>
-        <p className="lothero__line">
-          {[
-            (lot.originCountry || lot.destinationCountry) ? laneOf(lot) : null,
-            `${items.length} ${items.length === 1 ? 'order' : 'orders'}`,
-            totals.weightGrams > 0 ? formatWeight(totals.weightGrams) : null,
-            totals.valueMinor > 0 ? formatMoney(totals.valueMinor) : null,
-            route.name,
-          ].filter(Boolean).join(' · ')}
-        </p>
+        {/* The lane and the route are on Settings; here only what changes day to day. */}
       </header>
 
       <nav className="lotnav" aria-label="This lot">

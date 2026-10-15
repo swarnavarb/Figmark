@@ -14,6 +14,8 @@ import { stepEmoji } from '../components/OrderTrack';
 import {
   PipSays, pipAck, pipQueue, pipTips, pipTotal, routeFromAnswers, type PipAnswers, type PipFix,
 } from '../components/RouteMascot';
+import { InfoTip } from '../components/InfoTip';
+import { MoreMenu } from '../components/MoreMenu';
 import { RoutePreview } from '../components/RoutePreview';
 
 /**
@@ -123,7 +125,16 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /* Pip: asking its questions, suggesting fixes, or tucked away. */
-  const [pip, setPip] = useState<'ask' | 'coach' | 'hidden'>('coach');
+  /* Pip coaches the first route a seller opens; after that it waits behind "Ask Pip". */
+  const [pip, setPip] = useState<'ask' | 'coach' | 'hidden'>(() => {
+    try {
+      if (localStorage.getItem(PIP_SEEN_KEY) === '1') return 'hidden';
+      localStorage.setItem(PIP_SEEN_KEY, '1');
+    } catch {
+      /* Blocked storage: Pip says hello each visit, as it used to. */
+    }
+    return 'coach';
+  });
   const [answers, setAnswers] = useState<PipAnswers>({});
   const [pipSaid, setPipSaid] = useState('');
   const [tipAt, setTipAt] = useState(0);
@@ -494,7 +505,14 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
       <header className="rshead">
         <input id="rs-name" className="rshead__name" value={name} onChange={(event) => setName(event.target.value)}
           placeholder="Name this route - e.g. Guangzhou air" aria-label="Route name" required autoFocus />
-        <span className="rshead__hint">For your own lists - buyers see the steps, not this name.</span>
+        <span className="rshead__hint">
+          <InfoTip label="About the route name">For your own lists - buyers see the steps, not this name.</InfoTip>
+          {editing && (
+            <MoreMenu label="More for this route" items={[
+              { label: 'Delete route', danger: true, disabled: busy, onClick: () => void remove() },
+            ]} />
+          )}
+        </span>
         <div className="seg rshead__mode" role="tablist" aria-label="How much to show">
           <button type="button" role="tab" aria-selected={!detailed} className={detailed ? '' : 'is-on'}
             onClick={() => showDetails(false)}>Steps</button>
@@ -614,12 +632,6 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
           one, and cannot be given to a lot.
         </span>
       )}
-      {editing && (
-        <button type="button" className="btn btn--ghost btn--danger btn--sm" style={{ justifySelf: 'start' }}
-          disabled={busy} onClick={() => void remove()}>
-          Delete route
-        </button>
-      )}
 
       {behind && (
         <Modal title="Update the lots on this route?" onClose={() => onSaved(behind.route)}>
@@ -651,6 +663,9 @@ function snapshot(name: string, steps: readonly RouteStep[], joinAt: number, lea
     step.forward ?? false, step.custom ?? false, step.assignee ?? null,
   ])]);
 }
+
+/** Whether Pip has already coached a route on this device. */
+const PIP_SEEN_KEY = 'figmark.pip.seen';
 
 const ZONE_TEXT: Record<StepZone, { title: string; note: string; short: string }> = {
   pre: { title: '① Before the lot', note: 'Each item on its own - buttons per item', short: 'before the lot' },
@@ -711,8 +726,7 @@ function ZoneLine({ zone, at, min = 0, atEnd, onMove, onAdd }: {
   return (
     <div className={`rszone rszone--${zone}`}>
       <span className="rszone__text">
-        <b>{text.title}</b>
-        <span>{text.note}</span>
+        <b>{text.title} <InfoTip label={`About ${text.short}`}>{text.note}.</InfoTip></b>
       </span>
       <span className="rsjoin__acts">
         {at !== undefined && onMove && (
@@ -906,14 +920,13 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
           </div>
           <div className="rsnode__top">
             <span className="rsnode__name rsnode__name--static">{step.name}</span>
+            <InfoTip label="About Order Placed">
+              Always first, and never renamed or moved. It shows the order&apos;s payment status here
+              automatically — paid, awaiting payment, or refunded — same as on the order itself.
+            </InfoTip>
             <Icon name="lock" size={13} />
           </div>
           {step.description && <span className="rsnode__desc rsnode__desc--static">{step.description}</span>}
-          <span className="rsnode__paymenthint">
-            <Icon name="bank" size={12} />
-            Shows the order's payment status here automatically — paid, awaiting payment, or refunded —
-            same as it does on the order itself.
-          </span>
         </div>
       </div>
     );
