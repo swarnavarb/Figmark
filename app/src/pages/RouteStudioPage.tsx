@@ -531,7 +531,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
               <button type="button" className="rsnew__alt" onClick={() => open(library.suggested, '')}>
                 <span aria-hidden="true">✏️</span>
                 <b>Start from common steps</b>
-                <span className="faint">Nine steps to edit</span>
+                <span className="faint">{library.suggested.length} steps to edit</span>
               </button>
             </div>
           </div>
@@ -724,9 +724,18 @@ function snapshot(name: string, steps: readonly RouteStep[], joinAt: number, lea
 const PIP_SEEN_KEY = 'figmark.pip.seen';
 
 const ZONE_TEXT: Record<StepZone, { title: string; note: string; short: string }> = {
-  pre: { title: '① Before the lot', note: 'Each item on its own - buttons per item', short: 'before the lot' },
-  lot: { title: '② In the lot', note: 'Everything moves together - no buttons, you move the lot', short: 'in the lot' },
-  post: { title: '③ After the lot', note: 'Each item on its own again - buttons per item', short: 'after the lot' },
+  pre: {
+    title: '① Before the lot', short: 'before the lot',
+    note: 'Each item/order moves on its own until it joins a lot. Define how you control the tracking progress for your customers to see in their tracking',
+  },
+  lot: {
+    title: '② In the lot', short: 'in the lot',
+    note: 'Each item/order now moves along with the lot. Define the steps and who can make the progress',
+  },
+  post: {
+    title: '③ After the lot', short: 'after the lot',
+    note: 'Each item/order is unboxed from the lot and then shipped on its own to its customer. Define the tracking and who controls it',
+  },
 };
 
 /**
@@ -801,7 +810,7 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
             <b>{kind.custom ? 'A step with your own button' : kind.trigger ? renderStepText(kind.name, vars) : 'A plain step'}</b>
             <span>{open
               ? kind.custom ? 'You name it and its button - pressed per item.'
-                : kind.trigger ? `⚡ Comes with its button - ${BUTTON_NOTE[kind.trigger].toLowerCase()}`
+                : kind.trigger ? '⚡ Comes with its button - you use it to move the item here.'
                   : zone === 'lot' ? 'Moves when you move the lot.' : 'No button - ticked off with the next one.'
               : renderStepText(why ?? '', vars)}</span>
           </span>
@@ -996,7 +1005,7 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
               aria-label={`Words on the button for step ${index + 1}`}
               onChange={(event) => onChange({ button: event.target.value })} />
             <span className="rsbtn__note">
-              {step.trigger ? BUTTON_NOTE[step.trigger] : 'Your own button - pressed for each item, and it moves the timeline here.'}
+              {pressNote(step)}
             </span>
             {step.trigger === 'dispatched' && (
               <span className="rsbtn__ship">
@@ -1009,8 +1018,8 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
           </div>
         ) : step.name.trim() && (
           <span className="rsbtn__none">
-            <span className="rsbtn__nonetext">
-              {zone === 'lot' ? '🚢 The lot moves this step - items in a lot move together' : '↪ No button - ticked off with the next one'}
+            <span className={`rsbtn__nonetext${zone === 'lot' ? ' rsbtn__nonetext--lot' : ''}`}>
+              {zone === 'lot' ? '🚢 No buttons - moved from the lot\'s tracking' : '↪ No button - ticked off with the next one'}
             </span>
             {/* Moving the crate is the forwarder's job, so a lot step can be
                 theirs to press too - every buyer in the lot is told when it is. */}
@@ -1076,13 +1085,10 @@ const ZONE_CREW: Record<StepZone, { id: StepAssignee; label: string }> = {
   post: CREW.handler,
 };
 
-/** What pressing each button does, said under it in the Studio. */
-const BUTTON_NOTE: Record<StepTrigger, string> = {
-  china_received: 'You press it when the item arrives overseas.',
-  china_packed: 'You press it once it is packed for the lot.',
-  india_received: 'You press it when it lands with you or your warehouse.',
-  ready_to_dispatch: 'You press it once it is checked and ready.',
-  packed: 'You press it once it is boxed for the courier.',
-  dispatched: 'Always here. Pressing it asks for the courier and AWB (both optional), and tells the buyer it is on the way.',
-  delivered: 'Always last. Pressing it asks first, then tells the buyer it has arrived.',
-};
+/** Under a button: who uses it to move the item, and anything it asks for on the way. */
+function pressNote(step: RouteStep): string {
+  const who = step.assignee ? `you and the ${step.assignee}` : 'you';
+  if (step.trigger === 'delivered') return 'The button above is used by you to mark the item delivered. It asks first, then tells the buyer.';
+  const said = `The button above is used by ${who} to move the item here.`;
+  return step.trigger === 'dispatched' ? `${said} It asks for the courier and AWB (both optional).` : said;
+}

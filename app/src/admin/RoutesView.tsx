@@ -34,9 +34,108 @@ export function RoutesView() {
 
   return (
     <div className="stack">
+      <Common data={data} onSaved={(common, customised) => setData({
+        ...data, common, commonCustomised: customised, commonUpdatedAt: customised ? new Date().toISOString() : null, commonUpdatedBy: null,
+      })} />
       <Samples data={data} onSaved={(samples) => setData({ ...data, samples, customised: true, samplesUpdatedAt: new Date().toISOString() })} />
       <Words data={data} onSaved={(words) => setData({ ...data, words, wordsUpdatedAt: new Date().toISOString() })} />
     </div>
+  );
+}
+
+/**
+ * What "Start from common steps" opens with for every shop. Edited in the
+ * same Studio, so the operators can add a step with its own button and say
+ * who besides the shop presses it - the supplier, forwarder or handler.
+ */
+function Common({ data, onSaved }: { data: Library; onSaved: (steps: RouteStep[], customised: boolean) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+
+  async function publish(steps: RouteStep[] | null, said: string) {
+    setBusy(true);
+    setError(null);
+    setSaved(null);
+    try {
+      const result = await admin.saveRouteCommon(steps);
+      onSaved(result.steps, steps !== null);
+      setSaved(said);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save the common steps.');
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <section className="card card--pad stack">
+        <div className="row row--between">
+          <h2 style={{ margin: 0 }}>Edit the common steps</h2>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => { setEditing(false); setError(null); }}>Back</button>
+        </div>
+        <p className="field__hint" style={{ margin: 0 }}>
+          Add a step with <b>+ Step</b>, give it its own button from its ⋯ menu, and pick who besides the shop can press it.
+        </p>
+        {error && <p className="notice notice--error">{error}</p>}
+        {busy && <p className="faint">Saving…</p>}
+        <BrowserRouter>
+          <div className="opsroutes__studio">
+            <RouteStudio editing={null} onSaved={() => {}} onCancel={() => setEditing(false)} cancelLabel="Back"
+              sample={{
+                name: 'Common steps',
+                steps: data.common,
+                onSave: async (_name, steps) => {
+                  await publish(steps, 'Common steps updated for every shop.');
+                  setEditing(false);
+                },
+              }} />
+          </div>
+        </BrowserRouter>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card card--pad stack">
+      <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Common steps</h2>
+          <p className="field__hint" style={{ margin: 0 }}>
+            What every shop gets from “Start from common steps” under “New route”. Add steps, their buttons, and who can press them.
+          </p>
+        </div>
+        <button type="button" className="btn btn--sm" onClick={() => setEditing(true)}>Edit</button>
+      </div>
+      {error && <p className="notice notice--error">{error}</p>}
+      {saved && <p className="notice notice--ok">{saved}</p>}
+      <span className="faint">{routePartsLine({ steps: data.common })}</span>
+      <ol className="opscommon">
+        {data.common.map((step) => (
+          <li key={step.id}>
+            {step.name}
+            {(step.trigger || step.custom) && <span className="opscommon__btn">⚡ button{step.assignee ? ` · you + ${step.assignee}` : ''}</span>}
+          </li>
+        ))}
+      </ol>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        {data.commonCustomised && (
+          <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
+            onClick={() => {
+              if (!window.confirm('Put back Figmark’s built-in common steps?')) return;
+              void publish(null, 'Built-in common steps restored.').catch(() => {});
+            }}>
+            Restore built-in steps
+          </button>
+        )}
+        {data.commonUpdatedAt && (
+          <span className="faint">Last changed {timeAgo(data.commonUpdatedAt)}{data.commonUpdatedBy ? ` by ${data.commonUpdatedBy}` : ''}.</span>
+        )}
+      </div>
+    </section>
   );
 }
 

@@ -1,6 +1,6 @@
 import { checkButtons, withButtons } from '../../shared/buttons.js';
 import { normaliseSteps, type RouteStep, type StageIcon } from '../../shared/routes.js';
-import { ROUTE_SAMPLES_ID, builtInSamples, isStageIcon, type SampleRoute } from '../../shared/route-samples.js';
+import { ROUTE_COMMON_ID, ROUTE_SAMPLES_ID, builtInCommonSteps, builtInSamples, isStageIcon, type SampleRoute } from '../../shared/route-samples.js';
 import { DEFAULT_ROUTE_WORDS, ROUTE_WORDS_ID, cleanRouteWords, setRouteWords, type RouteWords } from '../../shared/route-words.js';
 import type { getRepository } from './data/index.js';
 
@@ -15,6 +15,28 @@ export async function routeSamples(repository: Repo): Promise<SampleRoute[]> {
     const cleaned = cleanSample(entry);
     return 'sample' in cleaned ? [cleaned.sample] : [];
   });
+}
+
+/** What "Start from common steps" opens with: the operators' steps, or the built-in nine. */
+export async function commonSteps(repository: Repo): Promise<RouteStep[]> {
+  const saved = await repository.getSiteContent(ROUTE_COMMON_ID);
+  const cleaned = cleanCommonSteps((saved?.data as { steps?: unknown } | undefined)?.steps);
+  return 'steps' in cleaned ? cleaned.steps : builtInCommonSteps();
+}
+
+/** The common steps as the console sent them, held to the rules a shop's own route is. */
+export function cleanCommonSteps(input: unknown): { steps: RouteStep[] } | { error: string } {
+  if (!Array.isArray(input)) return { error: 'Send the common steps as a list.' };
+  if (input.length > 30) return { error: 'At most 30 common steps.' };
+  const written = normaliseSteps(
+    (input as Partial<RouteStep>[]).map((step) => ({ ...step, stageIcon: isStageIcon(step?.stageIcon) ? step.stageIcon : undefined })),
+    { keepButtons: true },
+  );
+  if (written.length < 2) return { error: 'The common steps need at least two steps.' };
+  const steps = withButtons(written);
+  const wrong = checkButtons(steps).find((problem) => problem.level === 'error');
+  if (wrong) return { error: wrong.text };
+  return { steps };
 }
 
 /** One sample as the console sent it, checked the same way a shop's own route is. */

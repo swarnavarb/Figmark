@@ -1,4 +1,4 @@
-import { ROUTE_PRESETS, ROUTE_TEMPLATES, STAGE_ICONS, type RouteStep, type StageIcon } from './routes.js';
+import { ROUTE_PRESETS, ROUTE_TEMPLATES, STAGE_ICONS, SUGGESTED_STEPS, type RouteStep, type StageIcon } from './routes.js';
 
 /**
  * A route every shop is offered under "New route".
@@ -35,6 +35,30 @@ export function builtInSamples(): SampleRoute[] {
       steps: toSteps(preset.id, preset.steps),
     })),
   ];
+}
+
+/** The site content document the operators' common steps are kept in. */
+export const ROUTE_COMMON_ID = 'route-common';
+
+/**
+ * What "Start from common steps" opens with until the operators save their
+ * own: the nine steps sellers actually describe.
+ */
+export function builtInCommonSteps(): RouteStep[] {
+  return SUGGESTED_STEPS.map((step, index) => ({
+    id: `sg_${index}`,
+    name: step.name,
+    description: step.description,
+    position: index,
+    side: step.side,
+    trigger: step.trigger,
+    stageId: step.stageId,
+    stageName: step.stageName,
+    stageIcon: step.stageIcon,
+    locked: step.locked,
+    forward: step.forward,
+    assignee: step.assignee,
+  }));
 }
 
 export const isStageIcon = (value: unknown): value is StageIcon =>

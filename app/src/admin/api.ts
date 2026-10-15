@@ -5,6 +5,7 @@ import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
 import type { SampleRoute } from '@shared/route-samples';
 import type { RouteWords } from '@shared/route-words';
+import type { RouteStep } from '@shared/routes';
 import type { DeviceFigures } from '@shared/devices';
 import { ApiRequestError, api as marketplace, type OpsStoreRow } from '../api';
 import type { StoreStatus } from '@shared/models';
@@ -248,7 +249,10 @@ export const admin = {
   routeLibrary: () => request<{
     samples: SampleRoute[]; customised: boolean; samplesUpdatedAt: string | null; samplesUpdatedBy: string | null;
     words: RouteWords; wordsUpdatedAt: string | null; wordsUpdatedBy: string | null;
+    common: RouteStep[]; commonCustomised: boolean; commonUpdatedAt: string | null; commonUpdatedBy: string | null;
   }>('/ops/route-library'),
+  /** null puts back the built-in common steps. */
+  saveRouteCommon: (steps: RouteStep[] | null) => post<{ steps: RouteStep[] }>('/ops/route-common/save', { steps }),
   saveRouteSamples: (samples: SampleRoute[]) => post<{ samples: SampleRoute[] }>('/ops/route-samples/save', { samples }),
   saveRouteWords: (words: RouteWords) => post<RouteWords>('/ops/route-words/save', words),
   settings: () => request<MarketSettings>('/ops/settings'),
