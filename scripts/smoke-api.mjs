@@ -5917,6 +5917,9 @@ await check('a seller can say something without moving the lot', async () => {
 await check('one item can travel differently from the rest of its lot', async () => {
   // Thirty-three pieces cleared and one was pulled for inspection. The lot has
   // not moved, and neither has the truth for thirty-three people.
+  // A moment after the lot's last note: an item's own line and a lot note in
+  // the same millisecond read item first, which is not what this is about.
+  await new Promise((resolve) => setTimeout(resolve, 2));
   const held = await stepItem(req({
     headers: auth, params: { id: earlyOrder.id },
     body: { to: 3, note: 'Pulled for inspection at customs.' },
