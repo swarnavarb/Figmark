@@ -9430,7 +9430,36 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 }
 .rstags__hint { font-size: var(--t-2xs); color: var(--text-dim); }
 .rsprev { display: grid; gap: 16px; }
-.rsprev__lead { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.5; }
+.rsprev__lead { display: grid; gap: 10px; justify-items: start; }
+.rsprev__lead p { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.5; }
+.rsprev__views { display: flex; }
+.rsprev__views > button { flex: 1; }
+/* The walkthrough: one card at a time, above the save bar, over the preview. */
+.rstour {
+  position: fixed; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 82px); z-index: 30;
+  max-width: 520px; margin: 0 auto; display: grid; gap: 8px; padding: 14px 16px;
+  border-radius: var(--r-lg); background: var(--surface); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 18px 40px rgba(0, 0, 0, 0.45);
+  animation: rstour-in 0.22s ease-out;
+}
+@keyframes rstour-in { from { opacity: 0; transform: translateY(10px); } }
+.rstour__top { display: flex; align-items: center; justify-content: space-between; }
+.rstour__count { font-size: var(--t-2xs); color: var(--text-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+.rstour__now { font-size: var(--t-xs); color: var(--ok); }
+.rstour__title { font-size: var(--t-md); }
+.rstour__body { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.5; }
+.rstour__acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rstour__gap { flex: 1; }
+/* What the walkthrough's card is about, pulsing where it sits. */
+.rsprev .is-spot { position: relative; z-index: 1; animation: rstour-spot 1.2s ease-in-out infinite; }
+@keyframes rstour-spot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.75); }
+  50% { box-shadow: 0 0 0 7px rgba(250, 204, 21, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rstour { animation: none; }
+  .rsprev .is-spot { animation: none; outline: 3px solid #facc15; }
+}
 .rsprev__side { display: grid; gap: 8px; }
 .rsprev__title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: var(--t-sm); }
 .rsprev__title .faint { font-size: var(--t-2xs); }

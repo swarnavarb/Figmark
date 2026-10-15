@@ -3,7 +3,7 @@ import { isLotEvent, kindOf, settledHistory } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import {
-  groupStages, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep, lotNo,
+  joinIndexOf, leaveIndexOf, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep, type StageIcon, lotNo,
 } from '@shared/routes';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { formatDateOrdinal } from '../format';
@@ -128,18 +128,13 @@ export function Ladder({
   const editable = !ended && Boolean(onMove || onNote);
 
   /*
-   * Stage headers, drawn only where the seller actually grouped steps.
-   *
-   * `groupStages` folds every step with no `stageId` into a box of one, which
-   * is right for the builder (nothing to group, nothing missing) and wrong
-   * here: heading every rung with its own name would repeat what is already
-   * on it. So only a step that starts an explicitly-named stage gets one.
+   * The journey in its three parts, each under its own heading: the
+   * supplier's (each item on its own, before the lot), the freight
+   * forwarder's (the lot), and the domestic leg (each item on its own again,
+   * to its buyer). Worked out from the steps themselves, so every timeline -
+   * the seller's, the buyer's, the Studio's preview - is split the same way.
    */
-  const stageStarts = new Map(
-    groupStages(steps)
-      .filter((group) => group.steps[0]!.step.stageId)
-      .map((group) => [group.steps[0]!.index, group] as const),
-  );
+  const stageStarts = partStarts(steps, zones);
 
   async function send(at: number) {
     const text = draft.trim();
@@ -175,8 +170,8 @@ export function Ladder({
           <Fragment key={step.id}>
           {stage && (
             <li className="ladder__stage" aria-hidden="true">
-              <Icon name={STAGE_ICON_META[stage.stageIcon ?? 'warehouse'].icon} size={14} />
-              <span>{renderStepText(stage.stageName, vars ?? {})}</span>
+              <Icon name={STAGE_ICON_META[stage.icon].icon} size={14} />
+              <span>{stage.name}</span>
             </li>
           )}
           {/* Where the crate is unpacked and this piece goes on alone. Quiet on
@@ -375,6 +370,24 @@ export function Ladder({
       )}
     </ol>
   );
+}
+
+const ITEM_ALONE = new Set(['india_received', 'ready_to_dispatch', 'packed', 'dispatched', 'delivered']);
+
+/** Where each part of the journey starts on a timeline, and what it is called. */
+function partStarts(steps: RouteStep[], zones?: { join: number; leave: number }): Map<number, { name: string; icon: StageIcon }> {
+  const join = zones?.join ?? joinIndexOf({ steps });
+  /* Items leave the lot where the route says, or at the first thing that
+     happens to each item alone - arriving, checking, packing, dispatch. */
+  const own = steps.findIndex((step, index) => index >= join && Boolean(step.trigger && ITEM_ALONE.has(step.trigger)));
+  const leave = Math.max(join, zones?.leave ?? Math.min(leaveIndexOf({ steps }), own < 0 ? steps.length : own));
+  /* Order placed opens every journey and is the shop's, not the supplier's. */
+  const first = steps[0] && (steps[0].locked || /^order placed$/i.test(steps[0].name.trim())) ? 1 : 0;
+  const out = new Map<number, { name: string; icon: StageIcon }>();
+  if (first < join) out.set(first, { name: 'Supplier', icon: 'supplier' });
+  if (join < leave && join < steps.length) out.set(join, { name: 'Freight forwarder', icon: 'transit' });
+  if (leave < steps.length) out.set(leave, { name: 'Domestic', icon: 'delivery' });
+  return out;
 }
 
 /**
