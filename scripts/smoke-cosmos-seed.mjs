@@ -103,6 +103,19 @@ function fakeContainer(store) {
           if (!store.delete(id)) throw { code: 404 };
           return {};
         },
+        // Top-level paths only, which is all the repository patches.
+        async patch(operations) {
+          calls.writes += 1;
+          const resource = store.get(id);
+          if (!resource) throw { code: 404 };
+          for (const { op, path, value } of operations) {
+            const key = path.slice(1);
+            if (op === 'set') resource[key] = value;
+            else if (op === 'incr') resource[key] = (resource[key] ?? 0) + value;
+            else throw new Error(`the fake does not patch with ${op}`);
+          }
+          return { resource };
+        },
       };
     },
   };
@@ -587,6 +600,42 @@ await check('leftovers are removed once, and existing containers take the new po
   assert.ok(notificationsPolicy.indexingPolicy.excludedPaths.some((entry) => entry.path === '/body/?'));
   assert.deepEqual(notificationsPolicy.partitionKey, { paths: ['/userId'] }, 'the partition key is kept');
   assert.match(restarted.status().detail, /Removed .*withdrawn notice/);
+
+  // Once, and never again.
+  resetCalls();
+  const again = repositoryOn(containers);
+  await again.init();
+  await again.settled();
+  assert.equal(calls.writes, 0, `nothing left to do, but wrote ${calls.writes} times`);
+});
+
+await check('listings are relabelled to match their lot and given their popularity, once', async () => {
+  const containers = provisioned();
+  const seeded = repositoryOn(containers);
+  await seeded.init();
+  await seeded.settled();
+
+  // What an older release left: an item filed into a lot while still marked
+  // in hand, one from before sourcing existed, and no stored popularity.
+  const listings = containers.get('listings');
+  const [filed, unsourced, plain] = [...listings.values()];
+  Object.assign(filed, { lotId: 'lot_any', sourcing: 'in_hand' });
+  Object.assign(unsourced, { lotId: null });
+  delete unsourced.sourcing;
+  Object.assign(plain, { viewCount: 7, likeCount: 2 });
+  for (const listing of listings.values()) delete listing.popularity;
+  containers.get('siteContent').delete('migration:listing-sourcing');
+
+  const restarted = repositoryOn(containers);
+  await restarted.init();
+  await restarted.settled();
+
+  assert.equal(filed.sourcing, 'import', 'an item in a lot is an import');
+  assert.equal(unsourced.sourcing, 'in_hand', 'an item from before sourcing, in no lot, is in hand');
+  assert.ok(listings.has(unsourced.id), 'nothing is deleted');
+  assert.deepEqual(containers.get('siteContent').get('migration:listing-sourcing').data.legacy, [unsourced.id]);
+  assert.equal(plain.popularity, 27);
+  assert.ok([...listings.values()].every((l) => l.popularity === (l.viewCount ?? 0) + (l.likeCount ?? 0) * 10));
 
   // Once, and never again.
   resetCalls();

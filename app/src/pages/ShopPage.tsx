@@ -7,7 +7,7 @@ import {
 import { CATEGORIES } from '@shared/catalog';
 import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
-import { lotIsDone, lotPhase, sourcingOf } from '@shared/fulfilment';
+import { lotIsDone, lotPhase } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
 import { LotName, LotPhaseBadge, lotLabel } from '../components/LotName';
@@ -1180,7 +1180,7 @@ function ShelfCard({ listing, onEdit, onOpenLot, onTag }: {
   const rarity = listingRarity(listing);
   const tier = rarity.tier;
   const view = listing.preOrder ? preOrderView(listing.preOrder) : null;
-  const sourcing = sourcingOf(listing);
+  const sourcing = listing.sourcing;
   const expired = isExpired(listing);
   return (
     <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}`}>
@@ -3849,7 +3849,7 @@ function Unlotted({ store, onBack }: {
         setOrders(sales.orders.filter((row) => row.awaitingLot && stateOf(row) === 'active'));
         // Only an import travels in a lot; a piece in hand never waits on one.
         setListings(mine.listings.filter((listing) => listing.sellerId === store.ownerId
-          && !listing.lotId && sourcingOf(listing) === 'import'
+          && !listing.lotId && listing.sourcing === 'import'
           && listing.status === 'active' && !isExpired(listing)));
       })
       .catch((err: unknown) =>

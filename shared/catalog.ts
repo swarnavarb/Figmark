@@ -169,8 +169,7 @@ export function isEndingSoon(listing: { expiresAt?: string | null }, now: number
 interface KindShape {
   preOrder: unknown;
   bundle?: boolean;
-  lotId?: string | null;
-  sourcing?: string;
+  sourcing: string;
 }
 
 /**
@@ -188,10 +187,9 @@ export function matchesKind(listing: KindShape, kind: string | undefined): boole
     case 'mixed_lot':
       return listing.bundle === true;
     case 'in_hand':
-      // Not "has no shipment lot": an item can be in hand and still have been
-      // imported at some point. What a buyer is asking is whether it ships from
-      // the seller's shelf today, which is what `sourcing` records.
-      return (listing.sourcing ?? (listing.lotId ? 'import' : 'in_hand')) === 'in_hand';
+      // Moving an item into or out of a lot moves its sourcing with it, so the
+      // field alone answers whether it ships from the seller's shelf today.
+      return listing.sourcing === 'in_hand';
     // 'in_stock' is the name the first version of the buy page used. Kept
     // because it is in links people have already shared.
     case 'in_stock':
@@ -210,22 +208,51 @@ interface SearchShape {
 }
 
 /**
+ * The words a search term is made of, lower-cased.
+ *
+ * Capped, because each word is a clause in the Cosmos query: a pasted
+ * paragraph should narrow by its first few words rather than build a
+ * statement nobody can afford to run.
+ */
+export const MAX_SEARCH_WORDS = 8;
+
+export function searchWords(term: string): string[] {
+  return term.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, MAX_SEARCH_WORDS);
+}
+
+/**
  * Whether a listing answers a search term.
  *
- * Every word must appear somewhere, so extra words narrow rather than widen -
- * "frieren nendoroid" should not return every Nendoroid ever listed. Shared
- * because both backends apply it in JavaScript: Cosmos SQL cannot express
- * "all of these words, across four fields" without assembling the statement
- * from the term, and a query built by string concatenation is the one thing
- * this repository refuses to do.
+ * Every word must appear in one of the title, description, category or a
+ * tag, so extra words narrow rather than widen - "frieren nendoroid" should
+ * not return every Nendoroid ever listed. Cosmos asks the same question in
+ * SQL, one clause per word over the same four fields; this is the definition.
  */
 export function matchesSearch(listing: SearchShape, term: string): boolean {
-  const needle = term.trim().toLowerCase();
-  if (!needle) return true;
-  const haystack = [listing.title, listing.description, listing.category, ...listing.tags]
-    .join(' ')
-    .toLowerCase();
-  return needle.split(/\s+/).every((word) => haystack.includes(word));
+  const words = searchWords(term);
+  if (words.length === 0) return true;
+  const fields = [listing.title, listing.description, listing.category, ...listing.tags].map((field) => field.toLowerCase());
+  return words.every((word) => fields.some((field) => field.includes(word)));
+}
+
+/**
+ * The lowest price an item may be listed at, in paise: one rupee.
+ *
+ * Nothing is listed for nothing. A price that rounds to zero rupees on the
+ * card reads as free, so the floor is a whole rupee rather than one paisa.
+ */
+export const MIN_PRICE_MINOR = 100;
+
+/** A submitted price as paise, or null when it is not one an item may be listed at. */
+export function listablePrice(value: unknown): number | null {
+  const paise = Math.round(Number(value));
+  return Number.isFinite(paise) && paise >= MIN_PRICE_MINOR ? paise : null;
+}
+
+/** A price ceiling from a query string, or undefined for none: zero or less is no ceiling. */
+export function priceCeiling(value: string | null | undefined): number | undefined {
+  const paise = Number(value);
+  return Number.isFinite(paise) && paise > 0 ? paise : undefined;
 }
 
 interface FreshnessShape {

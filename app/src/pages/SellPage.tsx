@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { tagKey } from '@shared/shop-tags';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
-import { CATEGORIES } from '@shared/catalog';
+import { CATEGORIES, MIN_PRICE_MINOR } from '@shared/catalog';
 import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import type { Lot } from '@shared/models';
@@ -389,7 +389,7 @@ export function SellPage() {
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
-  const canPublish = title.trim().length > 2 && priceMinor > 0;
+  const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR;
   // The lot is the answer: in one means import, out of one means in hand.
   const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
   const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;

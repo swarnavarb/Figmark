@@ -10,6 +10,10 @@
     <script src="/boot/tone.js"></script>
     <!-- The loading screen, before the app's own script and styles arrive. -->
     <link rel="stylesheet" href="/boot/loader.css" />
+    <!-- The two faces the first screen is set in, fetched alongside the
+         stylesheet rather than only once it has been read. -->
+    <link rel="preload" href="/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin />
     <title>Figmark</title>
     <!-- Installable: on a phone's home screen it opens like an app, and on an
          iPhone that is what lets it show notifications at all. -->

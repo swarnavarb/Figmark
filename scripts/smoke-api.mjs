@@ -507,6 +507,40 @@ await check('filters by kind, condition and price', async () => {
   assert.ok(cheap.every((l) => l.priceMinor <= 50000));
 });
 
+await check('a price ceiling of zero is no ceiling at all', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings.length;
+  assert.equal((await feed(req({ query: { maxPrice: '0' } }), ctx)).jsonBody.listings.length, all);
+  assert.equal((await feed(req({ query: { maxPrice: '-5' } }), ctx)).jsonBody.listings.length, all);
+});
+
+await check('nothing is listed for nothing', async () => {
+  for (const priceMinor of [0, 40, -100, 'free', null]) {
+    const made = await createListing(req({ headers: auth, body: { title: 'Free stuff', priceMinor } }), ctx);
+    assert.equal(made.status, 400, `a price of ${priceMinor} must be refused`);
+  }
+  const item = (await createListing(req({ headers: auth, body: { title: 'Priced', priceMinor: 1_000 } }), ctx)).jsonBody.listing;
+  const zeroed = await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 0 } }), ctx);
+  assert.equal(zeroed.status, 400, 'an edit cannot take the price to nothing either');
+});
+
+await check('search finds a word in any of title, description, category or tags', async () => {
+  const made = (await createListing(req({
+    headers: auth,
+    body: { title: 'Plain box', description: 'Holds a zephyrine widget', priceMinor: 1_000, tags: ['quokkacore'] },
+  }), ctx)).jsonBody.listing;
+  for (const q of ['zephyrine', 'QUOKKACORE', 'plain zephyrine quokkacore']) {
+    const found = (await feed(req({ query: { q } }), ctx)).jsonBody.listings;
+    assert.ok(found.some((l) => l.id === made.id), `"${q}" should find it`);
+  }
+  assert.ok(!(await feed(req({ query: { q: 'zephyrine nowhere' } }), ctx)).jsonBody.listings.some((l) => l.id === made.id));
+});
+
+await check('popular puts the most watched first', async () => {
+  const listings = (await feed(req({ query: { sort: 'popular' } }), ctx)).jsonBody.listings;
+  const scores = listings.map((l) => l.viewCount + l.likeCount * 10);
+  assert.deepEqual(scores, [...scores].sort((a, b) => b - a));
+});
+
 await check('pre-orders carry their own fill counts', async () => {
   const body = (await feed(req({ query: { kind: 'pre_order' } }), ctx)).jsonBody;
   assert.ok(body.listings.every((l) => typeof l.preOrder.fillThreshold === 'number'));
@@ -976,9 +1010,15 @@ await check('items can be tagged into and out of a lot', async () => {
   assert.equal(added.jsonBody.changed, 1);
   const contents = (await lotContents(req({ headers: auth, params: { id: lotId } }), ctx)).jsonBody;
   assert.ok(contents.listings.some((l) => l.id === 'lst_my_cards'));
+  // Into a lot is an import, and it leaves the in-hand shelf with it.
+  assert.equal((await (await getRepository()).getListing('lst_my_cards')).sourcing, 'import');
+  const inHand = (await feed(req({ query: { kind: 'in_hand' } }), ctx)).jsonBody.listings;
+  assert.ok(!inHand.some((l) => l.id === 'lst_my_cards'));
 
   const removed = await assignToLot(req({ headers: auth, params: { id: lotId }, body: { listingIds: ['lst_my_cards'], remove: true } }), ctx);
   assert.equal(removed.jsonBody.changed, 1);
+  // ...and out of one is back in hand.
+  assert.equal((await (await getRepository()).getListing('lst_my_cards')).sourcing, 'in_hand');
 });
 
 await check("a seller cannot touch someone else's lot", async () => {

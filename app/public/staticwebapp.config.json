@@ -13,6 +13,18 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/assets/*",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "route": "/fonts/*",
+      "headers": {
+        "Cache-Control": "public, max-age=2592000"
+      }
+    },
+    {
       "route": "/sw.js",
       "headers": {
         "Cache-Control": "no-cache"

@@ -338,7 +338,7 @@ export class MemoryRepository implements Repository {
     // How it is sold is derived from the listing rather than stored, and the
     // rule lives in shared/catalog so the SQL and this agree by construction.
     if (query.kind && query.kind !== 'all') items = items.filter((l) => matchesKind(l, query.kind));
-    if (query.maxPriceMinor !== undefined) {
+    if (query.maxPriceMinor !== undefined && query.maxPriceMinor > 0) {
       items = items.filter((l) => l.priceMinor <= query.maxPriceMinor!);
     }
     if (query.search) items = items.filter((l) => matchesSearch(l, query.search!));
@@ -482,6 +482,7 @@ export class MemoryRepository implements Repository {
       // whole lot: the route has already checked the lot's owner.
       if (!listing || listing.sellerId !== sellerId) continue;
       listing.lotId = lotId;
+      listing.sourcing = lotId ? 'import' : 'in_hand';
       listing.updatedAt = new Date().toISOString();
       changed += 1;
     }

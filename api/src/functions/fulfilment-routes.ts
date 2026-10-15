@@ -16,7 +16,7 @@ import { UNDO_EXPIRED, canUndo, undoTag, withoutUndo } from './undo.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
 import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped } from '../../../shared/orders.js';
 import {
-  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, sourcingOf, stagesFor,
+  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, stagesFor,
 } from '../../../shared/fulfilment.js';
 import type { Lot, LotCrewSettings, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
@@ -258,7 +258,7 @@ async function myLots(request: HttpRequest, _context: InvocationContext) {
   /* Only imports: an item shipping from the shelf never needs a lot, and
      listing it here made a seller think something was wrong with it. */
   const unassigned = allListings.filter((l) =>
-    l.status === 'active' && !l.unlisted && l.lotId === null && sourcingOf(l) === 'import');
+    l.status === 'active' && !l.unlisted && l.lotId === null && l.sourcing === 'import');
   /* Sold, bound for a lot, and in none - the orders actually waiting on the
      seller, which is what the Lots screen asks them to act on. */
   const awaitingOrders = allOrders.filter((order) =>

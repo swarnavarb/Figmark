@@ -1,7 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, Listing, Order, SellerProfile } from '../../../shared/models.js';
-import { awaitingLot, inLot, isDirect, lotIsDone, sourcingOf } from '../../../shared/fulfilment.js';
+import { awaitingLot, inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
 import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, holdsLotBack, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
@@ -754,7 +754,7 @@ async function sellTodo(request: HttpRequest, _context: InvocationContext) {
        already the seller's next job, before anybody buys it. Sold out, expired
        or archived ones are nobody's job. */
     noLotListings: listings
-      ? listings.filter((listing) => !listing.lotId && sourcingOf(listing) === 'import'
+      ? listings.filter((listing) => !listing.lotId && listing.sourcing === 'import'
         && listing.status === 'active' && !isExpired(listing)).length
       : null,
     lots: lots ? lots.filter((lot) => !lotIsDone(lot)).length : null,

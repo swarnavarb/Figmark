@@ -6,10 +6,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AdvanceStrip } from '../components/Buy';
 import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
 import {
-  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, categoriesIn, matchesKind,
+  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, categoriesIn, matchesKind, priceCeiling,
   type CatalogKind,
 } from '@shared/catalog';
-import { sourcingOf } from '@shared/fulfilment';
 import { preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
@@ -94,12 +93,13 @@ export function useCatalog() {
   const photoData: FeedResponse | null = useMemo(() => {
     if (!photoFound) return null;
     const inGroup = group ? new Set(categoriesIn(group)) : null;
+    const ceiling = priceCeiling(maxPrice);
     const listings = photoFound.filter((listing) =>
       (!inGroup || inGroup.has(listing.category))
       && (!category || listing.category === category)
       && (!condition || listing.condition === condition)
       && (!kind || matchesKind(listing, kind))
-      && (!maxPrice || listing.priceMinor <= Number(maxPrice)));
+      && (ceiling === undefined || listing.priceMinor <= ceiling));
     // Best match first unless a price order was asked for.
     if (sort === 'price_asc') listings.sort((a, b) => a.priceMinor - b.priceMinor);
     if (sort === 'price_desc') listings.sort((a, b) => b.priceMinor - a.priceMinor);
@@ -615,7 +615,7 @@ export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) 
             <span className="qtimer qtimer--ago"><Glyph name="clock" size={11} />{timeAgo(listing.bumpedAt ?? listing.createdAt)}</span>
           )}
           {' · '}
-          <b className={sourcingOf(listing) === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[sourcingOf(listing)]}</b>
+          <b className={listing.sourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[listing.sourcing]}</b>
           {' · '}{listing.category}
           {left !== null && left > 0 && left <= 5 && <> · <b className="qhot">{left} left</b></>}
           {left === null && ' · plenty'}

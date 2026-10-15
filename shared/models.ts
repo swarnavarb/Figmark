@@ -858,17 +858,21 @@ export interface Listing extends BaseDocument {
    */
   lotId: string | null;
   /**
-   * In hand or imported.
+   * In hand or imported - the only two states an item can be in.
    *
-   * Determined by `lotId` rather than chosen alongside it: an import is a
-   * consignment, and the lot is what carries the stages a buyer waits on, so
-   * an imported item outside a lot has nowhere for its tracking to come from.
-   * A lot means import; no lot means it ships from the seller's shelf.
-   *
-   * Optional on the type because listings written before this field existed do
-   * not carry it; `sourcingOf` resolves those rather than showing a blank.
+   * An import is in a lot or waiting to be filed into one; in hand ships from
+   * the seller's shelf. It moves with the lot: filing an item into a lot makes
+   * it an import, and taking it out puts it back in hand, so a listing with a
+   * `lotId` is always an import.
    */
-  sourcing?: Sourcing;
+  sourcing: Sourcing;
+  /**
+   * `viewCount + likeCount * 10`, stored so the catalog can be ordered by it
+   * in the database. Cosmos only: it is written with the listing and moved by
+   * the same increments that move the two counts. See `popularity` in
+   * shared/catalog for the definition.
+   */
+  popularity?: number;
   /**
    * Reachable, but not in the catalog.
    *
