@@ -3827,11 +3827,9 @@ function CancelOrderRow({ row, onClose, onDone }: {
  * tile and the Lots tab's waiting note both open this, so the whole job is on
  * one screen rather than split between Orders and Listings.
  */
-function Unlotted({ store, onBack, onShipTogether }: {
+function Unlotted({ store, onBack }: {
   store: StoreAccess;
   onBack: () => void;
-  /** Open one lot for every waiting order, back on the Lots screen. */
-  onShipTogether: () => void;
 }) {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<SaleRow[] | null>(null);
@@ -3839,6 +3837,7 @@ function Unlotted({ store, onBack, onShipTogether }: {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Listing | null>(null);
   const [tagging, setTagging] = useState<Listing | null>(null);
+  const [shipping, setShipping] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -3872,15 +3871,14 @@ function Unlotted({ store, onBack, onShipTogether }: {
         !error && <p className="muted">Loading…</p>
       ) : (
         <>
+          {orders.length + listings.length > 0 && (
+            <button type="button" className="btn" style={{ justifySelf: 'start' }}
+              onClick={() => { setNotice(null); setShipping(true); }}>
+              Ship them together
+            </button>
+          )}
           <section className="stack">
-            <span className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-              <h3 className="card__title">Active orders · {orders.length}</h3>
-              {orders.length > 0 && (
-                <button type="button" className="btn btn--sm" onClick={onShipTogether}>
-                  Ship them together
-                </button>
-              )}
-            </span>
+            <h3 className="card__title">Active orders · {orders.length}</h3>
             {orders.length === 0 ? (
               <p className="faint">Every active order is in a lot.</p>
             ) : orders.map((row) => (
@@ -3923,7 +3921,170 @@ function Unlotted({ store, onBack, onShipTogether }: {
         <ListingIntoLot listing={tagging} store={store} onClose={() => setTagging(null)}
           onDone={(said) => { setTagging(null); setNotice(said); load(); }} />
       )}
+      {shipping && orders && listings && (
+        <ShipTogether store={store} orders={orders} listings={listings} onClose={() => setShipping(false)}
+          onDone={(said) => { setShipping(false); setNotice(said); load(); }} />
+      )}
     </div>
+  );
+}
+
+/**
+ * One lot for many things at once: an open lot or a new one, and whichever of
+ * the active orders and active listings not in a lot go into it. Everything
+ * starts ticked - shipping them together is the point - and the seller
+ * unticks what belongs to another run.
+ */
+function ShipTogether({ store, orders, listings, onClose, onDone }: {
+  store: StoreAccess;
+  orders: SaleRow[];
+  listings: Listing[];
+  onClose: () => void;
+  /** Handed what to tell the seller, once the lot has them. */
+  onDone: (said: string) => void;
+}) {
+  const [lots, setLots] = useState<LotSummary[] | null>(null);
+  /** An open lot's id, or 'new' to open one here. */
+  const [lotId, setLotId] = useState('');
+  const [orderIds, setOrderIds] = useState<Set<string>>(() => new Set(orders.map((row) => row.id)));
+  const [listingIds, setListingIds] = useState<Set<string>>(() => new Set(listings.map((listing) => listing.id)));
+  /** Picked items held while the new lot's details are filled in. */
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.myLots(store.isOwner ? undefined : store.ownerId)
+      .then((result) => {
+        const open = result.lots.filter((entry) => !lotIsDone(entry.lot));
+        setLots(open);
+        setLotId(open.length === 1 ? open[0]!.lot.id : open.length === 0 ? 'new' : '');
+      })
+      .catch(() => { setLots([]); setLotId('new'); });
+  }, [store.ownerId, store.isOwner]);
+
+  const toggle = (set: Set<string>, id: string) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  };
+  const count = orderIds.size + listingIds.size;
+  const picked = lots?.find((entry) => entry.lot.id === lotId)?.lot ?? null;
+
+  async function fill(lot: Lot) {
+    setBusy(true);
+    setError(null);
+    try {
+      // One request for the orders, one for the listings - not one per item.
+      const added = orderIds.size > 0 ? (await api.addItemsToLot(lot.id, [...orderIds])).added : 0;
+      const tagged = listingIds.size > 0 ? (await api.assignToLot(lot.id, [...listingIds])).changed : 0;
+      const parts = [
+        added > 0 ? (added === 1 ? '1 order' : `${added} orders`) : null,
+        tagged > 0 ? (tagged === 1 ? '1 listing' : `${tagged} listings`) : null,
+      ].filter(Boolean);
+      const left = orderIds.size - added;
+      onDone(`${parts.length > 0 ? parts.join(' and ') : 'Nothing'} filed into ${lotLabel(lot)}.${
+        left > 0 ? ` ${left === 1 ? '1 order' : `${left} orders`} could not go in and ${left === 1 ? 'is' : 'are'} still waiting.` : ''}`);
+    } catch (err) {
+      setCreating(false);
+      setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
+      setBusy(false);
+    }
+  }
+
+  if (creating) {
+    return (
+      <Modal title="New lot" onClose={onClose}>
+        {busy ? <p className="muted">Filing {count === 1 ? '1 item' : `${count} items`}…</p> : (
+          <NewLotForm bare onCancel={() => setCreating(false)} onDone={(lot) => void fill(lot)} />
+        )}
+      </Modal>
+    );
+  }
+
+  const group = <T,>(title: string, items: T[], idOf: (item: T) => string, set: Set<string>,
+    setSet: (next: Set<string>) => void, render: (item: T) => ReactNode) => (
+    <fieldset className="pickset">
+      <legend className="row" style={{ justifyContent: 'space-between', width: '100%', gap: 8 }}>
+        <span>{title} · {set.size}/{items.length}</span>
+        {items.length > 0 && (
+          <button type="button" className="btn btn--sm btn--quiet"
+            onClick={() => setSet(set.size === items.length ? new Set() : new Set(items.map(idOf)))}>
+            {set.size === items.length ? 'Clear' : 'Select all'}
+          </button>
+        )}
+      </legend>
+      {items.length === 0 ? (
+        <p className="faint" style={{ margin: 0 }}>None waiting.</p>
+      ) : items.map((item) => (
+        <label key={idOf(item)} className={`pick${set.has(idOf(item)) ? ' is-on' : ''}`}>
+          <input type="checkbox" checked={set.has(idOf(item))} onChange={() => setSet(toggle(set, idOf(item)))} />
+          <span className="pick__body">{render(item)}</span>
+        </label>
+      ))}
+    </fieldset>
+  );
+
+  return (
+    <Modal title="Ship them together" onClose={onClose}>
+      <div className="stack">
+        <fieldset className="pickset">
+          <legend>Choose a lot</legend>
+          {lots === null ? (
+            <p className="muted">Loading…</p>
+          ) : (
+            <>
+              {lots.map(({ lot }) => (
+                <label key={lot.id} className={`pick${lotId === lot.id ? ' is-on' : ''}`}>
+                  <input type="radio" name="ship-lot" checked={lotId === lot.id} onChange={() => setLotId(lot.id)} />
+                  <span className="pick__body">
+                    <span className="pick__name"><LotName name={lot.name} number={lot.lotNumber} /></span>
+                    <span className="faint" style={{ fontSize: 'var(--t-xs)' }}>
+                      {lot.route?.name ?? 'Generic route'} · now: {lotStepLabel(lot)}
+                    </span>
+                  </span>
+                </label>
+              ))}
+              <label className={`pick${lotId === 'new' ? ' is-on' : ''}`}>
+                <input type="radio" name="ship-lot" checked={lotId === 'new'} onChange={() => setLotId('new')} />
+                <span className="pick__body">
+                  <span className="pick__name">✨ Create a new lot</span>
+                  <span className="faint" style={{ fontSize: 'var(--t-xs)' }}>Set it up next; what you tick below goes in once it is saved.</span>
+                </span>
+              </label>
+            </>
+          )}
+        </fieldset>
+
+        {group('Active orders', orders, (row) => row.id, orderIds, setOrderIds, (row) => (
+          <>
+            <span className="pick__name">{row.itemName}{row.quantity > 1 ? ` × ${row.quantity}` : ''}</span>
+            <span className="faint" style={{ fontSize: 'var(--t-xs)' }}>
+              {row.buyer.name} · {formatMoney(row.totalMinor, row.currency)} · {timeAgo(row.createdAt)}
+            </span>
+          </>
+        ))}
+        {group('Active listings', listings, (listing) => listing.id, listingIds, setListingIds, (listing) => (
+          <>
+            <span className="pick__name">{listing.title}</span>
+            <span className="faint" style={{ fontSize: 'var(--t-xs)' }}>
+              {formatMoney(listing.priceMinor, listing.currency)} · future orders of it go straight into the lot
+            </span>
+          </>
+        ))}
+
+        {error && <ErrorNotice message={error} />}
+        <button type="button" className="btn btn--block" disabled={busy || !lotId || count === 0}
+          onClick={() => (lotId === 'new' ? setCreating(true) : picked && void fill(picked))}>
+          {busy ? 'Filing…'
+            : !lotId ? 'Pick a lot first'
+              : count === 0 ? 'Tick something to ship'
+                : lotId === 'new' ? `Next: set up the lot (${count})`
+                  : `Put ${count === 1 ? '1 item' : `${count} items`} in ${picked ? lotLabel(picked) : 'the lot'}`}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -3951,19 +4112,12 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
   /** An order sent here from Orders to be filed into the lot about to be opened. */
   const fileOrder = params.get('file');
   const [creating, setCreating] = useState(Boolean(fileOrder));
-  /** Opening a lot for every order waiting on one, from "Ship them together". */
-  const [gathering, setGathering] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   /* The lot is open; put the order that asked for it inside, and take the
      seller back to that order on the Orders screen. */
   async function created(lot: Lot) {
     setCreating(false);
-    if (gathering) {
-      setGathering(false);
-      await gather(lot);
-      return;
-    }
     if (!fileOrder) {
       void load();
       return;
@@ -3979,28 +4133,6 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
         ? `The lot is open, but the order was not filed into it: ${err.message}`
         : 'The lot is open, but the order was not filed into it.');
     }
-  }
-  /* Every active order waiting for a lot, filed into the one just opened. One
-     the server refuses (a different lane, say) stays waiting, and is counted
-     rather than failing the rest. */
-  async function gather(lot: Lot) {
-    try {
-      const sales = await api.sales(store.ownerId);
-      const waiting = sales.orders.filter((row) => row.awaitingLot && stateOf(row) === 'active');
-      // One request for all of them, not one per order.
-      const filed = waiting.length > 0
-        ? (await api.addItemsToLot(lot.id, waiting.map((row) => row.id))).added
-        : 0;
-      const left = waiting.length - filed;
-      setNotice(`${filed === 1 ? '1 order' : `${filed} orders`} filed into ${lot.name}.${
-        left > 0 ? ` ${left === 1 ? '1 order' : `${left} orders`} could not go in and ${left === 1 ? 'is' : 'are'} still waiting.` : ''}`);
-      setOpenId(lot.id);
-    } catch (err) {
-      setError(err instanceof ApiRequestError
-        ? `The lot is open, but the orders were not filed into it: ${err.message}`
-        : 'The lot is open, but the orders were not filed into it.');
-    }
-    void load();
   }
   const dropFileOrder = () =>
     setParams((current) => {
@@ -4050,8 +4182,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
 
   if (!openId && params.get('view') === 'unlotted') {
     return (
-      <Unlotted store={store} onBack={() => { closeUnlotted(); void load(); }}
-        onShipTogether={() => { closeUnlotted(); setNotice(null); setGathering(true); setCreating(true); }} />
+      <Unlotted store={store} onBack={() => { closeUnlotted(); void load(); }} />
     );
   }
 
@@ -4081,7 +4212,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
       {creating ? (
         <NewLotForm
           onDone={(lot) => void created(lot)}
-          onCancel={() => { setCreating(false); setGathering(false); dropFileOrder(); }}
+          onCancel={() => { setCreating(false); dropFileOrder(); }}
         />
       ) : (
         // Routes now live on their own Sell-home card, not beside this button.
