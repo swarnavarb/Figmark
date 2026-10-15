@@ -347,7 +347,7 @@ const cardAt = async (image) => {
   assert.equal(response.status, 200, `card for ${image}`);
   assert.equal(response.headers['Content-Type'], 'image/jpeg');
   assert.ok(response.body[0] === 0xff && response.body[1] === 0xd8, 'a real JPEG');
-  assert.ok(response.body.byteLength < 300_000, `small enough for a chat preview: ${response.body.byteLength}`);
+  assert.ok(response.body.byteLength <= 90_000, `small enough for a chat preview: ${response.body.byteLength}`);
   return response.body;
 };
 

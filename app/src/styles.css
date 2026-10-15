@@ -14992,3 +14992,49 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* A shelf card's foot: the counts, then its lot badge, never touching. */
 .shelf__foot { display: flex; align-items: center; justify-content: space-between; gap: 6px 8px; flex-wrap: wrap; }
 .shelf__foot .badge { flex: none; }
+
+/* ── Profile header: the name on the cover, the rest in order under it ── */
+.phead {
+  --phead-face: 96px; --phead-below: 30px;
+  position: relative; z-index: 2; display: grid; gap: 10px; margin-bottom: 14px;
+}
+.phead--shop { --phead-face: 76px; --phead-below: 22px; }
+.phead__top {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 14px;
+  margin-top: calc(var(--phead-below) - var(--phead-face));
+}
+/* Lifted so its last line ends just above the cover's edge, on the cover's dark foot. */
+.phead__name { display: grid; gap: 2px; min-width: 0; padding-bottom: calc(var(--phead-below) + 10px); }
+.phead__name h1 {
+  margin: 0; color: #fff; font-size: var(--t-xl); line-height: 1.08; letter-spacing: -0.015em; overflow-wrap: anywhere;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.5);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.phead__handle {
+  font-size: var(--t-sm); font-weight: var(--w-semi); color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.phead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.phead__meta:empty { display: none; }
+.phead__since { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.phead .qprofile__avatar, .phead .storefront__avatar { position: relative; z-index: 1; }
+.phead .qprofile__face { background: var(--bg); }
+@media (min-width: 720px) { .phead__name h1 { font-size: var(--t-2xl); } }
+
+/* The shop's "open" sign moves off the cover's foot, where the name now sits. */
+.storefront--shop .storefront__open { bottom: auto; top: 74px; }
+@media (min-width: 720px) { .storefront--shop .storefront__open { top: 96px; } }
+
+/* A titled section, so a page reads as parts rather than a run of boxes. */
+.ppanel {
+  display: grid; gap: 10px; margin: 0 0 14px; padding: 14px 14px 12px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.ppanel__title {
+  margin: 0; font-size: var(--t-2xs); font-weight: var(--w-bold); color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.ppanel .pbio { margin: 0; padding: 0 0 0 12px; border: 0; border-radius: 0; background: none; }
+.ppanel .pbio::before { top: 2px; bottom: 2px; }
+.ppanel .chips--tight { margin-bottom: 0; }
+.ppanel .alsosells { margin-top: 0; }

@@ -49,30 +49,43 @@ export function cardSvg(spec: CardSpec, wide = false): string {
 }
 
 /**
- * Android's WhatsApp shows no picture at all for a preview much over 300 KB,
- * where the iPhone's shrinks it: under this, every chat app shows it.
+ * Android's WhatsApp shows no picture at all for a preview that is too heavy,
+ * where the iPhone's shrinks it. Kept well under, so it also arrives quickly on
+ * a slow connection: under this, every chat app shows it.
  */
-export const PREVIEW_MAX_BYTES = 280_000;
+export const PREVIEW_MAX_BYTES = 90_000;
+
+/** Quality steps tried in turn until the JPEG fits. */
+const QUALITIES = [82, 72, 62, 52, 44, 36, 30];
 
 /** An SVG card as a JPEG, small enough for any chat app's preview. */
 export async function renderCard(svg: string): Promise<Buffer> {
   const fontBuffers = await boot();
-  const resvg = new Resvg(svg, {
+  const draw = (width: number | null) => new Resvg(svg, {
     font: { fontBuffers, defaultFontFamily: CARD_FONT, sansSerifFamily: CARD_FONT },
-    fitTo: { mode: 'original' },
+    fitTo: width ? { mode: 'width', value: width } : { mode: 'original' },
   });
-  const image = resvg.render();
-  try {
-    const frame = { data: image.pixels, width: image.width, height: image.height };
-    // A busy photo can make a large JPEG: step the quality down until it fits.
-    let bytes = Buffer.from(encode(frame, 84).data);
-    for (const quality of [74, 62, 50]) {
-      if (bytes.byteLength <= PREVIEW_MAX_BYTES) break;
-      bytes = Buffer.from(encode(frame, quality).data);
+  const fit = (resvg: InstanceType<typeof Resvg>): Buffer => {
+    const image = resvg.render();
+    try {
+      const frame = { data: image.pixels, width: image.width, height: image.height };
+      // A busy photo makes a heavy JPEG: step the quality down until it fits.
+      let bytes = Buffer.from(encode(frame, QUALITIES[0]!).data);
+      for (const quality of QUALITIES.slice(1)) {
+        if (bytes.byteLength <= PREVIEW_MAX_BYTES) break;
+        bytes = Buffer.from(encode(frame, quality).data);
+      }
+      return bytes;
+    } finally {
+      image.free();
+      resvg.free();
     }
-    return bytes;
-  } finally {
-    image.free();
-    resvg.free();
+  };
+  let bytes = fit(draw(null));
+  // Still too heavy at the lowest quality worth looking at: draw it smaller.
+  for (const width of [960, 800]) {
+    if (bytes.byteLength <= PREVIEW_MAX_BYTES) break;
+    bytes = fit(draw(width));
   }
+  return bytes;
 }
