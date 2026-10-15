@@ -3277,7 +3277,7 @@ a.provider__name:hover { color: var(--accent-text); }
   55% { transform: translateX(-7px) scale(1.12); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .spotlight-badge, .routearrow, .stepmark--current, .waveloader span, .rschain__row::before { animation: none; }
+  .spotlight-badge, .routearrow, .stepmark--current, .waveloader span { animation: none; }
 }
 
 .stagebox {
@@ -5215,16 +5215,9 @@ a.ocard__buyer:hover { color: var(--accent-text); }
  * the next step travels the next step's own icon. */
 .rsstudio { display: grid; gap: 14px; padding-bottom: 8px; }
 
-.rshead {
-  position: relative; display: grid; gap: 8px; padding: 16px; border-radius: var(--r-lg); overflow: hidden;
-  background:
-    radial-gradient(120% 140% at 100% 0%, var(--violet-soft), transparent 60%),
-    radial-gradient(120% 140% at 0% 100%, var(--aqua-soft), transparent 55%),
-    var(--surface);
-  box-shadow: inset 0 0 0 1px var(--border);
-}
+.rshead { position: relative; display: grid; gap: 10px; }
 .rshead__name {
-  width: 100%; min-width: 0; padding: 2px 0; border: 0; border-bottom: 2px dashed var(--border-strong);
+  width: 100%; min-width: 0; padding: 2px 0; border: 0; border-bottom: 1px solid transparent;
   background: transparent; color: var(--text); font: inherit; font-size: var(--t-lg); font-weight: var(--w-bold);
 }
 .rshead__name:focus { outline: none; border-bottom-color: var(--accent); }
@@ -5241,107 +5234,23 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .rsmap__seg--lot, .rslane--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
 .rsmap__seg--post, .rslane--post { --zone: var(--lime); --zone-soft: var(--lime-soft); --zone-line: var(--lime-line); }
 
-.rslanes { display: grid; gap: 12px; }
-.rslane {
-  scroll-margin-top: 80px; display: grid; gap: 4px; padding: 10px 10px 8px; border-radius: var(--r-lg);
-  background: linear-gradient(180deg, var(--zone-soft), transparent 85%);
-  box-shadow: inset 0 0 0 1px var(--zone-line);
-}
-.rslane .rszone { margin: 0 0 6px; }
+.rslanes { display: grid; gap: 18px; }
+.rslane { scroll-margin-top: 80px; display: grid; gap: 2px; }
+.rslane .rszone { margin: 0 0 4px; }
 .rslane__empty { margin: 4px 6px 8px; font-size: var(--t-xs); color: var(--text-dim); }
 
 .rschain { position: relative; display: grid; }
-/* The track to the next step, in the lane's colour, nudged slowly along so
-   it reads as travelled rather than painted on. */
-.rschain__row { position: relative; }
-.rschain__row:not(.rschain__row--last)::before {
-  content: ''; position: absolute; top: 30px; bottom: 0; left: 14px; width: 3px;
-  border-radius: 2px; background-size: 3px 30px;
-  background-image: repeating-linear-gradient(to bottom, var(--zone) 0 9px, transparent 9px 15px);
-  opacity: 0.75; animation: rsroad-travel 6s linear infinite;
-}
-@keyframes rsroad-travel { from { background-position: 0 0; } to { background-position: 0 30px; } }
-/* The next step's icon, riding the track down to it. */
-.rslink__token {
-  position: absolute; left: 3px; top: 34px; z-index: 2; width: 25px; height: 25px; display: grid; place-items: center;
-  border-radius: 50%; font-size: 13px; background: var(--surface); box-shadow: 0 0 0 2px var(--zone), 0 4px 10px rgba(0, 0, 0, 0.25);
-  animation: rslink-travel 3.4s cubic-bezier(0.45, 0, 0.25, 1) infinite;
-}
-@keyframes rslink-travel {
-  0% { top: 34px; opacity: 0; transform: scale(0.6); }
-  12% { opacity: 1; transform: scale(1); }
-  80% { opacity: 1; transform: scale(1); }
-  100% { top: calc(100% - 26px); opacity: 0; transform: scale(0.6); }
-}
-
-.rsnode { position: relative; display: grid; grid-template-columns: 31px 1fr; gap: 9px; align-items: start; }
-/* A stop on the track: the step's own picture, ringed in its lane's colour. */
-.rsnode__dot {
-  position: relative; z-index: 1; width: 31px; height: 31px; border-radius: 50%; display: grid; place-items: center;
-  font-size: 15px; background: var(--surface); box-shadow: 0 0 0 2px var(--zone), 0 0 0 5px var(--zone-soft, transparent);
-}
-.rsnode__dot--locked { opacity: 0.85; }
+.rsnode { position: relative; display: grid; }
 .rsnode__card {
-  position: relative; overflow: hidden; display: grid; gap: 8px; padding: 10px 13px 12px;
-  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  position: relative; display: grid; gap: 6px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
+  transition: border-color 0.15s ease;
 }
-.rsnode__card > :not(.rsscene) { position: relative; z-index: 1; }
-.rsnode__card:focus-within, .rsnode__card:hover {
-  border-color: var(--zone, var(--accent-line)); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16); transform: translateY(-1px);
-}
+.rsnode__card:focus-within { border-color: var(--zone, var(--accent-line)); }
+.rsnode__icon { flex: 0 0 auto; font-size: 16px; line-height: 1; }
 .rsnode__card--locked { background: var(--surface-2); }
 .rsnode__card--delivered { border-color: rgba(52, 211, 153, 0.45); }
 .rsnode__no { font-size: 10.5px; font-weight: var(--w-semi); letter-spacing: 0.05em; text-transform: uppercase; color: var(--zone, var(--text-faint)); }
-
-/* The scene behind a step: its picture, large and faint, doing what the step
-   does - and for the moving ones, the world going by behind it. */
-.rsscene { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; border-radius: inherit;
-  background: linear-gradient(120deg, transparent 40%, var(--zone-soft, transparent)); }
-.rsscene__art {
-  position: absolute; right: 6px; bottom: -8px; font-size: 64px; line-height: 1; opacity: 0.16;
-  animation: rsscene-float 5s ease-in-out infinite;
-}
-.rsscene__lines { position: absolute; inset: 0; opacity: 0; }
-@keyframes rsscene-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-
-.rsscene--fly .rsscene__art { animation: rsscene-fly 4.5s ease-in-out infinite; }
-@keyframes rsscene-fly { 0% { transform: translate(18px, 10px) rotate(-6deg); } 50% { transform: translate(-14px, -8px) rotate(-10deg); } 100% { transform: translate(18px, 10px) rotate(-6deg); } }
-.rsscene--fly .rsscene__lines, .rsscene--road .rsscene__lines, .rsscene--sail .rsscene__lines { opacity: 0.25; }
-.rsscene--fly .rsscene__lines {
-  background-image: repeating-linear-gradient(90deg, var(--zone) 0 18px, transparent 18px 70px);
-  background-size: 140px 2px; background-repeat: repeat-x; background-position: 0 88%;
-  animation: rsscene-wind 1.6s linear infinite;
-}
-.rsscene--road .rsscene__lines {
-  background-image: repeating-linear-gradient(90deg, var(--zone) 0 14px, transparent 14px 28px);
-  background-size: 56px 3px; background-repeat: repeat-x; background-position: 0 calc(100% - 6px);
-  animation: rsscene-wind 0.9s linear infinite;
-}
-.rsscene--sail .rsscene__lines {
-  background-image: radial-gradient(circle at 10px -4px, transparent 10px, var(--zone) 11px, transparent 12px);
-  background-size: 20px 8px; background-repeat: repeat-x; background-position: 0 calc(100% - 4px);
-  animation: rsscene-wind 2.2s linear infinite;
-}
-@keyframes rsscene-wind { from { background-position-x: 0; } to { background-position-x: -140px; } }
-.rsscene--road .rsscene__art { animation: rsscene-drive 0.5s ease-in-out infinite alternate; }
-@keyframes rsscene-drive { from { transform: translateY(0); } to { transform: translateY(-2px); } }
-.rsscene--sail .rsscene__art { animation: rsscene-sail 3s ease-in-out infinite; }
-@keyframes rsscene-sail { 0%, 100% { transform: rotate(-4deg) translateY(0); } 50% { transform: rotate(4deg) translateY(-5px); } }
-.rsscene--pack .rsscene__art { animation: rsscene-pack 2.2s cubic-bezier(0.3, 1.6, 0.5, 1) infinite; transform-origin: 50% 100%; }
-@keyframes rsscene-pack { 0%, 60%, 100% { transform: scale(1, 1); } 70% { transform: scale(1.12, 0.88); } 85% { transform: scale(0.94, 1.08) translateY(-6px); } }
-.rsscene--warehouse .rsscene__art { animation: rsscene-pulse 3.2s ease-in-out infinite; }
-@keyframes rsscene-pulse { 0%, 100% { transform: scale(1); opacity: 0.14; } 50% { transform: scale(1.06); opacity: 0.22; } }
-.rsscene--customs .rsscene__art { animation: rsscene-stamp 2.6s ease-in-out infinite; transform-origin: 50% 100%; }
-@keyframes rsscene-stamp { 0%, 70%, 100% { transform: rotate(0); } 78% { transform: rotate(-12deg) translateY(-6px); } 86% { transform: rotate(4deg) translateY(2px); } }
-.rsscene--land .rsscene__art { animation: rsscene-land 4s ease-out infinite; }
-@keyframes rsscene-land { 0% { transform: translate(-30px, -24px) rotate(10deg); opacity: 0; } 30% { opacity: 0.18; } 70%, 100% { transform: translate(0, 0) rotate(0); opacity: 0.18; } }
-.rsscene--check .rsscene__art { animation: rsscene-pop 2.4s ease-in-out infinite; }
-@keyframes rsscene-pop { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.15); } 30% { transform: scale(1); } }
-.rsscene--home .rsscene__art { animation: rsscene-home 2.8s ease-in-out infinite; }
-@keyframes rsscene-home { 0%, 100% { transform: translateY(0) rotate(0); } 25% { transform: translateY(-8px) rotate(-4deg); } 50% { transform: translateY(0) rotate(0); } }
-.rsscene--spark .rsscene__art { animation: rsscene-twinkle 3s ease-in-out infinite; }
-@keyframes rsscene-twinkle { 0%, 100% { opacity: 0.1; transform: rotate(0) scale(1); } 50% { opacity: 0.22; transform: rotate(12deg) scale(1.08); } }
 
 /* Preview and Save, in reach however long the chain grows. */
 .rsbar {
@@ -5363,24 +5272,20 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   border: 1px solid var(--zone-line); background: var(--surface); color: var(--zone); font: inherit; font-size: var(--t-2xs); font-weight: var(--w-semi);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .rslink__token { animation: none; top: 50%; opacity: 1; }
-  .rsscene__art, .rsscene__lines { animation: none !important; }
-}
 
 .rsnode__top { display: flex; align-items: center; gap: 8px; }
 .rsnode__name {
   flex: 1 1 auto; min-width: 0; border: none; background: transparent;
-  font-size: var(--t-md); font-weight: var(--w-bold); padding: 4px 0; color: var(--text);
+  font-size: var(--t-sm); font-weight: var(--w-bold); padding: 2px 0; color: var(--text);
 }
 .rsnode__name:focus { outline: none; }
 .rsnode__name:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); cursor: default; }
 .rsnode__name--static { padding: 4px 0; color: var(--text-dim); }
 .rsnode__desc {
-  border: none; border-bottom: 1px dashed var(--border); background: transparent;
-  font-size: var(--t-xs); color: var(--text-dim); padding: 2px 0 6px;
+  border: none; background: transparent;
+  font-size: var(--t-xs); color: var(--text-dim); padding: 0;
 }
-.rsnode__desc:focus { outline: none; border-bottom-color: var(--accent); }
+.rsnode__desc:focus { outline: none; color: var(--text); }
 .rsnode__desc--static { font-size: var(--t-xs); color: var(--text-faint); padding: 0; }
 .rsnode__paymenthint {
   display: flex; align-items: flex-start; gap: 6px;
@@ -5390,11 +5295,12 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 
 /* The gap between two nodes: the road's shoulder, where a wait is said and
    where a new stop is dropped in. */
-.rsgap { position: relative; display: flex; align-items: center; gap: 8px; min-height: 30px; padding-left: 28px; }
+.rsgap { position: relative; display: flex; align-items: center; gap: 8px; min-height: 26px; padding-left: 12px; }
+.rsgap__arrow { flex: 0 0 auto; width: 16px; text-align: center; font-size: 14px; line-height: 1; color: var(--zone, var(--text-faint)); opacity: 0.8; }
 .rsgap__wait {
   flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 7px;
-  padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--border);
-  background: transparent; color: var(--text-dim); font-size: var(--t-xs);
+  padding: 4px 10px; border-radius: 999px; border: 1px solid transparent;
+  background: var(--surface-2); color: var(--text-dim); font-size: var(--t-xs);
   cursor: pointer; text-align: left;
 }
 .rsgap__wait:hover { border-color: var(--warn); color: var(--warn); }
@@ -5406,8 +5312,8 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .rsgap__insert {
   flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; position: relative; z-index: 1;
   display: grid; place-items: center;
-  border: 1px dashed var(--border-strong); background: var(--surface); color: var(--text-dim);
-  opacity: 0; transition: opacity 0.15s ease;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+  opacity: 0.7; transition: opacity 0.15s ease;
 }
 .rschain:hover .rsgap__insert, .rsgap:focus-within .rsgap__insert { opacity: 1; }
 .rsgap__insert:hover { border-style: solid; border-color: var(--accent); color: var(--accent-text); }
@@ -5431,8 +5337,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .rszone {
   --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line);
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin: 10px 0 6px; padding: 9px 12px; border-radius: var(--r-md);
-  background: var(--zone-soft); box-shadow: inset 4px 0 0 var(--zone), inset 0 0 0 1px var(--zone-line);
+  margin: 10px 0 6px; padding: 0 2px;
 }
 .rszone--pre { --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line); }
 .rszone--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
@@ -5444,7 +5349,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .rsnode--lot { --zone: var(--coral); }
 .rsnode--post { --zone: var(--lime); }
 .rsnode--pre .rsnode__card, .rsnode--lot .rsnode__card, .rsnode--post .rsnode__card {
-  box-shadow: inset 4px 0 0 var(--zone), 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: inset 3px 0 0 var(--zone);
 }
 
 /* Adding a step: every kind, the ones that cannot go here locked with why. */
@@ -9543,12 +9448,11 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 /* A step's button in the Studio: handed out, so shown as a chip; only its words are a field. */
 .rsbtn {
   display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 8px; align-items: center;
-  margin-top: 8px; padding: 8px; border-radius: var(--r-sm);
-  background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line);
+  margin-top: 2px; border-radius: var(--r-sm);
 }
-.rsbtn.is-wrong { background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); }
+.rsbtn.is-wrong { padding: 8px; background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); }
 .rsbtn__chip {
-  display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px;
+  display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px;
   background: var(--accent); color: #fff; font-size: var(--t-xs); font-weight: var(--w-bold); white-space: nowrap;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
@@ -14674,8 +14578,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* The route builder's start: the other two ways in, after the ready-made ones. */
 .rsstart__other { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
-.rshead__mode { justify-self: start; }
-.rshead__mode button { white-space: nowrap; }
+.rshead__modes { display: flex; align-items: center; gap: 8px; }
+.rshead__mode { flex: 1 1 auto; }
+.rshead__mode button { white-space: nowrap; padding: 7px 12px; }
 
 /* "Steps" view: names and lines only. The buttons, who presses them, the
    waits between steps and where the lot starts and ends are handed out
@@ -14985,7 +14890,5 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .rsnew__alt .faint { font-size: var(--t-2xs); }
 
 /* The Studio in Steps view: the words, and nothing moving behind them. */
-.rsstudio--simple .rsscene { display: none; }
-.rsstudio--simple .rsnode__card { padding-block: 10px; }
 .rshead__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rshead__top .rshead__name { flex: 1; min-width: 0; }

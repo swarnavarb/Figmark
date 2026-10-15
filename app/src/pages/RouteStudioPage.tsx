@@ -232,6 +232,8 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     setJoinAt(join);
     setLeaveAt(leave);
     setStarted(true);
+    // The route opens at its top, not wherever the list was scrolled to.
+    window.scrollTo(0, 0);
     /* A saved route opens clean; a starting point is already unsaved work
        the moment it is on screen, so it is never thrown away unasked. */
     setSavedAs(editing ? snapshot(called, given, join, leave) : null);
@@ -490,7 +492,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
             {/* Most shops ship one of a handful of ways, so those lead: one
                 tap opens a whole route to look over. Pip and a blank chain are
                 for the shop whose way is not among them. */}
-            <span className="rsnew__label">Start from the closest one</span>
+            <span className="rsnew__label">Start with a sample route</span>
             <div className="rsnew__list">
               {[...library.routeTemplates, ...library.presets.map((preset) => ({ ...preset, icon: 'transit' as const }))].map((template) => {
                 const parts = routeParts(template);
@@ -562,11 +564,23 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
           )}
         </span>
         </div>
-        <div className="seg rshead__mode" role="tablist" aria-label="How much to show">
-          <button type="button" role="tab" aria-selected={!detailed} className={detailed ? '' : 'is-on'}
-            onClick={() => showDetails(false)}>Steps</button>
-          <button type="button" role="tab" aria-selected={detailed} className={detailed ? 'is-on' : ''}
-            onClick={() => showDetails(true)}>All details</button>
+        <div className="rshead__modes">
+          <div className="seg rshead__mode" role="tablist" aria-label="How much to show">
+            <button type="button" role="tab" aria-selected={!detailed} className={detailed ? '' : 'is-on'}
+              onClick={() => showDetails(false)}>Steps</button>
+            <button type="button" role="tab" aria-selected={detailed} className={detailed ? 'is-on' : ''}
+              onClick={() => showDetails(true)}>All details</button>
+          </div>
+          <InfoTip label="Steps or All details">
+            <b>Steps</b> shows the route plainly: each step&apos;s name, one line about it, its button and
+            who can press it. Most routes only need this.
+            <br /><br />
+            <b>All details</b> shows everything else you can change: your own words on a button, the
+            message buyers see while they wait between two steps, where the lot starts and ends, and a
+            short note on what each button does.
+            <br /><br />
+            Both edit the same route. Switching changes only what you see.
+          </InfoTip>
         </div>
         <div className="rsmap" aria-label="The route's three parts">
           {lanes.map((lane) => (
@@ -600,16 +614,9 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
             <div className="rschain">
               {lane.indexes.map((index) => {
                 const step = given[index]!;
-                const following = given[index + 1];
                 const last = index === given.length - 1;
                 return (
                   <div key={step.id} className={`rschain__row${last ? ' rschain__row--last' : ''}`}>
-                    {/* What happens next, travelling down the track to it. */}
-                    {following && !last && (
-                      <span className={`rslink__token rslink__token--${sceneOf(following, index + 1)}`} aria-hidden="true">
-                        {stepEmoji(following, index + 1)}
-                      </span>
-                    )}
                     <StepNode
                       step={step} index={index} count={steps.length}
                       zone={zoneAt(index)}
@@ -721,40 +728,6 @@ const ZONE_TEXT: Record<StepZone, { title: string; note: string; short: string }
   lot: { title: '② In the lot', note: 'Everything moves together - no buttons, you move the lot', short: 'in the lot' },
   post: { title: '③ After the lot', note: 'Each item on its own again - buttons per item', short: 'after the lot' },
 };
-
-/** The kind of scene behind a step - what it looks like happening - read off its words, then its button. */
-type Scene = 'order' | 'warehouse' | 'pack' | 'fly' | 'sail' | 'road' | 'customs' | 'check' | 'land' | 'home' | 'spark';
-
-function sceneOf(step: Pick<RouteStep, 'name' | 'trigger' | 'custom'>, index: number): Scene {
-  const name = step.name.toLowerCase();
-  if (index === 0 || /order placed|ordered|booked/.test(name)) return 'order';
-  if (step.trigger === 'delivered' || /deliver/.test(name)) return 'home';
-  if (step.trigger === 'dispatched' || /dispatch|courier|out for|truck/.test(name)) return 'road';
-  if (/custom/.test(name)) return 'customs';
-  if (/pack|box|wrap|consolidat/.test(name)) return 'pack';
-  if (/air|flight|fly|plane/.test(name)) return 'fly';
-  if (/sea|sail|ship|vessel|port|container/.test(name)) return 'sail';
-  if (/land|arriv/.test(name)) return 'land';
-  if (/ready|check|qc|inspect/.test(name)) return 'check';
-  if (/warehouse|\bwh\b|receiv|forward|supplier/.test(name)) return 'warehouse';
-  return 'spark';
-}
-
-/**
- * What a step looks like happening, drawn behind its card: a plane crossing,
- * a ship on the swell, a parcel being boxed, a truck on the road. Purely
- * decoration - it reads off the step's words, says nothing a reader needs,
- * and stands still for anyone who asks for less motion.
- */
-function Scene({ step, index }: { step: Pick<RouteStep, 'name' | 'trigger' | 'custom' | 'stageIcon' | 'locked'>; index: number }) {
-  const scene = sceneOf(step, index);
-  return (
-    <span className={`rsscene rsscene--${scene}`} aria-hidden="true">
-      <span className="rsscene__lines" />
-      <span className="rsscene__art">{stepEmoji(step, index)}</span>
-    </span>
-  );
-}
 
 /**
  * Where one part of the journey begins: before the lot, in it, after it -
@@ -868,6 +841,7 @@ function GapRow({ afterStep, onChangeWait, onInsert }: {
 
   return (
     <div className="rsgap">
+      <span className="rsgap__arrow" aria-hidden="true">↓</span>
       {afterStep && onChangeWait && (
         editing ? (
           <WaitMessageEditor step={afterStep} onChange={onChangeWait} onDone={() => setEditing(false)} />
@@ -960,13 +934,10 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
   if (index === 0 && step.locked) {
     return (
       <div className="rsnode rsnode--pre">
-        <span className="rsnode__dot rsnode__dot--locked" aria-hidden="true">🧾</span>
         <div className="rsnode__card rsnode__card--locked">
-          <Scene step={step} index={index} />
+          <span className="rsnode__no is-fixed">Step 1 · always first</span>
           <div className="rsnode__top">
-            <span className="rsnode__no is-fixed">Step 1 · always first</span>
-          </div>
-          <div className="rsnode__top">
+            <span className="rsnode__icon" aria-hidden="true">🧾</span>
             <span className="rsnode__name rsnode__name--static">{step.name}</span>
             <InfoTip label="About Order Placed">
               Always first, and never renamed or moved. It shows the order&apos;s payment status here
@@ -988,11 +959,10 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
 
   return (
     <div className={`rsnode rsnode--${zone}`} data-step={step.id}>
-      <span className="rsnode__dot" aria-hidden="true">{stepEmoji(step, index)}</span>
       <div className={`rsnode__card${isDelivered ? ' rsnode__card--delivered' : ''}`}>
-        <Scene step={step} index={index} />
         <span className={`rsnode__no${fixed ? ' is-fixed' : ''}`}>Step {index + 1}{fixed ? (isDelivered ? ' · always last' : ' · always before Delivered') : ''}</span>
         <div className="rsnode__top">
+          <span className="rsnode__icon" aria-hidden="true">{stepEmoji(step, index)}</span>
           <input className="rsnode__name" value={step.name} placeholder="What happens here"
             aria-label={`Step ${index + 1} name`} disabled={isDelivered}
             onChange={(event) => onChange({ name: event.target.value })} />
