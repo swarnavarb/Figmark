@@ -1,3 +1,6 @@
+import { api } from './api';
+import { pushState } from './push';
+
 /**
  * When to look for news, in one place.
  *
@@ -10,6 +13,8 @@
  * - An open conversation on screen checks every 10 seconds.
  * - Anywhere else on the site the bell checks every 30 seconds, and new
  *   messages come with it (it carries their notices; see Notifications.tsx).
+ *   With push on for this device - and messages not kept off the phone -
+ *   every 10 minutes: the push brings the news, the clock is a safety net.
  * - Nothing is asked from a tab nobody can see. Coming back looks at once.
  * - A push that lands while the site is open is news there and then.
  * - One tab asks for them all.
@@ -19,6 +24,8 @@ type Look = () => Promise<boolean | void>;
 
 /** The bell's clock, which is also how soon a new message is heard of off its conversation. */
 const BELL_MS = 30_000;
+/** The bell's clock when pushes bring the news to this device. */
+const BELL_PUSH_MS = 10 * 60_000;
 /** An open conversation's clock, while it is on screen. */
 const THREAD_MS = 10_000;
 /** An open room's clock, while it is on screen. */
@@ -37,8 +44,11 @@ const pushHeard = new Set<(link: string | null) => void>();
 const fronted = new Set<() => void>();
 const hidden = new Set<() => void>();
 const othersSaw = new Set<() => void>();
+const pushFlipped = new Set<() => void>();
 let broadcast: BroadcastChannel | null = null;
 let started = false;
+/** Whether pushes reach this device, messages included. */
+let pushOn = false;
 
 function start() {
   if (started || typeof window === 'undefined') return;
@@ -51,7 +61,10 @@ function start() {
   let wasVisible = visible();
   const onFront = () => {
     const now = visible();
-    if (now && !wasVisible) fronted.forEach((front) => front());
+    if (now && !wasVisible) {
+      void refreshPush();
+      fronted.forEach((front) => front());
+    }
     if (!now && wasVisible) hidden.forEach((hide) => hide());
     wasVisible = now;
   };
@@ -71,6 +84,29 @@ function start() {
   } catch {
     // No BroadcastChannel: each tab simply keeps its own bell.
   }
+  void refreshPush();
+}
+
+/**
+ * Whether this device gets pushes, and gets them for messages: somebody who
+ * keeps messages off the phone hears of them from the bell's clock alone.
+ * Asked at start and whenever the site comes back to the front, which is
+ * when push is turned on or off (on the page, or in the browser's settings).
+ */
+async function refreshPush() {
+  const was = pushOn;
+  try {
+    pushOn = (await pushState()) === 'on'
+      && !(await api.notificationSettings()).prefs.pushOff.includes('messages');
+  } catch {
+    pushOn = false;
+  }
+  if (pushOn !== was) pushFlipped.forEach((flip) => flip());
+}
+
+/** Called when push is turned on or off on this device, so the bell's clock follows at once. */
+export function pushChanged(): void {
+  void refreshPush();
 }
 
 /** Where a link goes, without its query: what a push is matched against. */
@@ -116,7 +152,7 @@ export function onBellChanged(look: Look): () => void {
   let mine = 0;
   let stopped = false;
 
-  const wait = () => BELL_MS;
+  const wait = () => (pushOn ? BELL_PUSH_MS : BELL_MS);
 
   const schedule = (ms = wait()) => {
     window.clearTimeout(timer);
@@ -171,10 +207,14 @@ export function onBellChanged(look: Look): () => void {
     schedule();
   };
 
+  // Push turned on or off: the clock moves to the new pace from now.
+  const onFlip = () => schedule();
+
   fronted.add(onFront);
   hidden.add(onHidden);
   pushHeard.add(onPush);
   othersSaw.add(onOthers);
+  pushFlipped.add(onFlip);
   // The first look is the page's own load; the clock starts from it.
   void run(false).then(() => schedule());
 
@@ -185,6 +225,7 @@ export function onBellChanged(look: Look): () => void {
     hidden.delete(onHidden);
     pushHeard.delete(onPush);
     othersSaw.delete(onOthers);
+    pushFlipped.delete(onFlip);
   };
 }
 
