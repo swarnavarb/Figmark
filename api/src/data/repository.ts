@@ -284,6 +284,12 @@ export interface Repository {
   saveNotification(notification: Notification): Promise<Notification>;
   deleteNotification(userId: string, id: string): Promise<void>;
   /**
+   * How many notices one person has and when the newest write to any of them
+   * landed, in whole seconds: enough for the bell to tell "nothing changed"
+   * from one small read instead of filling a page.
+   */
+  notificationStamp(userId: string): Promise<{ count: number; lastWriteAt: number }>;
+  /**
    * Held notices whose hold ended between `from` and `until`, not yet sent to
    * anybody's devices and not taken back - across everybody, for the clock
    * that sends them. Bounded below so a notice from before push existed is

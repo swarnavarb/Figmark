@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { FORUM_CAP, FORUM_MODERATORS_MAX, FORUM_UNLOCK_LEVELS, forumLockedMessage, forumSlotsAt } from '../../../shared/enums.js';
 import type { Forum, Listing, Post, User } from '../../../shared/models.js';
@@ -818,6 +818,18 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
   // A channel is for the people who follow the shop. Everybody else sees the
   // door - who it is, how many are inside - and a button to come in.
   const locked = !forum && !mine && !following;
+
+  /* A refresh that already holds this room is told so in a line when nothing
+     in it has been written since, rather than decorated afresh: the posts,
+     the room and the viewer's place in it are what the page is made of.
+     What is only joined in (an item's stock, a name) is caught by the page's
+     occasional full refresh. */
+  const stamp = locked ? null : createHash('sha1')
+    .update(JSON.stringify([posts, following, mine, forum, seller?.sellerProfile ?? null]))
+    .digest('base64url')
+    .slice(0, 16);
+  if (stamp && request.query?.get('since') === stamp) return json(200, { unchanged: true, stamp });
+
   // A forum is people talking as themselves. Anything said there in a shop's
   // name predates that rule and is not shown.
   const shown = locked ? [] : forum ? await withoutShops(posts, repository) : posts;
@@ -864,6 +876,7 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
         },
     shareable,
     posts: await decorate(shown, repository, actor, { followed: new Set(followed) }),
+    ...(stamp ? { stamp } : {}),
   });
 }
 

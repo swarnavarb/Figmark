@@ -4,6 +4,7 @@ import type { Message, MessageDeal } from '@shared/models';
 import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
+import { onThreadChanged } from '../live';
 import { ManagerMark } from '../components/ManagerBadge';
 import { Avatar, EmptyState, ErrorNotice, Icon, LevelChip, useConfirm } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
@@ -267,24 +268,19 @@ export function ThreadPage() {
 
   // Live while it is on screen, like a room - asking only for what arrived
   // since the newest message here, rather than the whole conversation again.
+  // When is live.ts's call: a clock, the tab coming back, a push for this chat.
   const latest = data?.messages.at(-1)?.createdAt;
   useEffect(() => {
-    if (!handle || !data) return;
-    const tick = window.setInterval(async () => {
-      if (document.visibilityState !== 'visible') return;
-      try {
-        const fresh = await api.thread(handle, as, latest ? { since: latest } : {});
-        if (fresh.messages.length === 0) return;
-        setData((current) => {
-          if (!current) return fresh;
-          const known = new Set(current.messages.map((message) => message.id));
-          return { ...current, messages: [...current.messages, ...fresh.messages.filter((message) => !known.has(message.id))] };
-        });
-      } catch {
-        // A missed refresh is caught by the next one.
-      }
-    }, 10_000);
-    return () => window.clearInterval(tick);
+    if (!handle || !data) return undefined;
+    return onThreadChanged(handle, async () => {
+      const fresh = await api.thread(handle, as, latest ? { since: latest } : {});
+      if (fresh.messages.length === 0) return;
+      setData((current) => {
+        if (!current) return fresh;
+        const known = new Set(current.messages.map((message) => message.id));
+        return { ...current, messages: [...current.messages, ...fresh.messages.filter((message) => !known.has(message.id))] };
+      });
+    });
   }, [handle, as, latest, Boolean(data)]);
 
   /** The page before the first message here, kept in place on screen. */

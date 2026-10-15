@@ -13,6 +13,7 @@ import { figmarkLink, LinkCard } from './LinkCard';
 import { PersonVoice, useVoice } from './SocialVoice';
 import { RoomBar, useLongPress, useScrolledPast } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
+import { onChannelChanged } from '../live';
 import { OpeningCard } from './Showcase';
 
 /**
@@ -222,8 +223,8 @@ function ListSkeleton() {
 
 type Show = 'announcements' | 'everything' | 'media';
 
-/** How often an open room looks for new messages. */
-const REFRESH_MS = 12_000;
+/** Every this many refreshes is a whole one, for what the room's stamp does not cover (an item's stock). */
+const FULL_EVERY = 10;
 /** Messages this close together from the same voice read as one run. */
 const RUN_GAP_MS = 5 * 60_000;
 
@@ -270,6 +271,8 @@ function Room() {
   const [notice, setNotice] = useState<string | null>(null);
   const known = useRef<Set<string>>(new Set());
   const firstLoad = useRef(true);
+  // What the room was when last read, for a refresh to be told "unchanged" against.
+  const stamp = useRef<string | null>(null);
   const back = useGoBack('/social?view=channels');
   // At the top the views keep their names and the pin its own line; once the
   // hero has gone they fold into one row under the bar.
@@ -283,10 +286,16 @@ function Room() {
     behavior: smooth ? 'smooth' : 'auto',
   });
 
-  const load = useCallback(async (quiet = false) => {
+  const load = useCallback(async (quiet = false, since: string | null = null) => {
     if (!id) return;
     try {
-      const next = await api.channelThread(id, voice.storeId, quiet);
+      const reply = since ? await api.channelSince(id, voice.storeId, since) : await api.channelThread(id, voice.storeId, quiet);
+      if ('unchanged' in reply) {
+        markSeen(id);
+        return;
+      }
+      const next = reply;
+      stamp.current = next.stamp ?? null;
       const arrived = next.posts.filter((card) => !known.current.has(card.post.id));
       const wasNear = nearBottom();
       // A light refresh leaves the item list out; keep the one already here.
@@ -308,13 +317,16 @@ function Room() {
     void load();
   }, [load]);
 
-  // A room is live while you are looking at it, and quiet while you are not.
+  // A room is live while you are looking at it, and quiet while you are not
+  // (live.ts keeps the time); most refreshes hear "unchanged" in a line.
   useEffect(() => {
-    const tick = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load(true);
-    }, REFRESH_MS);
-    return () => window.clearInterval(tick);
-  }, [load]);
+    if (!id) return undefined;
+    let ticks = 0;
+    return onChannelChanged(`/social/c/${encodeURIComponent(id)}`, async () => {
+      ticks += 1;
+      await load(true, ticks % FULL_EVERY === 0 ? null : stamp.current);
+    });
+  }, [id, load]);
 
   // Open at the newest message, as every chat does.
   useLayoutEffect(() => {

@@ -1208,6 +1208,8 @@ export interface ChannelThread {
   /** The shop's own items, for putting one in front of followers. Empty unless it is yours. */
   shareable: { id: string; title: string; priceMinor: number; currency: string; condition?: string; photoUrl?: string | null }[];
   posts: PostCard[];
+  /** Sent back as `since` on a refresh, which is answered in a line if nothing in the room changed. */
+  stamp?: string;
 }
 
 /** Which voice a social call speaks in: a shop's id, or nothing for the person. */
@@ -1288,6 +1290,14 @@ export interface NotificationPage {
   unreadByCategory: Partial<Record<NotificationCategory, number>>;
   /** Where the next page starts; null at the end. */
   nextBefore: string | null;
+  /** On a first page: sent back as `since`, the next poll is answered in a line if nothing changed. */
+  version?: string;
+}
+
+/** What a poll with `since` hears when nothing has been written since. */
+export interface NotificationsUnchanged {
+  unchanged: true;
+  version: string;
 }
 
 export interface WantDetail {
@@ -2847,6 +2857,13 @@ export const api = {
     const base = `/social/channels/${encodeURIComponent(id)}${voice(as)}`;
     return request<ChannelThread>(light ? `${base}${base.includes('?') ? '&' : '?'}light=1` : base);
   },
+  /** The light refresh, answered in a line when nothing in the room changed since `since` (a thread's `stamp`). */
+  channelSince: (id: string, as: string | null | undefined, since: string) => {
+    const base = `/social/channels/${encodeURIComponent(id)}${voice(as)}`;
+    return request<ChannelThread | { unchanged: true; stamp: string }>(
+      `${base}${base.includes('?') ? '&' : '?'}light=1&since=${encodeURIComponent(since)}`,
+    );
+  },
   pinPost: (channelId: string, id: string) =>
     post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
   createPost: (body: {
@@ -2912,6 +2929,14 @@ export const api = {
     if (options.category) query.set('category', options.category);
     const qs = query.toString();
     return request<NotificationPage>(`/notifications${qs ? `?${qs}` : ''}`);
+  },
+  /** The first page again, or word that nothing changed since `since` (a page's `version`). */
+  notificationsSince: (since: string | null, category?: NotificationCategory | null) => {
+    const query = new URLSearchParams();
+    if (category) query.set('category', category);
+    if (since) query.set('since', since);
+    const qs = query.toString();
+    return request<NotificationPage | NotificationsUnchanged>(`/notifications${qs ? `?${qs}` : ''}`);
   },
   /** One by id, several by ids, a whole category, or (nothing given) everything. */
   markNotificationsRead: (which?: string | { ids?: string[]; category?: NotificationCategory }) =>

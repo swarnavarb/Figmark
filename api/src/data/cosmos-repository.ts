@@ -1974,6 +1974,18 @@ export class CosmosRepository implements Repository {
     });
   }
 
+  /* One partition, answered from the index: `_ts` is stamped by Cosmos on
+     every write, and a delete or an expiry shows in the count. */
+  async notificationStamp(userId: string): Promise<{ count: number; lastWriteAt: number }> {
+    const { resources } = await this.container('notifications')
+      .items.query<{ n?: number; ts?: number }>(
+        { query: 'SELECT COUNT(1) AS n, MAX(c._ts) AS ts FROM c' },
+        { partitionKey: userId },
+      )
+      .fetchAll();
+    return { count: resources[0]?.n ?? 0, lastWriteAt: resources[0]?.ts ?? 0 };
+  }
+
   /* Cross-partition, but bounded to a few minutes of holds, and a clock that
      finds nothing costs one small query. */
   async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {

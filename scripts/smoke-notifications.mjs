@@ -26,7 +26,7 @@ const { setUsernameRoute: setUsername, sendMessageRoute: send, threadRoute: thre
 const { notificationsRoute: list, notificationsReadRoute: markRead, notificationSettingsRoute: settings, notificationSettingsSaveRoute: saveSettings } =
   await import(new URL('notification-routes.js', fns));
 const { pushSubscribeRoute: subscribe } = await import(new URL('push-routes.js', fns));
-const { createPostRoute: createPost, reactRoute: react, addPostCommentRoute: comment, likeCommentRoute: likeComment } =
+const { createPostRoute: createPost, reactRoute: react, addPostCommentRoute: comment, likeCommentRoute: likeComment, channelThreadRoute: channelThread } =
   await import(new URL('social-routes.js', fns));
 const { toggleFollowRoute: follow } = await import(new URL('catalog-routes.js', fns));
 const { writePageReviewRoute: writePageReview } = await import(new URL('profile-routes.js', fns));
@@ -375,6 +375,65 @@ await check('a folded notice replaces its line on the lock screen', async () => 
   assert.equal(sent.length, 2);
   assert.equal(sent[1].message.title, 'Sana sent you 2 messages');
   assert.ok(sent[0].message.tag && sent[0].message.tag === sent[1].message.tag, 'same tag, so it replaces');
+});
+
+await check('a poll that sends its version hears "unchanged" until something is written', async () => {
+  const quiet = await person('Quiet Reader', '+919000081077');
+  const first = await bell(quiet);
+  assert.equal(first.notifications.length, 0);
+  assert.match(first.version, /^v1\./);
+  assert.deepEqual(await bell(quiet, { since: first.version }), { unchanged: true, version: first.version });
+  // A page further down is never answered "unchanged", and carries no version.
+  assert.equal((await bell(quiet, { since: first.version, before: new Date().toISOString() })).unchanged, undefined);
+
+  await notify(repository, [quiet.id], { kind: 'message', title: 'Hello there', body: '', link: '/' });
+  const after = await bell(quiet, { since: first.version });
+  assert.equal(after.unchanged, undefined);
+  assert.equal(after.notifications[0].title, 'Hello there');
+  assert.equal(after.unread, 1);
+
+  // Inside the margin a write is still news; once it has passed, quiet again.
+  assert.equal((await bell(quiet, { since: after.version })).unchanged, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 6_500));
+  const settled = await bell(quiet);
+  assert.equal((await bell(quiet, { since: settled.version })).unchanged, true);
+
+  // Reading is a write: the badge on another device must hear of it.
+  await markRead(req({ headers: quiet.auth, body: {} }), ctx);
+  const read = await bell(quiet, { since: settled.version });
+  assert.equal(read.unchanged, undefined);
+  assert.equal(read.unread, 0);
+
+  // A notice held for a moment shows when its hold ends, though nothing is written then.
+  await new Promise((resolve) => setTimeout(resolve, 6_500));
+  await notify(repository, [quiet.id], { kind: 'message', title: 'Held', body: '', link: '/' },
+    { notBefore: new Date(Date.now() + 7_000).toISOString() });
+  await new Promise((resolve) => setTimeout(resolve, 6_000));
+  const held = await bell(quiet);
+  assert.ok(!held.notifications.some((row) => row.title === 'Held'));
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  const shown = await bell(quiet, { since: held.version });
+  assert.equal(shown.unchanged, undefined);
+  assert.ok(shown.notifications.some((row) => row.title === 'Held'));
+
+  // Another version's word for nothing is never taken.
+  assert.equal((await bell(quiet, { since: 'v1.not.a.version' })).unchanged, undefined);
+});
+
+await check('a room refresh that sends its stamp hears "unchanged" until a post changes', async () => {
+  const room = async (query = {}) => {
+    const response = await channelThread(req({ headers: arjun.auth, params: { id: arjun.id }, query }), ctx);
+    assert.equal(response.status, 200, JSON.stringify(response.jsonBody));
+    return response.jsonBody;
+  };
+  const first = await room({ light: '1' });
+  assert.ok(first.stamp);
+  assert.deepEqual(await room({ light: '1', since: first.stamp }), { unchanged: true, stamp: first.stamp });
+  await createPost(req({ headers: sana.auth, body: { body: 'Is the crate open yet?', channelId: arjun.id } }), ctx);
+  const after = await room({ light: '1', since: first.stamp });
+  assert.equal(after.unchanged, undefined);
+  assert.ok(after.posts.some((card) => card.post.body === 'Is the crate open yet?'));
+  assert.notEqual(after.stamp, first.stamp);
 });
 
 console.log(`\n${passed} notification checks passed`);
