@@ -9333,21 +9333,13 @@ a.ohead__thumb:hover { transform: scale(1.04); }
   height: 26px; padding: 0 9px;
   border-color: rgba(52, 211, 153, 0.35); background: var(--ok-soft); color: var(--ok);
 }
+/* Further on: drawn so the seller sees what comes next, but it opens only once the one before it is pressed. */
+.stepact__btn.is-later { border-style: dashed; background: none; color: var(--text-faint); }
+.stepact__btn.is-done:disabled { opacity: 1; }
+/* The lot's Move here, scrolled to from the order card's Lot stop. */
+.ladder__move { scroll-margin: 120px; }
 .stepact__undo { margin-left: 2px; font-weight: var(--w-normal); color: var(--text-faint); text-decoration: underline; }
 .stepact__wait { font-size: var(--t-xs); color: var(--text-dim); }
-.stepact__skip {
-  padding: 0; border: 0; background: none; cursor: pointer;
-  font: inherit; font-size: var(--t-2xs); color: var(--text-faint); text-decoration: underline;
-}
-.stepact__skip:hover { color: var(--text); }
-.stepact__later { display: grid; gap: 6px; }
-.stepact__pick {
-  display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 12px;
-  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2);
-  color: var(--text); font: inherit; font-size: var(--t-sm); text-align: left; cursor: pointer;
-}
-.stepact__pick:hover { border-color: var(--accent); }
-.stepact__pick-label { font-weight: var(--w-semi); }
 
 @media (prefers-reduced-motion: reduce) {
   .trkbox__item.is-here .trkbox__icon { animation: none; }
@@ -9466,10 +9458,6 @@ a.ohead__thumb:hover { transform: scale(1.04); }
 .rsprev__reset {
   margin-left: auto; padding: 4px 10px; border: 0; border-radius: 999px;
   background: var(--surface-2); color: var(--text-dim); font: inherit; font-size: var(--t-2xs); cursor: pointer;
-}
-.rsprev__lot {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-  padding: 10px 12px; border-radius: var(--r-md); background: var(--coral-soft); font-size: var(--t-sm);
 }
 .rsprev__said { font-size: var(--t-xs); color: var(--ok); }
 .rsprev__order {
@@ -11361,6 +11349,7 @@ a.ocust__name:hover { color: var(--accent-text); }
   box-shadow: 0 6px 16px -8px rgba(6, 214, 231, 0.85);
 }
 .serial__btn--later { opacity: 0.8; }
+.serial__btn--later:disabled { opacity: 0.5; }
 
 /* Each stop rises in after the one before; a tick pops when its step lands
    (on first paint, staggered, and again whenever it is pressed); the next

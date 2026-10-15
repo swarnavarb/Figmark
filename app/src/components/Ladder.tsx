@@ -28,7 +28,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, actFor, lockFrom, zones, moveUpTo, ended, brief = false,
+  leaveAt, leaveNote, actFor, lockFrom, zones, moveFrom = 0, moveUpTo, backTo, ended, brief = false,
 }: {
   steps: RouteStep[];
   current: number;
@@ -95,6 +95,10 @@ export function Ladder({
    * and a button that only answers with a refusal is worse than none.
    */
   moveUpTo?: number;
+  /** The first rung `onMove` may go to - the lot's first step, where the lot does not start the route. */
+  moveFrom?: number;
+  /** The furthest back an undo may take it. Defaults to `moveFrom`. */
+  backTo?: number;
   /**
    * The journey stopped here - the order was cancelled or turned down. The
    * rungs past where it got to are not drawn at all, and one last rung says
@@ -204,6 +208,44 @@ export function Ladder({
               </span>
               {!brief && step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
               {actFor?.(step, index, steps)}
+              {/* Moving goes one rung at a time: the next rung's Move here
+                  opens once the one before it is reached, and only the rung
+                  it is on can be undone - so nothing is skipped by a slip. */}
+              {editable && onMove && forwarding !== index && index >= moveFrom
+                && (moveUpTo === undefined || index <= moveUpTo) && (() => {
+                  if (index === current + 1) {
+                    return (
+                      <span className="stepact">
+                        <button type="button" className="stepact__btn is-next ladder__move" disabled={busy}
+                          onClick={() => step.forward ? setForwarding(index) : void onMove(index)}>
+                          <span aria-hidden="true">🚢</span> Move here
+                        </button>
+                      </span>
+                    );
+                  }
+                  if (index === current && current - 1 >= (backTo ?? moveFrom)) {
+                    return (
+                      <span className="stepact">
+                        <button type="button" className="stepact__btn is-done" disabled={busy}
+                          title="Moved here. Tap to take the lot back one step."
+                          onClick={() => void onMove(current - 1)}>
+                          <span aria-hidden="true">✓</span> Moved here <span className="stepact__undo">undo</span>
+                        </button>
+                      </span>
+                    );
+                  }
+                  if (index > current + 1) {
+                    return (
+                      <span className="stepact">
+                        <button type="button" className="stepact__btn is-later" disabled
+                          title="Opens once the step before it is done">
+                          <span aria-hidden="true">🔒</span> Move here
+                        </button>
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
 
               {said.map((event, at) => (
                 isLotEvent(event)
@@ -262,22 +304,15 @@ export function Ladder({
                 </span>
               )}
 
+
               {/* The affordance that makes "between the steps" a place you can
                   write: it hangs under the rung the note will be filed at. */}
-              {editable && noting !== index && (
+              {editable && noting !== index && onNote && (
                 <span className="ladder__acts">
-                  {onNote && (
-                    <button type="button" className="ladder__act" disabled={busy}
-                      onClick={() => { setNoting(index); setDraft(''); }}>
-                      <Icon name="plus" size={11} /> Note
-                    </button>
-                  )}
-                  {onMove && index !== current && forwarding !== index && (moveUpTo === undefined || index <= moveUpTo) && (
-                    <button type="button" className="ladder__act ladder__act--move" disabled={busy}
-                      onClick={() => step.forward ? setForwarding(index) : void onMove(index)}>
-                      {index < current ? 'Move back here' : 'Move here'}
-                    </button>
-                  )}
+                  <button type="button" className="ladder__act" disabled={busy}
+                    onClick={() => { setNoting(index); setDraft(''); }}>
+                    <Icon name="plus" size={11} /> Note
+                  </button>
                 </span>
               )}
 

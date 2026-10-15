@@ -6,13 +6,13 @@ import { ShipmentChip } from './OrderStatus';
 import { Ladder } from './Ladder';
 import { TrackHero, boxesFor, stepEmoji } from './OrderTrack';
 import { SerialButtons } from './SerialButtons';
-import { LotMoves, StepButton, timelineButtons } from './StepActs';
+import { StepButton, buttonStateAt, timelineButtons } from './StepActs';
 import type { Shipment } from './ShipDialog';
 
 type Vars = { origin?: string | null; destination?: string | null };
 
 /** One thing done to the sample order: a button pressed on it, or its lot moved. */
-type Action = { kind: 'item'; key: string; shipment?: Shipment } | { kind: 'lot'; to: number };
+type Action = { kind: 'item'; key: string; shipment?: Shipment } | { kind: 'lot'; to: number; shipper?: string; trackingId?: string };
 
 const SAMPLE_LOT = { id: 'lot_sample', name: 'October run', number: 'W4F889' };
 const SAMPLE_SHIPMENT: Shipment = { courier: 'Delhivery', awb: '1234567890' };
@@ -23,7 +23,7 @@ const DAY = 24 * 60 * 60 * 1000;
  *
  * On top, the order card a seller works from under Sell → Orders, with the
  * same buttons and the same questions a real order asks, and the lot it
- * rides in. Below, the order's Tracking - as the seller sees it, with the
+ * rides in - moved, as on a real lot, by Move here on its Tracking. Below, the order's Tracking - as the seller sees it, with the
  * buttons on its steps, or as the customer reads it - with what was said
  * along the way dated between the steps. A walkthrough presses each button
  * in turn and says what it did. Nothing here is saved.
@@ -47,7 +47,6 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
   const here = steps[current];
   const buttons = serialButtons(steps, hasLot ? Math.max(lotStep, 0) : 0, ticks, vars);
   const lotAt = lotStep >= joinAt ? lotStep : -1;
-  const lotNext = hasLot && lotAt < leaveAt - 1 ? Math.max(lotAt + 1, joinAt) : -1;
   const pressed = (key: string) => Boolean(ticks[key]);
   const at = timelineButtons(steps, current, pressed);
   const history = sampleHistory(steps, joinAt, done, ticks, shipment);
@@ -63,11 +62,20 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
       setSaid(step ? `${on ? '✓' : '↩'} ${renderStepText(step.name, vars)} - your customer's tracking ${on ? 'moved' : 'went back'}.` : null);
       return;
     }
-    setDone((now) => [...now, action]);
-    setSaid(`🚢 The lot moved to “${renderStepText(steps[action.to]!.name, vars)}” - every order in it moves together.`);
+    const back = action.to < lotStep;
+    /* Back one step takes the last move off; forward adds one. */
+    setDone((now) => (back ? now.filter((entry) => !(entry.kind === 'lot' && entry.to > action.to)) : [...now, action]));
+    setSaid(back
+      ? `↩ The lot went back to “${action.to >= joinAt ? renderStepText(steps[action.to]!.name, vars) : 'not moved yet'}”.`
+      : `🚢 The lot moved to “${renderStepText(steps[action.to]!.name, vars)}” - every order in it moves together.`);
   }
 
-  const moveLot = () => { if (lotNext >= 0) act({ kind: 'lot', to: lotNext }); };
+  /* The order card's Lot stop takes the seller to where the lot is moved: Move here, on its Tracking. */
+  function goToLot() {
+    setView('seller');
+    requestAnimationFrame(() => (box.current?.querySelector('.ladder__move') ?? box.current?.querySelector('.trk__ladder'))?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    setSaid('Tap 🚢 Move here on the lot step in Tracking below - on a real order it is in Lots → your lot → Tracking.');
+  }
 
   function reset() {
     setDone([]);
@@ -102,9 +110,7 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
     if (!root) return;
     root.querySelectorAll('.is-spot').forEach((node) => node.classList.remove('is-spot'));
     if (!spot) return;
-    const target = spot.kind === 'lot'
-      ? root.querySelector('.rsprev__lot .btn')
-      : root.querySelector('.ladder .stepact__btn.is-next') ?? root.querySelector('.serial__btn--next');
+    const target = root.querySelector('.ladder .stepact__btn.is-next') ?? root.querySelector('.serial__btn--next');
     if (!target) return;
     target.classList.add('is-spot');
     target.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -140,19 +146,8 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
             who={{ itemName: 'Labubu Big Into Energy', buyerName: 'Asha' }}
             stepOf={{ at: current, of: steps.length }}
             onItem={(key, _on, ship) => act({ kind: 'item', key, shipment: ship })}
-            onLot={moveLot} />
+            onLot={goToLot} />
         </div>
-        {hasLot && (
-          <div className="rsprev__lot">
-            <span>
-              📦 <b>{SAMPLE_LOT.name}</b>
-              <span className="faint"> · {lotAt >= 0 ? renderStepText(steps[lotAt]!.name, vars) : 'not moved yet'}</span>
-            </span>
-            <button type="button" className="btn btn--sm" disabled={lotNext < 0} onClick={moveLot}>
-              {lotNext < 0 ? 'Lot done' : `Move to ${renderStepText(steps[lotNext]!.name, vars)} →`}
-            </button>
-          </div>
-        )}
         {said && <span className="rsprev__said" role="status">{said}</span>}
       </section>
 
@@ -180,6 +175,9 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
                 leaveAt={leaveAt < steps.length ? leaveAt : undefined}
                 leaveNote={<span className="faint">Press its buttons below as it goes</span>}
                 lockFrom={leaveAt}
+                /* The lot's steps move by Move here, one at a time - as on the lot's own Tracking. */
+                onMove={hasLot ? (to, details) => act({ kind: 'lot', to, ...details }) : undefined}
+                moveFrom={joinAt} moveUpTo={leaveAt - 1} backTo={joinAt - 1}
                 lotAction={() => (
                   <span className="ladder__lot-acts">
                     <button type="button" className="ladder__act"
@@ -190,11 +188,10 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
                 )}
                 actFor={(step, index) => {
                   const key = stepTickKey(step);
-                  if (!key) return at.waitingOnLot && index === current + 1 ? <LotMoves /> : null;
-                  const isDone = pressed(key);
-                  if (!isDone && index !== at.next) return null;
+                  if (!key) return null;
+                  const { state, undoable } = buttonStateAt(steps, index, current, at.next, pressed);
                   return (
-                    <StepButton step={step} vars={vars} state={isDone ? 'done' : 'next'}
+                    <StepButton step={step} vars={vars} state={state} undoable={undoable}
                       onPress={() => act({ kind: 'item', key, shipment: key === 'dispatched' ? SAMPLE_SHIPMENT : undefined })} />
                   );
                 }} />
@@ -262,7 +259,9 @@ function sampleHistory(
     const day = 3 + index * 2;
     if (action.kind === 'lot') {
       const step = steps[action.to];
-      if (step?.forward) out.push(event(day, step.name, { kind: 'step', shipper: 'DHL', trackingId: 'DHL4821937650' }));
+      if (step?.forward) {
+        out.push(event(day, step.name, { kind: 'step', shipper: action.shipper ?? 'DHL', trackingId: action.trackingId ?? 'DHL4821937650' }));
+      }
       return;
     }
     if (!ticks[action.key]) return;
@@ -307,8 +306,8 @@ function TourCard({ index, script, steps, vars, reached, viewing, onNext, onBack
       ? 'Every order on this route moves this way. Press Start over to try the buttons yourself.'
       : 'This is a sample order. I will press each button in turn, the way you would on a real order, and show you what your customer sees after each one.';
   } else if (entry.kind === 'lot') {
-    title = `🚢 Move the lot to “${entry.step}”`;
-    body = `Steps in the lot have no button on the order. Open Lots → your lot → Tracking and move the lot - every order in it moves to “${entry.step}” at once.`;
+    title = `🚢 Tap Move here on “${entry.step}”`;
+    body = `Steps in the lot have no button on the order. On the lot's Tracking (Lots → your lot), tap 🚢 Move here on the next step - every order in it moves to “${entry.step}” at once. Only the next step opens, and ✓ Moved here takes it back one.`;
   } else if (entry.lastMile === 'dispatched') {
     title = `⚡ Tap “${entry.label}”`;
     body = `${who}It asks for the courier and AWB (both optional). Your customer then gets a link to track the parcel.`;
@@ -340,7 +339,7 @@ function TourCard({ index, script, steps, vars, reached, viewing, onNext, onBack
         {last
           ? <button type="button" className="btn btn--sm" onClick={onClose}>Done</button>
           : <button type="button" className="btn btn--sm" onClick={onNext}>
-            {!entry ? 'Start' : entry.kind === 'lot' ? 'Move it →' : `Tap ${shortLabel(entry, vars, steps)} →`}
+            {!entry ? 'Start' : entry.kind === 'lot' ? 'Move here →' : `Tap ${shortLabel(entry, vars, steps)} →`}
           </button>}
       </div>
     </div>

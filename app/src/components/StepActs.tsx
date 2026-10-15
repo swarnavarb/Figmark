@@ -11,38 +11,47 @@ import { formatDate } from '../format';
 import { ErrorNotice, Modal } from './ui';
 import { useUndo } from './Undo';
 
-/** A button on a rung: the one to press next, or one already pressed. */
-export type StepButtonState = 'done' | 'next';
+/** A button on a rung: the one to press next, one already pressed, or one further on, not open yet. */
+export type StepButtonState = 'done' | 'next' | 'later';
 
 type Vars = { origin?: string | null; destination?: string | null };
 
 /**
  * Where a timeline's buttons stand.
  *
- * One button is ever offered: the first one past where the item is, not yet
- * pressed - the same one its order card shows. None while the lot still has
- * to carry it there. Everything further on is not drawn at all; a parcel that
- * outruns the screen is caught by "something further on already happened?",
- * which lists them on purpose rather than leaving them lying on every rung.
+ * They go one at a time: the next one opens once the one before it is
+ * pressed, and only the last one pressed - the one the item is on - can be
+ * taken back. None is next while the lot still has to carry the item there.
  */
 export function timelineButtons(
   steps: readonly RouteStep[],
   current: number,
   pressed: (key: string) => boolean,
-): { next: number; waitingOnLot: boolean; later: { step: RouteStep; index: number }[] } {
+): { next: number; waitingOnLot: boolean } {
   const found = nextButton(steps, current, pressed);
-  const next = found && 'step' in found ? found.index : -1;
-  const from = next >= 0 ? next : current;
   return {
-    next,
+    next: found && 'step' in found ? found.index : -1,
     waitingOnLot: Boolean(found && found.index < 0),
-    later: steps
-      .map((step, index) => ({ step, index }))
-      .filter(({ step, index }) => {
-        const key = stepTickKey(step);
-        return index > from && key !== null && !pressed(key);
-      }),
   };
+}
+
+/**
+ * How a keyed rung's button is drawn, and whether a pressed one may be
+ * undone: only the last one pressed, and only while the item is still on its
+ * step - not once a later button, or the lot, has moved it on.
+ */
+export function buttonStateAt(
+  steps: readonly RouteStep[], index: number, current: number, next: number, pressed: (key: string) => boolean,
+): { state: StepButtonState; undoable: boolean } {
+  const key = stepTickKey(steps[index]!);
+  if (key && pressed(key)) {
+    const laterPressed = steps.slice(index + 1).some((step) => {
+      const other = stepTickKey(step);
+      return other !== null && pressed(other);
+    });
+    return { state: 'done', undoable: index >= current && !laterPressed };
+  }
+  return { state: index === next ? 'next' : 'later', undoable: false };
 }
 
 /**
@@ -51,9 +60,11 @@ export function timelineButtons(
  * in the Route Studio's preview, so what a seller tries there is what they
  * press here. The next one is big; a pressed one is a small tick that undoes.
  */
-export function StepButton({ step, state, busy = false, vars, onPress, children }: {
+export function StepButton({ step, state, undoable = state === 'done', busy = false, vars, onPress, children }: {
   step: Pick<RouteStep, 'trigger' | 'button' | 'name' | 'custom' | 'assignee'>;
   state: StepButtonState;
+  /** A pressed button that is not the last one pressed stays a plain tick: undo the later ones first. */
+  undoable?: boolean;
   busy?: boolean;
   vars?: Vars;
   onPress: () => void;
@@ -61,16 +72,19 @@ export function StepButton({ step, state, busy = false, vars, onPress, children 
   children?: ReactNode;
 }) {
   const label = stepButtonLabel(step, vars);
+  const shut = state === 'later' || (state === 'done' && !undoable);
   return (
     <span className="stepact">
-      <button type="button" className={`stepact__btn is-${state}`} disabled={busy} aria-pressed={state === 'done'}
-        title={state === 'done' ? `${label} - pressed. Tap to undo.` : `Press when this has happened: ${step.name}`}
+      <button type="button" className={`stepact__btn is-${state}`} disabled={busy || shut} aria-pressed={state === 'done'}
+        title={state === 'done'
+          ? (undoable ? `${label} - pressed. Tap to undo.` : `${label} - pressed. Undo the steps after it first.`)
+          : state === 'later' ? 'Opens once the button before it is pressed' : `Press when this has happened: ${step.name}`}
         onClick={onPress}>
-        <span aria-hidden="true">{state === 'done' ? '✓' : '⚡'}</span>
+        <span aria-hidden="true">{state === 'done' ? '✓' : state === 'later' ? '🔒' : '⚡'}</span>
         {label}
-        {state === 'done' && <span className="stepact__undo">undo</span>}
+        {state === 'done' && undoable && <span className="stepact__undo">undo</span>}
       </button>
-      {step.assignee && <AssigneeTag who={step.assignee} />}
+      {step.assignee && state === 'next' && <AssigneeTag who={step.assignee} />}
       {children}
     </span>
   );
@@ -86,48 +100,14 @@ export function AssigneeTag({ who }: { who: StepAssignee }) {
 }
 
 /** What sits on the rung after the item's own when the lot, not a button, moves it next. */
-export function LotMoves({ onSkip }: { onSkip?: () => void }) {
+export function LotMoves({ onOpen }: { onOpen?: () => void }) {
   return (
     <span className="stepact">
-      <span className="stepact__wait">🚢 The lot moves this one</span>
-      {onSkip && <SkipLink onClick={onSkip} />}
+      <span className="stepact__wait">🚢 Moved from the lot's Tracking</span>
+      {onOpen && (
+        <button type="button" className="ladder__act ladder__act--move" onClick={onOpen}>Open the lot →</button>
+      )}
     </span>
-  );
-}
-
-/** The way to press a button further on, kept small: the screen being behind is the exception. */
-export function SkipLink({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" className="stepact__skip" onClick={onClick}>
-      Something further on already happened?
-    </button>
-  );
-}
-
-/** The buttons further on, listed so one can be pressed on purpose. */
-export function SkipPicker({ later, vars, onPick, onClose }: {
-  later: { step: RouteStep; index: number }[];
-  vars?: Vars;
-  onPick: (step: RouteStep) => void;
-  onClose: () => void;
-}) {
-  return (
-    <Modal title="Already happened?" onClose={onClose}>
-      <div className="stack">
-        <p style={{ margin: 0 }}>
-          Pick what has happened. The timeline jumps to it, and the steps before it count as done.
-        </p>
-        <div className="stepact__later">
-          {later.map(({ step }) => (
-            <button key={step.id} type="button" className="stepact__pick" onClick={() => onPick(step)}>
-              <span aria-hidden="true">⚡</span>
-              <span className="stepact__pick-label">{stepButtonLabel(step, vars)}</span>
-            </button>
-          ))}
-        </div>
-        <button type="button" className="btn btn--quiet btn--block" onClick={onClose}>Not yet</button>
-      </div>
-    </Modal>
   );
 }
 
@@ -151,7 +131,6 @@ export function useStepActs(
   const [error, setError] = useState<string | null>(null);
   const [shipping, setShipping] = useState(false);
   const [asking, setAsking] = useState(false);
-  const [picking, setPicking] = useState<{ step: RouteStep; index: number }[] | null>(null);
   /** The warehouse button pressed with no lot yet: asking where, or to put it in one. */
   const [receiving, setReceiving] = useState(false);
   const navigate = useNavigate();
@@ -238,21 +217,21 @@ export function useStepActs(
       const checkpoint = stepTickKey(step);
       if (!checkpoint) {
         return at.waitingOnLot && index === current + 1
-          ? <LotMoves onSkip={at.later.length ? () => setPicking(at.later) : undefined} />
+          ? <LotMoves onOpen={order!.lotId ? () => navigate(`/shop?tab=lots&lot=${encodeURIComponent(order!.lotId!)}`) : undefined} />
           : null;
       }
       const pressed = pressedNow(checkpoint);
-      if (!pressed && index !== at.next) return null;
+      const { state: shown, undoable } = buttonStateAt(steps, index, current, at.next, pressedNow);
       // A booking the seller has not accepted cannot be shipped or handed
       // over; the Accept button above is the way forward.
-      if (!pressed && (checkpoint === 'dispatched' || checkpoint === 'delivered') && awaitingAcceptance(order!)) {
+      if (shown === 'next' && (checkpoint === 'dispatched' || checkpoint === 'delivered') && awaitingAcceptance(order!)) {
         return <span className="field__hint">{NOT_ACCEPTED_MESSAGE}</span>;
       }
       /* Undoing is not offered where it would undo something else too: a
          dispatch once delivered, a delivery the buyer has already confirmed. */
       const frozen = pressed && ((checkpoint === 'dispatched' && delivered) || (checkpoint === 'delivered' && (received || released)));
       return (
-        <StepButton step={step} state={pressed ? 'done' : 'next'} busy={busy || frozen} vars={vars}
+        <StepButton step={step} state={shown} undoable={undoable && !frozen} busy={busy} vars={vars}
           onPress={() => press(step, pressed)}>
           {checkpoint === 'dispatched' && dispatched && !delivered && (
             <button type="button" className="ladder__act" disabled={busy} onClick={openShipping}>
@@ -262,7 +241,7 @@ export function useStepActs(
           {checkpoint === 'delivered' && delivered && (received || released) && (
             <span className="badge badge--ok">{received ? '📬 Buyer confirmed' : 'Delivered'}{released ? ' · paid out' : ''}</span>
           )}
-          {checkpoint === 'dispatched' && !pressed && held && (
+          {checkpoint === 'dispatched' && shown === 'next' && held && (
             <span className="field__hint">Starts the {state!.autoReleaseDays}-day protection window.</span>
           )}
           {checkpoint === 'delivered' && delivered && !received && held && (
@@ -270,7 +249,6 @@ export function useStepActs(
               Waiting for the buyer to confirm{order!.hold.autoReleaseAt ? ` — releases on ${formatDate(order!.hold.autoReleaseAt)} if no dispute` : ''}.
             </span>
           )}
-          {!pressed && at.later.length > 0 && <SkipLink onClick={() => setPicking(at.later)} />}
         </StepButton>
       );
     };
@@ -340,10 +318,6 @@ export function useStepActs(
           onClose={() => setReceiving(false)} />
       )}
 
-      {picking && (
-        <SkipPicker later={picking} vars={vars} onClose={() => setPicking(null)}
-          onPick={(step) => { setPicking(null); press(step, false); }} />
-      )}
     </>
   );
 

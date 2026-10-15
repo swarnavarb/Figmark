@@ -70,6 +70,9 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
   const doneOf = (entry: Entry) => (entry.kind === 'lot' ? entry.done : entry.button.done);
   const nextAt = entries.findIndex((entry) => !doneOf(entry));
   const doneCount = entries.filter(doneOf).length;
+  /* One at a time, both ways: only the next one presses, and only the last
+     one pressed takes back. */
+  const lastDone = entries.reduce((last, entry, index) => (doneOf(entry) ? index : last), -1);
 
   function confirm() {
     if (!asking) return;
@@ -121,6 +124,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
   const stop = (entry: Entry, index: number) => {
     const done = doneOf(entry);
     const state = done ? 'done' : index === nextAt ? 'next' : 'later';
+    const shut = entry.kind === 'item' && (state === 'later' || (done && index !== lastDone));
     const className = `serial__btn serial__btn--${state} serial__btn--${entry.kind}`;
     /* Each stop comes in after the one before it. */
     const style = { '--s': index } as CSSProperties;
@@ -146,17 +150,17 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
       </>
     );
     /* Dispatched is pressed on the order, where the courier and AWB go in. */
-    if (button.lastMile === 'dispatched' && !done && shipHere) {
+    if (button.lastMile === 'dispatched' && !done && shipHere && !shut) {
       return (
         <li key={button.key} style={style}>
-          <button type="button" className={className} disabled={busy} title="Asks for the courier and AWB"
+          <button type="button" className={className} disabled={busy || shut} title="Asks for the courier and AWB"
             onClick={() => setShipping(button)}>
             {body}
           </button>
         </li>
       );
     }
-    if (button.lastMile === 'dispatched' && !done && orderLink) {
+    if (button.lastMile === 'dispatched' && !done && orderLink && !shut) {
       return (
         <li key={button.key} style={style}>
           <Link to={orderLink.to} state={{ ...(orderLink.state as object | undefined), act: 'dispatched' }}
@@ -168,8 +172,9 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
     }
     return (
       <li key={button.key} style={style}>
-        <button type="button" className={className} disabled={busy}
-          title={done ? `Done — press to undo: ${button.step}` : `Moves this item to: ${button.step}`}
+        <button type="button" className={className} disabled={busy || shut}
+          title={shut ? (done ? 'Done. Undo the buttons after it first.' : 'Opens once the button before it is pressed')
+            : done ? `Done — press to undo: ${button.step}` : `Moves this item to: ${button.step}`}
           onClick={() => setAsking({ button, on: !done })}>
           {body}
         </button>
