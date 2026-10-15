@@ -3,8 +3,13 @@ import { BrowserRouter } from 'react-router-dom';
 import { STAGE_ICONS, routePartsLine, type RouteStep, type StageIcon } from '@shared/routes';
 import { builtInSamples, type SampleRoute } from '@shared/route-samples';
 import { DEFAULT_ROUTE_WORDS, renderButtonText, type RouteWords } from '@shared/route-words';
+import {
+  RENAMEABLE_KINDS, setButtonLibrary, type ButtonLibrary, type ButtonPlace, type LibraryButton,
+} from '@shared/route-buttons';
+import type { StepAssignee } from '@shared/routes';
 import { RouteStudio } from '../pages/RouteStudioPage';
 import { ApiRequestError, admin } from './api';
+import { BackButton, backOps, goOps, useOpsPath } from './nav';
 import { timeAgo } from '../format';
 
 type Library = Awaited<ReturnType<typeof admin.routeLibrary>>;
@@ -13,90 +18,97 @@ const ICON_LABEL: Record<StageIcon, string> = {
   supplier: '🏭 Supplier', warehouse: '🏬 Warehouse', transit: '✈️ Transit', customs: '🛃 Customs', delivery: '📦 Delivery',
 };
 
+/** How the console's examples read: on the commonest lane. */
+const LANE = { origin: 'China', destination: 'India' };
+
 /**
- * Routes, for every shop: the sample routes offered under "New route", and
- * the short forms every button is drawn with.
+ * Routes, for every shop: what "Start from common steps" opens with, the
+ * buttons "+ Step" offers, the sample routes under "New route", and the short
+ * forms every button is drawn with.
  *
- * A sample is edited in the same Studio a shop uses, so what an operator
- * writes is exactly what a shop picks. Saving publishes the whole list to
- * every shop at once; a shop's own saved routes are never touched by it.
+ * A route is edited in the same Studio a shop uses, on a screen of its own
+ * (#routes/common, #routes/sample/<id>) so back - the console's, the
+ * phone's - closes it. Saving publishes to every shop at once; a shop's own
+ * saved routes are never touched by it.
  */
 export function RoutesView() {
   const [data, setData] = useState<Library | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { path } = useOpsPath();
+  const [, screen, id] = path.split('/');
 
-  const load = () => admin.routeLibrary().then(setData)
-    .catch((err) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the route library.'));
+  const load = () => admin.routeLibrary().then((library) => {
+    setButtonLibrary(library.buttons);
+    setData(library);
+  }).catch((err) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the route library.'));
   useEffect(() => { void load(); }, []);
 
   if (error && !data) return <p className="notice notice--error">{error}</p>;
   if (!data) return <p className="muted">Loading…</p>;
 
+  const savedCommon = (common: RouteStep[], customised: boolean) => setData({
+    ...data, common, commonCustomised: customised, commonUpdatedAt: customised ? new Date().toISOString() : null, commonUpdatedBy: null,
+  });
+  const savedSamples = (samples: SampleRoute[]) => setData({ ...data, samples, customised: true, samplesUpdatedAt: new Date().toISOString() });
+
+  if (screen === 'common') return <CommonEditor data={data} onSaved={savedCommon} />;
+  if (screen === 'sample') return <SampleEditor key={id} data={data} id={id ?? 'new'} onSaved={savedSamples} />;
+
   return (
     <div className="stack">
-      <Common data={data} onSaved={(common, customised) => setData({
-        ...data, common, commonCustomised: customised, commonUpdatedAt: customised ? new Date().toISOString() : null, commonUpdatedBy: null,
-      })} />
-      <Samples data={data} onSaved={(samples) => setData({ ...data, samples, customised: true, samplesUpdatedAt: new Date().toISOString() })} />
+      <Common data={data} onSaved={savedCommon} />
+      <Buttons data={data} onSaved={(buttons) => {
+        setButtonLibrary(buttons);
+        setData({ ...data, buttons, buttonsUpdatedAt: new Date().toISOString() });
+      }} />
+      <Samples data={data} onSaved={savedSamples} />
       <Words data={data} onSaved={(words) => setData({ ...data, words, wordsUpdatedAt: new Date().toISOString() })} />
     </div>
   );
 }
 
+/** A screen of its own inside Routes: back at the top, then the Studio, edge to edge. */
+function EditorScreen({ hint, error, busy, children }: {
+  hint?: React.ReactNode;
+  error: string | null;
+  busy: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="opsedit">
+      <BackButton to="routes" label="Back to routes" />
+      {hint && <p className="field__hint" style={{ margin: 0 }}>{hint}</p>}
+      {error && <p className="notice notice--error">{error}</p>}
+      {busy && <p className="faint">Saving…</p>}
+      {/* The Studio links between its own screens; the console has no router of its own. */}
+      <BrowserRouter>
+        <div className="opsroutes__studio">{children}</div>
+      </BrowserRouter>
+    </section>
+  );
+}
+
 /**
  * What "Start from common steps" opens with for every shop. Edited in the
- * same Studio, so the operators can add a step with its own button and say
- * who besides the shop presses it - the supplier, forwarder or handler.
+ * same Studio, so the operators can add a step with its own button, reword
+ * any button, and say who besides the shop presses it.
  */
 function Common({ data, onSaved }: { data: Library; onSaved: (steps: RouteStep[], customised: boolean) => void }) {
-  const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
-  async function publish(steps: RouteStep[] | null, said: string) {
+  async function restore() {
+    if (!window.confirm('Put back Figmark’s built-in common steps?')) return;
     setBusy(true);
-    setError(null);
-    setSaved(null);
     try {
-      const result = await admin.saveRouteCommon(steps);
-      onSaved(result.steps, steps !== null);
-      setSaved(said);
+      const result = await admin.saveRouteCommon(null);
+      onSaved(result.steps, false);
+      setNote('Built-in common steps restored.');
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not save the common steps.');
-      throw err;
+      setNote(err instanceof ApiRequestError ? err.message : 'Could not restore the common steps.');
     } finally {
       setBusy(false);
     }
-  }
-
-  if (editing) {
-    return (
-      <section className="card card--pad stack">
-        <div className="row row--between">
-          <h2 style={{ margin: 0 }}>Edit the common steps</h2>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => { setEditing(false); setError(null); }}>Back</button>
-        </div>
-        <p className="field__hint" style={{ margin: 0 }}>
-          Add a step with <b>+ Step</b>, give it its own button from its ⋯ menu, and pick who besides the shop can press it.
-        </p>
-        {error && <p className="notice notice--error">{error}</p>}
-        {busy && <p className="faint">Saving…</p>}
-        <BrowserRouter>
-          <div className="opsroutes__studio">
-            <RouteStudio editing={null} onSaved={() => {}} onCancel={() => setEditing(false)} cancelLabel="Back"
-              sample={{
-                name: 'Common steps',
-                steps: data.common,
-                onSave: async (_name, steps) => {
-                  await publish(steps, 'Common steps updated for every shop.');
-                  setEditing(false);
-                },
-              }} />
-          </div>
-        </BrowserRouter>
-      </section>
-    );
   }
 
   return (
@@ -105,29 +117,24 @@ function Common({ data, onSaved }: { data: Library; onSaved: (steps: RouteStep[]
         <div>
           <h2 style={{ margin: 0 }}>Common steps</h2>
           <p className="field__hint" style={{ margin: 0 }}>
-            What every shop gets from “Start from common steps” under “New route”. Add steps, their buttons, and who can press them.
+            What every shop gets from “Start from common steps” under “New route”.
           </p>
         </div>
-        <button type="button" className="btn btn--sm" onClick={() => setEditing(true)}>Edit</button>
+        <button type="button" className="btn btn--sm" onClick={() => goOps('routes/common')}>Edit</button>
       </div>
-      {error && <p className="notice notice--error">{error}</p>}
-      {saved && <p className="notice notice--ok">{saved}</p>}
+      {note && <p className="notice notice--info">{note}</p>}
       <span className="faint">{routePartsLine({ steps: data.common })}</span>
       <ol className="opscommon">
         {data.common.map((step) => (
           <li key={step.id}>
-            {step.name}
+            {renderButtonText(step.name, LANE)}
             {(step.trigger || step.custom) && <span className="opscommon__btn">⚡ button{step.assignee ? ` · you + ${step.assignee}` : ''}</span>}
           </li>
         ))}
       </ol>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         {data.commonCustomised && (
-          <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
-            onClick={() => {
-              if (!window.confirm('Put back Figmark’s built-in common steps?')) return;
-              void publish(null, 'Built-in common steps restored.').catch(() => {});
-            }}>
+          <button type="button" className="btn btn--quiet btn--sm" disabled={busy} onClick={() => void restore()}>
             Restore built-in steps
           </button>
         )}
@@ -139,9 +146,177 @@ function Common({ data, onSaved }: { data: Library; onSaved: (steps: RouteStep[]
   );
 }
 
+function CommonEditor({ data, onSaved }: { data: Library; onSaved: (steps: RouteStep[], customised: boolean) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <EditorScreen busy={busy} error={error}
+      hint={<>Add a step with <b>+ Step</b> - the buttons from “Buttons” are there too - reword any button under it, and pick who besides the shop can press it.</>}>
+      <RouteStudio editing={null} onSaved={() => {}} onCancel={() => backOps('routes')} cancelLabel="Back to routes"
+        sample={{
+          name: 'Common steps',
+          steps: data.common,
+          onSave: async (_name, steps) => {
+            setBusy(true);
+            setError(null);
+            try {
+              const result = await admin.saveRouteCommon(steps);
+              onSaved(result.steps, true);
+              backOps('routes');
+            } catch (err) {
+              setError(err instanceof ApiRequestError ? err.message : 'Could not save the common steps.');
+              throw err;
+            } finally {
+              setBusy(false);
+            }
+          },
+        }} />
+    </EditorScreen>
+  );
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+
+const PLACE_LABEL: Record<ButtonPlace, string> = { pre: 'Before the lot', post: 'After the lot', both: 'Before or after the lot' };
+const WHO_FOR: Record<ButtonPlace, StepAssignee[]> = { pre: ['supplier'], post: ['handler'], both: ['supplier', 'handler'] };
+const WHO_LABEL: Record<StepAssignee, string> = { supplier: 'You + 🏭 Supplier', handler: 'You + 🧑‍🔧 Handler', forwarder: 'You + ✈️ Forwarder' };
+
+/**
+ * The buttons every shop finds under "+ Step": the built-in ones, in the
+ * operators' words, and buttons of their own - each with where it can go and
+ * who besides the shop may press it.
+ */
+function Buttons({ data, onSaved }: { data: Library; onSaved: (library: ButtonLibrary) => void }) {
+  const [stock, setStock] = useState(data.buttons.stock);
+  const [extra, setExtra] = useState<LibraryButton[]>(data.buttons.extra);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const touch = () => setSaved(false);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const library = await admin.saveRouteButtons({ stock, extra });
+      setStock(library.stock);
+      setExtra(library.extra);
+      onSaved(library);
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save the buttons.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const setExtraAt = (index: number, patch: Partial<LibraryButton>) => {
+    setExtra(extra.map((entry, i) => {
+      if (i !== index) return entry;
+      const next = { ...entry, ...patch };
+      // Who presses it follows where it can go.
+      if (next.assignee && !WHO_FOR[next.place].includes(next.assignee)) delete next.assignee;
+      return next;
+    }));
+    touch();
+  };
+
+  return (
+    <section className="card card--pad stack">
+      <div>
+        <h2 style={{ margin: 0 }}>Buttons</h2>
+        <p className="field__hint" style={{ margin: 0 }}>
+          What every shop finds under <b>+ Step</b> in the route builder. Use {'{origin}'} and {'{dest}'} for the
+          lot’s countries - they read as 🇨🇳 and 🇮🇳 on a China → India lot.
+        </p>
+      </div>
+
+      <h3 className="opsbtns__head">Built-in buttons</h3>
+      <div className="opsbtns">
+        {RENAMEABLE_KINDS.map((kind) => {
+          const own = stock[kind.id] ?? {};
+          const set = (patch: { name?: string; button?: string }) => { setStock({ ...stock, [kind.id]: { ...own, ...patch } }); touch(); };
+          return (
+            <div key={kind.id} className="opsbtns__row">
+              <span className="opsbtns__icon" aria-hidden="true">{kind.icon}</span>
+              <label className="field">
+                <span>Step</span>
+                <input value={own.name ?? ''} maxLength={60} placeholder={kind.name} onChange={(event) => set({ name: event.target.value })} />
+              </label>
+              <label className="field">
+                <span>Button says</span>
+                <input value={own.button ?? ''} maxLength={28} placeholder={own.name || kind.name}
+                  onChange={(event) => set({ button: event.target.value })} />
+              </label>
+              <span className="opswords__pill">⚡ {renderButtonText(own.button || own.name || kind.name, LANE)}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <h3 className="opsbtns__head">New buttons</h3>
+      {extra.length === 0 && <p className="faint" style={{ margin: 0 }}>None yet. Add one and every shop can put it on a route.</p>}
+      <div className="opsbtns">
+        {extra.map((entry, index) => (
+          <div key={entry.id} className="opsbtns__row opsbtns__row--new">
+            <input className="opsbtns__icon opsbtns__icon--edit" value={entry.icon} maxLength={4} aria-label="Icon"
+              onChange={(event) => setExtraAt(index, { icon: event.target.value })} />
+            <label className="field">
+              <span>Step</span>
+              <input value={entry.name} maxLength={60} placeholder="e.g. Quality checked at {origin}"
+                onChange={(event) => setExtraAt(index, { name: event.target.value })} />
+            </label>
+            <label className="field">
+              <span>Button says</span>
+              <input value={entry.button} maxLength={28} placeholder={entry.name || 'e.g. QC done'}
+                onChange={(event) => setExtraAt(index, { button: event.target.value })} />
+            </label>
+            <label className="field">
+              <span>Where</span>
+              <select value={entry.place} onChange={(event) => setExtraAt(index, { place: event.target.value as ButtonPlace })}>
+                {(Object.keys(PLACE_LABEL) as ButtonPlace[]).map((place) => <option key={place} value={place}>{PLACE_LABEL[place]}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Who presses it</span>
+              <select value={entry.assignee ?? ''} onChange={(event) => setExtraAt(index, { assignee: (event.target.value || undefined) as StepAssignee | undefined })}>
+                <option value="">Only you</option>
+                {WHO_FOR[entry.place].map((who) => <option key={who} value={who}>{WHO_LABEL[who]}</option>)}
+              </select>
+            </label>
+            <label className="field opsbtns__wide">
+              <span>One line for the customer (optional)</span>
+              <input value={entry.description} maxLength={160} placeholder="What it means for them"
+                onChange={(event) => setExtraAt(index, { description: event.target.value })} />
+            </label>
+            <span className="opswords__pill">⚡ {renderButtonText(entry.button || entry.name || 'Button', LANE)}</span>
+            <button type="button" className="btn btn--ghost btn--danger btn--sm" onClick={() => { setExtra(extra.filter((_, i) => i !== index)); touch(); }}>
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+      <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
+        onClick={() => { setExtra([...extra, { id: `btn_${Date.now().toString(36)}`, icon: '✨', name: '', button: '', description: '', place: 'both' }]); touch(); }}>
+        + New button
+      </button>
+
+      {error && <p className="notice notice--error">{error}</p>}
+      {saved && <p className="notice notice--ok">Saved. Every shop sees these under + Step.</p>}
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="btn" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save buttons'}</button>
+        {data.buttonsUpdatedAt && (
+          <span className="faint">Last changed {timeAgo(data.buttonsUpdatedAt)}{data.buttonsUpdatedBy ? ` by ${data.buttonsUpdatedBy}` : ''}.</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ── Sample routes ───────────────────────────────────────────────────── */
+
 function Samples({ data, onSaved }: { data: Library; onSaved: (samples: SampleRoute[]) => void }) {
-  const [list, setList] = useState<SampleRoute[]>(data.samples);
-  const [editing, setEditing] = useState<string | 'new' | null>(null);
+  const list = data.samples;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -153,42 +328,25 @@ function Samples({ data, onSaved }: { data: Library; onSaved: (samples: SampleRo
     setSaved(null);
     try {
       const result = await admin.saveRouteSamples(next);
-      setList(result.samples);
       onSaved(result.samples);
       setSaved(said);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save the samples.');
-      throw err;
     } finally {
       setBusy(false);
     }
   }
 
-  const current = editing === 'new' ? null : list.find((entry) => entry.id === editing) ?? null;
-  if (editing) {
-    return (
-      <SampleEditor key={editing} sample={current} busy={busy} error={error}
-        onCancel={() => { setEditing(null); setError(null); }}
-        onSave={async (sample) => {
-          const next = current ? list.map((entry) => (entry.id === current.id ? sample : entry)) : [...list, sample];
-          await publish(next, current ? `"${sample.name}" updated for every shop.` : `"${sample.name}" added for every shop.`);
-          setEditing(null);
-        }}
-        onDelete={current ? () => void remove(current) : undefined} />
-    );
-  }
-
-  async function remove(sample: SampleRoute) {
+  function remove(sample: SampleRoute) {
     if (!window.confirm(`Delete the sample "${sample.name}"? Shops stop being offered it. Routes shops already saved from it are not touched.`)) return;
-    await publish(list.filter((entry) => entry.id !== sample.id), `"${sample.name}" deleted.`).catch(() => {});
-    setEditing(null);
+    void publish(list.filter((entry) => entry.id !== sample.id), `"${sample.name}" deleted.`);
   }
 
   function move(index: number, by: number) {
     const next = [...list];
     const [taken] = next.splice(index, 1);
     next.splice(index + by, 0, taken!);
-    void publish(next, 'Order saved.').catch(() => {});
+    void publish(next, 'Order saved.');
   }
 
   return (
@@ -200,7 +358,7 @@ function Samples({ data, onSaved }: { data: Library; onSaved: (samples: SampleRo
             Offered to every shop under “New route”, in this order. Picking one only fills a shop’s Studio in.
           </p>
         </div>
-        <button type="button" className="btn btn--sm" onClick={() => setEditing('new')}>+ New sample</button>
+        <button type="button" className="btn btn--sm" onClick={() => goOps('routes/sample/new')}>+ New sample</button>
       </div>
       {!data.customised && (
         <p className="notice notice--info" style={{ margin: 0 }}>
@@ -221,8 +379,8 @@ function Samples({ data, onSaved }: { data: Library; onSaved: (samples: SampleRo
             <span className="opsroutes__acts">
               <button type="button" className="btn btn--quiet btn--sm" disabled={busy || index === 0} aria-label="Move up" onClick={() => move(index, -1)}>↑</button>
               <button type="button" className="btn btn--quiet btn--sm" disabled={busy || index === list.length - 1} aria-label="Move down" onClick={() => move(index, 1)}>↓</button>
-              <button type="button" className="btn btn--sm" disabled={busy} onClick={() => setEditing(sample.id)}>Edit</button>
-              <button type="button" className="btn btn--ghost btn--danger btn--sm" disabled={busy} onClick={() => void remove(sample)}>Delete</button>
+              <button type="button" className="btn btn--sm" disabled={busy} onClick={() => goOps(`routes/sample/${sample.id}`)}>Edit</button>
+              <button type="button" className="btn btn--ghost btn--danger btn--sm" disabled={busy} onClick={() => remove(sample)}>Delete</button>
             </span>
           </li>
         ))}
@@ -232,7 +390,7 @@ function Samples({ data, onSaved }: { data: Library; onSaved: (samples: SampleRo
         <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
           onClick={() => {
             if (!window.confirm('Put back Figmark’s built-in samples? Your list is replaced.')) return;
-            void publish(builtInSamples(), 'Built-in samples restored.').catch(() => {});
+            void publish(builtInSamples(), 'Built-in samples restored.');
           }}>
           Restore built-in samples
         </button>
@@ -244,25 +402,41 @@ function Samples({ data, onSaved }: { data: Library; onSaved: (samples: SampleRo
   );
 }
 
-/** One sample: its card (name, line, icon), then its steps in the Studio. */
-function SampleEditor({ sample, busy, error, onSave, onCancel, onDelete }: {
-  sample: SampleRoute | null;
-  busy: boolean;
-  error: string | null;
-  onSave: (sample: SampleRoute) => Promise<void>;
-  onCancel: () => void;
-  onDelete?: () => void;
-}) {
+/** One sample on a screen of its own: its card (line, icon), then its steps in the Studio. */
+function SampleEditor({ data, id, onSaved }: { data: Library; id: string; onSaved: (samples: SampleRoute[]) => void }) {
+  const sample = data.samples.find((entry) => entry.id === id) ?? null;
   const [blurb, setBlurb] = useState(sample?.blurb ?? '');
   const [icon, setIcon] = useState<StageIcon>(sample?.icon ?? 'transit');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const start = sample?.steps ?? builtInSamples()[0]?.steps ?? [];
 
+  async function publish(next: SampleRoute[]) {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await admin.saveRouteSamples(next);
+      onSaved(result.samples);
+      backOps('routes');
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save the sample.');
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (id !== 'new' && !sample) {
+    return (
+      <section className="opsedit">
+        <BackButton to="routes" label="Back to routes" />
+        <p className="muted">That sample is not on the list any more.</p>
+      </section>
+    );
+  }
+
   return (
-    <section className="card card--pad stack">
-      <div className="row row--between">
-        <h2 style={{ margin: 0 }}>{sample ? `Edit “${sample.name}”` : 'New sample route'}</h2>
-        <button type="button" className="btn btn--quiet btn--sm" onClick={onCancel}>Back to the list</button>
-      </div>
+    <EditorScreen busy={busy} error={error}>
       <div className="opsroutes__card">
         <label className="field">
           <span>Card line</span>
@@ -276,24 +450,20 @@ function SampleEditor({ sample, busy, error, onSave, onCancel, onDelete }: {
           </select>
         </label>
       </div>
-      {error && <p className="notice notice--error">{error}</p>}
-      {busy && <p className="faint">Saving…</p>}
-      {/* The Studio links between its own screens; the console has no router of its own. */}
-      <BrowserRouter>
-        <div className="opsroutes__studio">
-          <RouteStudio editing={null} onSaved={() => {}} onCancel={onCancel} cancelLabel="Back to the list"
-            sample={{
-              name: sample?.name ?? '',
-              steps: start as RouteStep[],
-              onDelete,
-              onSave: (name, steps) => onSave({
-                id: sample?.id ?? `sample_${Date.now().toString(36)}`,
-                name, blurb: blurb.trim(), icon, steps,
-              }),
-            }} />
-        </div>
-      </BrowserRouter>
-    </section>
+      <RouteStudio editing={null} onSaved={() => {}} onCancel={() => backOps('routes')} cancelLabel="Back to routes"
+        sample={{
+          name: sample?.name ?? '',
+          steps: start as RouteStep[],
+          onDelete: sample ? () => {
+            if (!window.confirm(`Delete the sample "${sample.name}"? Shops stop being offered it.`)) return;
+            void publish(data.samples.filter((entry) => entry.id !== sample.id)).catch(() => {});
+          } : undefined,
+          onSave: (name, steps) => {
+            const next: SampleRoute = { id: sample?.id ?? `sample_${Date.now().toString(36)}`, name, blurb: blurb.trim(), icon, steps };
+            return publish(sample ? data.samples.map((entry) => (entry.id === sample.id ? next : entry)) : [...data.samples, next]);
+          },
+        }} />
+    </EditorScreen>
   );
 }
 
@@ -305,7 +475,7 @@ function Words({ data, onSaved }: { data: Library; onSaved: (words: RouteWords) 
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const draft: RouteWords = { flags, terms: terms.filter((term) => term.from.trim() && term.to.trim()) };
-  const examples = ['Received at {origin} warehouse', 'Dispatched to Freight Forwarder', 'Received at {destination} warehouse'];
+  const examples = ['Received at {origin} warehouse', 'Dispatched to Freight Forwarder', 'Received at {dest} warehouse'];
 
   async function save() {
     setBusy(true);
@@ -329,7 +499,7 @@ function Words({ data, onSaved }: { data: Library; onSaved: (words: RouteWords) 
         <h2 style={{ margin: 0 }}>Button words</h2>
         <p className="field__hint" style={{ margin: 0 }}>
           How every route button is said across the marketplace. Steps keep their full words on the timeline;
-          buttons use these short forms, and the lot’s country in place of {'{origin}'} and {'{destination}'}.
+          buttons use these short forms, and the lot’s country in place of {'{origin}'} and {'{dest}'}.
         </p>
       </div>
       <label className="row" style={{ gap: 8 }}>

@@ -62,7 +62,7 @@ export function cleanRouteWords(input: unknown): { words: RouteWords } | { error
     if (!from && !to) continue;
     if (!from || !to) return { error: 'Every short form needs both the word and what it becomes.' };
     if (from.length > MAX_LENGTH || to.length > MAX_LENGTH) return { error: `Keep each word under ${MAX_LENGTH} characters.` };
-    if (/[{}]/.test(from) || /[{}]/.test(to)) return { error: 'Curly braces are for {origin} and {destination} only.' };
+    if (/[{}]/.test(from) || /[{}]/.test(to)) return { error: 'Curly braces are for {origin} and {dest} only.' };
     const key = from.toLowerCase();
     if (seen.has(key)) return { error: `"${from}" is listed twice.` };
     seen.add(key);
@@ -98,6 +98,6 @@ export function renderButtonText(
   };
   const filled = text
     .replace(/(?:\bthe\s+)?'?\{origin\}'?/gi, place(vars.origin, 'origin'))
-    .replace(/(?:\bthe\s+)?'?\{destination\}'?/gi, place(vars.destination, 'destination'));
+    .replace(/(?:\bthe\s+)?'?\{dest(?:ination|\.)?\}'?/gi, place(vars.destination, 'destination'));
   return shortenWords(filled, words).replace(/\s+/g, ' ').trim();
 }

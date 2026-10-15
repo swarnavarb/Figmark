@@ -14,6 +14,7 @@ import { StoresView } from './StoresView';
 import { DevicesView } from './DevicesView';
 import { PhotosView } from './PhotosView';
 import { RoutesView } from './RoutesView';
+import { BackButton, goOps, useOpsPath } from './nav';
 import '../styles.css';
 
 /**
@@ -56,7 +57,9 @@ const TAB_LABELS: Record<Tab, string> = {
 function Console() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>('users');
+  const { path, depth } = useOpsPath();
+  const first = path.split('/')[0] as Tab;
+  const tab: Tab = first in TAB_LABELS ? first : 'users';
 
   const refresh = useCallback(async () => {
     try {
@@ -112,13 +115,18 @@ function Console() {
       </header>
 
       <main className="ops__body ops">
-        <div className="tabs">
+        {/* Back on every tab; a screen inside one draws its own. */}
+        {!path.includes('/') && (depth > 0 || tab !== 'users') && <BackButton to="users" />}
+        {/* A screen opened inside a tab has the whole width; back returns to the tab. */}
+        {!path.includes('/') && (
+          <div className="tabs">
           {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
-            <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
+            <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => goOps(entry)}>
               {TAB_LABELS[entry]}
             </button>
           ))}
-        </div>
+          </div>
+        )}
 
         {tab === 'users' ? <UsersView />
           : tab === 'stores' ? <StoresView />

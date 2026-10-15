@@ -21,7 +21,7 @@ import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
 import { UNDO_EXPIRED, canUndo, undoTag, withdrawNotices, withoutUndo } from './undo.js';
 import { checkButtons, withButtons } from '../../../shared/buttons.js';
-import { commonSteps, routeSamples } from '../route-library.js';
+import { commonSteps, readButtonLibrary, routeSamples } from '../route-library.js';
 
 /**
  * Routes, the items that ride them, and moving a lot one step.
@@ -51,9 +51,9 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
-  const [routes, lots, samples, common] = await Promise.all([
+  const [routes, lots, samples, common, buttonLibrary] = await Promise.all([
     repository.listRoutes(user.id), repository.listLots({ sellerId: user.id }), routeSamples(repository),
-    commonSteps(repository),
+    commonSteps(repository), readButtonLibrary(repository),
   ]);
 
   /* How many unfinished lots ride each route, and how many of those carry an
@@ -84,6 +84,8 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
     presets: [],
     /** What "Start from common steps" opens with, as the operators keep it. */
     suggested: common,
+    /** The buttons "+ Step" offers, as the operators keep them. */
+    buttonLibrary,
     /**
      * The logistics-scenario cards: where an order enters the lot's journey.
      * Same shape as `presets`, sent the same way for the same reason.

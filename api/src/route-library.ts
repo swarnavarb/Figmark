@@ -1,7 +1,8 @@
 import { checkButtons, withButtons } from '../../shared/buttons.js';
-import { normaliseSteps, type RouteStep, type StageIcon } from '../../shared/routes.js';
+import { normaliseSteps, tagStepPlaces, type RouteStep, type StageIcon } from '../../shared/routes.js';
 import { ROUTE_COMMON_ID, ROUTE_SAMPLES_ID, builtInCommonSteps, builtInSamples, isStageIcon, type SampleRoute } from '../../shared/route-samples.js';
 import { DEFAULT_ROUTE_WORDS, ROUTE_WORDS_ID, cleanRouteWords, setRouteWords, type RouteWords } from '../../shared/route-words.js';
+import { EMPTY_BUTTON_LIBRARY, ROUTE_BUTTONS_ID, cleanButtonLibrary, type ButtonLibrary } from '../../shared/route-buttons.js';
 import type { getRepository } from './data/index.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -29,7 +30,7 @@ export function cleanCommonSteps(input: unknown): { steps: RouteStep[] } | { err
   if (!Array.isArray(input)) return { error: 'Send the common steps as a list.' };
   if (input.length > 30) return { error: 'At most 30 common steps.' };
   const written = normaliseSteps(
-    (input as Partial<RouteStep>[]).map((step) => ({ ...step, stageIcon: isStageIcon(step?.stageIcon) ? step.stageIcon : undefined })),
+    (input as Partial<RouteStep>[]).map((step) => ({ ...tagStepPlaces(step ?? {}), stageIcon: isStageIcon(step?.stageIcon) ? step.stageIcon : undefined })),
     { keepButtons: true },
   );
   if (written.length < 2) return { error: 'The common steps need at least two steps.' };
@@ -51,7 +52,7 @@ export function cleanSample(input: unknown): { sample: SampleRoute } | { error: 
   if (!id) return { error: 'A sample route needs an id.' };
   if (!Array.isArray(body.steps)) return { error: 'A sample route needs its steps.' };
   const written = normaliseSteps(
-    (body.steps as Partial<RouteStep>[]).map((step) => ({ ...step, stageIcon: isStageIcon(step?.stageIcon) ? step.stageIcon : undefined })),
+    (body.steps as Partial<RouteStep>[]).map((step) => ({ ...tagStepPlaces(step ?? {}), stageIcon: isStageIcon(step?.stageIcon) ? step.stageIcon : undefined })),
     { keepButtons: true },
   );
   if (written.length < 2) return { error: `"${name}" needs at least two steps.` };
@@ -59,6 +60,14 @@ export function cleanSample(input: unknown): { sample: SampleRoute } | { error: 
   const wrong = checkButtons(steps).find((problem) => problem.level === 'error');
   if (wrong) return { error: `"${name}": ${wrong.text}` };
   return { sample: { id, name, blurb, icon: isStageIcon(body.icon) ? body.icon : ('transit' as StageIcon), steps } };
+}
+
+/** The operators' button library: their words for the built-in buttons, and buttons of their own. */
+export async function readButtonLibrary(repository: Repo): Promise<ButtonLibrary> {
+  const saved = await repository.getSiteContent(ROUTE_BUTTONS_ID);
+  if (!saved) return EMPTY_BUTTON_LIBRARY;
+  const cleaned = cleanButtonLibrary(saved.data);
+  return 'error' in cleaned ? EMPTY_BUTTON_LIBRARY : cleaned.library;
 }
 
 /* ── Route words ─────────────────────────────────────────────────────── */

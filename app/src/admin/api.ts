@@ -6,6 +6,7 @@ import type { MarketSettings } from '@shared/settings';
 import type { SampleRoute } from '@shared/route-samples';
 import type { RouteWords } from '@shared/route-words';
 import type { RouteStep } from '@shared/routes';
+import type { ButtonLibrary } from '@shared/route-buttons';
 import type { DeviceFigures } from '@shared/devices';
 import { ApiRequestError, api as marketplace, type OpsStoreRow } from '../api';
 import type { StoreStatus } from '@shared/models';
@@ -250,10 +251,12 @@ export const admin = {
     samples: SampleRoute[]; customised: boolean; samplesUpdatedAt: string | null; samplesUpdatedBy: string | null;
     words: RouteWords; wordsUpdatedAt: string | null; wordsUpdatedBy: string | null;
     common: RouteStep[]; commonCustomised: boolean; commonUpdatedAt: string | null; commonUpdatedBy: string | null;
+    buttons: ButtonLibrary; buttonsUpdatedAt: string | null; buttonsUpdatedBy: string | null;
   }>('/ops/route-library'),
   /** null puts back the built-in common steps. */
   saveRouteCommon: (steps: RouteStep[] | null) => post<{ steps: RouteStep[] }>('/ops/route-common/save', { steps }),
   saveRouteSamples: (samples: SampleRoute[]) => post<{ samples: SampleRoute[] }>('/ops/route-samples/save', { samples }),
+  saveRouteButtons: (library: ButtonLibrary) => post<ButtonLibrary>('/ops/route-buttons/save', library),
   saveRouteWords: (words: RouteWords) => post<RouteWords>('/ops/route-words/save', words),
   settings: () => request<MarketSettings>('/ops/settings'),
   saveSettings: (settings: Partial<Omit<MarketSettings, 'updatedAt' | 'updatedBy'>>) =>

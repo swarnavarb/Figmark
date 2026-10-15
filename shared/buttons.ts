@@ -498,12 +498,20 @@ export interface StepKind {
   /** The checkpoint it comes with, the seller's own button, or nothing. */
   trigger?: StepTrigger;
   custom?: boolean;
+  /** What its button says, where the operators gave it words. */
+  button?: string;
+  /** Who besides the shop presses it, for a button from the operators' library. */
+  assignee?: StepAssignee;
+  /** Where a library button may go. */
+  place?: 'pre' | 'post' | 'both';
+  /** One of the operators' own buttons, offered to every shop. */
+  library?: boolean;
 }
 
 export const STEP_KINDS: readonly StepKind[] = [
   { id: 'china_received', icon: '🏬', name: 'Received at {origin} warehouse', description: 'Counted in overseas and waiting for a lot.', trigger: 'china_received' },
   { id: 'china_packed', icon: '📦', name: 'Packed at {origin}', description: 'Boxed up and ready for the lot.', trigger: 'china_packed' },
-  { id: 'india_received', icon: '🛬', name: 'Received at {destination} warehouse', description: 'Unpacked from the lot - each item goes on alone from here.', trigger: 'india_received' },
+  { id: 'india_received', icon: '🛬', name: 'Received at {dest} warehouse', description: 'Unpacked from the lot - each item goes on alone from here.', trigger: 'india_received' },
   { id: 'ready_to_dispatch', icon: '🏷️', name: 'Checked and ready', description: 'Inspected and ready to go out.', trigger: 'ready_to_dispatch' },
   { id: 'packed', icon: '📦', name: 'Packed for you', description: 'Boxed for the courier.', trigger: 'packed' },
   { id: 'dispatched', icon: '🚚', name: 'Dispatched to you', description: 'Handed to the courier.', trigger: 'dispatched' },
@@ -524,13 +532,13 @@ export type StepZone = 'pre' | 'lot' | 'post';
  * cannot go here are locked with the reason: used already, before or after
  * the lot only, out of order, or always last.
  */
-export function stepChoices(steps: readonly RouteStep[], at: number, zone: StepZone): StepChoice[] {
+export function stepChoices(steps: readonly RouteStep[], at: number, zone: StepZone, kinds: readonly StepKind[] = STEP_KINDS): StepChoice[] {
   const order = MATCHED as readonly string[];
   const usedAt = new Map<string, number>();
   steps.forEach((step, index) => { if (step.trigger) usedAt.set(step.trigger, index); });
   const dispatchAt = usedAt.get('dispatched') ?? steps.length;
 
-  return STEP_KINDS.map((kind): StepChoice => {
+  return kinds.map((kind): StepChoice => {
     if (kind.trigger === 'dispatched' || kind.trigger === 'delivered') {
       return { kind, open: false, why: 'Always the last two steps' };
     }
@@ -538,6 +546,8 @@ export function stepChoices(steps: readonly RouteStep[], at: number, zone: StepZ
     if (!kind.trigger && !kind.custom) return { kind, open: true };
     if (zone === 'lot') return { kind, open: false, why: 'Items in a lot move together - no buttons here' };
     if (at > dispatchAt) return { kind, open: false, why: 'Not after Dispatched' };
+    if (kind.place === 'pre' && zone !== 'pre') return { kind, open: false, why: 'Only before the lot' };
+    if (kind.place === 'post' && zone === 'pre') return { kind, open: false, why: 'Only after the lot' };
     if (kind.custom) return { kind, open: true };
     const trigger = kind.trigger!;
     const used = usedAt.get(trigger);

@@ -1,10 +1,11 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { ROUTE_COMMON_ID, ROUTE_SAMPLES_ID } from '../../../shared/route-samples.js';
+import { ROUTE_BUTTONS_ID, cleanButtonLibrary } from '../../../shared/route-buttons.js';
 import { ROUTE_WORDS_ID, cleanRouteWords } from '../../../shared/route-words.js';
 import { audited } from '../audit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { cleanCommonSteps, cleanSample, commonSteps, readRouteWords, routeSamples, syncRouteWords } from '../route-library.js';
+import { cleanCommonSteps, cleanSample, commonSteps, readButtonLibrary, readRouteWords, routeSamples, syncRouteWords } from '../route-library.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -40,6 +41,7 @@ async function library(request: HttpRequest, _context: InvocationContext) {
     commonSteps(repository),
     repository.getSiteContent(ROUTE_COMMON_ID),
   ]);
+  const buttonsDoc = await repository.getSiteContent(ROUTE_BUTTONS_ID);
   return json(200, {
     samples,
     /** False until the operators save a list of their own: until then it is Figmark's built-in one. */
@@ -54,6 +56,10 @@ async function library(request: HttpRequest, _context: InvocationContext) {
     commonCustomised: Boolean(commonDoc),
     commonUpdatedAt: commonDoc?.updatedAt ?? null,
     commonUpdatedBy: commonDoc?.updatedBy ?? null,
+    /** The buttons "+ Step" offers every shop. */
+    buttons: await readButtonLibrary(repository),
+    buttonsUpdatedAt: buttonsDoc?.updatedAt ?? null,
+    buttonsUpdatedBy: buttonsDoc?.updatedBy ?? null,
   });
 }
 
@@ -103,6 +109,21 @@ async function saveCommon(request: HttpRequest, _context: InvocationContext) {
   return json(200, { steps: cleaned.steps });
 }
 
+/** POST /api/ops/route-buttons/save - the built-in buttons' words and the operators' own buttons. */
+async function saveButtons(request: HttpRequest, _context: InvocationContext) {
+  const user = await operator(request);
+  const cleaned = cleanButtonLibrary(await body(request));
+  if ('error' in cleaned) return error(400, 'invalid_buttons', cleaned.error);
+  const repository = await getRepository();
+  const now = new Date().toISOString();
+  const existing = await repository.getSiteContent(ROUTE_BUTTONS_ID);
+  await repository.saveSiteContent({
+    id: ROUTE_BUTTONS_ID, data: cleaned.library, updatedBy: user.displayName ?? user.email,
+    createdAt: existing?.createdAt ?? now, updatedAt: now,
+  });
+  return json(200, cleaned.library);
+}
+
 /** POST /api/ops/route-words/save - the short forms and whether countries show as flags. */
 async function saveWords(request: HttpRequest, _context: InvocationContext) {
   const user = await operator(request);
@@ -124,6 +145,7 @@ export const routeWordsRoute = handler(words);
 export const opsRouteLibraryRoute = handler(library);
 export const opsRouteSamplesSaveRoute = audited('routes.samples.save', handler(saveSamples));
 export const opsRouteCommonSaveRoute = audited('routes.common.save', handler(saveCommon));
+export const opsRouteButtonsSaveRoute = audited('routes.buttons.save', handler(saveButtons));
 export const opsRouteWordsSaveRoute = audited('routes.words.save', handler(saveWords));
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -131,4 +153,5 @@ app.http('route-words', { ...anon, methods: ['GET'], route: 'route-words', handl
 app.http('ops-route-library', { ...anon, methods: ['GET'], route: 'ops/route-library', handler: opsRouteLibraryRoute });
 app.http('ops-route-samples-save', { ...anon, methods: ['POST'], route: 'ops/route-samples/save', handler: opsRouteSamplesSaveRoute });
 app.http('ops-route-common-save', { ...anon, methods: ['POST'], route: 'ops/route-common/save', handler: opsRouteCommonSaveRoute });
+app.http('ops-route-buttons-save', { ...anon, methods: ['POST'], route: 'ops/route-buttons/save', handler: opsRouteButtonsSaveRoute });
 app.http('ops-route-words-save', { ...anon, methods: ['POST'], route: 'ops/route-words/save', handler: opsRouteWordsSaveRoute });

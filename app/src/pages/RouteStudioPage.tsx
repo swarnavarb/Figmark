@@ -1,9 +1,10 @@
 import { Fragment, createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
+import { setButtonLibrary, stepKinds } from '@shared/route-buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  renderStepText, routeParts, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, waitMessageFor,
+  renderStepText, routeParts, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
   type RouteStep, type StepAssignee, type StepTrigger, type TrackingRoute,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
@@ -25,6 +26,8 @@ import { RoutePreview } from '../components/RoutePreview';
  * tokens read as plain "the origin" and "the destination".
  */
 type PreviewVars = { origin?: string | null; destination?: string | null };
+/** Until the shop has a lot of its own, {origin} and {dest} read on the commonest lane. */
+const EXAMPLE_LANE: PreviewVars = { origin: 'China', destination: 'India' };
 const PreviewVarsContext = createContext<PreviewVars>({});
 
 /**
@@ -48,7 +51,6 @@ function ensureDelivered(steps: readonly RouteStep[]): RouteStep[] {
 }
 
 /** Whether the Studio opens with every detail showing, remembered per browser. */
-const DETAIL_KEY = 'figmark:route-studio-details';
 
 /**
  * A ready-made route's steps, put in order the way the Studio would before
@@ -153,29 +155,17 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const [answers, setAnswers] = useState<PipAnswers>({});
   const [pipSaid, setPipSaid] = useState('');
   const [tipAt, setTipAt] = useState(0);
-  const [previewing, setPreviewing] = useState(false);
-  /* Most edits are words: a step's name and its line. Buttons, who presses
-     them, the waits between steps and where the lot starts and ends are all
-     handed out sensibly already, so they wait behind "All details". */
-  const [detailed, setDetailed] = useState(() => {
-    try {
-      return localStorage.getItem(DETAIL_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  const showDetails = (next: boolean) => {
-    setDetailed(next);
-    try {
-      localStorage.setItem(DETAIL_KEY, next ? '1' : '0');
-    } catch {
-      /* A private window: it starts simple next time. */
-    }
+  /* Edit builds the route; Preview runs a sample order on it, from both
+     sides - the seller's buttons and the customer's tracking. */
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const showMode = (next: 'edit' | 'preview') => {
+    setMode(next);
+    window.scrollTo(0, 0);
   };
   /** Where a step is being added: the index it will take, and which part of the journey. */
   const [adding, setAdding] = useState<{ at: number; zone: StepZone } | null>(null);
   /** The shop's own lane, so the preview reads in its countries rather than ours. */
-  const [vars, setVars] = useState<PreviewVars>({});
+  const [vars, setVars] = useState<PreviewVars>(EXAMPLE_LANE);
   /** The chain as last opened or saved: anything else on screen is unsaved work. */
   const [savedAs, setSavedAs] = useState<string | null>(null);
   /** Saved, and some unfinished lots still read the route's older steps. */
@@ -184,7 +174,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   useEffect(() => {
     if (sample) {
       // A sample is read by every shop; it is previewed on the commonest lane.
-      setVars({ origin: 'China', destination: 'India' });
+      setVars(EXAMPLE_LANE);
       return;
     }
     void api.myLots().then((result) => {
@@ -200,6 +190,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     }
     void api.routes().then((result) => {
       setLibrary(result);
+      setButtonLibrary(result.buttonLibrary);
       if (!editing) return;
       const found = result.routes.find((route) => route.id === editing);
       if (!found) { setError('No such route.'); return; }
@@ -222,7 +213,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
    * had to change on a saved route is returned, for Pip to say.
    */
   function open(from: readonly RouteStep[], called: string): ButtonChange[] {
-    const withDelivered = ensureDelivered(from);
+    const withDelivered = ensureDelivered(from.map(tagStepPlaces));
     const withSides = withDelivered.map((step, index) => ({ ...step, position: index, side: sideOf(step, index) }));
     const { steps: given, changes } = assignButtons(withSides);
     const join = joinIndexOf({ steps: given });
@@ -258,7 +249,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   }
 
   function fix(action: PipFix) {
-    if (action.kind === 'preview') { setPreviewing(true); return; }
+    if (action.kind === 'preview') { showMode('preview'); return; }
     if (action.kind === 'name') { document.getElementById('rs-name')?.focus(); return; }
     const input = document.querySelector<HTMLInputElement>(`[data-step="${action.stepId}"] .rsbtn__words`);
     input?.scrollIntoView({ block: 'center' });
@@ -299,7 +290,10 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     const next = [...steps];
     const step: RouteStep = {
       ...blankStep(steps.length),
-      ...(kind ? { name: kind.name, description: kind.description, trigger: kind.trigger, custom: kind.custom } : {}),
+      ...(kind ? {
+        name: kind.name, description: kind.description, trigger: kind.trigger, custom: kind.custom,
+        button: kind.button, assignee: kind.assignee,
+      } : {}),
     };
     next.splice(index, 0, step);
     setSteps(next);
@@ -547,7 +541,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   return (
     <PreviewVarsContext.Provider value={vars}>
     {/* Something to fix shows everything, so the field it is about is there to fix. */}
-    <form className={`rsstudio${detailed || blocking.length > 0 ? '' : ' rsstudio--simple'}`} onSubmit={save}>
+    <form className="rsstudio" onSubmit={save}>
       {pipDock}
 
       {/* The route itself: its name, and a map of its three parts at a glance. */}
@@ -566,22 +560,23 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
         </div>
         <div className="rshead__modes">
           <div className="seg rshead__mode" role="tablist" aria-label="How much to show">
-            <button type="button" role="tab" aria-selected={!detailed} className={detailed ? '' : 'is-on'}
-              onClick={() => showDetails(false)}>Steps</button>
-            <button type="button" role="tab" aria-selected={detailed} className={detailed ? 'is-on' : ''}
-              onClick={() => showDetails(true)}>All details</button>
+            <button type="button" role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'is-on' : ''}
+              disabled={named.length < 2} onClick={() => showMode('preview')}>👀 Preview</button>
+            <button type="button" role="tab" aria-selected={mode === 'edit'} className={mode === 'edit' ? 'is-on' : ''}
+              onClick={() => showMode('edit')}>✏️ Edit</button>
           </div>
-          <InfoTip label="Steps or All details">
-            <b>Steps</b> shows the route plainly: each step&apos;s name, one line about it, its button and
-            who can press it. Most routes only need this.
+          <InfoTip label="Preview or Edit">
+            <b>Edit</b> is where you build the route: name each step, add or remove steps, choose which
+            steps have a button, what the button says and who can press it.
             <br /><br />
-            <b>All details</b> shows everything else you can change: your own words on a button, the
-            message buyers see while they wait between two steps, where the lot starts and ends, and a
-            short note on what each button does.
+            <b>Preview</b> puts a sample order on the route. You see the order card exactly as it shows
+            under Sell → Orders, and you press its buttons the same way you would on a real order. Right
+            below, you see the tracking your customer reads, moving as you press.
             <br /><br />
-            Both edit the same route. Switching changes only what you see.
+            Nothing in Preview is saved - it is only for trying the route out.
           </InfoTip>
         </div>
+        {mode === 'edit' && (<>
         <div className="rsmap" aria-label="The route's three parts">
           {lanes.map((lane) => (
             <a key={lane.zone} href={`#rs-lane-${lane.zone}`} className={`rsmap__seg rsmap__seg--${lane.zone}`}
@@ -593,10 +588,17 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
         <span className="rshead__stats">
           ⚡ {bound} buttons · {named.length} steps · Dispatched and Delivered always last
         </span>
+        </>)}
       </header>
 
       {/* The journey, in its three parts: each a lane in its own colour, the
           steps in it joined by a track the next step's icon travels down. */}
+      {mode === 'preview' ? (
+        /* Its own buttons ask in dialogs with forms of their own; none of them saves the route. */
+        <div onSubmit={(event) => event.stopPropagation()}>
+          <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} />
+        </div>
+      ) : (
       <div className="rslanes">
         {lanes.map((lane) => (
           <section key={lane.zone} id={`rs-lane-${lane.zone}`} className={`rslane rslane--${lane.zone}`}>
@@ -638,6 +640,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
           </section>
         ))}
       </div>
+      )}
 
       {adding && (
         <StepPicker at={adding.at} zone={adding.zone} steps={given}
@@ -650,14 +653,6 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 
       {error && <ErrorNotice message={error} />}
 
-      {previewing && (
-        <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} problems={problems}
-          onChangeStep={(index, patch) => {
-            const id = named[index]?.id;
-            setSteps((now) => now.map((step) => (step.id === id ? { ...step, ...patch } : step)));
-          }}
-          onClose={() => setPreviewing(false)} />
-      )}
 
       {blocking.length > 0 && (
         <div className="rsproblems" role="alert">
@@ -668,8 +663,9 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 
       {/* Always in reach, however long the chain: try it, save it. */}
       <div className="rsbar">
-        <button type="button" className="rsbar__preview" disabled={named.length < 2} onClick={() => setPreviewing(true)}>
-          <span aria-hidden="true">👀</span> Preview on a sample order
+        <button type="button" className="rsbar__preview" disabled={named.length < 2}
+          onClick={() => showMode(mode === 'preview' ? 'edit' : 'preview')}>
+          {mode === 'preview' ? <><span aria-hidden="true">✏️</span> Back to edit</> : <><span aria-hidden="true">👀</span> Try on a sample order</>}
         </button>
         <button type="submit" className="btn rsbar__save" disabled={busy || named.length < 2 || !name.trim() || blocking.length > 0}
           title={blocking.length > 0 ? 'Fix the button words above first' : !name.trim() ? 'Give the route a name first' : undefined}>
@@ -798,7 +794,7 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
   onClose: () => void;
 }) {
   const vars = useContext(PreviewVarsContext);
-  const choices = stepChoices(steps, at, zone);
+  const choices = stepChoices(steps, at, zone, stepKinds());
   const group = (title: string, rows: typeof choices) => rows.length > 0 && (
     <div className="rspick__group">
       <span className="rspick__title">{title}</span>
@@ -807,9 +803,10 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
           onClick={() => onPick(kind)}>
           <span className="rspick__icon" aria-hidden="true">{open ? kind.icon : '🔒'}</span>
           <span className="rspick__body">
-            <b>{kind.custom ? 'A step with your own button' : kind.trigger ? renderStepText(kind.name, vars) : 'A plain step'}</b>
+            <b>{kind.library || kind.trigger ? renderStepText(kind.name, vars) : kind.custom ? 'A step with your own button' : 'A plain step'}</b>
             <span>{open
-              ? kind.custom ? 'You name it and its button - pressed per item.'
+              ? kind.library ? `⚡ ${kind.button || renderStepText(kind.name, vars)}${kind.assignee ? ` - you and the ${kind.assignee} press it` : ''}`
+                : kind.custom ? 'You name it and its button - pressed per item.'
                 : kind.trigger ? '⚡ Comes with its button - you use it to move the item here.'
                   : zone === 'lot' ? 'Moves when you move the lot.' : 'No button - ticked off with the next one.'
               : renderStepText(why ?? '', vars)}</span>
@@ -825,7 +822,8 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
           <b>{ZONE_TEXT[zone].title}</b> · {ZONE_TEXT[zone].note}
         </p>
         {group('Steps with a button', choices.filter((choice) => choice.kind.trigger))}
-        {group('Your own', choices.filter((choice) => !choice.kind.trigger))}
+        {group('More buttons', choices.filter((choice) => choice.kind.library))}
+        {group('Your own', choices.filter((choice) => !choice.kind.trigger && !choice.kind.library))}
       </div>
     </Modal>
   );
@@ -907,7 +905,7 @@ function WaitMessageEditor({ step, onChange, onDone }: {
       )}
       <span className="field__hint">
         Shown with the moving wave above, between this step and the next. {'{origin}'} and{' '}
-        {'{destination}'} fill in from the lot, same as in a step's name.
+        {'{dest}'} fill in from the lot, same as in a step's name.
       </span>
       <button type="button" className="btn btn--sm" onClick={onDone}>Done</button>
     </div>
@@ -990,8 +988,10 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
           )}
         </div>
 
+        <PlaceTags onAdd={(tag) => onChange({ name: `${step.name.trimEnd()} ${tag}`.trim() })} what="name" />
+
         <input className="rsnode__desc" value={step.description}
-          placeholder="Say what happens here, in one line — {origin} and {destination} work too"
+          placeholder="Say what happens here, in one line — {origin} and {dest} work too"
           aria-label={`Step ${index + 1} description`}
           onChange={(event) => onChange({ description: event.target.value })} />
 
@@ -1004,6 +1004,8 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
               placeholder="Your words (optional)"
               aria-label={`Words on the button for step ${index + 1}`}
               onChange={(event) => onChange({ button: event.target.value })} />
+            <PlaceTags what="button"
+              onAdd={(tag) => onChange({ button: `${(step.button || step.name).trimEnd()} ${tag}`.trim() })} />
             <span className="rsbtn__note">
               {pressNote(step)}
             </span>
@@ -1084,6 +1086,24 @@ const ZONE_CREW: Record<StepZone, { id: StepAssignee; label: string }> = {
   lot: CREW.forwarder,
   post: CREW.handler,
 };
+
+/**
+ * The two place tags, a tap away while a step is being written: each turns
+ * into the lot's own country - "Received at {origin} WH" reads "Received at
+ * 🇨🇳 WH" on a China lot. Shown only on the card being edited.
+ */
+function PlaceTags({ what, onAdd }: { what: 'name' | 'button'; onAdd: (tag: string) => void }) {
+  return (
+    <span className="rstags" role="group" aria-label={`Add a place to the ${what}`}>
+      {/* Pressing one keeps the field being typed in focused, so the tags stay put. */}
+      <button type="button" className="rstags__tag" onPointerDown={(event) => event.preventDefault()}
+        onClick={() => onAdd('{origin}')}>+ {'{origin}'}</button>
+      <button type="button" className="rstags__tag" onPointerDown={(event) => event.preventDefault()}
+        onClick={() => onAdd('{dest}')}>+ {'{dest}'}</button>
+      <span className="rstags__hint">fills in the lot&apos;s country</span>
+    </span>
+  );
+}
 
 /** Under a button: who uses it to move the item, and anything it asks for on the way. */
 function pressNote(step: RouteStep): string {

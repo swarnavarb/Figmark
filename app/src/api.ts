@@ -1,4 +1,5 @@
 import type { RouteWords } from '@shared/route-words';
+import type { ButtonLibrary } from '@shared/route-buttons';
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type { NotificationCategory } from '@shared/notifications';
 import type { NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
@@ -1729,6 +1730,8 @@ export interface RoutesResponse {
   suggested: RouteStep[];
   /** The logistics-scenario cards: where an order enters the lot's journey. */
   routeTemplates: (RoutePreset & { icon: StageIcon })[];
+  /** The buttons "+ Step" offers, as the operators keep them. */
+  buttonLibrary?: ButtonLibrary;
 }
 
 /** An item that could go in a lot: sold, bound for one, not in one. */
