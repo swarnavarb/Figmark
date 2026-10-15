@@ -100,15 +100,24 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
                 <span className="qchip__streak"><Glyph name="flame" size={12} />{collector.streak.current}</span>
               )}
             </div>
-            <p className="faint" style={{ margin: 0 }}>
-              {page && <FollowCounts userId={page.sellerId} followerCount={page.followerCount} isStore={false} />}
-              {page && person.memberSince && ' · '}
-              {person.memberSince && `here since ${formatDate(person.memberSince)}`}
-              {person.lastSeenAt && ` · seen ${timeAgo(person.lastSeenAt)}`}
-            </p>
+            {(person.memberSince || person.lastSeenAt) && (
+              <p className="faint" style={{ margin: 0 }}>
+                {person.memberSince && `here since ${formatDate(person.memberSince)}`}
+                {person.memberSince && person.lastSeenAt && ' · '}
+                {person.lastSeenAt && `seen ${timeAgo(person.lastSeenAt)}`}
+              </p>
+            )}
             <VerifiedChips checks={page?.verified} />
           </div>
         </header>
+
+        {page && (
+          <div className="pstats">
+            <FollowCounts userId={page.sellerId} followerCount={page.followerCount} isStore={false} />
+            <span className="pstat"><b>{collector ? uniqueCards : '—'}</b><small>cards</small></span>
+            <span className="pstat"><b>{collector ? earned.length : '—'}</b><small>stickers</small></span>
+          </div>
+        )}
 
         {collector && (
           <div className="qprofile__xp">

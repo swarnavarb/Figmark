@@ -641,9 +641,14 @@ function listingShareSpec(data: ListingDetail): ShareSpec {
   // Only a sharer's own affiliate link takes money off; the shop sharing its own item sends a plain one.
   const viaLink = Boolean(data.affiliate?.canShare) && !data.isOwn;
   const off = viaLink && data.affiliate?.buyerOffMinor ? formatMoney(data.affiliate.buyerOffMinor, listing.currency) : null;
+  const deal = off && data.affiliate?.buyerOffMinor
+    ? formatMoney(Math.max(100, listing.priceMinor - data.affiliate.buyerOffMinor), listing.currency)
+    : null;
+  // Through the link it costs less, so the caption says what the friend will pay.
+  const pays = deal ? `${deal} (was ${price})` : price;
   const caption = filling
-    ? `${left} spot${left === 1 ? '' : 's'} left in this pre-order: ${listing.title} at ${price}. It ships when it fills 👇`
-    : data.isOwn ? `New drop: ${listing.title} at ${price} 🔥` : `Found this on Figmark: ${listing.title} at ${price} ✨`;
+    ? `${left} spot${left === 1 ? '' : 's'} left in this pre-order: ${listing.title} at ${pays}. It ships when it fills 👇`
+    : data.isOwn ? `New drop: ${listing.title} at ${price} 🔥` : `Found this on Figmark: ${listing.title} at ${pays} ✨`;
   return {
     kind: filling ? 'fill' : 'item',
     moment: {
@@ -654,7 +659,7 @@ function listingShareSpec(data: ListingDetail): ShareSpec {
       fill: pre ? { joined, threshold: pre.fillThreshold } : null,
       headline: filling ? 'Help fill this pre-order' : data.isOwn ? 'New drop' : off ? 'Grab this with me' : 'Look what I found',
       discount: off,
-      deal: off && data.affiliate?.buyerOffMinor ? formatMoney(Math.max(100, listing.priceMinor - data.affiliate.buyerOffMinor), listing.currency) : null,
+      deal,
       seed: listing.id,
       badge: shopBadge(seller, shop),
     },

@@ -2765,6 +2765,9 @@ await check('the Sell tab counts on the server what it used to count from the wh
   const waiting = new Set([...full.waiting, ...full.placed].map((row) => row.id));
   assert.equal(counts.answer, active.filter((row) => waiting.has(row.id)).length);
   assert.equal(counts.noLot, active.filter((row) => row.awaitingLot).length);
+  // An import on sale with no lot is counted before anybody orders it.
+  const shelf = await (await getRepository()).listListings({ sellerId: 'usr_demo', limit: 10_000 });
+  assert.equal(counts.noLotListings, shelf.filter((listing) => !listing.lotId && listing.sourcing === 'import').length);
   assert.ok(counts.answer > 0, 'with something to answer in it');
   // One time per order waiting, so the tab can mark the ones newer than the seller's last look.
   assert.equal(counts.answerSince.length, counts.answer);

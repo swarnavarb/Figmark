@@ -1,7 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
 import type { BuyerReversalDetails, Listing, Order, SellerProfile } from '../../../shared/models.js';
-import { awaitingLot, inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
+import { awaitingLot, inLot, isDirect, lotIsDone, sourcingOf } from '../../../shared/fulfilment.js';
 import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, holdsLotBack, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
@@ -730,9 +730,10 @@ async function sellTodo(request: HttpRequest, _context: InvocationContext) {
     && (storeId === user.id || Boolean(owner?.sellerProfile && can(owner, user.id, 'lots')));
   if (!answers && !mayLots) return error(403, 'forbidden', 'You cannot see that store’s work.');
 
-  const [figures, lots] = await Promise.all([
+  const [figures, lots, listings] = await Promise.all([
     answers ? repository.listOrderFiguresForSeller(storeId) : Promise.resolve(null),
     mayLots ? repository.listLots({ sellerId: storeId, limit: 10_000 }) : Promise.resolve(null),
+    mayLots ? repository.listListings({ sellerId: storeId, limit: 10_000 }) : Promise.resolve(null),
   ]);
   const active = figures?.filter((order) => !isFinished(order)) ?? null;
   const waitsOnShop = (order: NonNullable<typeof figures>[number]) =>
@@ -748,6 +749,12 @@ async function sellTodo(request: HttpRequest, _context: InvocationContext) {
       ? waiting.map((order) => order.paymentClaim?.claimedAt ?? order.placedAt ?? order.createdAt)
       : null,
     noLot: active ? active.filter((order) => awaitingLot(order)).length : null,
+    /* Imports on sale that no lot carries yet. An order is not the first sign
+       of one: a listing marked import and left out of every lot is already
+       the seller's next job, before anybody buys it. */
+    noLotListings: listings
+      ? listings.filter((listing) => !listing.lotId && sourcingOf(listing) === 'import').length
+      : null,
     lots: lots ? lots.filter((lot) => !lotIsDone(lot)).length : null,
   });
 }

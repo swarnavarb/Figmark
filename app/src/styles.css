@@ -10929,14 +10929,34 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   color: var(--accent-text); font: inherit; font-size: var(--t-xs); font-weight: var(--w-bold);
 }
 
+/* The page's numbers, one row of equal cells: followers sit in it like the rest. */
 .pstats {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 12px; overflow: hidden;
-  border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border);
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0 0 14px; overflow: hidden;
+  border-radius: var(--r-lg); border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.08), transparent 70%), var(--surface);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
 }
-.pstats > span { display: grid; justify-items: center; gap: 1px; padding: 10px 4px; }
-.pstats > span + span { border-left: 1px solid var(--border); }
-.pstats b { font-family: var(--ui); font-size: var(--t-lg); font-variant-numeric: tabular-nums; }
-.pstats small { font-size: var(--t-2xs); color: var(--text-faint); }
+.pstat {
+  display: grid; justify-items: center; align-content: center; gap: 2px; min-width: 0; padding: 14px 4px 12px;
+  border: 0; background: none; color: inherit; font: inherit; text-align: center;
+}
+.pstat + .pstat { border-left: 1px solid var(--border); }
+.pstat b {
+  font-family: var(--ui); font-size: var(--t-xl); line-height: 1.05; font-weight: var(--w-bold);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.pstat small {
+  font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.pstat--tap { cursor: pointer; transition: background 160ms var(--ease), transform 160ms var(--ease); }
+.pstat--tap b {
+  background: linear-gradient(135deg, var(--text), var(--violet-text)); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.pstat--tap:hover { background: rgba(255, 255, 255, 0.04); }
+.pstat--tap:active { transform: scale(0.97); }
+.pstat--tap:focus-visible { outline: 2px solid var(--violet); outline-offset: -2px; }
+@media (max-width: 380px) { .pstat b { font-size: var(--t-lg); } }
 .ptrust--ok { color: #34D399; }
 .ptrust--warn { color: #FBBF24; }
 .ptrust--low { color: #F87171; }
@@ -13676,7 +13696,6 @@ label.rdy__line { cursor: pointer; }
 .forummod__settings { display: grid; gap: 10px; }
 .forummod__settings label { display: grid; gap: 4px; font-weight: 600; }
 .forummod__warnform { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
-.pstats__follows { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .is-gone { opacity: .5; }
 .streams--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .streams--3 .streams__tab { gap: 5px; white-space: nowrap; }
@@ -14945,3 +14964,31 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .lotgate__who .faint { font-size: var(--t-2xs); }
 .lotgate__row .ladder__act { flex: none; text-decoration: none; }
 .lotgate__hint { margin: 0; }
+
+/* ── Profile and storefront polish ─────────────────────────────────────── */
+/* A name that reads as the page's title, and a face that sits on the cover. */
+.storefront__who h1, .qprofile__who h1 {
+  margin: 0; font-size: var(--t-xl); line-height: 1.1; letter-spacing: -0.015em; overflow-wrap: anywhere;
+}
+.qprofile__face { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); }
+.qprofile__who { gap: 6px; }
+.qprofile__xp {
+  padding: 8px 12px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--border);
+}
+.storefront--shop .storefront__sign {
+  grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding: 14px;
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(139, 92, 246, 0.14), transparent 55%) padding-box,
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--grad-hero) border-box;
+}
+.storefront--shop .storefront__avatar {
+  width: 76px; height: 76px; border-radius: 20px;
+  box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px rgba(139, 92, 246, 0.55), 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+.storefront--shop .storefront__who { gap: 5px; }
+.storefront__body .chips--tight .chip { border-radius: var(--r-pill); }
+@media (prefers-reduced-motion: reduce) { .pstat--tap { transition: none; } }
+/* A shelf card's foot: the counts, then its lot badge, never touching. */
+.shelf__foot { display: flex; align-items: center; justify-content: space-between; gap: 6px 8px; flex-wrap: wrap; }
+.shelf__foot .badge { flex: none; }

@@ -353,7 +353,7 @@ function SellHome({ store, canList, onGo, section }: {
   /** The section open under it: List an item leads only on Listings. */
   section: Section | null;
 }) {
-  const [todo, setTodo] = useState<{ answer: number; since: string[]; noLot: number; lots: number } | null>(null);
+  const [todo, setTodo] = useState<{ answer: number; since: string[]; noLot: number; noLotListings: number; lots: number } | null>(null);
   const [seen, setSeen] = useState(() => readAnswerSeen(store.ownerId));
   const seesLots = store.permissions.includes('lots');
 
@@ -371,6 +371,7 @@ function SellHome({ store, canList, onGo, section }: {
         answer: counts.answer ?? 0,
         since: counts.answerSince ?? [],
         noLot: counts.noLot ?? 0,
+        noLotListings: counts.noLotListings ?? 0,
         lots: seesLots ? counts.lots ?? 0 : 0,
       });
     });
@@ -398,8 +399,15 @@ function SellHome({ store, canList, onGo, section }: {
     { id: 'answer', count: todo.answer, label: todo.answer === 1 ? 'order to answer' : 'orders to answer',
       hot: todo.answer > 0, fresh, go: () => onGo('payments', { show: 'answer' }) },
     ...(seesLots ? [
-      { id: 'nolot', count: todo.noLot, label: todo.noLot === 1 ? 'order not in a lot' : 'orders not in a lot',
-        hot: todo.noLot > 0, go: () => onGo('lots') },
+      /* Orders waiting for a lot, and imports on sale that no lot carries yet:
+         either one is a job on the lots. Orders first - somebody paid. */
+      todo.noLot > 0 || todo.noLotListings === 0
+        ? { id: 'nolot', count: todo.noLot + todo.noLotListings,
+          label: todo.noLotListings > 0 ? 'orders & imports not in a lot' : todo.noLot === 1 ? 'order not in a lot' : 'orders not in a lot',
+          hot: todo.noLot > 0, go: () => onGo('lots') }
+        : { id: 'nolot', count: todo.noLotListings,
+          label: todo.noLotListings === 1 ? 'import not in a lot' : 'imports not in a lot',
+          hot: true, go: () => onGo('items') },
       { id: 'lots', count: todo.lots, label: todo.lots === 1 ? 'lot on the move' : 'lots on the move',
         hot: false, go: () => onGo('lots') },
     ] : []),
@@ -1214,7 +1222,7 @@ function ShelfCard({ listing, onEdit, onOpenLot, onTag }: {
           <span className="qloot__why">{rarity.reasons.slice(0, 2).join(' · ')}</span>
         )}
 
-        <span className="qloot__foot">
+        <span className="qloot__foot shelf__foot">
           <span className="faint"><Svg name="views" size={13} /> {listing.viewCount} · ♥ {listing.likeCount ?? 0}</span>
           {/* Only an import travels in a lot, so only an import says so -
               and the badge is the way there: to its lot, or into one. */}

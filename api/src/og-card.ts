@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { initWasm, Resvg } from '@resvg/resvg-wasm';
 import { encode } from 'jpeg-js';
-import { CARD_FONT, layoutCard, opsToSvg, type CardSpec } from '../../shared/shareCard.js';
+import { CARD_FONT, WIDE_CARD, layoutCard, layoutWideCard, opsToSvg, type CardSpec } from '../../shared/shareCard.js';
 
 /* ── Rendering ───────────────────────────────────────────────────────────── */
 
@@ -43,10 +43,16 @@ function boot(): Promise<Uint8Array[]> {
   return ready;
 }
 
-/** The card as an SVG, ready for the renderer. */
-export function cardSvg(spec: CardSpec): string {
-  return opsToSvg(layoutCard(spec));
+/** The card as an SVG, ready for the renderer: square, or wide for a link's preview. */
+export function cardSvg(spec: CardSpec, wide = false): string {
+  return wide ? opsToSvg(layoutWideCard(spec), WIDE_CARD) : opsToSvg(layoutCard(spec));
 }
+
+/**
+ * Android's WhatsApp shows no picture at all for a preview much over 300 KB,
+ * where the iPhone's shrinks it: under this, every chat app shows it.
+ */
+export const PREVIEW_MAX_BYTES = 280_000;
 
 /** An SVG card as a JPEG, small enough for any chat app's preview. */
 export async function renderCard(svg: string): Promise<Buffer> {
@@ -57,8 +63,14 @@ export async function renderCard(svg: string): Promise<Buffer> {
   });
   const image = resvg.render();
   try {
-    const jpeg = encode({ data: image.pixels, width: image.width, height: image.height }, 84);
-    return Buffer.from(jpeg.data);
+    const frame = { data: image.pixels, width: image.width, height: image.height };
+    // A busy photo can make a large JPEG: step the quality down until it fits.
+    let bytes = Buffer.from(encode(frame, 84).data);
+    for (const quality of [74, 62, 50]) {
+      if (bytes.byteLength <= PREVIEW_MAX_BYTES) break;
+      bytes = Buffer.from(encode(frame, quality).data);
+    }
+    return bytes;
   } finally {
     image.free();
     resvg.free();

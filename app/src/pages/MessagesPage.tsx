@@ -134,7 +134,7 @@ export function MessagesView() {
                 <span className="chrow__top">
                   <span className="chrow__name">
                     {row.them.displayName}
-                    <ManagerMark handle={row.them.handle} />
+                    {!row.them.isStore && <ManagerMark handle={row.them.handle} />}
                     <LevelChip tag={row.them.level} inline />
                     {row.them.isStore && <span className="chrow__tier">SHOP</span>}
                   </span>
@@ -552,7 +552,7 @@ export function ThreadPage() {
     <div className="social dmscreen">
       <RoomBar tone="chat" onBack={back}
         avatar={<Avatar name={data.them.displayName} size={34} />}
-        title={<>{data.them.displayName}<ManagerMark handle={data.them.handle} /><LevelChip tag={data.them.level} inline />{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
+        title={<>{data.them.displayName}{!data.them.isStore && <ManagerMark handle={data.them.handle} />}<LevelChip tag={data.them.level} inline />{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
         sub={<>@{data.them.handle} · you as @{data.us.handle}</>}
         action={(
           <span className="dmactions">

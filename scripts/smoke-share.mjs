@@ -455,6 +455,24 @@ await check('an item with no photo gets its own drawn picture, not the Figmark b
   assert.equal((await ogCard(req({ params: { kind: 'l', name: 'nope.jpg' } }), ctx)).status, 404);
 });
 
+await check('an item with a photo is drawn at the size WhatsApp shows, never sent as the raw upload', async () => {
+  const photographed = await repository.updateListing({
+    ...(await repository.getListing(deal.id)),
+    photos: [{ url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', isPrimary: true }],
+  });
+  const html = await preview(`/s/l/${photographed.id}`);
+  const image = tag(html, 'og:image');
+  assert.match(image, new RegExp(`^https://figmark\\.example/api/og/card/l/${deal.id}\\.jpg\\?v=`));
+  assert.equal(tag(html, 'og:image:width'), '1200');
+  assert.equal(tag(html, 'og:image:height'), '630');
+  assert.equal(tag(html, 'og:image:type'), 'image/jpeg');
+  const bytes = await cardAt(image);
+  // A JPEG's size sits in its start-of-frame marker.
+  const sof = bytes.indexOf(Buffer.from([0xff, 0xc0]));
+  assert.ok(sof > 0, 'a baseline JPEG');
+  assert.deepEqual([bytes.readUInt16BE(sof + 7), bytes.readUInt16BE(sof + 5)], [1200, 630]);
+});
+
 await check('a shop and a person without a photo get drawn pictures too', async () => {
   const owner = await repository.getUserById(shop.id);
   const shopImage = tag(await preview(`/s/p/${owner.sellerProfile.username}`), 'og:image');

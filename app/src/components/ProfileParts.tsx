@@ -597,18 +597,18 @@ export function FollowCounts({ userId, followerCount, isStore }: { userId: strin
   const followers = data?.followers.length ?? followerCount;
   const following = data?.following.length ?? 0;
   const tabs = isStore ? (['followers'] as const) : (['followers', 'following'] as const);
+  // Each count is a cell of the page's stats row (.pstats), the same size as its neighbours.
   return (
     <>
-      <button type="button" className="followcount" onClick={() => setOpen('followers')}>
-        <b>{followers}</b> {followers === 1 ? 'follower' : 'followers'}
+      <button type="button" className="pstat pstat--tap" onClick={() => setOpen('followers')}
+        aria-label={`${followers} ${followers === 1 ? 'follower' : 'followers'}`}>
+        <b>{followers.toLocaleString('en-IN')}</b><small>{followers === 1 ? 'follower' : 'followers'}</small>
       </button>
       {!isStore && (
-        <>
-          {' · '}
-          <button type="button" className="followcount" onClick={() => setOpen('following')}>
-            <b>{following}</b> following
-          </button>
-        </>
+        <button type="button" className="pstat pstat--tap" onClick={() => setOpen('following')}
+          aria-label={`${following} following`}>
+          <b>{following.toLocaleString('en-IN')}</b><small>following</small>
+        </button>
       )}
       {open && (
         <Modal title={open === 'followers' ? 'Followers' : 'Following'} onClose={() => setOpen(null)}>

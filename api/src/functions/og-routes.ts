@@ -12,7 +12,7 @@ import { resolveInvite } from '../share.js';
 import { config } from '../config.js';
 import { error, handler } from './http.js';
 import { cardSvg, renderCard } from '../og-card.js';
-import { THEMES, type CardSpec } from '../../../shared/shareCard.js';
+import { THEMES, WIDE_CARD, type CardSpec } from '../../../shared/shareCard.js';
 
 /**
  * Link previews for everything people share out of the app.
@@ -35,9 +35,12 @@ import { THEMES, type CardSpec } from '../../../shared/shareCard.js';
  *   /s/l/<id>?m=&i=           an item, as a moment (booked, delivered, ...)
  *   /s/p/<handle>?i=          a shop or a person's page
  *
- * The picture is the item's lead photo. Something with no photo gets a card
- * drawn for it instead (`/api/og/card/...`, below) - its tile, price and shop -
- * rather than the Figmark banner, which said nothing about what was shared.
+ * The picture is always one drawn here (`/api/og/card/...`, below), 1200×630,
+ * the size chat apps show under a link: the item's lead photo (or its tile
+ * when it has none), its price and its shop. The raw photo used to go out
+ * as it was - a phone camera's few megabytes, at whatever shape - and
+ * Android's WhatsApp drops a preview picture like that rather than shrink it,
+ * so the link arrived bare.
  */
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -51,7 +54,11 @@ interface Meta {
   fallback: string;
   /** Wide pictures get the large card; a square shop photo reads better small. */
   large: boolean;
+  /** Said up front, so a preview fetcher can lay the card out before it has the picture. */
+  size?: { w: number; h: number } | null;
 }
+
+const CARD_TAGS = { size: WIDE_CARD };
 
 const DEFAULT_IMAGE = '/og/figmark.jpg';
 
@@ -107,12 +114,6 @@ function originalUrl(request: HttpRequest): URL | null {
   } catch {
     return null;
   }
-}
-
-function absolute(origin: string, url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (/^https?:\/\//i.test(url)) return url;
-  return url.startsWith('/') ? `${origin}${url}` : null;
 }
 
 function leadPhoto(listing: Listing): string | null {
@@ -181,8 +182,7 @@ async function listingMeta(
       ? 'Join the pre-order - it ships when it fills. Buyer Protection on Figmark.'
       : 'Buyer Protection on Figmark.',
   ].filter(Boolean);
-  const photo = absolute(origin, leadPhoto(listing));
-  return { title, description: parts.join(' · '), image: photo ?? listingCardUrl(origin, listing, seller, offMinor, code), large: true, fallback };
+  return { title, description: parts.join(' · '), image: listingCardUrl(origin, listing, seller, offMinor, code), large: true, fallback, ...CARD_TAGS };
 }
 
 async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta> {
@@ -197,6 +197,7 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
     image: `${origin}${DEFAULT_IMAGE}`,
     large: true,
     fallback: '/',
+    ...CARD_TAGS,
   };
 
   const [kind, first, second] = segments;
@@ -216,12 +217,12 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
       ? {
           title: `${name} invited you to sell on Figmark`,
           description: 'Run pre-orders with order manifests, tracking buyers can see, Buyer Protection and affiliates who sell for you. Opening a shop takes a minute.',
-          image: inviteCardUrl(origin, first, true, inviter), large: true, fallback: `/?i=${encodeURIComponent(first)}`,
+          image: inviteCardUrl(origin, first, true, inviter), large: true, fallback: `/?i=${encodeURIComponent(first)}`, ...CARD_TAGS,
         }
       : {
           title: `${name} invited you to Figmark`,
           description: 'Pre-orders from import resellers, Buyer Protection on payments and reviews only real buyers can leave. Collect cards and level up as you shop.',
-          image: inviteCardUrl(origin, first, false, inviter), large: true, fallback: `/?i=${encodeURIComponent(first)}`,
+          image: inviteCardUrl(origin, first, false, inviter), large: true, fallback: `/?i=${encodeURIComponent(first)}`, ...CARD_TAGS,
         };
   }
   if (kind === 's' && first === 'l' && second) {
@@ -246,14 +247,13 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
         user.sellerTrust.score >= 80 ? 'Trusted seller' : null,
         shop.bio?.trim().slice(0, 120) || null,
       ].filter(Boolean);
-      const photo = absolute(origin, shop.photoUrl);
-      return { title: `${shop.storefrontName} on Figmark`, description: bits.join(' · '), image: photo ?? personCardUrl(origin, second, user), large: !photo, fallback: back };
+      return { title: `${shop.storefrontName} on Figmark`, description: bits.join(' · '), image: personCardUrl(origin, second, user), large: true, fallback: back, ...CARD_TAGS };
     }
     const level = user.quest?.levelCache ?? 1;
     return {
       title: `${user.displayName} on Figmark`,
       description: [`Level ${level} ${titleFor(level)}`, `${(user.collection ?? []).length} in their collection`, user.bio?.trim().slice(0, 120)].filter(Boolean).join(' · '),
-      image: personCardUrl(origin, second, user), large: true, fallback: back,
+      image: personCardUrl(origin, second, user), large: true, fallback: back, ...CARD_TAGS,
     };
   }
   return fallbackMeta;
@@ -273,7 +273,7 @@ function versionOf(...parts: unknown[]): string {
 
 function listingCardUrl(origin: string, listing: Listing, seller: User | null, offMinor: number, code: string | null): string {
   const v = versionOf(listing.updatedAt, listing.title, listing.priceMinor, listing.preOrder?.filledCount, listing.preOrder?.pledgedCount,
-    seller?.sellerProfile?.levelCache, seller?.sellerProfile?.storefrontName, seller?.sellerProfile?.photoUrl?.length, offMinor);
+    seller?.sellerProfile?.levelCache, seller?.sellerProfile?.storefrontName, seller?.sellerProfile?.photoUrl?.length, offMinor, leadPhoto(listing));
   const via = offMinor > 0 && code ? `&r=${encodeURIComponent(code)}` : '';
   return `${origin}/api/og/card/l/${encodeURIComponent(listing.id)}.jpg?v=${v}${via}`;
 }
@@ -285,7 +285,8 @@ function inviteCardUrl(origin: string, code: string, seller: boolean, inviter: U
 
 function personCardUrl(origin: string, handle: string, user: User): string {
   const shop = user.sellerProfile;
-  const v = versionOf(user.updatedAt, user.displayName, user.quest?.levelCache, shop?.storefrontName, shop?.levelCache, shop?.followerCount, (user.collection ?? []).length);
+  const v = versionOf(user.updatedAt, user.displayName, user.quest?.levelCache, shop?.storefrontName, shop?.levelCache, shop?.followerCount,
+    (user.collection ?? []).length, shop?.photoUrl?.slice(-40));
   return `${origin}/api/og/card/p/${encodeURIComponent(handle)}.jpg?v=${v}`;
 }
 
@@ -313,7 +314,7 @@ async function inlinePhoto(_origin: string, url: string | null | undefined): Pro
   }
 }
 
-/** The square picture for an item with no photo: the same one the app shares. */
+/** An item's preview: its lead photo, or its tile when it has none, with its price and shop. */
 async function listingCard(repository: Repo, origin: string, listing: Listing, code: string | null): Promise<CardSpec> {
   const seller = await repository.getUserById(listing.sellerId);
   let offMinor = 0;
@@ -325,9 +326,10 @@ async function listingCard(repository: Repo, origin: string, listing: Listing, c
   const fill = fillLine(listing, Date.now());
   const level = seller?.sellerProfile ? seller.sellerProfile.levelCache ?? 1 : null;
   const preOrder = Boolean(pre) || (listing.tags ?? []).includes('pre-order');
+  const photo = await inlinePhoto(origin, leadPhoto(listing));
   return {
     seed: listing.id,
-    hero: { kind: 'tile', label: listing.title },
+    hero: photo ? { kind: 'photo', src: photo } : { kind: 'tile', label: listing.title },
     chips: [
       ...(preOrder ? [{ label: 'PRE-ORDER', fill: '#F472B6', ink: '#2A0614' }] : []),
       ...(listing.condition ? [{ label: listing.condition.toUpperCase(), fill: 'rgba(8,11,18,0.62)', ink: '#FFFFFF' }] : []),
@@ -351,7 +353,7 @@ async function listingCard(repository: Repo, origin: string, listing: Listing, c
   };
 }
 
-/** A shop or a person with no photo: their mark, large, with their standing. */
+/** A shop or a person: their photo or mark, large, with their standing. */
 async function personCard(origin: string, user: User, isStore: boolean): Promise<CardSpec> {
   const shop = isStore ? user.sellerProfile : null;
   if (shop) {
@@ -409,7 +411,7 @@ async function inviteCard(origin: string, inviter: User, seller: boolean): Promi
 const cardCache = new Map<string, Buffer>();
 const CARD_CACHE_SIZE = 200;
 
-/** GET /api/og/card/{l|p|i}/{id}.jpg - the drawn preview: an item or page with no photo, or an invite. */
+/** GET /api/og/card/{l|p|i}/{id}.jpg - the drawn preview, 1200×630: an item, a page, or an invite. */
 async function ogCard(request: HttpRequest, _context: InvocationContext) {
   const kind = request.params.kind;
   const name = (request.params.name ?? '').replace(/\.jpe?g$/i, '');
@@ -422,13 +424,13 @@ async function ogCard(request: HttpRequest, _context: InvocationContext) {
     let svg: string | null = null;
     if (kind === 'l') {
       const listing = await repository.getListing(name);
-      if (listing && !listing.privateFor) svg = cardSvg(await listingCard(repository, origin, listing, request.query.get('r')));
+      if (listing && !listing.privateFor) svg = cardSvg(await listingCard(repository, origin, listing, request.query.get('r')), true);
     } else if (kind === 'i') {
       const inviter = await resolveInvite(repository, name);
-      if (inviter) svg = cardSvg(await inviteCard(origin, inviter, request.query.get('as') === 'seller'));
+      if (inviter) svg = cardSvg(await inviteCard(origin, inviter, request.query.get('as') === 'seller'), true);
     } else {
       const found = await repository.getByHandle(name);
-      if (found) svg = cardSvg(await personCard(origin, found.user, found.isStore));
+      if (found) svg = cardSvg(await personCard(origin, found.user, found.isStore), true);
     }
     if (!svg) return { status: 404, body: 'Not found' };
     try {
@@ -461,6 +463,14 @@ function tags(meta: Meta, url: string): string {
     ['og:description', meta.description],
     ['og:image', meta.image],
     ['og:image:alt', meta.title],
+    ...(meta.size ? [
+      // Some fetchers - WhatsApp's on Android among them - want the picture
+      // described before they will fetch it.
+      ['og:image:secure_url', meta.image],
+      ['og:image:type', 'image/jpeg'],
+      ['og:image:width', String(meta.size.w)],
+      ['og:image:height', String(meta.size.h)],
+    ] as [string, string][] : []),
     ['og:url', url],
   ];
   return [
@@ -539,7 +549,7 @@ async function og(request: HttpRequest, _context: InvocationContext) {
   } catch {
     meta = {
       title: 'Figmark', description: 'Import pre-orders, Buyer Protection and real reviews.',
-      image: `${origin}${DEFAULT_IMAGE}`, large: true, fallback: '/',
+      image: `${origin}${DEFAULT_IMAGE}`, large: true, fallback: '/', ...CARD_TAGS,
     };
   }
   const shell = await loadShell(origin);
