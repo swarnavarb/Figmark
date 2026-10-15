@@ -9,7 +9,8 @@ import { pushState } from './push';
  * tab coming back to the front. Later a live connection can say it instead,
  * and none of the pages need change.
  *
- * - Nothing is asked from a tab nobody can see. Coming back looks at once.
+ * - Nothing is asked from a tab nobody can see, but for an open conversation,
+ *   which checks every 30 seconds. Coming back looks at once.
  * - A push that lands while the site is open is news there and then.
  * - With push on for this device, the clock is only a safety net.
  * - The bell backs off while nothing happens, and one tab asks for them all.
@@ -228,10 +229,11 @@ export function onBellChanged(look: Look): () => void {
 /* ---- A conversation or a room ------------------------------------------ */
 
 /**
- * Call `look` while `path` is open: on a clock while it is on screen, at
- * once when it comes back to the front, and when a push points at it.
+ * Call `look` while `path` is open: on a clock (`every` says how often, on
+ * screen or behind another tab; null is not at all), at once when it comes
+ * back to the front, and when a push points at it.
  */
-function whileOpen(path: string, every: () => number, look: Look): () => void {
+function whileOpen(path: string, every: (onScreen: boolean) => number | null, look: Look): () => void {
   start();
   let timer: number | undefined;
   let stopped = false;
@@ -250,13 +252,14 @@ function whileOpen(path: string, every: () => number, look: Look): () => void {
   };
   const schedule = () => {
     window.clearTimeout(timer);
-    if (stopped || !visible()) return;
-    timer = window.setTimeout(() => void run().then(schedule), every());
+    const wait = stopped ? null : every(visible());
+    if (wait === null) return;
+    timer = window.setTimeout(() => void run().then(schedule), wait);
   };
   const onFront = () => void run().then(schedule);
-  const onHidden = () => window.clearTimeout(timer);
+  const onHidden = schedule;
   const onPush = (link: string | null) => {
-    if (!visible() || (link !== null && pathOf(link) !== path)) return;
+    if (link !== null && pathOf(link) !== path) return;
     void run().then(schedule);
   };
 
@@ -274,12 +277,16 @@ function whileOpen(path: string, every: () => number, look: Look): () => void {
   };
 }
 
-/** A conversation: every 10 seconds, or 30 when pushes bring its messages. */
+/**
+ * A conversation: every 10 seconds while it is on screen, every 30 while it
+ * is open behind another tab or app, so it is up to date the moment it is
+ * looked at again. (A browser may stretch the second on its own.)
+ */
 export function onThreadChanged(handle: string, look: Look): () => void {
-  return whileOpen(`/messages/${encodeURIComponent(handle)}`, () => (pushOn ? 30_000 : 10_000), look);
+  return whileOpen(`/messages/${encodeURIComponent(handle)}`, (onScreen) => (onScreen ? 10_000 : 30_000), look);
 }
 
 /** A channel or forum room: every 12 seconds while it is on screen. */
 export function onChannelChanged(path: string, look: Look): () => void {
-  return whileOpen(path.replace(/\/+$/, ''), () => 12_000, look);
+  return whileOpen(path.replace(/\/+$/, ''), (onScreen) => (onScreen ? 12_000 : null), look);
 }
