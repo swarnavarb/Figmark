@@ -1098,6 +1098,20 @@ export interface Follow extends BaseDocument {
 export type StageEventKind = 'step' | 'note' | 'joined' | 'moved';
 
 /** One recorded stage transition, powering the buyer-visible timeline. */
+/** How an order was read against its lot. Transient: see `Order.lotView`. */
+export interface OrderLotView {
+  lotId: string;
+  /** The position and status the order holds itself. */
+  own: { stage: FulfilmentStage; currentStep?: number; status: OrderStatus };
+  /** The position and status it was read as, with its lot applied. */
+  shown: { stage: FulfilmentStage; currentStep?: number; status: OrderStatus };
+  positionSeq?: number;
+  /** True when the position shown is the lot's, the lot having moved since this item was placed. */
+  follows: boolean;
+  /** Which of the lot's news reaches it: all of it, notes only once delivered, none once stopped. */
+  reach: 'all' | 'notes' | 'none';
+}
+
 export interface StageEvent {
   stage: FulfilmentStage;
   enteredAt: string;
@@ -1146,6 +1160,21 @@ export interface StageEvent {
    */
   trackingId?: string;
   shipper?: string;
+  /**
+   * The lot's count when this event was written to it, on lot news its
+   * buyers read (see `Lot.seq`). Absent on events the lot keeps to itself -
+   * closing, reopening, "every item arrived" - and on everything written
+   * before lot news stopped being copied onto each order.
+   */
+  seq?: number;
+  /** On lot news that moved the lot. An item delivered on its own has left the crate and hears only the rest. */
+  movedLot?: boolean;
+  /**
+   * On an order as read: the lot whose news this event is. Put there by the
+   * repository when it lays the lot's history over the item's own, and taken
+   * off again before the order is written, so it is never stored.
+   */
+  fromLot?: string;
 }
 
 /**
@@ -1225,6 +1254,19 @@ export interface Lot extends BaseDocument {
   currentStep?: number;
   /** What the tagged supplier and handler may press and see. Absent is the defaults. */
   crew?: LotCrewSettings | null;
+  /**
+   * How many pieces of news the lot has told its buyers.
+   *
+   * The lot is the one record of where a consignment is. Moving it writes
+   * the lot and nothing else - not each of its orders - and every item reads
+   * its lot's news off the lot (`api/src/data/lot-view.ts`). Each event worth
+   * an item's timeline takes the next number, so an order needs to remember
+   * only the last number it has seen. A counter rather than a time, because
+   * a join and a move can land in the same millisecond.
+   */
+  seq?: number;
+  /** `seq` when the lot last changed position. Items placed on their own since then keep their place. */
+  movedSeq?: number;
 }
 
 /**
@@ -1390,13 +1432,17 @@ export interface Order extends BaseDocument {
    */
   protection?: OrderProtection | null;
   /**
-   * The order's own fulfilment record, not a view onto the lot's.
+   * The order's own fulfilment record, with its lot's news laid over it.
    *
-   * Advancing a lot appends an event to every order in it. Keeping the history
-   * here rather than deriving it means re-tagging an item into a later
-   * shipment appends "moved to a later consignment" instead of rewinding the
-   * buyer's timeline to the start - and lets one item diverge when it is held
-   * at customs while the rest of the crate clears.
+   * Stored, it holds only what happened to this item: bought, paid, ticked
+   * in at the warehouse, dispatched, delivered, moved on its own. Moving a
+   * lot writes the lot alone, and the repository reads every order with the
+   * lot's news since `lotSeenSeq` added in (see `api/src/data/lot-view.ts`),
+   * so a handler reads the same timeline the buyer does. Re-tagging an item
+   * into a later shipment still appends "moved to a later consignment"
+   * rather than rewinding the buyer's timeline - what it was told on the old
+   * lot goes with it - and one item can still diverge when it is held at
+   * customs while the rest of the crate clears.
    */
   stage: FulfilmentStage;
   stageHistory: StageEvent[];
@@ -1410,6 +1456,25 @@ export interface Order extends BaseDocument {
    * then on this item's timeline is its own.
    */
   currentStep?: number;
+  /**
+   * The last of its lot's news (`Lot.seq`) this order already holds in its
+   * own `stageHistory`. Later news is read off the lot. Absent on orders
+   * written before lot news stopped being copied, which hold every copy up
+   * to then, so it reads as zero.
+   */
+  lotSeenSeq?: number;
+  /**
+   * The lot's `seq` when this item's position was last set on its own - it
+   * joined, or the seller moved this one item. The item follows its lot
+   * again once the lot moves after that (`Lot.movedSeq`).
+   */
+  positionSeq?: number;
+  /**
+   * On an order as read, never stored: what the order holds itself and what
+   * it was shown as once its lot's news was laid over it, so a write can
+   * tell what the caller changed. See `api/src/data/lot-view.ts`.
+   */
+  lotView?: OrderLotView;
   /**
    * Who brought this buyer in, when they arrived through a share link.
    *

@@ -74,7 +74,7 @@ const createLot = (request, ctx) => {
 };
 const {
   storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, storefrontPhotoRoute: storefrontPhoto, regionGuessRoute: regionGuess, dashboardRoute: dashboard,
-  myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales,
+  myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales, sellTodoRoute: sellTodo,
 } = await import(new URL('seller-routes.js', fns));
 const {
   socialFeedRoute: socialFeed, channelsRoute: channels, channelThreadRoute: channelThread,
@@ -89,7 +89,7 @@ const {
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
   setTrackingRoute: setTracking, orderTrackingRoute: orderTracking,
-  lotsBoardRoute: lotsBoard, lotBoardRoute: lotBoard, setCheckpointRoute: setCheckpoint,
+  lotsBoardRoute: lotsBoard, lotBoardRoute: lotBoard, setCheckpointRoute: setCheckpoint, setCheckpointsRoute: setCheckpoints,
   paymentReminderRoute: paymentReminder,
 } = await import(new URL('fulfilment-routes.js', fns));
 const {
@@ -2707,6 +2707,50 @@ await check('it shows up in the shop\'s payments queue', async () => {
 await check('a stranger cannot read a shop\'s payments queue', async () => {
   const refused = await sales(req({ headers: directAuth, params: {}, query: { store: 'usr_demo' } }), ctx);
   assert.equal(refused.status, 403);
+});
+
+await check('after a press the queue answers for that order alone, not the whole book', async () => {
+  const scoped = (await sales(req({ headers: auth, query: { ids: directOrder.id } }), ctx)).jsonBody;
+  assert.equal(scoped.partial, true);
+  // A direct sale rides no lot, so it is the only row.
+  assert.deepEqual(scoped.orders.map((row) => row.id), [directOrder.id]);
+  assert.ok(scoped.waiting.some((row) => row.id === directOrder.id), 'and says which pile it is in');
+  const full = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  assert.deepEqual(scoped.orders[0], full.orders.find((row) => row.id === directOrder.id), 'the same card either way');
+  // Somebody else's order is not answered for.
+  const foreign = (await sales(req({ headers: directAuth, query: { ids: directOrder.id } }), ctx)).jsonBody;
+  assert.deepEqual(foreign.orders, []);
+});
+
+await check('the Sell tab counts on the server what it used to count from the whole book', async () => {
+  const counts = (await sellTodo(req({ headers: auth }), ctx)).jsonBody;
+  const full = (await sales(req({ headers: auth, query: { history: 'all' } }), ctx)).jsonBody;
+  const finished = (row) => ['rejected', 'cancelled', 'cancelled_reversed', 'delivered'].includes(row.status) || Boolean(row.deliveredAt);
+  const active = full.orders.filter((row) => !finished(row));
+  const waiting = new Set([...full.waiting, ...full.placed].map((row) => row.id));
+  assert.equal(counts.answer, active.filter((row) => waiting.has(row.id)).length);
+  assert.equal(counts.noLot, active.filter((row) => row.awaitingLot).length);
+  assert.ok(counts.answer > 0, 'with something to answer in it');
+  assert.equal(typeof counts.lots, 'number');
+  const refused = await sellTodo(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+await check('finished orders older than ninety days wait behind "Show older"', async () => {
+  const repository = await getRepository();
+  const old = '2025-01-01T00:00:00.000Z';
+  const template = await repository.getOrder(directOrder.id);
+  await repository.updateOrder({
+    ...template, id: 'ord_long_delivered', status: 'delivered', createdAt: old, updatedAt: old, _etag: undefined,
+  });
+  const window = (await sales(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(!window.orders.some((row) => row.id === 'ord_long_delivered'), 'not drawn by default');
+  assert.ok(window.olderCount >= 1, 'but counted');
+  assert.ok(window.orders.some((row) => row.id === directOrder.id), 'an open order is always there');
+  const everything = (await sales(req({ headers: auth, query: { history: 'all' } }), ctx)).jsonBody;
+  assert.ok(everything.orders.some((row) => row.id === 'ord_long_delivered'), 'and there when asked for');
+  assert.equal(everything.olderCount, 0);
+  await repository.deleteOrder(await repository.getOrder('ord_long_delivered'));
 });
 
 await check('denying it needs a reason the buyer can act on', async () => {
@@ -5745,10 +5789,22 @@ await check('one click moves the lot, and every item in it', async () => {
   const last = tracking.order.stageHistory[tracking.order.stageHistory.length - 1];
   assert.equal(last.step, 'Flown', 'in the words the seller wrote');
   assert.equal(last.note, 'On the Thursday flight.');
+  // Read off the lot, not copied onto the order: the move was one write.
+  assert.equal(last.fromLot, routedLot.id, 'the move is the lot\'s news, read off the lot');
+  assert.equal(tracking.order.stageHistory.filter((event) => event.note === 'On the Thursday flight.').length, 1,
+    'and told once, not once from the lot and once from a copy');
 
   // And they were told, which is the notification the product is really for.
   const told = await noticesFor(earlyBuyer.id);
   assert.ok(told.some((row) => row.kind === 'lot_moved' && row.title.includes('Flown')));
+  // In the bell at once; the phone push is the clock's, off the seller's
+  // request, since the move reached more than one buyer.
+  const notice = told.find((row) => row.kind === 'lot_moved' && row.title.includes('Flown'));
+  assert.equal(notice.pushedAt, undefined, 'not pushed inside the seller\'s request');
+  assert.ok(notice.notBefore, 'but queued for the clock that sends held notices');
+  const due = await (await getRepository()).listHeldNotificationsDue(
+    new Date(Date.now() - 60_000).toISOString(), new Date().toISOString());
+  assert.ok(due.some((row) => row.id === notice.id), 'which finds it due now');
 });
 
 await check('a seller can say something without moving the lot', async () => {
@@ -11300,5 +11356,36 @@ console.log('\nshop tags');
     assert.equal((await tagInsights(req({ headers: auth, query: { store: 'usr_nobody' } }), ctx)).status, 403);
   });
 }
+
+await check('one request ticks a whole parcel, and says which did not land', async () => {
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Batch tick lot' } }), ctx)).jsonBody.lot;
+  const buyer = await newBuyer('Batch Buyer');
+  const placed = [];
+  for (const title of ['Batch one', 'Batch two']) {
+    const listingId = await waitingItem(title);
+    placed.push((await createOrder(req({ headers: buyer.headers, body: { listingId } }), ctx)).jsonBody.order.id);
+  }
+  const added = await addItems(req({ headers: auth, params: { id: lot.id }, body: { orderIds: placed } }), ctx);
+  assert.equal(added.jsonBody.added, 2, 'filed together in one request');
+
+  const ticked = await setCheckpoints(req({
+    headers: auth, body: { orderIds: [...placed, 'ord_no_such_order'], checkpoint: 'china_received', on: true },
+  }), ctx);
+  assert.equal(ticked.status, 200, JSON.stringify(ticked.jsonBody));
+  assert.equal(ticked.jsonBody.done, 2);
+  assert.equal(ticked.jsonBody.failed, 1, 'one refused does not stop the rest');
+  const refused = ticked.jsonBody.results.find((entry) => !entry.ok);
+  assert.equal(refused.id, 'ord_no_such_order');
+  assert.equal(refused.error, 'not_found');
+  for (const id of placed) {
+    assert.ok((await (await getRepository()).getOrder(id)).checkpoints.china_received, 'each one really ticked');
+  }
+  // The buyer cannot tick the seller's warehouse.
+  const theirs = await setCheckpoints(req({
+    headers: buyer.headers, body: { orderIds: placed, checkpoint: 'china_received', on: false },
+  }), ctx);
+  assert.equal(theirs.jsonBody.done, 0);
+  assert.equal((await setCheckpoints(req({ body: { orderIds: placed, checkpoint: 'packed' } }), ctx)).status, 401);
+});
 
 console.log(`\n${passed} checks passed`);

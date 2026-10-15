@@ -51,6 +51,15 @@ container, which fits the Cosmos free tier exactly.
 
   The unique key on `reviews` *is* meaningful: it is scoped to `/subjectId`, and
   every review of one order in one direction shares that subject.
+- **Lot writes are checked like order writes.** `updateLot` is conditional on
+  the etag it was read with, so the shop and its forwarder moving a lot at
+  once, or a note landing while it moves, merge or are refused - never one
+  quietly losing the other's event.
+- **Lookups by id are point reads once seen.** `getOrder` and `getListing` know
+  only an id, and orders are partitioned by lot, so each was a query across
+  every partition. The repository remembers which partition each id was last
+  read or written in (bounded) and reads it directly, falling back to the
+  query when it has not seen it or it has moved.
 - **`filledCount` on `Lot` is denormalised** from the orders in that lot, so
   listing lots does not require counting orders per lot. It must be updated in
   the same operation that creates or cancels an order.
@@ -111,6 +120,35 @@ Progress is computed from the index, so the seller's working view and the
 buyer's tracking timeline render from one array. Every transition appends a
 `StageEvent` with who recorded it and when, which is what buyer status pings and
 the time-in-stage analytics will read.
+
+### The lot holds the step
+
+The lot is the one record of where a consignment is. Moving a lot, noting
+something on it or giving it a new route writes the lot and nothing else, so a
+crate of forty items is one write rather than forty-one - and there is no
+half-moved lot when one of those writes fails.
+
+Each order stores only what is its own: paid, ticked in at the warehouse,
+dispatched, delivered, a step this one item took. The repository reads every
+order with its lot applied and writes back only what the caller changed
+(`api/src/data/lot-view.ts`, wrapped around whichever store loads):
+
+- **News.** Lot events buyers should read carry `seq`, the lot's running count
+  (`Lot.seq`). An order remembers the last one it already holds
+  (`Order.lotSeenSeq`) and reads the rest off the lot. Events the lot keeps to
+  itself - closing, reopening - carry no `seq` and reach no timeline. A counter
+  rather than a time, because a join and a move can land in the same
+  millisecond.
+- **Position.** An item follows its lot once the lot has moved
+  (`Lot.movedSeq`) since the item was last placed on its own
+  (`Order.positionSeq` - it joined, or the seller moved it alone).
+- **Reach.** An item called off or refunded hears nothing more; one delivered
+  on its own hears notes but not moves; everything else travels with the lot.
+- **Leaving.** An item that joins another lot, leaves one, or stops keeps
+  what it was told as its own history, since it will not read that lot again.
+
+Orders written before this hold copies of every lot event and no counters, so
+they read exactly as they did, and the next move of their lot reaches them.
 
 `LotStatus` (`draft`/`open`/`filled`/`closed`/`cancelled`) is deliberately
 separate: it describes the group-buy's commercial lifecycle, which moves

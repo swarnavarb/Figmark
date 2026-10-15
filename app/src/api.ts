@@ -890,6 +890,39 @@ export interface SalesResponse {
   placed: SaleRow[];
   /** Every purchase, newest first: the shop's whole book, cancelled and rejected ones included. */
   orders: SaleRow[];
+  /** Finished orders older than the window, left out until asked for with `history: 'all'`. */
+  olderCount?: number;
+  /** An answer for a few orders only: its rows replace their own, and nothing else changed. */
+  partial?: boolean;
+}
+
+/**
+ * A partial sales answer laid over the book already on screen.
+ *
+ * Its rows replace their own where they are and join the top where they are
+ * new; an order asked for and not returned has gone. Each answer pile
+ * (`waiting`, `placed`) keeps its place for orders still in it. The money
+ * lists are left as they were: a partial answer only covers a press.
+ */
+export function mergeSales(current: SalesResponse, update: SalesResponse, asked: readonly string[]): SalesResponse {
+  const fresh = new Map(update.orders.map((row) => [row.id, row]));
+  const gone = new Set(asked.filter((id) => !fresh.has(id)));
+  const touched = new Set([...fresh.keys(), ...gone]);
+  const pile = (rows: SaleRow[], next: SaleRow[]) => {
+    const still = new Map(next.map((row) => [row.id, row]));
+    const kept = rows.filter((row) => !touched.has(row.id) || still.has(row.id)).map((row) => still.get(row.id) ?? row);
+    return [...kept, ...next.filter((row) => !rows.some((existing) => existing.id === row.id))];
+  };
+  const known = new Set(current.orders.map((row) => row.id));
+  return {
+    ...current,
+    waiting: pile(current.waiting, update.waiting),
+    placed: pile(current.placed, update.placed),
+    orders: [
+      ...update.orders.filter((row) => !known.has(row.id)),
+      ...current.orders.filter((row) => !gone.has(row.id)).map((row) => fresh.get(row.id) ?? row),
+    ],
+  };
 }
 
 /* ── Power selling ─────────────────────────────────────────────────────── */
@@ -2554,8 +2587,23 @@ export const api = {
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/claim-payment`, body),
   settleClaim: (id: string, body: { accept: boolean; reason?: string }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/settle-claim`, body),
-  sales: (storeId?: string) =>
-    request<SalesResponse>(`/me/sales${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  /**
+   * The shop's sales book. `ids` asks for just those orders and the rest of
+   * their lots (a `partial` answer, merged with `mergeSales`); `history: 'all'`
+   * includes finished orders older than the window.
+   */
+  sales: (storeId?: string, options: { ids?: readonly string[]; history?: 'all' } = {}) => {
+    const query = new URLSearchParams();
+    if (storeId) query.set('store', storeId);
+    if (options.ids?.length) query.set('ids', options.ids.join(','));
+    if (options.history) query.set('history', options.history);
+    const search = query.toString();
+    return request<SalesResponse>(`/me/sales${search ? `?${search}` : ''}`);
+  },
+  /** The Sell tab's three counts; null where this person may not see one. */
+  sellTodo: (storeId?: string) =>
+    request<{ answer: number | null; noLot: number | null; lots: number | null }>(
+      `/me/sell/todo${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
 
   /** The seller cannot serve an order. Puts the stock and the place back. */
   rejectOrder: (id: string, reason: string) =>
@@ -2654,6 +2702,14 @@ export const api = {
   /** A message from the shop: these orders are ready to go out once the balance is paid. */
   paymentReminder: (orderIds: string[]) =>
     post<{ sent: true; via: 'message' | 'bell'; thread: string | null }>('/orders/payment-reminder', { orderIds }),
+  /** The same tick on several orders in one request; each one refused is listed with why. */
+  setCheckpoints: (orderIds: readonly string[], checkpoint: OrderCheckpoint | string, on: boolean) =>
+    post<{
+      results: ({ id: string; ok: true; order: { id: string; checkpoints: BoardOrder['checkpoints']; status: string } }
+        | { id: string; ok: false; error: string; message: string })[];
+      done: number;
+      failed: number;
+    }>('/orders/checkpoints', { orderIds, checkpoint, on }),
   setCheckpoint: (orderId: string, checkpoint: OrderCheckpoint | `custom:${string}` | string, on: boolean,
     /** The courier and AWB with a dispatch; `label`, where an item with no lot was received. */
     shipment?: { courier?: string; awb?: string; label?: string }, undoOf?: string) =>

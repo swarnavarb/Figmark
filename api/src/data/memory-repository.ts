@@ -13,8 +13,8 @@ import type {
 import { handleKey } from '../../../shared/handles.js';
 import { STORE_KINDS, storeOf, type StoreKind } from '../../../shared/service-stores.js';
 import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
-import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
-import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
+import type { BackendStatus, CatalogQuery, OrderFigures, Repository } from './repository.js';
+import { BUMP_COOLDOWN_MS, ORDER_FIGURE_FIELDS, sessionDigest } from './repository.js';
 import { photoNamesIn } from '../storage/unused.js';
 import {
   DEMO_EMAIL,
@@ -1014,6 +1014,19 @@ export class MemoryRepository implements Repository {
   async listStoresManagedBy(userId: string): Promise<User[]> {
     return [...this.users.values()].filter((user) =>
       (user.sellerProfile?.managers ?? []).some((entry) => entry.userId === userId));
+  }
+
+  async listOrderFiguresForSeller(sellerId: string): Promise<OrderFigures[]> {
+    return (await this.listOrdersForSeller(sellerId)).map((order) => {
+      const figures: Record<string, unknown> = {};
+      for (const field of ORDER_FIGURE_FIELDS) if (order[field] !== undefined) figures[field] = order[field];
+      return figures as OrderFigures;
+    });
+  }
+
+  async listSellerOrdersIn(lotId: string, sellerId: string): Promise<Order[]> {
+    return [...this.orders.values()].filter((order) =>
+      order.lotId === lotId && order.sellerId === sellerId && isPlaced(order));
   }
 
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {

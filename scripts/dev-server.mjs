@@ -39,11 +39,11 @@ const { ogRoute, ogCardRoute, linkPreviewRoute } = await import(new URL('og-rout
 const {
   myLotsRoute, createLotRoute, lotContentsRoute, assignToLotRoute,
   advanceStageRoute, setTrackingRoute, updateLotDetailsRoute, orderTrackingRoute,
-  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, paymentReminderRoute,
+  lotsBoardRoute, lotBoardRoute, setCheckpointRoute, setCheckpointsRoute, paymentReminderRoute,
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute } =
+const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute, sellTodoRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
@@ -187,6 +187,7 @@ const routes = [
   ['GET', '/api/me/lots', myLotsRoute],
   ['GET', '/api/lots/:id/board', lotBoardRoute],
   ['POST', '/api/orders/payment-reminder', paymentReminderRoute],
+  ['POST', '/api/orders/checkpoints', setCheckpointsRoute],
   ['POST', '/api/orders/:id/checkpoint', setCheckpointRoute],
   ['POST', '/api/orders/:id/photos', addOrderPhotoRoute],
   ['POST', '/api/orders/:id/photos/:photoId', updateOrderPhotoRoute],
@@ -204,6 +205,7 @@ const routes = [
   ['GET', '/api/me/region-guess', regionGuessRoute],
   ['GET', '/api/me/dashboard', dashboardRoute],
   ['GET', '/api/me/sales', salesRoute],
+  ['GET', '/api/me/sell/todo', sellTodoRoute],
   ['GET', '/api/me/stores', myStoresRoute],
   ['POST', '/api/me/storefront/managers', updateManagersRoute],
   ['GET', '/api/social/feed', socialFeedRoute],

@@ -72,6 +72,14 @@ export interface CatalogQuery {
  * Cosmos is not configured. Handlers depend on this interface so the app is
  * runnable and demonstrable with no cloud resources attached.
  */
+/** What `listOrderFiguresForSeller` reads of each order. */
+export const ORDER_FIGURE_FIELDS = [
+  'id', 'lotId', 'sellerId', 'buyerId', 'listingId', 'status', 'paymentStatus', 'hold', 'completedAt',
+  'protection', 'credits', 'accepted', 'paymentClaim', 'reversal', 'bookingOnly', 'payments', 'detailsCheck',
+  'placedAt', 'receivedAt', 'createdAt', 'updatedAt', 'quantity', 'unitPriceMinor', 'currency', 'checkpoints',
+] as const;
+export type OrderFigures = Pick<Order, (typeof ORDER_FIGURE_FIELDS)[number]>;
+
 export interface Repository {
   readonly backend: BackendKind;
 
@@ -443,6 +451,18 @@ export interface Repository {
 
   /** Every order a seller has taken, for the tracking and analytics views. */
   listOrdersForSeller(sellerId: string): Promise<Order[]>;
+  /**
+   * The same orders, as only the fields totals and to-do counts read - none
+   * of the timeline, photos or shipment that make an order heavy. For screens
+   * that count the book rather than draw it.
+   */
+  listOrderFiguresForSeller(sellerId: string): Promise<OrderFigures[]>;
+  /**
+   * One shop's placed orders filed under one lot id - a single partition. For
+   * the sentinels (direct sales, awaiting a lot), which every shop shares, so
+   * reading the whole partition would read everybody's.
+   */
+  listSellerOrdersIn(lotId: string, sellerId: string): Promise<Order[]>;
   /** Every order carrying a commission with this artist, newest first. */
   listOrdersCommissionedFrom(artistId: string): Promise<Order[]>;
 

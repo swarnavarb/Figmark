@@ -42,6 +42,7 @@ import type { SavedCalc } from '@shared/profit';
 import {
   ApiRequestError,
   api,
+  mergeSales,
   type DashboardResponse,
   type InsightsResponse,
   type PartyRef,
@@ -352,22 +353,19 @@ function SellHome({ store, canList, onGo }: {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      api.sales(store.ownerId).catch(() => null),
-      seesLots ? api.myLots(store.isOwner ? undefined : store.ownerId).catch(() => null) : Promise.resolve(null),
-    ]).then(([sales, lots]) => {
+    /* Three numbers, counted on the server: this used to fetch the whole
+       sales book and every lot with its orders to count them here. */
+    void api.sellTodo(store.ownerId).catch(() => null).then((counts) => {
       // Nothing to count yet - an unverified shop is refused both - says nothing rather than zeros.
-      if (cancelled || (!sales && !lots)) return;
-      const active = sales?.orders.filter((row) => stateOf(row) === 'active') ?? [];
-      const waiting = new Set([...(sales?.waiting ?? []), ...(sales?.placed ?? [])].map((row) => row.id));
+      if (cancelled || !counts || (counts.answer === null && counts.lots === null)) return;
       setTodo({
-        answer: active.filter((row) => waiting.has(row.id)).length,
-        noLot: active.filter((row) => row.awaitingLot).length,
-        lots: lots?.lots.filter((entry) => !lotIsDone(entry.lot)).length ?? 0,
+        answer: counts.answer ?? 0,
+        noLot: counts.noLot ?? 0,
+        lots: seesLots ? counts.lots ?? 0 : 0,
       });
     });
     return () => { cancelled = true; };
-  }, [store.ownerId, store.isOwner, seesLots]);
+  }, [store.ownerId, seesLots]);
 
   const tiles: { id: string; count: number; label: string; hot: boolean; go: () => void }[] = todo ? [
     { id: 'answer', count: todo.answer, label: todo.answer === 1 ? 'order to answer' : 'orders to answer',
@@ -1292,18 +1290,33 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     writeCustomersOpen(open);
   };
 
+  /* Finished orders from the last ninety days, until the seller asks for the rest. */
+  const [allHistory, setAllHistory] = useState(false);
   const load = useCallback(async () => {
     setError(null);
     try {
-      setData(await api.sales(store.ownerId));
+      setData(await api.sales(store.ownerId, allHistory ? { history: 'all' } : {}));
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your orders.');
     }
-  }, [store.ownerId]);
+  }, [store.ownerId, allHistory]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * After a press: those orders and the rest of their lots, laid over the
+   * book on screen - not the shop's whole book read again for one tick.
+   */
+  const refreshRows = useCallback(async (ids: string[]) => {
+    try {
+      const update = await api.sales(store.ownerId, { ids });
+      setData((current) => (current ? mergeSales(current, update, ids) : update));
+    } catch {
+      await load();
+    }
+  }, [store.ownerId, load]);
 
   /* Coming back from an order: put it in the middle of the screen and let it
      glow for a moment, then forget the request so a reload does not repeat it. */
@@ -1333,8 +1346,8 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   /** The order whose warehouse button was pressed with no lot to say what that means. */
   const [receiving, setReceiving] = useState<{ row: SaleRow; button: CardButton } | null>(null);
 
-  async function refresh() {
-    await load();
+  async function refresh(ids: string[]) {
+    await refreshRows(ids);
     onChanged?.();
   }
 
@@ -1355,10 +1368,10 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           label: `${row.itemName}: ${button.label}${on ? '' : ' (undone)'}`,
           until: undo.until,
           undo: async () => { await api.setCheckpoint(row.id, button.checkpoint, !on, undefined, undo.id); },
-          onUndone: () => void refresh(),
+          onUndone: () => void refresh([row.id]),
         });
       }
-      await refresh();
+      await refresh([row.id]);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {
@@ -1373,8 +1386,12 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     setBusy(todo[0]!.id);
     setError(null);
     try {
-      for (const row of todo) await api.setCheckpoint(row.id, 'ready_to_dispatch', on);
-      await refresh();
+      // The whole parcel in one request; any one refused is said, not swallowed.
+      const result = await api.setCheckpoints(todo.map((row) => row.id), 'ready_to_dispatch', on);
+      await refresh(todo.map((row) => row.id));
+      if (result.failed > 0) {
+        setError(result.results.find((entry) => !entry.ok)?.message ?? `${result.failed} could not be marked.`);
+      }
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
       await load();
@@ -1583,6 +1600,13 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
         </div>
       )}
 
+      {statusFilter !== 'active' && !allHistory && (data.olderCount ?? 0) > 0 && (
+        <button type="button" className="btn btn--quiet btn--sm" onClick={() => setAllHistory(true)}>
+          {/* The count is the shop's, so a lot's own list does not quote it. */}
+          {lotId ? 'Show older orders' : `Show ${data.olderCount} older ${data.olderCount === 1 ? 'order' : 'orders'}`}
+        </button>
+      )}
+
       {rejecting && (
         <RejectOrder
           row={rejecting}
@@ -1619,7 +1643,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           row={filing}
           store={store}
           onClose={() => setFiling(null)}
-          onDone={(said) => { setFiling(null); setNotice(said); void refresh(); }}
+          onDone={(said) => { const id = filing.id; setFiling(null); setNotice(said); void refresh([id]); }}
         />
       )}
     </div>
@@ -3784,15 +3808,10 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
     try {
       const sales = await api.sales(store.ownerId);
       const waiting = sales.orders.filter((row) => row.awaitingLot && stateOf(row) === 'active');
-      let filed = 0;
-      for (const row of waiting) {
-        try {
-          await api.assignOrderToLot(row.id, { lotId: lot.id });
-          filed += 1;
-        } catch {
-          /* Left waiting; said below. */
-        }
-      }
+      // One request for all of them, not one per order.
+      const filed = waiting.length > 0
+        ? (await api.addItemsToLot(lot.id, waiting.map((row) => row.id))).added
+        : 0;
       const left = waiting.length - filed;
       setNotice(`${filed === 1 ? '1 order' : `${filed} orders`} filed into ${lot.name}.${
         left > 0 ? ` ${left === 1 ? '1 order' : `${left} orders`} could not go in and ${left === 1 ? 'is' : 'are'} still waiting.` : ''}`);

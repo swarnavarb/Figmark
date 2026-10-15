@@ -14,7 +14,7 @@ import {
 import { COUNTRIES } from '../../../shared/countries.js';
 import { UNDO_EXPIRED, canUndo, undoTag, withoutUndo } from './undo.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
-import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
+import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped } from '../../../shared/orders.js';
 import {
   AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, sourcingOf, stagesFor,
 } from '../../../shared/fulfilment.js';
@@ -23,6 +23,7 @@ import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { bookingFor, forwarderWorks } from '../service-access.js';
 import { getRepository } from '../data/index.js';
+import { mapLimit, tellLot } from '../data/lot-view.js';
 import {
   afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, syncLotDelivery, undeliver,
 } from '../delivery.js';
@@ -655,31 +656,21 @@ async function advanceStage(request: HttpRequest, _context: InvocationContext) {
     recordedBy: userId,
   };
 
+  // The lot alone: every order still riding in it reads the move off the lot
+  // (data/lot-view.ts). Called-off orders stay as they are, and an item
+  // already delivered on its own has left the crate - the crate's later news
+  // is not about it.
   const repository = await getRepository();
   const updated = await repository.updateLot({
     ...lot,
     stage: target,
     currentStep: step,
-    stageHistory: [...lot.stageHistory, event],
+    ...tellLot(lot, event, { moved: true }),
     updatedAt: now,
   });
 
-  // Fan the event out to every order still riding in this lot. Called-off
-  // orders stay as they are, and an item already delivered on its own has
-  // left the crate - the crate's later news is not about it.
   const orders = (await repository.listOrdersForLot(lot.id))
     .filter((order) => !isStopped(order.status) && order.status !== 'delivered');
-  await Promise.all(
-    orders.map((order) =>
-      repository.updateOrder({
-        ...order,
-        stage: target,
-        stageHistory: [...order.stageHistory, event],
-        status: travellingStatus(order.status),
-        updatedAt: now,
-      }),
-    ),
-  );
 
   // Every buyer in the lot, in one go. This is the notification the whole
   // product is really for: twenty people paid for one shipment weeks ago and
@@ -1176,6 +1167,9 @@ async function lotBoard(request: HttpRequest, _context: InvocationContext) {
  * because the commonest correction on a packing floor is undoing a tick made on
  * the wrong row.
  */
+/** Ticks made as part of a batch, which reads the board once rather than per order. */
+const IN_BATCH = new WeakSet<HttpRequest>();
+
 async function setCheckpoint(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   // Only authenticated here. Who may tick what depends on which side of the
@@ -1325,7 +1319,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       body: shipmentNote!,
     }), { except: order.sellerId });
     const siblings = !inLot(order)
-      ? (await repository.listOrdersForSeller(order.sellerId)).filter((row) => row.lotId === order.lotId)
+      ? await repository.listSellerOrdersIn(order.lotId, order.sellerId)
       : await repository.listOrdersForLot(order.lotId);
     return json(200, {
       order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, status: saved.status },
@@ -1424,17 +1418,64 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   // sale has no lot, and its board is this shop's own direct orders only.
   // Only a delivery change can finish or reopen a lot; any other tick just
   // needs the board's counts.
+  // A batch reads the board once at the end, not once per order.
+  const withTally = !IN_BATCH.has(request);
   const siblings = !inLot(order)
-    ? (await repository.listOrdersForSeller(order.sellerId)).filter((row) => row.lotId === order.lotId)
+    ? withTally ? await repository.listSellerOrdersIn(order.lotId, order.sellerId) : null
     : checkpoint === 'delivered'
       ? await syncLotDelivery(saved, repository)
-      : await repository.listOrdersForLot(order.lotId);
+      : withTally ? await repository.listOrdersForLot(order.lotId) : null;
 
   return json(200, {
     order: { id: saved.id, checkpoints: saved.checkpoints ?? {}, status: saved.status },
-    tally: tally(siblings),
+    tally: siblings ? tally(siblings) : null,
     ...undoReply(key),
   });
+}
+
+/**
+ * POST /api/orders/checkpoints - the same tick on several orders at once.
+ *
+ * `{ orderIds, checkpoint, on }`: a customer's whole parcel marked ready, or
+ * every item the warehouse never ticked in. It used to be one request per
+ * order from the phone, one after another. Each order goes through exactly
+ * the checks a single tick does, and one refused does not stop the rest:
+ * the answer says which landed and which did not, and why.
+ */
+async function setCheckpoints(request: HttpRequest, context: InvocationContext) {
+  const auth = await getAuthService();
+  await auth.requireAuth(request);
+  let body: { orderIds?: unknown; checkpoint?: string; on?: boolean; label?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const ids = Array.isArray(body.orderIds)
+    ? [...new Set(body.orderIds.filter((id): id is string => typeof id === 'string' && id.length > 0))]
+    : [];
+  if (ids.length === 0) return error(400, 'invalid_request', 'Pick at least one order.');
+  if (ids.length > 100) return error(400, 'too_many', 'At most a hundred at a time.');
+
+  const one = { checkpoint: body.checkpoint, on: body.on, label: body.label };
+  /* A delivery can finish its lot, so deliveries go one at a time: two
+     closing the same lot at once would race on the lot itself. */
+  const results = await mapLimit(ids, body.checkpoint === 'delivered' ? 1 : 4, async (id) => {
+    const tick = {
+      headers: request.headers,
+      query: new URLSearchParams(),
+      params: { id },
+      json: async () => one,
+    } as unknown as HttpRequest;
+    IN_BATCH.add(tick);
+    const answer = await setCheckpointRoute(tick, context);
+    const reply = answer.jsonBody as { order?: { id: string; checkpoints: Record<string, string | null>; status: string }; message?: string; error?: string };
+    return answer.status && answer.status >= 300
+      ? { id, ok: false as const, error: reply.error ?? 'refused', message: reply.message ?? 'That did not save.' }
+      : { id, ok: true as const, order: reply.order };
+  });
+  const failed = results.filter((result) => !result.ok).length;
+  return json(200, { results, done: results.length - failed, failed });
 }
 
 /**
@@ -1510,6 +1551,7 @@ async function paymentReminder(request: HttpRequest, _context: InvocationContext
 export const lotsBoardRoute = handler(lotsBoard);
 export const lotBoardRoute = handler(lotBoard);
 export const setCheckpointRoute = handler(setCheckpoint);
+export const setCheckpointsRoute = handler(setCheckpoints);
 export const paymentReminderRoute = handler(paymentReminder);
 export const myLotsRoute = handler(myLots);
 export const createLotRoute = handler(createLot);
@@ -1533,5 +1575,6 @@ app.http('lot-details', { ...anon, methods: ['POST'], route: 'lots/{id}/details'
 app.http('lots-board', { ...anon, methods: ['GET'], route: 'me/lots/board', handler: lotsBoardRoute });
 app.http('lot-board', { ...anon, methods: ['GET'], route: 'lots/{id}/board', handler: lotBoardRoute });
 app.http('order-checkpoint', { ...anon, methods: ['POST'], route: 'orders/{id}/checkpoint', handler: setCheckpointRoute });
+app.http('order-checkpoints', { ...anon, methods: ['POST'], route: 'orders/checkpoints', handler: setCheckpointsRoute });
 app.http('order-payment-reminder', { ...anon, methods: ['POST'], route: 'orders/payment-reminder', handler: paymentReminderRoute });
 app.http('order-tracking', { ...anon, methods: ['GET'], route: 'orders/{id}', handler: orderTrackingRoute });

@@ -1,11 +1,11 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.js';
-import type { BuyerReversalDetails, SellerProfile } from '../../../shared/models.js';
-import { awaitingLot, inLot, isDirect } from '../../../shared/fulfilment.js';
+import type { BuyerReversalDetails, Listing, Order, SellerProfile } from '../../../shared/models.js';
+import { awaitingLot, inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
 import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
-import { actionsFor, disputeSubjects, isCancelledLike } from '../../../shared/orders.js';
+import { actionsFor, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
@@ -13,6 +13,9 @@ import { personRef } from '../../../shared/parties.js';
 import { hasArrived, readyGated, supplierIdOf } from '../../../shared/services.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { mapLimit } from '../data/lot-view.js';
+
+type Repo = Awaited<ReturnType<typeof getRepository>>;
 import { error, handler, json } from './http.js';
 import { getPhotoStore, ownPhotoName } from '../storage/index.js';
 import { tooFast } from '../rate-limit.js';
@@ -282,8 +285,9 @@ async function dashboard(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
+  // The figures only: totals need no timeline, photos or shipment.
   const [allOrders, listings] = await Promise.all([
-    repository.listOrdersForSeller(user.id),
+    repository.listOrderFiguresForSeller(user.id),
     repository.listListings({ sellerId: user.id }),
   ]);
 
@@ -371,17 +375,27 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     }
   }
 
-  const orders = await repository.listOrdersForSeller(storeId);
+  /* `?ids=` answers for those orders alone, and everything riding in the
+     same lots - one press changes the buttons of the rest of its crate (the
+     warehouse check-in gate counts them), but nothing outside it. That is
+     what a card reads after a press, instead of the shop's whole book. */
+  const ids = [...new Set((request.query.get('ids') ?? '').split(',').map((id) => id.trim()).filter(Boolean))].slice(0, 100);
+  const scoped = ids.length > 0;
+  const orders = scoped ? await scopedOrders(repository, storeId, ids) : await repository.listOrdersForSeller(storeId);
   const lotIds = [...new Set(orders.filter(inLot).map((order) => order.lotId))];
 
   /* The buyers, the lots and the listings behind these orders, read side by
      side and each once: one lookup for every buyer, one per lot rather than
      per row, and one query for the shop's listings - so the "add to a lot"
-     screen can pre-select the route the Quick Fill template set up. */
+     screen can pre-select the route the Quick Fill template set up. A scoped
+     answer reads just the listings its few orders came from. */
   const [people, lotRows, listingRows, routeRows] = await Promise.all([
     repository.listUsersByIds([...new Set(orders.map((order) => order.buyerId))]),
     Promise.all(lotIds.map((id) => repository.getLot(storeId, id))),
-    repository.listListings({ sellerId: storeId, includeHidden: true, limit: 10_000 }),
+    scoped
+      ? mapLimit([...new Set(orders.map((order) => order.listingId))], 8, (id) => repository.getListing(id))
+        .then((rows) => rows.filter((row): row is Listing => row !== null))
+      : repository.listListings({ sellerId: storeId, includeHidden: true, limit: 10_000 }),
     repository.listRoutes(storeId),
   ]);
   const routes = new Map(routeRows.map((route) => [route.id, route]));
@@ -667,6 +681,15 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     .filter((entry) => entry.refundableMinor > 0)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  /* The book: every open order, and the finished ones from the last ninety
+     days unless the seller asks for all of history. A shop two years old drew
+     a card - buttons, lot, route - for every sale it ever made on every visit.
+     The money lists above still read the whole book: they are its record. */
+  const allHistory = scoped || request.query.get('history') === 'all';
+  const since = new Date(Date.now() - BOOK_DAYS * 86_400_000).toISOString();
+  const inBook = (order: (typeof orders)[number]) => allHistory || !isFinished(order) || order.updatedAt >= since;
+  const book = orders.filter(inBook);
+
   return json(200, {
     credits,
     refundHistory,
@@ -677,10 +700,72 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
        need an answer; this is the shop's whole book, which is what the seller
        is actually working from - cancelled and turned-down orders included,
        so there is a record of them. */
-    orders: [...orders]
+    orders: [...book]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(row),
+    /** Finished orders older than the window, left out until asked for. */
+    olderCount: orders.length - book.length,
+    /** True on a `?ids=` answer: these rows replace their own, and nothing else changed. */
+    partial: scoped,
   });
+}
+
+/**
+ * GET /api/me/sell/todo - the Sell tab's three counts.
+ *
+ * Orders to answer, orders waiting for a lot, and lots still moving. The tab
+ * used to fetch the whole sales book (every order drawn as a card, with its
+ * buyers, lots and listings) and every lot with all its orders, to count
+ * three numbers. Now it reads the orders' figures and the lots, and counts.
+ * Each count is null where this person may not see it in this store.
+ */
+async function sellTodo(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const storeId = request.query.get('store') ?? user.id;
+
+  const owner = storeId === user.id ? null : await repository.getUserById(storeId);
+  // The same rights the sales book and the lots screen ask for.
+  const answers = storeId === user.id || Boolean(owner && can(owner, user.id, 'admin'));
+  const mayLots = await auth.requireCapability(request, ['sell']).then(() => true, () => false)
+    && (storeId === user.id || Boolean(owner?.sellerProfile && can(owner, user.id, 'lots')));
+  if (!answers && !mayLots) return error(403, 'forbidden', 'You cannot see that store’s work.');
+
+  const [figures, lots] = await Promise.all([
+    answers ? repository.listOrderFiguresForSeller(storeId) : Promise.resolve(null),
+    mayLots ? repository.listLots({ sellerId: storeId, limit: 10_000 }) : Promise.resolve(null),
+  ]);
+  const active = figures?.filter((order) => !isFinished(order)) ?? null;
+  const waitsOnShop = (order: NonNullable<typeof figures>[number]) =>
+    ((order.paymentStatus === 'claimed' || order.status === 'payment_reversal_pending') && !isCancelledLike(order.status))
+    || actionsFor(order, storeId).includes('accept');
+
+  return json(200, {
+    answer: active ? active.filter(waitsOnShop).length : null,
+    noLot: active ? active.filter((order) => awaitingLot(order)).length : null,
+    lots: lots ? lots.filter((lot) => !lotIsDone(lot)).length : null,
+  });
+}
+
+/** How many days of finished orders the book carries before "Show older". */
+const BOOK_DAYS = 90;
+
+/** Delivered, or called off for good: nothing left for the seller to do on it. */
+function isFinished(order: Pick<Order, 'status' | 'checkpoints'>): boolean {
+  return order.status === 'rejected' || order.status === 'cancelled' || order.status === 'cancelled_reversed'
+    || order.status === 'delivered' || Boolean(order.checkpoints?.delivered);
+}
+
+/** These orders of the shop's, and every other order in the lots they ride in. */
+async function scopedOrders(repository: Repo, storeId: string, ids: readonly string[]): Promise<Order[]> {
+  const picked = (await mapLimit(ids, 8, (id) => repository.getOrder(id)))
+    .filter((order): order is Order => order !== null && order.sellerId === storeId && isPlaced(order));
+  const lots = [...new Set(picked.filter(inLot).map((order) => order.lotId))];
+  const mates = (await mapLimit(lots, 4, (lotId) => repository.listOrdersForLot(lotId))).flat();
+  const byId = new Map<string, Order>();
+  for (const order of [...picked, ...mates]) if (order.sellerId === storeId) byId.set(order.id, order);
+  return [...byId.values()];
 }
 
 /**
@@ -775,6 +860,7 @@ export const storefrontPhotoRoute = handler(uploadStorefrontPhoto);
 export const regionGuessRoute = handler(regionGuess);
 export const dashboardRoute = handler(dashboard);
 export const salesRoute = handler(sales);
+export const sellTodoRoute = handler(sellTodo);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -784,5 +870,6 @@ app.http('me-region-guess', { ...anon, methods: ['GET'], route: 'me/region-guess
 app.http('me-storefront-photo', { ...anon, methods: ['POST'], route: 'me/storefront/photo', handler: storefrontPhotoRoute });
 app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', handler: dashboardRoute });
 app.http('me-sales', { ...anon, methods: ['GET'], route: 'me/sales', handler: salesRoute });
+app.http('me-sell-todo', { ...anon, methods: ['GET'], route: 'me/sell/todo', handler: sellTodoRoute });
 app.http('me-stores', { ...anon, methods: ['GET'], route: 'me/stores', handler: myStoresRoute });
 app.http('me-store-managers', { ...anon, methods: ['POST'], route: 'me/storefront/managers', handler: updateManagersRoute });

@@ -1228,9 +1228,8 @@ export function LotDetail({ lotId, onBack, customers }: {
       /* Every tick is tried, and the lot moves only if all of them landed.
          Firing them all and moving regardless left a lot past the warehouse
          with some of its items never marked as having arrived there. */
-      const ticks = await Promise.allSettled(
-        missing.map((item) => api.setCheckpoint(item.id, 'china_received', true)));
-      const failed = ticks.filter((tick) => tick.status === 'rejected').length;
+      // One request for every missing tick, which says how many landed.
+      const { failed } = await api.setCheckpoints(missing.map((item) => item.id), 'china_received', true);
       if (failed > 0) {
         throw new Error(`${failed} of ${missing.length} items could not be marked received, so the lot has not moved. Try again.`);
       }

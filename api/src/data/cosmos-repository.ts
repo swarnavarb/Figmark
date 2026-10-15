@@ -16,8 +16,9 @@ import { checkUsername, handleKey, suggestUsername } from '../../../shared/handl
 import type { StoreKind } from '../../../shared/service-stores.js';
 import { matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
-import type { BackendStatus, CatalogQuery, Repository } from './repository.js';
+import type { BackendStatus, CatalogQuery, OrderFigures, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
+import { mapLimit } from './lot-view.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
 import { photoNamesIn } from '../storage/unused.js';
 import { AUDIT_KEEP_DAYS, AUDIT_PREFIX } from '../site-log.js';
@@ -1063,7 +1064,35 @@ export class CosmosRepository implements Repository {
   }
 
   /** How orders, listings and users looked when read - see concurrency.ts. */
-  private readonly snapshots = new ReadSnapshots();
+  private readonly snapshots = new ReadSnapshots(1000, (kind, doc) => {
+    const path = CONTAINERS[kind as keyof typeof CONTAINERS]?.partitionKeyPath.slice(1);
+    const value = path ? (doc as unknown as Record<string, unknown>)[path] : undefined;
+    return typeof value === 'string' ? value : undefined;
+  });
+
+  /**
+   * One document by id, from the partition it was last seen in: a point read
+   * where that is known, and otherwise (or where it has moved since) the
+   * query across partitions it always was.
+   */
+  private async readById<T extends { id: string }>(name: 'orders' | 'listings', id: string): Promise<T | null> {
+    const partition = this.snapshots.whereIs(name, id);
+    if (partition !== undefined) {
+      try {
+        const { resource } = await this.container(name).item(id, partition).read<T>();
+        if (resource) return this.snapshots.remember(name, resource);
+      } catch (error) {
+        if (!isNotFound(error)) throw error;
+      }
+    }
+    const { resources } = await this.container(name)
+      .items.query<T>({
+        query: 'SELECT * FROM c WHERE c.id = @id OFFSET 0 LIMIT 1',
+        parameters: [{ name: '@id', value: id }],
+      })
+      .fetchAll();
+    return resources[0] ? this.snapshots.remember(name, resources[0]) : null;
+  }
 
   /**
    * Writes a document read earlier, only if nobody else wrote it in between.
@@ -1074,7 +1103,7 @@ export class CosmosRepository implements Repository {
    * it against and it is written as before.
    */
   private async writeChecked<T extends { id: string; _etag?: string }>(
-    name: 'orders' | 'listings' | 'users' | 'userParts',
+    name: 'orders' | 'listings' | 'users' | 'userParts' | 'lots',
     partition: string,
     doc: T,
   ): Promise<T> {
@@ -1332,7 +1361,7 @@ export class CosmosRepository implements Repository {
     if (fromLotId !== moved.lotId) {
       await this.container('orders').item(moved.id, fromLotId).delete().catch(() => undefined);
     }
-    return (resource as Order | undefined) ?? moved;
+    return this.snapshots.remember('orders', (resource as Order | undefined) ?? moved);
   }
 
   async listHandlers(): Promise<User[]> {
@@ -2152,6 +2181,40 @@ export class CosmosRepository implements Repository {
     return resources.sort((a, b) => (b.artistJob?.updatedAt ?? '').localeCompare(a.artistJob?.updatedAt ?? ''));
   }
 
+  async listOrderFiguresForSeller(sellerId: string): Promise<OrderFigures[]> {
+    // The fields a count reads, not the timelines and photos that make an
+    // order heavy: a dashboard over a long-running shop's book costs a
+    // fraction of reading every order whole.
+    const { resources } = await this.container('orders')
+      .items.query<OrderFigures>({
+        query:
+          'SELECT c.id, c.lotId, c.sellerId, c.buyerId, c.listingId, c.status, c.paymentStatus, c.hold, c.completedAt,'
+          + ' c.protection, c.credits, c.accepted, c.paymentClaim, c.reversal, c.bookingOnly, c.payments, c.detailsCheck,'
+          + ' c.placedAt, c.receivedAt, c.createdAt, c.updatedAt, c.quantity, c.unitPriceMinor, c.currency, c.checkpoints'
+          + ' FROM c WHERE c.sellerId = @sellerId',
+        parameters: [{ name: '@sellerId', value: sellerId }],
+      })
+      .fetchAll();
+    return resources.filter(isPlaced);
+  }
+
+  async listSellerOrdersIn(lotId: string, sellerId: string): Promise<Order[]> {
+    const { resources } = await this.container('orders')
+      .items.query<Order>(
+        {
+          query: 'SELECT * FROM c WHERE c.lotId = @lotId AND c.sellerId = @sellerId',
+          parameters: [
+            { name: '@lotId', value: lotId },
+            { name: '@sellerId', value: sellerId },
+          ],
+        },
+        { partitionKey: lotId },
+      )
+      .fetchAll();
+    this.snapshots.rememberAll('orders', resources);
+    return resources.filter(isPlaced);
+  }
+
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
     // Orders are partitioned by lot, so a seller's book is cross-partition.
     // Bounded by one seller's order count, which is the right size for the
@@ -2394,7 +2457,7 @@ export class CosmosRepository implements Repository {
   async getLot(sellerId: string, lotId: string): Promise<Lot | null> {
     try {
       const { resource } = await this.container('lots').item(lotId, sellerId).read<Lot>();
-      return resource ?? null;
+      return resource ? this.snapshots.remember('lots', resource) : null;
     } catch (error) {
       if (isNotFound(error)) return null;
       throw error;
@@ -2494,18 +2557,12 @@ export class CosmosRepository implements Repository {
   }
 
   async getListing(id: string): Promise<Listing | null> {
-    const { resources } = await this.container('listings')
-      .items.query<Listing>({
-        query: 'SELECT * FROM c WHERE c.id = @id OFFSET 0 LIMIT 1',
-        parameters: [{ name: '@id', value: id }],
-      })
-      .fetchAll();
-    return resources[0] ? this.snapshots.remember('listings', resources[0]) : null;
+    return this.readById<Listing>('listings', id);
   }
 
   async createListing(listing: Listing): Promise<Listing> {
     const { resource } = await this.container('listings').items.create(listing);
-    return resource ?? listing;
+    return this.snapshots.remember('listings', resource ?? listing);
   }
 
   async bumpListing(sellerId: string, listingId: string): Promise<boolean> {
@@ -2530,10 +2587,12 @@ export class CosmosRepository implements Repository {
   }
 
   async updateLot(lot: Lot): Promise<Lot> {
-    const { resource } = await this.container('lots')
-      .item(lot.id, lot.sellerId)
-      .replace({ ...lot, updatedAt: new Date().toISOString() });
-    return (resource as Lot | undefined) ?? lot;
+    // Checked like an order: a lot is the one record of where a consignment
+    // is, so the shop and its forwarder moving it at once, or a note landing
+    // while it moves, must merge or be refused - never one quietly lose the
+    // other's event.
+    lot.updatedAt = new Date().toISOString();
+    return this.writeChecked('lots', lot.sellerId, lot as Lot & { _etag?: string });
   }
 
   async listListingsInLot(lotId: string): Promise<Listing[]> {
@@ -2551,32 +2610,30 @@ export class CosmosRepository implements Repository {
     listingIds: readonly string[],
     lotId: string | null,
   ): Promise<number> {
-    let changed = 0;
-    for (const id of listingIds) {
+    // A few at a time rather than one after another: each is a point read and
+    // a write in the seller's own partition.
+    const done = await mapLimit(listingIds, 6, async (id) => {
       try {
         const { resource } = await this.container('listings').item(id, sellerId).read<Listing>();
-        if (!resource) continue;
+        if (!resource) return false;
         await this.container('listings')
           .item(id, sellerId)
           .replace({ ...resource, lotId, updatedAt: new Date().toISOString() });
-        changed += 1;
+        return true;
       } catch (error) {
         // Not this seller's listing, or already gone: skip rather than fail.
         if (!isNotFound(error)) throw error;
+        return false;
       }
-    }
-    return changed;
+    });
+    return done.filter(Boolean).length;
   }
 
   async getOrder(id: string): Promise<Order | null> {
-    const { resources } = await this.container('orders')
-      .items.query<Order>({
-        query: 'SELECT * FROM c WHERE c.id = @id OFFSET 0 LIMIT 1',
-        parameters: [{ name: '@id', value: id }],
-      })
-      .fetchAll();
-    this.snapshots.rememberAll('orders', resources);
-    return resources[0] ?? null;
+    // Orders are partitioned by lot, so by id alone this was a query across
+    // every partition on every order action. Now a point read once the order
+    // has been seen - in a list, a manifest, or its last write.
+    return this.readById<Order>('orders', id);
   }
 
   async deleteOrder(order: Order): Promise<void> {
@@ -2626,7 +2683,7 @@ export class CosmosRepository implements Repository {
    */
   async createOrder(order: Order): Promise<Order> {
     const { resource } = await this.container('orders').items.create(order);
-    const saved = resource ?? order;
+    const saved = this.snapshots.remember('orders', resource ?? order);
     if (isPlaced(order)) await this.takeStock(order).catch(() => false);
     return saved;
   }
@@ -2901,7 +2958,7 @@ export class CosmosRepository implements Repository {
     const { resources } = await this.container(name)
       .items.query<T>(spec, query.sellerId ? { partitionKey: query.sellerId } : undefined)
       .fetchAll();
-    return resources;
+    return this.snapshots.rememberAll(name, resources);
   }
 }
 
