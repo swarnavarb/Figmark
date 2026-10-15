@@ -1,5 +1,3 @@
-import { pushState } from './push';
-
 /**
  * When to look for news, in one place.
  *
@@ -9,22 +7,22 @@ import { pushState } from './push';
  * tab coming back to the front. Later a live connection can say it instead,
  * and none of the pages need change.
  *
- * - Nothing is asked from a tab nobody can see, but for an open conversation,
- *   which checks every 30 seconds. Coming back looks at once.
+ * - An open conversation on screen checks every 10 seconds.
+ * - Anywhere else on the site the bell checks every 30 seconds, and new
+ *   messages come with it (it carries their notices; see Notifications.tsx).
+ * - Nothing is asked from a tab nobody can see. Coming back looks at once.
  * - A push that lands while the site is open is news there and then.
- * - With push on for this device, the clock is only a safety net.
- * - The bell backs off while nothing happens, and one tab asks for them all.
+ * - One tab asks for them all.
  */
 
 type Look = () => Promise<boolean | void>;
 
-/** The bell's clock: a minute, or ten when pushes bring the news. */
-const BELL_MS = 60_000;
-const BELL_PUSH_MS = 10 * 60_000;
-/** Polls in a row that found nothing stretch the wait: 1, 1, 1, 2, 2, then 5 minutes. */
-const QUIET_STEPS = [1, 1, 1, 2, 2, 5];
-/** However long the quiet, never longer than this between looks (or the push clock, if longer). */
-const QUIET_CAP_MS = 5 * 60_000;
+/** The bell's clock, which is also how soon a new message is heard of off its conversation. */
+const BELL_MS = 30_000;
+/** An open conversation's clock, while it is on screen. */
+const THREAD_MS = 10_000;
+/** An open room's clock, while it is on screen. */
+const ROOM_MS = 12_000;
 /** A look this recent, from this tab or another, makes the next one unnecessary. */
 const RECENT_MS = 3_000;
 
@@ -40,7 +38,6 @@ const fronted = new Set<() => void>();
 const hidden = new Set<() => void>();
 const othersSaw = new Set<() => void>();
 let broadcast: BroadcastChannel | null = null;
-let pushOn = false;
 let started = false;
 
 function start() {
@@ -54,10 +51,7 @@ function start() {
   let wasVisible = visible();
   const onFront = () => {
     const now = visible();
-    if (now && !wasVisible) {
-      void refreshPush();
-      fronted.forEach((front) => front());
-    }
+    if (now && !wasVisible) fronted.forEach((front) => front());
     if (!now && wasVisible) hidden.forEach((hide) => hide());
     wasVisible = now;
   };
@@ -76,15 +70,6 @@ function start() {
     };
   } catch {
     // No BroadcastChannel: each tab simply keeps its own bell.
-  }
-  void refreshPush();
-}
-
-async function refreshPush() {
-  try {
-    pushOn = (await pushState()) === 'on';
-  } catch {
-    pushOn = false;
   }
 }
 
@@ -119,7 +104,7 @@ function markLook(at: number) {
 
 /**
  * Call `look` whenever the bell may have something new. It resolves true
- * when it found news, which resets the back-off and tells the other tabs.
+ * when it found news, which is told to the other tabs.
  *
  * One tab asks for them all: whichever visible tab's clock comes round first
  * looks, and the others see it was done a moment ago and wait. News found in
@@ -128,15 +113,10 @@ function markLook(at: number) {
 export function onBellChanged(look: Look): () => void {
   start();
   let timer: number | undefined;
-  let quiet = 0;
   let mine = 0;
   let stopped = false;
 
-  const wait = () => {
-    const base = pushOn ? BELL_PUSH_MS : BELL_MS;
-    const step = QUIET_STEPS[Math.min(quiet, QUIET_STEPS.length - 1)]!;
-    return Math.min(base * step, Math.max(base, QUIET_CAP_MS));
-  };
+  const wait = () => BELL_MS;
 
   const schedule = (ms = wait()) => {
     window.clearTimeout(timer);
@@ -150,15 +130,9 @@ export function onBellChanged(look: Look): () => void {
     mine = now;
     markLook(now);
     try {
-      const news = await look();
-      if (news) {
-        quiet = 0;
-        if (tell) broadcast?.postMessage({ type: 'bell' });
-      } else {
-        quiet += 1;
-      }
+      if ((await look()) && tell) broadcast?.postMessage({ type: 'bell' });
     } catch {
-      quiet += 1;
+      // The next look tries again.
     }
   };
 
@@ -176,7 +150,6 @@ export function onBellChanged(look: Look): () => void {
   /** Look now, unless this tab just did. */
   const now = async () => {
     if (stopped) return;
-    quiet = 0;
     if (Date.now() - mine < RECENT_MS) {
       schedule();
       return;
@@ -193,15 +166,8 @@ export function onBellChanged(look: Look): () => void {
   };
   const onOthers = () => {
     if (!visible()) return;
-    quiet = 0;
     // The tab that found it already asked; this one asks for its own view.
     void look().catch(() => undefined);
-    schedule();
-  };
-  // Somebody using the page is somebody worth being prompt for.
-  const onActive = () => {
-    if (quiet < 3) return;
-    quiet = 0;
     schedule();
   };
 
@@ -209,8 +175,6 @@ export function onBellChanged(look: Look): () => void {
   hidden.add(onHidden);
   pushHeard.add(onPush);
   othersSaw.add(onOthers);
-  window.addEventListener('pointerdown', onActive, { passive: true });
-  window.addEventListener('keydown', onActive);
   // The first look is the page's own load; the clock starts from it.
   void run(false).then(() => schedule());
 
@@ -221,8 +185,6 @@ export function onBellChanged(look: Look): () => void {
     hidden.delete(onHidden);
     pushHeard.delete(onPush);
     othersSaw.delete(onOthers);
-    window.removeEventListener('pointerdown', onActive);
-    window.removeEventListener('keydown', onActive);
   };
 }
 
@@ -259,7 +221,7 @@ function whileOpen(path: string, every: (onScreen: boolean) => number | null, lo
   const onFront = () => void run().then(schedule);
   const onHidden = schedule;
   const onPush = (link: string | null) => {
-    if (link !== null && pathOf(link) !== path) return;
+    if (!visible() || (link !== null && pathOf(link) !== path)) return;
     void run().then(schedule);
   };
 
@@ -277,16 +239,12 @@ function whileOpen(path: string, every: (onScreen: boolean) => number | null, lo
   };
 }
 
-/**
- * A conversation: every 10 seconds while it is on screen, every 30 while it
- * is open behind another tab or app, so it is up to date the moment it is
- * looked at again. (A browser may stretch the second on its own.)
- */
+/** A conversation: every 10 seconds while it is on screen. */
 export function onThreadChanged(handle: string, look: Look): () => void {
-  return whileOpen(`/messages/${encodeURIComponent(handle)}`, (onScreen) => (onScreen ? 10_000 : 30_000), look);
+  return whileOpen(`/messages/${encodeURIComponent(handle)}`, (onScreen) => (onScreen ? THREAD_MS : null), look);
 }
 
 /** A channel or forum room: every 12 seconds while it is on screen. */
 export function onChannelChanged(path: string, look: Look): () => void {
-  return whileOpen(path.replace(/\/+$/, ''), (onScreen) => (onScreen ? 12_000 : null), look);
+  return whileOpen(path.replace(/\/+$/, ''), (onScreen) => (onScreen ? ROOM_MS : null), look);
 }

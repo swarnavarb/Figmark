@@ -39,6 +39,11 @@ import { onBellChanged } from '../live';
 export const SALES_NEWS_EVENT = 'figmark:sales-news';
 const SALES_NEWS: readonly NotificationCategory[] = ['orders', 'payments'];
 
+/** Said on the window when the bell brings news of a message, so the inbox
+    and the Messages tab's count read again then: away from a conversation,
+    the bell's clock is how soon a new message is heard of. */
+export const MESSAGES_NEWS_EVENT = 'figmark:messages-news';
+
 const CATEGORY_ICON: Record<NotificationCategory, IconName> = {
   messages: 'message',
   orders: 'truck',
@@ -98,6 +103,8 @@ export function Notifications() {
   shown.current = rows;
   // Order and payment rows already seen (id and count), so only a new one is news.
   const salesSeen = useRef<Set<string> | null>(null);
+  // The message lines last seen (id, count, read), so only a change is news.
+  const messagesSeen = useRef<string | null>(null);
   // What the last first page was, for the server to answer "unchanged" against.
   const version = useRef<string | null>(null);
   // What the bell last showed, so a poll that changed nothing is not news.
@@ -127,6 +134,13 @@ export function Notifications() {
       const sales = page.notifications.filter((row) => SALES_NEWS.includes(row.category)).map((row) => `${row.id}:${row.count}`);
       if (salesSeen.current && sales.some((key) => !salesSeen.current!.has(key))) window.dispatchEvent(new Event(SALES_NEWS_EVENT));
       salesSeen.current = new Set([...(salesSeen.current ?? []), ...sales]);
+      // Only a list that shows message lines can tell whether they changed.
+      if (category === null || category === 'messages') {
+        const messages = `${page.unreadByCategory?.messages ?? 0}|${page.notifications
+          .filter((row) => row.category === 'messages').map((row) => `${row.id}:${row.count}:${row.read}`).join(',')}`;
+        if (messagesSeen.current !== null && messages !== messagesSeen.current) window.dispatchEvent(new Event(MESSAGES_NEWS_EVENT));
+        messagesSeen.current = messages;
+      }
       const fresh = new Set(page.notifications.map((row) => row.id));
       const oldest = page.notifications[page.notifications.length - 1]?.createdAt;
       const older = oldest ? shown.current.filter((row) => !fresh.has(row.id) && row.createdAt < oldest) : [];

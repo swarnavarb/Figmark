@@ -5,6 +5,7 @@ import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
 import { onThreadChanged } from '../live';
+import { MESSAGES_NEWS_EVENT } from '../components/Notifications';
 import { ManagerMark } from '../components/ManagerBadge';
 import { Avatar, EmptyState, ErrorNotice, Icon, LevelChip, useConfirm } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
@@ -41,6 +42,10 @@ export function MessagesView() {
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your messages.'),
       );
+    // Read again when the bell hears of a new message, so it shows here too.
+    const onMessages = () => void api.inbox().then(setData).catch(() => undefined);
+    window.addEventListener(MESSAGES_NEWS_EVENT, onMessages);
+    return () => window.removeEventListener(MESSAGES_NEWS_EVENT, onMessages);
   }, []);
 
   if (error) return <ErrorNotice message={error} />;

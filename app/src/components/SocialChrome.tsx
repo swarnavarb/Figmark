@@ -8,7 +8,7 @@ import { ProfileMenu } from '../AppShell';
 import { useSession } from '../session';
 import { Avatar } from './ui';
 import { Icon, type IconName } from './Icon';
-import { Notifications } from './Notifications';
+import { MESSAGES_NEWS_EVENT, Notifications } from './Notifications';
 import { VoicePicker, useVoice } from './SocialVoice';
 import { seenMap, unreadOf } from './Channels';
 
@@ -57,8 +57,16 @@ function usePulse(): Pulse {
           : 0,
       });
     });
+    // A new message, heard by the bell, moves the Messages count at once.
+    const onMessages = () => {
+      void api.inbox().then((inbox) => {
+        if (live) setPulse((current) => ({ ...current, messages: inbox.threads.reduce((sum, row) => sum + row.unread, 0) }));
+      }).catch(() => undefined);
+    };
+    window.addEventListener(MESSAGES_NEWS_EVENT, onMessages);
     return () => {
       live = false;
+      window.removeEventListener(MESSAGES_NEWS_EVENT, onMessages);
     };
   }, []);
   return pulse;
