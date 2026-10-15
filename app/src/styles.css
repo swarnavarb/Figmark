@@ -14934,3 +14934,14 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* The Studio in Steps view: the words, and nothing moving behind them. */
 .rshead__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rshead__top .rshead__name { flex: 1; min-width: 0; }
+
+/* The orders holding a lot back from its next move, each with the button it still needs. */
+.lotgate { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 46vh; overflow: auto; }
+.lotgate__row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2);
+}
+.lotgate__who { display: grid; gap: 2px; min-width: 0; font-size: var(--t-sm); }
+.lotgate__who .faint { font-size: var(--t-2xs); }
+.lotgate__row .ladder__act { flex: none; text-decoration: none; }
+.lotgate__hint { margin: 0; }

@@ -599,7 +599,7 @@ export function withReceivedAs<T extends Pick<RouteStep, 'trigger' | 'name'>>(st
  */
 export type SerialButton =
   | { kind: 'item'; key: string; label: string; step: string; done: boolean; lastMile: 'dispatched' | 'delivered' | null }
-  /** `gated`: moving there would carry items past the warehouse check-in unticked. */
+  /** `gated`: some order in the lot is not ready for this move yet, so the lot waits for it. */
   | { kind: 'lot'; to: number; label: string; step: string; done: boolean; gated?: boolean };
 
 /**
@@ -644,4 +644,31 @@ export function serialButtons(
   }
 
   return placed.sort((a, b) => a.at - b.at).map((entry) => entry.button);
+}
+
+/* ── Whether a lot may move on ────────────────────────────────────────── */
+
+/**
+ * What one order still has to have pressed before its lot can move to
+ * `target`: the first of its own buttons before that step not yet pressed,
+ * or null when it is ready to go along.
+ *
+ * A lot carries every order in it together, so it cannot move past a step an
+ * order has not reached - its buyer would read that the parcel was somewhere
+ * it never got to. That order is progressed, or cancelled, first.
+ */
+export function holdsLotBack(
+  steps: readonly RouteStep[],
+  target: number,
+  ticks: Ticks,
+  vars?: { origin?: string | null; destination?: string | null },
+): { key: string; label: string; step: string } | null {
+  for (let index = 0; index < target && index < steps.length; index += 1) {
+    const step = steps[index]!;
+    const key = stepTickKey(step);
+    if (key && !ticks?.[key]) {
+      return { key, label: stepButtonLabel(step, vars), step: renderStepText(step.name, vars ?? {}) };
+    }
+  }
+  return null;
 }

@@ -307,7 +307,7 @@ function TourCard({ index, script, steps, vars, reached, viewing, onNext, onBack
       : 'This is a sample order. I will press each button in turn, the way you would on a real order, and show you what your customer sees after each one.';
   } else if (entry.kind === 'lot') {
     title = `🚢 Tap Move here on “${entry.step}”`;
-    body = `Steps in the lot have no button on the order. On the lot's Tracking (Lots → your lot), tap 🚢 Move here on the next step - every order in it moves to “${entry.step}” at once. Only the next step opens, and ✓ Moved here takes it back one.`;
+    body = `Steps in the lot have no button on the order. On the lot's Tracking (Lots → your lot), tap 🚢 Move here on the next step - every order in it moves to “${entry.step}” at once. Only the next step opens, and ✓ Moved here takes it back one. If an order in the lot is still behind, the lot waits and tells you which order to progress or cancel.`;
   } else if (entry.lastMile === 'dispatched') {
     title = `⚡ Tap “${entry.label}”`;
     body = `${who}It asks for the courier and AWB (both optional). Your customer then gets a link to track the parcel.`;

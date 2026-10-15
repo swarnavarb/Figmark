@@ -20,7 +20,7 @@ import { capital, notifyBuyers } from './notify.js';
 import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
 import { UNDO_EXPIRED, canUndo, undoTag, withdrawNotices, withoutUndo } from './undo.js';
-import { checkButtons, withButtons } from '../../../shared/buttons.js';
+import { checkButtons, holdsLotBack, withButtons } from '../../../shared/buttons.js';
 import { commonSteps, readButtonLibrary, routeSamples } from '../route-library.js';
 
 /**
@@ -408,6 +408,29 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     );
   }
 
+  /* The lot carries every order in it, so it waits for the slowest: an
+     order that has not had its own buttons pressed up to this step is
+     progressed or cancelled first, or its buyer would read a step their
+     parcel never reached. Going back is always allowed. */
+  const repository = await getRepository();
+  if (target > from) {
+    const vars = { origin: lot.originCountry, destination: lot.destinationCountry };
+    const held = (await repository.listOrdersForLot(lot.id))
+      .filter((order) => !isStopped(order.status) && order.status !== 'delivered')
+      .map((order) => ({ order, needs: holdsLotBack(route.steps, target, ticksOf(order), vars) }))
+      .filter((entry) => entry.needs !== null);
+    if (held.length > 0) {
+      const first = held[0]!;
+      return error(
+        409,
+        'orders_not_ready',
+        held.length === 1
+          ? `${first.order.itemName} still needs “${first.needs!.label}”. Press it, or cancel that order, to move the lot.`
+          : `${held.length} orders still need their earlier buttons pressed - ${first.order.itemName} needs “${first.needs!.label}”. Press them, or cancel those orders, to move the lot.`,
+      );
+    }
+  }
+
   const step = route.steps[target]!;
   /* A hand-over's courier and tracking ID are optional: a seller often has
      them only later. Whatever is left blank is simply not stored, so the
@@ -435,7 +458,6 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
      move. Called-off and refunded orders stay where they stopped, an item
      already delivered on its own has left the crate, and one already on its
      way keeps `shipped`; one not yet paid for keeps its Pay. */
-  const repository = await getRepository();
   const updated = await repository.updateLot({
     ...lot,
     currentStep: target,

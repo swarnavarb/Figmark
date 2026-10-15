@@ -164,7 +164,7 @@ const {
 } = await import(new URL('crew-routes.js', fns));
 const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
-  lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
+  lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLotRaw,
   noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
   myItemsRoute: myItems, applyRouteRoute: applyRoute, closeLotRoute: closeLot,
 } = await import(new URL('tracking-routes.js', fns));
@@ -261,6 +261,41 @@ const check = async (name, fn) => {
   await fn();
   passed += 1;
   console.log(`  ok  ${name}`);
+};
+
+/*
+ * A lot waits for every order in it: it will not move past a step one of
+ * them has not had its own buttons pressed up to. Checks about something
+ * else move lots through `stepLot`, which presses those buttons first, the
+ * way a seller would; `stepLotRaw` is the endpoint as it is, for the checks
+ * about that rule itself.
+ */
+const STOPPED = new Set(['cancelled', 'rejected', 'refunded', 'payment_reversal_pending', 'cancelled_reversed', 'delivered']);
+const readyLot = async (request) => {
+  const id = request.params.id;
+  // A forwarder (`?store=`) cannot press the shop's item buttons; the shop readies its own lot.
+  const headers = request.query.get('store') ? auth : request.headers;
+  const board = (await lotContents(req({ headers, params: { id } }), ctx)).jsonBody;
+  if (!board?.route || !Array.isArray(board.items)) return;
+  let to = board.route.currentStep + 1;
+  try { const body = await request.json(); if (typeof body?.to === 'number') to = body.to; } catch { /* no body: one step on */ }
+  if (to <= board.route.currentStep) return;
+  for (const item of board.items) {
+    if (STOPPED.has(item.status)) continue;
+    for (let index = 0; index < to && index < board.route.steps.length; index += 1) {
+      const step = board.route.steps[index];
+      const key = step.trigger ?? (step.custom ? `custom:${step.id}` : null);
+      if (key && !item.ticks?.[key]) {
+        await setCheckpoint(req({ headers, params: { id: item.id }, body: { checkpoint: key, on: true } }), ctx);
+      }
+    }
+  }
+};
+const stepLot = async (request, context) => {
+  let undo = false;
+  try { undo = Boolean((await request.json())?.undoOf); } catch { /* no body */ }
+  if (!undo) await readyLot(request);
+  return stepLotRaw(request, context);
 };
 
 /* ── auth ──────────────────────────────────────────────────────────────── */
@@ -5763,6 +5798,17 @@ await check('filling a lot moves the item into it, and tells the buyer', async (
     headers: auth, params: { id: routedLot.id }, body: { orderIds: [earlyOrder.id] },
   }), ctx);
   assert.equal(again.jsonBody.added, 0);
+});
+
+await check('a lot waits for an order whose own buttons are not pressed yet, and says which', async () => {
+  const before = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.ok(before.items.some((item) => !item.ticks.china_received), 'an item here has not been checked in');
+  const held = await stepLotRaw(req({ headers: auth, params: { id: routedLot.id }, body: {} }), ctx);
+  assert.equal(held.status, 409);
+  assert.equal(held.jsonBody.error, 'orders_not_ready');
+  assert.match(held.jsonBody.message, /cancel/, 'it says the order can be progressed or cancelled');
+  const still = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(still.route.currentStep, before.route.currentStep, 'and the lot has not moved');
 });
 
 await check('one click moves the lot, and every item in it', async () => {
