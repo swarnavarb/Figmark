@@ -206,6 +206,10 @@ async function updateLotDetails(request: HttpRequest, _context: InvocationContex
   return json(200, { lot: await repository.updateLot(lot) });
 }
 
+/** Cancelled, turned down, or cancelled and refunded: listed, never counted. */
+const countsAsOrder = (order: Pick<Order, 'status'>) =>
+  order.status !== 'cancelled' && order.status !== 'rejected' && order.status !== 'cancelled_reversed';
+
 async function myLots(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
@@ -229,7 +233,9 @@ async function myLots(request: HttpRequest, _context: InvocationContext) {
 
   const withContents = lots.map((lot) => {
     const listings = listingsByLot.get(lot.id) ?? [];
-    const orders = ordersByLot.get(lot.id) ?? [];
+    /* A cancelled or turned-down order is still listed in the lot, but it is
+       not an order anybody is sending: it is not counted. */
+    const orders = (ordersByLot.get(lot.id) ?? []).filter(countsAsOrder);
     return {
       lot,
       listingCount: listings.length,
@@ -570,11 +576,12 @@ async function lotContents(request: HttpRequest, _context: InvocationContext) {
         && lotOffset(route) < route.steps.length,
       history: order.stageHistory,
     })),
+    /* Called-off orders stay on the manifest above but are not counted. */
     totals: {
-      lines: orders.length,
-      units: orders.reduce((sum, o) => sum + o.quantity, 0),
-      weightGrams: orders.reduce((sum, o) => sum + o.quantity * o.unitWeightGrams, 0),
-      valueMinor: orders.reduce((sum, o) => sum + o.quantity * o.unitPriceMinor, 0),
+      lines: orders.filter(countsAsOrder).length,
+      units: orders.filter(countsAsOrder).reduce((sum, o) => sum + o.quantity, 0),
+      weightGrams: orders.filter(countsAsOrder).reduce((sum, o) => sum + o.quantity * o.unitWeightGrams, 0),
+      valueMinor: orders.filter(countsAsOrder).reduce((sum, o) => sum + o.quantity * o.unitPriceMinor, 0),
     },
   });
 }
@@ -972,6 +979,8 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
           lotId: lot!.id,
           lotName: lot!.name,
           lotNumber: lot!.lotNumber ?? lotNumberFrom(lot!.id, lot!.createdAt),
+          originCountry: lot!.originCountry ?? null,
+          destinationCountry: lot!.destinationCountry ?? null,
           /** The lot as a whole, in a few words: filling, closed, in transit, received. */
           lotPhase: lotPhase(lot!),
         }

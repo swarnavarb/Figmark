@@ -144,6 +144,8 @@ export function useStepActs(
   onDone: () => void | Promise<void>,
   /** Opened from an order card's Dispatched or Delivered button: ask straight away. */
   opening?: OrderCheckpoint | null,
+  /** The lot's countries, for the words on the buttons. */
+  vars?: Vars,
 ) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -250,7 +252,7 @@ export function useStepActs(
          dispatch once delivered, a delivery the buyer has already confirmed. */
       const frozen = pressed && ((checkpoint === 'dispatched' && delivered) || (checkpoint === 'delivered' && (received || released)));
       return (
-        <StepButton step={step} state={pressed ? 'done' : 'next'} busy={busy || frozen}
+        <StepButton step={step} state={pressed ? 'done' : 'next'} busy={busy || frozen} vars={vars}
           onPress={() => press(step, pressed)}>
           {checkpoint === 'dispatched' && dispatched && !delivered && (
             <button type="button" className="ladder__act" disabled={busy} onClick={openShipping}>
@@ -339,7 +341,7 @@ export function useStepActs(
       )}
 
       {picking && (
-        <SkipPicker later={picking} onClose={() => setPicking(null)}
+        <SkipPicker later={picking} vars={vars} onClose={() => setPicking(null)}
           onPick={(step) => { setPicking(null); press(step, false); }} />
       )}
     </>

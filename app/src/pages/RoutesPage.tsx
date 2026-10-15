@@ -180,7 +180,7 @@ function RoutesFaq() {
           It is tracked automatically from the moment it joins — before the lot exists, the
           moment it sells, or halfway along its steps, it makes no difference. It is placed at
           the correct step from two things: how far the lot it joins has already moved, and
-          anything already ticked for that item on its own (its "China WH received" tick, say).
+          anything already ticked for that item on its own (its "origin WH received" tick, say).
           Nobody has to re-position it by hand.
         </p>
       </details>
@@ -188,7 +188,7 @@ function RoutesFaq() {
       <details className="faq__item">
         <summary>Which steps move themselves? (⚡ Activity Triggered)</summary>
         <p className="muted">
-          While designing a route, a step bound to one of the seller's own buttons ("China WH",
+          While designing a route, a step bound to one of the seller's own buttons ("Origin WH",
           "Dispatched" and so on) is marked <strong>⚡ Activity Triggered</strong>: pressing that
           button on an order moves its tracking to that step automatically, with no separate
           edit to the timeline. A step with nothing bound is marked <strong>✋ Manual</strong> —

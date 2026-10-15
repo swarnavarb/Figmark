@@ -1,5 +1,7 @@
 import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type OrderCheckpoint } from './enums.js';
 import type { BaseDocument, Lot } from './models.js';
+import { COUNTRIES, countryFlag } from './countries.js';
+import { renderButtonText } from './route-words.js';
 
 /**
  * A route is the list of steps a lot travels through.
@@ -70,9 +72,9 @@ export type StageIcon = (typeof STAGE_ICONS)[number];
 
 /** What each trigger button says, and what pressing it means. */
 export const TRIGGER_LABELS: Record<StepTrigger, { button: string; means: string }> = {
-  china_received: { button: 'China WH', means: 'the piece arrived at the overseas warehouse' },
-  china_packed: { button: 'Packed CH', means: 'it was boxed up before the lot left' },
-  india_received: { button: 'India WH', means: 'it landed and you have it' },
+  china_received: { button: '{origin} warehouse', means: 'the piece arrived at the overseas warehouse' },
+  china_packed: { button: 'Packed at {origin}', means: 'it was boxed up before the lot left' },
+  india_received: { button: '{destination} warehouse', means: 'it landed and you have it' },
   ready_to_dispatch: { button: 'Ready', means: 'it is checked and ready to go out' },
   packed: { button: 'Packed', means: 'it is boxed for the domestic courier' },
   dispatched: { button: 'Dispatched', means: 'it is on its way to the buyer' },
@@ -216,13 +218,13 @@ export function stepButtonLabel(
 ): string {
   const own = step.button?.trim();
   // Routes saved before the button was renamed still say it the long way.
-  if (own) return own === 'Packed for the buyer' ? 'Packed' : own;
+  if (own) return own === 'Packed for the buyer' ? 'Packed' : renderButtonText(own, vars);
   if (!step.trigger && !step.custom) return '';
   const name = (step.name ?? '').trim();
-  if (!name) return step.trigger ? TRIGGER_LABELS[step.trigger].button : 'Done';
-  const said = vars
-    ? renderStepText(name, vars)
-    : name.replace(/'?\{(origin|destination)\}'?/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!name) return step.trigger ? renderButtonText(TRIGGER_LABELS[step.trigger].button, vars) : 'Done';
+  /* On a button the country is its flag and long words take their short
+     forms; with no lot to say which country, the word "origin" stands in. */
+  const said = renderButtonText(name, vars);
   return said.length > 44 ? `${said.slice(0, 43).replace(/\s+\S*$/, '')}…` : said;
 }
 
@@ -291,9 +293,15 @@ export function renderStepText(text: string, vars: { origin?: string | null; des
      said "Received at '{destination}' Warehouse", and a buyer should never
      read the punctuation that held a placeholder. A lot with no country set
      reads as plain words rather than as the token's name in quotes. */
+  /* A known country is said with its flag in front: "Received at 🇮🇳 India warehouse". */
+  const place = (country: string | null | undefined, word: string) => {
+    const name = country?.trim();
+    if (!name) return word;
+    return COUNTRIES.includes(name) ? `${countryFlag(name)} ${name}` : name;
+  };
   return text
-    .replace(/'?\{origin\}'?/g, vars.origin?.trim() || 'the origin')
-    .replace(/'?\{destination\}'?/g, vars.destination?.trim() || 'the destination');
+    .replace(/'?\{origin\}'?/g, place(vars.origin, 'the origin'))
+    .replace(/'?\{destination\}'?/g, place(vars.destination, 'the destination'));
 }
 
 /**
@@ -656,7 +664,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The piece has been handed to the courier.', side: 'pre' },
       { name: 'Tracking issued', description: 'The courier has given the parcel a tracking number.', side: 'pre' },
-      { name: 'In transit', description: 'On its way to India.', side: 'pre' },
+      { name: 'In transit', description: 'On its way to {destination}.', side: 'pre' },
       { name: 'Customs', description: 'Clearing customs. The courier handles this.', side: 'pre' },
       { name: 'Out for delivery', description: 'With the local courier for the last leg.', side: 'pre', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'pre' },
@@ -1072,5 +1080,8 @@ const SHORT_BUTTON: Record<string, string> = {
   ready_to_dispatch: 'Checked', packed: 'Packed', dispatched: 'Dispatched', delivered: 'Delivered',
 };
 export function shortButtonLabel(key: string, label: string): string {
+  /* A label already short - a flag and the short forms make most of them
+     so ("Received at 🇮🇳 WH") - is kept; the stock short word otherwise. */
+  if (label && label.length <= 22) return label;
   return SHORT_BUTTON[key] ?? label;
 }

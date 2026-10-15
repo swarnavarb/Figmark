@@ -3,6 +3,8 @@ import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayme
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
+import type { SampleRoute } from '@shared/route-samples';
+import type { RouteWords } from '@shared/route-words';
 import type { DeviceFigures } from '@shared/devices';
 import { ApiRequestError, api as marketplace, type OpsStoreRow } from '../api';
 import type { StoreStatus } from '@shared/models';
@@ -242,6 +244,13 @@ export const admin = {
 
   devices: () => request<DeviceFigures>('/ops/devices'),
   /** Marketplace-wide rules and every fee: protection, disputes, escalations, commission. */
+  /** The sample routes every shop is offered, and the short forms buttons are drawn with. */
+  routeLibrary: () => request<{
+    samples: SampleRoute[]; customised: boolean; samplesUpdatedAt: string | null; samplesUpdatedBy: string | null;
+    words: RouteWords; wordsUpdatedAt: string | null; wordsUpdatedBy: string | null;
+  }>('/ops/route-library'),
+  saveRouteSamples: (samples: SampleRoute[]) => post<{ samples: SampleRoute[] }>('/ops/route-samples/save', { samples }),
+  saveRouteWords: (words: RouteWords) => post<RouteWords>('/ops/route-words/save', words),
   settings: () => request<MarketSettings>('/ops/settings'),
   saveSettings: (settings: Partial<Omit<MarketSettings, 'updatedAt' | 'updatedBy'>>) =>
     post<MarketSettings>('/ops/settings/save', settings),

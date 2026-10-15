@@ -13,6 +13,7 @@ import { SettingsView } from './SettingsView';
 import { StoresView } from './StoresView';
 import { DevicesView } from './DevicesView';
 import { PhotosView } from './PhotosView';
+import { RoutesView } from './RoutesView';
 import '../styles.css';
 
 /**
@@ -35,7 +36,7 @@ import '../styles.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'settings' | 'learn' | 'audit';
+type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'routes' | 'settings' | 'learn' | 'audit';
 
 const TAB_LABELS: Record<Tab, string> = {
   users: 'People and stores',
@@ -46,6 +47,7 @@ const TAB_LABELS: Record<Tab, string> = {
   reports: 'Reports',
   devices: 'Installs & devices',
   photos: 'Stored photos',
+  routes: 'Routes',
   settings: 'Settings',
   learn: 'Learn page',
   audit: 'Audit trail',
@@ -126,6 +128,7 @@ function Console() {
           : tab === 'reports' ? <ReportsView />
           : tab === 'devices' ? <DevicesView />
           : tab === 'photos' ? <PhotosView />
+          : tab === 'routes' ? <RoutesView />
           : tab === 'settings' ? <SettingsView />
           : tab === 'audit' ? <AuditView />
           : <LearnView />}

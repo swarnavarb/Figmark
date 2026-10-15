@@ -375,7 +375,8 @@ function SellHome({ store, canList, onGo, section }: {
       });
     });
     read();
-    const timer = window.setInterval(read, 60_000);
+    /* Only while the app is on screen: a phone in a pocket asks nothing. */
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') read(); }, 60_000);
     const onShow = () => { if (document.visibilityState === 'visible') read(); };
     document.addEventListener('visibilitychange', onShow);
     return () => {
@@ -1915,8 +1916,9 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
             ? <Link to={`/${buyer.handle}`} className="ocust__name">{buyer.name}</Link>
             : <span className="ocust__name">{buyer.name}</span>}
           <span className="ocust__meta">
-            {rows.length} {rows.length === 1 ? 'order' : 'orders'}
-            {rows.length !== live.length && ` · ${rows.length - live.length} called off`}
+            {/* A cancelled order is listed, never counted as one. */}
+            {live.length} {live.length === 1 ? 'order' : 'orders'}
+            {rows.length !== live.length && ` · ${rows.length - live.length} cancelled`}
             {/* Open, the sums ride along here instead of taking a row of their own. */}
             {/* The money rides along here, folded or open. */}
             {live.length > 0 && paid > 0 && pending > 0 && <> · Paid <b>{formatTotals(sum((row) => Math.min(row.paidMinor, row.totalMinor)), currency)}</b> of {formatTotals(sum((row) => row.totalMinor), currency)}</>}
@@ -2610,11 +2612,12 @@ function OrderRow({
         </div>
 
         {/* Where it stands, in words: accepted and waiting to be paid, paid, on its way... */}
-        {statusLine && !awaitingClaim && (
+        {/* Where it stands, unless that is only "paid": the badge and the
+            money line above already say so. */}
+        {statusLine && !awaitingClaim && !disputed
+          && !(row.paymentStatus === 'paid' && statusLine.tone === 'ok' && !row.dispatchedAt && row.status !== 'delivered') && (
           <div className="lrow__wide lrow__status">
-            {/* In a lot the handler ships it, so paid is just paid. */}
-            <StatusBanner compact line={row.paymentStatus === 'paid' && statusLine.tone === 'ok' && !row.dispatchedAt && row.status !== 'delivered'
-              ? { ...statusLine, title: 'Payment received', note: undefined } : statusLine} />
+            <StatusBanner compact line={statusLine} />
           </div>
         )}
 
@@ -2652,7 +2655,9 @@ function OrderRow({
 
         {working && row.serial && row.serial.length > 0 && (
           <div className="lrow__wide">
-            <SerialButtons compact shipHere fold
+            {/* Every step stays in view in a lot: the pills are small, and a
+                lot is worked step by step across its orders. */}
+            <SerialButtons compact shipHere
               buttons={row.serial}
               busy={busy}
               who={{ itemName: row.itemName, buyerName: row.buyer.name }}

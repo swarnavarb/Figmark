@@ -14393,9 +14393,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 /* An order's money: three figures, big enough to read at a glance, the due one lit. */
 .lrow__money { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin-top: 2px; border-radius: var(--r-md); background: var(--border); overflow: hidden; box-shadow: inset 0 0 0 1px var(--border); }
-.lrow__cell { display: grid; gap: 1px; padding: 6px 10px; background: var(--surface-2); }
-.lrow__cell small { font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
-.lrow__cell b { font-family: var(--mono); font-size: var(--t-md); font-weight: var(--w-bold); font-variant-numeric: tabular-nums; color: var(--text); }
+.lrow__cell { display: flex; align-items: baseline; gap: 5px; min-width: 0; padding: 4px 8px; background: var(--surface-2); }
+.lrow__cell small { font-size: 9px; font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.lrow__cell b { font-family: var(--mono); font-size: var(--t-sm); font-weight: var(--w-semi); font-variant-numeric: tabular-nums; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .lrow__cell--paid b { color: var(--ok); }
 .lrow__money.is-due .lrow__cell--due { background: var(--warn-soft); }
 .lrow__money.is-due .lrow__cell--due b, .lrow__money.is-due .lrow__cell--due small { color: var(--warn); }
@@ -14922,3 +14922,67 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* An ⓘ beside a heading or a step's name sits just after the words. */
 .ladder__name .qinfo, .rszone__text .qinfo { margin-left: 6px; vertical-align: middle; }
 .trk-photos__title { display: flex; align-items: center; gap: 8px; margin: 0; }
+
+/*
+ * A lot's orders, each its own card: a box with its own edge and a gap
+ * between, so the eye sees where one order ends. The money sits on one
+ * small line of three - still always there, no longer the loudest thing.
+ */
+.ocust__orders .lrows { gap: 10px; padding: 10px; }
+.ocust__orders .lrow {
+  padding: 12px; border: 1px solid var(--border-strong, var(--border)); border-radius: 14px;
+  background: var(--surface); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.ocust__orders .lrow:first-child { border-top: 1px solid var(--border-strong, var(--border)); }
+.ocust__orders .lrow.is-urgent { margin-left: 0; padding-left: 12px; box-shadow: inset 3px 0 0 var(--warn), 0 2px 10px rgba(0, 0, 0, 0.25); }
+.lrow__money { border-radius: 10px; }
+
+/* Operations: the sample routes list, the button words table and its preview. */
+.opsroutes { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.opsroutes__row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); flex-wrap: wrap; }
+.opsroutes__icon { font-size: 22px; }
+.opsroutes__body { display: grid; gap: 2px; flex: 1 1 16rem; min-width: 0; }
+.opsroutes__acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.opsroutes__card { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
+.opsroutes__studio { max-width: 640px; }
+.opswords { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px 8px; align-items: center; max-width: 560px; }
+.opswords__preview { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.opswords__pill { padding: 6px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font-size: var(--t-sm); font-weight: var(--w-semi); }
+
+/* New route: one clean list of samples, each with its three parts as a bar and its first steps. */
+.rsnew__head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.rsnew__head h1 { margin: 0; }
+.rsnew__label { font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.rsnew__list { display: grid; gap: 8px; }
+.rsnew__item {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.rsnew__item:hover { border-color: var(--accent-line); }
+.rsnew__item:active { transform: scale(0.99); }
+.rsnew__item > svg { flex: none; color: var(--text-faint); }
+.rsnew__icon { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-text); }
+.rsnew__body { display: grid; gap: 5px; flex: 1; min-width: 0; }
+.rsnew__name { font-weight: var(--w-semi); }
+.rsnew__blurb { font-size: var(--t-xs); color: var(--text-dim); }
+.rsnew__bar { display: flex; gap: 3px; height: 5px; }
+.rsnew__seg { flex: 1 1 0; border-radius: 3px; min-width: 6px; }
+.rsnew__seg--pre { background: var(--aqua); }
+.rsnew__seg--lot { background: var(--coral); }
+.rsnew__seg--post { background: var(--lime); }
+.rsnew__trail { font-size: var(--t-2xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rsnew__other { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rsnew__alt {
+  display: grid; gap: 2px; justify-items: start; padding: 12px 14px; text-align: left;
+  border: 1px dashed var(--border-strong, var(--border)); border-radius: 14px; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.rsnew__alt:hover { border-color: var(--accent-line); }
+.rsnew__alt > span:first-child { font-size: 20px; }
+.rsnew__alt .faint { font-size: var(--t-2xs); }
+
+/* The Studio in Steps view: the words, and nothing moving behind them. */
+.rsstudio--simple .rsscene { display: none; }
+.rsstudio--simple .rsnode__card { padding-block: 10px; }
+.rshead__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rshead__top .rshead__name { flex: 1; min-width: 0; }

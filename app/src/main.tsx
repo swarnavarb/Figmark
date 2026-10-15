@@ -14,7 +14,10 @@ import { FreshOnNavigate, NotificationLinks } from './components/Notifications';
 import { keepFresh } from './freshness';
 import { PullToRefresh } from './components/PullToRefresh';
 import { Preloader, liftBootScreen } from './components/Preloader';
+import { loadRouteWords } from './routeWords';
 import './styles.css';
+
+loadRouteWords();
 
 /**
  * A screen, fetched the first time it is opened.

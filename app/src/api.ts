@@ -1,3 +1,4 @@
+import type { RouteWords } from '@shared/route-words';
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type { NotificationCategory } from '@shared/notifications';
 import type { NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
@@ -506,6 +507,9 @@ export interface OrderTracking {
     lotId: string;
     lotName: string;
     lotNumber: string;
+    /** The lot's countries, filled into {origin} and {destination}. */
+    originCountry?: string | null;
+    destinationCountry?: string | null;
     /** The lot as a whole: filling, closed, in transit, received. */
     lotPhase?: LotBuyerPhase;
   } | null;
@@ -2600,6 +2604,8 @@ export const api = {
     const search = query.toString();
     return request<SalesResponse>(`/me/sales${search ? `?${search}` : ''}`);
   },
+  /** The operators' short forms for route buttons. */
+  routeWords: () => request<RouteWords>('/route-words'),
   /** The Sell tab's three counts; null where this person may not see one. */
   sellTodo: (storeId?: string) =>
     request<{ answer: number | null; answerSince?: string[] | null; noLot: number | null; lots: number | null }>(

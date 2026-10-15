@@ -7,7 +7,7 @@ import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
-import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex } from '@shared/routes';
+import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex, renderStepText } from '@shared/routes';
 import { REVIEW_REVEAL_DAYS, isCancelledLike, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
@@ -90,7 +90,9 @@ export function OrderPage() {
   /* The seller's buttons, on the timeline rungs they reach - the last mile
      included, so there is one place to work an item, not a card and a ladder. */
   // Opened from an order card's Dispatched or Delivered button: that press asks first, here.
-  const acts = useStepActs(state, load, arrived?.act ?? null);
+  /* The lot's countries fill {origin} and {destination} in the steps and on the buttons. */
+  const places = data?.route ? { origin: data.route.originCountry, destination: data.route.destinationCountry } : undefined;
+  const acts = useStepActs(state, load, arrived?.act ?? null, places);
 
   // The listing itself, only while this is still a checkout: its clock and
   // its stock are what say "decide now", and they are the listing's facts.
@@ -196,6 +198,7 @@ export function OrderPage() {
           timeline to find the button. */}
       <OrderActions state={state} onDone={load} />
       {acts.dialogs}
+      <OrderMoment data={data} state={state} />
       <CollectionPrompt state={state} />
       <DisputePanel state={state} />
       {/* Cover from the forwarder flying it, and a commission with an artist:
@@ -235,7 +238,7 @@ export function OrderPage() {
                  bought into a lot that is the first thing its buyer wants,
                  and the ladder below is the answer to the second. */
               <TrackHero icon={endedOf(order) ? '🚫' : data.route.waitingForLot ? '⏳' : '🚢'}
-                now={endedOf(order)?.label ?? (data.route.waitingForLot ? 'Waiting for the lot to move' : lotTrack!.steps[lotAt]?.name ?? 'On its way')}
+                now={endedOf(order)?.label ?? (data.route.waitingForLot ? 'Waiting for the lot to move' : (lotTrack!.steps[lotAt] ? renderStepText(lotTrack!.steps[lotAt]!.name, places ?? {}) : 'On its way'))}
                 sub={<>
                   📦 {data.route.lotName} <span className="lotname__no">LOT {lotNo(data.route.lotNumber)}</span>
                   {leftLot ? ' · now travelling on its own' : ''}
@@ -243,7 +246,7 @@ export function OrderPage() {
                     <span style={{ display: 'block', marginTop: 6 }}><LotPhaseBadge phase={data.route.lotPhase} /></span>
                   )}
                 </>}
-                boxes={boxesFor(lotTrack!.steps, lotAt)}
+                boxes={boxesFor(lotTrack!.steps.map((step) => ({ ...step, name: renderStepText(step.name, places ?? {}) })), lotAt)}
                 done={lotAt + 1} total={lotTrack!.steps.length}>
                 {order.shipment && <ShipmentChip shipment={order.shipment} />}
                 <div className="trk__ladder">
@@ -251,7 +254,7 @@ export function OrderPage() {
                     off the rung it happened at and dated - so a payment made
                     after the parcel reached the warehouse reads under the
                     warehouse tick, not above it. */}
-                <Ladder brief steps={lotTrack!.steps} current={lotAt}
+                <Ladder brief vars={places} steps={lotTrack!.steps} current={lotAt}
                   history={data.order.stageHistory}
                   ended={endedOf(order)}
                   /* Only the seller is told who moves the tracking from here:
@@ -293,7 +296,7 @@ export function OrderPage() {
                 sub="Not in a shipment lot yet — the rest of the journey appears once it is."
                 done={data.preLot.currentStep + 1} total={preTrack.steps.length + 1}>
                 <div className="trk__ladder">
-                  <Ladder brief steps={preTrack.steps} current={data.preLot.currentStep}
+                  <Ladder brief vars={places} steps={preTrack.steps} current={data.preLot.currentStep}
                     history={data.order.stageHistory}
                     ended={endedOf(order)}
                     /* Only its own steps have buttons before a lot: the last mile
@@ -333,9 +336,6 @@ export function OrderPage() {
           )}
         </section>
       )}
-
-      {/* The share prompt waits until after the order itself has been read. */}
-      <OrderMoment data={data} state={state} />
 
       {placed && tab === 'details' && (
         <div className="detail">
@@ -848,7 +848,7 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
       target: listing.id,
       storeId: order.sellerId,
     };
-    return <MomentBanner spec={spec} title={filled ? 'It filled! Tell everyone' : 'Sold! Tell your buyers'}
+    return <MomentBanner spec={spec} title={filled ? 'It filled! Tell everyone' : 'Sold! Tell your followers'}
       note="A sale is the best advert you have. Post it to your Status - it brings the next buyer, and counts for your Grow quests." />;
   }
 

@@ -6078,10 +6078,10 @@ await check('the two ways to move a lot cannot disagree about where it is', asyn
 
   const body = (await lotContents(req({ headers: auth, params: { id } }), ctx)).jsonBody;
   assert.equal(body.lot.stage, 'dispatched_from_china');
-  assert.equal(body.route.steps[body.route.currentStep].name, 'Dispatched from China');
+  assert.equal(body.route.steps[body.route.currentStep].name, 'Dispatched from origin');
   // And the history says what happened in the same words the ladder shows.
   const last = body.lot.stageHistory[body.lot.stageHistory.length - 1];
-  assert.equal(last.step, 'Dispatched from China');
+  assert.equal(last.step, 'Dispatched from origin');
 });
 
 await check('a route can be dropped, and the lots on it carry on', async () => {
@@ -6953,7 +6953,7 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   /* And every button the item has - its own and the lot's - on one line, in route order. */
   const serial = (await card()).serial;
   assert.deepEqual(serial.slice(0, 2).map((button) => [button.kind, button.label]),
-    [['item', 'Received at international warehouse'], ['lot', 'Dispatched from China']]);
+    [['item', 'Received at international WH'], ['lot', 'Dispatched from China']]);
   assert.equal(serial[1].gated, true, 'the lot move warns while the item is not checked in');
   assert.ok(serial.some((button) => button.kind === 'item' && button.key === 'delivered'), 'the last mile is on the line');
 
@@ -7097,7 +7097,7 @@ await check('an item with no lot is received where the seller says, under the sa
   assert.equal(tracking.order.checkpoints.china_received != null, true, 'and it is the same warehouse tick');
   assert.ok(tracking.order.stageHistory.some((event) => event.note === `${said}.`));
   const row = (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((entry) => entry.id === order.id);
-  assert.equal(row.done.label, said);
+  assert.equal(row.done.label, "Received at forwarder's WH", 'its button, in the short forms');
 
   // Undone, the label goes with it.
   await setCheckpoint(req({
@@ -10636,7 +10636,7 @@ await check('a step forward can be undone for three minutes, and shows nowhere u
 
 await check('a route that never joins a lot cannot be given to one', async () => {
   const library = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
-  const courier = library.presets.find((preset) => preset.steps.every((step) => step.side !== 'post'));
+  const courier = library.routeTemplates.find((preset) => preset.steps.every((step) => step.side !== 'post'));
   assert.ok(courier, 'a preset that never joins a lot exists');
   const saved = await saveRoute(req({ headers: auth, body: { name: 'Courier only', steps: courier.steps } }), ctx);
   assert.equal(saved.status, 201, JSON.stringify(saved.jsonBody));
@@ -11389,6 +11389,61 @@ await check('one request ticks a whole parcel, and says which did not land', asy
   }), ctx);
   assert.equal(theirs.jsonBody.done, 0);
   assert.equal((await setCheckpoints(req({ body: { orderIds: placed, checkpoint: 'packed' } }), ctx)).status, 401);
+});
+
+/* ── the route library operators keep ─────────────────────────────────── */
+console.log('\nthe route library operators keep');
+
+const {
+  routeWordsRoute: readWords, opsRouteLibraryRoute: opsLibrary,
+  opsRouteSamplesSaveRoute: saveSamples, opsRouteWordsSaveRoute: saveWords,
+} = await import(new URL('route-admin-routes.js', fns));
+const { renderButtonText, setRouteWords, DEFAULT_ROUTE_WORDS } =
+  await import(new URL('../api/dist/shared/route-words.js', import.meta.url));
+
+await check('a button says the lot\'s country as its flag, and the trade\'s short words', async () => {
+  setRouteWords(DEFAULT_ROUTE_WORDS);
+  assert.equal(renderButtonText('Received at {origin} warehouse', { origin: 'China' }), 'Received at 🇨🇳 WH');
+  assert.equal(renderButtonText('Received at the {destination} Warehouse', { destination: 'India' }), 'Received at 🇮🇳 WH');
+  // No country on the lot yet: the plain word stands in.
+  assert.equal(renderButtonText('Received at {origin} warehouse', {}), 'Received at origin WH');
+  // Whole words only: "warehouses" is not "warehouse".
+  assert.equal(renderButtonText('Two warehouses', {}), 'Two warehouses');
+});
+
+await check('only operators keep the sample routes, and every shop is offered them', async () => {
+  const stranger = await newBuyer('Not A Route Operator');
+  assert.equal((await opsLibrary(req({ headers: stranger.headers }), ctx)).status, 403);
+  assert.equal((await saveSamples(req({ headers: stranger.headers, body: { samples: [] } }), ctx)).status, 403);
+
+  const library = (await opsLibrary(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(library.customised, false, 'the built-in samples until operators save their own');
+  assert.ok(library.samples.length >= 2);
+
+  const refused = await saveSamples(req({ headers: auth, body: { samples: [{ id: 'one', name: 'Too short', steps: [{ name: 'Only' }] }] } }), ctx);
+  assert.equal(refused.status, 400);
+
+  const mine = { ...library.samples[0], id: 'ops_sample', name: 'Air via Shenzhen', blurb: 'An operator wrote this.' };
+  const saved = await saveSamples(req({ headers: auth, body: { samples: [mine, library.samples[1]] } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  const offered = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
+  assert.deepEqual(offered.routeTemplates.map((entry) => entry.name), ['Air via Shenzhen', library.samples[1].name]);
+
+  // Deleting one is saving the list without it.
+  await saveSamples(req({ headers: auth, body: { samples: [library.samples[1]] } }), ctx);
+  assert.deepEqual((await listRoutes(req({ headers: auth }), ctx)).jsonBody.routeTemplates.map((entry) => entry.id), [library.samples[1].id]);
+  await saveSamples(req({ headers: auth, body: { samples: library.samples } }), ctx);
+});
+
+await check('operators set the short forms every button is drawn with', async () => {
+  const stranger = await newBuyer('Not A Words Operator');
+  assert.equal((await saveWords(req({ headers: stranger.headers, body: { terms: [], flags: true } }), ctx)).status, 403);
+  assert.equal((await saveWords(req({ headers: auth, body: { terms: [{ from: 'warehouse', to: '' }] } }), ctx)).status, 400);
+  const saved = await saveWords(req({ headers: auth, body: { flags: false, terms: [{ from: 'warehouse', to: 'Depot' }] } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.deepEqual((await readWords(req(), ctx)).jsonBody, { flags: false, terms: [{ from: 'warehouse', to: 'Depot' }] });
+  assert.equal(renderButtonText('Received at {origin} warehouse', { origin: 'China' }), 'Received at China Depot');
+  await saveWords(req({ headers: auth, body: DEFAULT_ROUTE_WORDS }), ctx);
 });
 
 console.log(`\n${passed} checks passed`);

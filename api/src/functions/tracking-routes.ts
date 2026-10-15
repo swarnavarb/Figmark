@@ -4,7 +4,7 @@ import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect, lotIsDone, lotPhase } 
 import type { Listing, Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import { repriceCheckout, unavailableReason } from './placement.js';
 import {
-  BUILT_IN_ROUTE, ROUTE_PRESETS, ROUTE_TEMPLATES, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNo, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeJoinsLot, routeOf, sameSteps, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
+  BUILT_IN_ROUTE, SUGGESTED_STEPS, coarseStage, currentStepOf, lotNo, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeJoinsLot, routeOf, sameSteps, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
 } from '../../../shared/routes.js';
 import { NOT_ACCEPTED_MESSAGE, actionsFor, awaitingAcceptance, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
@@ -21,6 +21,7 @@ import { error, handler, json } from './http.js';
 import { ownedLot } from './fulfilment-routes.js';
 import { UNDO_EXPIRED, canUndo, undoTag, withdrawNotices, withoutUndo } from './undo.js';
 import { checkButtons, withButtons } from '../../../shared/buttons.js';
+import { routeSamples } from '../route-library.js';
 
 /**
  * Routes, the items that ride them, and moving a lot one step.
@@ -50,7 +51,9 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
-  const [routes, lots] = await Promise.all([repository.listRoutes(user.id), repository.listLots({ sellerId: user.id })]);
+  const [routes, lots, samples] = await Promise.all([
+    repository.listRoutes(user.id), repository.listLots({ sellerId: user.id }), routeSamples(repository),
+  ]);
 
   /* How many unfinished lots ride each route, and how many of those carry an
      older copy of it - so a list can say "on 3 lots" and offer the update. */
@@ -75,20 +78,9 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
      * They are not saved routes: picking one fills the editor in, and it only
      * becomes a route of the shop's own when they save it.
      */
-    presets: ROUTE_PRESETS.map((preset) => ({
-      ...preset,
-      steps: preset.steps.map((step, index) => ({
-        id: `${preset.id}_${index}`,
-        name: step.name,
-        description: step.description,
-        position: index,
-        side: step.side,
-        // The bindings come with the shape. A preset that arrived with no
-        // buttons attached would make every shop wire up its own from scratch
-        // to get the behaviour the preset is describing.
-        trigger: step.trigger,
-      })),
-    })),
+    /* Every sample is one list now, kept by the operators; the two kinds it
+       used to be split into arrive together as routeTemplates. */
+    presets: [],
     /** What a blank route opens with: the nine steps sellers actually describe. */
     suggested: SUGGESTED_STEPS.map((step, index) => ({
       id: `sg_${index}`,
@@ -107,22 +99,7 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
      * The logistics-scenario cards: where an order enters the lot's journey.
      * Same shape as `presets`, sent the same way for the same reason.
      */
-    routeTemplates: ROUTE_TEMPLATES.map((template) => ({
-      ...template,
-      steps: template.steps.map((step, index) => ({
-        id: `${template.id}_${index}`,
-        name: step.name,
-        description: step.description,
-        position: index,
-        side: step.side,
-        trigger: step.trigger,
-        stageId: step.stageId,
-        stageName: step.stageName,
-        stageIcon: step.stageIcon,
-        locked: step.locked,
-        forward: step.forward,
-      })),
-    })),
+    routeTemplates: samples,
   });
 }
 

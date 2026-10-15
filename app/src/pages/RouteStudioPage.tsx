@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  renderStepText, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, waitMessageFor,
+  renderStepText, routeParts, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, waitMessageFor,
   type RouteStep, type StepAssignee, type StepTrigger, type TrackingRoute,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
@@ -105,8 +105,22 @@ const blankStep = (seed: number): RouteStep => ({
   id: stepId(seed), name: '', description: '', position: 0,
 });
 
-export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel' }: {
+/**
+ * A sample route the operators keep, opened in the same Studio a shop uses:
+ * the words and lanes are edited here, and saving hands them back to the
+ * console instead of saving a route of a shop's own.
+ */
+export interface StudioSample {
+  name: string;
+  steps: RouteStep[];
+  onSave: (name: string, steps: RouteStep[]) => Promise<void>;
+  onDelete?: () => void;
+}
+
+export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel', sample }: {
   editing: string | null;
+  /** Editing one of the operators' sample routes rather than a shop's own. */
+  sample?: StudioSample;
   /** Handed the route as saved, for a caller that picks it straight away. */
   onSaved: (route: TrackingRoute) => void;
   onCancel: () => void;
@@ -127,6 +141,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   /* Pip: asking its questions, suggesting fixes, or tucked away. */
   /* Pip coaches the first route a seller opens; after that it waits behind "Ask Pip". */
   const [pip, setPip] = useState<'ask' | 'coach' | 'hidden'>(() => {
+    if (sample) return 'hidden';
     try {
       if (localStorage.getItem(PIP_SEEN_KEY) === '1') return 'hidden';
       localStorage.setItem(PIP_SEEN_KEY, '1');
@@ -167,6 +182,11 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const [behind, setBehind] = useState<{ route: TrackingRoute; lots: number } | null>(null);
 
   useEffect(() => {
+    if (sample) {
+      // A sample is read by every shop; it is previewed on the commonest lane.
+      setVars({ origin: 'China', destination: 'India' });
+      return;
+    }
     void api.myLots().then((result) => {
       const lane = result.lots.find((entry) => entry.lot.originCountry || entry.lot.destinationCountry)?.lot;
       if (lane) setVars({ origin: lane.originCountry, destination: lane.destinationCountry });
@@ -174,6 +194,10 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   }, []);
 
   useEffect(() => {
+    if (sample) {
+      open(sample.steps, sample.name);
+      return;
+    }
     void api.routes().then((result) => {
       setLibrary(result);
       if (!editing) return;
@@ -312,6 +336,19 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     event.stopPropagation();
     setBusy(true);
     setError(null);
+    if (sample) {
+      try {
+        await sample.onSave(name.trim(), given.filter((step) => step.name.trim()).map((step) => ({
+          ...step, name: step.name.trim(), description: step.description.trim(),
+        })));
+        setSavedAs(snapshot(name, steps, joinAt, leaveAt));
+      } catch (err) {
+        setError(err instanceof ApiRequestError ? err.message : 'Could not save that sample.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     try {
       const result = await api.saveRoute({
         id: editing ?? undefined,
@@ -367,6 +404,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   /* Lots carry their own copy of a route, so deleting one only takes it off
      the list - every lot already on it keeps travelling exactly as before. */
   async function remove() {
+    if (sample?.onDelete) { sample.onDelete(); return; }
     if (!editing) return;
     if (!window.confirm(`Delete "${name.trim() || 'this route'}"? Lots already on it keep their steps.`)) return;
     setBusy(true);
@@ -406,7 +444,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const question = pip === 'ask' ? pipQueue(answers)[0] : undefined;
   const tips = pip === 'coach' ? pipTips(named, name, problems) : [];
   const tip = tips.length ? tips[tipAt % tips.length] : undefined;
-  const pipDock = pip === 'hidden' ? (
+  const pipDock = sample ? null : pip === 'hidden' ? (
     <button type="button" className="pipcall" onClick={() => setPip('coach')}>🤖 Ask Pip</button>
   ) : question ? (
     <PipSays mood="think"
@@ -435,15 +473,13 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     return (
       <PreviewVarsContext.Provider value={vars}>
         {intro ?? (
-          <div className="page__head">
-            <div>
-              <h1>{editing ? 'Edit route' : 'New route'}</h1>
-              <p className="muted">
-                The steps your buyers read as their tracking. Pick a ready-made route and change
-                any words you like - you can preview exactly what a buyer sees before saving.
-              </p>
-            </div>
-          </div>
+          <header className="rsnew__head">
+            <h1>{editing ? 'Edit route' : 'New route'}</h1>
+            <InfoTip label="About routes">
+              The steps your buyers read as their tracking. Pick the one closest to how you ship and change any
+              words you like - you can preview exactly what a buyer sees before saving.
+            </InfoTip>
+          </header>
         )}
 
         {error && <ErrorNotice message={error} />}
@@ -454,35 +490,46 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
             {/* Most shops ship one of a handful of ways, so those lead: one
                 tap opens a whole route to look over. Pip and a blank chain are
                 for the shop whose way is not among them. */}
-            <span className="card__title">Start from the one closest to how you ship</span>
-            <div className="rsgrid">
-              {library.routeTemplates.map((template) => (
-                <button key={template.id} type="button" className="rscard"
-                  onClick={() => open(template.steps, template.name)}>
-                  <span className="rscard__icon"><Icon name={STAGE_ICON_META[template.icon].icon} size={20} /></span>
-                  <span className="rscard__name">{template.name}</span>
-                  <span className="rscard__note">{template.blurb}</span>
-                  <span className="faint">{routePartsLine(template)}</span>
-                </button>
-              ))}
-              {library.presets.map((preset) => (
-                <button key={preset.id} type="button" className="rscard"
-                  onClick={() => open(preset.steps, preset.name)}>
-                  <span className="rscard__icon"><Icon name="truck" size={20} /></span>
-                  <span className="rscard__name">{preset.name}</span>
-                  <span className="rscard__note">{preset.blurb}</span>
-                  <span className="faint">{routePartsLine(preset)}</span>
-                </button>
-              ))}
+            <span className="rsnew__label">Start from the closest one</span>
+            <div className="rsnew__list">
+              {[...library.routeTemplates, ...library.presets.map((preset) => ({ ...preset, icon: 'transit' as const }))].map((template) => {
+                const parts = routeParts(template);
+                const total = Math.max(1, template.steps.length);
+                return (
+                  <button key={template.id} type="button" className="rsnew__item"
+                    onClick={() => open(template.steps, template.name)}>
+                    <span className="rsnew__icon"><Icon name={STAGE_ICON_META[template.icon].icon} size={18} /></span>
+                    <span className="rsnew__body">
+                      <span className="rsnew__name">{template.name}</span>
+                      {template.blurb && <span className="rsnew__blurb">{template.blurb}</span>}
+                      {/* The three parts as one bar, in the lanes' colours. */}
+                      <span className="rsnew__bar" aria-label={routePartsLine(template)} title={routePartsLine(template)}>
+                        <span className="rsnew__seg rsnew__seg--pre" style={{ flexGrow: parts.before / total }} />
+                        {parts.lot > 0 && <span className="rsnew__seg rsnew__seg--lot" style={{ flexGrow: parts.lot / total }} />}
+                        {parts.after > 0 && <span className="rsnew__seg rsnew__seg--post" style={{ flexGrow: parts.after / total }} />}
+                      </span>
+                      <span className="rsnew__trail">
+                        {template.steps.slice(0, 4).map((step) => renderStepText(step.name, vars)).join(' → ')}
+                        {template.steps.length > 4 ? ` → +${template.steps.length - 4}` : ''}
+                      </span>
+                    </span>
+                    <Icon name="right" size={16} />
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="rsstart__other">
-              <span className="faint">None of these?</span>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={startPip}>
-                🤖 Answer a few questions
+            <span className="rsnew__label">Or</span>
+            <div className="rsnew__other">
+              <button type="button" className="rsnew__alt" onClick={startPip}>
+                <span aria-hidden="true">🤖</span>
+                <b>Answer a few questions</b>
+                <span className="faint">Pip builds it with you</span>
               </button>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => open(library.suggested, '')}>
-                Start from common steps
+              <button type="button" className="rsnew__alt" onClick={() => open(library.suggested, '')}>
+                <span aria-hidden="true">✏️</span>
+                <b>Start from common steps</b>
+                <span className="faint">Nine steps to edit</span>
               </button>
             </div>
           </div>
@@ -503,16 +550,18 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 
       {/* The route itself: its name, and a map of its three parts at a glance. */}
       <header className="rshead">
+        <div className="rshead__top">
         <input id="rs-name" className="rshead__name" value={name} onChange={(event) => setName(event.target.value)}
           placeholder="Name this route - e.g. Guangzhou air" aria-label="Route name" required autoFocus />
         <span className="rshead__hint">
           <InfoTip label="About the route name">For your own lists - buyers see the steps, not this name.</InfoTip>
-          {editing && (
+          {(editing || sample?.onDelete) && (
             <MoreMenu label="More for this route" items={[
               { label: 'Delete route', danger: true, disabled: busy, onClick: () => void remove() },
             ]} />
           )}
         </span>
+        </div>
         <div className="seg rshead__mode" role="tablist" aria-label="How much to show">
           <button type="button" role="tab" aria-selected={!detailed} className={detailed ? '' : 'is-on'}
             onClick={() => showDetails(false)}>Steps</button>

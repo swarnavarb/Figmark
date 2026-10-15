@@ -2,6 +2,8 @@ import type { HttpResponseInit, InvocationContext } from '@azure/functions';
 import type { ApiError } from '../../../shared/contracts.js';
 import { AuthError } from '../auth/errors.js';
 import { StaleWriteError } from '../data/concurrency.js';
+import { getRepository } from '../data/index.js';
+import { syncRouteWords } from '../route-library.js';
 
 /**
  * JSON response with optional Set-Cookie values.
@@ -121,6 +123,9 @@ export function handler<Args extends unknown[]>(
   return async (...args) => {
     const context = args[args.length - 1] as InvocationContext;
     try {
+      /* The route short forms every label is drawn with: read at most once a
+         minute per worker, and never the reason a request fails. */
+      await getRepository().then((repository) => syncRouteWords(repository)).catch(() => {});
       return await fn(...args);
     } catch (err) {
       return toErrorResponse(err, context);

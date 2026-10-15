@@ -1266,7 +1266,7 @@ export function LotDetail({ lotId, onBack, customers }: {
         <div className="lothero__foot">
           <p className="lothero__line">
             {[
-              `${items.length} ${items.length === 1 ? 'order' : 'orders'}`,
+              `${totals.lines} ${totals.lines === 1 ? 'order' : 'orders'}`,
               totals.valueMinor > 0 ? formatMoney(totals.valueMinor) : null,
               totals.weightGrams > 0 ? formatWeight(totals.weightGrams) : null,
             ].filter(Boolean).join(' · ')}
