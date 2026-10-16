@@ -8,6 +8,7 @@ import { api } from '../api';
 import { formatMoney } from '../format';
 import { STAGE_TONES } from '../pages/ProfitCalculator';
 import { CalcIcon } from './CalcIcon';
+import { Loading } from './Feedback';
 import '../styles/FloatingCalc.css';
 
 /**
@@ -95,7 +96,7 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
         {collapsible && <CostSwitch on onToggle={() => setOpen(false)} />}
       </div>
 
-      {templates === null ? <p className="faint">Loading your calculators…</p> : templates.length > 0 ? (
+      {templates === null ? <Loading label="Loading your calculators" /> : templates.length > 0 ? (
         <div className="stack" style={{ gap: 10 }}>
           <label className="field">
             <span>Calculator</span>

@@ -30,6 +30,7 @@ import { RouteStudio, routeStepsFrom } from './RouteStudioPage';
 import { ForwarderBooking } from '../components/ForwarderBooking';
 import { formatDate, formatMoney, formatWeight } from '../format';
 import { ConditionTag } from '../components/ConditionTag';
+import { Loading } from '../components/Feedback';
 
 /**
  * Who moves this lot, and how to reach them.
@@ -529,7 +530,7 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
         ))}
 
         {!library && (
-          <p className="field__hint" style={{ margin: 0 }}>Loading routes…</p>
+          <Loading label="Loading routes" />
         )}
       </fieldset>
 
@@ -686,7 +687,7 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
           </label>
         ) : (
           <p className="field__hint">
-            {library ? 'You have no route for lots yet.' : 'Loading…'}
+            {library ? 'You have no route for lots yet.' : <Loading size="sm" label="Loading routes" />}
           </p>
         )}
 
@@ -966,7 +967,7 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
       {error && <ErrorNotice message={error} />}
 
       {items === null ? (
-        <p className="muted">Loading…</p>
+        <Loading />
       ) : items.length === 0 ? (
         <p className="muted">
           {query
@@ -1103,7 +1104,7 @@ export function LotDetail({ lotId, onBack, customers }: {
 
   // A <div>, not a <main>: this is drawn inside the Sell tab's own <main>.
   if (error && !data) return <div className="stack"><ErrorNotice message={error} /></div>;
-  if (!data) return <div className="stack"><p className="muted">Loading…</p></div>;
+  if (!data) return <div className="stack"><Loading /></div>;
 
   const { lot, listings, totals, route, items } = data;
   /** Somewhere else an item could ride: any open lot of this shop but this one. */
@@ -1323,7 +1324,7 @@ export function LotDetail({ lotId, onBack, customers }: {
               </Fragment>
             : people
               ? <LotPeople board={people} onChanged={setPeople} onError={setError} />
-              : <p className="muted">Loading…</p>}
+              : <Loading />}
 
           {/* Sold, bound for a lot, in none - which before this screen existed
               was a list nobody could see. Shut, because most of the time there

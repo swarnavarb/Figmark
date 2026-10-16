@@ -59,7 +59,7 @@ import {
 import { ItemHead } from '../components/ItemHead';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
 import { PowerSalePanel } from '../components/PowerSale';
-import { SkeletonText, useToast } from '../components/Feedback';
+import { SkeletonText, useToast, Loading } from '../components/Feedback';
 import { InsightsPanel } from './InsightsPanel';
 import { ProfitCalculator } from './ProfitCalculator';
 import { SalesPanel } from './SalesPanel';
@@ -72,6 +72,7 @@ import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
 import { MoreMenu } from '../components/MoreMenu';
 import { EarnPill, earnOf } from '../components/Affiliate';
+import { Preloader } from '../components/Preloader';
 import '../styles/ShopPage.css';
 
 type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people';
@@ -158,7 +159,7 @@ export function ShopPage() {
   }, [load]);
 
   if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!stores) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
+  if (!stores) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
 
   if (stores.length === 0 && !opening) {
     return <ShopStart onOpen={() => setOpening(true)} />;
@@ -586,7 +587,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   // Only a failed load stands in for the form; a failed save is said beside
   // Save, with everything typed still there to fix.
   if (error && !draft) return <ErrorNotice message={error} />;
-  if (!draft) return <p className="muted">Loading…</p>;
+  if (!draft) return <Loading />;
 
   const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) =>
     setDraft({ ...draft, [key]: value });
@@ -1132,7 +1133,7 @@ function MyItems({ store }: { store: StoreAccess }) {
       ) : mode === 'power' ? (
         <PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} />
       ) : !data ? (
-        <p className="muted">Loading…</p>
+        <Loading />
       ) : (
         <>
           {mine.length === 0 && (
@@ -1488,7 +1489,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   }
 
   if (error && !data) return <ErrorNotice message={error} />;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <Loading />;
 
   const needsAnswer = new Set([...data.waiting, ...data.placed].map((row) => row.id));
   /* Inside a lot, the book is that lot's orders and nothing else. */
@@ -2244,7 +2245,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
   // Only a first load that fails has nothing to show; a failed delete says so
   // above the list and leaves the list where it is.
   if (error && templates === null) return <ErrorNotice message={error} />;
-  if (templates === null) return <p className="muted">Loading…</p>;
+  if (templates === null) return <Loading />;
 
   if (editing) {
     return (
@@ -2881,7 +2882,7 @@ function Refunds({ store }: { store: StoreAccess }) {
   }, [load]);
 
   if (error && !data) return <ErrorNotice message={error} />;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <Loading />;
 
   const deciding = data.credits.filter((credit) => credit.status !== 'refund_pending');
   const waiting = data.credits.filter((credit) => credit.status === 'refund_pending');
@@ -3483,7 +3484,7 @@ function ListingIntoLot({ listing, store, onClose, onDone }: {
           Every order of this listing goes straight into the lot you pick.
         </span>
         {lots === null ? (
-          <p className="muted">Loading…</p>
+          <Loading />
         ) : lots.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
             No lots open yet. <Link to="/shop?tab=lots&spotlight=new" onClick={onClose}>Create one</Link> first.
@@ -3589,7 +3590,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
           </span>
 
           {lots === null ? (
-            <p className="muted">Loading…</p>
+            <Loading />
           ) : lots.length === 0 ? (
             <p className="muted" style={{ margin: 0 }}>No lots open yet. Create one below.</p>
           ) : (
@@ -3871,7 +3872,7 @@ function Unlotted({ store, onBack }: {
       {notice && <p className="notice notice--ok" role="status">{notice}</p>}
 
       {!orders || !listings ? (
-        !error && <p className="muted">Loading…</p>
+        !error && <Loading />
       ) : (
         <>
           {orders.length + listings.length > 0 && (
@@ -4095,7 +4096,7 @@ function ShipTogether({ store, orders, listings, onClose, onDone }: {
         <fieldset className="pickset">
           <legend>Choose a lot</legend>
           {lots === null ? (
-            <p className="muted">Loading…</p>
+            <Loading />
           ) : (
             <>
               {lots.map(({ lot }) => (
@@ -4262,7 +4263,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
   }
 
   if (error && !data) return <ErrorNotice message={error} />;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <Loading />;
 
   /* Closed or fully delivered is done - the same rule the server uses to stop
      filing orders into a lot or moving it. */
@@ -4463,7 +4464,7 @@ function Analytics({ store }: { store: StoreAccess }) {
   }, [store.ownerId, store.isOwner]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <Loading />;
 
   const { analytics } = data;
   const peak = Math.max(1, ...analytics.daily.map((day) => day.revenueMinor));

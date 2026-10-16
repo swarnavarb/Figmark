@@ -8,6 +8,7 @@ import { timeAgo } from '../format';
 import { setBadge } from '../push';
 import { isReloading, isStale, loadFresh } from '../freshness';
 import { onBellChanged } from '../live';
+import { Spinner } from './Spinner';
 
 /**
  * What happened while you were not looking.
@@ -313,7 +314,7 @@ export function Notifications() {
               {earlier.map(line)}
               {nextBefore && (
                 <button type="button" className="bell__more" onClick={() => void more()} disabled={loadingMore}>
-                  {loadingMore ? 'Loading…' : 'Show older'}
+                  {loadingMore ? <><Spinner size={14} label="Loading" /> Show older</> : 'Show older'}
                 </button>
               )}
             </div>

@@ -6,6 +6,7 @@ import { ManagerMark } from '../components/ManagerBadge';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
+import { Preloader } from '../components/Preloader';
 import '../styles/MyDisputesPage.css';
 
 type Tab = 'buyer' | 'store' | 'community';
@@ -42,7 +43,7 @@ export function MyDisputesPage() {
   }, [load]);
 
   if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!data) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   const rows = tab === 'buyer' ? data.asBuyer : tab === 'store' ? data.asStore : data.community;
   const choices = data.orders.filter((order) => tab === 'community' || order.side === (tab === 'buyer' ? 'buyer' : 'seller'));

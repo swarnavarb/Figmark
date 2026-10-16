@@ -15,6 +15,7 @@ import { DevicesView } from './DevicesView';
 import { PhotosView } from './PhotosView';
 import { RoutesView } from './RoutesView';
 import { BackButton, goOps, useOpsPath } from './nav';
+import { Loading } from '../components/Feedback';
 import '../styles.css';
 import '../styles/admin.css';
 
@@ -76,7 +77,7 @@ function Console() {
     void refresh();
   }, [refresh]);
 
-  if (loading) return <main className="ops__body"><p className="muted">Loading…</p></main>;
+  if (loading) return <main className="ops__body"><Loading /></main>;
   if (!user) return <SignIn onSignedIn={refresh} />;
 
   // Signed in, but not as an operator. Said plainly rather than shown an empty

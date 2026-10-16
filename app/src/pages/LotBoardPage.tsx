@@ -5,6 +5,7 @@ import { LOT_CARD_LABELS } from '@shared/enums';
 import { ApiRequestError, api, type LotBoard } from '../api';
 import { ErrorNotice, Icon } from '../components/ui';
 import { LotPeople } from '../components/LotPeople';
+import { Preloader } from '../components/Preloader';
 
 /**
  * The packing board: one lot, worked customer by customer.
@@ -34,7 +35,7 @@ export function LotBoardPage() {
   useEffect(() => { void load(); }, [load]);
 
   if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
+  if (!data) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
 
   const { lot, tally } = data;
 

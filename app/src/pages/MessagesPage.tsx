@@ -16,6 +16,7 @@ import { VoicePicker, VoiceScope } from '../components/SocialVoice';
 import { RoomBar, useLongPress } from '../components/SocialChrome';
 import { useGoBack } from '../components/ScrollManager';
 import { shrink } from '../components/PhotoManager';
+import { Spinner } from '../components/Spinner';
 import '../styles/MessagesPage.css';
 
 /**
@@ -586,7 +587,7 @@ export function ThreadPage() {
         <div className="chthread">
           {data.more && (
             <button type="button" className="chmore" disabled={older} onClick={() => void loadOlder()}>
-              {older ? 'Loading…' : 'Load earlier messages'}
+              {older ? <><Spinner size={14} label="Loading" /> Load earlier messages</> : 'Load earlier messages'}
             </button>
           )}
           {data.messages.length === 0 ? (

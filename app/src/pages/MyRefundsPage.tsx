@@ -6,6 +6,8 @@ import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../a
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
+import { Loading } from '../components/Feedback';
+import { Preloader } from '../components/Preloader';
 import '../styles/MyRefundsPage.css';
 
 /**
@@ -133,7 +135,7 @@ export function MyRefundsPage() {
   }
 
   if (error && !refunds) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!refunds) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!refunds) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   const currency = refunds[0]?.currency ?? 'INR';
   const owed = refunds.reduce((sum, refund) => sum + refund.leftMinor, 0);
@@ -273,7 +275,7 @@ function EarningsTab() {
   }, []);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!earnings) return <p className="muted">Loading…</p>;
+  if (!earnings) return <Loading />;
 
   const currency = earnings[0]?.currency ?? 'INR';
   const sum = (status: AffiliateEarning['status']) => earnings

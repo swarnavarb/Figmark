@@ -3,6 +3,7 @@ import { DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS } from '@shared/disputes';
 import { ApiRequestError, admin, type AdminDisputeRow } from './api';
 import { formatDate, formatMoney, timeAgo } from '../format';
+import { Loading } from '../components/Feedback';
 
 /**
  * Every dispute, for oversight.
@@ -46,7 +47,7 @@ export function DisputesView() {
     }
   }
 
-  if (!rows && !error) return <p className="muted">Loading…</p>;
+  if (!rows && !error) return <Loading />;
   const all = rows ?? [];
   const closed = (row: AdminDisputeRow) => row.dispute.status === 'resolved' || row.dispute.status === 'withdrawn';
   const overdue = all.filter((row) => row.overdue);

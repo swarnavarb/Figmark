@@ -7,6 +7,7 @@ import { formatMoney } from '../format';
 import { CalcInputs, CalcLines, PriceRoute } from './CostSheetField';
 import { ErrorNotice } from './ui';
 import { CalcIcon } from './CalcIcon';
+import { Loading } from './Feedback';
 
 /**
  * The calculator, one tap from anywhere (Pro).
@@ -226,7 +227,7 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
     </div>
   );
 
-  if (stores === null) return <>{head}<p className="muted">Loading…</p></>;
+  if (stores === null) return <>{head}<Loading /></>;
   if (stores.length === 0) return <>{head}<p className="muted">The calculator is for shops. Open a shop to use it.</p></>;
 
   return (
@@ -243,7 +244,7 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
         )}
         {tab === 'saved' ? (
           <SavedCalcList calcs={calcs} store={store} onChanged={setCalcs} onAct={onLeave} />
-        ) : templates === null ? <p className="muted">Loading your calculators…</p> : !template ? (
+        ) : templates === null ? <Loading label="Loading your calculators" /> : !template ? (
           <p className="muted">
             No calculator saved yet.{' '}
             <Link to="/shop?tab=calculator" state={{ store: storeId }} onClick={onLeave}>Set one up</Link> first.

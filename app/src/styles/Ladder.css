@@ -12,8 +12,6 @@
   border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft);
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
-/* A preview in a form is a list, not a progress bar: nothing has happened yet. */
-.ladder--preview .ladder__row { color: var(--text-dim); padding: 5px 0; }
 .ladder__track-link:hover { text-decoration: underline; }
 .ladder__leave.is-past .ladder__leave-text { color: var(--text-dim); }
 /* The wait between the two ladders. Dashed, because it is a state rather than

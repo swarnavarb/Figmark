@@ -13,6 +13,7 @@ import { OrderPhotos } from '../components/OrderPhotos';
 import { ConditionTag } from '../components/ConditionTag';
 import { shrink } from '../components/PhotoManager';
 import { useSession } from '../session';
+import { Preloader } from '../components/Preloader';
 import '../styles/CrewLotPage.css';
 
 /**
@@ -155,7 +156,7 @@ export function CrewLotPage() {
       </main>
     );
   }
-  if (!view) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!view) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   const done = (key: string) => view.items.filter((item) => item.ticks[key]).length;
   const visible = (key: string) => filter === 'all' || (filter === `todo:${key}`);

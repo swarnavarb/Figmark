@@ -5,7 +5,7 @@ import { BUYER_DISPUTE_REASONS, DISPUTE_REASON_LABELS, SELLER_DISPUTE_REASONS } 
 import { REASON_MIN, type ReportTarget } from '@shared/moderation';
 import { ApiRequestError, api, type DisputeTarget, type EvidenceDraft, type ManagerOption } from '../api';
 import { formatMoney } from '../format';
-import { useToast } from './Feedback';
+import { useToast, Loading } from './Feedback';
 import { ManagerMark } from './ManagerBadge';
 import { Modal } from './LotFields';
 import { shrink } from './PhotoManager';
@@ -236,7 +236,7 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
           <>
             <div className="field">
               <span>Community manager</span>
-              {managers === null ? <p className="faint">Loading…</p> : managers.length === 0 ? (
+              {managers === null ? <Loading /> : managers.length === 0 ? (
                 <p className="faint">No community manager is taking new disputes right now. Try again soon.</p>
               ) : (
                 <div className="raise__managers" role="radiogroup" aria-label="Community manager">

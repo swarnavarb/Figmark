@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { SANCTION_LABELS, XP_PENALTY } from '@shared/disputes';
 import { ApiRequestError, admin, type PendingAction } from './api';
 import { timeAgo } from '../format';
+import { Loading } from '../components/Feedback';
 
 /**
  * What community managers decided that waits for Figmark.
@@ -40,7 +41,7 @@ export function ApprovalsView() {
     }
   }
 
-  if (!actions && !error) return <p className="muted">Loading…</p>;
+  if (!actions && !error) return <Loading />;
   const pending = (actions ?? []).filter((entry) => entry.status === 'pending');
   const done = (actions ?? []).filter((entry) => entry.status !== 'pending');
 

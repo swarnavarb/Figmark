@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { CalcIcon } from './CalcIcon';
+import { Loading } from './Feedback';
 
 /**
  * The floating calculator button, mounted on every screen.
@@ -75,7 +76,7 @@ export function FloatingCalc() {
         <div className={`fcalc${closing ? ' is-closing' : ''}`}>
           <button type="button" className="fcalc__scrim" aria-label="Close the calculator" onClick={close} />
           <section className="fcalc__sheet prozone" role="dialog" aria-modal="true" aria-label="Profit calculator">
-            <Suspense fallback={<p className="muted">Loading…</p>}>
+            <Suspense fallback={<Loading />}>
               <QuickCalc onLeave={close} />
             </Suspense>
           </section>

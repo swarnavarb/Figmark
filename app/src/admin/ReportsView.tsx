@@ -4,6 +4,7 @@ import {
 } from '@shared/moderation';
 import { ApiRequestError, admin } from './api';
 import { timeAgo } from '../format';
+import { Loading } from '../components/Feedback';
 
 type Row = ContentReport & { authorName: string };
 
@@ -32,7 +33,7 @@ export function ReportsView() {
   useEffect(() => { void load(); }, [load]);
 
   if (error) return <p className="notice notice--error">{error}</p>;
-  if (!rows) return <p className="muted">Loading…</p>;
+  if (!rows) return <Loading />;
 
   const open = rows.filter((row) => row.status === 'open');
   const done = rows.filter((row) => row.status !== 'open');

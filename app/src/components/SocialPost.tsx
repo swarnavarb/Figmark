@@ -18,6 +18,7 @@ import { useVoice, VoiceAvatar } from './SocialVoice';
 import { PostInFigmark } from './PostInFigmark';
 import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
+import { Loading } from './Feedback';
 
 /**
  * One post, and everything people do with it.
@@ -1036,7 +1037,7 @@ function Reactors({ card, onClose }: { card: PostCard; onClose: () => void }) {
         ))}
       </div>
       {error && <p className="notice notice--error">{error}</p>}
-      {!rows && !error && <p className="muted">Loading…</p>}
+      {!rows && !error && <Loading />}
       <ul className="reactors__list">
         {shown.map((row, index) => (
           <li key={`${row.party.handle ?? row.party.name}-${index}`} className="reactors__row">
@@ -1113,7 +1114,7 @@ function Comments({ card, onCount }: {
   return (
     <section className="cmts" aria-label="Comments">
       {error && <p className="notice notice--error">{error}</p>}
-      {!threads && !error && <p className="faint">Loading comments…</p>}
+      {!threads && !error && <Loading label="Loading comments" />}
       {threads && threads.length === 0 && (
         <p className="cmts__empty">No comments yet. Start the conversation 💬</p>
       )}

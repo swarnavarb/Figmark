@@ -80,6 +80,23 @@ export function SkeletonRows({ count = 6 }: { count?: number }) {
   );
 }
 
+/**
+ * Something is on its way and a skeleton would be guessing at its shape: the
+ * boot screen's mark, small. `label` is what a screen reader hears; `size`
+ * "sm" sits inline with text.
+ *
+ * Counts toward the first screen still loading (see Preloader), so a refresh
+ * keeps the boot screen up rather than showing it and then this.
+ */
+export function Loading({ label = 'Loading', size }: { label?: string; size?: 'sm' }) {
+  return (
+    <span className={size === 'sm' ? 'loadmark loadmark--sm' : 'loadmark'} role="status" aria-label={label} data-boot-pending>
+      <span className="loadmark__arc" aria-hidden="true" />
+      <span className="loadmark__tile" aria-hidden="true" />
+    </span>
+  );
+}
+
 /* ── Toasts ──────────────────────────────────────────────────────────────── */
 
 export type ToastTone = 'ok' | 'error' | 'info';

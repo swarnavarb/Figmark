@@ -104,6 +104,5 @@
 }
 .inbox__compose.is-on, .inbox__compose:hover:not(:disabled) { background: var(--sx-grad); color: #fff; border-color: transparent; }
 .chip.is-on .chip__count { background: rgba(255, 255, 255, 0.24); color: #fff; }
-.chip--hot .chip__count { background: var(--coral); color: var(--coral-ink); }
 .cmsg__link:hover { filter: brightness(1.06); }
 .cmsg__link:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }

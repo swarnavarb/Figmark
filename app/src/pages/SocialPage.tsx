@@ -13,6 +13,7 @@ import { timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { WantedPage } from './WantedPage';
 import { useToast } from '../components/Feedback';
+import { Spinner } from '../components/Spinner';
 import '../styles/SocialPage.css';
 
 /**
@@ -180,7 +181,7 @@ function FollowingFeed() {
 
       {posts && next && (
         <button type="button" className="chmore" disabled={more} onClick={() => void loadMore()}>
-          {more ? 'Loading…' : 'Show older posts'}
+          {more ? <><Spinner size={14} label="Loading" /> Show older posts</> : 'Show older posts'}
         </button>
       )}
     </div>

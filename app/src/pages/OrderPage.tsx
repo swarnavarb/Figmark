@@ -32,6 +32,8 @@ import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
 import { MomentBanner, shopBadge, type ShareSpec } from '../components/ShareKit';
 import { OrderPhotos } from '../components/OrderPhotos';
+import { Loading } from '../components/Feedback';
+import { Preloader } from '../components/Preloader';
 import '../styles/OrderPage.css';
 
 /**
@@ -107,7 +109,7 @@ export function OrderPage() {
   }, [checkoutOf]);
 
   if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data || !state) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!data || !state) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   const { order } = data;
   /** The lot it is in now, as opposed to the ones it has been in. */
@@ -1014,7 +1016,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   }, [order.id, order.unitPriceMinor, order.quantity]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!quote) return <p className="muted">Loading…</p>;
+  if (!quote) return <Loading />;
 
   if (quote.unavailable) {
     return (

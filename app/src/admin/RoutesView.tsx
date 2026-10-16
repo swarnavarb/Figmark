@@ -11,6 +11,7 @@ import { RouteStudio } from '../pages/RouteStudioPage';
 import { ApiRequestError, admin } from './api';
 import { BackButton, backOps, goOps, useOpsPath } from './nav';
 import { timeAgo } from '../format';
+import { Loading } from '../components/Feedback';
 
 type Library = Awaited<ReturnType<typeof admin.routeLibrary>>;
 
@@ -44,7 +45,7 @@ export function RoutesView() {
   useEffect(() => { void load(); }, []);
 
   if (error && !data) return <p className="notice notice--error">{error}</p>;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <Loading />;
 
   const savedCommon = (common: RouteStep[], customised: boolean) => setData({
     ...data, common, commonCustomised: customised, commonUpdatedAt: customised ? new Date().toISOString() : null, commonUpdatedBy: null,

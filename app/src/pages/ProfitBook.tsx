@@ -8,6 +8,7 @@ import {
 import { ApiRequestError, api, type BookLot, type BookRow, type CostsResponse } from '../api';
 import { formatMoney } from '../format';
 import { ErrorNotice, Modal, PersonLink, Tile } from '../components/ui';
+import { Loading } from '../components/Feedback';
 
 /**
  * Real profit as a book: lots, and what was sold from hand. A lot opens to
@@ -80,7 +81,7 @@ export function ProfitBook({ shop, data, reload }: { shop?: string; data: CostsR
     inLots: rows.filter((row) => row.lotId),
   }), [rows]);
 
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <Loading />;
 
   const lot = lotId ? data.lots.find((entry) => entry.id === lotId) ?? null : null;
   const scope = lot ? inLots.filter((row) => row.lotId === lot.id) : tab === 'lots' ? inLots : inHand;

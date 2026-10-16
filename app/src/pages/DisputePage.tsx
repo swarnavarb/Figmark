@@ -10,6 +10,7 @@ import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumR
 import { ScreenshotPicker } from '../components/DisputeFlows';
 import { Avatar, ErrorNotice, Icon, useConfirm } from '../components/ui';
 import { formatDateOrdinal, formatMoney, timeAgo } from '../format';
+import { Preloader } from '../components/Preloader';
 import '../styles/DisputePage.css';
 
 /**
@@ -39,7 +40,7 @@ export function DisputePage() {
   }, [load]);
 
   if (error && !data) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
+  if (!data) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
 
   const { dispute, order, parties, role } = data;
   const rounds = dispute.rounds ?? [];

@@ -13,6 +13,7 @@ import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
 import { scrollToTopOf, useGoBack } from '../components/ScrollManager';
 import { CalcIcon } from '../components/CalcIcon';
 import { PriceRoute } from '../components/CostSheetField';
+import { Loading } from '../components/Feedback';
 
 /**
  * The profit calculator (Pro).
@@ -116,7 +117,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   const result = useMemo(() => (active ? calculateProfit(active, input) : null), [active, input]);
 
   if (error && !templates) return <ErrorNotice message={error} />;
-  if (!templates) return <p className="muted">Loading…</p>;
+  if (!templates) return <Loading />;
 
   const set = (patch: Partial<ProfitInput>) => setInput((current) => ({ ...current, ...patch }));
   /** Any change to the sheet makes it a draft, kept on screen until saved or dropped. */
