@@ -1436,10 +1436,20 @@ code, kbd, samp, pre {
  * 20px off the bottom of the screen - close enough to look deliberate, and
  * wrong enough that the page showed through underneath it.
  */
-.tabbar {
+/* Holds the bar at the bottom of the screen and never moves itself: the bar
+   slides inside it (see "Bars that step aside" below). */
+.tabdock {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 40;
+  /* Down to the true bottom when an iPhone has left the window a keyboard
+     short - see ViewportSync. Zero otherwise. */
+  margin-bottom: calc(-1 * var(--vv-shrunk, 0px));
+  pointer-events: none;
+}
+.tabbar {
+  position: relative;
+  pointer-events: auto;
   display: flex;
   isolation: isolate;
   /* Glass, as the header is once scrolled: the page passes underneath as a
@@ -1450,9 +1460,6 @@ code, kbd, samp, pre {
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
   border-top: 1px solid var(--border);
   height: var(--tabbar-h);
-  /* Down to the true bottom when an iPhone has left the window a keyboard
-     short - see ViewportSync. Zero otherwise. */
-  margin-bottom: calc(-1 * var(--vv-shrunk, 0px));
   padding: 6px 8px;
   padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
 }

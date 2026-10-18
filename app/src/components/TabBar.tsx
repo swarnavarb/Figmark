@@ -185,36 +185,43 @@ export function TabBar() {
     // Shop violet, Discover iris, Sell aqua, Services lime, Social pink,
     // Quests gold. Colours people learn without being told, on the one element
     // always on screen.
-    <nav className="tabbar" aria-label="Sections" data-tab={active.id}>
-      {/* Position and width both come from the column and the column count, in
-          CSS, against the bar's padding box. Sizing it as a percentage of the
-          whole bar instead put it eight pixels past the right edge on the last
-          tab - enough to make the page scroll sideways. */}
-      <span
-        className="tabbar__pill"
-        style={{ '--i': column, '--tabs': TABS.length + 1 } as React.CSSProperties}
-        aria-hidden="true"
-      />
-      {TABS.slice(0, CREATE_COLUMN).map(tabLink)}
-      <div className="tab-create">
-        <button type="button" className={`tab-create__btn${creating ? ' is-open' : ''}`}
-          aria-label="Create a post or listing" aria-haspopup="dialog" aria-expanded={creating}
-          onClick={() => {
-            if (!user) {
-              promptAuth('Sign in to post, list and share.');
-              return;
-            }
-            setCreating(!creating);
-          }}>
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.4"
-            strokeLinecap="round" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        </button>
-        <span className="tab-item__label" aria-hidden="true">Create</span>
-      </div>
-      {TABS.slice(CREATE_COLUMN).map(tabLink)}
-      {creating && <CreateSheet onClose={() => setCreating(false)} />}
-    </nav>
+    //
+    // Pinned by the dock, slid by the bar inside it. An iPhone holds a fixed
+    // element that is mid-transition where it was while Safari's toolbar
+    // grows back, then drops it into place once the slide ends; a dock that
+    // never moves is kept on the toolbar the whole way.
+    <div className="tabdock">
+      <nav className="tabbar" aria-label="Sections" data-tab={active.id}>
+        {/* Position and width both come from the column and the column count, in
+            CSS, against the bar's padding box. Sizing it as a percentage of the
+            whole bar instead put it eight pixels past the right edge on the last
+            tab - enough to make the page scroll sideways. */}
+        <span
+          className="tabbar__pill"
+          style={{ '--i': column, '--tabs': TABS.length + 1 } as React.CSSProperties}
+          aria-hidden="true"
+        />
+        {TABS.slice(0, CREATE_COLUMN).map(tabLink)}
+        <div className="tab-create">
+          <button type="button" className={`tab-create__btn${creating ? ' is-open' : ''}`}
+            aria-label="Create a post or listing" aria-haspopup="dialog" aria-expanded={creating}
+            onClick={() => {
+              if (!user) {
+                promptAuth('Sign in to post, list and share.');
+                return;
+              }
+              setCreating(!creating);
+            }}>
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.4"
+              strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <span className="tab-item__label" aria-hidden="true">Create</span>
+        </div>
+        {TABS.slice(CREATE_COLUMN).map(tabLink)}
+        {creating && <CreateSheet onClose={() => setCreating(false)} />}
+      </nav>
+    </div>
   );
 }
