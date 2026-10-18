@@ -20,6 +20,7 @@ import { PostInFigmark } from './PostInFigmark';
 import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
 import { Loading } from './Feedback';
+import { PhotoSales } from './PhotoSales';
 
 /**
  * One post, and everything people do with it.
@@ -885,6 +886,8 @@ export function Lightbox({ photos, start, onClose, title, caption, origin, royal
         </div>
       )}
       <img ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
+      {/* Following a link out of it leaves the photo behind, without the shrink back into the page. */}
+      <PhotoSales url={photos[index]} onLeave={onClose} />
       {photos.length > 1 && (
         <>
           <span className="lightbox__count">{index + 1} / {photos.length}</span>

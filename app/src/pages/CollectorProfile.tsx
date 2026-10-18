@@ -17,6 +17,7 @@ import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
 import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
+import { PhotoSales } from '../components/PhotoSales';
 
 /**
  * A person's page, as a collector's.
@@ -467,6 +468,7 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
             {photos.map((url, i) => <i key={url} className={`${i === index ? 'is-on' : ''}${hidden.includes(url) ? ' is-hidden' : ''}`} />)}
           </div>
         )}
+        <PhotoSales url={photo} tone="light" onLeave={onClose} />
         <p className="faint" style={{ margin: 0 }}>
           Tap the card to turn it over · delivered {formatDate(item.deliveredAt)}
           {isHidden && ' · this photo is hidden from others'}

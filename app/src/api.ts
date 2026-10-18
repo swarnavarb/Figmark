@@ -1928,6 +1928,21 @@ export interface PhotoSearchResponse {
   vision: boolean;
 }
 
+/** One item read in a photo, and the listings it is or was for sale under. */
+export interface PhotoSalesItem {
+  /** What the item was read as, or null for listings found by the picture alone. */
+  label: string | null;
+  /** On sale first, then those sold out or taken down. */
+  listings: (FeedListing & { onSale: boolean })[];
+}
+
+export interface PhotoSalesResponse {
+  items: PhotoSalesItem[];
+  /** Shops that have sold the matching items, most sold first. */
+  sellers: { seller: SellerCard; unitsSold: number; items: number }[];
+  vision: boolean;
+}
+
 export interface StoredPhoto {
   blobName: string;
   url: string;
@@ -2339,6 +2354,8 @@ export const api = {
     request<ListingDetail>(`/listings/${encodeURIComponent(id)}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
   /** Items like the one in the photo. The photo is read and dropped, never stored. */
   photoSearch: (dataUrl: string) => post<PhotoSearchResponse>('/search/photo', { dataUrl }),
+  /** Where the items in a photo already on Figmark are, or were, for sale. */
+  photoSales: (url: string) => post<PhotoSalesResponse>('/search/photo/sales', { url }),
   similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
   affiliateLink: (listingId: string) =>
     post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),

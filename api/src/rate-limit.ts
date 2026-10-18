@@ -14,7 +14,7 @@ import { error } from './functions/http.js';
  * reached the local count still applies: a limit that fails open is better
  * than an endpoint that fails closed.
  */
-export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch'
+export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
   | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
   | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check';
 
@@ -35,6 +35,9 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   chatphoto: [{ max: 20, ms: MINUTE }, { max: 150, ms: HOUR }],
   // Each one may be a call to Claude, which is paid for.
   photosearch: [{ max: 10, ms: MINUTE }, { max: 60, ms: HOUR }],
+  // Only counted when a photo nobody has opened yet is read by Claude; scrolling
+  // through a feed opens many, so it allows more than a search does.
+  photosales: [{ max: 30, ms: MINUTE }, { max: 300, ms: HOUR }],
   // Each email sent counts against the free daily quota.
   verify_email: [{ max: 3, ms: 600_000 }, { max: 8, ms: DAY }],
   verify_code: [{ max: 10, ms: 600_000 }],

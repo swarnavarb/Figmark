@@ -63,39 +63,62 @@ export function describedScore(listing: Listing, description: PhotoDescription):
   return score;
 }
 
+/** How a listing's own photos compare with the one searched with. */
+export interface PictureMatch {
+  /** One of its photos is the same picture. */
+  same: boolean;
+  /** 0 to 1: how alike its closest photo looks. */
+  visual: number;
+}
+
+/**
+ * Every listing in the pool with a photo like this one, by id. Listings with
+ * nothing that looks alike are left out.
+ */
+export async function pictureMatches(pool: Listing[], hash: string): Promise<Map<string, PictureMatch>> {
+  let fresh = 0;
+  const found = new Map<string, PictureMatch>();
+  for (const listing of pool) {
+    let visual = 0;
+    let same = false;
+    for (const name of await storedPhotos(listing)) {
+      // Stored hashes first; then whatever this instance has already
+      // worked out; then, up to a budget, read the photo and work it out.
+      const stored = listing.photos.find((photo) => photo.blobName === name)?.imageHash ?? null;
+      if (!stored && !isFingerprinted(name)) {
+        if (fresh >= FRESH_PER_SEARCH) continue;
+        fresh += 1;
+      }
+      const theirs = stored ?? await storedFingerprint(name);
+      const alike = theirs ? likeness(hash, theirs) : null;
+      if (!alike) continue;
+      same ||= alike.samePhoto;
+      visual = Math.max(visual, alike.score);
+    }
+    if (same || visual >= LOOKS_ALIKE) found.set(listing.id, { same, visual });
+  }
+  return found;
+}
+
+/** The score a picture match is worth, on the same scale as `describedScore`. */
+export function pictureScore(match: PictureMatch | undefined): number {
+  if (!match) return 0;
+  return match.same ? 100 + match.visual * 10 : match.visual * 6;
+}
+
 /** Matches for the photo, best first, then items related to them. */
 export async function rankByPhoto(
   pool: Listing[],
   hash: string | null,
   description: PhotoDescription | null,
 ): Promise<Listing[]> {
-  let fresh = 0;
+  const pictures = hash ? await pictureMatches(pool, hash) : new Map<string, PictureMatch>();
   const ranked: Scored[] = [];
 
   for (const listing of pool) {
-    let visual = 0;
-    let same = false;
-    if (hash) {
-      for (const name of await storedPhotos(listing)) {
-        // Stored hashes first; then whatever this instance has already
-        // worked out; then, up to a budget, read the photo and work it out.
-        const stored = listing.photos.find((photo) => photo.blobName === name)?.imageHash ?? null;
-        if (!stored && !isFingerprinted(name)) {
-          if (fresh >= FRESH_PER_SEARCH) continue;
-          fresh += 1;
-        }
-        const theirs = stored ?? await storedFingerprint(name);
-        const alike = theirs ? likeness(hash, theirs) : null;
-        if (!alike) continue;
-        same ||= alike.samePhoto;
-        visual = Math.max(visual, alike.score);
-      }
-    }
     const words = description ? describedScore(listing, description) : 0;
-    const looks = visual >= LOOKS_ALIKE ? visual * 6 : 0;
-
-    if (same) ranked.push({ listing, score: 100 + visual * 10 + words });
-    else if (words > 0 || looks > 0) ranked.push({ listing, score: words + looks });
+    const score = pictureScore(pictures.get(listing.id)) + words;
+    if (score > 0) ranked.push({ listing, score });
   }
 
   const matches = ranked

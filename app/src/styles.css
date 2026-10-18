@@ -4140,6 +4140,74 @@ a.ocard__buyer:hover { color: var(--accent-text); }
   color: rgba(255, 255, 255, 0.8); font-family: var(--mono); font-size: var(--t-sm);
 }
 
+/* ── Seen for sale: the bar under a photo and the sheet it opens ─────── */
+
+.psales {
+  display: inline-flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px);
+  min-height: 40px; padding: 8px 14px;
+  border: 0; border-radius: var(--r-pill);
+  font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi);
+  cursor: pointer;
+  animation: fade-in var(--dur-2) var(--ease) both;
+}
+.psales__text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.psales.is-loading { cursor: default; font-weight: 400; }
+.psales__dot {
+  width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  animation: psales-pulse 1.2s ease-in-out infinite;
+}
+@keyframes psales-pulse { 50% { opacity: 0.25; } }
+/* Over the photo viewer: pinned to the bottom, where the photo count moves up to make room. */
+.psales--dark {
+  position: absolute; z-index: 3; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; translate: -50% 0;
+  background: rgba(255, 255, 255, 0.14); color: #fff; backdrop-filter: blur(12px);
+}
+.psales--dark:not(.is-loading):hover { background: rgba(255, 255, 255, 0.24); }
+.psales--dark.is-loading { background: transparent; color: rgba(255, 255, 255, 0.6); }
+.lightbox:has(.psales--dark) .lightbox__count { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 50px); }
+.psales--light { justify-self: center; background: var(--surface-2); color: var(--text); }
+.psales--light:not(.is-loading):hover { background: var(--surface-hover); }
+.psales--light.is-loading { background: transparent; color: var(--text-faint); }
+
+.psheet {
+  position: fixed; inset: 0; z-index: 400;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  animation: fade-in var(--dur-2) var(--ease) both;
+}
+.psheet__box {
+  width: min(560px, 100vw); max-height: 82vh; overflow-y: auto; overscroll-behavior: contain;
+  display: grid; gap: 18px; align-content: start;
+  padding: 16px 16px max(20px, env(safe-area-inset-bottom));
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+  animation: psheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes psheet-up { from { transform: translateY(40px); opacity: 0; } }
+.psheet__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.psheet__title { margin: 0; font-size: var(--t-md); }
+.psheet__item { display: grid; gap: 4px; }
+.psheet__label {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin: 0 0 2px; font-size: var(--t-sm);
+}
+.psheet__count { color: var(--text-faint); font-size: var(--t-2xs); font-weight: 400; white-space: nowrap; }
+.psheet__sub { margin: 6px 0 0; color: var(--text-faint); font-size: var(--t-xs); }
+.psheet__row {
+  display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 8px; margin: 0 -8px;
+  border-radius: var(--r-md); color: inherit; text-decoration: none;
+}
+a.psheet__row:hover { background: var(--surface-hover); }
+.psheet__thumb { flex: none; width: 48px; aspect-ratio: 1; border-radius: 10px; overflow: hidden; font-size: var(--t-xs); }
+.psheet__main { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.psheet__name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--t-sm); }
+.psheet__meta { color: var(--text-dim); font-size: var(--t-xs); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.psheet__price { display: grid; justify-items: end; gap: 1px; font-family: var(--mono); font-size: var(--t-sm); white-space: nowrap; }
+.psheet__ended { color: var(--text-faint); font-family: inherit; font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.04em; }
+@media (prefers-reduced-motion: reduce) {
+  .psales, .psales__dot, .psheet, .psheet__box { animation: none; }
+}
+
 /* ── Vibes: a line set on a brand gradient ────────────────────────────── */
 
 .vibe {

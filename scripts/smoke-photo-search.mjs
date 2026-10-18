@@ -17,7 +17,7 @@ const { encode } = require('jpeg-js');
 const dist = new URL('../api/dist/api/src/', import.meta.url);
 const { fingerprint, likeness } = await import(new URL('image-hash.js', dist));
 const { describedScore } = await import(new URL('photo-search.js', dist));
-const { photoSearchRoute } = await import(new URL('functions/catalog-routes.js', dist));
+const { photoSearchRoute, photoSalesRoute } = await import(new URL('functions/catalog-routes.js', dist));
 const { healthRoute } = await import(new URL('functions/health.js', dist));
 const { getRepository } = await import(new URL('data/index.js', dist));
 const { getPhotoStore } = await import(new URL('storage/index.js', dist));
@@ -133,6 +133,57 @@ await check('the route refuses what is not a photo', async () => {
   // A JPEG that will not decode, with nobody to describe it, cannot be searched with.
   const broken = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.from('not a jpeg')]).toString('base64')}`;
   assert.equal((await photoSearchRoute(req({ body: { dataUrl: broken } }), ctx)).status, 422);
+});
+
+await check('a photo on Figmark finds where it is, and was, for sale, and who sold it', async () => {
+  const repository = await getRepository();
+  const store = await getPhotoStore();
+  const all = await repository.listListings({});
+  const template = all[0];
+  const otherShop = all.find((listing) => listing.sellerId !== template.sellerId);
+  assert.ok(otherShop, 'the seed has two shops');
+  const shot = await store.upload(picture(800, 600, (x, y) => (x > 0.5 ? [240, 200, 20] : [20, 120, 60]), 88), 'image/jpeg');
+  const now = new Date().toISOString();
+  const make = (id, changes) => ({
+    ...template, id, title: `Haul item ${id}`, createdAt: now, updatedAt: now, privateFor: null, expiresAt: null,
+    unlisted: false, soldCount: 0, status: 'active',
+    photos: [{ blobName: shot.blobName, url: shot.url, imageHash: null, isPrimary: true }],
+    ...changes,
+  });
+  await repository.createListing(make('lst_sales_live', {}));
+  await repository.createListing(make('lst_sales_gone', { sellerId: otherShop.sellerId, status: 'sold_out', soldCount: 3 }));
+  await repository.createListing(make('lst_sales_draft', { status: 'draft' }));
+  await repository.createListing(make('lst_sales_private', { privateFor: 'usr_someone' }));
+
+  const response = await photoSalesRoute(req({ body: { url: shot.url } }), ctx);
+  assert.equal(response.status, 200, JSON.stringify(response.jsonBody));
+  const body = response.jsonBody;
+  assert.equal(body.vision, false);
+  // Without vision there is one group: the listings that use the picture.
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].label, null);
+  const ids = body.items[0].listings.map((listing) => listing.id);
+  // What can be bought now comes before what was.
+  assert.deepEqual(ids.filter((id) => id.startsWith('lst_sales_')), ['lst_sales_live', 'lst_sales_gone']);
+  assert.equal(body.items[0].listings.find((listing) => listing.id === 'lst_sales_live').onSale, true);
+  assert.equal(body.items[0].listings.find((listing) => listing.id === 'lst_sales_gone').onSale, false);
+  // Drafts and private deals were never for sale to the public.
+  assert.ok(!ids.includes('lst_sales_draft') && !ids.includes('lst_sales_private'));
+  assert.equal(body.items[0].listings[0].costSheet, undefined);
+  const sold = body.sellers.find((entry) => entry.seller.id === otherShop.sellerId);
+  assert.ok(sold, 'the shop that sold it is listed');
+  assert.equal(sold.unitsSold, 3);
+  // A shop whose matching item has not sold has not sold it.
+  assert.ok(!body.sellers.some((entry) => entry.seller.id === template.sellerId));
+});
+
+await check('photos from anywhere else are not looked at', async () => {
+  const outside = await photoSalesRoute(req({ body: { url: 'https://example.com/haul.jpg' } }), ctx);
+  assert.equal(outside.status, 200);
+  assert.deepEqual(outside.jsonBody.items, []);
+  const missing = await photoSalesRoute(req({ body: { url: '/api/photos/nothing-here.jpg' } }), ctx);
+  assert.deepEqual(missing.jsonBody.items, []);
+  assert.equal((await photoSalesRoute(req({ body: {} }), ctx)).status, 400);
 });
 
 await check('health says photo search is matching by picture only', async () => {

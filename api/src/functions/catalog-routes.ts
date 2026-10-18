@@ -37,6 +37,7 @@ import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { sniffImageType } from '../storage/sanitize.js';
 import { fingerprint } from '../image-hash.js';
 import { rankByPhoto } from '../photo-search.js';
+import { alreadyRead, findSales, onSale } from '../photo-sales.js';
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
@@ -349,6 +350,67 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
       estimatedDispatchAt: null,
     })),
     vision: visionAvailable(),
+  });
+}
+
+/**
+ * POST /api/search/photo/sales - where the items in a photo on Figmark are, or
+ * were, for sale, and the shops that have sold them.
+ *
+ * Takes the address of a photo this app stores, never a photo's bytes and
+ * never anybody else's link: the server reads only what is already public
+ * here, and the answer is about listings, which are public too. Chat photos
+ * live in a store this cannot read, so they are not looked at.
+ */
+async function photoSales(request: HttpRequest, _context: InvocationContext) {
+  const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
+  let body: { url?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const vision = visionAvailable();
+  const none = { items: [], sellers: [], vision };
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!url || url.length > 500) return error(400, 'invalid_photo', 'Send the address of a photo.');
+  const name = await ownPhotoName(url);
+  // Somebody else's server is never fetched; there is simply nothing to say about it.
+  if (!name) return json(200, none);
+
+  const viewer = await auth.getCurrentUser(request);
+  // Opening a photo somebody already opened costs nothing; reading a new one may be a call to Claude.
+  if (!alreadyRead(name, vision)) {
+    const slow = await tooFast(viewer?.id ?? `ip:${clientIp(request)}`, 'photosales');
+    if (slow) return slow;
+  }
+
+  const found = await findSales(name, await repository.listListings({ includeHidden: true }));
+  if (!found) return json(200, none);
+
+  const listings = found.items.flatMap((item) => item.listings);
+  const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
+  const sellers = await repository.listUsersByIds([...new Set([
+    ...listings.map((listing) => listing.sellerId),
+    ...found.sellers.map((seller) => seller.sellerId),
+  ])]);
+  const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
+  return json(200, {
+    items: found.items.map((item) => ({
+      label: item.label,
+      listings: item.listings.map((listing) => ({
+        ...publicListing(listing),
+        liked: likedIds.has(listing.id),
+        seller: sellerById.get(listing.sellerId) ?? null,
+        estimatedDispatchAt: null,
+        onSale: onSale(listing),
+      })),
+    })),
+    sellers: found.sellers.flatMap((entry) => {
+      const seller = sellerById.get(entry.sellerId);
+      return seller ? [{ seller, unitsSold: entry.unitsSold, items: entry.items }] : [];
+    }),
+    vision,
   });
 }
 
@@ -1468,11 +1530,13 @@ app.http('feed', { ...anon, methods: ['GET'], route: 'feed', handler: feedRoute 
 app.http('listing-detail', { ...anon, methods: ['GET'], route: 'listings/{id}', handler: listingDetailRoute });
 export const similarListingsRoute = handler(similarListings);
 export const photoSearchRoute = handler(photoSearch);
+export const photoSalesRoute = handler(photoSales);
 export const affiliateLinkRoute = handler(affiliateLink);
 export const openShortLinkRoute = handler(openShortLink);
 app.http('listing-affiliate-link', { ...anon, methods: ['POST'], route: 'listings/{id}/affiliate-link', handler: affiliateLinkRoute });
 app.http('short-link', { ...anon, methods: ['GET'], route: 'r/{code}', handler: openShortLinkRoute });
 app.http('photo-search', { ...anon, methods: ['POST'], route: 'search/photo', handler: photoSearchRoute });
+app.http('photo-sales', { ...anon, methods: ['POST'], route: 'search/photo/sales', handler: photoSalesRoute });
 app.http('listing-similar', { ...anon, methods: ['GET'], route: 'listings/{id}/similar', handler: similarListingsRoute });
 app.http('listing-create', { ...anon, methods: ['POST'], route: 'listings', handler: createListingRoute });
 app.http('listing-like', { ...anon, methods: ['POST'], route: 'listings/{id}/like', handler: toggleLikeRoute });
