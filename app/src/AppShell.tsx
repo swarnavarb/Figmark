@@ -129,8 +129,10 @@ export function AppShell() {
           )}
         </nav>
       </header>
-      {/* Not a dialog: browsing needs no verification, so the reminder waits up here. */}
-      {!room && <VerifyNudge />}
+      {/* Not a dialog: browsing needs no verification, so the reminder waits up here.
+          The social screens' headers run to the top of the screen, so there it
+          sits under the social header instead (see SocialPage). */}
+      {!social && <VerifyNudge />}
 
       {sessionsInsecure && (
         <div className="page page--notice">

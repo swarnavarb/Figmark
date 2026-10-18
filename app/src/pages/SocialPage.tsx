@@ -12,6 +12,7 @@ import { useGoBack } from '../components/ScrollManager';
 import { timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { WantedPage } from './WantedPage';
+import { VerifyNudge } from './VerifyPage';
 import { useToast } from '../components/Feedback';
 import { Spinner } from '../components/Spinner';
 import '../styles/SocialPage.css';
@@ -42,6 +43,7 @@ export function SocialPage() {
     <VoiceProvider>
       <div className="social socialtab">
         <SocialTop view={view} onView={setView} />
+        <VerifyNudge />
         <main className="page tab-view social">
           <div className="tab-view" key={view}>
             {view === 'feed' && <><CommunityNotices /><FollowingFeed /></>}
