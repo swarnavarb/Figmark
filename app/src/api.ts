@@ -1940,6 +1940,11 @@ export interface PhotoSalesResponse {
   items: PhotoSalesItem[];
   /** Shops that have sold the matching items, most sold first. */
   sellers: { seller: SellerCard; unitsSold: number; items: number }[];
+  /**
+   * Shops likely to get the items: by keyword first (a brand, a name), then by
+   * category. `listings` is how many of theirs carry it, past or present.
+   */
+  likely: { seller: SellerCard; because: string; kind: 'keyword' | 'category'; listings: number }[];
   vision: boolean;
 }
 
@@ -2355,7 +2360,7 @@ export const api = {
   /** Items like the one in the photo. The photo is read and dropped, never stored. */
   photoSearch: (dataUrl: string) => post<PhotoSearchResponse>('/search/photo', { dataUrl }),
   /** Where the items in a photo already on Figmark are, or were, for sale. */
-  photoSales: (url: string) => post<PhotoSalesResponse>('/search/photo/sales', { url }),
+  photoSales: (url: string, about?: string) => post<PhotoSalesResponse>('/search/photo/sales', { url, about }),
   similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
   affiliateLink: (listingId: string) =>
     post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),

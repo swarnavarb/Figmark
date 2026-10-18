@@ -609,7 +609,7 @@ export function SocialPostCard({
       )}
 
       {lightbox !== null && (
-        <Lightbox photos={photos} start={lightbox} onClose={() => setLightbox(null)} />
+        <Lightbox photos={photos} start={lightbox} about={post.body} onClose={() => setLightbox(null)} />
       )}
     </article>
   );
@@ -793,7 +793,7 @@ function Carousel({ photos, alt, burst, onOpen, onDoubleTap }: {
 }
 
 /** A photo filling the screen, with the rest a swipe or an arrow key away. */
-export function Lightbox({ photos, start, onClose, title, caption, origin, royal }: {
+export function Lightbox({ photos, start, onClose, title, caption, about, origin, royal }: {
   photos: string[];
   start: number;
   onClose: () => void;
@@ -805,6 +805,8 @@ export function Lightbox({ photos, start, onClose, title, caption, origin, royal
   title?: string;
   /** One line under the heading - when it joined the collection. */
   caption?: string;
+  /** The words shown with the photos - a post's text - searched with them for where to buy. Defaults to the title. */
+  about?: string;
 }) {
   const [index, setIndex] = useState(start);
   const touch = useRef<number | null>(null);
@@ -887,7 +889,7 @@ export function Lightbox({ photos, start, onClose, title, caption, origin, royal
       )}
       <img ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
       {/* Following a link out of it leaves the photo behind, without the shrink back into the page. */}
-      <PhotoSales url={photos[index]} onLeave={onClose} />
+      <PhotoSales url={photos[index]} about={about ?? title} onLeave={onClose} />
       {photos.length > 1 && (
         <>
           <span className="lightbox__count">{index + 1} / {photos.length}</span>

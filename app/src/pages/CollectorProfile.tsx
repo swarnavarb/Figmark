@@ -468,7 +468,7 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
             {photos.map((url, i) => <i key={url} className={`${i === index ? 'is-on' : ''}${hidden.includes(url) ? ' is-hidden' : ''}`} />)}
           </div>
         )}
-        <PhotoSales url={photo} tone="light" onLeave={onClose} />
+        <PhotoSales url={photo} about={item.name} tone="light" onLeave={onClose} />
         <p className="faint" style={{ margin: 0 }}>
           Tap the card to turn it over · delivered {formatDate(item.deliveredAt)}
           {isHidden && ' · this photo is hidden from others'}

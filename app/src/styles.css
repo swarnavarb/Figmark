@@ -4203,6 +4203,13 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .psheet__name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--t-sm); }
 .psheet__meta { color: var(--text-dim); font-size: var(--t-xs); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .psheet__price { display: grid; justify-items: end; gap: 1px; font-family: var(--mono); font-size: var(--t-sm); white-space: nowrap; }
+.psheet__group { display: grid; gap: 2px; }
+.psheet__chip {
+  display: inline-block; padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text);
+}
+.psheet__chip--keyword { background: var(--accent-soft); }
+.psheet__chip--category { background: var(--surface-2); }
 .psheet__ended { color: var(--text-faint); font-family: inherit; font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.04em; }
 @media (prefers-reduced-motion: reduce) {
   .psales, .psales__dot, .psheet, .psheet__box { animation: none; }

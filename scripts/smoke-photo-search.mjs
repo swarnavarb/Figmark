@@ -177,6 +177,48 @@ await check('a photo on Figmark finds where it is, and was, for sale, and who so
   assert.ok(!body.sellers.some((entry) => entry.seller.id === template.sellerId));
 });
 
+await check('the words with a photo find items by title, and shops by keyword, then by kind', async () => {
+  const repository = await getRepository();
+  const store = await getPhotoStore();
+  const all = await repository.listListings({});
+  const template = all[0];
+  // A shop with no listing like this picture, so nothing else names it first.
+  const nikeShop = 'usr_gadgetgrid';
+  // A picture no listing uses: everything found here comes from the words.
+  const shot = await store.upload(picture(640, 480, (x, y) => [Math.round(x * 255), 90, Math.round(y * 255)], 88), 'image/jpeg');
+  const now = new Date().toISOString();
+  const make = (id, sellerId, title, category) => repository.createListing({
+    ...template, id, sellerId, title, category, tags: [], createdAt: now, updatedAt: now, privateFor: null,
+    expiresAt: null, unlisted: false, soldCount: 0, status: 'active', photos: [],
+  });
+  await make('lst_words_zorblax', template.sellerId, 'Zorblax resin figure — limited', 'Scale figures');
+  // Nike is on enough titles that one shared word is not a match by itself.
+  for (const [at, model] of ['Air Max 95', 'Dunk Low Panda', 'Air Force 1', 'Blazer Mid', 'Cortez'].entries()) {
+    await make(`lst_words_nike_${at}`, nikeShop, `Nike ${model} — UK 9`, 'Sneakers');
+  }
+
+  const response = await photoSalesRoute(req({ body: { url: shot.url, about: 'My Zorblax arrived! Now hunting Nike shoes for the shelf.' } }), ctx);
+  assert.equal(response.status, 200, JSON.stringify(response.jsonBody));
+  const body = response.jsonBody;
+  const zorblax = body.items.find((item) => item.label === 'Zorblax');
+  assert.ok(zorblax, `a rare title word is a match: ${JSON.stringify(body.items.map((item) => item.label))}`);
+  assert.deepEqual(zorblax.listings.map((listing) => listing.id), ['lst_words_zorblax']);
+  assert.ok(!body.items.some((item) => item.listings.some((listing) => listing.id.startsWith('lst_words_nike'))),
+    'a common word alone does not make an item a match');
+  // Likely shops: the brand first, then the kind of thing.
+  assert.equal(body.likely[0].because, 'Nike');
+  assert.equal(body.likely[0].kind, 'keyword');
+  assert.equal(body.likely[0].seller.id, nikeShop);
+  assert.ok(body.likely[0].listings >= 5);
+  const kinds = body.likely.map((entry) => entry.kind);
+  assert.ok(kinds.lastIndexOf('keyword') < kinds.indexOf('category'), `keywords come before categories: ${kinds}`);
+  assert.ok(body.likely.some((entry) => entry.because === 'Sneakers'), 'shoes are read as Sneakers');
+  // A shop is named once, and not when it already has a matching listing.
+  const ids = body.likely.map((entry) => entry.seller.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.ok(!ids.includes(template.sellerId), 'the shop already listing the Zorblax is not repeated as likely');
+});
+
 await check('photos from anywhere else are not looked at', async () => {
   const outside = await photoSalesRoute(req({ body: { url: 'https://example.com/haul.jpg' } }), ctx);
   assert.equal(outside.status, 200);

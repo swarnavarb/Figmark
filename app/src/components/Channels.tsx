@@ -266,7 +266,7 @@ function Room() {
   const [replyTo, setReplyTo] = useState<PostCard | null>(null);
   const [fresh, setFresh] = useState(0);
   const [pinAt, setPinAt] = useState(0);
-  const [lightbox, setLightbox] = useState<{ photos: string[]; start: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; start: number; about?: string } | null>(null);
   const [following, setFollowing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const known = useRef<Set<string>>(new Set());
@@ -418,7 +418,7 @@ function Room() {
       <Message key={card.post.id} card={card} startsRun={startsRun}
         mine={card.post.authorId === user?.id} isForum={Boolean(isForum)} canPin={canPin}
         onReply={() => setReplyTo(card)} onJump={jump}
-        onOpenPhoto={(start) => setLightbox({ photos: photosOf(card), start })}
+        onOpenPhoto={(start) => setLightbox({ photos: photosOf(card), start, about: card.post.body })}
         onChange={(change) => patch(card.post.id, change)}
         onNotice={setNotice} />,
     );
@@ -521,7 +521,7 @@ function Room() {
           <div className="chmedia">
             {media.flatMap((card) => photosOf(card).map((url, at) => (
               <button key={`${card.post.id}-${at}`} type="button" className="chmedia__tile"
-                onClick={() => setLightbox({ photos: photosOf(card), start: at })}>
+                onClick={() => setLightbox({ photos: photosOf(card), start: at, about: card.post.body })}>
                 <img src={url} alt={card.post.body || `Photo from ${card.post.authorName}`} loading="lazy" />
               </button>
             )))}
@@ -563,7 +563,7 @@ function Room() {
       </>
       )}
 
-      {lightbox && <Lightbox photos={lightbox.photos} start={lightbox.start} onClose={() => setLightbox(null)} />}
+      {lightbox && <Lightbox photos={lightbox.photos} start={lightbox.start} about={lightbox.about} onClose={() => setLightbox(null)} />}
     </main>
     </div>
   );

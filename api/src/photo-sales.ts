@@ -1,4 +1,6 @@
+import { CATEGORIES } from '../../shared/catalog.js';
 import type { Listing } from '../../shared/models.js';
+import { wordKeys } from '../../shared/shop-tags.js';
 import { isExpired } from '../../shared/payments.js';
 import { storedFingerprint } from './image-hash.js';
 import { describedScore, pictureMatches, pictureScore, type PictureMatch } from './photo-search.js';
@@ -16,8 +18,15 @@ import { describeItems, type PhotoDescription } from './vision.js';
  * The photo is split into the items in it when vision is on, each matched by
  * the words Claude read for it; the picture itself is matched by fingerprint
  * either way, so a reposted listing photo finds its listing with no key at all.
+ * The words shown with the photo - a post's caption, a listing's title - are
+ * searched too, against listing titles, so a haul post that names what is in
+ * it finds those items with no key at all.
+ *
  * Unlike photo search the pool reaches back past what is buyable now: an item
- * sold out or taken down is still evidence of who sells that thing.
+ * sold out or taken down is still evidence of who sells that thing. And past
+ * the items themselves, it names the shops likely to get one: those that list
+ * the brand or name first (Nike, McFarlane), then those that deal in the kind
+ * of thing (sneakers, action figures).
  */
 export interface SalesGroup {
   /** What Claude named the item, or null for listings found by the picture alone. */
@@ -34,15 +43,61 @@ export interface PastSeller {
   items: number;
 }
 
+export interface LikelySeller {
+  sellerId: string;
+  /** What they were matched on: a keyword, like "Nike", or a category, like "Sneakers". */
+  because: string;
+  kind: 'keyword' | 'category';
+  /** How many of their listings, past or present, carry it. */
+  listings: number;
+}
+
 export interface PhotoSales {
   items: SalesGroup[];
   sellers: PastSeller[];
+  likely: LikelySeller[];
 }
 
-/** Under this, a few shared words are coincidence: one telling word in the title is the least that counts. */
-const MIN_WORDS = 4;
 const PER_ITEM = 24;
 const SELLERS = 12;
+const LIKELY = 10;
+/** Shops named per keyword or category, so one word cannot fill the list. */
+const LIKELY_PER_TERM = 3;
+/** Keywords tried for likely shops, most telling first. */
+const TERMS = 6;
+
+/** Words that say nothing about what an item is. */
+const STOP = new Set([
+  'the', 'and', 'for', 'with', 'from', 'this', 'that', 'these', 'those', 'have', 'has', 'had', 'are', 'was', 'were',
+  'been', 'but', 'not', 'you', 'your', 'our', 'they', 'them', 'their', 'who', 'what', 'where', 'when', 'which',
+  'just', 'got', 'get', 'finally', 'here', 'there', 'now', 'new', 'one', 'two', 'all', 'any', 'out', 'off', 'into',
+  'about', 'more', 'some', 'very', 'really', 'still', 'want', 'wanted', 'year', 'month', 'week', 'day', 'today',
+  'home', 'haul', 'photo', 'pic', 'tap', 'see', 'look', 'item', 'thing', 'stuff', 'anyone', 'know', 'sold', 'sell',
+  'seller', 'shop', 'buy', 'price', 'left', 'last', 'run', 'box', 'boxed', 'sealed', 'japan', 'japanese', 'version',
+  'ver', 'edition', 'original', 'real', 'fake', 'legit', 'set', 'lot', 'piece', 'pcs', 'unit', 'size',
+  'good', 'great', 'company', 'official', 'limited', 'exclusive', 'mint', 'rare', 'condition', 'tag', 'center',
+  'import', 'imported', 'pre', 'order', 'preorder', 'stock', 'instock', 'sale', 'deal', 'authentic', 'genuine', 'hand',
+]);
+
+/** Everyday words for a kind of thing, read as the category a shop files it under. */
+const KIND_WORDS: Record<string, string> = {
+  shoe: 'Sneakers', sneaker: 'Sneakers', kick: 'Sneakers', trainer: 'Sneakers',
+  figure: 'Scale figures', action: 'Scale figures', figurine: 'Scale figures', statue: 'Scale figures', nendoroid: 'Scale figures', figma: 'Scale figures',
+  kit: 'Model kits', gunpla: 'Model kits', model: 'Model kits',
+  card: 'Trading cards', tcg: 'Trading cards', booster: 'Trading cards',
+  plush: 'Anime merch', plushy: 'Anime merch', plushie: 'Anime merch', keychain: 'Anime merch', acrylic: 'Anime merch',
+  hoodie: 'Streetwear', tee: 'Streetwear', shirt: 'Streetwear', jacket: 'Streetwear', cap: 'Streetwear',
+  phone: 'Electronics', headphone: 'Electronics', earbud: 'Electronics', console: 'Electronics', camera: 'Electronics',
+  watch: 'Bags & watches', bag: 'Bags & watches', wallet: 'Bags & watches',
+  perfume: 'Beauty', skincare: 'Beauty', lipstick: 'Beauty',
+};
+
+/** The words worth matching on: no stop words, no bare numbers, nothing under three letters. */
+function keyWords(text: string): string[] {
+  return wordKeys(text).filter((word) => word.length > 2 && !STOP.has(word) && !/^\d+$/.test(word));
+}
+
+const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
 /** Listed for sale at some point and seen by the public: drafts, private deals and members' windows are not. */
 export function everListed(listing: Listing): boolean {
@@ -94,10 +149,11 @@ export function forgetReadings(): void {
 }
 
 /**
- * The listings a stored photo's items are or were for sale under, and the
- * shops that have sold them. Null when the photo is not in the store.
+ * The listings a stored photo's items are or were for sale under, the shops
+ * that have sold them, and the shops likely to get them. `about` is the text
+ * shown with the photo. Null when the photo is not in the store.
  */
-export async function findSales(blobName: string, catalogue: Listing[]): Promise<PhotoSales | null> {
+export async function findSales(blobName: string, catalogue: Listing[], about = ''): Promise<PhotoSales | null> {
   const store = await getPhotoStore();
   const photo = await store.read(blobName);
   if (!photo) return null;
@@ -110,23 +166,34 @@ export async function findSales(blobName: string, catalogue: Listing[]): Promise
   const pictures = hash ? await pictureMatches(pool, hash) : new Map<string, PictureMatch>();
   const items = described ?? [];
 
-  // Each listing goes to the one item it matches best. A listing that uses this
+  // Each listing goes to the one group it matches best. A listing that uses this
   // very picture is about the photo's main item, so it counts toward the first.
+  const index = titleIndex(pool);
   const best = new Map<string, { group: number; score: number }>();
-  pool.forEach((listing) => {
-    const picture = pictureScore(pictures.get(listing.id));
-    items.forEach((item, group) => {
-      const words = describedScore(listing, item);
-      const score = (words >= MIN_WORDS ? words : 0) + (group === 0 ? picture : 0);
-      if (score > 0 && score > (best.get(listing.id)?.score ?? 0)) best.set(listing.id, { group, score });
-    });
-    // Nothing named in the photo: the picture is all there is to go on.
-    if (items.length === 0 && picture > 0) best.set(listing.id, { group: 0, score: picture });
-  });
-
   const labels: (string | null)[] = items.length > 0
     ? items.map((item) => item.query || item.keywords.join(' '))
     : [null];
+  const itemWords = items.map((item) => new Set(keyWords([...item.keywords, item.query].join(' '))));
+  pool.forEach((listing) => {
+    const picture = pictureScore(pictures.get(listing.id));
+    items.forEach((item, group) => {
+      // The same telling-words rule as the caption: a brand alone is a shop to
+      // ask, not the item, so it is left to the likely shops.
+      const words = index.tells(listing, itemWords[group]!) ? describedScore(listing, item) : 0;
+      const score = words + (group === 0 ? picture : 0);
+      if (score > 0 && score > (best.get(listing.id)?.score ?? 0)) best.set(listing.id, { group, score });
+    });
+    // Nothing named in the photo: the picture is all it has to go on.
+    if (items.length === 0 && picture > 0) best.set(listing.id, { group: 0, score: picture });
+  });
+
+  // Then the words shown with it, for whatever the photo did not already find.
+  for (const found of captionMatches(index, pool.filter((listing) => !best.has(listing.id)), about)) {
+    let group = labels.indexOf(found.label);
+    if (group < 0) group = labels.push(found.label) - 1;
+    best.set(found.listing.id, { group, score: found.score });
+  }
+
   const groups: SalesGroup[] = labels.map((label, group) => ({
     label,
     listings: pool
@@ -149,5 +216,139 @@ export async function findSales(blobName: string, catalogue: Listing[]): Promise
     .sort((a, b) => b.unitsSold - a.unitsSold || b.items - a.items)
     .slice(0, SELLERS);
 
-  return { items: groups, sellers };
+  return { items: groups, sellers, likely: likelySellers(index, pool, groups, items, about) };
+}
+
+/**
+ * Which words every title carries, and how many titles carry each.
+ *
+ * A word only a few titles carry - "frieren", "pikachu" - is telling alone;
+ * a common one - "nike" in a sneaker shop's catalogue - needs a second word
+ * beside it. A word for a kind of thing ("figure", "shoe") never counts alone:
+ * it is a category, and goes to the likely shops instead.
+ */
+function titleIndex(pool: Listing[]) {
+  const titles = new Map(pool.map((listing) => [listing.id, new Set(keyWords(listing.title))]));
+  const seen = new Map<string, number>();
+  for (const words of titles.values()) for (const word of words) seen.set(word, (seen.get(word) ?? 0) + 1);
+  const rare = Math.max(3, pool.length * 0.02);
+  // How the titles spell each word, so a label reads "McFarlane", not "mcfarlane".
+  const spelling = new Map<string, string>();
+  for (const listing of pool) {
+    for (const token of listing.title.split(/[\s/,()"'—–-]+/)) {
+      const keys = wordKeys(token);
+      if (keys.length === 1 && !spelling.has(keys[0]!)) spelling.set(keys[0]!, token.replace(/[^\p{L}\p{N}]+/gu, ''));
+    }
+  }
+  const shared = (listing: Listing, wanted: Set<string>) =>
+    [...(titles.get(listing.id) ?? [])].filter((word) => wanted.has(word));
+  const enough = (words: string[]) => {
+    const named = words.filter((word) => !KIND_WORDS[word]);
+    return named.length >= 2 || (named.length === 1 && (seen.get(named[0]!) ?? 0) <= rare);
+  };
+  return {
+    seen,
+    shared,
+    /** A word as the titles write it, capitalised when none do. */
+    spell: (word: string) => spelling.get(word) ?? capital(word),
+    enough,
+    /** Whether the listing's title shares enough telling words with these. */
+    tells: (listing: Listing, wanted: Set<string>) => enough(shared(listing, wanted)),
+  };
+}
+
+/** Listings whose title shares telling words with the text, grouped by the rarest of them. */
+function captionMatches(
+  index: ReturnType<typeof titleIndex>, pool: Listing[], about: string,
+): { listing: Listing; label: string; score: number }[] {
+  const said = keyWords(about.slice(0, 500));
+  if (said.length === 0) return [];
+  const wanted = new Set(said);
+  const df = (word: string) => index.seen.get(word) ?? 1;
+
+  const found: { listing: Listing; key: string; shared: string[]; score: number }[] = [];
+  for (const listing of pool) {
+    const shared = index.shared(listing, wanted);
+    if (!index.enough(shared)) continue;
+    const named = shared.filter((word) => !KIND_WORDS[word]);
+    const key = named.reduce((a, b) => (df(b) < df(a) ? b : a));
+    found.push({ listing, key, shared, score: shared.reduce((sum, word) => sum + 4 / df(word), 0) });
+  }
+  // One label per group: the words the best match shares, in the order the text says them.
+  const labelOf = new Map<string, string>();
+  for (const entry of [...found].sort((a, b) => b.score - a.score)) {
+    if (labelOf.has(entry.key)) continue;
+    const words = said.filter((word, at) => entry.shared.includes(word) && said.indexOf(word) === at);
+    labelOf.set(entry.key, words.map(index.spell).join(' '));
+  }
+  return found.map((entry) => ({ listing: entry.listing, label: labelOf.get(entry.key)!, score: entry.score }));
+}
+
+/**
+ * Shops likely to get the photo's items, whether or not they list them now.
+ *
+ * Keywords first - the brand, the name, the line - because a shop that lists
+ * Nike is a better bet for a Nike shoe than one that lists shoes; then the
+ * categories, for a photo of something nobody has listed by name. What a shop
+ * deals in is read off everything it has ever listed: titles, tags, category.
+ */
+function likelySellers(
+  index: ReturnType<typeof titleIndex>, pool: Listing[], groups: SalesGroup[], items: PhotoDescription[], about: string,
+): LikelySeller[] {
+  const matched = groups.flatMap((group) => group.listings);
+  const taken = new Set(matched.map((listing) => listing.sellerId));
+
+  // What each shop deals in, and how many of its listings say so.
+  const vocabulary = new Map<string, Map<string, number>>();
+  const known = new Set<string>();
+  for (const listing of pool) {
+    const words = new Set([...keyWords(listing.title), ...listing.tags.flatMap(keyWords), `#${listing.category}`]);
+    const shop = vocabulary.get(listing.sellerId) ?? new Map<string, number>();
+    for (const word of words) {
+      shop.set(word, (shop.get(word) ?? 0) + 1);
+      known.add(word);
+    }
+    vocabulary.set(listing.sellerId, shop);
+  }
+
+  // Keywords, most telling first: what Claude read, then the text, then the tags of what matched.
+  // A word the matched titles share is about the item. Any other word counts
+  // only when some shop lists it again and again, which is what a brand or a
+  // line looks like - not a place or an event named once ("Mumbai", "con").
+  const keywords: string[] = [];
+  const kinds: string[] = [];
+  const itemWords = new Set(matched.slice(0, 12).flatMap((listing) => keyWords(listing.title)));
+  // A keyword singles out a few shops; one most of them carry says nothing.
+  const shopsWith = (word: string) => [...vocabulary.values()].filter((words) => words.has(word)).length;
+  const telling = Math.max(3, vocabulary.size * 0.5);
+  const addKeyword = (word: string, fromItems = false) => {
+    const kind = KIND_WORDS[word];
+    if (kind) { if (!kinds.includes(kind)) kinds.push(kind); return; }
+    const dealtIn = [...vocabulary.values()].some((words) => (words.get(word) ?? 0) >= 2);
+    if (!fromItems && !itemWords.has(word) && !dealtIn) return;
+    if (known.has(word) && !keywords.includes(word) && shopsWith(word) <= telling) keywords.push(word);
+  };
+  items.forEach((item) => item.keywords.flatMap(keyWords).forEach((word) => addKeyword(word)));
+  keyWords(about.slice(0, 500)).forEach((word) => addKeyword(word));
+  matched.slice(0, 6).flatMap((listing) => listing.tags.flatMap(keyWords)).forEach((word) => addKeyword(word, true));
+  for (const category of [...items.map((item) => item.category), ...matched.map((listing) => listing.category)]) {
+    if (category && (CATEGORIES as readonly string[]).includes(category) && !kinds.includes(category)) kinds.push(category);
+  }
+
+  const likely: LikelySeller[] = [];
+  const pick = (term: string, because: string, kind: LikelySeller['kind']) => {
+    [...vocabulary.entries()]
+      .map(([sellerId, words]) => ({ sellerId, count: words.get(term) ?? 0 }))
+      .filter((entry) => entry.count > 0 && !taken.has(entry.sellerId))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, LIKELY_PER_TERM)
+      .forEach((entry) => {
+        if (likely.length >= LIKELY) return;
+        taken.add(entry.sellerId);
+        likely.push({ sellerId: entry.sellerId, because, kind, listings: entry.count });
+      });
+  };
+  keywords.slice(0, TERMS).forEach((word) => pick(word, index.spell(word), 'keyword'));
+  kinds.forEach((category) => pick(`#${category}`, category, 'category'));
+  return likely;
 }

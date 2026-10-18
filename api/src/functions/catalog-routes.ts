@@ -357,21 +357,24 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
  * POST /api/search/photo/sales - where the items in a photo on Figmark are, or
  * were, for sale, and the shops that have sold them.
  *
- * Takes the address of a photo this app stores, never a photo's bytes and
+ * Takes the address of a photo this app stores, and the text shown with it
+ * (`about`: a caption or a title), never a photo's bytes and
  * never anybody else's link: the server reads only what is already public
  * here, and the answer is about listings, which are public too. Chat photos
  * live in a store this cannot read, so they are not looked at.
  */
 async function photoSales(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
-  let body: { url?: string };
+  let body: { url?: string; about?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
   const vision = visionAvailable();
-  const none = { items: [], sellers: [], vision };
+  const none = { items: [], sellers: [], likely: [], vision };
+  // The words shown with the photo - a caption, a title - searched alongside it.
+  const about = typeof body.about === 'string' ? body.about.slice(0, 500) : '';
   const url = typeof body.url === 'string' ? body.url.trim() : '';
   if (!url || url.length > 500) return error(400, 'invalid_photo', 'Send the address of a photo.');
   const name = await ownPhotoName(url);
@@ -385,7 +388,7 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
     if (slow) return slow;
   }
 
-  const found = await findSales(name, await repository.listListings({ includeHidden: true }));
+  const found = await findSales(name, await repository.listListings({ includeHidden: true }), about);
   if (!found) return json(200, none);
 
   const listings = found.items.flatMap((item) => item.listings);
@@ -393,6 +396,7 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
   const sellers = await repository.listUsersByIds([...new Set([
     ...listings.map((listing) => listing.sellerId),
     ...found.sellers.map((seller) => seller.sellerId),
+    ...found.likely.map((seller) => seller.sellerId),
   ])]);
   const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
   return json(200, {
@@ -409,6 +413,10 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
     sellers: found.sellers.flatMap((entry) => {
       const seller = sellerById.get(entry.sellerId);
       return seller ? [{ seller, unitsSold: entry.unitsSold, items: entry.items }] : [];
+    }),
+    likely: found.likely.flatMap((entry) => {
+      const seller = sellerById.get(entry.sellerId);
+      return seller ? [{ seller, because: entry.because, kind: entry.kind, listings: entry.listings }] : [];
     }),
     vision,
   });

@@ -17,20 +17,22 @@ import { Avatar, Thumb, leadPhoto } from './ui';
  */
 
 /**
- * Answers by photo address, for this page load. A photo's bytes never change,
- * so swiping back to one is free; a reload asks again, since listings do.
+ * Answers by photo address and the words with it, for this page load. A
+ * photo's bytes never change, so swiping back to one is free; a reload asks
+ * again, since listings do.
  */
 const answers = new Map<string, Promise<PhotoSalesResponse | null>>();
 
-function salesFor(url: string): Promise<PhotoSalesResponse | null> {
-  let answer = answers.get(url);
+function salesFor(url: string, about: string): Promise<PhotoSalesResponse | null> {
+  const key = `${url}\n${about}`;
+  let answer = answers.get(key);
   if (!answer) {
     // A failure is quiet - this is a hint, not the page - and is not kept, so a later look tries again.
-    answer = api.photoSales(url).catch(() => {
-      answers.delete(url);
+    answer = api.photoSales(url, about || undefined).catch(() => {
+      answers.delete(key);
       return null;
     });
-    answers.set(url, answer);
+    answers.set(key, answer);
   }
   return answer;
 }
@@ -45,14 +47,18 @@ function summary(found: PhotoSalesResponse): string {
   const live = listings.filter((listing) => listing.onSale).length;
   const parts = [
     found.items.length > 1 ? count(found.items.length, 'item') + ' spotted' : null,
-    live > 0 ? `${live} for sale` : count(listings.length, 'past listing'),
+    live > 0 ? `${live} for sale` : listings.length > 0 ? count(listings.length, 'past listing') : null,
     found.sellers.length > 0 ? `${count(found.sellers.length, 'seller')} sold before` : null,
+    // Only worth the room when there is nothing more certain to say.
+    found.sellers.length === 0 && found.likely.length > 0 ? `${count(found.likely.length, 'shop')} could get this` : null,
   ];
   return parts.filter(Boolean).join(' · ');
 }
 
-export function PhotoSales({ url, onLeave, tone = 'dark' }: {
+export function PhotoSales({ url, about = '', onLeave, tone = 'dark' }: {
   url: string | undefined;
+  /** The words shown with the photo - a caption, a title - searched alongside it. */
+  about?: string;
   /** Called as a link in the sheet is followed, so whatever shows the photo can close. */
   onLeave?: () => void;
   /** Over a dark photo viewer, or in a light dialog. */
@@ -65,13 +71,13 @@ export function PhotoSales({ url, onLeave, tone = 'dark' }: {
     if (!url) return;
     let live = true;
     setOpen(false);
-    void salesFor(url).then((sales) => { if (live) setFound({ url, sales }); });
+    void salesFor(url, about).then((sales) => { if (live) setFound({ url, sales }); });
     return () => { live = false; };
-  }, [url]);
+  }, [url, about]);
 
   const sales = found && found.url === url ? found.sales : null;
   const loading = Boolean(url) && found?.url !== url;
-  const any = Boolean(sales && sales.items.length > 0);
+  const any = Boolean(sales && (sales.items.length > 0 || sales.likely.length > 0));
 
   if (loading) {
     return (
@@ -173,6 +179,41 @@ function SalesSheet({ sales, onClose, onLeave }: {
               return seller.username
                 ? <Link key={seller.id} to={`/${seller.username}`} className="psheet__row" onClick={leave}>{body}</Link>
                 : <div key={seller.id} className="psheet__row">{body}</div>;
+            })}
+          </section>
+        )}
+
+        {sales.likely.length > 0 && (
+          <section className="psheet__item">
+            <h3 className="psheet__label">Shops that could get {several || sales.items.length === 0 ? 'these' : 'this'}</h3>
+            {/* By keyword first - the brand, the name - then by the kind of thing. */}
+            {[...new Set(sales.likely.map((entry) => entry.because))].map((because) => {
+              const shops = sales.likely.filter((entry) => entry.because === because);
+              return (
+                <div key={because} className="psheet__group">
+                  <p className="psheet__sub">
+                    <span className={`psheet__chip psheet__chip--${shops[0]!.kind}`}>{because}</span>
+                  </p>
+                  {shops.map(({ seller, listings, kind }) => {
+                    const body = (
+                      <>
+                        <Avatar name={seller.storefrontName} size={36} />
+                        <span className="psheet__main">
+                          <b className="psheet__name">{seller.storefrontName}</b>
+                          <span className="psheet__meta">
+                            {kind === 'keyword'
+                              ? `Has listed ${because} ${listings === 1 ? 'once' : `${listings} times`}`
+                              : `${count(listings, 'listing')} in ${because}`}
+                          </span>
+                        </span>
+                      </>
+                    );
+                    return seller.username
+                      ? <Link key={seller.id} to={`/${seller.username}`} className="psheet__row" onClick={leave}>{body}</Link>
+                      : <div key={seller.id} className="psheet__row">{body}</div>;
+                  })}
+                </div>
+              );
             })}
           </section>
         )}

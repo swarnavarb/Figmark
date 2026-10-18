@@ -86,8 +86,12 @@ photos, collection cards) checks whether the things in it are, or were, for
 sale here and says so in a bar along the bottom. Tapping it lists the matching
 listings, those on sale now first and then sold-out or ended ones, along with
 the shops that have sold them. With `ANTHROPIC_API_KEY` set, Claude names each
-item in the photo, up to five, and each item gets its own group. Without it,
-only listings that use the same picture are found. `POST /api/search/photo/sales`
+item in the photo, up to five, and each item gets its own group. The words
+shown with the photo (a post's caption, a listing's title) are searched
+against listing titles too, so a post that names what is in it finds those
+items without a key. The sheet ends with shops that could get the items:
+those that list the brand or name (Nike, McFarlane) first, then those that
+deal in the kind of thing (sneakers, action figures). `POST /api/search/photo/sales`
 only reads photos stored here (never an outside link, never a chat photo), and
 caches what it read for each photo, so reopening one costs nothing.
 
