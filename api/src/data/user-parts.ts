@@ -26,6 +26,7 @@ export const USER_PARTS = {
   push: ['pushEndpoints'],
   devices: ['clientDevices'],
   profit: ['profitTemplates', 'savedCalcs'],
+  feed: ['feedPrefs'],
 } as const satisfies Record<string, readonly (keyof User)[]>;
 
 export type UserPartName = keyof typeof USER_PARTS;

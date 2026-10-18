@@ -71,6 +71,9 @@ const ShortLinkPage = page(() => import('./pages/ShortLinkPage'), 'ShortLinkPage
 const InvitePage = page(() => import('./pages/InvitePage'), 'InvitePage');
 const SharedItem = page(() => import('./pages/InvitePage'), 'SharedItem');
 const SharedPage = page(() => import('./pages/InvitePage'), 'SharedPage');
+const SharedPost = page(() => import('./pages/InvitePage'), 'SharedPost');
+const SharedTopic = page(() => import('./pages/InvitePage'), 'SharedTopic');
+const SharedDiscover = page(() => import('./pages/InvitePage'), 'SharedDiscover');
 const PowerSaleBuilderPage = page(() => import('./components/PowerSale'), 'PowerSaleBuilderPage');
 
 /**
@@ -112,6 +115,9 @@ function App() {
         <Route path="/i/:code" element={<InvitePage />} />
         <Route path="/s/l/:id" element={<SharedItem />} />
         <Route path="/s/p/:handle" element={<SharedPage />} />
+        <Route path="/s/x/:channel/:id" element={<SharedPost />} />
+        <Route path="/s/t/:slug" element={<SharedTopic />} />
+        <Route path="/s/d" element={<SharedDiscover />} />
         <Route path="/sell" element={members(<SellPage />)} />
         <Route path="/shop" element={members(<ShopPage />)} />
         <Route path="/shop/power-sale" element={members(<PowerSaleBuilderPage />)} />

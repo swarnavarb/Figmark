@@ -3829,6 +3829,23 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .spost__kind--poll { background: var(--aqua-soft); color: var(--aqua); }
 .spost__kind--hot { background: var(--grad-warm); color: #fff; }
 
+/* Who you follow took part, over a stranger's post. */
+.spost__social {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 6px;
+  color: var(--text-dim); font-size: var(--t-2xs); font-weight: var(--w-semi);
+}
+.spost__saved { display: inline-flex; color: var(--accent-text); }
+.spost__mention, .spost__topic { color: var(--accent-text); font-weight: var(--w-semi); text-decoration: none; }
+.spost__mention:hover, .spost__topic:hover { text-decoration: underline; }
+
+/* A post this reader put away, with the way back. */
+.spost--away { padding: 12px 14px; }
+.spost__awayline {
+  display: flex; align-items: center; gap: 10px; margin: 0;
+  color: var(--text-dim); font-size: var(--t-sm);
+}
+.spost__awayline > span { flex: 1 1 auto; }
+
 /* Follow, beside the name of whoever is not followed yet. */
 .spost__follow {
   display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto;

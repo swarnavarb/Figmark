@@ -14,7 +14,7 @@ import { error } from './functions/http.js';
  * reached the local count still applies: a limit that fails open is better
  * than an endpoint that fails closed.
  */
-export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
+export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
   | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
   | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check';
 
@@ -25,6 +25,10 @@ const DAY = HOUR * 24;
 /** Each action's windows: at most `max` in any `ms`. */
 const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   post: [{ max: 10, ms: MINUTE }, { max: 60, ms: HOUR }],
+  // A batch of what was on screen, sent every few seconds while somebody scrolls.
+  seen: [{ max: 30, ms: MINUTE }, { max: 600, ms: HOUR }],
+  // Saving, hiding and muting: a tap each, but a tap that writes the account.
+  feedpref: [{ max: 60, ms: MINUTE }],
   comment: [{ max: 20, ms: MINUTE }, { max: 200, ms: HOUR }],
   react: [{ max: 60, ms: MINUTE }],
   share: [{ max: 20, ms: MINUTE }],

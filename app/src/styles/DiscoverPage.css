@@ -59,9 +59,51 @@
 .discitem__why--rare { color: #FF8A8D; background: var(--coral-soft); }
 .discitem__why--filling { color: #67E8F9; background: var(--aqua-soft); }
 .discitem__why--hot { color: var(--warn); background: var(--warn-soft); }
+.discitem__why--yours { color: var(--accent-text); background: var(--accent-soft); }
 .discitem__name {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.35;
 }
 .discitem__meta { display: flex; align-items: baseline; gap: 6px; font-size: var(--t-sm); }
 .discitem__meta strong { font-family: var(--mono); font-weight: var(--w-medium); }
+
+/* The title, with a way to pass Discover on beside it. */
+.dischero__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* What people are posting about: one sideways line of #topics. */
+.distopics {
+  display: flex; gap: 6px; margin: 6px -16px 0; padding-inline: 16px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.distopics::-webkit-scrollbar { display: none; }
+.distopic {
+  display: inline-flex; align-items: baseline; gap: 5px; flex: 0 0 auto;
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  color: var(--accent-text); font-size: var(--t-xs); font-weight: var(--w-semi); text-decoration: none;
+}
+.distopic:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+
+/* Where a guest's scrolling stops. */
+.discwall {
+  display: grid; gap: 8px; justify-items: center; text-align: center;
+  padding: 22px 18px; border: 1px solid var(--accent-line); border-radius: var(--r-lg, 16px);
+  background: var(--accent-soft);
+}
+.discwall h2 { margin: 0; font-size: var(--t-lg); }
+.discwall p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); max-width: 42ch; }
+
+/* This week's best: three short ranked lists. */
+.discweek { display: grid; gap: 16px; }
+.discweek__block { display: grid; gap: 8px; }
+.discweek__block h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-md); }
+.discweek__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.discweek__row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  color: inherit; text-decoration: none;
+}
+a.discweek__row:hover { border-color: var(--border-strong); }
+.discweek__rank { width: 1.4em; text-align: center; font-family: var(--mono); font-weight: var(--w-bold); color: var(--accent-text); }
+.discweek__photo { width: 40px; height: 40px; border-radius: 8px; flex: 0 0 auto; }
+.discweek__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+.discweek__count { flex: 0 0 auto; color: var(--text-dim); font-size: var(--t-xs); font-family: var(--mono); }

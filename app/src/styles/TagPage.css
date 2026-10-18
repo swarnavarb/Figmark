@@ -7,3 +7,5 @@
 .tagpage__title { display: flex; align-items: baseline; gap: 2px; }
 .tagpage__title > span { color: var(--accent); }
 .tagpage__grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.tagpage__posts { display: grid; gap: 14px; max-width: 640px; margin-top: 18px; }
+.tagpage__sub { margin: 0; font-size: var(--t-md); }

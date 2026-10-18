@@ -545,4 +545,23 @@ await check('without a visitor cookie, opening a link still keeps the referral',
   assert.ok(sent[0].startsWith('fm_ref='), 'the referral pays someone; the visitor cookie can wait');
 });
 
+await check('Discover, a topic and a public post each have a card; a room message does not', async () => {
+  const ask = (u) => linkPreview(req({ headers: { host: 'figmark.example' }, query: { u } }), ctx);
+  const recent = await repository.listRecentPosts(200);
+  const open = recent.find((post) => post.channel === 'seller' && (post.reach ?? 'feed') === 'feed' && post.body);
+  const room = recent.find((post) => post.channel === 'seller' && post.reach === 'channel');
+  assert.ok(open, 'a seeded broadcast to share');
+  const card = await ask(`/s/x/${open.channelId}/${open.id}`);
+  assert.equal(card.status, 200);
+  assert.equal(card.jsonBody.href, `/social/p/${open.channelId}/${open.id}`);
+  assert.match(card.jsonBody.title, new RegExp(open.authorName));
+  if (room) assert.equal((await ask(`/s/x/${room.channelId}/${room.id}`)).status, 404, 'what was said in a room stays there');
+  assert.equal((await ask('/s/d')).jsonBody.href, '/discover');
+  const topic = await ask('/s/t/resin-kit');
+  assert.equal(topic.jsonBody.href, '/tags/resin-kit');
+  assert.match(topic.jsonBody.title, /#Resinkit/);
+  const page = await og(req({ headers: { host: 'figmark.example' }, query: { u: `/s/x/${open.channelId}/${open.id}` } }), ctx);
+  assert.match(tag(page.body, 'og:title'), new RegExp(open.authorName));
+});
+
 console.log(`\n${passed} checks passed`);

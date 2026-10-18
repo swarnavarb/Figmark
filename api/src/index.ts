@@ -41,3 +41,4 @@ import './functions/affiliate-routes.js';
 import './functions/share-routes.js';
 import './functions/og-routes.js';
 import './functions/shop-tag-routes.js';
+import './functions/feed-routes.js';

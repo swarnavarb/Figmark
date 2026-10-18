@@ -70,3 +70,37 @@
   font-size: var(--t-sm); color: #BEF264; background: var(--lime-soft); border: 1px solid var(--lime-line);
 }
 .itemchip .iconbtn { margin-left: auto; }
+
+/* New posts from the people followed, waiting above: a pill that brings them in. */
+.feed__fresh {
+  position: sticky; top: calc(var(--strip-h, 0px) + 8px); z-index: 5;
+  justify-self: center; display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border: 0; border-radius: var(--r-pill);
+  background: var(--accent); color: var(--accent-ink);
+  font-size: var(--t-xs); font-weight: var(--w-bold); cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.feed__freshwho { font-weight: var(--w-medium); opacity: 0.85; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Where the new posts stop and last visit's begin. */
+.feed__caught {
+  display: flex; align-items: center; gap: 10px; padding: 4px 2px;
+  color: var(--text-dim); font-size: var(--t-xs); font-weight: var(--w-semi);
+}
+.feed__caught::before, .feed__caught::after { content: ''; flex: 1 1 auto; height: 1px; background: var(--border); }
+
+/* A run of one shop's drops, folded: the newest in full, then the rest as a strip. */
+.dropbatch { display: grid; gap: 6px; }
+.dropbatch__more {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px;
+  border: 1px dashed var(--border-strong); border-radius: 12px; background: var(--surface);
+  color: var(--text-dim); font-size: var(--t-sm); text-align: left; cursor: pointer;
+}
+.dropbatch__more > span:nth-child(2) { flex: 1 1 auto; }
+.dropbatch__more strong { color: var(--text); }
+.dropbatch__thumbs { display: flex; }
+.dropbatch__thumbs img, .dropbatch__blank {
+  width: 30px; height: 30px; border-radius: 8px; object-fit: cover;
+  border: 2px solid var(--surface); margin-left: -8px; background: var(--surface-2);
+}
+.dropbatch__thumbs > :first-child { margin-left: 0; }

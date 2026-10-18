@@ -11655,4 +11655,229 @@ await check('a new ISO is matched against what is listed, and the seller hears',
   assert.equal(rare.matchCount, 0);
 });
 
+/* ── discovery and the feed: preferences, ranking signals, rails ─────────── */
+console.log('\ndiscovery and the feed');
+const {
+  savePostRoute: savePostR, savedPostsRoute: savedPostsR, hidePostRoute: hidePostR, muteRoute: feedMute,
+  seenRoute: seenR, suggestionsRoute: suggestionsR, leaderboardRoute: leaderboardR, topicPostsRoute: topicPostsR,
+} = await import(new URL('feed-routes.js', fns));
+const { homeNewRoute: homeNew } = await import(new URL('social-routes.js', fns));
+const discoverIds = async (headers, query = {}) => {
+  const body = (await discover(req({ headers, query }), ctx)).jsonBody;
+  return new Set([...body.debates, ...body.threads, ...body.flexes, ...(body.rising ?? [])].map((card) => card.post.id));
+};
+
+await check('an @handle in a post or a comment tells whoever holds it, once', async () => {
+  const named = await newBuyer('Mention Target');
+  assert.equal((await setUsername(req({ headers: named.headers, body: { username: 'mention_target' } }), ctx)).status, 200);
+  const writer = await newBuyer('Mention Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Look at this, @mention_target. And @nobody_here_at_all' } }), ctx)).jsonBody.post;
+  const told = (await noticesFor(named.id)).filter((notice) => notice.kind === 'mentioned');
+  assert.equal(told.length, 1, 'mentioned in the post');
+  assert.ok(told[0].link.includes(made.id));
+  assert.ok(told[0].title.includes('Mention Writer'));
+  await commentOn(req({ headers: writer.headers, params: on(made), body: { body: '@MENTION_TARGET what do you think?' } }), ctx);
+  assert.equal((await noticesFor(named.id)).filter((notice) => notice.kind === 'mentioned').length, 2, 'and again in a comment');
+  // Naming yourself is not news.
+  resetRateLimits();
+  await createPost(req({ headers: named.headers, body: { body: 'Me: @mention_target' } }), ctx);
+  assert.equal((await noticesFor(named.id)).filter((notice) => notice.kind === 'mentioned').length, 2);
+});
+
+await check('a post can be saved, listed back, and unsaved', async () => {
+  const reader = await newBuyer('Saver');
+  const writer = await newBuyer('Saved Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Worth keeping' } }), ctx)).jsonBody.post;
+  const saved = await savePostR(req({ headers: reader.headers, params: on(made) }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.saved, true);
+  const list = (await savedPostsR(req({ headers: reader.headers }), ctx)).jsonBody.posts;
+  assert.deepEqual(list.map((card) => card.post.id), [made.id]);
+  assert.equal(list[0].saved, true);
+  assert.equal((await readPost(req({ headers: reader.headers, params: on(made) }), ctx)).jsonBody.card.saved, true, 'the card says so anywhere');
+  assert.equal((await savePostR(req({ headers: reader.headers, params: on(made) }), ctx)).jsonBody.saved, false);
+  assert.equal((await savedPostsR(req({ headers: reader.headers }), ctx)).jsonBody.posts.length, 0);
+  assert.equal((await savePostR(req({ headers: reader.headers, params: { channel: made.channelId, id: 'pst_nope' } }), ctx)).status, 404);
+});
+
+await check('hiding a post or muting its author keeps them out of Discover, and both undo', async () => {
+  const reader = await newBuyer('Hider');
+  const loud = await newBuyer('Loud Poster');
+  resetRateLimits();
+  const thread = (await createPost(req({ headers: loud.headers, body: { body: 'Hot take: boxes do not matter.' } }), ctx)).jsonBody.post;
+  for (const who of [await newBuyer('Hot One'), await newBuyer('Hot Two'), await newBuyer('Hot Three')]) {
+    await commentOn(req({ headers: who.headers, params: on(thread), body: { body: 'They do.' } }), ctx);
+  }
+  assert.ok((await discoverIds(reader.headers)).has(thread.id), 'on Discover to begin with');
+
+  assert.equal((await hidePostR(req({ headers: reader.headers, params: on(thread), body: {} }), ctx)).status, 200);
+  assert.ok(!(await discoverIds(reader.headers)).has(thread.id), 'hidden');
+  assert.ok((await discoverIds(auth)).has(thread.id), 'for this reader only');
+  await hidePostR(req({ headers: reader.headers, params: on(thread), body: { undo: true } }), ctx);
+  assert.ok((await discoverIds(reader.headers)).has(thread.id), 'and back');
+
+  assert.equal((await feedMute(req({ headers: reader.headers, body: { id: loud.id, on: true } }), ctx)).jsonBody.muted, true);
+  assert.ok(!(await discoverIds(reader.headers)).has(thread.id), 'muted');
+  await feedMute(req({ headers: reader.headers, body: { id: loud.id, on: false } }), ctx);
+  assert.ok((await discoverIds(reader.headers)).has(thread.id));
+
+  assert.equal((await feedMute(req({ headers: reader.headers, body: { id: reader.id } }), ctx)).status, 400, 'not yourself');
+  assert.equal((await hidePostR(req({ headers: loud.headers, params: on(thread), body: {} }), ctx)).status, 400, 'nor your own post');
+});
+
+await check('"not interested" sinks a post without hiding its author', async () => {
+  const reader = await newBuyer('Picky Reader');
+  const repository = await getRepository();
+  const me = await repository.getUserById(reader.id);
+  const writer = await newBuyer('Less Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Meh' } }), ctx)).jsonBody.post;
+  await hidePostR(req({ headers: reader.headers, params: on(made), body: { notInterested: true } }), ctx);
+  const after = await repository.getUserById(reader.id);
+  assert.ok(after.feedPrefs.hidden.includes(made.id));
+  assert.ok(after.feedPrefs.lessFrom.includes(writer.id), 'less from them, not none');
+  assert.ok(!(after.feedPrefs.muted ?? []).includes(writer.id));
+  assert.equal(me.feedPrefs, undefined, 'nothing written before they asked');
+});
+
+await check('Discover pages on, carries rising posts, topics and the rails, and stays open to guests', async () => {
+  resetRateLimits();
+  const poster = await newBuyer('Topic Poster');
+  const tagged = (await createPost(req({ headers: poster.headers, body: { body: 'New arrivals for my #ResinKits shelf' } }), ctx)).jsonBody.post;
+  await createPost(req({ headers: poster.headers, body: { body: 'More #resin_kits today' } }), ctx);
+  const first = (await discover(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(Array.isArray(first.rising));
+  assert.ok(first.rising.every((card) => card.badges?.includes('rising')));
+  assert.ok(first.topics.some((topic) => topic.key === 'resin kit' && topic.posts >= 2), JSON.stringify(first.topics));
+  assert.ok(Array.isArray(first.wants) && Array.isArray(first.spotted));
+  assert.ok(first.next === null || first.next === 1);
+  const later = (await discover(req({ headers: auth, query: { page: '1' } }), ctx)).jsonBody;
+  assert.equal(later.topics, undefined, 'the rails come once, on the first page');
+  const ids = (body) => [...body.debates, ...body.threads, ...body.flexes, ...body.rising].map((card) => card.post.id);
+  assert.ok(!ids(later).some((id) => ids(first).includes(id)), 'a later page does not repeat the first');
+
+  const topic = (await topicPostsR(req({ params: { slug: 'resin-kit' } }), ctx)).jsonBody;
+  assert.equal(topic.topic.key, 'resin kit');
+  assert.ok(topic.posts.some((card) => card.post.id === tagged.id), 'the topic page finds it, for a guest too');
+  const guest = (await discover(req(), ctx)).jsonBody;
+  assert.ok(guest.rising.every((card) => !card.social.mine));
+});
+
+await check('the item tagged for sale on a shelf is spotted on Discover', async () => {
+  const body = (await discover(req({ headers: auth }), ctx)).jsonBody;
+  const tagged = flexPost.flex.hotspots.find((spot) => spot.listingId)?.listingId;
+  const spotted = body.spotted.find((item) => item.listingId === tagged);
+  assert.ok(spotted, JSON.stringify(body.spotted));
+  // The same item is in an earlier debate too; it is credited to the hotter post, once.
+  assert.ok(['flex', 'debate'].includes(spotted.how));
+  assert.equal(body.spotted.filter((item) => item.listingId === tagged).length, 1);
+  assert.ok(body.spotted.every((item) => item.listingId && item.spottedBy));
+});
+
+await check('a closed debate tells its voters which side won, and comes back on their feed', async () => {
+  const author = await newBuyer('Debater');
+  const voter = await newBuyer('Debate Voter');
+  resetRateLimits();
+  const made = (await createPost(req({
+    headers: author.headers,
+    body: { body: 'Which box art?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], poll: { options: ['Japanese', 'Western'] }, debate: { listingIds: [null, null] } },
+  }), ctx)).jsonBody.post;
+  assert.ok(made.poll.closesAt, 'a debate closes by itself when its author does not say');
+  const option = made.poll.options[0].id;
+  assert.equal((await vote(req({ headers: voter.headers, params: on(made), body: { optionId: option } }), ctx)).status, 200);
+  const repository = await getRepository();
+  await repository.mutatePost(made.channelId, made.id, (post) => ({ ...post, poll: { ...post.poll, closesAt: new Date(Date.now() - 60_000).toISOString() } }));
+
+  await discover(req(), ctx);
+  const told = (await noticesFor(voter.id)).filter((notice) => notice.kind === 'debate_result');
+  assert.equal(told.length, 1);
+  assert.match(told[0].title, /Your pick won: Japanese/);
+  assert.ok((await noticesFor(author.id)).some((notice) => notice.kind === 'debate_result'), 'the author hears too');
+  await discover(req(), ctx);
+  assert.equal((await noticesFor(voter.id)).filter((notice) => notice.kind === 'debate_result').length, 1, 'once');
+
+  const feed = (await socialHome(req({ headers: voter.headers, query: { following: '1' } }), ctx)).jsonBody.posts;
+  assert.equal(feed[0].post.id, made.id, 'the result is on top of their feed');
+  assert.ok(feed[0].badges.includes('result'));
+});
+
+await check('what was on screen is counted on the post, but not for its author', async () => {
+  const reader = await newBuyer('Scroller');
+  const writer = await newBuyer('Seen Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Look at me' } }), ctx)).jsonBody.post;
+  const sent = await seenR(req({ headers: reader.headers, body: { items: [
+    { channelId: made.channelId, postId: made.id, ms: 4000, opened: true },
+    { channelId: made.channelId, postId: 'pst_gone', ms: 100 },
+    { nonsense: true },
+  ] } }), ctx);
+  assert.equal(sent.status, 200);
+  assert.equal(sent.jsonBody.counted, 1);
+  await seenR(req({ headers: reader.headers, body: { items: [{ channelId: made.channelId, postId: made.id, ms: 10_000_000 }] } }), ctx);
+  await seenR(req({ headers: writer.headers, body: { items: [{ channelId: made.channelId, postId: made.id, ms: 5000 }] } }), ctx);
+  const stored = await (await getRepository()).getPost(made.channelId, made.id);
+  assert.equal(stored.views, 2, 'the author looking at their own post is not a view');
+  assert.equal(stored.opens, 1);
+  assert.equal(stored.dwellMs, 4000 + 60_000, 'a minute is all one view can add');
+});
+
+await check('suggestions name people you engage with, never anybody followed or yourself', async () => {
+  const reader = await newBuyer('Suggest Reader');
+  const writer = await newBuyer('Suggested Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Follow-worthy' } }), ctx)).jsonBody.post;
+  await reactTo(req({ headers: reader.headers, params: on(made), body: { kind: 'love' } }), ctx);
+  const rows = (await suggestionsR(req({ headers: reader.headers }), ctx)).jsonBody.suggestions;
+  const row = rows.find((entry) => entry.id === writer.id);
+  assert.ok(row, JSON.stringify(rows));
+  assert.equal(row.followKey, `person:${writer.id}`);
+  assert.match(row.reason, /engaged/);
+  assert.ok(rows.every((entry) => entry.id !== reader.id));
+  await toggleFollow(req({ headers: reader.headers, params: { id: row.followKey } }), ctx);
+  assert.ok(!(await suggestionsR(req({ headers: reader.headers }), ctx)).jsonBody.suggestions.some((entry) => entry.id === writer.id));
+});
+
+await check('the week\'s best ranks loved shelves and argued debates', async () => {
+  resetRateLimits();
+  await reactTo(req({ headers: auth, params: on(flexPost), body: { kind: 'fire' } }), ctx);
+  const board = (await leaderboardR(req(), ctx)).jsonBody;
+  assert.ok(board.shelves.some((shelf) => shelf.postId === flexPost.id));
+  assert.ok(board.debates.every((debate) => debate.votes > 0));
+  assert.ok(board.voices.length > 0 && board.voices.every((voice) => voice.reactions > 0));
+});
+
+await check('the feed says how many new posts are waiting, and where the last visit stopped', async () => {
+  const fan = await newBuyer('Feed Fan');
+  await toggleFollow(req({ headers: fan.headers, params: { id: 'usr_demo' } }), ctx);
+  const first = (await socialHome(req({ headers: fan.headers, query: { following: '1' } }), ctx)).jsonBody;
+  const newest = first.posts.find((card) => !card.badges)?.post.createdAt;
+  assert.ok(newest, 'the shop has posts');
+  assert.equal(first.lastVisit, null, 'a first visit has nothing to be caught up on');
+  assert.equal((await homeNew(req({ headers: fan.headers, query: { since: newest } }), ctx)).jsonBody.count, 0);
+  resetRateLimits();
+  await createPost(req({ headers: auth, body: { body: 'Fresh drop', storeId: 'usr_demo' } }), ctx);
+  const waiting = (await homeNew(req({ headers: fan.headers, query: { since: newest } }), ctx)).jsonBody;
+  assert.equal(waiting.count, 1);
+  assert.equal(waiting.names.length, 1);
+  const second = (await socialHome(req({ headers: fan.headers, query: { following: '1' } }), ctx)).jsonBody;
+  assert.equal(second.lastVisit, newest, 'the last visit read up to the newest post then');
+  assert.equal((await homeNew(req({ headers: fan.headers }), ctx)).status, 400);
+});
+
+await check('a card says which of the people you follow took part', async () => {
+  const fan = await newBuyer('Watcher');
+  const friend = await newBuyer('Friend Reactor');
+  const stranger = await newBuyer('Stranger Poster');
+  await toggleFollow(req({ headers: fan.headers, params: { id: `person:${friend.id}` } }), ctx);
+  resetRateLimits();
+  const made = (await createPost(req({ headers: stranger.headers, body: { body: 'Unknown to you' } }), ctx)).jsonBody.post;
+  await reactTo(req({ headers: friend.headers, params: on(made), body: { kind: 'love' } }), ctx);
+  const card = (await readPost(req({ headers: fan.headers, params: on(made) }), ctx)).jsonBody.card;
+  assert.deepEqual(card.followedActed, { count: 1, names: ['Friend Reactor'] });
+  const plain = (await readPost(req({ headers: stranger.headers, params: on(made) }), ctx)).jsonBody.card;
+  assert.ok(!plain.followedActed);
+});
+
 console.log(`\n${passed} checks passed`);

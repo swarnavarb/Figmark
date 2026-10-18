@@ -15,6 +15,7 @@ import { WantedPage } from './WantedPage';
 import { VerifyNudge } from './VerifyPage';
 import { useToast } from '../components/Feedback';
 import { Spinner } from '../components/Spinner';
+import { FollowSuggestions } from '../components/FollowSuggestions';
 import '../styles/SocialPage.css';
 
 /**
@@ -60,7 +61,7 @@ export function SocialPage() {
 
 /* ── Feed ───────────────────────────────────────────────────────────────── */
 
-type FeedFilter = 'all' | 'photos' | 'polls' | 'sale' | 'flexes';
+type FeedFilter = 'all' | 'photos' | 'polls' | 'sale' | 'flexes' | 'saved';
 
 const FILTERS: { id: FeedFilter; label: string }[] = [
   { id: 'all', label: 'Everything' },
@@ -68,7 +69,42 @@ const FILTERS: { id: FeedFilter; label: string }[] = [
   { id: 'flexes', label: '🏆 Flexes' },
   { id: 'polls', label: '📊 Polls' },
   { id: 'photos', label: '📸 Photos' },
+  { id: 'saved', label: '🔖 Saved' },
 ];
+
+/** How often the feed asks whether anything new has been posted, while it is open and on screen. */
+const NEW_POSTS_EVERY_MS = 60_000;
+/** Drops from one shop this close together are one batch. */
+const DROP_BATCH_MS = 6 * 3_600_000;
+/** Fewer than this in a row are shown one by one. */
+const DROP_BATCH_MIN = 3;
+
+/** One entry in the feed: a post, or a run of one shop's drops folded together. */
+type FeedEntry = { kind: 'post'; card: PostCard } | { kind: 'drops'; cards: PostCard[] };
+
+const isDrop = (card: PostCard) => !card.badges?.length && !card.post.repostOf
+  && (card.post.kind === 'sale' || Boolean(card.post.drop)) && Boolean(card.listing);
+
+/**
+ * Fold runs of one shop's drops - several items posted one after another -
+ * into a single entry, so a shop listing twenty things does not push
+ * everybody else off the screen.
+ */
+function batchDrops(cards: PostCard[]): FeedEntry[] {
+  const out: FeedEntry[] = [];
+  for (let index = 0; index < cards.length;) {
+    const first = cards[index]!;
+    let end = index + 1;
+    if (isDrop(first)) {
+      while (end < cards.length && isDrop(cards[end]!) && cards[end]!.post.channelId === first.post.channelId
+        && Date.parse(first.post.createdAt) - Date.parse(cards[end]!.post.createdAt) < DROP_BATCH_MS) end += 1;
+    }
+    if (end - index >= DROP_BATCH_MIN) out.push({ kind: 'drops', cards: cards.slice(index, end) });
+    else for (const card of cards.slice(index, end)) out.push({ kind: 'post', card });
+    index = end;
+  }
+  return out;
+}
 
 function matches(card: PostCard, filter: FeedFilter): boolean {
   const { post, social } = card;
@@ -109,13 +145,20 @@ function FollowingFeed() {
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FeedFilter>('all');
+  /** Where this person had read up to on their last visit, to draw "all caught up" at. */
+  const [lastVisit, setLastVisit] = useState<string | null>(null);
+  /** Followed posts that arrived since the newest one on screen. */
+  const [fresh, setFresh] = useState<{ count: number; names: string[] } | null>(null);
+  const [saved, setSaved] = useState<PostCard[] | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
+    setFresh(null);
     try {
       const page = await api.socialHome(as, undefined, true);
       setPosts(page.posts);
       setNext(page.next);
+      setLastVisit((known) => known ?? page.lastVisit ?? null);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your feed.');
     }
@@ -144,13 +187,61 @@ function FollowingFeed() {
     void load();
   }, [load]);
 
+  // Saved is its own list: posts saved from anywhere, not only from this feed.
+  useEffect(() => {
+    if (filter !== 'saved') return;
+    let live = true;
+    setSaved(null);
+    api.savedPosts(as)
+      .then((found) => live && setSaved(found.posts))
+      .catch((err: unknown) => live && setError(err instanceof ApiRequestError ? err.message : 'Could not load what you saved.'));
+    return () => {
+      live = false;
+    };
+  }, [filter, as]);
+
+  // Anything new from the people followed? Asked now and then while the feed
+  // is on screen, and answered with a pill rather than by moving what is
+  // being read.
+  const newest = posts?.find((card) => !card.badges?.length)?.post.createdAt ?? null;
+  useEffect(() => {
+    if (!newest) return;
+    const ask = () => {
+      if (document.visibilityState !== 'visible') return;
+      api.socialHomeNew(newest).then((found) => setFresh(found.count > 0 ? found : null)).catch(() => undefined);
+    };
+    const timer = window.setInterval(ask, NEW_POSTS_EVERY_MS);
+    return () => window.clearInterval(timer);
+  }, [newest]);
+
   // A channel message is said to the room, never to the feed - whatever the
   // server sends, a room message is not drawn here.
-  const shown = (posts ?? []).filter((card) => !inRoomOnly(card) && matches(card, filter));
+  const shown = filter === 'saved'
+    ? saved ?? []
+    : (posts ?? []).filter((card) => !inRoomOnly(card) && matches(card, filter));
+  const entries = batchDrops(shown);
+  // The line goes above the first post already seen, when something above it is new.
+  const caughtUpAt = filter === 'all' && lastVisit
+    ? entries.findIndex((entry, index) => index > 0 && entry.kind === 'post' && !entry.card.badges?.length
+      && entry.card.post.createdAt <= lastVisit)
+    : -1;
+  const remove = (id: string) => setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null);
+  const repost = (card: PostCard) => setPosts((all) => [card, ...(all ?? [])]);
 
   return (
     <div className="feed">
       <Composer onPosted={load} />
+
+      {fresh && filter !== 'saved' && (
+        <button type="button" className="feed__fresh" onClick={() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          void load();
+        }}>
+          <Icon name="up" size={13} />
+          {fresh.count === 1 ? '1 new post' : `${fresh.count} new posts`}
+          {fresh.names.length > 0 && <span className="feed__freshwho"> from {fresh.names.join(', ')}</span>}
+        </button>
+      )}
 
       <div className="feed__filters" role="toolbar" aria-label="Show">
         {FILTERS.map((entry) => (
@@ -163,34 +254,95 @@ function FollowingFeed() {
 
       {error ? (
         <ErrorNotice message={error} />
-      ) : !posts ? (
+      ) : !posts || (filter === 'saved' && !saved) ? (
         <FeedSkeleton />
-      ) : posts.length === 0 ? (
-        <EmptyState title="Your feed is quiet">
-          This is where the shops, collectors and groups you follow post their drops, unboxings and flexes.
-          Follow a few and it fills up.
-          <span className="feed__empty-go">
-            <Link to="/discover" className="btn btn--sm">Find people in Discover</Link>
-            <Link to="/social?view=forums" className="btn btn--quiet btn--sm">Browse groups</Link>
-          </span>
-        </EmptyState>
+      ) : posts.length === 0 && filter !== 'saved' ? (
+        <>
+          <EmptyState title="Your feed is quiet">
+            This is where the shops, collectors and groups you follow post their drops, unboxings and flexes.
+            Follow a few and it fills up.
+            <span className="feed__empty-go">
+              <Link to="/discover" className="btn btn--sm">Find people in Discover</Link>
+              <Link to="/social?view=forums" className="btn btn--quiet btn--sm">Browse groups</Link>
+            </span>
+          </EmptyState>
+          <FollowSuggestions title="Start with these" onFollowed={() => void load()} />
+        </>
       ) : shown.length === 0 ? (
-        <EmptyState title="Nothing like that yet">
-          Nothing matches that filter. Try another, or be the first.
-        </EmptyState>
+        filter === 'saved' ? (
+          <EmptyState title="Nothing saved yet">
+            Press ··· on any post and Save it to read again later. Saved posts wait here.
+          </EmptyState>
+        ) : (
+          <EmptyState title="Nothing like that yet">
+            Nothing matches that filter. Try another, or be the first.
+          </EmptyState>
+        )
       ) : (
-        shown.map((card) => (
-          <SocialPostCard key={`${as ?? 'me'}-${card.post.id}`} card={card}
-            onRemoved={(id) => setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null)}
-            onReposted={(repost) => setPosts((all) => [repost, ...(all ?? [])])} />
+        entries.map((entry, index) => (
+          <FeedItem key={entry.kind === 'post' ? `${as ?? 'me'}-${entry.card.post.id}` : `drops-${entry.cards[0]!.post.id}`}
+            entry={entry} caughtUp={index === caughtUpAt} onRemoved={remove} onReposted={repost} />
         ))
       )}
 
-      {posts && next && (
+      {posts && next && filter !== 'saved' && (
         <button type="button" className="chmore" disabled={more} onClick={() => void loadMore()}>
           {more ? <><Spinner size={14} label="Loading" /> Show older posts</> : 'Show older posts'}
         </button>
       )}
+    </div>
+  );
+}
+
+/** One entry in the feed, with the "caught up" line above it when that is where the new posts stop. */
+function FeedItem({ entry, caughtUp, onRemoved, onReposted }: {
+  entry: FeedEntry;
+  caughtUp: boolean;
+  onRemoved: (id: string) => void;
+  onReposted: (card: PostCard) => void;
+}) {
+  return (
+    <>
+      {caughtUp && (
+        <div className="feed__caught" role="separator">
+          <Icon name="check" size={14} /> <span>You're all caught up. Older posts below.</span>
+        </div>
+      )}
+      {entry.kind === 'post'
+        ? <SocialPostCard card={entry.card} onRemoved={onRemoved} onReposted={onReposted} />
+        : <DropBatch cards={entry.cards} onRemoved={onRemoved} onReposted={onReposted} />}
+    </>
+  );
+}
+
+/**
+ * A run of one shop's drops: the newest in full, the rest as a strip of
+ * thumbnails that opens into the posts.
+ */
+function DropBatch({ cards, onRemoved, onReposted }: {
+  cards: PostCard[];
+  onRemoved: (id: string) => void;
+  onReposted: (card: PostCard) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [first, ...rest] = cards;
+  if (open) {
+    return <>{cards.map((card) => <SocialPostCard key={card.post.id} card={card} onRemoved={onRemoved} onReposted={onReposted} />)}</>;
+  }
+  return (
+    <div className="dropbatch">
+      <SocialPostCard card={first!} onRemoved={onRemoved} onReposted={onReposted} />
+      <button type="button" className="dropbatch__more" onClick={() => setOpen(true)}>
+        <span className="dropbatch__thumbs" aria-hidden="true">
+          {rest.slice(0, 4).map((card) => (card.listing?.photoUrl
+            ? <img key={card.post.id} src={card.listing.photoUrl} alt="" loading="lazy" />
+            : <span key={card.post.id} className="dropbatch__blank" />))}
+        </span>
+        <span>
+          <strong>{first!.post.authorName}</strong> posted {rest.length} more {rest.length === 1 ? 'item' : 'items'}
+        </span>
+        <Icon name="chevron" size={14} />
+      </button>
     </div>
   );
 }

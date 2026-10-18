@@ -48,6 +48,8 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
 
   forum_moderation: 'social',
   post_reacted: 'social',
+  mentioned: 'social',
+  debate_result: 'social',
   post_commented: 'social',
   comment_replied: 'social',
   comment_liked: 'social',

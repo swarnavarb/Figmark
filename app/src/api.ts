@@ -16,6 +16,7 @@ import type {
 import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, OrderStatus, Sourcing, StorePermission } from '@shared/enums';
 import type { DealState } from '@shared/deals';
 import type { LotTally } from '@shared/board';
+import type { FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
@@ -1159,15 +1160,25 @@ export interface PostCard {
   shop?: boolean;
   /** Why the home feed shows it: trending anywhere, or new and rising past its followers. */
   badges?: PostBoost[];
+  /** Saved by this viewer to read again. */
+  saved?: boolean;
+  /** People the viewer follows who took part: up to three names, and how many in all. */
+  followedActed?: { count: number; names: string[] } | null;
 }
 
-export type PostBoost = 'trending' | 'rising';
+export type PostBoost = 'trending' | 'rising' | 'result';
 
-/** What Discover is made of, each list already ranked. */
+/** What Discover is made of, each list already ranked. The rails come on the first page only. */
 export interface DiscoverResponse {
   debates: PostCard[];
   threads: PostCard[];
   flexes: PostCard[];
+  rising?: PostCard[];
+  topics?: TopicChip[];
+  wants?: WantRow[];
+  spotted?: SpottedItem[];
+  /** The page after this one, or null at the end. */
+  next?: number | null;
 }
 
 /** One post read in full, with everything said under it. */
@@ -2909,16 +2920,32 @@ export const api = {
    * Who you follow, with trending and rising posts mixed in and badged - or,
    * with `following`, who you follow and nobody else, newest first.
    */
+  /** How many followed posts arrived after `since`, for the "new posts" pill. */
+  socialHomeNew: (since: string) =>
+    request<{ count: number; names: string[] }>(`/social/home/new?since=${encodeURIComponent(since)}`),
+  savePost: (channelId: string, postId: string) =>
+    post<{ saved: boolean; count: number }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(postId)}/save`),
+  savedPosts: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/saved${voice(as)}`),
+  hidePost: (channelId: string, postId: string, options: { notInterested?: boolean; undo?: boolean } = {}) =>
+    post<{ hidden: boolean }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(postId)}/hide`, options),
+  muteFeed: (id: string, on: boolean) => post<{ muted: boolean; count: number }>('/social/mute', { id, on }),
+  feedMutes: () => request<{ muted: { id: string; name: string; handle: string | null; shop: boolean }[] }>('/social/mutes'),
+  /** What was on screen, in a batch. Fire and forget: a lost batch only means a post counts one view short. */
+  seenPosts: (items: SeenEntry[]) => post<{ counted: number }>('/social/seen', { items }),
+  followSuggestions: () => request<{ suggestions: FollowSuggestion[] }>('/social/suggestions'),
+  weeklyBest: () => request<Leaderboard>('/social/leaderboard'),
+  topicPosts: (slug: string) =>
+    request<{ topic: { key: string; label: string }; posts: PostCard[] }>(`/social/topics/${encodeURIComponent(slug)}`),
   socialHome: (as?: string | null, before?: string, following = false) => {
     const query = new URLSearchParams();
     if (as) query.set('as', as);
     if (before) query.set('before', before);
     if (following) query.set('following', '1');
     const tail = query.toString();
-    return request<{ posts: PostCard[]; next: string | null }>(`/social/home${tail ? `?${tail}` : ''}`);
+    return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null }>(`/social/home${tail ? `?${tail}` : ''}`);
   },
   /** The public side, ranked: debates, conversations that took off, and collection flexes. */
-  discover: () => request<DiscoverResponse>('/social/discover'),
+  discover: (page = 0) => request<DiscoverResponse>(`/social/discover${page ? `?page=${page}` : ''}`),
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
   /** `light` is the refresh while a room is open: the posts only, without the shop's item list. */

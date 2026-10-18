@@ -22,9 +22,18 @@ export type IconName =
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image' | 'camera'
   | 'trash' | 'sort' | 'filter' | 'external' | 'home' | 'phone'
-  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy' | 'rising';
+  | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy' | 'rising'
+  | 'bookmark' | 'trophy' | 'mute' | 'hide';
 
 const PATHS: Record<IconName, ReactNode> = {
+  // A ribbon marker, for keeping a post to read again.
+  bookmark: <path d="M6.4 3.6h11.2v17l-5.6-4-5.6 4Z" />,
+  // A cup, for the week's best.
+  trophy: (<><path d="M7.6 4h8.8v5.2a4.4 4.4 0 0 1-8.8 0Z" /><path d="M7.6 6H4.4a3.2 3.2 0 0 0 3.6 4.4M16.4 6h3.2a3.2 3.2 0 0 1-3.6 4.4M12 13.6V17M8.4 20.4h7.2M9.6 17h4.8" /></>),
+  // A speaker with a cross, for hearing less of somebody.
+  mute: (<><path d="M4 9.6h3.6L12.4 5.6v12.8L7.6 14.4H4Z" /><path d="m15.6 9.6 4.8 4.8M20.4 9.6l-4.8 4.8" /></>),
+  // An eye with a stroke through it, for putting a post out of sight.
+  hide: (<><path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6Z" /><circle cx="12" cy="12" r="2.6" /><path d="M4 20 20 4" /></>),
   search: (<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>),
   heart: <path d="M12 20s-7-4.5-7-9a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 4.5-7 9-7 9Z" />,
   plus: <path d="M12 5v14M5 12h14" />,

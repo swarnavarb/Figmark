@@ -10,7 +10,7 @@ import { api, type LinkPreview } from '../api';
  */
 
 /** The share addresses a card can be drawn for, and an item's own page. */
-const PREVIEWABLE = /^\/(r|i|s\/l|s\/p|listing)\/[^/]+\/?$/;
+const PREVIEWABLE = /^\/(?:(?:r|i|s\/l|s\/p|s\/t|listing)\/[^/]+|s\/x\/[^/]+\/[^/]+|s\/d)\/?$/;
 
 /**
  * The first link into Figmark in some words that has a card: its path, and

@@ -21,6 +21,9 @@ import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
 import { Loading } from './Feedback';
 import { PhotoSales } from './PhotoSales';
+import { markOpened, useSeen } from '../seen';
+import { HASHTAG, MENTION } from '@shared/feed';
+import { tagKey, tagSlug } from '@shared/shop-tags';
 
 /**
  * One post, and everything people do with it.
@@ -36,6 +39,14 @@ const HOT_WINDOW_MS = 24 * 3_600_000;
 /** Where a post can be read on its own, for links and the share sheet. */
 export function postHref(post: { channelId: string; id: string }): string {
   return `/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`;
+}
+
+/**
+ * The address a post is passed on by: it opens the post, and a chat app that
+ * reads it first is answered with the post's own picture and words.
+ */
+export function shareHref(post: { channelId: string; id: string }): string {
+  return `/s/x/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`;
 }
 
 /** The count, shortened once it stops fitting: 1.2k rather than 1,204. */
@@ -131,9 +142,10 @@ export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['lis
 }
 
 /** What each badge says when tapped: the name first, then why the post is in front of you. */
-const BOOSTS: Record<PostBoost, { icon: 'bolt' | 'rising'; title: string; line: string }> = {
+const BOOSTS: Record<PostBoost, { icon: 'bolt' | 'rising' | 'trophy'; title: string; line: string }> = {
   trending: { icon: 'bolt', title: 'Trending', line: 'One of the most talked-about posts on Figmark right now.' },
   rising: { icon: 'rising', title: 'Rising', line: 'A new post picking up fast. You are seeing it early.' },
+  result: { icon: 'trophy', title: 'Result', line: 'A debate you voted in has closed. Here is how it ended.' },
 };
 
 const TIP_MS = 2600;
@@ -319,11 +331,22 @@ export function SocialPostCard({
   const [burst, setBurst] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
+  const [saved, setSaved] = useState(Boolean(initial.saved));
+  /** Put out of sight by this reader, and how - kept as a stub that can be undone. */
+  const [away, setAway] = useState<'hidden' | 'less' | 'muted' | null>(null);
+  const shell = useRef<HTMLElement>(null);
+  useSeen(shell, initial.post, Boolean(user) && !nested);
 
   useEffect(() => {
     setCard(initial);
     setFollowing(initial.following);
+    setSaved(Boolean(initial.saved));
   }, [initial]);
+
+  // Read on its own page, with its conversation open, is a post opened.
+  useEffect(() => {
+    if (openComments && user && !nested) markOpened(initial.post);
+  }, [openComments, user, nested, initial.post]);
 
   const { post, listing, author, social } = card;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
@@ -369,6 +392,62 @@ export function SocialPostCard({
     }
   }
 
+  /** Whose post it is, for muting: the shop it spoke as, or the person. */
+  const voiceId = card.shop ? post.channelId : post.authorId;
+
+  async function toggleSave() {
+    setMenu(false);
+    const was = saved;
+    setSaved(!was);
+    try {
+      setSaved((await api.savePost(post.channelId, post.id)).saved);
+    } catch (err) {
+      setSaved(was);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
+    }
+  }
+
+  async function putAway(how: 'hidden' | 'less' | 'muted') {
+    setMenu(false);
+    setAway(how);
+    try {
+      if (how === 'muted') await api.muteFeed(voiceId, true);
+      else await api.hidePost(post.channelId, post.id, { notInterested: how === 'less' });
+    } catch (err) {
+      setAway(null);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not do that.');
+    }
+  }
+
+  async function bringBack() {
+    const how = away;
+    setAway(null);
+    try {
+      if (how === 'muted') await api.muteFeed(voiceId, false);
+      else await api.hidePost(post.channelId, post.id, { undo: true });
+    } catch (err) {
+      setAway(how);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not undo that.');
+    }
+  }
+
+  if (away && !nested) {
+    return (
+      <article className="spost spost--away" aria-live="polite">
+        <p className="spost__awayline">
+          <Icon name={away === 'muted' ? 'mute' : 'hide'} size={15} />
+          <span>
+            {away === 'muted' ? <>You will not see <strong>{post.authorName}</strong> in Discover or suggestions.</>
+              : away === 'less' ? 'Hidden. You will see fewer posts like this.'
+                : 'Post hidden.'}
+          </span>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => void bringBack()}>Undo</button>
+        </p>
+        {error && <p className="spost__error" role="alert">{error}</p>}
+      </article>
+    );
+  }
+
   const kindLine = (
     <>
       {/* The item card below already says it is for sale; the pill is for when it has gone. */}
@@ -395,10 +474,16 @@ export function SocialPostCard({
   const type = nested ? null : contentTypeOf(card, promoted);
 
   return (
-    <article className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
+    <article ref={shell} className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {!nested && <span className="spost__glow" aria-hidden="true" />}
       {dialog}
       {type && <ContentBadge type={type} />}
+      {!nested && card.followedActed && !following && (
+        <p className="spost__social">
+          <Icon name="users" size={12} />
+          <span>{actedLine(card.followedActed)}</span>
+        </p>
+      )}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
@@ -440,6 +525,7 @@ export function SocialPostCard({
           <span className="spost__meta">
             <Link to={postHref(post)} className="spost__time">{timeAgo(post.createdAt)}</Link>
             {badges.map((kind) => <BoostBadge key={kind} kind={kind} />)}
+            {saved && !nested && <span className="spost__saved" title="Saved"><Icon name="bookmark" size={12} /></span>}
             {/* Only a message said in the room points back at the room. A post
                 that went to the feed is a feed post, wherever else it shows. */}
             {card.shop && !nested && post.reach === 'channel' && (
@@ -465,6 +551,26 @@ export function SocialPostCard({
                 <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
                   <Icon name="external" size={15} /> Open post
                 </Link>
+                {user && (
+                  <button type="button" role="menuitem" onClick={() => void toggleSave()}>
+                    <Icon name="bookmark" size={15} /> {saved ? 'Unsave' : 'Save post'}
+                  </button>
+                )}
+                {user && !social.mine && (
+                  <>
+                    <button type="button" role="menuitem" onClick={() => void putAway('less')}>
+                      <Icon name="down" size={15} /> Not interested
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => void putAway('hidden')}>
+                      <Icon name="hide" size={15} /> Hide post
+                    </button>
+                    {voiceId !== user.id && (
+                      <button type="button" role="menuitem" onClick={() => void putAway('muted')}>
+                        <Icon name="mute" size={15} /> Mute {post.authorName}
+                      </button>
+                    )}
+                  </>
+                )}
                 {canModerate && (
                   <button type="button" role="menuitem" onClick={async () => {
                     setMenu(false);
@@ -529,10 +635,10 @@ export function SocialPostCard({
         <>
           {photos.length > 0 && (post.flex ? (
             <FlexShelf photos={photos} hotspots={post.flex.hotspots} alt={post.body || `Collection of ${post.authorName}`}
-              onOpen={(index) => setLightbox(index)} />
+              onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} />
           ) : (
             <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
-              onOpen={(index) => setLightbox(index)} onDoubleTap={nested ? undefined : loveFromPhoto} />
+              onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} onDoubleTap={nested ? undefined : loveFromPhoto} />
           ))}
           {/* Whether what is in the photo can be bought here, without opening it. */}
           {photos.length > 0 && !nested && <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline" />}
@@ -571,7 +677,10 @@ export function SocialPostCard({
           <div className="spost__actions">
             <ReactButton mine={social.reactions.mine} onReact={(kind) => void react(kind)} />
             <button type="button" className={`spost__action${showComments ? ' is-on' : ''}`}
-              onClick={() => setShowComments(!showComments)} aria-expanded={showComments}>
+              onClick={() => {
+                if (!showComments && user) markOpened(post);
+                setShowComments(!showComments);
+              }} aria-expanded={showComments}>
               <Icon name="message" size={18} /> <span>Comment</span>
             </button>
             <button type="button" className="spost__action" onClick={() => setSharing(true)}>
@@ -617,6 +726,14 @@ export function SocialPostCard({
   );
 }
 
+/** "Sana reacted", "Sana and Ravi reacted", "Sana, Ravi and 3 others you follow joined in". */
+function actedLine(acted: NonNullable<PostCard['followedActed']>): string {
+  const [first, second] = acted.names;
+  if (acted.count === 1) return `${first} took part`;
+  if (acted.count === 2 && second) return `${first} and ${second} took part`;
+  return `${first}${second ? `, ${second}` : ''} and ${acted.count - (second ? 2 : 1)} others you follow took part`;
+}
+
 /**
  * What kind of post this is, for its colours.
  *
@@ -652,15 +769,45 @@ function Body({ text, long }: { text: string; long: boolean }) {
 }
 
 /**
+ * The @names and #topics in some words, made into links: a handle opens whoever
+ * holds it, a topic opens its page. Everything else is left as written.
+ */
+function Tagged({ text }: { text: string }) {
+  const marks = [
+    ...[...text.matchAll(MENTION)].map((match) => ({ at: match.index! + match[1]!.length, raw: `@${match[2]!}`, kind: 'mention' as const })),
+    ...[...text.matchAll(HASHTAG)].map((match) => ({ at: match.index! + match[1]!.length, raw: `#${match[2]!}`, kind: 'topic' as const })),
+  ].sort((a, b) => a.at - b.at);
+  if (marks.length === 0) return <>{text}</>;
+  const out: ReactNode[] = [];
+  let from = 0;
+  for (const mark of marks) {
+    if (mark.at < from) continue;
+    // A handle never ends on a dot or an underscore; that is the sentence's.
+    const raw = mark.kind === 'mention' ? mark.raw.replace(/[._]+$/, '') : mark.raw;
+    out.push(text.slice(from, mark.at));
+    const to = mark.kind === 'mention'
+      ? `/${encodeURIComponent(raw.slice(1).toLowerCase())}`
+      : `/tags/${encodeURIComponent(tagSlug(tagKey(raw.slice(1).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' '))))}`;
+    out.push(
+      <Link key={`${mark.at}`} className={`spost__${mark.kind}`} to={to} onClick={(event) => event.stopPropagation()}>{raw}</Link>,
+    );
+    from = mark.at + raw.length;
+  }
+  out.push(text.slice(from));
+  return <>{out}</>;
+}
+
+/**
  * Links in a post's words, made pressable. One into Figmark opens in place;
- * anything else opens in a new tab, and is never vouched for.
+ * anything else opens in a new tab, and is never vouched for. @names and
+ * #topics in between are links too.
  */
 export function Linked({ text }: { text: string }) {
   const parts = text.split(/(https?:\/\/[^\s<>"']+)/g);
   return (
     <>
       {parts.map((part, index) => {
-        if (index % 2 === 0) return part;
+        if (index % 2 === 0) return <Tagged key={index} text={part} />;
         // A sentence's full stop or closing bracket is not part of the address.
         const url = part.replace(/[.,!?;:)\]]+$/, '');
         const tail = part.slice(url.length);
@@ -686,7 +833,7 @@ export function Linked({ text }: { text: string }) {
 }
 
 export async function copyLink(post: { channelId: string; id: string }): Promise<boolean> {
-  const url = `${window.location.origin}${postHref(post)}`;
+  const url = `${window.location.origin}${shareHref(post)}`;
   try {
     await navigator.clipboard.writeText(url);
     return true;
@@ -1305,7 +1452,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
           <PersonLink party={comment.author} className="cmt__name">{comment.authorName}</PersonLink>
           <p className="cmt__body">
             {comment.replyToName && <span className="cmt__to">@{comment.replyToName} </span>}
-            {comment.body}
+            <Tagged text={comment.body} />
           </p>
         </div>
         <div className="cmt__meta">
@@ -1586,7 +1733,7 @@ function ShareSheet({ card, onClose, onShared }: {
 
   async function link(native: boolean) {
     setError(null);
-    const url = `${window.location.origin}${postHref(target)}`;
+    const url = `${window.location.origin}${shareHref(target)}`;
     try {
       if (native) {
         await navigator.share({ title: `${target.authorName} on Figmark`, text: target.body.slice(0, 120), url });
@@ -1636,7 +1783,7 @@ function ShareSheet({ card, onClose, onShared }: {
         </div>
         {elsewhere && (
           <PostInFigmark feed={false} asStore={Boolean(voice.storeId)}
-            text={`${thought.trim() ? `${thought.trim()}\n` : ''}${window.location.origin}${postHref(target)}`}
+            text={`${thought.trim() ? `${thought.trim()}\n` : ''}${window.location.origin}${shareHref(target)}`}
             onPosted={() => void count('link').catch(() => undefined)} />
         )}
         {done && <p className="sharesheet__done" role="status">{done}</p>}

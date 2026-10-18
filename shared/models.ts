@@ -3,6 +3,7 @@ import type { DealState } from './deals.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
+import type { FeedPrefs } from './feed.js';
 import type {
   PostDebate, PostFlex, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
 } from './social.js';
@@ -190,6 +191,8 @@ export interface User extends BaseDocument {
   messageBlocks?: string[];
   /** Conversations this account keeps but is not told about: no unread count. */
   mutedThreads?: string[];
+  /** Who the feed should leave out, what was saved to read again, where the feed was read up to. */
+  feedPrefs?: FeedPrefs;
   /**
    * Platform administration: verification queue, dispute console, payouts.
    * A real assigned role, not a capability derived from verification, so it is
@@ -2448,6 +2451,18 @@ export interface Post extends BaseDocument {
    * Each is a post of its own there; this is so a card can say where else.
    */
   alsoIn?: { forumId: string; forumName: string; postId: string }[] | null;
+  /**
+   * How often it was on somebody's screen, opened, and for how long in all.
+   *
+   * Counted rather than kept per reader: what ranking needs is whether people
+   * stop on it, not who did. A post shown a great deal that nobody touches is
+   * weighed down; one people linger on is lifted before anybody reacts.
+   */
+  views?: number;
+  opens?: number;
+  dwellMs?: number;
+  /** When the voters were told how a debate ended. Set once, so they are told once. */
+  resultsSentAt?: string | null;
 }
 
 /**
@@ -2719,6 +2734,10 @@ export type NotificationKind =
   | 'post_commented'
   | 'comment_replied'
   | 'post_shared'
+  /** Somebody named you, or a store you speak for, with an @ in a post or a comment. */
+  | 'mentioned'
+  /** A debate you voted in closed: which side won. */
+  | 'debate_result'
   /** A service store's application was decided, or a lot was booked with one. */
   | 'service_store'
   /** An artist commission moved: quoted, paid, finished, shipped. */

@@ -50,8 +50,12 @@ const {
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
   removePostRoute, trendingRoute, homeRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
-  forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute, discoverRoute,
+  forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute, discoverRoute, homeNewRoute,
 } = await import(new URL('social-routes.js', apiRoot));
+const {
+  savePostRoute, savedPostsRoute, hidePostRoute, muteRoute: feedMuteRoute, mutesRoute: feedMutesRoute, seenRoute,
+  suggestionsRoute, leaderboardRoute, topicPostsRoute,
+} = await import(new URL('feed-routes.js', apiRoot));
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute, dealItemsRoute,
   blockedListRoute, unblockRoute, uploadChatPhotoRoute, chatPhotoRoute, deleteMessageRoute, discardChatPhotoRoute } =
   await import(new URL('message-routes.js', apiRoot));
@@ -226,6 +230,16 @@ const routes = [
   ['GET', '/api/social/search', socialSearchRoute],
   ['GET', '/api/social/trending', trendingRoute],
   ['GET', '/api/social/home', homeRoute],
+  ['GET', '/api/social/home/new', homeNewRoute],
+  ['POST', '/api/social/posts/:channel/:id/save', savePostRoute],
+  ['POST', '/api/social/posts/:channel/:id/hide', hidePostRoute],
+  ['GET', '/api/social/saved', savedPostsRoute],
+  ['POST', '/api/social/mute', feedMuteRoute],
+  ['GET', '/api/social/mutes', feedMutesRoute],
+  ['POST', '/api/social/seen', seenRoute],
+  ['GET', '/api/social/suggestions', suggestionsRoute],
+  ['GET', '/api/social/leaderboard', leaderboardRoute],
+  ['GET', '/api/social/topics/:slug', topicPostsRoute],
   ['GET', '/api/social/discover', discoverRoute],
   ['GET', '/api/social/shareable', shareableRoute],
   ['GET', '/api/social/posts/:channel/:id', readPostRoute],
