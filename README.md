@@ -82,7 +82,7 @@ never uploaded to the photo store or kept anywhere: it is held in the browser's
 memory for the search and dropped by `POST /api/search/photo` when it answers.
 
 Seen for sale: every full-screen photo (posts, channels, listings, order
-photos, collection cards) checks whether the things in it are, or were, for
+photos, collection cards), and every post and channel photo in the feed, checks whether the things in it are, or were, for
 sale here and says so in a bar along the bottom. Tapping it lists the matching
 listings, those on sale now first and then sold-out or ended ones, along with
 the shops that have sold them. With `ANTHROPIC_API_KEY` set, Claude names each

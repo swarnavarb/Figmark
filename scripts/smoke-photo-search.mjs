@@ -17,13 +17,14 @@ const { encode } = require('jpeg-js');
 const dist = new URL('../api/dist/api/src/', import.meta.url);
 const { fingerprint, likeness } = await import(new URL('image-hash.js', dist));
 const { describedScore } = await import(new URL('photo-search.js', dist));
-const { photoSearchRoute, photoSalesRoute } = await import(new URL('functions/catalog-routes.js', dist));
+const { photoSearchRoute, photoSalesRoute, forgetCatalogue } = await import(new URL('functions/catalog-routes.js', dist));
 const { healthRoute } = await import(new URL('functions/health.js', dist));
 const { getRepository } = await import(new URL('data/index.js', dist));
 const { getPhotoStore } = await import(new URL('storage/index.js', dist));
 
 let passed = 0;
 const check = async (name, fn) => {
+  forgetCatalogue();
   await fn();
   passed += 1;
   console.log(`  ok  ${name}`);

@@ -534,6 +534,8 @@ export function SocialPostCard({
             <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
               onOpen={(index) => setLightbox(index)} onDoubleTap={nested ? undefined : loveFromPhoto} />
           ))}
+          {/* Whether what is in the photo can be bought here, without opening it. */}
+          {photos.length > 0 && !nested && <PhotoSales url={photos[0]} about={post.body} tone="inline" />}
 
           {social.poll && (
             <Poll poll={social.poll} disabled={nested}

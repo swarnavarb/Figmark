@@ -4169,6 +4169,18 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .psales--light:not(.is-loading):hover { background: var(--surface-hover); }
 .psales--light.is-loading { background: transparent; color: var(--text-faint); }
 
+/* Under a photo in the feed: a full-width row, quiet until it is needed. The
+   slot keeps a sliver of height so it can be seen scrolling into view. */
+.psales-slot { min-height: 1px; }
+.psales--inline {
+  display: flex; width: 100%; max-width: none; margin-top: 8px;
+  border-radius: var(--r-md); justify-content: flex-start;
+  background: var(--accent-soft); color: var(--text); text-align: left;
+}
+.psales--inline .psales__text { flex: 1; }
+.psales--inline svg { flex: none; color: var(--accent-text, var(--accent)); }
+.psales--inline:hover { background: var(--surface-hover); }
+
 .psheet {
   position: fixed; inset: 0; z-index: 400;
   display: flex; align-items: flex-end; justify-content: center;

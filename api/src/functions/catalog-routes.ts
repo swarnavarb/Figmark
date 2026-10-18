@@ -354,6 +354,32 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
+ * Every listing, kept for a minute per host instance.
+ *
+ * A feed asks about each photo as it scrolls into view, and each answer reads
+ * the whole catalogue; reading it from the database every time would cost a
+ * cross-partition query per photo. A listing made or sold in the last minute
+ * shows up on the next read - fine for a hint under a photo.
+ */
+let catalogue: { at: number; listings: Promise<Listing[]> } | null = null;
+const CATALOGUE_MS = 60_000;
+
+function everyListing(repository: Awaited<ReturnType<typeof getRepository>>): Promise<Listing[]> {
+  if (!catalogue || Date.now() - catalogue.at > CATALOGUE_MS) {
+    const listings = repository.listListings({ includeHidden: true });
+    catalogue = { at: Date.now(), listings };
+    // A failed read is not kept, so the next photo tries again.
+    listings.catch(() => { if (catalogue?.listings === listings) catalogue = null; });
+  }
+  return catalogue.listings;
+}
+
+/** For tests that write listings and then look straight away. */
+export function forgetCatalogue(): void {
+  catalogue = null;
+}
+
+/**
  * POST /api/search/photo/sales - where the items in a photo on Figmark are, or
  * were, for sale, and the shops that have sold them.
  *
@@ -388,7 +414,7 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
     if (slow) return slow;
   }
 
-  const found = await findSales(name, await repository.listListings({ includeHidden: true }), about);
+  const found = await findSales(name, await everyListing(repository), about);
   if (!found) return json(200, none);
 
   const listings = found.items.flatMap((item) => item.listings);

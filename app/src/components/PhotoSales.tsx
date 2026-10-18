@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { api, type PhotoSalesResponse } from '../api';
@@ -12,8 +12,10 @@ import { Avatar, Thumb, leadPhoto } from './ui';
  *
  * Every full-screen photo carries one - a post's, a listing's, an order's, a
  * collection card's - because the question a photo of somebody's haul raises
- * is the same wherever it is shown. It says nothing until there is something
- * to say: a photo with no matches gets no bar, not a "nothing found".
+ * is the same wherever it is shown. Posts and channel messages also carry one
+ * under their photo in the feed, asked for only once it scrolls into view. It
+ * says nothing until there is something to say: a photo with no matches gets
+ * no bar, not a "nothing found".
  */
 
 /**
@@ -48,7 +50,7 @@ function summary(found: PhotoSalesResponse): string {
   const parts = [
     found.items.length > 1 ? count(found.items.length, 'item') + ' spotted' : null,
     live > 0 ? `${live} for sale` : listings.length > 0 ? count(listings.length, 'past listing') : null,
-    found.sellers.length > 0 ? `${count(found.sellers.length, 'seller')} sold before` : null,
+    found.sellers.length > 0 ? `${count(found.sellers.length, 'past seller')}` : null,
     // Only worth the room when there is nothing more certain to say.
     found.sellers.length === 0 && found.likely.length > 0 ? `${count(found.likely.length, 'shop')} could get this` : null,
   ];
@@ -61,24 +63,59 @@ export function PhotoSales({ url, about = '', onLeave, tone = 'dark' }: {
   about?: string;
   /** Called as a link in the sheet is followed, so whatever shows the photo can close. */
   onLeave?: () => void;
-  /** Over a dark photo viewer, or in a light dialog. */
-  tone?: 'dark' | 'light';
+  /**
+   * Over a dark photo viewer, in a light dialog, or under a photo in the feed -
+   * where it waits until it is on screen and shows nothing while it looks.
+   */
+  tone?: 'dark' | 'light' | 'inline';
 }) {
   const [found, setFound] = useState<{ url: string; sales: PhotoSalesResponse | null } | null>(null);
   const [open, setOpen] = useState(false);
+  const inline = tone === 'inline';
+  const slot = useRef<HTMLDivElement>(null);
+  // A feed is scrolled past far more than it is read: only ask about photos that come into view.
+  const [inView, setInView] = useState(!inline);
 
   useEffect(() => {
-    if (!url) return;
+    const el = slot.current;
+    if (inView || !el) return;
+    if (typeof IntersectionObserver === 'undefined') { setInView(true); return; }
+    const watch = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) { setInView(true); watch.disconnect(); }
+    }, { rootMargin: '200px 0px' });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [inView]);
+
+  useEffect(() => {
+    if (!url || !inView) return;
     let live = true;
     setOpen(false);
     void salesFor(url, about).then((sales) => { if (live) setFound({ url, sales }); });
     return () => { live = false; };
-  }, [url, about]);
+  }, [url, about, inView]);
 
   const sales = found && found.url === url ? found.sales : null;
   const loading = Boolean(url) && found?.url !== url;
   const any = Boolean(sales && (sales.items.length > 0 || sales.likely.length > 0));
 
+  if (inline) {
+    return (
+      <div ref={slot} className="psales-slot">
+        {!loading && sales && any && (
+          <>
+            <button type="button" className="psales psales--inline" aria-haspopup="dialog"
+              onClick={(event) => { event.stopPropagation(); setOpen(true); }}>
+              <Icon name="tag" size={15} />
+              <span className="psales__text">{summary(sales)}</span>
+              <Icon name="right" size={14} />
+            </button>
+            {open && <SalesSheet sales={sales} onClose={() => setOpen(false)} onLeave={onLeave} />}
+          </>
+        )}
+      </div>
+    );
+  }
   if (loading) {
     return (
       <div className={`psales psales--${tone} is-loading`} aria-live="polite">
