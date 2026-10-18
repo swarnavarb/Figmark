@@ -267,7 +267,7 @@ function Room() {
   const [replyTo, setReplyTo] = useState<PostCard | null>(null);
   const [fresh, setFresh] = useState(0);
   const [pinAt, setPinAt] = useState(0);
-  const [lightbox, setLightbox] = useState<{ photos: string[]; start: number; about?: string } | null>(null);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; start: number; about?: string; by?: string } | null>(null);
   const [following, setFollowing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const known = useRef<Set<string>>(new Set());
@@ -419,7 +419,7 @@ function Room() {
       <Message key={card.post.id} card={card} startsRun={startsRun}
         mine={card.post.authorId === user?.id} isForum={Boolean(isForum)} canPin={canPin}
         onReply={() => setReplyTo(card)} onJump={jump}
-        onOpenPhoto={(start) => setLightbox({ photos: photosOf(card), start, about: card.post.body })}
+        onOpenPhoto={(start) => setLightbox({ photos: photosOf(card), start, about: card.post.body, by: card.post.authorId })}
         onChange={(change) => patch(card.post.id, change)}
         onNotice={setNotice} />,
     );
@@ -522,7 +522,7 @@ function Room() {
           <div className="chmedia">
             {media.flatMap((card) => photosOf(card).map((url, at) => (
               <button key={`${card.post.id}-${at}`} type="button" className="chmedia__tile"
-                onClick={() => setLightbox({ photos: photosOf(card), start: at, about: card.post.body })}>
+                onClick={() => setLightbox({ photos: photosOf(card), start: at, about: card.post.body, by: card.post.authorId })}>
                 <img src={url} alt={card.post.body || `Photo from ${card.post.authorName}`} loading="lazy" />
               </button>
             )))}
@@ -564,7 +564,7 @@ function Room() {
       </>
       )}
 
-      {lightbox && <Lightbox photos={lightbox.photos} start={lightbox.start} about={lightbox.about} onClose={() => setLightbox(null)} />}
+      {lightbox && <Lightbox photos={lightbox.photos} start={lightbox.start} about={lightbox.about} by={lightbox.by} onClose={() => setLightbox(null)} />}
     </main>
     </div>
   );
@@ -690,7 +690,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
               ))}
             </div>
           )}
-          {photos.length > 0 && <PhotoSales url={photos[0]} about={card.post.body} tone="inline" />}
+          {photos.length > 0 && <PhotoSales url={photos[0]} about={card.post.body} by={card.post.authorId} tone="inline" />}
           {(linked ? linked.rest : post.body) && !(listing && post.drop) && <p className="cmsg__body"><Linked text={linked ? linked.rest : post.body} /></p>}
           {linked && <LinkCard path={linked.path} compact />}
           {post.opening && (

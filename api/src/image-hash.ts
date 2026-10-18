@@ -14,6 +14,12 @@ import { getPhotoStore } from './storage/index.js';
  * - a coarse colour histogram, 4 levels per channel, each bin scaled to one hex
  *   digit. It knows nothing about shape, so it never decides a match alone;
  *   it is what makes "the red one" rank above "the blue one" among look-alikes.
+ * - the look: the colours of the thing itself, with the backdrop taken out,
+ *   by hue. Two different photos of the same figure - one on a white sweep,
+ *   one on a shelf - share little shape, but the same blue, black and skin
+ *   tones. It is a guess, not a match: it is what "probable" rests on when
+ *   nothing names the item. Hashes stored before it existed have no look;
+ *   they are worked out again from the photo when one is needed.
  *
  * Plain JavaScript like the compressor, and for the same reason: nothing
  * native for the Functions host to carry. It only reads JPEG, which is what
@@ -84,6 +90,67 @@ function colourHistogram(raw: Raw): string {
   return bins.map((count) => Math.round((count / top) * 15).toString(16)).join('');
 }
 
+/** Bins of the look: 12 hues at two strengths, then black, dark, light and white greys. */
+const LOOK_BINS = 28;
+
+function lookBin(r: number, g: number, b: number): number {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const value = max / 255;
+  const saturation = max ? (max - min) / max : 0;
+  if (value < 0.2) return 24;
+  if (saturation < 0.2) return value < 0.45 ? 25 : value < 0.75 ? 26 : 27;
+  let hue: number;
+  if (max === r) hue = ((g - b) / (max - min) + 6) % 6;
+  else if (max === g) hue = (b - r) / (max - min) + 2;
+  else hue = (r - g) / (max - min) + 4;
+  return Math.min(11, Math.floor(hue * 2)) * 2 + (saturation < 0.55 ? 0 : 1);
+}
+
+/**
+ * The colours of the subject. The backdrop is whatever colours the edge
+ * carries much of; every pixel close to one of them is left out.
+ */
+function look(raw: Raw): string {
+  const at = (x: number, y: number) => (y * raw.width + x) * 4;
+  const edge: number[] = [];
+  const stepX = Math.max(1, Math.floor(raw.width / 64));
+  const stepY = Math.max(1, Math.floor(raw.height / 64));
+  // A little in from the edge, past any frame or letterbox line.
+  const inX = Math.floor(raw.width * 0.03);
+  const inY = Math.floor(raw.height * 0.03);
+  for (let x = inX; x < raw.width - inX; x += stepX) edge.push(at(x, inY), at(x, raw.height - 1 - inY));
+  for (let y = inY; y < raw.height - inY; y += stepY) edge.push(at(inX, y), at(raw.width - 1 - inX, y));
+  const coarse = new Map<number, number[]>();
+  for (const i of edge) {
+    const key = ((raw.data[i]! >> 5) << 6) | ((raw.data[i + 1]! >> 5) << 3) | (raw.data[i + 2]! >> 5);
+    const list = coarse.get(key) ?? [];
+    list.push(i);
+    coarse.set(key, list);
+  }
+  // Every colour the edge carries much of is backdrop: a plain sweep is one,
+  // a shelf or a gradient a few.
+  const backdrop: [number, number, number][] = [];
+  for (const group of coarse.values()) {
+    if (group.length < edge.length * 0.08) continue;
+    let r = 0; let g = 0; let b = 0;
+    for (const i of group) { r += raw.data[i]!; g += raw.data[i + 1]!; b += raw.data[i + 2]!; }
+    backdrop.push([r / group.length, g / group.length, b / group.length]);
+  }
+
+  const bins = new Array<number>(LOOK_BINS).fill(0);
+  const pixels = raw.width * raw.height;
+  const step = Math.max(1, Math.floor(pixels / 8192));
+  for (let index = 0; index < pixels; index += step) {
+    const i = index * 4;
+    const r = raw.data[i]!; const g = raw.data[i + 1]!; const b = raw.data[i + 2]!;
+    if (backdrop.some(([br, bg, bb]) => Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb) < 60)) continue;
+    bins[lookBin(r, g, b)]! += 1;
+  }
+  const top = Math.max(1, ...bins);
+  return bins.map((count) => Math.round((count / top) * 15).toString(16)).join('');
+}
+
 /** The fingerprint of a JPEG, or null for anything this cannot decode. */
 export function fingerprint(bytes: Uint8Array, contentType: string): string | null {
   if (contentType !== 'image/jpeg') return null;
@@ -93,17 +160,40 @@ export function fingerprint(bytes: Uint8Array, contentType: string): string | nu
     });
     const raw = { data: decoded.data as unknown as Uint8Array, width: decoded.width, height: decoded.height };
     if (raw.width < 2 || raw.height < 2) return null;
-    return `${HASH_VERSION}:${dHash(raw)}:${colourHistogram(raw)}`;
+    return `${HASH_VERSION}:${dHash(raw)}:${colourHistogram(raw)}:${look(raw)}`;
   } catch {
     return null;
   }
 }
 
-function parse(hash: string): { shape: bigint; colour: number[] } | null {
-  const [version, shape, colour] = hash.split(':');
+function parse(hash: string): { shape: bigint; colour: number[]; look: number[] | null } | null {
+  const [version, shape, colour, look] = hash.split(':');
   if (version !== HASH_VERSION || !shape || !colour || shape.length !== 16 || colour.length !== 64) return null;
-  return { shape: BigInt(`0x${shape}`), colour: [...colour].map((digit) => parseInt(digit, 16)) };
+  const digits = (text: string) => [...text].map((digit) => parseInt(digit, 16));
+  return {
+    shape: BigInt(`0x${shape}`),
+    colour: digits(colour),
+    look: look && look.length === LOOK_BINS ? digits(look) : null,
+  };
 }
+
+/** Whether a stored hash carries the look, or predates it. */
+export function hasLook(hash: string): boolean {
+  return parse(hash)?.look != null;
+}
+
+/** Weighted overlap of two histograms, 0 to 1. */
+function overlap(a: number[], b: number[], weight: (index: number) => number = () => 1): number {
+  let shared = 0; let total = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    shared += weight(index) * Math.min(a[index]!, b[index]!);
+    total += weight(index) * Math.max(a[index]!, b[index]!);
+  }
+  return total ? shared / total : 0;
+}
+
+/** Black, grey and white are in most photos - text, shadow, packaging - so they say little. */
+const lookWeight = (index: number) => (index >= 24 ? 0.25 : 1);
 
 function bitsApart(a: bigint, b: bigint): number {
   let diff = a ^ b;
@@ -120,6 +210,8 @@ export interface Likeness {
   samePhoto: boolean;
   /** 0 to 1: how alike they look, shape and colour together. */
   score: number;
+  /** 0 to 1: how alike the subjects' colours are, backdrop aside; null when either hash predates it. */
+  look: number | null;
 }
 
 /** How alike two fingerprints are; null when either is unreadable. */
@@ -130,13 +222,9 @@ export function likeness(a: string, b: string): Likeness | null {
   const bits = bitsApart(left.shape, right.shape);
   // Unrelated photos sit around 32 bits apart; anything past that is noise.
   const shape = Math.max(0, 1 - bits / 32);
-  let shared = 0; let total = 0;
-  for (let index = 0; index < 64; index += 1) {
-    shared += Math.min(left.colour[index]!, right.colour[index]!);
-    total += Math.max(left.colour[index]!, right.colour[index]!);
-  }
-  const colour = total ? shared / total : 0;
-  return { samePhoto: bits <= SAME_PHOTO_BITS, score: 0.65 * shape + 0.35 * colour };
+  const colour = overlap(left.colour, right.colour);
+  const look = left.look && right.look ? overlap(left.look, right.look, lookWeight) : null;
+  return { samePhoto: bits <= SAME_PHOTO_BITS, score: 0.65 * shape + 0.35 * colour, look };
 }
 
 /**

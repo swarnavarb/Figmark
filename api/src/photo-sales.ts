@@ -3,7 +3,7 @@ import type { Listing } from '../../shared/models.js';
 import { wordKeys } from '../../shared/shop-tags.js';
 import { isExpired } from '../../shared/payments.js';
 import { storedFingerprint } from './image-hash.js';
-import { describedScore, pictureMatches, pictureScore, type PictureMatch } from './photo-search.js';
+import { describedScore, onlyAlike, pictureLooks, pictureScore, type PictureLook } from './photo-search.js';
 import { getPhotoStore } from './storage/index.js';
 import { describeItems, type PhotoDescription } from './vision.js';
 
@@ -27,6 +27,13 @@ import { describeItems, type PhotoDescription } from './vision.js';
  * the items themselves, it names the shops likely to get one: those that list
  * the brand or name first (Nike, McFarlane), then those that deal in the kind
  * of thing (sneakers, action figures).
+ *
+ * Under all of that sit the probable matches: a guess, ranked by how likely
+ * each listing is to be the thing in the photo, for when nothing is certain -
+ * a different photo of the same figure, with a caption that names nothing.
+ * The colours of the subject (backdrop aside), any word the caption shares
+ * with a title, and whether the person who posted the photo lists it, put
+ * together into one chance. It is allowed to be wrong; it is shown as a guess.
  */
 export interface SalesGroup {
   /** What Claude named the item, or null for listings found by the picture alone. */
@@ -47,15 +54,23 @@ export interface LikelySeller {
   sellerId: string;
   /** What they were matched on: a keyword, like "Nike", or a category, like "Sneakers". */
   because: string;
-  kind: 'keyword' | 'category';
+  kind: 'keyword' | 'similar' | 'category';
   /** How many of their listings, past or present, carry it. */
   listings: number;
+}
+
+export interface ProbableListing {
+  listing: Listing;
+  /** 0 to 1: how likely this is the thing in the photo. A guess. */
+  chance: number;
 }
 
 export interface PhotoSales {
   items: SalesGroup[];
   sellers: PastSeller[];
   likely: LikelySeller[];
+  /** Listings that may be the thing in the photo, likeliest first; none of those in `items`. */
+  probable: ProbableListing[];
 }
 
 const PER_ITEM = 24;
@@ -65,6 +80,9 @@ const LIKELY = 10;
 const LIKELY_PER_TERM = 3;
 /** Keywords tried for likely shops, most telling first. */
 const TERMS = 6;
+const PROBABLE = 8;
+/** A probable match under this is not worth showing. */
+const PROBABLE_FLOOR = 0.15;
 
 /** Words that say nothing about what an item is. */
 const STOP = new Set([
@@ -151,9 +169,11 @@ export function forgetReadings(): void {
 /**
  * The listings a stored photo's items are or were for sale under, the shops
  * that have sold them, and the shops likely to get them. `about` is the text
- * shown with the photo. Null when the photo is not in the store.
+ * shown with the photo, `by` who posted it. Null when the photo is not in the store.
  */
-export async function findSales(blobName: string, catalogue: Listing[], about = ''): Promise<PhotoSales | null> {
+export async function findSales(
+  blobName: string, catalogue: Listing[], about = '', by: string | null = null,
+): Promise<PhotoSales | null> {
   const store = await getPhotoStore();
   const photo = await store.read(blobName);
   if (!photo) return null;
@@ -163,7 +183,8 @@ export async function findSales(blobName: string, catalogue: Listing[], about = 
     storedFingerprint(blobName),
     readItems(blobName, photo.bytes, photo.contentType),
   ]);
-  const pictures = hash ? await pictureMatches(pool, hash) : new Map<string, PictureMatch>();
+  const looks = hash ? await pictureLooks(pool, hash) : new Map<string, PictureLook>();
+  const pictures = onlyAlike(looks);
   const items = described ?? [];
 
   // Each listing goes to the one group it matches best. A listing that uses this
@@ -216,7 +237,55 @@ export async function findSales(blobName: string, catalogue: Listing[], about = 
     .sort((a, b) => b.unitsSold - a.unitsSold || b.items - a.items)
     .slice(0, SELLERS);
 
-  return { items: groups, sellers, likely: likelySellers(index, pool, groups, items, about) };
+  const shown = new Set(groups.flatMap((group) => group.listings.map((listing) => listing.id)));
+  const sure = new Set(groups.flatMap((group) => group.listings.map((listing) => listing.category)));
+  const probable = probableMatches(index, pool.filter((listing) => !shown.has(listing.id)), looks, items, about, by, sure);
+  return { items: groups, sellers, likely: likelySellers(index, pool, groups, items, about, probable), probable };
+}
+
+/**
+ * The listings likeliest to be the thing in the photo, each with a chance.
+ *
+ * Each piece of evidence is a chance of its own, and they are put together as
+ * independent odds: the subject's colours, a word the caption shares with the
+ * title (a rare word counts for more), the poster's own listing when it also
+ * looks something like the photo, and the kind of thing the caption names.
+ * Colour is weak evidence, so when the photo already has certain matches it
+ * counts for half outside their categories.
+ */
+function probableMatches(
+  index: ReturnType<typeof titleIndex>, pool: Listing[], looks: Map<string, PictureLook>,
+  items: PhotoDescription[], about: string, by: string | null, sure: Set<string>,
+): ProbableListing[] {
+  const said = new Set([
+    ...keyWords(about.slice(0, 500)),
+    ...items.flatMap((item) => keyWords([...item.keywords, item.query].join(' '))),
+  ]);
+  const kinds = new Set([
+    ...[...said].flatMap((word) => KIND_WORDS[word] ?? []),
+    ...items.flatMap((item) => item.category ?? []),
+  ]);
+  const clamp = (value: number) => Math.max(0, Math.min(1, value));
+
+  const found: ProbableListing[] = [];
+  for (const listing of pool) {
+    const seen = looks.get(listing.id);
+    const look = clamp(((seen?.look ?? 0) - 0.15) / 0.45);
+    const colour = sure.size > 0 && !sure.has(listing.category) ? 0.5 : 1;
+    const odds = [colour * 0.6 * look, colour * 0.4 * clamp(((seen?.visual ?? 0) - 0.45) / 0.3)];
+    const shared = index.shared(listing, said).filter((word) => !KIND_WORDS[word]);
+    if (shared.length > 0) {
+      odds.push(Math.min(0.6, shared.reduce((sum, word) => sum + 0.6 / Math.sqrt(index.seen.get(word) ?? 1), 0)));
+    }
+    // People post what they sell; but a shop posts plenty that is not this.
+    if (by && listing.sellerId === by) odds.push(0.35 * clamp(look * 2));
+    if (kinds.has(listing.category)) odds.push(0.15);
+    const chance = 1 - odds.reduce((miss, odd) => miss * (1 - odd), 1);
+    if (chance >= PROBABLE_FLOOR) found.push({ listing, chance });
+  }
+  return found
+    .sort((a, b) => b.chance - a.chance || Number(onSale(b.listing)) - Number(onSale(a.listing)))
+    .slice(0, PROBABLE);
 }
 
 /**
@@ -294,6 +363,7 @@ function captionMatches(
  */
 function likelySellers(
   index: ReturnType<typeof titleIndex>, pool: Listing[], groups: SalesGroup[], items: PhotoDescription[], about: string,
+  probable: ProbableListing[],
 ): LikelySeller[] {
   const matched = groups.flatMap((group) => group.listings);
   const taken = new Set(matched.map((listing) => listing.sellerId));
@@ -331,7 +401,10 @@ function likelySellers(
   items.forEach((item) => item.keywords.flatMap(keyWords).forEach((word) => addKeyword(word)));
   keyWords(about.slice(0, 500)).forEach((word) => addKeyword(word));
   matched.slice(0, 6).flatMap((listing) => listing.tags.flatMap(keyWords)).forEach((word) => addKeyword(word, true));
-  for (const category of [...items.map((item) => item.category), ...matched.map((listing) => listing.category)]) {
+  const guesses = probable.slice(0, 3).map((entry) => entry.listing);
+  for (const category of [
+    ...items.map((item) => item.category), ...matched.map((listing) => listing.category), ...guesses.map((listing) => listing.category),
+  ]) {
     if (category && (CATEGORIES as readonly string[]).includes(category) && !kinds.includes(category)) kinds.push(category);
   }
 
@@ -349,6 +422,14 @@ function likelySellers(
       });
   };
   keywords.slice(0, TERMS).forEach((word) => pick(word, index.spell(word), 'keyword'));
+  // Then the shops behind the probable matches: they list something like it.
+  const similar = new Map<string, number>();
+  for (const { listing } of probable) similar.set(listing.sellerId, (similar.get(listing.sellerId) ?? 0) + 1);
+  for (const [sellerId, count] of similar) {
+    if (likely.length >= LIKELY || taken.has(sellerId)) continue;
+    taken.add(sellerId);
+    likely.push({ sellerId, because: 'Similar listings', kind: 'similar', listings: count });
+  }
   kinds.forEach((category) => pick(`#${category}`, category, 'category'));
   return likely;
 }

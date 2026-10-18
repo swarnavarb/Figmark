@@ -4222,6 +4222,12 @@ a.psheet__row:hover { background: var(--surface-hover); }
 }
 .psheet__chip--keyword { background: var(--accent-soft); }
 .psheet__chip--category { background: var(--surface-2); }
+.psheet__chip--similar { background: var(--surface-2); border: 1px dashed var(--border); }
+.psheet__note { margin: 2px 0 6px; color: var(--text-faint); font-size: var(--t-xs); }
+.psheet__chance {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--text); font-size: var(--t-2xs); font-weight: 600;
+}
 .psheet__ended { color: var(--text-faint); font-family: inherit; font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.04em; }
 @media (prefers-reduced-motion: reduce) {
   .psales, .psales__dot, .psheet, .psheet__box { animation: none; }

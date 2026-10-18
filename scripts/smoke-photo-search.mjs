@@ -220,6 +220,46 @@ await check('the words with a photo find items by title, and shops by keyword, t
   assert.ok(!ids.includes(template.sellerId), 'the shop already listing the Zorblax is not repeated as likely');
 });
 
+await check('a different photo of the same thing, with a caption that names nothing, is a probable match', async () => {
+  const repository = await getRepository();
+  const store = await getPhotoStore();
+  const all = await repository.listListings({});
+  const template = all[0];
+  // The same blue-and-black figure: standing alone on white for the listing,
+  // smaller and off to one side on grey for the post. No shape in common.
+  const figure = (cx, cy, scale) => (x, y) => {
+    const dx = (x - cx) / scale; const dy = (y - cy) / scale;
+    if (Math.abs(dx) < 0.06 && dy > -0.4 && dy < -0.3) return [235, 190, 150];
+    if (Math.abs(dx) < 0.12 && dy >= -0.3 && dy < 0) return [30, 60, 200];
+    if (Math.abs(dx) < 0.1 && dy >= 0 && dy < 0.4) return [15, 15, 18];
+    return null;
+  };
+  const listed = await store.upload(picture(600, 800, (x, y) => figure(0.5, 0.5, 1)(x, y) ?? [250, 250, 250], 88), 'image/jpeg');
+  const posted = await store.upload(picture(800, 600, (x, y) => figure(0.3, 0.55, 0.8)(x, y) ?? [150 + Math.round(x * 90), 150 + Math.round(y * 60), 140], 70), 'image/jpeg');
+  const red = await store.upload(picture(600, 600, disc, 88), 'image/jpeg');
+  const now = new Date().toISOString();
+  const make = (id, photo) => repository.createListing({
+    ...template, id, title: `Gizmo ${id}`, tags: [], createdAt: now, updatedAt: now, privateFor: null, expiresAt: null,
+    unlisted: false, soldCount: 0, status: 'active',
+    photos: [{ blobName: photo.blobName, url: photo.url, imageHash: null, isPrimary: true }],
+  });
+  await make('lst_probable_figure', listed);
+  await make('lst_probable_red', red);
+
+  const response = await photoSalesRoute(req({ body: { url: posted.url, about: 'How is this?', by: template.sellerId } }), ctx);
+  assert.equal(response.status, 200, JSON.stringify(response.jsonBody));
+  const body = response.jsonBody;
+  assert.ok(!body.items.some((item) => item.listings.some((listing) => listing.id === 'lst_probable_figure')),
+    'not the same picture, so not a certain match');
+  const probable = body.probable.map((listing) => listing.id);
+  assert.equal(probable[0], 'lst_probable_figure', `likeliest first: ${probable}`);
+  assert.ok(!probable.includes('lst_probable_red'), 'other colours are not probable');
+  assert.ok(body.probable[0].chance > 0.2 && body.probable[0].chance < 1);
+  // Its shop is named once: with the certain matches when it has one, else as one with similar listings.
+  const named = [...body.items.flatMap((item) => item.listings.map((listing) => listing.sellerId)), ...body.likely.map((entry) => entry.seller.id)];
+  assert.ok(named.includes(template.sellerId), 'the shop behind a probable match is named');
+});
+
 await check('photos from anywhere else are not looked at', async () => {
   const outside = await photoSalesRoute(req({ body: { url: 'https://example.com/haul.jpg' } }), ctx);
   assert.equal(outside.status, 200);

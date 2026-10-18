@@ -16,6 +16,11 @@ import { Avatar, Thumb, leadPhoto } from './ui';
  * under their photo in the feed, asked for only once it scrolls into view. It
  * says nothing until there is something to say: a photo with no matches gets
  * no bar, not a "nothing found".
+ *
+ * Under the certain matches come the probable ones - a guess at what the
+ * photo shows, from its colours, its caption and who posted it - with the
+ * shops that could get it, so a photo the catalogue cannot name still leads
+ * somewhere.
  */
 
 /**
@@ -25,12 +30,12 @@ import { Avatar, Thumb, leadPhoto } from './ui';
  */
 const answers = new Map<string, Promise<PhotoSalesResponse | null>>();
 
-function salesFor(url: string, about: string): Promise<PhotoSalesResponse | null> {
-  const key = `${url}\n${about}`;
+function salesFor(url: string, about: string, by: string): Promise<PhotoSalesResponse | null> {
+  const key = `${url}\n${about}\n${by}`;
   let answer = answers.get(key);
   if (!answer) {
     // A failure is quiet - this is a hint, not the page - and is not kept, so a later look tries again.
-    answer = api.photoSales(url, about || undefined).catch(() => {
+    answer = api.photoSales(url, about || undefined, by || undefined).catch(() => {
       answers.delete(key);
       return null;
     });
@@ -43,24 +48,28 @@ function count(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** The bar's one line: what is in the photo, what can be bought, who has sold it. */
+/** The bar's one line: what is in the photo, what can be bought, who has sold it, what it may be. */
 function summary(found: PhotoSalesResponse): string {
   const listings = found.items.flatMap((item) => item.listings);
   const live = listings.filter((listing) => listing.onSale).length;
+  const probable = found.probable.length;
   const parts = [
     found.items.length > 1 ? count(found.items.length, 'item') + ' spotted' : null,
     live > 0 ? `${live} for sale` : listings.length > 0 ? count(listings.length, 'past listing') : null,
     found.sellers.length > 0 ? `${count(found.sellers.length, 'past seller')}` : null,
+    probable > 0 ? `${count(probable, 'probable match', 'probable matches')}` : null,
     // Only worth the room when there is nothing more certain to say.
-    found.sellers.length === 0 && found.likely.length > 0 ? `${count(found.likely.length, 'shop')} could get this` : null,
+    listings.length === 0 && found.likely.length > 0 ? `${count(found.likely.length, 'shop')} could get this` : null,
   ];
   return parts.filter(Boolean).join(' · ');
 }
 
-export function PhotoSales({ url, about = '', onLeave, tone = 'dark' }: {
+export function PhotoSales({ url, about = '', by = '', onLeave, tone = 'dark' }: {
   url: string | undefined;
   /** The words shown with the photo - a caption, a title - searched alongside it. */
   about?: string;
+  /** Who posted it: their own listings are the likelier guesses. */
+  by?: string;
   /** Called as a link in the sheet is followed, so whatever shows the photo can close. */
   onLeave?: () => void;
   /**
@@ -91,13 +100,13 @@ export function PhotoSales({ url, about = '', onLeave, tone = 'dark' }: {
     if (!url || !inView) return;
     let live = true;
     setOpen(false);
-    void salesFor(url, about).then((sales) => { if (live) setFound({ url, sales }); });
+    void salesFor(url, about, by).then((sales) => { if (live) setFound({ url, sales }); });
     return () => { live = false; };
-  }, [url, about, inView]);
+  }, [url, about, by, inView]);
 
   const sales = found && found.url === url ? found.sales : null;
   const loading = Boolean(url) && found?.url !== url;
-  const any = Boolean(sales && (sales.items.length > 0 || sales.likely.length > 0));
+  const any = Boolean(sales && (sales.items.length > 0 || sales.likely.length > 0 || sales.probable.length > 0));
 
   if (inline) {
     return (
@@ -220,10 +229,22 @@ function SalesSheet({ sales, onClose, onLeave }: {
           </section>
         )}
 
+        {sales.probable.length > 0 && (
+          <section className="psheet__item">
+            <h3 className="psheet__label">{count(sales.probable.length, 'probable listing')}</h3>
+            <p className="psheet__note">A guess from the photo's colours, the words with it and who posted it.</p>
+            {sales.probable.map((listing) => (
+              <SaleRow key={listing.id} listing={listing} chance={listing.chance} onLeave={leave} />
+            ))}
+          </section>
+        )}
+
         {sales.likely.length > 0 && (
           <section className="psheet__item">
-            <h3 className="psheet__label">Shops that could get {several || sales.items.length === 0 ? 'these' : 'this'}</h3>
-            {/* By keyword first - the brand, the name - then by the kind of thing. */}
+            <h3 className="psheet__label">
+              {count(sales.likely.length, 'probable shop')} that can get {several || sales.items.length === 0 ? 'these' : 'this'}
+            </h3>
+            {/* By keyword first - the brand, the name - then shops with similar listings, then by the kind of thing. */}
             {[...new Set(sales.likely.map((entry) => entry.because))].map((because) => {
               const shops = sales.likely.filter((entry) => entry.because === because);
               return (
@@ -240,7 +261,9 @@ function SalesSheet({ sales, onClose, onLeave }: {
                           <span className="psheet__meta">
                             {kind === 'keyword'
                               ? `Has listed ${because} ${listings === 1 ? 'once' : `${listings} times`}`
-                              : `${count(listings, 'listing')} in ${because}`}
+                              : kind === 'similar'
+                                ? `${count(listings, 'probable match', 'probable matches')} above`
+                                : `${count(listings, 'listing')} in ${because}`}
                           </span>
                         </span>
                       </>
@@ -260,8 +283,10 @@ function SalesSheet({ sales, onClose, onLeave }: {
   );
 }
 
-function SaleRow({ listing, onLeave }: {
+function SaleRow({ listing, chance, onLeave }: {
   listing: PhotoSalesResponse['items'][number]['listings'][number];
+  /** For a probable match: how likely, 0 to 1. */
+  chance?: number;
   onLeave: () => void;
 }) {
   const ended = listing.status === 'sold_out' ? 'Sold out' : 'Ended';
@@ -271,6 +296,7 @@ function SaleRow({ listing, onLeave }: {
       <span className="psheet__main">
         <b className="psheet__name">{listing.title}</b>
         <span className="psheet__meta">
+          {chance !== undefined && <span className="psheet__chance">{Math.round(chance * 100)}% likely</span>}
           {listing.seller?.storefrontName ?? 'A shop'}
           {(listing.soldCount ?? 0) > 0 && ` · ${listing.soldCount} sold`}
         </span>

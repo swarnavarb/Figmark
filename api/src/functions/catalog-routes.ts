@@ -391,16 +391,18 @@ export function forgetCatalogue(): void {
  */
 async function photoSales(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
-  let body: { url?: string; about?: string };
+  let body: { url?: string; about?: string; by?: string };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
   const vision = visionAvailable();
-  const none = { items: [], sellers: [], likely: [], vision };
+  const none = { items: [], sellers: [], likely: [], probable: [], vision };
   // The words shown with the photo - a caption, a title - searched alongside it.
   const about = typeof body.about === 'string' ? body.about.slice(0, 500) : '';
+  // Who posted it: people post what they sell, so their own listings are likelier.
+  const by = typeof body.by === 'string' && body.by.length <= 100 ? body.by : null;
   const url = typeof body.url === 'string' ? body.url.trim() : '';
   if (!url || url.length > 500) return error(400, 'invalid_photo', 'Send the address of a photo.');
   const name = await ownPhotoName(url);
@@ -414,10 +416,10 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
     if (slow) return slow;
   }
 
-  const found = await findSales(name, await everyListing(repository), about);
+  const found = await findSales(name, await everyListing(repository), about, by);
   if (!found) return json(200, none);
 
-  const listings = found.items.flatMap((item) => item.listings);
+  const listings = [...found.items.flatMap((item) => item.listings), ...found.probable.map((entry) => entry.listing)];
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
   const sellers = await repository.listUsersByIds([...new Set([
     ...listings.map((listing) => listing.sellerId),
@@ -425,17 +427,16 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
     ...found.likely.map((seller) => seller.sellerId),
   ])]);
   const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
+  const card = (listing: Listing) => ({
+    ...publicListing(listing),
+    liked: likedIds.has(listing.id),
+    seller: sellerById.get(listing.sellerId) ?? null,
+    estimatedDispatchAt: null,
+    onSale: onSale(listing),
+  });
   return json(200, {
-    items: found.items.map((item) => ({
-      label: item.label,
-      listings: item.listings.map((listing) => ({
-        ...publicListing(listing),
-        liked: likedIds.has(listing.id),
-        seller: sellerById.get(listing.sellerId) ?? null,
-        estimatedDispatchAt: null,
-        onSale: onSale(listing),
-      })),
-    })),
+    items: found.items.map((item) => ({ label: item.label, listings: item.listings.map(card) })),
+    probable: found.probable.map((entry) => ({ ...card(entry.listing), chance: Math.round(entry.chance * 100) / 100 })),
     sellers: found.sellers.flatMap((entry) => {
       const seller = sellerById.get(entry.sellerId);
       return seller ? [{ seller, unitsSold: entry.unitsSold, items: entry.items }] : [];

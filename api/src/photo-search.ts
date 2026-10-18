@@ -1,5 +1,5 @@
 import type { Listing } from '../../shared/models.js';
-import { isFingerprinted, likeness, storedFingerprint } from './image-hash.js';
+import { hasLook, isFingerprinted, likeness, storedFingerprint } from './image-hash.js';
 import { ownPhotoName } from './storage/index.js';
 import type { PhotoDescription } from './vision.js';
 
@@ -71,33 +71,54 @@ export interface PictureMatch {
   visual: number;
 }
 
+/** A picture match, with how alike the subjects' colours are as well. */
+export interface PictureLook extends PictureMatch {
+  /** 0 to 1, backdrop aside: the basis for a probable match. 0 when unknown. */
+  look: number;
+}
+
+/**
+ * How every listing in the pool compares with this photo, by id - including
+ * those that look nothing like it, so a probable match can be ranked from them.
+ */
+export async function pictureLooks(pool: Listing[], hash: string): Promise<Map<string, PictureLook>> {
+  let fresh = 0;
+  const found = new Map<string, PictureLook>();
+  for (const listing of pool) {
+    let visual = 0;
+    let look = 0;
+    let same = false;
+    for (const name of await storedPhotos(listing)) {
+      // Stored hashes first; then whatever this instance has already
+      // worked out; then, up to a budget, read the photo and work it out.
+      // A stored hash from before the look is read again for it.
+      let theirs = listing.photos.find((photo) => photo.blobName === name)?.imageHash ?? null;
+      if ((!theirs || !hasLook(theirs)) && (isFingerprinted(name) || fresh < FRESH_PER_SEARCH)) {
+        if (!isFingerprinted(name)) fresh += 1;
+        theirs = (await storedFingerprint(name)) ?? theirs;
+      }
+      const alike = theirs ? likeness(hash, theirs) : null;
+      if (!alike) continue;
+      same ||= alike.samePhoto;
+      visual = Math.max(visual, alike.score);
+      look = Math.max(look, alike.look ?? 0);
+    }
+    if (visual > 0 || look > 0) found.set(listing.id, { same, visual, look });
+  }
+  return found;
+}
+
 /**
  * Every listing in the pool with a photo like this one, by id. Listings with
  * nothing that looks alike are left out.
  */
 export async function pictureMatches(pool: Listing[], hash: string): Promise<Map<string, PictureMatch>> {
-  let fresh = 0;
-  const found = new Map<string, PictureMatch>();
-  for (const listing of pool) {
-    let visual = 0;
-    let same = false;
-    for (const name of await storedPhotos(listing)) {
-      // Stored hashes first; then whatever this instance has already
-      // worked out; then, up to a budget, read the photo and work it out.
-      const stored = listing.photos.find((photo) => photo.blobName === name)?.imageHash ?? null;
-      if (!stored && !isFingerprinted(name)) {
-        if (fresh >= FRESH_PER_SEARCH) continue;
-        fresh += 1;
-      }
-      const theirs = stored ?? await storedFingerprint(name);
-      const alike = theirs ? likeness(hash, theirs) : null;
-      if (!alike) continue;
-      same ||= alike.samePhoto;
-      visual = Math.max(visual, alike.score);
-    }
-    if (same || visual >= LOOKS_ALIKE) found.set(listing.id, { same, visual });
-  }
-  return found;
+  return onlyAlike(await pictureLooks(pool, hash));
+}
+
+/** The looks that are close enough to be the picture itself, or very like it. */
+export function onlyAlike(looks: Map<string, PictureLook>): Map<string, PictureMatch> {
+  return new Map([...looks].filter(([, match]) => match.same || match.visual >= LOOKS_ALIKE));
 }
 
 /** The score a picture match is worth, on the same scale as `describedScore`. */

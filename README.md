@@ -48,7 +48,7 @@ browsable with nothing provisioned:
 | Database | Cosmos DB, when `COSMOS_ENDPOINT` is set | In-memory store with seeded data |
 | Storage | Blob Storage, when `STORAGE_ACCOUNT` is set | In-memory (photos resolve to nothing) |
 | Auth | Static Web Apps identity, when `AUTH_MODE=swa` | Mock username/password provider |
-| Photo search | Claude reads the photo, when `ANTHROPIC_API_KEY` is set | Matches by picture only |
+| Photo search | Claude reads the photo, when `ANTHROPIC_API_KEY` is set | Matches by picture, caption words and probable look-alikes |
 
 `/api/health` reports which implementation actually loaded, and the status page
 renders it — so a deployment running on fallbacks is visibly degraded rather
@@ -91,7 +91,13 @@ shown with the photo (a post's caption, a listing's title) are searched
 against listing titles too, so a post that names what is in it finds those
 items without a key. The sheet ends with shops that could get the items:
 those that list the brand or name (Nike, McFarlane) first, then those that
-deal in the kind of thing (sneakers, action figures). `POST /api/search/photo/sales`
+deal in the kind of thing (sneakers, action figures). When nothing is certain - a
+different photo of the same figure, a caption that names nothing - the bar
+still counts probable matches: a guess, with a chance on each, from the
+colours of the thing itself (backdrop aside), any word the caption shares with
+a title, and whether the person who posted it lists it. No key needed; the
+sheet shows the probable listings and the probable shops that can get them.
+`POST /api/search/photo/sales`
 only reads photos stored here (never an outside link, never a chat photo), and
 caches what it read for each photo, so reopening one costs nothing.
 
