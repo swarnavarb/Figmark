@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { CosmosRepository } from './cosmos-repository.js';
 import { MemoryRepository } from './memory-repository.js';
 import { withLotView } from './lot-view.js';
+import { topUpPhotoDemo } from './seed-photo-demo.js';
 import type { Repository } from './repository.js';
 
 export type { Repository, BackendStatus, CatalogQuery } from './repository.js';
@@ -22,6 +23,8 @@ export function getRepository(): Promise<Repository> {
         ? new CosmosRepository(config.cosmos)
         : new MemoryRepository();
       await repository.init();
+      // The one fixture with photos in the store; see seed-photo-demo.ts.
+      await topUpPhotoDemo(repository);
       // Orders are read with their lot's news and position, and written back
       // as only their own - see lot-view.ts.
       return withLotView(repository);
