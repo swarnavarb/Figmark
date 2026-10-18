@@ -7,6 +7,7 @@ import type { StoreDraft } from '../api';
 import { formatMoney } from '../format';
 import { Icon } from './ui';
 import { LaneTicket, MoneyInput, OfferingCard, PlanCard, PortfolioGrid, StoreCover, StoreMark, accentStyle } from './StoreKit';
+import '../styles/StoreApplyPage.css';
 
 /**
  * The sections a service store is written in.

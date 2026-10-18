@@ -11,6 +11,7 @@ import { RoomBar } from './SocialChrome';
 import { useGoBack } from './ScrollManager';
 import { markSeen } from './Channels';
 import { ForumPeople, RoleChip } from './ForumMod';
+import '../styles/ForumRoom.css';
 
 /**
  * A forum, read as a feed with a subject.

@@ -1,0 +1,41 @@
+/*
+ * Styles only pages/SellPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.dealfrom { margin: 8px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--pink-soft); font-size: var(--t-sm); }
+.dealfrom__state { margin-left: 6px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--surface-2); font-size: 11px; font-weight: var(--w-bold); }
+.sellgrid { display: grid; gap: 22px; align-items: start; }
+@media (min-width: 900px) {
+  .sellgrid { grid-template-columns: minmax(0, 1fr) 280px; }
+}
+.sellpreview { display: grid; gap: 8px; align-content: start; max-width: 280px; }
+@media (min-width: 900px) {
+  .sellpreview { position: sticky; top: calc(var(--nav-h) + 16px); }
+}
+/* Quick Fill's templates: one tap each, "None" set apart at the end. */
+.qfill { display: flex; flex-wrap: wrap; gap: 6px; }
+/* ── The listing form ──────────────────────────────────────────────────── */
+.qfill__chip {
+  padding: 7px 12px; border: 1px solid var(--border); border-radius: 99px;
+  background: var(--surface); color: inherit; font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.qfill__chip.is-on { border-color: transparent; background: var(--gold-soft, var(--surface-2)); box-shadow: inset 0 0 0 2px var(--gold, var(--accent)); font-weight: var(--w-bold); }
+.qfill__chip--none { color: var(--text-dim); }
+/* The fold over everything past the basics, saying what is switched on. */
+.sellmore { flex-wrap: wrap; text-align: left; }
+.sellmore__chips { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.sellmore__chip {
+  padding: 2px 8px; border-radius: 99px; background: var(--surface-2);
+  font-size: var(--t-2xs); color: var(--text-dim); white-space: nowrap;
+}
+/* Publish, always in reach: pinned above the tab bar on a phone. */
+.sellform__bar { display: grid; }
+@media (max-width: 719px) {
+  .sellform__bar {
+    position: sticky; bottom: calc(var(--tabbar-h) + 8px); z-index: 5;
+    padding: 8px; margin-inline: -8px; border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+}

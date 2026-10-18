@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiRequestError, admin, type AuditEntry } from './api';
 import { timeAgo } from '../format';
+import { Loading } from '../components/Feedback';
 
 /**
  * What operators did: every write made from this console, recorded once it
@@ -53,7 +54,7 @@ export function AuditView() {
           <span>
             Record operator actions
             <span className="phoneprefs__hint muted">
-              {recording === null ? 'Loading…' : recording
+              {recording === null ? <Loading size="sm" /> : recording
                 ? 'On: every change made from this console is written here.'
                 : 'Off: nothing is recorded, including turning it off. Entries already here stay for 90 days.'}
             </span>
@@ -69,7 +70,7 @@ export function AuditView() {
           </button>
         ))}
       </div>
-      {!entries ? <p className="muted">Loading…</p> : entries.length === 0 ? <p className="muted">Nothing recorded in this period.</p> : (
+      {!entries ? <Loading /> : entries.length === 0 ? <p className="muted">Nothing recorded in this period.</p> : (
         <div className="card">
           {entries.map((entry) => (
             <div key={entry.id} className="userrow" style={{ cursor: 'default' }}>

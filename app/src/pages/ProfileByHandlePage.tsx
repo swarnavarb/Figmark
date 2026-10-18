@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CommunityAlertBanner } from '../components/CommunityAlerts';
-import { VerifiedChips } from '../components/VerifiedChips';
-import { ManagerTag } from '../components/ManagerBadge';
+import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
 import { Link, useParams } from 'react-router-dom';
 import { handleShapeProblem, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api, type FeedListing, type PostCard, type PublicProfile, type ShelfState } from '../api';
@@ -20,6 +19,7 @@ import { CollectorProfile } from './CollectorProfile';
 import { ShopStrip, tagPath } from '../components/ShopCards';
 import { tagKey } from '@shared/shop-tags';
 import type { ShopCard } from '../api';
+import '../styles/ProfileByHandlePage.css';
 
 /**
  * Whatever lives at `/<username>`.
@@ -140,24 +140,25 @@ function Storefront({ data, isMe, onFollow, reload }: {
       </div>
 
       <div className="storefront__body">
-        <header className="storefront__head storefront__sign">
-          <div className="storefront__avatar">
+        {/* The shop's name sits on its cover, just above the edge; its details line up under it. */}
+        <header className="phead phead--shop">
+          <div className="phead__face storefront__avatar">
             {data.photoUrl ? <img src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
           </div>
-          <div className="storefront__who">
-            <h1>{data.displayName}</h1>
-            <ManagerTag id={data.sellerId} />
-            <LevelChip tag={data.levelTag} />
-            <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-              <span className="faint">@{data.handle}</span>
-
-              {data.tier && <span className="badge">{data.tier}</span>}
-            </div>
-            <p className="faint" style={{ margin: 0 }}>
-              open since {formatDate(data.memberSince)}
+          <div className="phead__name">
+            <h1>{data.displayName}<VerifiedTick checks={data.verified} /></h1>
+            <span className="phead__line">
+              <span className="phead__handle">@{data.handle}</span>
+              <LevelChip tag={data.levelTag} inline />
+            </span>
+          </div>
+          <div className="phead__details">
+            <p className="phead__since">
+              Open since {formatDate(data.memberSince)}
               {data.lastSeenAt && ` · seen ${timeAgo(data.lastSeenAt)}`}
+              {data.tier && <span className="badge phead__tier">{data.tier}</span>}
             </p>
-            <VerifiedChips checks={data.verified} />
+            <VerifiedChips checks={data.verified} passedOnly />
           </div>
         </header>
 
@@ -165,10 +166,10 @@ function Storefront({ data, isMe, onFollow, reload }: {
           edit={<Link to="/shop" className="pbtn pbtn--follow">Edit shop</Link>} />
 
         <div className="pstats">
-          <span className="pstats__follows"><FollowCounts userId={data.sellerId} followerCount={data.followerCount} isStore /></span>
-          <span><b>{data.counts.onSale}</b><small>live</small></span>
-          <span><b>{data.counts.sold}</b><small>sold out</small></span>
-          <span><b className={`ptrust ptrust--${trustTone(data.trustScore)}`}>{data.trustScore ?? '—'}</b><small>trust</small></span>
+          <FollowCounts userId={data.sellerId} followerCount={data.followerCount} isStore />
+          <span className="pstat"><b>{data.counts.onSale}</b><small>live</small></span>
+          <span className="pstat"><b>{data.counts.sold}</b><small>sold out</small></span>
+          <span className="pstat"><b className={`ptrust ptrust--${trustTone(data.trustScore)}`}>{data.trustScore ?? '—'}</b><small>trust</small></span>
         </div>
 
         {/* Earned, not typed: read off the shop's orders. */}
@@ -180,30 +181,34 @@ function Storefront({ data, isMe, onFollow, reload }: {
           </div>
         )}
 
-        {(data.tags.length > 0 || data.dispatchRegion || data.link || data.ownerHandle) && (
-          <div className="chips chips--tight">
-            {/* Each tag opens every shop that carries it. */}
-            {data.tags.map((tag) => <Link key={tag} to={tagPath(tag)} className="chip">{tag}</Link>)}
-            {data.dispatchRegion && <span className="chip chip--static">📦 ships from {data.dispatchRegion}</span>}
-            {data.link && (
-              <a className="chip" href={withScheme(data.link)} target="_blank" rel="noreferrer noopener">
-                🔗 {data.link.replace(/^https?:\/\//, '')}
-              </a>
-            )}
-            {/* The person behind a shop is a separate page, rated as a buyer. */}
-            {data.ownerHandle && <Link to={`/${data.ownerHandle}`} className="chip">👤 @{data.ownerHandle}</Link>}
-          </div>
+        {/* Who they are, in one place: what they said, what they sell, where from. */}
+        {(data.bio.trim() || data.tags.length > 0 || data.dispatchRegion || data.link || data.ownerHandle || alsoSells.length > 0) && (
+        <section className="ppanel" aria-label="About">
+          <h2 className="ppanel__title">About</h2>
+          <Bio text={data.bio} />
+          {(data.tags.length > 0 || data.dispatchRegion || data.link || data.ownerHandle) && (
+            <div className="chips chips--tight">
+              {/* Each tag opens every shop that carries it. */}
+              {data.tags.map((tag) => <Link key={tag} to={tagPath(tag)} className="chip">{tag}</Link>)}
+              {data.dispatchRegion && <span className="chip chip--static">📦 ships from {data.dispatchRegion}</span>}
+              {data.link && (
+                <a className="chip" href={withScheme(data.link)} target="_blank" rel="noreferrer noopener">
+                  🔗 {data.link.replace(/^https?:\/\//, '')}
+                </a>
+              )}
+              {/* The person behind a shop is a separate page, rated as a buyer. */}
+              {data.ownerHandle && <Link to={`/${data.ownerHandle}`} className="chip">👤 @{data.ownerHandle}</Link>}
+            </div>
+          )}
+          {/* What its listings say it sells, beyond the tags it chose. */}
+          {alsoSells.length > 0 && (
+            <div className="chips chips--tight alsosells">
+              <span className="alsosells__label">Also sells</span>
+              {alsoSells.map((tag) => <Link key={tag.key} to={tagPath(tag.label)} className="chip alsosells__tag">{tag.label}</Link>)}
+            </div>
+          )}
+        </section>
         )}
-
-        {/* What its listings say it sells, beyond the tags it chose. */}
-        {alsoSells.length > 0 && (
-          <div className="chips chips--tight alsosells">
-            <span className="alsosells__label">Also sells</span>
-            {alsoSells.map((tag) => <Link key={tag.key} to={tagPath(tag.label)} className="chip alsosells__tag">{tag.label}</Link>)}
-          </div>
-        )}
-
-        <Bio text={data.bio} />
 
         <RatingSlab rating={data.rating} side="store" onOpen={() => setRatingOpen(true)} />
 

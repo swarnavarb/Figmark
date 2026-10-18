@@ -1,0 +1,39 @@
+/*
+ * Styles only components/Ladder.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.ladder__stage:first-child { margin-top: 0; }
+.ladder__row.is-done .ladder__dot {
+  border-color: var(--ok); color: var(--ok-ink); background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+.ladder__row.is-current .ladder__dot {
+  border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.ladder__track-link:hover { text-decoration: underline; }
+.ladder__leave.is-past .ladder__leave-text { color: var(--text-dim); }
+/* The wait between the two ladders. Dashed, because it is a state rather than
+   a step somebody will ever tick. */
+.ladder__row--wait.is-current .ladder__dot {
+  border-style: dashed; border-color: var(--warn); color: var(--warn);
+  background: var(--warn-soft);
+}
+.ladder__row--wait .ladder__name { color: var(--warn); }
+.ladder__row:hover > .ladder__body > .ladder__acts,
+.ladder__row:focus-within > .ladder__body > .ladder__acts,
+.ladder__row.is-current > .ladder__body > .ladder__acts {
+  max-height: 80px; margin-top: 6px; opacity: 1;
+}
+@media (hover: none) {
+  .ladder__acts { max-height: 80px; margin-top: 6px; opacity: 1; }
+}
+.ladder__row.is-locked .ladder__dot { border-style: dashed; color: var(--text-faint); }
+/* A called-off order: the timeline stops at a last rung, and nothing follows it. */
+.ladder__row--ended .ladder__dot {
+  display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--danger-soft, rgba(244, 63, 94, 0.15)); color: var(--danger, #F43F5E);
+  font-size: 11px; font-weight: var(--w-bold);
+}
+.ladder__row--ended .ladder__name { color: var(--danger, #F43F5E); }

@@ -60,11 +60,47 @@ function wire(row: Notification) {
 }
 
 /**
- * GET /api/notifications?before=&category=&limit= - yours, newest first.
+ * What a full read saw, for the next poll to compare against: how many
+ * notices there were, the second the read was made (less a margin, so a
+ * write landing in the same second, or on a clock a moment behind, still
+ * reads as news), and when the next held notice comes into view, since that
+ * one appears without anything being written.
+ */
+interface BellVersion {
+  count: number;
+  readAt: number;
+  heldUntil: number;
+}
+
+/** Seconds a write may predate the read that missed it and still be caught. */
+const VERSION_MARGIN_S = 5;
+
+function versionOf(value: BellVersion): string {
+  return `v1.${value.count}.${value.readAt}.${value.heldUntil}`;
+}
+
+function parseVersion(raw: string | null): BellVersion | null {
+  const match = raw?.match(/^v1\.(\d+)\.(\d+)\.(\d+)$/);
+  return match ? { count: Number(match[1]), readAt: Number(match[2]), heldUntil: Number(match[3]) } : null;
+}
+
+/** Whether anything the bell shows can have changed since `seen`. */
+function changedSince(seen: BellVersion, stamp: { count: number; lastWriteAt: number }, now: number): boolean {
+  return stamp.count !== seen.count
+    || stamp.lastWriteAt >= seen.readAt
+    || (seen.heldUntil > 0 && now >= seen.heldUntil * 1000);
+}
+
+/**
+ * GET /api/notifications?before=&category=&limit=&since= - yours, newest first.
  *
  * Paged: `nextBefore` is where the next page starts, null at the end. Each
  * page also carries the unread counts, overall and by category, so the badge
  * and the filter chips stay right however far down somebody has scrolled.
+ *
+ * Each first page carries a `version`. Sent back as `since`, it is answered
+ * `{ unchanged: true }` from one small read when nothing has been written
+ * since - which is what most polls find - instead of filling a page again.
  */
 async function list(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -84,7 +120,21 @@ async function list(request: HttpRequest, _context: InvocationContext) {
   // clock for held pushes on a host without timers (see push.ts).
   await sendHeldPushesSoon(repository, now);
 
+  // Taken before the rows are read, so a write in between shows as news next time.
+  const readAt = Math.floor(now / 1000) - VERSION_MARGIN_S;
+  // A stamp that cannot be read only costs this poll its shortcut.
+  const stamp = before ? null : await repository.notificationStamp(user.id).catch(() => null);
+  const seen = parseVersion(request.query.get('since'));
+  if (stamp && seen && !changedSince(seen, stamp, now)) {
+    return json(200, { unchanged: true, version: versionOf(seen) });
+  }
+
   const latest = await repository.listNotifications(user.id, UNREAD_WINDOW);
+  // The next held notice to come into view, which needs no write to appear.
+  const heldUntil = latest.reduce((soonest, row) => {
+    const at = row.notBefore && !row.withdrawn ? Date.parse(row.notBefore) : NaN;
+    return at > now && (soonest === 0 || at < soonest) ? at : soonest;
+  }, 0);
   // Counted as the bell shows them: a group is unread when its line is.
   const unreadRows = oneEach(latest.filter((row) => isVisibleNotice(row, now))).filter((row) => row.readAt === null);
   const unreadByCategory: Partial<Record<NotificationCategory, number>> = {};
@@ -132,6 +182,7 @@ async function list(request: HttpRequest, _context: InvocationContext) {
     unread: unreadRows.length,
     unreadByCategory,
     nextBefore,
+    ...(stamp ? { version: versionOf({ count: stamp.count, readAt, heldUntil: Math.ceil(heldUntil / 1000) }) } : {}),
   });
 }
 

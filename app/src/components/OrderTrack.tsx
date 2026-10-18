@@ -1,10 +1,11 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Order } from '@shared/models';
-import type { RouteStep, StageIcon } from '@shared/routes';
+import { renderStepText, type RouteStep, type StageIcon } from '@shared/routes';
 import { settledHistory } from '@shared/fulfilment';
 import { formatDateOrdinal, timeAgo } from '../format';
 import { ShipmentChip } from './OrderStatus';
 import { Ladder } from './Ladder';
+import '../styles/StepActs.css';
 
 const STAGE_EMOJI: Record<StageIcon, string> = {
   supplier: '🏭', warehouse: '🏬', transit: '✈️', customs: '🛃', delivery: '🏠',
@@ -51,7 +52,7 @@ export function boxesFor(steps: readonly Pick<RouteStep, 'id' | 'name' | 'trigge
   return steps.map((step, index) => ({
     key: `${step.id}-${index}`,
     icon: stepEmoji(step, index),
-    label: step.name.replace(/\{(origin|destination)\}/g, (_, key: 'origin' | 'destination') => vars?.[key] ?? key),
+    label: renderStepText(step.name, vars ?? {}),
     state: index < current ? 'done' : index === current ? 'here' : index === current + 1 ? 'next' : 'locked',
   }));
 }

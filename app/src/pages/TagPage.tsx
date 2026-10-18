@@ -4,6 +4,8 @@ import { ApiRequestError, api, type ShopCard } from '../api';
 import { ShopTile } from '../components/ShopCards';
 import { BackLink } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice } from '../components/ui';
+import { Loading } from '../components/Feedback';
+import '../styles/TagPage.css';
 
 /**
  * One tag's page: every shop that carries it, the ones most about it first.
@@ -28,7 +30,7 @@ export function TagPage() {
     <main className="page">
       <BackLink to="/">‹ Back</BackLink>
       {error && <ErrorNotice message={error} />}
-      {!data && !error && <p className="muted">Loading…</p>}
+      {!data && !error && <Loading />}
       {data && (
         <>
           <div className="page__head">

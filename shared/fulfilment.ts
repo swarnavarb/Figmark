@@ -173,21 +173,6 @@ export function furthestStage(
 export type { DirectStage, FulfilmentStage, LotStage };
 
 /**
- * How a listing is sourced.
- *
- * A lot settles it: an item in one is an import, whatever anybody typed. With
- * no lot the stored answer stands, because filing an item into a lot is
- * bookkeeping a shop does weeks after the item went up - the listing route has
- * allowed an import to wait for its lot for some time, and reading that back
- * as "in hand" was this function telling the buyer the opposite of what the
- * seller said, on a screen the seller could not correct.
- */
-export function sourcingOf(listing: { sourcing?: Sourcing; lotId: string | null }): Sourcing {
-  if (listing.lotId) return 'import';
-  return listing.sourcing === 'import' ? 'import' : 'in_hand';
-}
-
-/**
  * What kind of event this is, for a history that may predate the field.
  *
  * Everything written before `kind` existed was either a step transition or a

@@ -4,6 +4,7 @@ import { LearnText } from '../components/LearnText';
 import { shrink } from '../components/PhotoManager';
 import { ApiRequestError, admin } from './api';
 import { Confirm } from './Confirm';
+import { Loading } from '../components/Feedback';
 
 /**
  * Writing the Learn guide.
@@ -49,7 +50,7 @@ export function LearnView() {
     void admin.learn().then(take).catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the guide.'));
   }, [take]);
 
-  if (!tabs) return error ? <p className="notice notice--error">{error}</p> : <p className="muted">Loading…</p>;
+  if (!tabs) return error ? <p className="notice notice--error">{error}</p> : <Loading />;
 
   const dirty = JSON.stringify(tabs) !== saved;
   const index = Math.min(selected, tabs.length - 1);

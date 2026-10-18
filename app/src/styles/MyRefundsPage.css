@@ -1,0 +1,7 @@
+/*
+ * Styles only pages/MyRefundsPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.earnrow--void { opacity: 0.6; }
+.earnrow--void .earnrow__side b { text-decoration: line-through; }

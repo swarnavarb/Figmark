@@ -7,6 +7,7 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
 import { LevelChip, Thumb, leadPhoto } from './ui';
+import '../styles/Affiliate.css';
 
 /** What sharing a listing pays per sale, in paise; zero when it pays nothing. */
 export function earnOf(listing: { affiliate?: { amountMinor?: number; percent?: number } | null; priceMinor: number }): number {

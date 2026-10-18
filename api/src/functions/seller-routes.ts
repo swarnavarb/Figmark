@@ -3,10 +3,10 @@ import { STORE_PERMISSIONS, type StorePermission } from '../../../shared/enums.j
 import type { BuyerReversalDetails, Listing, Order, SellerProfile } from '../../../shared/models.js';
 import { awaitingLot, inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
 import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
-import { cardButtons, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
+import { cardButtons, holdsLotBack, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
-import { creditIsLive, creditLeft, orderMoney } from '../../../shared/payments.js';
+import { creditIsLive, creditLeft, isExpired, orderMoney } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
@@ -442,12 +442,13 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
    * The lot's own next move, offered on every order riding in it - the same
    * "Move to" the lot's Tracking section has, so a seller working down their
    * orders can move the crate without leaving the card. `unchecked` counts the
-   * items the move would carry past the warehouse check-in without having been
-   * ticked in there, so the card can stop and say so as the lot screen does.
+   * orders not yet ready for that move - their own buttons not pressed up to
+   * it - which the lot waits for, so the card can say so as the lot screen does.
    */
-  /** Items riding in a lot that were never ticked in at the warehouse. */
-  const uncheckedIn = (lotId: string) => orders.filter((order) => order.lotId === lotId
-    && !isCancelledLike(order.status) && order.status !== 'delivered' && !order.checkpoints?.china_received).length;
+  /** Orders in a lot that would hold it back from moving to `to`. */
+  const uncheckedIn = (lotId: string, steps: readonly RouteStep[], to: number) => orders.filter((order) => order.lotId === lotId
+    && !isCancelledLike(order.status) && order.status !== 'delivered'
+    && holdsLotBack(withReceivedAs(steps, order.receivedAs), to, ticksOf(order)) !== null).length;
 
   const lotNextFor = (lot: Awaited<ReturnType<typeof repository.getLot>>) => {
     if (!lot || lot.status === 'closed') return null;
@@ -457,8 +458,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     const to = Math.max(currentStepOf(lot) + 1, lotOffset(route));
     const step = route.steps[to];
     if (!step || to > lotEndIndex(route)) return null;
-    const gateAt = route.steps.findIndex((entry) => entry.trigger === 'china_received');
-    const unchecked = gateAt >= 0 && to >= gateAt ? uncheckedIn(lot.id) : 0;
+    const unchecked = uncheckedIn(lot.id, route.steps, to);
     return {
       to,
       label: renderStepText(step.name, { origin: lot.originCountry, destination: lot.destinationCountry }),
@@ -476,13 +476,11 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   ) => {
     if (!lot || isDirect(order)) return null;
     const route = routeOf(lot);
-    const unchecked = uncheckedIn(lot.id);
-    const gateAt = route.steps.findIndex((entry) => entry.trigger === 'china_received');
     return serialButtons(
       withReceivedAs(route.steps, order.receivedAs), currentStepOf(lot), ticksOf(order),
       { origin: lot.originCountry, destination: lot.destinationCountry },
-    ).map((button) => (button.kind === 'lot' && !button.done && gateAt >= 0 && button.to >= gateAt
-      ? { ...button, gated: unchecked > 0 }
+    ).map((button) => (button.kind === 'lot' && !button.done
+      ? { ...button, gated: uncheckedIn(lot.id, route.steps, button.to) > 0 }
       : button));
   };
 
@@ -732,18 +730,33 @@ async function sellTodo(request: HttpRequest, _context: InvocationContext) {
     && (storeId === user.id || Boolean(owner?.sellerProfile && can(owner, user.id, 'lots')));
   if (!answers && !mayLots) return error(403, 'forbidden', 'You cannot see that store’s work.');
 
-  const [figures, lots] = await Promise.all([
+  const [figures, lots, listings] = await Promise.all([
     answers ? repository.listOrderFiguresForSeller(storeId) : Promise.resolve(null),
     mayLots ? repository.listLots({ sellerId: storeId, limit: 10_000 }) : Promise.resolve(null),
+    mayLots ? repository.listListings({ sellerId: storeId, limit: 10_000 }) : Promise.resolve(null),
   ]);
   const active = figures?.filter((order) => !isFinished(order)) ?? null;
   const waitsOnShop = (order: NonNullable<typeof figures>[number]) =>
     ((order.paymentStatus === 'claimed' || order.status === 'payment_reversal_pending') && !isCancelledLike(order.status))
     || actionsFor(order, storeId).includes('accept');
 
+  const waiting = active ? active.filter(waitsOnShop) : null;
   return json(200, {
-    answer: active ? active.filter(waitsOnShop).length : null,
+    answer: waiting ? waiting.length : null,
+    /* When each one started waiting - a claim, or the order itself - so the
+       Sell tab can mark the ones that arrived since the seller last looked. */
+    answerSince: waiting
+      ? waiting.map((order) => order.paymentClaim?.claimedAt ?? order.placedAt ?? order.createdAt)
+      : null,
     noLot: active ? active.filter((order) => awaitingLot(order)).length : null,
+    /* Active imports on sale that no lot carries yet. An order is not the
+       first sign of one: a listing marked import and left out of every lot is
+       already the seller's next job, before anybody buys it. Sold out, expired
+       or archived ones are nobody's job. */
+    noLotListings: listings
+      ? listings.filter((listing) => !listing.lotId && listing.sourcing === 'import'
+        && listing.status === 'active' && !isExpired(listing)).length
+      : null,
     lots: lots ? lots.filter((lot) => !lotIsDone(lot)).length : null,
   });
 }

@@ -1,0 +1,95 @@
+/*
+ * Styles only components/BuyerLots.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.alloc__pick.is-on { border-color: var(--violet-line); background: var(--violet-soft); }
+.alloc__num {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--surface); font-weight: var(--w-semi);
+}
+.alloc__pick.is-on .alloc__num { background: var(--grad-hero); color: #fff; }
+.alloc__nums { display: grid; justify-items: end; font-variant-numeric: tabular-nums; }
+.alloc { display: grid; gap: 6px; padding: 12px; border-radius: var(--r-md); background: var(--surface-2); border: 1px dashed var(--aqua-line); }
+.alloc__line { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
+.alloc__line--extra { color: var(--pink-text); }
+.alloc__line--total { border-top: 1px solid var(--border); padding-top: 6px; font-size: var(--t-md); }
+/* Cart: take it out, or keep it for later on Saved. Sits beside Checkout; the title already opens the listing. */
+.cartacts { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+/* ── The cart's header ──────────────────────────────────────────────────── */
+.cartbox {
+  position: relative; overflow: hidden; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center;
+  margin-bottom: 16px; padding: 18px;
+}
+.cartbox__icon {
+  display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; color: #fff;
+  background: var(--grad-sea); box-shadow: 0 8px 20px rgba(6, 214, 231, 0.3);
+}
+.cartbox__eyebrow { font-size: 10.5px; font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--aqua); }
+.cartbox__title { margin: 0; }
+.cartbox__lede { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.cartbox__sum {
+  grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08); font-size: var(--t-sm); color: var(--text-dim);
+}
+/* ── The buyer's boxes ───────────────────────────────────────────────────
+   My Purchases, sorted by what each thing is waiting on: what needs the
+   buyer, the boxes on their way, things straight from a shop's shelf, things
+   waiting for a box, and the shelf of what has arrived. */
+.purch { gap: 22px; }
+.purch__section { display: grid; gap: 12px; }
+.purch__h { margin: 0; font-size: var(--t-lg); display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.needs__title { font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.needs__calm { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+.needs__row { display: grid; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); font-size: var(--t-sm); }
+.needs__row--pay { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.35); }
+.needs__row--confirm { background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.35); }
+.needs__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.needs__chip {
+  padding: 4px 10px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08);
+  color: var(--text); font-size: var(--t-xs); font-weight: var(--w-semi); text-decoration: none;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The buyer's box: the seller's carton, with their items peeking over the rim. */
+.lot-grid--buyer { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 30px 12px; padding-top: 20px; }
+.lotbox__peekitem:nth-child(3) { transform: rotate(8deg); }
+.lotbox--buyer:hover .lotbox__peek { transform: translateX(-50%) translateY(-4px); }
+.lotbox--buyer.is-opening .lotbox__peek { transform: translateX(-50%) translateY(-16px) scale(1.08); }
+.lotbox__store { font-size: var(--t-2xs); color: var(--card-dim); margin-top: -3px; }
+.ptrack--shelf { grid-template-columns: repeat(3, 1fr); }
+.ptrack__label { font-size: 10px; font-weight: var(--w-semi); opacity: 0.55; white-space: nowrap; }
+.ptrack__stop.is-done .ptrack__dot { background: #34D399; color: #04251A; font-weight: 700; }
+.ptrack__stop.is-here .ptrack__dot {
+  width: 26px; height: 26px; margin-top: -3px; font-size: 15px;
+  background: #FDE68A; box-shadow: 0 0 0 3px rgba(253, 230, 138, 0.35);
+  animation: ptrack-bob 1.8s ease-in-out infinite;
+}
+.ptrack__stop.is-here .ptrack__label { opacity: 1; }
+.ptrack--lg .ptrack__dot { width: 28px; height: 28px; font-size: 14px; }
+.ptrack--lg .ptrack__stop.is-here .ptrack__dot { width: 36px; height: 36px; margin-top: -4px; font-size: 19px; }
+.ptrack--lg .ptrack__label { font-size: var(--t-xs); }
+@media (prefers-reduced-motion: reduce) {
+  .ptrack__stop.is-here .ptrack__dot { animation: none; }
+}
+.lotbox .paychip--due { background: rgba(220, 38, 38, 0.12); color: #9B1C1C; }
+.irow__status { font-size: var(--t-xs); color: var(--text-dim); }
+.irow__note { font-size: var(--t-2xs); color: var(--text-faint); }
+.irow__go { font-size: 22px; color: var(--text-faint); }
+.arrived__item { display: grid; gap: 4px; justify-items: center; text-align: center; color: inherit; text-decoration: none; }
+.arrived__name { font-size: var(--t-2xs); font-weight: var(--w-semi); line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.arrived__tag { font-size: 10px; color: #6EE7B7; font-weight: var(--w-semi); }
+.arrived__tag--ask { color: #FDE68A; }
+.peek__hint { margin: 0; font-size: var(--t-sm); color: var(--text-dim); text-align: center; }
+.peek__title { font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.peek__item:nth-child(2) { animation-delay: 0.05s; }
+.peek__item:nth-child(3) { animation-delay: 0.1s; }
+.peek__item:nth-child(n+4) { animation-delay: 0.15s; }
+@media (prefers-reduced-motion: reduce) {
+  .peek__item { animation: none; }
+}
+.peek__status { font-size: var(--t-xs); color: var(--text-dim); }
+/* In a box there is room for one word: the stop it is at. */
+.lotbox .ptrack__label { display: none; }
+.lotbox .ptrack__stop.is-here .ptrack__label { display: block; }
+.lotbox .ptrack__stop:first-child.is-here .ptrack__label { justify-self: start; }
+.lotbox .ptrack__stop:last-child.is-here .ptrack__label { justify-self: end; }

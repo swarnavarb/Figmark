@@ -16,18 +16,21 @@ import { LotPhaseBadge, lotLabel } from '../components/LotName';
 import { useUndo } from '../components/Undo';
 import { Ladder } from '../components/Ladder';
 import { SerialButtons } from '../components/SerialButtons';
-import { serialButtons, withReceivedAs } from '@shared/buttons';
+import { holdsLotBack, serialButtons, withReceivedAs } from '@shared/buttons';
+import { isStopped } from '@shared/orders';
 import { LotPeople } from '../components/LotPeople';
 import { PersonTag } from '../components/PersonTag';
 import { TAGGED_ROLES, crewButtons, crewSlots, type TaggedRole } from '@shared/services';
 import { LotDetailFields, emptyLotDetails, lotDetailsOf } from '../components/LotFields';
 import { Avatar, ErrorNotice, Icon, Modal, type IconName } from '../components/ui';
 import { ItemHead } from '../components/ItemHead';
+import { InfoTip } from '../components/InfoTip';
 import { endedOf } from '../components/OrderTrack';
 import { RouteStudio, routeStepsFrom } from './RouteStudioPage';
 import { ForwarderBooking } from '../components/ForwarderBooking';
 import { formatDate, formatMoney, formatWeight } from '../format';
 import { ConditionTag } from '../components/ConditionTag';
+import { Loading } from '../components/Feedback';
 
 /**
  * Who moves this lot, and how to reach them.
@@ -527,7 +530,7 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
         ))}
 
         {!library && (
-          <p className="field__hint" style={{ margin: 0 }}>Loading routes…</p>
+          <Loading label="Loading routes" />
         )}
       </fieldset>
 
@@ -684,7 +687,7 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
           </label>
         ) : (
           <p className="field__hint">
-            {library ? 'You have no route for lots yet.' : 'Loading…'}
+            {library ? 'You have no route for lots yet.' : <Loading size="sm" label="Loading routes" />}
           </p>
         )}
 
@@ -964,7 +967,7 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
       {error && <ErrorNotice message={error} />}
 
       {items === null ? (
-        <p className="muted">Loading…</p>
+        <Loading />
       ) : items.length === 0 ? (
         <p className="muted">
           {query
@@ -1031,17 +1034,17 @@ export function LotDetail({ lotId, onBack, customers }: {
   const [siblings, setSiblings] = useState<LotsResponse['lots']>([]);
   const [error, setError] = useState<string | null>(null);
   /*
-   * A move that would carry the lot past the checkpoint where items are
-   * received at the international warehouse, while some of them are not
-   * actually marked as received yet. Held here rather than fired straight
-   * from the button, so the seller sees what is missing before it happens
-   * instead of a buyer reading a step their piece never reached.
+   * A move the lot cannot make yet: some orders in it have not had their own
+   * buttons pressed up to the step it would move to. The lot carries them
+   * all together, so it waits - and the seller is told which ones, and what
+   * each still needs, rather than a buyer reading a step their piece never
+   * reached.
    */
   const [gate, setGate] = useState<{
     targetAbsolute: number;
     details?: { trackingId?: string; shipper?: string };
     label: string;
-    missing: LotItem[];
+    missing: { item: LotItem; needs: { key: string; label: string; step: string } }[];
   } | null>(null);
   const [confirmingBypass, setConfirmingBypass] = useState(false);
   /* Every move made from Tracking asks first - the lot's and one item's
@@ -1101,7 +1104,7 @@ export function LotDetail({ lotId, onBack, customers }: {
 
   // A <div>, not a <main>: this is drawn inside the Sell tab's own <main>.
   if (error && !data) return <div className="stack"><ErrorNotice message={error} /></div>;
-  if (!data) return <div className="stack"><p className="muted">Loading…</p></div>;
+  if (!data) return <div className="stack"><Loading /></div>;
 
   const { lot, listings, totals, route, items } = data;
   /** Somewhere else an item could ride: any open lot of this shop but this one. */
@@ -1126,6 +1129,16 @@ export function LotDetail({ lotId, onBack, customers }: {
   const nextAt = Math.max(route.currentStep + 1, route.offset);
   const nextStep = nextAt <= crateEnd ? route.steps[nextAt] ?? null : null;
   const lane = { origin: lot.originCountry, destination: lot.destinationCountry };
+  /** The orders the lot would leave behind by moving to `target`, and the button each still needs. */
+  const holdingAt = (target: number) => (target > route.currentStep
+    ? items
+      .filter((item) => !isStopped(item.status as Parameters<typeof isStopped>[0]) && item.status !== 'delivered')
+      .flatMap((item) => {
+        const needs = holdsLotBack(withReceivedAs(route.steps, item.receivedAs), target, item.ticks, lane);
+        return needs ? [{ item, needs }] : [];
+      })
+    : []);
+  const holding = nextStep ? holdingAt(nextAt) : [];
   const status = lotIsDone(lot) ? 'Delivered' : lotStep < 0 ? 'Filling' : renderStepText(lotSteps[lotStep]?.name ?? 'Filling', lane);
   const done = lotIsDone(lot) || lotStep >= lotSteps.length - 1;
   const phase = lotPhase(lot);
@@ -1167,6 +1180,19 @@ export function LotDetail({ lotId, onBack, customers }: {
     label: string,
     confirmed = false,
   ) {
+    if (targetAbsolute > crateEnd) {
+      setFlash({
+        text: 'This lot is unpacked. Mark each item dispatched and delivered on its own; the lot closes when the last one arrives.',
+        ok: false,
+      });
+      return;
+    }
+    // Asked before anything else: which orders are holding it back, not "are you sure" and then no.
+    const missing = holdingAt(targetAbsolute);
+    if (missing.length > 0) {
+      setGate({ targetAbsolute, details, label, missing });
+      return;
+    }
     if (!confirmed && targetAbsolute <= crateEnd) {
       const name = route.steps[targetAbsolute]?.name ?? 'that step';
       setAsking({
@@ -1176,21 +1202,6 @@ export function LotDetail({ lotId, onBack, customers }: {
         yes: `🚢 Move lot to ${name}`,
         go: () => requestMove(targetAbsolute, details, label, true),
       });
-      return;
-    }
-    if (targetAbsolute > crateEnd) {
-      setFlash({
-        text: 'This lot is unpacked. Mark each item dispatched and delivered on its own; the lot closes when the last one arrives.',
-        ok: false,
-      });
-      return;
-    }
-    const gateAt = route.steps.findIndex((step) => step.trigger === 'china_received');
-    const missing = gateAt >= 0 && targetAbsolute >= gateAt
-      ? items.filter((item) => !item.checkpoints.china_received)
-      : [];
-    if (missing.length > 0) {
-      setGate({ targetAbsolute, details, label, missing });
       return;
     }
     void run(label, () => api.stepLot(lot.id, { to: targetAbsolute, ...details }).then(offerLotUndo));
@@ -1225,13 +1236,19 @@ export function LotDetail({ lotId, onBack, customers }: {
     setGate(null);
     setConfirmingBypass(false);
     await run(label, async () => {
-      /* Every tick is tried, and the lot moves only if all of them landed.
-         Firing them all and moving regardless left a lot past the warehouse
-         with some of its items never marked as having arrived there. */
-      // One request for every missing tick, which says how many landed.
-      const { failed } = await api.setCheckpoints(missing.map((item) => item.id), 'china_received', true);
-      if (failed > 0) {
-        throw new Error(`${failed} of ${missing.length} items could not be marked received, so the lot has not moved. Try again.`);
+      /* Every missing button, in route order, one request per button for
+         all the orders that need it - and the lot moves only if every one
+         landed. Moving regardless would leave orders behind the lot. */
+      for (let index = 0; index < targetAbsolute && index < route.steps.length; index += 1) {
+        const step = route.steps[index]!;
+        const key = step.trigger ?? (step.custom ? `custom:${step.id}` : null);
+        if (!key) continue;
+        const ids = missing.filter(({ item }) => !item.ticks[key]).map(({ item }) => item.id);
+        if (ids.length === 0) continue;
+        const { failed } = await api.setCheckpoints(ids, key, true);
+        if (failed > 0) {
+          throw new Error(`${failed} of ${ids.length} orders could not be updated, so the lot has not moved. Try again.`);
+        }
       }
       offerLotUndo(await api.stepLot(lot.id, { to: targetAbsolute, ...details }));
     });
@@ -1253,16 +1270,23 @@ export function LotDetail({ lotId, onBack, customers }: {
         <div className="lothero__now">
           <span className="lothero__pulse" aria-hidden="true" />
           <span className="lothero__state">{status}</span>
-          <span className="lothero__step">{Math.max(0, lotStep + 1)}/{lotSteps.length}</span>
+          <InfoTip label="What customers see">
+            Customers see this lot as <b><LotPhaseBadge phase={phase} /></b> on their order&apos;s tracking.
+            {phase === 'filling' && ' Close the lot when nothing more is going in; they then see it being prepped for dispatch.'}
+          </InfoTip>
+          <span className="lothero__step">Step {Math.max(0, lotStep + 1)}/{lotSteps.length}</span>
         </div>
         <div className="lothero__bar" aria-hidden="true">
           <span style={{ width: `${((lotStep + 1) / Math.max(1, lotSteps.length)) * 100}%` }} />
         </div>
         <div className="lothero__foot">
-          <span className="lothero__buyers">
-            <span className="lothero__eyebrow">Customers see</span>
-            <LotPhaseBadge phase={phase} />
-          </span>
+          <p className="lothero__line">
+            {[
+              `${totals.lines} ${totals.lines === 1 ? 'order' : 'orders'}`,
+              totals.valueMinor > 0 ? formatMoney(totals.valueMinor) : null,
+              totals.weightGrams > 0 ? formatWeight(totals.weightGrams) : null,
+            ].filter(Boolean).join(' · ')}
+          </p>
           {(phase === 'filling' || (phase === 'closed' && lotStep < 0)) && (
             <button type="button" className="btn btn--ghost btn--sm" disabled={busy}
               onClick={() => void run(
@@ -1273,15 +1297,7 @@ export function LotDetail({ lotId, onBack, customers }: {
             </button>
           )}
         </div>
-        <p className="lothero__line">
-          {[
-            (lot.originCountry || lot.destinationCountry) ? laneOf(lot) : null,
-            `${items.length} ${items.length === 1 ? 'order' : 'orders'}`,
-            totals.weightGrams > 0 ? formatWeight(totals.weightGrams) : null,
-            totals.valueMinor > 0 ? formatMoney(totals.valueMinor) : null,
-            route.name,
-          ].filter(Boolean).join(' · ')}
-        </p>
+        {/* The lane and the route are on Settings; here only what changes day to day. */}
       </header>
 
       <nav className="lotnav" aria-label="This lot">
@@ -1308,7 +1324,7 @@ export function LotDetail({ lotId, onBack, customers }: {
               </Fragment>
             : people
               ? <LotPeople board={people} onChanged={setPeople} onError={setError} />
-              : <p className="muted">Loading…</p>}
+              : <Loading />}
 
           {/* Sold, bound for a lot, in none - which before this screen existed
               was a list nobody could see. Shut, because most of the time there
@@ -1351,7 +1367,8 @@ export function LotDetail({ lotId, onBack, customers }: {
                 downstream has to know this screen shows half of it. */}
             <Ladder
               steps={lotSteps}
-              current={lotStep}
+              /* A lot further back than filling still moves onto its own first step next. */
+              current={Math.max(lotStep, -1)}
               history={data.history}
               /* Where the crate is unpacked: from the rung after it, each item
                  is dispatched and delivered on its own, from its own order. */
@@ -1377,6 +1394,18 @@ export function LotDetail({ lotId, onBack, customers }: {
                 api.noteOnLot(lot.id, text, at + route.offset).then(() => {}))}
             />
 
+            {nextStep && !done && holding.length > 0 && (
+              <p className="notice notice--info lotgate__hint">
+                ⏳ {holding.length === 1 ? '1 order' : `${holding.length} orders`} still{' '}
+                {holding.length === 1 ? 'needs' : 'need'} progressing before the lot can move to{' '}
+                <b>{renderStepText(nextStep.name, lane)}</b> - press{' '}
+                {holding.length === 1 ? 'its' : 'their'} next button, or cancel {holding.length === 1 ? 'it' : 'them'}.{' '}
+                <button type="button" className="ladder__act ladder__act--move"
+                  onClick={() => setGate({ targetAbsolute: nextAt, label: `Now: ${renderStepText(nextStep.name, lane)}.`, missing: holding })}>
+                  See which
+                </button>
+              </p>
+            )}
             {nextStep && !done ? (
               /* The same lot button every order riding in this lot carries on its card. */
               <button className="btn btn--block" disabled={busy}
@@ -1474,41 +1503,54 @@ export function LotDetail({ lotId, onBack, customers }: {
 
           {gate && (
             <Modal
-              title={confirmingBypass ? 'Confirm the update' : 'Not all items are checked in'}
+              title={confirmingBypass ? 'Press and move the lot?' : `${gate.missing.length === 1 ? 'One order is' : `${gate.missing.length} orders are`} not ready to move`}
               onClose={() => { setGate(null); setConfirmingBypass(false); }}>
               {!confirmingBypass ? (
                 <div className="stack">
-                  <p>
-                    {gate.missing.length} of {items.length}{' '}
-                    {items.length === 1 ? 'item has' : 'items have'} not been marked as received at
-                    the international warehouse. Moving the lot on now would carry{' '}
-                    {gate.missing.length === 1 ? 'it' : 'them'} past a checkpoint{' '}
-                    {gate.missing.length === 1 ? "it hasn't" : "they haven't"} actually reached.
+                  <p style={{ margin: 0 }}>
+                    The lot moves every order in it together, so it can&apos;t go to{' '}
+                    <strong>{renderStepText(route.steps[gate.targetAbsolute]?.name ?? 'the next step', lane)}</strong> until{' '}
+                    {gate.missing.length === 1 ? 'this order catches up' : 'these orders catch up'}.
+                    {gate.missing.length === 1
+                      ? 'Progress it, or cancel it if it isn\'t going, then move the lot.'
+                      : 'Progress each one, or cancel the ones that aren\'t going, then move the lot.'}
                   </p>
-                  <ul className="stack" style={{ gap: 4, margin: 0, padding: 0, listStyle: 'none' }}>
-                    {gate.missing.map((item) => (
-                      <li key={item.id} className="faint">{item.itemName} — {item.buyerName}</li>
+                  <ul className="lotgate">
+                    {gate.missing.map(({ item, needs }) => (
+                      <li key={item.id} className="lotgate__row">
+                        <span className="lotgate__who">
+                          <b>{item.itemName}</b>
+                          <span className="faint">{item.buyerName} · still needs <b>⚡ {needs.label}</b></span>
+                        </span>
+                        <Link className="ladder__act ladder__act--move" to={`/order/${encodeURIComponent(item.id)}`}>
+                          Open order
+                        </Link>
+                      </li>
                     ))}
                   </ul>
                   <button type="button" className="btn btn--block"
-                    onClick={() => { setGate(null); setConfirmingBypass(false); }}>
-                    Go check the items in
+                    onClick={() => {
+                      setGate(null);
+                      setConfirmingBypass(false);
+                      document.getElementById('lot-items')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}>
+                    {gate.missing.length === 1 ? 'Progress it in the list' : 'Progress them in the list'}
                   </button>
                   <button type="button" className="btn btn--ghost btn--block"
                     onClick={() => setConfirmingBypass(true)}>
-                    Are these going straight to the freight forwarder?
+                    {gate.missing.length === 1 ? 'Already done? Press it and move the lot' : 'Already done? Press them all and move the lot'}
                   </button>
                 </div>
               ) : (
                 <div className="stack">
-                  <p>
-                    This marks {gate.missing.length} {gate.missing.length === 1 ? 'item' : 'items'} as
-                    received at the international warehouse and moves the lot to{' '}
-                    <strong>{route.steps[gate.targetAbsolute]?.name}</strong>.
+                  <p style={{ margin: 0 }}>
+                    This presses the buttons still missing on {gate.missing.length}{' '}
+                    {gate.missing.length === 1 ? 'order' : 'orders'} - their customers read each step - and then
+                    moves the lot to <strong>{renderStepText(route.steps[gate.targetAbsolute]?.name ?? 'the next step', lane)}</strong>.
                   </p>
                   <button type="button" className="btn btn--block" disabled={busy}
                     onClick={() => void confirmBypass()}>
-                    {busy ? 'Updating…' : 'Confirm and move the lot'}
+                    {busy ? 'Updating…' : 'Press them and move the lot'}
                   </button>
                   <button type="button" className="btn btn--quiet btn--block"
                     onClick={() => setConfirmingBypass(false)}>

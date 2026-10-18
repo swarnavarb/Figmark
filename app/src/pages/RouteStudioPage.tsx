@@ -1,9 +1,10 @@
 import { Fragment, createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
+import { setButtonLibrary, stepKinds } from '@shared/route-buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  renderStepText, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, waitMessageFor,
+  renderStepText, routeParts, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
   type RouteStep, type StepAssignee, type StepTrigger, type TrackingRoute,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
@@ -14,6 +15,8 @@ import { stepEmoji } from '../components/OrderTrack';
 import {
   PipSays, pipAck, pipQueue, pipTips, pipTotal, routeFromAnswers, type PipAnswers, type PipFix,
 } from '../components/RouteMascot';
+import { InfoTip } from '../components/InfoTip';
+import { MoreMenu } from '../components/MoreMenu';
 import { RoutePreview } from '../components/RoutePreview';
 
 /**
@@ -23,6 +26,8 @@ import { RoutePreview } from '../components/RoutePreview';
  * tokens read as plain "the origin" and "the destination".
  */
 type PreviewVars = { origin?: string | null; destination?: string | null };
+/** Until the shop has a lot of its own, {origin} and {dest} read on the commonest lane. */
+const EXAMPLE_LANE: PreviewVars = { origin: 'China', destination: 'India' };
 const PreviewVarsContext = createContext<PreviewVars>({});
 
 /**
@@ -46,7 +51,6 @@ function ensureDelivered(steps: readonly RouteStep[]): RouteStep[] {
 }
 
 /** Whether the Studio opens with every detail showing, remembered per browser. */
-const DETAIL_KEY = 'figmark:route-studio-details';
 
 /**
  * A ready-made route's steps, put in order the way the Studio would before
@@ -103,8 +107,22 @@ const blankStep = (seed: number): RouteStep => ({
   id: stepId(seed), name: '', description: '', position: 0,
 });
 
-export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel' }: {
+/**
+ * A sample route the operators keep, opened in the same Studio a shop uses:
+ * the words and lanes are edited here, and saving hands them back to the
+ * console instead of saving a route of a shop's own.
+ */
+export interface StudioSample {
+  name: string;
+  steps: RouteStep[];
+  onSave: (name: string, steps: RouteStep[]) => Promise<void>;
+  onDelete?: () => void;
+}
+
+export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel', sample }: {
   editing: string | null;
+  /** Editing one of the operators' sample routes rather than a shop's own. */
+  sample?: StudioSample;
   /** Handed the route as saved, for a caller that picks it straight away. */
   onSaved: (route: TrackingRoute) => void;
   onCancel: () => void;
@@ -123,39 +141,42 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /* Pip: asking its questions, suggesting fixes, or tucked away. */
-  const [pip, setPip] = useState<'ask' | 'coach' | 'hidden'>('coach');
+  /* Pip coaches the first route a seller opens; after that it waits behind "Ask Pip". */
+  const [pip, setPip] = useState<'ask' | 'coach' | 'hidden'>(() => {
+    if (sample) return 'hidden';
+    try {
+      if (localStorage.getItem(PIP_SEEN_KEY) === '1') return 'hidden';
+      localStorage.setItem(PIP_SEEN_KEY, '1');
+    } catch {
+      /* Blocked storage: Pip says hello each visit, as it used to. */
+    }
+    return 'coach';
+  });
   const [answers, setAnswers] = useState<PipAnswers>({});
   const [pipSaid, setPipSaid] = useState('');
   const [tipAt, setTipAt] = useState(0);
-  const [previewing, setPreviewing] = useState(false);
-  /* Most edits are words: a step's name and its line. Buttons, who presses
-     them, the waits between steps and where the lot starts and ends are all
-     handed out sensibly already, so they wait behind "All details". */
-  const [detailed, setDetailed] = useState(() => {
-    try {
-      return localStorage.getItem(DETAIL_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  const showDetails = (next: boolean) => {
-    setDetailed(next);
-    try {
-      localStorage.setItem(DETAIL_KEY, next ? '1' : '0');
-    } catch {
-      /* A private window: it starts simple next time. */
-    }
+  /* Edit builds the route; Preview runs a sample order on it, from both
+     sides - the seller's buttons and the customer's tracking. */
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const showMode = (next: 'edit' | 'preview') => {
+    setMode(next);
+    window.scrollTo(0, 0);
   };
   /** Where a step is being added: the index it will take, and which part of the journey. */
   const [adding, setAdding] = useState<{ at: number; zone: StepZone } | null>(null);
   /** The shop's own lane, so the preview reads in its countries rather than ours. */
-  const [vars, setVars] = useState<PreviewVars>({});
+  const [vars, setVars] = useState<PreviewVars>(EXAMPLE_LANE);
   /** The chain as last opened or saved: anything else on screen is unsaved work. */
   const [savedAs, setSavedAs] = useState<string | null>(null);
   /** Saved, and some unfinished lots still read the route's older steps. */
   const [behind, setBehind] = useState<{ route: TrackingRoute; lots: number } | null>(null);
 
   useEffect(() => {
+    if (sample) {
+      // A sample is read by every shop; it is previewed on the commonest lane.
+      setVars(EXAMPLE_LANE);
+      return;
+    }
     void api.myLots().then((result) => {
       const lane = result.lots.find((entry) => entry.lot.originCountry || entry.lot.destinationCountry)?.lot;
       if (lane) setVars({ origin: lane.originCountry, destination: lane.destinationCountry });
@@ -163,8 +184,13 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   }, []);
 
   useEffect(() => {
+    if (sample) {
+      open(sample.steps, sample.name);
+      return;
+    }
     void api.routes().then((result) => {
       setLibrary(result);
+      setButtonLibrary(result.buttonLibrary);
       if (!editing) return;
       const found = result.routes.find((route) => route.id === editing);
       if (!found) { setError('No such route.'); return; }
@@ -187,7 +213,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
    * had to change on a saved route is returned, for Pip to say.
    */
   function open(from: readonly RouteStep[], called: string): ButtonChange[] {
-    const withDelivered = ensureDelivered(from);
+    const withDelivered = ensureDelivered(from.map(tagStepPlaces));
     const withSides = withDelivered.map((step, index) => ({ ...step, position: index, side: sideOf(step, index) }));
     const { steps: given, changes } = assignButtons(withSides);
     const join = joinIndexOf({ steps: given });
@@ -197,6 +223,8 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     setJoinAt(join);
     setLeaveAt(leave);
     setStarted(true);
+    // The route opens at its top, not wherever the list was scrolled to.
+    window.scrollTo(0, 0);
     /* A saved route opens clean; a starting point is already unsaved work
        the moment it is on screen, so it is never thrown away unasked. */
     setSavedAs(editing ? snapshot(called, given, join, leave) : null);
@@ -221,7 +249,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   }
 
   function fix(action: PipFix) {
-    if (action.kind === 'preview') { setPreviewing(true); return; }
+    if (action.kind === 'preview') { showMode('preview'); return; }
     if (action.kind === 'name') { document.getElementById('rs-name')?.focus(); return; }
     const input = document.querySelector<HTMLInputElement>(`[data-step="${action.stepId}"] .rsbtn__words`);
     input?.scrollIntoView({ block: 'center' });
@@ -262,7 +290,10 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     const next = [...steps];
     const step: RouteStep = {
       ...blankStep(steps.length),
-      ...(kind ? { name: kind.name, description: kind.description, trigger: kind.trigger, custom: kind.custom } : {}),
+      ...(kind ? {
+        name: kind.name, description: kind.description, trigger: kind.trigger, custom: kind.custom,
+        button: kind.button, assignee: kind.assignee,
+      } : {}),
     };
     next.splice(index, 0, step);
     setSteps(next);
@@ -301,6 +332,19 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     event.stopPropagation();
     setBusy(true);
     setError(null);
+    if (sample) {
+      try {
+        await sample.onSave(name.trim(), given.filter((step) => step.name.trim()).map((step) => ({
+          ...step, name: step.name.trim(), description: step.description.trim(),
+        })));
+        setSavedAs(snapshot(name, steps, joinAt, leaveAt));
+      } catch (err) {
+        setError(err instanceof ApiRequestError ? err.message : 'Could not save that sample.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     try {
       const result = await api.saveRoute({
         id: editing ?? undefined,
@@ -356,6 +400,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   /* Lots carry their own copy of a route, so deleting one only takes it off
      the list - every lot already on it keeps travelling exactly as before. */
   async function remove() {
+    if (sample?.onDelete) { sample.onDelete(); return; }
     if (!editing) return;
     if (!window.confirm(`Delete "${name.trim() || 'this route'}"? Lots already on it keep their steps.`)) return;
     setBusy(true);
@@ -395,7 +440,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const question = pip === 'ask' ? pipQueue(answers)[0] : undefined;
   const tips = pip === 'coach' ? pipTips(named, name, problems) : [];
   const tip = tips.length ? tips[tipAt % tips.length] : undefined;
-  const pipDock = pip === 'hidden' ? (
+  const pipDock = sample ? null : pip === 'hidden' ? (
     <button type="button" className="pipcall" onClick={() => setPip('coach')}>🤖 Ask Pip</button>
   ) : question ? (
     <PipSays mood="think"
@@ -424,15 +469,13 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     return (
       <PreviewVarsContext.Provider value={vars}>
         {intro ?? (
-          <div className="page__head">
-            <div>
-              <h1>{editing ? 'Edit route' : 'New route'}</h1>
-              <p className="muted">
-                The steps your buyers read as their tracking. Pick a ready-made route and change
-                any words you like - you can preview exactly what a buyer sees before saving.
-              </p>
-            </div>
-          </div>
+          <header className="rsnew__head">
+            <h1>{editing ? 'Edit route' : 'New route'}</h1>
+            <InfoTip label="About routes">
+              The steps your buyers read as their tracking. Pick the one closest to how you ship and change any
+              words you like - you can preview exactly what a buyer sees before saving.
+            </InfoTip>
+          </header>
         )}
 
         {error && <ErrorNotice message={error} />}
@@ -443,35 +486,46 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
             {/* Most shops ship one of a handful of ways, so those lead: one
                 tap opens a whole route to look over. Pip and a blank chain are
                 for the shop whose way is not among them. */}
-            <span className="card__title">Start from the one closest to how you ship</span>
-            <div className="rsgrid">
-              {library.routeTemplates.map((template) => (
-                <button key={template.id} type="button" className="rscard"
-                  onClick={() => open(template.steps, template.name)}>
-                  <span className="rscard__icon"><Icon name={STAGE_ICON_META[template.icon].icon} size={20} /></span>
-                  <span className="rscard__name">{template.name}</span>
-                  <span className="rscard__note">{template.blurb}</span>
-                  <span className="faint">{routePartsLine(template)}</span>
-                </button>
-              ))}
-              {library.presets.map((preset) => (
-                <button key={preset.id} type="button" className="rscard"
-                  onClick={() => open(preset.steps, preset.name)}>
-                  <span className="rscard__icon"><Icon name="truck" size={20} /></span>
-                  <span className="rscard__name">{preset.name}</span>
-                  <span className="rscard__note">{preset.blurb}</span>
-                  <span className="faint">{routePartsLine(preset)}</span>
-                </button>
-              ))}
+            <span className="rsnew__label">Start with a sample route</span>
+            <div className="rsnew__list">
+              {[...library.routeTemplates, ...library.presets.map((preset) => ({ ...preset, icon: 'transit' as const }))].map((template) => {
+                const parts = routeParts(template);
+                const total = Math.max(1, template.steps.length);
+                return (
+                  <button key={template.id} type="button" className="rsnew__item"
+                    onClick={() => open(template.steps, template.name)}>
+                    <span className="rsnew__icon"><Icon name={STAGE_ICON_META[template.icon].icon} size={18} /></span>
+                    <span className="rsnew__body">
+                      <span className="rsnew__name">{template.name}</span>
+                      {template.blurb && <span className="rsnew__blurb">{template.blurb}</span>}
+                      {/* The three parts as one bar, in the lanes' colours. */}
+                      <span className="rsnew__bar" aria-label={routePartsLine(template)} title={routePartsLine(template)}>
+                        <span className="rsnew__seg rsnew__seg--pre" style={{ flexGrow: parts.before / total }} />
+                        {parts.lot > 0 && <span className="rsnew__seg rsnew__seg--lot" style={{ flexGrow: parts.lot / total }} />}
+                        {parts.after > 0 && <span className="rsnew__seg rsnew__seg--post" style={{ flexGrow: parts.after / total }} />}
+                      </span>
+                      <span className="rsnew__trail">
+                        {template.steps.slice(0, 4).map((step) => renderStepText(step.name, vars)).join(' → ')}
+                        {template.steps.length > 4 ? ` → +${template.steps.length - 4}` : ''}
+                      </span>
+                    </span>
+                    <Icon name="right" size={16} />
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="rsstart__other">
-              <span className="faint">None of these?</span>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={startPip}>
-                🤖 Answer a few questions
+            <span className="rsnew__label">Or</span>
+            <div className="rsnew__other">
+              <button type="button" className="rsnew__alt" onClick={startPip}>
+                <span aria-hidden="true">🤖</span>
+                <b>Answer a few questions</b>
+                <span className="faint">Pip builds it with you</span>
               </button>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => open(library.suggested, '')}>
-                Start from common steps
+              <button type="button" className="rsnew__alt" onClick={() => open(library.suggested, '')}>
+                <span aria-hidden="true">✏️</span>
+                <b>Start from common steps</b>
+                <span className="faint">{library.suggested.length} steps to edit</span>
               </button>
             </div>
           </div>
@@ -487,20 +541,42 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   return (
     <PreviewVarsContext.Provider value={vars}>
     {/* Something to fix shows everything, so the field it is about is there to fix. */}
-    <form className={`rsstudio${detailed || blocking.length > 0 ? '' : ' rsstudio--simple'}`} onSubmit={save}>
+    <form className="rsstudio" onSubmit={save}>
       {pipDock}
 
       {/* The route itself: its name, and a map of its three parts at a glance. */}
       <header className="rshead">
+        <div className="rshead__top">
         <input id="rs-name" className="rshead__name" value={name} onChange={(event) => setName(event.target.value)}
-          placeholder="Name this route - e.g. Guangzhou air" aria-label="Route name" required autoFocus />
-        <span className="rshead__hint">For your own lists - buyers see the steps, not this name.</span>
-        <div className="seg rshead__mode" role="tablist" aria-label="How much to show">
-          <button type="button" role="tab" aria-selected={!detailed} className={detailed ? '' : 'is-on'}
-            onClick={() => showDetails(false)}>Steps</button>
-          <button type="button" role="tab" aria-selected={detailed} className={detailed ? 'is-on' : ''}
-            onClick={() => showDetails(true)}>All details</button>
+          placeholder="Name this route - e.g. Guangzhou air" aria-label="Route name" required />
+        <span className="rshead__hint">
+          <InfoTip label="About the route name">For your own lists - buyers see the steps, not this name.</InfoTip>
+          {(editing || sample?.onDelete) && (
+            <MoreMenu label="More for this route" items={[
+              { label: 'Delete route', danger: true, disabled: busy, onClick: () => void remove() },
+            ]} />
+          )}
+        </span>
         </div>
+        <div className="rshead__modes">
+          <div className="seg rshead__mode" role="tablist" aria-label="How much to show">
+            <button type="button" role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'is-on' : ''}
+              disabled={named.length < 2} onClick={() => showMode('preview')}>👀 Preview</button>
+            <button type="button" role="tab" aria-selected={mode === 'edit'} className={mode === 'edit' ? 'is-on' : ''}
+              onClick={() => showMode('edit')}>✏️ Edit</button>
+          </div>
+          <InfoTip label="Preview or Edit">
+            <b>Edit</b> is where you build the route: name each step, add or remove steps, choose which
+            steps have a button, what the button says and who can press it.
+            <br /><br />
+            <b>Preview</b> puts a sample order on the route. You see the order card exactly as it shows
+            under Sell → Orders, and you press its buttons the same way you would on a real order. Right
+            below, you see the tracking your customer reads, moving as you press.
+            <br /><br />
+            Nothing in Preview is saved - it is only for trying the route out.
+          </InfoTip>
+        </div>
+        {mode === 'edit' && (<>
         <div className="rsmap" aria-label="The route's three parts">
           {lanes.map((lane) => (
             <a key={lane.zone} href={`#rs-lane-${lane.zone}`} className={`rsmap__seg rsmap__seg--${lane.zone}`}
@@ -512,10 +588,17 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
         <span className="rshead__stats">
           ⚡ {bound} buttons · {named.length} steps · Dispatched and Delivered always last
         </span>
+        </>)}
       </header>
 
       {/* The journey, in its three parts: each a lane in its own colour, the
           steps in it joined by a track the next step's icon travels down. */}
+      {mode === 'preview' ? (
+        /* Its own buttons ask in dialogs with forms of their own; none of them saves the route. */
+        <div onSubmit={(event) => event.stopPropagation()}>
+          <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} />
+        </div>
+      ) : (
       <div className="rslanes">
         {lanes.map((lane) => (
           <section key={lane.zone} id={`rs-lane-${lane.zone}`} className={`rslane rslane--${lane.zone}`}>
@@ -533,16 +616,9 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
             <div className="rschain">
               {lane.indexes.map((index) => {
                 const step = given[index]!;
-                const following = given[index + 1];
                 const last = index === given.length - 1;
                 return (
                   <div key={step.id} className={`rschain__row${last ? ' rschain__row--last' : ''}`}>
-                    {/* What happens next, travelling down the track to it. */}
-                    {following && !last && (
-                      <span className={`rslink__token rslink__token--${sceneOf(following, index + 1)}`} aria-hidden="true">
-                        {stepEmoji(following, index + 1)}
-                      </span>
-                    )}
                     <StepNode
                       step={step} index={index} count={steps.length}
                       zone={zoneAt(index)}
@@ -564,6 +640,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
           </section>
         ))}
       </div>
+      )}
 
       {adding && (
         <StepPicker at={adding.at} zone={adding.zone} steps={given}
@@ -576,14 +653,6 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 
       {error && <ErrorNotice message={error} />}
 
-      {previewing && (
-        <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} problems={problems}
-          onChangeStep={(index, patch) => {
-            const id = named[index]?.id;
-            setSteps((now) => now.map((step) => (step.id === id ? { ...step, ...patch } : step)));
-          }}
-          onClose={() => setPreviewing(false)} />
-      )}
 
       {blocking.length > 0 && (
         <div className="rsproblems" role="alert">
@@ -594,8 +663,9 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 
       {/* Always in reach, however long the chain: try it, save it. */}
       <div className="rsbar">
-        <button type="button" className="rsbar__preview" disabled={named.length < 2} onClick={() => setPreviewing(true)}>
-          <span aria-hidden="true">👀</span> Preview on a sample order
+        <button type="button" className="rsbar__preview" disabled={named.length < 2}
+          onClick={() => showMode(mode === 'preview' ? 'edit' : 'preview')}>
+          {mode === 'preview' ? <><span aria-hidden="true">✏️</span> Back to edit</> : <><span aria-hidden="true">👀</span> Try on a sample order</>}
         </button>
         <button type="submit" className="btn rsbar__save" disabled={busy || named.length < 2 || !name.trim() || blocking.length > 0}
           title={blocking.length > 0 ? 'Fix the button words above first' : !name.trim() ? 'Give the route a name first' : undefined}>
@@ -613,12 +683,6 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
           Nothing is in the lot lane, so this route never joins a lot: it suits listings shipped one by
           one, and cannot be given to a lot.
         </span>
-      )}
-      {editing && (
-        <button type="button" className="btn btn--ghost btn--danger btn--sm" style={{ justifySelf: 'start' }}
-          disabled={busy} onClick={() => void remove()}>
-          Delete route
-        </button>
       )}
 
       {behind && (
@@ -652,45 +716,23 @@ function snapshot(name: string, steps: readonly RouteStep[], joinAt: number, lea
   ])]);
 }
 
+/** Whether Pip has already coached a route on this device. */
+const PIP_SEEN_KEY = 'figmark.pip.seen';
+
 const ZONE_TEXT: Record<StepZone, { title: string; note: string; short: string }> = {
-  pre: { title: '① Before the lot', note: 'Each item on its own - buttons per item', short: 'before the lot' },
-  lot: { title: '② In the lot', note: 'Everything moves together - no buttons, you move the lot', short: 'in the lot' },
-  post: { title: '③ After the lot', note: 'Each item on its own again - buttons per item', short: 'after the lot' },
+  pre: {
+    title: '① Before the lot', short: 'before the lot',
+    note: 'Each item/order moves on its own until it joins a lot. Define how you control the tracking progress for your customers to see in their tracking',
+  },
+  lot: {
+    title: '② In the lot', short: 'in the lot',
+    note: 'Each item/order now moves along with the lot. Define the steps and who can make the progress',
+  },
+  post: {
+    title: '③ After the lot', short: 'after the lot',
+    note: 'Each item/order is unboxed from the lot and then shipped on its own to its customer. Define the tracking and who controls it',
+  },
 };
-
-/** The kind of scene behind a step - what it looks like happening - read off its words, then its button. */
-type Scene = 'order' | 'warehouse' | 'pack' | 'fly' | 'sail' | 'road' | 'customs' | 'check' | 'land' | 'home' | 'spark';
-
-function sceneOf(step: Pick<RouteStep, 'name' | 'trigger' | 'custom'>, index: number): Scene {
-  const name = step.name.toLowerCase();
-  if (index === 0 || /order placed|ordered|booked/.test(name)) return 'order';
-  if (step.trigger === 'delivered' || /deliver/.test(name)) return 'home';
-  if (step.trigger === 'dispatched' || /dispatch|courier|out for|truck/.test(name)) return 'road';
-  if (/custom/.test(name)) return 'customs';
-  if (/pack|box|wrap|consolidat/.test(name)) return 'pack';
-  if (/air|flight|fly|plane/.test(name)) return 'fly';
-  if (/sea|sail|ship|vessel|port|container/.test(name)) return 'sail';
-  if (/land|arriv/.test(name)) return 'land';
-  if (/ready|check|qc|inspect/.test(name)) return 'check';
-  if (/warehouse|\bwh\b|receiv|forward|supplier/.test(name)) return 'warehouse';
-  return 'spark';
-}
-
-/**
- * What a step looks like happening, drawn behind its card: a plane crossing,
- * a ship on the swell, a parcel being boxed, a truck on the road. Purely
- * decoration - it reads off the step's words, says nothing a reader needs,
- * and stands still for anyone who asks for less motion.
- */
-function Scene({ step, index }: { step: Pick<RouteStep, 'name' | 'trigger' | 'custom' | 'stageIcon' | 'locked'>; index: number }) {
-  const scene = sceneOf(step, index);
-  return (
-    <span className={`rsscene rsscene--${scene}`} aria-hidden="true">
-      <span className="rsscene__lines" />
-      <span className="rsscene__art">{stepEmoji(step, index)}</span>
-    </span>
-  );
-}
 
 /**
  * Where one part of the journey begins: before the lot, in it, after it -
@@ -711,8 +753,7 @@ function ZoneLine({ zone, at, min = 0, atEnd, onMove, onAdd }: {
   return (
     <div className={`rszone rszone--${zone}`}>
       <span className="rszone__text">
-        <b>{text.title}</b>
-        <span>{text.note}</span>
+        <b>{text.title} <InfoTip label={`About ${text.short}`}>{text.note}.</InfoTip></b>
       </span>
       <span className="rsjoin__acts">
         {at !== undefined && onMove && (
@@ -753,7 +794,7 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
   onClose: () => void;
 }) {
   const vars = useContext(PreviewVarsContext);
-  const choices = stepChoices(steps, at, zone);
+  const choices = stepChoices(steps, at, zone, stepKinds());
   const group = (title: string, rows: typeof choices) => rows.length > 0 && (
     <div className="rspick__group">
       <span className="rspick__title">{title}</span>
@@ -762,10 +803,11 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
           onClick={() => onPick(kind)}>
           <span className="rspick__icon" aria-hidden="true">{open ? kind.icon : '🔒'}</span>
           <span className="rspick__body">
-            <b>{kind.custom ? 'A step with your own button' : kind.trigger ? renderStepText(kind.name, vars) : 'A plain step'}</b>
+            <b>{kind.library || kind.trigger ? renderStepText(kind.name, vars) : kind.custom ? 'A step with your own button' : 'A plain step'}</b>
             <span>{open
-              ? kind.custom ? 'You name it and its button - pressed per item.'
-                : kind.trigger ? `⚡ Comes with its button - ${BUTTON_NOTE[kind.trigger].toLowerCase()}`
+              ? kind.library ? `⚡ ${kind.button || renderStepText(kind.name, vars)}${kind.assignee ? ` - you and the ${kind.assignee} press it` : ''}`
+                : kind.custom ? 'You name it and its button - pressed per item.'
+                : kind.trigger ? '⚡ Comes with its button - you use it to move the item here.'
                   : zone === 'lot' ? 'Moves when you move the lot.' : 'No button - ticked off with the next one.'
               : renderStepText(why ?? '', vars)}</span>
           </span>
@@ -780,7 +822,8 @@ function StepPicker({ at, zone, steps, onPick, onClose }: {
           <b>{ZONE_TEXT[zone].title}</b> · {ZONE_TEXT[zone].note}
         </p>
         {group('Steps with a button', choices.filter((choice) => choice.kind.trigger))}
-        {group('Your own', choices.filter((choice) => !choice.kind.trigger))}
+        {group('More buttons', choices.filter((choice) => choice.kind.library))}
+        {group('Your own', choices.filter((choice) => !choice.kind.trigger && !choice.kind.library))}
       </div>
     </Modal>
   );
@@ -805,6 +848,7 @@ function GapRow({ afterStep, onChangeWait, onInsert }: {
 
   return (
     <div className="rsgap">
+      <span className="rsgap__arrow" aria-hidden="true">↓</span>
       {afterStep && onChangeWait && (
         editing ? (
           <WaitMessageEditor step={afterStep} onChange={onChangeWait} onDone={() => setEditing(false)} />
@@ -855,13 +899,13 @@ function WaitMessageEditor({ step, onChange, onDone }: {
         <option value="Custom">Custom…</option>
       </select>
       {customMode && (
-        <input value={step.waitMessage ?? ''} placeholder="e.g. Leaving {origin}" autoFocus
+        <input value={step.waitMessage ?? ''} placeholder="e.g. Leaving {origin}"
           aria-label="Custom wait message"
           onChange={(event) => onChange({ waitMessage: event.target.value })} />
       )}
       <span className="field__hint">
         Shown with the moving wave above, between this step and the next. {'{origin}'} and{' '}
-        {'{destination}'} fill in from the lot, same as in a step's name.
+        {'{dest}'} fill in from the lot, same as in a step's name.
       </span>
       <button type="button" className="btn btn--sm" onClick={onDone}>Done</button>
     </div>
@@ -890,7 +934,6 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
   onMove: (to: number) => void;
 }) {
   const vars = useContext(PreviewVarsContext);
-  const [open, setOpen] = useState(false);
 
   /* Always first, never renamed, moved or removed - "Order Placed" reads as
      a fact about every route, and it is the one place a real order's payment
@@ -898,22 +941,18 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
   if (index === 0 && step.locked) {
     return (
       <div className="rsnode rsnode--pre">
-        <span className="rsnode__dot rsnode__dot--locked" aria-hidden="true">🧾</span>
         <div className="rsnode__card rsnode__card--locked">
-          <Scene step={step} index={index} />
+          <span className="rsnode__no is-fixed">Step 1 · always first</span>
           <div className="rsnode__top">
-            <span className="rsnode__no">Step 1 · always first</span>
-          </div>
-          <div className="rsnode__top">
+            <span className="rsnode__icon" aria-hidden="true">🧾</span>
             <span className="rsnode__name rsnode__name--static">{step.name}</span>
+            <InfoTip label="About Order Placed">
+              Always first, and never renamed or moved. It shows the order&apos;s payment status here
+              automatically — paid, awaiting payment, or refunded — same as on the order itself.
+            </InfoTip>
             <Icon name="lock" size={13} />
           </div>
           {step.description && <span className="rsnode__desc rsnode__desc--static">{step.description}</span>}
-          <span className="rsnode__paymenthint">
-            <Icon name="bank" size={12} />
-            Shows the order's payment status here automatically — paid, awaiting payment, or refunded —
-            same as it does on the order itself.
-          </span>
         </div>
       </div>
     );
@@ -927,25 +966,32 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
 
   return (
     <div className={`rsnode rsnode--${zone}`} data-step={step.id}>
-      <span className="rsnode__dot" aria-hidden="true">{stepEmoji(step, index)}</span>
       <div className={`rsnode__card${isDelivered ? ' rsnode__card--delivered' : ''}`}>
-        <Scene step={step} index={index} />
-        <span className="rsnode__no">Step {index + 1}{fixed ? (isDelivered ? ' · always last' : ' · always before Delivered') : ''}</span>
+        <span className={`rsnode__no${fixed ? ' is-fixed' : ''}`}>Step {index + 1}{fixed ? (isDelivered ? ' · always last' : ' · always before Delivered') : ''}</span>
         <div className="rsnode__top">
+          <span className="rsnode__icon" aria-hidden="true">{stepEmoji(step, index)}</span>
           <input className="rsnode__name" value={step.name} placeholder="What happens here"
             aria-label={`Step ${index + 1} name`} disabled={isDelivered}
             onChange={(event) => onChange({ name: event.target.value })} />
           {fixed && <Icon name="lock" size={13} />}
           {!fixed && (
-            <button type="button" className="iconbtn" aria-label={open ? 'Collapse node' : 'Expand node'}
-              onClick={() => setOpen((value) => !value)}>
-              <Icon name="chevron" size={13} />
-            </button>
+            <MoreMenu label={`More for step ${index + 1}`} items={[
+              { label: 'Move up', disabled: index === 0 || lockedAbove, onClick: () => onMove(index - 1) },
+              { label: 'Move down', disabled: index === count - 1 || lockedBelow, onClick: () => onMove(index + 1) },
+              zone === 'lot' && {
+                label: step.forward ? 'No courier hand-over here' : 'Hand-over to a courier here',
+                onClick: () => onChange({ forward: !step.forward }),
+              },
+              step.custom && { label: 'Take its button off', onClick: () => onChange({ custom: undefined, button: undefined, assignee: undefined }) },
+              { label: 'Delete step', danger: true, onClick: onRemove },
+            ]} />
           )}
         </div>
 
+        <PlaceTags onAdd={(tag) => onChange({ name: `${step.name.trimEnd()} ${tag}`.trim() })} what="name" />
+
         <input className="rsnode__desc" value={step.description}
-          placeholder="Say what happens here, in one line — {origin} and {destination} work too"
+          placeholder="Say what happens here, in one line — {origin} and {dest} work too"
           aria-label={`Step ${index + 1} description`}
           onChange={(event) => onChange({ description: event.target.value })} />
 
@@ -958,8 +1004,10 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
               placeholder="Your words (optional)"
               aria-label={`Words on the button for step ${index + 1}`}
               onChange={(event) => onChange({ button: event.target.value })} />
+            <PlaceTags what="button"
+              onAdd={(tag) => onChange({ button: `${(step.button || step.name).trimEnd()} ${tag}`.trim() })} />
             <span className="rsbtn__note">
-              {step.trigger ? BUTTON_NOTE[step.trigger] : 'Your own button - pressed for each item, and it moves the timeline here.'}
+              {pressNote(step)}
             </span>
             {step.trigger === 'dispatched' && (
               <span className="rsbtn__ship">
@@ -967,42 +1015,17 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
                 <input disabled placeholder="AWB - e.g. 1234567890" aria-label="Example AWB" />
               </span>
             )}
-            {step.trigger !== 'delivered' && (
-              <span className="rsbtn__who" role="group" aria-label="Who else can press it">
-                <span className="rsbtn__who-label">Who presses it</span>
-                {WHO.map((who) => (
-                  <button key={who.id} type="button" aria-pressed={(step.assignee ?? 'seller') === who.id}
-                    className={`rsbtn__whochip${(step.assignee ?? 'seller') === who.id ? ' is-on' : ''}`}
-                    onClick={() => onChange({ assignee: who.id === 'seller' ? undefined : who.id })}>
-                    {who.label}
-                  </button>
-                ))}
-              </span>
-            )}
-            {step.custom && (
-              <button type="button" className="stepact__skip" onClick={() => onChange({ custom: undefined, button: undefined, assignee: undefined })}>
-                Take this button off
-              </button>
-            )}
+            {step.trigger !== 'delivered' && <WhoPresses step={step} zone={zone} onChange={onChange} />}
             {problems.map((text) => <span key={text} className="rsbtn__wrong">{text}</span>)}
           </div>
         ) : step.name.trim() && (
           <span className="rsbtn__none">
-            {zone === 'lot' ? '🚢 The lot moves this step - items in a lot move together' : '↪ No button - ticked off with the next one'}
+            <span className={`rsbtn__nonetext${zone === 'lot' ? ' rsbtn__nonetext--lot' : ''}`}>
+              {zone === 'lot' ? '🚢 No buttons - moved from the lot\'s tracking' : '↪ No button - ticked off with the next one'}
+            </span>
             {/* Moving the crate is the forwarder's job, so a lot step can be
-                theirs to press - every buyer in the lot is told when it is. */}
-            {zone === 'lot' && !fixed && (
-              <span className="rsbtn__who" role="group" aria-label="Who moves the lot here">
-                <span className="rsbtn__who-label">Who moves it</span>
-                {LOT_WHO.map((who) => (
-                  <button key={who.id} type="button" aria-pressed={(step.assignee ?? 'seller') === who.id}
-                    className={`rsbtn__whochip${(step.assignee ?? 'seller') === who.id ? ' is-on' : ''}`}
-                    onClick={() => onChange({ assignee: who.id === 'seller' ? undefined : 'forwarder' })}>
-                    {who.label}
-                  </button>
-                ))}
-              </span>
-            )}
+                theirs to press too - every buyer in the lot is told when it is. */}
+            {zone === 'lot' && !fixed && <WhoPresses step={step} zone={zone} onChange={onChange} />}
             {zone !== 'lot' && !fixed && (
               <button type="button" className="rsbtn__add" onClick={() => onChange({ custom: true })}>
                 ✨ Give it its own button
@@ -1011,62 +1034,81 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
           </span>
         )}
 
-        {open && !fixed && (
-          <div className="rsnode__more">
-            {zone === 'lot' && (
-              <label className="row" style={{ fontSize: 'var(--t-sm)' }}>
-                <input type="checkbox" checked={Boolean(step.forward)}
-                  onChange={(event) => onChange({ forward: event.target.checked })} />
-                <span>Hand-over to a courier — ask for a tracking ID and courier name when the lot moves here</span>
-              </label>
-            )}
-
-            {zone === 'lot' && step.forward && (
-              <div className="rsnode__forward">
-                <span className="field__hint">
-                  Asked for when the lot reaches this step. Both optional - if you leave them blank, buyers see nothing extra, not empty fields.
-                </span>
-                <input disabled placeholder="Tracking ID / AWB — e.g. DHL1234567890" aria-label="Example tracking ID or AWB" />
-                <input disabled placeholder="Courier — e.g. DHL" aria-label="Example courier name" />
-              </div>
-            )}
-
-            <div className="rsnode__acts">
-              <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} up`}
-                disabled={index === 0 || lockedAbove} onClick={() => onMove(index - 1)}><Icon name="up" size={12} /></button>
-              <button type="button" className="iconbtn" aria-label={`Move step ${index + 1} down`}
-                disabled={index === count - 1 || lockedBelow} onClick={() => onMove(index + 1)}><Icon name="down" size={12} /></button>
-              <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete step ${index + 1}`}
-                onClick={onRemove}><Icon name="trash" size={12} /></button>
-            </div>
-          </div>
+        {zone === 'lot' && step.forward && !fixed && (
+          <span className="rsnode__handover">
+            📦 Courier hand-over: the tracking ID and courier are asked for when the lot moves here (both optional).
+          </span>
         )}
       </div>
     </div>
   );
 }
 
-/** Who can press a button: the seller always, and one crew member besides if handed it. */
-const WHO: { id: 'seller' | StepAssignee; label: string }[] = [
-  { id: 'seller', label: '🧑‍💼 Only you' },
-  { id: 'supplier', label: '🏭 + Supplier' },
-  { id: 'forwarder', label: '✈️ + Forwarder' },
-  { id: 'handler', label: '🧑‍🔧 + Handler' },
-];
+/**
+ * Who presses a step: you always, and the crew member that part of the
+ * journey belongs to - the supplier before the lot, the forwarder in it, the
+ * handler after. Both can be on at once; one handed out elsewhere before
+ * still shows, so it can be taken off.
+ */
+function WhoPresses({ step, zone, onChange }: {
+  step: RouteStep;
+  zone: StepZone;
+  onChange: (patch: Partial<RouteStep>) => void;
+}) {
+  const crew = ZONE_CREW[zone];
+  const shown = step.assignee && step.assignee !== crew.id ? [crew, CREW[step.assignee]] : [crew];
+  return (
+    <span className="rsbtn__who" role="group" aria-label="Who presses it">
+      <span className="rsbtn__whochip is-on is-fixed" title="You can always press it">🧑‍💼 You</span>
+      {shown.map((who) => {
+        const on = step.assignee === who.id;
+        return (
+          <button key={who.id} type="button" aria-pressed={on} className={`rsbtn__whochip${on ? ' is-on' : ''}`}
+            onClick={() => onChange({ assignee: on ? undefined : who.id })}>
+            {on ? '✓ ' : '+ '}{who.label}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
 
-/** Who may move the whole lot onto a step inside it. */
-const LOT_WHO: { id: 'seller' | 'forwarder'; label: string }[] = [
-  { id: 'seller', label: '🧑‍💼 Only you' },
-  { id: 'forwarder', label: '✈️ + Forwarder' },
-];
-
-/** What pressing each button does, said under it in the Studio. */
-const BUTTON_NOTE: Record<StepTrigger, string> = {
-  china_received: 'You press it when the item arrives overseas.',
-  china_packed: 'You press it once it is packed for the lot.',
-  india_received: 'You press it when it lands with you or your warehouse.',
-  ready_to_dispatch: 'You press it once it is checked and ready.',
-  packed: 'You press it once it is boxed for the courier.',
-  dispatched: 'Always here. Pressing it asks for the courier and AWB (both optional), and tells the buyer it is on the way.',
-  delivered: 'Always last. Pressing it asks first, then tells the buyer it has arrived.',
+/** The crew who can press a step besides the seller. */
+const CREW: Record<StepAssignee, { id: StepAssignee; label: string }> = {
+  supplier: { id: 'supplier', label: '🏭 Supplier' },
+  forwarder: { id: 'forwarder', label: '✈️ Forwarder' },
+  handler: { id: 'handler', label: '🧑‍🔧 Handler' },
 };
+
+/** Whose part of the journey each zone is. */
+const ZONE_CREW: Record<StepZone, { id: StepAssignee; label: string }> = {
+  pre: CREW.supplier,
+  lot: CREW.forwarder,
+  post: CREW.handler,
+};
+
+/**
+ * The two place tags, a tap away while a step is being written: each turns
+ * into the lot's own country - "Received at {origin} WH" reads "Received at
+ * 🇨🇳 WH" on a China lot. Shown only on the card being edited.
+ */
+function PlaceTags({ what, onAdd }: { what: 'name' | 'button'; onAdd: (tag: string) => void }) {
+  return (
+    <span className="rstags" role="group" aria-label={`Add a place to the ${what}`}>
+      {/* Pressing one keeps the field being typed in focused, so the tags stay put. */}
+      <button type="button" className="rstags__tag" onPointerDown={(event) => event.preventDefault()}
+        onClick={() => onAdd('{origin}')}>+ {'{origin}'}</button>
+      <button type="button" className="rstags__tag" onPointerDown={(event) => event.preventDefault()}
+        onClick={() => onAdd('{dest}')}>+ {'{dest}'}</button>
+      <span className="rstags__hint">fills in the lot&apos;s country</span>
+    </span>
+  );
+}
+
+/** Under a button: who uses it to move the item, and anything it asks for on the way. */
+function pressNote(step: RouteStep): string {
+  const who = step.assignee ? `you and the ${step.assignee}` : 'you';
+  if (step.trigger === 'delivered') return 'The button above is used by you to mark the item delivered. It asks first, then tells the buyer.';
+  const said = `The button above is used by ${who} to move the item here.`;
+  return step.trigger === 'dispatched' ? `${said} It asks for the courier and AWB (both optional).` : said;
+}

@@ -22,6 +22,9 @@ import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
 import { ConditionTag } from '../components/ConditionTag';
+import { Loading } from '../components/Feedback';
+import { Preloader } from '../components/Preloader';
+import '../styles/ServicesPage.css';
 
 /**
  * The trades around the trade.
@@ -78,7 +81,7 @@ function MyServicesButton({ mine, signedIn }: { mine: MyServicesView | null; sig
   const line = !signedIn
     ? 'Sign in to see the work you do for others'
     : mine === null
-      ? 'Loading…'
+      ? <Loading size="sm" />
       : !enrolled(mine)
         ? 'You’re not enrolled in any services'
         : waiting > 0
@@ -183,7 +186,7 @@ function ServiceTile({ kind, mine }: { kind: StoreKind; mine: MyServicesView | n
           {others > 0 && <span className="svx__face svx__face--more">+{others}</span>}
         </span>
         <span className="svx__count">
-          {providers === null ? 'Loading…' : providers.length === 0 ? 'Nobody yet' : `${providers.length} on Figmark`}
+          {providers === null ? <Loading size="sm" /> : providers.length === 0 ? 'Nobody yet' : `${providers.length} on Figmark`}
         </span>
         <span className="svx__go">Explore <Icon name="right" size={15} /></span>
       </div>
@@ -491,7 +494,7 @@ export function MyServicesPage() {
       {error && <ErrorNotice message={error} />}
 
       {mine === null ? (
-        !error && <p className="muted">Loading…</p>
+        !error && <Loading />
       ) : !enrolled(mine) ? (
         <EmptyState icon={<Icon name="users" size={26} />} title="You’re not enrolled in any services">
           When a shop names you on a lot — as its supplier or handler — the lot appears here. To run
@@ -623,7 +626,7 @@ export function ConsignmentsPage() {
       {error && <ErrorNotice message={error} />}
 
       {rows === null ? (
-        <p className="muted">Loading…</p>
+        <Loading />
       ) : rows.length === 0 ? (
         <EmptyState icon="✈" title="Nothing consigned yet">
           When a shop picks you on a lot it turns up here, with what it weighs.
@@ -697,7 +700,7 @@ export function DistributionPage() {
       {error && <ErrorNotice message={error} />}
 
       {rows === null ? (
-        <p className="muted">Loading…</p>
+        <Loading />
       ) : rows.length === 0 ? (
         <EmptyState icon="📦" title="Nothing to hand out yet">
           When a shop names you on a lot it lands here, with the customers to pack and send.
@@ -773,7 +776,7 @@ function DistributionDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
   }
 
   if (error) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!data) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   return (
     <main className="page">

@@ -1,0 +1,9 @@
+/*
+ * Styles only pages/TagPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+/* One tag's own page. */
+.tagpage__title { display: flex; align-items: baseline; gap: 2px; }
+.tagpage__title > span { color: var(--accent); }
+.tagpage__grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }

@@ -7,6 +7,7 @@ import {
 } from '../device';
 import { disablePush, enablePush, pushState, syncPush, type PushState } from '../push';
 import type { NotificationPrefs } from '@shared/models';
+import { pushChanged } from '../live';
 import {
   CATEGORY_LABELS, NOTIFICATION_CATEGORIES, QUIET_FROM_HOUR, QUIET_UNTIL_HOUR, type NotificationCategory,
 } from '@shared/notifications';
@@ -37,6 +38,8 @@ interface Shared {
 let shared: Shared = { state: null, busy: false, guide: false };
 const listeners = new Set<() => void>();
 const set = (next: Partial<Shared>) => {
+  // The bell's clock follows whether pushes reach this device (live.ts).
+  if (next.state !== undefined && next.state !== shared.state) pushChanged();
   shared = { ...shared, ...next };
   listeners.forEach((listener) => listener());
 };
@@ -213,6 +216,7 @@ function PhoneSettings({ on }: { on: boolean }) {
     try {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       setPrefs((await api.saveNotificationSettings({ ...next, timeZone })).prefs);
+      pushChanged();
     } catch {
       setPrefs(before);
       toast('Could not save that. Try again.', 'error');

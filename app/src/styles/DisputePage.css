@@ -1,0 +1,31 @@
+/*
+ * Styles only pages/DisputePage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.post.dmsg .post__head { flex-wrap: nowrap; align-items: center; }
+/* The two sides a manager decides between: equal cards, side by side when there is room. */
+.decide__sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.decide__sides .raise__manager { width: 100%; }
+/* A chosen action's settings sit under it, indented, so the list stays scannable. */
+.decide__sanction .field-row { margin: 6px 0 10px 10px; padding-left: 12px; border-left: 2px solid var(--accent-line); }
+/* Dispute header: what it is about as a kicker, the two sides as the title. */
+.dhead { align-items: flex-start; gap: 12px; }
+.dhead__kicker { display: block; font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); }
+.dhead__title { margin: 2px 0 0; font-size: 20px; line-height: 1.25; overflow-wrap: anywhere; }
+.dsteps__step { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
+.dsteps__step.is-done + .dsteps__step::before { background: var(--accent); }
+.dsteps__step.is-done { color: var(--text-dim); }
+.dsteps__step.is-done .dsteps__dot { background: var(--accent); border-color: var(--accent); }
+.dsteps__step.is-on { color: var(--text); font-weight: var(--w-semi); }
+.dsteps__step.is-on .dsteps__dot { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+/* Figmark's own notes in a thread (a reassignment) read as events, not as a person speaking. */
+.dnote { margin: 2px 0; text-align: center; font-size: var(--t-xs); color: var(--text-dim); }
+.evidence__host { font-size: var(--t-sm); color: var(--accent); overflow-wrap: anywhere; }
+.drounds__item.is-decided { border-style: solid; }
+.drounds__head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.drounds__decision { margin: 4px 0 0; }
+.decide__sanctions { display: grid; gap: 10px; margin: 0; padding: 12px; border: 1px solid var(--border-strong); border-radius: var(--r-md); }
+.decide__sanctions legend { padding: 0 6px; font-weight: 600; }
+.decide__sanction { display: grid; gap: 8px; }
+.decide__check { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; cursor: pointer; }

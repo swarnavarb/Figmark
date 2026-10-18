@@ -1,0 +1,64 @@
+/*
+ * Styles only pages/OrderPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.starbtn.is-on { color: var(--warn); }
+.starbtn:hover { transform: scale(1.12); }
+.buyway:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-hover); }
+.buyway:disabled { opacity: 0.55; cursor: not-allowed; }
+.buyway__head { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); }
+.buyway[class*='buyway--']:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 16px 34px var(--bw-glow); background: var(--bw-grad); }
+.buyway[class*='buyway--']:active:not(:disabled) { transform: scale(0.98); }
+.buyway[class*='buyway--'].is-on { box-shadow: 0 0 0 3px #fff, 0 16px 34px var(--bw-glow); background: var(--bw-grad); }
+.buyway[class*='buyway--']:disabled { filter: grayscale(0.8); }
+.buyway--sea  { --bw-grad: var(--grad-sea);  --bw-glow: rgba(6, 214, 231, 0.3); }
+.buyway--cool { --bw-grad: var(--grad-cool); --bw-glow: rgba(124, 58, 237, 0.35); }
+.buyway--warm { --bw-grad: var(--grad-warm); --bw-glow: rgba(236, 72, 153, 0.35); }
+.buyway[class*='buyway--'] .buyway__title { grid-column: 2; grid-row: 1; font-size: var(--t-md); font-weight: var(--w-bold); }
+.buyway[class*='buyway--'] .buyway__price { grid-column: 3; grid-row: 1; font-size: var(--t-md); font-weight: var(--w-bold); }
+.buyway[class*='buyway--'] .buyway__note { grid-column: 2 / -1; color: rgba(255, 255, 255, 0.9); }
+.buyway[class*='buyway--'] .buyway__note a { color: #fff; text-decoration: underline; }
+.trk-photos { margin-top: 14px; }
+.os { display: grid; gap: 12px; margin: 6px 0 18px; }
+/* ==========================================================================
+   Services on an order: cover and commissions.
+   ========================================================================== */
+.os__head { display: grid; gap: 2px; }
+.os__eyebrow { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.12em; font-weight: var(--w-semi); color: var(--pink-text); }
+.os__grid { display: grid; gap: 12px; }
+@media (min-width: 860px) {
+  .os__grid { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+}
+.os-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
+.os-card--cover { background: linear-gradient(150deg, rgba(52, 211, 153, 0.08), transparent 55%), var(--surface); }
+.os-card--cover.is-on { border-color: rgba(52, 211, 153, 0.45); }
+.os-card--art { background: radial-gradient(120% 90% at 100% 0%, var(--pink-soft), transparent 55%), var(--surface); }
+.os-card--art.is-on { border-color: var(--pink-line); }
+.os-card__top { display: flex; align-items: center; gap: 12px; }
+.os-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 42px; height: 42px; border-radius: 13px; background: var(--ok-soft); color: var(--ok); }
+.os-card__icon--art { background: var(--grad-warm); color: #fff; box-shadow: 0 8px 20px rgba(236, 72, 153, 0.35); }
+.os-card__title { font-weight: var(--w-semi); font-size: var(--t-md); }
+.os-card__badge { flex: 0 0 auto; }
+.os-card__lede { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.55; }
+.os-card__acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.os-plans { display: grid; gap: 8px; }
+.os-cover { display: grid; gap: 4px; padding: 12px; border-radius: var(--r-md); background: var(--ok-soft); }
+.os-cover__figs { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--t-sm); color: var(--text-dim); }
+.os-artists { display: flex; flex-wrap: wrap; gap: 6px; }
+.os-artist-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--t-xs); }
+.os-strip { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; align-items: center; }
+.os-strip__pic { flex: 0 0 76px; width: 76px; }
+.os-flow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.os-quote { display: grid; gap: 2px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); }
+.os-quote__price { font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold); letter-spacing: -0.03em; }
+.os-ship { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-sm); color: var(--ok); }
+.os-studio { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--pink-line); background: var(--pink-soft); font-size: var(--t-sm); }
+.os-pay { display: grid; gap: 10px; padding: 14px; border-radius: var(--r-lg); background: var(--surface-2); }
+.os-payto { display: grid; gap: 4px; padding: 12px; border-radius: var(--r-md); border: 1px dashed var(--border-strong); font-size: var(--t-sm); }
+.os-total { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--t-sm); color: var(--text-dim); }
+.os-log ol { margin-top: 8px; }
+.payqr { display: grid; justify-items: center; gap: 6px; margin: 4px 0; }
+.payqr__img { width: min(220px, 70vw); aspect-ratio: 1; object-fit: contain; padding: 8px; border-radius: var(--r-md); background: #fff; }
+.notice__tag { margin-left: 8px; vertical-align: middle; }
+.trk-photos__title { display: flex; align-items: center; gap: 8px; margin: 0; }

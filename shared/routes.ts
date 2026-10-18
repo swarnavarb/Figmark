@@ -1,5 +1,7 @@
 import { LOT_STAGES, LOT_STAGE_LABELS, ORDER_CHECKPOINTS, type LotStage, type OrderCheckpoint } from './enums.js';
 import type { BaseDocument, Lot } from './models.js';
+import { COUNTRIES, countryFlag } from './countries.js';
+import { renderButtonText } from './route-words.js';
 
 /**
  * A route is the list of steps a lot travels through.
@@ -70,9 +72,9 @@ export type StageIcon = (typeof STAGE_ICONS)[number];
 
 /** What each trigger button says, and what pressing it means. */
 export const TRIGGER_LABELS: Record<StepTrigger, { button: string; means: string }> = {
-  china_received: { button: 'China WH', means: 'the piece arrived at the overseas warehouse' },
-  china_packed: { button: 'Packed CH', means: 'it was boxed up before the lot left' },
-  india_received: { button: 'India WH', means: 'it landed and you have it' },
+  china_received: { button: '{origin} warehouse', means: 'the piece arrived at the overseas warehouse' },
+  china_packed: { button: 'Packed at {origin}', means: 'it was boxed up before the lot left' },
+  india_received: { button: '{dest} warehouse', means: 'it landed and you have it' },
   ready_to_dispatch: { button: 'Ready', means: 'it is checked and ready to go out' },
   packed: { button: 'Packed', means: 'it is boxed for the domestic courier' },
   dispatched: { button: 'Dispatched', means: 'it is on its way to the buyer' },
@@ -216,13 +218,13 @@ export function stepButtonLabel(
 ): string {
   const own = step.button?.trim();
   // Routes saved before the button was renamed still say it the long way.
-  if (own) return own === 'Packed for the buyer' ? 'Packed' : own;
+  if (own) return own === 'Packed for the buyer' ? 'Packed' : renderButtonText(own, vars);
   if (!step.trigger && !step.custom) return '';
   const name = (step.name ?? '').trim();
-  if (!name) return step.trigger ? TRIGGER_LABELS[step.trigger].button : 'Done';
-  const said = vars
-    ? renderStepText(name, vars)
-    : name.replace(/'?\{(origin|destination)\}'?/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!name) return step.trigger ? renderButtonText(TRIGGER_LABELS[step.trigger].button, vars) : 'Done';
+  /* On a button the country is its flag and long words take their short
+     forms; with no lot to say which country, the word "origin" stands in. */
+  const said = renderButtonText(name, vars);
   return said.length > 44 ? `${said.slice(0, 43).replace(/\s+\S*$/, '')}…` : said;
 }
 
@@ -246,7 +248,7 @@ export const DEFAULT_WAIT_MESSAGES: Partial<Record<StepTrigger, string>> = {
  * The wait messages a seller reaches for most often, offered as a picker the
  * same way `TRACKING_STATUS_OPTIONS` offers step names - one tap to say a
  * common wait rather than typing it slightly differently on every route.
- * `{origin}`/`{destination}` work here exactly as they do in a step's own
+ * `{origin}`/`{dest}` work here exactly as they do in a step's own
  * name or description. `'Custom'` is the sentinel that opens free text.
  */
 export const WAIT_MESSAGE_PRESETS = [
@@ -255,7 +257,7 @@ export const WAIT_MESSAGE_PRESETS = [
   'Being consolidated at the forwarder',
   'Awaiting customs clearance',
   'Leaving {origin}',
-  'Arriving in {destination}',
+  'Arriving in {dest}',
 ] as const;
 
 /**
@@ -277,7 +279,7 @@ export function waitMessageFor(step: RouteStep | undefined): string | null {
 }
 
 /**
- * A step's name or description, with `{origin}`/`{destination}` filled in
+ * A step's name or description, with `{origin}`/`{dest}` filled in
  * from the lot travelling it.
  *
  * Route text is written once and reused by every lot on that route, so a
@@ -288,12 +290,45 @@ export function waitMessageFor(step: RouteStep | undefined): string | null {
  */
 export function renderStepText(text: string, vars: { origin?: string | null; destination?: string | null }): string {
   /* Quotes around a token are dropped with it: routes written before this
-     said "Received at '{destination}' Warehouse", and a buyer should never
+     said "Received at '{dest}' Warehouse", and a buyer should never
      read the punctuation that held a placeholder. A lot with no country set
      reads as plain words rather than as the token's name in quotes. */
+  /* A known country is said with its flag in front: "Received at 🇮🇳 India warehouse". */
+  const place = (country: string | null | undefined, word: string) => {
+    const name = country?.trim();
+    if (!name) return word;
+    return COUNTRIES.includes(name) ? `${countryFlag(name)} ${name}` : name;
+  };
+  const out = text
+    .replace(/'?\{origin\}'?/g, place(vars.origin, 'the origin'))
+    .replace(/'?\{dest(?:ination|\.)?\}'?/g, place(vars.destination, 'the destination'));
+  // A step that opens on a place with no country set still opens on a capital.
+  return /^'?\{/.test(text) ? out.charAt(0).toUpperCase() + out.slice(1) : out;
+}
+
+/**
+ * The words "origin" and "destination" written out in a step, turned into
+ * the `{origin}`/`{dest}` tags, so they read as the lot's own countries:
+ * "Dispatched from the origin" becomes "Dispatched from {origin}". A tag
+ * already there is left alone; with no country set the tag reads as the
+ * plain word again, so nothing is lost.
+ */
+export function tagPlaces(text: string): string {
   return text
-    .replace(/'?\{origin\}'?/g, vars.origin?.trim() || 'the origin')
-    .replace(/'?\{destination\}'?/g, vars.destination?.trim() || 'the destination');
+    .replace(/(?<![{\p{L}])(?:\bthe\s+)?\borigin\b(?!\})/giu, '{origin}')
+    .replace(/(?<![{\p{L}])(?:\bthe\s+)?\bdestination\b(?!\})/giu, '{dest}')
+    .replace(/\{destination\}/g, '{dest}');
+}
+
+/** Every word a step shows, with its places tagged - see `tagPlaces`. */
+export function tagStepPlaces<T extends Partial<Pick<RouteStep, 'name' | 'description' | 'button' | 'waitMessage'>>>(step: T): T {
+  return {
+    ...step,
+    ...(typeof step.name === 'string' ? { name: tagPlaces(step.name) } : {}),
+    ...(typeof step.description === 'string' ? { description: tagPlaces(step.description) } : {}),
+    ...(typeof step.button === 'string' ? { button: tagPlaces(step.button) } : {}),
+    ...(typeof step.waitMessage === 'string' ? { waitMessage: tagPlaces(step.waitMessage) } : {}),
+  };
 }
 
 /**
@@ -613,7 +648,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
       { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival. Usually handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received at the destination.', side: 'post', trigger: 'india_received' },
+      { name: 'Landed', description: 'The lot has been received in {dest}.', side: 'post', trigger: 'india_received' },
       { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
@@ -642,9 +677,9 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The supplier has sent the piece to the freight forwarder.', side: 'pre' },
       { name: 'At the forwarder', description: 'Received and being consolidated into a lot.', side: 'post', trigger: 'china_received' },
-      { name: 'Dispatched', description: 'The lot has left for the destination.', side: 'post' },
+      { name: 'Dispatched', description: 'The lot has left for {dest}.', side: 'post' },
       { name: 'Customs', description: 'Clearing customs on arrival. Handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received at the destination.', side: 'post', trigger: 'india_received' },
+      { name: 'Landed', description: 'The lot has been received in {dest}.', side: 'post', trigger: 'india_received' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -656,7 +691,7 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The piece has been handed to the courier.', side: 'pre' },
       { name: 'Tracking issued', description: 'The courier has given the parcel a tracking number.', side: 'pre' },
-      { name: 'In transit', description: 'On its way to India.', side: 'pre' },
+      { name: 'In transit', description: 'On its way to {dest}.', side: 'pre' },
       { name: 'Customs', description: 'Clearing customs. The courier handles this.', side: 'pre' },
       { name: 'Out for delivery', description: 'With the local courier for the last leg.', side: 'pre', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'pre' },
@@ -703,7 +738,7 @@ export const SUGGESTED_STEPS: readonly PresetStep[] = [
     stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier',
   },
   {
-    name: 'Dispatched from origin', description: 'The lot has left the warehouse.', side: 'post',
+    name: 'Dispatched from {origin}', description: 'The lot has left the warehouse.', side: 'post',
     stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse',
   },
   {
@@ -711,7 +746,7 @@ export const SUGGESTED_STEPS: readonly PresetStep[] = [
     stageId: 'transit', stageName: 'International Transit', stageIcon: 'transit',
   },
   {
-    name: 'Destination customs', description: 'Clearing customs on arrival.', side: 'post',
+    name: '{dest} customs', description: 'Clearing customs on arrival.', side: 'post',
     stageId: 'domestic', stageName: 'Domestic', stageIcon: 'customs',
   },
   {
@@ -756,8 +791,8 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
       { name: 'Supplier Accumulates Orders', description: "Held at the supplier's until enough orders are ready to ship together.", side: 'pre', trigger: 'china_received', stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
       { name: 'Dispatched to Freight Forwarder', description: "Handed over from the supplier to the freight forwarder.", side: 'post', forward: true, stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
       { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Freight Forwarder Forwards to Destination', description: 'On its way to {destination}.', side: 'post', forward: true, assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Received at {destination} warehouse', description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Freight Forwarder Forwards to {dest}', description: 'On its way to {dest}.', side: 'post', forward: true, assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Received at {dest} warehouse', description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
     ],
@@ -772,8 +807,8 @@ export const ROUTE_TEMPLATES: readonly RouteTemplate[] = [
       { name: 'Seller Purchases & Ships to Freight Forwarder', description: 'Bought from the supplier and sent straight on, with no stop at the seller.', side: 'pre', forward: true, stageId: 'supplier', stageName: 'Supplier', stageIcon: 'supplier' },
       { name: 'Freight Forwarder Receives Goods', description: 'Counted in at the freight forwarder.', side: 'post', trigger: 'china_received', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
       { name: 'Freight Forwarder Consolidates', description: 'Combined with other shipments travelling the same lane.', side: 'post', assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Freight Forwarder Forwards to Destination', description: 'On its way to {destination}.', side: 'post', forward: true, assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
-      { name: 'Received at {destination} warehouse', description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
+      { name: 'Freight Forwarder Forwards to {dest}', description: 'On its way to {dest}.', side: 'post', forward: true, assignee: 'forwarder', stageId: 'forwarder', stageName: 'Freight Forwarder', stageIcon: 'warehouse' },
+      { name: 'Received at {dest} warehouse', description: 'Landed and with the shop.', side: 'post', trigger: 'india_received', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Domestic Dispatch', description: 'Handed to the courier for the last leg.', side: 'post', trigger: 'dispatched', stageId: 'destination', stageName: 'Destination', stageIcon: 'customs' },
       { name: 'Delivered', description: 'It reached you.', side: 'post', stageId: 'delivery', stageName: 'Final Delivery', stageIcon: 'delivery' },
     ],
@@ -801,7 +836,7 @@ export const TRACKING_STATUS_OPTIONS = [
   'Consolidating',
   'Shipment booked',
   'In transit',
-  'Arrived at destination',
+  'Arrived at {dest}',
   'Customs clearance',
   'Customs cleared',
   'Received by domestic handler',
@@ -1072,5 +1107,8 @@ const SHORT_BUTTON: Record<string, string> = {
   ready_to_dispatch: 'Checked', packed: 'Packed', dispatched: 'Dispatched', delivered: 'Delivered',
 };
 export function shortButtonLabel(key: string, label: string): string {
+  /* A label already short - a flag and the short forms make most of them
+     so ("Received at 🇮🇳 WH") - is kept; the stock short word otherwise. */
+  if (label && label.length <= 22) return label;
   return SHORT_BUTTON[key] ?? label;
 }

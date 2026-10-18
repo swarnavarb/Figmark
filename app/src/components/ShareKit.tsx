@@ -142,6 +142,11 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
   const [posting, setPosting] = useState(false);
   const urls = useRef<string[]>([]);
   const files = useMemo(canShareFiles, []);
+  /* Android's WhatsApp takes a shared picture as a photo with a caption: no
+     link card, and the photo itself goes nowhere when tapped. The link alone
+     unfolds into the drawn preview, which does open the item - so there it
+     leads. */
+  const android = useMemo(() => typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent), []);
 
   // Redrawn only when what it shows changes - not when a share refreshes the quest view.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,14 +251,21 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
         <p className="shs__caption">{spec.caption}{link && <><br /><span className="shs__link">{link.replace(/^https?:\/\//, '')}</span></>}</p>
 
         <div className="shs__acts">
+          {android && (
+            <button type="button" className="shs__act shs__act--wa" disabled={!link} onClick={whatsapp}>
+              <WhatsAppMark /> WhatsApp
+            </button>
+          )}
           {files && (
-            <button type="button" className="shs__act shs__act--go" disabled={!picture || !link} onClick={() => void sharePicture()}>
+            <button type="button" className={`shs__act${android ? '' : ' shs__act--go'}`} disabled={!picture || !link} onClick={() => void sharePicture()}>
               Share picture + link
             </button>
           )}
-          <button type="button" className="shs__act shs__act--wa" disabled={!link} onClick={whatsapp}>
-            <WhatsAppMark /> {files ? 'WhatsApp link' : 'WhatsApp'}
-          </button>
+          {!android && (
+            <button type="button" className="shs__act shs__act--wa" disabled={!link} onClick={whatsapp}>
+              <WhatsAppMark /> {files ? 'WhatsApp link' : 'WhatsApp'}
+            </button>
+          )}
           <button type="button" className="shs__act" disabled={!picture} onClick={save}>Save picture</button>
           <button type="button" className="shs__act" disabled={!link} onClick={() => void copy()}>
             {copied ? '✓ Copied' : 'Copy link'}

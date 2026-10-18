@@ -3,6 +3,8 @@ import type { TradeRight } from '@shared/models';
 import { ApiRequestError, admin, type AdminUserDetail, type AdminUserRow, type EmailProviderUsage } from './api';
 import { Confirm } from './Confirm';
 import { formatDate, formatMoney } from '../format';
+import { Loading } from '../components/Feedback';
+import { Spinner } from '../components/Spinner';
 
 /**
  * Everyone, and what they have made.
@@ -65,7 +67,7 @@ export function UsersView() {
       </div>
     );
   }
-  if (!rows) return <p className="muted">Loading…</p>;
+  if (!rows) return <Loading />;
 
   if (openId) {
     return (
@@ -125,7 +127,7 @@ export function UsersView() {
       </div>
       {next && (
         <button className="btn btn--ghost" style={{ justifySelf: 'start' }} disabled={more} onClick={() => void loadMore()}>
-          {more ? 'Loading…' : 'Show more'}
+          {more ? <><Spinner size={14} label="Loading" /> Show more</> : 'Show more'}
         </button>
       )}
     </div>
@@ -175,7 +177,7 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
   }
 
   if (error && !data) return <p className="notice notice--error">{error}</p>;
-  if (!data) return <p className="muted">Loading…</p>;
+  if (!data) return <Loading />;
 
   const { user } = data;
   const deletable = data.blockers.length === 0;

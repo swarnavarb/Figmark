@@ -11,6 +11,8 @@ import { buyerStatus, ShipmentChip } from '../components/OrderStatus';
 import { ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatDate } from '../format';
 import { PayMore } from './PurchasesPage';
+import { Loading } from '../components/Feedback';
+import '../styles/BuyerLotPage.css';
 
 /**
  * One lot, from inside: everything a buyer in it could want to know, and
@@ -170,7 +172,7 @@ function InsideItem({ item, steps, vars }: {
       {open && (
         <div className="inside__track">
           {error && <ErrorNotice message={error} />}
-          {!track && !error && <p className="muted">Loading its timeline…</p>}
+          {!track && !error && <Loading label="Loading its timeline" />}
           {track?.route && (
             <Ladder steps={track.route.steps} current={track.route.currentStep}
               history={track.order.stageHistory} vars={vars} />

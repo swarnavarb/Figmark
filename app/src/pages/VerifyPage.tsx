@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { Link } from 'react-router-dom';
 import { AADHAAR_MOBILE_RULE, maskMobile, verifiedChecks } from '@shared/verification';
 import { ApiRequestError, api, type VerificationStatus } from '../api';
-import { ErrorNotice } from '../components/ui';
+import { ErrorNotice, Icon } from '../components/ui';
 import { useSession } from '../session';
+import { Preloader } from '../components/Preloader';
 
 /**
  * Verification: email, then WhatsApp, then Aadhaar.
@@ -39,7 +40,7 @@ export function VerifyPage() {
 
   if (!user) return null;
   if (error && !status) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!status) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!status) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   const { checks } = status;
   const done = checks.email && checks.phone && checks.aadhaar;
@@ -523,9 +524,20 @@ export function VerifyNudge() {
  * warning there, a gate on the Sell tab - and nobody could tell how many were
  * left. Shown on the Sell tab until all of it is done.
  */
+/** Whether the Start selling list has been folded on this device. */
+const SETUP_FOLDED_KEY = 'figmark.setup.folded';
+
 export function SetupChecklist({ hasStore, onOpenStore }: { hasStore: boolean; onOpenStore?: () => void }) {
   const { user } = useSession();
+  /* Open until the seller folds it; folded stays folded on this device. */
+  const [folded, setFolded] = useState(() => {
+    try { return window.localStorage.getItem(SETUP_FOLDED_KEY) === '1'; } catch { return false; }
+  });
   if (!user) return null;
+  const fold = (next: boolean) => {
+    setFolded(next);
+    try { window.localStorage.setItem(SETUP_FOLDED_KEY, next ? '1' : '0'); } catch { /* Lasts as long as the screen. */ }
+  };
   const checks = verifiedChecks(user);
   const rows: { id: string; label: string; done: boolean; go: ReactNode }[] = [
     { id: 'account', label: 'Create your account', done: true, go: null },
@@ -542,13 +554,16 @@ export function SetupChecklist({ hasStore, onOpenStore }: { hasStore: boolean; o
   const next = rows.find((row) => !row.done)!;
 
   return (
-    <section className="card card--pad setupcheck" aria-label="Start selling">
-      <div className="row row--between">
+    <section className={`card card--pad setupcheck${folded ? ' is-folded' : ''}`} aria-label="Start selling">
+      <button type="button" className="setupcheck__head" aria-expanded={!folded} aria-controls="setupcheck-list"
+        onClick={() => fold(!folded)}>
         <span className="card__title">Start selling</span>
-        <span className="faint">{done} of {rows.length} done</span>
-      </div>
+        <span className="faint">{folded ? `Next: ${next.label}` : `${done} of ${rows.length} done`}</span>
+        <Icon name={folded ? 'down' : 'up'} size={16} />
+      </button>
       <span className="setupcheck__bar" aria-hidden="true"><span style={{ width: `${(done / rows.length) * 100}%` }} /></span>
-      <ol className="setupcheck__list">
+      {!folded && <>
+      <ol className="setupcheck__list" id="setupcheck-list">
         {rows.map((row) => (
           <li key={row.id} className={`setupcheck__row${row.done ? ' is-done' : ''}${row === next ? ' is-next' : ''}`}>
             <span className="setupcheck__tick" aria-hidden="true">{row.done ? '✓' : ''}</span>
@@ -562,6 +577,7 @@ export function SetupChecklist({ hasStore, onOpenStore }: { hasStore: boolean; o
           You can fill in a listing before you are verified - it is kept as a draft and goes live once you are.
         </p>
       )}
+      </>}
     </section>
   );
 }

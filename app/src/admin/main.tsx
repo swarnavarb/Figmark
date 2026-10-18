@@ -13,7 +13,11 @@ import { SettingsView } from './SettingsView';
 import { StoresView } from './StoresView';
 import { DevicesView } from './DevicesView';
 import { PhotosView } from './PhotosView';
+import { RoutesView } from './RoutesView';
+import { BackButton, goOps, useOpsPath } from './nav';
+import { Loading } from '../components/Feedback';
 import '../styles.css';
+import '../styles/admin.css';
 
 /**
  * The operations console.
@@ -35,7 +39,7 @@ import '../styles.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'settings' | 'learn' | 'audit';
+type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'routes' | 'settings' | 'learn' | 'audit';
 
 const TAB_LABELS: Record<Tab, string> = {
   users: 'People and stores',
@@ -46,6 +50,7 @@ const TAB_LABELS: Record<Tab, string> = {
   reports: 'Reports',
   devices: 'Installs & devices',
   photos: 'Stored photos',
+  routes: 'Routes',
   settings: 'Settings',
   learn: 'Learn page',
   audit: 'Audit trail',
@@ -54,7 +59,9 @@ const TAB_LABELS: Record<Tab, string> = {
 function Console() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>('users');
+  const { path, depth } = useOpsPath();
+  const first = path.split('/')[0] as Tab;
+  const tab: Tab = first in TAB_LABELS ? first : 'users';
 
   const refresh = useCallback(async () => {
     try {
@@ -70,7 +77,7 @@ function Console() {
     void refresh();
   }, [refresh]);
 
-  if (loading) return <main className="ops__body"><p className="muted">Loading…</p></main>;
+  if (loading) return <main className="ops__body"><Loading /></main>;
   if (!user) return <SignIn onSignedIn={refresh} />;
 
   // Signed in, but not as an operator. Said plainly rather than shown an empty
@@ -110,13 +117,18 @@ function Console() {
       </header>
 
       <main className="ops__body ops">
-        <div className="tabs">
+        {/* Back on every tab; a screen inside one draws its own. */}
+        {!path.includes('/') && (depth > 0 || tab !== 'users') && <BackButton to="users" />}
+        {/* A screen opened inside a tab has the whole width; back returns to the tab. */}
+        {!path.includes('/') && (
+          <div className="tabs">
           {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
-            <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
+            <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => goOps(entry)}>
               {TAB_LABELS[entry]}
             </button>
           ))}
-        </div>
+          </div>
+        )}
 
         {tab === 'users' ? <UsersView />
           : tab === 'stores' ? <StoresView />
@@ -126,6 +138,7 @@ function Console() {
           : tab === 'reports' ? <ReportsView />
           : tab === 'devices' ? <DevicesView />
           : tab === 'photos' ? <PhotosView />
+          : tab === 'routes' ? <RoutesView />
           : tab === 'settings' ? <SettingsView />
           : tab === 'audit' ? <AuditView />
           : <LearnView />}

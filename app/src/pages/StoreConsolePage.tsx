@@ -18,6 +18,8 @@ import {
   type SectionProps,
 } from '../components/StoreForm';
 import { Timeline } from './StoreApplyPage';
+import { Preloader } from '../components/Preloader';
+import '../styles/StoreConsolePage.css';
 
 /**
  * A service store, from the inside.
@@ -69,7 +71,7 @@ export function StoreConsolePage() {
       </main>
     );
   }
-  if (!console) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!console) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   const store = console.store;
   const live = console.status === 'approved';

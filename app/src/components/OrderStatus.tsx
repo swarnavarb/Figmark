@@ -4,6 +4,7 @@ import type { OrderAction } from '@shared/orders';
 import { orderMoney } from '@shared/payments';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { formatMoney } from '../format';
+import '../styles/OrderStatus.css';
 
 /**
  * One line that says where an order stands, for the person reading it.

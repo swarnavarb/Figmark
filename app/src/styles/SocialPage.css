@@ -1,0 +1,41 @@
+/*
+ * Styles only pages/SocialPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.feedpage { --page-max: 680px; }
+.forumcard:hover { transform: translateY(-2px); box-shadow: inset 0 0 0 1px rgba(var(--c1), 0.55), 0 10px 26px rgba(var(--c2), 0.18); }
+.forumcard--violet { --c1: 124, 58, 237; --c2: 255, 46, 126; }
+.forumcard--volt { --c1: 164, 214, 20; --c2: 24, 224, 176; }
+.forumcard--sea { --c1: 6, 182, 212; --c2: 124, 58, 237; }
+.forumcard .forumav { background: linear-gradient(135deg, rgb(var(--c1)), rgb(var(--c2))); }
+.forumcard__stats { color: var(--text-dim); font-size: var(--t-xs); }
+.forumcard__name { font-size: var(--t-md); font-weight: 800; letter-spacing: -0.01em; }
+.forumcard__desc { color: var(--text-dim); font-size: var(--t-sm); }
+.forumcard__join.is-on { background: var(--surface-2); color: var(--text-dim); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.peopleonly .followbtn { margin-left: auto; }
+.wanthero__kicker { font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+.wanthero__title {
+  font-family: var(--display); font-size: 22px; font-weight: 800; font-style: italic;
+  letter-spacing: -0.01em; line-height: 1.1;
+}
+.wanthero__stat { font-size: var(--t-xs); font-weight: 600; opacity: 0.9; }
+.wanted__title {
+  font-family: var(--display); font-size: var(--t-md); font-weight: 800; font-style: italic; text-transform: uppercase;
+}
+.wanted__cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.wanted .wantcard:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255, 140, 40, 0.5), 0 8px 22px rgba(255, 120, 40, 0.14); }
+.wanted .want__title { font-size: var(--t-md); font-weight: 800; }
+.wanted .want__budget {
+  padding: 3px 10px; border-radius: var(--r-pill);
+  background: linear-gradient(115deg, #FF5B1F, #F59E0B); color: #fff; font-size: var(--t-xs);
+}
+.wanted .alsome .btn:not(.btn--quiet) { background: var(--sx-grad); border-color: transparent; color: #fff; }
+/* ISO: photos on a request, and who answered. */
+.want__photo { width: 56px; height: 56px; flex: 0 0 auto; border-radius: 12px; object-fit: cover; }
+.isophotos--view .isophotos__tile { width: 96px; height: 96px; }
+.isoanswer__tag {
+  padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.isoanswer__tag--shop { background: rgba(255, 91, 31, 0.16); color: #FF8A5B; }
+.isoanswer__tag--person { background: rgba(212, 255, 58, 0.14); color: #D4FF3A; }

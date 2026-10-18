@@ -4,6 +4,8 @@ import type { Message, MessageDeal } from '@shared/models';
 import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import type { SavedCalc } from '@shared/profit';
 import { ApiRequestError, api, type Inbox, type Thread } from '../api';
+import { onThreadChanged } from '../live';
+import { MESSAGES_NEWS_EVENT } from '../components/Notifications';
 import { ManagerMark } from '../components/ManagerBadge';
 import { Avatar, EmptyState, ErrorNotice, Icon, LevelChip, useConfirm } from '../components/ui';
 import { SkeletonRows } from '../components/Feedback';
@@ -14,6 +16,8 @@ import { VoicePicker, VoiceScope } from '../components/SocialVoice';
 import { RoomBar, useLongPress } from '../components/SocialChrome';
 import { useGoBack } from '../components/ScrollManager';
 import { shrink } from '../components/PhotoManager';
+import { Spinner } from '../components/Spinner';
+import '../styles/MessagesPage.css';
 
 /**
  * The inbox.
@@ -40,6 +44,10 @@ export function MessagesView() {
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your messages.'),
       );
+    // Read again when the bell hears of a new message, so it shows here too.
+    const onMessages = () => void api.inbox().then(setData).catch(() => undefined);
+    window.addEventListener(MESSAGES_NEWS_EVENT, onMessages);
+    return () => window.removeEventListener(MESSAGES_NEWS_EVENT, onMessages);
   }, []);
 
   if (error) return <ErrorNotice message={error} />;
@@ -134,7 +142,7 @@ export function MessagesView() {
                 <span className="chrow__top">
                   <span className="chrow__name">
                     {row.them.displayName}
-                    <ManagerMark handle={row.them.handle} />
+                    {!row.them.isStore && <ManagerMark handle={row.them.handle} />}
                     <LevelChip tag={row.them.level} inline />
                     {row.them.isStore && <span className="chrow__tier">SHOP</span>}
                   </span>
@@ -267,24 +275,19 @@ export function ThreadPage() {
 
   // Live while it is on screen, like a room - asking only for what arrived
   // since the newest message here, rather than the whole conversation again.
+  // When is live.ts's call: a clock, the tab coming back, a push for this chat.
   const latest = data?.messages.at(-1)?.createdAt;
   useEffect(() => {
-    if (!handle || !data) return;
-    const tick = window.setInterval(async () => {
-      if (document.visibilityState !== 'visible') return;
-      try {
-        const fresh = await api.thread(handle, as, latest ? { since: latest } : {});
-        if (fresh.messages.length === 0) return;
-        setData((current) => {
-          if (!current) return fresh;
-          const known = new Set(current.messages.map((message) => message.id));
-          return { ...current, messages: [...current.messages, ...fresh.messages.filter((message) => !known.has(message.id))] };
-        });
-      } catch {
-        // A missed refresh is caught by the next one.
-      }
-    }, 10_000);
-    return () => window.clearInterval(tick);
+    if (!handle || !data) return undefined;
+    return onThreadChanged(handle, async () => {
+      const fresh = await api.thread(handle, as, latest ? { since: latest } : {});
+      if (fresh.messages.length === 0) return;
+      setData((current) => {
+        if (!current) return fresh;
+        const known = new Set(current.messages.map((message) => message.id));
+        return { ...current, messages: [...current.messages, ...fresh.messages.filter((message) => !known.has(message.id))] };
+      });
+    });
   }, [handle, as, latest, Boolean(data)]);
 
   /** The page before the first message here, kept in place on screen. */
@@ -552,7 +555,7 @@ export function ThreadPage() {
     <div className="social dmscreen">
       <RoomBar tone="chat" onBack={back}
         avatar={<Avatar name={data.them.displayName} size={34} />}
-        title={<>{data.them.displayName}<ManagerMark handle={data.them.handle} /><LevelChip tag={data.them.level} inline />{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
+        title={<>{data.them.displayName}{!data.them.isStore && <ManagerMark handle={data.them.handle} />}<LevelChip tag={data.them.level} inline />{data.them.isStore && <span className="roombar__tier">SHOP</span>}</>}
         sub={<>@{data.them.handle} · you as @{data.us.handle}</>}
         action={(
           <span className="dmactions">
@@ -584,7 +587,7 @@ export function ThreadPage() {
         <div className="chthread">
           {data.more && (
             <button type="button" className="chmore" disabled={older} onClick={() => void loadOlder()}>
-              {older ? 'Loading…' : 'Load earlier messages'}
+              {older ? <><Spinner size={14} label="Loading" /> Load earlier messages</> : 'Load earlier messages'}
             </button>
           )}
           {data.messages.length === 0 ? (

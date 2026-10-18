@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
-import { CATEGORIES } from '../../../shared/catalog.js';
+import { CATEGORIES, listablePrice } from '../../../shared/catalog.js';
 import type { PowerSale, PowerSaleItem } from '../../../shared/models.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
@@ -148,8 +148,8 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
   const title = trimmed(entry.title, 120);
   if (!title) return { why: 'Every item needs a title.' };
 
-  const priceMinor = positive(entry.priceMinor, 0);
-  if (priceMinor <= 0) return { why: `${title} needs a members' price.` };
+  const priceMinor = listablePrice(entry.priceMinor);
+  if (priceMinor === null) return { why: `${title} needs a members' price of at least ₹1.` };
 
   // The public price is what it moves to when the window shuts. The same
   // number is fine - no discount, it just goes public - but never lower.

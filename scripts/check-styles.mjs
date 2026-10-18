@@ -13,7 +13,14 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 
-const css = readFileSync(new URL('../app/src/styles.css', import.meta.url), 'utf8');
+// The shared sheet, then every chunk's own: one stylesheet as far as class
+// names are concerned, whichever file a rule sits in.
+const splitDir = new URL('../app/src/styles/', import.meta.url);
+const splitSheets = readdirSync(splitDir).filter((name) => name.endsWith('.css')).sort();
+const css = [
+  readFileSync(new URL('../app/src/styles.css', import.meta.url), 'utf8'),
+  ...splitSheets.map((name) => readFileSync(new URL(name, splitDir), 'utf8')),
+].join('\n');
 
 let passed = 0;
 const check = (name, fn) => {
@@ -137,6 +144,24 @@ check('a class the app writes is a class the sheet defines', () => {
   }
 
   assert.deepEqual([...missing], [], 'class names with no rule behind them');
+});
+
+check('every chunk stylesheet is imported, exactly once', () => {
+  // A sheet nothing imports is a page that renders unstyled; one imported
+  // twice belongs to two chunks and is no longer split at all.
+  const sources = readdirSync(new URL('../app/src/', import.meta.url), { recursive: true })
+    .filter((name) => typeof name === 'string' && /\.tsx?$/.test(name));
+  const importers = new Map(splitSheets.map((name) => [name, []]));
+  for (const name of sources) {
+    const code = readFileSync(new URL(`../app/src/${name}`, import.meta.url), 'utf8');
+    for (const [, sheet] of code.matchAll(/^import '(?:\.\.?\/)+styles\/([\w-]+\.css)';$/gm)) {
+      importers.get(sheet)?.push(name);
+    }
+  }
+  assert.ok(splitSheets.length > 10, `expected the chunk stylesheets, found ${splitSheets.length}`);
+  for (const [sheet, by] of importers) {
+    assert.equal(by.length, 1, `styles/${sheet} is imported by ${by.length ? by.join(', ') : 'nothing'}`);
+  }
 });
 
 console.log(`\n${passed} checks passed`);

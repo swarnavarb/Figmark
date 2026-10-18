@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { initWasm, Resvg } from '@resvg/resvg-wasm';
 import { encode } from 'jpeg-js';
-import { CARD_FONT, layoutCard, opsToSvg, type CardSpec } from '../../shared/shareCard.js';
+import { CARD_FONT, WIDE_CARD, layoutCard, layoutWideCard, opsToSvg, type CardSpec } from '../../shared/shareCard.js';
 
 /* ── Rendering ───────────────────────────────────────────────────────────── */
 
@@ -43,24 +43,49 @@ function boot(): Promise<Uint8Array[]> {
   return ready;
 }
 
-/** The card as an SVG, ready for the renderer. */
-export function cardSvg(spec: CardSpec): string {
-  return opsToSvg(layoutCard(spec));
+/** The card as an SVG, ready for the renderer: square, or wide for a link's preview. */
+export function cardSvg(spec: CardSpec, wide = false): string {
+  return wide ? opsToSvg(layoutWideCard(spec), WIDE_CARD) : opsToSvg(layoutCard(spec));
 }
+
+/**
+ * Android's WhatsApp shows no picture at all for a preview that is too heavy,
+ * where the iPhone's shrinks it. Kept well under, so it also arrives quickly on
+ * a slow connection: under this, every chat app shows it.
+ */
+export const PREVIEW_MAX_BYTES = 90_000;
+
+/** Quality steps tried in turn until the JPEG fits. */
+const QUALITIES = [82, 72, 62, 52, 44, 36, 30];
 
 /** An SVG card as a JPEG, small enough for any chat app's preview. */
 export async function renderCard(svg: string): Promise<Buffer> {
   const fontBuffers = await boot();
-  const resvg = new Resvg(svg, {
+  const draw = (width: number | null) => new Resvg(svg, {
     font: { fontBuffers, defaultFontFamily: CARD_FONT, sansSerifFamily: CARD_FONT },
-    fitTo: { mode: 'original' },
+    fitTo: width ? { mode: 'width', value: width } : { mode: 'original' },
   });
-  const image = resvg.render();
-  try {
-    const jpeg = encode({ data: image.pixels, width: image.width, height: image.height }, 84);
-    return Buffer.from(jpeg.data);
-  } finally {
-    image.free();
-    resvg.free();
+  const fit = (resvg: InstanceType<typeof Resvg>): Buffer => {
+    const image = resvg.render();
+    try {
+      const frame = { data: image.pixels, width: image.width, height: image.height };
+      // A busy photo makes a heavy JPEG: step the quality down until it fits.
+      let bytes = Buffer.from(encode(frame, QUALITIES[0]!).data);
+      for (const quality of QUALITIES.slice(1)) {
+        if (bytes.byteLength <= PREVIEW_MAX_BYTES) break;
+        bytes = Buffer.from(encode(frame, quality).data);
+      }
+      return bytes;
+    } finally {
+      image.free();
+      resvg.free();
+    }
+  };
+  let bytes = fit(draw(null));
+  // Still too heavy at the lowest quality worth looking at: draw it smaller.
+  for (const width of [960, 800]) {
+    if (bytes.byteLength <= PREVIEW_MAX_BYTES) break;
+    bytes = fit(draw(width));
   }
+  return bytes;
 }

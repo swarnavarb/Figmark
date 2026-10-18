@@ -1,7 +1,7 @@
 /**
  * Draws app/public/og/figmark.jpg: the preview for a link that is about no
- * one thing (the home page, an unknown address). The same square card every
- * other share uses, painted by the API's renderer. Run after `npm run build`
+ * one thing (the home page, an unknown address). The same card every
+ * other share uses, wide (1200×630), painted by the API's renderer. Run after `npm run build`
  * in api/ whenever the card's layout changes.
  */
 import { writeFileSync } from 'node:fs';
@@ -21,5 +21,5 @@ const spec = {
 };
 
 const out = new URL('../app/public/og/figmark.jpg', import.meta.url);
-writeFileSync(out, await renderCard(cardSvg(spec)));
+writeFileSync(out, await renderCard(cardSvg(spec, true)));
 console.log(`wrote ${out.pathname}`);

@@ -295,8 +295,9 @@ export function PersonLink({ party, className, children, bare }: {
   const name = party.handle
     ? <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>{label}</Link>
     : <span className={className}>{label}</span>;
-  // A community manager's shield goes wherever their name does.
-  const mark = <ManagerMark id={party.id} handle={party.handle} />;
+  // A community manager's shield goes wherever their name does - a person's
+  // name, never their shop's: a shop is not a community manager.
+  const mark = party.level?.shop ? null : <ManagerMark id={party.id} handle={party.handle} />;
   if (bare || !party.level) return <>{name}{mark}</>;
   // The level reads as a tagline under the name.
   return <span className="pname"><span className="pname__line">{name}{mark}</span><LevelChip tag={party.level} /></span>;

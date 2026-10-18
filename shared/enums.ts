@@ -97,9 +97,9 @@ export type FulfilmentStage = LotStage | DirectStage;
 
 export const LOT_STAGE_LABELS: Record<LotStage, string> = {
   ordering: 'Ordering',
-  china_wh_received: 'China WH received',
-  dispatched_from_china: 'Dispatched from China',
-  india_received: 'India received / customs',
+  china_wh_received: 'Origin WH received',
+  dispatched_from_china: 'Dispatched from origin',
+  india_received: 'Destination received / customs',
   qc_repack: 'QC & repack',
   local_dispatch: 'Local dispatch',
   delivered: 'Delivered',
@@ -323,9 +323,9 @@ export type OrderCheckpoint = (typeof ORDER_CHECKPOINTS)[number];
 
 /** Short forms, as they appear on an order row. */
 export const CHECKPOINT_LABELS: Record<OrderCheckpoint, string> = {
-  china_received: 'China WH',
-  china_packed: 'Packed CH',
-  india_received: 'India WH',
+  china_received: 'Origin WH',
+  china_packed: 'Packed at origin',
+  india_received: 'Destination WH',
   ready_to_dispatch: 'Ready',
   packed: 'Packed',
   dispatched: 'Dispatched',
@@ -334,9 +334,9 @@ export const CHECKPOINT_LABELS: Record<OrderCheckpoint, string> = {
 
 /** Long forms, for the counts on a lot card. */
 export const CHECKPOINT_COUNT_LABELS: Record<OrderCheckpoint, string> = {
-  china_received: 'China WH rcvd',
-  china_packed: 'Packed in China',
-  india_received: 'India received',
+  china_received: 'Origin WH rcvd',
+  china_packed: 'Packed at origin',
+  india_received: 'Destination received',
   ready_to_dispatch: 'Ready to dispatch',
   packed: 'Packed',
   dispatched: 'Dispatched',
@@ -369,9 +369,9 @@ export const LOT_PROGRESS_CHECKPOINTS: OrderCheckpoint[] = [
 /** How a lot's own stage reads on its card, in the seller's words. */
 export const LOT_CARD_LABELS: Record<LotStage, string> = {
   ordering: 'Lot getting filled',
-  china_wh_received: 'Arriving at China WH',
-  dispatched_from_china: 'Dispatched from China',
-  india_received: 'Received in India',
+  china_wh_received: 'Arriving at origin WH',
+  dispatched_from_china: 'Dispatched from origin',
+  india_received: 'Received at destination',
   qc_repack: 'QC and repack',
   local_dispatch: 'Out for local dispatch',
   delivered: 'Delivered',

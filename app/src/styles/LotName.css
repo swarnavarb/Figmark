@@ -1,0 +1,16 @@
+/*
+ * Styles only components/LotName.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+/* The lot's status as its buyers read it. */
+.lotphase {
+  display: inline-flex; align-items: center; gap: 6px; width: fit-content;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: var(--w-semi);
+  background: rgba(251, 191, 36, 0.16); color: #FCD34D; border: 1px solid rgba(251, 191, 36, 0.35);
+}
+.lotphase--closed { background: rgba(167, 139, 250, 0.16); color: #C4B5FD; border-color: rgba(167, 139, 250, 0.4); }
+.lotphase--in_transit { background: rgba(96, 165, 250, 0.16); color: #93C5FD; border-color: rgba(96, 165, 250, 0.4); }
+.lotphase--received { background: rgba(52, 211, 153, 0.16); color: #6EE7B7; border-color: rgba(52, 211, 153, 0.4); }
+.lotphase--cancelled { background: rgba(248, 113, 113, 0.14); color: #FCA5A5; border-color: rgba(248, 113, 113, 0.4); }

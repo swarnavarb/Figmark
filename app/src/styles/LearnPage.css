@@ -1,0 +1,31 @@
+/*
+ * Styles only pages/LearnPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.learn__railhead { display: none; margin: 0 0 4px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+.learn__tab:hover { border-color: var(--border-strong); color: var(--text); }
+.learn__tab.is-on { background: var(--violet-soft); border-color: var(--violet-line); color: var(--text); }
+.learn__icon { font-size: 22px; line-height: 1; }
+.learn__label { line-height: 1.2; overflow-wrap: anywhere; }
+@media (max-width: 719px) {
+  .learn__bigicon { display: none; }
+}
+/* On a phone the rail already shows the icon, so the header gives its width to the words. */
+.learn__bigicon {
+  width: 52px; height: 52px; flex: none; display: grid; place-items: center; font-size: 28px;
+  border-radius: 16px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.learn__intro { margin: 6px 0 0; color: var(--text-dim); }
+.learn__toc { padding: 12px 14px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); }
+.learn__toc a:hover { text-decoration: underline; }
+.learn__shot {
+  display: block; padding: 0; border: 1px solid var(--border-strong); border-radius: 14px; overflow: hidden;
+  background: var(--bg); cursor: zoom-in; max-width: 320px;
+}
+.learn__updated { margin: 0; font-size: var(--t-xs); }
+@media (min-width: 720px) {
+  .learn__railhead { display: block; }
+  .learn__tab { grid-template-columns: 28px 1fr; justify-items: start; align-items: center; padding: 10px 12px; font-size: var(--t-sm); text-align: left; }
+  .learn__icon { font-size: 20px; }
+}

@@ -14,6 +14,7 @@ import { useUndo } from './Undo';
 import { OrderPhotos } from './OrderPhotos';
 import { ConditionTag } from './ConditionTag';
 import { Spinner } from './Spinner';
+import '../styles/LotPeople.css';
 
 /**
  * One lot, worked customer by customer.

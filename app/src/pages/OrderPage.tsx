@@ -1,3 +1,4 @@
+import { InfoTip } from '../components/InfoTip';
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
 import { ManagerMark } from '../components/ManagerBadge';
@@ -6,7 +7,7 @@ import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
-import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex } from '@shared/routes';
+import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex, renderStepText } from '@shared/routes';
 import { REVIEW_REVEAL_DAYS, isCancelledLike, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
@@ -31,6 +32,9 @@ import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
 import { MomentBanner, shopBadge, type ShareSpec } from '../components/ShareKit';
 import { OrderPhotos } from '../components/OrderPhotos';
+import { Loading } from '../components/Feedback';
+import { Preloader } from '../components/Preloader';
+import '../styles/OrderPage.css';
 
 /**
  * One order, as the buyer sees it.
@@ -89,7 +93,9 @@ export function OrderPage() {
   /* The seller's buttons, on the timeline rungs they reach - the last mile
      included, so there is one place to work an item, not a card and a ladder. */
   // Opened from an order card's Dispatched or Delivered button: that press asks first, here.
-  const acts = useStepActs(state, load, arrived?.act ?? null);
+  /* The lot's countries fill {origin} and {destination} in the steps and on the buttons. */
+  const places = data?.route ? { origin: data.route.originCountry, destination: data.route.destinationCountry } : undefined;
+  const acts = useStepActs(state, load, arrived?.act ?? null, places);
 
   // The listing itself, only while this is still a checkout: its clock and
   // its stock are what say "decide now", and they are the listing's facts.
@@ -103,7 +109,7 @@ export function OrderPage() {
   }, [checkoutOf]);
 
   if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data || !state) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!data || !state) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   const { order } = data;
   /** The lot it is in now, as opposed to the ones it has been in. */
@@ -185,7 +191,10 @@ export function OrderPage() {
 
       {!placed && full && <Urgency listing={full} />}
 
-      {placed && statusLine && <StatusBanner line={statusLine} />}
+      {/* A dispute on record says itself, with its link, just below: the
+          banner would only say it twice. */}
+      {placed && statusLine && !(order.hold.state === 'disputed' && (order.hold.disputeId || (order.disputeLinks ?? []).length > 0))
+        && <StatusBanner line={statusLine} />}
 
       {/* What to do about it comes before where it is: someone opening this
           screen with a payment to make should not have to scroll past a
@@ -212,9 +221,6 @@ export function OrderPage() {
 
       {placed && tab === 'tracking' && (
         <div className="stack">
-          <div className="row row--between" style={{ flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ margin: 0 }}>Tracking</h2>
-          </div>
 
           {/* The lot's own ladder, in the seller's words, when there is a
               lot. An item waiting for one gets what has actually happened
@@ -235,7 +241,7 @@ export function OrderPage() {
                  bought into a lot that is the first thing its buyer wants,
                  and the ladder below is the answer to the second. */
               <TrackHero icon={endedOf(order) ? '🚫' : data.route.waitingForLot ? '⏳' : '🚢'}
-                now={endedOf(order)?.label ?? (data.route.waitingForLot ? 'Waiting for the lot to move' : lotTrack!.steps[lotAt]?.name ?? 'On its way')}
+                now={endedOf(order)?.label ?? (data.route.waitingForLot ? 'Waiting for the lot to move' : (lotTrack!.steps[lotAt] ? renderStepText(lotTrack!.steps[lotAt]!.name, places ?? {}) : 'On its way'))}
                 sub={<>
                   📦 {data.route.lotName} <span className="lotname__no">LOT {lotNo(data.route.lotNumber)}</span>
                   {leftLot ? ' · now travelling on its own' : ''}
@@ -243,7 +249,7 @@ export function OrderPage() {
                     <span style={{ display: 'block', marginTop: 6 }}><LotPhaseBadge phase={data.route.lotPhase} /></span>
                   )}
                 </>}
-                boxes={boxesFor(lotTrack!.steps, lotAt)}
+                boxes={boxesFor(lotTrack!.steps.map((step) => ({ ...step, name: renderStepText(step.name, places ?? {}) })), lotAt)}
                 done={lotAt + 1} total={lotTrack!.steps.length}>
                 {order.shipment && <ShipmentChip shipment={order.shipment} />}
                 <div className="trk__ladder">
@@ -251,7 +257,7 @@ export function OrderPage() {
                     off the rung it happened at and dated - so a payment made
                     after the parcel reached the warehouse reads under the
                     warehouse tick, not above it. */}
-                <Ladder steps={lotTrack!.steps} current={lotAt}
+                <Ladder brief vars={places} steps={lotTrack!.steps} current={lotAt}
                   history={data.order.stageHistory}
                   ended={endedOf(order)}
                   /* Only the seller is told who moves the tracking from here:
@@ -293,7 +299,7 @@ export function OrderPage() {
                 sub="Not in a shipment lot yet — the rest of the journey appears once it is."
                 done={data.preLot.currentStep + 1} total={preTrack.steps.length + 1}>
                 <div className="trk__ladder">
-                  <Ladder steps={preTrack.steps} current={data.preLot.currentStep}
+                  <Ladder brief vars={places} steps={preTrack.steps} current={data.preLot.currentStep}
                     history={data.order.stageHistory}
                     ended={endedOf(order)}
                     /* Only its own steps have buttons before a lot: the last mile
@@ -317,14 +323,14 @@ export function OrderPage() {
           shop chose to share; the shop sees them all and chooses here too. */}
       {placed && tab === 'tracking' && (seller || (order.photos ?? []).length > 0) && (
         <section className="card card--pad stack trk-photos">
-          <div>
-            <h2>{seller ? 'Photos of this order' : 'Photos of your item'}</h2>
-            <span className="field__hint">
+          <h2 className="trk-photos__title">
+            {seller ? 'Photos of this order' : 'Photos of your item'}
+            <InfoTip label="About these photos">
               {seller
                 ? 'Taken by you or your crew. Tap Buyer on a photo to show it on the buyer’s timeline.'
                 : 'From the shop, as your item made its way to you.'}
-            </span>
-          </div>
+            </InfoTip>
+          </h2>
           {seller ? (
             <OrderPhotos orderId={order.id} photos={order.photos ?? []} seller
               onChange={(photos) => setData((current) => current && { ...current, order: { ...current.order, photos } })} />
@@ -560,6 +566,8 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const returnedMinor = returned.reduce((sum, credit) => sum + (credit.pendingRefund?.amountMinor ?? 0), 0);
   const nothingToDo = !actions.some((action) =>
     (DRAWN_HERE as readonly string[]).includes(action));
+  const onlyCancel = actions.includes('cancel')
+    && actions.filter((action) => (DRAWN_HERE as readonly string[]).includes(action)).length === 1;
 
   return (
     <div className="stack" style={{ marginBottom: 20 }}>
@@ -567,7 +575,10 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
           genuinely left the buyer's account — Figmark simply had no part in it,
           which the checkout says in its own words. Claiming otherwise here
           would tell somebody who has actually paid that they have not. */}
-      {state.simulatedPayment && order.protection != null && (
+
+      {/* Before it is paid; once paid it rides on the protection line below. */}
+      {state.simulatedPayment && order.protection != null
+        && order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded' && (
         <p className="notice notice--warn">
           The Buyer Protection hold is simulated while no provider is connected — nothing is charged.
         </p>
@@ -593,23 +604,43 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       {/* What protection did or did not buy, once the choice has been made. */}
       {(order.paymentStatus === 'paid' || order.paymentStatus === 'refunded') && (
         order.protection ? (
-          <p className="notice notice--ok">
-            Held by <strong>Figmark</strong>, with{' '}
-            <strong>{order.protection.managerName ?? 'a community manager'}<ManagerMark id={order.protection.managerId} /></strong>{' '}
-            assigned — {formatMoney(order.protection.feeMinor, order.currency)} protection fee. Either side can open
-            a dispute: they decide it, and release the money once all three of you agree.
-            {order.protection.refundedAt && ' The fee was refunded.'}
+          <p className="notice notice--ok notice--line">
+            <span>
+              🛡 Held by <strong>Figmark</strong> ·{' '}
+              <strong>{order.protection.managerName ?? 'a community manager'}<ManagerMark id={order.protection.managerId} /></strong>{' '}
+              · {formatMoney(order.protection.feeMinor, order.currency)} fee
+              {order.protection.refundedAt && ' (refunded)'}
+              {/* Only the held payment is simulated. A direct sale is real money
+                  that genuinely left the buyer's account. */}
+              {state.simulatedPayment && <span className="badge badge--warn notice__tag">Simulated</span>}
+            </span>
+            <InfoTip label="How Buyer Protection works">
+              Figmark holds the payment with {order.protection.managerName ?? 'a community manager'} assigned.
+              Either side can open a dispute: they decide it, and release the money once all three of you agree.
+              {state.simulatedPayment && ' The hold is simulated while no payment provider is connected — nothing is charged.'}
+            </InfoTip>
           </p>
         ) : (
-          <p className="notice notice--info">
-            Paid without protection, so the money went straight to the seller. There is nobody holding
-            anything if this goes wrong.
+          <p className="notice notice--info notice--line">
+            <span>Paid directly · not protected</span>
+            <InfoTip label="What paying directly means">
+              Paid without protection, so the money went straight to the seller. There is nobody holding
+              anything if this goes wrong.
+            </InfoTip>
           </p>
         )
       )}
 
 
-      {!nothingToDo && (
+      {/* Cancel on its own is not something to do, only something that can
+          be done: a quiet button, not a card of its own. */}
+      {onlyCancel && !cancelling && (
+        <button type="button" className="btn btn--quiet btn--sm order-cancel" onClick={() => setCancelling(true)}>
+          Cancel order
+        </button>
+      )}
+
+      {!nothingToDo && !(onlyCancel && !cancelling) && (
         <div className="card card--pad stack">
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {actions.includes('pay') && !paying && (
@@ -653,7 +684,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
                 ❌ Reject
               </button>
             )}
-            {actions.includes('cancel') && !cancelling && (
+            {actions.includes('cancel') && !cancelling && !onlyCancel && (
               <button className="btn btn--quiet" onClick={() => setCancelling(true)}>
                 ❌ Cancel order
               </button>
@@ -820,7 +851,7 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
       target: listing.id,
       storeId: order.sellerId,
     };
-    return <MomentBanner spec={spec} title={filled ? 'It filled! Tell everyone' : 'Sold! Tell your buyers'}
+    return <MomentBanner spec={spec} title={filled ? 'It filled! Tell everyone' : 'Sold! Tell your followers'}
       note="A sale is the best advert you have. Post it to your Status - it brings the next buyer, and counts for your Grow quests." />;
   }
 
@@ -985,7 +1016,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   }, [order.id, order.unitPriceMinor, order.quantity]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!quote) return <p className="muted">Loading…</p>;
+  if (!quote) return <Loading />;
 
   if (quote.unavailable) {
     return (

@@ -1,0 +1,9 @@
+/*
+ * Styles only pages/RoutesPage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+/* Routes: New route, then the help behind an ⓘ; each route with its ⋯ beside it. */
+.rhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.rhead__help { display: inline-flex; align-items: center; gap: 10px; font-size: var(--t-sm); }
+.rlist__item { display: flex; align-items: center; gap: 6px; }

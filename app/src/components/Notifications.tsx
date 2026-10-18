@@ -7,6 +7,8 @@ import { PushRow, usePush } from './PushControls';
 import { timeAgo } from '../format';
 import { setBadge } from '../push';
 import { isReloading, isStale, loadFresh } from '../freshness';
+import { onBellChanged } from '../live';
+import { Spinner } from './Spinner';
 
 /**
  * What happened while you were not looking.
@@ -16,10 +18,12 @@ import { isReloading, isStale, loadFresh } from '../freshness';
  * announces something and then leaves you to find it is an interruption, not a
  * message.
  *
- * Polled while the site is open; a minute is soon enough for "somebody
- * answered your want" and costs one small request. When it is closed, the
- * same notices reach the lock screen as Web Push (see push.ts), and a push
- * that lands while it is open refreshes the bell on the spot.
+ * Asked again while the site is on screen (live.ts decides when: a minute,
+ * ten when pushes bring the news, longer while nothing happens, one tab for
+ * all of them), and each ask is answered in a line when nothing changed.
+ * When it is closed, the same notices reach the lock screen as Web Push (see
+ * push.ts), and a push that lands while it is open refreshes the bell on the
+ * spot.
  *
  * Twenty at a time, newest first, with "Show older" for the rest, and a row of
  * filters so somebody who only wants their messages is not reading past their
@@ -31,7 +35,15 @@ import { isReloading, isStale, loadFresh } from '../freshness';
  * was last read; anything older that slipped through as a second line is
  * dropped here. Unread lines sit under "New", the rest under "Earlier".
  */
-const POLL_MS = 60_000;
+/** Said on the window when the bell brings news of an order or a payment, so
+    the Sell tab's counts read again then rather than on a clock of their own. */
+export const SALES_NEWS_EVENT = 'figmark:sales-news';
+const SALES_NEWS: readonly NotificationCategory[] = ['orders', 'payments'];
+
+/** Said on the window when the bell brings news of a message, so the inbox
+    and the Messages tab's count read again then: away from a conversation,
+    the bell's clock is how soon a new message is heard of. */
+export const MESSAGES_NEWS_EVENT = 'figmark:messages-news';
 
 const CATEGORY_ICON: Record<NotificationCategory, IconName> = {
   messages: 'message',
@@ -90,6 +102,14 @@ export function Notifications() {
   const asked = useRef<NotificationCategory | null>(null);
   const shown = useRef<AppNotification[]>([]);
   shown.current = rows;
+  // Order and payment rows already seen (id and count), so only a new one is news.
+  const salesSeen = useRef<Set<string> | null>(null);
+  // The message lines last seen (id, count, read), so only a change is news.
+  const messagesSeen = useRef<string | null>(null);
+  // What the last first page was, for the server to answer "unchanged" against.
+  const version = useRef<string | null>(null);
+  // What the bell last showed, so a poll that changed nothing is not news.
+  const showing = useRef('');
 
   const counts = (page: NotificationPage) => {
     setUnread(page.unread);
@@ -97,38 +117,47 @@ export function Notifications() {
   };
 
   /* The newest page, merged over whatever older pages are already showing so
-     a refresh does not throw away what somebody scrolled down to. */
-  const load = useCallback(async () => {
+     a refresh does not throw away what somebody scrolled down to. A poll
+     sends what it last saw and hears "unchanged" when nothing was written;
+     it resolves whether the bell now says something new. */
+  const load = useCallback(async (poll = false): Promise<boolean> => {
     const category = asked.current;
     try {
-      const page = await api.notifications({ category });
-      if (asked.current !== category) return;
+      const reply = poll ? await api.notificationsSince(version.current, category) : await api.notifications({ category });
+      if (asked.current !== category) return false;
+      if ('unchanged' in reply) return false;
+      const page = reply;
+      if (page.version) version.current = page.version;
+      const said = `${page.unread}|${page.notifications.map((row) => `${row.id}:${row.count}:${row.read}`).join(',')}`;
+      const news = said !== showing.current;
+      showing.current = said;
       counts(page);
+      const sales = page.notifications.filter((row) => SALES_NEWS.includes(row.category)).map((row) => `${row.id}:${row.count}`);
+      if (salesSeen.current && sales.some((key) => !salesSeen.current!.has(key))) window.dispatchEvent(new Event(SALES_NEWS_EVENT));
+      salesSeen.current = new Set([...(salesSeen.current ?? []), ...sales]);
+      // Only a list that shows message lines can tell whether they changed.
+      if (category === null || category === 'messages') {
+        const messages = `${page.unreadByCategory?.messages ?? 0}|${page.notifications
+          .filter((row) => row.category === 'messages').map((row) => `${row.id}:${row.count}:${row.read}`).join(',')}`;
+        if (messagesSeen.current !== null && messages !== messagesSeen.current) window.dispatchEvent(new Event(MESSAGES_NEWS_EVENT));
+        messagesSeen.current = messages;
+      }
       const fresh = new Set(page.notifications.map((row) => row.id));
       const oldest = page.notifications[page.notifications.length - 1]?.createdAt;
       const older = oldest ? shown.current.filter((row) => !fresh.has(row.id) && row.createdAt < oldest) : [];
       // Older pages already showing keep their own place to carry on from.
       if (older.length === 0) setNextBefore(page.nextBefore);
       setRows(oneEach([...page.notifications, ...older]));
+      return news;
     } catch {
       // A bell that cannot load is not worth an error on somebody's screen.
+      return false;
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(timer);
-  }, [load]);
-
-  // A push arriving while the site is open is news for the bell too.
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      if ((event.data as { type?: string } | null)?.type === 'figmark:notification') void load();
-    };
-    navigator.serviceWorker?.addEventListener('message', onMessage);
-    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
-  }, [load]);
+  // Loaded now, then whenever there may be news: a push, the tab coming
+  // back, another tab hearing of some, or the clock.
+  useEffect(() => onBellChanged(() => load(true)), [load]);
 
   // The number on the home-screen icon, where the device shows one.
   useEffect(() => setBadge(unread), [unread]);
@@ -285,7 +314,7 @@ export function Notifications() {
               {earlier.map(line)}
               {nextBefore && (
                 <button type="button" className="bell__more" onClick={() => void more()} disabled={loadingMore}>
-                  {loadingMore ? 'Loading…' : 'Show older'}
+                  {loadingMore ? <><Spinner size={14} label="Loading" /> Show older</> : 'Show older'}
                 </button>
               )}
             </div>

@@ -1,0 +1,29 @@
+/*
+ * Styles only components/OrderStatus.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.sbanner__icon { font-size: 22px; line-height: 1; flex: none; }
+.sbanner__title { font-size: var(--t-base); font-weight: var(--w-bold); color: var(--sb); letter-spacing: -0.01em; }
+.sbanner__note { font-size: var(--t-xs); color: var(--text-dim); }
+.sbanner--urgent {
+  --sb: #FFD1D3; --sb-soft: rgba(255, 90, 95, 0.32); --sb-line: var(--coral-line);
+  border-left-color: var(--coral);
+  background: linear-gradient(135deg, rgba(255, 90, 95, 0.34), rgba(236, 72, 153, 0.2));
+  animation: sbanner-pulse 1.8s ease-in-out infinite;
+}
+.sbanner--urgent .sbanner__title { color: #fff; }
+.sbanner--wait { --sb: var(--warn); --sb-soft: var(--warn-soft); --sb-line: rgba(251, 191, 36, 0.4); }
+.sbanner--sent { --sb: var(--violet-text); --sb-soft: var(--violet-soft); --sb-line: var(--violet-line); }
+.sbanner--ok { --sb: var(--ok); --sb-soft: var(--ok-soft); --sb-line: rgba(52, 211, 153, 0.4); }
+.sbanner--info { --sb: var(--aqua); --sb-soft: var(--aqua-soft); --sb-line: var(--aqua-line); }
+.sbanner--danger { --sb: var(--danger-text); --sb-soft: var(--danger-soft); --sb-line: rgba(244, 63, 94, 0.45); }
+.sbanner--quiet { --sb: var(--text-dim); --sb-soft: rgba(255, 255, 255, 0.04); --sb-line: var(--border); }
+.sbanner--compact .sbanner__title { font-size: var(--t-sm); }
+@media (prefers-reduced-motion: reduce) {
+  .sbanner--urgent { animation: none; }
+}
+.shipchip__label { font-weight: var(--w-semi); color: var(--aqua); }
+.shipchip__awb { font-size: var(--t-2xs); color: var(--text); }
+.shipchip__track { font-weight: var(--w-bold); color: var(--aqua); text-decoration: none; }
+.shipchip__track:hover { text-decoration: underline; }

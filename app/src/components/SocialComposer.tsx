@@ -11,6 +11,8 @@ import {
 } from '@shared/social';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
+import { Loading } from './Feedback';
+import '../styles/SocialComposer.css';
 
 /** How long a poll runs, as offered. */
 const POLL_LENGTHS: { hours: number; label: string }[] = [
@@ -335,7 +337,7 @@ export function Composer({ onPosted, forum = null }: {
       {picking && !item && (
         <div className="stockpick" role="listbox" aria-label="Pick an item to post">
           {!stock ? (
-            <p className="faint">Loading your items…</p>
+            <Loading label="Loading your items" />
           ) : stock.length === 0 ? (
             <p className="faint">Nothing listed yet. List something from Sell and post it here.</p>
           ) : (
@@ -385,7 +387,7 @@ export function Composer({ onPosted, forum = null }: {
           </p>
           <div className="forumpick__list">
             {!joined ? (
-              <p className="faint">Loading your forums…</p>
+              <Loading label="Loading your forums" />
             ) : joined.length === 0 ? (
               <p className="faint">You have not joined a forum yet. Join one from Forums and post into it from here.</p>
             ) : (

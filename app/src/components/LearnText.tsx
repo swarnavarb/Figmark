@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import '../styles/LearnText.css';
 
 /**
  * Guide text, drawn from the three bits of formatting the Learn editor allows.

@@ -1,0 +1,6 @@
+/*
+ * Styles only pages/CommunityServicePage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.tiles--big { grid-template-columns: repeat(2, 1fr); }

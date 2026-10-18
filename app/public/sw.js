@@ -42,9 +42,10 @@ self.addEventListener('push', (event) => {
     ? self.navigator.setAppBadge(message.unread).catch(() => undefined)
     : Promise.resolve();
 
-  // An open copy of the site refreshes its bell now rather than at the next poll.
+  // An open copy of the site refreshes its bell now rather than at the next
+  // poll, and the conversation or room the push points at, if it is open.
   const told = self.clients.matchAll({ type: 'window' }).then((windows) => {
-    for (const client of windows) client.postMessage({ type: 'figmark:notification' });
+    for (const client of windows) client.postMessage({ type: 'figmark:notification', link: message.link || null });
   });
 
   event.waitUntil(Promise.all([shown, badge, told]));

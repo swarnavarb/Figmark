@@ -80,6 +80,8 @@ export class MemoryRepository implements Repository {
   private readonly pledges = new Map<string, Pledge>();
   private readonly powerSales = new Map<string, PowerSale>();
   private readonly notifications = new Map<string, Notification>();
+  /** When each person's notices were last written, in whole seconds, as Cosmos keeps `_ts`. */
+  private readonly notificationWrites = new Map<string, number>();
   private readonly disputes = new Map<string, Dispute>();
   /** `@username` -> who holds it. Mirrors the reservations in `identifiers`. */
   private readonly handles = new Map<string, { userId: string; isStore: boolean }>();
@@ -336,7 +338,7 @@ export class MemoryRepository implements Repository {
     // How it is sold is derived from the listing rather than stored, and the
     // rule lives in shared/catalog so the SQL and this agree by construction.
     if (query.kind && query.kind !== 'all') items = items.filter((l) => matchesKind(l, query.kind));
-    if (query.maxPriceMinor !== undefined) {
+    if (query.maxPriceMinor !== undefined && query.maxPriceMinor > 0) {
       items = items.filter((l) => l.priceMinor <= query.maxPriceMinor!);
     }
     if (query.search) items = items.filter((l) => matchesSearch(l, query.search!));
@@ -480,6 +482,7 @@ export class MemoryRepository implements Repository {
       // whole lot: the route has already checked the lot's owner.
       if (!listing || listing.sellerId !== sellerId) continue;
       listing.lotId = lotId;
+      listing.sourcing = lotId ? 'import' : 'in_hand';
       listing.updatedAt = new Date().toISOString();
       changed += 1;
     }
@@ -772,11 +775,20 @@ export class MemoryRepository implements Repository {
 
   async saveNotification(notification: Notification): Promise<Notification> {
     this.notifications.set(notification.id, notification);
+    this.notificationWrites.set(notification.userId, Math.floor(Date.now() / 1000));
     return notification;
   }
 
   async deleteNotification(userId: string, id: string): Promise<void> {
-    if (this.notifications.get(id)?.userId === userId) this.notifications.delete(id);
+    if (this.notifications.get(id)?.userId !== userId) return;
+    this.notifications.delete(id);
+    this.notificationWrites.set(userId, Math.floor(Date.now() / 1000));
+  }
+
+  async notificationStamp(userId: string): Promise<{ count: number; lastWriteAt: number }> {
+    let count = 0;
+    for (const entry of this.notifications.values()) if (entry.userId === userId) count += 1;
+    return { count, lastWriteAt: this.notificationWrites.get(userId) ?? 0 };
   }
 
   async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {

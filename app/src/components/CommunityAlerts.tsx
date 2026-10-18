@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, type CommunityNotice, type CommunityStanding } from '../api';
 import { formatDateOrdinal } from '../format';
 import { ManagerMark } from './ManagerBadge';
+import '../styles/CommunityAlerts.css';
 
 /**
  * What community managers' final decisions put in front of everybody.

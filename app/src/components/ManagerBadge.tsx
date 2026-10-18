@@ -93,7 +93,6 @@ export function ManagerTag({ id, handle }: { id?: string | null; handle?: string
       <Shield size={18} />
       <span className="cmtag__text">
         <b>Community Manager</b>
-        <small>since {formatDate(manager.since)}</small>
       </span>
     </span>
   );

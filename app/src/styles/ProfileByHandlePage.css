@@ -1,0 +1,34 @@
+/*
+ * Styles only pages/ProfileByHandlePage.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.storefront__open {
+  position: absolute; right: 14px; bottom: 44px; z-index: 1; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: var(--r-pill); font-size: var(--t-xs); font-weight: var(--w-bold); color: #fff;
+  background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(8px); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.storefront--shop .storefront__avatar { width: 64px; height: 64px; border-radius: 16px; border-width: 2px; }
+.storefront--shop .storefront__avatar { display: grid; place-items: center; }
+.ptrust--ok { color: #34D399; }
+.ptrust--warn { color: #FBBF24; }
+.ptrust--low { color: #F87171; }
+.ptrust--none { color: var(--text-faint); }
+.pskel__head { display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: end; margin: -34px 0 16px; }
+/* On a shop: badges it earned, and what its listings say it sells. */
+.earnedtag { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); cursor: default; }
+.alsosells { align-items: center; }
+.alsosells__label { font-size: var(--t-xs); color: var(--text-faint); margin-right: 2px; }
+.alsosells__tag { border-style: dashed; }
+.storefront--shop .storefront__avatar {
+  width: 76px; height: 76px; border-radius: 20px;
+  box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px rgba(139, 92, 246, 0.55), 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+.phead--shop { --phead-face: 76px; --phead-below: 22px; }
+.phead__tier { font-size: 10.5px; padding: 1px 8px; }
+/* The shop's "open" sign moves off the cover's foot, where the name now sits. */
+.storefront--shop .storefront__open { bottom: auto; top: 74px; }
+@media (min-width: 720px) {
+  .storefront--shop .storefront__open { top: 96px; }
+}
+.ppanel .alsosells { margin-top: 0; }

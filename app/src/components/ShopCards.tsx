@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { tagKey, tagSlug } from '@shared/shop-tags';
 import type { ShopCard } from '../api';
 import { Avatar } from './ui';
+import '../styles/ShopCards.css';
 
 /** Where a tag's own page lives: "Resin kits" → /tags/resin-kit. */
 export const tagPath = (label: string) => `/tags/${encodeURIComponent(tagSlug(tagKey(label)))}`;

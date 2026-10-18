@@ -450,6 +450,62 @@ function ticketPath(x: number, y: number, w: number, h: number, tear: number, r 
     + `A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`;
 }
 
+/**
+ * What it is, its price and the link's ticket, stacked from y = 0 in a column
+ * `colW` wide at `col`. The caller moves it into place.
+ */
+function details(spec: CardSpec, measure: Measure, col: number, colW: number, sizes: { title: number; price: number }) {
+  const right: Op[] = [];
+  let y = 0;
+  const title = fitBlock(measure, spec.title, sizes.title, Math.round(sizes.title * 2 / 3), true, colW, spec.off ? 2 : 3);
+  for (const line of title.lines) {
+    right.push(text(col, y + title.size * 0.8, line, title.size, TEXT));
+    y += title.size * 1.14;
+  }
+  if (spec.detail) {
+    y += 8;
+    for (const line of wrapText(measure, spec.detail, 26, false, colW, 2)) {
+      right.push(text(col, y + 26, line, 26, DIM, false));
+      y += 36;
+    }
+  }
+  if (spec.price) {
+    y += 24;
+    const size = sizes.price;
+    right.push(text(col, y + size * 0.78, spec.price, size, '#FFFFFF'));
+    if (spec.was) {
+      const px = col + measure(spec.price, size, true) + 20;
+      const ww = measure(spec.was, 32, false);
+      if (px + ww <= col + colW) {
+        right.push(
+          text(px, y + size * 0.76, spec.was, 32, DIM, false),
+          { op: 'fill', shape: rect(px - 2, y + size * 0.76 - 13, ww + 4, 3), paint: DIM },
+        );
+      }
+    }
+    y += size + 6;
+  }
+  if (spec.off) {
+    // The reason to tap, as a gold ticket with the stub torn off.
+    y += 18;
+    const tail = 'with my link';
+    const tailW = measure(tail, 22, false) + 36;
+    const headSize = Math.min(30, Math.max(20, 30 * (colW - tailW - 40) / measure(`GET ${spec.off} OFF`, 30, true)));
+    const headW = measure(`GET ${spec.off} OFF`, headSize, true) + 40;
+    const h = 64;
+    const path: Shape = { kind: 'path', d: ticketPath(col, y, headW + tailW, h, headW) };
+    right.push(
+      { op: 'fill', shape: path, paint: linear(col, 0, col + headW + tailW, 0, '#FDE047', '#FB923C') },
+      { op: 'clip', shape: path, ops: [{ op: 'fill', shape: rect(col + headW, y, tailW, h), paint: '#000000', opacity: 0.1 }] },
+      { op: 'stroke', shape: { kind: 'path', d: `M${col + headW} ${y + 14}V${y + h - 14}` }, paint: '#2B1D00', width: 2, dash: [5, 5], opacity: 0.45 },
+      text(col + 20, y + h / 2 + headSize * 0.36, `GET ${spec.off} OFF`, headSize, '#2B1D00'),
+      text(col + headW + 18, y + h / 2 + 8, tail, 22, '#2B1D00', false),
+    );
+    y += h;
+  }
+  return { ops: right, height: y };
+}
+
 /** Everything to paint, back to front. */
 export function layoutCard(spec: CardSpec, measure: Measure = tableMeasure): Op[] {
   const hue = hueFor(spec.seed);
@@ -515,58 +571,88 @@ export function layoutCard(spec: CardSpec, measure: Measure = tableMeasure): Op[
   ops.push(...hero(spec, measure, PAD, heroY, size));
 
   const col = PAD + size + 44;
-  const colW = S - PAD - col;
-  const right: Op[] = [];
-  let y = 0;
-  const title = fitBlock(measure, spec.title, 54, 36, true, colW, spec.off ? 2 : 3);
-  for (const line of title.lines) {
-    right.push(text(col, y + title.size * 0.8, line, title.size, TEXT));
-    y += title.size * 1.14;
-  }
-  if (spec.detail) {
-    y += 8;
-    for (const line of wrapText(measure, spec.detail, 26, false, colW, 2)) {
-      right.push(text(col, y + 26, line, 26, DIM, false));
-      y += 36;
-    }
-  }
-  if (spec.price) {
-    y += 24;
-    const size = 66;
-    right.push(text(col, y + size * 0.78, spec.price, size, '#FFFFFF'));
-    if (spec.was) {
-      const px = col + measure(spec.price, size, true) + 20;
-      const ww = measure(spec.was, 32, false);
-      if (px + ww <= S - PAD) {
-        right.push(
-          text(px, y + size * 0.76, spec.was, 32, DIM, false),
-          { op: 'fill', shape: rect(px - 2, y + size * 0.76 - 13, ww + 4, 3), paint: DIM },
-        );
-      }
-    }
-    y += size + 6;
-  }
-  if (spec.off) {
-    // The reason to tap, as a gold ticket with the stub torn off.
-    y += 18;
-    const tail = 'with my link';
-    const tailW = measure(tail, 22, false) + 36;
-    const headSize = Math.min(30, Math.max(20, 30 * (colW - tailW - 40) / measure(`GET ${spec.off} OFF`, 30, true)));
-    const headW = measure(`GET ${spec.off} OFF`, headSize, true) + 40;
-    const h = 64;
-    const path: Shape = { kind: 'path', d: ticketPath(col, y, headW + tailW, h, headW) };
-    right.push(
-      { op: 'fill', shape: path, paint: linear(col, 0, col + headW + tailW, 0, '#FDE047', '#FB923C') },
-      { op: 'clip', shape: path, ops: [{ op: 'fill', shape: rect(col + headW, y, tailW, h), paint: '#000000', opacity: 0.1 }] },
-      { op: 'stroke', shape: { kind: 'path', d: `M${col + headW} ${y + 14}V${y + h - 14}` }, paint: '#2B1D00', width: 2, dash: [5, 5], opacity: 0.45 },
-      text(col + 20, y + h / 2 + headSize * 0.36, `GET ${spec.off} OFF`, headSize, '#2B1D00'),
-      text(col + headW + 18, y + h / 2 + 8, tail, 22, '#2B1D00', false),
-    );
-    y += h;
-  }
+  const { ops: right, height: y } = details(spec, measure, col, S - PAD - col, { title: 54, price: 66 });
   // Centred on the hero, unless it is taller than the hero.
   const shift = heroY + Math.max(0, (size - y) / 2);
   ops.push(...right.map((op) => moveY(op, shift)));
+  return ops;
+}
+
+/** The link-preview size chat apps crop to: WhatsApp, Telegram, X and the rest show 1.91:1. */
+export const WIDE_CARD = { w: 1200, h: 630 } as const;
+
+/**
+ * The same card, wide, for a link's preview.
+ *
+ *   ┌────────────┬───────────────────────────┐
+ *   │            │ F Figmark      [Buyer P.] │
+ *   │    hero    │ Headline                  │
+ *   │            │ Title                     │
+ *   │            │ ₹price  [GET ₹X OFF|link] │
+ *   │            │ ───────────────────────── │
+ *   │            │ (o) Shop  LV 6 Trusted    │
+ *   └────────────┴───────────────────────────┘
+ *
+ * A square card under a link is cropped to a strip by most chat apps, and a
+ * shop's own photo is whatever size the phone took: Android's WhatsApp drops
+ * a preview picture that is too big rather than shrink it. This one is drawn
+ * at the size they show, with the photo inside it.
+ */
+export function layoutWideCard(spec: CardSpec, measure: Measure = tableMeasure): Op[] {
+  const { w: W, h: H } = WIDE_CARD;
+  const pad = 44;
+  const hue = hueFor(spec.seed);
+  const size = H - pad * 2;
+  const ops: Op[] = [
+    { op: 'fill', shape: rect(0, 0, W, H), paint: BG },
+    { op: 'fill', shape: rect(0, 0, W, H), paint: { radial: [size * 0.5 + pad, H * 0.5, W * 0.6], stops: [[0, hsl(hue, 60, 30), 0.8], [1, BG, 0]] } },
+    { op: 'fill', shape: rect(0, 0, W, H), paint: { radial: [W, 0, W * 0.55], stops: [[0, spec.stamp?.from ?? '#7C3AED', 0.38], [1, BG, 0]] } },
+    ...hero(spec, measure, pad, pad - 6, size),
+  ];
+
+  const col = pad + size + 44;
+  const colW = W - pad - col;
+  ops.push(...brand(col, pad));
+  if (spec.stamp) {
+    ops.push(...pill(measure, W - pad, pad + 2, spec.stamp.label, 22, [spec.stamp.from, spec.stamp.to], spec.stamp.ink, 'right').ops);
+  } else if (spec.protection) {
+    ops.push(...protectionPill(measure, W - pad, pad));
+  }
+
+  let top = pad + 48 + 30;
+  if (spec.headline) {
+    const head = fitBlock(measure, spec.headline, 44, 30, true, colW, 2);
+    for (const line of head.lines) {
+      ops.push(text(col, top + head.size * 0.8, line, head.size, TEXT));
+      top += head.size * 1.1;
+    }
+    top += 6;
+    ops.push({ op: 'fill', shape: rect(col, top, 96, 6, 3), paint: linear(col, 0, col + 96, 0, spec.stamp?.from ?? BRAND[0], spec.stamp?.to ?? BRAND[1]) });
+    top += 6;
+  }
+
+  const badge = spec.badge;
+  const foot = H - pad - 92;
+  if (badge) {
+    ops.push({ op: 'fill', shape: rect(col, foot, colW, 2), paint: '#FFFFFF', opacity: 0.1 });
+    const r = 36;
+    const cy = H - pad - r;
+    ops.push(...avatar(badge.name, badge.level, badge.photo, col + r, cy, r));
+    const tx = col + r * 2 + 18;
+    const room = W - pad - tx;
+    if (badge.level) {
+      ops.push(text(tx, cy - 6, fitText(measure, badge.name, 28, true, room), 28, TEXT));
+      ops.push(...levelChip(measure, tx, cy + 6, badge.level, badge.title ?? '', 18, room));
+    } else {
+      ops.push(text(tx, cy + 10, fitText(measure, badge.name, 28, true, room), 28, TEXT));
+    }
+  }
+
+  // What it is, centred in the room between the headline and the foot.
+  const bottom = badge ? foot - 20 : H - pad;
+  const made = details({ ...spec, detail: spec.off ? null : spec.detail }, measure, col, colW, { title: 46, price: 56 });
+  const shift = top + 24 + Math.max(0, (bottom - top - 24 - made.height) / 2);
+  ops.push(...made.ops.map((op) => moveY(op, shift)));
   return ops;
 }
 
@@ -600,7 +686,7 @@ function esc(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-export function opsToSvg(ops: Op[], size = CARD_SIZE): string {
+export function opsToSvg(ops: Op[], box: { w: number; h: number } = { w: CARD_SIZE, h: CARD_SIZE }): string {
   const defs: string[] = [];
   let next = 0;
   const id = () => `d${(next += 1)}`;
@@ -651,5 +737,5 @@ export function opsToSvg(ops: Op[], size = CARD_SIZE): string {
   };
   // The server has no emoji font: an emoji would come out as a box.
   const body = ops.filter((op) => !(op.op === 'text' && op.emoji)).map(draw).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${CARD_SIZE} ${CARD_SIZE}"><defs>${defs.join('')}</defs>${body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${box.w}" height="${box.h}" viewBox="0 0 ${box.w} ${box.h}"><defs>${defs.join('')}</defs>${body}</svg>`;
 }

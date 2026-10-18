@@ -6,6 +6,8 @@ import { api, type PublicStore } from '../api';
 import { formatMoney, formatWeight } from '../format';
 import { Icon, TrustBadge } from './ui';
 import { LaneTicket, PlanCard, StoreMark, accentStyle } from './StoreKit';
+import { Loading } from './Feedback';
+import '../styles/LotsPage.css';
 
 /**
  * Who flies this lot.
@@ -112,7 +114,7 @@ export function ForwarderBooking({ lot, busy, onRun }: {
                 setPicking(false);
               })}>Save forwarder</button>
             </div>
-          ) : stores === null ? <p className="muted">Loading forwarders…</p> : stores.length === 0 ? (
+          ) : stores === null ? <Loading label="Loading forwarders" /> : stores.length === 0 ? (
             <p className="muted">No forwarders are taking bookings yet.</p>
           ) : (
             <div className="stack">

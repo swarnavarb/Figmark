@@ -3,13 +3,15 @@ import { isLotEvent, kindOf, settledHistory } from '@shared/fulfilment';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import {
-  groupStages, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep, lotNo,
+  joinIndexOf, leaveIndexOf, renderStepText, sideOf, stepForStage, stepStateAt, waitMessageFor, type RouteStep, type StageIcon, lotNo,
 } from '@shared/routes';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { formatDateOrdinal } from '../format';
 import { Icon } from './Icon';
 import { StepMark, WaveLoader } from './ui';
+import { InfoTip } from './InfoTip';
 import { STAGE_ICON_META } from './RouteBuilder';
+import '../styles/Ladder.css';
 
 /**
  * A route, drawn.
@@ -27,7 +29,7 @@ import { STAGE_ICON_META } from './RouteBuilder';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, actFor, lockFrom, zones, moveUpTo, ended,
+  leaveAt, leaveNote, actFor, lockFrom, zones, moveFrom = 0, moveUpTo, backTo, ended, brief = false,
 }: {
   steps: RouteStep[];
   current: number;
@@ -94,12 +96,18 @@ export function Ladder({
    * and a button that only answers with a refusal is worse than none.
    */
   moveUpTo?: number;
+  /** The first rung `onMove` may go to - the lot's first step, where the lot does not start the route. */
+  moveFrom?: number;
+  /** The furthest back an undo may take it. Defaults to `moveFrom`. */
+  backTo?: number;
   /**
    * The journey stopped here - the order was cancelled or turned down. The
    * rungs past where it got to are not drawn at all, and one last rung says
    * how it ended: nothing further is going to happen to it.
    */
   ended?: { label: string; at?: string | null; note?: string | null } | null;
+  /** Each step's description behind an ⓘ by its name, so the timeline reads as a list of steps. */
+  brief?: boolean;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -125,18 +133,13 @@ export function Ladder({
   const editable = !ended && Boolean(onMove || onNote);
 
   /*
-   * Stage headers, drawn only where the seller actually grouped steps.
-   *
-   * `groupStages` folds every step with no `stageId` into a box of one, which
-   * is right for the builder (nothing to group, nothing missing) and wrong
-   * here: heading every rung with its own name would repeat what is already
-   * on it. So only a step that starts an explicitly-named stage gets one.
+   * The journey in its three parts, each under its own heading: the
+   * supplier's (each item on its own, before the lot), the freight
+   * forwarder's (the lot), and the domestic leg (each item on its own again,
+   * to its buyer). Worked out from the steps themselves, so every timeline -
+   * the seller's, the buyer's, the Studio's preview - is split the same way.
    */
-  const stageStarts = new Map(
-    groupStages(steps)
-      .filter((group) => group.steps[0]!.step.stageId)
-      .map((group) => [group.steps[0]!.index, group] as const),
-  );
+  const stageStarts = partStarts(steps, zones);
 
   async function send(at: number) {
     const text = draft.trim();
@@ -172,8 +175,8 @@ export function Ladder({
           <Fragment key={step.id}>
           {stage && (
             <li className="ladder__stage" aria-hidden="true">
-              <Icon name={STAGE_ICON_META[stage.stageIcon ?? 'warehouse'].icon} size={14} />
-              <span>{renderStepText(stage.stageName, vars ?? {})}</span>
+              <Icon name={STAGE_ICON_META[stage.icon].icon} size={14} />
+              <span>{stage.name}</span>
             </li>
           )}
           {/* Where the crate is unpacked and this piece goes on alone. Quiet on
@@ -198,9 +201,52 @@ export function Ladder({
             <span className="ladder__body">
               <span className="ladder__name">
                 {renderStepText(step.name, vars ?? {})}
+                {brief && step.description && (
+                  <InfoTip label={`About ${renderStepText(step.name, vars ?? {})}`}>
+                    {renderStepText(step.description, vars ?? {})}
+                  </InfoTip>
+                )}
               </span>
-              {step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
+              {!brief && step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
               {actFor?.(step, index, steps)}
+              {/* Moving goes one rung at a time: the next rung's Move here
+                  opens once the one before it is reached, and only the rung
+                  it is on can be undone - so nothing is skipped by a slip. */}
+              {editable && onMove && forwarding !== index && index >= moveFrom
+                && (moveUpTo === undefined || index <= moveUpTo) && (() => {
+                  if (index === current + 1) {
+                    return (
+                      <span className="stepact">
+                        <button type="button" className="stepact__btn is-next ladder__move" disabled={busy}
+                          onClick={() => step.forward ? setForwarding(index) : void onMove(index)}>
+                          <span aria-hidden="true">🚢</span> Move here
+                        </button>
+                      </span>
+                    );
+                  }
+                  if (index === current && current - 1 >= (backTo ?? moveFrom)) {
+                    return (
+                      <span className="stepact">
+                        <button type="button" className="stepact__btn is-done" disabled={busy}
+                          title="Moved here. Tap to take the lot back one step."
+                          onClick={() => void onMove(current - 1)}>
+                          <span aria-hidden="true">✓</span> Moved here <span className="stepact__undo">undo</span>
+                        </button>
+                      </span>
+                    );
+                  }
+                  if (index > current + 1) {
+                    return (
+                      <span className="stepact">
+                        <button type="button" className="stepact__btn is-later" disabled
+                          title="Opens once the step before it is done">
+                          <span aria-hidden="true">🔒</span> Move here
+                        </button>
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
 
               {said.map((event, at) => (
                 isLotEvent(event)
@@ -259,22 +305,15 @@ export function Ladder({
                 </span>
               )}
 
+
               {/* The affordance that makes "between the steps" a place you can
                   write: it hangs under the rung the note will be filed at. */}
-              {editable && noting !== index && (
+              {editable && noting !== index && onNote && (
                 <span className="ladder__acts">
-                  {onNote && (
-                    <button type="button" className="ladder__act" disabled={busy}
-                      onClick={() => { setNoting(index); setDraft(''); }}>
-                      <Icon name="plus" size={11} /> Note
-                    </button>
-                  )}
-                  {onMove && index !== current && forwarding !== index && (moveUpTo === undefined || index <= moveUpTo) && (
-                    <button type="button" className="ladder__act ladder__act--move" disabled={busy}
-                      onClick={() => step.forward ? setForwarding(index) : void onMove(index)}>
-                      {index < current ? 'Move back here' : 'Move here'}
-                    </button>
-                  )}
+                  <button type="button" className="ladder__act" disabled={busy}
+                    onClick={() => { setNoting(index); setDraft(''); }}>
+                    <Icon name="plus" size={11} /> Note
+                  </button>
                 </span>
               )}
 
@@ -367,6 +406,24 @@ export function Ladder({
       )}
     </ol>
   );
+}
+
+const ITEM_ALONE = new Set(['india_received', 'ready_to_dispatch', 'packed', 'dispatched', 'delivered']);
+
+/** Where each part of the journey starts on a timeline, and what it is called. */
+function partStarts(steps: RouteStep[], zones?: { join: number; leave: number }): Map<number, { name: string; icon: StageIcon }> {
+  const join = zones?.join ?? joinIndexOf({ steps });
+  /* Items leave the lot where the route says, or at the first thing that
+     happens to each item alone - arriving, checking, packing, dispatch. */
+  const own = steps.findIndex((step, index) => index >= join && Boolean(step.trigger && ITEM_ALONE.has(step.trigger)));
+  const leave = Math.max(join, zones?.leave ?? Math.min(leaveIndexOf({ steps }), own < 0 ? steps.length : own));
+  /* Order placed opens every journey and is the shop's, not the supplier's. */
+  const first = steps[0] && (steps[0].locked || /^order placed$/i.test(steps[0].name.trim())) ? 1 : 0;
+  const out = new Map<number, { name: string; icon: StageIcon }>();
+  if (first < join) out.set(first, { name: 'Supplier', icon: 'supplier' });
+  if (join < leave && join < steps.length) out.set(join, { name: 'Freight forwarder', icon: 'transit' });
+  if (leave < steps.length) out.set(leave, { name: 'Domestic', icon: 'delivery' });
+  return out;
 }
 
 /**

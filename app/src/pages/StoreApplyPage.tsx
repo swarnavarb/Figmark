@@ -12,6 +12,7 @@ import {
   emptyLane, type SectionProps,
 } from '../components/StoreForm';
 import type { StoreReviewEvent, StoreStatus } from '@shared/models';
+import { Preloader } from '../components/Preloader';
 
 /**
  * Applying for a service store.
@@ -83,7 +84,7 @@ export function StoreApplyPage() {
   if (!user) {
     return <main className="page"><EmptyState icon="◍" title="Sign in to apply"><Link to="/" className="btn">Sign in</Link></EmptyState></main>;
   }
-  if (!draft) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!draft) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   if (status === 'approved' || status === 'suspended') {
     return (

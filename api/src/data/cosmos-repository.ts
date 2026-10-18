@@ -4,7 +4,7 @@ import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { createHash } from 'node:crypto';
-import { CosmosClient, type Container, type ContainerRequest, type Database, type IndexingPolicy } from '@azure/cosmos';
+import { CosmosClient, type Container, type ContainerRequest, type Database, type IndexingPolicy, type PatchOperation } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
@@ -14,7 +14,7 @@ import type {
 } from '../../../shared/models.js';
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
-import { matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
+import { newestOrder, popularity, searchWords } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, OrderFigures, Repository } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
@@ -72,6 +72,8 @@ const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
 const SELF_MESSAGES_MARKER = 'migration:self-messages';
 /** Site-content id of the marker left once the one-off storage clean-up has run. */
 const STORAGE_CLEANUP_MARKER = 'migration:storage-cleanup';
+/** Site-content id of the marker left once every listing carries its sourcing and stored popularity. */
+const LISTINGS_MARKER = 'migration:listing-sourcing';
 /** Site-content id recording which container policies were last applied to the database. */
 const CONTAINER_POLICY_MARKER = 'migration:container-policies';
 /** How long a refused policy update waits before it is tried again. */
@@ -143,6 +145,8 @@ export class CosmosRepository implements Repository {
   /** The one-off removal of owner-to-own-shop messages, when it is running. */
   private selfMessages: Promise<void> | null = null;
   private storage: Promise<void> | null = null;
+  /** The one-off listing tidy, when it is running. */
+  private listingsPass: Promise<void> | null = null;
 
   constructor(private readonly cosmosConfig: CosmosConfig) {
     // A key is used when supplied; otherwise managed identity, which is the
@@ -251,6 +255,15 @@ export class CosmosRepository implements Repository {
     // so. Both behind the request; both cost one marker read once done.
     const populated = signInAccounts > 0;
     this.storage = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.tidyStorage(populated)).catch(() => undefined);
+
+    // Listings in the shape the catalog reads: once, behind a marker, and
+    // behind the request - a row not yet tidied is at worst missing from one
+    // filter or sort for a moment.
+    if (populated) {
+      this.listingsPass = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.tidyListings()).catch((error) => {
+        this.state = { ...this.state, detail: `${this.state.detail} Listing tidy failed: ${describeError(error)}.` };
+      }).then(() => undefined);
+    }
 
     let seeded = '';
     if (autoSeedEnabled()) {
@@ -480,6 +493,50 @@ export class CosmosRepository implements Repository {
     if (removed > 0) {
       this.state = { ...this.state, detail: `${this.state.detail} Removed ${removed} message(s) between owners and their own shops.` };
     }
+  }
+
+  /**
+   * Brings every listing into the shape the catalog reads, once.
+   *
+   * Sourcing follows the lot: a listing in one is an import, which is what
+   * filing it in now does, and a listing from before sourcing existed gets the
+   * answer its lot gives. Those older rows are only relabelled here, never
+   * deleted - their ids are kept on the marker so removing them is a decision
+   * somebody makes with the list in front of them. And every row gets the
+   * stored popularity the catalog orders by.
+   */
+  private async tidyListings(): Promise<void> {
+    if (await this.getSiteContent(LISTINGS_MARKER)) return;
+    const { resources } = await this.container('listings').items.query<Listing>({ query: 'SELECT * FROM c' }).fetchAll();
+
+    const legacy: string[] = [];
+    let relabelled = 0;
+    for (const listing of resources) {
+      const unsourced = listing.sourcing !== 'import' && listing.sourcing !== 'in_hand';
+      if (unsourced) legacy.push(listing.id);
+      const sourcing = listing.lotId ? 'import' : unsourced ? 'in_hand' : listing.sourcing;
+      const score = popularity(listing);
+      const ops: PatchOperation[] = [];
+      if (sourcing !== listing.sourcing) ops.push({ op: 'set', path: '/sourcing', value: sourcing });
+      if (listing.popularity !== score) ops.push({ op: 'set', path: '/popularity', value: score });
+      if (ops.length === 0) continue;
+      await this.container('listings').item(listing.id, listing.sellerId).patch(ops);
+      if (sourcing !== listing.sourcing) relabelled += 1;
+    }
+
+    await this.markListingsTidied({ legacy, relabelled });
+    if (relabelled > 0) {
+      this.state = {
+        ...this.state,
+        detail: `${this.state.detail} Relabelled ${relabelled} listing(s) to match their lot; ${legacy.length} predate sourcing.`,
+      };
+    }
+  }
+
+  /** Records that every listing is in the shape the catalog reads, so the pass never runs again. */
+  private async markListingsTidied(data: { legacy: string[]; relabelled: number }): Promise<void> {
+    const now = new Date().toISOString();
+    await this.saveSiteContent({ id: LISTINGS_MARKER, data, updatedBy: null, createdAt: now, updatedAt: now });
   }
 
   private async markSelfMessagesCleared(removed: number): Promise<void> {
@@ -768,6 +825,7 @@ export class CosmosRepository implements Repository {
     await this.maintenance;
     await this.selfMessages;
     await this.storage;
+    await this.listingsPass;
   }
 
   /**
@@ -826,6 +884,7 @@ export class CosmosRepository implements Repository {
     await this.markPaymentHoldsMigrated(0);
     await this.markSelfMessagesCleared(0);
     await this.markStorageCleaned({});
+    await this.markListingsTidied({ legacy: [], relabelled: 0 });
     this.seeded = true;
     return ` Seeded ${written} fixture records into an empty database.`;
   }
@@ -925,7 +984,7 @@ export class CosmosRepository implements Repository {
 
       // Only the genuinely absent ones are written, and in parallel: a handful
       // of rows after a release, none at all on the run after that.
-      await Promise.all(missing.map((item) => this.container(name).items.upsert(item)));
+      await Promise.all(missing.map((item) => this.container(name).items.upsert(fixtureRow(name, item))));
       added += missing.length;
       if (name === 'users') newUsers.push(...(missing as readonly User[]));
     }
@@ -1036,7 +1095,7 @@ export class CosmosRepository implements Repository {
       ['wantOffers', seedWantOffers()],
       ['pledges', seedPledges()],
     ] as const) {
-      for (const item of items) await this.container(name).items.upsert(item);
+      for (const item of items) await this.container(name).items.upsert(fixtureRow(name, item));
       written += items.length;
     }
 
@@ -1974,6 +2033,18 @@ export class CosmosRepository implements Repository {
     });
   }
 
+  /* One partition, answered from the index: `_ts` is stamped by Cosmos on
+     every write, and a delete or an expiry shows in the count. */
+  async notificationStamp(userId: string): Promise<{ count: number; lastWriteAt: number }> {
+    const { resources } = await this.container('notifications')
+      .items.query<{ n?: number; ts?: number }>(
+        { query: 'SELECT COUNT(1) AS n, MAX(c._ts) AS ts FROM c' },
+        { partitionKey: userId },
+      )
+      .fetchAll();
+    return { count: resources[0]?.n ?? 0, lastWriteAt: resources[0]?.ts ?? 0 };
+  }
+
   /* Cross-partition, but bounded to a few minutes of holds, and a clock that
      finds nothing costs one small query. */
   async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {
@@ -2477,16 +2548,21 @@ export class CosmosRepository implements Repository {
    * cannot be checked before it is sent, and an unchecked query is exactly how
    * a reserved word reached production last time.
    *
-   * Search is the exception and stays in JavaScript: "every one of these words,
-   * across four fields" is not expressible without building the statement from
-   * the term. It therefore searches the window this query returns rather than
-   * all of history, so the window is opened wider when there is a term.
+   * Search is pushed in too, so it reaches every listing rather than only the
+   * newest few hundred: one fixed clause per word (see searchClause), up to
+   * MAX_SEARCH_WORDS of them. The clause count follows the term but its text
+   * never does - each word is a parameter - and every clause is a literal the
+   * query check reads like any other.
    */
   async listListings(query: CatalogQuery = {}): Promise<Listing[]> {
-    const byPopularity = query.sort === 'popular';
-    const limit = byPopularity ? 400 : query.limit ?? (query.search ? 400 : 100);
+    const limit = query.limit ?? 100;
     // "Newest" means the later of listed and bumped, which Cosmos cannot ORDER BY.
     const ranked = !query.sort || query.sort === 'newest';
+    // One clause per search word. Only the number of clauses follows the term;
+    // every word goes in as a parameter, so nothing anybody typed is ever part
+    // of the statement.
+    const words = searchWords(query.search ?? '');
+    const searched = words.map((_, i) => searchClause(`@w${i}`)).join('');
     const where =
       // The operations console passes @all, because it deletes what an
       // account made and cannot do that from a filtered list. Everybody else
@@ -2500,8 +2576,9 @@ export class CosmosRepository implements Repository {
       ' AND (@price = 0 OR c.priceMinor <= @price)' +
       ' AND (@kind = "" OR (@kind = "pre_order" AND IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder))' +
       ' OR (@kind = "mixed_lot" AND c.bundle = true)' +
-      ' OR (@kind = "in_hand" AND (c.sourcing = "in_hand" OR (NOT IS_DEFINED(c.sourcing) AND NOT IS_DEFINED(c.lotId))))' +
-      ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))';
+      ' OR (@kind = "in_hand" AND c.sourcing = "in_hand")' +
+      ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))' +
+      searched;
     const bound = {
       parameters: [
         { name: '@all', value: query.includeHidden === true },
@@ -2511,9 +2588,10 @@ export class CosmosRepository implements Repository {
         // empty list means none of them, which is what an unknown heading is.
         { name: '@cats', value: query.categories ? [...query.categories] : null },
         { name: '@cond', value: query.condition ?? '' },
-        { name: '@price', value: query.maxPriceMinor ?? 0 },
+        { name: '@price', value: query.maxPriceMinor && query.maxPriceMinor > 0 ? query.maxPriceMinor : 0 },
         { name: '@kind', value: query.kind && query.kind !== 'all' ? query.kind : '' },
         { name: '@limit', value: limit },
+        ...words.map((word, i) => ({ name: `@w${i}`, value: word })),
       ],
     };
     const options = query.sellerId ? { partitionKey: query.sellerId } : undefined;
@@ -2530,18 +2608,9 @@ export class CosmosRepository implements Repository {
         ? read(where + ' AND IS_DEFINED(c.bumpedAt) AND NOT IS_NULL(c.bumpedAt) ORDER BY c.bumpedAt DESC OFFSET 0 LIMIT @limit')
         : Promise.resolve({ resources: [] as Listing[] }),
     ]);
+    if (!ranked) return listed.resources;
     const resources = [...new Map([...listed.resources, ...bumped.resources].map((l) => [l.id, l])).values()];
-
-    const matched = query.search
-      ? resources.filter((listing) => matchesSearch(listing, query.search!))
-      : resources;
-
-    if (byPopularity) {
-      return [...matched].sort((a, b) => popularity(b) - popularity(a)).slice(0, query.limit ?? 100);
-    }
-
-    if (!ranked) return matched;
-    return [...matched].sort(newestOrder).slice(0, limit);
+    return resources.sort(newestOrder).slice(0, limit);
   }
 
   async listOrdersForLot(lotId: string): Promise<Order[]> {
@@ -2561,7 +2630,7 @@ export class CosmosRepository implements Repository {
   }
 
   async createListing(listing: Listing): Promise<Listing> {
-    const { resource } = await this.container('listings').items.create(listing);
+    const { resource } = await this.container('listings').items.create(withPopularity(listing));
     return this.snapshots.remember('listings', resource ?? listing);
   }
 
@@ -2618,7 +2687,7 @@ export class CosmosRepository implements Repository {
         if (!resource) return false;
         await this.container('listings')
           .item(id, sellerId)
-          .replace({ ...resource, lotId, updatedAt: new Date().toISOString() });
+          .replace({ ...resource, lotId, sourcing: lotId ? 'import' : 'in_hand', updatedAt: new Date().toISOString() });
         return true;
       } catch (error) {
         // Not this seller's listing, or already gone: skip rather than fail.
@@ -2769,7 +2838,7 @@ export class CosmosRepository implements Repository {
     // An increment rather than a read and a write: views never conflict, and
     // a count that misses one under load costs nothing.
     await this.container('listings').item(listing.id, listing.sellerId)
-      .patch([{ op: 'incr', path: '/viewCount', value: 1 }])
+      .patch([{ op: 'incr', path: '/viewCount', value: 1 }, { op: 'incr', path: '/popularity', value: 1 }])
       .catch(() => undefined);
   }
 
@@ -2814,7 +2883,10 @@ export class CosmosRepository implements Repository {
     const listing = await this.getListing(listingId);
     if (listing) {
       await this.container('listings').item(listing.id, listing.sellerId)
-        .patch([{ op: 'incr', path: '/likeCount', value: liked ? 1 : -1 }])
+        .patch([
+          { op: 'incr', path: '/likeCount', value: liked ? 1 : -1 },
+          { op: 'incr', path: '/popularity', value: liked ? 10 : -10 },
+        ])
         .catch(() => undefined);
     }
     return liked;
@@ -2976,10 +3048,31 @@ const CATALOG_ORDER: Record<string, string> = {
   newest: ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
   price_asc: ' ORDER BY c.priceMinor ASC OFFSET 0 LIMIT @limit',
   price_desc: ' ORDER BY c.priceMinor DESC OFFSET 0 LIMIT @limit',
-  // Popularity is a sum of two fields, which Cosmos cannot ORDER BY. The newest
-  // window is fetched wide and ranked in JavaScript instead; see listListings.
-  popular: ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+  // A sum of two fields, which Cosmos cannot ORDER BY, so it is stored on the
+  // row and kept in step by the increments that move the counts.
+  popular: ' ORDER BY c.popularity DESC OFFSET 0 LIMIT @limit',
 };
+
+/**
+ * One search word's clause: the word, passed as the parameter `name`, somewhere
+ * in the title, description, category or a tag - the four fields matchesSearch
+ * in shared/catalog reads, matched the same way, ignoring case.
+ */
+function searchClause(name: string): string {
+  return ' AND (CONTAINS(c.title, ' + name + ', true) OR CONTAINS(c.description, ' + name + ', true)' +
+    ' OR CONTAINS(c.category, ' + name + ', true)' +
+    ' OR EXISTS(SELECT VALUE t FROM t IN c.tags WHERE CONTAINS(t, ' + name + ', true)))';
+}
+
+/** A listing as it is stored: with the popularity the catalog orders by. */
+function withPopularity(listing: Listing): Listing {
+  return { ...listing, popularity: popularity(listing) };
+}
+
+/** A fixture as it is written: listings carry their stored popularity like any other. */
+function fixtureRow<T>(container: string, item: T): T {
+  return container === 'listings' ? withPopularity(item as Listing) as T : item;
+}
 
 /** The clause for one sort, falling back to newest for anything unrecognised. */
 function catalogOrder(sort: string | undefined): string {

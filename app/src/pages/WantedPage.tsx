@@ -9,6 +9,7 @@ import { useSession } from '../session';
 import { Icon } from '../components/Icon';
 import { shrink } from '../components/PhotoManager';
 import { VoicePicker, useVoice } from '../components/SocialVoice';
+import { Loading } from '../components/Feedback';
 
 /**
  * What people are looking for.
@@ -497,7 +498,7 @@ function WantDialog({ card, onClose, onChanged }: {
       )}
 
       {!data ? (
-        <p className="muted">Loading…</p>
+        <Loading />
       ) : (
         <>
           <section className="detail__section">

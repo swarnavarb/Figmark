@@ -6,6 +6,7 @@ import type { OpsStoreRow } from '../api';
 import { formatDate, timeAgo } from '../format';
 import { LaneTicket, OfferingCard, PlanCard, PortfolioGrid, StatusPill, StoreCover, StoreMark, accentStyle } from '../components/StoreKit';
 import { Timeline } from '../pages/StoreApplyPage';
+import { Loading } from '../components/Feedback';
 
 /**
  * Service store applications, and every store already open.
@@ -43,7 +44,7 @@ export function StoresView() {
     void load();
   }, [load]);
 
-  if (!rows) return error ? <p className="notice notice--error">{error}</p> : <p className="muted">Loading…</p>;
+  if (!rows) return error ? <p className="notice notice--error">{error}</p> : <Loading />;
 
   const waiting = rows.filter((row) => row.status === 'pending');
   const shown = rows.filter((row) =>

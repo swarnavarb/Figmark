@@ -1,0 +1,97 @@
+/*
+ * Styles only admin/main.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.userrow:last-child { border-bottom: 0; }
+.learned { gap: 16px; }
+/* ── The Learn editor, in the operations console ───────────────────────── */
+.learned__bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.learned__grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+.learned__tabs { display: grid; gap: 6px; }
+.learned__label { margin: 0; font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em; }
+.learned__tab { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 4px; }
+.learned__tab.is-on { border-color: var(--violet-line); background: var(--violet-soft); }
+.learned__tools { display: inline-flex; gap: 4px; flex: none; }
+.learned__hint { margin: 0; font-size: var(--t-xs); }
+.learned__row { display: flex; align-items: center; gap: 10px; }
+.learned__icon { width: 80px; }
+.learned__check { gap: 8px; font-size: var(--t-sm); cursor: pointer; }
+.learned__danger { color: var(--danger-text); }
+.learned__section { gap: 12px; }
+.learned__steps { gap: 10px; }
+.learned__step { display: grid; gap: 8px; padding: 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.learned__image { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.learned__thumb { width: 96px; max-height: 160px; object-fit: cover; object-position: top; border-radius: 10px; border: 1px solid var(--border-strong); }
+.learned__preview { display: grid; gap: 14px; padding: 16px; border-radius: var(--r-lg); border: 1px dashed var(--border-strong); }
+@media (min-width: 900px) {
+  .learned__grid { grid-template-columns: 240px minmax(0, 1fr); }
+}
+.ops-st__head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; }
+/* ==========================================================================
+   Operations: the service store queue.
+   ========================================================================== */
+.ops-st { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+.ops-st.is-open { border-color: var(--sk-line); }
+.ops-st__row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ops-st__row:hover { background: var(--surface-2); }
+.ops-st__when { flex: 0 0 auto; }
+.ops-st__body { padding: 0 14px 16px; }
+.ops-st__grid { display: grid; gap: 18px; }
+@media (min-width: 900px) {
+  .ops-st__grid { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+}
+.ops-st__about { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.6; white-space: pre-line; }
+.ops-st__plans { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+.ops-st__facts { margin: 0; display: grid; gap: 0; }
+.ops-st__facts dt { color: var(--text-faint); }
+.ops-st__facts dd { margin: 0; text-align: right; }
+.ops-st__links { display: flex; flex-wrap: wrap; gap: 10px; font-size: var(--t-sm); }
+.ops-st__decide { padding: 14px; border-radius: var(--r-md); background: var(--surface-2); }
+.ops-st__head .seg button { white-space: nowrap; }
+/* ── Admin: installs & devices ─────────────────────────────────────────── */
+.devstats__headline { margin: 0; font-size: var(--t-md); }
+.devstats__headline strong { font-size: var(--t-xl); margin-right: 4px; }
+.devstats__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.devstats__tile { display: grid; gap: 4px; }
+.devstats__value { font-size: var(--t-2xl); font-weight: var(--w-bold); line-height: 1.1; }
+.devstats__table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.devstats__table thead th { font-weight: var(--w-semi); color: var(--text-faint); }
+.devstats__track { flex: 1; height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.devstats__fill { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+/* Operations: the sample routes list, the button words table and its preview. */
+.opsroutes { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.opsroutes__row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); flex-wrap: wrap; }
+.opscommon { display: grid; gap: 4px; margin: 0; padding-left: 20px; font-size: var(--t-sm); }
+.opscommon__btn { margin-left: 8px; font-size: var(--t-2xs); color: var(--text-dim); }
+.opsroutes__icon { font-size: 22px; }
+.opsroutes__body { display: grid; gap: 2px; flex: 1 1 16rem; min-width: 0; }
+.opsroutes__acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.opsroutes__card { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
+.opsroutes__studio { min-width: 0; }
+/* A screen opened inside a console tab: back, a title, then the work, edge to edge. */
+.opsedit { display: grid; gap: 12px; min-width: 0; }
+.opsback {
+  justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 8px;
+  border: 0; border-radius: 999px; background: var(--surface-2); color: var(--text);
+  font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
+}
+.opsbtns { display: grid; gap: 10px; }
+.opsbtns__head { margin: 6px 0 0; font-size: var(--t-sm); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.opsbtns__row {
+  display: grid; grid-template-columns: 36px repeat(2, minmax(0, 1fr)) auto; gap: 10px; align-items: end;
+  padding: 10px 12px; border-radius: 12px; background: var(--surface-2);
+}
+.opsbtns__row--new { grid-template-columns: 36px repeat(4, minmax(0, 1fr)); }
+.opsbtns__wide { grid-column: 2 / -1; }
+.opsbtns__icon { font-size: 22px; align-self: center; text-align: center; }
+.opsbtns__icon--edit { width: 36px; padding: 6px 0; font-size: 18px; }
+@media (max-width: 720px) {
+  .ops__head { padding: 12px 16px; }
+  .ops__body { padding: 12px 16px 24px; }
+  .opsbtns__row, .opsbtns__row--new { grid-template-columns: 36px minmax(0, 1fr); }
+  .opsbtns__row > :not(.opsbtns__icon), .opsbtns__wide { grid-column: 2; }
+}
+.opswords { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px 8px; align-items: center; max-width: 560px; }
+.opswords__preview { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.opswords__pill { padding: 6px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font-size: var(--t-sm); font-weight: var(--w-semi); }

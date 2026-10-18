@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { RouteProblem } from '@shared/buttons';
 import { renderStepText, stepButtonLabel, type RouteStep } from '@shared/routes';
+import '../styles/RouteStudioPage.css';
 
 /**
  * Pip, the parcel who helps write a tracking timeline.
@@ -214,11 +215,11 @@ export function routeFromAnswers(a: PipAnswers): RouteStep[] {
 
   const lot: RouteStep[] = [];
   if (a.travel === 'air') {
-    lot.push(make('Flying out of {origin}', 'The lot is on a flight.', { forward: true }), make('Landed in {destination}', 'Off the plane.'));
+    lot.push(make('Flying out of {origin}', 'The lot is on a flight.', { forward: true }), make('Landed in {dest}', 'Off the plane.'));
   } else if (a.travel === 'sea') {
-    lot.push(make('Sailing from {origin}', 'The lot is on a ship.', { forward: true }), make('Arrived at {destination} port', 'Off the ship.'));
+    lot.push(make('Sailing from {origin}', 'The lot is on a ship.', { forward: true }), make('Arrived at {dest} port', 'Off the ship.'));
   } else if (a.travel === 'courier') {
-    lot.push(make('With the international courier', 'Handed over to the courier.', { forward: true }), make('Arrived in {destination}', 'In the country.'));
+    lot.push(make('With the international courier', 'Handed over to the courier.', { forward: true }), make('Arrived in {dest}', 'In the country.'));
   }
   if (a.customs) lot.push(make('Customs cleared', 'Cleared on arrival.'));
 
@@ -226,7 +227,7 @@ export function routeFromAnswers(a: PipAnswers): RouteStep[] {
      lot is unpacked there and each item is counted in on its own button. */
   const last: RouteStep[] = [];
   if (a.land === 'warehouse') {
-    last.push(make('Received at {destination} warehouse', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'At home WH' }));
+    last.push(make('Received at {dest} warehouse', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'At home WH' }));
   } else if (a.land === 'me') {
     last.push(make('Received by the seller', 'Unpacked - each item goes on alone from here.', { trigger: 'india_received', button: 'Got it' }));
   }

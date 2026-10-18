@@ -5,7 +5,7 @@ import {
 } from '../api';
 import { Avatar, Modal, useConfirm } from './ui';
 import { Icon } from './Icon';
-import { useToast } from './Feedback';
+import { useToast, Loading } from './Feedback';
 import { timeAgo } from '../format';
 
 type Pane = 'members' | 'banned' | 'warnings' | 'settings';
@@ -101,7 +101,7 @@ export function ForumPeople({ forumId, description, rules, onClose, onForum }: {
           </div>
         )}
         {error && <p className="spost__error">{error}</p>}
-        {!data && !error && <p className="muted">Loading…</p>}
+        {!data && !error && <Loading />}
 
         {data && pane === 'members' && (
           <>

@@ -128,6 +128,7 @@ const {
 } = await import(new URL('collection-routes.js', apiRoot));
 const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
 const { settingsRoute, opsSettingsRoute, opsSettingsSaveRoute } = await import(new URL('settings-routes.js', apiRoot));
+const { routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute } = await import(new URL('route-admin-routes.js', apiRoot));
 const {
   reportCreateRoute, reportMineRoute, opsReportsRoute, opsReportResolveRoute,
 } = await import(new URL('report-routes.js', apiRoot));
@@ -309,6 +310,10 @@ const routes = [
   ['GET', '/api/settings', settingsRoute],
   ['GET', '/api/ops/settings', opsSettingsRoute],
   ['POST', '/api/ops/settings/save', opsSettingsSaveRoute],
+  ['GET', '/api/route-words', routeWordsRoute],
+  ['GET', '/api/ops/route-library', opsRouteLibraryRoute],
+  ['POST', '/api/ops/route-samples/save', opsRouteSamplesSaveRoute],
+  ['POST', '/api/ops/route-words/save', opsRouteWordsSaveRoute],
   ['POST', '/api/reports', reportCreateRoute],
   ['GET', '/api/reports/mine', reportMineRoute],
   ['GET', '/api/ops/reports', opsReportsRoute],

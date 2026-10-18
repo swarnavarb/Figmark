@@ -1,0 +1,115 @@
+/*
+ * Styles only components/RouteMascot.tsx and what it brings in can draw, loaded with that
+ * chunk rather than in front of every page. Split out of styles.css by
+ * where each class is used; see the note at the top of styles.css.
+ */
+.rshead__name:focus { outline: none; border-bottom-color: var(--accent); }
+.rsmap__seg--pre, .rslane--pre { --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line); }
+.rsmap__seg--lot, .rslane--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
+.rsmap__seg--post, .rslane--post { --zone: var(--lime); --zone-soft: var(--lime-soft); --zone-line: var(--lime-line); }
+.rslane .rszone { margin: 0 0 4px; }
+.rsnode__card:focus-within { border-color: var(--zone, var(--accent-line)); }
+.rsnode__card--locked { background: var(--surface-2); }
+.rsnode__card--delivered { border-color: rgba(52, 211, 153, 0.45); }
+.rsbar__preview:disabled { opacity: 0.5; cursor: default; }
+.rsnode__name:focus { outline: none; }
+.rsnode__name:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); cursor: default; }
+.rsnode__desc:focus { outline: none; color: var(--text); }
+.rsgap__wait:hover { border-color: var(--warn); color: var(--warn); }
+/* A message set makes the pill read the same amber the real ladder uses for
+   this exact wait, so the gap looks here the way it will look for a buyer. */
+.rsgap__wait:has(.waveloader) { border-style: solid; border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+.rschain:hover .rsgap__insert, .rsgap:focus-within .rsgap__insert { opacity: 1; }
+.rsgap__insert:hover { border-style: solid; border-color: var(--accent); color: var(--accent-text); }
+.rszone--pre { --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line); }
+.rszone--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
+.rszone--post { --zone: var(--lime); --zone-soft: var(--lime-soft); --zone-line: var(--lime-line); }
+.rsnode--pre { --zone: var(--aqua); }
+.rsnode--lot { --zone: var(--coral); }
+.rsnode--post { --zone: var(--lime); }
+.rsnode--pre .rsnode__card, .rsnode--lot .rsnode__card, .rsnode--post .rsnode__card {
+  box-shadow: inset 3px 0 0 var(--zone);
+}
+.rspick__row:hover:not(:disabled) { border-color: var(--accent); }
+.rspick__row.is-locked { opacity: 0.55; cursor: not-allowed; border-style: dashed; }
+.pipdock__bubble {
+  position: relative; padding: 10px 12px; border-radius: 4px 14px 14px 14px;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.pipdock__choice:hover { border-color: var(--accent); }
+.pipdock__choice.is-primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+.pipdock__hide:hover { color: var(--text); background: var(--surface-2); }
+.pipcall:hover { color: var(--text); border-color: var(--accent); }
+/* Under the field being typed in: the name's under the name, the button's under the button. */
+.rsnode__top:focus-within + .rstags, .rsbtn__words:focus + .rstags { display: flex; }
+.rstour__title { font-size: var(--t-md); }
+.rstour__gap { flex: 1; }
+.rsbtn.is-wrong { padding: 8px; background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); }
+.rsbtn__note { color: var(--text-dim); }
+.rsbtn__wrong { color: var(--danger); }
+.rsbtn__add {
+  height: 26px; padding: 0 10px; border: 1px dashed var(--accent-line); border-radius: 999px;
+  background: transparent; color: var(--accent-text); font: inherit; font-size: var(--t-2xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.rsbtn__whochip {
+  height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text-dim); font: inherit; font-size: var(--t-2xs); cursor: pointer;
+}
+.rsbtn__whochip.is-on { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: var(--w-semi); }
+.rsbtn__whochip.is-fixed { display: inline-flex; align-items: center; cursor: default; opacity: 0.85; }
+.rsnode__handover { font-size: var(--t-2xs); line-height: 1.4; color: var(--text-dim); }
+.serial__btn:active:not(:disabled) { transform: scale(0.96); }
+.serial__btn:disabled { cursor: default; }
+.serial__btn--later:disabled { opacity: 0.5; }
+/* The route's buttons as small pills in a row. */
+.serial--compact { gap: 0; }
+.serial--compact .serial__head { display: none; }
+.serial--compact .serial__list { display: flex; flex-wrap: wrap; gap: 5px; }
+.serial--compact .serial__btn { width: auto; min-height: 28px; gap: 5px; padding: 2px 10px 2px 3px; border-radius: 14px; font-size: var(--t-2xs); }
+.serial--compact .serial__n { width: 20px; height: 20px; font-size: 10px; }
+.serial--compact .serial__label { display: block; max-width: 10rem; text-overflow: ellipsis; white-space: nowrap; }
+.serial__meter { display: block; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.serial__list--one > li { flex: 1; }
+.serial__more {
+  flex: none; margin-left: auto; padding: 4px 2px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--t-2xs); color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px;
+}
+.serial__head .serial__more { text-transform: none; letter-spacing: 0; font-weight: var(--w-semi); }
+.serial--compact.serial--folded .serial__btn { width: 100%; }
+.rshead__modes { display: flex; align-items: center; gap: 8px; }
+.rshead__mode { flex: 1 1 auto; }
+.rshead__mode button { white-space: nowrap; padding: 7px 12px; }
+/* The route name's note and the ⋯ beside it. */
+.rshead__hint { display: inline-flex; align-items: center; gap: 8px; }
+/* New route: one clean list of samples, each with its three parts as a bar and its first steps. */
+.rsnew__head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.rsnew__label { font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.rsnew__list { display: grid; gap: 8px; }
+.rsnew__item {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.rsnew__item:hover { border-color: var(--accent-line); }
+.rsnew__item:active { transform: scale(0.99); }
+.rsnew__item > svg { flex: none; color: var(--text-faint); }
+.rsnew__icon { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-text); }
+.rsnew__body { display: grid; gap: 5px; flex: 1; min-width: 0; }
+.rsnew__name { font-weight: var(--w-semi); }
+.rsnew__blurb { font-size: var(--t-xs); color: var(--text-dim); }
+.rsnew__bar { display: flex; gap: 3px; height: 5px; }
+.rsnew__seg { flex: 1 1 0; border-radius: 3px; min-width: 6px; }
+.rsnew__seg--pre { background: var(--aqua); }
+.rsnew__seg--lot { background: var(--coral); }
+.rsnew__seg--post { background: var(--lime); }
+.rsnew__trail { font-size: var(--t-2xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rsnew__other { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rsnew__alt {
+  display: grid; gap: 2px; justify-items: start; padding: 12px 14px; text-align: left;
+  border: 1px dashed var(--border-strong, var(--border)); border-radius: 14px; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.rsnew__alt:hover { border-color: var(--accent-line); }
+.rsnew__alt > span:first-child { font-size: 20px; }
+/* The Studio in Steps view: the words, and nothing moving behind them. */
+.rshead__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rshead__top .rshead__name { flex: 1; min-width: 0; }

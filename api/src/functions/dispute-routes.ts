@@ -1256,8 +1256,9 @@ async function managers(request: HttpRequest, _context: InvocationContext) {
  * GET /api/community/team - every appointed community manager, for the badge.
  *
  * Public: the badge sits beside their name wherever it appears, signed in or
- * not. Ids and handles only - their own and their shop's, since a shop page is
- * still them - plus the date they were appointed.
+ * not. Ids and their own handle only - not their shop's: the role is a
+ * person's, and a shop is not labelled with it - plus the date they were
+ * appointed.
  */
 async function team(_request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
@@ -1265,7 +1266,7 @@ async function team(_request: HttpRequest, _context: InvocationContext) {
   return json(200, {
     managers: people.map((person) => ({
       id: person.id,
-      handles: [person.username, person.sellerProfile?.username].filter((handle): handle is string => !!handle),
+      handles: [person.username].filter((handle): handle is string => !!handle),
       since: person.managerRights!.grantedAt,
     })),
   });

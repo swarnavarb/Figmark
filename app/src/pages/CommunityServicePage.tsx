@@ -5,6 +5,8 @@ import { ApiRequestError, api, type CommunityDesk } from '../api';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 import { BackLink } from '../components/ScrollManager';
+import { Preloader } from '../components/Preloader';
+import '../styles/CommunityServicePage.css';
 
 type Tab = 'waiting' | 'all' | 'earnings';
 
@@ -37,7 +39,7 @@ export function CommunityServicePage() {
   }, [load]);
 
   if (error && !desk) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!desk) return <main className="page tab-view"><p className="muted">Loading…</p></main>;
+  if (!desk) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
 
   const waiting = desk.cases.filter((row) => row.waitingOnMe)
     .sort((a, b) => (a.decideBy ?? '').localeCompare(b.decideBy ?? ''));

@@ -164,7 +164,7 @@ const {
 } = await import(new URL('crew-routes.js', fns));
 const {
   listRoutesRoute: listRoutes, saveRouteRoute: saveRoute, deleteRouteRoute: deleteRoute,
-  lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLot,
+  lotCandidatesRoute: lotCandidates, addItemsRoute: addItems, stepLotRoute: stepLotRaw,
   noteOnLotRoute: noteOnLot, setLotRouteRoute: setLotRoute, stepItemRoute: stepItem,
   myItemsRoute: myItems, applyRouteRoute: applyRoute, closeLotRoute: closeLot,
 } = await import(new URL('tracking-routes.js', fns));
@@ -261,6 +261,41 @@ const check = async (name, fn) => {
   await fn();
   passed += 1;
   console.log(`  ok  ${name}`);
+};
+
+/*
+ * A lot waits for every order in it: it will not move past a step one of
+ * them has not had its own buttons pressed up to. Checks about something
+ * else move lots through `stepLot`, which presses those buttons first, the
+ * way a seller would; `stepLotRaw` is the endpoint as it is, for the checks
+ * about that rule itself.
+ */
+const STOPPED = new Set(['cancelled', 'rejected', 'refunded', 'payment_reversal_pending', 'cancelled_reversed', 'delivered']);
+const readyLot = async (request) => {
+  const id = request.params.id;
+  // A forwarder (`?store=`) cannot press the shop's item buttons; the shop readies its own lot.
+  const headers = request.query.get('store') ? auth : request.headers;
+  const board = (await lotContents(req({ headers, params: { id } }), ctx)).jsonBody;
+  if (!board?.route || !Array.isArray(board.items)) return;
+  let to = board.route.currentStep + 1;
+  try { const body = await request.json(); if (typeof body?.to === 'number') to = body.to; } catch { /* no body: one step on */ }
+  if (to <= board.route.currentStep) return;
+  for (const item of board.items) {
+    if (STOPPED.has(item.status)) continue;
+    for (let index = 0; index < to && index < board.route.steps.length; index += 1) {
+      const step = board.route.steps[index];
+      const key = step.trigger ?? (step.custom ? `custom:${step.id}` : null);
+      if (key && !item.ticks?.[key]) {
+        await setCheckpoint(req({ headers, params: { id: item.id }, body: { checkpoint: key, on: true } }), ctx);
+      }
+    }
+  }
+};
+const stepLot = async (request, context) => {
+  let undo = false;
+  try { undo = Boolean((await request.json())?.undoOf); } catch { /* no body */ }
+  if (!undo) await readyLot(request);
+  return stepLotRaw(request, context);
 };
 
 /* ── auth ──────────────────────────────────────────────────────────────── */
@@ -470,6 +505,40 @@ await check('filters by kind, condition and price', async () => {
   assert.ok(misb.every((l) => l.condition === 'MISB'));
   const cheap = (await feed(req({ query: { maxPrice: '50000' } }), ctx)).jsonBody.listings;
   assert.ok(cheap.every((l) => l.priceMinor <= 50000));
+});
+
+await check('a price ceiling of zero is no ceiling at all', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings.length;
+  assert.equal((await feed(req({ query: { maxPrice: '0' } }), ctx)).jsonBody.listings.length, all);
+  assert.equal((await feed(req({ query: { maxPrice: '-5' } }), ctx)).jsonBody.listings.length, all);
+});
+
+await check('nothing is listed for nothing', async () => {
+  for (const priceMinor of [0, 40, -100, 'free', null]) {
+    const made = await createListing(req({ headers: auth, body: { title: 'Free stuff', priceMinor } }), ctx);
+    assert.equal(made.status, 400, `a price of ${priceMinor} must be refused`);
+  }
+  const item = (await createListing(req({ headers: auth, body: { title: 'Priced', priceMinor: 1_000 } }), ctx)).jsonBody.listing;
+  const zeroed = await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 0 } }), ctx);
+  assert.equal(zeroed.status, 400, 'an edit cannot take the price to nothing either');
+});
+
+await check('search finds a word in any of title, description, category or tags', async () => {
+  const made = (await createListing(req({
+    headers: auth,
+    body: { title: 'Plain box', description: 'Holds a zephyrine widget', priceMinor: 1_000, tags: ['quokkacore'] },
+  }), ctx)).jsonBody.listing;
+  for (const q of ['zephyrine', 'QUOKKACORE', 'plain zephyrine quokkacore']) {
+    const found = (await feed(req({ query: { q } }), ctx)).jsonBody.listings;
+    assert.ok(found.some((l) => l.id === made.id), `"${q}" should find it`);
+  }
+  assert.ok(!(await feed(req({ query: { q: 'zephyrine nowhere' } }), ctx)).jsonBody.listings.some((l) => l.id === made.id));
+});
+
+await check('popular puts the most watched first', async () => {
+  const listings = (await feed(req({ query: { sort: 'popular' } }), ctx)).jsonBody.listings;
+  const scores = listings.map((l) => l.viewCount + l.likeCount * 10);
+  assert.deepEqual(scores, [...scores].sort((a, b) => b - a));
 });
 
 await check('pre-orders carry their own fill counts', async () => {
@@ -941,9 +1010,15 @@ await check('items can be tagged into and out of a lot', async () => {
   assert.equal(added.jsonBody.changed, 1);
   const contents = (await lotContents(req({ headers: auth, params: { id: lotId } }), ctx)).jsonBody;
   assert.ok(contents.listings.some((l) => l.id === 'lst_my_cards'));
+  // Into a lot is an import, and it leaves the in-hand shelf with it.
+  assert.equal((await (await getRepository()).getListing('lst_my_cards')).sourcing, 'import');
+  const inHand = (await feed(req({ query: { kind: 'in_hand' } }), ctx)).jsonBody.listings;
+  assert.ok(!inHand.some((l) => l.id === 'lst_my_cards'));
 
   const removed = await assignToLot(req({ headers: auth, params: { id: lotId }, body: { listingIds: ['lst_my_cards'], remove: true } }), ctx);
   assert.equal(removed.jsonBody.changed, 1);
+  // ...and out of one is back in hand.
+  assert.equal((await (await getRepository()).getListing('lst_my_cards')).sourcing, 'in_hand');
 });
 
 await check("a seller cannot touch someone else's lot", async () => {
@@ -2730,7 +2805,13 @@ await check('the Sell tab counts on the server what it used to count from the wh
   const waiting = new Set([...full.waiting, ...full.placed].map((row) => row.id));
   assert.equal(counts.answer, active.filter((row) => waiting.has(row.id)).length);
   assert.equal(counts.noLot, active.filter((row) => row.awaitingLot).length);
+  // An import on sale with no lot is counted before anybody orders it.
+  const shelf = await (await getRepository()).listListings({ sellerId: 'usr_demo', limit: 10_000 });
+  assert.equal(counts.noLotListings, shelf.filter((listing) => !listing.lotId && listing.sourcing === 'import').length);
   assert.ok(counts.answer > 0, 'with something to answer in it');
+  // One time per order waiting, so the tab can mark the ones newer than the seller's last look.
+  assert.equal(counts.answerSince.length, counts.answer);
+  assert.ok(counts.answerSince.every((at) => typeof at === 'string' && !Number.isNaN(Date.parse(at))));
   assert.equal(typeof counts.lots, 'number');
   const refused = await sellTodo(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
   assert.equal(refused.status, 403);
@@ -5762,6 +5843,17 @@ await check('filling a lot moves the item into it, and tells the buyer', async (
   assert.equal(again.jsonBody.added, 0);
 });
 
+await check('a lot waits for an order whose own buttons are not pressed yet, and says which', async () => {
+  const before = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.ok(before.items.some((item) => !item.ticks.china_received), 'an item here has not been checked in');
+  const held = await stepLotRaw(req({ headers: auth, params: { id: routedLot.id }, body: {} }), ctx);
+  assert.equal(held.status, 409);
+  assert.equal(held.jsonBody.error, 'orders_not_ready');
+  assert.match(held.jsonBody.message, /cancel/, 'it says the order can be progressed or cancelled');
+  const still = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
+  assert.equal(still.route.currentStep, before.route.currentStep, 'and the lot has not moved');
+});
+
 await check('one click moves the lot, and every item in it', async () => {
   const before = (await lotContents(req({ headers: auth, params: { id: routedLot.id } }), ctx)).jsonBody;
   // Filling: one short of its own first step, having taken none of them.
@@ -5865,6 +5957,9 @@ await check('a seller can say something without moving the lot', async () => {
 await check('one item can travel differently from the rest of its lot', async () => {
   // Thirty-three pieces cleared and one was pulled for inspection. The lot has
   // not moved, and neither has the truth for thirty-three people.
+  // A moment after the lot's last note: an item's own line and a lot note in
+  // the same millisecond read item first, which is not what this is about.
+  await new Promise((resolve) => setTimeout(resolve, 2));
   const held = await stepItem(req({
     headers: auth, params: { id: earlyOrder.id },
     body: { to: 3, note: 'Pulled for inspection at customs.' },
@@ -6075,10 +6170,10 @@ await check('the two ways to move a lot cannot disagree about where it is', asyn
 
   const body = (await lotContents(req({ headers: auth, params: { id } }), ctx)).jsonBody;
   assert.equal(body.lot.stage, 'dispatched_from_china');
-  assert.equal(body.route.steps[body.route.currentStep].name, 'Dispatched from China');
+  assert.equal(body.route.steps[body.route.currentStep].name, 'Dispatched from origin');
   // And the history says what happened in the same words the ladder shows.
   const last = body.lot.stageHistory[body.lot.stageHistory.length - 1];
-  assert.equal(last.step, 'Dispatched from China');
+  assert.equal(last.step, 'Dispatched from origin');
 });
 
 await check('a route can be dropped, and the lots on it carry on', async () => {
@@ -6950,7 +7045,7 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   /* And every button the item has - its own and the lot's - on one line, in route order. */
   const serial = (await card()).serial;
   assert.deepEqual(serial.slice(0, 2).map((button) => [button.kind, button.label]),
-    [['item', 'Received at international warehouse'], ['lot', 'Dispatched from China']]);
+    [['item', 'Received at international WH'], ['lot', 'Dispatched from China']]);
   assert.equal(serial[1].gated, true, 'the lot move warns while the item is not checked in');
   assert.ok(serial.some((button) => button.kind === 'item' && button.key === 'delivered'), 'the last mile is on the line');
 
@@ -7094,7 +7189,7 @@ await check('an item with no lot is received where the seller says, under the sa
   assert.equal(tracking.order.checkpoints.china_received != null, true, 'and it is the same warehouse tick');
   assert.ok(tracking.order.stageHistory.some((event) => event.note === `${said}.`));
   const row = (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((entry) => entry.id === order.id);
-  assert.equal(row.done.label, said);
+  assert.equal(row.done.label, "Received at forwarder's WH", 'its button, in the short forms');
 
   // Undone, the label goes with it.
   await setCheckpoint(req({
@@ -10633,7 +10728,7 @@ await check('a step forward can be undone for three minutes, and shows nowhere u
 
 await check('a route that never joins a lot cannot be given to one', async () => {
   const library = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
-  const courier = library.presets.find((preset) => preset.steps.every((step) => step.side !== 'post'));
+  const courier = library.routeTemplates.find((preset) => preset.steps.every((step) => step.side !== 'post'));
   assert.ok(courier, 'a preset that never joins a lot exists');
   const saved = await saveRoute(req({ headers: auth, body: { name: 'Courier only', steps: courier.steps } }), ctx);
   assert.equal(saved.status, 201, JSON.stringify(saved.jsonBody));
@@ -11386,6 +11481,61 @@ await check('one request ticks a whole parcel, and says which did not land', asy
   }), ctx);
   assert.equal(theirs.jsonBody.done, 0);
   assert.equal((await setCheckpoints(req({ body: { orderIds: placed, checkpoint: 'packed' } }), ctx)).status, 401);
+});
+
+/* ── the route library operators keep ─────────────────────────────────── */
+console.log('\nthe route library operators keep');
+
+const {
+  routeWordsRoute: readWords, opsRouteLibraryRoute: opsLibrary,
+  opsRouteSamplesSaveRoute: saveSamples, opsRouteWordsSaveRoute: saveWords,
+} = await import(new URL('route-admin-routes.js', fns));
+const { renderButtonText, setRouteWords, DEFAULT_ROUTE_WORDS } =
+  await import(new URL('../api/dist/shared/route-words.js', import.meta.url));
+
+await check('a button says the lot\'s country as its flag, and the trade\'s short words', async () => {
+  setRouteWords(DEFAULT_ROUTE_WORDS);
+  assert.equal(renderButtonText('Received at {origin} warehouse', { origin: 'China' }), 'Received at 🇨🇳 WH');
+  assert.equal(renderButtonText('Received at the {destination} Warehouse', { destination: 'India' }), 'Received at 🇮🇳 WH');
+  // No country on the lot yet: the plain word stands in.
+  assert.equal(renderButtonText('Received at {origin} warehouse', {}), 'Received at origin WH');
+  // Whole words only: "warehouses" is not "warehouse".
+  assert.equal(renderButtonText('Two warehouses', {}), 'Two warehouses');
+});
+
+await check('only operators keep the sample routes, and every shop is offered them', async () => {
+  const stranger = await newBuyer('Not A Route Operator');
+  assert.equal((await opsLibrary(req({ headers: stranger.headers }), ctx)).status, 403);
+  assert.equal((await saveSamples(req({ headers: stranger.headers, body: { samples: [] } }), ctx)).status, 403);
+
+  const library = (await opsLibrary(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(library.customised, false, 'the built-in samples until operators save their own');
+  assert.ok(library.samples.length >= 2);
+
+  const refused = await saveSamples(req({ headers: auth, body: { samples: [{ id: 'one', name: 'Too short', steps: [{ name: 'Only' }] }] } }), ctx);
+  assert.equal(refused.status, 400);
+
+  const mine = { ...library.samples[0], id: 'ops_sample', name: 'Air via Shenzhen', blurb: 'An operator wrote this.' };
+  const saved = await saveSamples(req({ headers: auth, body: { samples: [mine, library.samples[1]] } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  const offered = (await listRoutes(req({ headers: auth }), ctx)).jsonBody;
+  assert.deepEqual(offered.routeTemplates.map((entry) => entry.name), ['Air via Shenzhen', library.samples[1].name]);
+
+  // Deleting one is saving the list without it.
+  await saveSamples(req({ headers: auth, body: { samples: [library.samples[1]] } }), ctx);
+  assert.deepEqual((await listRoutes(req({ headers: auth }), ctx)).jsonBody.routeTemplates.map((entry) => entry.id), [library.samples[1].id]);
+  await saveSamples(req({ headers: auth, body: { samples: library.samples } }), ctx);
+});
+
+await check('operators set the short forms every button is drawn with', async () => {
+  const stranger = await newBuyer('Not A Words Operator');
+  assert.equal((await saveWords(req({ headers: stranger.headers, body: { terms: [], flags: true } }), ctx)).status, 403);
+  assert.equal((await saveWords(req({ headers: auth, body: { terms: [{ from: 'warehouse', to: '' }] } }), ctx)).status, 400);
+  const saved = await saveWords(req({ headers: auth, body: { flags: false, terms: [{ from: 'warehouse', to: 'Depot' }] } }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  assert.deepEqual((await readWords(req(), ctx)).jsonBody, { flags: false, terms: [{ from: 'warehouse', to: 'Depot' }] });
+  assert.equal(renderButtonText('Received at {origin} warehouse', { origin: 'China' }), 'Received at China Depot');
+  await saveWords(req({ headers: auth, body: DEFAULT_ROUTE_WORDS }), ctx);
 });
 
 console.log(`\n${passed} checks passed`);

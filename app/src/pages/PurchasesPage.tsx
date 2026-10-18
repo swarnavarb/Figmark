@@ -7,7 +7,7 @@ import { Modal } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Thumb } from '../components/ui';
 import { ItemCard, PriceChangeNote, Svg } from '../components/ListingBlocks';
 import { formatMoney, timeAgo } from '../format';
-import { useToast } from '../components/Feedback';
+import { useToast, Loading } from '../components/Feedback';
 
 type Item = ItemGroup['items'][number];
 
@@ -98,7 +98,7 @@ export function PurchasesPage() {
 
       {error && <ErrorNotice message={error} />}
       {!groups ? (
-        <p className="muted">Loading…</p>
+        <Loading />
       ) : groups.length === 0 ? (
         <EmptyState icon="🛍️" title="No purchases yet">
           Orders you pay for or book show up here.{' '}
@@ -260,7 +260,7 @@ export function CartPage() {
 
       {error && <ErrorNotice message={error} />}
       {!items ? (
-        <p className="muted">Loading…</p>
+        <Loading />
       ) : items.length === 0 ? (
         <EmptyState icon={<Svg name="cart" size={26} />} title="Your cart is empty">
           Press Buy on anything you like and it waits here. <Link to="/">Go find something fun →</Link>

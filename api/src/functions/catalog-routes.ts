@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
-import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
+import { CATEGORIES, categoriesIn, listablePrice, priceCeiling } from '../../../shared/catalog.js';
 import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefront.js';
 import { can } from '../../../shared/stores.js';
-import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone, sourcingOf } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone } from '../../../shared/fulfilment.js';
 import { lotNo, lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
 import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
@@ -76,25 +76,30 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
   const viewer = await auth.getCurrentUser(request);
 
-  const followedSellerIds = viewer ? await repository.listFollowedSellerIds(viewer.id) : [];
-  const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
-
   // A heading is shorthand for the categories under it, resolved here rather
   // than stored on the row, so re-housing a category is an edit to one file
   // instead of a migration.
   const group = request.query.get('group')?.trim();
-  const listings = (await repository.listListings({
+  // The reader's follows and saves do not depend on the catalog, so all three
+  // reads go out together rather than one after another.
+  const [followedSellerIds, liked, catalog] = await Promise.all([
+    viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([] as string[]),
+    viewer ? repository.listLikedListingIds(viewer.id) : Promise.resolve([] as string[]),
+    repository.listListings({
     search: request.query.get('q') ?? undefined,
     category: request.query.get('category') ?? undefined,
     categories: group ? categoriesIn(group) : undefined,
     condition: request.query.get('condition') ?? undefined,
     kind: request.query.get('kind') ?? undefined,
     sort: request.query.get('sort') ?? undefined,
-    maxPriceMinor: numeric(request.query.get('maxPrice')),
+    maxPriceMinor: priceCeiling(request.query.get('maxPrice')),
     // One shop's live stock, for its storefront.
     sellerId: request.query.get('seller') ?? undefined,
+    }),
+  ]);
+  const likedIds = new Set(liked);
   // Expired is read off the clock, so it is filtered here rather than stored.
-  })).filter((listing) => !isExpired(listing));
+  const listings = catalog.filter((listing) => !isExpired(listing));
 
   // Only the lots these listings ride in, not every lot on the site.
   const lotKeys = [...new Map(listings.filter((l) => l.lotId).map((l) => [l.lotId!, l.sellerId])).entries()];
@@ -492,9 +497,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   } catch (err) {
     return error(400, 'invalid_listing', (err as Error).message);
   }
-  if (!body.priceMinor || body.priceMinor <= 0) {
-    return error(400, 'invalid_listing', 'A price above zero is required.');
-  }
+  const priceMinor = listablePrice(body.priceMinor);
+  if (priceMinor === null) return error(400, 'invalid_listing', 'A price of at least ₹1 is required.');
 
   // A lot can be chosen while listing rather than only afterwards, so the
   // seller is not made to publish and then go and file it. It has to be one of
@@ -539,10 +543,10 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
       : 'Collectibles',
     condition: body.condition ?? 'LOOSE',
     status: 'active',
-    priceMinor: Math.round(body.priceMinor),
+    priceMinor,
     currency: 'INR',
     quantityAvailable: Math.max(1, Math.round(body.quantityAvailable ?? 1)),
-    ...listingTerms(body, Math.round(body.priceMinor)),
+    ...listingTerms(body, priceMinor),
     // Pre-order and shipment lot are independent: a listing opts into demand
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
@@ -1052,7 +1056,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     // never joins a lot, while an import sold before its run is opened waits
     // for one - and has to be findable on the screen where a shop fills it.
     lotId: bornInLot?.id
-      ?? (listing.lotId || sourcingOf(listing) === 'import' ? AWAITING_LOT_ID : DIRECT_LOT_ID),
+      ?? (listing.lotId || listing.sourcing === 'import' ? AWAITING_LOT_ID : DIRECT_LOT_ID),
     sellerId: listing.sellerId,
     buyerId: user.id,
     listingId: listing.id,
@@ -1325,9 +1329,8 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
-  if (body.priceMinor !== undefined && !(body.priceMinor > 0)) {
-    return error(400, 'invalid_listing', 'A price above zero is required.');
-  }
+  const newPrice = body.priceMinor === undefined ? undefined : listablePrice(body.priceMinor);
+  if (newPrice === null) return error(400, 'invalid_listing', 'A price of at least ₹1 is required.');
   // Stock is a change, not a count. The form was drawn minutes ago; a sale
   // since then has already taken its unit, and writing the old number back
   // would hand that unit to a second buyer. So what the seller moved - from
@@ -1348,7 +1351,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   // if somebody else wrote it in between: sold count, pre-order fill and stock
   // a buyer took are never rolled back by a seller saving a title.
   const change = (current: Listing): Listing | null => {
-    const price = body.priceMinor !== undefined && body.priceMinor > 0 ? Math.round(body.priceMinor) : current.priceMinor;
+    const price = newPrice ?? current.priceMinor;
     const next: Listing = { ...current, ...listingTerms(body, price, current.affiliate), updatedAt: new Date().toISOString() };
     // A private deal stays one: no commission, and a new clock is at most a day from now.
     if (current.privateFor) {
@@ -1442,12 +1445,6 @@ async function forwarders(request: HttpRequest, _context: InvocationContext) {
     .sort((a, b) => b.trust.score - a.trust.score);
 
   return json(200, { forwarders: entries });
-}
-
-function numeric(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export const feedRoute = handler(feed);

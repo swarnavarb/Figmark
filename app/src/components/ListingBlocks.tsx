@@ -3,7 +3,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
 import { isInDemand } from '@shared/catalog';
-import { sourcingOf } from '@shared/fulfilment';
 import { SOURCING_LABELS } from '@shared/enums';
 import { isMultiple } from '@shared/payments';
 import type { Listing } from '@shared/models';
@@ -207,7 +206,7 @@ function Tile({ tone, icon, label, value, note, i }: {
  */
 export function DetailBlocks({ listing }: { listing: Listing }) {
   const rarity = listingRarity(listing);
-  const sourcing = sourcingOf(listing);
+  const sourcing = listing.sourcing;
   const tiles: Omit<Parameters<typeof Tile>[0], 'i'>[] = [];
 
   if (rarity.tier) {

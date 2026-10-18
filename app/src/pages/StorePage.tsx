@@ -8,6 +8,8 @@ import { formatMoney } from '../format';
 import {
   LaneTicket, OfferingCard, PlanCard, PortfolioGrid, StatusPill, StoreCover, StoreMark, accentStyle,
 } from '../components/StoreKit';
+import { Preloader } from '../components/Preloader';
+import '../styles/StorePage.css';
 
 /**
  * A service store's own page.
@@ -33,7 +35,7 @@ export function StorePage() {
   if (error) {
     return <main className="page"><BackLink to={`/services/${kind}`}>← Back</BackLink><EmptyState icon="◌" title="No such store">{error}</EmptyState></main>;
   }
-  if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
+  if (!data) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
 
   const { store, stats } = data;
   const modes = [...new Set(store.lanes.map((lane) => lane.mode))];

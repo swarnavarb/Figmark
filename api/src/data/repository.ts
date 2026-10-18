@@ -62,6 +62,7 @@ export interface CatalogQuery {
    * list is how a row outlives the account that made it.
    */
   includeHidden?: boolean;
+  /** The most an item may cost, in paise. Absent, zero or less means no ceiling. */
   maxPriceMinor?: number;
 }
 
@@ -144,7 +145,10 @@ export interface Repository {
   updateLot(lot: Lot): Promise<Lot>;
   /** Every listing tagged into this lot. */
   listListingsInLot(lotId: string): Promise<Listing[]>;
-  /** Tags listings into a lot, or clears the tag when lotId is null. */
+  /**
+   * Tags listings into a lot, or clears the tag when lotId is null. Sourcing
+   * moves with it: into a lot is an import, out of one is back in hand.
+   */
   assignListingsToLot(sellerId: string, listingIds: readonly string[], lotId: string | null): Promise<number>;
 
   getOrder(id: string): Promise<Order | null>;
@@ -283,6 +287,12 @@ export interface Repository {
   listNotifications(userId: string, limit?: number, before?: string): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<Notification>;
   deleteNotification(userId: string, id: string): Promise<void>;
+  /**
+   * How many notices one person has and when the newest write to any of them
+   * landed, in whole seconds: enough for the bell to tell "nothing changed"
+   * from one small read instead of filling a page.
+   */
+  notificationStamp(userId: string): Promise<{ count: number; lastWriteAt: number }>;
   /**
    * Held notices whose hold ended between `from` and `until`, not yet sent to
    * anybody's devices and not taken back - across everybody, for the clock
