@@ -2,10 +2,10 @@ import { CATEGORIES } from '../../shared/catalog.js';
 import type { Listing } from '../../shared/models.js';
 import { wordKeys } from '../../shared/shop-tags.js';
 import { isExpired } from '../../shared/payments.js';
-import { storedFingerprint } from './image-hash.js';
+import { fingerprintOf, isFingerprinted, storedFingerprint } from './image-hash.js';
 import { describedScore, onlyAlike, pictureLooks, pictureScore, type LearnedHash, type PictureLook } from './photo-search.js';
 import { getPhotoStore } from './storage/index.js';
-import { describeItems, type PhotoDescription } from './vision.js';
+import { describeItems, visionAvailable, type PhotoDescription } from './vision.js';
 
 /**
  * Where the things in a photo are, or were, for sale.
@@ -171,40 +171,100 @@ export function forgetReadings(): void {
 }
 
 /**
+ * What every answer works out from the catalogue alone - the pool, its title
+ * index, what each shop deals in - kept per catalogue snapshot. The caller
+ * holds one snapshot for a minute, so a feed full of photos builds these once
+ * rather than once per photo.
+ */
+interface Prepared {
+  pool: Listing[];
+  index: ReturnType<typeof titleIndex>;
+  shops: ReturnType<typeof shopVocabulary>;
+  /** Answers by photo, caption and poster, for this snapshot. */
+  answers: Map<string, PhotoSales>;
+}
+const prepared = new WeakMap<Listing[], Prepared>();
+const ANSWERS_MAX = 500;
+
+function prepare(catalogue: Listing[]): Prepared {
+  let ready = prepared.get(catalogue);
+  if (!ready) {
+    const pool = catalogue.filter(everListed);
+    ready = { pool, index: titleIndex(pool), shops: shopVocabulary(pool), answers: new Map() };
+    prepared.set(catalogue, ready);
+  }
+  return ready;
+}
+
+/**
  * The listings a stored photo's items are or were for sale under, the shops
  * that have sold them, and the shops likely to get them. `about` is the text
  * shown with the photo, `by` who posted it. Null when the photo is not in the store.
+ *
+ * Answers are kept for as long as the catalogue snapshot is: the same post
+ * seen by a hundred people is worked out once.
  */
 export async function findSales(
   blobName: string, catalogue: Listing[], about = '', by: string | null = null,
 ): Promise<PhotoSales | null> {
-  const store = await getPhotoStore();
-  const photo = await store.read(blobName);
-  if (!photo) return null;
+  const ready = prepare(catalogue);
+  const key = `${blobName}\n${about}\n${by ?? ''}`;
+  const kept = ready.answers.get(key);
+  if (kept) return kept;
 
-  const pool = catalogue.filter(everListed);
-  const [hash, described] = await Promise.all([
-    storedFingerprint(blobName),
-    readItems(blobName, photo.bytes, photo.contentType),
-  ]);
-  // The poster's own listings first, then the newest: those are the likeliest,
-  // and the ones to compare when there are more photos than one look can read.
+  // The photo's bytes are read only when something needs them: a fingerprint
+  // this instance has not worked out, or items Claude has not read. A photo
+  // fingerprinted before was in the store, so need not be read to know it is.
+  const vision = visionAvailable();
+  let hash: string | null;
+  let described: PhotoDescription[] | null;
+  if (isFingerprinted(blobName) && alreadyRead(blobName, vision)) {
+    [hash, described] = await Promise.all([storedFingerprint(blobName), vision ? readings.get(blobName)! : null]);
+  } else {
+    const photo = await (await getPhotoStore()).read(blobName);
+    if (!photo) return null;
+    hash = fingerprintOf(blobName, photo.bytes, photo.contentType);
+    described = vision ? await readItems(blobName, photo.bytes, photo.contentType) : null;
+  }
+
+  const found = answer(ready, hash ? await looksFor(ready.pool, hash, by) : { looks: new Map(), learned: [] },
+    described ?? [], about, by);
+  // A reading that failed is tried again on the next look, so its answer is not kept.
+  if (!vision || described) {
+    if (ready.answers.size >= ANSWERS_MAX) ready.answers.delete(ready.answers.keys().next().value!);
+    // Kept without what was learned: that is stored once, by the first answer.
+    ready.answers.set(key, { ...found, learned: [] });
+  }
+  return found;
+}
+
+/** How the pool compares with the photo, the poster's own listings and the newest compared first. */
+async function looksFor(pool: Listing[], hash: string, by: string | null) {
+  // Those are the likeliest, and the ones to compare when there are more photos than one look can read.
   const ordered = [...pool].sort((a, b) => Number(b.sellerId === by) - Number(a.sellerId === by)
     || b.createdAt.localeCompare(a.createdAt));
   const learned: LearnedHash[] = [];
-  const looks = hash ? await pictureLooks(ordered, hash, learned) : new Map<string, PictureLook>();
+  return { looks: await pictureLooks(ordered, hash, learned), learned };
+}
+
+function answer(
+  { pool, index, shops }: Prepared, { looks, learned }: { looks: Map<string, PictureLook>; learned: LearnedHash[] },
+  items: PhotoDescription[], about: string, by: string | null,
+): PhotoSales {
   const pictures = onlyAlike(looks);
-  const items = described ?? [];
 
   // Each listing goes to the one group it matches best. A listing that uses this
   // very picture is about the photo's main item, so it counts toward the first.
-  const index = titleIndex(pool);
   const best = new Map<string, { group: number; score: number }>();
   const labels: (string | null)[] = items.length > 0
     ? items.map((item) => item.query || item.keywords.join(' '))
     : [null];
   const itemWords = items.map((item) => new Set(keyWords([...item.keywords, item.query].join(' '))));
-  pool.forEach((listing) => {
+  // Only listings something points at are scored: a picture match, or a title word Claude read.
+  const named = new Set(itemWords.flatMap((words) => [...words]));
+  const candidates = items.length > 0 ? pool.filter((listing) => pictures.has(listing.id)
+    || index.shared(listing, named).length > 0) : pool.filter((listing) => pictures.has(listing.id));
+  candidates.forEach((listing) => {
     const picture = pictureScore(pictures.get(listing.id));
     items.forEach((item, group) => {
       // The same telling-words rule as the caption: a brand alone is a shop to
@@ -224,10 +284,11 @@ export async function findSales(
     best.set(found.listing.id, { group, score: found.score });
   }
 
+  const placed = pool.filter((listing) => best.has(listing.id));
   const groups: SalesGroup[] = labels.map((label, group) => ({
     label,
-    listings: pool
-      .filter((listing) => best.get(listing.id)?.group === group)
+    listings: placed
+      .filter((listing) => best.get(listing.id)!.group === group)
       .sort((a, b) => Number(onSale(b)) - Number(onSale(a))
         || best.get(b.id)!.score - best.get(a.id)!.score
         || b.createdAt.localeCompare(a.createdAt))
@@ -249,7 +310,7 @@ export async function findSales(
   const shown = new Set(groups.flatMap((group) => group.listings.map((listing) => listing.id)));
   const sure = new Set(groups.flatMap((group) => group.listings.map((listing) => listing.category)));
   const probable = probableMatches(index, pool.filter((listing) => !shown.has(listing.id)), looks, items, about, by, sure);
-  return { items: groups, sellers, likely: likelySellers(index, pool, groups, items, about, probable), probable, learned };
+  return { items: groups, sellers, likely: likelySellers(index, shops, groups, items, about, probable), probable, learned };
 }
 
 /**
@@ -377,25 +438,33 @@ function captionMatches(
  * categories, for a photo of something nobody has listed by name. What a shop
  * deals in is read off everything it has ever listed: titles, tags, category.
  */
-function likelySellers(
-  index: ReturnType<typeof titleIndex>, pool: Listing[], groups: SalesGroup[], items: PhotoDescription[], about: string,
-  probable: ProbableListing[],
-): LikelySeller[] {
-  const matched = groups.flatMap((group) => group.listings);
-  const taken = new Set(matched.map((listing) => listing.sellerId));
-
-  // What each shop deals in, and how many of its listings say so.
+/** What each shop deals in, and how many of its listings say so; and how many shops carry each word. */
+function shopVocabulary(pool: Listing[]) {
   const vocabulary = new Map<string, Map<string, number>>();
-  const known = new Set<string>();
   for (const listing of pool) {
     const words = new Set([...keyWords(listing.title), ...listing.tags.flatMap(keyWords), `#${listing.category}`]);
     const shop = vocabulary.get(listing.sellerId) ?? new Map<string, number>();
-    for (const word of words) {
-      shop.set(word, (shop.get(word) ?? 0) + 1);
-      known.add(word);
-    }
+    for (const word of words) shop.set(word, (shop.get(word) ?? 0) + 1);
     vocabulary.set(listing.sellerId, shop);
   }
+  const shopsWith = new Map<string, number>();
+  /** Words some shop lists again and again: what a brand or a line looks like. */
+  const dealtIn = new Set<string>();
+  for (const words of vocabulary.values()) {
+    for (const [word, count] of words) {
+      shopsWith.set(word, (shopsWith.get(word) ?? 0) + 1);
+      if (count >= 2) dealtIn.add(word);
+    }
+  }
+  return { vocabulary, shopsWith, dealtIn };
+}
+
+function likelySellers(
+  index: ReturnType<typeof titleIndex>, { vocabulary, shopsWith, dealtIn }: ReturnType<typeof shopVocabulary>,
+  groups: SalesGroup[], items: PhotoDescription[], about: string, probable: ProbableListing[],
+): LikelySeller[] {
+  const matched = groups.flatMap((group) => group.listings);
+  const taken = new Set(matched.map((listing) => listing.sellerId));
 
   // Keywords, most telling first: what Claude read, then the text, then the tags of what matched.
   // A word the matched titles share is about the item. Any other word counts
@@ -405,14 +474,13 @@ function likelySellers(
   const kinds: string[] = [];
   const itemWords = new Set(matched.slice(0, 12).flatMap((listing) => keyWords(listing.title)));
   // A keyword singles out a few shops; one most of them carry says nothing.
-  const shopsWith = (word: string) => [...vocabulary.values()].filter((words) => words.has(word)).length;
   const telling = Math.max(3, vocabulary.size * 0.5);
   const addKeyword = (word: string, fromItems = false) => {
     const kind = KIND_WORDS[word];
     if (kind) { if (!kinds.includes(kind)) kinds.push(kind); return; }
-    const dealtIn = [...vocabulary.values()].some((words) => (words.get(word) ?? 0) >= 2);
-    if (!fromItems && !itemWords.has(word) && !dealtIn) return;
-    if (known.has(word) && !keywords.includes(word) && shopsWith(word) <= telling) keywords.push(word);
+    if (!fromItems && !itemWords.has(word) && !dealtIn.has(word)) return;
+    const shops = shopsWith.get(word) ?? 0;
+    if (shops > 0 && !keywords.includes(word) && shops <= telling) keywords.push(word);
   };
   items.forEach((item) => item.keywords.flatMap(keyWords).forEach((word) => addKeyword(word)));
   keyWords(about.slice(0, 500)).forEach((word) => addKeyword(word));

@@ -31,6 +31,9 @@ const FRESH_PER_SEARCH = 150;
 const RESULTS = 24;
 const RELATED = 24;
 
+/** Photos read at once when fingerprints have to be worked out. */
+const READ_AT_ONCE = 8;
+
 /** The blob names of a listing's own stored photos, lead photo first. */
 async function storedPhotos(listing: Listing): Promise<string[]> {
   const names: string[] = [];
@@ -41,6 +44,13 @@ async function storedPhotos(listing: Listing): Promise<string[]> {
     if (name) names.push(name);
   }
   return names;
+}
+
+/** Run `work` over every entry, a few at a time. */
+async function inBatches<T>(entries: T[], work: (entry: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const lane = async () => { while (next < entries.length) await work(entries[next++]!); };
+  await Promise.all(Array.from({ length: Math.min(READ_AT_ONCE, entries.length) }, lane));
 }
 
 /** 0 when nothing matches; higher the more of the description the item carries. */
@@ -93,31 +103,40 @@ export interface LearnedHash {
 export async function pictureLooks(
   pool: Listing[], hash: string, learned: LearnedHash[] = [],
 ): Promise<Map<string, PictureLook>> {
-  let fresh = 0;
   const found = new Map<string, PictureLook>();
+  const compare = (listing: Listing, theirs: string) => {
+    const alike = likeness(hash, theirs);
+    if (!alike) return;
+    const was = found.get(listing.id) ?? { same: false, visual: 0, look: 0 };
+    found.set(listing.id, {
+      same: was.same || alike.samePhoto,
+      visual: Math.max(was.visual, alike.score),
+      look: Math.max(was.look, alike.look ?? 0),
+    });
+  };
+
+  const settle = (listing: Listing, name: string, theirs: string | null, worked: string | null) => {
+    if (worked && worked !== theirs) learned.push({ listing, blobName: name, hash: worked });
+    const use = worked ?? theirs;
+    if (use) compare(listing, use);
+  };
+  // Stored hashes, and whatever this instance has already worked out, cost
+  // nothing: they are compared first. A photo with neither - or a stored hash
+  // from before the look - is read and worked out after, a few at a time, up
+  // to a budget, in pool order so the likeliest go first.
+  const toRead: { listing: Listing; name: string; theirs: string | null }[] = [];
   for (const listing of pool) {
-    let visual = 0;
-    let look = 0;
-    let same = false;
     for (const name of await storedPhotos(listing)) {
-      // Stored hashes first; then whatever this instance has already
-      // worked out; then, up to a budget, read the photo and work it out.
-      // A stored hash from before the look is read again for it.
-      let theirs = listing.photos.find((photo) => photo.blobName === name)?.imageHash ?? null;
-      if ((!theirs || !hasLook(theirs)) && (isFingerprinted(name) || fresh < FRESH_PER_SEARCH)) {
-        if (!isFingerprinted(name)) fresh += 1;
-        const worked = await storedFingerprint(name);
-        if (worked && worked !== theirs) learned.push({ listing, blobName: name, hash: worked });
-        theirs = worked ?? theirs;
-      }
-      const alike = theirs ? likeness(hash, theirs) : null;
-      if (!alike) continue;
-      same ||= alike.samePhoto;
-      visual = Math.max(visual, alike.score);
-      look = Math.max(look, alike.look ?? 0);
+      const theirs = listing.photos.find((photo) => photo.blobName === name)?.imageHash ?? null;
+      if (theirs && hasLook(theirs)) compare(listing, theirs);
+      else if (isFingerprinted(name)) settle(listing, name, theirs, await storedFingerprint(name));
+      else if (toRead.length < FRESH_PER_SEARCH) toRead.push({ listing, name, theirs });
+      else if (theirs) compare(listing, theirs);
     }
-    if (visual > 0 || look > 0) found.set(listing.id, { same, visual, look });
   }
+  await inBatches(toRead, async ({ listing, name, theirs }) =>
+    settle(listing, name, theirs, await storedFingerprint(name).catch(() => null)));
+  for (const [id, entry] of found) if (entry.visual <= 0 && entry.look <= 0) found.delete(id);
   return found;
 }
 
@@ -125,8 +144,10 @@ export async function pictureLooks(
  * Every listing in the pool with a photo like this one, by id. Listings with
  * nothing that looks alike are left out.
  */
-export async function pictureMatches(pool: Listing[], hash: string): Promise<Map<string, PictureMatch>> {
-  return onlyAlike(await pictureLooks(pool, hash));
+export async function pictureMatches(
+  pool: Listing[], hash: string, learned: LearnedHash[] = [],
+): Promise<Map<string, PictureMatch>> {
+  return onlyAlike(await pictureLooks(pool, hash, learned));
 }
 
 /** The looks that are close enough to be the picture itself, or very like it. */
@@ -145,8 +166,9 @@ export async function rankByPhoto(
   pool: Listing[],
   hash: string | null,
   description: PhotoDescription | null,
+  learned: LearnedHash[] = [],
 ): Promise<Listing[]> {
-  const pictures = hash ? await pictureMatches(pool, hash) : new Map<string, PictureMatch>();
+  const pictures = hash ? await pictureMatches(pool, hash, learned) : new Map<string, PictureMatch>();
   const ranked: Scored[] = [];
 
   for (const listing of pool) {

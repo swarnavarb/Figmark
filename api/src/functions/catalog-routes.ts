@@ -37,7 +37,7 @@ import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { sniffImageType } from '../storage/sanitize.js';
 import { fingerprint, storedFingerprint } from '../image-hash.js';
 import { rankByPhoto, type LearnedHash } from '../photo-search.js';
-import { alreadyRead, findSales, onSale } from '../photo-sales.js';
+import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
@@ -65,6 +65,9 @@ function toSellerCard(user: User) {
     coverUrl: user.sellerProfile?.coverUrl ?? null,
   };
 }
+
+/** Listings a catalog read returns when it names no limit: see listListings. */
+const FEED_PAGE = 100;
 
 /**
  * GET /api/feed - the unified catalog.
@@ -125,6 +128,9 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     // "what exists somewhere".
     categories: [...new Set(listings.map((l) => l.category))].sort(),
     followedSellerIds,
+    // Under a page's worth: this is every match there is, so a search typed
+    // further can narrow these on the device instead of asking again.
+    complete: catalog.length < FEED_PAGE,
   });
 }
 
@@ -328,19 +334,24 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   }
 
   const hash = fingerprint(bytes, contentType);
+  // The whole catalogue, from the copy kept for photo answers: no read of its
+  // own, and every listing rather than the newest hundred.
   const [description, all] = await Promise.all([
     describePhoto(bytes, contentType),
-    repository.listListings({}),
+    everyListing(repository),
   ]);
   if (!hash && !description) {
     return error(422, 'unreadable_photo', 'Could not read that photo. Try a JPEG, or a clearer picture.');
   }
-  const pool = all.filter((listing) => !isExpired(listing) && !listing.privateFor);
-  const found = await rankByPhoto(pool, hash, description);
+  const pool = all.filter((listing) => onSale(listing) && everListed(listing));
+  const learned: LearnedHash[] = [];
+  const found = await rankByPhoto(pool, hash, description, learned);
+  const storing = storeLearned(repository, learned);
 
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
   const sellers = await repository.listUsersByIds([...new Set(found.map((listing) => listing.sellerId))]);
   const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
+  await storing;
   // One list, best first: what matches the photo, then what is related to it.
   return json(200, {
     listings: found.map((listing) => ({
@@ -361,15 +372,25 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
  * cross-partition query per photo. A listing made or sold in the last minute
  * shows up on the next read - fine for a hint under a photo.
  */
-let catalogue: { at: number; listings: Promise<Listing[]> } | null = null;
+let catalogue: { at: number; listings: Promise<Listing[]>; next: Promise<Listing[]> | null } | null = null;
 const CATALOGUE_MS = 60_000;
 
 function everyListing(repository: Awaited<ReturnType<typeof getRepository>>): Promise<Listing[]> {
-  if (!catalogue || Date.now() - catalogue.at > CATALOGUE_MS) {
+  if (!catalogue) {
     const listings = repository.listListings({ includeHidden: true });
-    catalogue = { at: Date.now(), listings };
+    catalogue = { at: Date.now(), listings, next: null };
     // A failed read is not kept, so the next photo tries again.
     listings.catch(() => { if (catalogue?.listings === listings) catalogue = null; });
+  } else if (Date.now() - catalogue.at > CATALOGUE_MS && !catalogue.next) {
+    // Past its minute, the copy is still answered from while a fresh one is
+    // read: nobody waits on the database for a hint under a photo.
+    const held = catalogue;
+    const next = repository.listListings({ includeHidden: true });
+    held.next = next;
+    next.then(
+      () => { if (catalogue === held) catalogue = { at: Date.now(), listings: next, next: null }; },
+      () => { if (catalogue === held) held.next = null; },
+    );
   }
   return catalogue.listings;
 }
@@ -404,52 +425,97 @@ async function storeLearned(repository: Awaited<ReturnType<typeof getRepository>
     entry.hashes.set(blobName, hash);
     byListing.set(listing.id, entry);
   }
-  await Promise.all([...byListing.values()].map(({ listing, hashes }) =>
-    repository.changeListing(listing.id, listing.sellerId, (current) => ({
+  await Promise.all([...byListing.values()].map(async ({ listing, hashes }) => {
+    const stored = await repository.changeListing(listing.id, listing.sellerId, (current) => ({
       ...current,
       photos: current.photos.map((photo) => (hashes.has(photo.blobName) ? { ...photo, imageHash: hashes.get(photo.blobName)! } : photo)),
-    })).catch(() => null)));
-  if (byListing.size > 0) forgetCatalogue();
+    })).catch(() => null);
+    // The kept copy of the catalogue learns it too, rather than being read
+    // again: otherwise every look until the next read would store it again.
+    if (stored) {
+      listing.photos = listing.photos.map((photo) => (hashes.has(photo.blobName) ? { ...photo, imageHash: hashes.get(photo.blobName)! } : photo));
+    }
+  }));
 }
 
+/** Photos answered per request, at most: a screenful of the feed. */
+const PHOTOS_PER_ASK = 10;
+
+interface PhotoAsk {
+  /** The photo's blob name, or null for an address this app does not store. */
+  name: string | null;
+  about: string;
+  by: string | null;
+}
+
+/** One photo as the body names it, or a message saying what is wrong with it. */
+async function photoAsk(entry: unknown): Promise<PhotoAsk | string> {
+  const body = (entry && typeof entry === 'object' ? entry : {}) as { url?: unknown; about?: unknown; by?: unknown };
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!url || url.length > 500) return 'Send the address of a photo.';
+  return {
+    // Somebody else's server is never fetched; there is simply nothing to say about it.
+    name: await ownPhotoName(url),
+    // The words shown with the photo - a caption, a title - searched alongside it.
+    about: typeof body.about === 'string' ? body.about.slice(0, 500) : '',
+    // Who posted it: people post what they sell, so their own listings are likelier.
+    by: typeof body.by === 'string' && body.by.length <= 100 ? body.by : null,
+  };
+}
+
+/**
+ * Takes one photo (`url`, `about`, `by`) and answers it, or several
+ * (`photos: [...]`, up to a screenful) and answers each in `answers`, in
+ * order: a feed asks about the photos that came into view together in one
+ * request, and the catalogue, the shops and the reader's saves are looked up
+ * once for all of them.
+ */
 async function photoSales(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
-  let body: { url?: string; about?: string; by?: string };
+  let body: { url?: string; about?: string; by?: string; photos?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
-  const vision = visionAvailable();
-  const none = { items: [], sellers: [], likely: [], probable: [], vision };
-  // The words shown with the photo - a caption, a title - searched alongside it.
-  const about = typeof body.about === 'string' ? body.about.slice(0, 500) : '';
-  // Who posted it: people post what they sell, so their own listings are likelier.
-  const by = typeof body.by === 'string' && body.by.length <= 100 ? body.by : null;
-  const url = typeof body.url === 'string' ? body.url.trim() : '';
-  if (!url || url.length > 500) return error(400, 'invalid_photo', 'Send the address of a photo.');
-  const name = await ownPhotoName(url);
-  // Somebody else's server is never fetched; there is simply nothing to say about it.
-  if (!name) return json(200, none);
+  const several = Array.isArray(body.photos);
+  if (several && ((body.photos as unknown[]).length === 0 || (body.photos as unknown[]).length > PHOTOS_PER_ASK)) {
+    return error(400, 'invalid_photo', `Send between 1 and ${PHOTOS_PER_ASK} photos.`);
+  }
+  const asks: PhotoAsk[] = [];
+  for (const entry of several ? body.photos as unknown[] : [body]) {
+    const ask = await photoAsk(entry);
+    if (typeof ask === 'string') return error(400, 'invalid_photo', ask);
+    asks.push(ask);
+  }
 
-  const viewer = await auth.getCurrentUser(request);
+  const vision = visionAvailable();
+  const viewer = asks.some((ask) => ask.name) ? await auth.getCurrentUser(request) : null;
   // Opening a photo somebody already opened costs nothing; reading a new one may be a call to Claude.
-  if (!alreadyRead(name, vision)) {
+  for (const ask of asks) {
+    if (!ask.name || alreadyRead(ask.name, vision)) continue;
     const slow = await tooFast(viewer?.id ?? `ip:${clientIp(request)}`, 'photosales');
     if (slow) return slow;
   }
 
-  const found = await findSales(name, await everyListing(repository), about, by);
-  if (!found) return json(200, none);
-  await storeLearned(repository, found.learned);
+  const catalogue = asks.some((ask) => ask.name) ? await everyListing(repository) : [];
+  const found = await Promise.all(asks.map((ask) => (ask.name ? findSales(ask.name, catalogue, ask.about, ask.by) : null)));
+  const answered = found.filter((entry): entry is PhotoSales => entry !== null);
 
-  const listings = [...found.items.flatMap((item) => item.listings), ...found.probable.map((entry) => entry.listing)];
-  const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
-  const sellers = await repository.listUsersByIds([...new Set([
-    ...listings.map((listing) => listing.sellerId),
-    ...found.sellers.map((seller) => seller.sellerId),
-    ...found.likely.map((seller) => seller.sellerId),
-  ])]);
+  const listings = answered.flatMap((entry) => [
+    ...entry.items.flatMap((item) => item.listings), ...entry.probable.map((guess) => guess.listing)]);
+  const [likedIds, sellers] = await Promise.all([
+    viewer && listings.length > 0 ? repository.listLikedListingIds(viewer.id).then((ids) => new Set(ids)) : new Set<string>(),
+    answered.length > 0
+      ? repository.listUsersByIds([...new Set(answered.flatMap((entry) => [
+        ...entry.items.flatMap((item) => item.listings.map((listing) => listing.sellerId)),
+        ...entry.probable.map((guess) => guess.listing.sellerId),
+        ...entry.sellers.map((seller) => seller.sellerId),
+        ...entry.likely.map((seller) => seller.sellerId),
+      ]))])
+      : [],
+    storeLearned(repository, answered.flatMap((entry) => entry.learned)),
+  ]);
   const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
   const card = (listing: Listing) => ({
     ...publicListing(listing),
@@ -458,19 +524,20 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
     estimatedDispatchAt: null,
     onSale: onSale(listing),
   });
-  return json(200, {
-    items: found.items.map((item) => ({ label: item.label, listings: item.listings.map(card) })),
-    probable: found.probable.map((entry) => ({ ...card(entry.listing), chance: Math.round(entry.chance * 100) / 100 })),
-    sellers: found.sellers.flatMap((entry) => {
-      const seller = sellerById.get(entry.sellerId);
-      return seller ? [{ seller, unitsSold: entry.unitsSold, items: entry.items }] : [];
+  const reply = (entry: PhotoSales | null) => (!entry ? { items: [], sellers: [], likely: [], probable: [], vision } : {
+    items: entry.items.map((item) => ({ label: item.label, listings: item.listings.map(card) })),
+    probable: entry.probable.map((guess) => ({ ...card(guess.listing), chance: Math.round(guess.chance * 100) / 100 })),
+    sellers: entry.sellers.flatMap((seller) => {
+      const shop = sellerById.get(seller.sellerId);
+      return shop ? [{ seller: shop, unitsSold: seller.unitsSold, items: seller.items }] : [];
     }),
-    likely: found.likely.flatMap((entry) => {
-      const seller = sellerById.get(entry.sellerId);
-      return seller ? [{ seller, because: entry.because, kind: entry.kind, listings: entry.listings }] : [];
+    likely: entry.likely.flatMap((seller) => {
+      const shop = sellerById.get(seller.sellerId);
+      return shop ? [{ seller: shop, because: seller.because, kind: seller.kind, listings: seller.listings }] : [];
     }),
     vision,
   });
+  return json(200, several ? { answers: found.map(reply) } : reply(found[0]!));
 }
 
 /**

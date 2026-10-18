@@ -273,6 +273,33 @@ await check('a different photo of the same thing, with a caption that names noth
   assert.ok(named.includes(template.sellerId), 'the shop behind a probable match is named');
 });
 
+await check('several photos are answered in one request, in order, and an answer is kept', async () => {
+  const repository = await getRepository();
+  const store = await getPhotoStore();
+  const listed = (await repository.listListings({})).find((listing) => listing.id === 'lst_sales_live');
+  assert.ok(listed, 'the listing from the check above');
+  // Its fingerprint was stored on it by the first look, so no instance reads its photo again.
+  assert.match(listed.photos[0].imageHash ?? '', /^v1:[0-9a-f]{16}:[0-9a-f]{64}:[0-9a-f]{28}$/);
+  forgetCatalogue();
+  const other = await store.upload(picture(640, 480, (x, y) => (Math.floor((x + y) * 6) % 2 ? [40, 170, 60] : [230, 210, 40]), 80), 'image/jpeg');
+  const response = await photoSalesRoute(req({ body: { photos: [
+    { url: listed.photos[0].url },
+    { url: 'https://example.com/haul.jpg' },
+    { url: other.url, about: 'My Zorblax arrived!' },
+  ] } }), ctx);
+  assert.equal(response.status, 200, JSON.stringify(response.jsonBody));
+  const { answers } = response.jsonBody;
+  assert.equal(answers.length, 3);
+  assert.ok(answers[0].items[0].listings.some((listing) => listing.id === 'lst_sales_live'), 'the first is the listed photo');
+  assert.deepEqual(answers[1].items, [], 'somebody else\'s photo says nothing');
+  assert.ok(answers[2].items.some((item) => item.listings.some((listing) => /Zorblax/.test(listing.title))), 'the third by its words');
+  // The same photo again, from the same catalogue, is the same answer.
+  const again = (await photoSalesRoute(req({ body: { url: listed.photos[0].url } }), ctx)).jsonBody;
+  assert.deepEqual(again.items, answers[0].items);
+  assert.equal((await photoSalesRoute(req({ body: { photos: [] } }), ctx)).status, 400);
+  assert.equal((await photoSalesRoute(req({ body: { photos: Array(11).fill({ url: other.url }) } }), ctx)).status, 400);
+});
+
 await check('photos from anywhere else are not looked at', async () => {
   const outside = await photoSalesRoute(req({ body: { url: 'https://example.com/haul.jpg' } }), ctx);
   assert.equal(outside.status, 200);

@@ -166,15 +166,33 @@ export function fingerprint(bytes: Uint8Array, contentType: string): string | nu
   }
 }
 
-function parse(hash: string): { shape: bigint; colour: number[]; look: number[] | null } | null {
+interface Parsed { high: number; low: number; colour: number[]; look: number[] | null }
+
+/**
+ * Parsed hashes, by text. A search compares one hash with every photo in the
+ * catalogue, and the catalogue's hashes are the same from one search to the
+ * next, so each is parsed once per instance rather than once per comparison.
+ */
+const parsed = new Map<string, Parsed | null>();
+const PARSED_MAX = 40_000;
+
+function parse(hash: string): Parsed | null {
+  const kept = parsed.get(hash);
+  if (kept !== undefined) return kept;
   const [version, shape, colour, look] = hash.split(':');
-  if (version !== HASH_VERSION || !shape || !colour || shape.length !== 16 || colour.length !== 64) return null;
   const digits = (text: string) => [...text].map((digit) => parseInt(digit, 16));
-  return {
-    shape: BigInt(`0x${shape}`),
-    colour: digits(colour),
-    look: look && look.length === LOOK_BINS ? digits(look) : null,
-  };
+  const value = version !== HASH_VERSION || !shape || !colour || !/^[0-9a-f]{16}$/i.test(shape) || colour.length !== 64
+    ? null
+    : {
+      // The 64-bit shape as two 32-bit halves: counting bits apart on numbers is far cheaper than on a bigint.
+      high: parseInt(shape.slice(0, 8), 16),
+      low: parseInt(shape.slice(8), 16),
+      colour: digits(colour),
+      look: look && look.length === LOOK_BINS ? digits(look) : null,
+    };
+  if (parsed.size >= PARSED_MAX) parsed.delete(parsed.keys().next().value!);
+  parsed.set(hash, value);
+  return value;
 }
 
 /** Whether a stored hash carries the look, or predates it. */
@@ -195,11 +213,15 @@ function overlap(a: number[], b: number[], weight: (index: number) => number = (
 /** Black, grey and white are in most photos - text, shadow, packaging - so they say little. */
 const lookWeight = (index: number) => (index >= 24 ? 0.25 : 1);
 
-function bitsApart(a: bigint, b: bigint): number {
-  let diff = a ^ b;
-  let count = 0;
-  while (diff) { count += Number(diff & 1n); diff >>= 1n; }
-  return count;
+/** Set bits in a 32-bit number. */
+function bitCount(value: number): number {
+  let v = value - ((value >>> 1) & 0x55555555);
+  v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
+  return (((v + (v >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
+}
+
+function bitsApart(a: Parsed, b: Parsed): number {
+  return bitCount((a.high ^ b.high) >>> 0) + bitCount((a.low ^ b.low) >>> 0);
 }
 
 /** Bits apart at or under which two shapes are the same picture. */
@@ -219,7 +241,7 @@ export function likeness(a: string, b: string): Likeness | null {
   const left = parse(a);
   const right = parse(b);
   if (!left || !right) return null;
-  const bits = bitsApart(left.shape, right.shape);
+  const bits = bitsApart(left, right);
   // Unrelated photos sit around 32 bits apart; anything past that is noise.
   const shape = Math.max(0, 1 - bits / 32);
   const colour = overlap(left.colour, right.colour);
@@ -237,19 +259,36 @@ export function likeness(a: string, b: string): Likeness | null {
 const known = new Map<string, string | null>();
 const KNOWN_MAX = 20_000;
 
+/** Fingerprints being worked out, so photos asked about together are read once. */
+const working = new Map<string, Promise<string | null>>();
+
+function remember(blobName: string, hash: string | null): void {
+  if (known.size >= KNOWN_MAX) known.delete(known.keys().next().value!);
+  known.set(blobName, hash);
+}
+
 /** The fingerprint of one of our stored photos, read and computed on first ask. */
-export async function storedFingerprint(blobName: string): Promise<string | null> {
-  if (known.has(blobName)) return known.get(blobName) ?? null;
-  const store = await getPhotoStore();
-  const found = await store.read(blobName);
-  const hash = found ? fingerprint(found.bytes, found.contentType) : null;
-  // A photo that could not be read may be there next time; one that could not
-  // be decoded never will be.
-  if (found) {
-    if (known.size >= KNOWN_MAX) known.delete(known.keys().next().value!);
-    known.set(blobName, hash);
-  }
-  return hash;
+export function storedFingerprint(blobName: string): Promise<string | null> {
+  if (known.has(blobName)) return Promise.resolve(known.get(blobName) ?? null);
+  const pending = working.get(blobName);
+  if (pending) return pending;
+  const work = (async () => {
+    const store = await getPhotoStore();
+    const found = await store.read(blobName);
+    const hash = found ? fingerprint(found.bytes, found.contentType) : null;
+    // A photo that could not be read may be there next time; one that could not
+    // be decoded never will be.
+    if (found) remember(blobName, hash);
+    return hash;
+  })().finally(() => working.delete(blobName));
+  working.set(blobName, work);
+  return work;
+}
+
+/** The fingerprint of a stored photo whose bytes are already to hand: worked out once, never read again. */
+export function fingerprintOf(blobName: string, bytes: Uint8Array, contentType: string): string | null {
+  if (!known.has(blobName)) remember(blobName, fingerprint(bytes, contentType));
+  return known.get(blobName) ?? null;
 }
 
 /** Whether this blob's fingerprint is already to hand, so costs nothing to ask. */

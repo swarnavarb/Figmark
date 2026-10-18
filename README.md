@@ -99,7 +99,14 @@ a title, and whether the person who posted it lists it. No key needed; the
 sheet shows the probable listings and the probable shops that can get them.
 `POST /api/search/photo/sales`
 only reads photos stored here (never an outside link, never a chat photo), and
-caches what it read for each photo, so reopening one costs nothing.
+caches what it read for each photo, so reopening one costs nothing. It takes
+one photo or up to ten (`photos: [...]`): the feed sends the photos coming into
+view together as one request, and keeps answers for five minutes, across a
+reload too. Listing photos keep their fingerprint on the listing, the
+catalogue is held for a minute and refreshed behind the answers, and an answer
+is worked out once per photo per catalogue copy, however many people see it.
+The search sheet filters on the device when more letters can only narrow what
+it already has, and asks for people and shops only when there can be some.
 
 ## Status
 

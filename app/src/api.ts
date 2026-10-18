@@ -203,6 +203,13 @@ const visitorKnown = () => request<unknown>('/auth/me').catch(() => undefined);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
+/**
+ * A question sent as a POST because it carries a body - a photo, a list of
+ * photos - but changes nothing anybody can see: the reads kept above stay
+ * kept. A feed asks one of these per screenful of photos.
+ */
+const ask = <T>(path: string, body: unknown) => send<T>(path, { method: 'POST', body: JSON.stringify(body) });
+
 export interface SellerCard {
   id: string;
   displayName: string;
@@ -235,6 +242,8 @@ export interface FeedResponse {
   listings: FeedListing[];
   categories: string[];
   followedSellerIds: string[];
+  /** Every match there is, not the first page of them. */
+  complete?: boolean;
 }
 
 export type { PreOrderView };
@@ -2364,10 +2373,13 @@ export const api = {
   listing: (id: string, ref?: string | null) =>
     request<ListingDetail>(`/listings/${encodeURIComponent(id)}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
   /** Items like the one in the photo. The photo is read and dropped, never stored. */
-  photoSearch: (dataUrl: string) => post<PhotoSearchResponse>('/search/photo', { dataUrl }),
+  photoSearch: (dataUrl: string) => ask<PhotoSearchResponse>('/search/photo', { dataUrl }),
   /** Where the items in a photo already on Figmark are, or were, for sale. */
   photoSales: (url: string, about?: string, by?: string) =>
-    post<PhotoSalesResponse>('/search/photo/sales', { url, about, by }),
+    ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by }),
+  /** The same for several photos at once, answered in order: up to ten. */
+  photoSalesMany: (photos: { url: string; about?: string; by?: string }[]) =>
+    ask<{ answers: PhotoSalesResponse[] }>('/search/photo/sales', { photos }),
   similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
   affiliateLink: (listingId: string) =>
     post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),

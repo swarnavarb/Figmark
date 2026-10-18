@@ -24,23 +24,92 @@ import { Avatar, Thumb, leadPhoto } from './ui';
  */
 
 /**
- * Answers by photo address and the words with it, for this page load. A
- * photo's bytes never change, so swiping back to one is free; a reload asks
- * again, since listings do.
+ * Answers by photo address and the words with it. A photo's bytes never
+ * change, so swiping back to one is free; listings do, so an answer is kept
+ * for a few minutes - across a reload too, in this tab's session storage -
+ * and then asked again.
  */
 const answers = new Map<string, Promise<PhotoSalesResponse | null>>();
+const KEPT_MS = 5 * 60_000;
+const STORE_KEY = 'figmark.photoSales';
+/** Photos asked about together: those that come into view in the same moment go in one request. */
+const BATCH_MS = 120;
+const BATCH_MAX = 10;
+
+type Kept = Record<string, { at: number; sales: PhotoSalesResponse }>;
+
+/** The session's kept answers, read from storage once per page. */
+let stored: Kept | null = null;
+
+function readKept(): Kept {
+  if (stored) return stored;
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(STORE_KEY) ?? '{}') as Kept;
+    stored = kept && typeof kept === 'object' ? kept : {};
+  } catch {
+    stored = {};
+  }
+  return stored;
+}
+
+function keep(key: string, sales: PhotoSalesResponse): void {
+  const now = Date.now();
+  // The newest few dozen, none past their minutes: session storage is small.
+  stored = Object.fromEntries(Object.entries(readKept()).filter(([, entry]) => now - entry.at < KEPT_MS).slice(-30));
+  stored[key] = { at: now, sales };
+  try {
+    sessionStorage.setItem(STORE_KEY, JSON.stringify(stored));
+  } catch {
+    // Storage full or off: the answer is still kept in memory for this page.
+  }
+}
+
+let waiting: { key: string; ask: { url: string; about?: string; by?: string }; done: (sales: PhotoSalesResponse | null) => void }[] = [];
+let timer: number | undefined;
+
+function send(): void {
+  const batch = waiting.splice(0, BATCH_MAX);
+  if (waiting.length > 0) timer = window.setTimeout(send, 0);
+  else timer = undefined;
+  const asked = batch.length === 1
+    ? api.photoSales(batch[0]!.ask.url, batch[0]!.ask.about, batch[0]!.ask.by).then((sales) => [sales])
+    : api.photoSalesMany(batch.map((entry) => entry.ask)).then((reply) => reply.answers);
+  // A failure is quiet - this is a hint, not the page - and is not kept, so a later look tries again.
+  asked.then(
+    (found) => batch.forEach((entry, at) => entry.done(found[at] ?? null)),
+    () => batch.forEach((entry) => { answers.delete(entry.key); entry.done(null); }),
+  );
+}
+
+/**
+ * Whether the server could say anything about this address: only photos it
+ * stores are looked at, so a picture inlined in the page or held in this tab
+ * (`data:`, `blob:`) is not asked about at all.
+ */
+function askable(url: string): boolean {
+  return url.startsWith('/api/photos/') || url.startsWith('https://');
+}
 
 function salesFor(url: string, about: string, by: string): Promise<PhotoSalesResponse | null> {
+  if (!askable(url)) return Promise.resolve(null);
   const key = `${url}\n${about}\n${by}`;
   let answer = answers.get(key);
-  if (!answer) {
-    // A failure is quiet - this is a hint, not the page - and is not kept, so a later look tries again.
-    answer = api.photoSales(url, about || undefined, by || undefined).catch(() => {
-      answers.delete(key);
-      return null;
+  if (answer) return answer;
+  const kept = readKept()[key];
+  if (kept && Date.now() - kept.at < KEPT_MS) {
+    answer = Promise.resolve(kept.sales);
+  } else {
+    answer = new Promise<PhotoSalesResponse | null>((done) => {
+      waiting.push({ key, ask: { url, about: about || undefined, by: by || undefined }, done });
+      timer ??= window.setTimeout(send, BATCH_MS);
+    }).then((sales) => {
+      if (sales) keep(key, sales);
+      return sales;
     });
-    answers.set(key, answer);
   }
+  answers.set(key, answer);
+  // Forgotten in memory after the same few minutes, so a long-open page asks again.
+  window.setTimeout(() => { if (answers.get(key) === answer) answers.delete(key); }, KEPT_MS);
   return answer;
 }
 
@@ -82,7 +151,8 @@ export function PhotoSales({ url, about = '', by = '', onLeave, tone = 'dark' }:
   const [open, setOpen] = useState(false);
   const inline = tone === 'inline';
   const slot = useRef<HTMLDivElement>(null);
-  // A feed is scrolled past far more than it is read: only ask about photos that come into view.
+  // A feed is scrolled past far more than it is read: only ask about photos
+  // within a screen of the view - far enough ahead that a scroll's worth go in one request.
   const [inView, setInView] = useState(!inline);
 
   useEffect(() => {
@@ -91,7 +161,7 @@ export function PhotoSales({ url, about = '', by = '', onLeave, tone = 'dark' }:
     if (typeof IntersectionObserver === 'undefined') { setInView(true); return; }
     const watch = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) { setInView(true); watch.disconnect(); }
-    }, { rootMargin: '200px 0px' });
+    }, { rootMargin: '800px 0px' });
     watch.observe(el);
     return () => watch.disconnect();
   }, [inView]);
