@@ -45,6 +45,7 @@ import {
   seedPledges,
   seedUsers,
 } from './seed.js';
+import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
 
 /**
@@ -105,7 +106,7 @@ export class MemoryRepository implements Repository {
       this.follows.set(followKey(follow.followerId, follow.sellerId), follow);
     }
     for (const forum of seedForums()) this.forums.set(forum.id, forum);
-    for (const post of seedPosts()) this.posts.set(post.id, post);
+    for (const post of [...seedPosts(), ...seedFeedDemoPosts()]) this.posts.set(post.id, post);
     for (const review of seedReviews()) this.reviews.set(review.id, review);
     for (const record of seedDisputes()) this.disputes.set(record.id, record);
     for (const record of seedWants()) this.wants.set(record.id, record);

@@ -57,6 +57,7 @@ import {
   seedPledges,
   seedUsers,
 } from './seed.js';
+import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
 
 /**
@@ -964,7 +965,7 @@ export class CosmosRepository implements Repository {
       ['powerSales', seedShowcaseSales()],
       ['comments', seedComments()],
       ['forums', seedForums()],
-      ['posts', seedPosts()],
+      ['posts', [...seedPosts(), ...seedFeedDemoPosts()]],
       ['reviews', seedReviews()],
       ['disputes', seedDisputes()],
       ['wants', seedWants()],
@@ -1088,7 +1089,7 @@ export class CosmosRepository implements Repository {
       ['powerSales', seedShowcaseSales()],
       ['comments', seedComments()],
       ['forums', seedForums()],
-      ['posts', seedPosts()],
+      ['posts', [...seedPosts(), ...seedFeedDemoPosts()]],
       ['reviews', seedReviews()],
       ['disputes', seedDisputes()],
       ['wants', seedWants()],

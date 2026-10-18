@@ -11543,7 +11543,11 @@ await check('operators set the short forms every button is drawn with', async ()
 await check('the Social tab reads who you follow and nobody else, newest first', async () => {
   const home = await socialHome(req({ headers: auth, query: { following: '1' } }), ctx);
   assert.equal(home.status, 200);
-  const cards = home.jsonBody.posts;
+  // The one exception is the ending of a debate this person voted in, which
+  // leads the feed with its result wherever the debate was had.
+  const results = home.jsonBody.posts.filter((card) => card.badges?.includes('result'));
+  assert.ok(results.every((card) => card.post.debate && card.social.poll.closed && card.social.poll.myVote));
+  const cards = home.jsonBody.posts.slice(results.length);
   assert.ok(cards.length > 0);
   assert.ok(cards.every((card) => card.following || card.post.channelId === 'usr_demo'), 'only people you follow');
   assert.ok(cards.every((card) => !card.badges), 'nothing slotted in from outside');

@@ -1547,7 +1547,7 @@ const POSTS: PostSeed[] = [
  * blocked, so a carousel in the seed feed carries small SVG posters instead of
  * links to somebody else's server.
  */
-function seedArt([rawCaption, from, to]: [string, string, string], index: number): string {
+export function seedArt([rawCaption, from, to]: [string, string, string], index: number): string {
   // Written into XML, so an ampersand or a bracket in a caption would make
   // the whole picture fail to decode.
   const caption = rawCaption.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1568,7 +1568,7 @@ function seedArt([rawCaption, from, to]: [string, string, string], index: number
  * A function rather than a constant because the customer list is declared
  * further down the file, and a constant here would read it before it exists.
  */
-const reactorIds = (): string[] => LOT_BUYERS.map(([id]) => id);
+export const reactorIds = (): string[] => LOT_BUYERS.map(([id]) => id);
 const SEED_KINDS: ReactionKind[] = ['love', 'fire', 'love', 'clap', 'haha', 'wow', 'love', 'fire'];
 
 export function seedPosts(): Post[] {
