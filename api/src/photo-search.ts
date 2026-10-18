@@ -77,11 +77,22 @@ export interface PictureLook extends PictureMatch {
   look: number;
 }
 
+/** A fingerprint worked out from a listing's photo that the listing did not store. */
+export interface LearnedHash {
+  listing: Listing;
+  blobName: string;
+  hash: string;
+}
+
 /**
  * How every listing in the pool compares with this photo, by id - including
  * those that look nothing like it, so a probable match can be ranked from them.
+ * Fingerprints worked out along the way are pushed onto `learned`, for the
+ * caller to store, so the next instance does not have to read the photo again.
  */
-export async function pictureLooks(pool: Listing[], hash: string): Promise<Map<string, PictureLook>> {
+export async function pictureLooks(
+  pool: Listing[], hash: string, learned: LearnedHash[] = [],
+): Promise<Map<string, PictureLook>> {
   let fresh = 0;
   const found = new Map<string, PictureLook>();
   for (const listing of pool) {
@@ -95,7 +106,9 @@ export async function pictureLooks(pool: Listing[], hash: string): Promise<Map<s
       let theirs = listing.photos.find((photo) => photo.blobName === name)?.imageHash ?? null;
       if ((!theirs || !hasLook(theirs)) && (isFingerprinted(name) || fresh < FRESH_PER_SEARCH)) {
         if (!isFingerprinted(name)) fresh += 1;
-        theirs = (await storedFingerprint(name)) ?? theirs;
+        const worked = await storedFingerprint(name);
+        if (worked && worked !== theirs) learned.push({ listing, blobName: name, hash: worked });
+        theirs = worked ?? theirs;
       }
       const alike = theirs ? likeness(hash, theirs) : null;
       if (!alike) continue;

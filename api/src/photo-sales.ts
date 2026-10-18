@@ -3,7 +3,7 @@ import type { Listing } from '../../shared/models.js';
 import { wordKeys } from '../../shared/shop-tags.js';
 import { isExpired } from '../../shared/payments.js';
 import { storedFingerprint } from './image-hash.js';
-import { describedScore, onlyAlike, pictureLooks, pictureScore, type PictureLook } from './photo-search.js';
+import { describedScore, onlyAlike, pictureLooks, pictureScore, type LearnedHash, type PictureLook } from './photo-search.js';
 import { getPhotoStore } from './storage/index.js';
 import { describeItems, type PhotoDescription } from './vision.js';
 
@@ -71,6 +71,8 @@ export interface PhotoSales {
   likely: LikelySeller[];
   /** Listings that may be the thing in the photo, likeliest first; none of those in `items`. */
   probable: ProbableListing[];
+  /** Listing photo fingerprints worked out to answer this, worth storing on the listings. */
+  learned: LearnedHash[];
 }
 
 const PER_ITEM = 24;
@@ -83,6 +85,8 @@ const TERMS = 6;
 const PROBABLE = 8;
 /** A probable match under this is not worth showing. */
 const PROBABLE_FLOOR = 0.15;
+/** The poster's own listings shown on that alone, with nothing else pointing at them. */
+const POSTERS_OWN = 3;
 
 /** Words that say nothing about what an item is. */
 const STOP = new Set([
@@ -183,7 +187,12 @@ export async function findSales(
     storedFingerprint(blobName),
     readItems(blobName, photo.bytes, photo.contentType),
   ]);
-  const looks = hash ? await pictureLooks(pool, hash) : new Map<string, PictureLook>();
+  // The poster's own listings first, then the newest: those are the likeliest,
+  // and the ones to compare when there are more photos than one look can read.
+  const ordered = [...pool].sort((a, b) => Number(b.sellerId === by) - Number(a.sellerId === by)
+    || b.createdAt.localeCompare(a.createdAt));
+  const learned: LearnedHash[] = [];
+  const looks = hash ? await pictureLooks(ordered, hash, learned) : new Map<string, PictureLook>();
   const pictures = onlyAlike(looks);
   const items = described ?? [];
 
@@ -240,7 +249,7 @@ export async function findSales(
   const shown = new Set(groups.flatMap((group) => group.listings.map((listing) => listing.id)));
   const sure = new Set(groups.flatMap((group) => group.listings.map((listing) => listing.category)));
   const probable = probableMatches(index, pool.filter((listing) => !shown.has(listing.id)), looks, items, about, by, sure);
-  return { items: groups, sellers, likely: likelySellers(index, pool, groups, items, about, probable), probable };
+  return { items: groups, sellers, likely: likelySellers(index, pool, groups, items, about, probable), probable, learned };
 }
 
 /**
@@ -267,7 +276,7 @@ function probableMatches(
   ]);
   const clamp = (value: number) => Math.max(0, Math.min(1, value));
 
-  const found: ProbableListing[] = [];
+  const found: (ProbableListing & { ownOnly: boolean })[] = [];
   for (const listing of pool) {
     const seen = looks.get(listing.id);
     const look = clamp(((seen?.look ?? 0) - 0.15) / 0.45);
@@ -277,15 +286,22 @@ function probableMatches(
     if (shared.length > 0) {
       odds.push(Math.min(0.6, shared.reduce((sum, word) => sum + 0.6 / Math.sqrt(index.seen.get(word) ?? 1), 0)));
     }
-    // People post what they sell; but a shop posts plenty that is not this.
-    if (by && listing.sellerId === by) odds.push(0.35 * clamp(look * 2));
     if (kinds.has(listing.category)) odds.push(0.15);
-    const chance = 1 - odds.reduce((miss, odd) => miss * (1 - odd), 1);
-    if (chance >= PROBABLE_FLOOR) found.push({ listing, chance });
+    const other = 1 - odds.reduce((miss, odd) => miss * (1 - odd), 1);
+    // People post what they sell: their own listings are a fair guess on that
+    // alone, and a better one the more the photo looks like them.
+    const own = Boolean(by && listing.sellerId === by);
+    const chance = own ? 1 - (1 - other) * (1 - (0.15 + 0.3 * clamp(look * 2))) : other;
+    if (chance >= PROBABLE_FLOOR) found.push({ listing, chance, ownOnly: own && other < PROBABLE_FLOOR });
   }
+  let ownOnly = 0;
   return found
-    .sort((a, b) => b.chance - a.chance || Number(onSale(b.listing)) - Number(onSale(a.listing)))
-    .slice(0, PROBABLE);
+    .sort((a, b) => b.chance - a.chance || Number(onSale(b.listing)) - Number(onSale(a.listing))
+      || b.listing.createdAt.localeCompare(a.listing.createdAt))
+    // A shop posts plenty that is not one of its listings: only a few on that alone.
+    .filter((entry) => !entry.ownOnly || (ownOnly += 1) <= POSTERS_OWN)
+    .slice(0, PROBABLE)
+    .map(({ listing, chance }) => ({ listing, chance }));
 }
 
 /**

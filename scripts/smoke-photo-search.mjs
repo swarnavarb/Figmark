@@ -255,6 +255,19 @@ await check('a different photo of the same thing, with a caption that names noth
   assert.equal(probable[0], 'lst_probable_figure', `likeliest first: ${probable}`);
   assert.ok(!probable.includes('lst_probable_red'), 'other colours are not probable');
   assert.ok(body.probable[0].chance > 0.2 && body.probable[0].chance < 1);
+  // What had to be worked out from the listing's photo is kept on the listing.
+  const stored = await repository.getListing('lst_probable_figure');
+  assert.match(stored.photos[0].imageHash ?? '', /^v1:[0-9a-f]{16}:[0-9a-f]{64}:[0-9a-f]{28}$/);
+
+  // The poster's own listing is a fair guess even when the colours say little.
+  forgetCatalogue();
+  const unlike = await store.upload(picture(640, 480, (x, y) => (Math.floor((x + y) * 6) % 2 ? [40, 170, 60] : [230, 210, 40]), 80), 'image/jpeg');
+  const own = (await photoSalesRoute(req({ body: { url: unlike.url, about: 'How is this?', by: template.sellerId } }), ctx)).jsonBody;
+  assert.ok(own.probable.some((listing) => listing.sellerId === template.sellerId), 'the poster lists it, so it may be this');
+  assert.ok(own.probable.filter((listing) => listing.chance < 0.2).length <= 3, 'only a few on that alone');
+  const stranger = (await photoSalesRoute(req({ body: { url: unlike.url, about: 'How is this?' } }), ctx)).jsonBody;
+  assert.ok(!stranger.probable.some((listing) => listing.id === 'lst_probable_figure'), 'from anyone else, it is not');
+
   // Its shop is named once: with the certain matches when it has one, else as one with similar listings.
   const named = [...body.items.flatMap((item) => item.listings.map((listing) => listing.sellerId)), ...body.likely.map((entry) => entry.seller.id)];
   assert.ok(named.includes(template.sellerId), 'the shop behind a probable match is named');

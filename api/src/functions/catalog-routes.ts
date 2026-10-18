@@ -35,8 +35,8 @@ import {
 import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
 import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { sniffImageType } from '../storage/sanitize.js';
-import { fingerprint } from '../image-hash.js';
-import { rankByPhoto } from '../photo-search.js';
+import { fingerprint, storedFingerprint } from '../image-hash.js';
+import { rankByPhoto, type LearnedHash } from '../photo-search.js';
 import { alreadyRead, findSales, onSale } from '../photo-sales.js';
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
@@ -389,6 +389,29 @@ export function forgetCatalogue(): void {
  * here, and the answer is about listings, which are public too. Chat photos
  * live in a store this cannot read, so they are not looked at.
  */
+/** Listing photo fingerprints stored per answer, at most: the rest wait for the next one. */
+const LEARNED_PER_ANSWER = 25;
+
+/**
+ * Store the fingerprints a look had to work out on the listings they came from,
+ * so every instance after this one compares them for nothing. Best effort: a
+ * listing changed or gone meanwhile is simply left for next time.
+ */
+async function storeLearned(repository: Awaited<ReturnType<typeof getRepository>>, learned: LearnedHash[]): Promise<void> {
+  const byListing = new Map<string, { listing: Listing; hashes: Map<string, string> }>();
+  for (const { listing, blobName, hash } of learned.slice(0, LEARNED_PER_ANSWER)) {
+    const entry = byListing.get(listing.id) ?? { listing, hashes: new Map<string, string>() };
+    entry.hashes.set(blobName, hash);
+    byListing.set(listing.id, entry);
+  }
+  await Promise.all([...byListing.values()].map(({ listing, hashes }) =>
+    repository.changeListing(listing.id, listing.sellerId, (current) => ({
+      ...current,
+      photos: current.photos.map((photo) => (hashes.has(photo.blobName) ? { ...photo, imageHash: hashes.get(photo.blobName)! } : photo)),
+    })).catch(() => null)));
+  if (byListing.size > 0) forgetCatalogue();
+}
+
 async function photoSales(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
   let body: { url?: string; about?: string; by?: string };
@@ -418,6 +441,7 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
 
   const found = await findSales(name, await everyListing(repository), about, by);
   if (!found) return json(200, none);
+  await storeLearned(repository, found.learned);
 
   const listings = [...found.items.flatMap((item) => item.listings), ...found.probable.map((entry) => entry.listing)];
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
@@ -1392,7 +1416,8 @@ async function sellerPhotos(
       ours = other === listingId || (await repository.getListing(other))?.sellerId === sellerId;
     }
     if (!ours) return null;
-    rows.push({ blobName: name, url, imageHash: null, isPrimary });
+    // Fingerprinted now, so photo search and "seen for sale" never have to read it again.
+    rows.push({ blobName: name, url, imageHash: await storedFingerprint(name), isPrimary });
   }
   const lead = Math.max(0, rows.findIndex((photo) => photo.isPrimary));
   return rows.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
