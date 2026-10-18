@@ -113,6 +113,57 @@ export interface StoredPoll {
   closesAt: string | null;
 }
 
+/**
+ * What a tagged piece in a collection photo is to whoever took the photo.
+ *
+ * Three answers, because they are three different invitations: "I have this"
+ * starts a conversation, "I want this" is demand a seller can read, and "this
+ * one is for sale" is a way to buy it.
+ */
+export const HOTSPOT_STATUSES = ['owned', 'wishlist', 'for_sale'] as const;
+export type HotspotStatus = (typeof HOTSPOT_STATUSES)[number];
+
+export const HOTSPOT_LABELS: Record<HotspotStatus, string> = {
+  owned: 'In collection',
+  wishlist: 'Wishlist',
+  for_sale: 'For sale',
+};
+
+/** Most tags on one flex: past this a shelf photo is all dots and no shelf. */
+export const FLEX_MAX_HOTSPOTS = 12;
+export const HOTSPOT_LABEL_MAX_CHARS = 48;
+
+/**
+ * One tagged piece in a collection photo.
+ *
+ * `x` and `y` are fractions of the photo's width and height, so the dot stays
+ * on the piece at any size the photo is drawn.
+ */
+export interface PostHotspot {
+  /** Which of the post's photos, by position. */
+  photo: number;
+  x: number;
+  y: number;
+  label: string;
+  status: HotspotStatus;
+  /** The item on Figmark, when it is one. */
+  listingId: string | null;
+}
+
+/** A collection flex: photos of a shelf, with its pieces tagged. */
+export interface PostFlex {
+  hotspots: PostHotspot[];
+}
+
+/**
+ * A side-by-side debate: the post's two photos are A and B, its poll's two
+ * answers name them, and each side may point at an item on Figmark so the
+ * argument ends somewhere it can be bought.
+ */
+export interface PostDebate {
+  listingIds: [string | null, string | null];
+}
+
 /** A post that is somebody else's post, passed on. */
 export interface RepostRef {
   postId: string;

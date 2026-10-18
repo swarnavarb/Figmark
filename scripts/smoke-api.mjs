@@ -85,6 +85,7 @@ const {
   removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, shareableRoute: shareable, pinPostRoute: pinPost,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
   forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
+  discoverRoute: discover,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -11536,6 +11537,122 @@ await check('operators set the short forms every button is drawn with', async ()
   assert.deepEqual((await readWords(req(), ctx)).jsonBody, { flags: false, terms: [{ from: 'warehouse', to: 'Depot' }] });
   assert.equal(renderButtonText('Received at {origin} warehouse', { origin: 'China' }), 'Received at China Depot');
   await saveWords(req({ headers: auth, body: DEFAULT_ROUTE_WORDS }), ctx);
+});
+
+
+await check('the Social tab reads who you follow and nobody else, newest first', async () => {
+  const home = await socialHome(req({ headers: auth, query: { following: '1' } }), ctx);
+  assert.equal(home.status, 200);
+  const cards = home.jsonBody.posts;
+  assert.ok(cards.length > 0);
+  assert.ok(cards.every((card) => card.following || card.post.channelId === 'usr_demo'), 'only people you follow');
+  assert.ok(cards.every((card) => !card.badges), 'nothing slotted in from outside');
+  const times = cards.map((card) => card.post.createdAt);
+  assert.deepEqual(times, [...times].sort().reverse(), 'in the order it was said');
+  // Without it, the old mixed feed is unchanged.
+  const mixed = (await socialHome(req({ headers: auth }), ctx)).jsonBody.posts;
+  assert.ok(mixed.some((card) => card.badges?.length), 'the mixed feed still finds new people');
+});
+
+let flexPost = null;
+/** An item that is certainly on sale, whatever the checks above did to the seeded ones. */
+const taggable = async () => {
+  const repository = await getRepository();
+  if (!(await repository.getListing('lst_taggable'))) {
+    const base = await repository.getListing('lst_handheld');
+    await repository.createListing({ ...base, id: 'lst_taggable', status: 'active', unlisted: false, privateFor: null, quantityAvailable: 5 });
+  }
+  return 'lst_taggable';
+};
+await check('a collection flex carries its tagged pieces, and a bad tag is refused', async () => {
+  const item = await taggable();
+  resetRateLimits();
+  const post = (body) => createPost(req({ headers: auth, body }), ctx);
+  const made = await post({
+    body: 'The shelf.', photoUrls: ['/api/photos/shelf.jpg'],
+    flex: { hotspots: [
+      { photo: 0, x: 0.3, y: 1.4, label: 'Rem crystal dress', status: 'owned' },
+      { photo: 0, x: 0.6, y: 0.5, label: 'Spare handheld', status: 'for_sale', listingId: item },
+    ] },
+  });
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  flexPost = made.jsonBody.post;
+  assert.equal(flexPost.flex.hotspots.length, 2);
+  assert.equal(flexPost.flex.hotspots[0].y, 1, 'a dot past the edge meant the edge');
+  assert.equal(flexPost.flex.hotspots[1].listingId, item);
+  assert.equal(flexPost.flex.hotspots[0].listingId, null);
+
+  resetRateLimits();
+  const shelf = ['/api/photos/shelf.jpg'];
+  assert.equal((await post({ body: 'x', photoUrls: shelf, flex: { hotspots: [{ photo: 1, x: 0.5, y: 0.5, label: 'A', status: 'owned' }] } })).status, 400, 'a tag on a photo that is not there');
+  assert.equal((await post({ body: 'x', photoUrls: shelf, flex: { hotspots: [{ photo: 0, x: 0.5, y: 0.5, label: 'A', status: 'stolen' }] } })).status, 400);
+  assert.equal((await post({ body: 'x', photoUrls: shelf, flex: { hotspots: [{ photo: 0, x: 0.5, y: 0.5, label: '', status: 'owned' }] } })).status, 400);
+  assert.equal((await post({ body: 'No photo', flex: { hotspots: [] } })).status, 400, 'a flex needs a photo');
+  assert.equal((await post({ body: 'x', photoUrls: shelf, flex: { hotspots: [{ photo: 0, x: 0.5, y: 0.5, label: 'A', status: 'for_sale', listingId: 'lst_nope' }] } })).status, 404);
+});
+
+await check('a debate is two photos and two answers, and Discover ranks debates, threads and flexes for anyone', async () => {
+  const item = await taggable();
+  resetRateLimits();
+  const post = (body) => createPost(req({ headers: auth, body }), ctx);
+  const poll = { options: ['Original run', 'Reissue'] };
+  assert.equal((await post({ body: 'Which?', photoUrls: ['/api/photos/a.jpg'], poll, debate: { listingIds: [null, null] } })).status, 400, 'one photo is not a debate');
+  assert.equal((await post({ body: 'Which?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], debate: { listingIds: [null, null] } })).status, 400, 'nor is one without a vote');
+  assert.equal((await post({ body: 'Which?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], poll, debate: { listingIds: ['lst_nope', null] } })).status, 404);
+  const made = await post({ body: 'Which paint job is cleaner?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], poll, debate: { listingIds: [item, null] } });
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const debate = made.jsonBody.post;
+
+  // A conversation that took off, from somebody else.
+  const talker = await newBuyer('Thread Starter');
+  const thread = (await createPost(req({ headers: talker.headers, body: { body: 'Is the 2019 run worth the premium?' } }), ctx)).jsonBody.post;
+  for (const who of [await newBuyer('Thread One'), await newBuyer('Thread Two'), await newBuyer('Thread Three')]) {
+    assert.equal((await commentOn(req({ headers: who.headers, params: on(thread), body: { body: 'Depends on the box.' } }), ctx)).status, 201);
+  }
+
+  // A guest reads it too: browsing needs no account.
+  const guest = await discover(req(), ctx);
+  assert.equal(guest.status, 200);
+  const { debates, threads, flexes } = guest.jsonBody;
+  const found = debates.find((card) => card.post.id === debate.id);
+  assert.ok(found, 'the debate is on Discover');
+  assert.deepEqual(found.post.debate.listingIds, [item, null]);
+  assert.equal(found.social.poll.options.length, 2);
+  assert.equal(found.social.poll.myVote, null);
+  assert.ok(threads.some((card) => card.post.id === thread.id), 'the conversation is promoted');
+  assert.ok(flexes.some((card) => card.post.id === flexPost.id), 'the flex is on Discover');
+  assert.ok([...debates, ...threads, ...flexes].every((card) => !card.post.repostOf && !card.post.wallOf));
+  assert.ok(!threads.some((card) => card.post.debate || card.post.flex), 'nothing twice');
+  assert.equal((await discover(req({ headers: auth }), ctx)).status, 200);
+});
+
+await check('a new ISO is matched against what is listed, and the seller hears', async () => {
+  const repository = await getRepository();
+  const base = await repository.getListing('lst_handheld');
+  await repository.createListing({
+    ...base, id: 'lst_iso_rem', title: 'Furyu Rem Crystal Dress prize figure', description: 'Sealed.', tags: [],
+    status: 'active', unlisted: false, privateFor: null, preOrder: null, quantityAvailable: 3,
+  });
+  const hunter = await newBuyer('Rem Hunter');
+  resetRateLimits();
+  const posted = await postWant(req({ headers: hunter.headers, body: { title: 'Furyu Rem crystal dress', category: base.category } }), ctx);
+  assert.equal(posted.status, 201, JSON.stringify(posted.jsonBody));
+  const want = posted.jsonBody.want;
+  assert.ok(want.matchCount >= 1, 'matched the moment it is posted');
+
+  const board = (await wantsBoard(req({ headers: hunter.headers }), ctx)).jsonBody;
+  assert.ok(board.mine.find((row) => row.id === want.id).matchCount >= 1);
+  const detail = (await readWant(req({ params: { id: want.id }, query: { buyer: hunter.id } }), ctx)).jsonBody;
+  const match = detail.matches.find((row) => row.id === 'lst_iso_rem');
+  assert.ok(match, 'the listed item is offered as a match');
+  assert.equal(match.sellerId, base.sellerId);
+  assert.ok((await noticesFor(base.sellerId)).some((notice) => notice.kind === 'want_matched' && notice.link.includes(want.id)),
+    'the seller whose item matches is told');
+
+  // A hunt nobody can answer from stock says so.
+  resetRateLimits();
+  const rare = (await postWant(req({ headers: hunter.headers, body: { title: 'Zzyzx prototype resin', category: base.category } }), ctx)).jsonBody.want;
+  assert.equal(rare.matchCount, 0);
 });
 
 console.log(`\n${passed} checks passed`);

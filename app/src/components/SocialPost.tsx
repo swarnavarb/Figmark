@@ -6,8 +6,9 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
 import {
-  REACTIONS, REACTION_META,
-  type CommentThread, type CommentView, type PollView, type ReactionKind, type ReactionSummary, type ReactorRow,
+  HOTSPOT_LABELS, REACTIONS, REACTION_META,
+  type CommentThread, type CommentView, type PollView, type PostHotspot, type ReactionKind, type ReactionSummary,
+  type ReactorRow,
 } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
@@ -254,10 +255,41 @@ function reduceMotion(): boolean {
 
 /* ── The post ──────────────────────────────────────────────────────────── */
 
+/**
+ * What a card is, said in capitals at its top, so a mixed feed can be read at
+ * a glance: a debate to vote on, a flex to look at, a thing to buy, a hunt.
+ */
+type ContentType = 'sale' | 'debate' | 'flex' | 'iso' | 'thread';
+
+const CONTENT_TYPES: Record<ContentType, string> = {
+  sale: 'For sale',
+  debate: 'Debate poll',
+  flex: 'Collection flex',
+  iso: 'ISO request',
+  thread: 'Hot debate',
+};
+
+function contentTypeOf(card: PostCard, promoted: boolean): ContentType | null {
+  const { post, listing } = card;
+  if (post.debate && card.social.poll) return 'debate';
+  if (post.flex) return 'flex';
+  if (promoted) return 'thread';
+  if (post.answersWant) return 'iso';
+  if (listing || post.kind === 'sale') return 'sale';
+  return null;
+}
+
+export function ContentBadge({ type }: { type: ContentType }) {
+  return <span className={`ctype ctype--${type}`}>{CONTENT_TYPES[type]}</span>;
+}
+
 export function SocialPostCard({
   card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false, canModerate = false, onPinned,
+  promoted = false,
 }: {
   card: PostCard;
+  /** Shown because its conversation took off (Discover's hot debates), not for the post alone. */
+  promoted?: boolean;
   /** Read by the forum's admin or a moderator, who may take it down or pin it. */
   canModerate?: boolean;
   onPinned?: (id: string, pinned: boolean) => void;
@@ -342,7 +374,7 @@ export function SocialPostCard({
       {post.kind === 'sale' && !listing && (
         <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>
       )}
-      {social.poll && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
+      {social.poll && !post.debate && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
       {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
       {post.answersWant && (
         <Link className="spost__kind spost__kind--poll"
@@ -359,10 +391,13 @@ export function SocialPostCard({
     </>
   );
 
+  const type = nested ? null : contentTypeOf(card, promoted);
+
   return (
     <article className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {!nested && <span className="spost__glow" aria-hidden="true" />}
       {dialog}
+      {type && <ContentBadge type={type} />}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
@@ -483,17 +518,30 @@ export function SocialPostCard({
 
       {linked && <LinkCard path={linked.path} compact={nested} />}
 
-      {photos.length > 0 && (
-        <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
-          onOpen={(index) => setLightbox(index)} onDoubleTap={nested ? undefined : loveFromPhoto} />
-      )}
-
-      {social.poll && (
-        <Poll poll={social.poll} disabled={nested}
+      {post.debate && social.poll && photos.length === 2 ? (
+        <Debate photos={photos} poll={social.poll} listingIds={post.debate.listingIds} disabled={nested || !user}
           onVote={async (optionId) => {
             const { poll } = await api.votePoll(post.channelId, post.id, optionId, as);
             setCard((current) => ({ ...current, social: { ...current.social, poll } }));
           }} />
+      ) : (
+        <>
+          {photos.length > 0 && (post.flex ? (
+            <FlexShelf photos={photos} hotspots={post.flex.hotspots} alt={post.body || `Collection of ${post.authorName}`}
+              onOpen={(index) => setLightbox(index)} />
+          ) : (
+            <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
+              onOpen={(index) => setLightbox(index)} onDoubleTap={nested ? undefined : loveFromPhoto} />
+          ))}
+
+          {social.poll && (
+            <Poll poll={social.poll} disabled={nested}
+              onVote={async (optionId) => {
+                const { poll } = await api.votePoll(post.channelId, post.id, optionId, as);
+                setCard((current) => ({ ...current, social: { ...current.social, poll } }));
+              }} />
+          )}
+        </>
       )}
 
       {post.opening && (
@@ -1266,6 +1314,160 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Collection flexes ─────────────────────────────────────────────────── */
+
+/**
+ * A collection photo with its pieces tagged.
+ *
+ * Drawn at the photo's own shape rather than the feed's square, because the
+ * tags are placed on the whole photo and a crop would move them off their
+ * pieces. Tap a dot for what it is; a piece for sale opens its item.
+ */
+function FlexShelf({ photos, hotspots, alt, onOpen }: {
+  photos: string[];
+  hotspots: PostHotspot[];
+  alt: string;
+  onOpen: (index: number) => void;
+}) {
+  const [at, setAt] = useState(0);
+  const [open, setOpen] = useState<number | null>(null);
+  const here = hotspots.map((spot, index) => ({ spot, index })).filter(({ spot }) => spot.photo === at);
+  const counts = hotspots.reduce<Record<string, number>>((all, spot) => ({ ...all, [spot.status]: (all[spot.status] ?? 0) + 1 }), {});
+
+  return (
+    <div className="flexshelf">
+      <div className="flexshelf__frame">
+        <img src={photos[at]} alt={alt} loading="lazy" draggable={false} onClick={() => onOpen(at)} />
+        {here.map(({ spot, index }) => (
+          <span key={index} className="flexshelf__spot" style={{ left: `${spot.x * 100}%`, top: `${spot.y * 100}%` }}>
+            <button type="button" className={`hotdot hotdot--${spot.status}${open === index ? ' is-open' : ''}`}
+              aria-label={`${spot.label}: ${HOTSPOT_LABELS[spot.status]}`} aria-expanded={open === index}
+              onClick={() => setOpen(open === index ? null : index)}>
+              <span aria-hidden="true">{index + 1}</span>
+            </button>
+            {open === index && (
+              <span className={`flexshelf__tip${spot.x > 0.6 ? ' flexshelf__tip--left' : ''}`} role="status">
+                <strong>{spot.label}</strong>
+                <span className={`hotchip hotchip--${spot.status} is-on`}>{HOTSPOT_LABELS[spot.status]}</span>
+                {spot.listingId && (
+                  <Link to={`/listing/${encodeURIComponent(spot.listingId)}`} className="flexshelf__go">
+                    {spot.status === 'for_sale' ? 'View listing' : 'See it on Figmark'} <Icon name="right" size={11} />
+                  </Link>
+                )}
+              </span>
+            )}
+          </span>
+        ))}
+        {photos.length > 1 && <span className="carousel__count">{at + 1}/{photos.length}</span>}
+      </div>
+      {photos.length > 1 && (
+        <div className="flexshelf__thumbs">
+          {photos.map((url, index) => (
+            <button key={`${url}-${index}`} type="button" className={`flexshelf__thumb${index === at ? ' is-on' : ''}`}
+              aria-label={`Photo ${index + 1}`} onClick={() => { setAt(index); setOpen(null); }}>
+              <img src={url} alt="" loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+      {hotspots.length > 0 && (
+        <p className="flexshelf__legend">
+          <Icon name="tag" size={12} /> {hotspots.length} tagged
+          {(['owned', 'wishlist', 'for_sale'] as const).filter((status) => counts[status]).map((status) => (
+            <span key={status} className={`hotchip hotchip--${status} is-on`}>{counts[status]} {HOTSPOT_LABELS[status]}</span>
+          ))}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ── Debates ───────────────────────────────────────────────────────────── */
+
+/**
+ * A over B: the two photos side by side, each a button that votes for it,
+ * with the live split drawn as one bar underneath. The split stays hidden
+ * until you have voted, as an ordinary poll's does, so the first vote is
+ * yours rather than the crowd's.
+ *
+ * It ends in the shop: each side's own item when the debate links one, and
+ * the catalogue searched for whichever side is winning.
+ */
+function Debate({ photos, poll, listingIds, disabled, onVote }: {
+  photos: string[];
+  poll: PollView;
+  listingIds: [string | null, string | null];
+  disabled: boolean;
+  onVote: (optionId: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sides = poll.options.slice(0, 2);
+  const reveal = poll.myVote !== null || poll.closed;
+  const shares = sides.map((option) => (poll.total > 0 ? Math.round((option.votes / poll.total) * 100) : 50));
+  const leader = sides[0] && sides[1] && sides[1].votes > sides[0].votes ? sides[1] : sides[0];
+
+  async function vote(optionId: string) {
+    if (disabled || poll.closed || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onVote(optionId);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not count that vote.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="debate">
+      <div className="debate__pair">
+        {sides.map((option, index) => {
+          const mine = poll.myVote === option.id;
+          const listingId = listingIds[index] ?? null;
+          return (
+            <div key={option.id} className={`debate__side debate__side--${index === 0 ? 'a' : 'b'}${mine ? ' is-mine' : ''}`}>
+              <button type="button" className="debate__pick" disabled={disabled || poll.closed || busy}
+                aria-pressed={mine} onClick={() => void vote(option.id)}>
+                <img src={photos[index]} alt={option.label} loading="lazy" draggable={false} />
+                <span className="debate__letter" aria-hidden="true">{index === 0 ? 'A' : 'B'}</span>
+                {reveal && <span className="debate__pct">{shares[index]}%</span>}
+                <span className="debate__label">
+                  {mine && <Icon name="check" size={12} />} {option.label}
+                </span>
+              </button>
+              {listingId && (
+                <Link to={`/listing/${encodeURIComponent(listingId)}`} className="debate__item">
+                  <Icon name="tag" size={11} /> Shop side {index === 0 ? 'A' : 'B'}
+                </Link>
+              )}
+            </div>
+          );
+        })}
+        <span className="debate__vs" aria-hidden="true">VS</span>
+      </div>
+      <div className={`debate__bar${reveal ? ' is-revealed' : ''}`} aria-hidden={!reveal}>
+        <span className="debate__bar-a" style={{ width: `${reveal ? shares[0] : 50}%` }} />
+        <span className="debate__bar-b" style={{ width: `${reveal ? shares[1] : 50}%` }} />
+      </div>
+      <div className="debate__foot">
+        <span className="poll__foot">
+          {poll.total} vote{poll.total === 1 ? '' : 's'}
+          {poll.closesAt && <> · {poll.closed ? 'Final results' : `Closes ${timeAgoAhead(poll.closesAt)}`}</>}
+          {!reveal && !disabled && <> · tap a side to vote</>}
+        </span>
+        {leader && (
+          <Link to={`/?q=${encodeURIComponent(leader.label)}`} className="debate__cta">
+            View Active Listings <Icon name="right" size={12} />
+          </Link>
+        )}
+      </div>
+      {error && <p className="spost__error">{error}</p>}
     </div>
   );
 }

@@ -58,6 +58,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   content_report_settled: 'reviews',
 
   want_answered: 'drops',
+  want_matched: 'drops',
   preorder_nearly: 'drops',
   preorder_filled: 'drops',
   preorder_due: 'drops',

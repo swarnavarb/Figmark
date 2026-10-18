@@ -58,15 +58,14 @@ export function SocialPage() {
 
 /* ── Feed ───────────────────────────────────────────────────────────────── */
 
-type FeedFilter = 'all' | 'photos' | 'polls' | 'sale' | 'trending' | 'rising';
+type FeedFilter = 'all' | 'photos' | 'polls' | 'sale' | 'flexes';
 
 const FILTERS: { id: FeedFilter; label: string }[] = [
   { id: 'all', label: 'Everything' },
-  { id: 'trending', label: '⚡ Trending' },
-  { id: 'rising', label: '↗ Rising' },
-  { id: 'photos', label: '📸 Photos' },
+  { id: 'sale', label: '📦 Drops & unboxings' },
+  { id: 'flexes', label: '🏆 Flexes' },
   { id: 'polls', label: '📊 Polls' },
-  { id: 'sale', label: '🏷️ For sale' },
+  { id: 'photos', label: '📸 Photos' },
 ];
 
 function matches(card: PostCard, filter: FeedFilter): boolean {
@@ -76,9 +75,9 @@ function matches(card: PostCard, filter: FeedFilter): boolean {
   switch (filter) {
     case 'photos': return hasPhotos(card) || Boolean(inner && hasPhotos(inner));
     case 'polls': return Boolean(social.poll || inner?.social.poll);
-    case 'sale': return post.kind === 'sale' || inner?.post.kind === 'sale';
-    case 'trending': return Boolean(card.badges?.includes('trending'));
-    case 'rising': return Boolean(card.badges?.includes('rising'));
+    // A shop's drop, or a buyer showing what arrived: both are stock landing.
+    case 'sale': return post.kind === 'sale' || inner?.post.kind === 'sale' || Boolean(post.drop || post.delivered);
+    case 'flexes': return Boolean(post.flex || inner?.post.flex);
     default: return true;
   }
 }
@@ -89,12 +88,13 @@ function inRoomOnly(card: PostCard): boolean {
 }
 
 /**
- * The feed: who you follow, with what is catching on mixed in.
+ * The feed: who you follow, newest first, and nobody else.
  *
- * One stream. Followed posts keep their order and every few of them the server
- * slots in one from outside - trending (a lightning badge) or new and rising (a
- * rising-line badge) - so nobody has to know a second tab exists to find
- * something new, and the badge says why a stranger is there.
+ * The shops' drops and unboxings, your people's flexes and polls, the forum
+ * posts they put on their walls - in the order they were said, so "what did
+ * my people post" is a question this always answers the same way. Finding
+ * people you do not follow yet is Discover's job, not this one's, which is
+ * what keeps a stranger from turning up between two friends.
  *
  * Read in whichever voice is chosen, because "did I react to this" depends on
  * who is asking; switching voice reads it again.
@@ -111,7 +111,7 @@ function FollowingFeed() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const page = await api.socialHome(as);
+      const page = await api.socialHome(as, undefined, true);
       setPosts(page.posts);
       setNext(page.next);
     } catch (err) {
@@ -124,7 +124,7 @@ function FollowingFeed() {
     if (!next) return;
     setMore(true);
     try {
-      const page = await api.socialHome(as, next);
+      const page = await api.socialHome(as, next, true);
       setPosts((current) => {
         const known = new Set((current ?? []).map((card) => card.post.id));
         return [...(current ?? []), ...page.posts.filter((card) => !known.has(card.post.id))];
@@ -164,8 +164,13 @@ function FollowingFeed() {
       ) : !posts ? (
         <FeedSkeleton />
       ) : posts.length === 0 ? (
-        <EmptyState title="Nothing here yet">
-          Nothing is catching fire right now. Post something and start it, or follow a shop or a person.
+        <EmptyState title="Your feed is quiet">
+          This is where the shops, collectors and groups you follow post their drops, unboxings and flexes.
+          Follow a few and it fills up.
+          <span className="feed__empty-go">
+            <Link to="/discover" className="btn btn--sm">Find people in Discover</Link>
+            <Link to="/social?view=forums" className="btn btn--quiet btn--sm">Browse groups</Link>
+          </span>
         </EmptyState>
       ) : shown.length === 0 ? (
         <EmptyState title="Nothing like that yet">

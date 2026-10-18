@@ -50,7 +50,7 @@ const {
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
   removePostRoute, trendingRoute, homeRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
-  forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute,
+  forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute, discoverRoute,
 } = await import(new URL('social-routes.js', apiRoot));
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute, dealItemsRoute,
   blockedListRoute, unblockRoute, uploadChatPhotoRoute, chatPhotoRoute, deleteMessageRoute, discardChatPhotoRoute } =
@@ -225,6 +225,7 @@ const routes = [
   ['GET', '/api/social/search', socialSearchRoute],
   ['GET', '/api/social/trending', trendingRoute],
   ['GET', '/api/social/home', homeRoute],
+  ['GET', '/api/social/discover', discoverRoute],
   ['GET', '/api/social/shareable', shareableRoute],
   ['GET', '/api/social/posts/:channel/:id', readPostRoute],
   ['POST', '/api/social/posts/:channel/:id/react', reactRoute],

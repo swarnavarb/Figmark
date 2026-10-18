@@ -32,6 +32,7 @@ function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
 }
 
 const FeedPage = page(() => import('./pages/FeedPage'), 'FeedPage');
+const DiscoverPage = page(() => import('./pages/DiscoverPage'), 'DiscoverPage');
 const ListingPage = page(() => import('./pages/ListingPage'), 'ListingPage');
 const SellPage = page(() => import('./pages/SellPage'), 'SellPage');
 const ShopPage = page(() => import('./pages/ShopPage'), 'ShopPage');
@@ -102,6 +103,8 @@ function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<FeedPage />} />
+        {/* Open to everybody, as the catalogue is: the community side, ranked. */}
+        <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/listing/:id" element={<ListingPage />} />
         {/* A short affiliate link: resolved, remembered, then the item. */}
         <Route path="/r/:code" element={<ShortLinkPage />} />

@@ -3,7 +3,9 @@ import type { DealState } from './deals.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
-import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
+import type {
+  PostDebate, PostFlex, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
+} from './social.js';
 import type {
   ConditionTag,
   FulfilmentStage,
@@ -2410,6 +2412,10 @@ export interface Post extends BaseDocument {
   boughtBy?: string[];
   /** A question with a few answers to pick from. */
   poll?: StoredPoll | null;
+  /** A collection flex: the photos are a shelf, and these are its pieces. */
+  flex?: PostFlex | null;
+  /** A two-sided debate: photo A against photo B, voted on by the poll. */
+  debate?: PostDebate | null;
   /** Set when this post is somebody else's, passed on to the reposter's followers. */
   repostOf?: RepostRef | null;
   /** A short line set on one of the brand gradients. */
@@ -2661,6 +2667,8 @@ export type NotificationKind =
   /** A forum's founder or a moderator warned, removed or appointed you. */
   | 'forum_moderation'
   | 'want_answered'
+  /** A new ISO matches something this seller has listed. */
+  | 'want_matched'
   | 'payment_claimed'
   | 'payment_received'
   | 'credit_refunded'

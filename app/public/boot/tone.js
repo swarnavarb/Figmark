@@ -11,6 +11,8 @@
   var tone = starts(['/social', '/messages']) ? ['social', '#FF3471']
     : starts(['/services', '/forwarders', '/community-service', '/packing']) ? ['services', '#3A8C4E']
     : starts(['/shop', '/sell', '/lots', '/lot/', '/routes']) ? ['sell', '#177ACE']
+    : starts(['/discover']) ? ['discover', '#8B2FC9']
+    : starts(['/quests']) ? ['quests', '#C46A08']
     : ['buy', '#5B5EF1'];
   if (path.indexOf('/social/f/') === 0) tone[1] = '#C627CB';
   document.documentElement.setAttribute('data-tone', tone[0]);

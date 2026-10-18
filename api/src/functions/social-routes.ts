@@ -3,10 +3,11 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { FORUM_CAP, FORUM_MODERATORS_MAX, FORUM_UNLOCK_LEVELS, forumLockedMessage, forumSlotsAt } from '../../../shared/enums.js';
 import type { Forum, Listing, Post, User } from '../../../shared/models.js';
 import {
-  COMMENT_MAX_CHARS, POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_COMMENTS,
+  COMMENT_MAX_CHARS, FLEX_MAX_HOTSPOTS, HOTSPOT_LABEL_MAX_CHARS, HOTSPOT_STATUSES, POLL_MAX_OPTIONS,
+  POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_COMMENTS,
   POST_MAX_PHOTOS, REACTION_META, VIBE_MAX_CHARS, actorKey, isReaction, isVibe, reactionActor, summarise,
-  type CommentThread, type CommentView, type PollView, type PostSocial, type ReactorRow,
-  type StoredComment, type StoredPoll, type StoredReaction,
+  type CommentThread, type CommentView, type HotspotStatus, type PollView, type PostDebate, type PostHotspot,
+  type PostSocial, type ReactorRow, type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
 import { can } from '../../../shared/stores.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
@@ -579,12 +580,16 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   // `before` is the next page: older followed posts only. What is catching on
   // is chosen once, on the first page, so it is not offered twice.
   const before = request.query?.get('before') || undefined;
+  // `following=1` is the Social tab: who you chose, in order, and nobody else.
+  // Finding new people is Discover's job.
+  const onlyFollowed = request.query?.get('following') === '1';
+  const findNew = !before && !onlyFollowed;
   const followed = await repository.listFollowedSellerIds(user.id);
   const followedSet = new Set(followed);
   const [ownFeed, recent, liked] = await Promise.all([
     repository.listPostsForChannels([...new Set([...followed, user.id])], HOME_PAGE, { before, feedOnly: true }),
-    before ? Promise.resolve([] as Post[]) : repository.listRecentPosts(200),
-    before ? Promise.resolve([] as string[]) : repository.listLikedListingIds(user.id),
+    findNew ? repository.listRecentPosts(200) : Promise.resolve([] as Post[]),
+    findNew ? repository.listLikedListingIds(user.id) : Promise.resolve([] as string[]),
   ]);
   // Items this person saved: a new post selling one is news to them.
   const wished = new Set(liked);
@@ -650,6 +655,62 @@ async function home(request: HttpRequest, _context: InvocationContext) {
       return badges.length ? { ...card, badges } : card;
     }),
   });
+}
+
+/** How many of each kind Discover shows. */
+const DISCOVER_DEBATES = 10;
+const DISCOVER_THREADS = 8;
+const DISCOVER_FLEXES = 10;
+/** Comments before a conversation counts as a hot debate. */
+const HOT_THREAD_COMMENTS = 3;
+
+/** Somebody reading Discover without an account: nothing is theirs, nothing is voted. */
+const GUEST: Actor = { userId: 'guest', storeId: null, key: 'guest', name: 'Guest' };
+
+/**
+ * GET /api/social/discover - the public side, ranked rather than followed.
+ *
+ * Three kinds of thing worth finding, from anybody:
+ *
+ * - debates: A-versus-B polls, liveliest first, so the arguments worth joining
+ *   are on top;
+ * - threads: posts - in the feed or in a forum - whose conversation has taken
+ *   off, promoted for the comments rather than the post;
+ * - flexes: collection photos, most reacted to first.
+ *
+ * Open to guests, as browsing is everywhere else: a guest sees the same cards
+ * and is asked to sign in when they press anything.
+ */
+async function discover(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.getCurrentUser(request);
+  const repository = await getRepository();
+  const actor = user ? await actorFor(request, user, repository) : GUEST;
+  if (!actor) return notYours();
+
+  const now = Date.now();
+  const recent = await repository.listRecentPosts(200);
+  const heatOf = new Map(recent.map((post) => [post.id, heat(post, now)]));
+  const hottest = (a: Post, b: Post) => heatOf.get(b.id)! - heatOf.get(a.id)! || b.createdAt.localeCompare(a.createdAt);
+  const reactionsOf = (post: Post) => post.reactions?.length ?? post.likeCount;
+  const commentsOf = (post: Post) => post.comments?.length ?? post.replyCount;
+  // Public and first-hand: no room messages, no wall echoes, no reposts.
+  const open = recent.filter((post) => !post.repostOf && !post.wallOf
+    && (post.channel === 'forum' || (post.reach ?? 'feed') === 'feed'));
+
+  const debates = open.filter((post) => post.debate && post.poll).sort(hottest).slice(0, DISCOVER_DEBATES);
+  const flexes = open.filter((post) => post.flex && !post.debate)
+    .sort((a, b) => reactionsOf(b) - reactionsOf(a) || hottest(a, b)).slice(0, DISCOVER_FLEXES);
+  const shown = new Set([...debates, ...flexes].map((post) => post.id));
+  const threads = open.filter((post) => !shown.has(post.id) && commentsOf(post) >= HOT_THREAD_COMMENTS)
+    .sort((a, b) => commentsOf(b) / Math.pow((now - Date.parse(b.createdAt)) / 86_400_000 + 1, 0.6)
+      - commentsOf(a) / Math.pow((now - Date.parse(a.createdAt)) / 86_400_000 + 1, 0.6))
+    .slice(0, DISCOVER_THREADS);
+
+  const cards = await decorate([...debates, ...threads, ...flexes], repository, actor);
+  const byId = new Map(cards.map((card) => [card.post.id, card]));
+  const pick = (posts: Post[]) => posts.map((post) => byId.get(post.id)).filter((card): card is PostCard => Boolean(card));
+  return json(200, { debates: pick(debates), threads: pick(threads), flexes: pick(flexes) });
 }
 
 /**
@@ -958,6 +1019,34 @@ async function announcePost(post: Post, answered: Post | null, writerId: string,
   }
 }
 
+/**
+ * The tags on a flex, checked and tidied, or null when any one is wrong.
+ *
+ * Positions are clamped into the photo rather than refused: a dot dragged a
+ * hair past the edge meant the edge.
+ */
+function readHotspots(raw: unknown, photos: number): PostHotspot[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > FLEX_MAX_HOTSPOTS) return null;
+  const spots: PostHotspot[] = [];
+  for (const entry of raw as Record<string, unknown>[]) {
+    if (!entry || typeof entry !== 'object') return null;
+    const photo = Number(entry.photo ?? 0);
+    const x = Number(entry.x);
+    const y = Number(entry.y);
+    const label = typeof entry.label === 'string' ? entry.label.trim() : '';
+    const status = entry.status as HotspotStatus;
+    if (!Number.isInteger(photo) || photo < 0 || photo >= photos) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (!label || label.length > HOTSPOT_LABEL_MAX_CHARS) return null;
+    if (!HOTSPOT_STATUSES.includes(status)) return null;
+    const listingId = typeof entry.listingId === 'string' && entry.listingId.trim() ? entry.listingId.trim() : null;
+    const clamp = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000;
+    spots.push({ photo, x: clamp(x), y: clamp(y), label, status, listingId });
+  }
+  return spots;
+}
+
 async function createPost(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -980,6 +1069,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     toWall?: boolean;
     /** Up to two more forums to share the same post into. */
     alsoForumIds?: unknown;
+    /** A collection flex: tagged pieces on the photos. */
+    flex?: { hotspots?: unknown } | null;
+    /** A debate: photo A against photo B, each side optionally an item. */
+    debate?: { listingIds?: unknown } | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -1031,7 +1124,40 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     vibe = body.vibe;
   }
 
+  // A flex is a shelf photo with its pieces tagged; the tags need a photo to sit on.
+  let hotspots: PostHotspot[] | null = null;
+  if (body.flex) {
+    if (photoUrls.length === 0) return error(400, 'invalid_flex', 'A flex needs a photo of the collection.');
+    hotspots = readHotspots(body.flex.hotspots, photoUrls.length);
+    if (!hotspots) {
+      return error(400, 'invalid_flex', `Up to ${FLEX_MAX_HOTSPOTS} tags, each on a photo, named in under ${HOTSPOT_LABEL_MAX_CHARS} characters.`);
+    }
+  }
+
+  // A debate is A against B: two photos, and a poll whose two answers name them.
+  let debateIds: PostDebate['listingIds'] | null = null;
+  if (body.debate) {
+    if (photoUrls.length !== 2 || poll?.options.length !== 2) {
+      return error(400, 'invalid_debate', 'A debate is two photos and a question with two answers.');
+    }
+    const raw = Array.isArray(body.debate.listingIds) ? body.debate.listingIds : [];
+    const side = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+    debateIds = [side(raw[0]), side(raw[1])];
+  }
+  if (hotspots && debateIds) return error(400, 'invalid_post', 'A post is a flex or a debate, not both.');
+
   const repository = await getRepository();
+
+  // Items named on a flex or a debate must be real, public items - anybody's,
+  // since a debate is usually about two things neither side sells.
+  const linked = [...(hotspots ?? []).map((spot) => spot.listingId), ...(debateIds ?? [])]
+    .filter((id): id is string => id !== null);
+  for (const id of new Set(linked)) {
+    const listing = await repository.getListing(id);
+    if (!listing || listing.privateFor || listing.status !== 'active') {
+      return error(404, 'not_found', 'One of the tagged items is not on Figmark any more.');
+    }
+  }
 
   let channelId = user.id;
   let channel: Post['channel'] = 'seller';
@@ -1166,6 +1292,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     poll,
     vibe,
     replyTo,
+    ...(hotspots ? { flex: { hotspots } } : {}),
+    ...(debateIds ? { debate: { listingIds: debateIds } } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -1207,6 +1335,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
       photoUrl: null,
       photoUrls: [],
       poll: null,
+      flex: null,
+      debate: null,
       voice: 'store',
       reach: 'feed',
       announcement: false,
@@ -2192,6 +2322,7 @@ export const forumMembersRoute = handler(forumMembers);
 export const moderateForumRoute = handler(moderateForum);
 export const shopFeedRoute = handler(shopFeed);
 export const followsRoute = handler(follows);
+export const discoverRoute = handler(discover);
 app.http('me-posts', { ...anon, methods: ['GET'], route: 'me/posts', handler: myPostsRoute });
 app.http('person-posts', { ...anon, methods: ['GET'], route: 'users/{id}/posts', handler: personPostsRoute });
 app.http('social-feed', { ...anon, methods: ['GET'], route: 'social/feed', handler: socialFeedRoute });
@@ -2212,6 +2343,7 @@ app.http('social-post-vote', { ...anon, methods: ['POST'], route: 'social/posts/
 app.http('social-post-delete', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/delete', handler: removePostRoute });
 app.http('social-trending', { ...anon, methods: ['GET'], route: 'social/trending', handler: trendingRoute });
 app.http('social-home', { ...anon, methods: ['GET'], route: 'social/home', handler: homeRoute });
+app.http('social-discover', { ...anon, methods: ['GET'], route: 'social/discover', handler: discoverRoute });
 app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });
 app.http('social-post-pin', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/pin', handler: pinPostRoute });
 app.http('social-forum-join', { ...anon, methods: ['POST'], route: 'social/forums/{id}/join', handler: joinForumRoute });

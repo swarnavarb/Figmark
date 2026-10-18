@@ -242,6 +242,7 @@
   --grad-warm: linear-gradient(135deg, #EC4899 0%, #FF5A5F 100%);
   --grad-sea:  linear-gradient(135deg, #06D6E7 0%, #3B82F6 100%);
   --grad-play: linear-gradient(135deg, #A3E635 0%, #06D6E7 100%);
+  --grad-gold: linear-gradient(135deg, #FBBF24 0%, #F97316 100%);
 
   /* The header's colour, one per section (set as data-tone on the root by
      the shell). The tab bar's hues, taken deep enough to carry white: the
@@ -566,6 +567,16 @@ code, kbd, samp, pre {
   --top-grad: linear-gradient(115deg, #FF5B1F 0%, #FF2E7E 58%, #C026D3 100%);
   --top-rgb: 255 52 113;
   --top-ink: #FF8A65;
+}
+:root[data-tone='discover'] {
+  --top-grad: linear-gradient(115deg, #6D28D9 0%, #A21CAF 100%);
+  --top-rgb: 139 47 201;
+  --top-ink: #D8B4FE;
+}
+:root[data-tone='quests'] {
+  --top-grad: linear-gradient(115deg, #D97706 0%, #B45309 100%);
+  --top-rgb: 196 106 8;
+  --top-ink: #FCD34D;
 }
 
 /* ── Search ────────────────────────────────────────────────────────────── */
@@ -1470,34 +1481,100 @@ code, kbd, samp, pre {
 }
 
 /* One hue per section, so the bar is a colour cue as well as a label. */
-.tabbar[data-tab="0"] { --tab-grad: var(--grad-blue); --tab-glow: rgba(124, 58, 237, 0.42); }
-.tabbar[data-tab="1"] { --tab-grad: var(--grad-sea);  --tab-glow: rgba(6, 214, 231, 0.36); }
-.tabbar[data-tab="2"] { --tab-grad: var(--grad-play); --tab-glow: rgba(163, 230, 53, 0.34); }
-.tabbar[data-tab="3"] { --tab-grad: var(--grad-warm); --tab-glow: rgba(236, 72, 153, 0.40); }
+.tabbar[data-tab="buy"]      { --tab-grad: var(--grad-blue); --tab-glow: rgba(124, 58, 237, 0.42); }
+.tabbar[data-tab="discover"] { --tab-grad: var(--grad-cool); --tab-glow: rgba(139, 92, 246, 0.40); }
+.tabbar[data-tab="sell"]     { --tab-grad: var(--grad-sea);  --tab-glow: rgba(6, 214, 231, 0.36); }
+.tabbar[data-tab="services"] { --tab-grad: var(--grad-play); --tab-glow: rgba(163, 230, 53, 0.34); }
+.tabbar[data-tab="social"]   { --tab-grad: var(--grad-warm); --tab-glow: rgba(236, 72, 153, 0.40); }
+.tabbar[data-tab="quests"]   { --tab-grad: var(--grad-gold); --tab-glow: rgba(251, 191, 36, 0.36); }
 
+/* Seven equal columns: three tabs, the Create button, three tabs. Equal
+   rather than sized to their words, so the bar is symmetrical about the +
+   whatever the labels say. */
 .tab-item {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding: 8px 4px;
+  padding: 8px 0;
   color: var(--text-faint);
   text-decoration: none;
-  font-size: var(--t-xs);
+  font-size: var(--t-2xs);
   font-weight: var(--w-semi);
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   transition: color 0.24s ease;
+  -webkit-tap-highlight-color: transparent;
 }
+.tab-item__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+@media (max-width: 340px) {
+  .tab-item { font-size: 9.5px; }
+}
+
+/* The + in the middle: lifted out of the bar on a ring of the page, so it
+   reads as the one thing in the bar that makes rather than goes. */
+.tab-create {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 4px;
+  color: var(--text-dim);
+  font-size: var(--t-2xs);
+  font-weight: var(--w-semi);
+}
+.tab-create__btn {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  translate: -50% 0;
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: var(--grad-hero);
+  color: #fff;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--bg) 88%, transparent),
+    0 8px 22px rgba(236, 72, 153, 0.42),
+    0 0 26px rgba(124, 58, 237, 0.45);
+  transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-create__btn svg { transition: transform var(--dur-2) var(--ease); }
+.tab-create__btn:hover {
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--bg) 88%, transparent),
+    0 10px 28px rgba(236, 72, 153, 0.55),
+    0 0 34px rgba(124, 58, 237, 0.6);
+}
+.tab-create__btn:active { transform: scale(0.93); }
+.tab-create__btn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.tab-create__btn.is-open svg { transform: rotate(45deg); }
 .tab-item__glyph {
   display: block;
   transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* On a filled pill the label is ink on colour, not the accent on the page. */
 .tab-item.is-on { color: var(--tab-ink, #fff); font-weight: var(--w-bold); }
-.tabbar[data-tab="1"] .tab-item.is-on { --tab-ink: var(--aqua-ink); }
-.tabbar[data-tab="2"] .tab-item.is-on { --tab-ink: var(--lime-ink); }
+.tabbar[data-tab="sell"] .tab-item.is-on { --tab-ink: var(--aqua-ink); }
+.tabbar[data-tab="services"] .tab-item.is-on { --tab-ink: var(--lime-ink); }
+.tabbar[data-tab="quests"] .tab-item.is-on { --tab-ink: var(--warn-ink); }
 .tab-item.is-on .tab-item__glyph { transform: translateY(-1px); stroke-width: 2.1; }
 
 /* The bar is fixed, so every page needs room under it to finish scrolling.
@@ -1508,7 +1585,9 @@ code, kbd, samp, pre {
 @media (prefers-reduced-motion: reduce) {
   .tabbar__pill,
   .tab-item,
-  .tab-item__glyph { transition: none; }
+  .tab-item__glyph,
+  .tab-create__btn,
+  .tab-create__btn svg { transition: none; }
 }
 
 /* ── Tab content transition ────────────────────────────────────────────── */
@@ -5454,7 +5533,8 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .nav { transition: transform 280ms var(--ease); }
 .tabbar { transition: transform 280ms var(--ease); }
 :root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail))); }
-:root[data-bars='hidden'] .tabbar { transform: translateY(100%); }
+/* Past the bar's own height by the + button's lift, so no rim of it is left showing. */
+:root[data-bars='hidden'] .tabbar { transform: translateY(calc(100% + 30px)); }
 
 @media (prefers-reduced-motion: reduce) {
   .spost__glow::before, .spost__glow::after, .social .writer::before { animation: none; }
@@ -10963,3 +11043,231 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* Small tags in the About panel. */
 .ppanel .chips--tight { gap: 6px; }
 .ppanel .chip { padding: 3px 10px; font-size: var(--t-xs); }
+
+
+/* ── Create sheet ──────────────────────────────────────────────────────── */
+
+/* What the + opens: a glass sheet up from the bottom, four ways to post. */
+.csheet {
+  position: fixed; inset: 0; z-index: 190;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(4, 6, 12, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: csheet-fade var(--dur-2) var(--ease) both;
+}
+.csheet__box {
+  width: 100%; max-width: 560px;
+  display: grid; gap: 12px;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--border-strong); border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: csheet-up 320ms var(--ease) both;
+}
+.csheet__grip {
+  justify-self: center;
+  width: 38px; height: 4px; border-radius: var(--r-pill);
+  background: var(--border-strong);
+}
+.csheet__title {
+  margin: 2px 0 0;
+  font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold);
+  letter-spacing: -0.01em;
+}
+.csheet__list { display: grid; gap: 8px; }
+.csheet__item {
+  display: grid; grid-template-columns: 46px minmax(0, 1fr) 16px; align-items: center; gap: 12px;
+  min-height: 66px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.csheet__item:hover, .csheet__item:focus-visible { border-color: var(--accent-line); background: var(--surface-hover); outline: none; }
+.csheet__item:active { transform: scale(0.985); }
+.csheet__emoji {
+  display: grid; place-items: center;
+  width: 46px; height: 46px; border-radius: 14px;
+  font-size: 22px; line-height: 1;
+  background: var(--violet-soft); border: 1px solid var(--violet-line);
+}
+.csheet__item--sell .csheet__emoji { background: var(--aqua-soft); border-color: var(--aqua-line); }
+.csheet__item--iso .csheet__emoji { background: var(--coral-soft); border-color: var(--coral-line); }
+.csheet__item--debate .csheet__emoji { background: var(--pink-soft); border-color: var(--pink-line); }
+.csheet__text { display: grid; gap: 2px; min-width: 0; }
+.csheet__text strong { font-size: var(--t-base); font-weight: var(--w-semi); }
+.csheet__text span { font-size: var(--t-sm); color: var(--text-dim); line-height: 1.4; }
+.csheet__chev { color: var(--text-faint); }
+.csheet__cancel {
+  min-height: 46px; border: 0; border-radius: var(--r-md);
+  background: none; color: var(--text-dim); font: inherit; font-weight: var(--w-semi); cursor: pointer;
+}
+.csheet__cancel:hover { color: var(--text); background: var(--surface-2); }
+@keyframes csheet-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes csheet-up { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .csheet, .csheet__box { animation: none; }
+}
+
+/* ── What a card is ────────────────────────────────────────────────────── */
+
+/* [FOR SALE], [DEBATE POLL], [COLLECTION FLEX], [ISO REQUEST], [HOT DEBATE]:
+   one look for each, on every card that is one, wherever it is shown. */
+.ctype {
+  display: inline-flex; align-items: center; justify-self: start; width: fit-content;
+  padding: 3px 8px; border-radius: var(--r-pill);
+  font-family: var(--mono); font-size: 10px; font-weight: var(--w-medium);
+  letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.3;
+  color: var(--violet-text); background: var(--violet-soft); border: 1px solid var(--violet-line);
+}
+.ctype--sale { color: #BEF264; background: var(--lime-soft); border-color: var(--lime-line); }
+.ctype--debate { color: var(--pink-text); background: var(--pink-soft); border-color: var(--pink-line); }
+.ctype--iso { color: #FF8A8D; background: var(--coral-soft); border-color: var(--coral-line); }
+.ctype--thread { color: var(--warn); background: var(--warn-soft); border-color: rgba(251, 191, 36, 0.42); }
+.discitem__photo .ctype {
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(8, 11, 18, 0.72); backdrop-filter: blur(6px);
+}
+
+/* ── Gear hotspots ─────────────────────────────────────────────────────── */
+
+/* A tagged piece in a collection photo: a numbered dot in the colour of what
+   it is to its owner - had, wanted, or for sale. */
+.hotdot {
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px; padding: 0;
+  border-radius: 50%; border: 2px solid #fff;
+  background: var(--violet); color: #fff;
+  font: var(--w-bold) 11px/1 var(--ui);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(124, 58, 237, 0.32);
+  cursor: pointer;
+}
+.hotdot--owned { background: var(--violet); }
+.hotdot--wishlist { background: var(--pink); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(236, 72, 153, 0.32); }
+.hotdot--for_sale { background: var(--lime); color: var(--lime-ink); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(163, 230, 53, 0.34); }
+.hotdot--pending { background: rgba(255, 255, 255, 0.85); color: #111; border-style: dashed; }
+.hotdot.is-open { transform: scale(1.15); }
+.hotchip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi);
+  white-space: nowrap; cursor: pointer;
+}
+.hotchip--owned.is-on { color: var(--violet-text); background: var(--violet-soft); border-color: var(--violet-line); }
+.hotchip--wishlist.is-on { color: var(--pink-text); background: var(--pink-soft); border-color: var(--pink-line); }
+.hotchip--for_sale.is-on { color: #BEF264; background: var(--lime-soft); border-color: var(--lime-line); }
+
+/* The flex as a post: the photo at its own shape, so its dots stay on their pieces. */
+.flexshelf { display: grid; gap: 8px; margin-inline: -16px; }
+.spost--nested .flexshelf { margin-inline: 0; }
+.flexshelf__frame { position: relative; background: #000; line-height: 0; }
+.flexshelf__frame > img { width: 100%; height: auto; max-height: 78vh; object-fit: contain; cursor: zoom-in; user-select: none; }
+.flexshelf__spot { position: absolute; width: 0; height: 0; z-index: 1; line-height: 1.4; }
+.flexshelf__spot .hotdot { position: absolute; left: -13px; top: -13px; transition: transform var(--dur-1) var(--ease); }
+.flexshelf__spot .hotdot:not(.is-open) { animation: hotdot-pulse 2.4s ease-out infinite; }
+.flexshelf__tip {
+  position: absolute; left: 18px; top: -16px; z-index: 2;
+  display: grid; gap: 6px; justify-items: start;
+  width: max-content; max-width: 200px; padding: 10px 12px;
+  border-radius: var(--r-md); border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+  font-size: var(--t-sm);
+}
+.flexshelf__tip--left { left: auto; right: 18px; }
+.flexshelf__go { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-text); font-weight: var(--w-semi); font-size: var(--t-xs); text-decoration: none; }
+.flexshelf__thumbs { display: flex; gap: 6px; padding-inline: 16px; overflow-x: auto; scrollbar-width: none; }
+.flexshelf__thumb {
+  flex: none; width: 52px; height: 52px; padding: 0; overflow: hidden;
+  border-radius: var(--r-sm); border: 2px solid transparent; background: var(--surface-2); cursor: pointer; opacity: 0.6;
+}
+.flexshelf__thumb.is-on { border-color: var(--violet-lit); opacity: 1; }
+.flexshelf__thumb img { width: 100%; height: 100%; object-fit: cover; }
+.flexshelf__legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 0; padding-inline: 16px; color: var(--text-dim); font-size: var(--t-xs); font-weight: var(--w-semi);
+}
+.flexshelf__legend .hotchip { cursor: default; }
+@keyframes hotdot-pulse {
+  0% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 0 rgba(255, 255, 255, 0.55); }
+  70% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 10px rgba(255, 255, 255, 0); }
+  100% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 0 rgba(255, 255, 255, 0); }
+}
+
+/* ── Debates ───────────────────────────────────────────────────────────── */
+
+/* A against B, side by side, with the split as one bar beneath. */
+.debate { display: grid; gap: 10px; }
+.debate__pair { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.debate__side { display: grid; gap: 6px; min-width: 0; }
+.debate__pick {
+  position: relative; display: block; width: 100%; aspect-ratio: 4 / 5; padding: 0; overflow: hidden;
+  border-radius: var(--r-md); border: 2px solid var(--border); background: #000;
+  color: #fff; font: inherit; cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.debate__pick:disabled { cursor: default; }
+.debate__pick:not(:disabled):hover { transform: translateY(-1px); }
+.debate__pick img { width: 100%; height: 100%; object-fit: cover; user-select: none; }
+.debate__side--a .debate__pick:not(:disabled):hover, .debate__side--a.is-mine .debate__pick { border-color: var(--blue); }
+.debate__side--b .debate__pick:not(:disabled):hover, .debate__side--b.is-mine .debate__pick { border-color: var(--pink); }
+.debate__letter {
+  position: absolute; top: 8px; left: 8px;
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  font: var(--w-bold) 13px/1 var(--display);
+  background: var(--blue); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.debate__side--b .debate__letter { background: var(--pink); }
+.debate__pct {
+  position: absolute; top: 8px; right: 8px;
+  padding: 3px 8px; border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(6px);
+  font: var(--w-bold) var(--t-sm)/1.2 var(--mono);
+}
+.debate__label {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: 4px; justify-content: center;
+  padding: 26px 8px 8px; text-align: center;
+  font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.3;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.82));
+}
+.debate__vs {
+  position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+  display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%;
+  font: var(--w-bold) 12px/1 var(--display); letter-spacing: 0.04em;
+  background: var(--grad-hero); color: #fff;
+  border: 3px solid var(--surface); box-shadow: 0 4px 16px rgba(236, 72, 153, 0.45);
+  pointer-events: none;
+}
+.debate__item {
+  display: inline-flex; align-items: center; gap: 4px; justify-self: center;
+  font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--accent-text); text-decoration: none;
+}
+.debate__bar {
+  display: flex; height: 8px; overflow: hidden; gap: 2px;
+  border-radius: var(--r-pill); background: var(--surface-2); opacity: 0.45;
+  transition: opacity var(--dur-2) var(--ease);
+}
+.debate__bar.is-revealed { opacity: 1; }
+.debate__bar-a, .debate__bar-b { display: block; height: 100%; transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+.debate__bar-a { background: var(--grad-blue); border-radius: var(--r-pill) 0 0 var(--r-pill); }
+.debate__bar-b { background: var(--grad-warm); border-radius: 0 var(--r-pill) var(--r-pill) 0; }
+.debate__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.debate__foot .poll__foot { margin: 0; }
+.debate__cta {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 7px 12px; border-radius: var(--r-pill);
+  background: var(--grad-hero); color: #fff; text-decoration: none;
+  font-size: var(--t-xs); font-weight: var(--w-bold);
+  box-shadow: 0 4px 14px rgba(236, 72, 153, 0.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .flexshelf__spot .hotdot:not(.is-open) { animation: none; }
+  .debate__bar-a, .debate__bar-b, .debate__pick { transition: none; }
+}

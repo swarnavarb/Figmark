@@ -30,7 +30,7 @@ import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type {
-  CommentThread, PollView, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
+  CommentThread, PollView, PostHotspot, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
 } from '@shared/social';
 import type { CommunityAction } from '@shared/disputes';
 import type { MarketSettings } from '@shared/settings';
@@ -1154,6 +1154,13 @@ export interface PostCard {
 
 export type PostBoost = 'trending' | 'rising';
 
+/** What Discover is made of, each list already ranked. */
+export interface DiscoverResponse {
+  debates: PostCard[];
+  threads: PostCard[];
+  flexes: PostCard[];
+}
+
 /** One post read in full, with everything said under it. */
 export interface PostDetail {
   card: PostCard;
@@ -1255,6 +1262,19 @@ export interface WantCard {
   createdAt: string;
   expiresAt: string;
   closedAt: string | null;
+  /** Items already listed that look like what is being hunted. */
+  matchCount?: number;
+}
+
+/** An item already on Figmark that looks like what a hunt is after. */
+export interface WantMatch {
+  id: string;
+  title: string;
+  priceMinor: number;
+  currency: string;
+  condition: string;
+  sellerId: string;
+  photoUrl: string | null;
 }
 
 export interface WantOfferRow {
@@ -1311,6 +1331,8 @@ export interface WantDetail {
   /** Your answers by the voice you gave them in. */
   yoursBy: Partial<Record<'person' | 'shop', { id: string; message: string; priceMinor: number | null; listingId: string | null }>>;
   offers: WantOfferRow[];
+  /** What is already listed that looks like it. */
+  matches?: WantMatch[];
 }
 
 export type ForumRole = 'admin' | 'moderator' | 'member';
@@ -2842,14 +2864,20 @@ export const api = {
 
   socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
   trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
-  /** Who you follow, with trending and rising posts mixed in and badged. */
-  socialHome: (as?: string | null, before?: string) => {
+  /**
+   * Who you follow, with trending and rising posts mixed in and badged - or,
+   * with `following`, who you follow and nobody else, newest first.
+   */
+  socialHome: (as?: string | null, before?: string, following = false) => {
     const query = new URLSearchParams();
     if (as) query.set('as', as);
     if (before) query.set('before', before);
+    if (following) query.set('following', '1');
     const tail = query.toString();
     return request<{ posts: PostCard[]; next: string | null }>(`/social/home${tail ? `?${tail}` : ''}`);
   },
+  /** The public side, ranked: debates, conversations that took off, and collection flexes. */
+  discover: () => request<DiscoverResponse>('/social/discover'),
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
   /** `light` is the refresh while a room is open: the posts only, without the shop's item list. */
@@ -2871,6 +2899,7 @@ export const api = {
     channelId?: string; announcement?: boolean;
     photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
     replyToId?: string; toWall?: boolean; alsoForumIds?: string[];
+    flex?: { hotspots: PostHotspot[] } | null; debate?: { listingIds: [string | null, string | null] } | null;
   }) =>
     post<{ post: Post }>('/social/posts', body),
   socialPost: (channelId: string, id: string, as?: string | null) =>

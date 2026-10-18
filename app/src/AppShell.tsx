@@ -4,7 +4,7 @@ import { FloatingCalc } from './components/FloatingCalcFab';
 import { Notifications } from './components/Notifications';
 import { ScrollBars } from './components/ScrollBars';
 import { ScrollManager } from './components/ScrollManager';
-import { TABS, TabBar } from './components/TabBar';
+import { TabBar, tabFor, type TabId } from './components/TabBar';
 import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon, Modal } from './components/ui';
@@ -43,19 +43,19 @@ export function AppShell() {
   useEffect(() => { void inviteCodeFor(user?.id); }, [user?.id]);
 
   // Each section's header carries that section's hue, the same one its pill
-  // in the tab bar does; a page outside the four reads as Buy, as the bar does.
-  const tone = TONES[Math.max(0, TABS.findIndex((tab) => tab.match(pathname)))] ?? TONES[0];
+  // in the tab bar does; a page outside the six reads as Shop, as the bar does.
+  const tone = tabFor(pathname).id;
   // Before paint: Safari picks its status bar colour from the first frame it
   // sees, so a frame in the wrong tone sticks. (public/boot/tone.js sets the first
   // page's tone before any of this loads.)
   useLayoutEffect(() => {
-    document.documentElement.dataset.tone = tone.id;
+    document.documentElement.dataset.tone = tone;
     // The phone's own status bar takes the header's colour, so the header
     // reads as running to the very top of the screen. A new tag rather than
     // a changed one: Safari does not always notice an edited theme-color.
     const meta = document.createElement('meta');
     meta.name = 'theme-color';
-    meta.content = pathname.startsWith('/social/f/') ? FORUM_STATUS : tone.status;
+    meta.content = pathname.startsWith('/social/f/') ? FORUM_STATUS : TONE_STATUS[tone];
     document.querySelectorAll('meta[name="theme-color"]').forEach((old) => old.remove());
     document.head.append(meta);
   }, [tone, pathname]);
@@ -87,7 +87,7 @@ export function AppShell() {
           bar (see .topstrip in the stylesheet). A new element for each
           section: Safari samples its status bar colour again when the bar
           at the top is replaced, but not when its colour changes. */}
-      <div key={pathname.startsWith('/social/f/') ? `${tone.id}-forum` : tone.id} className="topstrip" aria-hidden="true" />
+      <div key={pathname.startsWith('/social/f/') ? `${tone}-forum` : tone} className="topstrip" aria-hidden="true" />
       <ScrollManager />
       <ScrollBars />
       <ViewportSync />
@@ -189,17 +189,19 @@ export function AppShell() {
 
 /**
  * The colour each section's header runs in, keyed in the stylesheet by
- * `data-tone` on the root, in the order of the tabs. `status` is the phone's
- * status bar under the clock, and the same colour as the header's top edge
- * (--top-rgb in the stylesheet), so the two read as one block. public/boot/tone.js
- * repeats the paths and colours, to set the first page's tone before paint.
+ * `data-tone` on the root. This is the phone's status bar under the clock, and
+ * the same colour as the header's top edge (--top-rgb in the stylesheet), so
+ * the two read as one block. public/boot/tone.js repeats the paths and
+ * colours, to set the first page's tone before paint.
  */
-const TONES = [
-  { id: 'buy', status: '#5B5EF1' },
-  { id: 'sell', status: '#177ACE' },
-  { id: 'services', status: '#3A8C4E' },
-  { id: 'social', status: '#FF3471' },
-] as const;
+const TONE_STATUS: Record<TabId, string> = {
+  buy: '#5B5EF1',
+  discover: '#8B2FC9',
+  sell: '#177ACE',
+  services: '#3A8C4E',
+  social: '#FF3471',
+  quests: '#C46A08',
+};
 
 /**
  * The cart, with how many items are waiting in it.

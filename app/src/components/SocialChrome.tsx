@@ -25,10 +25,10 @@ import { seenMap, unreadOf } from './Channels';
 export type SocialView = 'feed' | 'channels' | 'wanted' | 'forums' | 'messages';
 
 export const SOCIAL_VIEWS: { id: SocialView; label: string; icon: IconName }[] = [
-  { id: 'feed', label: 'Feed', icon: 'spark' },
+  { id: 'feed', label: 'Following', icon: 'spark' },
   { id: 'channels', label: 'Channels', icon: 'megaphone' },
-  { id: 'wanted', label: 'ISO', icon: 'target' },
-  { id: 'forums', label: 'Forums', icon: 'forum' },
+  { id: 'wanted', label: 'ISO board', icon: 'target' },
+  { id: 'forums', label: 'Groups', icon: 'forum' },
   { id: 'messages', label: 'Messages', icon: 'mail' },
 ];
 
