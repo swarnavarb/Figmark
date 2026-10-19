@@ -53,6 +53,7 @@ const STORE: { label: string; actions: Action[] }[] = [
       { id: 'power', emoji: '⚡', title: 'Power sale', line: 'A run of drops on a timer, in your channel.', pro: true,
         to: (store) => `/shop/power-sale?store=${encodeURIComponent(store!.ownerId)}`, hue: 'gold' },
       { id: 'announce', emoji: '📣', title: 'Announcement', line: 'To your channel, for your followers.', to: (store) => `/social/c/${encodeURIComponent(store!.ownerId)}`, hue: 'coral' },
+      { id: 'dashboard', emoji: '📈', title: 'Seller dashboard', line: 'Sales, orders and what is moving.', to: () => '/shop?tab=analytics', hue: 'aqua' },
     ],
   },
   {
@@ -118,7 +119,8 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
     }
     // Closed here as well as by the move: from the page it goes to, there is no move.
     onClose();
-    navigate(action.to!(as));
+    // The console opens on whichever store it is told; the rest ignore it.
+    navigate(action.to!(as), as ? { state: { store: as.ownerId } } : undefined);
   }
 
   const posted = (post: Pick<Post, 'channelId' | 'id'>) => {
