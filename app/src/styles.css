@@ -6148,7 +6148,7 @@ body.is-locked { overflow: hidden; }
   to { background-position: 0 0, 0 0, 100% 70%; }
 }
 .soctop__in {
-  display: grid; gap: 12px;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px;
   max-width: var(--page-max, 1180px); margin: 0 auto;
   padding: 10px max(var(--page-pad), env(safe-area-inset-right, 0px)) 16px max(var(--page-pad), env(safe-area-inset-left, 0px));
 }
@@ -6191,6 +6191,12 @@ body.is-locked { overflow: hidden; }
 .soctop .bell__panel { top: calc(env(safe-area-inset-top, 0px) + 60px); color: var(--text); }
 .soctop .pmenu__btn { background: #fff; }
 .soctop .pmenu__panel { color: var(--text); }
+/* A narrow phone has room for the title and the four buttons, not the Live tag too. */
+@media (max-width: 360px) {
+  .soctop__bar { gap: 8px; }
+  .soctop__live { display: none; }
+  .soctop__tools { gap: 6px; }
+}
 
 .soctab {
   position: relative; flex: 0 0 auto;
