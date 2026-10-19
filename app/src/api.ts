@@ -15,6 +15,7 @@ import type {
 } from '@shared/contracts';
 import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, OrderStatus, Sourcing, StorePermission } from '@shared/enums';
 import type { DealState } from '@shared/deals';
+import type { Badge, ContestJudging, GuessView, StoreCredit } from '@shared/play';
 import type { LotTally } from '@shared/board';
 import type { FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
@@ -31,7 +32,7 @@ import type { PreOrderView } from '@shared/preorder';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type {
-  CommentThread, PollView, PostHotspot, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
+  CommentThread, PollView, PostHotspot, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe, PollStyle,
 } from '@shared/social';
 import type { CommunityAction } from '@shared/disputes';
 import type { MarketSettings } from '@shared/settings';
@@ -1187,8 +1188,39 @@ export interface PostCard {
 
 export type PostBoost = 'trending' | 'rising' | 'result';
 
+/** One answer as the composer sends it: words, and on a photo poll its picture and item. */
+export interface NewPollOption {
+  label: string;
+  photoUrl?: string | null;
+  listingId?: string | null;
+}
+
+/** Everything a post can be made with. The server decides which combinations make sense. */
+export interface NewPost {
+  body: string; forumId?: string; listingId?: string; storeId?: string;
+  channelId?: string; announcement?: boolean;
+  photoUrls?: string[];
+  poll?: {
+    options: (string | NewPollOption)[]; closesInHours?: number; style?: PollStyle;
+    stock?: boolean; reward?: { amountMinor: number; maxVoters: number } | null;
+  } | null;
+  vibe?: Vibe | null;
+  replyToId?: string; toWall?: boolean; alsoForumIds?: string[];
+  flex?: { hotspots: PostHotspot[] } | null;
+  debate?: { listingIds?: [string | null, string | null]; prize?: { amountMinor: number; judge: 'store' | 'likes' } | null } | null;
+  guess?: { answerMinor: number; revealInHours: number; listingId?: string | null } | null;
+  contest?: {
+    title: string; rules: string; entriesHours: number; votingHours: number; judging: ContestJudging;
+    prizes: { amountMinor: number; note: string }[]; host?: 'store' | 'figmark';
+  } | null;
+}
+
 /** What Discover is made of, each list already ranked. The rails come on the first page only. */
 export interface DiscoverResponse {
+  /** Open to take part in and not yet joined: polls, guesses, competitions. First page only. */
+  live?: PostCard[];
+  /** Competitions running or just finished. First page only. */
+  contests?: PostCard[];
   debates: PostCard[];
   threads: PostCard[];
   flexes: PostCard[];
@@ -2133,6 +2165,8 @@ export interface TagInsights {
 }
 
 export interface PublicProfile {
+  /** What a person won in competitions, debates and guesses. Empty for a shop. */
+  gameBadges?: Badge[];
   handle: string;
   isStore: boolean;
   displayName: string;
@@ -2961,7 +2995,7 @@ export const api = {
     if (before) query.set('before', before);
     if (following) query.set('following', '1');
     const tail = query.toString();
-    return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null }>(`/social/home${tail ? `?${tail}` : ''}`);
+    return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null; live?: PostCard[] }>(`/social/home${tail ? `?${tail}` : ''}`);
   },
   /** The public side, ranked: debates, conversations that took off, and collection flexes. */
   discover: (page = 0) => request<DiscoverResponse>(`/social/discover${page ? `?page=${page}` : ''}`),
@@ -2981,14 +3015,18 @@ export const api = {
   },
   pinPost: (channelId: string, id: string) =>
     post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
-  createPost: (body: {
-    body: string; forumId?: string; listingId?: string; storeId?: string;
-    channelId?: string; announcement?: boolean;
-    photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
-    replyToId?: string; toWall?: boolean; alsoForumIds?: string[];
-    flex?: { hotspots: PostHotspot[] } | null; debate?: { listingIds: [string | null, string | null] } | null;
-  }) =>
-    post<{ post: Post }>('/social/posts', body),
+  createPost: (body: NewPost) => post<{ post: Post }>('/social/posts', body),
+  /** Put a photo into a competition: one each, while entries are open. */
+  enterContest: (channelId: string, id: string, photoUrl: string, caption: string) =>
+    post<{ entryId: string; card: PostCard }>(`${postPath(channelId, id)}/enter`, { photoUrl, caption }),
+  guessPrice: (channelId: string, id: string, amountMinor: number) =>
+    post<{ guess: GuessView }>(`${postPath(channelId, id)}/guess`, { amountMinor }),
+  /** The host's decisions: a shortlist, the winners, a debate's best argument, a prize handed over. */
+  judge: (channelId: string, id: string, body: { action: 'shortlist' | 'winners'; entryIds: string[] } | { action: 'best'; commentId: string } | { action: 'sent'; place: number }) =>
+    post<{ card: PostCard }>(`${postPath(channelId, id)}/judge`, body),
+  myRewards: () => request<{ credits: StoreCredit[]; badges: Badge[] }>('/me/rewards'),
+  /** A shop's polls, debates, guesses and competitions, for its Engage screen. */
+  shopGames: (storeId: string) => request<{ posts: PostCard[] }>(`/social/shops/${encodeURIComponent(storeId)}/games`),
   socialPost: (channelId: string, id: string, as?: string | null) =>
     request<PostDetail>(`${postPath(channelId, id)}${voice(as)}`),
   react: (channelId: string, id: string, kind: ReactionKind | null, as?: string | null) =>

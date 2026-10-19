@@ -26,6 +26,17 @@ import { levelOf } from './quest-routes.js';
 import { LESS_FROM_LIFT, NO_SCREEN, lessFrom, screenOf, screens, type FeedScreen } from '../feed-prefs.js';
 import { hashtagsIn, mentionsIn, MENTIONS_MAX, type SpottedItem, type TopicChip, type WantRow } from '../../../shared/feed.js';
 import { tagKey, tidyLabel } from '../../../shared/shop-tags.js';
+import {
+  CONTEST_CAPTION_MAX, CONTEST_MAX_ENTRIES, CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, GUESS_MAX_MINOR,
+  PHASE_MAX_HOURS, PHASE_MIN_HOURS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX, SHORTLIST_MAX, SHORTLIST_MIN,
+  closestGuess, contestPhase, isJudging,
+  type ContestPrize, type ContestWinner, type GuessView, type PostContest, type PostGuess,
+} from '../../../shared/play.js';
+import { RATING_LABELS, isPollStyle, type DebatePrize, type PollStyle, type VoterReward } from '../../../shared/social.js';
+import { verifiedChecks } from '../../../shared/verification.js';
+import { isDue, payContest, payDebate, settlePlay } from '../play.js';
+import { ownPhotoName } from '../storage/index.js';
+import { likeness, storedFingerprint } from '../image-hash.js';
 
 /**
  * The social side: what the people you follow are saying, and the forums.
@@ -139,18 +150,49 @@ function publicPost(post: Post): Post {
     ...rest,
     likeCount: post.reactions?.length ?? post.likeCount,
     replyCount: post.comments?.length ?? post.replyCount,
+    // Sealed until it is revealed: the answer and everybody's guesses are the
+    // game, and GuessView says what this viewer may see of them.
+    ...(post.guess ? { guess: null } : {}),
+  };
+}
+
+/** A guess-the-price as this viewer may see it: their own guess, and the answer only once it is out. */
+function guessView(guess: PostGuess | null | undefined, viewerId: string): GuessView | null {
+  if (!guess) return null;
+  const revealed = Boolean(guess.revealedAt);
+  return {
+    listingId: guess.listingId,
+    revealAt: guess.revealAt,
+    count: guess.guesses.length,
+    mine: guess.guesses.find((entry) => entry.userId === viewerId)?.amountMinor ?? null,
+    revealed,
+    answerMinor: revealed ? guess.answerMinor : null,
+    winner: revealed ? guess.winner ?? null : null,
+    closest: revealed ? closestGuess(guess).slice(0, 3).map((entry) => ({ name: entry.name, amountMinor: entry.amountMinor })) : [],
   };
 }
 
 function pollView(poll: StoredPoll | null | undefined, viewerId: string): PollView | null {
   if (!poll) return null;
-  const options = poll.options.map((option) => ({ id: option.id, label: option.label, votes: option.voterIds.length }));
+  const options = poll.options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    votes: option.voterIds.length,
+    ...(option.photoUrl ? { photoUrl: option.photoUrl } : {}),
+    ...(option.listingId ? { listingId: option.listingId } : {}),
+  }));
   return {
     options,
     total: options.reduce((sum, option) => sum + option.votes, 0),
     myVote: poll.options.find((option) => option.voterIds.includes(viewerId))?.id ?? null,
     closesAt: poll.closesAt,
     closed: poll.closesAt !== null && poll.closesAt < new Date().toISOString(),
+    ...(poll.style ? { style: poll.style } : {}),
+    ...(poll.switches ? { switches: poll.switches } : {}),
+    ...(poll.stock ? { stock: true } : {}),
+    ...(poll.reward
+      ? { reward: { amountMinor: poll.reward.amountMinor, maxVoters: poll.reward.maxVoters, storeName: poll.reward.storeName, paidCount: poll.reward.paidCount ?? null } }
+      : {}),
   };
 }
 
@@ -171,6 +213,7 @@ function commentView(comment: StoredComment, post: Post, viewer: Actor, people: 
     likedByMe: comment.likedBy.includes(viewer.key),
     canDelete: comment.authorId === viewer.userId || post.authorId === viewer.userId,
     createdAt: comment.createdAt,
+    ...(comment.side ? { side: comment.side } : {}),
   };
 }
 
@@ -375,6 +418,10 @@ export async function decorate(
         shareCount: post.shareCount ?? 0,
         poll: pollView(post.poll, viewer.userId),
         mine: post.authorId === viewer.userId,
+        ...(post.guess ? { guess: guessView(post.guess, viewer.userId) } : {}),
+        ...((post.contest || post.debate?.prize || post.poll?.stock) && (post.authorId === viewer.userId
+          || (post.channel === 'seller' && channelOwner?.sellerProfile && can(channelOwner, viewer.userId, 'posts')))
+          ? { host: true } : {}),
       },
       following: followedIds.has(post.channelId) || post.channelId === viewer.userId,
       shop: spokenAsShop,
@@ -519,19 +566,90 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
 export function heat(post: Post, now: number): number {
   const votes = post.poll?.options.reduce((sum, option) => sum + option.voterIds.length, 0) ?? 0;
   // A sale is the strongest thing a post can do: somebody paid because of it.
+  // A vote is a tap like a reaction, and counts as one: polls are what people
+  // come back to take part in.
   const engagement = (post.reactions?.length ?? post.likeCount)
     + 2 * (post.comments?.length ?? post.replyCount)
     + 3 * (post.shareCount ?? 0)
     + 4 * (post.buyCount ?? 0)
-    + 0.5 * votes;
+    + votes
+    + (post.guess?.guesses.length ?? 0)
+    + 2 * (post.contest?.entries.length ?? 0);
   // Reading counts for something before anybody presses anything: an open is
   // half a reaction, and every twenty seconds people spent on it is one more.
   const reading = 0.5 * (post.opens ?? 0) + (post.dwellMs ?? 0) / 20_000;
   // Shown to plenty and touched by nobody: people are scrolling past it.
   const ignored = (post.views ?? 0) >= IGNORED_AFTER_VIEWS && engagement === 0 ? 0.5 : 1;
   const hours = Math.max(0, (now - new Date(post.createdAt).getTime()) / 3_600_000);
-  return (ignored * (engagement + reading)) / Math.pow(hours / 24 + 1, 0.6);
+  // Something still open to take part in - a poll, a guess, a competition -
+  // is worth more while it is open: a closed one can only be read.
+  const lift = isLive(post, now) ? LIVE_LIFT + (endsSoon(post, now) ? ENDING_LIFT : 0) : 1;
+  return (lift * ignored * (engagement + reading + (lift > 1 ? 1 : 0))) / Math.pow(hours / 24 + 1, 0.6);
 }
+
+/** How much an open poll, guess or competition is lifted, and more again in its last day. */
+const LIVE_LIFT = 1.6;
+const ENDING_LIFT = 0.6;
+const ENDING_WINDOW_MS = 24 * 3_600_000;
+
+/** When whatever is open on this post stops taking part, or null when nothing is open. */
+export function liveUntil(post: Post, now: number): number | null {
+  if (post.contest && !post.contest.settledAt) {
+    const phase = contestPhase(post.contest, now);
+    if (phase === 'entries') return Date.parse(post.contest.entriesCloseAt);
+    if (phase === 'voting') return Date.parse(post.contest.endsAt);
+    if (phase === 'shortlisting' || phase === 'judging') return null;
+  }
+  if (post.guess && !post.guess.revealedAt && Date.parse(post.guess.revealAt) > now) return Date.parse(post.guess.revealAt);
+  if (post.poll && !post.contest && post.poll.options.length > 0) {
+    if (!post.poll.closesAt) return Number.POSITIVE_INFINITY;
+    const closes = Date.parse(post.poll.closesAt);
+    return closes > now ? closes : null;
+  }
+  return null;
+}
+
+export const isLive = (post: Post, now: number) => liveUntil(post, now) !== null;
+
+/** Whether this person has already taken part: voted, guessed, or entered. */
+export function playedBy(post: Post, userId: string | null): boolean {
+  if (!userId) return false;
+  return Boolean(post.poll?.options.some((option) => option.voterIds.includes(userId))
+    || post.guess?.guesses.some((entry) => entry.userId === userId)
+    || post.contest?.entries.some((entry) => entry.userId === userId));
+}
+
+/** How many open games the Live strip shows. */
+const LIVE_SIZE = 10;
+/** How long a finished competition stays on the competitions row, with its podium. */
+const CONTEST_SHOWN_MS = 3 * 86_400_000;
+
+/**
+ * What is open to take part in right now, for the Live strip: polls, guesses
+ * and competitions the reader has not joined yet, hottest first, those about
+ * to close lifted. Public broadcasts only, and nothing the reader screened out.
+ */
+function liveFor(posts: readonly Post[], userId: string | null, now: number, score: (post: Post) => number): Post[] {
+  return posts
+    .filter((post) => isLive(post, now) && !playedBy(post, userId) && !post.repostOf && !post.wallOf
+      && post.authorId !== userId && (post.channel === 'forum' || (post.reach ?? 'feed') === 'feed'))
+    .sort((a, b) => score(b) - score(a))
+    .slice(0, LIVE_SIZE);
+}
+
+/** Competitions running or just finished, open ones first, those closing soonest first. */
+function contestsOf(posts: readonly Post[], now: number): Post[] {
+  const open = (post: Post) => contestPhase(post.contest!, now) !== 'ended';
+  return posts
+    .filter((post) => post.contest && (open(post) || now - Date.parse(post.contest.settledAt ?? post.contest.endsAt) < CONTEST_SHOWN_MS))
+    .sort((a, b) => Number(open(b)) - Number(open(a))
+      || (liveUntil(a, now) ?? Number.POSITIVE_INFINITY) - (liveUntil(b, now) ?? Number.POSITIVE_INFINITY))
+    .slice(0, 12);
+}
+const endsSoon = (post: Post, now: number) => {
+  const until = liveUntil(post, now);
+  return until !== null && Number.isFinite(until) && until - now < ENDING_WINDOW_MS;
+};
 
 /** Views with nothing pressed before a post counts as scrolled past. */
 const IGNORED_AFTER_VIEWS = 30;
@@ -678,43 +796,20 @@ async function watchedBy(userId: string, repository: Repo): Promise<Set<string>>
 }
 
 /**
- * Tell the voters how the debates that have closed came out.
- *
- * Done on the way past - whenever a feed or Discover reads the recent posts -
- * rather than by a clock, because a debate nobody is reading can wait. The
- * post is marked first, through the same read-change-write a vote uses, so two
- * readers arriving together send it once.
+ * Settle the games among these posts that have come due - debates closed,
+ * guesses to reveal, competitions to move on, voters to pay (see play.ts) -
+ * and hand back the posts with the settled ones read again, so what is drawn
+ * is what was decided.
  */
-async function settleDebates(recent: readonly Post[], repository: Repo): Promise<void> {
-  const now = new Date().toISOString();
-  const due = recent.filter((post) => post.debate && post.poll?.closesAt && post.poll.closesAt < now && !post.resultsSentAt);
-  for (const post of due.slice(0, 5)) {
-    const marked = await repository.mutatePost(post.channelId, post.id, (current) =>
-      (current.resultsSentAt ? null : { ...current, resultsSentAt: now }));
-    if (!marked || marked.resultsSentAt !== now) continue;
-    const options = marked.poll!.options;
-    const total = options.reduce((sum, option) => sum + option.voterIds.length, 0);
-    if (total === 0) continue;
-    const ranked = [...options].sort((a, b) => b.voterIds.length - a.voterIds.length);
-    const tie = ranked.length > 1 && ranked[0]!.voterIds.length === ranked[1]!.voterIds.length;
-    const split = options.map((option) => `${option.label} ${Math.round((100 * option.voterIds.length) / total)}%`).join(' · ');
-    const link = linkTo(marked);
-    for (const option of options) {
-      const won = !tie && option.id === ranked[0]!.id;
-      await notify(repository, option.voterIds.filter((id) => id !== marked.authorId), {
-        kind: 'debate_result',
-        title: tie ? 'A debate you voted in ended level' : won ? `Your pick won: ${option.label}` : `${ranked[0]!.label} won the debate`,
-        body: `${split} — ${gist(marked.body)}`,
-        link,
-      });
-    }
-    await notify(repository, [marked.authorId], {
-      kind: 'debate_result',
-      title: tie ? 'Your debate ended level' : `Your debate closed: ${ranked[0]!.label} won`,
-      body: `${split} from ${total} ${total === 1 ? 'vote' : 'votes'}`,
-      link,
-    });
-  }
+async function settleDebates(recent: Post[], repository: Repo): Promise<Post[]> {
+  const touched = await settlePlay(recent, repository);
+  if (touched.size === 0) return recent;
+  const fresh = new Map<string, Post>();
+  await Promise.all(recent.filter((post) => touched.has(post.id)).map(async (post) => {
+    const read = await repository.getPost(post.channelId, post.id);
+    if (read) fresh.set(post.id, read);
+  }));
+  return recent.map((post) => fresh.get(post.id) ?? post);
 }
 
 /**
@@ -751,7 +846,7 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   const findNew = !before && !onlyFollowed;
   const followed = await repository.listFollowedSellerIds(user.id);
   const followedSet = new Set(followed);
-  const [ownFeed, recent, liked, me, watched] = await Promise.all([
+  const [ownFeed, recentRead, liked, me, watched] = await Promise.all([
     repository.listPostsForChannels([...new Set([...followed, user.id])], HOME_PAGE, { before, feedOnly: true }),
     before ? Promise.resolve([] as Post[]) : repository.listRecentPosts(200),
     findNew ? repository.listLikedListingIds(user.id) : Promise.resolve([] as string[]),
@@ -759,7 +854,7 @@ async function home(request: HttpRequest, _context: InvocationContext) {
     findNew ? watchedBy(user.id, repository) : Promise.resolve(followedSet),
   ]);
   const screen = screenOf(me);
-  await settleDebates(recent, repository);
+  const recent = await settleDebates(recentRead, repository);
   const reader: Reader = { userId: user.id, actorKey: actor.key, watched, wished: new Set(liked), screen };
   const now = Date.now();
   const scores = new Map(recent.map((post) => [post.id, heat(post, now)]));
@@ -814,12 +909,17 @@ async function home(request: HttpRequest, _context: InvocationContext) {
     await repository.updateUser({ ...me, feedPrefs: { ...me.feedPrefs, seenFeedAt: newest } });
   }
 
-  const cards = await decorate(merged, repository, actor, { followed: followedSet });
+  // The Live strip rides on the first page: the same cards, one decorate.
+  const live = findNew ? liveFor(recent.filter((post) => !screens(screen, post)), user.id, now, (post) => scores.get(post.id) ?? 0) : [];
+  const shown = new Set(merged.map((post) => post.id));
+  const cards = await decorate([...merged, ...live.filter((post) => !shown.has(post.id))], repository, actor, { followed: followedSet });
+  const cardById = new Map(cards.map((card) => [card.post.id, card]));
   return json(200, {
+    live: live.map((post) => cardById.get(post.id)).filter((card): card is PostCard => Boolean(card)),
     /** Pass back as `before` for the next page; null when there is none. */
     next: ownFeed.length === HOME_PAGE ? ownFeed.at(-1)!.createdAt : null,
     lastVisit: before ? null : lastVisit,
-    posts: cards.map((card) => {
+    posts: cards.slice(0, merged.length).map((card) => {
       const badges: Boost[] = [];
       if (resultIds.has(card.post.id)) badges.push('result');
       if (trendingIds.has(card.post.id)) badges.push('trending');
@@ -929,14 +1029,14 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
   const page = Math.min(DISCOVER_PAGES - 1, Math.max(0, Math.floor(Number(request.query?.get('page')) || 0)));
 
   const now = Date.now();
-  const [recent, me, watched, liked, moderated] = await Promise.all([
+  const [recentRead, me, watched, liked, moderated] = await Promise.all([
     repository.listRecentPosts(DISCOVER_WINDOW),
     user ? repository.getUserById(user.id) : Promise.resolve(null),
     user ? watchedBy(user.id, repository) : Promise.resolve(new Set<string>()),
     user ? repository.listLikedListingIds(user.id) : Promise.resolve([] as string[]),
     moderation(repository),
   ]);
-  if (page === 0) await settleDebates(recent, repository);
+  const recent = page === 0 ? await settleDebates(recentRead, repository) : recentRead;
   const screen = user ? screenOf(me) : NO_SCREEN;
   const reader: Reader = { userId: user?.id ?? null, actorKey: user ? actor.key : null, watched, wished: new Set(liked), screen };
   const affinity = affinityOf(recent, reader);
@@ -984,7 +1084,13 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
     allDebates.length > (page + 1) * DISCOVER_DEBATES || allThreads.length > (page + 1) * DISCOVER_THREADS
     || allFlexes.length > (page + 1) * DISCOVER_FLEXES || allRising.length > (page + 1) * DISCOVER_RISING);
 
-  const cards = await decorate([...debates, ...threads, ...flexes, ...rising], repository, actor);
+  // The Live strip and the competitions row ride on the first page.
+  const live = page === 0 ? liveFor(open, user?.id ?? null, now, (post) => score.get(post.id) ?? 0) : [];
+  const contests = page === 0 ? contestsOf(open, now) : [];
+  const listed = [...debates, ...threads, ...flexes, ...rising];
+  const listedIds = new Set(listed.map((post) => post.id));
+  const extra = [...new Map([...live, ...contests].filter((post) => !listedIds.has(post.id)).map((post) => [post.id, post])).values()];
+  const cards = await decorate([...listed, ...extra], repository, actor);
   const byId = new Map(cards.map((card) => [card.post.id, card]));
   const pick = (posts: Post[]) => posts.map((post) => byId.get(post.id)).filter((card): card is PostCard => Boolean(card));
 
@@ -996,6 +1102,7 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
       }
     : {};
   return json(200, {
+    ...(page === 0 ? { live: pick(live), contests: pick(contests) } : {}),
     debates: pick(debates),
     threads: pick(threads),
     flexes: pick(flexes),
@@ -1455,7 +1562,15 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     /** Uploaded photos, in order. Several make a carousel. */
     photoUrls?: unknown;
     /** A question to vote on: the body is the question, these the answers. */
-    poll?: { options?: unknown; closesInHours?: unknown } | null;
+    poll?: {
+      options?: unknown; closesInHours?: unknown;
+      /** text, photo, versus or rating. */
+      style?: unknown;
+      /** A shop asking what to stock next. */
+      stock?: unknown;
+      /** A shop's store credit for whoever voted for the winner. */
+      reward?: { amountMinor?: unknown; maxVoters?: unknown } | null;
+    } | null;
     /** A short line on one of the brand gradients. */
     vibe?: unknown;
     /** The message in the same room this one answers. */
@@ -1466,8 +1581,15 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     alsoForumIds?: unknown;
     /** A collection flex: tagged pieces on the photos. */
     flex?: { hotspots?: unknown } | null;
-    /** A debate: photo A against photo B, each side optionally an item. */
-    debate?: { listingIds?: unknown } | null;
+    /** A debate: photo A against photo B, each side optionally an item; a shop may put up a prize. */
+    debate?: { listingIds?: unknown; prize?: { amountMinor?: unknown; judge?: unknown } | null } | null;
+    /** A guess-the-price: the answer, sealed, and when it comes out. */
+    guess?: { answerMinor?: unknown; revealInHours?: unknown; listingId?: unknown } | null;
+    /** A photo competition. Shops run them; Figmark runs the weekly challenge. */
+    contest?: {
+      title?: unknown; rules?: unknown; entriesHours?: unknown; votingHours?: unknown; judging?: unknown;
+      prizes?: unknown; host?: unknown;
+    } | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -1487,25 +1609,59 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   if (slow) return slow;
 
   let poll: StoredPoll | null = null;
+  // Photos on the answers themselves, checked as the post's own are.
+  const optionPhotos: string[] = [];
   if (body.poll) {
     const raw = Array.isArray(body.poll.options) ? body.poll.options : [];
-    const labels = raw.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean);
+    const style: PollStyle = isPollStyle(body.poll.style) ? body.poll.style : 'text';
     if (!text) return error(400, 'invalid_poll', 'A poll needs a question.');
-    if (labels.length < POLL_MIN_OPTIONS || labels.length > POLL_MAX_OPTIONS) {
-      return error(400, 'invalid_poll', `A poll takes ${POLL_MIN_OPTIONS} to ${POLL_MAX_OPTIONS} answers.`);
-    }
-    if (labels.some((label) => label.length > POLL_OPTION_MAX_CHARS)) {
-      return error(400, 'invalid_poll', `Keep each answer under ${POLL_OPTION_MAX_CHARS} characters.`);
-    }
-    if (new Set(labels.map((label) => label.toLowerCase())).size !== labels.length) {
-      return error(400, 'invalid_poll', 'Two answers say the same thing.');
+    type Draft = { label: string; photoUrl: string | null; listingId: string | null };
+    let drafts: Draft[];
+    if (style === 'rating') {
+      // Rated out of five, on the post's own photo: the answers are always the stars.
+      if (photoUrls.length === 0) return error(400, 'invalid_poll', 'A rating needs a photo to rate.');
+      drafts = RATING_LABELS.map((label) => ({ label, photoUrl: null, listingId: null }));
+    } else {
+      drafts = raw.map((entry) => {
+        const item = (typeof entry === 'string' ? { label: entry } : entry) as Record<string, unknown> | null;
+        const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+        return { label: text(item?.label) ?? '', photoUrl: text(item?.photoUrl), listingId: text(item?.listingId) };
+      }).filter((draft) => draft.label);
+      if (drafts.length !== raw.length) return error(400, 'invalid_poll', 'Every answer needs a few words.');
+      if (drafts.length < POLL_MIN_OPTIONS || drafts.length > POLL_MAX_OPTIONS) {
+        return error(400, 'invalid_poll', `A poll takes ${POLL_MIN_OPTIONS} to ${POLL_MAX_OPTIONS} answers.`);
+      }
+      if (style === 'versus' && drafts.length !== 2) return error(400, 'invalid_poll', 'A versus poll is two sides.');
+      if ((style === 'photo' || style === 'versus') && drafts.some((draft) => !draft.photoUrl)) {
+        return error(400, 'invalid_poll', 'Every answer needs its photo.');
+      }
+      if (style === 'text' && drafts.some((draft) => draft.photoUrl)) {
+        return error(400, 'invalid_poll', 'Pick a photo poll to put photos on the answers.');
+      }
+      if (drafts.some((draft) => draft.label.length > POLL_OPTION_MAX_CHARS)) {
+        return error(400, 'invalid_poll', `Keep each answer under ${POLL_OPTION_MAX_CHARS} characters.`);
+      }
+      if (new Set(drafts.map((draft) => draft.label.toLowerCase())).size !== drafts.length) {
+        return error(400, 'invalid_poll', 'Two answers say the same thing.');
+      }
+      const pictures = drafts.flatMap((draft) => (draft.photoUrl ? [draft.photoUrl] : []));
+      const owned = await ownPhotos(pictures, POLL_MAX_OPTIONS);
+      if (!owned || owned.length !== pictures.length) return error(400, 'invalid_poll', 'Answer photos are uploaded here first.');
+      optionPhotos.push(...owned);
     }
     const hours = Number(body.poll.closesInHours);
     poll = {
-      options: labels.map((label, index) => ({ id: `opt_${index + 1}`, label, voterIds: [] })),
+      options: drafts.map((draft, index) => ({
+        id: `opt_${index + 1}`,
+        label: draft.label,
+        voterIds: [],
+        ...(draft.photoUrl ? { photoUrl: draft.photoUrl } : {}),
+        ...(draft.listingId ? { listingId: draft.listingId } : {}),
+      })),
       closesAt: Number.isFinite(hours) && hours > 0
         ? new Date(Date.now() + Math.min(hours, 24 * 30) * 3_600_000).toISOString()
         : null,
+      ...(style !== 'text' ? { style } : {}),
     };
   }
 
@@ -1530,16 +1686,41 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   }
 
   // A debate is A against B: two photos, and a poll whose two answers name them.
+  // Either the post's two photos are the sides (as debates were first made),
+  // or the poll is a versus poll whose two answers carry their own.
   let debateIds: PostDebate['listingIds'] | null = null;
   if (body.debate) {
-    if (photoUrls.length !== 2 || poll?.options.length !== 2) {
+    const versus = poll?.style === 'versus';
+    if (poll?.options.length !== 2 || (!versus && photoUrls.length !== 2)) {
       return error(400, 'invalid_debate', 'A debate is two photos and a question with two answers.');
     }
     const raw = Array.isArray(body.debate.listingIds) ? body.debate.listingIds : [];
     const side = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
-    debateIds = [side(raw[0]), side(raw[1])];
+    debateIds = versus
+      ? [poll.options[0]!.listingId ?? side(raw[0]), poll.options[1]!.listingId ?? side(raw[1])]
+      : [side(raw[0]), side(raw[1])];
   }
   if (hotspots && debateIds) return error(400, 'invalid_post', 'A post is a flex or a debate, not both.');
+
+  // The games a shop runs for money: who may, and for how much, is checked
+  // once the voice is known, below.
+  const prizeAsked = Boolean(body.debate?.prize || body.poll?.reward || body.poll?.stock || body.contest);
+
+  let guess: PostGuess | null = null;
+  if (body.guess) {
+    const answer = Number(body.guess.answerMinor);
+    const hours = Number(body.guess.revealInHours);
+    if (!Number.isInteger(answer) || answer < 100 || answer > GUESS_MAX_MINOR) {
+      return error(400, 'invalid_guess', 'Set the real price, in rupees.');
+    }
+    if (!Number.isFinite(hours) || hours < PHASE_MIN_HOURS || hours > PHASE_MAX_HOURS) {
+      return error(400, 'invalid_guess', 'Reveal it between an hour and 30 days from now.');
+    }
+    if (!text) return error(400, 'invalid_guess', 'Say what people are guessing the price of.');
+    if (poll || body.listingId) return error(400, 'invalid_guess', 'A guess is a post of its own.');
+    const listingId = typeof body.guess.listingId === 'string' && body.guess.listingId.trim() ? body.guess.listingId.trim() : null;
+    guess = { listingId, answerMinor: answer, revealAt: new Date(Date.now() + hours * 3_600_000).toISOString(), guesses: [] };
+  }
 
   const repository = await getRepository();
 
@@ -1550,13 +1731,13 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   if (debateIds && poll && !poll.closesAt) {
     poll = { ...poll, closesAt: new Date(Date.now() + DEBATE_DEFAULT_HOURS * 3_600_000).toISOString() };
   }
-  const linked = [...(hotspots ?? []).map((spot) => spot.listingId), ...(debateIds ?? [])]
-    .filter((id): id is string => id !== null);
-  for (const id of new Set(linked)) {
-    const listing = await repository.getListing(id);
-    if (!listing || listing.privateFor || listing.status !== 'active') {
-      return error(404, 'not_found', 'One of the tagged items is not on Figmark any more.');
-    }
+  const linked = [
+    ...(hotspots ?? []).map((spot) => spot.listingId), ...(debateIds ?? []),
+    ...(poll?.options ?? []).map((option) => option.listingId ?? null), guess?.listingId ?? null,
+  ].filter((id): id is string => id !== null);
+  const listed = await Promise.all([...new Set(linked)].map((id) => repository.getListing(id)));
+  if (listed.some((listing) => !listing || listing.privateFor || listing.status !== 'active')) {
+    return error(404, 'not_found', 'One of the tagged items is not on Figmark any more.');
   }
 
   let channelId = user.id;
@@ -1565,6 +1746,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   // Posting as yourself is the default; posting as a store you manage puts it
   // in that store's channel, under the store's name, for its followers.
   let authorName = user.displayName;
+  /** The shop this is said as, when it is: who pays a prize, and whose followers hear. */
+  let shop: { id: string; name: string } | null = null;
 
   if (body.storeId && body.storeId !== user.id) {
     const owner = await repository.getUserById(body.storeId);
@@ -1574,8 +1757,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     }
     channelId = owner.id;
     authorName = owner.sellerProfile.storefrontName;
+    shop = { id: owner.id, name: authorName };
   } else if (body.storeId === user.id) {
     authorName = user.sellerProfile?.storefrontName ?? user.displayName;
+    if (user.sellerProfile) shop = { id: user.id, name: authorName };
   }
 
   // Speaking in a shop's channel. Anybody may - that is the difference between
@@ -1595,7 +1780,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     if (can(owner, user.id, 'posts')) {
       authorName = owner.sellerProfile.storefrontName;
       voice = 'store';
+      shop = { id: owner.id, name: authorName };
     } else {
+      shop = null;
       // A customer is a person. A shop does not speak in another shop's room.
       authorName = user.displayName;
       if (body.storeId) return shopsStayHome();
@@ -1640,6 +1827,83 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     voice = 'visitor';
     reach = 'channel';
     announcement = false;
+    shop = null;
+  }
+
+  // Prizes, voter rewards, stock polls and competitions are a shop speaking to
+  // the whole feed - and the credit they promise is spent at that shop.
+  // Figmark's weekly challenge is the one game run by the operators.
+  const figmarkHost = body.contest?.host === 'figmark';
+  if (figmarkHost && !user.capabilities.isAdmin) return error(403, 'forbidden', 'Only Figmark runs the weekly challenge.');
+  if (prizeAsked && !figmarkHost && (!shop || reach !== 'feed')) {
+    return error(403, 'store_only', 'Prizes, rewards and competitions are run by a store, posting to its feed. Switch to your store.');
+  }
+  /** Store credit as asked for, in paise: null when it is not a whole amount in range. */
+  const credit = (value: unknown): number | null => {
+    const amount = value === undefined || value === null || value === '' ? 0 : Number(value);
+    return Number.isInteger(amount) && amount >= 0 && amount <= PRIZE_MAX_MINOR ? amount : null;
+  };
+  const badCredit = () => error(400, 'invalid_prize', `A prize is store credit from ₹0 to ₹${PRIZE_MAX_MINOR / 100}.`);
+
+  let debatePrize: DebatePrize | null = null;
+  if (body.debate?.prize && shop) {
+    const amount = credit(body.debate.prize.amountMinor);
+    if (amount === null) return badCredit();
+    if (amount === 0) return error(400, 'invalid_prize', 'Set the prize, or leave it off.');
+    debatePrize = { storeId: shop.id, storeName: shop.name, amountMinor: amount, judge: body.debate.prize.judge === 'store' ? 'store' : 'likes' };
+  }
+
+  const pollExtra = body.poll;
+  if (poll && shop && pollExtra?.stock === true) poll = { ...poll, stock: true };
+  if (poll && shop && pollExtra?.reward) {
+    const amount = credit(pollExtra.reward.amountMinor);
+    if (amount === null) return badCredit();
+    const most = Number(pollExtra.reward.maxVoters);
+    if (amount === 0) return error(400, 'invalid_prize', 'Set the reward, or leave it off.');
+    if (!Number.isInteger(most) || most < 1 || most > 500) return error(400, 'invalid_prize', 'Reward between 1 and 500 voters.');
+    if (!poll.closesAt) return error(400, 'invalid_prize', 'A rewarded poll needs an end, so it is known who won.');
+    const voterReward: VoterReward = { storeId: shop.id, storeName: shop.name, amountMinor: amount, maxVoters: most };
+    poll = { ...poll, reward: voterReward };
+  }
+
+  let contest: PostContest | null = null;
+  if (body.contest) {
+    const raw = body.contest;
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    const rules = typeof raw.rules === 'string' ? raw.rules.trim() : '';
+    const entriesHours = Number(raw.entriesHours);
+    const votingHours = Number(raw.votingHours);
+    const judging = isJudging(raw.judging) ? raw.judging : 'audience';
+    if (!title || title.length > CONTEST_TITLE_MAX) return error(400, 'invalid_contest', `Name the competition, in under ${CONTEST_TITLE_MAX} characters.`);
+    if (rules.length > CONTEST_RULES_MAX) return error(400, 'invalid_contest', `Keep the rules under ${CONTEST_RULES_MAX} characters.`);
+    const hoursOk = (value: number) => Number.isFinite(value) && value >= PHASE_MIN_HOURS && value <= PHASE_MAX_HOURS;
+    if (!hoursOk(entriesHours) || (judging !== 'store' && !hoursOk(votingHours))) {
+      return error(400, 'invalid_contest', 'Each phase runs between an hour and 30 days.');
+    }
+    if (poll || guess || hotspots || debateIds || body.listingId || vibe) return error(400, 'invalid_contest', 'A competition is a post of its own.');
+    const prizes: ContestPrize[] = [];
+    const rawPrizes = Array.isArray(raw.prizes) ? raw.prizes.slice(0, CONTEST_MAX_PRIZES) : [];
+    for (const [index, entry] of (rawPrizes as (Record<string, unknown> | null)[]).entries()) {
+      const amount = figmarkHost ? 0 : credit(entry?.amountMinor);
+      if (amount === null) return badCredit();
+      const note = typeof entry?.note === 'string' ? entry.note.trim().slice(0, PRIZE_NOTE_MAX) : '';
+      if (amount > 0 || note) prizes.push({ place: (index + 1) as 1 | 2 | 3, amountMinor: amount, note });
+    }
+    const opens = Date.now();
+    const entriesCloseAt = new Date(opens + entriesHours * 3_600_000).toISOString();
+    const endsAt = new Date(Date.parse(entriesCloseAt) + (judging === 'store' ? PHASE_MAX_HOURS : votingHours) * 3_600_000).toISOString();
+    contest = {
+      host: figmarkHost ? 'figmark' : 'store',
+      storeId: figmarkHost ? null : shop!.id,
+      hostName: figmarkHost ? 'Figmark' : shop!.name,
+      title, rules, entriesCloseAt, endsAt, judging, prizes, entries: [],
+    };
+    if (figmarkHost) {
+      authorName = 'Figmark';
+      channelId = user.id;
+    }
+    // The audience vote is the post's own poll, its answers the entries.
+    if (judging !== 'store') poll = { options: [], closesAt: endsAt, style: 'photo' };
   }
 
   // A sale post has to point at an item this account actually sells.
@@ -1693,7 +1957,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     vibe,
     replyTo,
     ...(hotspots ? { flex: { hotspots } } : {}),
-    ...(debateIds ? { debate: { listingIds: debateIds } } : {}),
+    ...(debateIds ? { debate: { listingIds: debateIds, ...(debatePrize ? { prize: debatePrize } : {}) } } : {}),
+    ...(guess ? { guess } : {}),
+    ...(contest ? { contest } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -1722,7 +1988,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     }
   }
   const saved = await repository.createPost(post);
-  await claimPhotos(photoUrls, `post:${saved.id}`);
+  await claimPhotos([...photoUrls, ...optionPhotos], `post:${saved.id}`);
   if (forumName && post.wallPostId) {
     await repository.createPost({
       ...post,
@@ -1737,6 +2003,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
       poll: null,
       flex: null,
       debate: null,
+      guess: null,
+      contest: null,
       voice: 'store',
       reach: 'feed',
       announcement: false,
@@ -1746,8 +2014,38 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     });
   }
   await announcePost(saved, answered, user.id, forumName, repository);
+  if (shop && reach === 'feed' && (poll || guess || contest)) await announceGame(saved, shop, user.id, repository);
   await tellMentioned(text, saved, { userId: user.id, storeId: null, key: user.id, name: authorName }, 'post', repository);
   return json(201, { post: saved });
+}
+
+/**
+ * A shop starting something to take part in tells its followers: polls are
+ * meant to be seen, and a competition nobody hears about has no entries.
+ * Folded per shop, so a shop running three polls is one line in the bell.
+ */
+async function announceGame(post: Post, shop: { id: string; name: string }, writerId: string, repository: Repo) {
+  const owner = await repository.getUserById(shop.id);
+  const crew = owner ? storeCrew(owner, 'posts') : [shop.id];
+  const followers = (await repository.listFollowerIds(shop.id)).filter((id) => !crew.includes(id));
+  if (followers.length === 0) return;
+  const name = actorName(shop.name);
+  const what = post.contest ? `a photo competition: ${post.contest.title}`
+    : post.guess ? 'a guess-the-price'
+      : post.debate ? 'a debate'
+        : post.poll?.stock ? 'a poll on what to stock next' : 'a poll';
+  const prize = post.contest?.prizes.some((entry) => entry.amountMinor > 0 || entry.note) || post.debate?.prize || post.poll?.reward;
+  await notify(repository, followers, {
+    kind: 'poll_started',
+    title: `${name} started ${what}${prize ? ' 🎁' : ''}`,
+    body: post.contest ? (post.contest.rules ? gist(post.contest.rules) : 'Enter a photo before entries close.') : gist(post.body),
+    link: linkTo(post),
+    group: {
+      key: `game:${shop.id}`,
+      actor: name,
+      title: ({ count }) => (count === 1 ? `${name} started ${what}` : `${name} started ${count} things to vote on`),
+    },
+  }, { except: writerId });
 }
 
 /**
@@ -1856,9 +2154,11 @@ async function readPost(request: HttpRequest, _context: InvocationContext) {
   if (!actor) return notYours();
   if (!post) return noPost();
   if (!(await mayRead(post, user.id, repository))) return followFirst();
+  // Opened after its time was up: settled now, so the page shows the result.
+  const current = isDue(post, Date.now()) ? (await settleDebates([post], repository))[0]! : post;
   return json(200, {
-    card: await cardFor(post, repository, actor),
-    comments: await commentsFor(post, repository, actor),
+    card: await cardFor(current, repository, actor),
+    comments: await commentsFor(current, repository, actor),
   });
 }
 
@@ -1978,6 +2278,8 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   }
 
   const now = new Date().toISOString();
+  // In a debate, an argument is on the side its writer voted for.
+  const side = post.debate ? post.poll?.options.find((option) => option.voterIds.includes(user.id))?.id ?? null : null;
   const comment: StoredComment = {
     id: `cmt_${randomUUID().slice(0, 12)}`,
     authorId: user.id,
@@ -1988,6 +2290,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
     replyToName: answering && answering.id !== parent?.id ? answering.authorName : null,
     likedBy: [],
     createdAt: now,
+    ...(side ? { side } : {}),
   };
 
   let full = false;
@@ -2232,15 +2535,34 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
   if (post.poll.closesAt && post.poll.closesAt < new Date().toISOString()) {
     return error(409, 'poll_closed', 'Voting on this one has closed.');
   }
+  // A competition's vote decides who gets paid, so it is held to more: open
+  // only in its voting phase, one verified person one vote, and never for
+  // your own entry or by whoever runs it.
+  if (post.contest) {
+    if (contestPhase(post.contest) !== 'voting') return error(409, 'not_voting', 'Voting is not open on this one.');
+    if (!verifiedChecks(user).phone) {
+      return error(403, 'verify_to_vote', 'Verify your phone number to vote in competitions.');
+    }
+    if (post.contest.entries.some((entry) => entry.id === optionId && entry.userId === user.id)) {
+      return error(403, 'own_entry', 'Vote for somebody else\'s photo.');
+    }
+    if (post.authorId === user.id || (post.contest.storeId && actor.storeId === post.contest.storeId)) {
+      return error(403, 'host_vote', 'Whoever runs a competition does not vote in it.');
+    }
+  }
   const slow = await tooFast(user.id, 'react');
   if (slow) return slow;
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
     if (!current.poll) return null;
+    const had = current.poll.options.find((option) => option.voterIds.includes(user.id))?.id ?? null;
+    if (had === optionId) return null;
     return {
       ...current,
       poll: {
         ...current.poll,
+        // Changing your mind is part of a debate: counted, so the post can say so.
+        ...(had ? { switches: (current.poll.switches ?? 0) + 1 } : {}),
         options: current.poll.options.map((option) => {
           const others = option.voterIds.filter((id) => id !== user.id);
           return { ...option, voterIds: option.id === optionId ? [...others, user.id] : others };
@@ -2755,6 +3077,237 @@ export const pinPostRoute = handler(pinPost);
 export const joinForumRoute = handler(joinForum);
 export const socialSearchRoute = handler(search);
 
+/* ── The games: entering, guessing, judging, and who is winning ──────── */
+
+/** Whether this person runs the post's game: wrote it, or speaks for its shop. */
+async function runsGame(post: Post, userId: string, repository: Repo): Promise<boolean> {
+  if (post.authorId === userId) return true;
+  const shopId = post.contest?.storeId ?? post.debate?.prize?.storeId ?? (post.channel === 'seller' ? post.channelId : null);
+  if (!shopId) return false;
+  const owner = await repository.getUserById(shopId);
+  return Boolean(owner?.sellerProfile && can(owner, userId, 'posts'));
+}
+
+/** The blob behind a photo address, for comparing two entries by their pixels. */
+async function fingerprintOfUrl(url: string): Promise<string | null> {
+  const name = await ownPhotoName(url);
+  return name ? storedFingerprint(name).catch(() => null) : null;
+}
+
+/**
+ * POST /api/social/posts/{channel}/{id}/enter - put a photo into a competition.
+ *
+ * One entry per person, while entries are open, from a verified phone - the
+ * prize is real credit. A photo that is the same picture as an entry already
+ * in (recompressed, resized or screenshotted) is refused: entering somebody
+ * else's photo is the one way to cheat a photo competition.
+ */
+async function enterContest(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post } = await target(request);
+  if (!post) return noPost();
+  const contest = post.contest;
+  if (!contest) return error(400, 'invalid_entry', 'That post is not a competition.');
+  if (contestPhase(contest) !== 'entries') return error(409, 'entries_closed', 'Entries have closed.');
+  if (!verifiedChecks(user).phone) return error(403, 'verify_to_enter', 'Verify your phone number to enter competitions.');
+  if (await runsGame(post, user.id, repository)) return error(403, 'host_entry', 'Whoever runs a competition does not enter it.');
+  const body = await readJson<{ photoUrl?: unknown; caption?: unknown }>(request);
+  if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
+  const photos = await ownPhotos(typeof body.photoUrl === 'string' ? [body.photoUrl] : [], 1);
+  if (!photos?.[0]) return error(400, 'invalid_entry', 'Upload your photo first.');
+  const caption = typeof body.caption === 'string' ? body.caption.trim() : '';
+  if (caption.length > CONTEST_CAPTION_MAX) return error(400, 'invalid_entry', `Keep the caption under ${CONTEST_CAPTION_MAX} characters.`);
+  if (contest.entries.some((entry) => entry.userId === user.id)) return error(409, 'already_entered', 'You have already entered this one.');
+  if (contest.entries.length >= CONTEST_MAX_ENTRIES) return error(409, 'contest_full', 'This competition is full.');
+  const slow = await tooFast(user.id, 'post');
+  if (slow) return slow;
+
+  // Fingerprints are worked out once per photo and kept, so this costs a
+  // photo read the first time any entry is compared and nothing after.
+  const mine = await fingerprintOfUrl(photos[0]);
+  if (mine) {
+    const theirs = await Promise.all(contest.entries.map((entry) => fingerprintOfUrl(entry.photoUrl)));
+    if (theirs.some((hash) => hash && likeness(mine, hash)?.samePhoto)) {
+      return error(409, 'same_photo', 'That photo is already in this competition.');
+    }
+  }
+
+  const entry = { id: `ent_${randomUUID().slice(0, 10)}`, userId: user.id, name: user.displayName, photoUrl: photos[0], caption, at: new Date().toISOString() };
+  let refused: ReturnType<typeof error> | null = null;
+  const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+    const now = current.contest;
+    if (!now || contestPhase(now) !== 'entries') { refused = error(409, 'entries_closed', 'Entries have closed.'); return null; }
+    if (now.entries.some((other) => other.userId === user.id)) { refused = error(409, 'already_entered', 'You have already entered this one.'); return null; }
+    if (now.entries.length >= CONTEST_MAX_ENTRIES) { refused = error(409, 'contest_full', 'This competition is full.'); return null; }
+    return {
+      ...current,
+      contest: { ...now, entries: [...now.entries, entry] },
+      // Audience judging votes on every entry; a shortlist puts its own in later.
+      ...(current.poll && now.judging === 'audience'
+        ? { poll: { ...current.poll, options: [...current.poll.options, { id: entry.id, label: entry.name, voterIds: [], photoUrl: entry.photoUrl }] } }
+        : {}),
+    };
+  });
+  if (refused) return refused;
+  if (!saved) return noPost();
+  await claimPhotos([entry.photoUrl], `post:${post.id}`);
+  const actor = await actorFor(request, user, repository) ?? personActor(user);
+  return json(201, { entryId: entry.id, card: await cardFor(saved, repository, actor) });
+}
+
+/**
+ * POST /api/social/posts/{channel}/{id}/guess - say what you think it costs.
+ * One guess per person, changeable until the price is revealed.
+ */
+async function guessPrice(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
+  if (!post) return noPost();
+  if (!post.guess) return error(400, 'invalid_guess', 'That post is not a guessing game.');
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
+  if (post.guess.revealedAt || post.guess.revealAt < new Date().toISOString()) return error(409, 'revealed', 'The price is already out.');
+  if (post.authorId === user.id) return error(403, 'own_guess', 'You know the answer to this one.');
+  const body = await readJson<{ amountMinor?: unknown }>(request);
+  const amount = Number(body?.amountMinor);
+  if (!Number.isInteger(amount) || amount < 100 || amount > GUESS_MAX_MINOR) return error(400, 'invalid_guess', 'Guess a price in rupees.');
+  const slow = await tooFast(user.id, 'react');
+  if (slow) return slow;
+  const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+    if (!current.guess || current.guess.revealedAt) return null;
+    const others = current.guess.guesses.filter((entry) => entry.userId !== user.id);
+    return { ...current, guess: { ...current.guess, guesses: [...others, { userId: user.id, name: user.displayName, amountMinor: amount, at: new Date().toISOString() }] } };
+  });
+  if (!saved) return noPost();
+  return json(200, { guess: guessView(saved.guess, user.id) });
+}
+
+/**
+ * POST /api/social/posts/{channel}/{id}/judge - the host's decisions.
+ *
+ * - shortlist: mixed judging, entries closed - the entries that go to the vote;
+ * - winners: store judging, entries closed - first, second and third, in order;
+ * - best: a shop's prize debate judged by the shop, closed - the best argument;
+ * - sent: a prize that is not credit, marked handed over.
+ */
+async function judge(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
+  if (!post) return noPost();
+  if (!(await runsGame(post, user.id, repository))) return error(403, 'forbidden', 'Only whoever runs it decides.');
+  const body = await readJson<{ action?: unknown; entryIds?: unknown; commentId?: unknown; place?: unknown }>(request);
+  if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
+  const ids = Array.isArray(body.entryIds) ? [...new Set(body.entryIds.filter((id): id is string => typeof id === 'string'))] : [];
+  const nowIso = new Date().toISOString();
+
+  if (body.action === 'shortlist') {
+    const contest = post.contest;
+    if (!contest || contest.judging !== 'mixed') return error(400, 'invalid_judging', 'Only a shortlisted competition takes a shortlist.');
+    if (contestPhase(contest) !== 'shortlisting') return error(409, 'not_now', 'The shortlist is picked once entries close.');
+    if (ids.length < SHORTLIST_MIN || ids.length > SHORTLIST_MAX || ids.some((id) => !contest.entries.some((entry) => entry.id === id))) {
+      return error(400, 'invalid_shortlist', `Shortlist ${SHORTLIST_MIN} to ${SHORTLIST_MAX} of the entries.`);
+    }
+    // The vote gets its full length from now: the time spent shortlisting is not taken off it.
+    const voteMs = Math.max(Date.parse(contest.endsAt) - Date.parse(contest.entriesCloseAt), 3_600_000);
+    const endsAt = new Date(Date.now() + voteMs).toISOString();
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+      if (!current.contest || current.contest.shortlist?.length) return null;
+      const chosen = current.contest.entries.filter((entry) => ids.includes(entry.id));
+      return {
+        ...current,
+        contest: { ...current.contest, shortlist: chosen.map((entry) => entry.id), endsAt },
+        poll: { options: chosen.map((entry) => ({ id: entry.id, label: entry.name, voterIds: [], photoUrl: entry.photoUrl })), closesAt: endsAt, style: 'photo' },
+      };
+    });
+    if (!saved) return noPost();
+    const shortlisted = saved.contest!.entries.filter((entry) => ids.includes(entry.id)).map((entry) => entry.userId);
+    await notify(repository, shortlisted, {
+      kind: 'contest_update', title: `You made the shortlist: ${contest.title}`, body: 'Voting is open. Share it so people vote for yours.', link: linkTo(saved),
+    });
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
+  if (body.action === 'winners') {
+    const contest = post.contest;
+    if (!contest || contest.judging !== 'store') return error(400, 'invalid_judging', 'The audience picks this one.');
+    if (contestPhase(contest) !== 'judging') return error(409, 'not_now', 'Winners are picked once entries close.');
+    const max = Math.min(3, contest.entries.length);
+    if (ids.length < 1 || ids.length > max || ids.some((id) => !contest.entries.some((entry) => entry.id === id))) {
+      return error(400, 'invalid_winners', 'Pick up to three of the entries, first place first.');
+    }
+    const winners: ContestWinner[] = ids.map((id, index) => {
+      const entry = contest.entries.find((candidate) => candidate.id === id)!;
+      return { place: (index + 1) as 1 | 2 | 3, entryId: entry.id, userId: entry.userId, name: entry.name, photoUrl: entry.photoUrl, votes: null };
+    });
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) =>
+      (!current.contest || current.contest.settledAt ? null : { ...current, contest: { ...current.contest, winners, settledAt: nowIso, endsAt: nowIso } }));
+    if (!saved) return noPost();
+    if (saved.contest?.settledAt === nowIso) await payContest(repository, saved);
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
+  if (body.action === 'best') {
+    const debate = post.debate;
+    if (!debate?.prize || debate.prize.judge !== 'store') return error(400, 'invalid_judging', 'The likes decide this one.');
+    if (!post.poll?.closesAt || post.poll.closesAt > nowIso) return error(409, 'not_now', 'Pick the best argument once the debate closes.');
+    const comment = post.comments?.find((entry) => entry.id === body.commentId && entry.parentId === null);
+    if (!comment || comment.authorId === post.authorId || comment.asStore) return error(400, 'invalid_best', 'Pick somebody\'s argument.');
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) =>
+      (!current.debate || current.debate.best ? null
+        : { ...current, debate: { ...current.debate, best: { userId: comment.authorId, name: comment.authorName, commentId: comment.id, side: comment.side ?? null } } }));
+    if (!saved) return noPost();
+    if (saved.debate?.best?.commentId === comment.id && !post.debate?.best) await payDebate(repository, saved);
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
+  if (body.action === 'sent') {
+    const place = Number(body.place);
+    if (!post.contest?.winners?.some((winner) => winner.place === place)) return error(400, 'invalid_place', 'No winner in that place.');
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) =>
+      (!current.contest ? null : { ...current, contest: { ...current.contest, prizeSent: [...new Set([...(current.contest.prizeSent ?? []), place])] } }));
+    if (!saved) return noPost();
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
+  return error(400, 'invalid_action', 'Shortlist, pick winners, pick the best argument, or mark a prize sent.');
+}
+
+/** Posts a shop's Engage screen reads back: the most recent hundred in its channel. */
+const GAMES_WINDOW = 100;
+
+/**
+ * GET /api/social/shops/{id}/games - everything a shop is running to take part
+ * in: polls, debates, guesses and competitions, newest first, settled on the
+ * way past so a closed one shows its result. Only for whoever speaks for it.
+ */
+async function shopGames(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const shopId = request.params.id ?? '';
+  const owner = await repository.getUserById(shopId);
+  if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+  if (!can(owner, user.id, 'posts')) return notYours();
+  const posts = (await repository.listPostsForChannels([shopId], GAMES_WINDOW))
+    .filter((post) => post.poll || post.contest || post.guess);
+  const settled = await settleDebates(posts, repository);
+  const actor: Actor = { userId: user.id, storeId: shopId, key: actorKey(user.id, shopId), name: owner.sellerProfile.storefrontName };
+  return json(200, { posts: await decorate(settled, repository, actor) });
+}
+
+/**
+ * GET /api/me/rewards - store credit won and badges earned.
+ * The person's own: credit is money, and nobody else's business.
+ */
+async function myRewards(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  return json(200, {
+    credits: [...(me?.storeCredits ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    badges: [...(me?.badges ?? [])].sort((a, b) => b.at.localeCompare(a.at)),
+  });
+}
+
 const anon = { authLevel: 'anonymous' } as const;
 
 export const forumMembersRoute = handler(forumMembers);
@@ -2763,6 +3316,11 @@ export const shopFeedRoute = handler(shopFeed);
 export const followsRoute = handler(follows);
 export const discoverRoute = handler(discover);
 export const homeNewRoute = handler(homeNew);
+export const enterContestRoute = handler(enterContest);
+export const guessPriceRoute = handler(guessPrice);
+export const judgeRoute = handler(judge);
+export const myRewardsRoute = handler(myRewards);
+export const shopGamesRoute = handler(shopGames);
 app.http('me-posts', { ...anon, methods: ['GET'], route: 'me/posts', handler: myPostsRoute });
 app.http('person-posts', { ...anon, methods: ['GET'], route: 'users/{id}/posts', handler: personPostsRoute });
 app.http('social-feed', { ...anon, methods: ['GET'], route: 'social/feed', handler: socialFeedRoute });
@@ -2792,4 +3350,9 @@ app.http('social-forum-members', { ...anon, methods: ['GET'], route: 'social/for
 app.http('social-forum-moderate', { ...anon, methods: ['POST'], route: 'social/forums/{id}/moderate', handler: moderateForumRoute });
 app.http('social-shop-feed', { ...anon, methods: ['GET'], route: 'social/shops/{id}/feed', handler: shopFeedRoute });
 app.http('user-follows', { ...anon, methods: ['GET'], route: 'users/{id}/follows', handler: followsRoute });
+app.http('social-post-enter', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/enter', handler: enterContestRoute });
+app.http('social-post-guess', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/guess', handler: guessPriceRoute });
+app.http('social-post-judge', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/judge', handler: judgeRoute });
+app.http('social-shop-games', { ...anon, methods: ['GET'], route: 'social/shops/{id}/games', handler: shopGamesRoute });
+app.http('me-rewards', { ...anon, methods: ['GET'], route: 'me/rewards', handler: myRewardsRoute });
 app.http('social-search', { ...anon, methods: ['GET'], route: 'social/search', handler: socialSearchRoute });

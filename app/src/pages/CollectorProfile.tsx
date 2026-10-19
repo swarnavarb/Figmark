@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CARDS } from '@shared/quest';
+import { BADGE_META } from '@shared/play';
 import type { CollectionItem } from '@shared/models';
 import {
   ApiRequestError, api,
@@ -42,7 +43,7 @@ export interface Person {
 }
 
 export type ProfilePart = Pick<PublicProfile,
-  'sellerId' | 'isStore' | 'handle' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince' | 'rating' | 'followerCount' | 'verified'>;
+  'sellerId' | 'isStore' | 'handle' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince' | 'rating' | 'followerCount' | 'verified' | 'gameBadges'>;
 
 /* ── The header every person page shares ──────────────────────────────── */
 
@@ -121,6 +122,17 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
             <FollowCounts userId={page.sellerId} followerCount={page.followerCount} isStore={false} />
             <span className="pstat"><b>{collector ? uniqueCards : '—'}</b><small>cards</small></span>
             <span className="pstat"><b>{collector ? earned.length : '—'}</b><small>stickers</small></span>
+          </div>
+        )}
+
+        {/* Won, not claimed: competitions, debates and guesses. */}
+        {page?.gameBadges && page.gameBadges.length > 0 && (
+          <div className="chips chips--tight" aria-label="Wins">
+            {page.gameBadges.map((badge) => (
+              <Link key={badge.id} to={badge.link} className="chip winchip" title={badge.detail}>
+                {BADGE_META[badge.kind].emoji} {badge.detail}
+              </Link>
+            ))}
           </div>
         )}
 

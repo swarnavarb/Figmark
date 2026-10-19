@@ -4,6 +4,7 @@ import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
 import type { FeedPrefs } from './feed.js';
+import type { Badge, PostContest, PostGuess, StoreCredit } from './play.js';
 import type {
   PostDebate, PostFlex, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
 } from './social.js';
@@ -315,6 +316,13 @@ export interface User extends BaseDocument {
   affiliateOrderIds?: string[];
   /** This person's short link code for each item, so sharing twice gives the same link. */
   affiliateLinks?: Record<string, string>;
+  /**
+   * Store credit won in competitions, debates and polls, spendable only at
+   * the shop that gave it. Stored in the account's `rewards` part.
+   */
+  storeCredits?: StoreCredit[];
+  /** What this person has won, for their page. In the `rewards` part too. */
+  badges?: Badge[];
   /** This person's invite code, for `/i/<code>`: made the first time they invite anybody. */
   inviteCode?: string;
   /** Who brought this account to Figmark, if anybody did. Set once, at sign-up. */
@@ -2419,6 +2427,10 @@ export interface Post extends BaseDocument {
   flex?: PostFlex | null;
   /** A two-sided debate: photo A against photo B, voted on by the poll. */
   debate?: PostDebate | null;
+  /** A photo competition this post runs; its audience vote is the post's poll. */
+  contest?: PostContest | null;
+  /** A guess-the-price, sealed until it is revealed. */
+  guess?: PostGuess | null;
   /** Set when this post is somebody else's, passed on to the reposter's followers. */
   repostOf?: RepostRef | null;
   /** A short line set on one of the brand gradients. */
@@ -2740,6 +2752,12 @@ export type NotificationKind =
   | 'mentioned'
   /** A debate you voted in closed: which side won. */
   | 'debate_result'
+  /** A shop you follow started a poll, a debate, a competition or a guess. */
+  | 'poll_started'
+  /** A competition you entered or run moved: voting opened, winners named. */
+  | 'contest_update'
+  /** You won something: store credit, a badge, or both. */
+  | 'prize_won'
   /** A service store's application was decided, or a lot was booked with one. */
   | 'service_store'
   /** An artist commission moved: quoted, paid, finished, shipped. */

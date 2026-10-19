@@ -1,4 +1,5 @@
 import type { ModerationMark } from './moderation.js';
+import type { GuessView } from './play.js';
 /**
  * Reactions, comments, shares and polls on a post: the wire shapes and rules.
  *
@@ -48,8 +49,30 @@ export const COMMENT_MAX_CHARS = 1000;
 /** A post is one document; its conversation cannot grow without bound. */
 export const POST_MAX_COMMENTS = 500;
 export const POLL_MIN_OPTIONS = 2;
-export const POLL_MAX_OPTIONS = 4;
+export const POLL_MAX_OPTIONS = 6;
 export const POLL_OPTION_MAX_CHARS = 60;
+
+/**
+ * How a poll is drawn. One poll underneath - answers and voters - and four
+ * faces for it:
+ *
+ * - text: answers as bars;
+ * - photo: every answer a picture, in a grid;
+ * - versus: two pictures side by side with a VS between them;
+ * - rating: one photo, rated one to five stars.
+ *
+ * Absent on polls written before there was a choice: those are text, or
+ * versus when the post is a debate.
+ */
+export const POLL_STYLES = ['text', 'photo', 'versus', 'rating'] as const;
+export type PollStyle = (typeof POLL_STYLES)[number];
+
+export function isPollStyle(value: unknown): value is PollStyle {
+  return typeof value === 'string' && (POLL_STYLES as readonly string[]).includes(value);
+}
+
+/** A rating poll's answers: one star to five, always these five. */
+export const RATING_LABELS = ['1', '2', '3', '4', '5'] as const;
 
 /* ── As stored, on the post ─────────────────────────────────────────────── */
 
@@ -96,6 +119,11 @@ export interface StoredComment {
   replyToName?: string | null;
   /** The shop it was written as. Absent or null: written as the person. */
   asStore?: string | null;
+  /**
+   * In a debate: the side the writer had voted for when they wrote it, so the
+   * argument reads as Team A and Team B. Taken from their vote, never sent.
+   */
+  side?: string | null;
   /** Actor keys - see `actorKey` - so a shop's like and its owner's are two likes. */
   likedBy: string[];
   createdAt: string;
@@ -105,12 +133,38 @@ export interface StoredPollOption {
   id: string;
   label: string;
   voterIds: string[];
+  /** The answer's own picture, on a photo or versus poll. */
+  photoUrl?: string | null;
+  /** The item on Figmark the answer is, so voters can go and buy their pick. */
+  listingId?: string | null;
+}
+
+/**
+ * Store credit for everybody who voted for the winning answer, once the poll
+ * closes: a shop thanking the people who told it what they wanted. Paid into
+ * each voter's wallet, spendable at that shop only. Figmark holds nothing.
+ */
+export interface VoterReward {
+  storeId: string;
+  storeName: string;
+  amountMinor: number;
+  /** The most voters it is paid to, earliest first, so a shop knows its cost up front. */
+  maxVoters: number;
+  /** Set once paid, with how many it reached. */
+  paidAt?: string | null;
+  paidCount?: number;
 }
 
 export interface StoredPoll {
   options: StoredPollOption[];
   /** When voting stops. Null runs until the post goes. */
   closesAt: string | null;
+  style?: PollStyle;
+  /** Times somebody moved their vote to another answer: "12 changed their mind". */
+  switches?: number;
+  /** A shop asking its buyers what it should stock next; its results feed the shop's console. */
+  stock?: boolean;
+  reward?: VoterReward | null;
 }
 
 /**
@@ -155,6 +209,27 @@ export interface PostFlex {
   hotspots: PostHotspot[];
 }
 
+/** Who made the best case in a debate: the most-liked comment, or the shop's pick. */
+export interface DebateBest {
+  userId: string;
+  name: string;
+  commentId: string;
+  side: string | null;
+}
+
+/**
+ * A shop's prize on a debate it started: store credit for the best argument.
+ * Never for being on the winning side - that is luck, and a prize for luck
+ * makes people pile onto whichever side is ahead.
+ */
+export interface DebatePrize {
+  storeId: string;
+  storeName: string;
+  amountMinor: number;
+  /** The shop picks, or the most-liked argument wins when the debate closes. */
+  judge: 'store' | 'likes';
+}
+
 /**
  * A side-by-side debate: the post's two photos are A and B, its poll's two
  * answers name them, and each side may point at an item on Figmark so the
@@ -162,6 +237,9 @@ export interface PostFlex {
  */
 export interface PostDebate {
   listingIds: [string | null, string | null];
+  prize?: DebatePrize | null;
+  /** Set when it is decided: on close for most-liked, on the shop's pick otherwise. */
+  best?: DebateBest | null;
 }
 
 /** A post that is somebody else's post, passed on. */
@@ -196,12 +274,23 @@ export interface ReactionSummary {
 }
 
 export interface PollView {
-  options: { id: string; label: string; votes: number }[];
+  options: { id: string; label: string; votes: number; photoUrl?: string | null; listingId?: string | null }[];
   total: number;
   /** Which option this viewer picked; null until they vote. */
   myVote: string | null;
   closesAt: string | null;
   closed: boolean;
+  style?: PollStyle;
+  switches?: number;
+  stock?: boolean;
+  reward?: { amountMinor: number; maxVoters: number; storeName: string; paidCount?: number | null } | null;
+}
+
+/** The mean of a rating poll's stars, one decimal; null before anybody rated. */
+export function ratingOf(poll: Pick<PollView, 'options' | 'total'>): number | null {
+  if (poll.total === 0) return null;
+  const sum = poll.options.reduce((all, option) => all + Number(option.label) * option.votes, 0);
+  return Math.round((sum / poll.total) * 10) / 10;
 }
 
 export interface CommentView {
@@ -218,6 +307,8 @@ export interface CommentView {
   createdAt: string;
   /** Whether this viewer wrote it: their report button asks for validation, not a dispute. */
   mine?: boolean;
+  /** In a debate, the side the writer was on. */
+  side?: string | null;
   /** Disputed, validated, or waiting on an operator (shared/moderation.ts). */
   moderation?: ModerationMark;
 }
@@ -237,6 +328,13 @@ export interface PostSocial {
   poll: PollView | null;
   /** Whether this viewer wrote it, and so may delete it. */
   mine: boolean;
+  /** A guess-the-price, as far as this viewer may see it. */
+  guess?: GuessView | null;
+  /**
+   * Whether this viewer runs the post's game: wrote it, or speaks for the shop
+   * whose post it is - the one who shortlists, picks winners and judges.
+   */
+  host?: boolean;
 }
 
 /** One row in "who reacted". */

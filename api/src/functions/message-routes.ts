@@ -1018,6 +1018,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     lastSeenAt: user.lastSeenAt ?? null,
     // Which checks the account behind this page passed - a shop's are its owner's.
     verified: verifiedChecks(user),
+    // What the person has won in competitions, debates and guesses: a person's page only.
+    gameBadges: isStore ? [] : [...(user.badges ?? [])].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
     /** What the tabs and chips count, so neither has to guess. */
     counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },
     // Active first, then sold out, then expired.

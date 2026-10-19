@@ -1,3 +1,4 @@
+import type { PlayerRow } from './play.js';
 import { tagKey } from './shop-tags.js';
 
 /**
@@ -144,6 +145,8 @@ export interface Leaderboard {
   debates: { postId: string; channelId: string; question: string; votes: number; leading: string | null }[];
   /** People and shops whose posts drew the most this week. */
   voices: { id: string; name: string; handle: string | null; shop: boolean; reactions: number; posts: number }[];
+  /** Who is winning the games: competitions, debates, guesses, and every vote cast. */
+  players?: PlayerRow[];
 }
 
 /**

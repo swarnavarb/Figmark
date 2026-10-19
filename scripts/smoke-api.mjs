@@ -86,6 +86,7 @@ const {
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
   forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
   discoverRoute: discover,
+  enterContestRoute: enterContest, guessPriceRoute: guessPrice, judgeRoute: judgeGame, myRewardsRoute: myRewards,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -1519,7 +1520,7 @@ await check('a poll counts one vote per person and lets them change it', async (
   assert.equal(card.social.poll.options.find((option) => option.id === blue).votes, 1);
 
   assert.equal((await vote(req({ headers: auth, params: on(post), body: { optionId: 'opt_9' } }), ctx)).status, 400);
-  for (const bad of [{ options: ['Only one'] }, { options: ['a', 'b', 'c', 'd', 'e'] }, { options: ['Same', 'same'] }]) {
+  for (const bad of [{ options: ['Only one'] }, { options: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }, { options: ['Same', 'same'] }]) {
     assert.equal((await createPost(req({ headers: auth, body: { body: 'Q?', poll: bad } }), ctx)).status, 400);
   }
 });
@@ -11923,6 +11924,240 @@ await check('a shop listing what somebody hunts for tells them, within their bud
   assert.equal(rows[0].link, `/listing/${fits.jsonBody.listing.id}`);
   const mine = (await notifications(req({ headers: auth }), ctx)).jsonBody.notifications;
   assert.equal(mine.some((row) => row.kind === 'want_listed'), false, 'a shop is not told about its own listing');
+});
+
+/* ── Polls, debates, competitions and guesses ─────────────────────────── */
+
+/** A buyer with a verified phone: competitions take entries and votes from those only. */
+const verifiedBuyer = async (name) => {
+  const made = await newBuyer(name);
+  const repository = await getRepository();
+  const user = await repository.getUserById(made.id);
+  await repository.updateUser({
+    ...user,
+    verification: { ...user.verification, phone: 'verified', proofs: { ...(user.verification.proofs ?? {}), phone: { number: '+919000000000', via: 'seed', at: new Date().toISOString() } } },
+  });
+  return made;
+};
+/** And one without: the suite's sign-ups arrive verified, so this undoes the phone. */
+const unverifiedBuyer = async (name) => {
+  const made = await newBuyer(name);
+  const repository = await getRepository();
+  const user = await repository.getUserById(made.id);
+  await repository.updateUser({ ...user, verification: { ...user.verification, phone: 'unverified', proofs: { ...(user.verification.proofs ?? {}), phone: null } } });
+  return made;
+};
+const backdate = async (post, change) => (await getRepository()).mutatePost(post.channelId, post.id, change);
+const ago = (ms) => new Date(Date.now() - ms).toISOString();
+
+await check('a photo poll carries a picture on every answer, and a rating poll is always five stars', async () => {
+  resetRateLimits();
+  const photo = await createPost(req({ headers: auth, body: {
+    body: 'Which repaint?',
+    poll: { style: 'photo', options: [{ label: 'Red', photoUrl: '/api/photos/r.jpg' }, { label: 'Blue', photoUrl: '/api/photos/b2.jpg' }, { label: 'Gold', photoUrl: '/api/photos/g.jpg' }] },
+  } }), ctx);
+  assert.equal(photo.status, 201, JSON.stringify(photo.jsonBody));
+  assert.equal(photo.jsonBody.post.poll.style, 'photo');
+  assert.equal(photo.jsonBody.post.poll.options[2].photoUrl, '/api/photos/g.jpg');
+  const missing = await createPost(req({ headers: auth, body: {
+    body: 'Which?', poll: { style: 'photo', options: [{ label: 'A', photoUrl: '/api/photos/r.jpg' }, { label: 'B' }] },
+  } }), ctx);
+  assert.equal(missing.status, 400, 'a photo poll needs every photo');
+  const outside = await createPost(req({ headers: auth, body: {
+    body: 'Which?', poll: { style: 'photo', options: [{ label: 'A', photoUrl: 'https://evil.example/x.jpg' }, { label: 'B', photoUrl: '/api/photos/r.jpg' }] },
+  } }), ctx);
+  assert.equal(outside.status, 400, 'answer photos are our own uploads');
+  const rating = await createPost(req({ headers: auth, body: { body: 'Rate my shelf', photoUrls: ['/api/photos/shelf.jpg'], poll: { style: 'rating', options: ['ignored'] } } }), ctx);
+  assert.equal(rating.status, 201, JSON.stringify(rating.jsonBody));
+  assert.deepEqual(rating.jsonBody.post.poll.options.map((option) => option.label), ['1', '2', '3', '4', '5']);
+});
+
+await check('a debate puts arguments on the voter\'s side, and counts people changing their minds', async () => {
+  resetRateLimits();
+  const voter = await newBuyer('Side Taker');
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'Original or reissue?',
+    poll: { style: 'versus', options: [{ label: 'Original', photoUrl: '/api/photos/o.jpg' }, { label: 'Reissue', photoUrl: '/api/photos/re.jpg' }] },
+    debate: {},
+  } }), ctx)).jsonBody.post;
+  const [a, b] = made.poll.options.map((option) => option.id);
+  await vote(req({ headers: voter.headers, params: on(made), body: { optionId: a } }), ctx);
+  const argued = await commentOn(req({ headers: voter.headers, params: on(made), body: { body: 'The paint on the original is unbeatable' } }), ctx);
+  assert.equal(argued.status, 201, JSON.stringify(argued.jsonBody));
+  assert.equal(argued.jsonBody.comments[0].side, a, 'the argument is on the side they voted for');
+  const moved = await vote(req({ headers: voter.headers, params: on(made), body: { optionId: b } }), ctx);
+  assert.equal(moved.jsonBody.poll.switches, 1);
+  const again = await vote(req({ headers: voter.headers, params: on(made), body: { optionId: b } }), ctx);
+  assert.equal(again.jsonBody.poll.switches, 1, 'voting the same way twice is not a change of mind');
+});
+
+await check('a prize is for a store to give: a person cannot put one up', async () => {
+  resetRateLimits();
+  const person = await newBuyer('Prize Promiser');
+  const refused = await createPost(req({ headers: person.headers, body: {
+    body: 'Best custom wins', contest: { title: 'Customs', entriesHours: 24, votingHours: 24, prizes: [{ amountMinor: 50000 }] },
+  } }), ctx);
+  assert.equal(refused.status, 403);
+  const reward = await createPost(req({ headers: person.headers, body: {
+    body: 'Which?', poll: { options: ['A', 'B'], closesInHours: 24, reward: { amountMinor: 1000, maxVoters: 5 } },
+  } }), ctx);
+  assert.equal(reward.status, 403);
+  const challenge = await createPost(req({ headers: person.headers, body: {
+    body: 'This week', contest: { host: 'figmark', title: 'Weekly', entriesHours: 24, votingHours: 24 },
+  } }), ctx);
+  assert.equal(challenge.status, 403, 'only Figmark runs the weekly challenge');
+});
+
+await check('a store debate with a store-judged prize pays the best argument in store credit', async () => {
+  resetRateLimits();
+  const arguer = await newBuyer('Best Arguer');
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'Which grade is worth it?', storeId: 'usr_demo',
+    poll: { style: 'versus', options: [{ label: 'MG', photoUrl: '/api/photos/mg.jpg' }, { label: 'RG', photoUrl: '/api/photos/rg.jpg' }], closesInHours: 24 },
+    debate: { prize: { amountMinor: 25000, judge: 'store' } },
+  } }), ctx)).jsonBody.post;
+  assert.equal(made.debate.prize.storeId, 'usr_demo');
+  await vote(req({ headers: arguer.headers, params: on(made), body: { optionId: made.poll.options[1].id } }), ctx);
+  const commented = (await commentOn(req({ headers: arguer.headers, params: on(made), body: { body: 'RG has the inner frame' } }), ctx)).jsonBody;
+  const early = await judgeGame(req({ headers: auth, params: on(made), body: { action: 'best', commentId: commented.comment } }), ctx);
+  assert.equal(early.status, 409, 'picked once it closes');
+  await backdate(made, (post) => ({ ...post, poll: { ...post.poll, closesAt: ago(60_000) } }));
+  const stranger = await judgeGame(req({ headers: arguer.headers, params: on(made), body: { action: 'best', commentId: commented.comment } }), ctx);
+  assert.equal(stranger.status, 403, 'only the store judges');
+  const picked = await judgeGame(req({ headers: auth, params: on(made), body: { action: 'best', commentId: commented.comment } }), ctx);
+  assert.equal(picked.status, 200, JSON.stringify(picked.jsonBody));
+  const rewards = (await myRewards(req({ headers: arguer.headers }), ctx)).jsonBody;
+  assert.equal(rewards.credits.length, 1);
+  assert.equal(rewards.credits[0].amountMinor, 25000);
+  assert.equal(rewards.credits[0].storeId, 'usr_demo');
+  assert.ok(rewards.badges.some((badge) => badge.kind === 'debate_winner'));
+  await judgeGame(req({ headers: auth, params: on(made), body: { action: 'best', commentId: commented.comment } }), ctx);
+  assert.equal((await myRewards(req({ headers: arguer.headers }), ctx)).jsonBody.credits.length, 1, 'paid once');
+
+  const { heldCreditMinor } = await import(new URL('placement.js', fns));
+  assert.equal(await heldCreditMinor(await getRepository(), { id: 'ord_none', buyerId: arguer.id, sellerId: 'usr_demo' }), 25000,
+    'the credit comes off their next order at that store');
+  assert.equal(await heldCreditMinor(await getRepository(), { id: 'ord_none', buyerId: arguer.id, sellerId: 'usr_other' }), 0,
+    'and only at that store');
+});
+
+await check('a photo competition takes verified entries, votes when entries close, and pays its podium', async () => {
+  resetRateLimits();
+  const made = await createPost(req({ headers: auth, body: {
+    body: 'Show us your best custom paint job', storeId: 'usr_demo',
+    contest: { title: 'Best custom paint', rules: 'One photo each', entriesHours: 24, votingHours: 24, judging: 'audience',
+      prizes: [{ amountMinor: 50000, note: 'Signed print' }, { amountMinor: 20000 }] },
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const contest = made.jsonBody.post;
+  assert.equal(contest.contest.prizes.length, 2);
+
+  const unverified = await unverifiedBuyer('Unverified Painter');
+  const tried = await enterContest(req({ headers: unverified.headers, params: on(contest), body: { photoUrl: '/api/photos/p0.jpg' } }), ctx);
+  assert.equal(tried.status, 403, JSON.stringify(tried.jsonBody));
+  assert.equal((await enterContest(req({ headers: auth, params: on(contest), body: { photoUrl: '/api/photos/p0.jpg' } }), ctx)).status, 403,
+    'the host does not enter');
+  const painters = [await verifiedBuyer('Painter One'), await verifiedBuyer('Painter Two'), await verifiedBuyer('Painter Three')];
+  for (const [index, painter] of painters.entries()) {
+    const entered = await enterContest(req({ headers: painter.headers, params: on(contest), body: { photoUrl: `/api/photos/p${index + 1}.jpg`, caption: 'Mine' } }), ctx);
+    assert.equal(entered.status, 201, JSON.stringify(entered.jsonBody));
+  }
+  assert.equal((await enterContest(req({ headers: painters[0].headers, params: on(contest), body: { photoUrl: '/api/photos/p9.jpg' } }), ctx)).status, 409,
+    'one entry each');
+
+  const read = (await readPost(req({ headers: auth, params: on(contest) }), ctx)).jsonBody.card;
+  assert.equal(read.post.contest.entries.length, 3);
+  assert.equal(read.social.poll.options.length, 3, 'every entry is an answer in the vote');
+  assert.equal(read.social.host, true);
+  const entryOf = (index) => read.post.contest.entries[index].id;
+
+  const voter = await verifiedBuyer('Contest Voter');
+  assert.equal((await vote(req({ headers: voter.headers, params: on(contest), body: { optionId: entryOf(0) } }), ctx)).status, 409,
+    'no votes while entries are open');
+  await backdate(contest, (post) => ({ ...post, contest: { ...post.contest, entriesCloseAt: ago(60_000) } }));
+  assert.equal((await vote(req({ headers: painters[0].headers, params: on(contest), body: { optionId: entryOf(0) } }), ctx)).status, 403,
+    'not for your own photo');
+  assert.equal((await vote(req({ headers: unverified.headers, params: on(contest), body: { optionId: entryOf(1) } }), ctx)).status, 403,
+    'verified voters only');
+  assert.equal((await vote(req({ headers: voter.headers, params: on(contest), body: { optionId: entryOf(1) } }), ctx)).status, 200);
+  assert.equal((await vote(req({ headers: painters[0].headers, params: on(contest), body: { optionId: entryOf(1) } }), ctx)).status, 200);
+  assert.equal((await vote(req({ headers: painters[1].headers, params: on(contest), body: { optionId: entryOf(0) } }), ctx)).status, 200);
+
+  const live = (await discover(req({ headers: unverified.headers }), ctx)).jsonBody;
+  assert.ok(live.contests.some((card) => card.post.id === contest.id), 'on the competitions row');
+
+  await backdate(contest, (post) => ({ ...post, contest: { ...post.contest, endsAt: ago(1000) }, poll: { ...post.poll, closesAt: ago(1000) } }));
+  const settled = (await readPost(req({ headers: auth, params: on(contest) }), ctx)).jsonBody.card;
+  assert.deepEqual(settled.post.contest.winners.map((winner) => winner.userId), [painters[1].id, painters[0].id]);
+  const first = (await myRewards(req({ headers: painters[1].headers }), ctx)).jsonBody;
+  assert.equal(first.credits[0].amountMinor, 50000);
+  assert.ok(first.badges.some((badge) => badge.kind === 'contest_winner'));
+  assert.equal((await myRewards(req({ headers: painters[0].headers }), ctx)).jsonBody.credits[0].amountMinor, 20000);
+  assert.equal((await myRewards(req({ headers: painters[2].headers }), ctx)).jsonBody.credits.length, 0, 'no votes, no place');
+  await discover(req(), ctx);
+  assert.equal((await myRewards(req({ headers: painters[1].headers }), ctx)).jsonBody.credits.length, 1, 'paid once');
+  assert.ok((await noticesFor(painters[1].id)).some((notice) => notice.kind === 'prize_won'));
+});
+
+await check('a store-judged competition is decided by the store once entries close', async () => {
+  resetRateLimits();
+  const contest = (await createPost(req({ headers: auth, body: {
+    body: 'Best diorama', storeId: 'usr_demo', contest: { title: 'Diorama', entriesHours: 24, judging: 'store', prizes: [{ note: 'Free kit' }] },
+  } }), ctx)).jsonBody.post;
+  assert.equal(contest.poll, null, 'no audience vote');
+  const maker = await verifiedBuyer('Diorama Maker');
+  await enterContest(req({ headers: maker.headers, params: on(contest), body: { photoUrl: '/api/photos/d1.jpg' } }), ctx);
+  const entryId = (await readPost(req({ headers: auth, params: on(contest) }), ctx)).jsonBody.card.post.contest.entries[0].id;
+  assert.equal((await judgeGame(req({ headers: auth, params: on(contest), body: { action: 'winners', entryIds: [entryId] } }), ctx)).status, 409);
+  await backdate(contest, (post) => ({ ...post, contest: { ...post.contest, entriesCloseAt: ago(1000) } }));
+  const decided = await judgeGame(req({ headers: auth, params: on(contest), body: { action: 'winners', entryIds: [entryId] } }), ctx);
+  assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
+  assert.equal(decided.jsonBody.card.post.contest.winners[0].userId, maker.id);
+  const rewards = (await myRewards(req({ headers: maker.headers }), ctx)).jsonBody;
+  assert.equal(rewards.credits.length, 0, 'a prize that is not credit is not credit');
+  assert.ok(rewards.badges.some((badge) => badge.kind === 'contest_winner'));
+  const sent = await judgeGame(req({ headers: auth, params: on(contest), body: { action: 'sent', place: 1 } }), ctx);
+  assert.deepEqual(sent.jsonBody.card.post.contest.prizeSent, [1]);
+});
+
+await check('a guess-the-price keeps its answer sealed until the reveal, then names the closest', async () => {
+  resetRateLimits();
+  const near = await newBuyer('Near Guesser');
+  const far = await newBuyer('Far Guesser');
+  const made = (await createPost(req({ headers: auth, body: { body: 'What did this sell for?', photoUrls: ['/api/photos/guess.jpg'], guess: { answerMinor: 450000, revealInHours: 24 } } }), ctx)).jsonBody.post;
+  assert.equal(made.guess.answerMinor, 450000, 'the author sees their own answer when posting');
+  const seen = (await readPost(req({ headers: near.headers, params: on(made) }), ctx)).jsonBody.card;
+  assert.equal(seen.post.guess, null, 'nobody else reads the answer');
+  assert.equal(seen.social.guess.answerMinor, null);
+  assert.equal((await guessPrice(req({ headers: auth, params: on(made), body: { amountMinor: 450000 } }), ctx)).status, 403);
+  const guessed = await guessPrice(req({ headers: near.headers, params: on(made), body: { amountMinor: 440000 } }), ctx);
+  assert.equal(guessed.jsonBody.guess.mine, 440000);
+  await guessPrice(req({ headers: far.headers, params: on(made), body: { amountMinor: 900000 } }), ctx);
+  await backdate(made, (post) => ({ ...post, guess: { ...post.guess, revealAt: ago(1000) } }));
+  const out = (await readPost(req({ headers: far.headers, params: on(made) }), ctx)).jsonBody.card.social.guess;
+  assert.equal(out.revealed, true);
+  assert.equal(out.answerMinor, 450000);
+  assert.equal(out.winner.userId, near.id);
+  assert.ok((await myRewards(req({ headers: near.headers }), ctx)).jsonBody.badges.some((badge) => badge.kind === 'guess_winner'));
+});
+
+await check('a store poll with a voter reward pays the winning side, up to its cap, once it closes', async () => {
+  resetRateLimits();
+  const fans = [await newBuyer('Fan One'), await newBuyer('Fan Two'), await newBuyer('Fan Three')];
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'What should we stock next?', storeId: 'usr_demo',
+    poll: { options: ['Gunpla', 'Figma'], closesInHours: 24, stock: true, reward: { amountMinor: 5000, maxVoters: 1 } },
+  } }), ctx)).jsonBody.post;
+  assert.equal(made.poll.stock, true);
+  await vote(req({ headers: fans[0].headers, params: on(made), body: { optionId: made.poll.options[0].id } }), ctx);
+  await vote(req({ headers: fans[1].headers, params: on(made), body: { optionId: made.poll.options[0].id } }), ctx);
+  await vote(req({ headers: fans[2].headers, params: on(made), body: { optionId: made.poll.options[1].id } }), ctx);
+  const open = (await discover(req({ headers: (await newBuyer('Live Reader')).headers }), ctx)).jsonBody;
+  assert.ok(open.live.some((card) => card.post.id === made.id), 'an open poll is on the Live strip');
+  await backdate(made, (post) => ({ ...post, poll: { ...post.poll, closesAt: ago(1000) } }));
+  await readPost(req({ headers: auth, params: on(made) }), ctx);
+  const paid = await Promise.all(fans.map(async (fan) => (await myRewards(req({ headers: fan.headers }), ctx)).jsonBody.credits.length));
+  assert.deepEqual(paid, [1, 0, 0], 'the earliest winning voter, up to the cap');
 });
 
 console.log(`\n${passed} checks passed`);

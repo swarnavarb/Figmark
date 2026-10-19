@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
 import {
   HOTSPOT_LABELS, REACTIONS, REACTION_META,
-  type CommentThread, type CommentView, type PollView, type PostHotspot, type ReactionKind, type ReactionSummary,
+  type CommentThread, type CommentView, type PostHotspot, type ReactionKind, type ReactionSummary,
   type ReactorRow,
 } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
@@ -23,6 +23,7 @@ import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
 import { Loading, useToast } from './Feedback';
 import { PhotoSales } from './PhotoSales';
+import { ContestPlay, GuessPlay, PollPlay, TeamChip } from './PostPlay';
 import { markOpened, useSeen } from '../seen';
 import { HASHTAG, MENTION } from '@shared/feed';
 import { tagKey, tagSlug } from '@shared/shop-tags';
@@ -452,7 +453,9 @@ export function SocialPostCard({
       {post.kind === 'sale' && !listing && (
         <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>
       )}
-      {social.poll && !post.debate && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
+      {post.contest ? <span className="spost__kind spost__kind--hot">🏆 Competition</span>
+        : social.guess ? <span className="spost__kind spost__kind--poll">🎯 Guess the price</span>
+          : social.poll && !post.debate && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> {social.poll.stock ? 'Stock poll' : 'Poll'}</span>}
       {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
       {post.answersWant && (
         <Link className="spost__kind spost__kind--poll"
@@ -623,33 +626,41 @@ export function SocialPostCard({
 
       {linked && <LinkCard path={linked.path} compact={nested} />}
 
-      {post.debate && social.poll && photos.length === 2 ? (
-        <Debate photos={photos} poll={social.poll} listingIds={post.debate.listingIds} disabled={nested || !user}
-          onVote={async (optionId) => {
-            const { poll } = await api.votePoll(post.channelId, post.id, optionId, as);
-            setCard((current) => ({ ...current, social: { ...current.social, poll } }));
-          }} />
-      ) : (
-        <>
-          {photos.length > 0 && (post.flex ? (
-            <FlexShelf photos={photos} hotspots={post.flex.hotspots} alt={post.body || `Collection of ${post.authorName}`}
-              onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} />
-          ) : (
-            <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
-              onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} onDoubleTap={nested ? undefined : loveFromPhoto} />
-          ))}
-          {/* Whether what is in the photo can be bought here, without opening it. */}
-          {photos.length > 0 && !nested && <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline" />}
-
-          {social.poll && (
-            <Poll poll={social.poll} disabled={nested}
-              onVote={async (optionId) => {
-                const { poll } = await api.votePoll(post.channelId, post.id, optionId, as);
-                setCard((current) => ({ ...current, social: { ...current.social, poll } }));
-              }} />
-          )}
-        </>
-      )}
+      {(() => {
+        const vote = async (optionId: string) => {
+          const { poll } = await api.votePoll(post.channelId, post.id, optionId, as);
+          setCard((current) => ({ ...current, social: { ...current.social, poll } }));
+        };
+        if (post.contest) {
+          return (
+            <>
+              {photos.length > 0 && (
+                <Carousel photos={photos} alt={post.contest.title} burst={burst}
+                  onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} />
+              )}
+              <ContestPlay card={card} disabled={nested || !user} vote={vote} onCard={setCard} />
+            </>
+          );
+        }
+        // A versus poll draws its own two photos; the post's photos are for everything else.
+        const versus = social.poll && (social.poll.style === 'versus' || (post.debate && !social.poll.style));
+        return (
+          <>
+            {photos.length > 0 && !versus && (post.flex ? (
+              <FlexShelf photos={photos} hotspots={post.flex.hotspots} alt={post.body || `Collection of ${post.authorName}`}
+                onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} />
+            ) : (
+              <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
+                onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} onDoubleTap={nested ? undefined : loveFromPhoto} />
+            ))}
+            {/* Whether what is in the photo can be bought here, without opening it. */}
+            {/* Not on a guess: matching shops would give the answer away. */}
+            {photos.length > 0 && !versus && !nested && !social.guess && <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline" />}
+            {social.poll && <PollPlay card={card} photos={photos} disabled={nested || !user} vote={vote} />}
+            {social.guess && <GuessPlay card={card} disabled={nested || !user} onCard={setCard} />}
+          </>
+        );
+      })()}
 
       {post.opening && (
         <OpeningCard sellerId={post.opening.sellerId} saleId={post.opening.saleId}
@@ -1420,6 +1431,23 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   }, [comment.likedByMe, comment.likeCount]);
 
   const { confirm, dialog } = useConfirm();
+  const debate = card.post.debate;
+  const best = debate?.best?.commentId === comment.id;
+  // A shop that put up a prize and kept the judging picks the best argument, once the debate has closed.
+  const canPick = !small && Boolean(card.social.host) && debate?.prize?.judge === 'store' && !debate.best
+    && Boolean(card.social.poll?.closed) && !comment.mine;
+  const [picking, setPicking] = useState(false);
+
+  async function pickBest() {
+    setPicking(true);
+    try {
+      await api.judge(channelId, id, { action: 'best', commentId: comment.id });
+      const detail = await api.socialPost(channelId, id, voice.storeId);
+      onChanged(detail);
+    } catch {
+      setPicking(false);
+    }
+  }
 
   async function like() {
     setLiked(!liked);
@@ -1444,12 +1472,14 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   }
 
   return (
-    <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}`}>
+    <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}${best ? ' is-best' : ''}`}>
       {dialog}
       <Avatar name={comment.authorName} size={small ? 26 : 32} />
       <div className="cmt__main">
         <div className="cmt__bubble">
           <PersonLink party={comment.author} className="cmt__name">{comment.authorName}</PersonLink>
+          {debate && comment.side && <TeamChip poll={card.social.poll} side={comment.side} />}
+          {best && <span className="teamchip teamchip--best">🎤 Best argument</span>}
           <p className="cmt__body">
             {comment.replyToName && <span className="cmt__to">@{comment.replyToName} </span>}
             <Tagged text={comment.body} />
@@ -1461,6 +1491,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
             {liked ? 'Liked' : 'Like'}
           </button>
           <button type="button" onClick={() => onReply(comment)}>Reply</button>
+          {canPick && <button type="button" disabled={picking} onClick={() => void pickBest()}>🎤 Pick as best</button>}
           {comment.canDelete && <button type="button" onClick={() => void remove()}>Delete</button>}
           {likes > 0 && <span className="cmt__likes">❤️ {likes}</span>}
           {/* Only in the full thread, where the comment carries its moderation state. */}
@@ -1542,157 +1573,6 @@ function FlexShelf({ photos, hotspots, alt, onOpen }: {
       )}
     </div>
   );
-}
-
-/* ── Debates ───────────────────────────────────────────────────────────── */
-
-/**
- * A over B: the two photos side by side, each a button that votes for it,
- * with the live split drawn as one bar underneath. The split stays hidden
- * until you have voted, as an ordinary poll's does, so the first vote is
- * yours rather than the crowd's.
- *
- * It ends in the shop: each side's own item when the debate links one, and
- * the catalogue searched for whichever side is winning.
- */
-function Debate({ photos, poll, listingIds, disabled, onVote }: {
-  photos: string[];
-  poll: PollView;
-  listingIds: [string | null, string | null];
-  disabled: boolean;
-  onVote: (optionId: string) => Promise<void>;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const sides = poll.options.slice(0, 2);
-  const reveal = poll.myVote !== null || poll.closed;
-  const shares = sides.map((option) => (poll.total > 0 ? Math.round((option.votes / poll.total) * 100) : 50));
-  const leader = sides[0] && sides[1] && sides[1].votes > sides[0].votes ? sides[1] : sides[0];
-
-  async function vote(optionId: string) {
-    if (disabled || poll.closed || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await onVote(optionId);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not count that vote.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="debate">
-      <div className="debate__pair">
-        {sides.map((option, index) => {
-          const mine = poll.myVote === option.id;
-          const listingId = listingIds[index] ?? null;
-          return (
-            <div key={option.id} className={`debate__side debate__side--${index === 0 ? 'a' : 'b'}${mine ? ' is-mine' : ''}`}>
-              <button type="button" className="debate__pick" disabled={disabled || poll.closed || busy}
-                aria-pressed={mine} onClick={() => void vote(option.id)}>
-                <img src={photos[index]} alt={option.label} loading="lazy" draggable={false} />
-                <span className="debate__letter" aria-hidden="true">{index === 0 ? 'A' : 'B'}</span>
-                {reveal && <span className="debate__pct">{shares[index]}%</span>}
-                <span className="debate__label">
-                  {mine && <Icon name="check" size={12} />} {option.label}
-                </span>
-              </button>
-              {listingId && (
-                <Link to={`/listing/${encodeURIComponent(listingId)}`} className="debate__item">
-                  <Icon name="tag" size={11} /> Shop side {index === 0 ? 'A' : 'B'}
-                </Link>
-              )}
-            </div>
-          );
-        })}
-        <span className="debate__vs" aria-hidden="true">VS</span>
-      </div>
-      <div className={`debate__bar${reveal ? ' is-revealed' : ''}`} aria-hidden={!reveal}>
-        <span className="debate__bar-a" style={{ width: `${reveal ? shares[0] : 50}%` }} />
-        <span className="debate__bar-b" style={{ width: `${reveal ? shares[1] : 50}%` }} />
-      </div>
-      <div className="debate__foot">
-        <span className="poll__foot">
-          {poll.total} vote{poll.total === 1 ? '' : 's'}
-          {poll.closesAt && <> · {poll.closed ? 'Final results' : `Closes ${timeAgoAhead(poll.closesAt)}`}</>}
-          {!reveal && !disabled && <> · tap a side to vote</>}
-        </span>
-        {leader && (
-          <Link to={`/?q=${encodeURIComponent(leader.label)}`} className="debate__cta">
-            View Active Listings <Icon name="right" size={12} />
-          </Link>
-        )}
-      </div>
-      {error && <p className="spost__error">{error}</p>}
-    </div>
-  );
-}
-
-/* ── Polls ─────────────────────────────────────────────────────────────── */
-
-function Poll({ poll, disabled, onVote }: {
-  poll: PollView;
-  disabled: boolean;
-  onVote: (optionId: string) => Promise<void>;
-}) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const reveal = poll.myVote !== null || poll.closed || disabled;
-  const leader = Math.max(...poll.options.map((option) => option.votes));
-
-  const closes = poll.closesAt
-    ? poll.closed
-      ? 'Final results'
-      : `Closes ${timeAgoAhead(poll.closesAt)}`
-    : null;
-
-  return (
-    <div className="poll">
-      {poll.options.map((option) => {
-        const share = poll.total > 0 ? Math.round((option.votes / poll.total) * 100) : 0;
-        const mine = poll.myVote === option.id;
-        return (
-          <button key={option.id} type="button"
-            className={`poll__option${reveal ? ' is-revealed' : ''}${mine ? ' is-mine' : ''}`
-              + `${reveal && option.votes === leader && leader > 0 ? ' is-leading' : ''}`}
-            disabled={disabled || poll.closed || busy !== null}
-            onClick={async () => {
-              setBusy(option.id);
-              setError(null);
-              try {
-                await onVote(option.id);
-              } catch (err) {
-                setError(err instanceof ApiRequestError ? err.message : 'Could not count that vote.');
-              } finally {
-                setBusy(null);
-              }
-            }}>
-            <span className="poll__fill" style={{ width: reveal ? `${share}%` : '0%' }} />
-            <span className="poll__label">
-              {mine && <Icon name="check" size={14} />}
-              {option.label}
-            </span>
-            {reveal && <span className="poll__share">{share}%</span>}
-          </button>
-        );
-      })}
-      <p className="poll__foot">
-        {poll.total} vote{poll.total === 1 ? '' : 's'}
-        {closes && <> · {closes}</>}
-        {poll.myVote && !poll.closed && <> · tap another to change</>}
-      </p>
-      {error && <p className="spost__error">{error}</p>}
-    </div>
-  );
-}
-
-function timeAgoAhead(iso: string): string {
-  const hours = Math.max(0, (new Date(iso).getTime() - Date.now()) / 3_600_000);
-  if (hours < 1) return 'in under an hour';
-  if (hours < 48) return `in ${Math.round(hours)}h`;
-  return `in ${Math.round(hours / 24)} days`;
 }
 
 /* ── Sharing ───────────────────────────────────────────────────────────── */

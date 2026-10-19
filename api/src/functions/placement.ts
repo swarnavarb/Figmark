@@ -7,6 +7,7 @@ import { affiliateFor, creditAffiliate } from '../affiliate.js';
 import type { getRepository } from '../data/index.js';
 import { notify, orderNames } from './notify.js';
 import { reconcilePreOrder } from './preorder.js';
+import { storeCreditLeft } from '../../../shared/play.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -201,12 +202,76 @@ export async function heldCreditMinor(
   repository: Repo,
   order: Pick<Order, 'id' | 'buyerId' | 'sellerId'>,
 ): Promise<number> {
-  const theirs = await repository.listOrdersForBuyer(order.buyerId);
-  return theirs
+  const [theirs, buyer] = await Promise.all([repository.listOrdersForBuyer(order.buyerId), repository.getUserById(order.buyerId)]);
+  const kept = theirs
     .filter((entry) => entry.id !== order.id && entry.sellerId === order.sellerId)
     .flatMap((entry) => entry.credits ?? [])
     .filter((credit) => credit.status === 'held')
     .reduce((sum, credit) => sum + creditLeft(credit), 0);
+  // And store credit won from this shop - a competition prize, a debate, a poll.
+  const won = (buyer?.storeCredits ?? [])
+    .filter((credit) => credit.storeId === order.sellerId)
+    .reduce((sum, credit) => sum + storeCreditLeft(credit), 0);
+  return kept + won;
+}
+
+/**
+ * Spends store credit the buyer won from this shop on the order being
+ * placed, oldest first, after any credit the shop kept for them: that money
+ * was theirs first. Mutates `order` (the caller saves it); saves the buyer.
+ */
+async function spendWonCredit(repository: Repo, order: Order, actorId: string, owing: number, now: string): Promise<number> {
+  if (owing <= 0) return 0;
+  const buyer = await repository.getUserById(order.buyerId);
+  const credits = buyer?.storeCredits ?? [];
+  if (!buyer || !credits.some((credit) => credit.storeId === order.sellerId && storeCreditLeft(credit) > 0)) return 0;
+  let left = owing;
+  let spent = 0;
+  const next = [...credits].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((credit) => {
+    if (left <= 0 || credit.storeId !== order.sellerId) return credit;
+    const take = Math.min(storeCreditLeft(credit), left);
+    if (take <= 0) return credit;
+    left -= take;
+    spent += take;
+    return { ...credit, spentMinor: credit.spentMinor + take, spends: [...credit.spends, { orderId: order.id, itemName: order.itemName, amountMinor: take, at: now }] };
+  });
+  if (spent <= 0) return 0;
+  await repository.updateUser({ ...buyer, storeCredits: next });
+  order.payments = [
+    ...(order.payments ?? []),
+    {
+      id: `pay_${randomUUID().slice(0, 12)}`,
+      at: now,
+      kind: 'credit',
+      method: 'direct',
+      amountMinor: spent,
+      batchId: null,
+      batchTotalMinor: null,
+      reference: 'Store credit won',
+      recordedBy: actorId,
+    },
+  ];
+  order.stageHistory = [
+    ...order.stageHistory,
+    { stage: order.stage, enteredAt: now, note: `🎁 Store credit — ${rupees(spent)} the buyer won from this shop.`, recordedBy: actorId },
+  ];
+  return spent;
+}
+
+/** Puts back store credit an order spent, for an order turned down before it was taken on. */
+async function returnWonCredit(repository: Repo, order: Order): Promise<number> {
+  const buyer = await repository.getUserById(order.buyerId);
+  const credits = buyer?.storeCredits ?? [];
+  let back = 0;
+  const next = credits.map((credit) => {
+    const mine = credit.spends.filter((spend) => spend.orderId === order.id);
+    if (mine.length === 0) return credit;
+    const amount = mine.reduce((sum, spend) => sum + spend.amountMinor, 0);
+    back += amount;
+    return { ...credit, spentMinor: Math.max(0, credit.spentMinor - amount), spends: credit.spends.filter((spend) => spend.orderId !== order.id) };
+  });
+  if (buyer && back > 0) await repository.updateUser({ ...buyer, storeCredits: next });
+  return back;
 }
 
 /**
@@ -277,6 +342,8 @@ export async function adjustHeldCredit(repository: Repo, order: Order, actorId: 
     await repository.updateOrder(source);
   }
 
+  applied += await spendWonCredit(repository, order, actorId, owing, now);
+
   if (applied > 0) {
     const money = orderMoney(order);
     order.paymentStatus = money.outstandingMinor === 0 ? 'paid' : 'partially_paid';
@@ -325,6 +392,7 @@ export async function returnKeptCredit(repository: Repo, order: Order, actorId: 
     await repository.updateOrder(source);
   }
 
+  returned += await returnWonCredit(repository, order);
   order.payments = (order.payments ?? []).filter((payment) => payment.kind !== 'credit');
   if (returned > 0) {
     order.stageHistory = [

@@ -51,6 +51,7 @@ const {
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
   removePostRoute, trendingRoute, homeRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
   forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute, discoverRoute, homeNewRoute,
+  enterContestRoute, guessPriceRoute, judgeRoute, myRewardsRoute, shopGamesRoute,
 } = await import(new URL('social-routes.js', apiRoot));
 const {
   savePostRoute, savedPostsRoute, hidePostRoute, muteRoute: feedMuteRoute, mutesRoute: feedMutesRoute, seenRoute,
@@ -226,6 +227,8 @@ const routes = [
   ['GET', '/api/social/forums/:id/members', forumMembersRoute],
   ['POST', '/api/social/forums/:id/moderate', moderateForumRoute],
   ['GET', '/api/social/shops/:id/feed', shopFeedRoute],
+  ['GET', '/api/social/shops/:id/games', shopGamesRoute],
+  ['GET', '/api/me/rewards', myRewardsRoute],
   ['GET', '/api/users/:id/follows', followsRoute],
   ['GET', '/api/social/search', socialSearchRoute],
   ['GET', '/api/social/trending', trendingRoute],
@@ -250,6 +253,9 @@ const routes = [
   ['POST', '/api/social/posts/:channel/:id/comments/:comment/delete', deletePostCommentRoute],
   ['POST', '/api/social/posts/:channel/:id/share', sharePostRoute],
   ['POST', '/api/social/posts/:channel/:id/vote', voteRoute],
+  ['POST', '/api/social/posts/:channel/:id/enter', enterContestRoute],
+  ['POST', '/api/social/posts/:channel/:id/guess', guessPriceRoute],
+  ['POST', '/api/social/posts/:channel/:id/judge', judgeRoute],
   ['POST', '/api/social/posts/:channel/:id/delete', removePostRoute],
   ['POST', '/api/social/posts/:channel/:id/pin', pinPostRoute],
   ['GET', '/api/messages', inboxRoute],

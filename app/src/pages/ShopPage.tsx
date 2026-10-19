@@ -1,5 +1,5 @@
 import { confirmSentence } from '../components/Ask';
-import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
@@ -76,7 +76,10 @@ import { EarnPill, earnOf } from '../components/Affiliate';
 import { Preloader } from '../components/Preloader';
 import '../styles/ShopPage.css';
 
-type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people';
+/* The Engage screen carries the whole post card; it arrives when it is opened. */
+const EngagePanel = lazy(() => import('../components/EngagePanel').then((module) => ({ default: module.EngagePanel })));
+
+type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -97,6 +100,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
+  // Polls, debates, competitions and guesses the shop runs for its buyers.
+  { id: 'engage', label: 'Engage' },
 ];
 
 /** Sections that are Pro: they wear the gold chip and the PRO badge. */
@@ -112,12 +117,13 @@ const PRO_SECTIONS: readonly Section[] = ['insights', 'calculator'];
  * screen. Each opens on its first section; the rest of its sections are chips
  * under it. Packing is not here: a packer works from My services.
  */
-type Group = 'items' | 'orders' | 'lots' | 'money' | 'settings';
+type Group = 'items' | 'orders' | 'lots' | 'engage' | 'money' | 'settings';
 
 const SECTION_GROUPS: Record<Group, Section[]> = {
   items: ['items'],
   orders: ['payments', 'refunds'],
   lots: ['lots', 'routes'],
+  engage: ['engage'],
   money: ['analytics', 'insights', 'calculator'],
   settings: ['storefront', 'people'],
 };
@@ -126,6 +132,7 @@ const GROUP_TABS: { id: Group; label: string; icon: IconName }[] = [
   { id: 'items', label: 'Listings', icon: 'tag' },
   { id: 'orders', label: 'Orders', icon: 'box' },
   { id: 'lots', label: 'Shipments', icon: 'truck' },
+  { id: 'engage', label: 'Engage', icon: 'poll' },
   { id: 'money', label: 'Data', icon: 'spark' },
   { id: 'settings', label: 'Shop settings', icon: 'bank' },
 ];
@@ -259,6 +266,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     if (entry.id === 'analytics' || entry.id === 'insights' || entry.id === 'calculator') return store.permissions.includes('analytics');
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
+    if (entry.id === 'engage') return store.permissions.includes('posts');
     return true;
   });
   // No tab, or a tab this store cannot open: the first section it can, so
@@ -335,6 +343,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
+          {active === 'engage' && <Suspense fallback={<Preloader small />}><EngagePanel store={store} /></Suspense>}
         </div>
       )}
     </main>

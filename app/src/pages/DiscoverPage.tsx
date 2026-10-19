@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { contestPhase } from '@shared/play';
 import { IN_DEMAND_SCORE, popularity } from '@shared/catalog';
 import type { Leaderboard, SpottedItem, TopicChip, WantRow } from '@shared/feed';
 import { tagSlug } from '@shared/shop-tags';
@@ -27,16 +28,22 @@ import '../styles/DiscoverPage.css';
  * chips narrow it to one kind. Between posts sit the people worth following,
  * the hunts this person could answer, and things seen in posts that can be
  * bought. It pages on as it is scrolled; a guest is asked to join instead.
+ *
+ * Above it all sits what is live: polls, guesses and competitions still open
+ * that this person has not joined - the things that are over if you wait -
+ * and the competitions shops are running, with what they are giving away.
  */
 
-type Lens = 'all' | 'rising' | 'debates' | 'threads' | 'flexes' | 'finds' | 'top';
+type Lens = 'all' | 'live' | 'contests' | 'rising' | 'debates' | 'threads' | 'flexes' | 'finds' | 'top';
 
 const LENSES: { id: Lens; label: string }[] = [
   { id: 'all', label: '✨ For you' },
+  { id: 'live', label: '🗳️ Live' },
+  { id: 'contests', label: '🏆 Competitions' },
   { id: 'rising', label: '🚀 Rising' },
   { id: 'debates', label: '⚔️ Debates' },
   { id: 'threads', label: '🔥 Hot debates' },
-  { id: 'flexes', label: '🏆 Flexes' },
+  { id: 'flexes', label: '📸 Flexes' },
   { id: 'finds', label: '💎 Rare finds' },
   { id: 'top', label: '🥇 This week' },
 ];
@@ -165,7 +172,13 @@ export function DiscoverPage() {
 function DiscoverBody() {
   const { user, promptAuth } = useSession();
   const toast = useToast();
-  const [lens, setLens] = useState<Lens>('all');
+  const location = useLocation();
+  const [lens, setLens] = useState<Lens>(location.hash === '#competitions' ? 'contests' : 'all');
+  const [live, setLive] = useState<PostCard[]>([]);
+  const [contests, setContests] = useState<PostCard[]>([]);
+  useEffect(() => {
+    if (location.hash === '#competitions') setLens('contests');
+  }, [location.hash]);
   const [stream, setStream] = useState<Stream | null>(null);
   const [rails, setRails] = useState<{ topics: TopicChip[]; wants: WantRow[]; spotted: SpottedItem[] }>({ topics: [], wants: [], spotted: [] });
   const [next, setNext] = useState<number | null>(null);
@@ -189,6 +202,8 @@ function DiscoverBody() {
       const page = community.value;
       setStream(merge(EMPTY, page));
       setRails({ topics: page.topics ?? [], wants: page.wants ?? [], spotted: page.spotted ?? [] });
+      setLive(page.live ?? []);
+      setContests(page.contests ?? []);
       setNext(page.next ?? null);
     } else {
       setStream(EMPTY);
@@ -236,6 +251,7 @@ function DiscoverBody() {
   const posts = (cards: PostCard[], promoted = false) => cards.map((card) => (
     <SocialPostCard key={card.post.id} card={card} promoted={promoted} />
   ));
+  const openContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended').length;
   const paged = lens === 'all' || lens === 'rising' || lens === 'debates' || lens === 'threads' || lens === 'flexes';
 
   async function share() {
@@ -254,44 +270,65 @@ function DiscoverBody() {
   return (
     <main className="page discpage">
       <header className="dischero">
-        <span className="dischero__kicker">Across Figmark</span>
+        <span className="dischero__orb dischero__orb--a" aria-hidden="true" />
+        <span className="dischero__orb dischero__orb--b" aria-hidden="true" />
         <div className="dischero__top">
-          <h1 className="dischero__title">Discover</h1>
+          <span className="dischero__kicker">Across Figmark</span>
           <button type="button" className="iconbtn" aria-label="Share Discover" onClick={() => void share()}>
             <Icon name="share" size={18} />
           </button>
         </div>
+        <h1 className="dischero__title">Discover</h1>
         <p className="dischero__sub">
-          Debates to settle, shelves to envy and finds that will not last.
+          Polls to settle, competitions to win, shelves to envy and finds that will not last.
           {hobbies.size > 0 && <> Leaning towards {[...hobbies].slice(0, 3).join(', ')}.</>}
         </p>
-        <div className="chips chips--tight dischero__lenses" role="toolbar" aria-label="Show">
-          {LENSES.map((entry) => (
-            <button key={entry.id} type="button" className={`chip${lens === entry.id ? ' is-on' : ''}`}
-              aria-pressed={lens === entry.id} onClick={() => setLens(entry.id)}>
-              {entry.label}
-            </button>
-          ))}
-        </div>
-        {rails.topics.length > 0 && (
-          <nav className="distopics" aria-label="Topics">
-            {rails.topics.map((topic) => (
-              <Link key={topic.key} to={`/tags/${encodeURIComponent(tagSlug(topic.key))}`} className="distopic">
-                #{topic.label.replace(/ /g, '')}
-                <span className="faint">{topic.posts}</span>
-              </Link>
-            ))}
-          </nav>
+        {(live.length > 0 || openContests > 0) && (
+          <div className="dischero__stats">
+            {live.length > 0 && (
+              <button type="button" className="dischero__stat" onClick={() => setLens('live')}>
+                <span className="dischero__pulse" aria-hidden="true" /> <strong>{live.length}</strong> live to vote on
+              </button>
+            )}
+            {openContests > 0 && (
+              <button type="button" className="dischero__stat dischero__stat--gold" onClick={() => setLens('contests')}>
+                🏆 <strong>{openContests}</strong> competition{openContests === 1 ? '' : 's'} open
+              </button>
+            )}
+          </div>
         )}
         {!user && (
           <p className="dischero__guest">
             <button type="button" className="btn btn--sm" onClick={() => promptAuth('Sign in to vote, react and follow.')}>
               Sign in
             </button>
-            <span className="faint">to vote on debates and follow the people behind them.</span>
+            <span className="faint">to vote, enter competitions and follow the people behind them.</span>
           </p>
         )}
       </header>
+
+      <nav className="dislens" aria-label="Show">
+        {LENSES.map((entry) => (
+          <button key={entry.id} type="button" className={`dislens__tab${lens === entry.id ? ' is-on' : ''}`}
+            aria-pressed={lens === entry.id} onClick={() => setLens(entry.id)}>
+            {entry.label}
+          </button>
+        ))}
+      </nav>
+
+      {rails.topics.length > 0 && lens === 'all' && (
+        <nav className="distopics" aria-label="Topics">
+          {rails.topics.map((topic) => (
+            <Link key={topic.key} to={`/tags/${encodeURIComponent(tagSlug(topic.key))}`} className="distopic">
+              #{topic.label.replace(/ /g, '')}
+              <span className="faint">{topic.posts}</span>
+            </Link>
+          ))}
+        </nav>
+      )}
+
+      {!loading && lens === 'all' && live.length > 0 && <LiveStrip cards={live} onAll={() => setLens('live')} />}
+      {!loading && lens === 'all' && contests.length > 0 && <ContestRow cards={contests} onAll={() => setLens('contests')} />}
 
       {error && <ErrorNotice message={error} />}
 
@@ -325,6 +362,18 @@ function DiscoverBody() {
         )
       ) : lens === 'top' ? (
         <WeeklyBest />
+      ) : lens === 'live' ? (
+        live.length === 0 ? (
+          <EmptyState title="You're all caught up">
+            Every open poll, guess and competition here has your vote. Start one with the + below.
+          </EmptyState>
+        ) : <div className="discover__stream">{posts(live)}</div>
+      ) : lens === 'contests' ? (
+        contests.length === 0 ? (
+          <EmptyState title="No competitions running">
+            Shops run photo competitions with store credit for the winners. Run one from the + below as your store.
+          </EmptyState>
+        ) : <div className="discover__stream" id="competitions">{posts(contests)}</div>
       ) : (
         <div className="discover__stream">
           {lens === 'rising' && (stream.rising.length ? posts(stream.rising) : (
@@ -480,6 +529,123 @@ function SpottedRail({ items }: { items: SpottedItem[] }) {
   );
 }
 
+/** What a live card is, in a word and a colour. */
+function liveKind(card: PostCard): { emoji: string; label: string; cta: string; tone: string } {
+  const { post, social } = card;
+  if (post.contest) return { emoji: '🏆', label: 'Competition', cta: contestPhase(post.contest) === 'entries' ? 'Enter' : 'Vote', tone: 'gold' };
+  if (social.guess) return { emoji: '🎯', label: 'Guess the price', cta: 'Guess', tone: 'violet' };
+  if (post.debate) return { emoji: '⚔️', label: 'Debate', cta: 'Pick a side', tone: 'pink' };
+  if (social.poll?.style === 'rating') return { emoji: '⭐', label: 'Rate it', cta: 'Rate', tone: 'gold' };
+  return { emoji: '📊', label: social.poll?.stock ? 'Stock poll' : 'Poll', cta: 'Vote', tone: 'aqua' };
+}
+
+/** When a live card stops taking part, said short. */
+function closesIn(card: PostCard): string | null {
+  const { post, social } = card;
+  const at = post.contest
+    ? (contestPhase(post.contest) === 'entries' ? post.contest.entriesCloseAt : post.contest.endsAt)
+    : social.guess?.revealAt ?? social.poll?.closesAt ?? null;
+  if (!at) return null;
+  const hours = (Date.parse(at) - Date.now()) / 3_600_000;
+  if (hours <= 0) return null;
+  return hours < 1 ? 'Ends within the hour' : hours < 24 ? `${Math.round(hours)}h left` : `${Math.round(hours / 24)}d left`;
+}
+
+/** Up to three pictures that say what a live card is about. */
+function pictures(card: PostCard): string[] {
+  const { post, social } = card;
+  const fromPoll = (social.poll?.options ?? []).map((option) => option.photoUrl).filter((url): url is string => Boolean(url));
+  const fromContest = (post.contest?.entries ?? []).map((entry) => entry.photoUrl);
+  const own = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
+  return [...fromPoll, ...own, ...fromContest].slice(0, 3);
+}
+
+/**
+ * Live now: open things to take part in, sideways, at the top. Each card is
+ * a door to the post - voting happens there, where the result is drawn.
+ */
+function LiveStrip({ cards, onAll }: { cards: PostCard[]; onAll: () => void }) {
+  return (
+    <section className="dislive" aria-label="Live now">
+      <div className="discrail__head">
+        <h2><span className="dischero__pulse" aria-hidden="true" /> Live now</h2>
+        <button type="button" className="discrail__all" onClick={onAll}>See all {cards.length}</button>
+      </div>
+      <div className="dislive__row">
+        {cards.map((card, index) => {
+          const kind = liveKind(card);
+          const shots = pictures(card);
+          const left = closesIn(card);
+          const votes = card.post.contest ? card.post.contest.entries.length : card.social.guess?.count ?? card.social.poll?.total ?? 0;
+          return (
+            <Link key={card.post.id} to={postHref(card.post)} className={`livecard livecard--${kind.tone}`}
+              style={{ animationDelay: `${index * 40}ms` }}>
+              <span className={`livecard__art livecard__art--${shots.length}`}>
+                {shots.length ? shots.map((url) => <img key={url} src={url} alt="" loading="lazy" />) : (
+                  <span className="livecard__emoji" aria-hidden="true">{kind.emoji}</span>
+                )}
+              </span>
+              <span className="livecard__body">
+                <span className="livecard__kind">{kind.emoji} {kind.label}</span>
+                <span className="livecard__q">{card.post.contest?.title ?? (card.post.body || 'Which one?')}</span>
+                <span className="livecard__meta">
+                  <span>{votes} {card.post.contest ? 'in' : card.social.guess ? 'guesses' : 'votes'}</span>
+                  {left && <span className="livecard__left">{left}</span>}
+                </span>
+                <span className="livecard__cta">{kind.cta} <Icon name="right" size={12} /></span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/** The competitions row: what each shop is giving away, and how long is left. */
+function ContestRow({ cards, onAll }: { cards: PostCard[]; onAll: () => void }) {
+  return (
+    <section className="dislive" aria-label="Competitions" id="competitions">
+      <div className="discrail__head">
+        <h2>🏆 Competitions</h2>
+        <button type="button" className="discrail__all" onClick={onAll}>See all</button>
+      </div>
+      <div className="dislive__row">
+        {cards.map((card, index) => {
+          const contest = card.post.contest!;
+          const phase = contestPhase(contest);
+          const top = contest.prizes[0];
+          const cover = card.post.photoUrl ?? contest.winners?.[0]?.photoUrl ?? contest.entries[0]?.photoUrl ?? null;
+          const left = closesIn(card);
+          return (
+            <Link key={card.post.id} to={postHref(card.post)} className="contestcard" style={{ animationDelay: `${index * 40}ms` }}>
+              <span className="contestcard__art">
+                {cover ? <img src={cover} alt="" loading="lazy" /> : <span aria-hidden="true">{contest.host === 'figmark' ? '🌟' : '🏆'}</span>}
+                <span className={`contestcard__phase contestcard__phase--${phase}`}>
+                  {phase === 'entries' ? 'Entries open' : phase === 'voting' ? 'Voting' : phase === 'ended' ? 'Winners' : 'Judging'}
+                </span>
+              </span>
+              <span className="contestcard__body">
+                <strong>{contest.title}</strong>
+                <span className="faint">{contest.host === 'figmark' ? 'Figmark weekly challenge' : contest.hostName}</span>
+                {top && (
+                  <span className="contestcard__prize">
+                    🥇 {[top.amountMinor > 0 ? `${formatMoney(top.amountMinor, 'INR')} credit` : '', top.note].filter(Boolean).join(' + ')}
+                  </span>
+                )}
+                <span className="livecard__meta">
+                  <span>{contest.entries.length} {contest.entries.length === 1 ? 'entry' : 'entries'}</span>
+                  {left && <span className="livecard__left">{left}</span>}
+                </span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /** The week's best: the most loved shelves, the most argued debates, the loudest voices. */
 function WeeklyBest() {
   const [board, setBoard] = useState<Leaderboard | null>(null);
@@ -495,12 +661,38 @@ function WeeklyBest() {
   }, []);
   if (error) return <ErrorNotice message={error} />;
   if (!board) return <DiscoverSkeleton />;
-  const empty = board.shelves.length === 0 && board.debates.length === 0 && board.voices.length === 0;
+  const players = board.players ?? [];
+  const empty = board.shelves.length === 0 && board.debates.length === 0 && board.voices.length === 0 && players.length === 0;
   if (empty) {
     return <EmptyState title="A quiet week so far">The shelves, debates and voices people love most this week show up here.</EmptyState>;
   }
   return (
     <div className="discweek">
+      {players.length > 0 && (
+        <section className="discweek__block">
+          <h2>🏅 Top players</h2>
+          <ol className="discweek__list">
+            {players.map((player, index) => {
+              const row = (
+                <>
+                  <span className="discweek__rank">{index < 3 ? ['🥇', '🥈', '🥉'][index] : index + 1}</span>
+                  <span className="discweek__name">
+                    {player.name}
+                    <span className="faint"> · {player.wins} win{player.wins === 1 ? '' : 's'} · {player.votes} vote{player.votes === 1 ? '' : 's'}</span>
+                  </span>
+                  <span className="discweek__count">{player.points} pts</span>
+                </>
+              );
+              return (
+                <li key={player.userId}>
+                  {player.handle ? <Link to={`/${encodeURIComponent(player.handle)}`} className="discweek__row">{row}</Link>
+                    : <span className="discweek__row">{row}</span>}
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
       {board.shelves.length > 0 && (
         <section className="discweek__block">
           <h2><Icon name="trophy" size={16} /> Most loved shelves</h2>

@@ -338,6 +338,8 @@
   --dur-1: 140ms;
   --dur-2: 240ms;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* A strong ease-out, for things arriving: fast at the start, where the eye is. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @media (min-width: 720px) {
@@ -4334,14 +4336,19 @@ a.psheet__row:hover { background: var(--surface-hover); }
   text-align: left; cursor: pointer;
   transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
-.poll__option:hover:not(:disabled) { border-color: var(--aqua); transform: translateY(-1px); }
+@media (hover: hover) and (pointer: fine) {
+  .poll__option:hover:not(:disabled) { border-color: var(--aqua); transform: translateY(-1px); }
+}
+.poll__option:active:not(:disabled) { transform: scale(0.985); }
 .poll__option:disabled { cursor: default; }
 .poll__option.is-revealed { border-color: var(--border); }
 .poll__option.is-mine { border-color: var(--aqua); }
+/* The result fills in from the left when you vote: scaled rather than sized, so it never lays the row out again. */
 .poll__fill {
-  position: absolute; inset: 0 auto 0 0;
+  position: absolute; inset: 0;
   background: var(--surface-hover);
-  transition: width 600ms var(--ease);
+  transform-origin: left center; transform: scaleX(0);
+  transition: transform 320ms var(--ease-out);
 }
 .poll__option.is-leading .poll__fill { background: var(--aqua-soft); }
 .poll__option.is-mine .poll__fill { background: linear-gradient(90deg, rgba(6, 214, 231, 0.32), rgba(59, 130, 246, 0.24)); }
@@ -11230,8 +11237,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   animation: csheet-fade var(--dur-2) var(--ease) both;
 }
 .csheet__box {
-  width: 100%; max-width: 560px;
-  display: grid; gap: 12px;
+  width: 100%; max-width: 560px; max-height: 92vh;
+  display: flex; flex-direction: column; gap: 12px;
   padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   border: 1px solid var(--border-strong); border-bottom: 0;
   border-radius: 22px 22px 0 0;
@@ -11242,7 +11249,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   animation: csheet-up 320ms var(--ease) both;
 }
 .csheet__grip {
-  justify-self: center;
+  align-self: center; flex: none;
   width: 38px; height: 4px; border-radius: var(--r-pill);
   background: var(--border-strong);
 }
@@ -11251,10 +11258,36 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold);
   letter-spacing: -0.01em;
 }
-.csheet__list { display: grid; gap: 8px; }
+.csheet__list {
+  display: grid; gap: 8px; align-content: start; flex: 1 1 auto;
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px 2px;
+}
+@media (min-width: 640px) { .csheet__list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* You and your store: a two-way switch whose highlight slides to the side you pick. */
+.csheet__sides {
+  position: relative; display: grid; grid-template-columns: 1fr 1fr;
+  padding: 4px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border);
+}
+.csheet__side {
+  position: relative; z-index: 1; min-height: 38px; min-width: 0; padding: 0 12px;
+  border: 0; border-radius: var(--r-pill); background: none; color: var(--text-dim);
+  font: inherit; font-weight: var(--w-semi); font-size: var(--t-sm);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  transition: color var(--dur-1) ease;
+}
+.csheet__side.is-on { color: #fff; }
+.csheet__thumb {
+  position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px);
+  border-radius: var(--r-pill); background: var(--grad-hero); box-shadow: var(--shadow-violet);
+  transition: transform 260ms var(--ease-out);
+}
+.csheet__thumb--store { transform: translateX(100%); background: var(--grad-gold); }
+.csheet__stores { margin: 0; }
 .csheet__item {
   display: grid; grid-template-columns: 46px minmax(0, 1fr) 16px; align-items: center; gap: 12px;
-  min-height: 66px; padding: 10px 12px;
+  min-height: 62px; padding: 9px 12px;
+  /* Each row arrives a beat after the one above: the list reads in order. */
+  animation: csheet-item 260ms var(--ease-out) both;
   border: 1px solid var(--border); border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--surface-2) 70%, transparent);
   color: var(--text); font: inherit; text-align: left; cursor: pointer;
@@ -11268,9 +11301,14 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   font-size: 22px; line-height: 1;
   background: var(--violet-soft); border: 1px solid var(--violet-line);
 }
-.csheet__item--sell .csheet__emoji { background: var(--aqua-soft); border-color: var(--aqua-line); }
-.csheet__item--iso .csheet__emoji { background: var(--coral-soft); border-color: var(--coral-line); }
-.csheet__item--debate .csheet__emoji { background: var(--pink-soft); border-color: var(--pink-line); }
+.csheet__item--aqua .csheet__emoji { background: var(--aqua-soft); border-color: var(--aqua-line); }
+.csheet__item--coral .csheet__emoji { background: var(--coral-soft); border-color: var(--coral-line); }
+.csheet__item--pink .csheet__emoji { background: var(--pink-soft); border-color: var(--pink-line); }
+.csheet__item--blue .csheet__emoji { background: var(--blue-soft); border-color: var(--blue-line); }
+.csheet__item--lime .csheet__emoji { background: var(--lime-soft); border-color: var(--lime-line); }
+.csheet__item--gold .csheet__emoji { background: var(--warn-soft); border-color: rgba(251, 191, 36, 0.45); }
+.csheet__item--violet .csheet__emoji { background: var(--violet-soft); border-color: var(--violet-line); }
+@keyframes csheet-item { from { opacity: 0; transform: translateY(8px); } }
 .csheet__text { display: grid; gap: 2px; min-width: 0; }
 .csheet__text strong { font-size: var(--t-base); font-weight: var(--w-semi); }
 .csheet__text span { font-size: var(--t-sm); color: var(--text-dim); line-height: 1.4; }
@@ -11284,7 +11322,10 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 @keyframes csheet-up { from { transform: translateY(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .csheet, .csheet__box { animation: none; }
+  .csheet__item { animation: fade-in 160ms ease both; }
+  .csheet__thumb { transition: none; }
 }
+@media (hover: none) { .csheet__item:hover { border-color: var(--border); background: color-mix(in srgb, var(--surface-2) 70%, transparent); } }
 
 /* ── What a card is ────────────────────────────────────────────────────── */
 
@@ -11386,10 +11427,17 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .debate__pick:disabled { cursor: default; }
-.debate__pick:not(:disabled):hover { transform: translateY(-1px); }
+@media (hover: hover) and (pointer: fine) {
+  .debate__pick:not(:disabled):hover { transform: translateY(-1px); }
+}
+.debate__pick:not(:disabled):active { transform: scale(0.98); }
 .debate__pick img { width: 100%; height: 100%; object-fit: cover; user-select: none; }
-.debate__side--a .debate__pick:not(:disabled):hover, .debate__side--a.is-mine .debate__pick { border-color: var(--blue); }
-.debate__side--b .debate__pick:not(:disabled):hover, .debate__side--b.is-mine .debate__pick { border-color: var(--pink); }
+.debate__side--a.is-mine .debate__pick { border-color: var(--blue); }
+.debate__side--b.is-mine .debate__pick { border-color: var(--pink); }
+@media (hover: hover) and (pointer: fine) {
+  .debate__side--a .debate__pick:not(:disabled):hover { border-color: var(--blue); }
+  .debate__side--b .debate__pick:not(:disabled):hover { border-color: var(--pink); }
+}
 .debate__letter {
   position: absolute; top: 8px; left: 8px;
   display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
@@ -11418,19 +11466,26 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   border: 3px solid var(--surface); box-shadow: 0 4px 16px rgba(236, 72, 153, 0.45);
   pointer-events: none;
 }
+/* The VS knocks once when your vote lands: the room heard you. */
+.debate__vs.is-knocked { animation: vs-knock 280ms var(--ease-out); }
+@keyframes vs-knock { 40% { transform: scale(1.22) rotate(-6deg); } }
 .debate__item {
   display: inline-flex; align-items: center; gap: 4px; justify-self: center;
   font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--accent-text); text-decoration: none;
 }
 .debate__bar {
-  display: flex; height: 8px; overflow: hidden; gap: 2px;
+  position: relative; height: 8px; overflow: hidden;
   border-radius: var(--r-pill); background: var(--surface-2); opacity: 0.45;
   transition: opacity var(--dur-2) var(--ease);
 }
 .debate__bar.is-revealed { opacity: 1; }
-.debate__bar-a, .debate__bar-b { display: block; height: 100%; transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
-.debate__bar-a { background: var(--grad-blue); border-radius: var(--r-pill) 0 0 var(--r-pill); }
-.debate__bar-b { background: var(--grad-warm); border-radius: 0 var(--r-pill) var(--r-pill) 0; }
+/* Each side grows from its own end, so the split meets where the room is. */
+.debate__bar-a, .debate__bar-b {
+  position: absolute; top: 0; bottom: 0; width: 100%;
+  transition: transform 360ms var(--ease-out);
+}
+.debate__bar-a { left: 0; background: var(--grad-blue); transform-origin: left center; }
+.debate__bar-b { right: 0; background: var(--grad-warm); transform-origin: right center; }
 .debate__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .debate__foot .poll__foot { margin: 0; }
 .debate__cta {
@@ -11442,5 +11497,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .flexshelf__spot .hotdot:not(.is-open) { animation: none; }
-  .debate__bar-a, .debate__bar-b, .debate__pick { transition: none; }
+  .debate__bar-a, .debate__bar-b, .debate__pick, .poll__fill { transition: none; }
+  .debate__vs.is-knocked { animation: none; }
 }
+
+/* A win on a person's page: gold, and a way to the post it was won in. */
+.winchip { border-color: rgba(251, 191, 36, 0.45); color: var(--warn); background: var(--warn-soft); text-decoration: none; }

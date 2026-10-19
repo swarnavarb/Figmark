@@ -12,6 +12,7 @@ import { shopIndex } from '../shop-identity.js';
 import { screenOf, screens } from '../feed-prefs.js';
 import { moderation } from '../moderation.js';
 import { tooFast } from '../rate-limit.js';
+import { leaderboardOf } from '../play.js';
 import { error, handler, json } from './http.js';
 import {
   GUEST, actorFor, decorate, engagedActors, isBroadcast, mayRead, notYours, readJson, type PostCard, type Repo,
@@ -349,7 +350,13 @@ async function leaderboard(_request: HttpRequest, _context: InvocationContext) {
   }
   const loudest = [...voices.entries()].filter(([, entry]) => entry.reactions > 0)
     .sort((a, b) => b[1].reactions - a[1].reactions).slice(0, 5);
-  const people = new Map((await repository.listUsersByIds(loudest.map(([id]) => id))).map((person) => [person.id, person]));
+  // The games are scored over the whole window, not the week: a competition
+  // runs longer than seven days, and its winners should not fall off the
+  // board the day it ends.
+  const games = [...leaderboardOf(recent).values()]
+    .sort((a, b) => b.points - a.points || b.wins - a.wins).slice(0, 10);
+  const people = new Map((await repository.listUsersByIds([...loudest.map(([id]) => id), ...games.map((row) => row.userId)]))
+    .map((person) => [person.id, person]));
   const board: Leaderboard = {
     since,
     shelves,
@@ -366,6 +373,10 @@ async function leaderboard(_request: HttpRequest, _context: InvocationContext) {
         reactions: entry.reactions,
         posts: entry.posts,
       }];
+    }),
+    players: games.flatMap((row) => {
+      const person = people.get(row.userId);
+      return person ? [{ ...row, name: person.displayName, handle: person.username ?? null }] : [];
     }),
   };
   return json(200, board);

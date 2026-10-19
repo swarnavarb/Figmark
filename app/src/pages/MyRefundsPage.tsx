@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { REFUND_ORIGIN_LABELS } from '@shared/payments';
 import { AFFILIATE_STATUS_LABELS } from '@shared/affiliate';
+import { BADGE_META, storeCreditLeft, type Badge, type StoreCredit } from '@shared/play';
 import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../api';
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice } from '../components/ui';
@@ -29,7 +30,7 @@ export function MyRefundsPage() {
   // In the URL, so a notification asking for reversal details lands on that tab.
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab = asked === 'details' ? 'details' : asked === 'earnings' ? 'earnings' : 'refunds';
+  const tab = asked === 'details' ? 'details' : asked === 'earnings' ? 'earnings' : asked === 'credit' ? 'credit' : 'refunds';
 
   const load = useCallback(async () => {
     try {
@@ -106,12 +107,26 @@ export function MyRefundsPage() {
         onClick={() => setParams({ tab: 'earnings' }, { replace: true })}>
         Affiliate earnings
       </button>
+      <button type="button" className={`tab${tab === 'credit' ? ' is-on' : ''}`}
+        onClick={() => setParams({ tab: 'credit' }, { replace: true })}>
+        Store credit
+      </button>
       <button type="button" className={`tab${tab === 'details' ? ' is-on' : ''}`}
         onClick={() => setParams({ tab: 'details' }, { replace: true })}>
         Payment reversal details
       </button>
     </div>
   );
+
+  if (tab === 'credit') {
+    return (
+      <main className="page stack page--top">
+        <div className="page__head"><h1>👛 My wallet</h1></div>
+        {tabs}
+        <CreditTab />
+      </main>
+    );
+  }
 
   if (tab === 'earnings') {
     return (
@@ -317,6 +332,86 @@ function EarningsTab() {
           </span>
         </div>
       ))}
+    </>
+  );
+}
+
+/**
+ * Store credit won in competitions, debates and polls, by shop: each one comes
+ * off the next order at that shop by itself, at checkout. And the badges
+ * that came with it.
+ */
+function CreditTab() {
+  const [rewards, setRewards] = useState<{ credits: StoreCredit[]; badges: Badge[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.myRewards()
+      .then((result) => !cancelled && setRewards(result))
+      .catch((err) => !cancelled && setError(err instanceof ApiRequestError ? err.message : 'Could not load your store credit.'));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (error) return <ErrorNotice message={error} />;
+  if (!rewards) return <Loading />;
+  if (rewards.credits.length === 0 && rewards.badges.length === 0) {
+    return (
+      <EmptyState title="Nothing won yet">
+        Shops give store credit for winning photo competitions, making the best argument in a debate, and voting for the winner.
+        {' '}<Link to="/discover#competitions">See what is running</Link>
+      </EmptyState>
+    );
+  }
+  const byShop = new Map<string, { name: string; left: number; credits: StoreCredit[] }>();
+  for (const credit of rewards.credits) {
+    const shop = byShop.get(credit.storeId) ?? { name: credit.storeName, left: 0, credits: [] };
+    shop.left += storeCreditLeft(credit);
+    shop.credits.push(credit);
+    byShop.set(credit.storeId, shop);
+  }
+  return (
+    <>
+      {byShop.size > 0 && (
+        <div className="wallet-credits">
+          {[...byShop.entries()].map(([storeId, shop]) => (
+            <section key={storeId} className="claimcard wallet-credit">
+              <div className="wallet-credit__head">
+                <strong>{shop.name}</strong>
+                <span className="wallet-credit__left">{formatMoney(shop.left, 'INR')}</span>
+              </div>
+              <p className="faint" style={{ margin: 0 }}>Comes off your next order at {shop.name} by itself, at checkout.</p>
+              <ul className="wallet-credit__list">
+                {shop.credits.map((credit) => (
+                  <li key={credit.id}>
+                    <Link to={credit.link}>{credit.reason}</Link>
+                    <span className="faint">
+                      {formatMoney(credit.amountMinor, 'INR')}{credit.spentMinor > 0 ? ` · ${formatMoney(credit.spentMinor, 'INR')} spent` : ''}
+                      {' · '}{formatDateOrdinal(credit.createdAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+      {rewards.badges.length > 0 && (
+        <section className="stack">
+          <h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>Badges</h2>
+          <div className="wallet-badges">
+            {rewards.badges.map((badge) => (
+              <Link key={badge.id} to={badge.link} className="wallet-badge">
+                <span className="wallet-badge__emoji" aria-hidden="true">{BADGE_META[badge.kind].emoji}</span>
+                <span>
+                  <strong>{BADGE_META[badge.kind].label}</strong>
+                  <span className="faint">{badge.detail}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
     </>
   );
 }
