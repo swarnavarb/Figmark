@@ -34,7 +34,7 @@ import {
 } from '../../../shared/play.js';
 import { RATING_LABELS, isPollStyle, type DebatePrize, type PollStyle, type VoterReward } from '../../../shared/social.js';
 import { verifiedChecks } from '../../../shared/verification.js';
-import { isDue, payContest, payDebate, settlePlay } from '../play.js';
+import { gameAudience, gameWhat, isDue, payContest, payDebate, settlePlay } from '../play.js';
 import { ownPhotoName } from '../storage/index.js';
 import { likeness, storedFingerprint } from '../image-hash.js';
 
@@ -1960,6 +1960,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     ...(debateIds ? { debate: { listingIds: debateIds, ...(debatePrize ? { prize: debatePrize } : {}) } } : {}),
     ...(guess ? { guess } : {}),
     ...(contest ? { contest } : {}),
+    ...(shop && reach === 'feed' && (poll || guess || contest) ? { hostShopId: shop.id } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -2014,28 +2015,24 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     });
   }
   await announcePost(saved, answered, user.id, forumName, repository);
-  if (shop && reach === 'feed' && (poll || guess || contest)) await announceGame(saved, shop, user.id, repository);
+  if (shop && saved.hostShopId) await announceGame(saved, shop, user.id, repository);
   await tellMentioned(text, saved, { userId: user.id, storeId: null, key: user.id, name: authorName }, 'post', repository);
   return json(201, { post: saved });
 }
 
 /**
- * A shop starting something to take part in tells its followers: polls are
- * meant to be seen, and a competition nobody hears about has no entries.
- * Folded per shop, so a shop running three polls is one line in the bell.
+ * A shop starting something to take part in tells its followers and the
+ * people who bought from it lately: polls are meant to be seen, and a
+ * competition nobody hears about has no entries. Folded per shop, so a shop
+ * running three polls is one line in the bell.
  */
 async function announceGame(post: Post, shop: { id: string; name: string }, writerId: string, repository: Repo) {
-  const owner = await repository.getUserById(shop.id);
-  const crew = owner ? storeCrew(owner, 'posts') : [shop.id];
-  const followers = (await repository.listFollowerIds(shop.id)).filter((id) => !crew.includes(id));
-  if (followers.length === 0) return;
+  const { audience } = await gameAudience(repository, shop.id);
+  if (audience.length === 0) return;
   const name = actorName(shop.name);
-  const what = post.contest ? `a photo competition: ${post.contest.title}`
-    : post.guess ? 'a guess-the-price'
-      : post.debate ? 'a debate'
-        : post.poll?.stock ? 'a poll on what to stock next' : 'a poll';
+  const what = gameWhat(post);
   const prize = post.contest?.prizes.some((entry) => entry.amountMinor > 0 || entry.note) || post.debate?.prize || post.poll?.reward;
-  await notify(repository, followers, {
+  await notify(repository, audience, {
     kind: 'poll_started',
     title: `${name} started ${what}${prize ? ' 🎁' : ''}`,
     body: post.contest ? (post.contest.rules ? gist(post.contest.rules) : 'Enter a photo before entries close.') : gist(post.body),
@@ -2045,7 +2042,7 @@ async function announceGame(post: Post, shop: { id: string; name: string }, writ
       actor: name,
       title: ({ count }) => (count === 1 ? `${name} started ${what}` : `${name} started ${count} things to vote on`),
     },
-  }, { except: writerId });
+  }, { except: writerId, pushLater: audience.length > 1 });
 }
 
 /**

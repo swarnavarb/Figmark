@@ -1055,6 +1055,12 @@ export class MemoryRepository implements Repository {
       order.lotId === lotId && order.sellerId === sellerId && isPlaced(order));
   }
 
+  async listBuyerIdsForSeller(sellerId: string, since: string): Promise<string[]> {
+    return [...new Set([...this.orders.values()]
+      .filter((order) => order.sellerId === sellerId && isPlaced(order) && order.createdAt >= since)
+      .map((order) => order.buyerId))];
+  }
+
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
     return [...this.orders.values()].filter((order) => order.sellerId === sellerId && isPlaced(order));
   }

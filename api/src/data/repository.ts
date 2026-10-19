@@ -410,6 +410,11 @@ export interface Repository {
    * rare and deliberate - not on any page render.
    */
   listFollowerIds(sellerId: string): Promise<string[]>;
+  /**
+   * Everybody who placed an order with this shop since a date, once each.
+   * The ids alone: told when the shop starts a game, as its followers are.
+   */
+  listBuyerIdsForSeller(sellerId: string, since: string): Promise<string[]>;
   /** Who follows this shop or person, with when they started. */
   listFollowsOf(sellerId: string): Promise<Follow[]>;
 

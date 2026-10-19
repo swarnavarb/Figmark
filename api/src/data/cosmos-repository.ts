@@ -3039,6 +3039,18 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listBuyerIdsForSeller(sellerId: string, since: string): Promise<string[]> {
+    // One column, deduplicated by the database: a shop's whole book would be
+    // every order read whole for the sake of a list of names.
+    const { resources } = await this.container('orders')
+      .items.query<string>({
+        query: 'SELECT DISTINCT VALUE c.buyerId FROM c WHERE c.sellerId = @sellerId AND NOT IS_NULL(c.placedAt) AND c.createdAt >= @since',
+        parameters: [{ name: '@sellerId', value: sellerId }, { name: '@since', value: since }],
+      })
+      .fetchAll();
+    return [...new Set(resources)];
+  }
+
   private async queryBySeller<T>(name: 'lots', query: CatalogQuery): Promise<T[]> {
     const limit = query.limit ?? 100;
     const spec = query.sellerId

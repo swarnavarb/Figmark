@@ -4,7 +4,7 @@ import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
 import type { FeedPrefs } from './feed.js';
-import type { Badge, PostContest, PostGuess, StoreCredit } from './play.js';
+import type { Badge, GameStage, PostContest, PostGuess, StoreCredit } from './play.js';
 import type {
   PostDebate, PostFlex, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
 } from './social.js';
@@ -2431,6 +2431,13 @@ export interface Post extends BaseDocument {
   contest?: PostContest | null;
   /** A guess-the-price, sealed until it is revealed. */
   guess?: PostGuess | null;
+  /**
+   * The shop running this game, when a shop is: its followers and recent
+   * buyers heard when it started, and hear again before it closes.
+   */
+  hostShopId?: string | null;
+  /** When each "ending soon" reminder went out. Stamped first, so it goes out once. */
+  lastCalls?: Partial<Record<GameStage, string>>;
   /** Set when this post is somebody else's, passed on to the reposter's followers. */
   repostOf?: RepostRef | null;
   /** A short line set on one of the brand gradients. */
@@ -2754,6 +2761,8 @@ export type NotificationKind =
   | 'debate_result'
   /** A shop you follow started a poll, a debate, a competition or a guess. */
   | 'poll_started'
+  /** A shop's game you have not played yet closes within hours. */
+  | 'game_ending'
   /** A competition you entered or run moved: voting opened, winners named. */
   | 'contest_update'
   /** You won something: store credit, a badge, or both. */

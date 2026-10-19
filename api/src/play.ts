@@ -1,11 +1,12 @@
 import type { Post } from '../../shared/models.js';
 import {
-  LEADER_POINTS, PLACE_LABELS, closestGuess, contestPhase,
-  type Badge, type BadgeKind, type ContestWinner, type PlayerRow, type StoreCredit,
+  LAST_CALL_MS, LEADER_POINTS, PLACE_LABELS, closestGuess, contestPhase,
+  type Badge, type BadgeKind, type ContestWinner, type GameStage, type PlayerRow, type StoreCredit,
 } from '../../shared/play.js';
+import { actorName, possessive } from '../../shared/notifications.js';
 import { rupees } from '../../shared/payments.js';
 import type { getRepository } from './data/index.js';
-import { notify } from './functions/notify.js';
+import { notify, storeCrew } from './functions/notify.js';
 
 /**
  * Settling the games posts run, and paying what they hand out.
@@ -331,6 +332,108 @@ async function revealGuess(repository: Repo, post: Post, nowIso: string): Promis
   });
 }
 
+/* ── Who hears, and the last call ───────────────────────────────────────── */
+
+/** How far back a purchase still makes somebody one of the shop's buyers. */
+const BUYER_WINDOW_MS = 365 * 86_400_000;
+
+/**
+ * Who hears about a shop's game: its followers and whoever bought from it in
+ * the last year, once each, minus the people who speak for the shop. Three
+ * reads, side by side.
+ */
+export async function gameAudience(repository: Repo, shopId: string): Promise<{ audience: string[]; shopName: string | null }> {
+  const since = new Date(Date.now() - BUYER_WINDOW_MS).toISOString();
+  const [owner, followers, buyers] = await Promise.all([
+    repository.getUserById(shopId),
+    repository.listFollowerIds(shopId),
+    repository.listBuyerIdsForSeller(shopId, since),
+  ]);
+  const crew = new Set(owner ? storeCrew(owner, 'posts') : [shopId]);
+  return {
+    audience: [...new Set([...followers, ...buyers])].filter((id) => !crew.has(id)),
+    shopName: owner?.sellerProfile?.storefrontName ?? null,
+  };
+}
+
+/** "a photo competition: Best shelf" - what a game is, for a notice. */
+export function gameWhat(post: Post): string {
+  return post.contest ? `a photo competition: ${post.contest.title}`
+    : post.guess ? 'a guess-the-price'
+      : post.debate ? 'a debate'
+        : post.poll?.stock ? 'a poll on what to stock next' : 'a poll';
+}
+
+/**
+ * The stage of a shop's game whose "ending soon" reminder is due, if one is:
+ * within LAST_CALL_MS of its deadline, after it has run at least that long
+ * (a short game's announcement is its reminder), and not yet sent.
+ */
+export function lastCallDue(post: Post, now: number): { stage: GameStage; closesAt: number } | null {
+  if (!post.hostShopId) return null;
+  const sent = post.lastCalls ?? {};
+  const due = (stage: GameStage, opened: number, closesAt: number) =>
+    (!sent[stage] && closesAt > now && closesAt - now <= LAST_CALL_MS && now - opened >= LAST_CALL_MS ? { stage, closesAt } : null);
+  const created = Date.parse(post.createdAt);
+  const contest = post.contest;
+  if (contest) {
+    if (contest.settledAt) return null;
+    const phase = contestPhase(contest, now);
+    if (phase === 'entries') return due('entries', created, Date.parse(contest.entriesCloseAt));
+    if (phase === 'voting') return due('votes', Date.parse(contest.entriesCloseAt), Date.parse(contest.endsAt));
+    return null;
+  }
+  if (post.guess) return post.guess.revealedAt ? null : due('guesses', created, Date.parse(post.guess.revealAt));
+  if (post.poll?.closesAt) return due('votes', created, Date.parse(post.poll.closesAt));
+  return null;
+}
+
+/** Who already did what a stage asks: entered, voted, or guessed. */
+function doneFor(post: Post, stage: GameStage): Set<string> {
+  if (stage === 'entries') return new Set((post.contest?.entries ?? []).map((entry) => entry.userId));
+  if (stage === 'guesses') return new Set((post.guess?.guesses ?? []).map((entry) => entry.userId));
+  return new Set((post.poll?.options ?? []).flatMap((option) => option.voterIds));
+}
+
+const hoursLeft = (ms: number) => {
+  const hours = Math.max(1, Math.round(ms / 3_600_000));
+  return `${hours} hour${hours === 1 ? '' : 's'}`;
+};
+
+/**
+ * One "ending soon" reminder per stage, to the people who heard the game
+ * start and have not played it yet. Stamped on the post first, so two readers
+ * arriving together send it once.
+ */
+async function lastCall(repository: Repo, post: Post, now: number): Promise<void> {
+  const due = lastCallDue(post, now);
+  if (!due || !post.hostShopId) return;
+  const stamp = new Date(now).toISOString();
+  const marked = await repository.mutatePost(post.channelId, post.id, (current) =>
+    (lastCallDue(current, now)?.stage === due.stage
+      ? { ...current, lastCalls: { ...(current.lastCalls ?? {}), [due.stage]: stamp } }
+      : null));
+  if (marked?.lastCalls?.[due.stage] !== stamp) return;
+  const { audience, shopName } = await gameAudience(repository, post.hostShopId);
+  const done = doneFor(marked, due.stage);
+  const left = audience.filter((id) => !done.has(id) && id !== marked.authorId);
+  if (left.length === 0) return;
+  const name = actorName(shopName ?? marked.authorName);
+  const verb = due.stage === 'entries' ? 'enter' : due.stage === 'guesses' ? 'guess' : 'vote';
+  const what = gameWhat(marked);
+  await notify(repository, left, {
+    kind: 'game_ending',
+    title: `${hoursLeft(due.closesAt - now)} left to ${verb}: ${possessive(name)} ${what.replace(/^an? /, '').replace(/:.*$/, '')}`,
+    body: marked.contest ? marked.contest.title : gist(marked.body),
+    link: linkOf(marked),
+    group: {
+      key: `ending:${post.hostShopId}`,
+      actor: name,
+      title: ({ count }) => (count === 1 ? `Closing soon at ${name}` : `${count} things at ${name} close soon`),
+    },
+  }, { pushLater: left.length > 1 });
+}
+
 /* ── On the way past ────────────────────────────────────────────────────── */
 
 /** How many games one read settles at most, so a feed load never turns into a batch job. */
@@ -343,6 +446,7 @@ export function isDue(post: Post, now: number): boolean {
   if (post.debate && pollClosed && !post.resultsSentAt) return true;
   if (post.poll?.reward && pollClosed && !post.poll.reward.paidAt) return true;
   if (post.guess && !post.guess.revealedAt && post.guess.revealAt < nowIso) return true;
+  if (lastCallDue(post, now)) return true;
   const contest = post.contest;
   if (contest && !contest.settledAt) {
     if (now >= Date.parse(contest.entriesCloseAt) && !contest.votingToldAt) return true;
@@ -367,6 +471,7 @@ export async function settlePlay(recent: readonly Post[], repository: Repo): Pro
     if (post.poll?.reward && pollClosed && !post.poll.reward.paidAt) await payVoters(repository, post, nowIso);
     if (post.guess && !post.guess.revealedAt && post.guess.revealAt < nowIso) await revealGuess(repository, post, nowIso);
     if (post.contest && !post.contest.settledAt) await settleContest(repository, post, now);
+    if (lastCallDue(post, now)) await lastCall(repository, post, now);
   }
   return touched;
 }

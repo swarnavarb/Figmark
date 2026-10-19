@@ -12160,4 +12160,38 @@ await check('a store poll with a voter reward pays the winning side, up to its c
   assert.deepEqual(paid, [1, 0, 0], 'the earliest winning voter, up to the cap');
 });
 
+await check('a store game reaches its recent buyers too, and reminds who has not played before it closes', async () => {
+  resetRateLimits();
+  const repository = await getRepository();
+  const base = await repository.getOrder('ord_1001');
+  const boughtFrom = (id, buyerId, at) => repository.createOrder({
+    ...structuredClone(base), id, buyerId, sellerId: 'usr_demo', placedAt: at, createdAt: at, updatedAt: at,
+  });
+  const [lately, voted, longAgo] = [await newBuyer('Recent Buyer'), await newBuyer('Voting Buyer'), await newBuyer('Lapsed Buyer')];
+  await boughtFrom('ord_game_recent', lately.id, ago(30 * 86_400_000));
+  await boughtFrom('ord_game_voted', voted.id, ago(30 * 86_400_000));
+  await boughtFrom('ord_game_lapsed', longAgo.id, ago(400 * 86_400_000));
+
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'Which line should we carry?', storeId: 'usr_demo', poll: { options: ['Gunpla', 'Figma'], closesInHours: 24 },
+  } }), ctx)).jsonBody.post;
+  assert.equal(made.hostShopId, 'usr_demo');
+  const heard = async (who, kind) => (await noticesFor(who.id)).filter((row) => row.kind === kind && row.link.includes(made.id)).length;
+  assert.equal(await heard(lately, 'poll_started'), 1, 'a recent buyer hears it started');
+  assert.equal(await heard(longAgo, 'poll_started'), 0, 'a buyer from over a year ago does not');
+
+  await vote(req({ headers: voted.headers, params: on(made), body: { optionId: made.poll.options[0].id } }), ctx);
+  await readPost(req({ headers: auth, params: on(made) }), ctx);
+  assert.equal(await heard(lately, 'game_ending'), 0, 'no reminder while it has most of its time left');
+
+  await backdate(made, (post) => ({ ...post, createdAt: ago(20 * 3_600_000), poll: { ...post.poll, closesAt: new Date(Date.now() + 2 * 3_600_000).toISOString() } }));
+  await readPost(req({ headers: auth, params: on(made) }), ctx);
+  await readPost(req({ headers: lately.headers, params: on(made) }), ctx);
+  assert.equal(await heard(lately, 'game_ending'), 1, 'reminded once, near the end');
+  assert.equal(await heard(voted, 'game_ending'), 0, 'not somebody who already voted');
+  assert.equal(await heard(longAgo, 'game_ending'), 0);
+  const title = (await noticesFor(lately.id)).find((row) => row.kind === 'game_ending').title;
+  assert.match(title, /^2 hours left to vote/);
+});
+
 console.log(`\n${passed} checks passed`);

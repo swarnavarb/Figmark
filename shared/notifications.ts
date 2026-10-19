@@ -51,6 +51,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   mentioned: 'social',
   debate_result: 'social',
   poll_started: 'social',
+  game_ending: 'social',
   contest_update: 'social',
   prize_won: 'social',
   post_commented: 'social',
