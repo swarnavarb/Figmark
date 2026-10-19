@@ -1,0 +1,22 @@
+# Weekly pull requests for outdated or vulnerable dependencies, grouped so a
+# week's updates arrive as one review per package rather than one per library.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /api
+    schedule:
+      interval: weekly
+    groups:
+      api:
+        patterns: ['*']
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+    groups:
+      app:
+        patterns: ['*']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

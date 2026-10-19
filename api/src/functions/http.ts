@@ -30,8 +30,14 @@ export function json(status: number, body: unknown, cookies: string[] = []): Htt
   return { status, headers, jsonBody: withoutStoreFields(body) };
 }
 
-/** What Cosmos adds to every document it hands back: how it is stored, which no reader needs. */
-const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', '_parts']);
+/**
+ * Fields no response ever carries, at any depth: what Cosmos adds to every
+ * document it hands back (how it is stored, which no reader needs), and what
+ * an account keeps for the server alone - its password hash and its search
+ * words. Routes map accounts to what each screen shows; this is the net under
+ * that, so a route that forgets cannot send a hash to the browser.
+ */
+const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', '_parts', 'passwordHash', 'searchKey']);
 
 /**
  * The body with Cosmos's own fields taken out, at any depth. Routes return

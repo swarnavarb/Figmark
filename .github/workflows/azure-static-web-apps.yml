@@ -45,6 +45,13 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # What ships to Azure and to browsers, held to no known high or critical
+      # vulnerability. Development tools are left out: they never run there.
+      - name: Audit shipped dependencies
+        run: |
+          npm --prefix api audit --omit=dev --audit-level=high
+          npm --prefix app audit --omit=dev --audit-level=high
+
       - name: Build app
         working-directory: app
         run: npm run build
