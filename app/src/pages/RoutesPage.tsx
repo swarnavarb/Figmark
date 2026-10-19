@@ -1,3 +1,4 @@
+import { confirmSentence } from '../components/Ask';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { routePartsLine, type RouteStep } from '@shared/routes';
@@ -47,7 +48,7 @@ export function RoutesList({ spotlightNew = false }: {
   const [applying, setApplying] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   async function apply(id: string, lots: number) {
-    if (!window.confirm(`Update ${lots === 1 ? 'the lot' : `all ${lots} lots`} on this route? Every buyer in ${lots === 1 ? 'it' : 'them'} reads the new steps from where the lot is now.`)) return;
+    if (!await confirmSentence(`Update ${lots === 1 ? 'the lot' : `all ${lots} lots`} on this route? Every buyer in ${lots === 1 ? 'it' : 'them'} reads the new steps from where the lot is now.`)) return;
     setApplying(id);
     setError(null);
     try {
@@ -63,7 +64,7 @@ export function RoutesList({ spotlightNew = false }: {
 
   /** Take a route off the list. Lots already on it keep their own copy of its steps. */
   async function remove(id: string, name: string) {
-    if (!window.confirm(`Delete "${name}"? Lots already on it keep their steps; new lots can no longer pick it.`)) return;
+    if (!await confirmSentence(`Delete "${name}"? Lots already on it keep their steps; new lots can no longer pick it.`)) return;
     setApplying(id);
     setError(null);
     try {

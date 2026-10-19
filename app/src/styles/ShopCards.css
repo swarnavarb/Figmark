@@ -25,6 +25,6 @@
 .shoptile__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .shoptile__tag {
   padding: 2px 8px; border-radius: 999px; background: var(--surface-2);
-  font-size: 11px; color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-xs); color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .shoptile__tag.is-hit { background: var(--accent-soft); color: var(--text); }

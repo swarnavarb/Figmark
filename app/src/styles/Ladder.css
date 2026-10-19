@@ -34,6 +34,6 @@
 .ladder__row--ended .ladder__dot {
   display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
   background: var(--danger-soft, rgba(244, 63, 94, 0.15)); color: var(--danger, #F43F5E);
-  font-size: 11px; font-weight: var(--w-bold);
+  font-size: var(--t-xs); font-weight: var(--w-bold);
 }
 .ladder__row--ended .ladder__name { color: var(--danger, #F43F5E); }

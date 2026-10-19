@@ -17,7 +17,7 @@
 .qpage { max-width: 760px; }
 .qpanel--gold { border-color: var(--q-gold-line); background: linear-gradient(160deg, rgba(245, 197, 66, 0.08), var(--surface)); }
 .qweek { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.qweek__day { display: grid; gap: 4px; text-align: center; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; color: var(--text-faint); }
+.qweek__day { display: grid; gap: 4px; text-align: center; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); color: var(--text-faint); }
 .qpacks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .qpack {
   display: grid; justify-items: center; gap: 4px; padding: 14px 10px; cursor: pointer; text-align: center;

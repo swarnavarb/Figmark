@@ -67,7 +67,7 @@
   display: flex; align-items: center; gap: 8px;
   padding: 6px 8px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border);
 }
-.hotlist__row .hotdot { width: 22px; height: 22px; font-size: 10px; cursor: default; box-shadow: none; }
+.hotlist__row .hotdot { width: 22px; height: 22px; font-size: var(--t-2xs); cursor: default; box-shadow: none; }
 .hotlist__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
 
 /* ── Debate ────────────────────────────────────────────────────────────── */
@@ -89,5 +89,5 @@
 .debedit__empty { display: grid; place-items: center; gap: 6px; height: 100%; font-size: var(--t-sm); }
 @media (max-width: 420px) {
   .debedit { gap: 8px; }
-  .debedit .field input { font-size: 16px; }
+  .debedit .field input { font-size: var(--t-md); }
 }

@@ -1,3 +1,4 @@
+import { askText } from './Ask';
 import { ReportButton } from './ReportButton';
 import { useNow } from '../clock';
 import { RaiseDisputeModal, ReportModal } from './DisputeFlows';
@@ -20,7 +21,7 @@ import { useVoice, VoiceAvatar } from './SocialVoice';
 import { PostInFigmark } from './PostInFigmark';
 import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
-import { Loading } from './Feedback';
+import { Loading, useToast } from './Feedback';
 import { PhotoSales } from './PhotoSales';
 import { markOpened, useSeen } from '../seen';
 import { HASHTAG, MENTION } from '@shared/feed';
@@ -321,6 +322,7 @@ export function SocialPostCard({
   const [showComments, setShowComments] = useState(openComments);
   const [sharing, setSharing] = useState(false);
   const [menu, setMenu] = useState(false);
+  const toast = useToast();
   const [objecting, setObjecting] = useState<'report' | 'dispute' | null>(null);
   const { user } = useSession();
   const [lightbox, setLightbox] = useState<number | null>(null);
@@ -541,7 +543,7 @@ export function SocialPostCard({
             </button>
             {menu && (
               <div className="spost__menu" role="menu" onMouseLeave={() => setMenu(false)}>
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); void copyLink(post); }}>
+                <button type="button" role="menuitem" onClick={() => { setMenu(false); void copyLink(post).then((copied) => { if (copied) toast('Link copied'); }); }}>
                   <Icon name="link" size={15} /> Copy link
                 </button>
                 <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
@@ -834,7 +836,9 @@ export async function copyLink(post: { channelId: string; id: string }): Promise
     await navigator.clipboard.writeText(url);
     return true;
   } catch {
-    window.prompt('Copy this link', url);
+    // No clipboard here (an old browser, or permission refused): the link in
+    // a field, selected, to copy by hand.
+    await askText({ title: 'Copy this link', label: 'Link', initial: url, action: 'Done' });
     return false;
   }
 }
@@ -1493,7 +1497,9 @@ function FlexShelf({ photos, hotspots, alt, onOpen }: {
   return (
     <div className="flexshelf">
       <div className="flexshelf__frame">
-        <img src={photos[at]} alt={alt} loading="lazy" draggable={false} onClick={() => onOpen(at)} />
+        <img src={photos[at]} alt={alt} loading="lazy" draggable={false} onClick={() => onOpen(at)}
+          role="button" tabIndex={0} aria-label={`${alt || 'Photo'} - open full screen`}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(at); } }} />
         {here.map(({ spot, index }) => (
           <span key={index} className="flexshelf__spot" style={{ left: `${spot.x * 100}%`, top: `${spot.y * 100}%` }}>
             <button type="button" className={`hotdot hotdot--${spot.status}${open === index ? ' is-open' : ''}`}

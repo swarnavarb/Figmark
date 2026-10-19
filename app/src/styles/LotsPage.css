@@ -57,7 +57,7 @@
 .lotdetail { display: grid; gap: 0; }
 /* ── Tagging people, and what they may press ───────────────────────────── */
 .ptag { position: relative; display: block; }
-.ptag__list { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
+.ptag__list { position: absolute; z-index: var(--z-popover); top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
 .ptag__opt { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: var(--r-sm); cursor: pointer; }
 .ptag__opt:hover, .ptag__opt.is-active { background: var(--surface-hover); }
 .ptag__name { font-weight: var(--w-semi); color: var(--text); }

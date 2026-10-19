@@ -1,3 +1,4 @@
+import { confirmSentence } from '../components/Ask';
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -2229,7 +2230,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
   }, [load]);
 
   async function remove(template: PostTemplate) {
-    if (!window.confirm(`Delete the template "${template.name}"? Items already listed from it keep what it filled in.`)) return;
+    if (!await confirmSentence(`Delete the template "${template.name}"? Items already listed from it keep what it filled in.`)) return;
     setBusy(template.id);
     setError(null);
     try {
@@ -4743,8 +4744,8 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
               <div className="channel__top">
                 <span className="channel__name">{manager.displayName}</span>
                 <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
-                  onClick={() => {
-                    if (!window.confirm(`Remove ${manager.displayName} from this shop? They lose every right here at once.`)) return;
+                  onClick={async () => {
+                    if (!await confirmSentence(`Remove ${manager.displayName} from this shop? They lose every right here at once.`)) return;
                     void run(
                       () => api.updateManager({ storeId: store.ownerId, identifier: manager.userId, remove: true }),
                       'Removed.',

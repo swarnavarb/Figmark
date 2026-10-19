@@ -35,7 +35,7 @@
 .want__photo { width: 56px; height: 56px; flex: 0 0 auto; border-radius: 12px; object-fit: cover; }
 .isophotos--view .isophotos__tile { width: 96px; height: 96px; }
 .isoanswer__tag {
-  padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 7px; border-radius: 4px; font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .isoanswer__tag--shop { background: rgba(255, 91, 31, 0.16); color: #FF8A5B; }
 .isoanswer__tag--person { background: rgba(212, 255, 58, 0.14); color: #D4FF3A; }

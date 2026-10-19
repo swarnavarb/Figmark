@@ -1,3 +1,4 @@
+import { askText } from './Ask';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AFFILIATE_STATUS_LABELS, affiliateCommissionMinor, affiliateStatus, affiliateUnitMinor } from '@shared/affiliate';
@@ -212,7 +213,12 @@ export function AffiliateOwed({ order, onDone }: { order: Order; onDone: () => v
   const who = order.affiliate.referrerHandle ? `@${order.affiliate.referrerHandle}` : order.affiliate.referrerName;
 
   async function markPaid() {
-    const reference = window.prompt(`Paid ${who} their commission? Add a payment reference if you have one.`, '');
+    const reference = await askText({
+      title: `Paid ${who} their commission?`,
+      label: 'Payment reference (optional)',
+      placeholder: 'UPI ref, bank transfer id…',
+      action: 'Mark paid',
+    });
     if (reference === null) return;
     setBusy(true);
     setProblem(null);

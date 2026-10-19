@@ -97,7 +97,7 @@
 }
 .pc__addhere {
   margin-left: 4px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-strong); background: none;
-  color: var(--text-dim); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+  color: var(--text-dim); font: inherit; font-size: var(--t-sm); line-height: 1; cursor: pointer;
 }
 .pc__addhere:hover { color: var(--text); border-color: var(--accent-line); }
 .pc__paidin { display: inline-flex; align-items: center; gap: 6px; color: var(--text-faint); font-size: var(--t-xs); }

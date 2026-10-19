@@ -176,6 +176,9 @@ export function Tile({ value, label, tone, onClick, open }: {
  * should be the thing people reach for without thinking. Used for choices worth
  * interrupting the page for — turning an order down is one.
  */
+/** Dialogs open now, the newest last. */
+const openDialogs: object[] = [];
+
 /**
  * What every dialog owes the keyboard: Escape closes it, Tab stays inside it,
  * focus moves into it on opening and goes back to whatever opened it on
@@ -185,6 +188,10 @@ export function useDialog(ref: { current: HTMLElement | null }, onClose: () => v
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
+    // Only the dialog on top hears the keyboard: Escape on a confirmation
+    // asked over a dialog closes the confirmation, not both.
+    const self = {};
+    openDialogs.push(self);
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const box = ref.current;
     const focusable = () => [...(box?.querySelectorAll<HTMLElement>(
@@ -195,6 +202,7 @@ export function useDialog(ref: { current: HTMLElement | null }, onClose: () => v
     if (first && !box?.contains(document.activeElement)) first.focus({ preventScroll: true });
 
     const onKey = (event: KeyboardEvent) => {
+      if (openDialogs[openDialogs.length - 1] !== self) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
         close.current();
@@ -216,6 +224,7 @@ export function useDialog(ref: { current: HTMLElement | null }, onClose: () => v
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
+      openDialogs.splice(openDialogs.indexOf(self), 1);
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = overflow;
       if (opener?.isConnected) opener.focus({ preventScroll: true });

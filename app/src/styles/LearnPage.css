@@ -3,7 +3,7 @@
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-.learn__railhead { display: none; margin: 0 0 4px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+.learn__railhead { display: none; margin: 0 0 4px; font-family: var(--mono); font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
 .learn__tab:hover { border-color: var(--border-strong); color: var(--text); }
 .learn__tab.is-on { background: var(--violet-soft); border-color: var(--violet-line); color: var(--text); }
 .learn__icon { font-size: 22px; line-height: 1; }
@@ -27,5 +27,5 @@
 @media (min-width: 720px) {
   .learn__railhead { display: block; }
   .learn__tab { grid-template-columns: 28px 1fr; justify-items: start; align-items: center; padding: 10px 12px; font-size: var(--t-sm); text-align: left; }
-  .learn__icon { font-size: 20px; }
+  .learn__icon { font-size: var(--t-lg); }
 }

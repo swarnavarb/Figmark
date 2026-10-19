@@ -15,14 +15,14 @@
   background: radial-gradient(120% 120% at 0% 0%, rgba(124, 58, 237, 0.42), transparent 60%), linear-gradient(160deg, #171233, var(--surface));
   border: 1px solid var(--violet-line);
 }
-.qhero__eyebrow { margin: 0; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet-text); }
+.qhero__eyebrow { margin: 0; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet-text); }
 .qhero__xp { margin: 0 0 4px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-xs); color: var(--text-dim); }
 .qtask { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
 .qtask.is-claimed { opacity: 0.6; }
-.qtask__progress { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10.5px; }
+.qtask__progress { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); }
 .qtask__act { flex: none; }
 .qtask__step {
-  margin-left: 6px; padding: 0 6px; border-radius: 6px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 9.5px; font-weight: var(--w-medium);
+  margin-left: 6px; padding: 0 6px; border-radius: 6px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-medium);
   color: var(--text-faint); background: var(--surface-hover); vertical-align: middle;
 }
 /* Bump points, beside the level. */
@@ -62,13 +62,13 @@
 .qtask__pay { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
 .qpay {
   display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: var(--r-pill);
-  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: var(--w-semi);
+  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-semi);
   background: rgba(167, 139, 250, 0.16); color: #C4B5FD;
 }
 .qpay--bump { background: rgba(250, 204, 21, 0.16); color: #FDE047; }
 .qpay--pack { background: rgba(236, 72, 153, 0.16); color: #F9A8D4; }
 .qtag {
-  padding: 0 7px; border-radius: var(--r-pill); font-size: 9.5px; font-weight: var(--w-semi); letter-spacing: 0.04em;
+  padding: 0 7px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.04em;
   text-transform: uppercase; border: 1px solid currentColor; opacity: 0.9;
 }
 .qtag--reviews { color: #C4B5FD; }
@@ -79,5 +79,5 @@
 @media (min-width: 720px) {
   .qnobump { left: 50%; right: auto; width: min(440px, calc(100vw - 32px)); transform: translateX(-50%); bottom: var(--s5); }
 }
-.qnobump__x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: 20px; cursor: pointer; }
+.qnobump__x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: var(--t-lg); cursor: pointer; }
 .qnobump__x:hover { color: var(--text); background: var(--surface-hover); }

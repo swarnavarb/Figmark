@@ -66,7 +66,7 @@
 .serial--compact .serial__head { display: none; }
 .serial--compact .serial__list { display: flex; flex-wrap: wrap; gap: 5px; }
 .serial--compact .serial__btn { width: auto; min-height: 28px; gap: 5px; padding: 2px 10px 2px 3px; border-radius: 14px; font-size: var(--t-2xs); }
-.serial--compact .serial__n { width: 20px; height: 20px; font-size: 10px; }
+.serial--compact .serial__n { width: 20px; height: 20px; font-size: var(--t-2xs); }
 .serial--compact .serial__label { display: block; max-width: 10rem; text-overflow: ellipsis; white-space: nowrap; }
 .serial__meter { display: block; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .serial__list--one > li { flex: 1; }
@@ -109,7 +109,7 @@
   border: 1px dashed var(--border-strong, var(--border)); border-radius: 14px; background: transparent; color: inherit; font: inherit; cursor: pointer;
 }
 .rsnew__alt:hover { border-color: var(--accent-line); }
-.rsnew__alt > span:first-child { font-size: 20px; }
+.rsnew__alt > span:first-child { font-size: var(--t-lg); }
 /* The Studio in Steps view: the words, and nothing moving behind them. */
 .rshead__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rshead__top .rshead__name { flex: 1; min-width: 0; }

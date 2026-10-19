@@ -1,3 +1,4 @@
+import { confirmSentence } from '../components/Ask';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
@@ -161,7 +162,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   }
 
   async function remove(id: string) {
-    if (!window.confirm('Delete this calculator? Its rates and costs go with it.')) return;
+    if (!await confirmSentence('Delete this calculator? Its rates and costs go with it.')) return;
     setBusy(true);
     try {
       const { templates: next } = await api.deleteProfitTemplate(id, shop);
@@ -771,7 +772,7 @@ function SaveToItem({ template, result, shop, itemPrice, quantity, sellingPrice,
 
   async function save() {
     if (!item) return;
-    if (item.sheet && !window.confirm(`Replace the costs already saved for ${item.title}?`)) return;
+    if (item.sheet && !await confirmSentence(`Replace the costs already saved for ${item.title}?`)) return;
     setBusy(true);
     setNote(null);
     try {

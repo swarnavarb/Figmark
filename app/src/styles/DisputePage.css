@@ -12,7 +12,7 @@
 /* Dispute header: what it is about as a kicker, the two sides as the title. */
 .dhead { align-items: flex-start; gap: 12px; }
 .dhead__kicker { display: block; font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); }
-.dhead__title { margin: 2px 0 0; font-size: 20px; line-height: 1.25; overflow-wrap: anywhere; }
+.dhead__title { margin: 2px 0 0; font-size: var(--t-lg); line-height: 1.25; overflow-wrap: anywhere; }
 .dsteps__step { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
 .dsteps__step.is-done + .dsteps__step::before { background: var(--accent); }
 .dsteps__step.is-done { color: var(--text-dim); }

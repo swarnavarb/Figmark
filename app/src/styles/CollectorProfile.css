@@ -119,7 +119,7 @@
 .royal__frame { position: relative; overflow: hidden; border-radius: 8px; box-shadow: inset 0 0 0 1.5px #3B2A05; }
 .royal__plate {
   padding: 1px 4px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
-  font-family: Georgia, 'Times New Roman', serif; font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #2A1D00;
+  font-family: Georgia, 'Times New Roman', serif; font-size: var(--t-2xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #2A1D00;
 }
 .royal__back {
   transform: rotateY(180deg); display: grid; place-content: center; justify-items: center; gap: 6px; padding: 10px; text-align: center;
@@ -130,10 +130,10 @@
     linear-gradient(160deg, #3B0764, #1E1B4B 60%, #0B0F1E);
   box-shadow: inset 0 0 0 4px #1E1B4B, inset 0 0 0 5px rgba(212, 175, 55, 0.7), 0 8px 20px rgba(0, 0, 0, 0.45);
 }
-.royal__crest { font-size: 26px; line-height: 1; color: #F5C542; text-shadow: 0 0 12px rgba(245, 197, 66, 0.7); }
+.royal__crest { font-size: var(--t-xl); line-height: 1; color: #F5C542; text-shadow: 0 0 12px rgba(245, 197, 66, 0.7); }
 .royal__name {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
-  font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: 13px; line-height: 1.25; color: #FDE68A;
+  font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: var(--t-sm); line-height: 1.25; color: #FDE68A;
 }
 .royal__date { font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(253, 230, 138, 0.7); }
 @media (prefers-reduced-motion: reduce) {
@@ -169,7 +169,7 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 }
 .vfychips { display: flex; flex-wrap: wrap; gap: 6px; }
 .vfychip {
-  display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 12px;
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: var(--t-xs);
   color: var(--text-dim); background: var(--surface-2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 .vfychip.is-ok { color: var(--ok); background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.3); }
@@ -180,7 +180,7 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 @media (prefers-reduced-motion: reduce) {
   .pstat--tap { transition: none; }
 }
-.phead .vfychip { font-size: 11px; padding: 2px 8px; }
+.phead .vfychip { font-size: var(--t-xs); padding: 2px 8px; }
 .phead .qprofile__face { background: var(--bg); }
 .vtick { display: inline-flex; vertical-align: -0.1em; margin-left: 6px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.45)); }
 .ppanel .pbio { margin: 0; padding: 0 0 0 12px; border: 0; border-radius: 0; background: none; }

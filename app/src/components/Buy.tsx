@@ -1,3 +1,4 @@
+import { confirmSentence } from './Ask';
 import { useState, type FormEvent } from 'react';
 import type { CreditRecord, Listing, Order } from '@shared/models';
 import { affiliateUnitMinor, linkDiscountMinor } from '@shared/affiliate';
@@ -427,8 +428,8 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
             {expired ? '✨ Make available again' : 'Save'}
           </button>
           <button type="button" className="btn btn--danger" disabled={busy || expired}
-            onClick={() => {
-              if (window.confirm('Expire this item? It comes off sale immediately - you can put it back on with a new expiry any time.')) {
+            onClick={async () => {
+              if (await confirmSentence('Expire this item? It comes off sale immediately - you can put it back on with a new expiry any time.')) {
                 void run(async () => { await api.expireListing(listing.id); return null; });
               }
             }}>

@@ -11,7 +11,7 @@
 .roster__row:last-child { border-bottom: 0; }
 .lp__title { margin: 0; font-family: var(--display); font-size: clamp(26px, 4vw, 38px); line-height: 1.1; letter-spacing: -0.02em; }
 .buybox__price { font-family: var(--display); font-size: 30px; font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1; }
-.buybox__was { font-size: 16px; font-weight: var(--w-medium); color: var(--text-faint); letter-spacing: 0; }
+.buybox__was { font-size: var(--t-md); font-weight: var(--w-medium); color: var(--text-faint); letter-spacing: 0; }
 .buybox__buy:active:not(:disabled) { transform: scale(0.97); }
 .buybox__fine { margin: 0; font-size: var(--t-2xs); color: var(--text-faint); }
 .pocard__title { font-family: var(--display); font-size: var(--t-lg); line-height: 1.15; }
@@ -37,7 +37,7 @@
 .post--reply .post__bubble { background: rgba(168, 85, 247, 0.1); }
 .post.is-open .post__bubble { transform: scale(1.02); box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.55), 0 10px 24px rgba(0, 0, 0, 0.35); }
 .post__seller {
-  padding: 1px 7px; border-radius: var(--r-pill); font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
   color: #fff; background: var(--grad-hero);
 }
 .post__time { font-size: var(--t-2xs); color: var(--text-faint); }

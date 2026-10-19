@@ -17,7 +17,7 @@
 /* A photo search: the photo stands where the heading's words would. */
 .qrow__head h2.qphoto { gap: 8px; }
 .qseller__pic.is-in { opacity: 1; }
-.qseller__lv .lvtag { font-size: 9.5px; }
+.qseller__lv .lvtag { font-size: var(--t-2xs); }
 /* On a half-width card the shop mark pushed the level title off; the crest already says store. */
 .qseller__lv .lvtag__shop { display: none; }
 .qloot__meta .qtimer { vertical-align: -2px; }
@@ -56,7 +56,7 @@
 .rail--rush { background: radial-gradient(90% 80% at 0% 50%, #1E3A8A 0%, #111338 50%, #0B0B1A 100%); }
 .railitem__left {
   position: absolute; top: 8px; left: 8px; z-index: 1; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: var(--r-pill);
-  font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0; color: #fff; text-shadow: none;
+  font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0; color: #fff; text-shadow: none;
   background: rgba(11, 11, 26, 0.72); box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.5); backdrop-filter: blur(4px);
 }
 .railitem__left.is-hot { background: rgba(185, 28, 28, 0.85); box-shadow: inset 0 0 0 1px rgba(252, 165, 165, 0.7); animation: rush-beat 1s ease-in-out infinite; }
@@ -92,7 +92,7 @@
   animation: launch-fly 8s cubic-bezier(0.45, 0, 0.7, 1) infinite;
 }
 .launch__fuel { display: grid; gap: 5px; margin-bottom: 6px; }
-.launch__count { display: flex; align-items: baseline; gap: 4px; font-size: 11px; font-weight: var(--w-semi); }
+.launch__count { display: flex; align-items: baseline; gap: 4px; font-size: var(--t-xs); font-weight: var(--w-semi); }
 .launch__gauge { display: block; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, 0.18); }
 /* Shooting stars streaking down and across. */
 .launch__shoot {
@@ -115,4 +115,4 @@
 .railitem.is-affiliate .railitem__photo { box-shadow: 0 0 0 2px var(--lime), 0 6px 18px rgba(163, 230, 53, 0.3); }
 .railitem__earn { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 2; display: flex; container-type: inline-size; }
 .railitem__earn--right { top: 11px; left: 58%; right: 6px; justify-content: flex-end; }
-.railitem__earn--right .earnpill { font-size: 9px; padding: 0.2em 0.5em; }
+.railitem__earn--right .earnpill { font-size: var(--t-2xs); padding: 0.2em 0.5em; }
