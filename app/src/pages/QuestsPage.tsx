@@ -1,3 +1,4 @@
+import { formatCount } from '../format';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -260,12 +261,12 @@ export function QuestsPage() {
             {[...view.breakdown].sort((a, b) => Number(a.xp < 0) - Number(b.xp < 0)).map((line) => (
               <div key={line.label} className={`qbreak__row${line.xp < 0 ? ' is-loss' : ''}`}>
                 <dt>{line.label}{line.detail && <small>{line.detail}</small>}</dt>
-                <dd>{line.xp > 0 ? '+' : ''}{line.xp.toLocaleString('en-IN')} XP</dd>
+                <dd>{line.xp > 0 ? '+' : ''}{formatCount(line.xp)} XP</dd>
               </div>
             ))}
             <div className="qbreak__row qbreak__total">
               <dt>Total{view.penalty > 0 && <small>after −{view.penalty} XP of losses</small>}</dt>
-              <dd>{view.xp.toLocaleString('en-IN')} XP</dd>
+              <dd>{formatCount(view.xp)} XP</dd>
             </div>
           </dl>
         )}
@@ -383,7 +384,7 @@ function Leaderboard({ board }: { board: { top: LeaderRow[]; me: LeaderRow | nul
             {row.handle ? <Link to={`/${row.handle}`}>{row.name}</Link> : row.name}
             <small>Level {row.level} · {row.cards} cards</small>
           </span>
-          <b className="qleaders__xp">{row.xp.toLocaleString('en-IN')} XP</b>
+          <b className="qleaders__xp">{formatCount(row.xp)} XP</b>
         </li>
       ))}
     </ol>

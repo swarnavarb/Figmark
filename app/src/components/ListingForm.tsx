@@ -1,3 +1,4 @@
+import { daysUntil as daysLeft } from '../format';
 import type { ReactNode } from 'react';
 
 /**
@@ -48,8 +49,7 @@ export function isoInDays(days: string | number): string {
 
 /** Whole days until an ISO time, at least 1. */
 export function daysUntil(iso: string | null | undefined, fallback = 2): number {
-  if (!iso) return fallback;
-  return Math.max(1, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
+  return iso ? Math.max(1, daysLeft(iso)) : fallback;
 }
 
 /** An on/off switch, labelled. */

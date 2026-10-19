@@ -15,7 +15,7 @@ import { PhotoManager } from './PhotoManager';
 import { EmptyState, ErrorNotice, Icon } from './ui';
 import type { SavedCalc } from '@shared/profit';
 import { CostSheetField, type CostSheetDraft } from './CostSheetField';
-import { formatMoney, timeAgo } from '../format';
+import { formatMoney, timeAgo, formatDateTime } from '../format';
 import '../styles/PowerSale.css';
 
 /**
@@ -226,7 +226,7 @@ function SaleCard({ sale, storeId, onChanged }: {
             <span className="faint">
               {sale.openedAt
                 ? `Opened ${timeAgo(sale.openedAt)}`
-                : `Opens ${new Date(sale.openingAt).toLocaleString()}`}
+                : `Opens ${formatDateTime(sale.openingAt)}`}
             </span>
             {live && (
               <button className="btn btn--ghost btn--sm" onClick={() => void stop()} disabled={busy}>
@@ -273,7 +273,7 @@ function Countdown({ to }: { to: string }) {
   const secs = total % 60;
 
   return (
-    <span className="countdown" title={`All public by ${new Date(to).toLocaleString()}`}>
+    <span className="countdown" title={`All public by ${formatDateTime(to)}`}>
       <span className="countdown__value">
         {hours > 0 ? `${hours}h ${String(mins).padStart(2, '0')}m` : `${mins}m ${String(secs).padStart(2, '0')}s`}
       </span>

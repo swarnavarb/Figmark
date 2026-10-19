@@ -1,3 +1,4 @@
+import { formatCount } from '../format';
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react';
@@ -330,7 +331,7 @@ export function StoreChip() {
       <LevelRing level={level.level} progress={level.progress} size={30} />
       <span className="qchip__text">
         <small>Store</small>
-        <span>{level.points.toLocaleString('en-IN')}{level.next === null ? '' : `/${level.next.toLocaleString('en-IN')}`} XP</span>
+        <span>{formatCount(level.points)}{level.next === null ? '' : `/${formatCount(level.next)}`} XP</span>
       </span>
     </Link>
   );

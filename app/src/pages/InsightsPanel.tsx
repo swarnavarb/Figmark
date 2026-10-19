@@ -6,7 +6,7 @@ import {
   ApiRequestError, api, type CostsResponse, type CustomerRow, type DeepResponse, type InsightsResponse, type InterestResponse, type MarketResponse,
   type PartyRef, type TrendingRow, type TagInsights,
 } from '../api';
-import { formatDate, formatMoney, timeAgo } from '../format';
+import { formatDate, formatMoney, timeAgo, formatCount } from '../format';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
 import { NudgeButton } from '../components/NudgeButton';
 import { scrollToTopOf, useBack } from '../components/ScrollManager';
@@ -322,7 +322,7 @@ function Stage({ icon, label, value, hint }: { icon: string; label: string; valu
   return (
     <div className="insstage">
       <span className="insstage__icon" aria-hidden="true">{icon}</span>
-      <b>{value.toLocaleString('en-IN')}</b>
+      <b>{formatCount(value)}</b>
       <small>{label}</small>
       {hint && <em>{hint}</em>}
     </div>

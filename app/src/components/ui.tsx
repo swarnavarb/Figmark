@@ -176,18 +176,62 @@ export function Tile({ value, label, tone, onClick, open }: {
  * should be the thing people reach for without thinking. Used for choices worth
  * interrupting the page for — turning an order down is one.
  */
-export function Modal({ title, onClose, children }: {
+/**
+ * What every dialog owes the keyboard: Escape closes it, Tab stays inside it,
+ * focus moves into it on opening and goes back to whatever opened it on
+ * closing, and the page behind does not scroll under it.
+ */
+export function useDialog(ref: { current: HTMLElement | null }, onClose: () => void): void {
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const box = ref.current;
+    const focusable = () => [...(box?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? [])].filter((element) => element.offsetParent !== null || element === document.activeElement);
+    // The first field if there is one, else the dialog itself - never the close button by default.
+    const first = focusable().find((element) => element.matches('input, select, textarea')) ?? box;
+    if (first && !box?.contains(document.activeElement)) first.focus({ preventScroll: true });
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        close.current();
+        return;
+      }
+      if (event.key !== 'Tab' || !box) return;
+      const items = focusable();
+      if (items.length === 0) { event.preventDefault(); return; }
+      const [head, tail] = [items[0]!, items[items.length - 1]!];
+      if (event.shiftKey && (document.activeElement === head || document.activeElement === box)) {
+        event.preventDefault();
+        tail.focus();
+      } else if (!event.shiftKey && document.activeElement === tail) {
+        event.preventDefault();
+        head.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, [ref]);
+}
+
+export function Modal({ title, onClose, children, layout = 'box' }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** `box`, the default: a card. `panel`: a header bar over a scrolling body, which becomes a sheet on a phone. */
+  layout?: 'box' | 'panel';
 }) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  const box = useRef<HTMLDivElement>(null);
+  useDialog(box, onClose);
 
   // Rendered at the top of the document rather than where it was written.
   //
@@ -200,15 +244,27 @@ export function Modal({ title, onClose, children }: {
   return createPortal(
     <div className="modal" role="dialog" aria-modal="true" aria-label={title}
       onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="modal__box">
-        <div className="row row--between" style={{ marginBottom: 10 }}>
-          <h2 className="modal__title" style={{ margin: 0 }}>{title}</h2>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close">
-            <Icon name="close" size={14} />
-          </button>
+      {layout === 'panel' ? (
+        <div className="modal__panel" ref={box} tabIndex={-1}>
+          <div className="modal__head">
+            <h2>{title}</h2>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close">
+              <Icon name="close" size={14} />
+            </button>
+          </div>
+          <div className="modal__body">{children}</div>
         </div>
-        {children}
-      </div>
+      ) : (
+        <div className="modal__box" ref={box} tabIndex={-1}>
+          <div className="row row--between" style={{ marginBottom: 10 }}>
+            <h2 className="modal__title" style={{ margin: 0 }}>{title}</h2>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close">
+              <Icon name="close" size={14} />
+            </button>
+          </div>
+          {children}
+        </div>
+      )}
     </div>,
     document.body,
   );

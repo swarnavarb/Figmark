@@ -15,7 +15,7 @@ import { shrink } from '../components/PhotoManager';
 import { ManagerTag } from '../components/ManagerBadge';
 import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
-import { brandHueFor, formatDate, timeAgo } from '../format';
+import { brandHueFor, formatDate, timeAgo, formatCount } from '../format';
 import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
 import { PhotoSales } from '../components/PhotoSales';
 
@@ -127,7 +127,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
         {collector && (
           <div className="qprofile__xp">
             <XpBar progress={collector.progress} />
-            <span className="faint">{collector.xp.toLocaleString('en-IN')} XP · {collector.nextLevelXp - collector.xp} to level {collector.level + 1}</span>
+            <span className="faint">{formatCount(collector.xp)} XP · {collector.nextLevelXp - collector.xp} to level {collector.level + 1}</span>
           </div>
         )}
         {collector && collector.penalty > 0 && (

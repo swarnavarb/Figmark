@@ -343,7 +343,7 @@ function DiscoverBody() {
       )}
 
       {!loading && paged && (guestWall ? (
-        <GuestWall onJoin={() => promptAuth('Join to keep scrolling, vote and follow.')} />
+        <DiscoverWall onJoin={() => promptAuth('Join to keep scrolling, vote and follow.')} />
       ) : next !== null && (
         <MoreSentinel busy={more} onReach={() => void loadMore()} />
       ))}
@@ -374,7 +374,7 @@ function MoreSentinel({ busy, onReach }: { busy: boolean; onReach: () => void })
 }
 
 /** Where a guest's scrolling stops: what an account gets them, and the way in. */
-function GuestWall({ onJoin }: { onJoin: () => void }) {
+function DiscoverWall({ onJoin }: { onJoin: () => void }) {
   return (
     <section className="discwall">
       <h2>There is plenty more</h2>

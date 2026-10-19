@@ -1,3 +1,4 @@
+import { formatDateTime } from '../format';
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import { LEARN_LIMITS, learnImageOk, type LearnSection, type LearnStep, type LearnTab } from '@shared/learn';
 import { LearnText } from '../components/LearnText';
@@ -96,7 +97,7 @@ export function LearnView() {
           <h2 style={{ margin: 0 }}>Learn page</h2>
           <p className="faint" style={{ margin: 0 }}>
             {meta.customised
-              ? `Edited${meta.updatedBy ? ` by ${meta.updatedBy}` : ''}${meta.updatedAt ? ` · ${new Date(meta.updatedAt).toLocaleString('en-IN')}` : ''}`
+              ? `Edited${meta.updatedBy ? ` by ${meta.updatedBy}` : ''}${meta.updatedAt ? ` · ${formatDateTime(meta.updatedAt)}` : ''}`
               : 'Showing the guide that ships with the app.'}
             {dirty && ' · unsaved changes'}
           </p>

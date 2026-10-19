@@ -5,7 +5,7 @@ import {
   type CostStage, type CostStep, type ProfitInput, type ProfitResult, type ProfitTemplate,
 } from '@shared/profit';
 import { api } from '../api';
-import { formatMoney } from '../format';
+import { formatMoney, formatRupees } from '../format';
 import { STAGE_TONES } from '../pages/ProfitCalculator';
 import { CalcIcon } from './CalcIcon';
 import { Loading } from './Feedback';
@@ -251,8 +251,7 @@ export function PriceRoute({ template, input, result }: { template: ProfitTempla
   );
 }
 
-const rupees = (value: number) =>
-  `${value < 0 ? '−' : ''}₹${Math.abs(value).toLocaleString('en-IN', { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 })}`;
+const rupees = formatRupees;
 
 /** Each line the seller switched on in that calculator, and what it comes to per item. */
 export function CalcLines({ template, input, result }: { template: ProfitTemplate; input: ProfitInput; result: ProfitResult }) {

@@ -708,7 +708,7 @@ export function SocialPostCard({
       )}
 
       {sharing && (
-        <ShareSheet card={card} onClose={() => setSharing(false)}
+        <PostShareSheet card={card} onClose={() => setSharing(false)}
           onShared={(shareCount, repost) => {
             setCard((current) => ({ ...current, social: { ...current.social, shareCount } }));
             if (repost) onReposted?.(repost);
@@ -1691,7 +1691,7 @@ function timeAgoAhead(iso: string): string {
 
 /* ── Sharing ───────────────────────────────────────────────────────────── */
 
-function ShareSheet({ card, onClose, onShared }: {
+function PostShareSheet({ card, onClose, onShared }: {
   card: PostCard;
   onClose: () => void;
   onShared: (shareCount: number, repost: PostCard | null) => void;

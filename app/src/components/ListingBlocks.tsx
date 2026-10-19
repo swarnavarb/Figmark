@@ -7,7 +7,7 @@ import { isInDemand } from '@shared/catalog';
 import { SOURCING_LABELS } from '@shared/enums';
 import { isMultiple } from '@shared/payments';
 import type { Listing } from '@shared/models';
-import { formatMoney } from '../format';
+import { formatMoney, formatDateTime } from '../format';
 import type { PriceChange } from '../api';
 import { Lightbox } from './SocialPost';
 
@@ -238,7 +238,7 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
   if (listing.expiresAt) {
     tiles.push({
       tone: 'blue', icon: 'calendar', label: 'Available until',
-      value: new Date(listing.expiresAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }),
+      value: formatDateTime(listing.expiresAt),
     });
   }
   tiles.push({ tone: 'cool', icon: 'tag', label: 'Category', value: listing.category });
