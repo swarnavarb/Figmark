@@ -11259,10 +11259,17 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   letter-spacing: -0.01em;
 }
 .csheet__list {
-  display: grid; gap: 8px; align-content: start; flex: 1 1 auto;
+  display: flex; flex-direction: column; gap: 16px; flex: 1 1 auto;
   min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px 2px;
 }
-@media (min-width: 640px) { .csheet__list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Rows never shrink to fit: a long line wraps and the row grows with it. */
+.csheet__group { display: grid; gap: 8px; flex: none; }
+@media (min-width: 640px) { .csheet__group { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.csheet__label {
+  grid-column: 1 / -1; margin: 0 0 -2px 4px;
+  font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint);
+}
+.csheet__pro { margin-left: 8px; }
 /* You and your store: a two-way switch whose highlight slides to the side you pick. */
 .csheet__sides {
   position: relative; display: grid; grid-template-columns: 1fr 1fr;
@@ -11284,8 +11291,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .csheet__thumb--store { transform: translateX(100%); background: var(--grad-gold); }
 .csheet__stores { margin: 0; }
 .csheet__item {
-  display: grid; grid-template-columns: 46px minmax(0, 1fr) 16px; align-items: center; gap: 12px;
-  min-height: 62px; padding: 9px 12px;
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) 16px; align-items: center; gap: 14px;
+  min-height: 68px; height: auto; padding: 12px 14px;
   /* Each row arrives a beat after the one above: the list reads in order. */
   animation: csheet-item 260ms var(--ease-out) both;
   border: 1px solid var(--border); border-radius: var(--r-lg);
@@ -11297,7 +11304,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .csheet__item:active { transform: scale(0.985); }
 .csheet__emoji {
   display: grid; place-items: center;
-  width: 46px; height: 46px; border-radius: 14px;
+  width: 44px; height: 44px; border-radius: 14px;
   font-size: 22px; line-height: 1;
   background: var(--violet-soft); border: 1px solid var(--violet-line);
 }
@@ -11309,9 +11316,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .csheet__item--gold .csheet__emoji { background: var(--warn-soft); border-color: rgba(251, 191, 36, 0.45); }
 .csheet__item--violet .csheet__emoji { background: var(--violet-soft); border-color: var(--violet-line); }
 @keyframes csheet-item { from { opacity: 0; transform: translateY(8px); } }
-.csheet__text { display: grid; gap: 2px; min-width: 0; }
-.csheet__text strong { font-size: var(--t-base); font-weight: var(--w-semi); }
-.csheet__text span { font-size: var(--t-sm); color: var(--text-dim); line-height: 1.4; }
+.csheet__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.csheet__text strong { display: flex; align-items: center; font-size: var(--t-base); font-weight: var(--w-semi); line-height: 1.25; }
+.csheet__text > span { font-size: var(--t-sm); color: var(--text-dim); line-height: 1.35; }
 .csheet__chev { color: var(--text-faint); }
 .csheet__cancel {
   min-height: 46px; border: 0; border-radius: var(--r-md);

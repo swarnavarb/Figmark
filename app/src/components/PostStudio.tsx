@@ -276,7 +276,7 @@ export function PostStudio({
   onPosted: Posted;
 }) {
   const asShop = Boolean(storeId) && !forumId;
-  const [mode, setMode] = useState<StudioMode>(figmark ? 'contest' : start === 'contest' && !asShop ? 'photo' : start);
+  const [mode, setMode] = useState<StudioMode>(figmark ? 'contest' : (start === 'contest' || start === 'guess') && !asShop ? 'photo' : start);
   const draft = useDraftPhotos();
   const { photos } = draft;
   const [text, setText] = useState('');
@@ -481,7 +481,7 @@ export function PostStudio({
   const maxPhotos = mode === 'photo' ? 4 : mode === 'guess' ? 4 : 1;
   const needsPostPhotos = mode === 'photo' || mode === 'guess' || mode === 'contest' || (voting && faceOf === 'rating');
   const modes = figmark ? MODES.filter((entry) => entry.id === 'contest')
-    : MODES.filter((entry) => entry.id !== 'contest' || asShop);
+    : MODES.filter((entry) => (entry.id !== 'contest' && entry.id !== 'guess') || asShop);
   const heading = figmark ? '🌟 Weekly theme challenge'
     : asShop ? `Post as ${storeName ?? 'your store'}` : 'Create a post';
   const blocked = missing();

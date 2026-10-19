@@ -12124,7 +12124,9 @@ await check('a guess-the-price keeps its answer sealed until the reveal, then na
   resetRateLimits();
   const near = await newBuyer('Near Guesser');
   const far = await newBuyer('Far Guesser');
-  const made = (await createPost(req({ headers: auth, body: { body: 'What did this sell for?', photoUrls: ['/api/photos/guess.jpg'], guess: { answerMinor: 450000, revealInHours: 24 } } }), ctx)).jsonBody.post;
+  const asPerson = await createPost(req({ headers: near.headers, body: { body: 'Guess mine', photoUrls: ['/api/photos/guess.jpg'], guess: { answerMinor: 1000, revealInHours: 24 } } }), ctx);
+  assert.equal(asPerson.status, 403, 'a guess-the-price is a store\'s');
+  const made = (await createPost(req({ headers: auth, body: { body: 'What did this sell for?', storeId: 'usr_demo', photoUrls: ['/api/photos/guess.jpg'], guess: { answerMinor: 450000, revealInHours: 24 } } }), ctx)).jsonBody.post;
   assert.equal(made.guess.answerMinor, 450000, 'the author sees their own answer when posting');
   const seen = (await readPost(req({ headers: near.headers, params: on(made) }), ctx)).jsonBody.card;
   assert.equal(seen.post.guess, null, 'nobody else reads the answer');

@@ -14,6 +14,7 @@ import { StoresView } from './StoresView';
 import { DevicesView } from './DevicesView';
 import { PhotosView } from './PhotosView';
 import { RoutesView } from './RoutesView';
+import { ChallengeView } from './ChallengeView';
 import { BackButton, goOps, useOpsPath } from './nav';
 import { Loading } from '../components/Feedback';
 import '../styles.css';
@@ -39,7 +40,7 @@ import '../styles/admin.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'routes' | 'settings' | 'learn' | 'audit';
+type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'routes' | 'challenge' | 'settings' | 'learn' | 'audit';
 
 const TAB_LABELS: Record<Tab, string> = {
   users: 'People and stores',
@@ -51,6 +52,7 @@ const TAB_LABELS: Record<Tab, string> = {
   devices: 'Installs & devices',
   photos: 'Stored photos',
   routes: 'Routes',
+  challenge: 'Weekly challenge',
   settings: 'Settings',
   learn: 'Learn page',
   audit: 'Audit trail',
@@ -139,6 +141,7 @@ function Console() {
           : tab === 'devices' ? <DevicesView />
           : tab === 'photos' ? <PhotosView />
           : tab === 'routes' ? <RoutesView />
+          : tab === 'challenge' ? <ChallengeView />
           : tab === 'settings' ? <SettingsView />
           : tab === 'audit' ? <AuditView />
           : <LearnView />}

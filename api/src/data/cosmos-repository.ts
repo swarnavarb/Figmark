@@ -2374,6 +2374,25 @@ export class CosmosRepository implements Repository {
    */
   private recentCache: { at: number; limit: number; posts: Promise<Post[]> } | null = null;
 
+  /**
+   * Swap one changed post into the recent-posts cache rather than dropping it.
+   * A vote or a reaction changes one post; reading the whole window again on
+   * the next feed for that would cost a query a hundred times the size.
+   */
+  private patchRecent(post: Post): void {
+    const cached = this.recentCache;
+    if (!cached) return;
+    // A copy: whoever asked for the change keeps the one they were handed.
+    const copy = structuredClone(post);
+    const posts = cached.posts.then((list) => list.map((entry) =>
+      (entry.id === post.id && entry.channelId === post.channelId ? copy : entry)));
+    const entry = { ...cached, posts };
+    this.recentCache = entry;
+    posts.catch(() => {
+      if (this.recentCache === entry) this.recentCache = null;
+    });
+  }
+
   async listRecentPosts(limit: number): Promise<Post[]> {
     const cached = this.recentCache;
     if (cached && cached.limit >= limit && Date.now() - cached.at < RECENT_TTL_MS) {
@@ -2416,12 +2435,17 @@ export class CosmosRepository implements Repository {
         });
       if (!resource) return null;
       const next = change(resource);
-      if (!next) return resource;
-      this.recentCache = null;
+      // Nothing to change: what was read is still the freshest copy there is,
+      // so the cache takes it - a game settled elsewhere stops looking due here.
+      if (!next) {
+        this.patchRecent(resource);
+        return resource;
+      }
       try {
         const { resource: saved } = await this.container('posts').item(id, channelId).replace<Post>(next, {
           accessCondition: { type: 'IfMatch', condition: etag ?? '' },
         });
+        this.patchRecent(saved ?? next);
         return saved ?? next;
       } catch (error) {
         if ((error as { code?: number }).code === 412) continue;

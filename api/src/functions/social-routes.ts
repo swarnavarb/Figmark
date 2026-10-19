@@ -1838,6 +1838,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   if (prizeAsked && !figmarkHost && (!shop || reach !== 'feed')) {
     return error(403, 'store_only', 'Prizes, rewards and competitions are run by a store, posting to its feed. Switch to your store.');
   }
+  // A guess-the-price is a shop teasing what it sells: the answer is its own price.
+  if (body.guess && (!shop || reach !== 'feed')) {
+    return error(403, 'store_only', 'Guess the price is run by a store, posting to its feed. Switch to your store.');
+  }
   /** Store credit as asked for, in paise: null when it is not a whole amount in range. */
   const credit = (value: unknown): number | null => {
     const amount = value === undefined || value === null || value === '' ? 0 : Number(value);

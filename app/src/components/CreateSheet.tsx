@@ -26,28 +26,45 @@ interface Action {
   /** ...or goes somewhere that already makes it. */
   to?: (store: StoreAccess | null) => string;
   hue: 'aqua' | 'coral' | 'violet' | 'pink' | 'blue' | 'lime' | 'gold';
+  /** Marked as a Pro tool. */
+  pro?: boolean;
 }
 
 /** What a person can put up. */
 const YOU: Action[] = [
   { id: 'photo', emoji: '📸', title: 'Photo or collection flex', line: 'Photos, with every piece tagged if you like.', studio: 'photo', hue: 'violet' },
   { id: 'poll', emoji: '📊', title: 'Poll', line: 'Text, photos, versus or a star rating.', studio: 'poll', hue: 'aqua' },
-  { id: 'debate', emoji: '⚔️', title: 'Debate', line: 'Two sides; arguments land on the side you voted for.', studio: 'debate', hue: 'pink' },
-  { id: 'guess', emoji: '🎯', title: 'Guess the price', line: 'Sealed until the reveal. Closest wins.', studio: 'guess', hue: 'gold' },
-  { id: 'sell', emoji: '🛍️', title: 'List an item for sale', line: 'Price, condition, photos and shipping.', to: () => '/sell', hue: 'blue' },
-  { id: 'iso', emoji: '🔎', title: 'Post an ISO request', line: 'Say what you are hunting. Sellers who stock it hear.', to: () => '/social?view=wanted&ask=1', hue: 'coral' },
-  { id: 'enter', emoji: '🏆', title: 'Enter a competition', line: 'Shops are giving store credit for your best photo.', to: () => '/discover#competitions', hue: 'lime' },
+  { id: 'debate', emoji: '⚔️', title: 'Debate', line: 'Two sides. Arguments land on yours.', studio: 'debate', hue: 'pink' },
+  { id: 'iso', emoji: '🔎', title: 'Post an ISO request', line: 'Say what you hunt. Sellers who stock it hear.', to: () => '/social?view=wanted&ask=1', hue: 'coral' },
 ];
 
-/** What a shop can run - the games with prizes are a shop's, since the credit is spent there. */
-const STORE: Action[] = [
-  { id: 'contest', emoji: '🏆', title: 'Photo competition', line: 'You set the prizes; the audience or you pick winners.', studio: 'contest', hue: 'gold' },
-  { id: 'spoll', emoji: '📊', title: 'Store poll', line: 'Optionally reward whoever picks the winner.', studio: 'poll', hue: 'aqua' },
-  { id: 'stock', emoji: '📦', title: 'What should we stock next?', line: 'Results land in your Store Console.', studio: 'poll', presets: { stock: true }, hue: 'lime' },
-  { id: 'sdebate', emoji: '🎤', title: 'Debate with a prize', line: 'Store credit for the best argument.', studio: 'debate', presets: { prize: true }, hue: 'pink' },
-  { id: 'sguess', emoji: '🎯', title: 'Guess the price', line: 'Tease a drop: the reveal is the announcement.', studio: 'guess', hue: 'violet' },
-  { id: 'announce', emoji: '📣', title: 'Announcement', line: 'To your channel, for your followers.', to: (store) => `/social/c/${encodeURIComponent(store!.ownerId)}`, hue: 'coral' },
-  { id: 'slist', emoji: '🛍️', title: 'List an item', line: 'Straight into your shop.', to: (store) => (store!.isOwner ? '/sell' : `/sell?store=${encodeURIComponent(store!.ownerId)}`), hue: 'blue' },
+const storeQuery = (store: StoreAccess | null) => (store && !store.isOwner ? `?store=${encodeURIComponent(store.ownerId)}` : '');
+
+/**
+ * What a shop can do, in two groups: sell, and get people playing. The games
+ * with prizes and the guess are a shop's - the credit is spent there, and the
+ * price being guessed is its own.
+ */
+const STORE: { label: string; actions: Action[] }[] = [
+  {
+    label: 'Sell',
+    actions: [
+      { id: 'slist', emoji: '🛍️', title: 'List an item', line: 'Price, condition, photos and shipping.', to: (store) => `/sell${storeQuery(store)}`, hue: 'blue' },
+      { id: 'power', emoji: '⚡', title: 'Power sale', line: 'A run of drops on a timer, in your channel.', pro: true,
+        to: (store) => `/shop/power-sale?store=${encodeURIComponent(store!.ownerId)}`, hue: 'gold' },
+      { id: 'announce', emoji: '📣', title: 'Announcement', line: 'To your channel, for your followers.', to: (store) => `/social/c/${encodeURIComponent(store!.ownerId)}`, hue: 'coral' },
+    ],
+  },
+  {
+    label: 'Get people playing',
+    actions: [
+      { id: 'contest', emoji: '🏆', title: 'Photo competition', line: 'You set prizes; the audience or you pick.', studio: 'contest', hue: 'lime' },
+      { id: 'sguess', emoji: '🎯', title: 'Guess the price', line: 'Sealed until the reveal. Closest wins.', studio: 'guess', hue: 'violet' },
+      { id: 'spoll', emoji: '📊', title: 'Store poll', line: 'Reward whoever picks the winner, if you like.', studio: 'poll', hue: 'aqua' },
+      { id: 'stock', emoji: '📦', title: 'What should we stock next?', line: 'Results land in your Store Console.', studio: 'poll', presets: { stock: true }, hue: 'lime' },
+      { id: 'sdebate', emoji: '🎤', title: 'Debate with a prize', line: 'Store credit for the best argument.', studio: 'debate', presets: { prize: true }, hue: 'pink' },
+    ],
+  },
 ];
 
 /** Each list's rows come in one after another, this far apart, so the eye reads them in order. */
@@ -65,7 +82,7 @@ const STAGGER_MS = 35;
 export function CreateSheet({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const { user } = useSession();
-  const [making, setMaking] = useState<{ action: Action; store: StoreAccess | null; figmark?: boolean } | null>(null);
+  const [making, setMaking] = useState<{ action: Action; store: StoreAccess | null } | null>(null);
   const [stores, setStores] = useState<StoreAccess[]>([]);
   const [storeAt, setStoreAt] = useState(0);
   const [side, setSide] = useState<'you' | 'store'>('you');
@@ -94,9 +111,9 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
 
   const store = stores[storeAt] ?? null;
 
-  function pick(action: Action, as: StoreAccess | null, figmark = false) {
+  function pick(action: Action, as: StoreAccess | null) {
     if (action.studio) {
-      setMaking({ action, store: as, figmark });
+      setMaking({ action, store: as });
       return;
     }
     // Closed here as well as by the move: from the page it goes to, there is no move.
@@ -113,12 +130,13 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
     return (
       <Suspense fallback={createPortal(<div className="csheet"><Preloader small /></div>, document.body)}>
         <PostStudio mode={making.action.studio!} storeId={making.store?.ownerId ?? null} storeName={making.store?.name ?? null}
-          presets={making.action.presets} figmark={making.figmark} onClose={onClose} onPosted={posted} />
+          presets={making.action.presets} onClose={onClose} onPosted={posted} />
       </Suspense>
     );
   }
 
-  const list = side === 'store' && store ? STORE : YOU;
+  const groups = side === 'store' && store ? STORE : [{ label: '', actions: YOU }];
+  let order = 0;
 
   return createPortal(
     <div className="csheet" role="presentation" onClick={(event) => event.target === event.currentTarget && onClose()}>
@@ -152,31 +170,29 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="csheet__list" key={side}>
-          {list.map((action, index) => (
-            <button key={action.id} ref={index === 0 ? first : undefined} type="button"
-              className={`csheet__item csheet__item--${action.hue}`} style={{ animationDelay: `${index * STAGGER_MS}ms` }}
-              onClick={() => pick(action, side === 'store' ? store : null)}>
-              <span className="csheet__emoji" aria-hidden="true">{action.emoji}</span>
-              <span className="csheet__text">
-                <strong>{action.title}</strong>
-                <span>{action.line}</span>
-              </span>
-              <svg className="csheet__chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
-                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="m9 6 6 6-6 6" />
-              </svg>
-            </button>
+          {groups.map((group) => (
+            <section key={group.label || 'you'} className="csheet__group" aria-label={group.label || undefined}>
+              {group.label && <h3 className="csheet__label">{group.label}</h3>}
+              {group.actions.map((action) => {
+                const at = order++;
+                return (
+                  <button key={action.id} ref={at === 0 ? first : undefined} type="button"
+                    className={`csheet__item csheet__item--${action.hue}`} style={{ animationDelay: `${at * STAGGER_MS}ms` }}
+                    onClick={() => pick(action, side === 'store' ? store : null)}>
+                    <span className="csheet__emoji" aria-hidden="true">{action.emoji}</span>
+                    <span className="csheet__text">
+                      <strong>{action.title}{action.pro && <span className="probadge csheet__pro">PRO</span>}</strong>
+                      <span>{action.line}</span>
+                    </span>
+                    <svg className="csheet__chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m9 6 6 6-6 6" />
+                    </svg>
+                  </button>
+                );
+              })}
+            </section>
           ))}
-          {user?.capabilities.isAdmin && side === 'you' && (
-            <button type="button" className="csheet__item csheet__item--violet" style={{ animationDelay: `${list.length * STAGGER_MS}ms` }}
-              onClick={() => pick({ id: 'challenge', emoji: '🌟', title: '', line: '', studio: 'contest', hue: 'violet' }, null, true)}>
-              <span className="csheet__emoji" aria-hidden="true">🌟</span>
-              <span className="csheet__text">
-                <strong>Figmark weekly challenge</strong>
-                <span>A theme for everyone, with a badge for the winners.</span>
-              </span>
-            </button>
-          )}
         </div>
         <button type="button" className="csheet__cancel" onClick={onClose}>Cancel</button>
       </div>

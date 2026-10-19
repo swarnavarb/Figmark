@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { contestPhase } from '@shared/play';
 import { IN_DEMAND_SCORE, popularity } from '@shared/catalog';
@@ -247,6 +247,7 @@ function DiscoverBody() {
     [stream, finds, user, rails.wants, rails.spotted],
   );
   const loading = !stream || !listings;
+  const spots = useMemo(() => spotlight(live, contests, stream ?? EMPTY, finds), [live, contests, stream, finds]);
 
   const posts = (cards: PostCard[], promoted = false) => cards.map((card) => (
     <SocialPostCard key={card.post.id} card={card} promoted={promoted} />
@@ -270,11 +271,10 @@ function DiscoverBody() {
   return (
     <main className="page discpage">
       <header className="dischero">
-        <span className="dischero__orb dischero__orb--a" aria-hidden="true" />
-        <span className="dischero__orb dischero__orb--b" aria-hidden="true" />
+        <span className="dischero__aurora" aria-hidden="true"><span /><span /><span /></span>
         <div className="dischero__top">
-          <span className="dischero__kicker">Across Figmark</span>
-          <button type="button" className="iconbtn" aria-label="Share Discover" onClick={() => void share()}>
+          <span className="dischero__kicker"><span aria-hidden="true">✦</span> Across Figmark</span>
+          <button type="button" className="iconbtn dischero__share" aria-label="Share Discover" onClick={() => void share()}>
             <Icon name="share" size={18} />
           </button>
         </div>
@@ -291,7 +291,7 @@ function DiscoverBody() {
               </button>
             )}
             {openContests > 0 && (
-              <button type="button" className="dischero__stat dischero__stat--gold" onClick={() => setLens('contests')}>
+              <button type="button" className="dischero__stat" onClick={() => setLens('contests')}>
                 🏆 <strong>{openContests}</strong> competition{openContests === 1 ? '' : 's'} open
               </button>
             )}
@@ -302,10 +302,12 @@ function DiscoverBody() {
             <button type="button" className="btn btn--sm" onClick={() => promptAuth('Sign in to vote, react and follow.')}>
               Sign in
             </button>
-            <span className="faint">to vote, enter competitions and follow the people behind them.</span>
+            <span>to vote, enter competitions and follow the people behind them.</span>
           </p>
         )}
       </header>
+
+      {!loading && lens === 'all' && spots.length > 1 && <SpotlightDeck spots={spots} />}
 
       <nav className="dislens" aria-label="Show">
         {LENSES.map((entry) => (
@@ -524,6 +526,177 @@ function SpottedRail({ items }: { items: SpottedItem[] }) {
             </span>
           </Link>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/** One card in the spotlight deck: a picture, what it is, and where it goes. */
+interface Spot {
+  id: string;
+  kind: string;
+  title: string;
+  line: string | null;
+  photo: string | null;
+  emoji: string;
+  href: string;
+  cta: string;
+  tone: string;
+}
+
+/** Most cards the deck holds: enough to keep flicking, few enough to finish. */
+const SPOTS_MAX = 8;
+
+/**
+ * The deck's cards, from what the page already read: the liveliest open game,
+ * a competition, the most loved shelf, the hottest debate, something rising,
+ * a rare find - then round again. No request of its own.
+ */
+function spotlight(live: PostCard[], contests: PostCard[], stream: Stream, finds: Find[]): Spot[] {
+  const post = (card: PostCard, kind: string, tone: string, cta: string, emoji: string): Spot => ({
+    id: `p${card.post.id}`,
+    kind,
+    title: card.post.contest?.title ?? (card.post.body || 'Which one?'),
+    line: closesIn(card) ?? `by ${card.post.authorName}`,
+    photo: pictures(card)[0] ?? null,
+    emoji,
+    href: postHref(card.post),
+    cta,
+    tone,
+  });
+  const fromLive = live.map((card) => {
+    const kind = liveKind(card);
+    return post(card, `${kind.emoji} ${kind.label}`, kind.tone, kind.cta, kind.emoji);
+  });
+  const fromContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended')
+    .map((card) => post(card, '🏆 Competition', 'gold', 'Take a look', '🏆'));
+  const fromFlexes = stream.flexes.map((card) => post(card, '📸 Shelf', 'violet', 'See the shelf', '📸'));
+  const fromDebates = stream.debates.map((card) => post(card, '⚔️ Debate', 'pink', 'Pick a side', '⚔️'));
+  const fromRising = stream.rising.map((card) => post(card, '🚀 Rising', 'aqua', 'Open', '🚀'));
+  const fromFinds = finds.map(({ listing, why }): Spot => ({
+    id: `l${listing.id}`,
+    kind: `💎 ${why?.label ?? 'Find'}`,
+    title: listing.title,
+    line: formatMoney(listing.priceMinor, listing.currency),
+    photo: leadPhoto(listing)?.url ?? null,
+    emoji: '💎',
+    href: `/listing/${encodeURIComponent(listing.id)}`,
+    cta: 'View item',
+    tone: 'coral',
+  }));
+  const queues = [fromLive, fromContests, fromFlexes, fromDebates, fromFinds, fromRising];
+  const out: Spot[] = [];
+  const seen = new Set<string>();
+  while (out.length < SPOTS_MAX && queues.some((queue) => queue.length)) {
+    for (const queue of queues) {
+      const next = queue.shift();
+      if (next && !seen.has(next.id) && out.length < SPOTS_MAX) {
+        seen.add(next.id);
+        out.push(next);
+      }
+    }
+  }
+  return out;
+}
+
+/** How far a card has to be dragged before letting go sends it away. */
+const FLING_PX = 70;
+/** How long a sent card takes to leave, matching the CSS. */
+const FLING_MS = 260;
+
+/**
+ * The spotlight: a deck of cards, the top one big, two more peeking behind.
+ * Flick it either way - or tap Next - and it flies off to show the next
+ * thing; the deck goes round. A small, physical way to come across something.
+ */
+function SpotlightDeck({ spots }: { spots: Spot[] }) {
+  const [at, setAt] = useState(0);
+  const [flying, setFlying] = useState<{ id: string; way: 1 | -1 } | null>(null);
+  const [drag, setDrag] = useState(0);
+  const start = useRef<{ x: number; y: number; id: number } | null>(null);
+  const moved = useRef(false);
+
+  const fling = useCallback((way: 1 | -1) => {
+    if (flying) return;
+    setFlying({ id: spots[at % spots.length]!.id, way });
+    window.setTimeout(() => {
+      setAt((value) => (value + 1) % spots.length);
+      setFlying(null);
+      setDrag(0);
+    }, FLING_MS);
+  }, [at, flying, spots]);
+
+  const onDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (flying) return;
+    start.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    moved.current = false;
+  };
+  const onMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const from = start.current;
+    if (!from || from.id !== event.pointerId) return;
+    const dx = event.clientX - from.x;
+    if (!moved.current && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(event.clientY - from.y)) {
+      moved.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    if (moved.current) setDrag(dx);
+  };
+  const onUp = () => {
+    if (!start.current) return;
+    start.current = null;
+    if (Math.abs(drag) > FLING_PX) fling(drag > 0 ? 1 : -1);
+    else setDrag(0);
+  };
+
+  return (
+    <section className="spotdeck" aria-roledescription="carousel" aria-label="Spotlight">
+      <div className="spotdeck__head">
+        <h2>✨ Spotlight</h2>
+        <span className="spotdeck__count" aria-live="polite">{(at % spots.length) + 1} / {spots.length}</span>
+      </div>
+      <div className="spotdeck__stack" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+        onClickCapture={(event) => {
+          // A drag that ended over the link is not a tap on it.
+          if (moved.current) {
+            event.preventDefault();
+            event.stopPropagation();
+            moved.current = false;
+          }
+        }}>
+        {spots.map((spot, index) => {
+          const depth = (index - (at % spots.length) + spots.length) % spots.length;
+          const isFlying = flying?.id === spot.id;
+          const top = depth === 0;
+          const style = top && !isFlying && drag !== 0
+            ? { transform: `translateX(${drag}px) rotate(${drag / 18}deg)`, transition: 'none' }
+            : undefined;
+          return (
+            <Link key={spot.id} to={spot.href} tabIndex={top ? 0 : -1} aria-hidden={!top}
+              className={`spotcard spotcard--${spot.tone}${isFlying ? ` is-flying is-flying--${flying!.way > 0 ? 'right' : 'left'}` : ''}`}
+              data-depth={Math.min(depth, 3)} style={style} draggable={false}>
+              {spot.photo
+                ? <img className="spotcard__photo" src={spot.photo} alt="" loading={depth < 3 ? 'eager' : 'lazy'} draggable={false} />
+                : <span className="spotcard__emoji" aria-hidden="true">{spot.emoji}</span>}
+              <span className="spotcard__shade" aria-hidden="true" />
+              <span className="spotcard__body">
+                <span className="spotcard__kind">{spot.kind}</span>
+                <span className="spotcard__title">{spot.title}</span>
+                <span className="spotcard__foot">
+                  {spot.line && <span className="spotcard__line">{spot.line}</span>}
+                  <span className="spotcard__cta">{spot.cta} <Icon name="right" size={12} /></span>
+                </span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+      <div className="spotdeck__controls">
+        <span className="spotdeck__dots" aria-hidden="true">
+          {spots.map((spot, index) => <span key={spot.id} className={index === at % spots.length ? 'is-on' : undefined} />)}
+        </span>
+        <button type="button" className="spotdeck__next" onClick={() => fling(-1)}>
+          Next <Icon name="right" size={14} />
+        </button>
       </div>
     </section>
   );
