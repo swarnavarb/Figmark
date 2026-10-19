@@ -63,6 +63,11 @@ export function unreadOf(row: ChannelRow, seen: Record<string, string>): number 
   return (row.recent ?? []).filter((at) => !since || at > since).length;
 }
 
+/** A forum you are in with a post since you last opened it. */
+export function forumHasNews(row: { id: string; member: boolean; lastPostAt?: string | null }, seen: Record<string, string>): boolean {
+  return row.member && Boolean(row.lastPostAt) && (!seen[row.id] || row.lastPostAt! > seen[row.id]!);
+}
+
 /* ── The list ──────────────────────────────────────────────────────────── */
 
 export function ChannelList() {

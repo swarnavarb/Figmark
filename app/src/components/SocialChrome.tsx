@@ -10,7 +10,7 @@ import { Avatar } from './ui';
 import { Icon, type IconName } from './Icon';
 import { MESSAGES_NEWS_EVENT, Notifications } from './Notifications';
 import { VoicePicker, useVoice } from './SocialVoice';
-import { seenMap, unreadOf } from './Channels';
+import { forumHasNews, seenMap, unreadOf } from './Channels';
 
 /**
  * The social tab's own chrome: one gradient block for the header, a slim bar
@@ -53,7 +53,7 @@ function usePulse(): Pulse {
           : 0,
         // Joined forums with a post since you last looked in.
         forums: forums.status === 'fulfilled'
-          ? forums.value.forums.filter((row) => row.member && row.lastPostAt && (!seen[row.id] || row.lastPostAt > seen[row.id]!)).length
+          ? forums.value.forums.filter((row) => forumHasNews(row, seen)).length
           : 0,
       });
     });

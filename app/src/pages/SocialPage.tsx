@@ -5,7 +5,7 @@ import { ApiRequestError, api, type ForumRow, type ForumsResponse, type PostCard
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SocialPostCard, postHref } from '../components/SocialPost';
 import { PersonVoice, VoicePicker, VoiceProvider, useVoice } from '../components/SocialVoice';
-import { ChannelList, ChannelRoom } from '../components/Channels';
+import { ChannelList, ChannelRoom, forumHasNews, seenMap } from '../components/Channels';
 import { Composer } from '../components/SocialComposer';
 import { RoomBar, SOCIAL_VIEWS, SocialTop, type SocialView } from '../components/SocialChrome';
 import { useGoBack } from '../components/ScrollManager';
@@ -449,6 +449,8 @@ function Forums() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
+  // Read once, so a forum stays marked new for as long as this list is open.
+  const [seen] = useState(seenMap);
 
   const load = useCallback(async () => {
     try {
@@ -487,7 +489,11 @@ function Forums() {
 
   if (!data && !error) return <ForumSkeleton />;
 
-  const mine = data?.forums.filter((row) => row.member) ?? [];
+  // The ones with something new lead, so the Groups count points somewhere.
+  const mine = (data?.forums.filter((row) => row.member) ?? [])
+    .map((row, index) => ({ row, index, fresh: forumHasNews(row, seen) }))
+    .sort((a, b) => Number(b.fresh) - Number(a.fresh) || a.index - b.index);
+  const fresh = mine.filter((entry) => entry.fresh).length;
   const others = data?.forums.filter((row) => !row.member) ?? [];
 
   return (
@@ -505,7 +511,10 @@ function Forums() {
       <div className="forums__head">
         <div>
           <h2 className="forums__title">Your forums</h2>
-          <p className="faint">{mine.length === 0 ? 'Join one below to post in it.' : `${mine.length} joined`}</p>
+          <p className="faint">
+            {mine.length === 0 ? 'Join one below to post in it.' : `${mine.length} joined`}
+            {fresh > 0 && ` · ${fresh} with new posts`}
+          </p>
         </div>
         {data && !voice.storeId && (
           <button type="button" className="followbtn" onClick={() => {
@@ -541,7 +550,7 @@ function Forums() {
 
       {mine.length > 0 && (
         <div className="forumgrid">
-          {mine.map((row, index) => <ForumCard key={row.id} row={row} tone={index} onChange={replace} />)}
+          {mine.map((entry) => <ForumCard key={entry.row.id} row={entry.row} tone={entry.index} fresh={entry.fresh} onChange={replace} />)}
         </div>
       )}
 
@@ -559,15 +568,16 @@ function Forums() {
 
 const FORUM_TONES = ['blaze', 'violet', 'volt', 'sea'] as const;
 
-function ForumCard({ row, tone, onChange }: { row: ForumRow; tone: number; onChange: (row: ForumRow) => void }) {
+function ForumCard({ row, tone, fresh = false, onChange }: { row: ForumRow; tone: number; fresh?: boolean; onChange: (row: ForumRow) => void }) {
   const { voice } = useVoice();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <div className={`forumcard forumcard--${FORUM_TONES[tone % FORUM_TONES.length]}`}>
+    <div className={`forumcard forumcard--${FORUM_TONES[tone % FORUM_TONES.length]}${fresh ? ' is-unread' : ''}`}>
       <Link to={`/social/f/${encodeURIComponent(row.id)}`} className="forumcard__open">
         <span className="forumcard__top">
           <span className="forumav" aria-hidden="true"><Icon name="forum" size={20} /></span>
+          {fresh && <span className="forumcard__new">New post</span>}
           <span className="forumcard__stats">
             <strong>{row.memberCount}</strong> members · <strong>{row.postCount}</strong> posts
           </span>
