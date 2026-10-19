@@ -237,7 +237,7 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
           <ul className="qitems-list">
             {items.map((listing) => (
               <li key={listing.id} className="qitems-list__row">
-                {leadPhoto(listing)?.url ? <img className="qitems-list__thumb" src={leadPhoto(listing)!.url} alt="" /> : <span className="qitems-list__thumb" aria-hidden="true" />}
+                {leadPhoto(listing)?.url ? <img loading="lazy" decoding="async" className="qitems-list__thumb" src={leadPhoto(listing)!.url} alt="" /> : <span className="qitems-list__thumb" aria-hidden="true" />}
                 <span className="qitems-list__name">{listing.title}</span>
                 <span className="qitems-list__btns">
                   <button type="button" className="btn btn--sm btn--quiet" onClick={() => open(itemSpec(listing))}>Share</button>

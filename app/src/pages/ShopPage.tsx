@@ -748,12 +748,12 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const preview = (
     <div className="card sfpreview">
       {draft.coverUrl
-        ? <img className="sfpreview__cover" src={draft.coverUrl} alt="" />
+        ? <img loading="lazy" decoding="async" className="sfpreview__cover" src={draft.coverUrl} alt="" />
         : <div className="sfpreview__cover sfpreview__cover--empty" />}
       <div className="sfpreview__body stack">
         <div className="row">
           {draft.photoUrl ? (
-            <img className="channel__photo" src={draft.photoUrl} alt=""
+            <img loading="lazy" decoding="async" className="channel__photo" src={draft.photoUrl} alt=""
               onError={(e) => ((e.currentTarget.style.display = 'none'))} />
           ) : (
             <Avatar name={name} size={46} />
@@ -950,7 +950,7 @@ function ShopPictureField({ label, hint, value, onChange, shape }: {
       <span>{label}</span>
       <div className={`sfpic sfpic--${shape}`}>
         {value
-          ? <img className="sfpic__img" src={value} alt={label} />
+          ? <img loading="lazy" decoding="async" className="sfpic__img" src={value} alt={label} />
           : <span className="sfpic__empty" aria-hidden="true"><Icon name="camera" size={20} /></span>}
         <div className="sfpic__acts">
           <label className={`btn btn--quiet btn--sm sfpic__pick${busy ? ' is-busy' : ''}`}>
@@ -3225,7 +3225,7 @@ function PayoutDetails({ orderId, buyerName, details, check, onChanged }: {
           </dl>
           {details.qrCodeUrl && (
             <a href={details.qrCodeUrl} target="_blank" rel="noopener noreferrer" className="payout__qr">
-              <img src={details.qrCodeUrl} alt={`${buyerName}'s payment QR code`} />
+              <img loading="lazy" decoding="async" src={details.qrCodeUrl} alt={`${buyerName}'s payment QR code`} />
             </a>
           )}
         </div>

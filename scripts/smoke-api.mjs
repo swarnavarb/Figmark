@@ -247,13 +247,18 @@ const expireCampaign = async (id) => {
     preOrder: { ...listing.preOrder, cutoffAt: new Date(Date.now() - 1000).toISOString() },
   });
 };
-const req = ({ headers = {}, body, query = {}, params = {} } = {}) => ({
+const req = ({ headers = {}, body, query = {}, params = {}, bytes } = {}) => ({
   headers: new Headers(headers),
   query: new URLSearchParams(query),
   params,
   json: async () => {
     if (body === undefined) throw new Error('no body');
     return body;
+  },
+  // A photo sent as its own bytes, the way the app uploads one now.
+  arrayBuffer: async () => {
+    if (bytes === undefined) throw new Error('no body');
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   },
 });
 
@@ -2405,6 +2410,19 @@ await check('only a signed-in account may upload, and the same limits as any pho
   assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: 'data:application/pdf;base64,AAAA' } }), ctx)).status, 400);
   const huge = `data:image/jpeg;base64,${'A'.repeat(1_400_000)}`;
   assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: huge } }), ctx)).status, 413);
+});
+
+await check('a chat photo sent as its own bytes is taken like a data URL, and held to the same limits', async () => {
+  const png = Buffer.from(chatPixel.split(',')[1], 'base64');
+  const stored = await uploadChatPhoto(req({ headers: { ...auth, 'content-type': 'image/png' }, bytes: png }), ctx);
+  assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
+  assert.ok(stored.jsonBody.blobName.endsWith('.png'));
+  const wrong = await uploadChatPhoto(req({ headers: { ...auth, 'content-type': 'image/jpeg' }, bytes: png }), ctx);
+  assert.equal(wrong.status, 400, 'the bytes decide what it is, not the header');
+  const big = await uploadChatPhoto(req({
+    headers: { ...auth, 'content-type': 'image/jpeg', 'content-length': '2000000' }, bytes: new Uint8Array(10),
+  }), ctx);
+  assert.equal(big.status, 413);
 });
 
 await check("somebody else's upload cannot be sent as yours, and made-up names are refused", async () => {

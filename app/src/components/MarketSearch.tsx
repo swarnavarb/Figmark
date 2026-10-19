@@ -191,7 +191,7 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
               <div key={shop.id} className="socsearch__row">
                 <button type="button" className="socsearch__open" onClick={() => shop.handle && open(`/${shop.handle}`)}>
                   {shop.photoUrl
-                    ? <img className="mktsearch__shop" src={shop.photoUrl} alt="" />
+                    ? <img loading="lazy" decoding="async" className="mktsearch__shop" src={shop.photoUrl} alt="" />
                     : <Avatar name={shop.name} size={40} />}
                   <span className="socsearch__who">
                     <strong>{shop.name}</strong>

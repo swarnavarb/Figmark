@@ -35,7 +35,7 @@ export function ProofPicker({ value, onChange }: {
       {value ? (
         <div className="proofpick__done">
           <a href={value} target="_blank" rel="noopener noreferrer">
-            <img src={value} alt="Transfer screenshot" className="proofpick__img" />
+            <img loading="lazy" decoding="async" src={value} alt="Transfer screenshot" className="proofpick__img" />
           </a>
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => onChange(null)}>Remove</button>
         </div>

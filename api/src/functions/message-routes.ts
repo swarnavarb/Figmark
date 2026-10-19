@@ -21,7 +21,7 @@ import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
 import { getPhotoStore } from '../storage/index.js';
-import { readPhoto } from './template-routes.js';
+import { readPhotoRequest } from './template-routes.js';
 import { earnedTags } from '../../../shared/shop-tags.js';
 
 /**
@@ -691,14 +691,7 @@ async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext
   const slow = await tooFast(user.id, 'chatphoto');
   if (slow) return slow;
 
-  let body: { dataUrl?: string };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return error(400, 'invalid_body', 'Request body must be JSON.');
-  }
-
-  const read = readPhoto(body.dataUrl);
+  const read = await readPhotoRequest(request);
   if ('refusal' in read) return read.refusal;
   const photo = read.photo;
   const stored = await (await getPhotoStore()).uploadPrivate(photo.bytes, photo.contentType, user.id);

@@ -15,7 +15,7 @@ import type { Repository } from '../data/repository.js';
 import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, handleShapeProblem, suggestUsername } from '../../../shared/handles.js';
-import { PASSWORD_MAX_LENGTH, hashPassword, passwordProblem, verifyPassword } from './passwords.js';
+import { PASSWORD_MAX_LENGTH, hashPasswordAsync, passwordProblem, verifyPasswordAsync } from './passwords.js';
 import { normalizeIndianMobile } from '../../../shared/verification.js';
 import {
   SESSION_COOKIE_NAME,
@@ -248,7 +248,7 @@ export class MockAuthProvider implements AuthService {
 
     // Compare regardless of whether the user exists so a missing account and a
     // wrong password take the same time to answer.
-    const ok = verifyPassword(credentials.password, user?.passwordHash ?? null);
+    const ok = await verifyPasswordAsync(credentials.password, user?.passwordHash ?? null);
 
     // Before blaming the credentials, rule out the case where nothing could
     // have matched them. A store that is unreachable, unprovisioned or empty
@@ -472,7 +472,7 @@ export class MockAuthProvider implements AuthService {
         displayName,
         username,
         isAdmin: false,
-        passwordHash: hashPassword(request.password),
+        passwordHash: await hashPasswordAsync(request.password),
         verification: blank,
         buyerTrust: { score: 0, completedTransactions: 0, disputesLost: 0, computedAt: null },
         sellerTrust: {

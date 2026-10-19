@@ -377,7 +377,7 @@ export function OrderPage() {
             {data.listing && (
               <Link to={`/listing/${data.listing.id}`} className="order-product">
                 {data.listing.photoUrl
-                  ? <img src={data.listing.photoUrl} alt="" className="order-product__thumb" />
+                  ? <img loading="lazy" decoding="async" src={data.listing.photoUrl} alt="" className="order-product__thumb" />
                   : <span className="order-product__thumb order-product__thumb--none" aria-hidden="true" />}
                 <span className="order-product__body">
                   <span className="order-product__name">{data.listing.title}</span>
@@ -1228,7 +1228,7 @@ function DirectPay({ quote, payment, busy, onPaid, onBack }: {
         ))}
         {payment.qrUrl && (
           <figure className="payqr">
-            <img src={payment.qrUrl} alt={`QR code to pay ${quote.seller.name ?? 'the seller'}`} className="payqr__img" />
+            <img loading="lazy" decoding="async" src={payment.qrUrl} alt={`QR code to pay ${quote.seller.name ?? 'the seller'}`} className="payqr__img" />
             <figcaption className="faint">Scan with any UPI app</figcaption>
           </figure>
         )}
@@ -1262,7 +1262,7 @@ function DirectPay({ quote, payment, busy, onPaid, onBack }: {
           </label>
 
           {screenshot && (
-            <img src={screenshot} alt="Your payment confirmation" className="proof" />
+            <img loading="lazy" decoding="async" src={screenshot} alt="Your payment confirmation" className="proof" />
           )}
 
           {error && <ErrorNotice message={error} />}
@@ -1330,7 +1330,7 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
           <div className="kv"><dt>Said to be paid</dt><dd>{timeAgo(claim.claimedAt)}</dd></div>
         )}
         {claim?.screenshot ? (
-          <img src={claim.screenshot} alt="The buyer's payment confirmation" className="proof" />
+          <img loading="lazy" decoding="async" src={claim.screenshot} alt="The buyer's payment confirmation" className="proof" />
         ) : (
           <p className="faint" style={{ margin: 0 }}>No screenshot — they gave a reference only.</p>
         )}
@@ -1516,7 +1516,7 @@ function ReversalPanel({ order, buyerHasReversalDetails, busy, onRequestDetails,
         <input type="file" accept="image/*"
           onChange={(e) => { const file = e.target.files?.[0]; if (file) void downscale(file).then(setScreenshot); }} />
       </label>
-      {screenshot && <img src={screenshot} alt="Reversal proof" className="proof" />}
+      {screenshot && <img loading="lazy" decoding="async" src={screenshot} alt="Reversal proof" className="proof" />}
       <div className="row">
         <button type="button" className="btn" disabled={busy !== null || (!reference.trim() && !screenshot)}
           onClick={() => void onSubmit({ reference: reference.trim() || undefined, screenshot: screenshot ?? undefined })}>

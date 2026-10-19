@@ -1,3 +1,4 @@
+import { useNow } from '../clock';
 import {
   Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
   type MouseEvent, type PointerEvent, type ReactNode,
@@ -224,11 +225,7 @@ export function FeedPage() {
   const rarityFilter = (params.get('rarity') ?? '') as RarityTier | '';
 
   // Read against one clock per render so every card agrees on "now".
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const now = useNow(60_000);
 
   const rated: Rated[] = useMemo(
     () => (data?.listings ?? []).map((listing) => ({ ...listing, rarity: listingRarity(listing, now) })),
@@ -341,7 +338,7 @@ export function FeedPage() {
       <div className="qrow__head">
         {photo ? (
           <h2 className="qphoto">
-            <img src={photo.dataUrl} alt="" />
+            <img loading="lazy" decoding="async" src={photo.dataUrl} alt="" />
             Your photo
             <button type="button" className="qphoto__clear" aria-label="Clear photo search" onClick={clearPhoto}>
               <Icon name="close" size={12} />

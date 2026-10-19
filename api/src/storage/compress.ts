@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { decode, encode } from 'jpeg-js';
 
 /**
@@ -21,6 +23,10 @@ const FLOOR_QUALITY = 35;
 const CEILING_QUALITY = 92;
 /** How far a photo is shrunk, one step at a time, when quality alone cannot do it. */
 const SCALES = [1, 0.85, 0.72, 0.6, 0.5, 0.42, 0.35, 0.3];
+/** The longest side any stored photo needs: wider than any screen it is drawn on. */
+const LONG_EDGE_MAX = 2560;
+/** Above what any photo small enough to be sent here (MAX_PHOTO_BYTES) really holds. */
+const MAX_MEGAPIXELS = 24;
 
 export interface CompressedPhoto {
   bytes: Uint8Array;
@@ -31,9 +37,11 @@ export interface CompressedPhoto {
   recompressed: boolean;
   /** Set when a JPEG could not be decoded - which a real photo always can. */
   undecodable?: true;
+  /** The kept picture's pixels, when it was decoded: its fingerprint needs no second decode. */
+  pixels?: Raw;
 }
 
-interface Raw {
+export interface Raw {
   data: Uint8Array;
   width: number;
   height: number;
@@ -106,28 +114,102 @@ export function compressPhoto(input: Uint8Array, contentType: string): Compresse
 
   let raw: Raw;
   try {
-    const decoded = decode(Buffer.from(input), {
-      useTArray: true, formatAsRGBA: true, maxResolutionInMP: 40, maxMemoryUsageInMB: 256,
-    });
-    raw = { data: decoded.data as unknown as Uint8Array, width: decoded.width, height: decoded.height };
+    raw = decodeJpeg(input);
   } catch {
     return { ...untouched, undecodable: true };
   }
 
   let candidate: Uint8Array | null = null;
+  let kept: Raw = raw;
   if (input.byteLength <= PHOTO_MAX_BYTES) {
     // Already small enough: one gentle pass, kept only if it really is smaller.
     candidate = encodeAt(raw, 75);
   } else {
+    // Nothing is shown wider than LONG_EDGE_MAX, so a bigger picture is brought
+    // down to it before any encoding: every try after that is far cheaper.
+    const base = shrinkRaw(raw, Math.min(1, LONG_EDGE_MAX / Math.max(raw.width, raw.height)));
+    // A scale too big to fit costs one encoding at the floor quality to rule out (see bestFit).
     for (const scale of SCALES) {
-      const { bytes, fits } = bestFit(shrinkRaw(raw, scale), PHOTO_MAX_BYTES);
-      if (!candidate || bytes.byteLength < candidate.byteLength) candidate = bytes;
-      if (fits) { candidate = bytes; break; }
+      const shrunk = shrinkRaw(base, scale);
+      const { bytes, fits } = bestFit(shrunk, PHOTO_MAX_BYTES);
+      if (!candidate || bytes.byteLength < candidate.byteLength) { candidate = bytes; kept = shrunk; }
+      if (fits) { candidate = bytes; kept = shrunk; break; }
     }
   }
 
   if (candidate && candidate.byteLength < input.byteLength) {
-    return { bytes: candidate, contentType: 'image/jpeg', originalBytes: input.byteLength, recompressed: true };
+    return { bytes: candidate, contentType: 'image/jpeg', originalBytes: input.byteLength, recompressed: true, pixels: kept };
   }
-  return untouched;
+  return { ...untouched, pixels: raw };
+}
+
+/**
+ * A JPEG's pixels, refusing any that claim more than a phone takes. The cap
+ * is what stops a small file that declares an enormous picture from tying up
+ * the worker, and its memory, decoding it.
+ */
+export function decodeJpeg(bytes: Uint8Array): Raw {
+  const decoded = decode(Buffer.from(bytes), {
+    useTArray: true, formatAsRGBA: true, maxResolutionInMP: MAX_MEGAPIXELS, maxMemoryUsageInMB: 128,
+  });
+  return { data: decoded.data as unknown as Uint8Array, width: decoded.width, height: decoded.height };
+}
+
+/* ── Off the request thread ─────────────────────────────────────────────── */
+
+type Job = { resolve: (out: CompressedPhoto) => void; reject: (err: Error) => void };
+
+let worker: Worker | null = null;
+let workerBroken = false;
+let nextJob = 0;
+const jobs = new Map<number, Job>();
+
+function compressWorker(): Worker | null {
+  if (worker || workerBroken) return worker;
+  try {
+    worker = new Worker(join(__dirname, 'compress-worker.js'));
+    worker.on('message', (reply: { id: number; out?: CompressedPhoto; failed?: string }) => {
+      const job = jobs.get(reply.id);
+      jobs.delete(reply.id);
+      if (!job) return;
+      if (reply.out) job.resolve(reply.out);
+      else job.reject(new Error(reply.failed ?? 'compression failed'));
+    });
+    worker.on('error', () => {
+      // A worker that died takes its jobs with it; they are done here instead.
+      worker = null;
+      for (const job of jobs.values()) job.reject(new Error('compression worker stopped'));
+      jobs.clear();
+    });
+    // The host may exit with the worker idle.
+    worker.unref();
+  } catch {
+    workerBroken = true;
+    worker = null;
+  }
+  return worker;
+}
+
+/**
+ * `compressPhoto`, on a worker thread when it is a JPEG - the only kind that
+ * costs anything - and on this one if no worker can be had.
+ */
+export async function compressPhotoAsync(input: Uint8Array, contentType: string): Promise<CompressedPhoto> {
+  if (contentType !== 'image/jpeg') return compressPhoto(input, contentType);
+  const thread = compressWorker();
+  if (!thread) return compressPhoto(input, contentType);
+  const id = nextJob++;
+  try {
+    return await new Promise<CompressedPhoto>((resolve, reject) => {
+      // A worker that never answers must not hold the upload for ever.
+      const timer = setTimeout(() => { jobs.delete(id); reject(new Error('compression timed out')); }, 20_000);
+      jobs.set(id, {
+        resolve: (out) => { clearTimeout(timer); resolve(out); },
+        reject: (err) => { clearTimeout(timer); reject(err); },
+      });
+      thread.postMessage({ id, bytes: input, contentType });
+    });
+  } catch {
+    return compressPhoto(input, contentType);
+  }
 }

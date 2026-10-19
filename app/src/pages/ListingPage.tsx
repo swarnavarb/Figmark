@@ -319,7 +319,7 @@ export function ListingPage() {
               <div className="sellercard__awning"><Canopy stripes={10} /></div>
               <div className="sellercard__sign">
                 <span className="sellercard__avatar">
-                  {seller.photoUrl ? <img src={seller.photoUrl} alt="" /> : <Avatar name={seller.storefrontName} size={64} />}
+                  {seller.photoUrl ? <img loading="lazy" decoding="async" src={seller.photoUrl} alt="" /> : <Avatar name={seller.storefrontName} size={64} />}
                 </span>
                 <div className="sellercard__who">
                   <span className="dtile__label">Posted by</span>

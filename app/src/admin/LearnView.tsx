@@ -152,7 +152,7 @@ export function LearnView() {
                         <div className="learn__stepbody">
                           <h3>{entry.title}</h3>
                           <LearnText text={entry.body} inRouter={false} />
-                          {entry.image && <img className="learned__thumb" src={entry.image} alt="" />}
+                          {entry.image && <img loading="lazy" decoding="async" className="learned__thumb" src={entry.image} alt="" />}
                           {entry.caption && <small className="faint">{entry.caption}</small>}
                         </div>
                       </li>
@@ -318,7 +318,7 @@ function StepEditor({ step, position, count, onChange, onMove, onDelete }: {
       <textarea rows={3} value={step.body} maxLength={LEARN_LIMITS.body} aria-label="Step text" placeholder="What to do, in a sentence or two."
         onChange={(event) => onChange({ body: event.target.value })} />
       <div className="learned__image">
-        {step.image && !badLink && <img className="learned__thumb" src={step.image} alt="" />}
+        {step.image && !badLink && <img loading="lazy" decoding="async" className="learned__thumb" src={step.image} alt="" />}
         <div className="stack" style={{ flex: 1, gap: 6 }}>
           <input value={step.image ?? ''} placeholder="Picture: upload one, or paste an https link" aria-label="Picture link"
             onChange={(event) => onChange({ image: event.target.value.trim() || null })} />

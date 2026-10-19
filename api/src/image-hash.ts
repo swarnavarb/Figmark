@@ -1,4 +1,4 @@
-import { decode } from 'jpeg-js';
+import { decodeJpeg, type Raw } from './storage/compress.js';
 import { getPhotoStore } from './storage/index.js';
 
 /**
@@ -26,12 +26,6 @@ import { getPhotoStore } from './storage/index.js';
  * the browser turns every upload into.
  */
 export const HASH_VERSION = 'v1';
-
-interface Raw {
-  data: Uint8Array;
-  width: number;
-  height: number;
-}
 
 /** Average the source pixels under each destination cell, as grey. */
 function greyGrid(raw: Raw, width: number, height: number): number[] {
@@ -155,15 +149,21 @@ function look(raw: Raw): string {
 export function fingerprint(bytes: Uint8Array, contentType: string): string | null {
   if (contentType !== 'image/jpeg') return null;
   try {
-    const decoded = decode(Buffer.from(bytes), {
-      useTArray: true, formatAsRGBA: true, maxResolutionInMP: 40, maxMemoryUsageInMB: 256,
-    });
-    const raw = { data: decoded.data as unknown as Uint8Array, width: decoded.width, height: decoded.height };
-    if (raw.width < 2 || raw.height < 2) return null;
-    return `${HASH_VERSION}:${dHash(raw)}:${colourHistogram(raw)}:${look(raw)}`;
+    return fingerprintPixels(decodeJpeg(bytes));
   } catch {
     return null;
   }
+}
+
+/** The fingerprint of pixels already decoded - an upload's, say - with no second decode. */
+export function fingerprintPixels(raw: Raw): string | null {
+  if (raw.width < 2 || raw.height < 2) return null;
+  return `${HASH_VERSION}:${dHash(raw)}:${colourHistogram(raw)}:${look(raw)}`;
+}
+
+/** Remember a just-stored photo's fingerprint, worked out from the pixels the upload decoded anyway. */
+export function rememberFingerprint(blobName: string, pixels: Raw | undefined): void {
+  if (pixels && !known.has(blobName)) remember(blobName, fingerprintPixels(pixels));
 }
 
 interface Parsed { high: number; low: number; colour: number[]; look: number[] | null }

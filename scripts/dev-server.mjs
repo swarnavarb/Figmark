@@ -496,7 +496,7 @@ function matchRoute(method, pathname) {
 async function readBody(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
 
 /**
@@ -539,8 +539,10 @@ const server = createServer((request, response) => {
           headers: new Headers(Object.entries(request.headers).map(([k, v]) => [k, String(v)])),
           query: url.searchParams,
           params: route.params,
-          json: async () => JSON.parse(raw),
-          text: async () => raw,
+          json: async () => JSON.parse(raw.toString('utf8')),
+          text: async () => raw.toString('utf8'),
+          // A photo is sent as its own bytes (see readPhotoRequest).
+          arrayBuffer: async () => raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength),
         },
         { error: console.error, log: () => {}, warn: console.warn, info: () => {} },
       );

@@ -208,8 +208,19 @@ function WhatsAppStep({ status, onChange, reload }: {
   const waiting = Boolean(status.phoneChallenge) && !status.checks.phone;
   useEffect(() => {
     if (!waiting) return;
-    const timer = window.setInterval(() => void reload(), 4000);
-    return () => window.clearInterval(timer);
+    // Every 4 seconds at first, easing off to every 30 the longer it waits,
+    // and not at all while the page is hidden - it looks again on return.
+    let delay = 4000;
+    let timer: number | undefined;
+    const look = () => {
+      if (document.visibilityState === 'visible') void reload();
+      delay = Math.min(30_000, Math.round(delay * 1.25));
+      timer = window.setTimeout(look, delay);
+    };
+    timer = window.setTimeout(look, delay);
+    const onVisible = () => { if (document.visibilityState === 'visible') void reload(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [waiting, reload]);
 
   async function start() {

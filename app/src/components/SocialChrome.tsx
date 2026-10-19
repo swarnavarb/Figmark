@@ -311,7 +311,7 @@ export function SocialMatches({ result, open, onError }: {
             <div key={shop.id} className="socsearch__row">
               <button type="button" className="socsearch__open"
                 onClick={() => open(shop.handle ? `/${shop.handle}` : `/social/c/${shop.id}`)}>
-                {shop.photoUrl ? <img className="socsearch__photo" src={shop.photoUrl} alt="" /> : <Avatar name={shop.name} size={44} />}
+                {shop.photoUrl ? <img loading="lazy" decoding="async" className="socsearch__photo" src={shop.photoUrl} alt="" /> : <Avatar name={shop.name} size={44} />}
                 <span className="socsearch__who">
                   <strong>{shop.name} <span className="socsearch__kind">Shop</span></strong>
                   <span className="faint">{shop.handle ? `@${shop.handle} · ` : ''}{shop.followerCount} followers</span>

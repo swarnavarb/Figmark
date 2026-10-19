@@ -78,7 +78,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
   return (
     <>
       <div className={`storefront__cover storefront__cover--${brandHueFor(person.handle ?? person.displayName)}`}>
-        {person.coverUrl && <img src={person.coverUrl} alt="" />}
+        {person.coverUrl && <img loading="lazy" decoding="async" src={person.coverUrl} alt="" />}
       </div>
 
       <div className="storefront__body">
@@ -87,7 +87,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           <div className="phead__face qprofile__avatar">
             {collector && <LevelRing level={collector.level} progress={collector.progress} size={96} />}
             <span className="qprofile__face">
-              {person.photoUrl ? <img src={person.photoUrl} alt="" /> : <Avatar name={person.displayName} size={72} />}
+              {person.photoUrl ? <img loading="lazy" decoding="async" src={person.photoUrl} alt="" /> : <Avatar name={person.displayName} size={72} />}
             </span>
             {collector && <span className="qprofile__lv">Lv {collector.level}</span>}
           </div>

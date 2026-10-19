@@ -1,5 +1,6 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { useNow } from '../clock';
 import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
 import { isInDemand } from '@shared/catalog';
@@ -53,14 +54,8 @@ export function Svg({ name, size = 18 }: { name: Glyph; size?: number }) {
 }
 
 /** Now, once a second, for a clock that is actually counting. */
-function useNow(active: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [active]);
-  return now;
+function useTick(active: boolean) {
+  return useNow(active ? 1000 : null);
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -142,7 +137,7 @@ export function Rush({ streaks = 9, front, bolts = true }: { streaks?: number | 
  */
 export function Urgency({ listing, compact }: { listing: Listing; compact?: boolean }) {
   const until = listing.expiresAt ? Date.parse(listing.expiresAt) : null;
-  const now = useNow(until !== null && until > Date.now());
+  const now = useTick(until !== null && until > Date.now());
   const rarity = listingRarity(listing, now);
   const left = isMultiple(listing) ? null : listing.quantityAvailable;
   const sold = listing.soldCount ?? 0;

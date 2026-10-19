@@ -123,7 +123,7 @@ async function uploadStorefrontPhoto(request: HttpRequest, _context: InvocationC
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
-  const read = readPhoto(body.dataUrl);
+  const read = await readPhoto(body.dataUrl);
   if ('refusal' in read) return read.refusal;
   const stored = await (await getPhotoStore()).upload(read.photo.bytes, read.photo.contentType, user.id);
   return json(201, { ...stored, size: read.photo.bytes.byteLength });

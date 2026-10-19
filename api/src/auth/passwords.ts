@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
 
 /**
  * Password hashing for the mock auth provider only.
@@ -30,6 +30,43 @@ export function verifyPassword(password: string, stored: string | null): boolean
   if (expected.length !== KEY_LENGTH) return false;
 
   const actual = scryptSync(password, Buffer.from(saltHex, 'hex'), KEY_LENGTH);
+  return timingSafeEqual(actual, expected);
+}
+
+/**
+ * scrypt off the main thread. The sync form held the whole worker for the
+ * length of every hash, so a burst of sign-ins queued every other request
+ * behind them.
+ */
+function scryptAsync(password: string, salt: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, KEY_LENGTH, (err, derived) => (err ? reject(err) : resolve(derived)));
+  });
+}
+
+/** `hashPassword`, without blocking the worker: for sign-up. */
+export async function hashPasswordAsync(password: string): Promise<string> {
+  const salt = randomBytes(16);
+  const derived = await scryptAsync(password, salt);
+  return `${salt.toString('hex')}:${derived.toString('hex')}`;
+}
+
+/** Hashed against when there is no account, so "no such account" takes as long as "wrong password". */
+const DECOY_SALT = randomBytes(16);
+
+/**
+ * `verifyPassword`, without blocking the worker: for sign-in. An absent or
+ * unreadable hash still costs one scrypt, so how long a sign-in takes does
+ * not say whether the account exists.
+ */
+export async function verifyPasswordAsync(password: string, stored: string | null): Promise<boolean> {
+  const [saltHex, hashHex] = (stored ?? '').split(':');
+  const expected = saltHex && hashHex ? Buffer.from(hashHex, 'hex') : null;
+  if (!expected || expected.length !== KEY_LENGTH) {
+    await scryptAsync(password, DECOY_SALT);
+    return false;
+  }
+  const actual = await scryptAsync(password, Buffer.from(saltHex!, 'hex'));
   return timingSafeEqual(actual, expected);
 }
 

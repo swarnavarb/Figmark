@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useNow } from '../clock';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { PostTemplate } from '@shared/templates';
 import { useSession } from '../session';
@@ -255,18 +256,14 @@ function SaleCard({ sale, storeId, onChanged }: {
  * minute. Only the ticking is local.
  */
 function Countdown({ to }: { to: string }) {
-  const [left, setLeft] = useState(() => Date.parse(to) - Date.now());
-  // A minute apart once there is more than an hour on it: a second hand on a
-  // four-hour countdown is motion for its own sake, and a render a second for
-  // every card on the screen. Crossing under the hour re-arms the timer, so
-  // the seconds start moving the moment they are shown.
-  const long = left > 3_600_000;
-
-  useEffect(() => {
-    setLeft(Date.parse(to) - Date.now());
-    const timer = window.setInterval(() => setLeft(Date.parse(to) - Date.now()), long ? 30_000 : 1_000);
-    return () => window.clearInterval(timer);
-  }, [to, long]);
+  // Half a minute apart while there is more than an hour on it: a second hand
+  // on a four-hour countdown is motion for its own sake. Crossing under the
+  // hour moves it to the one-second clock, so the seconds start moving the
+  // moment they are shown.
+  const slow = useNow(30_000);
+  const long = Date.parse(to) - slow > 3_600_000;
+  const fast = useNow(long ? null : 1_000);
+  const left = Date.parse(to) - (long ? slow : Math.max(slow, fast));
 
   if (left <= 0) return <span className="countdown countdown--done">handing over…</span>;
 

@@ -1,4 +1,5 @@
 import { ReportButton } from './ReportButton';
+import { useNow } from '../clock';
 import { RaiseDisputeModal, ReportModal } from './DisputeFlows';
 import { useSession } from '../session';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
@@ -81,13 +82,8 @@ export function withReaction(summary: ReactionSummary, kind: ReactionKind | null
 
 /** mm:ss (or h:mm:ss) until a time, ticking each second; null once it has passed. */
 function useCountdown(endsAt: string): string | null {
-  const [now, setNow] = useState(() => Date.now());
   const end = Date.parse(endsAt);
-  useEffect(() => {
-    if (end <= Date.now()) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [end]);
+  const now = useNow(end > Date.now() ? 1000 : null);
   const left = Math.max(0, Math.floor((end - now) / 1000));
   if (left === 0) return null;
   const h = Math.floor(left / 3600);
@@ -1028,7 +1024,7 @@ export function Lightbox({ photos, start, onClose, title, caption, about, by, or
         if (from === null || to === undefined || Math.abs(to - from) < 40) return;
         setIndex((at) => Math.max(0, Math.min(photos.length - 1, at + (to < from ? 1 : -1))));
       }}>
-      {royal && <img className="lightbox__wash" src={photos[index]} alt="" aria-hidden="true" />}
+      {royal && <img loading="lazy" decoding="async" className="lightbox__wash" src={photos[index]} alt="" aria-hidden="true" />}
       <button type="button" className="lightbox__close" aria-label="Close" onClick={close}>
         <Icon name="close" size={20} />
       </button>
@@ -1038,7 +1034,7 @@ export function Lightbox({ photos, start, onClose, title, caption, about, by, or
           {caption && <span className="lightbox__caption">{caption}</span>}
         </div>
       )}
-      <img ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
+      <img loading="lazy" decoding="async" ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
       {/* Following a link out of it leaves the photo behind, without the shrink back into the page. */}
       <PhotoSales url={photos[index]} about={about ?? title} by={by} onLeave={onClose} />
       {photos.length > 1 && (

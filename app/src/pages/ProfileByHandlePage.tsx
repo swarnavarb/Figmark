@@ -134,7 +134,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
       {/* An unset banner is a full gradient in the shop's own hue, so every
           storefront opens with colour and no two look like the same shop. */}
       <div className={`storefront__cover storefront__cover--${brandHueFor(data.handle)}`}>
-        {data.coverUrl && <img src={data.coverUrl} alt="" />}
+        {data.coverUrl && <img loading="lazy" decoding="async" src={data.coverUrl} alt="" />}
         <Canopy />
         <span className="storefront__open"><i aria-hidden="true" /> Open for orders</span>
       </div>
@@ -143,7 +143,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
         {/* The shop's name sits on its cover, just above the edge; its details line up under it. */}
         <header className="phead phead--shop">
           <div className="phead__face storefront__avatar">
-            {data.photoUrl ? <img src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
+            {data.photoUrl ? <img loading="lazy" decoding="async" src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
           </div>
           <div className="phead__name">
             <h1>{data.displayName}<VerifiedTick checks={data.verified} /></h1>

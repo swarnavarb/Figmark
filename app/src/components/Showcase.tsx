@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useNow } from '../clock';
 import { Link } from 'react-router-dom';
 import { countryFlag } from '@shared/countries';
 import { ApiRequestError, api, type DropCardData, type FillingLot } from '../api';
@@ -23,14 +24,8 @@ import { Thumb } from './ui';
 
 /* ── Shared clock ──────────────────────────────────────────────────────── */
 
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return undefined;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [active]);
-  return now;
+function useTick(active: boolean): number {
+  return useNow(active ? 1000 : null);
 }
 
 /** Hours, minutes, seconds until a time - zeros once it has passed. */
@@ -117,7 +112,7 @@ function FlipClock({ until, now }: { until: string; now: number }) {
 function DropTicket({ drop: initial, index }: { drop: DropCardData; index: number }) {
   const [drop, setDrop] = useState(initial);
   useEffect(() => setDrop(initial), [initial]);
-  const now = useNow(true);
+  const now = useTick(true);
   const startsIn = parts(drop.startsAt, now).left;
   // The curtain goes up the second the clock runs out, without waiting for
   // the server to say so - the channel is where the first item lands.
@@ -182,9 +177,12 @@ export function DropsStage() {
     let alive = true;
     const load = () => api.drops().then((result) => alive && setDrops(result.drops)).catch(() => alive && setDrops([]));
     void load();
-    // A drop announced while the tab is open appears without a reload.
-    const timer = window.setInterval(load, 60_000);
-    return () => { alive = false; window.clearInterval(timer); };
+    // A drop announced while the tab is open appears without a reload - but
+    // only asked for while somebody can see it, and at once on coming back.
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load(); }, 60_000);
+    const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { alive = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
   if (!drops || drops.length === 0) return null;
 
@@ -226,7 +224,7 @@ export function OpeningCard({ sellerId, saleId, startsAt, saleName, itemCount }:
   useEffect(() => {
     void api.drop(sellerId, saleId).then((result) => setDrop(result.drop)).catch(() => setDrop(null));
   }, [sellerId, saleId]);
-  const now = useNow(true);
+  const now = useTick(true);
   const left = parts(startsAt, now).left;
   return (
     <span className={`opening${left === 0 ? ' is-live' : ''}`}>

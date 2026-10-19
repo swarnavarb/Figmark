@@ -35,6 +35,14 @@ export default defineConfig({
         main: fileURLToPath(new URL('index.html', import.meta.url)),
         admin: fileURLToPath(new URL('admin.html', import.meta.url)),
       },
+      output: {
+        // React and the router change far less often than the app: kept in a
+        // chunk of their own, a deploy of the app leaves them cached.
+        manualChunks(id) {
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) return 'vendor';
+          return undefined;
+        },
+      },
     },
   },
 });

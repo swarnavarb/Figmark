@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useNow } from '../clock';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Message, MessageDeal, MessageParty } from '@shared/models';
 import type { DealState } from '@shared/deals';
@@ -204,12 +205,7 @@ export function DealForm({ us, them, onClose, onSent, initialTitle = '' }: {
 
 /** "1h 42m left", "8m left", ticking. */
 function useCountdown(until: string | null | undefined): { left: number; label: string } {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!until) return;
-    const tick = window.setInterval(() => setNow(Date.now()), 15_000);
-    return () => window.clearInterval(tick);
-  }, [until]);
+  const now = useNow(until ? 15_000 : null);
   if (!until) return { left: Infinity, label: '' };
   const left = Date.parse(until) - now;
   if (left <= 0) return { left: 0, label: 'Ended' };

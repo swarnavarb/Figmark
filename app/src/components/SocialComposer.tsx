@@ -312,7 +312,7 @@ export function Composer({ onPosted, forum = null }: {
         <div className="writer__photos">
           {photos.map((photo, index) => (
             <div key={photo.key} className={`writer__photo${photo.failed ? ' is-failed' : ''}`}>
-              <img src={photo.preview} alt={`Attached photo ${index + 1}`} />
+              <img loading="lazy" decoding="async" src={photo.preview} alt={`Attached photo ${index + 1}`} />
               {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
               {photo.failed && <span className="writer__failed">Failed</span>}
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
@@ -349,7 +349,7 @@ export function Composer({ onPosted, forum = null }: {
                   setPoll(null);
                 }}>
                 {entry.photoUrl ? (
-                  <img src={entry.photoUrl} alt="" className="stockpick__img" />
+                  <img loading="lazy" decoding="async" src={entry.photoUrl} alt="" className="stockpick__img" />
                 ) : (
                   <Thumb seed={entry.id} label={entry.title} className="stockpick__img" />
                 )}
@@ -364,7 +364,7 @@ export function Composer({ onPosted, forum = null }: {
       {item && (
         <div className="writer__item">
           {item.photoUrl ? (
-            <img src={item.photoUrl} alt="" className="writer__itemimg" />
+            <img loading="lazy" decoding="async" src={item.photoUrl} alt="" className="writer__itemimg" />
           ) : (
             <Thumb seed={item.id} label={item.title} className="writer__itemimg" />
           )}

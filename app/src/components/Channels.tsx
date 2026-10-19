@@ -157,7 +157,7 @@ function ChannelRowView({ row, unread }: { row: ChannelRow; unread: number }) {
   return (
     <Link to={`/social/c/${row.sellerId}`} className={`chrow${unread > 0 ? ' is-unread' : ''}`}>
       <span className={`chrow__ring${unread > 0 ? ' is-lit' : ''}`}>
-        {row.photoUrl ? <img className="chrow__photo" src={row.photoUrl} alt="" /> : <Avatar name={row.name} size={48} />}
+        {row.photoUrl ? <img loading="lazy" decoding="async" className="chrow__photo" src={row.photoUrl} alt="" /> : <Avatar name={row.name} size={48} />}
       </span>
       <span className="chrow__body">
         <span className="chrow__top">
@@ -435,7 +435,7 @@ function Room() {
   return (
     <div className="social">
       <RoomBar onBack={back} reveal
-        avatar={channel.photoUrl ? <img className="roombar__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={34} />}
+        avatar={channel.photoUrl ? <img loading="lazy" decoding="async" className="roombar__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={34} />}
         title={<>{channel.name}{channel.tier === 'pro' && <span className="roombar__tier">PRO</span>}</>}
         sub={<>{channel.followerCount ?? 0} followers{channel.handle && <> · @{channel.handle}</>}</>}
         action={channel.handle && (
@@ -447,7 +447,7 @@ function Room() {
           <Icon name="back" size={18} />
         </button>
         <div className="chhero__row">
-          {channel.photoUrl ? <img className="chhero__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={64} />}
+          {channel.photoUrl ? <img loading="lazy" decoding="async" className="chhero__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={64} />}
           <div className="chhero__text">
             <h1 className="chhero__name">{channel.name}</h1>
             {channel.tier === 'pro' && <span className="chhero__tier">PRO</span>}
@@ -706,7 +706,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
           {listing && !post.drop && (
             <Link to={`/listing/${listing.id}`} className="cmsg__item">
               {listing.photoUrl
-                ? <img src={listing.photoUrl} alt="" className="cmsg__itemimg" />
+                ? <img loading="lazy" decoding="async" src={listing.photoUrl} alt="" className="cmsg__itemimg" />
                 : <Thumb seed={listing.id} label={listing.title} className="cmsg__itemimg" />}
               <span className="cmsg__itembody">
                 <span className="cmsg__itemname">{listing.title}</span>
@@ -903,7 +903,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
         <div className="writer__photos">
           {photos.map((photo, index) => (
             <div key={photo.key} className={`writer__photo${photo.failed ? ' is-failed' : ''}`}>
-              <img src={photo.preview} alt={`Attached photo ${index + 1}`} />
+              <img loading="lazy" decoding="async" src={photo.preview} alt={`Attached photo ${index + 1}`} />
               {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
                 onClick={() => {
@@ -920,7 +920,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
       {item && (
         <div className="writer__item">
           {item.photoUrl
-            ? <img src={item.photoUrl} alt="" className="writer__itemimg" />
+            ? <img loading="lazy" decoding="async" src={item.photoUrl} alt="" className="writer__itemimg" />
             : <Thumb seed={item.id} label={item.title} className="writer__itemimg" />}
           <span className="writer__itembody">
             <span className="spost__itemtag">For sale</span>
@@ -939,7 +939,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
             <button key={entry.id} type="button" className="stockpick__item"
               onClick={() => { setItemId(entry.id); setPicking(false); }}>
               {entry.photoUrl
-                ? <img src={entry.photoUrl} alt="" className="stockpick__img" />
+                ? <img loading="lazy" decoding="async" src={entry.photoUrl} alt="" className="stockpick__img" />
                 : <Thumb seed={entry.id} label={entry.title} className="stockpick__img" />}
               <span className="stockpick__name">{entry.title}</span>
               <span className="stockpick__price">{formatMoney(entry.priceMinor, entry.currency)}</span>

@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../api/package.json', import.meta.url));
 const { encode } = require('jpeg-js');
-const { compressPhoto, PHOTO_MAX_BYTES, PHOTO_MIN_BYTES } = await import(
+const { compressPhoto, compressPhotoAsync, PHOTO_MAX_BYTES, PHOTO_MIN_BYTES } = await import(
   new URL('../api/dist/api/src/storage/compress.js', import.meta.url)
 );
 
@@ -70,5 +70,16 @@ check('anything that is not a readable JPEG comes back untouched for the caller 
   const same = compressPhoto(broken, 'image/jpeg');
   assert.equal(same.bytes, broken);
 });
+
+{
+  // Off the request thread, the answer is the very same picture.
+  const big = photo(1200, 900, 92);
+  const [here, there] = [compressPhoto(big, 'image/jpeg'), await compressPhotoAsync(big, 'image/jpeg')];
+  check('compressing on the worker thread gives the same picture, and its pixels for the fingerprint', () => {
+    assert.equal(there.recompressed, true);
+    assert.deepEqual(Buffer.from(there.bytes), Buffer.from(here.bytes));
+    assert.ok(there.pixels && there.pixels.width > 0 && there.pixels.data.length === there.pixels.width * there.pixels.height * 4);
+  });
+}
 
 console.log(`${passed} checks passed`);

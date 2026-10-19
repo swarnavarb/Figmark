@@ -9,7 +9,8 @@ import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
-import { compressPhoto, PHOTO_MAX_BYTES, type CompressedPhoto } from '../storage/compress.js';
+import { compressPhotoAsync, PHOTO_MAX_BYTES, type CompressedPhoto } from '../storage/compress.js';
+import { rememberFingerprint } from '../image-hash.js';
 import { sanitizeImage } from '../storage/sanitize.js';
 import { tooFast } from '../rate-limit.js';
 import { discardUpload } from '../storage/release.js';
@@ -166,19 +167,15 @@ async function upload(request: HttpRequest, _context: InvocationContext) {
   const slow = await tooFast(user.id, 'upload');
   if (slow) return slow;
 
-  let body: { dataUrl?: string };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return error(400, 'invalid_body', 'Request body must be JSON.');
-  }
-
-  const read = readPhoto(body.dataUrl);
+  const read = await readPhotoRequest(request);
   if ('refusal' in read) return read.refusal;
   const photo = read.photo;
 
   const store = await getPhotoStore();
   const stored = await store.upload(photo.bytes, photo.contentType, user.id);
+  // Worked out now, from pixels already decoded, so the first "seen for sale"
+  // look at this photo needs neither a read from the store nor a decode.
+  rememberFingerprint(stored.blobName, photo.pixels);
   return json(201, { ...stored, size: photo.bytes.byteLength, originalSize: photo.originalBytes });
 }
 
@@ -190,16 +187,48 @@ async function upload(request: HttpRequest, _context: InvocationContext) {
  * after it (see sanitize.ts), and then it is compressed to 70-90 KB - the
  * smaller of what was sent and the recompressed picture is the one kept.
  */
-export function readPhoto(dataUrl: string | undefined): { photo: CompressedPhoto } | { refusal: ReturnType<typeof error> } {
+export async function readPhoto(dataUrl: string | undefined): Promise<PhotoRead> {
   const match = /^data:([a-z/+-]+);base64,(.+)$/i.exec(dataUrl ?? '');
   if (!match) return { refusal: error(400, 'invalid_photo', 'Send the photo as a base64 data URL.') };
 
-  const contentType = match[1]!.toLowerCase();
+  return readPhotoBytes(Buffer.from(match[2]!, 'base64'), match[1]!.toLowerCase());
+}
+
+type PhotoRead = { photo: CompressedPhoto } | { refusal: ReturnType<typeof error> };
+
+/**
+ * A photo from an upload request, sent either way the app has ever sent one:
+ * as the image's own bytes with its type as Content-Type - a third smaller on
+ * the wire, and no base64 to undo - or as JSON carrying a data URL.
+ */
+export async function readPhotoRequest(request: HttpRequest): Promise<PhotoRead> {
+  const type = (request.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+  if (type.startsWith('image/')) {
+    const declared = Number(request.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_PHOTO_BYTES) {
+      return { refusal: error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.') };
+    }
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(await request.arrayBuffer());
+    } catch {
+      return { refusal: error(400, 'invalid_photo', 'That photo did not arrive whole. Try again.') };
+    }
+    return readPhotoBytes(bytes, type);
+  }
+  let body: { dataUrl?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return { refusal: error(400, 'invalid_body', 'Request body must be JSON.') };
+  }
+  return readPhoto(body.dataUrl);
+}
+
+async function readPhotoBytes(bytes: Buffer, contentType: string): Promise<PhotoRead> {
   if (!ALLOWED_TYPES.includes(contentType)) {
     return { refusal: error(400, 'invalid_photo', 'Photos must be JPEG, PNG, WebP or GIF.') };
   }
-
-  const bytes = Buffer.from(match[2]!, 'base64');
   if (bytes.byteLength === 0) return { refusal: error(400, 'invalid_photo', 'That photo is empty.') };
   if (bytes.byteLength > MAX_PHOTO_BYTES) {
     return { refusal: error(413, 'photo_too_large', 'That photo is too large. Try a smaller one.') };
@@ -208,7 +237,7 @@ export function readPhoto(dataUrl: string | undefined): { photo: CompressedPhoto
   const clean = sanitizeImage(new Uint8Array(bytes), contentType);
   if (!clean.ok) return { refusal: error(400, 'invalid_photo', clean.problem) };
 
-  const photo = compressPhoto(clean.bytes, clean.contentType);
+  const photo = await compressPhotoAsync(clean.bytes, clean.contentType);
   if (photo.undecodable) {
     return { refusal: error(400, 'invalid_photo', 'That picture looks damaged. Try saving it again, or use a different one.') };
   }

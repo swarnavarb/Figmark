@@ -234,7 +234,7 @@ export function FlexComposer({ onClose, onPosted }: { onClose: () => void; onPos
         <>
           <div className="flexedit" onPointerUp={place} role="button" tabIndex={-1}
             aria-label="Tap where a piece is to tag it">
-            <img src={photos[at]} alt="Your collection" draggable={false} />
+            <img loading="lazy" decoding="async" src={photos[at]} alt="Your collection" draggable={false} />
             {here.map(({ spot, index }) => (
               <span key={index} className={`hotdot hotdot--${spot.status}`}
                 style={{ left: `${spot.x * 100}%`, top: `${spot.y * 100}%` }} aria-hidden="true">
@@ -251,7 +251,7 @@ export function FlexComposer({ onClose, onPosted }: { onClose: () => void; onPos
               <span key={url} className={`flexstrip__tile${index === at ? ' is-on' : ''}`}>
                 <button type="button" className="flexstrip__pick" aria-label={`Photo ${index + 1}`}
                   onClick={() => { setAt(index); setPending(null); }}>
-                  <img src={url} alt="" />
+                  <img loading="lazy" decoding="async" src={url} alt="" />
                 </button>
                 <button type="button" className="flexstrip__remove" aria-label="Remove photo" onClick={() => removePhoto(index)}>
                   <Icon name="close" size={11} />
@@ -420,7 +420,7 @@ export function DebateComposer({ onClose, onPosted }: { onClose: () => void; onP
               <button type="button" className="debedit__photo" disabled={draft.uploading}
                 onClick={() => inputs[index]!.current?.click()}
                 aria-label={side.photo ? `Change photo ${index === 0 ? 'A' : 'B'}` : `Add photo ${index === 0 ? 'A' : 'B'}`}>
-                {side.photo ? <img src={side.photo} alt="" /> : (
+                {side.photo ? <img loading="lazy" decoding="async" src={side.photo} alt="" /> : (
                   <span className="debedit__empty"><Icon name="image" size={22} />{draft.uploading ? 'Uploading…' : 'Add photo'}</span>
                 )}
               </button>

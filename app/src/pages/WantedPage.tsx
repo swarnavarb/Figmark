@@ -347,7 +347,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
       <div className="isophotos">
         {photos.map((url) => (
           <span key={url} className="isophotos__tile">
-            <img src={url} alt="" />
+            <img loading="lazy" decoding="async" src={url} alt="" />
             <button type="button" aria-label="Remove photo" onClick={() => {
               void api.discardPhoto(url);
               setPhotos((all) => all.filter((entry) => entry !== url));
@@ -506,7 +506,7 @@ function WantDialog({ card, onClose, onChanged }: {
       {card.photoUrls?.length > 0 && (
         <div className="isophotos isophotos--view">
           {card.photoUrls.map((url) => (
-            <a key={url} className="isophotos__tile" href={url} target="_blank" rel="noreferrer"><img src={url} alt="" /></a>
+            <a key={url} className="isophotos__tile" href={url} target="_blank" rel="noreferrer"><img loading="lazy" decoding="async" src={url} alt="" /></a>
           ))}
         </div>
       )}

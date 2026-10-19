@@ -55,7 +55,7 @@ export function ScreenshotPicker({ value, onChange, max = 6 }: {
         <div className="shots__grid">
           {value.map((item, index) => (
             <figure key={item.url} className="shots__item">
-              <img src={item.url} alt={item.caption || `Screenshot ${index + 1}`} />
+              <img loading="lazy" decoding="async" src={item.url} alt={item.caption || `Screenshot ${index + 1}`} />
               <input value={item.caption} placeholder="What it shows" maxLength={200}
                 onChange={(e) => onChange(value.map((entry, i) => (i === index ? { ...entry, caption: e.target.value } : entry)))} />
               <button type="button" className="btn btn--quiet btn--sm"

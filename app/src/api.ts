@@ -204,6 +204,25 @@ const visitorKnown = () => request<unknown>('/auth/me').catch(() => undefined);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
+/** A data URL's bytes, as the Blob it describes. */
+function blobOf(dataUrl: string): Blob {
+  const match = /^data:([^;,]+);base64,(.*)$/.exec(dataUrl);
+  if (!match) throw new ApiRequestError(400, 'invalid_photo', 'That photo could not be read.');
+  const binary = atob(match[2]!);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: match[1] });
+}
+
+/**
+ * A photo upload, sent as the picture's own bytes rather than as base64 in
+ * JSON: a third smaller on the wire, with nothing for the server to decode.
+ */
+const postPhoto = <T>(path: string, dataUrl: string) => {
+  const blob = blobOf(dataUrl);
+  return request<T>(path, { method: 'POST', body: blob, headers: { 'Content-Type': blob.type } });
+};
+
 /**
  * A question sent as a POST because it carries a body - a photo, a list of
  * photos - but changes nothing anybody can see: the reads kept above stay
@@ -2641,7 +2660,7 @@ export const api = {
   deleteTemplate: (id: string) =>
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
-  uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
+  uploadPhoto: (dataUrl: string) => postPhoto<StoredPhoto>('/uploads', dataUrl),
   /** The shop's photo or banner: open to any signed-in account, unlike listing photos. */
   uploadStorefrontPhoto: (dataUrl: string) => post<StoredPhoto>('/me/storefront/photo', { dataUrl }),
   /** Shops whose name or tags match a search. */
@@ -2839,7 +2858,7 @@ export const api = {
       ...(photos?.length ? { photos } : {}),
     }),
   /** A picture for a chat, in: a private name out, with no address of its own. */
-  uploadChatPhoto: (dataUrl: string) => post<{ blobName: string }>('/message-photos', { dataUrl }),
+  uploadChatPhoto: (dataUrl: string) => postPhoto<{ blobName: string }>('/message-photos', dataUrl),
   discardChatPhoto: (blobName: string) => post<{ discarded: boolean }>('/message-photos/discard', { blobName }).catch(() => null),
   /** Take back a message you sent; its photos are deleted with it. */
   deleteMessage: (handle: string, messageId: string, as?: string) =>

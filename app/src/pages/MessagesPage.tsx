@@ -623,7 +623,7 @@ export function ThreadPage() {
           <div className="cbar__about">
             <span className="cbar__aboutitem">
               {about.photo
-                ? <img src={about.photo} alt="" />
+                ? <img loading="lazy" decoding="async" src={about.photo} alt="" />
                 : <span className="cbar__aboutblank" aria-hidden="true"><Icon name="tag" size={16} /></span>}
               <span className="cbar__aboutbody">
                 <small>Asking about</small>
@@ -659,7 +659,7 @@ export function ThreadPage() {
           <div className="cbar__photos">
             {photos.map((photo) => (
               <span key={photo.key} className={`cbar__photo${photo.failed ? ' is-failed' : ''}${photo.name ? '' : ' is-loading'}`}>
-                <img src={photo.preview} alt="" />
+                <img loading="lazy" decoding="async" src={photo.preview} alt="" />
                 <button type="button" className="cbar__photodrop" aria-label="Remove photo" onClick={() => dropPhoto(photo.key)}>
                   <Icon name="close" size={12} />
                 </button>
