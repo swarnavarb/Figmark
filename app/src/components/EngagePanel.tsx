@@ -1,12 +1,12 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
-import { contestPhase } from '@shared/play';
 import { ApiRequestError, api, type PostCard } from '../api';
 import { SocialPostCard, postHref } from './SocialPost';
 import { EmptyState, ErrorNotice } from './ui';
 import { Preloader } from './Preloader';
 import { Icon } from './Icon';
+import { isOpen, waitingOnShop } from '../engage';
 import type { StudioMode } from './PostStudio';
 import '../styles/EngagePanel.css';
 
@@ -19,28 +19,6 @@ const STARTS: { id: string; emoji: string; label: string; mode: StudioMode; pres
   { id: 'debate', emoji: '🎤', label: 'Debate with a prize', mode: 'debate', presets: { prize: true } },
   { id: 'guess', emoji: '🎯', label: 'Guess the price', mode: 'guess' },
 ];
-
-/** Whether a game is waiting on the shop: a shortlist, winners, a best argument, a prize to hand over. */
-function waitingOnShop(card: PostCard): string | null {
-  const { post, social } = card;
-  if (post.contest) {
-    const phase = contestPhase(post.contest);
-    if (phase === 'shortlisting') return 'Pick the shortlist';
-    if (phase === 'judging') return post.contest.entries.length ? 'Pick the winners' : null;
-    const owed = post.contest.prizes.filter((prize) => prize.note && post.contest!.winners?.some((winner) => winner.place === prize.place)
-      && !(post.contest!.prizeSent ?? []).includes(prize.place));
-    if (owed.length) return `Hand over ${owed.length} prize${owed.length === 1 ? '' : 's'}`;
-  }
-  if (post.debate?.prize?.judge === 'store' && !post.debate.best && social.poll?.closed) return 'Pick the best argument';
-  return null;
-}
-
-const isOpen = (card: PostCard) => {
-  const { post, social } = card;
-  if (post.contest) return contestPhase(post.contest) !== 'ended';
-  if (social.guess) return !social.guess.revealed;
-  return Boolean(social.poll && !social.poll.closed);
-};
 
 /**
  * The shop's Engage screen: start something people take part in, and see

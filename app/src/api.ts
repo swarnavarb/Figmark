@@ -1467,6 +1467,25 @@ export interface DashboardResponse {
   };
 }
 
+/** The card over the Sell tab: a few figures for each tab, read in one go. Null where this person may not see one. */
+export interface SellDashboard {
+  currency: string;
+  listings: {
+    onSale: number; drafts: number; soldOut: number; endingSoon: number; views: number; saves: number;
+    best: { id: string; title: string; units: number } | null;
+  } | null;
+  orders: { open: number; unpaid: number; claimed: number; inTransit: number; delivered30: number; cancelled30: number } | null;
+  shipments: { open: number; moving: number; done: number; ordersNoLot: number; listingsNoLot: number } | null;
+  money: {
+    revenue30Minor: number; revenuePrev30Minor: number; orders30: number; units30: number; averageMinor: number;
+    conversion: number; daily: { date: string; revenueMinor: number }[];
+  } | null;
+  shop: {
+    followers: number; team: number; tier: string;
+    setup: { photo: boolean; cover: boolean; bio: boolean; payment: boolean };
+  } | null;
+}
+
 /* ── Pro analytics ─────────────────────────────────────────────────────── */
 
 export interface WeekFigures { saves: number; buys: number; orders: number; revenueMinor: number }
@@ -2747,6 +2766,8 @@ export const api = {
   /** The operators' short forms for route buttons. */
   routeWords: () => request<RouteWords>('/route-words'),
   /** The Sell tab's three counts; null where this person may not see one. */
+  sellDashboard: (storeId?: string) =>
+    request<SellDashboard>(`/me/sell/dashboard${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
   sellTodo: (storeId?: string) =>
     request<{
       answer: number | null; answerSince?: string[] | null; noLot: number | null; noLotListings?: number | null; lots: number | null;

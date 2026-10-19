@@ -75,6 +75,7 @@ const createLot = (request, ctx) => {
 const {
   storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, storefrontPhotoRoute: storefrontPhoto, regionGuessRoute: regionGuess, dashboardRoute: dashboard,
   myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales, sellTodoRoute: sellTodo,
+  sellDashboardRoute: sellDashboard,
 } = await import(new URL('seller-routes.js', fns));
 const {
   socialFeedRoute: socialFeed, channelsRoute: channels, channelThreadRoute: channelThread,
@@ -2834,6 +2835,21 @@ await check('the Sell tab counts on the server what it used to count from the wh
   assert.ok(counts.answerSince.every((at) => typeof at === 'string' && !Number.isNaN(Date.parse(at))));
   assert.equal(typeof counts.lots, 'number');
   const refused = await sellTodo(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+await check('the Sell tab dashboard has a card for each tab, and only for its own store', async () => {
+  const card = (await sellDashboard(req({ headers: auth }), ctx)).jsonBody;
+  for (const key of ['listings', 'orders', 'shipments', 'money', 'shop']) assert.ok(card[key], `the owner sees ${key}`);
+  const shelf = await (await getRepository()).listListings({ sellerId: 'usr_demo', limit: 10_000 });
+  assert.equal(card.listings.drafts, shelf.filter((listing) => listing.status === 'draft').length);
+  assert.equal(card.listings.views, shelf.reduce((sum, listing) => sum + listing.viewCount, 0));
+  // The open orders are the ones the to-do counts read.
+  const counts = (await sellTodo(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(card.shipments.ordersNoLot, counts.noLot);
+  assert.equal(card.money.daily.length, 14);
+  assert.ok(card.money.revenue30Minor >= card.money.daily.reduce((sum, day) => sum + day.revenueMinor, 0));
+  const refused = await sellDashboard(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
   assert.equal(refused.status, 403);
 });
 

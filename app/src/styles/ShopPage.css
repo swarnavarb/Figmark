@@ -433,3 +433,43 @@ label.rdy__line { cursor: pointer; }
 .wcard__late { color: var(--warn); font-weight: var(--w-semi); }
 .wcard__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .wcard__actions .btn { flex: 1 1 auto; }
+
+/* ── The dashboard over the Sell tab: four figures about the open tab ─── */
+.sdash {
+  position: relative; overflow: hidden; padding: 14px; border-radius: var(--r-lg);
+  border: 1px solid var(--violet-line);
+  background:
+    radial-gradient(120% 90% at 100% 0%, var(--violet-soft), transparent 60%),
+    radial-gradient(90% 80% at 0% 100%, var(--aqua-soft), transparent 65%),
+    var(--surface);
+}
+.sdash__body { display: grid; gap: 10px; }
+.sdash__title { margin: 0; font-size: var(--t-sm); font-weight: var(--w-bold, 700); letter-spacing: .04em; text-transform: uppercase; color: var(--text-dim); }
+.sdash__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 560px) { .sdash__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.sdash__tile {
+  display: grid; align-content: start; gap: 2px; min-width: 0; padding: 10px 12px; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: inherit; font: inherit; cursor: pointer;
+  animation: sdash-in .22s var(--ease, ease-out) both;
+  transition: border-color .15s, transform .15s;
+}
+.sdash__tile:hover { border-color: var(--border-strong); }
+.sdash__tile:active { transform: scale(.97); }
+.sdash__tile.is-hot { border-color: var(--coral-line); background: linear-gradient(160deg, var(--coral-soft), transparent 75%); }
+.sdash__tile--wait { cursor: default; animation: none; opacity: .5; }
+.sdash__value { font-size: var(--t-lg); line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sdash__label { font-size: var(--t-xs); color: var(--text-dim); }
+.sdash__hint { font-size: var(--t-xs); color: var(--text-faint); }
+.sdash__note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.sdash__note span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.sdash__best b { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
+.sdash__step { padding: 2px 8px; border-radius: var(--r-pill); border: 1px dashed var(--border-strong); }
+.sdash__step.is-done { border-style: solid; border-color: var(--aqua-line); color: var(--text); }
+.sdash__line { display: block; width: 100%; height: 44px; }
+.sdash__area { fill: var(--violet-soft); }
+.sdash__stroke { fill: none; stroke: var(--violet-text); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+@keyframes sdash-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .sdash__tile { animation: none; transition: none; }
+}

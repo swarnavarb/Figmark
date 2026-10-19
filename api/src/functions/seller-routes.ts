@@ -6,7 +6,7 @@ import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset
 import { cardButtons, holdsLotBack, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
-import { creditIsLive, creditLeft, isExpired, orderMoney } from '../../../shared/payments.js';
+import { creditIsLive, creditLeft, expiresSoon, isExpired, orderMoney } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
@@ -761,6 +761,122 @@ async function sellTodo(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/**
+ * GET /api/me/sell/dashboard - the figures over the Sell tab, one card per tab.
+ *
+ * One read for every tab, so moving between Listings, Orders, Shipments, Data
+ * and Shop settings swaps the card at once rather than waiting on the server.
+ * The orders are read as figures, as the to-do counts are. A card is null
+ * where this person may not see that part of the store.
+ */
+async function sellDashboard(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const storeId = request.query.get('store') ?? user.id;
+
+  const owner = await repository.getUserById(storeId);
+  if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+  const may = (permission: StorePermission) => storeId === user.id || can(owner, user.id, permission);
+  const seesListings = may('listings');
+  // Orders and money are the sales book's, which asks for admin.
+  const seesOrders = may('admin');
+  const seesMoney = may('analytics');
+  const seesLots = may('lots') && await auth.requireCapability(request, ['sell']).then(() => true, () => false);
+  if (!seesListings && !seesOrders && !seesMoney && !seesLots) {
+    return error(403, 'forbidden', 'You cannot see that store’s work.');
+  }
+
+  const [figures, listings, lots] = await Promise.all([
+    seesOrders || seesMoney || seesLots ? repository.listOrderFiguresForSeller(storeId) : Promise.resolve([]),
+    repository.listListings({ sellerId: storeId, limit: 10_000 }),
+    seesLots ? repository.listLots({ sellerId: storeId, limit: 10_000 }) : Promise.resolve([]),
+  ]);
+
+  const now = Date.now();
+  const dayMs = 86_400_000;
+  const monthAgo = new Date(now - 30 * dayMs).toISOString();
+  const twoMonthsAgo = new Date(now - 60 * dayMs).toISOString();
+  const placed = figures.filter((order) => isPlaced(order));
+  const sold = placed.filter((order) => !isCancelledLike(order.status) && order.status !== 'cancelled_reversed');
+  const value = (order: (typeof figures)[number]) => order.quantity * order.unitPriceMinor;
+  const recent = sold.filter((order) => order.createdAt >= monthAgo);
+  const before = sold.filter((order) => order.createdAt >= twoMonthsAgo && order.createdAt < monthAgo);
+  const active = placed.filter((order) => !isFinished(order));
+  const onSale = listings.filter((listing) => listing.status === 'active' && !isExpired(listing));
+
+  // Fourteen days of takings, oldest first, for the Data card's line.
+  const start = now - 13 * dayMs;
+  const daily = Array.from({ length: 14 }, (_, index) => ({
+    date: new Date(start + index * dayMs).toISOString().slice(0, 10), revenueMinor: 0,
+  }));
+  const dayOf = new Map(daily.map((day) => [day.date, day]));
+  for (const order of sold) {
+    const day = dayOf.get(order.createdAt.slice(0, 10));
+    if (day) day.revenueMinor += value(order);
+  }
+
+  const unitsByListing = new Map<string, number>();
+  for (const order of recent) unitsByListing.set(order.listingId, (unitsByListing.get(order.listingId) ?? 0) + order.quantity);
+  const best = [...unitsByListing.entries()].sort((a, b) => b[1] - a[1])[0];
+  const bestListing = best ? listings.find((listing) => listing.id === best[0]) : undefined;
+
+  const views = listings.reduce((sum, listing) => sum + listing.viewCount, 0);
+  const revenue = recent.reduce((sum, order) => sum + value(order), 0);
+  const profile = owner.sellerProfile;
+
+  return json(200, {
+    currency: listings[0]?.currency ?? 'INR',
+    listings: seesListings ? {
+      onSale: onSale.length,
+      drafts: listings.filter((listing) => listing.status === 'draft').length,
+      soldOut: listings.filter((listing) => listing.status === 'sold_out').length,
+      endingSoon: onSale.filter((listing) => expiresSoon(listing)).length,
+      views,
+      saves: listings.reduce((sum, listing) => sum + listing.likeCount, 0),
+      best: bestListing ? { id: bestListing.id, title: bestListing.title, units: best![1] } : null,
+    } : null,
+    orders: seesOrders ? {
+      open: active.length,
+      unpaid: active.filter((order) => order.paymentStatus === 'unpaid' || order.paymentStatus === 'partially_paid').length,
+      claimed: active.filter((order) => order.paymentStatus === 'claimed').length,
+      inTransit: active.filter((order) => order.status === 'shipped' || Boolean(order.checkpoints?.dispatched)).length,
+      delivered30: placed.filter((order) => (order.status === 'delivered' || Boolean(order.checkpoints?.delivered))
+        && order.updatedAt >= monthAgo).length,
+      cancelled30: placed.filter((order) => (isCancelledLike(order.status) || order.status === 'cancelled_reversed')
+        && order.updatedAt >= monthAgo).length,
+    } : null,
+    shipments: seesLots ? {
+      open: lots.filter((lot) => lot.status === 'open').length,
+      moving: lots.filter((lot) => !lotIsDone(lot)).length,
+      done: lots.filter((lot) => lotIsDone(lot)).length,
+      ordersNoLot: active.filter((order) => awaitingLot(order)).length,
+      listingsNoLot: onSale.filter((listing) => !listing.lotId && listing.sourcing === 'import').length,
+    } : null,
+    money: seesMoney ? {
+      revenue30Minor: revenue,
+      revenuePrev30Minor: before.reduce((sum, order) => sum + value(order), 0),
+      orders30: recent.length,
+      units30: recent.reduce((sum, order) => sum + order.quantity, 0),
+      averageMinor: recent.length ? Math.round(revenue / recent.length) : 0,
+      // Units sold per view, as the Analytics screen counts it: views are lifetime, so the units are too.
+      conversion: views > 0 ? sold.reduce((sum, order) => sum + order.quantity, 0) / views : 0,
+      daily,
+    } : null,
+    shop: may('admin') ? {
+      followers: profile.followerCount,
+      team: (profile.managers ?? []).length,
+      tier: profile.tier,
+      setup: {
+        photo: Boolean(profile.photoUrl),
+        cover: Boolean(profile.coverUrl),
+        bio: Boolean(profile.bio?.trim()),
+        payment: Boolean(profile.payment?.upiId || profile.payment?.accountNumber),
+      },
+    } : null,
+  });
+}
+
 /** How many days of finished orders the book carries before "Show older". */
 const BOOK_DAYS = 90;
 
@@ -874,6 +990,7 @@ export const regionGuessRoute = handler(regionGuess);
 export const dashboardRoute = handler(dashboard);
 export const salesRoute = handler(sales);
 export const sellTodoRoute = handler(sellTodo);
+export const sellDashboardRoute = handler(sellDashboard);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -884,5 +1001,6 @@ app.http('me-storefront-photo', { ...anon, methods: ['POST'], route: 'me/storefr
 app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', handler: dashboardRoute });
 app.http('me-sales', { ...anon, methods: ['GET'], route: 'me/sales', handler: salesRoute });
 app.http('me-sell-todo', { ...anon, methods: ['GET'], route: 'me/sell/todo', handler: sellTodoRoute });
+app.http('me-sell-dashboard', { ...anon, methods: ['GET'], route: 'me/sell/dashboard', handler: sellDashboardRoute });
 app.http('me-stores', { ...anon, methods: ['GET'], route: 'me/stores', handler: myStoresRoute });
 app.http('me-store-managers', { ...anon, methods: ['POST'], route: 'me/storefront/managers', handler: updateManagersRoute });

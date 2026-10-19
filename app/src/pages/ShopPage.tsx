@@ -35,7 +35,8 @@ import { OrderPhotos } from '../components/OrderPhotos';
 import { ConditionTag } from '../components/ConditionTag';
 import { SlideToConfirm } from '../components/SlideToConfirm';
 import { Spinner } from '../components/Spinner';
-import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
+import { EXPIRY_WARNING_HOURS, REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
+import { isOpen, waitingOnShop } from '../engage';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
 import { shrink } from '../components/PhotoManager';
@@ -46,6 +47,8 @@ import {
   api,
   mergeSales,
   type DashboardResponse,
+  type PostCard,
+  type SellDashboard as SellDashboardData,
   type InsightsResponse,
   type PartyRef,
   type StorefrontDraft,
@@ -66,7 +69,7 @@ import { ProfitCalculator } from './ProfitCalculator';
 import { SalesPanel } from './SalesPanel';
 import { LotDetail, NewLotForm } from './LotsPage';
 import {
-  currencySymbol, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
+  currencySymbol, formatCount, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
 } from '../format';
 import { useSession } from '../session';
 import { Svg } from '../components/ListingBlocks';
@@ -424,6 +427,7 @@ function SellHome({ store, canList, onGo, section }: {
 
   return (
     <div className="sellhome">
+      <SellDashboard store={store} group={section ? groupOf(section) : 'items'} onGo={onGo} />
       {canList && (
         <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`}
           className={`btn sellhome__list${section === 'items' || section === null ? ' btn--lg' : ' sellhome__list--slim'}`}>
@@ -443,6 +447,195 @@ function SellHome({ store, canList, onGo, section }: {
         </div>
       )}
     </div>
+  );
+}
+
+/** One figure on the dashboard card, and where a tap on it goes. */
+interface DashTile { label: string; value: string; hint?: string; hot?: boolean; go?: () => void }
+
+const DASH_TITLES: Record<Group, string> = {
+  items: 'Your listings',
+  orders: 'Your orders',
+  lots: 'Your shipments',
+  engage: 'Your games',
+  money: 'Last 30 days',
+  settings: 'Your shop',
+};
+
+/**
+ * The dashboard at the top of the Sell tab: four figures about whichever tab
+ * is open, so Listings shows the shelf, Orders the book, Data the money.
+ *
+ * Every tab's figures come in one read, so changing tab swaps the card at
+ * once. It is read again when the store changes, when the bell brings news of
+ * a sale, and quietly on each change of tab, as the to-do counts are. Engage
+ * is the one exception - its games are a different read, made the first time
+ * that tab is opened.
+ */
+function SellDashboard({ store, group, onGo }: {
+  store: StoreAccess;
+  group: Group;
+  onGo: (section: Section, extra?: Record<string, string>) => void;
+}) {
+  const [data, setData] = useState<SellDashboardData | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [games, setGames] = useState<PostCard[] | null>(null);
+  const wantsGames = group === 'engage';
+
+  useEffect(() => {
+    let cancelled = false;
+    const read = () => void api.sellDashboard(store.ownerId)
+      .then((next) => !cancelled && (setData(next), setFailed(false)))
+      .catch(() => !cancelled && setFailed(true));
+    read();
+    window.addEventListener(SALES_NEWS_EVENT, read);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SALES_NEWS_EVENT, read);
+    };
+  }, [store.ownerId, group]);
+
+  useEffect(() => setGames(null), [store.ownerId]);
+  useEffect(() => {
+    if (!wantsGames || games) return;
+    let cancelled = false;
+    api.shopGames(store.ownerId).then((result) => !cancelled && setGames(result.posts)).catch(() => !cancelled && setGames([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [wantsGames, games, store.ownerId]);
+
+  const money = (minor: number) => formatMoney(minor, data?.currency);
+  const count = (value: number) => formatCount(value);
+  let tiles: DashTile[] | null = null;
+  let note: ReactNode = null;
+  let chart: { date: string; revenueMinor: number }[] | null = null;
+
+  if (group === 'items' && data?.listings) {
+    const it = data.listings;
+    tiles = [
+      { label: 'On sale', value: count(it.onSale), go: () => onGo('items') },
+      { label: 'Drafts', value: count(it.drafts), go: () => onGo('items') },
+      { label: 'Sold out', value: count(it.soldOut), go: () => onGo('items') },
+      { label: `Ending in ${EXPIRY_WARNING_HOURS}h`, value: count(it.endingSoon), hot: it.endingSoon > 0, go: () => onGo('items') },
+    ];
+    note = (
+      <>
+        <span>{count(it.views)} views</span>
+        <span><Icon name="heart" size={14} /> {count(it.saves)} saves</span>
+        {it.best && <span className="sdash__best">Best seller this month: <b>{it.best.title}</b> · {count(it.best.units)} sold</span>}
+      </>
+    );
+  } else if (group === 'orders' && data?.orders) {
+    const it = data.orders;
+    tiles = [
+      { label: 'Open orders', value: count(it.open), go: () => onGo('payments') },
+      { label: 'Payment to confirm', value: count(it.claimed), hot: it.claimed > 0, go: () => onGo('payments', { show: 'answer' }) },
+      { label: 'Not paid yet', value: count(it.unpaid), go: () => onGo('payments') },
+      { label: 'On the way', value: count(it.inTransit), go: () => onGo('payments') },
+    ];
+    note = (
+      <>
+        <span>{count(it.delivered30)} delivered in 30 days</span>
+        {it.cancelled30 > 0 && <span>{count(it.cancelled30)} called off</span>}
+      </>
+    );
+  } else if (group === 'lots' && data?.shipments) {
+    const it = data.shipments;
+    tiles = [
+      { label: 'Lots open to join', value: count(it.open), go: () => onGo('lots') },
+      { label: 'Lots on the move', value: count(it.moving), go: () => onGo('lots') },
+      { label: 'Orders not in a lot', value: count(it.ordersNoLot), hot: it.ordersNoLot > 0, go: () => onGo('lots', { view: 'unlotted' }) },
+      { label: 'Imports not in a lot', value: count(it.listingsNoLot), hot: it.listingsNoLot > 0, go: () => onGo('lots', { view: 'unlotted' }) },
+    ];
+    note = <span>{count(it.done)} {it.done === 1 ? 'lot' : 'lots'} delivered or closed</span>;
+  } else if (group === 'engage' && games) {
+    const waiting = games.filter((card) => waitingOnShop(card)).length;
+    const stock = games.filter((card) => card.social.poll?.stock).length;
+    const running = games.filter((card) => isOpen(card)).length;
+    tiles = [
+      { label: 'Running now', value: count(running), go: () => onGo('engage') },
+      { label: 'Waiting on you', value: count(waiting), hot: waiting > 0, go: () => onGo('engage') },
+      { label: 'Stock polls', value: count(stock), go: () => onGo('engage') },
+      { label: 'Run so far', value: count(games.length), go: () => onGo('engage') },
+    ];
+  } else if (group === 'money' && data?.money) {
+    const it = data.money;
+    const change = it.revenuePrev30Minor > 0 ? (it.revenue30Minor - it.revenuePrev30Minor) / it.revenuePrev30Minor : null;
+    tiles = [
+      { label: 'Takings', value: money(it.revenue30Minor),
+        hint: change === null ? undefined : `${change >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(change * 100))}% on the 30 days before`,
+        go: () => onGo('analytics') },
+      { label: 'Orders', value: count(it.orders30), go: () => onGo('analytics') },
+      { label: 'Average order', value: money(it.averageMinor), go: () => onGo('analytics') },
+      { label: 'Conversion', value: `${(it.conversion * 100).toFixed(1)}%`, hint: 'Units sold per view', go: () => onGo('analytics') },
+    ];
+    // A flat line over a quiet fortnight says nothing the ₹0 does not.
+    chart = it.daily.some((day) => day.revenueMinor > 0) ? it.daily : null;
+    note = <span>{count(it.units30)} {it.units30 === 1 ? 'piece' : 'pieces'} sold</span>;
+  } else if (group === 'settings' && data?.shop) {
+    const it = data.shop;
+    const setup = [
+      { done: it.setup.photo, label: 'Shop photo' },
+      { done: it.setup.cover, label: 'Cover' },
+      { done: it.setup.bio, label: 'Bio' },
+      { done: it.setup.payment, label: 'Payment details' },
+    ];
+    const ready = setup.filter((step) => step.done).length;
+    tiles = [
+      { label: 'Followers', value: count(it.followers), go: () => onGo('storefront') },
+      { label: 'Team', value: count(it.team + 1), hint: it.team ? undefined : 'Just you', go: () => onGo('people') },
+      { label: 'Tier', value: it.tier.charAt(0).toUpperCase() + it.tier.slice(1), go: () => onGo('storefront') },
+      { label: 'Storefront set up', value: `${ready}/${setup.length}`, hot: ready < setup.length, go: () => onGo('storefront') },
+    ];
+    note = setup.map((step) => (
+      <span key={step.label} className={`sdash__step${step.done ? ' is-done' : ''}`}>
+        <Icon name={step.done ? 'check' : 'plus'} size={12} /> {step.label}
+      </span>
+    ));
+  }
+
+  // A card this person may not see is left out, rather than shown empty.
+  const hidden = data && !tiles && group !== 'engage';
+  if (hidden || (failed && !data)) return null;
+
+  return (
+    <section className="sdash" aria-label={`Dashboard: ${DASH_TITLES[group]}`} aria-busy={!tiles}>
+      <div className="sdash__body" key={group}>
+        <h2 className="sdash__title">{DASH_TITLES[group]}</h2>
+        {chart && <DashLine days={chart} />}
+        <div className="sdash__grid">
+          {(tiles ?? Array.from({ length: 4 }, () => null)).map((tile, index) => tile ? (
+            <button key={tile.label} type="button" className={`sdash__tile${tile.hot ? ' is-hot' : ''}`} onClick={tile.go}
+              style={{ animationDelay: `${index * 40}ms` }}>
+              <b className="sdash__value">{tile.value}</b>
+              <span className="sdash__label">{tile.label}</span>
+              {tile.hint && <span className="sdash__hint">{tile.hint}</span>}
+            </button>
+          ) : (
+            <span key={index} className="sdash__tile sdash__tile--wait" aria-hidden="true">
+              <b className="sdash__value">–</b>
+              <span className="sdash__label">&nbsp;</span>
+            </span>
+          ))}
+        </div>
+        {note && <p className="sdash__note">{note}</p>}
+      </div>
+    </section>
+  );
+}
+
+/** Fourteen days of takings, as a line under the Data card's title. */
+function DashLine({ days }: { days: { date: string; revenueMinor: number }[] }) {
+  const most = Math.max(1, ...days.map((day) => day.revenueMinor));
+  const step = 100 / Math.max(1, days.length - 1);
+  const points = days.map((day, index) => `${(index * step).toFixed(2)},${(28 - (day.revenueMinor / most) * 26).toFixed(2)}`);
+  return (
+    <svg className="sdash__line" viewBox="0 0 100 30" preserveAspectRatio="none" role="img"
+      aria-label="Takings over the last fourteen days">
+      <polygon className="sdash__area" points={`0,30 ${points.join(' ')} 100,30`} />
+      <polyline className="sdash__stroke" points={points.join(' ')} vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 
