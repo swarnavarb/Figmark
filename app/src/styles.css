@@ -276,15 +276,19 @@
   --z-lightbox: 300;
   --z-photo-sheet: 400;
 
+  /* Text size, as the reader chose it in Settings (see textSize.ts); every
+     size on the scale below grows with it. */
+  --text-scale: 1;
+
   /* One type scale */
-  --t-2xs: 10.5px;
-  --t-xs: 11.5px;
-  --t-sm: 13px;
-  --t-base: 14.5px;
-  --t-md: 16px;
-  --t-lg: 20px;
-  --t-xl: 26px;
-  --t-2xl: 34px;
+  --t-2xs: calc(10.5px * var(--text-scale));
+  --t-xs: calc(11.5px * var(--text-scale));
+  --t-sm: calc(13px * var(--text-scale));
+  --t-base: calc(14.5px * var(--text-scale));
+  --t-md: calc(16px * var(--text-scale));
+  --t-lg: calc(20px * var(--text-scale));
+  --t-xl: calc(26px * var(--text-scale));
+  --t-2xl: calc(34px * var(--text-scale));
 
   /* ── One spacing scale. 4px base, eight steps. ───────────────────────── */
   --s1: 4px;
@@ -380,6 +384,9 @@ code, kbd, samp, pre {
 }
 
 ::selection { background: var(--accent-line); }
+
+:root[data-text-size="large"] { --text-scale: 1.12; }
+:root[data-text-size="larger"] { --text-scale: 1.25; }
 
 :focus-visible {
   outline: 2px solid var(--accent);

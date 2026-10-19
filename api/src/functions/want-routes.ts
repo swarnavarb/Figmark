@@ -11,6 +11,7 @@ import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { notify } from './notify.js';
+import { matchesSearch } from '../../../shared/catalog.js';
 
 /**
  * What people are looking for, and who says they can get it.
@@ -512,6 +513,38 @@ async function notifySeekers(
       }
     }),
   );
+}
+
+/** The most open wants a new listing is compared with, and the most it alerts. */
+const LISTED_LOOKS = 200;
+const LISTED_ALERTS_MAX = 20;
+
+/**
+ * Tell the people hunting for something that a shop has just listed it.
+ *
+ * A want was answered only when a shop thought to offer on it; a shop that
+ * simply listed the thing left the hunter none the wiser. Now a new listing is
+ * held up against the open wants in its category: every word of the want's
+ * title in the listing (the catalogue search's own rule), within the budget
+ * when one was given, in the condition asked for when one was. The hunter and
+ * everyone who said "me too" hear of it once, and never about their own shop.
+ */
+export async function alertWantsListed(repository: Repo, listing: Listing, shopName: string): Promise<number> {
+  const wants = await repository.listOpenWants({ category: listing.category, limit: LISTED_LOOKS });
+  const matched = wants.filter((want) => want.buyerId !== listing.sellerId
+    && matchesSearch(listing, want.title)
+    && (want.budgetMinor === null || listing.priceMinor <= want.budgetMinor)
+    && (want.condition === null || listing.condition === want.condition)).slice(0, LISTED_ALERTS_MAX);
+  await Promise.all(matched.map(async (want) => {
+    const seekers = await repository.listWantSeekers(want.id).catch(() => []);
+    await notify(repository, [want.buyerId, ...seekers.map((seeker) => seeker.userId)], {
+      kind: 'want_listed',
+      title: `${shopName} just listed something you want`,
+      body: `${listing.title} - for your want "${want.title}"`,
+      link: `/listing/${listing.id}`,
+    }, { except: listing.sellerId, pushLater: true });
+  }));
+  return matched.length;
 }
 
 /**

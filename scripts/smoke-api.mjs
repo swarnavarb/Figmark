@@ -11902,4 +11902,27 @@ await check('a card says which of the people you follow took part', async () => 
   assert.ok(!plain.followedActed);
 });
 
+await check('a shop listing what somebody hunts for tells them, within their budget and never itself', async () => {
+  const unread = async () => (await notifications(req({ headers: bystanderAuth }), ctx)).jsonBody.notifications
+    .filter((row) => row.kind === 'want_listed');
+  const before = (await unread()).length;
+  const over = await createListing(req({ headers: auth, body: {
+    title: 'HG Gundam kits, bulk lot for a class (premium)', description: 'Twenty kits', category: 'Model kits',
+    condition: 'MIB', priceMinor: 20_00_000, quantityAvailable: 1, tags: ['gunpla'],
+  } }), ctx);
+  assert.equal(over.status, 201, JSON.stringify(over.jsonBody));
+  assert.equal((await unread()).length, before, 'over their budget is not an answer');
+
+  const fits = await createListing(req({ headers: auth, body: {
+    title: 'HG Gundam kits, bulk lot for a class', description: 'Twenty kits, mixed grades', category: 'Model kits',
+    condition: 'MIB', priceMinor: 9_00_000, quantityAvailable: 1, tags: ['gunpla'],
+  } }), ctx);
+  assert.equal(fits.status, 201, JSON.stringify(fits.jsonBody));
+  const rows = await unread();
+  assert.equal(rows.length, before + 1, 'somebody who joined the hunt hears it is listed');
+  assert.equal(rows[0].link, `/listing/${fits.jsonBody.listing.id}`);
+  const mine = (await notifications(req({ headers: auth }), ctx)).jsonBody.notifications;
+  assert.equal(mine.some((row) => row.kind === 'want_listed'), false, 'a shop is not told about its own listing');
+});
+
 console.log(`\n${passed} checks passed`);

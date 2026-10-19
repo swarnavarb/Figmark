@@ -1,3 +1,4 @@
+import { TEXT_SIZES, readTextSize, setTextSize, type TextSize } from '../textSize';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
@@ -212,6 +213,7 @@ export function ProfilePage() {
         <>
           <UsernameSettings />
           <MyPageSettings />
+          <DisplaySettings />
           <BlockedList />
         </>
       ) : tab === 'posts' ? (
@@ -328,6 +330,26 @@ export function ProfilePage() {
  * three controls. Kept apart from the shop's on purpose: an account can be
  * both, and they are two different faces.
  */
+/** How the app looks on this device: for now, how big its text is. */
+function DisplaySettings() {
+  const [size, setSize] = useState<TextSize>(readTextSize);
+  return (
+    <div className="card card--pad form" style={{ marginBottom: 16 }}>
+      <h2 style={{ margin: 0 }}>Display</h2>
+      <p className="muted" style={{ margin: 0 }}>Text size on this device.</p>
+      <div className="seg" role="radiogroup" aria-label="Text size">
+        {TEXT_SIZES.map((option) => (
+          <button key={option.value} type="button" role="radio" aria-checked={size === option.value}
+            className={size === option.value ? 'is-on' : undefined}
+            onClick={() => { setTextSize(option.value); setSize(option.value); }}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MyPageSettings() {
   const { user, refresh } = useSession();
   const [bio, setBio] = useState(user?.bio ?? '');

@@ -42,6 +42,7 @@ import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
+import { alertWantsListed } from './want-routes.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
 function toSellerCard(user: SellerCardSource) {
@@ -69,6 +70,8 @@ function toSellerCard(user: SellerCardSource) {
 
 /** Listings a catalog read returns when it names no limit: see listListings. */
 const FEED_PAGE = 100;
+/** The most one catalog read returns, however many times "Show more" is pressed. */
+const FEED_MAX = 400;
 
 /**
  * GET /api/feed - the unified catalog.
@@ -86,7 +89,12 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   const group = request.query.get('group')?.trim();
   // The catalog does not depend on who is reading, so it is asked for at once,
   // alongside the session; the reader's follows and saves follow the session.
+  // "Show more" asks for a longer list rather than the next page: "newest"
+  // merges two orderings (listed and bumped), and a longer list of it is the
+  // only page that never skips or repeats an item. Capped, so it stays a read.
+  const limit = Math.min(FEED_MAX, Math.max(FEED_PAGE, Math.ceil((Number(request.query.get('limit')) || FEED_PAGE) / FEED_PAGE) * FEED_PAGE));
   const catalogRead = repository.listListings({
+    limit,
     search: request.query.get('q') ?? undefined,
     category: request.query.get('category') ?? undefined,
     categories: group ? categoriesIn(group) : undefined,
@@ -133,7 +141,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     followedSellerIds,
     // Under a page's worth: this is every match there is, so a search typed
     // further can narrow these on the device instead of asking again.
-    complete: catalog.length < FEED_PAGE,
+    complete: catalog.length < limit,
   });
 }
 
@@ -782,6 +790,11 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   await claimPhotos(created.photos.map((photo) => photo.blobName || photo.url), `listing:${created.id}`);
   // What a shop lists is what it is about: its tags count toward its identity.
   if (!privateFor) await refreshIdentity(repository, created.sellerId);
+  // Anybody hunting for this hears it is here. Never the reason a listing fails.
+  if (!privateFor && !created.unlisted) {
+    const shop = await repository.getUserById(sellerId).catch(() => null);
+    await alertWantsListed(repository, created, shop?.sellerProfile?.storefrontName ?? user.displayName).catch(() => 0);
+  }
 
   // Telling people is part of listing, not a second job to remember. The
   // channel is where a shop's followers already are; the feed is everybody.

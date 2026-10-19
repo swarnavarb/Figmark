@@ -18,3 +18,12 @@
   document.documentElement.setAttribute('data-tone', tone[0]);
   document.querySelector('meta[name="theme-color"]').content = tone[1];
 })();
+
+// The reader's text size, before the first paint, so nothing reflows when the
+// app arrives. Keep in step with src/textSize.ts.
+(function () {
+  try {
+    var size = localStorage.getItem('figmark:text-size');
+    if (size === 'large' || size === 'larger') document.documentElement.setAttribute('data-text-size', size);
+  } catch (e) { /* Storage refused: default size. */ }
+})();

@@ -2682,6 +2682,8 @@ export type NotificationKind =
   /** A forum's founder or a moderator warned, removed or appointed you. */
   | 'forum_moderation'
   | 'want_answered'
+  /** A shop listed something that answers your want, before anybody offered it to you. */
+  | 'want_listed'
   /** A new ISO matches something this seller has listed. */
   | 'want_matched'
   | 'payment_claimed'

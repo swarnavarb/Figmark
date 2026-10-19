@@ -44,6 +44,11 @@ export const PRICE_BANDS = [
  * behaves. "Newest" is the same for everyone: the latest listed or bumped
  * item leads, whoever the reader follows.
  */
+/** Listings per catalogue page, as the API counts them. */
+const CATALOG_PAGE = 100;
+/** The API's own ceiling (400 listings). */
+const CATALOG_MAX_PAGES = 4;
+
 export function useCatalog() {
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState<FeedResponse | null>(null);
@@ -108,12 +113,26 @@ export function useCatalog() {
     return { listings, categories: [...new Set(listings.map((l) => l.category))].sort(), followedSellerIds: [] };
   }, [photoFound, group, category, condition, kind, maxPrice, sort]);
 
+  // How many pages of the catalogue are asked for: "Show more" adds one, and
+  // any change of filter starts again from the first.
+  const [pages, setPages] = useState(1);
+  const filters = `${search}|${group}|${category}|${condition}|${kind}|${sort}|${maxPrice}`;
+  const [pagesFor, setPagesFor] = useState(filters);
+  if (pagesFor !== filters) {
+    setPagesFor(filters);
+    setPages(1);
+  }
+  const showMore = useCallback(() => setPages((count) => Math.min(CATALOG_MAX_PAGES, count + 1)), []);
+
   useEffect(() => {
     if (photoId) return;
     let cancelled = false;
     setLoading(true);
     void api
-      .feed({ q: search, group, category, condition, kind, sort, maxPrice })
+      .feed({
+        q: search, group, category, condition, kind, sort, maxPrice,
+        limit: pages > 1 ? String(pages * CATALOG_PAGE) : undefined,
+      })
       .then((result) => {
         if (cancelled) return;
         setData(result);
@@ -124,7 +143,7 @@ export function useCatalog() {
     return () => {
       cancelled = true;
     };
-  }, [photoId, search, group, category, condition, kind, sort, maxPrice]);
+  }, [photoId, search, group, category, condition, kind, sort, maxPrice, pages]);
 
   /** Back to the ordinary catalogue, with the filters as they are. */
   const clearPhoto = useCallback(() => {
@@ -194,6 +213,8 @@ export function useCatalog() {
   const activeFilters = [group, category, condition, kind, maxPrice].filter(Boolean).length;
   return {
     params, setParams, data: photoId ? photoData : data, error, loading, setData,
+    // More to come: the server said this is not every match, and there is room to ask for more.
+    canShowMore: !photoId && data?.complete === false && pages < CATALOG_MAX_PAGES, showMore,
     search, group, category, condition, kind, sort, maxPrice,
     photo, clearPhoto,
     toggle, chooseGroup, chooseKind, set, activeFilters,
@@ -221,6 +242,7 @@ export function FeedPage() {
     search, group, category, condition, kind, sort, maxPrice,
     photo, clearPhoto,
     chooseGroup, chooseKind, set, activeFilters,
+    canShowMore, showMore,
   } = useCatalog();
   const rarityFilter = (params.get('rarity') ?? '') as RarityTier | '';
 
@@ -372,6 +394,13 @@ export function FeedPage() {
             </Fragment>
           ))}
           {drawn < shown.length && <span ref={more} className="qgrid__more" aria-hidden="true" />}
+        </div>
+      )}
+      {drawn >= shown.length && canShowMore && (
+        <div className="qgrid__showmore">
+          <button type="button" className="btn btn--ghost" onClick={showMore} disabled={loading}>
+            {loading ? 'Loading…' : 'Show more'}
+          </button>
         </div>
       )}
     </main>
