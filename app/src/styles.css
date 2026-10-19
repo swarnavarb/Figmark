@@ -5476,7 +5476,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .spost__itemcta--buy { background: var(--lime); color: var(--lime-ink); }
 
 /* A sale post: the item, how to buy it, and what the post has sold. */
-.spost__sale { display: grid; gap: 8px; }
+.spost__sale { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .spost__sale.is-gone .spost__item { border-color: var(--border); background: var(--surface-2); opacity: 0.8; }
 .spost__left {
   padding: 0 7px; border-radius: var(--r-pill);
