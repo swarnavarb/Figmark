@@ -2,7 +2,7 @@
 
 /* ── Picking a Figmark item ─────────────────────────────────────────────── */
 
-.itempick { display: grid; gap: 6px; }
+.itempick { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .itempick--set {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px; border-radius: var(--r-md);
@@ -11,7 +11,7 @@
 }
 .itempick__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--w-semi); }
 .itempick__note { font-size: var(--t-xs); }
-.itempick__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.itempick__list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 0; padding: 0; list-style: none; }
 .itempick__row {
   display: flex; align-items: center; gap: 10px; width: 100%;
   min-height: 48px; padding: 6px 8px;
@@ -83,7 +83,7 @@
 
 /* ── The studio ────────────────────────────────────────────────────────── */
 
-.pstudio { display: grid; gap: 14px; }
+.pstudio { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .pstudio__modes {
   display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
   margin: -4px -4px 0; padding: 4px;
@@ -98,7 +98,7 @@
 .pstudio__mode:active { transform: scale(0.96); }
 .pstudio__mode.is-on { background: var(--grad-hero); border-color: transparent; color: #fff; }
 /* A new mode's fields arrive rather than appear: the form changed under you, and this says so. */
-.pstudio__body { display: grid; gap: 14px; animation: pstudio-in 220ms var(--ease-out) both; }
+.pstudio__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; animation: pstudio-in 220ms var(--ease-out) both; }
 @keyframes pstudio-in { from { opacity: 0; transform: translateY(6px); } }
 
 .pstudio__styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
@@ -141,7 +141,7 @@
 
 .pstudio__answers { display: grid; gap: 10px; }
 .pstudio__answers--photo, .pstudio__answers--versus { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.pstudio__answer { position: relative; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.pstudio__answer { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-content: start; min-width: 0; }
 .pstudio__answerphoto {
   position: relative; display: block; width: 100%; aspect-ratio: 4 / 5; padding: 0; overflow: hidden;
   border-radius: var(--r-md); border: 1.5px dashed var(--border-strong); background: var(--surface-2);
@@ -151,7 +151,19 @@
 .pstudio__answer--a .pstudio__answerphoto { border-color: var(--blue-line); }
 .pstudio__answer--b .pstudio__answerphoto { border-color: var(--pink-line); }
 .pstudio__answerrow { display: flex; align-items: center; gap: 6px; }
-.pstudio__answerrow input { flex: 1; min-width: 0; }
+.pstudio__answerrow input {
+  flex: 1; min-width: 0; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); font-size: var(--t-base);
+}
+.pstudio__answerrow input:focus { border-color: var(--accent-line); background: var(--surface-hover); }
+/* Half a phone is too narrow for a title beside its price: the title is what names the side, so it
+   keeps the room, over two lines. */
+.pstudio__answer .itempick__row > .faint { display: none; }
+.pstudio__answer .itempick__row .itempick__name {
+  white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  line-height: 1.25;
+}
 .pstudio__addanswer {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px;
   border-radius: var(--r-md); border: 1.5px dashed var(--border-strong); background: none;
