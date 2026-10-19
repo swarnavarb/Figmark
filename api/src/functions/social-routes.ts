@@ -1179,7 +1179,7 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   // whether or not it has ever been posted in: it is the one channel you write
   // rather than read, so an empty one is a prompt, not an absence. Shops you
   // help run count too - a manager posting for a shop needs its channel.
-  const owners = await repository.listStoreOwners();
+  const owners = await repository.listStoresManagedBy(user.id);
   const run = owners.filter((owner) => can(owner, user.id, 'posts')).map((owner) => owner.id);
   const mineToo = [...new Set([...followed, ...run, user.id])];
   const candidates = await repository.listUsersByIds(mineToo);
@@ -1223,12 +1223,15 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   // Read from the newest posts anywhere - one shared, cached window - rather
   // than a query per shop on the platform: a room nobody has spoken in lately
   // is not one to recommend anyway.
-  const strangers = new Map(owners
-    .filter((owner) => owner.sellerProfile && !mineToo.includes(owner.id))
+  // Only the shops that spoke lately are read, not every shop there is.
+  const recent = (await repository.listRecentPosts(200))
+    .filter((post) => post.channel === 'seller' && !mineToo.includes(post.channelId));
+  const strangers = new Map((await repository.listUsersByIds([...new Set(recent.map((post) => post.channelId))]))
+    .filter((owner) => owner.sellerProfile)
     .map((owner) => [owner.id, owner]));
   const byRoom = new Map<string, Post[]>();
-  for (const post of await repository.listRecentPosts(200)) {
-    if (post.channel !== 'seller' || !strangers.has(post.channelId)) continue;
+  for (const post of recent) {
+    if (!strangers.has(post.channelId)) continue;
     const list = byRoom.get(post.channelId) ?? [];
     if (list.length < 20) list.push(post);
     byRoom.set(post.channelId, list);

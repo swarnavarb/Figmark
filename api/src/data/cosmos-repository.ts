@@ -16,7 +16,7 @@ import { checkUsername, handleKey, suggestUsername } from '../../../shared/handl
 import type { StoreKind } from '../../../shared/service-stores.js';
 import { newestOrder, popularity, searchWords } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
-import type { BackendStatus, CatalogQuery, OrderFigures, Repository } from './repository.js';
+import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { mapLimit } from './lot-view.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
@@ -1291,8 +1291,19 @@ export class CosmosRepository implements Repository {
       if (isConflict(error)) throw new Error('That email or phone number is already registered.');
       throw error;
     }
-    const { resource } = await this.container('users').items.create(user);
+    const { resource } = await this.container('users').items.create(withSearchKey(user));
     return resource ?? user;
+  }
+
+  async listSellerCardsByIds(ids: readonly string[]): Promise<SellerCardSource[]> {
+    if (ids.length === 0) return [];
+    const { resources } = await this.container('users')
+      .items.query<SellerCardSource>({
+        query: 'SELECT c.id, c.displayName, c.createdAt, c.sellerProfile, c.sellerTrust FROM c WHERE ARRAY_CONTAINS(@ids, c.id)',
+        parameters: [{ name: '@ids', value: [...ids] }],
+      })
+      .fetchAll();
+    return resources;
   }
 
   async listUsersByIds(ids: readonly string[]): Promise<User[]> {
@@ -1471,7 +1482,7 @@ export class CosmosRepository implements Repository {
       versions[part] = { etag: saved._etag ?? null, was: JSON.stringify(fieldsOf(saved, part)) };
     }
 
-    const row = await this.writeChecked('users', user.id, rowOf(joined) as User & { _etag?: string });
+    const row = await this.writeChecked('users', user.id, withSearchKey(rowOf(joined) as User & { _etag?: string }));
     // The caller keeps using its object: give it the stored row, its parts and their new versions.
     for (const key of Object.keys(rowOf(joined))) if (!(key in row)) delete joined[key];
     Object.assign(joined, row);
@@ -1811,9 +1822,13 @@ export class CosmosRepository implements Repository {
   async searchUsers(needle: string, limit: number): Promise<User[]> {
     const { resources } = await this.container('users')
       .items.query<User>({
-        query: 'SELECT TOP @limit * FROM c WHERE CONTAINS(LOWER(c.displayName), @q) OR CONTAINS(c.username, @q)'
+        // The lowercased words are stored with the account when it is saved
+        // (searchKey), so most rows are matched without lowercasing five
+        // fields of every account; one saved before that is matched the old way.
+        query: 'SELECT TOP @limit * FROM c WHERE (IS_DEFINED(c.searchKey) ? CONTAINS(c.searchKey, @q)'
+          + ' : (CONTAINS(LOWER(c.displayName), @q) OR CONTAINS(c.username, @q)'
           + ' OR CONTAINS(LOWER(c.sellerProfile.storefrontName), @q) OR CONTAINS(c.sellerProfile.username, @q)'
-          + ' OR CONTAINS(LOWER(c.sellerProfile.bio), @q)',
+          + ' OR CONTAINS(LOWER(c.sellerProfile.bio), @q)))',
         parameters: [{ name: '@q', value: needle }, { name: '@limit', value: limit }],
       })
       .fetchAll();
@@ -2526,6 +2541,17 @@ export class CosmosRepository implements Repository {
     return this.queryBySeller<Lot>('lots', query);
   }
 
+  async listLotsNaming(userId: string): Promise<Lot[]> {
+    const { resources } = await this.container('lots')
+      .items.query<Lot>({
+        query: 'SELECT * FROM c WHERE c.forwarder.forwarderUserId = @id OR c.handler.handlerUserId = @id'
+          + ' OR c.supplier.supplierUserId = @id OR c.exporterUserId = @id ORDER BY c.createdAt DESC',
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return this.snapshots.rememberAll('lots', resources);
+  }
+
   async getLot(sellerId: string, lotId: string): Promise<Lot | null> {
     try {
       const { resource } = await this.container('lots').item(lotId, sellerId).read<Lot>();
@@ -3111,4 +3137,14 @@ function nameFor(user: { displayName?: string; email?: string; id: string }): st
 function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/**
+ * The account's searchable words, lowercased once, as people search for them:
+ * its name, handle, shop name, shop handle and bio. Never its email or phone.
+ */
+function withSearchKey<T extends User>(user: T): T {
+  const words = [user.displayName, user.username, user.sellerProfile?.storefrontName, user.sellerProfile?.username,
+    user.sellerProfile?.bio].filter((word): word is string => typeof word === 'string' && word.length > 0);
+  return { ...user, searchKey: words.join('\n').toLowerCase() };
 }

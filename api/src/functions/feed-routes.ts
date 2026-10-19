@@ -8,6 +8,7 @@ import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
 import { tagFromSlug, tagKey, tidyLabel } from '../../../shared/shop-tags.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { shopIndex } from '../shop-identity.js';
 import { screenOf, screens } from '../feed-prefs.js';
 import { moderation } from '../moderation.js';
 import { tooFast } from '../rate-limit.js';
@@ -267,16 +268,16 @@ async function suggestions(request: HttpRequest, _context: InvocationContext) {
   const categories = new Map<string, number>();
   for (const listing of saved) if (listing) categories.set(listing.category, (categories.get(listing.category) ?? 0) + 1);
   const top = [...categories.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
-  for (const [category] of top) {
-    for (const listing of await repository.listListings({ category, limit: 30 })) {
-      offer(listing.sellerId, 3, `Sells ${category}`);
-    }
-  }
+  const inCategories = await Promise.all(top.map(([category]) => repository.listListings({ category, limit: 30 })));
+  top.forEach(([category], index) => {
+    for (const listing of inCategories[index]!) offer(listing.sellerId, 3, `Sells ${category}`);
+  });
 
   // Nothing to go on yet: the shops most people follow.
   if (tally.size < SUGGESTIONS) {
-    const owners = (await repository.listStoreOwners())
-      .sort((a, b) => (b.sellerProfile?.followerCount ?? 0) - (a.sellerProfile?.followerCount ?? 0)).slice(0, SUGGESTIONS);
+    // The shop index is held for a minute, so this costs no read of every shop.
+    const owners = [...await shopIndex(repository)]
+      .sort((a, b) => b.followerCount - a.followerCount).slice(0, SUGGESTIONS);
     for (const owner of owners) offer(owner.id, 0.5, 'Popular on Figmark');
   }
 

@@ -140,25 +140,31 @@ async function sharedLimit(subject: string, action: Action, count: boolean, now:
     return null;
   }
   const digest = createHash('sha256').update(subject).digest('base64url').slice(0, 22);
-  const bumped: string[] = [];
+  // Every window is counted at once rather than one after another: an upload
+  // has three, and each is a round trip to the store.
+  const windows = LIMITS[action].map((limit) => ({
+    limit,
+    id: `rl:${action}:${digest}:${limit.ms}:${Math.floor(now / limit.ms)}`,
+    ttl: Math.ceil(limit.ms / 1000) + 60,
+  }));
+  let totals: (number | null)[];
   try {
-    for (const limit of LIMITS[action]) {
-      const id = `rl:${action}:${digest}:${limit.ms}:${Math.floor(now / limit.ms)}`;
-      const ttl = Math.ceil(limit.ms / 1000) + 60;
-      const total = await repository.bumpCounter(id, count ? 1 : 0, ttl);
-      if (total === null) return null;
-      if (count) bumped.push(id);
-      if (count ? total > limit.max : total >= limit.max) {
-        // Refused attempts are not counted: take this one back off.
-        for (const taken of bumped) void repository.bumpCounter(taken, -1, ttl).catch(() => undefined);
-        return waitFor(limit.ms);
-      }
-    }
+    totals = await Promise.all(windows.map(({ id, ttl }) => repository.bumpCounter(id, count ? 1 : 0, ttl)));
   } catch {
     // The store is unreachable or refusing; the local count still stands.
     return null;
   }
-  return null;
+  if (totals.some((total) => total === null)) return null;
+  const over = windows.find(({ limit }, index) => {
+    const total = totals[index]!;
+    return count ? total > limit.max : total >= limit.max;
+  });
+  if (!over) return null;
+  // Refused attempts are not counted: take this one back off every window.
+  if (count) {
+    for (const { id, ttl } of windows) void repository.bumpCounter(id, -1, ttl).catch(() => undefined);
+  }
+  return waitFor(over.limit.ms);
 }
 
 /** Drop subjects that have been quiet for longer than any window, now and then. */
@@ -177,11 +183,11 @@ export async function forget(subject: string, action: Action): Promise<void> {
     const repository = await getRepository();
     const digest = createHash('sha256').update(subject).digest('base64url').slice(0, 22);
     const now = Date.now();
-    for (const limit of LIMITS[action]) {
+    await Promise.all(LIMITS[action].map(async (limit) => {
       const id = `rl:${action}:${digest}:${limit.ms}:${Math.floor(now / limit.ms)}`;
       const total = await repository.bumpCounter(id, 0, 1);
       if (total) await repository.bumpCounter(id, -total, 1);
-    }
+    }));
   } catch {
     // Best effort: the window expires on its own.
   }

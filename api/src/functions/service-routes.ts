@@ -11,6 +11,7 @@ import {
 } from '../../../shared/services.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { withOwners } from '../data/lot-owners.js';
 import { error, handler, json } from './http.js';
 import { liveStores } from './store-routes.js';
 import { liveLanes, liveOfferings, transitLabel } from '../../../shared/service-stores.js';
@@ -208,15 +209,10 @@ async function servicesHub(request: HttpRequest, _context: InvocationContext) {
 
 /** Whether anyone has named this account on a lot, or granted it the right. */
 async function packsForAnyone(repository: Repo, userId: string): Promise<boolean> {
-  for (const owner of await repository.listStoreOwners()) {
-    const managers = owner.sellerProfile?.managers ?? [];
-    if (managers.some((entry) => entry.userId === userId && entry.permissions.includes('export'))) {
-      return true;
-    }
-    const lots = await repository.listLots({ sellerId: owner.id });
-    if (lots.some((lot) => supplierIdOf(lot) === userId)) return true;
-  }
-  return false;
+  const managed = await repository.listStoresManagedBy(userId);
+  if (managed.some((owner) => (owner.sellerProfile?.managers ?? [])
+    .some((entry) => entry.userId === userId && entry.permissions.includes('export')))) return true;
+  return (await repository.listLotsNaming(userId)).some((lot) => supplierIdOf(lot) === userId);
 }
 
 /** GET /api/services/{kind} - who offers it. */
@@ -335,17 +331,10 @@ async function lotsNaming(
   userId: string,
   role: 'forwarder' | 'handler',
 ): Promise<{ owner: User; lot: Lot }[]> {
-  const rows: { owner: User; lot: Lot }[] = [];
-  for (const owner of await repository.listStoreOwners()) {
-    for (const lot of await repository.listLots({ sellerId: owner.id })) {
-      const named =
-        role === 'forwarder'
-          ? lot.forwarder?.forwarderUserId === userId
-          : lot.handler?.handlerUserId === userId;
-      if (named) rows.push({ owner, lot });
-    }
-  }
-  return rows;
+  const lots = (await repository.listLotsNaming(userId)).filter((lot) => (role === 'forwarder'
+    ? lot.forwarder?.forwarderUserId === userId
+    : lot.handler?.handlerUserId === userId));
+  return withOwners(repository, lots);
 }
 
 function storeCard(owner: User) {

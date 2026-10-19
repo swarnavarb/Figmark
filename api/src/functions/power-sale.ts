@@ -342,9 +342,10 @@ export async function advancePowerSale(
  */
 export async function releaseItems(repository: Repo, sale: PowerSale, now = new Date()): Promise<void> {
   const stamp = now.toISOString();
-  for (const item of sale.items) {
-    if (!item.listingId || item.liftedAt) continue;
-    const listing = await repository.getListing(item.listingId);
+  const pending = sale.items.filter((item) => item.listingId && !item.liftedAt);
+  const listings = await Promise.all(pending.map((item) => repository.getListing(item.listingId!)));
+  for (const [index, item] of pending.entries()) {
+    const listing = listings[index];
     if (!listing) continue;
     await repository.updateListing({
       ...listing,

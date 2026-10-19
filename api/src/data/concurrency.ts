@@ -142,3 +142,15 @@ export function adopt<T extends object>(target: T, saved: T): T {
   Object.assign(record, saved);
   return target;
 }
+
+/**
+ * `fn` over every item, a few at a time: quicker than one after another, and
+ * gentler on the store's throughput than all at once. Results keep the order.
+ */
+export async function inBatches<T, R>(items: readonly T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let start = 0; start < items.length; start += size) {
+    out.push(...await Promise.all(items.slice(start, start + size).map(fn)));
+  }
+  return out;
+}

@@ -13,7 +13,7 @@ import type {
 import { handleKey } from '../../../shared/handles.js';
 import { STORE_KINDS, storeOf, type StoreKind } from '../../../shared/service-stores.js';
 import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
-import type { BackendStatus, CatalogQuery, OrderFigures, Repository } from './repository.js';
+import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
 import { BUMP_COOLDOWN_MS, ORDER_FIGURE_FIELDS, sessionDigest } from './repository.js';
 import { photoNamesIn } from '../storage/unused.js';
 import {
@@ -193,6 +193,12 @@ export class MemoryRepository implements Repository {
     return user;
   }
 
+  async listSellerCardsByIds(ids: readonly string[]): Promise<SellerCardSource[]> {
+    return (await this.listUsersByIds(ids)).map(({ id, displayName, createdAt, sellerProfile, sellerTrust }) => ({
+      id, displayName, createdAt, sellerProfile, sellerTrust,
+    }));
+  }
+
   async listUsersByIds(ids: readonly string[]): Promise<User[]> {
     return ids.map((id) => this.users.get(id)).filter((u): u is User => u !== undefined);
   }
@@ -309,6 +315,13 @@ export class MemoryRepository implements Repository {
     const all = [...this.lots.values()];
     const filtered = query.sellerId ? all.filter((l) => l.sellerId === query.sellerId) : all;
     return filtered.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listLotsNaming(userId: string): Promise<Lot[]> {
+    return [...this.lots.values()]
+      .filter((lot) => lot.forwarder?.forwarderUserId === userId || lot.handler?.handlerUserId === userId
+        || lot.supplier?.supplierUserId === userId || lot.exporterUserId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   async getLot(sellerId: string, lotId: string): Promise<Lot | null> {

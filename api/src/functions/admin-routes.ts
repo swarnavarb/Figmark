@@ -7,6 +7,7 @@ import { currentRound, decisionOverdue, isClosed, releaseOverdue, roundsOf, stan
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { inBatches } from '../data/concurrency.js';
 import {
   applySanction, bringReleaseUpToDate, bringUpToDate, commit, excludedFrom, isManager, loadActions, loadLedger, mutateActions, pickManager,
   pickManagerFor, reassignRelease, reassignRound,
@@ -282,9 +283,9 @@ async function deleteAccount(request: HttpRequest, _context: InvocationContext) 
     repository.listLots({ sellerId: id }),
     repository.listPostsByAuthor(id),
   ]);
-  for (const listing of listings) await repository.deleteListing(id, listing.id);
-  for (const lot of lots) await repository.deleteLot(id, lot.id);
-  for (const post of posts) await repository.deletePost(post.channelId, post.id);
+  await inBatches(listings, 10, (listing) => repository.deleteListing(id, listing.id));
+  await inBatches(lots, 10, (lot) => repository.deleteLot(id, lot.id));
+  await inBatches(posts, 10, (post) => repository.deletePost(post.channelId, post.id));
   await releasePostPhotos(posts, repository);
   await releaseListingPhotos(listings, repository);
   await repository.deleteUser(id);
@@ -322,11 +323,9 @@ async function deleteResource(request: HttpRequest, _context: InvocationContext)
       const live = (await repository.listOrdersForListing(id))
         .filter((order) => isPlaced(order) && !isCancelledLike(order.status));
       if (live.length > 0) {
-        const buyers = new Set<string>();
-        for (const order of live) {
-          const buyer = await repository.getUserById(order.buyerId);
-          buyers.add(buyer?.displayName ?? order.buyerId);
-        }
+        const found = new Map((await repository.listUsersByIds([...new Set(live.map((order) => order.buyerId))]))
+          .map((buyer) => [buyer.id, buyer.displayName]));
+        const buyers = new Set(live.map((order) => found.get(order.buyerId) ?? order.buyerId));
         return error(
           409,
           'listing_purchased',

@@ -899,11 +899,13 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
   const ids = [...new Set(body.orderIds ?? [])];
   const amountMinor = Math.round(Number(body.amountMinor) || 0);
   if (ids.length === 0) return error(400, 'no_items', 'Choose at least one item to pay towards.');
+  if (ids.length > 100) return error(400, 'too_many_items', 'Up to 100 items at a time.');
   if (amountMinor <= 0) return error(400, 'invalid_amount', 'Enter an amount above zero.');
 
   const selected: Order[] = [];
-  for (const id of ids) {
-    const order = await repository.getOrder(id);
+  // Read together, then judged in the order they were asked for.
+  const read = await Promise.all(ids.map((id) => repository.getOrder(id)));
+  for (const order of read) {
     if (!order || order.buyerId !== user.id) return error(404, 'not_found', 'No such purchase of yours.');
     if (!actionsFor(order, user.id).includes('pay_more')) {
       return error(409, 'not_payable', `${order.itemName} is not waiting on a further payment.`);

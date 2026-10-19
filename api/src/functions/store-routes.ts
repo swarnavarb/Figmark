@@ -20,6 +20,7 @@ import { orderMoney } from '../../../shared/payments.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { withOwners } from '../data/lot-owners.js';
 import { forwarderTookLot } from '../service-access.js';
 import { ownedLot } from './fulfilment-routes.js';
 import { gistOf } from '../../../shared/notifications.js';
@@ -411,13 +412,8 @@ async function storeTeam(request: HttpRequest, _context: InvocationContext) {
 
 /** Every lot, in every shop, that books this forwarder. */
 async function lotsBooking(repository: Repo, forwarderId: string): Promise<{ owner: User; lot: Lot }[]> {
-  const rows: { owner: User; lot: Lot }[] = [];
-  for (const owner of await repository.listStoreOwners()) {
-    for (const lot of await repository.listLots({ sellerId: owner.id })) {
-      if (lot.forwarder?.forwarderUserId === forwarderId) rows.push({ owner, lot });
-    }
-  }
-  return rows;
+  return withOwners(repository, (await repository.listLotsNaming(forwarderId))
+    .filter((lot) => lot.forwarder?.forwarderUserId === forwarderId));
 }
 
 /** A lot's own countries, for the `{origin}`/`{destination}` in its step names. */
@@ -1035,18 +1031,29 @@ interface CrewSeat { role: CrewRole; owner: User; lot: Lot; forwarder: User | nu
 
 /** Every lot this person works, and as what. */
 async function seatsOf(repository: Repo, userId: string): Promise<CrewSeat[]> {
-  const seats: CrewSeat[] = [];
-  const [forwarderOwners, sellers] = await Promise.all([repository.listServiceStoreOwners('forwarder'), repository.listStoreOwners()]);
+  // Only the lots that could seat this person are read: those naming them,
+  // those booked with a forwarder they work for, and every lot of a shop that
+  // lets them pack for it - never every lot of every shop.
+  const [forwarderOwners, naming, managed] = await Promise.all([
+    repository.listServiceStoreOwners('forwarder'), repository.listLotsNaming(userId), repository.listStoresManagedBy(userId),
+  ]);
   const forwarders = new Map(forwarderOwners.filter((user) => isLive(user.forwarderProfile) && hasRight(user, 'forwarder', userId, 'work'))
     .map((user) => [user.id, user]));
-  for (const owner of sellers) {
-    const packsAll = can(owner, userId, 'export') && owner.id !== userId;
-    for (const lot of await repository.listLots({ sellerId: owner.id })) {
-      if (supplierIdOf(lot) === userId || (packsAll && lot.status !== 'closed')) seats.push({ role: 'supplier', owner, lot, forwarder: null });
-      if (lot.handler?.handlerUserId === userId) seats.push({ role: 'handler', owner, lot, forwarder: null });
-      const fwd = lot.forwarder?.forwarderUserId ? forwarders.get(lot.forwarder.forwarderUserId) : undefined;
-      if (fwd && forwarderTookLot(lot)) seats.push({ role: 'forwarder', owner, lot, forwarder: fwd });
-    }
+  const packing = new Set(managed.filter((owner) => owner.id !== userId && can(owner, userId, 'export')).map((owner) => owner.id));
+  const [packed, booked] = await Promise.all([
+    Promise.all([...packing].map((sellerId) => repository.listLots({ sellerId }))),
+    Promise.all([...forwarders.keys()].map((id) => repository.listLotsNaming(id))),
+  ]);
+  const lots = new Map<string, Lot>();
+  for (const lot of [...naming, ...packed.flat(), ...booked.flat()]) lots.set(`${lot.sellerId}:${lot.id}`, lot);
+
+  const seats: CrewSeat[] = [];
+  for (const { owner, lot } of await withOwners(repository, [...lots.values()])) {
+    const packsAll = packing.has(owner.id);
+    if (supplierIdOf(lot) === userId || (packsAll && lot.status !== 'closed')) seats.push({ role: 'supplier', owner, lot, forwarder: null });
+    if (lot.handler?.handlerUserId === userId) seats.push({ role: 'handler', owner, lot, forwarder: null });
+    const fwd = lot.forwarder?.forwarderUserId ? forwarders.get(lot.forwarder.forwarderUserId) : undefined;
+    if (fwd && forwarderTookLot(lot)) seats.push({ role: 'forwarder', owner, lot, forwarder: fwd });
   }
   return seats;
 }

@@ -18,6 +18,7 @@ import { BUMP_GUARD_MS, emptyQuestState, tidyQuestState } from '../../../shared/
 import { emptyGrowth, tidyGrowth } from '../../../shared/store-growth.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import type { SellerCardSource } from '../data/repository.js';
 import { moderation } from '../moderation.js';
 import { isLive } from '../../../shared/service-stores.js';
 import { claimPhotos, releaseListingPhotos } from '../storage/release.js';
@@ -43,7 +44,7 @@ import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
-function toSellerCard(user: User) {
+function toSellerCard(user: SellerCardSource) {
   return {
     id: user.id,
     displayName: user.displayName,
@@ -78,18 +79,14 @@ const FEED_PAGE = 100;
  */
 async function feed(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
-  const viewer = await auth.getCurrentUser(request);
 
   // A heading is shorthand for the categories under it, resolved here rather
   // than stored on the row, so re-housing a category is an edit to one file
   // instead of a migration.
   const group = request.query.get('group')?.trim();
-  // The reader's follows and saves do not depend on the catalog, so all three
-  // reads go out together rather than one after another.
-  const [followedSellerIds, liked, catalog] = await Promise.all([
-    viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([] as string[]),
-    viewer ? repository.listLikedListingIds(viewer.id) : Promise.resolve([] as string[]),
-    repository.listListings({
+  // The catalog does not depend on who is reading, so it is asked for at once,
+  // alongside the session; the reader's follows and saves follow the session.
+  const catalogRead = repository.listListings({
     search: request.query.get('q') ?? undefined,
     category: request.query.get('category') ?? undefined,
     categories: group ? categoriesIn(group) : undefined,
@@ -99,7 +96,13 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     maxPriceMinor: priceCeiling(request.query.get('maxPrice')),
     // One shop's live stock, for its storefront.
     sellerId: request.query.get('seller') ?? undefined,
-    }),
+  });
+  catalogRead.catch(() => undefined);
+  const viewer = await auth.getCurrentUser(request);
+  const [followedSellerIds, liked, catalog] = await Promise.all([
+    viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([] as string[]),
+    viewer ? repository.listLikedListingIds(viewer.id) : Promise.resolve([] as string[]),
+    catalogRead,
   ]);
   const likedIds = new Set(liked);
   // Expired is read off the clock, so it is filtered here rather than stored.
@@ -108,7 +111,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   // Only the lots these listings ride in, not every lot on the site.
   const lotKeys = [...new Map(listings.filter((l) => l.lotId).map((l) => [l.lotId!, l.sellerId])).entries()];
   const [sellers, lots] = await Promise.all([
-    repository.listUsersByIds([...new Set(listings.map((l) => l.sellerId))]),
+    repository.listSellerCardsByIds([...new Set(listings.map((l) => l.sellerId))]),
     Promise.all(lotKeys.map(([lotId, sellerId]) => repository.getLot(sellerId, lotId))),
   ]);
   const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));

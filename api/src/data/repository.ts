@@ -110,11 +110,23 @@ export interface Repository {
   bumpCounter(id: string, by: number, ttlSeconds: number): Promise<number | null>;
 
   listUsersByIds(ids: readonly string[]): Promise<User[]>;
+  /**
+   * Only what a seller card shows, for many accounts at once. The feed draws a
+   * card per listing, and the whole account - its sign-in, its game, its
+   * settings - was read for each just to name the shop.
+   */
+  listSellerCardsByIds(ids: readonly string[]): Promise<SellerCardSource[]>;
   listForwarders(): Promise<User[]>;
   listHandlers(): Promise<User[]>;
 
   listLots(query?: CatalogQuery): Promise<Lot[]>;
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;
+  /**
+   * Every lot, in any shop, that names this account as its forwarder, handler
+   * or supplier. One query across shops, rather than reading each shop's lots
+   * in turn - which grew with the whole platform on every crew page open.
+   */
+  listLotsNaming(userId: string): Promise<Lot[]>;
 
   /** The Quick Fill templates a shop lists from. */
   listTemplates(sellerId: string): Promise<PostTemplate[]>;
@@ -526,3 +538,6 @@ export const BUMP_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 export function sessionDigest(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
+
+/** The parts of an account a public seller card is drawn from. */
+export type SellerCardSource = Pick<User, 'id' | 'displayName' | 'createdAt' | 'sellerProfile' | 'sellerTrust'>;

@@ -59,7 +59,8 @@ async function handlesFor(userId: string, repository: Repo): Promise<MessagePart
       displayName: me.sellerProfile!.storefrontName,
     });
   }
-  for (const owner of await repository.listStoreOwners()) {
+  // Only the shops that name this account as a manager can lend it their voice.
+  for (const owner of await repository.listStoresManagedBy(userId)) {
     if (owner.id === userId) continue;
     const access = accessFor(owner, userId);
     if (!access?.permissions.includes('posts')) continue;

@@ -34,6 +34,14 @@ import {
 import type { AuthService, ClientContext } from './types.js';
 import { forget, limited } from '../rate-limit.js';
 
+/** Who a request turned out to be, and the session and account record that said so. */
+interface Resolution {
+  user: AuthUser | null;
+  token?: string;
+  /** The account as read; null when the answer came from the token's snapshot. */
+  record?: User | null;
+}
+
 /**
  * Development-only auth provider: username + password against seeded users.
  *
@@ -74,8 +82,29 @@ export class MockAuthProvider implements AuthService {
     return this.repository.backend === 'memory';
   }
 
-  async getCurrentUser(request: HttpRequest): Promise<AuthUser | null> {
-    if (!this.sessionSecret) return null;
+  /**
+   * Who a request is, worked out once per request.
+   *
+   * Every route asks, and /api/auth/me then asks twice more - to renew the
+   * cookie and to hand out the device cookie - and each answer is a revocation
+   * read, an account read and its parts. Held against the request object, the
+   * second and third ask cost nothing; the next request starts afresh.
+   */
+  private readonly resolved = new WeakMap<object, Promise<Resolution>>();
+
+  private resolve(request: HttpRequest): Promise<Resolution> {
+    let found = this.resolved.get(request);
+    if (!found) {
+      found = this.lookUp(request);
+      this.resolved.set(request, found);
+      // A failed read is not an answer: the next ask in this request tries again.
+      found.catch(() => this.resolved.delete(request));
+    }
+    return found;
+  }
+
+  private async lookUp(request: HttpRequest): Promise<Resolution> {
+    if (!this.sessionSecret) return { user: null };
     // Any one of the tokens presented may be the live one, so a dead cookie
     // sitting alongside a good one must not decide the answer.
     for (const token of readTokens(request)) {
@@ -88,16 +117,20 @@ export class MockAuthProvider implements AuthService {
       const user = await this.repository.getUserById(payload.sub);
       if (user) {
         if (signedOutEverywhere(user, payload)) continue;
-        return user.suspended ? null : toAuthUser(user);
+        return { user: user.suspended ? null : toAuthUser(user), token, record: user };
       }
 
       // It found nobody. With a real database that means the account is gone
       // and the session is over. With the per-worker store it far more likely
       // means this worker simply never saw the sign-up, so fall back to the
       // snapshot the token carries rather than throwing the user out.
-      if (this.storeIsEphemeral && payload.usr) return fromSnapshot(payload.usr as AuthUser);
+      if (this.storeIsEphemeral && payload.usr) return { user: fromSnapshot(payload.usr as AuthUser), token, record: null };
     }
-    return null;
+    return { user: null };
+  }
+
+  async getCurrentUser(request: HttpRequest): Promise<AuthUser | null> {
+    return (await this.resolve(request)).user;
   }
 
   async requireAuth(request: HttpRequest): Promise<AuthUser> {
@@ -280,7 +313,8 @@ export class MockAuthProvider implements AuthService {
    */
   async missingDeviceCookies(userId: string, request: HttpRequest): Promise<string[]> {
     if (!this.sessionSecret) return [];
-    const user = await this.repository.getUserById(userId);
+    const known = await this.resolve(request);
+    const user = known.record?.id === userId ? known.record : await this.repository.getUserById(userId);
     if (!user || this.trustsDevice(user, deviceCookieValue(request.headers.get('cookie')))) return [];
     return this.deviceCookies(userId, request);
   }
@@ -322,8 +356,10 @@ export class MockAuthProvider implements AuthService {
       if (!payload) continue;
       const now = Math.floor(Date.now() / 1000);
       if (now - payload.iat < SESSION_REFRESH_AFTER_SECONDS) return [];
-      if (await this.repository.isSessionRevoked(token)) continue;
-      const user = await this.repository.getUserById(payload.sub);
+      // The token this request was already recognised by needs no second look.
+      const known = await this.resolve(request);
+      if (known.token !== token && await this.repository.isSessionRevoked(token)) continue;
+      const user = known.token === token ? known.record ?? null : await this.repository.getUserById(payload.sub);
       if (user ? user.suspended || signedOutEverywhere(user, payload) : !this.storeIsEphemeral) continue;
       const principal = user ? toAuthUser(user) : payload.usr ? fromSnapshot(payload.usr as AuthUser) : null;
       if (!principal) continue;
@@ -342,6 +378,8 @@ export class MockAuthProvider implements AuthService {
   }
 
   async logout(request: HttpRequest): Promise<void> {
+    // Whoever this request was, it is nobody once signed out.
+    this.resolved.delete(request);
     const token = readToken(request);
     if (!token) return;
     const payload = verifySessionToken(token, this.sessionSecret);
