@@ -149,6 +149,7 @@ const {
  * Mirrors the routes registered with app.http() in the API.
  */
 const { exportMineRoute, clientErrorRoute } = await import(new URL('account-routes.js', apiRoot));
+const { bootstrapRoute } = await import(new URL('bootstrap-routes.js', apiRoot));
 
 const routes = [
   ['GET', '/api/health', healthRoute],
@@ -158,6 +159,7 @@ const routes = [
   ['POST', '/api/auth/reset/confirm', resetConfirmRoute],
   ['POST', '/api/me/delete', deleteMeRoute],
   ['GET', '/api/me/export', exportMineRoute],
+  ['GET', '/api/bootstrap', bootstrapRoute],
   ['POST', '/api/client-errors', clientErrorRoute],
   ['POST', '/api/me/mfa/setup', mfaSetupRoute],
   ['POST', '/api/me/mfa/enable', mfaEnableRoute],

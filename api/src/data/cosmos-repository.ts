@@ -68,6 +68,8 @@ const SELF_MESSAGES_MARKER = 'migration:self-messages';
 const STORAGE_CLEANUP_MARKER = 'migration:storage-cleanup';
 /** Site-content id of the marker left once every listing carries its sourcing and stored popularity. */
 const LISTINGS_MARKER = 'migration:listing-sourcing';
+/** Site-content id of the marker naming the fixture set the database was last topped up with. */
+const FIXTURES_MARKER = 'migration:fixtures-topped-up';
 /** Site-content id recording which container policies were last applied to the database. */
 const CONTAINER_POLICY_MARKER = 'migration:container-policies';
 /** How long a refused policy update waits before it is tried again. */
@@ -892,6 +894,8 @@ export class CosmosRepository implements Repository {
     await this.markSelfMessagesCleared(0);
     await this.markStorageCleaned({});
     await this.markListingsTidied({ legacy: [], relabelled: 0 });
+    // And with this release's fixtures: the next start has nothing to top up.
+    await this.markFixtures(fixtureSignature(fixtureSets()), 0);
     this.seeded = true;
     return ` Seeded ${written} fixture records into an empty database.`;
   }
@@ -963,21 +967,14 @@ export class CosmosRepository implements Repository {
     // What is already there, one container at a time. The usual answer is
     // "everything", and that answer has to be cheap: this runs on every cold
     // start, and every request landing on a cold worker waits behind it.
-    const fixtures = [
-      ['users', [...seedUsers(), ...seedLotBuyers()]],
-      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-      ['listings', [...seedListings(), ...seedShowcaseListings()]],
-      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
-      ['powerSales', seedShowcaseSales()],
-      ['comments', seedComments()],
-      ['forums', seedForums()],
-      ['posts', [...seedPosts(), ...seedFeedDemoPosts()]],
-      ['reviews', seedReviews()],
-      ['disputes', seedDisputes()],
-      ['wants', seedWants()],
-      ['wantOffers', seedWantOffers()],
-      ['pledges', seedPledges()],
-    ] as const;
+    const fixtures = fixtureSets();
+
+    // When the database was last topped up with exactly this release's
+    // fixtures, there is nothing to add, and the id scan of thirteen
+    // containers below is skipped: one point read instead.
+    const signature = fixtureSignature(fixtures);
+    const marker = await this.getSiteContent(FIXTURES_MARKER);
+    if ((marker?.data as { signature?: string } | undefined)?.signature === signature) return '';
 
     let added = 0;
     const newUsers: User[] = [];
@@ -1016,7 +1013,14 @@ export class CosmosRepository implements Repository {
       await Promise.all(reservations.map((row) => this.container('identifiers').items.upsert(row)));
     }
 
+    await this.markFixtures(signature, added);
     return added === 0 ? '' : ` Added ${added} fixture record(s) this database did not have yet.`;
+  }
+
+  /** Which fixture set the database now holds, so the next start can skip the scan. */
+  private async markFixtures(signature: string, added: number): Promise<void> {
+    const now = new Date().toISOString();
+    await this.saveSiteContent({ id: FIXTURES_MARKER, data: { signature, added }, updatedBy: null, createdAt: now, updatedAt: now });
   }
 
   /**
@@ -2632,38 +2636,38 @@ export class CosmosRepository implements Repository {
     // every word goes in as a parameter, so nothing anybody typed is ever part
     // of the statement.
     const words = searchWords(query.search ?? '');
-    const searched = words.map((_, i) => searchClause(`@w${i}`)).join('');
-    const where =
-      // The operations console passes @all, because it deletes what an
+    // Only the filters in use go into the statement. A clause like
+    // `(@cat = "" OR c.category = @cat)` reads the same, but Cosmos plans it
+    // without the index on category, so every catalog read scanned every
+    // listing. Each value still goes in as a parameter, never as text.
+    const clauses: string[] = [];
+    const parameters: { name: string; value: string | number | boolean | string[] | null }[] = [];
+    const where = (clause: string, name: string, value: string | number | string[]) => {
+      clauses.push(clause);
+      parameters.push({ name, value });
+    };
+    if (query.includeHidden !== true) {
+      // The operations console reads everything, because it deletes what an
       // account made and cannot do that from a filtered list. Everybody else
       // gets the catalog: active, and not hidden behind a members' window.
-      'SELECT * FROM c WHERE (@all = true OR c.status = "active")' +
-      ' AND (@all = true OR NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)' +
-      ' AND (@seller = "" OR c.sellerId = @seller)' +
-      ' AND (@cat = "" OR c.category = @cat)' +
-      ' AND (IS_NULL(@cats) OR ARRAY_CONTAINS(@cats, c.category))' +
-      ' AND (@cond = "" OR c.condition = @cond)' +
-      ' AND (@price = 0 OR c.priceMinor <= @price)' +
-      ' AND (@kind = "" OR (@kind = "pre_order" AND IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder))' +
-      ' OR (@kind = "mixed_lot" AND c.bundle = true)' +
-      ' OR (@kind = "in_hand" AND c.sourcing = "in_hand")' +
-      ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))' +
-      searched;
-    const bound = {
-      parameters: [
-        { name: '@all', value: query.includeHidden === true },
-        { name: '@seller', value: query.sellerId ?? '' },
-        { name: '@cat', value: query.category ?? '' },
-        // Null rather than an empty array: absent means every category, and an
-        // empty list means none of them, which is what an unknown heading is.
-        { name: '@cats', value: query.categories ? [...query.categories] : null },
-        { name: '@cond', value: query.condition ?? '' },
-        { name: '@price', value: query.maxPriceMinor && query.maxPriceMinor > 0 ? query.maxPriceMinor : 0 },
-        { name: '@kind', value: query.kind && query.kind !== 'all' ? query.kind : '' },
-        { name: '@limit', value: limit },
-        ...words.map((word, i) => ({ name: `@w${i}`, value: word })),
-      ],
-    };
+      clauses.push('c.status = "active"', '(NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)');
+    }
+    if (query.sellerId) where('c.sellerId = @seller', '@seller', query.sellerId);
+    if (query.category) where('c.category = @cat', '@cat', query.category);
+    // An empty list means none, which is what an unknown heading is.
+    if (query.categories) where('ARRAY_CONTAINS(@cats, c.category)', '@cats', [...query.categories]);
+    if (query.condition) where('c.condition = @cond', '@cond', query.condition);
+    if (query.maxPriceMinor && query.maxPriceMinor > 0) where('c.priceMinor <= @price', '@price', query.maxPriceMinor);
+    const kind = query.kind && query.kind !== 'all' ? query.kind : '';
+    if (kind === 'pre_order') clauses.push('IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder)');
+    if (kind === 'mixed_lot') clauses.push('c.bundle = true');
+    if (kind === 'in_hand') clauses.push('c.sourcing = "in_hand"');
+    if (kind === 'in_stock') clauses.push('(NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))');
+    words.forEach((word, i) => parameters.push({ name: `@w${i}`, value: word }));
+    parameters.push({ name: '@limit', value: limit });
+    const searched = words.map((_, i) => searchClause(`@w${i}`)).join('');
+    const whereSql = 'SELECT * FROM c WHERE ' + (clauses.length > 0 ? clauses.join(' AND ') : 'true') + searched;
+    const bound = { parameters };
     const options = query.sellerId ? { partitionKey: query.sellerId } : undefined;
     const read = (sql: string) =>
       this.container('listings').items.query<Listing>({ query: sql, parameters: bound.parameters }, options).fetchAll();
@@ -2673,9 +2677,9 @@ export class CosmosRepository implements Repository {
     // merges: the freshest N are always among the newest N listed plus the N
     // most recently bumped.
     const [listed, bumped] = await Promise.all([
-      read(where + catalogOrder(query.sort)),
+      read(whereSql + catalogOrder(query.sort)),
       ranked
-        ? read(where + ' AND IS_DEFINED(c.bumpedAt) AND NOT IS_NULL(c.bumpedAt) ORDER BY c.bumpedAt DESC OFFSET 0 LIMIT @limit')
+        ? read(whereSql + ' AND IS_DEFINED(c.bumpedAt) AND NOT IS_NULL(c.bumpedAt) ORDER BY c.bumpedAt DESC OFFSET 0 LIMIT @limit')
         : Promise.resolve({ resources: [] as Listing[] }),
     ]);
     if (!ranked) return listed.resources;
@@ -3145,6 +3149,33 @@ const CATALOG_ORDER: Record<string, string> = {
  * in the title, description, category or a tag - the four fields matchesSearch
  * in shared/catalog reads, matched the same way, ignoring case.
  */
+/** The fixtures this release ships, container by container, for the top-up. */
+function fixtureSets() {
+  return [
+    ['users', [...seedUsers(), ...seedLotBuyers()]],
+    ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
+    ['listings', [...seedListings(), ...seedShowcaseListings()]],
+    ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
+    ['powerSales', seedShowcaseSales()],
+    ['comments', seedComments()],
+    ['forums', seedForums()],
+    ['posts', [...seedPosts(), ...seedFeedDemoPosts()]],
+    ['reviews', seedReviews()],
+    ['disputes', seedDisputes()],
+    ['wants', seedWants()],
+    ['wantOffers', seedWantOffers()],
+    ['pledges', seedPledges()],
+  ] as const;
+}
+
+/** One fingerprint of every fixture id (and every retired one): it changes when a release changes them. */
+function fixtureSignature(fixtures: ReturnType<typeof fixtureSets>): string {
+  return createHash('sha256')
+    .update(fixtures.map(([name, items]) => `${name}:${items.map((item) => item.id).join(',')}`).join('|'))
+    .update(RETIRED_FIXTURE_POSTS.map(([, id]) => id).join(','))
+    .digest('hex');
+}
+
 function searchClause(name: string): string {
   return ' AND (CONTAINS(c.title, ' + name + ', true) OR CONTAINS(c.description, ' + name + ', true)' +
     ' OR CONTAINS(c.category, ' + name + ', true)' +

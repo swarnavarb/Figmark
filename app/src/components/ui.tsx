@@ -32,14 +32,14 @@ export type { IconName } from './Icon';
 export function Thumb({ seed, label, photo, className = 'thumb', children }: {
   seed: string;
   label: string;
-  /** The listing's leading photo, when it has one. */
-  photo?: { url?: string } | null;
+  /** The listing's leading photo, when it has one. Its small copy is drawn when there is one. */
+  photo?: { url?: string; thumbUrl?: string } | null;
   className?: string;
   children?: ReactNode;
 }) {
   return (
     <div className={className} style={photo?.url ? undefined : { background: gradientFor(seed) }}>
-      {photo?.url ? <img className="thumb__img" src={photo.url} alt={label} loading="lazy" />
+      {photo?.url ? <img className="thumb__img" src={photo.thumbUrl ?? photo.url} alt={label} loading="lazy" decoding="async" />
         : <span>{initialsOf(label)}</span>}
       {children}
     </div>
@@ -47,7 +47,7 @@ export function Thumb({ seed, label, photo, className = 'thumb', children }: {
 }
 
 /** The photo a listing leads with: the primary one, or simply the first. */
-export function leadPhoto(listing: { photos?: { url?: string; isPrimary?: boolean }[] }) {
+export function leadPhoto<P extends { url?: string; thumbUrl?: string; isPrimary?: boolean }>(listing: { photos?: P[] }): P | null {
   const photos = listing.photos ?? [];
   return photos.find((photo) => photo.isPrimary) ?? photos[0] ?? null;
 }

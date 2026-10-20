@@ -222,15 +222,17 @@ function parameterList(text, from) {
 
 check('a concatenated query is read as one statement', () => {
   // The guard on the guard: if the joining above ever stops working, the check
-  // below silently goes back to inspecting fragments. The catalog query is the
-  // long one - six parameters across seven literals - so it is the one that
-  // would quietly stop being checked.
-  const catalog = statements().find((entry) => entry.query.includes('c.status = "active"'));
-  assert.ok(catalog, 'the catalog query was not found');
-  for (const name of ['@seller', '@cat', '@cats', '@cond', '@price', '@kind']) {
+  // below silently goes back to inspecting fragments. The message inbox query
+  // is written across two literals with @limit only in the second, so it is
+  // the one that would quietly stop being checked. (The catalog query used to
+  // be the anchor; it is now assembled from only the filters in use, and its
+  // SELECT is a literal of its own.)
+  const inbox = statements().find((entry) => entry.query.includes('ARRAY_CONTAINS(@handles, c["from"].handle)'));
+  assert.ok(inbox, 'the inbox query was not found');
+  for (const name of ['@handles', '@limit']) {
     assert.ok(
-      catalog.query.includes(name),
-      `the catalog query was not joined end to end - ${name} is missing from ${catalog.query.slice(0, 100)}`,
+      inbox.query.includes(name),
+      `the inbox query was not joined end to end - ${name} is missing from ${inbox.query.slice(0, 100)}`,
     );
   }
 });

@@ -141,7 +141,60 @@ const READ_TTL_MS = 5_000;
 const reads = new Map<string, { at: number; promise: Promise<unknown> }>();
 
 function forgetReads(): void {
-  reads.clear();
+  // Startup reads still on their way stay: they answer for before the write
+  // just as their own requests would have.
+  for (const path of [...reads.keys()]) if (!primed.has(path)) reads.delete(path);
+}
+
+/**
+ * The reads every page load starts with, asked as one request (/api/bootstrap)
+ * rather than seven. Each is filed here under its own path, so whichever
+ * screen asks for it gets the bootstrap's answer - or, when the bootstrap did
+ * not carry it (signed out, or the request failed), its own request, sent only
+ * if something actually asks.
+ */
+const BOOT_PATHS = ['/auth/me', '/health', '/route-words', '/push/key', '/me/items', '/invite/me', '/quest/me'];
+/** Paths primed from the bootstrap and not yet answered, with whether something has asked. */
+const primed = new Map<string, { asked: boolean; settle: (answer: { status: number; body: unknown } | null) => void }>();
+
+export function primeStartupReads(): void {
+  const at = Date.now();
+  for (const path of BOOT_PATHS) {
+    let settle!: (answer: { status: number; body: unknown } | null) => void;
+    const promise = new Promise<unknown>((resolve, reject) => {
+      settle = (answer) => {
+        primed.delete(path);
+        if (answer && answer.status >= 200 && answer.status < 300) return resolve(answer.body);
+        if (answer) {
+          const body = answer.body as ApiError | null;
+          return reject(new ApiRequestError(answer.status, body?.error ?? 'http_error', body?.message ?? `Request failed with status ${answer.status}.`));
+        }
+        // Not carried: ask for it now, but only for whoever is waiting.
+        reads.delete(path);
+        send(path).then(resolve, reject);
+      };
+    });
+    promise.catch(() => {
+      if (reads.get(path)?.promise === promise) reads.delete(path);
+    });
+    reads.set(path, { at, promise });
+    primed.set(path, { asked: false, settle });
+  }
+  const finish = (answers: Record<string, { status: number; body: unknown }>) => {
+    for (const [path, entry] of [...primed]) {
+      const answer = answers[path] ?? null;
+      if (answer || entry.asked) entry.settle(answer);
+      else {
+        // Nobody wanted it and it was not carried: forget it unanswered.
+        primed.delete(path);
+        if (reads.get(path)) reads.delete(path);
+      }
+    }
+  };
+  void fetch('/api/bootstrap', { credentials: 'same-origin' })
+    .then((response) => (response.ok ? response.json() : { answers: {} }))
+    .then((body: { answers?: Record<string, { status: number; body: unknown }> }) => finish(body.answers ?? {}))
+    .catch(() => finish({}));
 }
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -150,8 +203,10 @@ function request<T>(path: string, init?: RequestInit): Promise<T> {
     forgetReads();
     return send<T>(path, init);
   }
+  const waiting = primed.get(path);
+  if (waiting) waiting.asked = true;
   const held = reads.get(path);
-  if (held && Date.now() - held.at < READ_TTL_MS) return held.promise as Promise<T>;
+  if (held && (waiting || Date.now() - held.at < READ_TTL_MS)) return held.promise as Promise<T>;
   const promise = send<T>(path, init);
   reads.set(path, { at: Date.now(), promise });
   // A failure is not an answer worth keeping: the next ask tries again.

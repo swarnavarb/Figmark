@@ -850,6 +850,8 @@ export interface ListingPhoto {
    * same order. Absent on rows written before photos could be uploaded at all.
    */
   url?: string;
+  /** A small copy for cards and grids; absent on photos stored before these were made, and on pasted links. */
+  thumbUrl?: string;
   /** Perceptual hash, reserved for reverse-image search. */
   imageHash: string | null;
   isPrimary: boolean;

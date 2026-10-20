@@ -39,6 +39,19 @@ export interface CompressedPhoto {
   undecodable?: true;
   /** The kept picture's pixels, when it was decoded: its fingerprint needs no second decode. */
   pixels?: Raw;
+  /** A small copy for cards and grids (THUMB_EDGE on its long side), when the photo is bigger than that. */
+  thumb?: Uint8Array;
+}
+
+/** The long side of a card's copy: sharp on a phone grid at 2x, a fraction of the bytes. */
+export const THUMB_EDGE = 480;
+const THUMB_QUALITY = 72;
+
+/** The small copy of decoded pixels, or nothing when the photo is already that small. */
+function thumbOf(raw: Raw): Uint8Array | undefined {
+  const edge = Math.max(raw.width, raw.height);
+  if (edge <= THUMB_EDGE) return undefined;
+  return encodeAt(shrinkRaw(raw, THUMB_EDGE / edge), THUMB_QUALITY);
 }
 
 export interface Raw {
@@ -138,9 +151,9 @@ export function compressPhoto(input: Uint8Array, contentType: string): Compresse
   }
 
   if (candidate && candidate.byteLength < input.byteLength) {
-    return { bytes: candidate, contentType: 'image/jpeg', originalBytes: input.byteLength, recompressed: true, pixels: kept };
+    return { bytes: candidate, contentType: 'image/jpeg', originalBytes: input.byteLength, recompressed: true, pixels: kept, thumb: thumbOf(kept) };
   }
-  return { ...untouched, pixels: raw };
+  return { ...untouched, pixels: raw, thumb: thumbOf(raw) };
 }
 
 /**

@@ -4,7 +4,7 @@ Date: 19 Oct 2026 · Commit `7c606f4` · Tested locally (`npm run serve`, in-mem
 
 ## Implementation status (20 Oct 2026)
 
-The code-level findings below have been fixed on `claude/pre-launch-audit` and deployed through the `development` branch. The suite now runs 900 checks, all passing.
+The code-level findings below have been fixed on `claude/pre-launch-audit` and deployed through the `development` branch, in two rounds. After round 2 the suite runs 911 checks, all passing; a browser crawl of 35 routes signed in and out shows no script errors, and axe finds no WCAG A/AA violations on the 11 scanned pages.
 
 | Item | Status | What changed |
 |---|---|---|
@@ -29,8 +29,22 @@ The code-level findings below have been fixed on `claude/pre-launch-audit` and d
 | A-1 | ✅ Fixed | axe: 0 WCAG A/AA violations on the 11 scanned pages |
 | Blocker 3 (password reset) | ✅ Built | Email code to a *confirmed* address → new password → signed in; every other session ends |
 | Blocker 8 (account deletion) | ✅ Built | Settings → "Delete your account" (password re-asked; refused while money or a dispute is open) |
-| S-8, S-11, P-2, P-5, P-7, P-8 | ⏳ Open | CSP image hosts, staff MFA, deeper JS splitting, thumbnails, search service. P-8 is moot with S-1 |
-| Blockers 1, 2, 4–7 and items 10–16 | ⏳ Open, not code-only | Payment gateway + RBI-compliant escrow, real identity provider, production settings, live Azure verification, legal pages, Aadhaar policy, monitoring, backups, CAPTCHA, custom domain, load test |
+| S-8 | ✅ Fixed (round 2) | CSP `img-src` limited to this site and Blob Storage; profile banners, store logos/covers, collection photos and finished-work photos must be uploaded here |
+| S-11 | ✅ Fixed (round 2) | Authenticator-app two-factor (TOTP, RFC 6238 test vectors, QR setup, 10 recovery codes, no code reuse), asked at sign-in, password reset and the operations console. With `STAFF_MFA` (on by default in Azure) operators and community managers cannot act until it is on |
+| S-12 (new) | ✅ Fixed (round 2) | Operator rights required only an address in `ADMIN_EMAILS`, not a confirmed one: whoever signed up first with an unregistered operator address became an operator. Now the address must be confirmed on the account |
+| P-2 | ✅ Fixed (round 2) | The shell no longer pulls in the social post UI, channels, games and dispute flows (three helpers moved to `channelSeen.ts`); the sign-in sheet loads on demand. Main JS 90 → 46 KB gzip |
+| P-3 | ✅ Fixed (round 2) | `GET /api/bootstrap` answers the 7 start-of-page reads in one request; the client files each answer under its own path, so screens are unchanged. Startup API calls per page 8 → 2 |
+| P-5 | ✅ Fixed (round 2) | Uploads larger than 480 px get a ~16 KB card copy (`.t.jpg`) beside the photo, stored, listed and deleted with it; listing photos carry `thumbUrl` and cards use it. Older photos keep using the full image |
+| P-7 | ✅ Partly (round 2) | The catalog query now contains only the filters in use, so Cosmos can use its indexes; a dedicated search service is still a scale-up item |
+| P-8 | ✅ Fixed (round 2) | The fixture top-up records a fingerprint of the fixture set and skips its 13-container scan when unchanged (and only runs at all with `COSMOS_AUTOSEED=on` on Azure) |
+| Blocker 3 rest (email change, staff MFA) | ✅ Built (round 2) | Change email: password re-asked, code to the new inbox, old address told. Built-in sign-in kept, by decision |
+| Blocker 6 (legal) | ✅ Drafted (round 2) | `/legal`: Terms, Privacy (DPDP), Refunds, Shipping, Prohibited items, Grievance Officer, marked as drafts for counsel with [bracketed] values to fill. Sign-up requires agreeing; the version agreed is stored on the account |
+| Blocker 7 (Aadhaar) | ✅ Changed (round 2) | Buying needs email + WhatsApp only; Aadhaar is required to sell |
+| Items 8, 10, 12 | ✅ Built (round 2) | Download my data (`GET /api/me/export`); browser errors and render crashes reported to the server log, with an error screen instead of a blank app; Cloudflare Turnstile on sign-up once its keys are set |
+| Items 11, 15, 16 | ✅ Documented (round 2) | `docs/OPERATIONS.md`: production settings, custom domain, Cosmos continuous backup + blob soft delete + restore drill, alert queries, and `scripts/load-test.mjs` |
+| Blockers 1, 2 (payments) | ⏳ Open, by decision | Payments stay simulated. Needs a gateway and an RBI-compliant way to hold buyers' money before taking real payments |
+| Blockers 4, 5 (settings, live Azure) | ⏳ Needs Azure access | Settings listed in `docs/OPERATIONS.md` §1; nothing here could reach Azure |
+| Search service, image moderation, CDN | ⏳ Open | Scale-up items, not launch blockers |
 
 ## How it was tested
 

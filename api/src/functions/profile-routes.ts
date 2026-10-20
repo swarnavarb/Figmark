@@ -12,6 +12,7 @@ import { error, handler, json } from './http.js';
 import { confirmDetailsOn } from './order-routes.js';
 import { reviewSide } from '../../../shared/storefront.js';
 import { verifiedChecks } from '../../../shared/verification.js';
+import { ownPhotoName } from '../storage/index.js';
 
 /** The page a page-review request is about: `?side=store` or the person's own. */
 function sideOf(request: HttpRequest): 'store' | 'person' {
@@ -336,8 +337,10 @@ async function saveProfile(request: HttpRequest, _context: InvocationContext) {
   if (body.bio !== undefined) record.bio = body.bio.trim().slice(0, 600);
   if (body.coverUrl !== undefined) {
     const cover = body.coverUrl.trim();
-    if (cover && !/^https?:\/\//i.test(cover)) {
-      return error(400, 'invalid_profile', 'The banner link is not a valid http(s) URL.');
+    // Only a picture uploaded here: one from another server would show that
+    // server every visitor to this page (and the browser would not load it).
+    if (cover && !(await ownPhotoName(cover))) {
+      return error(400, 'invalid_profile', 'Upload the banner here rather than linking to it.');
     }
     record.coverUrl = cover || null;
   }

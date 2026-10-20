@@ -7208,7 +7208,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .ticket__item { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ticket__preview li:not(.is-out):not(:first-child) .ticket__item { filter: blur(3px); }
 .ticket__price { flex: none; white-space: nowrap; font-weight: var(--w-semi); }
-.ticket__price s { margin-left: 5px; opacity: 0.5; font-weight: var(--w-medium); }
+.ticket__price s { margin-left: 5px; opacity: 0.75; font-weight: var(--w-medium); }
 .ticket__more { color: #7A5A30; }
 .ticket__perf {
   height: 2px; margin: 2px -30px;
@@ -7264,7 +7264,7 @@ a.ocust__name:hover { color: var(--accent-text); }
   animation: flip-in 0.4s cubic-bezier(0.3, 1.2, 0.5, 1);
 }
 @keyframes flip-in { from { transform: rotateX(80deg); opacity: 0.4; } to { transform: none; opacity: 1; } }
-.flip__label { font-size: var(--t-2xs); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; }
+.flip__label { font-size: var(--t-2xs); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.72; }
 
 /* The bell. */
 .remind {

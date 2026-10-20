@@ -35,6 +35,7 @@ import {
 } from '../../../shared/affiliate.js';
 import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
 import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
+import { thumbNameOf } from '../storage/types.js';
 import { sniffImageType } from '../storage/sanitize.js';
 import { fingerprint, storedFingerprint } from '../image-hash.js';
 import { rankByPhoto, type LearnedHash } from '../photo-search.js';
@@ -1500,7 +1501,10 @@ async function sellerPhotos(
     }
     if (!ours) return null;
     // Fingerprinted now, so photo search and "seen for sale" never have to read it again.
-    rows.push({ blobName: name, url, imageHash: await storedFingerprint(name), isPrimary });
+    rows.push({
+      blobName: name, url, imageHash: await storedFingerprint(name), isPrimary,
+      ...(info.hasThumb ? { thumbUrl: store.urlFor(thumbNameOf(name)) ?? undefined } : {}),
+    });
   }
   const lead = Math.max(0, rows.findIndex((photo) => photo.isPrimary));
   return rows.map((photo, index) => ({ ...photo, isPrimary: index === lead }));

@@ -43,3 +43,4 @@ import './functions/og-routes.js';
 import './functions/shop-tag-routes.js';
 import './functions/feed-routes.js';
 import './functions/account-routes.js';
+import './functions/bootstrap-routes.js';

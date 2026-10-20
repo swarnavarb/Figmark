@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FloatingCalc } from './components/FloatingCalcFab';
 import { Notifications } from './components/Notifications';
@@ -10,11 +10,13 @@ import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
-import { AuthModal } from './pages/AuthPage';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
-import { inviteCodeFor } from './components/ShareKit';
+import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
 import { Preloader } from './components/Preloader';
+
+/** The sign-in sheet, fetched the first time somebody needs it. */
+const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthModal })));
 
 /**
  * Persistent chrome: brand, search, the cart and who you are.
@@ -192,7 +194,7 @@ export function AppShell() {
 
       <TabBar />
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
-      {authPrompt && <AuthModal reason={authPrompt.reason} onClose={closeAuth} />}
+      {authPrompt && <Suspense fallback={null}><AuthModal reason={authPrompt.reason} onClose={closeAuth} /></Suspense>}
       <VerifyPrompt />
     </div>
   );

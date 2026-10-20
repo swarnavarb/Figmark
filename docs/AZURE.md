@@ -122,8 +122,11 @@ credentials were present. These steps need a machine that can reach Azure:
    The site is sent with a Content-Security-Policy, HSTS and a
    Permissions-Policy (`globalHeaders` in `app/public/staticwebapp.config.json`).
    The policy allows no inline script, so anything that has to run before the
-   bundle loads lives in `app/public/boot/`. Photos load from any `https:`
-   origin and the API is called only on this one.
+   bundle loads lives in `app/public/boot/`. Photos load only from this site
+   and Azure Blob Storage (`*.blob.core.windows.net`) - every picture people
+   add is uploaded here, so no other server sees who views it. Put a CDN in
+   front of the photos container later and its host must be added to
+   `img-src`. The API is called only on this origin.
 
 6. **Push to `main`.** The workflow builds, runs the smoke tests, and deploys.
    Then visit the site — the status page should show Database and Storage as

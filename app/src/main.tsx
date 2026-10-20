@@ -17,8 +17,11 @@ import { Preloader, liftBootScreen } from './components/Preloader';
 import { loadRouteWords } from './routeWords';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { listenForErrors } from './errors';
+import { primeStartupReads } from './api';
 import './styles.css';
 
+// The reads every screen starts with, as one request, before anything asks.
+primeStartupReads();
 loadRouteWords();
 
 /**

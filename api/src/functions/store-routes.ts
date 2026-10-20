@@ -27,6 +27,7 @@ import { gistOf } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { error, handler, json } from './http.js';
 import { audited } from '../audit.js';
+import { ownPhotoName, ownPhotos } from '../storage/index.js';
 
 /**
  * Service stores: applying for one, running one, and the people it serves.
@@ -180,6 +181,21 @@ function readPayment(input: unknown, previous: SellerPaymentDetails | null | und
 }
 
 /**
+ * A refusal when the logo or cover is not a picture uploaded here. Pictures
+ * from other servers would show those servers every visitor, and the site's
+ * policy does not load them.
+ */
+async function foreignImage(input: StoreBody) {
+  for (const value of [input.logoUrl, input.coverUrl]) {
+    const link = typeof value === 'string' ? value.trim() : '';
+    if (link && (link.length > 500 || !(await ownPhotoName(link)))) {
+      return error(400, 'invalid_photo', 'Upload the logo and cover here rather than linking to them.');
+    }
+  }
+  return null;
+}
+
+/**
  * A store as the form describes it, laid over what is already there. One
  * reader for applying and for editing, so a field you can apply with is a
  * field you can correct afterwards.
@@ -282,6 +298,8 @@ async function apply(request: HttpRequest, _context: InvocationContext) {
   const status = statusOf(storeOf(account, kind));
   if (status === 'approved') return error(409, 'already_live', 'Your store is live. Edit it from its console.');
   if (status === 'suspended') return error(409, 'suspended', 'This store is suspended. Message Figmark to talk about it.');
+  const foreign = await foreignImage(input);
+  if (foreign) return foreign;
 
   const store = mergeStore(kind, account, input);
   const gaps = applicationGaps(kind, store);
@@ -355,6 +373,8 @@ async function saveStore(request: HttpRequest, _context: InvocationContext) {
   const input = await body<StoreBody>(request);
   if (!input) return error(400, 'invalid_body', 'Request body must be JSON.');
   const { owner, kind, repository, user } = found;
+  const foreign = await foreignImage(input);
+  if (foreign) return foreign;
 
   const store = mergeStore(kind, owner, input);
   if (isLive(store)) {
@@ -564,7 +584,8 @@ async function artistAct(request: HttpRequest, _context: InvocationContext) {
       jobEvent(job, user.id, note || 'Work started.');
       break;
     case 'ready': {
-      const photos = (input.photos ?? []).map((value) => url(value)).filter((value): value is string => Boolean(value)).slice(0, 8);
+      // Finished-work photos are shown to the customer: uploaded here only.
+      const photos = (await ownPhotos((input.photos ?? []).slice(0, 8), 8)) ?? [];
       job.photos = photos.length ? photos : job.photos;
       job.status = 'ready';
       jobEvent(job, user.id, note || 'Finished.');

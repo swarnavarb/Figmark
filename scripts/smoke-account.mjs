@@ -25,6 +25,7 @@ const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { signupRoute: signup, loginRoute: login } = await import(new URL('auth-routes.js', fns));
 const { exportMineRoute: exportMine, clientErrorRoute: clientError } = await import(new URL('account-routes.js', fns));
 const { healthRoute: health } = await import(new URL('health.js', fns));
+const { bootstrapRoute: bootstrap } = await import(new URL('bootstrap-routes.js', fns));
 
 const logged = [];
 const ctx = { error: () => {}, log: () => {}, warn: (line) => logged.push(line), info: () => {} };
@@ -75,6 +76,17 @@ await check('a browser error is logged, cut short, and needs a message', async (
   assert.equal(report.message.length, 500);
   assert.equal(report.url, '/order/ord_1', 'the query string is dropped');
   assert.equal((await clientError(req({ body: {} }), ctx)).status, 400);
+});
+
+await check('one bootstrap answers the start of every page: four reads signed out, seven signed in', async () => {
+  const guest = (await bootstrap(req(), ctx)).jsonBody.answers;
+  assert.deepEqual(Object.keys(guest).sort(), ['/auth/me', '/health', '/push/key', '/route-words']);
+  assert.equal(guest['/auth/me'].body.user, null);
+  const session = await login(req({ body: { identifier: person.email, password: person.password } }), ctx);
+  const answers = (await bootstrap(req({ headers: { authorization: `Bearer ${session.jsonBody.token}` } }), ctx)).jsonBody.answers;
+  assert.equal(Object.keys(answers).length, 7);
+  assert.equal(answers['/auth/me'].body.user.email, person.email);
+  assert.equal(answers['/quest/me'].status, 200);
 });
 
 console.log(`\n${passed} account checks passed`);

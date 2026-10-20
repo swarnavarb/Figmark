@@ -10,6 +10,8 @@ export interface StoredPhoto {
   blobName: string;
   /** Where the app should point an <img> at it. */
   url: string;
+  /** The small copy for cards and grids, when one was made. */
+  thumbUrl?: string;
 }
 
 /**
@@ -25,8 +27,11 @@ export interface PhotoStore {
   status(): StorageStatus;
   /** Public URL for a stored blob, or null when the backend has no public form. */
   urlFor(blobName: string): string | null;
-  /** Store bytes and say where they can be read. */
-  upload(bytes: Uint8Array, contentType: string, uploadedBy?: string): Promise<StoredPhoto>;
+  /**
+   * Store bytes and say where they can be read. A `thumb`, when given, is kept
+   * beside it (see `thumbNameOf`) and goes when the photo goes.
+   */
+  upload(bytes: Uint8Array, contentType: string, uploadedBy?: string, thumb?: Uint8Array): Promise<StoredPhoto>;
   /** Who uploaded a public photo and what, if anything, has claimed it since. */
   publicInfo(blobName: string): Promise<PublicPhotoInfo | null>;
   /**
@@ -67,7 +72,16 @@ export interface PublicPhotoInfo {
   /** What claimed it, like `post:pst_x` or `listing:lst_x`; null while unsaved. */
   attachedTo: string | null;
   uploadedAt: string;
+  /** True when a small copy was stored with it. */
+  hasThumb?: boolean;
 }
+
+/**
+ * The small copy's name: `abc.jpg` keeps its thumbnail at `abc.t.jpg`. Kept
+ * out of listings and removed with its photo, so it is never an orphan of its own.
+ */
+export const thumbNameOf = (blobName: string) => blobName.replace(/\.[a-z]+$/i, '.t.jpg');
+export const isThumbName = (blobName: string) => /\.t\.jpg$/i.test(blobName);
 
 /** Which container a blob lives in: the public-read photos, or the private chat ones. */
 export type PhotoScope = 'public' | 'private';

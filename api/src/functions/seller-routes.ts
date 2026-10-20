@@ -125,7 +125,7 @@ async function uploadStorefrontPhoto(request: HttpRequest, _context: InvocationC
   }
   const read = await readPhoto(body.dataUrl);
   if ('refusal' in read) return read.refusal;
-  const stored = await (await getPhotoStore()).upload(read.photo.bytes, read.photo.contentType, user.id);
+  const stored = await (await getPhotoStore()).upload(read.photo.bytes, read.photo.contentType, user.id, read.photo.thumb);
   return json(201, { ...stored, size: read.photo.bytes.byteLength });
 }
 

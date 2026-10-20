@@ -5,6 +5,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { settleAll } from '../delivery.js';
 import { error, handler, json } from './http.js';
+import { ownPhotoName } from '../storage/index.js';
 
 /**
  * A buyer's collection: delivered purchases, kept as cards on their page.
@@ -161,7 +162,7 @@ async function edit(request: HttpRequest, _context: InvocationContext) {
   // One photo of their own, uploaded first: it leads the card and replaces the last one they added.
   if (input.own !== undefined) {
     const url = input.own.trim();
-    if (!/^(https?:\/\/|\/|data:image\/)/.test(url) || url.length > 4096) {
+    if (url.length > 500 || !(await ownPhotoName(url))) {
       return error(400, 'invalid_photo', 'That photo did not upload properly.');
     }
     item.photos = [url, ...item.photos.filter((photo) => photo !== item.ownPhoto && photo !== url)];

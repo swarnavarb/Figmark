@@ -12,6 +12,7 @@ parentPort?.on('message', (job: { id: number; bytes: Uint8Array; contentType: st
     const transfer = new Set<ArrayBuffer>();
     if (out.bytes.buffer instanceof ArrayBuffer) transfer.add(out.bytes.buffer);
     if (out.pixels?.data.buffer instanceof ArrayBuffer) transfer.add(out.pixels.data.buffer);
+    if (out.thumb?.buffer instanceof ArrayBuffer) transfer.add(out.thumb.buffer);
     parentPort!.postMessage({ id: job.id, out }, [...transfer]);
   } catch (err) {
     parentPort!.postMessage({ id: job.id, failed: String(err) });

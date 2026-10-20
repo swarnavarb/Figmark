@@ -82,4 +82,27 @@ check('anything that is not a readable JPEG comes back untouched for the caller 
   });
 }
 
+check('a photo bigger than a card gets a small copy for cards; a small one does not', () => {
+  const big = compressPhoto(photo(1600, 1200, 92), 'image/jpeg');
+  assert.ok(big.thumb, 'a thumbnail is made');
+  assert.ok(big.thumb.byteLength < big.bytes.byteLength / 2, `thumb ${big.thumb.byteLength} vs ${big.bytes.byteLength}`);
+  const decoded = require('jpeg-js').decode(Buffer.from(big.thumb));
+  assert.equal(Math.max(decoded.width, decoded.height), 480);
+  assert.equal(compressPhoto(photo(400, 300, 80), 'image/jpeg').thumb, undefined);
+});
+
+const { MemoryPhotoStore } = await import(new URL('../api/dist/api/src/storage/memory-store.js', import.meta.url));
+{
+  const store = new MemoryPhotoStore();
+  const big = compressPhoto(photo(1600, 1200, 92), 'image/jpeg');
+  const stored = await store.upload(big.bytes, big.contentType, 'usr_x', big.thumb);
+  check('the small copy is stored beside its photo, never listed on its own, and goes with it', () => {
+    assert.match(stored.thumbUrl, /\.t\.jpg$/);
+  });
+  assert.equal((await store.publicInfo(stored.blobName)).hasThumb, true);
+  assert.deepEqual((await store.list()).map((entry) => entry.name), [stored.blobName]);
+  await store.remove('public', stored.blobName);
+  assert.equal(await store.read(stored.blobName.replace(/\.jpg$/, '.t.jpg')), null);
+}
+
 console.log(`${passed} checks passed`);

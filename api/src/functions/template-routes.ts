@@ -172,7 +172,7 @@ async function upload(request: HttpRequest, _context: InvocationContext) {
   const photo = read.photo;
 
   const store = await getPhotoStore();
-  const stored = await store.upload(photo.bytes, photo.contentType, user.id);
+  const stored = await store.upload(photo.bytes, photo.contentType, user.id, photo.thumb);
   // Worked out now, from pixels already decoded, so the first "seen for sale"
   // look at this photo needs neither a read from the store nor a decode.
   rememberFingerprint(stored.blobName, photo.pixels);

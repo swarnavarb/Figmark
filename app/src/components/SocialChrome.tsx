@@ -10,7 +10,7 @@ import { Avatar } from './ui';
 import { Icon, type IconName } from './Icon';
 import { MESSAGES_NEWS_EVENT, Notifications } from './Notifications';
 import { VoicePicker, useVoice } from './SocialVoice';
-import { forumHasNews, seenMap, unreadOf } from './Channels';
+import { forumHasNews, seenMap, unreadOf } from './channelSeen';
 
 /**
  * The social tab's own chrome: one gradient block for the header, a slim bar
