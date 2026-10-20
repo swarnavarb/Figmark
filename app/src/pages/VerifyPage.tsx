@@ -49,13 +49,17 @@ export function VerifyPage() {
     <main className="page vfy">
       <h1>Verification</h1>
       <p className="muted" style={{ marginTop: 0 }}>
-        To buy or sell on Figmark - including private deals and power sales - verify all three. Browsing is open
-        without them. It takes about two minutes.
+        To buy on Figmark, verify your email and WhatsApp number. To sell - including private deals and power
+        sales - verify your Aadhaar too. Browsing is open without any of them. It takes about two minutes.
       </p>
 
       {done ? (
         <p className="notice notice--ok">
           ✓ You are verified. You can buy and sell, and your page shows the Email, WhatsApp and Aadhaar ticks.
+        </p>
+      ) : checks.email && checks.phone ? (
+        <p className="notice notice--ok">
+          ✓ You can buy. Verify your Aadhaar below only if you want to sell. {AADHAAR_MOBILE_RULE}
         </p>
       ) : (
         <p className="notice notice--warn vfy__rule">
@@ -80,7 +84,7 @@ export function VerifyPage() {
         </li>
 
         <li className={`card card--pad stack vfy__step${checks.aadhaar ? ' is-done' : ''}`}>
-          <StepHead n={3} title="Aadhaar" done={checks.aadhaar} />
+          <StepHead n={3} title="Aadhaar (to sell)" done={checks.aadhaar} />
           {checks.aadhaar && status.aadhaar ? (
             <p className="faint">
               Verified as {status.aadhaar.name}, Aadhaar ending {status.aadhaar.last4}, matched to {status.phone}.

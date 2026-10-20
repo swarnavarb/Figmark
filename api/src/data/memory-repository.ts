@@ -624,6 +624,18 @@ export class MemoryRepository implements Repository {
     return true;
   }
 
+  async changeEmail(user: User, email: string): Promise<boolean> {
+    const next = normaliseIdentifier(email);
+    const holder = this.identifiers.get(next);
+    if (holder && holder !== user.id) return false;
+    const previous = user.email ? normaliseIdentifier(user.email) : null;
+    this.identifiers.set(next, user.id);
+    user.email = email;
+    await this.updateUser(user);
+    if (previous && previous !== next) this.identifiers.delete(previous);
+    return true;
+  }
+
   async listMessages(threadId: string, limit = 200, before?: string): Promise<Message[]> {
     return [...this.messages.values()]
       .filter((message) => message.threadId === threadId && (!before || message.createdAt <= before))

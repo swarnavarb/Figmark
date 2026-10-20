@@ -1,5 +1,5 @@
-import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { LoginRequest, MeResponse, SignupRequest, SignupResponse } from '../../../shared/contracts.js';
+import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from '@azure/functions';
+import type { AuthUser, LoginRequest, MeResponse, SignupRequest, SignupResponse } from '../../../shared/contracts.js';
 import { VerificationError, startEmail } from '../verification/index.js';
 import { MockAuthProvider } from '../auth/mock-provider.js';
 import { getAuthService } from '../auth/index.js';
@@ -230,7 +230,52 @@ async function deleteMe(request: HttpRequest, _context: InvocationContext) {
   return json(200, { deleted }, auth.logoutCookies());
 }
 
+/** The signed-in account under the built-in provider, with its JSON body; or the refusal. */
+async function ownAccount(request: HttpRequest): Promise<
+  { refusal: HttpResponseInit } | { auth: MockAuthProvider; user: AuthUser; body: { password?: string; code?: string } }
+> {
+  const auth = await getAuthService();
+  if (!(auth instanceof MockAuthProvider)) {
+    return { refusal: error(501, 'not_implemented', 'Sign-in is managed by the identity provider. Set two-factor up there.') };
+  }
+  const user = await auth.requireAuth(request);
+  let body: { password?: string; code?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return { refusal: error(400, 'invalid_body', 'Request body must be JSON.') };
+  }
+  const slow = await addressLimited(request, 'login');
+  if (slow) return { refusal: slow };
+  return { auth, user, body };
+}
+
+/** POST /api/me/mfa/setup - { password }: a new authenticator key to add to an app. */
+async function mfaSetup(request: HttpRequest, _context: InvocationContext) {
+  const own = await ownAccount(request);
+  if ('refusal' in own) return own.refusal;
+  return json(200, await own.auth.startMfaSetup(own.user.id, own.body.password ?? ''));
+}
+
+/** POST /api/me/mfa/enable - { code }: the first code from the new key turns two-factor on. */
+async function mfaEnable(request: HttpRequest, _context: InvocationContext) {
+  const own = await ownAccount(request);
+  if ('refusal' in own) return own.refusal;
+  return json(200, await own.auth.enableMfa(own.user.id, own.body.code ?? ''));
+}
+
+/** POST /api/me/mfa/disable - { password, code }: two-factor off. */
+async function mfaDisable(request: HttpRequest, _context: InvocationContext) {
+  const own = await ownAccount(request);
+  if ('refusal' in own) return own.refusal;
+  await own.auth.disableMfa(own.user.id, own.body.password ?? '', own.body.code ?? '');
+  return json(200, { ok: true });
+}
+
 export const loginRoute = handler(login);
+export const mfaSetupRoute = handler(mfaSetup);
+export const mfaEnableRoute = handler(mfaEnable);
+export const mfaDisableRoute = handler(mfaDisable);
 export const deleteMeRoute = handler(deleteMe);
 export const resetStartRoute = handler(resetStart);
 export const resetConfirmRoute = handler(resetConfirm);
@@ -285,6 +330,10 @@ app.http('auth-reset-confirm', {
   route: 'auth/reset/confirm',
   handler: resetConfirmRoute,
 });
+
+app.http('me-mfa-setup', { methods: ['POST'], authLevel: 'anonymous', route: 'me/mfa/setup', handler: mfaSetupRoute });
+app.http('me-mfa-enable', { methods: ['POST'], authLevel: 'anonymous', route: 'me/mfa/enable', handler: mfaEnableRoute });
+app.http('me-mfa-disable', { methods: ['POST'], authLevel: 'anonymous', route: 'me/mfa/disable', handler: mfaDisableRoute });
 
 app.http('me-delete', {
   methods: ['POST'],

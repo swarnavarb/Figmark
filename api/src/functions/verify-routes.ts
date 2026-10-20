@@ -5,9 +5,10 @@ import { config } from '../config.js';
 import { getRepository } from '../data/index.js';
 import { tooFast } from '../rate-limit.js';
 import {
-  VerificationError, changePhone, confirmEmail, handleWhatsAppMessage, inboundMessages, startEmail, startPhone,
-  statusOf, verifyAadhaar, whatsappSignatureValid,
+  VerificationError, changePhone, confirmEmail, confirmEmailChange, handleWhatsAppMessage, inboundMessages, startEmail,
+  startEmailChange, startPhone, statusOf, verifyAadhaar, whatsappSignatureValid,
 } from '../verification/index.js';
+import { MockAuthProvider } from '../auth/mock-provider.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -68,6 +69,50 @@ async function emailConfirm(request: HttpRequest) {
   if (slow) return slow;
   const body = await readJson(request);
   await confirmEmail(await getRepository(), user, String(body.code ?? ''));
+  return json(200, { status: statusOf(user) });
+}
+
+/**
+ * POST /api/verify/email/change - { email, password }: a code to the new address.
+ *
+ * The password is asked again, so a session left open somewhere cannot move
+ * the account to an inbox somebody else holds - and with it every reset code.
+ */
+async function emailChangeStart(request: HttpRequest) {
+  const user = await signedInRow(request);
+  const slow = await tooFast(user.id, 'verify_email');
+  if (slow) return slow;
+  const body = await readJson(request);
+  const address = String(body.email ?? '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) || address.length > 254) {
+    throw new VerificationError(400, 'invalid_email', 'Enter a valid email address.');
+  }
+  if (address === user.email.trim().toLowerCase()) {
+    throw new VerificationError(400, 'same_email', 'That is already your email.');
+  }
+  const auth = await getAuthService();
+  if (!(auth instanceof MockAuthProvider)) {
+    throw new VerificationError(501, 'not_implemented', 'Your email is managed by the identity provider. Change it there.');
+  }
+  if (!(await auth.passwordMatches(user.id, String(body.password ?? '')))) {
+    throw new VerificationError(403, 'wrong_password', 'That is not your password.');
+  }
+  const repository = await getRepository();
+  const holder = await repository.getUserByIdentifier(address);
+  if (holder && holder.id !== user.id) {
+    throw new VerificationError(409, 'email_taken', 'That email is already on another Figmark account.');
+  }
+  const sent = await startEmailChange(repository, user, address);
+  return json(200, { ...sent, status: statusOf(user) });
+}
+
+/** POST /api/verify/email/change/confirm - { code }: move to the new address. */
+async function emailChangeConfirm(request: HttpRequest) {
+  const user = await signedInRow(request);
+  const slow = await tooFast(user.id, 'verify_code');
+  if (slow) return slow;
+  const body = await readJson(request);
+  await confirmEmailChange(await getRepository(), user, String(body.code ?? ''));
   return json(200, { status: statusOf(user) });
 }
 
@@ -150,6 +195,8 @@ async function whatsappWebhook(request: HttpRequest, context: InvocationContext)
 export const verifyStatusRoute = verifying(status);
 export const verifyEmailSendRoute = verifying(emailSend);
 export const verifyEmailConfirmRoute = verifying(emailConfirm);
+export const verifyEmailChangeRoute = verifying(emailChangeStart);
+export const verifyEmailChangeConfirmRoute = verifying(emailChangeConfirm);
 export const verifyPhoneStartRoute = verifying(phoneStart);
 export const verifyPhoneNumberRoute = verifying(phoneNumber);
 export const verifyAadhaarRoute = verifying(aadhaar);
@@ -159,6 +206,8 @@ const anon = { authLevel: 'anonymous' as const };
 app.http('verify-status', { ...anon, methods: ['GET'], route: 'verify/status', handler: verifyStatusRoute });
 app.http('verify-email-send', { ...anon, methods: ['POST'], route: 'verify/email/send', handler: verifyEmailSendRoute });
 app.http('verify-email-confirm', { ...anon, methods: ['POST'], route: 'verify/email/confirm', handler: verifyEmailConfirmRoute });
+app.http('verify-email-change', { ...anon, methods: ['POST'], route: 'verify/email/change', handler: verifyEmailChangeRoute });
+app.http('verify-email-change-confirm', { ...anon, methods: ['POST'], route: 'verify/email/change/confirm', handler: verifyEmailChangeConfirmRoute });
 app.http('verify-phone-start', { ...anon, methods: ['POST'], route: 'verify/phone/start', handler: verifyPhoneStartRoute });
 app.http('verify-phone-number', { ...anon, methods: ['POST'], route: 'verify/phone/number', handler: verifyPhoneNumberRoute });
 app.http('verify-aadhaar', { ...anon, methods: ['POST'], route: 'verify/aadhaar', handler: verifyAadhaarRoute });

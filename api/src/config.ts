@@ -61,6 +61,12 @@ export interface AppConfig {
    */
   passwordBreachCheck: boolean;
   /**
+   * Whether operators and community managers must have two-factor sign-in on
+   * before they can act as such. On by default when deployed to Azure, off on
+   * a laptop; STAFF_MFA=on|off overrides it.
+   */
+  staffMfa: boolean;
+  /**
    * Whether a new shop's dispatch region is guessed from the IP address it
    * opens from (one lookup per address, at ipapi.co). On in Azure, off
    * locally; REGION_GUESS=on|off overrides it.
@@ -337,6 +343,7 @@ export const config: AppConfig = {
   vision: resolveVision(),
   verification: resolveVerification(),
   passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),
+  staffMfa: env('STAFF_MFA') ? env('STAFF_MFA') === 'on' : runningInAzure(),
   regionGuess: env('REGION_GUESS') ? env('REGION_GUESS') === 'on' : runningInAzure(),
   swaPrincipalTrust: resolveSwaTrust(),
   publicOrigins: resolvePublicOrigins(),

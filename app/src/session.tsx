@@ -26,9 +26,9 @@ interface SessionValue {
   missingContainers: string[];
   /** True when a hosted deployment keeps its data in each worker's memory. */
   dataPerWorker: boolean;
-  signIn: (identifier: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string, otp?: string) => Promise<void>;
   /** Sets a new password with an emailed code and signs in with it. */
-  resetPassword: (identifier: string, code: string, password: string) => Promise<void>;
+  resetPassword: (identifier: string, code: string, password: string, otp?: string) => Promise<void>;
   signUp: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
   /** Sign out on every device this account is signed in on, this one included. */
@@ -155,11 +155,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => setSessionRejectedHandler(null);
   }, []);
 
-  const signIn = useCallback(async (identifier: string, password: string) => {
+  const signIn = useCallback(async (identifier: string, password: string, otp?: string) => {
     // The warning belongs to the account it was raised for, so signing in as
     // someone else must clear it.
     setWarning(null);
-    const result = await api.login(identifier, password);
+    const result = await api.login(identifier, password, otp);
     justSignedIn.current = true;
     setUser(result.user);
     // The sign-in response can carry only the session cookie; this hands out
@@ -167,9 +167,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void api.me().catch(() => undefined);
   }, []);
 
-  const resetPassword = useCallback(async (identifier: string, code: string, password: string) => {
+  const resetPassword = useCallback(async (identifier: string, code: string, password: string, otp?: string) => {
     setWarning(null);
-    const result = await api.confirmPasswordReset({ identifier, code, password });
+    const result = await api.confirmPasswordReset({ identifier, code, password, ...(otp ? { otp } : {}) });
     justSignedIn.current = true;
     setUser(result.user);
     void api.me().catch(() => undefined);

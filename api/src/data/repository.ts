@@ -452,6 +452,8 @@ export interface Repository {
    * (false) with nothing changed; the old one is released after.
    */
   changePhone(user: User, phone: string): Promise<boolean>;
+  /** The same for the account's email, the other sign-in identifier. */
+  changeEmail(user: User, email: string): Promise<boolean>;
 
   /* Messages. */
 

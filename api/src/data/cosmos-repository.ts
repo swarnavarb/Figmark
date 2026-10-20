@@ -1524,8 +1524,21 @@ export class CosmosRepository implements Repository {
   }
 
   async changePhone(user: User, phone: string): Promise<boolean> {
-    const next = normaliseIdentifier(phone);
-    const previous = user.phone ? normaliseIdentifier(user.phone) : null;
+    return this.moveIdentifier(user, user.phone, phone, () => { user.phone = phone; });
+  }
+
+  async changeEmail(user: User, email: string): Promise<boolean> {
+    return this.moveIdentifier(user, user.email, email, () => { user.email = email; });
+  }
+
+  /**
+   * Moves one of the account's sign-in identifiers. Reserves the new one
+   * first, so one somebody else holds is refused (false) with nothing changed;
+   * the old one is released after.
+   */
+  private async moveIdentifier(user: User, from: string | null, to: string, apply: () => void): Promise<boolean> {
+    const next = normaliseIdentifier(to);
+    const previous = from ? normaliseIdentifier(from) : null;
     if (next !== previous) {
       const existing = await this.readReservation(next);
       if (existing && existing.userId !== user.id) return false;
@@ -1538,7 +1551,7 @@ export class CosmosRepository implements Repository {
         }
       }
     }
-    user.phone = phone;
+    apply();
     await this.updateUser(user);
     if (previous && previous !== next) {
       await this.container('identifiers').item(previous, previous).delete().catch(() => {});

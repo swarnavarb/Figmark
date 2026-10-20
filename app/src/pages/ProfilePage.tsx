@@ -17,6 +17,7 @@ import { verifiedChecks } from '@shared/verification';
 import { VerifiedChips } from '../components/VerifiedChips';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import { PushCard } from '../components/PushControls';
+import { TwoFactorSettings } from '../components/TwoFactor';
 import '../styles/ProfilePage.css';
 
 type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
@@ -157,9 +158,11 @@ export function ProfilePage() {
           ) : (
             <>
               <p className="faint" style={{ margin: 0 }}>
-                {user.capabilities.canBuy || user.capabilities.canSell
+                {user.capabilities.canSell
                   ? 'An operator has opened trading for you; verifying still adds the ticks to your page.'
-                  : 'Buying and selling - including private deals and power sales - open once all three are verified.'}
+                  : user.capabilities.canBuy
+                    ? 'You can buy. Selling - including private deals and power sales - opens once your Aadhaar is verified too.'
+                    : 'Buying opens once your email and WhatsApp are verified; selling needs your Aadhaar as well.'}
               </p>
               <Link to="/verify" className="btn" style={{ justifySelf: 'start' }}>Verify now</Link>
             </>
@@ -213,6 +216,8 @@ export function ProfilePage() {
       ) : tab === 'settings' ? (
         <>
           <UsernameSettings />
+          <EmailSettings />
+          <TwoFactorSettings />
           <MyPageSettings />
           <DisplaySettings />
           <BlockedList />
@@ -663,6 +668,95 @@ function DeleteAccount() {
             <button type="button" className="btn btn--quiet" onClick={() => { setOpen(false); setPassword(''); setError(null); }}>
               Keep my account
             </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Moving the account to another email. A code goes to the new address and
+ * nothing changes until it comes back; the old address is told afterwards.
+ */
+function EmailSettings() {
+  const { user, refresh } = useSession();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (!user) return null;
+
+  async function start(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setFlash(null);
+    try {
+      const result = await api.startEmailChange(email, password);
+      setSentTo(result.sentTo);
+      setPassword('');
+      if (result.devCode) setCode(result.devCode);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not send the code.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirm(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.confirmEmailChange(code);
+      await refresh();
+      setFlash(`Your email is now ${sentTo}.`);
+      setSentTo(null);
+      setEmail('');
+      setCode('');
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not change the email.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card card--pad stack" style={{ marginTop: 18, maxWidth: 560 }}>
+      <span className="card__title">Your email</span>
+      <p className="faint" style={{ margin: 0 }}>Now <b>{user.email}</b>. Sign-in, reset codes and receipts go here.</p>
+      {sentTo === null ? (
+        <form className="form" onSubmit={start}>
+          <label className="field">
+            <span>New email</span>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+          </label>
+          <label className="field">
+            <span>Your password, to confirm</span>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+          </label>
+          {flash && <p className="notice notice--ok">{flash}</p>}
+          {error && <ErrorNotice message={error} />}
+          <button type="submit" className="btn" style={{ justifySelf: 'start' }} disabled={busy || !email || !password}>
+            {busy ? 'Sending…' : 'Send a code to it'}
+          </button>
+        </form>
+      ) : (
+        <form className="form" onSubmit={confirm}>
+          <p className="notice notice--info" role="status">We sent a code to <b>{sentTo}</b>.</p>
+          <label className="field">
+            <span>Code from the email</span>
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric" autoComplete="one-time-code" required />
+          </label>
+          {error && <ErrorNotice message={error} />}
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="submit" className="btn" disabled={busy || code.length !== 6}>{busy ? 'Saving…' : 'Change my email'}</button>
+            <button type="button" className="btn btn--quiet" onClick={() => { setSentTo(null); setCode(''); setError(null); }}>Cancel</button>
           </div>
         </form>
       )}

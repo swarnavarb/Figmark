@@ -143,6 +143,15 @@ export function AppShell() {
         </div>
       )}
 
+      {/* Staff act on other people's money: until two-factor is on, say so on every screen. */}
+      {user?.mfaRequired && (
+        <div className="page page--notice">
+          <p className="notice notice--warn notice--standing">
+            Turn on two-factor sign-in to keep acting as staff. <Link to="/me?tab=settings">Set it up</Link>
+          </p>
+        </div>
+      )}
+
       {/* A feature whose container does not exist fails on its own screen and
           nowhere else, which makes it look like a bug in that screen. Name it
           where every screen can see it. */}

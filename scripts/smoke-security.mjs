@@ -24,6 +24,7 @@ const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js
 const { StaticWebAppsAuthProvider } = await import(new URL('api/src/auth/swa-provider.js', base));
 const { createSessionToken, SESSION_COOKIE_NAME } = await import(new URL('api/src/auth/tokens.js', base));
 const { resetRateLimits, clientIp } = await import(new URL('api/src/rate-limit.js', base));
+const { codeAt, stepAt } = await import(new URL('api/src/auth/totp.js', base));
 const { DEMO_EMAIL, DEMO_PASSWORD } = await import(new URL('api/src/data/seed.js', base));
 const { loginRoute, meRoute } = await import(new URL('auth-routes.js', fns));
 const { adminSuspendRoute, adminAuditRoute } = await import(new URL('admin-routes.js', fns));
@@ -558,6 +559,37 @@ await check('no reset code goes to an email nobody has confirmed', async () => {
     displayName: 'Unconfirmed Person', email: `u${Date.now()}@figmark.example`, phone: `+9198${String(Date.now()).slice(-8)}`, password: 'a-fine-passphrase-9',
   });
   assert.deepEqual(await auth.requestPasswordReset(fresh.user.email), {});
+});
+
+await check('two-factor: set up with a code, then sign-in asks for one, once each, with recovery codes as a way back', async () => {
+  resetRateLimits();
+  const who = 'ops@lotusfreight.example';
+  const at = { ip: '198.51.100.81' };
+  const first = await auth.login({ identifier: who, password: DEMO_PASSWORD }, at);
+  const me = await auth.getCurrentUser(cookieFor(first.token));
+  await assert.rejects(auth.startMfaSetup(me.id, 'wrong'), { code: 'wrong_password' });
+  const { secret, uri } = await auth.startMfaSetup(me.id, DEMO_PASSWORD);
+  assert.match(uri, /^otpauth:\/\/totp\/Figmark/);
+  await assert.rejects(auth.enableMfa(me.id, '000000'), { code: 'wrong_code' });
+  const { recoveryCodes } = await auth.enableMfa(me.id, codeAt(secret, stepAt(Date.now())));
+  assert.equal(recoveryCodes.length, 10);
+
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD }, at), { code: 'mfa_required' });
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD, otp: '123456' }, at), { code: 'mfa_invalid' });
+  // The code that turned it on was spent; the next step's is good, once.
+  const next = codeAt(secret, stepAt(Date.now()) + 1);
+  const signedIn = await auth.login({ identifier: who, password: DEMO_PASSWORD, otp: next }, at);
+  assert.equal((await auth.getCurrentUser(cookieFor(signedIn.token))).mfaEnabled, true);
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD, otp: next }, at), { code: 'mfa_invalid' });
+  // A recovery code works once.
+  await auth.login({ identifier: who, password: DEMO_PASSWORD, otp: recoveryCodes[0] }, at);
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD, otp: recoveryCodes[0] }, at), { code: 'mfa_invalid' });
+  // A password reset by email alone does not get past it.
+  const { devCode } = await auth.requestPasswordReset(who);
+  await assert.rejects(auth.resetPassword({ identifier: who, code: devCode, password: 'a-new-passphrase-55' }, at), { code: 'mfa_required' });
+  // Off again, with the password and a code.
+  await auth.disableMfa(me.id, DEMO_PASSWORD, recoveryCodes[1]);
+  await auth.login({ identifier: who, password: DEMO_PASSWORD }, at);
 });
 
 /* ── Static Web Apps principal ─────────────────────────────────────────── */

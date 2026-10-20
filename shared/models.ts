@@ -121,6 +121,8 @@ export interface TradeOverride {
  */
 export interface VerificationChallenges {
   email?: { hash: string; address: string; expiresAt: string; sentAt: string; attempts: number } | null;
+  /** A code sent to a new address the account wants to move its email to. */
+  emailChange?: { hash: string; address: string; expiresAt: string; attempts: number } | null;
   /** A password reset code emailed to the account's verified address. */
   reset?: { hash: string; address: string; expiresAt: string; attempts: number } | null;
   phone?: {
@@ -265,6 +267,20 @@ export interface User extends BaseDocument {
    * every account no dispute has been lost by.
    */
   standing?: CommunityStanding | null;
+  /**
+   * Two-factor sign-in with an authenticator app. `secret` is the shared TOTP
+   * key, `lastStep` the newest 30-second step already used (so no code works
+   * twice), `recovery` the hashes of the unused one-time recovery codes.
+   * `pending` is a key being set up, not yet confirmed with a code. Never
+   * leaves the API (stripped from every response by name).
+   */
+  mfa?: {
+    secret: string | null;
+    enabledAt: string | null;
+    lastStep: number | null;
+    recovery: string[];
+    pending: { secret: string; createdAt: string } | null;
+  } | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
   /**

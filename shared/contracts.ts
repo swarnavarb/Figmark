@@ -51,6 +51,13 @@ export interface AuthUser {
    * row again on every request that acts on it.
    */
   managerRights: ManagerRights | null;
+  /** Whether sign-in asks this account for an authenticator code. */
+  mfaEnabled: boolean;
+  /**
+   * Operators and community managers must turn two-factor on before they can
+   * act as such; true while this one has not. The app says so where it matters.
+   */
+  mfaRequired: boolean;
   /** This person's own page, as distinct from their shop's. */
   bio: string;
   coverUrl: string | null;
@@ -61,6 +68,8 @@ export interface LoginRequest {
   /** Email, phone or username; the server normalises and resolves any of them. */
   identifier: string;
   password: string;
+  /** For an account with two-factor on: the authenticator code, or a recovery code. */
+  otp?: string;
 }
 
 export interface SignupRequest {

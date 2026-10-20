@@ -111,12 +111,14 @@ export class AuthError extends Error {
    * can open the verification steps instead of showing a bare refusal.
    */
   static verificationRequired(capabilities: readonly string[]): AuthError {
-    const what = capabilities.includes('sell') && !capabilities.includes('buy') ? 'sell' : 'buy';
+    const selling = capabilities.includes('sell') && !capabilities.includes('buy');
     return new AuthError(
       403,
       'verification_required',
-      `To ${what} on Figmark, verify your email, your WhatsApp number and your Aadhaar first ` +
-        '(Profile → Verification). Your Aadhaar-linked mobile must be the same number as your WhatsApp.',
+      selling
+        ? 'To sell on Figmark, verify your email, your WhatsApp number and your Aadhaar first ' +
+          '(Profile → Verification). Your Aadhaar-linked mobile must be the same number as your WhatsApp.'
+        : 'To buy on Figmark, verify your email and your WhatsApp number first (Profile → Verification).',
     );
   }
 

@@ -37,7 +37,7 @@ export function json(status: number, body: unknown, cookies: string[] = []): Htt
  * words. Routes map accounts to what each screen shows; this is the net under
  * that, so a route that forgets cannot send a hash to the browser.
  */
-const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', '_parts', 'passwordHash', 'searchKey']);
+const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', '_parts', 'passwordHash', 'searchKey', 'mfa', 'challenges']);
 
 /**
  * The body with Cosmos's own fields taken out, at any depth. Routes return

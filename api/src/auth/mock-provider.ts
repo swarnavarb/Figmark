@@ -16,7 +16,7 @@ import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, handleShapeProblem, suggestUsername } from '../../../shared/handles.js';
 import { PASSWORD_MAX_LENGTH, hashPasswordAsync, passwordNeedsRehash, passwordProblem, verifyPasswordAsync } from './passwords.js';
-import { normalizeIndianMobile } from '../../../shared/verification.js';
+import { normalizeIndianMobile, verifiedChecks } from '../../../shared/verification.js';
 import {
   SESSION_COOKIE_NAME,
   SESSION_REFRESH_AFTER_SECONDS,
@@ -33,6 +33,7 @@ import {
 } from './tokens.js';
 import type { AuthService, ClientContext } from './types.js';
 import { forget, limited } from '../rate-limit.js';
+import { hashRecovery, matchStep, newRecoveryCodes, newSecret, otpauthUri } from './totp.js';
 import { VerificationError, consumePasswordResetCode, startPasswordReset } from '../verification/index.js';
 
 /** Who a request turned out to be, and the session and account record that said so. */
@@ -197,6 +198,8 @@ export class MockAuthProvider implements AuthService {
     capabilities: readonly Capability[],
   ): Promise<AuthUser> {
     const user = await this.requireAuth(request);
+    // Operating the marketplace moves other people's money: not on a password alone.
+    if (capabilities.includes('admin') && user.capabilities.isAdmin && user.mfaRequired) throw staffMfaMissing();
     if (!hasAnyCapability(user.capabilities, capabilities)) {
       // Buying and selling are closed until verification is done, and the
       // person needs to be told what to do rather than that they may not.
@@ -278,6 +281,20 @@ export class MockAuthProvider implements AuthService {
       throw AuthError.invalidCredentials();
     }
     if (user.suspended) throw AuthError.suspended();
+
+    // The second factor, for an account that has one. A wrong code counts as
+    // a failed sign-in like a wrong password does.
+    if (mfaOn(user)) {
+      if (!credentials.otp?.trim()) {
+        throw new AuthError(401, 'mfa_required', 'Enter the 6-digit code from your authenticator app.');
+      }
+      if (!(await this.spendSecondFactor(user, credentials.otp))) {
+        await limited(key, 'login_fail', { force: true });
+        if (!trusted) await limited(accountKey, 'login_fail_account', { force: true });
+        throw new AuthError(401, 'mfa_invalid', 'That code is not right. Use the newest code in your app, or a recovery code.');
+      }
+    }
+
     // A good password clears the record, so a legitimate user who mistyped
     // twice is not held back by it.
     await forget(key, 'login_fail');
@@ -358,6 +375,70 @@ export class MockAuthProvider implements AuthService {
     return verifyPasswordAsync(password, user?.passwordHash ?? null);
   }
 
+  /**
+   * Checks an authenticator or recovery code and spends it: the step is
+   * recorded so the same code cannot sign in twice, a recovery code is struck.
+   */
+  private async spendSecondFactor(user: User, code: string): Promise<boolean> {
+    const mfa = user.mfa;
+    if (!mfa?.secret) return false;
+    const step = matchStep(mfa.secret, code, mfa.lastStep ?? null);
+    if (step !== null) {
+      user.mfa = { ...mfa, lastStep: step };
+      await this.repository.updateUser(user);
+      return true;
+    }
+    const hash = hashRecovery(code);
+    if (mfa.recovery.includes(hash)) {
+      user.mfa = { ...mfa, recovery: mfa.recovery.filter((entry) => entry !== hash) };
+      await this.repository.updateUser(user);
+      return true;
+    }
+    return false;
+  }
+
+  /** Starts setting up two-factor: a fresh key, held until a code from it comes back. */
+  async startMfaSetup(userId: string, password: string): Promise<{ secret: string; uri: string }> {
+    const user = await this.repository.getUserById(userId);
+    if (!user) throw AuthError.accountMissing();
+    if (!(await this.passwordMatches(userId, password))) throw new AuthError(403, 'wrong_password', 'That is not your password.');
+    if (mfaOn(user)) throw new AuthError(409, 'mfa_on', 'Two-factor sign-in is already on.');
+    const secret = newSecret();
+    user.mfa = { secret: null, enabledAt: null, lastStep: null, recovery: [], ...user.mfa, pending: { secret, createdAt: new Date().toISOString() } };
+    await this.repository.updateUser(user);
+    return { secret, uri: otpauthUri(secret, user.email) };
+  }
+
+  /** Turns two-factor on with the first code from the new key. Returns the recovery codes, shown once. */
+  async enableMfa(userId: string, code: string): Promise<{ recoveryCodes: string[] }> {
+    const user = await this.repository.getUserById(userId);
+    if (!user) throw AuthError.accountMissing();
+    const pending = user.mfa?.pending;
+    if (!pending || Date.now() - Date.parse(pending.createdAt) > 30 * 60_000) {
+      throw new AuthError(410, 'setup_expired', 'Setting up took too long. Start again.');
+    }
+    const step = matchStep(pending.secret, code, null);
+    if (step === null) throw new AuthError(400, 'wrong_code', 'That code is not right. Check the time on your phone and try the newest code.');
+    const recoveryCodes = newRecoveryCodes();
+    user.mfa = {
+      secret: pending.secret, enabledAt: new Date().toISOString(), lastStep: step,
+      recovery: recoveryCodes.map(hashRecovery), pending: null,
+    };
+    await this.repository.updateUser(user);
+    return { recoveryCodes };
+  }
+
+  /** Turns two-factor off, with the password and a current code (or a recovery code). */
+  async disableMfa(userId: string, password: string, code: string): Promise<void> {
+    const user = await this.repository.getUserById(userId);
+    if (!user) throw AuthError.accountMissing();
+    if (!mfaOn(user)) return;
+    if (!(await this.passwordMatches(userId, password))) throw new AuthError(403, 'wrong_password', 'That is not your password.');
+    if (!(await this.spendSecondFactor(user, code))) throw new AuthError(400, 'wrong_code', 'That code is not right.');
+    user.mfa = null;
+    await this.repository.updateUser(user);
+  }
+
   /** The account an email, phone or username names, as sign-in finds it. */
   private async accountFor(identifier: string): Promise<User | null> {
     const handle = identifier.replace(/^@/, '');
@@ -388,7 +469,7 @@ export class MockAuthProvider implements AuthService {
    * in somewhere. Failed sign-ins counted against the account are cleared, so
    * the owner is not held back by the guessing that may have led here.
    */
-  async resetPassword(body: { identifier?: string; code?: string; password?: string }, client: ClientContext = {}): Promise<LoginResponse> {
+  async resetPassword(body: { identifier?: string; code?: string; password?: string; otp?: string }, client: ClientContext = {}): Promise<LoginResponse> {
     this.requireSigningKey();
     const named = body.identifier?.trim() ?? '';
     const password = body.password ?? '';
@@ -400,6 +481,14 @@ export class MockAuthProvider implements AuthService {
     }, { breachCheck: config.passwordBreachCheck });
     if (weak) throw new AuthError(400, 'invalid_password', weak);
 
+    // An emailed code alone must not undo two-factor: whoever holds the inbox
+    // still needs the app, or a recovery code.
+    if (mfaOn(user)) {
+      if (!body.otp?.trim()) throw new AuthError(401, 'mfa_required', 'Enter the 6-digit code from your authenticator app too.');
+      if (!(await this.spendSecondFactor(user, body.otp))) {
+        throw new AuthError(401, 'mfa_invalid', 'That authenticator code is not right. Use the newest code, or a recovery code.');
+      }
+    }
     try {
       await consumePasswordResetCode(this.repository, user, body.code ?? '');
     } catch (err) {
@@ -713,12 +802,22 @@ function forwarderSummary(profile: User['forwarderProfile']): AuthUser['forwarde
  * trustworthy as its signature - and admin is never taken on a token's word.
  */
 function fromSnapshot(user: AuthUser): AuthUser {
-  const operator = config.adminEmails.includes(user.email.trim().toLowerCase());
-  return { ...user, capabilities: { ...user.capabilities, isAdmin: operator } };
+  return { ...user, capabilities: { ...user.capabilities, isAdmin: isOperator(user) } };
+}
+
+/**
+ * An operator: an address listed in ADMIN_EMAILS that this account has proved
+ * it holds. The proof matters - without it, whoever signed up first with a
+ * listed address that its owner had not yet registered was an operator.
+ */
+function isOperator(user: { email: string; verification: VerificationState }): boolean {
+  if (!config.adminEmails.includes(user.email.trim().toLowerCase())) return false;
+  const proof = user.verification.proofs?.email;
+  return verifiedChecks(user).email && (proof?.address === 'seed' || proof?.address?.toLowerCase() === user.email.trim().toLowerCase());
 }
 
 export function toAuthUser(user: User): AuthUser {
-  const operator = config.adminEmails.includes(user.email.trim().toLowerCase());
+  const operator = isOperator(user);
   return {
     id: user.id,
     displayName: user.displayName,
@@ -732,8 +831,24 @@ export function toAuthUser(user: User): AuthUser {
     sellerProfile: user.sellerProfile,
     forwarderProfile: forwarderSummary(user.forwarderProfile),
     managerRights: user.managerRights ?? null,
+    mfaEnabled: mfaOn(user),
+    mfaRequired: config.staffMfa && !mfaOn(user) && (operator || Boolean(user.managerRights)),
     bio: user.bio ?? '',
     coverUrl: user.coverUrl ?? null,
     tags: user.tags ?? [],
   };
+}
+
+/** Whether sign-in asks this account for a second factor. */
+export function mfaOn(user: Pick<User, 'mfa'>): boolean {
+  return Boolean(user.mfa?.secret && user.mfa.enabledAt);
+}
+
+/** Refusal for staff who have not turned two-factor on yet. */
+export function staffMfaMissing(): AuthError {
+  return new AuthError(
+    403,
+    'mfa_required_for_staff',
+    'Turn on two-factor sign-in first (Profile → Settings → Two-factor sign-in). Operators and community managers need it to act.',
+  );
 }

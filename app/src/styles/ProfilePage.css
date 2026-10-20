@@ -3,3 +3,11 @@
 .photogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; border-radius: var(--r-md); overflow: hidden; }
 .qme__facts { display: grid; gap: 8px; margin: 14px 0; }
 
+
+/* Two-factor setup: the QR on white so every camera reads it, the codes in a block. */
+.twofa__qr { justify-self: start; padding: 8px; border-radius: 12px; background: #FFFFFF; image-rendering: pixelated; }
+.twofa__key { word-break: break-all; }
+.twofa__codes {
+  margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-2);
+  font-size: var(--t-sm); line-height: 1.8; columns: 2; user-select: all;
+}

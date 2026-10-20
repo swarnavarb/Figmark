@@ -23,9 +23,11 @@ const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute } = await import(new URL('health.js', apiRoot));
 const {
   loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute, usernameAvailableRoute, resetStartRoute, resetConfirmRoute, deleteMeRoute,
+  mfaSetupRoute, mfaEnableRoute, mfaDisableRoute,
 } = await import(new URL('auth-routes.js', apiRoot));
 const {
   verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
+  verifyEmailChangeRoute, verifyEmailChangeConfirmRoute,
   verifyAadhaarRoute, whatsappWebhookRoute,
 } = await import(new URL('verify-routes.js', apiRoot));
 const {
@@ -153,6 +155,9 @@ const routes = [
   ['POST', '/api/auth/reset/start', resetStartRoute],
   ['POST', '/api/auth/reset/confirm', resetConfirmRoute],
   ['POST', '/api/me/delete', deleteMeRoute],
+  ['POST', '/api/me/mfa/setup', mfaSetupRoute],
+  ['POST', '/api/me/mfa/enable', mfaEnableRoute],
+  ['POST', '/api/me/mfa/disable', mfaDisableRoute],
   ['GET', '/api/auth/username/:name', usernameAvailableRoute],
   ['POST', '/api/auth/signup', signupRoute],
   ['POST', '/api/auth/logout', logoutRoute],
@@ -160,6 +165,8 @@ const routes = [
   ['GET', '/api/verify/status', verifyStatusRoute],
   ['POST', '/api/verify/email/send', verifyEmailSendRoute],
   ['POST', '/api/verify/email/confirm', verifyEmailConfirmRoute],
+  ['POST', '/api/verify/email/change', verifyEmailChangeRoute],
+  ['POST', '/api/verify/email/change/confirm', verifyEmailChangeConfirmRoute],
   ['POST', '/api/verify/phone/start', verifyPhoneStartRoute],
   ['POST', '/api/verify/phone/number', verifyPhoneNumberRoute],
   ['POST', '/api/verify/aadhaar', verifyAadhaarRoute],

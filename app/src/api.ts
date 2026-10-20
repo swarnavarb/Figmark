@@ -2422,8 +2422,8 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),
 
-  login: (identifier: string, password: string) =>
-    post<LoginResponse>('/auth/login', { identifier, password }),
+  login: (identifier: string, password: string, otp?: string) =>
+    post<LoginResponse>('/auth/login', { identifier, password, ...(otp ? { otp } : {}) }),
 
   signup: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) =>
     post<SignupResponse>('/auth/signup', body),
@@ -2433,7 +2433,7 @@ export const api = {
     post<{ sent: boolean; message: string; devCode?: string }>('/auth/reset/start', { identifier }),
 
   /** Sets a new password with the emailed code, ends every other session, and signs in. */
-  confirmPasswordReset: (body: { identifier: string; code: string; password: string }) =>
+  confirmPasswordReset: (body: { identifier: string; code: string; password: string; otp?: string }) =>
     post<LoginResponse>('/auth/reset/confirm', body),
 
   /** Whether a username is still free, asked while it is typed on the sign-up form. */
@@ -2445,6 +2445,10 @@ export const api = {
   verifyStatus: () => send<VerificationStatus>('/verify/status'),
   sendEmailCode: () => post<{ sentTo: string; devCode?: string; status: VerificationStatus }>('/verify/email/send'),
   confirmEmailCode: (code: string) => post<{ status: VerificationStatus }>('/verify/email/confirm', { code }),
+  /** Sends a code to a new address; the password is asked again. */
+  startEmailChange: (email: string, password: string) =>
+    post<{ sentTo: string; devCode?: string; status: VerificationStatus }>('/verify/email/change', { email, password }),
+  confirmEmailChange: (code: string) => post<{ status: VerificationStatus }>('/verify/email/change/confirm', { code }),
   startWhatsApp: () =>
     post<{ link: string; message: string; businessNumber: string; expiresAt: string; status: VerificationStatus }>('/verify/phone/start'),
   changePhone: (phone: string) => post<{ status: VerificationStatus }>('/verify/phone/number', { phone }),
@@ -2453,6 +2457,12 @@ export const api = {
   logout: () => post<{ ok: true }>('/auth/logout'),
   /** Ends every session this account has, on every device - this one too. */
   logoutAll: () => post<{ ok: true }>('/auth/logout-all'),
+
+  /** Two-factor sign-in: a new key to add to an authenticator app (password asked again). */
+  startMfaSetup: (password: string) => post<{ secret: string; uri: string }>('/me/mfa/setup', { password }),
+  /** The first code from the new key turns it on; the recovery codes come back once. */
+  enableMfa: (code: string) => post<{ recoveryCodes: string[] }>('/me/mfa/enable', { code }),
+  disableMfa: (password: string, code: string) => post<{ ok: true }>('/me/mfa/disable', { password, code }),
 
   /** Deletes this account and what it made, asked with its password. Refused while money or a dispute is open. */
   deleteAccount: (password: string) =>

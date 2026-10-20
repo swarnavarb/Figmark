@@ -90,6 +90,9 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const [pickHandle, setPickHandle] = useState(false);
   /** Showing the password reset form in place of sign-in. */
   const [resetting, setResetting] = useState(false);
+  /** Set once the server asks this account for its authenticator code. */
+  const [askOtp, setAskOtp] = useState(false);
+  const [otp, setOtp] = useState('');
 
   // The seeded sign-in hint, shown only while the mock provider is active.
   useEffect(() => {
@@ -155,11 +158,17 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
     setBusy(true);
     setError(null);
     try {
-      if (mode === 'signin') await signIn(identifier, password);
+      if (mode === 'signin') await signIn(identifier, password, askOtp ? otp : undefined);
       else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password });
       else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password });
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
+      if (err instanceof ApiRequestError && err.code === 'mfa_required') {
+        // Not a failure: the password was right and the second step is next.
+        setAskOtp(true);
+        setError(null);
+      } else {
+        setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
+      }
     } finally {
       setBusy(false);
     }
@@ -237,6 +246,15 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
                 </button>
               )}
             </label>
+
+            {mode === 'signin' && askOtp && (
+              <label className="field">
+                <span>Code from your authenticator app</span>
+                <input value={otp} onChange={(e) => setOtp(e.target.value.slice(0, 16))} autoFocus
+                  inputMode="text" autoComplete="one-time-code" placeholder="123456" required />
+                <span className="field__hint">Lost your phone? Enter one of your recovery codes instead.</span>
+              </label>
+            )}
 
             {mode === 'signup' && (
               <>
@@ -330,6 +348,8 @@ function ResetPassword({ initialIdentifier, onDone }: { initialIdentifier: strin
   const [sent, setSent] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [askOtp, setAskOtp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -353,8 +373,9 @@ function ResetPassword({ initialIdentifier, onDone }: { initialIdentifier: strin
     setBusy(true);
     setError(null);
     try {
-      await resetPassword(identifier, code, password);
+      await resetPassword(identifier, code, password, askOtp ? otp : undefined);
     } catch (err) {
+      if (err instanceof ApiRequestError && err.code === 'mfa_required') setAskOtp(true);
       setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
       setBusy(false);
     }
@@ -392,6 +413,13 @@ function ResetPassword({ initialIdentifier, onDone }: { initialIdentifier: strin
               autoComplete="new-password" placeholder="At least 8 characters" required />
             <span className="field__hint">Every other device signed in to this account is signed out.</span>
           </label>
+          {askOtp && (
+            <label className="field">
+              <span>Code from your authenticator app</span>
+              <input value={otp} onChange={(e) => setOtp(e.target.value.slice(0, 16))} autoComplete="one-time-code" required />
+              <span className="field__hint">Or one of your recovery codes.</span>
+            </label>
+          )}
           {error && <ErrorNotice message={error} />}
           <button type="submit" className="btn btn--lg btn--block" disabled={busy || code.length !== 6}>
             {busy ? 'Please wait…' : 'Set password and sign in'}

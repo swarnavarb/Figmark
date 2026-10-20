@@ -16,6 +16,7 @@ const { privateKey: otherKey } = generateKeyPairSync('rsa', { modulusLength: 204
 
 // Configuration is read once at import, so it goes in first.
 process.env.FIGMARK_RATE_LIMITS = 'off';
+process.env.ADMIN_EMAILS = 'demo@figmark.in,ops-lead@verify.example';
 process.env.WHATSAPP_BUSINESS_NUMBER = '+91 90000 00001';
 process.env.WHATSAPP_VERIFY_TOKEN = 'test-verify-token';
 process.env.WHATSAPP_APP_SECRET = 'test-app-secret';
@@ -27,7 +28,7 @@ const { signupRoute: signup, loginRoute: login, meRoute: me } = await import(new
 const {
   verifyStatusRoute: status, verifyEmailSendRoute: emailSend, verifyEmailConfirmRoute: emailConfirm,
   verifyPhoneStartRoute: phoneStart, verifyPhoneNumberRoute: phoneNumber, verifyAadhaarRoute: aadhaar,
-  whatsappWebhookRoute: webhook,
+  whatsappWebhookRoute: webhook, verifyEmailChangeRoute: emailChange, verifyEmailChangeConfirmRoute: emailChangeConfirm,
 } = await import(new URL('verify-routes.js', fns));
 const { createOrderRoute: createOrder } = await import(new URL('catalog-routes.js', fns));
 const { adminRightsRoute: rights, adminUsersRoute: adminUsers } = await import(new URL('admin-routes.js', fns));
@@ -200,9 +201,9 @@ await check("the code sent from the account's own number verifies it", async () 
   assert.equal(now.phoneChallenge, null);
 });
 
-await check('email and phone alone still do not open trading', async () => {
+await check('email and phone open buying, but not selling', async () => {
   const user = await meOf(priya);
-  assert.equal(user.capabilities.canBuy, false);
+  assert.equal(user.capabilities.canBuy, true);
   assert.equal(user.capabilities.canSell, false);
 });
 
@@ -295,6 +296,41 @@ await check('a corrected number becomes the sign-in identifier, and the old one 
   assert.equal(await repository.getUserByIdentifier('+919811122233'), null);
   const signedIn = await login(req({ body: { identifier: '+919811122244', password: 'longenough1' } }), ctx);
   assert.equal(signedIn.status, 200);
+});
+
+/* ── Changing the email ────────────────────────────────────────────────── */
+console.log('\nchanging the email');
+
+await check('the email moves only once the new inbox returns the code, and the password is asked', async () => {
+  const mover = await newAccount('Mover', '9811122233');
+  const wrongPassword = await emailChange(req({ headers: mover.headers, body: { email: 'moved@verify.example', password: 'nope' } }), ctx);
+  assert.equal(wrongPassword.status, 403);
+  const taken = await emailChange(req({ headers: mover.headers, body: { email: 'priya@verify.example', password: 'longenough1' } }), ctx);
+  assert.equal(taken.status, 409);
+
+  const started = await emailChange(req({ headers: mover.headers, body: { email: 'Moved@Verify.example', password: 'longenough1' } }), ctx);
+  assert.equal(started.status, 200, JSON.stringify(started.jsonBody));
+  assert.equal((await meOf(mover)).email, 'mover@verify.example', 'nothing changes before the code');
+  assert.equal((await emailChangeConfirm(req({ headers: mover.headers, body: { code: started.jsonBody.devCode === '000000' ? '111111' : '000000' } }), ctx)).status, 400);
+  assert.equal((await emailChangeConfirm(req({ headers: mover.headers, body: { code: started.jsonBody.devCode } }), ctx)).status, 200);
+
+  const now = await meOf(mover);
+  assert.equal(now.email, 'moved@verify.example');
+  assert.equal((await statusOf(mover)).checks.email, true, 'the new address is verified by the code');
+  // Signs in under the new address, not the old.
+  assert.equal((await login(req({ body: { identifier: 'moved@verify.example', password: 'longenough1' } }), ctx)).status, 200);
+  assert.equal((await login(req({ body: { identifier: 'mover@verify.example', password: 'longenough1' } }), ctx)).status, 401);
+});
+
+await check('an operator address is no use to whoever registers it without proving the inbox', async () => {
+  const squatter = await newAccount('Ops Lead', '9811177744');
+  const row = await repository.getUserById(squatter.id);
+  row.email = 'ops-lead@verify.example';
+  await repository.updateUser(row);
+  assert.equal((await meOf(squatter)).capabilities.isAdmin, false, 'unconfirmed: not an operator');
+  const sent = await emailSend(req({ headers: squatter.headers, body: {} }), ctx);
+  await emailConfirm(req({ headers: squatter.headers, body: { code: sent.jsonBody.devCode } }), ctx);
+  assert.equal((await meOf(squatter)).capabilities.isAdmin, true, 'confirmed: an operator');
 });
 
 /* ── Older accounts ────────────────────────────────────────────────────── */
