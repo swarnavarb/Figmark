@@ -293,6 +293,7 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <Link role="menuitem" to="/wallet" className="pmenu__item">👛 My wallet</Link>
           <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
           <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>
+          <Link role="menuitem" to="/legal" className="pmenu__item">📄 Terms &amp; policies</Link>
           <button role="menuitem" type="button" className="pmenu__item pmenu__item--out"
             onClick={() => { setOpen(false); setChoosing(true); }}>
             👋 Sign Out

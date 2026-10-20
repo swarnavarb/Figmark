@@ -4,6 +4,7 @@ import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handl
 import { ApiRequestError, api } from '../api';
 import { ErrorNotice, Icon } from '../components/ui';
 import { useSession } from '../session';
+import { Captcha } from '../components/Captcha';
 
 type Mode = 'signin' | 'signup';
 
@@ -93,6 +94,10 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   /** Set once the server asks this account for its authenticator code. */
   const [askOtp, setAskOtp] = useState(false);
   const [otp, setOtp] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  /** Turnstile's site key when the server asks sign-up for a CAPTCHA, and the token it gave. */
+  const [captchaKey, setCaptchaKey] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   // The seeded sign-in hint, shown only while the mock provider is active.
   useEffect(() => {
@@ -103,6 +108,7 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
         if (cancelled) return;
         if (health.auth.mode === 'mock') setDemo(health.auth.demoAccounts);
         setDurable(health.auth.accountsDurable);
+        setCaptchaKey(health.auth.captchaSiteKey ?? null);
         // Say why sign-in cannot work before the form is filled in, rather
         // than letting an empty or unreachable database answer a correct
         // password with "that password is wrong".
@@ -159,8 +165,8 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
     setError(null);
     try {
       if (mode === 'signin') await signIn(identifier, password, askOtp ? otp : undefined);
-      else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password });
-      else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password });
+      else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password, acceptTerms: agreed, captchaToken: captchaToken ?? undefined });
+      else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password, acceptTerms: agreed, captchaToken: captchaToken ?? undefined });
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === 'mfa_required') {
         // Not a failure: the password was right and the second step is next.
@@ -296,6 +302,18 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
               </>
             )}
 
+            {mode === 'signup' && (
+              <label className="auth__consent">
+                <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} required />
+                <span>
+                  I am 18 or older and agree to the <a href="/legal/terms" target="_blank" rel="noopener">Terms of Use</a> and
+                  the <a href="/legal/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+                </span>
+              </label>
+            )}
+
+            {mode === 'signup' && captchaKey && <Captcha siteKey={captchaKey} onToken={setCaptchaToken} />}
+
             {blocked && !error && <p className="notice notice--warn">{blocked}</p>}
 
             {error && <ErrorNotice message={error} />}
@@ -309,10 +327,15 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
             )}
 
             <button type="submit" className="btn btn--lg btn--block"
-              disabled={busy || (mode === 'signup' && (usernameState === 'taken' || usernameState === 'checking'))}>
+              disabled={busy || (mode === 'signup' && (!agreed || (captchaKey !== null && !captchaToken) || usernameState === 'taken' || usernameState === 'checking'))}>
               {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
           </form>
+
+          <p className="faint auth__legal">
+            <a href="/legal/terms" target="_blank" rel="noopener">Terms</a> · <a href="/legal/privacy" target="_blank" rel="noopener">Privacy</a> ·{' '}
+            <a href="/legal/grievance" target="_blank" rel="noopener">Grievance Officer</a>
+          </p>
 
           {/* Every seeded sign-in, not just the first: the shop owner and the
               supplier who packs for them see different halves of the same lot,

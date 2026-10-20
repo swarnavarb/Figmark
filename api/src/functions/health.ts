@@ -44,6 +44,7 @@ async function health(request: HttpRequest, _context: InvocationContext) {
     auth: {
       mode: auth.mode,
       demoAccounts: auth.listDemoAccounts(),
+      captchaSiteKey: config.captcha?.siteKey ?? null,
       sessionSecretSource: config.sessionSecretSource,
       // Accounts created at runtime only survive if something durable is behind
       // the repository; the in-memory store loses them on every restart.

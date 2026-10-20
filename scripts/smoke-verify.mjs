@@ -88,7 +88,7 @@ function whatsappDelivery(from, text, secret = 'test-app-secret') {
 
 async function newAccount(name, phone) {
   const made = await signup(req({
-    body: { displayName: name, email: `${name.toLowerCase().replace(/\W/g, '')}@verify.example`, phone, password: 'longenough1' },
+    body: { acceptTerms: true, displayName: name, email: `${name.toLowerCase().replace(/\W/g, '')}@verify.example`, phone, password: 'longenough1' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   return { id: made.jsonBody.user.id, made, headers: { authorization: `Bearer ${made.jsonBody.token}` } };
@@ -112,7 +112,7 @@ await check('sign-up verifies nothing, and stores the phone in one canonical for
 });
 
 await check('sign-up refuses a number that is not an Indian mobile', async () => {
-  const bad = await signup(req({ body: { displayName: 'Abroad', email: 'abroad@verify.example', phone: '+1 415 555 0100', password: 'longenough1' } }), ctx);
+  const bad = await signup(req({ body: { acceptTerms: true, displayName: 'Abroad', email: 'abroad@verify.example', phone: '+1 415 555 0100', password: 'longenough1' } }), ctx);
   assert.equal(bad.status, 400);
   assert.match(bad.jsonBody.message, /Aadhaar/);
 });

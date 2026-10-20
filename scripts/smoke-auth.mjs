@@ -127,7 +127,7 @@ await check('operating the marketplace comes from configuration, never from a ro
   // repository, so admin over data that resets on restart grants nothing — but
   // a new account is not, and no write path can make it one.
   const made = await auth.signup({
-    displayName: 'Ordinary Person', email: 'ordinary@figmark.example',
+    acceptTerms: true, displayName: 'Ordinary Person', email: 'ordinary@figmark.example',
     phone: '+919000045451', password: 'longenough1',
   });
   assert.equal(made.user.capabilities.isAdmin, false);
@@ -232,7 +232,7 @@ console.log('\nsign-up');
 
 await check('creates an account and reserves both identifiers', async () => {
   const created = await auth.signup({
-    displayName: 'Priya N.', email: 'priya@figmark.example', phone: '+919777000111', password: 'longenough1',
+    acceptTerms: true, displayName: 'Priya N.', email: 'priya@figmark.example', phone: '+919777000111', password: 'longenough1',
   });
   assert.equal(created.user.sellerProfile, null);
   // Nothing typed in at sign-up counts as verified, so a new account can
@@ -248,20 +248,20 @@ await check('creates an account and reserves both identifiers', async () => {
 });
 
 await expectAuthError('refuses a duplicate identifier', 'identifier_taken', () =>
-  auth.signup({ displayName: 'Clone', email: DEMO_EMAIL, phone: '+919777000222', password: 'longenough1' }),
+  auth.signup({ acceptTerms: true, displayName: 'Clone', email: DEMO_EMAIL, phone: '+919777000222', password: 'longenough1' }),
 );
 await expectAuthError('refuses a short password', 'invalid_signup', () =>
-  auth.signup({ displayName: 'X', email: 'x@figmark.example', phone: '+919777000333', password: 'short' }),
+  auth.signup({ acceptTerms: true, displayName: 'X', email: 'x@figmark.example', phone: '+919777000333', password: 'short' }),
 );
 
 await check('two people with one name both get in, without either picking a username', async () => {
   // The sign-up form folds the username away, so a clash on the one made
   // from the name has to be settled here rather than sent back as an error.
   const first = await auth.signup({
-    displayName: 'Same Name', email: 'same1@figmark.example', phone: '+919777002555', password: 'longenough1',
+    acceptTerms: true, displayName: 'Same Name', email: 'same1@figmark.example', phone: '+919777002555', password: 'longenough1',
   });
   const second = await auth.signup({
-    displayName: 'Same Name', email: 'same2@figmark.example', phone: '+919777002666', password: 'longenough1',
+    acceptTerms: true, displayName: 'Same Name', email: 'same2@figmark.example', phone: '+919777002666', password: 'longenough1',
   });
   assert.equal(first.user.username, 'same_name');
   assert.match(second.user.username, /^same_name_[a-z0-9]{4}$/);
@@ -269,14 +269,14 @@ await check('two people with one name both get in, without either picking a user
 
 await expectAuthError('a username somebody typed is still refused when taken', 'username_taken', () =>
   auth.signup({
-    displayName: 'Third', username: 'same_name', email: 'same3@figmark.example', phone: '+919777002777',
+    acceptTerms: true, displayName: 'Third', username: 'same_name', email: 'same3@figmark.example', phone: '+919777002777',
     password: 'longenough1',
   }),
 );
 
 await check("the form's own suggestion is settled with a tail if it was taken a moment ago", async () => {
   const late = await auth.signup({
-    displayName: 'Fourth', username: 'same_name', usernameSuggested: true,
+    acceptTerms: true, displayName: 'Fourth', username: 'same_name', usernameSuggested: true,
     email: 'same4@figmark.example', phone: '+919777002888', password: 'longenough1',
   });
   assert.match(late.user.username, /^same_name_[a-z0-9]{4}$/);
@@ -289,7 +289,7 @@ await check('with a durable store, a deleted account ends the session honestly',
   // really is deleted, and the token must not resurrect it. (On the per-worker
   // memory store the opposite is required - see the cross-worker check above.)
   const created = await auth.signup({
-    displayName: 'Ghost', email: 'ghost@figmark.example', phone: '+919777000444', password: 'longenough1',
+    acceptTerms: true, displayName: 'Ghost', email: 'ghost@figmark.example', phone: '+919777000444', password: 'longenough1',
   });
 
   const durable = new MemoryRepository();
@@ -318,7 +318,7 @@ await check('a signed-up account still works on a worker that never saw it', asy
   // The reported bug exactly: sign up lands on one worker, the next click is
   // served by another whose in-memory store has never heard of the account.
   const created = await auth.signup({
-    displayName: 'Cross Worker', email: 'cross@figmark.example', phone: '+919777000888', password: 'longenough1',
+    acceptTerms: true, displayName: 'Cross Worker', email: 'cross@figmark.example', phone: '+919777000888', password: 'longenough1',
   });
 
   const otherWorker = new MemoryRepository();
@@ -352,7 +352,7 @@ await check('the snapshot is a fallback, never an override', async () => {
 
 await check('a tampered snapshot is rejected with the signature', async () => {
   const created = await auth.signup({
-    displayName: 'Honest', email: 'honest@figmark.example', phone: '+919777000999', password: 'longenough1',
+    acceptTerms: true, displayName: 'Honest', email: 'honest@figmark.example', phone: '+919777000999', password: 'longenough1',
   });
   // Forge an admin snapshot into the payload and re-encode without resigning.
   const [payload, signature] = created.token.split('.');
@@ -364,14 +364,14 @@ await check('a tampered snapshot is rejected with the signature', async () => {
 
 await check('sign-up warns when the store will not keep the account', async () => {
   const created = await auth.signup({
-    displayName: 'Warned', email: 'warned@figmark.example', phone: '+919777000555', password: 'longenough1',
+    acceptTerms: true, displayName: 'Warned', email: 'warned@figmark.example', phone: '+919777000555', password: 'longenough1',
   });
   assert.match(created.warning ?? '', /memory/i);
 });
 
 await check('repeated wrong passwords are rate-limited', async () => {
   const target = 'ratelimit@figmark.example';
-  await auth.signup({ displayName: 'RL', email: target, phone: '+919777000666', password: 'longenough1' });
+  await auth.signup({ acceptTerms: true, displayName: 'RL', email: target, phone: '+919777000666', password: 'longenough1' });
   let limited = false;
   for (let i = 0; i < 12; i += 1) {
     try {
@@ -385,7 +385,7 @@ await check('repeated wrong passwords are rate-limited', async () => {
 
 await check('a correct password clears the failed-attempt record', async () => {
   const target = 'clears@figmark.example';
-  await auth.signup({ displayName: 'CL', email: target, phone: '+919777000777', password: 'longenough1' });
+  await auth.signup({ acceptTerms: true, displayName: 'CL', email: target, phone: '+919777000777', password: 'longenough1' });
   for (let i = 0; i < 3; i += 1) {
     await auth.login({ identifier: target, password: 'wrong' }).catch(() => {});
   }
@@ -508,6 +508,14 @@ await check('a freshly seeded store counts exactly the accounts it advertises', 
   await fresh.init();
   assert.equal(fresh.status().signInAccounts, fresh.listDemoAccounts().length);
   assert.equal(fresh.status().connected, true);
+});
+
+await check('sign-up needs the Terms agreed, and keeps which version was', async () => {
+  const fresh = new MockAuthProvider(new MemoryRepository(), 'test-secret', 3600);
+  const body = { displayName: 'Terms Reader', email: 'terms@figmark.example', phone: '+919811100001', password: 'a-fine-passphrase-3' };
+  await assert.rejects(fresh.signup(body), (err) => err.code === 'terms_required');
+  const made = await fresh.signup({ ...body, acceptTerms: true });
+  assert.ok(made.user.id);
 });
 
 console.log(`\n${passed} checks passed`);

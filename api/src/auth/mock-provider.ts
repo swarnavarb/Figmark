@@ -17,6 +17,7 @@ import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, handleShapeProblem, suggestUsername } from '../../../shared/handles.js';
 import { PASSWORD_MAX_LENGTH, hashPasswordAsync, passwordNeedsRehash, passwordProblem, verifyPasswordAsync } from './passwords.js';
 import { normalizeIndianMobile, verifiedChecks } from '../../../shared/verification.js';
+import { LEGAL_VERSION } from '../../../shared/legal.js';
 import {
   SESSION_COOKIE_NAME,
   SESSION_REFRESH_AFTER_SECONDS,
@@ -577,6 +578,9 @@ export class MockAuthProvider implements AuthService {
     const phone = normalizeIndianMobile(request.phone);
 
     if (!displayName) throw new AuthError(400, 'invalid_signup', 'Please enter your name.');
+    if (request.acceptTerms !== true) {
+      throw new AuthError(400, 'terms_required', 'Agree to the Terms and the Privacy Policy to create an account.');
+    }
     if (!email || !email.includes('@')) {
       throw new AuthError(400, 'invalid_signup', 'Please enter a valid email address.');
     }
@@ -655,6 +659,7 @@ export class MockAuthProvider implements AuthService {
         // No storefront yet: it appears the first time they list something.
         sellerProfile: null,
         forwarderProfile: null,
+        consent: { terms: LEGAL_VERSION, at: now },
         suspended: false,
         createdAt: now,
         updatedAt: now,

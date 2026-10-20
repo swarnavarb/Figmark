@@ -73,7 +73,7 @@ function browser() {
 
 async function person(name, phone, username) {
   const made = await signup(req({
-    body: { displayName: name, email: `${name.toLowerCase().replace(/\W/g, '')}@bell.example`, phone, password: 'longenough1' },
+    body: { acceptTerms: true, displayName: name, email: `${name.toLowerCase().replace(/\W/g, '')}@bell.example`, phone, password: 'longenough1' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const auth = { authorization: `Bearer ${made.jsonBody.token}` };

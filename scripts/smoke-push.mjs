@@ -71,7 +71,7 @@ function browser(host = 'fcm.googleapis.com') {
 
 async function person(name, phone) {
   const made = await signup(req({
-    body: { displayName: name, email: `${name.toLowerCase()}@push.example`, phone, password: 'longenough1' },
+    body: { acceptTerms: true, displayName: name, email: `${name.toLowerCase()}@push.example`, phone, password: 'longenough1' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   return { id: made.jsonBody.user.id, auth: { authorization: `Bearer ${made.jsonBody.token}` } };

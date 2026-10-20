@@ -274,7 +274,7 @@ const auth = new MockAuthProvider(repository, 'test-secret', 3600);
 await check('wrong passwords lock out that address for that account, and nobody else', async () => {
   resetRateLimits();
   const target = 'victim@figmark.example';
-  await auth.signup({ displayName: 'Vic Tim', email: target, phone: '+919777001001', password: 'correct horse battery' });
+  await auth.signup({ acceptTerms: true, displayName: 'Vic Tim', email: target, phone: '+919777001001', password: 'correct horse battery' });
   let locked = false;
   for (let attempt = 0; attempt < 12 && !locked; attempt += 1) {
     await auth.login({ identifier: target, password: 'wrong' }, { ip: '203.0.113.9' }).catch((err) => {
@@ -308,7 +308,7 @@ await check('guessing spread over many addresses is capped, and the owner\'s own
   resetRateLimits();
   const target = 'spread@figmark.example';
   const password = 'correct horse battery';
-  await auth.signup({ displayName: 'Spread Out', email: target, phone: '+919777001003', password });
+  await auth.signup({ acceptTerms: true, displayName: 'Spread Out', email: target, phone: '+919777001003', password });
   // The owner signed in on this browser before, so it carries the device cookie.
   const first = await auth.login({ identifier: target, password }, { ip: '198.51.100.50' });
   const device = auth.deviceCookies(first.user.id, { headers: new Headers() })[0].split(';')[0].split('=').slice(1).join('=');
@@ -355,7 +355,7 @@ await check('on Azure the address comes from the platform, never from what the c
 console.log('\npasswords');
 
 const signupWith = (password, extra = {}) => auth.signup({
-  displayName: 'Priya Raman', email: `p${Math.random().toString(36).slice(2, 8)}@figmark.example`,
+  acceptTerms: true, displayName: 'Priya Raman', email: `p${Math.random().toString(36).slice(2, 8)}@figmark.example`,
   phone: `+9197770${Math.floor(10000 + Math.random() * 89999)}`, password, ...extra,
 });
 
@@ -398,7 +398,7 @@ await check('a session in use is renewed, but never past its absolute limit', as
   // Not the demo account: the check above signed it out everywhere, and a
   // session from two hours ago is rightly over for it.
   const email = 'renewed@figmark.example';
-  await auth.signup({ displayName: 'Renee Wal', email, phone: '+919777001002', password: 'correct horse battery' });
+  await auth.signup({ acceptTerms: true, displayName: 'Renee Wal', email, phone: '+919777001002', password: 'correct horse battery' });
   // The real session length, so a two-hour-old session is still alive to renew.
   const twelveHours = new MockAuthProvider(repository, 'test-secret', 12 * 3600);
   const realNow = Date.now;
@@ -555,7 +555,7 @@ await check('a forgotten password is reset with an emailed code, and every old s
 
 await check('no reset code goes to an email nobody has confirmed', async () => {
   resetRateLimits();
-  const fresh = await auth.signup({
+  const fresh = await auth.signup({ acceptTerms: true,
     displayName: 'Unconfirmed Person', email: `u${Date.now()}@figmark.example`, phone: `+9198${String(Date.now()).slice(-8)}`, password: 'a-fine-passphrase-9',
   });
   assert.deepEqual(await auth.requestPasswordReset(fresh.user.email), {});

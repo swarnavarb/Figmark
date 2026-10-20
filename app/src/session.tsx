@@ -29,7 +29,7 @@ interface SessionValue {
   signIn: (identifier: string, password: string, otp?: string) => Promise<void>;
   /** Sets a new password with an emailed code and signs in with it. */
   resetPassword: (identifier: string, code: string, password: string, otp?: string) => Promise<void>;
-  signUp: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) => Promise<void>;
+  signUp: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string; acceptTerms: boolean; captchaToken?: string }) => Promise<void>;
   signOut: () => Promise<void>;
   /** Sign out on every device this account is signed in on, this one included. */
   signOutEverywhere: () => Promise<void>;

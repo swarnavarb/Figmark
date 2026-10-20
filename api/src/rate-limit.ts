@@ -18,7 +18,7 @@ import { error } from './functions/http.js';
 export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
   | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
   | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check'
-  | 'reset' | 'reset_account';
+  | 'reset' | 'reset_account' | 'export' | 'clienterror';
 
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
@@ -64,6 +64,10 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   // Reset emails per account, wherever they are asked from: nobody can fill
   // somebody's inbox with codes.
   reset_account: [{ max: 3, ms: HOUR }, { max: 6, ms: DAY }],
+  // Downloading everything an account holds reads a lot of rows.
+  export: [{ max: 3, ms: HOUR }, { max: 10, ms: DAY }],
+  // Error reports from a browser: enough for a page that breaks, not a flood.
+  clienterror: [{ max: 20, ms: MINUTE }, { max: 200, ms: HOUR }],
   // One per pause in typing a username on the sign-up form.
   handle_check: [{ max: 60, ms: MINUTE }, { max: 600, ms: HOUR }],
   // Wrong passwords for one account from one address. Keyed by both, so

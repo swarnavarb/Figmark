@@ -84,6 +84,10 @@ export interface SignupRequest {
   email: string;
   phone: string;
   password: string;
+  /** Ticked "I agree to the Terms and the Privacy Policy". Sign-up is refused without it. */
+  acceptTerms?: boolean;
+  /** The Turnstile token, when the server asks for a CAPTCHA. */
+  captchaToken?: string;
 }
 
 export interface LoginResponse {
@@ -124,6 +128,8 @@ export interface HealthResponse {
     mode: AuthMode;
     /** Seeded logins, exposed only while the mock provider is active. */
     demoAccounts: DemoAccount[];
+    /** Cloudflare Turnstile's public site key when sign-up asks for a CAPTCHA; null when it does not. */
+    captchaSiteKey: string | null;
     /**
      * Where the session signing key came from. 'development' means the constant
      * published in this repository - sessions are forgeable and this must never

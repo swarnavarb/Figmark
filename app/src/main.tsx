@@ -15,6 +15,8 @@ import { keepFresh } from './freshness';
 import { PullToRefresh } from './components/PullToRefresh';
 import { Preloader, liftBootScreen } from './components/Preloader';
 import { loadRouteWords } from './routeWords';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { listenForErrors } from './errors';
 import './styles.css';
 
 loadRouteWords();
@@ -33,6 +35,7 @@ function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
 
 const FeedPage = page(() => import('./pages/FeedPage'), 'FeedPage');
 const DiscoverPage = page(() => import('./pages/DiscoverPage'), 'DiscoverPage');
+const LegalPage = page(() => import('./pages/LegalPage'), 'LegalPage');
 const ListingPage = page(() => import('./pages/ListingPage'), 'ListingPage');
 const SellPage = page(() => import('./pages/SellPage'), 'SellPage');
 const ShopPage = page(() => import('./pages/ShopPage'), 'ShopPage');
@@ -166,6 +169,8 @@ function App() {
         <Route path="/disputes" element={members(<MyDisputesPage />)} />
         <Route path="/quests" element={members(<QuestsPage />)} />
         <Route path="/learn" element={<LearnPage />} />
+        <Route path="/legal" element={<LegalPage />} />
+        <Route path="/legal/:doc" element={<LegalPage />} />
         <Route path="/tags/:slug" element={<TagPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
@@ -177,6 +182,8 @@ function App() {
   );
 }
 
+// Errors in the browser reach the server's log.
+listenForErrors();
 // Only shows notifications; it caches nothing, so the site loads as before.
 registerServiceWorker();
 // Android's install prompt can arrive at any moment; keep it for the guide.
@@ -195,7 +202,9 @@ createRoot(container).render(
       <SessionProvider>
         <ToastHost>
           <UndoHost>
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
           </UndoHost>
         </ToastHost>
       </SessionProvider>

@@ -281,6 +281,8 @@ export interface User extends BaseDocument {
     recovery: string[];
     pending: { secret: string; createdAt: string } | null;
   } | null;
+  /** Which version of the Terms and Privacy Policy the account agreed to, and when. Absent on older accounts. */
+  consent?: { terms: string; at: string } | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
   /**

@@ -10,6 +10,7 @@ import { claimInvite, visitorCookieIfMissing } from '../share.js';
 import { clientIp, limited } from '../rate-limit.js';
 import { deviceCookieValue } from '../auth/tokens.js';
 import { deletionBlockers, eraseAccount } from '../account-deletion.js';
+import { captchaPasses } from '../captcha.js';
 import { USERNAME_PROBLEMS, checkUsername } from '../../../shared/handles.js';
 
 /** One address trying too many sign-ins or sign-ups, whichever accounts they name. */
@@ -92,6 +93,9 @@ async function signup(request: HttpRequest, _context: InvocationContext) {
 
   const slow = await addressLimited(request, 'signup');
   if (slow) return slow;
+  if (!(await captchaPasses(body.captchaToken, clientIp(request)))) {
+    return error(400, 'captcha_failed', 'Please complete the check that you are a person, then try again.');
+  }
 
   const result = await auth.signup(body);
   await claimReferrals(request, result.user?.id);

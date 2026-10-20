@@ -643,6 +643,15 @@ function DeleteAccount() {
   }
 
   return (
+    <>
+    <section className="card card--pad stack" style={{ marginTop: 18 }}>
+      <span className="card__title">Your data</span>
+      <p className="faint" style={{ margin: 0 }}>
+        Everything Figmark holds about your account - profile, listings, orders, messages, posts - as one file.
+      </p>
+      <a className="btn btn--ghost" style={{ justifySelf: 'start' }} href={api.exportUrl} download>Download my data</a>
+    </section>
+
     <section className="card card--pad stack" style={{ marginTop: 18 }}>
       <span className="card__title">Delete your account</span>
       <p className="faint" style={{ margin: 0 }}>
@@ -672,6 +681,7 @@ function DeleteAccount() {
         </form>
       )}
     </section>
+    </>
   );
 }
 

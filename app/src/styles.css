@@ -1148,6 +1148,13 @@ code, kbd, samp, pre {
   box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4);
 }
 
+/* The Terms box: the tick beside its sentence, top-aligned. */
+/* The CAPTCHA box keeps its height while Cloudflare's frame loads. */
+.auth__captcha { min-height: 65px; }
+.auth__legal { margin: 12px 0 0; text-align: center; font-size: var(--t-xs); }
+.auth__consent { display: flex; gap: 10px; align-items: flex-start; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.5; }
+.auth__consent a, .auth__legal a { color: var(--accent-text); text-decoration: underline; }
+.auth__consent input { margin-top: 3px; flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
 /* Under the password field, on its right, small. */
 .linkbtn.auth__forgot { justify-self: end; align-self: end; margin-top: 2px; font-size: var(--t-xs); }
 .auth__demo {

@@ -61,7 +61,7 @@ const newPerson = async (name, headers = {}) => {
   seq += 1;
   const made = await signup(req({
     headers,
-    body: { displayName: name, email: `share${seq}@figmark.example`, phone: `+91900006${String(1000 + seq).slice(-4)}`, password: 'longenough1' },
+    body: { acceptTerms: true, displayName: name, email: `share${seq}@figmark.example`, phone: `+91900006${String(1000 + seq).slice(-4)}`, password: 'longenough1' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   return { id: made.jsonBody.user.id, headers: { authorization: `Bearer ${made.jsonBody.token}` } };

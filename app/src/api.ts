@@ -2425,7 +2425,7 @@ export const api = {
   login: (identifier: string, password: string, otp?: string) =>
     post<LoginResponse>('/auth/login', { identifier, password, ...(otp ? { otp } : {}) }),
 
-  signup: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) =>
+  signup: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string; acceptTerms: boolean; captchaToken?: string }) =>
     post<SignupResponse>('/auth/signup', body),
 
   /** Emails a reset code when the account has a confirmed email; answers alike either way. */
@@ -2463,6 +2463,9 @@ export const api = {
   /** The first code from the new key turns it on; the recovery codes come back once. */
   enableMfa: (code: string) => post<{ recoveryCodes: string[] }>('/me/mfa/enable', { code }),
   disableMfa: (password: string, code: string) => post<{ ok: true }>('/me/mfa/disable', { password, code }),
+
+  /** The address that downloads everything this account holds, as one JSON file. */
+  exportUrl: '/api/me/export',
 
   /** Deletes this account and what it made, asked with its password. Refused while money or a dispute is open. */
   deleteAccount: (password: string) =>

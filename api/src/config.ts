@@ -67,6 +67,11 @@ export interface AppConfig {
    */
   staffMfa: boolean;
   /**
+   * Cloudflare Turnstile on sign-up, when both keys are set
+   * (TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY). Null: no CAPTCHA.
+   */
+  captcha: { siteKey: string; secretKey: string } | null;
+  /**
    * Whether a new shop's dispatch region is guessed from the IP address it
    * opens from (one lookup per address, at ipapi.co). On in Azure, off
    * locally; REGION_GUESS=on|off overrides it.
@@ -344,6 +349,9 @@ export const config: AppConfig = {
   verification: resolveVerification(),
   passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),
   staffMfa: env('STAFF_MFA') ? env('STAFF_MFA') === 'on' : runningInAzure(),
+  captcha: env('TURNSTILE_SITE_KEY') && env('TURNSTILE_SECRET_KEY')
+    ? { siteKey: env('TURNSTILE_SITE_KEY')!, secretKey: env('TURNSTILE_SECRET_KEY')! }
+    : null,
   regionGuess: env('REGION_GUESS') ? env('REGION_GUESS') === 'on' : runningInAzure(),
   swaPrincipalTrust: resolveSwaTrust(),
   publicOrigins: resolvePublicOrigins(),

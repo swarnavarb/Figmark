@@ -459,7 +459,7 @@ await check('rejects a wrong password with 401', async () => {
 
 await check('signup creates an account with no storefront', async () => {
   const created = await rawSignup(req({
-    body: { displayName: 'New Person', email: 'new@figmark.example', phone: '+919000012345', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'New Person', email: 'new@figmark.example', phone: '+919000012345', password: 'longenough1' },
   }), ctx);
   assert.equal(created.status, 201);
   assert.equal(created.jsonBody.user.sellerProfile, null);
@@ -470,14 +470,14 @@ await check('signup creates an account with no storefront', async () => {
 
 await check('signup refuses a duplicate identifier with 409', async () => {
   const dup = await signup(req({
-    body: { displayName: 'Impostor', email: DEMO_EMAIL, phone: '+919000099999', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Impostor', email: DEMO_EMAIL, phone: '+919000099999', password: 'longenough1' },
   }), ctx);
   assert.equal(dup.status, 409);
 });
 
 await check('signup validates a short password', async () => {
   const weak = await signup(req({
-    body: { displayName: 'X', email: 'x@figmark.example', phone: '+919000088888', password: 'short' },
+    body: { acceptTerms: true, displayName: 'X', email: 'x@figmark.example', phone: '+919000088888', password: 'short' },
   }), ctx);
   assert.equal(weak.status, 400);
 });
@@ -894,7 +894,7 @@ await check('a lot cannot be renamed to nothing, or by someone else', async () =
   // A lot is read from its owner's partition, so another seller's id does not
   // resolve at all - it is not found rather than forbidden.
   const stranger = await signup(req({
-    body: { displayName: 'Other Seller', email: 'other@figmark.example', phone: '+919000077777', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Other Seller', email: 'other@figmark.example', phone: '+919000077777', password: 'longenough1' },
   }), ctx);
   const theirs = await updateLotDetails(req({
     headers: { authorization: `Bearer ${stranger.jsonBody.token}` },
@@ -1049,7 +1049,7 @@ await check('advancing a lot writes tracking onto every order in it', async () =
   // Put a real order in the lot first.
   await assignToLot(req({ headers: auth, params: { id: lotId }, body: { listingIds: [published.jsonBody.listing.id] } }), ctx);
   const buyer = await signup(req({
-    body: { displayName: 'Buyer Two', email: 'b2@figmark.example', phone: '+919000054321', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Buyer Two', email: 'b2@figmark.example', phone: '+919000054321', password: 'longenough1' },
   }), ctx);
   const buyerAuth = { authorization: `Bearer ${buyer.jsonBody.token}` };
   const placed = await createOrder(req({ headers: buyerAuth, body: { listingId: published.jsonBody.listing.id } }), ctx);
@@ -1095,7 +1095,7 @@ await check('a direct sale tracks against the short vocabulary', async () => {
 
 await check('an order is private to its buyer and seller', async () => {
   const stranger = await signup(req({
-    body: { displayName: 'Nosy', email: 'nosy@figmark.example', phone: '+919000011111', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Nosy', email: 'nosy@figmark.example', phone: '+919000011111', password: 'longenough1' },
   }), ctx);
   const orders = (await myActivity(req({ headers: auth }), ctx)).jsonBody.orders;
   const peek = await orderTracking(req({
@@ -1151,7 +1151,7 @@ await check('the storefront is private to its owner', async () => {
 await check('storefront pictures are uploaded here, by a new account too, and never linked', async () => {
   const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
   const fresh = await rawSignup(req({
-    body: { displayName: 'Fresh Shop', email: 'freshshop@figmark.example', phone: '+919777003111', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Fresh Shop', email: 'freshshop@figmark.example', phone: '+919777003111', password: 'longenough1' },
   }), ctx);
   assert.equal(fresh.status, 201, JSON.stringify(fresh.jsonBody));
   const headers = { authorization: `Bearer ${fresh.jsonBody.token}` };
@@ -1271,7 +1271,7 @@ await check('only a shop has a channel', async () => {
   // this list with rooms nobody has a reason to open.
   const buyer = await signup(req({
     body: {
-      displayName: 'Channelless', email: 'nochannel@figmark.example',
+      acceptTerms: true, displayName: 'Channelless', email: 'nochannel@figmark.example',
       phone: '+919000045801', password: 'longenough1',
     },
   }), ctx);
@@ -1289,7 +1289,7 @@ await check('a follower may speak in a shop\'s room, as themselves', async () =>
   // the questions only end up in twenty separate private messages instead.
   const visitor = await signup(req({
     body: {
-      displayName: 'Curious Buyer', email: 'curious@figmark.example',
+      acceptTerms: true, displayName: 'Curious Buyer', email: 'curious@figmark.example',
       phone: '+919000045802', password: 'longenough1',
     },
   }), ctx);
@@ -1451,7 +1451,7 @@ await check('comments thread two deep, and a reply to a reply names who it answe
 
 await check('only the writer or the post\'s author can delete a comment', async () => {
   const stranger = await signup(req({
-    body: { displayName: 'Commenter', email: 'commenter@figmark.example', phone: '+919000045811', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Commenter', email: 'commenter@figmark.example', phone: '+919000045811', password: 'longenough1' },
   }), ctx);
   const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
   const post = (await createPost(req({ headers: auth, body: { body: 'Mine.' } }), ctx)).jsonBody.post;
@@ -1489,7 +1489,7 @@ await check('a repost reaches your followers and points at the original', async 
   assert.equal(counted.jsonBody.repost, null);
   assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount, 'the same sharer is counted once');
   const sharer = await signup(req({
-    body: { displayName: 'Link Sharer', email: 'linksharer@figmark.example', phone: '+919000045833', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Link Sharer', email: 'linksharer@figmark.example', phone: '+919000045833', password: 'longenough1' },
   }), ctx);
   const byThem = await sharePost(req({
     headers: { authorization: `Bearer ${sharer.jsonBody.token}` },
@@ -1679,7 +1679,7 @@ await check('only the shop pins in its room, three at most', async () => {
 
 await check('the author hears about reactions and comments, and can take the post down', async () => {
   const fan = await signup(req({
-    body: { displayName: 'Big Fan', email: 'bigfan@figmark.example', phone: '+919000045812', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Big Fan', email: 'bigfan@figmark.example', phone: '+919000045812', password: 'longenough1' },
   }), ctx);
   const theirs = { authorization: `Bearer ${fan.jsonBody.token}` };
   const post = (await createPost(req({ headers: auth, body: { body: 'Notice me.' } }), ctx)).jsonBody.post;
@@ -1698,7 +1698,7 @@ await check('the author hears about reactions and comments, and can take the pos
 await check('a customer cannot announce in somebody else\'s room', async () => {
   const visitor = await signup(req({
     body: {
-      displayName: 'Loud Visitor', email: 'loud@figmark.example',
+      acceptTerms: true, displayName: 'Loud Visitor', email: 'loud@figmark.example',
       phone: '+919000045804', password: 'longenough1',
     },
   }), ctx);
@@ -1738,7 +1738,7 @@ await check('a message from before the choice existed still reads as one', async
 await check('a visitor cannot advertise in somebody else\'s room', async () => {
   const visitor = await signup(req({
     body: {
-      displayName: 'Would Be Advertiser', email: 'advert@figmark.example',
+      acceptTerms: true, displayName: 'Would Be Advertiser', email: 'advert@figmark.example',
       phone: '+919000045803', password: 'longenough1',
     },
   }), ctx);
@@ -1847,7 +1847,7 @@ console.log('\nstores and who runs them');
 
 // A second account, to be brought into the demo account's shop.
 const helperSession = await signup(req({
-  body: { displayName: 'Helper Person', email: 'helper@figmark.example', phone: '+919000088888', password: 'longenough1' },
+  body: { acceptTerms: true, displayName: 'Helper Person', email: 'helper@figmark.example', phone: '+919000088888', password: 'longenough1' },
 }), ctx);
 const helper = { authorization: `Bearer ${helperSession.jsonBody.token}` };
 const helperId = helperSession.jsonBody.user.id;
@@ -2055,7 +2055,7 @@ await check('an unknown checkpoint is refused rather than stored', async () => {
 
 await check('another seller cannot read or tick this lot', async () => {
   const stranger = await signup(req({
-    body: { displayName: 'Rival Seller', email: 'rival@figmark.example', phone: '+919000066666', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Rival Seller', email: 'rival@figmark.example', phone: '+919000066666', password: 'longenough1' },
   }), ctx);
   assert.equal(stranger.status, 201, `signup failed: ${JSON.stringify(stranger.jsonBody)}`);
   const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
@@ -2077,7 +2077,7 @@ console.log('\nusernames');
 await check('a username is claimed at sign-up, and is where that person lives', async () => {
   const made = await signup(req({
     body: {
-      displayName: 'Nadia Rao', username: 'nadia_r',
+      acceptTerms: true, displayName: 'Nadia Rao', username: 'nadia_r',
       email: 'nadia@figmark.example', phone: '+919000022221', password: 'longenough1',
     },
   }), ctx);
@@ -2092,7 +2092,7 @@ await check('a username is claimed at sign-up, and is where that person lives', 
 await check('one namespace: a person and a shop cannot hold the same handle', async () => {
   const clash = await signup(req({
     body: {
-      displayName: 'Impostor', username: 'arjun_collects',
+      acceptTerms: true, displayName: 'Impostor', username: 'arjun_collects',
       email: 'impostor@figmark.example', phone: '+919000022222', password: 'longenough1',
     },
   }), ctx);
@@ -2118,7 +2118,7 @@ await check('a person can claim a username of their own, apart from any shop', a
   // and running a shop gives the shop an address rather than giving them one.
   const made = await signup(req({
     body: {
-      displayName: 'Late Comer', email: 'late@figmark.example',
+      acceptTerms: true, displayName: 'Late Comer', email: 'late@figmark.example',
       phone: '+919000022224', password: 'longenough1',
     },
   }), ctx);
@@ -2172,7 +2172,7 @@ console.log('\nlisting needs a storefront');
 
 const noShop = await signup(req({
   body: {
-    displayName: 'Shopless Sam', email: 'sam@figmark.example',
+    acceptTerms: true, displayName: 'Shopless Sam', email: 'sam@figmark.example',
     phone: '+919000022223', password: 'longenough1',
   },
 }), ctx);
@@ -2595,7 +2595,7 @@ await check('every order in a lot is offered the same protection, held by Figmar
 
   const buyer = await signup(req({
     body: {
-      displayName: 'Lot Buyer', email: 'lot@figmark.example',
+      acceptTerms: true, displayName: 'Lot Buyer', email: 'lot@figmark.example',
       phone: '+919000045511', password: 'longenough1',
     },
   }), ctx);
@@ -2724,7 +2724,7 @@ await check('the checkout carries the seller\'s details, so there is somewhere t
 /* A whole direct sale, end to end, on an order of its own. */
 const directBuyer = await signup(req({
   body: {
-    displayName: 'Direct Buyer', email: 'direct@figmark.example',
+    acceptTerms: true, displayName: 'Direct Buyer', email: 'direct@figmark.example',
     phone: '+919000045512', password: 'longenough1',
   },
 }), ctx);
@@ -3401,7 +3401,7 @@ await check("the credit record counts rows rather than reporting a stored grade"
 await check('an unrated side reads as unrated, not as nought per cent', async () => {
   const fresh = await signup(req({
     body: {
-      displayName: 'Nobody Yet', email: 'nobody@figmark.example',
+      acceptTerms: true, displayName: 'Nobody Yet', email: 'nobody@figmark.example',
       phone: '+919000045711', password: 'longenough1',
     },
   }), ctx);
@@ -3416,7 +3416,7 @@ await check('an unrated side reads as unrated, not as nought per cent', async ()
    number that was earned by trading. */
 const opinionAuthor = await signup(req({
   body: {
-    displayName: 'Passing Visitor', email: 'visitor@figmark.example',
+    acceptTerms: true, displayName: 'Passing Visitor', email: 'visitor@figmark.example',
     phone: '+919000045712', password: 'longenough1',
   },
 }), ctx);
@@ -3477,7 +3477,7 @@ await check('and none of it touches the record earned by trading', async () => {
 
   const second = await signup(req({
     body: {
-      displayName: 'Another Visitor', email: 'visitor2@figmark.example',
+      acceptTerms: true, displayName: 'Another Visitor', email: 'visitor2@figmark.example',
       phone: '+919000045713', password: 'longenough1',
     },
   }), ctx);
@@ -3698,7 +3698,7 @@ await check("an offered item has to be the seller's own", async () => {
 /* Somebody who is neither the buyer nor already involved. */
 const bystander = await signup(req({
   body: {
-    displayName: 'Not Their Business', email: 'notmine@figmark.example',
+    acceptTerms: true, displayName: 'Not Their Business', email: 'notmine@figmark.example',
     phone: '+919000045911', password: 'longenough1',
   },
 }), ctx);
@@ -3790,7 +3790,7 @@ await check('reading one marks it read without touching the others', async () =>
 await check('notifications are yours alone', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Uninvolved', email: 'uninvolved@figmark.example',
+      acceptTerms: true, displayName: 'Uninvolved', email: 'uninvolved@figmark.example',
       phone: '+919000045921', password: 'longenough1',
     },
   }), ctx);
@@ -3834,7 +3834,7 @@ console.log('\nbeing told what happened');
 await check('a claimed payment tells the seller, and nobody else', async () => {
   const buyer = await signup(req({
     body: {
-      displayName: 'Told You', email: 'toldyou@figmark.example',
+      acceptTerms: true, displayName: 'Told You', email: 'toldyou@figmark.example',
       phone: '+919000046101', password: 'longenough1',
     },
   }), ctx);
@@ -3930,7 +3930,7 @@ await check('a dispute tells the other side and whoever holds the money', async 
 
   const buyer = await signup(req({
     body: {
-      displayName: 'Will Dispute', email: 'willdispute@figmark.example',
+      acceptTerms: true, displayName: 'Will Dispute', email: 'willdispute@figmark.example',
       phone: '+919000046102', password: 'longenough1',
     },
   }), ctx);
@@ -4202,7 +4202,7 @@ await check('deleting an account takes what it made and frees its identifiers', 
   // something no other test depends on.
   const made = await signup(req({
     body: {
-      displayName: 'Passing Through', username: 'passing_through',
+      acceptTerms: true, displayName: 'Passing Through', username: 'passing_through',
       email: 'passing@figmark.example', phone: '+919000045499', password: 'longenough1',
     },
   }), ctx);
@@ -4222,7 +4222,7 @@ await check('deleting an account takes what it made and frees its identifiers', 
   assert.equal((await publicProfile(req({ params: { handle: 'passing_through' } }), ctx)).status, 404);
   const reclaimed = await signup(req({
     body: {
-      displayName: 'Someone Else', username: 'passing_through',
+      acceptTerms: true, displayName: 'Someone Else', username: 'passing_through',
       email: 'passing@figmark.example', phone: '+919000045499', password: 'longenough1',
     },
   }), ctx);
@@ -4259,7 +4259,7 @@ let buyerSeq = 0;
 const newBuyer = async (name) => {
   buyerSeq += 1;
   const made = await signup(req({
-    body: {
+    body: { acceptTerms: true,
       displayName: name,
       email: `pledger${buyerSeq}@figmark.example`,
       phone: `+91900007${String(1000 + buyerSeq).slice(-4)}`,
@@ -4925,7 +4925,7 @@ await check('deleting an account takes its hidden listings too', async () => {
   // how a row outlives the account that wrote it.
   const seller = await signup(req({
     body: {
-      displayName: 'Briefly Selling', username: 'briefly_selling',
+      acceptTerms: true, displayName: 'Briefly Selling', username: 'briefly_selling',
       email: 'briefly@figmark.example', phone: '+919000078801', password: 'longenough1',
     },
   }), ctx);
@@ -4964,7 +4964,7 @@ await check('deleting an account takes its hidden listings too', async () => {
 
 await check('a run belongs to the shop that scheduled it', async () => {
   const stranger = await signup(req({
-    body: { displayName: 'Not A Seller', email: 'nps@figmark.example', phone: '+919000077771', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Not A Seller', email: 'nps@figmark.example', phone: '+919000077771', password: 'longenough1' },
   }), ctx);
   const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
   // No storefront, so there is no shop to run one in.
@@ -4987,7 +4987,7 @@ await check('a seller can turn an order down, and the stock comes back', async (
   const id = listed.jsonBody.listing.id;
 
   const buyer = await signup(req({
-    body: { displayName: 'Turned Down', email: 'td@figmark.example', phone: '+919000077772', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Turned Down', email: 'td@figmark.example', phone: '+919000077772', password: 'longenough1' },
   }), ctx);
   const theirs = { authorization: `Bearer ${buyer.jsonBody.token}` };
   const placed = await createOrder(req({ headers: theirs, body: { listingId: id } }), ctx);
@@ -5233,7 +5233,7 @@ await check('a shop reads its own figures and nobody else reads them', async () 
 
   const stranger = await signup(req({
     body: {
-      displayName: 'Nosy Analyst', email: 'nosy-analyst@figmark.example',
+      acceptTerms: true, displayName: 'Nosy Analyst', email: 'nosy-analyst@figmark.example',
       phone: '+919000078801', password: 'longenough1',
     },
   }), ctx);
@@ -5345,7 +5345,7 @@ await check('an unlisted handler is a working handler, not a listed one', async 
 await check('offering a service puts you on the list, and withdrawing takes you off', async () => {
   const made = await signup(req({
     body: {
-      displayName: 'Kochi Parcel Co', email: 'kochi@figmark.example',
+      acceptTerms: true, displayName: 'Kochi Parcel Co', email: 'kochi@figmark.example',
       phone: '+919000078811', password: 'longenough1',
     },
   }), ctx);
@@ -5472,7 +5472,7 @@ await check('a handler works the India end, and no earlier', async () => {
 await check('somebody else’s lot is not on your screen and not yours to tick', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Unnamed Handler', email: 'unnamed@figmark.example',
+      acceptTerms: true, displayName: 'Unnamed Handler', email: 'unnamed@figmark.example',
       phone: '+919000078812', password: 'longenough1',
     },
   }), ctx);
@@ -5493,7 +5493,7 @@ await check('somebody else’s lot is not on your screen and not yours to tick',
 await check('naming a supplier on one lot hands over that lot and no other', async () => {
   const checker = await signup(req({
     body: {
-      displayName: 'One Run Checker', email: 'checker@figmark.example',
+      acceptTerms: true, displayName: 'One Run Checker', email: 'checker@figmark.example',
       phone: '+919000078813', password: 'longenough1',
     },
   }), ctx);
@@ -5552,7 +5552,7 @@ await check('a forwarder finally has a screen of their own', async () => {
   // Listing yourself is gone too - a forwarder applies for a store now.
   const made = await signup(req({
     body: {
-      displayName: 'Harbour Air Cargo', email: 'harbour@figmark.example',
+      acceptTerms: true, displayName: 'Harbour Air Cargo', email: 'harbour@figmark.example',
       phone: '+919000078815', password: 'longenough1',
     },
   }), ctx);
@@ -5589,7 +5589,7 @@ await check('a forwarder finally has a screen of their own', async () => {
 await check('only the shop that owns a lot may name who works it', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Not Their Shop', email: 'notshop@figmark.example',
+      acceptTerms: true, displayName: 'Not Their Shop', email: 'notshop@figmark.example',
       phone: '+919000078814', password: 'longenough1',
     },
   }), ctx);
@@ -6125,7 +6125,7 @@ await check('a lot walks its own half of the route, and neither end past it', as
 await check('a lot is only steppable by the shop that owns it', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Not This Shop', email: 'notthisshop@figmark.example',
+      acceptTerms: true, displayName: 'Not This Shop', email: 'notthisshop@figmark.example',
       phone: '+919000078821', password: 'longenough1',
     },
   }), ctx);
@@ -6330,7 +6330,7 @@ await check('a Quick Fill template is the stationery, not a straitjacket', async
 await check('somebody else’s stationery is not yours to read or edit', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Other Shop', email: 'othershop@figmark.example',
+      acceptTerms: true, displayName: 'Other Shop', email: 'othershop@figmark.example',
       phone: '+919000078831', password: 'longenough1',
     },
   }), ctx);
@@ -7300,7 +7300,7 @@ await check('a domestic sale is not something to file into a crate', async () =>
 await check('only the shop that sold it may file it, or tick it', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Passing Stranger', email: 'passing-by@figmark.example',
+      acceptTerms: true, displayName: 'Passing Stranger', email: 'passing-by@figmark.example',
       phone: '+919000078832', password: 'longenough1',
     },
   }), ctx);
@@ -7316,7 +7316,7 @@ await check('only the shop that sold it may file it, or tick it', async () => {
 console.log('\nstock, expiry and instalments');
 
 const payBuyer = await signup(req({
-  body: { displayName: 'Instalment Buyer', email: 'instal@figmark.example', phone: '+919000045599', password: 'longenough1' },
+  body: { acceptTerms: true, displayName: 'Instalment Buyer', email: 'instal@figmark.example', phone: '+919000045599', password: 'longenough1' },
 }), ctx);
 const payAuth = { authorization: `Bearer ${payBuyer.jsonBody.token}` };
 await saveReversalDetails(req({ headers: payAuth,
@@ -10517,7 +10517,7 @@ await check('a short link opened signed out is remembered through sign-up, with 
   buyerSeq += 1;
   const made = await signup(req({
     headers: withCookies({}, cookies),
-    body: { displayName: 'Cookie Buyer', email: `cookie${buyerSeq}@figmark.example`, phone: `+91900008${String(1000 + buyerSeq).slice(-4)}`, password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Cookie Buyer', email: `cookie${buyerSeq}@figmark.example`, phone: `+91900008${String(1000 + buyerSeq).slice(-4)}`, password: 'longenough1' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const headers = { authorization: `Bearer ${made.jsonBody.token}` };
@@ -10814,7 +10814,7 @@ const signInAs = async (identifier) =>
 const lotusTeam = await signInAs('ops@lotusfreight.example');
 const inkwellTeam = await signInAs('studio@inkwell.example');
 const newMember = async (name, email, phone) => {
-  const made = await signup(req({ body: { displayName: name, email, phone, password: 'longenough1' } }), ctx);
+  const made = await signup(req({ body: { acceptTerms: true, displayName: name, email, phone, password: 'longenough1' } }), ctx);
   return { id: made.jsonBody.user.id, headers: { authorization: `Bearer ${made.jsonBody.token}` } };
 };
 
@@ -12214,7 +12214,7 @@ await check('a store game reaches its recent buyers too, and reminds who has not
 
 await check('an account can delete itself with its password, but not while it holds money or a dispute', async () => {
   const made = await rawSignup(req({
-    body: { displayName: 'Leaving Soon', email: 'leaving@figmark.example', phone: '+919000077001', password: 'a-long-passphrase-1' },
+    body: { acceptTerms: true, displayName: 'Leaving Soon', email: 'leaving@figmark.example', phone: '+919000077001', password: 'a-long-passphrase-1' },
   }), ctx);
   assert.equal(made.status, 201);
   const leaver = { authorization: `Bearer ${made.jsonBody.token}` };

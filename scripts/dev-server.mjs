@@ -148,6 +148,8 @@ const {
  * [method, path pattern, handler]. `:name` segments become route params.
  * Mirrors the routes registered with app.http() in the API.
  */
+const { exportMineRoute, clientErrorRoute } = await import(new URL('account-routes.js', apiRoot));
+
 const routes = [
   ['GET', '/api/health', healthRoute],
   ['GET', '/api/auth/me', meRoute],
@@ -155,6 +157,8 @@ const routes = [
   ['POST', '/api/auth/reset/start', resetStartRoute],
   ['POST', '/api/auth/reset/confirm', resetConfirmRoute],
   ['POST', '/api/me/delete', deleteMeRoute],
+  ['GET', '/api/me/export', exportMineRoute],
+  ['POST', '/api/client-errors', clientErrorRoute],
   ['POST', '/api/me/mfa/setup', mfaSetupRoute],
   ['POST', '/api/me/mfa/enable', mfaEnableRoute],
   ['POST', '/api/me/mfa/disable', mfaDisableRoute],
