@@ -2428,6 +2428,14 @@ export const api = {
   signup: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) =>
     post<SignupResponse>('/auth/signup', body),
 
+  /** Emails a reset code when the account has a confirmed email; answers alike either way. */
+  startPasswordReset: (identifier: string) =>
+    post<{ sent: boolean; message: string; devCode?: string }>('/auth/reset/start', { identifier }),
+
+  /** Sets a new password with the emailed code, ends every other session, and signs in. */
+  confirmPasswordReset: (body: { identifier: string; code: string; password: string }) =>
+    post<LoginResponse>('/auth/reset/confirm', body),
+
   /** Whether a username is still free, asked while it is typed on the sign-up form. */
   usernameAvailable: (name: string, signal?: AbortSignal) =>
     request<{ username: string; available: boolean; reason: string | null }>(
@@ -2445,6 +2453,10 @@ export const api = {
   logout: () => post<{ ok: true }>('/auth/logout'),
   /** Ends every session this account has, on every device - this one too. */
   logoutAll: () => post<{ ok: true }>('/auth/logout-all'),
+
+  /** Deletes this account and what it made, asked with its password. Refused while money or a dispute is open. */
+  deleteAccount: (password: string) =>
+    post<{ deleted: { user: string; listings: number; lots: number; posts: number } }>('/me/delete', { password }),
 
   feed: (params: Record<string, string | undefined>) => {
     const query = new URLSearchParams();

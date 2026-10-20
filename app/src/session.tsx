@@ -27,6 +27,8 @@ interface SessionValue {
   /** True when a hosted deployment keeps its data in each worker's memory. */
   dataPerWorker: boolean;
   signIn: (identifier: string, password: string) => Promise<void>;
+  /** Sets a new password with an emailed code and signs in with it. */
+  resetPassword: (identifier: string, code: string, password: string) => Promise<void>;
   signUp: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
   /** Sign out on every device this account is signed in on, this one included. */
@@ -165,6 +167,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void api.me().catch(() => undefined);
   }, []);
 
+  const resetPassword = useCallback(async (identifier: string, code: string, password: string) => {
+    setWarning(null);
+    const result = await api.confirmPasswordReset({ identifier, code, password });
+    justSignedIn.current = true;
+    setUser(result.user);
+    void api.me().catch(() => undefined);
+  }, []);
+
   const signUp = useCallback(async (body: Parameters<SessionValue['signUp']>[0]) => {
     const result = await api.signup(body);
     setWarning(result.warning ?? null);
@@ -235,10 +245,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, signIn, signUp, signOut, signOutEverywhere, refresh,
+      user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, signIn, resetPassword, signUp, signOut, signOutEverywhere, refresh,
       promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt,
     }),
-    [user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, signIn, signUp, signOut, signOutEverywhere, refresh,
+    [user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, signIn, resetPassword, signUp, signOut, signOutEverywhere, refresh,
       promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt],
   );
 

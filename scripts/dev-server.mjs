@@ -21,7 +21,9 @@ process.env.FIGMARK_SHELL_FILE ??= join(staticRoot, 'index.html');
 const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
-const { loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute, usernameAvailableRoute } = await import(new URL('auth-routes.js', apiRoot));
+const {
+  loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute, usernameAvailableRoute, resetStartRoute, resetConfirmRoute, deleteMeRoute,
+} = await import(new URL('auth-routes.js', apiRoot));
 const {
   verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
   verifyAadhaarRoute, whatsappWebhookRoute,
@@ -148,6 +150,9 @@ const routes = [
   ['GET', '/api/health', healthRoute],
   ['GET', '/api/auth/me', meRoute],
   ['POST', '/api/auth/login', loginRoute],
+  ['POST', '/api/auth/reset/start', resetStartRoute],
+  ['POST', '/api/auth/reset/confirm', resetConfirmRoute],
+  ['POST', '/api/me/delete', deleteMeRoute],
   ['GET', '/api/auth/username/:name', usernameAvailableRoute],
   ['POST', '/api/auth/signup', signupRoute],
   ['POST', '/api/auth/logout', logoutRoute],

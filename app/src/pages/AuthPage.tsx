@@ -88,6 +88,8 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const [phone, setPhone] = useState('');
   /** Whether the username field is unfolded; most people keep the one made from their name. */
   const [pickHandle, setPickHandle] = useState(false);
+  /** Showing the password reset form in place of sign-in. */
+  const [resetting, setResetting] = useState(false);
 
   // The seeded sign-in hint, shown only while the mock provider is active.
   useEffect(() => {
@@ -171,6 +173,14 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
     setError(null);
   }
 
+  if (resetting) {
+    return (
+      <div className="card auth__card">
+        <ResetPassword initialIdentifier={identifier} onDone={() => setResetting(false)} />
+      </div>
+    );
+  }
+
   return (
         <div className="card auth__card">
                   <div className="auth__switch" role="tablist">
@@ -221,6 +231,11 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder={mode === 'signup' ? 'At least 8 characters' : ''} required />
+              {mode === 'signin' && (
+                <button type="button" className="linkbtn auth__forgot" onClick={() => { setResetting(true); setError(null); }}>
+                  Forgot your password?
+                </button>
+              )}
             </label>
 
             {mode === 'signup' && (
@@ -301,6 +316,93 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
             </div>
           )}
         </div>
+  );
+}
+
+/**
+ * A forgotten password: a code to the account's confirmed email, then a new
+ * password, which signs in and ends every other session. The first step
+ * answers the same whether or not the account exists.
+ */
+function ResetPassword({ initialIdentifier, onDone }: { initialIdentifier: string; onDone: () => void }) {
+  const { resetPassword } = useSession();
+  const [identifier, setIdentifier] = useState(initialIdentifier);
+  const [sent, setSent] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.startPasswordReset(identifier);
+      setSent(result.message);
+      if (result.devCode) setCode(result.devCode);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirm(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await resetPassword(identifier, code, password);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <h2 style={{ margin: 0 }}>Reset your password</h2>
+      {sent === null ? (
+        <form className="form" onSubmit={send}>
+          <p className="faint" style={{ margin: 0 }}>
+            We email a code to the address on your account, if it is confirmed.
+          </p>
+          <label className="field">
+            <span>Email, phone or username</span>
+            <input value={identifier} onChange={(e) => setIdentifier(e.target.value)}
+              autoComplete="username" autoCapitalize="off" autoCorrect="off" spellCheck={false} required />
+          </label>
+          {error && <ErrorNotice message={error} />}
+          <button type="submit" className="btn btn--lg btn--block" disabled={busy}>
+            {busy ? 'Please wait…' : 'Email me a code'}
+          </button>
+        </form>
+      ) : (
+        <form className="form" onSubmit={confirm}>
+          <p className="notice notice--info" role="status">{sent}</p>
+          <label className="field">
+            <span>Code from the email</span>
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric" autoComplete="one-time-code" placeholder="123456" required />
+          </label>
+          <label className="field">
+            <span>New password</span>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password" placeholder="At least 8 characters" required />
+            <span className="field__hint">Every other device signed in to this account is signed out.</span>
+          </label>
+          {error && <ErrorNotice message={error} />}
+          <button type="submit" className="btn btn--lg btn--block" disabled={busy || code.length !== 6}>
+            {busy ? 'Please wait…' : 'Set password and sign in'}
+          </button>
+          <button type="button" className="linkbtn" onClick={() => { setSent(null); setError(null); }}>
+            Send a new code
+          </button>
+        </form>
+      )}
+      <button type="button" className="linkbtn" onClick={onDone}>Back to sign in</button>
+    </div>
   );
 }
 

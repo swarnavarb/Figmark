@@ -16,7 +16,7 @@ process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse, json: jsonResponse } = await import(new URL('http.js', fns));
-const { loginRoute: login, signupRoute: rawSignup, meRoute: me, usernameAvailableRoute: usernameAvailable } = await import(new URL('auth-routes.js', fns));
+const { loginRoute: login, signupRoute: rawSignup, meRoute: me, usernameAvailableRoute: usernameAvailable, deleteMeRoute: deleteMe } = await import(new URL('auth-routes.js', fns));
 const { verifiedSignup } = await import('./verified-signup.mjs');
 // Verified on the way out: this suite tests trading, smoke-verify.mjs tests verification.
 const signup = verifiedSignup(rawSignup);
@@ -12210,6 +12210,26 @@ await check('a store game reaches its recent buyers too, and reminds who has not
   assert.equal(await heard(longAgo, 'game_ending'), 0);
   const title = (await noticesFor(lately.id)).find((row) => row.kind === 'game_ending').title;
   assert.match(title, /^2 hours left to vote/);
+});
+
+await check('an account can delete itself with its password, but not while it holds money or a dispute', async () => {
+  const made = await rawSignup(req({
+    body: { displayName: 'Leaving Soon', email: 'leaving@figmark.example', phone: '+919000077001', password: 'a-long-passphrase-1' },
+  }), ctx);
+  assert.equal(made.status, 201);
+  const leaver = { authorization: `Bearer ${made.jsonBody.token}` };
+  assert.equal((await deleteMe(req({ headers: leaver, body: { password: 'not-it' } }), ctx)).status, 403);
+  const gone = await deleteMe(req({ headers: leaver, body: { password: 'a-long-passphrase-1' } }), ctx);
+  assert.equal(gone.status, 200);
+  assert.equal(gone.jsonBody.deleted.user, made.jsonBody.user.id);
+  const again = await login(req({ body: { identifier: 'leaving@figmark.example', password: 'a-long-passphrase-1' } }), ctx);
+  assert.equal(again.status, 401);
+
+  // The demo account is party to an open dispute: refused, and told why.
+  const demo = await login(req({ body: { identifier: DEMO_EMAIL, password: DEMO_PASSWORD } }), ctx);
+  const refused = await deleteMe(req({ headers: { authorization: `Bearer ${demo.jsonBody.token}` }, body: { password: DEMO_PASSWORD } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.match(refused.jsonBody.message, /dispute|money/);
 });
 
 console.log(`\n${passed} checks passed`);

@@ -17,7 +17,8 @@ import { error } from './functions/http.js';
  */
 export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
   | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
-  | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check';
+  | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check'
+  | 'reset' | 'reset_account';
 
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
@@ -57,6 +58,12 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   // address and they must not be refused for each other.
   login: [{ max: 30, ms: MINUTE }, { max: 300, ms: HOUR }],
   signup: [{ max: 20, ms: HOUR }, { max: 100, ms: DAY }],
+  // Password reset requests and code tries, per address: each request may
+  // send an email, and each try is a guess at a six-digit code.
+  reset: [{ max: 10, ms: 600_000 }, { max: 40, ms: DAY }],
+  // Reset emails per account, wherever they are asked from: nobody can fill
+  // somebody's inbox with codes.
+  reset_account: [{ max: 3, ms: HOUR }, { max: 6, ms: DAY }],
   // One per pause in typing a username on the sign-up form.
   handle_check: [{ max: 60, ms: MINUTE }, { max: 600, ms: HOUR }],
   // Wrong passwords for one account from one address. Keyed by both, so

@@ -2,6 +2,36 @@
 
 Date: 19 Oct 2026 · Commit `7c606f4` · Tested locally (`npm run serve`, in-memory store, mock auth). The live Azure site could not be reached from the test environment (the egress proxy returned 403), so nothing here was checked against Cosmos, Blob Storage or the deployed host.
 
+## Implementation status (20 Oct 2026)
+
+The code-level findings below have been fixed on `claude/pre-launch-audit` and deployed through the `development` branch. The suite now runs 900 checks, all passing.
+
+| Item | Status | What changed |
+|---|---|---|
+| B-1 | ✅ Fixed | Tokens carry a millisecond issue time (`iam`); sign-out-everywhere compares against it |
+| B-2 | ✅ Fixed | `VoiceProvider` and `StoreChip` follow the signed-in account; no anonymous `/me/stores` calls |
+| B-3 | ✅ Fixed | All 3 routes mounted; `check-routes.mjs` now fails on any route the dev server does not serve |
+| B-4 | ✅ Fixed | README and AUTH.md corrected |
+| S-1 | ✅ Fixed | On Azure, fixtures are seeded/topped up only with `COSMOS_AUTOSEED=on` (never set it in production) |
+| S-2 | ✅ Fixed | The demo account is never a default admin on Azure |
+| S-3 | ✅ Fixed in code, **verify live** | On Azure only `x-azure-clientip`, else the last `x-forwarded-for` hop, is trusted |
+| S-4 | ✅ Fixed | Bodies over 4 MB refused (413) before parsing |
+| S-5 | ✅ Mitigated | "Forgot your password?" lifts the account's lockout; the lockout message says so |
+| S-6 | ✅ Fixed | On Azure, health detail strings (endpoint, errors, storage account) are shown to admins only |
+| S-7 | ✅ Fixed | Writes sent as form/plain-text content types refused (415); a custom domain is still recommended |
+| S-9 | ✅ Fixed | scrypt p=5 (OWASP-equivalent, 16 MB per hash); old hashes re-made on the next sign-in |
+| S-10 | ✅ Fixed | `npm audit fix` in app; 0 advisories |
+| P-1 | ✅ Partly | 1,179 page-only rules moved into their chunks' sheets (render-blocking CSS 84 → 66 KB gzip), using a cascade-conflict guard, verified by a pixel diff of 88 screenshots |
+| P-3 | ✅ Partly | `push/key`, `route-words` and `health` now carry browser caching. A single bootstrap endpoint is still open |
+| P-4 | ✅ Fixed | New photos carry `Cache-Control: immutable` (photos already stored keep their old headers) |
+| P-6 | ✅ Fixed | Verification nudges moved to `components/VerifyNudges.tsx`; VerifyPage is lazy again |
+| P-9 | ✅ Fixed | Bumps are etag-checked |
+| A-1 | ✅ Fixed | axe: 0 WCAG A/AA violations on the 11 scanned pages |
+| Blocker 3 (password reset) | ✅ Built | Email code to a *confirmed* address → new password → signed in; every other session ends |
+| Blocker 8 (account deletion) | ✅ Built | Settings → "Delete your account" (password re-asked; refused while money or a dispute is open) |
+| S-8, S-11, P-2, P-5, P-7, P-8 | ⏳ Open | CSP image hosts, staff MFA, deeper JS splitting, thumbnails, search service. P-8 is moot with S-1 |
+| Blockers 1, 2, 4–7 and items 10–16 | ⏳ Open, not code-only | Payment gateway + RBI-compliant escrow, real identity provider, production settings, live Azure verification, legal pages, Aadhaar policy, monitoring, backups, CAPTCHA, custom domain, load test |
+
 ## How it was tested
 
 | Area | Method | Result |

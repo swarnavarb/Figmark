@@ -33,6 +33,7 @@ import {
 } from './tokens.js';
 import type { AuthService, ClientContext } from './types.js';
 import { forget, limited } from '../rate-limit.js';
+import { VerificationError, consumePasswordResetCode, startPasswordReset } from '../verification/index.js';
 
 /** Who a request turned out to be, and the session and account record that said so. */
 interface Resolution {
@@ -242,7 +243,8 @@ export class MockAuthProvider implements AuthService {
       throw new AuthError(
         429,
         'too_many_attempts',
-        'Too many failed sign-in attempts on this account. Try again later, or from a device you have signed in on before.',
+        'Too many failed sign-in attempts on this account. Try again later, from a device you have signed in on before, ' +
+          'or reset your password with "Forgot your password?" - that lifts this hold.',
       );
     }
 
@@ -347,6 +349,78 @@ export class MockAuthProvider implements AuthService {
     user.sessionsValidAfter = new Date().toISOString();
     await this.repository.updateUser(user);
     await this.logout(request);
+  }
+
+  /** Whether this is the account's password, for an action that asks for it again. */
+  async passwordMatches(userId: string, password: string): Promise<boolean> {
+    if (!password || password.length > PASSWORD_MAX_LENGTH) return false;
+    const user = await this.repository.getUserById(userId);
+    return verifyPasswordAsync(password, user?.passwordHash ?? null);
+  }
+
+  /** The account an email, phone or username names, as sign-in finds it. */
+  private async accountFor(identifier: string): Promise<User | null> {
+    const handle = identifier.replace(/^@/, '');
+    return (await this.repository.getUserByIdentifier(identifier))
+      ?? (handleShapeProblem(handle) === null ? (await this.repository.getByHandle(handle))?.user ?? null : null);
+  }
+
+  /**
+   * Emails a password reset code, when the identifier names an account with a
+   * confirmed email. Answers alike whether or not it does, so the form cannot
+   * be used to find out who has an account here.
+   */
+  async requestPasswordReset(identifier: string): Promise<{ devCode?: string }> {
+    this.requireSigningKey();
+    const named = identifier.trim();
+    if (!named) throw new AuthError(400, 'invalid_request', 'Enter the email, phone or username you sign in with.');
+    const user = await this.accountFor(named);
+    if (!user) return {};
+    if (await limited(`acct:${user.id}`, 'reset_account')) return {};
+    const sent = await startPasswordReset(this.repository, user);
+    return sent.devCode ? { devCode: sent.devCode } : {};
+  }
+
+  /**
+   * Sets a new password with an emailed code, and signs in with it.
+   *
+   * Every other session ends: whoever made the reset necessary may be signed
+   * in somewhere. Failed sign-ins counted against the account are cleared, so
+   * the owner is not held back by the guessing that may have led here.
+   */
+  async resetPassword(body: { identifier?: string; code?: string; password?: string }, client: ClientContext = {}): Promise<LoginResponse> {
+    this.requireSigningKey();
+    const named = body.identifier?.trim() ?? '';
+    const password = body.password ?? '';
+    const user = named ? await this.accountFor(named) : null;
+    if (!user || user.suspended) throw new AuthError(410, 'code_expired', 'That code has expired, or none was sent. Ask for a new one.');
+
+    const weak = await passwordProblem(password, {
+      email: user.email, username: user.username ?? undefined, displayName: user.displayName,
+    }, { breachCheck: config.passwordBreachCheck });
+    if (weak) throw new AuthError(400, 'invalid_password', weak);
+
+    try {
+      await consumePasswordResetCode(this.repository, user, body.code ?? '');
+    } catch (err) {
+      if (err instanceof VerificationError) throw new AuthError(err.status, err.code, err.message);
+      throw err;
+    }
+    user.passwordHash = await hashPasswordAsync(password);
+    user.sessionsValidAfter = new Date().toISOString();
+    user.updatedAt = new Date().toISOString();
+    await this.repository.updateUser(user);
+    await forget(`acct:${user.id}`, 'login_fail_account');
+    await forget(`${named.toLowerCase()}|${client.ip ?? 'unknown'}`, 'login_fail');
+
+    const principal = toAuthUser(user);
+    const { token, expiresAt } = createSessionToken(
+      user.id,
+      this.sessionSecret,
+      this.sessionTtlSeconds,
+      this.storeIsEphemeral ? principal : undefined,
+    );
+    return { user: principal, token, expiresAt: expiresAt.toISOString() };
   }
 
   /**

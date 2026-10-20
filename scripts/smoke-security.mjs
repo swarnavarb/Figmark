@@ -519,6 +519,47 @@ await check('a write posted as a form or plain text is refused, so no other page
   }
 });
 
+await check('a forgotten password is reset with an emailed code, and every old session ends', async () => {
+  resetRateLimits();
+  const who = 'meera@figmark.in';
+  const at = { ip: '198.51.100.71' };
+  const before = await auth.login({ identifier: who, password: DEMO_PASSWORD }, at);
+
+  // Nobody learns from the form whether an account exists.
+  assert.deepEqual(await auth.requestPasswordReset('nobody-here@figmark.example'), {});
+  const { devCode } = await auth.requestPasswordReset(who);
+  assert.match(devCode, /^\d{6}$/);
+
+  const wrong = devCode === '000000' ? '111111' : '000000';
+  await assert.rejects(auth.resetPassword({ identifier: who, code: wrong, password: 'a-new-passphrase-42' }, at), { code: 'wrong_code' });
+  // A weak password is refused before the code is spent.
+  await assert.rejects(auth.resetPassword({ identifier: who, code: devCode, password: 'short' }, at), { code: 'invalid_password' });
+
+  const after = await auth.resetPassword({ identifier: who, code: devCode, password: 'a-new-passphrase-42' }, at);
+  assert.equal((await auth.getCurrentUser(cookieFor(after.token)))?.email, who);
+  assert.equal(await auth.getCurrentUser(cookieFor(before.token)), null, 'the session from before the reset is over');
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD }, at), { code: 'invalid_credentials' });
+  await auth.login({ identifier: who, password: 'a-new-passphrase-42' }, at);
+  // A reset lifts a hold somebody else's guessing put on the account.
+  for (let i = 0; i < 25; i += 1) {
+    await auth.login({ identifier: who, password: `guess-${i}` }, { ip: `203.0.113.${100 + i}` }).catch(() => undefined);
+  }
+  await assert.rejects(auth.login({ identifier: who, password: 'a-new-passphrase-42' }, { ip: '198.51.100.72' }), { code: 'too_many_attempts' });
+  const { devCode: unlock } = await auth.requestPasswordReset(who);
+  await auth.resetPassword({ identifier: who, code: unlock, password: 'a-newer-passphrase-43' }, { ip: '198.51.100.72' });
+  await auth.login({ identifier: who, password: 'a-newer-passphrase-43' }, { ip: '198.51.100.73' });
+  // The code was spent.
+  await assert.rejects(auth.resetPassword({ identifier: who, code: unlock, password: 'another-passphrase-7' }, at), { code: 'code_expired' });
+});
+
+await check('no reset code goes to an email nobody has confirmed', async () => {
+  resetRateLimits();
+  const fresh = await auth.signup({
+    displayName: 'Unconfirmed Person', email: `u${Date.now()}@figmark.example`, phone: `+9198${String(Date.now()).slice(-8)}`, password: 'a-fine-passphrase-9',
+  });
+  assert.deepEqual(await auth.requestPasswordReset(fresh.user.email), {});
+});
+
 /* ── Static Web Apps principal ─────────────────────────────────────────── */
 console.log('\nstatic web apps');
 

@@ -18,6 +18,7 @@ import { getPhotoStore } from '../storage/index.js';
 import { releaseListingPhotos, releasePostPhotos } from '../storage/release.js';
 import { deleteUnused, graceFrom, scanUnused } from '../storage/unused.js';
 import { audited, loadAudit } from '../audit.js';
+import { deletionBlockers, eraseAccount } from '../account-deletion.js';
 
 /**
  * Operating the marketplace.
@@ -199,38 +200,6 @@ async function userDetail(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * Why this account cannot be deleted yet.
- *
- * Checked before the button is offered and again before it acts, because the
- * state can change between the two and the second check is the one that
- * matters.
- */
-async function deletionBlockers(id: string, repository: Repo): Promise<string[]> {
-  const [purchases, sales, asParty, asManager] = await Promise.all([
-    repository.listOrdersForBuyer(id),
-    repository.listOrdersForSeller(id),
-    repository.listDisputesForParty(id),
-    repository.listDisputesForManager(id),
-  ]);
-
-  const blockers: string[] = [];
-  const live = [...purchases, ...sales].filter(
-    (order) => order.hold.state === 'held' || order.hold.state === 'disputed',
-  );
-  if (live.length > 0) {
-    blockers.push(
-      `${live.length} order(s) still hold money. Settle or release them before deleting the account.`,
-    );
-  }
-  const open = [...asParty, ...asManager.filter((dispute) => currentRound(dispute)?.managerId === id)]
-    .filter((dispute) => !isClosed(dispute));
-  if (open.length > 0) {
-    blockers.push(`${new Set(open.map((dispute) => dispute.id)).size} dispute(s) they are in or deciding are still open.`);
-  }
-  return blockers;
-}
-
-/**
  * POST /api/ops/users/{id}/suspend - stop an account without erasing it.
  *
  * The answer to almost everything deletion is reached for. It is reversible,
@@ -275,24 +244,7 @@ async function deleteAccount(request: HttpRequest, _context: InvocationContext) 
   const blockers = await deletionBlockers(id, repository);
   if (blockers.length > 0) return error(409, 'has_live_money', blockers.join(' '));
 
-  // What they made goes with them. Orders deliberately do not: they are the
-  // counterparty's record too, and erasing one side of a completed transaction
-  // takes the other side's history with it.
-  const [listings, lots, posts] = await Promise.all([
-    repository.listListings({ sellerId: id, includeHidden: true }),
-    repository.listLots({ sellerId: id }),
-    repository.listPostsByAuthor(id),
-  ]);
-  await inBatches(listings, 10, (listing) => repository.deleteListing(id, listing.id));
-  await inBatches(lots, 10, (lot) => repository.deleteLot(id, lot.id));
-  await inBatches(posts, 10, (post) => repository.deletePost(post.channelId, post.id));
-  await releasePostPhotos(posts, repository);
-  await releaseListingPhotos(listings, repository);
-  await repository.deleteUser(id);
-
-  return json(200, {
-    deleted: { user: id, listings: listings.length, lots: lots.length, posts: posts.length },
-  });
+  return json(200, { deleted: await eraseAccount(id, repository) });
 }
 
 /** POST /api/ops/resources/delete - remove one thing somebody made. */

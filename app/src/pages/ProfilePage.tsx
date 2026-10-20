@@ -216,6 +216,7 @@ export function ProfilePage() {
           <MyPageSettings />
           <DisplaySettings />
           <BlockedList />
+          <DeleteAccount />
         </>
       ) : tab === 'posts' ? (
         posts === null ? <Loading />
@@ -603,6 +604,67 @@ function BlockedList() {
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Deleting the account, by its owner. The password is asked again, and the
+ * server refuses - saying why - while money is held on an order or a dispute
+ * is open. Orders stay with the other side of each trade; listings, lots and
+ * posts go.
+ */
+function DeleteAccount() {
+  const { signOut } = useSession();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteAccount(password);
+      await signOut().catch(() => undefined);
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not delete the account. Try again.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card card--pad stack" style={{ marginTop: 18 }}>
+      <span className="card__title">Delete your account</span>
+      <p className="faint" style={{ margin: 0 }}>
+        Your listings, lots and posts are deleted with it. Orders stay on the other side of each trade, without your
+        account. This cannot be undone.
+      </p>
+      {!open ? (
+        <button type="button" className="btn btn--danger" style={{ justifySelf: 'start' }} onClick={() => setOpen(true)}>
+          Delete my account…
+        </button>
+      ) : (
+        <form className="form" onSubmit={submit}>
+          <label className="field">
+            <span>Your password, to confirm</span>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password" required />
+          </label>
+          {error && <ErrorNotice message={error} />}
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="submit" className="btn btn--danger" disabled={busy || !password}>
+              {busy ? 'Deleting…' : 'Delete it for good'}
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={() => { setOpen(false); setPassword(''); setError(null); }}>
+              Keep my account
+            </button>
+          </div>
+        </form>
       )}
     </section>
   );

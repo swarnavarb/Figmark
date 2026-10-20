@@ -145,6 +145,66 @@ export async function confirmEmail(repository: Repository, user: User, code: str
   await repository.updateUser(user);
 }
 
+/* ── Password reset ────────────────────────────────────────────────────── */
+
+const RESET_CODE_MINUTES = 15;
+const RESET_CODE_ATTEMPTS = 5;
+
+/**
+ * Emails a code that lets the account set a new password.
+ *
+ * Only to an address the account has proved it holds: a code sent to an
+ * unconfirmed address - a typo, somebody else's inbox - would hand that
+ * person the account. The caller answers the same either way, so nobody can
+ * use this to learn which addresses have accounts.
+ */
+export async function startPasswordReset(repository: Repository, user: User): Promise<{ sent: boolean; devCode?: string }> {
+  if (!verifiedChecks(user).email || user.suspended) return { sent: false };
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  user.challenges = {
+    ...user.challenges,
+    reset: { hash: hashCode(user.id, code), address: user.email, expiresAt: minutesFromNow(RESET_CODE_MINUTES), attempts: 0 },
+  };
+
+  if (!devCodesAllowed()) {
+    try {
+      await sendEmail(repository, {
+        to: user.email,
+        subject: `${code} is your Figmark password reset code`,
+        text: `Someone asked to reset the password for your Figmark account. The code is ${code}. It expires in ${RESET_CODE_MINUTES} minutes. ` +
+          'If it was not you, ignore this email: your password stays as it is.',
+        html: `<p>Someone asked to reset the password for your Figmark account. The code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p>` +
+          `<p>It expires in ${RESET_CODE_MINUTES} minutes. If it was not you, ignore this email: your password stays as it is.</p>`,
+      });
+    } catch (err) {
+      if (err instanceof EmailUnavailableError) {
+        throw new VerificationError(503, 'email_unavailable', 'Reset codes are not going out right now. Try again later.');
+      }
+      throw err;
+    }
+  }
+  user.updatedAt = now();
+  await repository.updateUser(user);
+  return devCodesAllowed() ? { sent: true, devCode: code } : { sent: true };
+}
+
+/** Checks and spends a reset code. Throws, counting the attempt, when it is not right. */
+export async function consumePasswordResetCode(repository: Repository, user: User, code: string): Promise<void> {
+  const challenge = user.challenges?.reset;
+  if (!challenge || Date.parse(challenge.expiresAt) < Date.now() || challenge.address !== user.email) {
+    throw new VerificationError(410, 'code_expired', 'That code has expired, or none was sent. Ask for a new one.');
+  }
+  if (challenge.attempts >= RESET_CODE_ATTEMPTS) {
+    throw new VerificationError(429, 'too_many_attempts', 'Too many wrong codes. Ask for a new one.');
+  }
+  if (!/^\d{6}$/.test(code.trim()) || !sameHash(challenge.hash, hashCode(user.id, code))) {
+    challenge.attempts += 1;
+    await repository.updateUser(user);
+    throw new VerificationError(400, 'wrong_code', 'That code is not right. Check the email and try again.');
+  }
+  user.challenges = { ...user.challenges, reset: null };
+}
+
 /* ── Phone, over WhatsApp ──────────────────────────────────────────────── */
 
 /** The exact words the person sends. The webhook reads the code and account back out of it. */

@@ -121,6 +121,8 @@ export interface TradeOverride {
  */
 export interface VerificationChallenges {
   email?: { hash: string; address: string; expiresAt: string; sentAt: string; attempts: number } | null;
+  /** A password reset code emailed to the account's verified address. */
+  reset?: { hash: string; address: string; expiresAt: string; attempts: number } | null;
   phone?: {
     hash: string;
     expiresAt: string;

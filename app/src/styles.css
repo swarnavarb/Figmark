@@ -1148,6 +1148,8 @@ code, kbd, samp, pre {
   box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4);
 }
 
+/* Under the password field, on its right, small. */
+.linkbtn.auth__forgot { justify-self: end; align-self: end; margin-top: 2px; font-size: var(--t-xs); }
 .auth__demo {
   margin-top: 18px; padding: 13px;
   border: 1px dashed var(--border-strong); border-radius: var(--r-sm);

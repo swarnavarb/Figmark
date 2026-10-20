@@ -313,7 +313,11 @@ export function CollectorChip() {
 /** The first shop you run, as the same chip: its level and XP, one tap from its quests. */
 export function StoreChip() {
   const [shop, setShop] = useState<{ id: string; name: string; level: Awaited<ReturnType<typeof api.growth>>['level'] } | null>(null);
+  // Asked again when the account changes, and not at all for a guest.
+  const userId = useSession().user?.id ?? null;
   useEffect(() => {
+    setShop(null);
+    if (!userId) return;
     let live = true;
     void api.stores().then(async ({ stores }) => {
       const first = stores[0];
@@ -322,7 +326,7 @@ export function StoreChip() {
       if (live) setShop({ id: first.ownerId, name: board.name, level: board.level });
     }).catch(() => undefined);
     return () => { live = false; };
-  }, []);
+  }, [userId]);
   if (!shop) return null;
   const { level } = shop;
   return (

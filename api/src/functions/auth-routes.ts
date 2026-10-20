@@ -9,6 +9,7 @@ import { claimCookieReferrals } from '../affiliate.js';
 import { claimInvite, visitorCookieIfMissing } from '../share.js';
 import { clientIp, limited } from '../rate-limit.js';
 import { deviceCookieValue } from '../auth/tokens.js';
+import { deletionBlockers, eraseAccount } from '../account-deletion.js';
 import { USERNAME_PROBLEMS, checkUsername } from '../../../shared/handles.js';
 
 /** One address trying too many sign-ins or sign-ups, whichever accounts they name. */
@@ -146,7 +147,93 @@ async function me(request: HttpRequest, _context: InvocationContext) {
   return json(200, body, cookies);
 }
 
+/**
+ * POST /api/auth/reset/start - { identifier }: email a password reset code.
+ *
+ * Always "sent" when the request is well formed: whether an account exists,
+ * or has a confirmed email, is not this form's to say.
+ */
+async function resetStart(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  if (!(auth instanceof MockAuthProvider)) {
+    return error(501, 'not_implemented', 'Passwords are managed by the identity provider. Reset it there.');
+  }
+  let body: { identifier?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const wait = await limited(clientIp(request), 'reset');
+  if (wait) return error(429, 'too_many_attempts', `Too many attempts from this network. Try again in ${wait}.`);
+  try {
+    const sent = await auth.requestPasswordReset(body.identifier ?? '');
+    return json(200, {
+      sent: true,
+      message: 'If that account has a confirmed email, a code is on its way to it.',
+      ...(sent.devCode ? { devCode: sent.devCode } : {}),
+    });
+  } catch (err) {
+    if (err instanceof VerificationError) return error(err.status, err.code, err.message);
+    throw err;
+  }
+}
+
+/** POST /api/auth/reset/confirm - { identifier, code, password }: set a new password and sign in. */
+async function resetConfirm(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  if (!(auth instanceof MockAuthProvider)) {
+    return error(501, 'not_implemented', 'Passwords are managed by the identity provider. Reset it there.');
+  }
+  let body: { identifier?: string; code?: string; password?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const wait = await limited(clientIp(request), 'reset');
+  if (wait) return error(429, 'too_many_attempts', `Too many attempts from this network. Try again in ${wait}.`);
+  const result = await auth.resetPassword(body, { ip: clientIp(request) });
+  return json(200, result, auth.loginCookies(result.token));
+}
+
+/**
+ * POST /api/me/delete - { password }: delete this account, by its owner.
+ *
+ * The password is asked again: a session left open on a shared computer must
+ * not be enough to erase somebody. Refused, with the reason, while money is
+ * held on one of its orders or a dispute it is in is open - the same rule the
+ * operations console follows.
+ */
+async function deleteMe(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  if (!(auth instanceof MockAuthProvider)) {
+    return error(501, 'not_implemented', 'Accounts are managed by the identity provider. Delete it there.');
+  }
+  const user = await auth.requireAuth(request);
+  let body: { password?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const slow = await addressLimited(request, 'login');
+  if (slow) return slow;
+  if (!(await auth.passwordMatches(user.id, body.password ?? ''))) {
+    return error(403, 'wrong_password', 'That is not your password.');
+  }
+  const repository = await getRepository();
+  const blockers = await deletionBlockers(user.id, repository);
+  if (blockers.length > 0) return error(409, 'has_live_money', blockers.join(' '));
+  await auth.logout(request);
+  const deleted = await eraseAccount(user.id, repository);
+  return json(200, { deleted }, auth.logoutCookies());
+}
+
 export const loginRoute = handler(login);
+export const deleteMeRoute = handler(deleteMe);
+export const resetStartRoute = handler(resetStart);
+export const resetConfirmRoute = handler(resetConfirm);
 export const signupRoute = handler(signup);
 /**
  * GET /api/auth/username/{name} - whether a username can still be claimed.
@@ -183,6 +270,27 @@ app.http('auth-login', {
   authLevel: 'anonymous',
   route: 'auth/login',
   handler: loginRoute,
+});
+
+app.http('auth-reset-start', {
+  methods: ['POST'],
+  authLevel: 'anonymous',
+  route: 'auth/reset/start',
+  handler: resetStartRoute,
+});
+
+app.http('auth-reset-confirm', {
+  methods: ['POST'],
+  authLevel: 'anonymous',
+  route: 'auth/reset/confirm',
+  handler: resetConfirmRoute,
+});
+
+app.http('me-delete', {
+  methods: ['POST'],
+  authLevel: 'anonymous',
+  route: 'me/delete',
+  handler: deleteMeRoute,
 });
 
 app.http('auth-logout', {
