@@ -1,3 +1,55 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.block--play { --block-grad: var(--grad-play); color: var(--lime-ink); }
+.detail__price { font-size: var(--t-2xl); font-weight: var(--w-bold); letter-spacing: -0.03em; }
+.stars__off { color: var(--border-strong); }
+.starbtn {
+  border: 0; padding: 2px 4px; background: none; cursor: pointer;
+  font-size: var(--t-xl); line-height: 1; color: var(--border-strong);
+  transition: color 0.15s, transform 0.15s;
+}
+.tick--wide { width: 100%; justify-content: flex-start; padding: 11px 12px; font-size: var(--t-sm); }
+.buyway {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 12px;
+  width: 100%; padding: 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.buyway__title { font-weight: var(--w-semi); font-size: var(--t-sm); }
+.buyway__price { font-weight: var(--w-semi); font-size: var(--t-sm); white-space: nowrap; text-align: right; }
+.buyway__note { grid-column: 1 / -1; color: var(--text-dim); font-size: var(--t-xs); line-height: 1.45; }
+.claimcard__hero {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--violet), #9333EA);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.35);
+}
+.claimcard__label { font-size: var(--t-sm); font-weight: var(--w-semi); color: rgba(245, 243, 255, 0.85); }
+.claimcard__amount { font-size: var(--t-xl); font-weight: var(--w-bold); color: #FFFFFF; letter-spacing: -0.02em; }
+.disputebar--done:hover { color: var(--text); }
+.buyway[class*='buyway--']::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(120% 90% at 10% 0%, rgba(255, 255, 255, 0.22), transparent 58%);
+}
+.buyway__icon {
+  grid-column: 1; grid-row: 1 / span 3; align-self: start; display: grid; place-items: center; width: 44px; height: 44px;
+  border-radius: 14px; background: rgba(255, 255, 255, 0.22); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+.buyway__tag {
+  grid-column: 2 / -1; justify-self: start; padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: var(--w-semi); background: rgba(0, 0, 0, 0.22);
+}
+.buyway__adv { margin: 0; padding: 12px 14px; font-size: var(--t-sm); }
+.seg--vivid { padding: 5px; background: var(--surface-2); }
+.icard__note {
+  flex: 1 1 100%; margin: 0; padding: 9px 12px; border-radius: 10px; font-size: var(--t-xs); color: var(--text-dim); line-height: 1.5;
+  background: rgba(251, 191, 36, 0.07); box-shadow: inset 3px 0 0 #FBBF24;
+}
+.icard__open:hover { background: var(--surface-hover); transform: translateY(-1px); }
+.os-card__top > span:nth-child(2) { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.os-flow li.is-on { background: var(--grad-warm); }
+
 /*
  * Styles only pages/OrderPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

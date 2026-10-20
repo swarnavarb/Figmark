@@ -11,7 +11,7 @@ import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
 import { AuthModal } from './pages/AuthPage';
-import { VerifyNudge, VerifyPrompt } from './pages/VerifyPage';
+import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
 import { inviteCodeFor } from './components/ShareKit';
 import { setPhotoQuery } from './photoQuery';
 import { Preloader } from './components/Preloader';
@@ -92,7 +92,7 @@ export function AppShell() {
       <ScrollBars />
       <ViewportSync />
       <header className="nav">
-        <NavLink to="/" className="brand">
+        <NavLink to="/" className="brand" aria-label="Figmark home">
           <span className="brand__mark" aria-hidden="true" />
           <span className="brand__name">Figmark</span>
         </NavLink>

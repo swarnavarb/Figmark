@@ -1,3 +1,94 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.vibe--edit .writer__text::placeholder { color: currentColor; opacity: 0.6; }
+.writer {
+  position: relative;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+.writer:not(.writer--closed) { border-color: var(--accent-line); box-shadow: 0 8px 30px rgba(124, 58, 237, 0.18); }
+.writer__prompt { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.writer__fake {
+  flex: 1; min-width: 0; min-height: 42px; padding: 0 16px;
+  border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text-faint);
+  font-size: var(--t-base); text-align: left; cursor: text;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.writer__as { display: grid; flex: 1; min-width: 0; }
+.writer__textwrap { display: block; }
+.writer__text {
+  width: 100%; min-height: 84px; resize: vertical;
+  padding: 4px 2px; border: 0; background: transparent; color: var(--text);
+  font-size: var(--t-md); line-height: 1.5;
+}
+.writer__tools { display: flex; gap: 4px; flex-wrap: wrap; }
+.writer__tool {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 11px; border: 0; border-radius: var(--r-pill);
+  background: transparent; color: var(--text-dim); font-weight: var(--w-semi); font-size: var(--t-sm); cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.writer__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+}
+.writer__post { min-width: 96px; background: var(--grad-hero); border-color: transparent; }
+.writer__vibes { display: flex; align-items: center; gap: 8px; }
+.writer__swatch {
+  width: 30px; height: 30px; padding: 0; border: 2px solid transparent; border-radius: 50%;
+  cursor: pointer; min-height: 0; place-items: initial;
+  transition: transform var(--dur-1) var(--ease);
+}
+.writer__addphoto {
+  flex: 0 0 auto; width: 92px; height: 92px; display: grid; place-items: center;
+  border: 1.5px dashed var(--border-strong); border-radius: var(--r-md);
+  background: transparent; color: var(--text-dim); cursor: pointer;
+}
+.social .writer {
+  border-radius: 22px;
+  border-color: var(--sx-line);
+  background: var(--sx-wash), var(--surface);
+}
+.social .writer { isolation: isolate; border-color: transparent; z-index: 5; }
+.writer__in { display: inline-flex; align-items: center; gap: 3px; color: var(--sx-flare); font-weight: 700; }
+.forumpick {
+  display: grid; gap: 4px; padding: 6px; border-radius: 14px;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
+}
+.forumpick__item {
+  display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 10px;
+  background: none; color: var(--text); text-align: left; cursor: pointer;
+}
+.forumpick__name { flex: 1; min-width: 0; font-weight: 700; font-size: var(--t-sm); }
+.writer__target {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 8px 8px 12px; border-radius: 12px;
+  background: linear-gradient(115deg, rgba(124, 58, 237, 0.2), rgba(255, 46, 126, 0.12));
+  box-shadow: inset 0 0 0 1px rgba(192, 132, 252, 0.4);
+  font-size: var(--t-sm);
+}
+.writer__wall {
+  display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: var(--t-sm);
+}
+.writer__switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; transition: transform var(--dur-1) var(--ease);
+}
+.writer__wall input:checked + .writer__switch { background: var(--sx-grad); box-shadow: none; }
+.writer__wall input:focus-visible + .writer__switch { outline: 2px solid var(--sx-blaze); outline-offset: 2px; }
+.writer--closed .writer__tools { flex-wrap: nowrap; }
+.forumpick__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0; font-weight: 700; font-size: var(--t-sm); }
+.forumpick__list { display: grid; gap: 6px; max-height: 196px; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+.forumpick__tick {
+  margin-left: auto; display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 auto;
+  border: 1.5px solid var(--border-strong); border-radius: 6px; color: var(--sx-ink);
+}
+.forumpick__done { justify-self: end; }
+
 /*
  * Styles only components/SocialComposer.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

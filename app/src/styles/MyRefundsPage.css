@@ -1,3 +1,9 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.claimcard__link { color: #FAE8FF; font-weight: var(--w-semi); }
+.earnrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); }
+.earnrow__what { display: grid; gap: 2px; min-width: 0; }
+.earnrow__side { display: grid; justify-items: end; gap: 4px; }
+
 /*
  * Styles only pages/MyRefundsPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

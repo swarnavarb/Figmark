@@ -1,3 +1,6 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.qcrest { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
 /*
  * Styles only pages/SellPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

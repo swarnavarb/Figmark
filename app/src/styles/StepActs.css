@@ -1,3 +1,20 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.trk__now { display: grid; gap: 2px; min-width: 0; }
+.trkbox::-webkit-scrollbar { display: none; }
+.trkbox__item + .trkbox__item::before {
+  content: ''; position: absolute; top: 22px; right: calc(50% + 24px); width: calc(100% - 48px);
+  height: 2px; border-radius: 2px; background: var(--border);
+}
+.trkbox__item.is-done::before, .trkbox__item.is-here::before { background: var(--ok); }
+.stepact__who.is-supplier { background: var(--aqua-soft); color: var(--aqua); }
+.stepact__who.is-handler { background: var(--lime-soft); color: var(--lime); }
+.rcvd__option {
+  display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 12px; text-align: left;
+  border: 1px solid var(--aqua-line); border-radius: var(--r-md); background: var(--aqua-soft);
+  color: var(--text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
+}
+.stepact__who.is-forwarder { background: var(--blue-soft); color: var(--blue-text); }
+
 /*
  * Styles only components/OrderTrack.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

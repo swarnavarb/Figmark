@@ -1,3 +1,11 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.storefront__avatar {
+  width: 84px; height: 84px; border-radius: 50%; overflow: hidden;
+  border: 3px solid var(--bg); background: var(--surface-2); flex: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.storefront--shop .storefront__avatar .avatar { width: 100% !important; height: 100% !important; border-radius: 0; }
+
 /*
  * Styles only pages/ProfileByHandlePage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

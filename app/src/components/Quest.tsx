@@ -244,7 +244,7 @@ export function LevelRing({ level, progress, size = 40 }: { level: number; progr
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
   return (
-    <span className="qring" style={{ width: size, height: size }} aria-label={`Level ${level}`}>
+    <span className="qring" style={{ width: size, height: size }} role="img" aria-label={`Level ${level}`}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--q-track)" strokeWidth={stroke} />
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="url(#qring-grad)" strokeWidth={stroke}

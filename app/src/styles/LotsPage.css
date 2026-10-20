@@ -1,3 +1,91 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.field--inline { gap: 5px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.row--tight { gap: 7px; flex-shrink: 0; }
+.lothero { display: grid; gap: 7px; margin-bottom: 16px; }
+.lothero__name {
+  margin: 0;
+  font-size: var(--t-2xl); font-weight: var(--w-bold); letter-spacing: -0.025em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.lothero__id {
+  padding: 3px 9px;
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  background: var(--surface-2);
+  font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em;
+  color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+.lothero__state {
+  padding: 3px 10px; border-radius: 999px;
+  font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.lothero__line { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.lothero__bar { height: 3px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.lotnav {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+  margin-bottom: 16px; padding: 4px;
+  border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
+}
+.lotnav__tab {
+  display: grid; justify-items: center; align-content: center; gap: 3px; min-width: 0;
+  padding: 9px 4px;
+  border: 0; border-radius: 14px;
+  background: transparent; color: var(--text-faint);
+  font: inherit; text-align: center; cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.lotnav__label {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-xs); font-weight: var(--w-semi);
+}
+.factlist { display: grid; gap: 7px; margin: 0; }
+.tagrow { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.tagrow__name { min-width: 0; font-size: var(--t-sm); overflow-wrap: anywhere; }
+.settings__sub { margin: 10px 0 0; font-size: var(--t-sm); color: var(--text-dim); }
+.ladder__leave-go:hover { border-color: var(--accent); color: var(--text); }
+.silkcta--sm { flex-direction: row; align-items: center; width: auto; padding: 7px 12px; gap: 6px; }
+.lotitem:last-of-type { border-bottom: none; }
+.picker-panel {
+  padding: 12px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.picker-panel .search { max-width: none; }
+.ocard__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.ocard__title { min-width: 0; display: grid; gap: 3px; }
+.ocard__name:hover { color: var(--accent-text); }
+.ocard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--t-xs); color: var(--text-faint); }
+.ocard__price { display: grid; justify-items: end; gap: 6px; }
+.ocard__price .badge { white-space: nowrap; }
+.pickset__sub {
+  margin-top: var(--s1);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semi);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.pick__steps {
+  font-size: var(--t-2xs);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.lotitem__own {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-strong); font-size: var(--t-2xs);
+}
+.lotitem__more {
+  justify-self: start; display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 2px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--t-2xs); color: var(--text-faint);
+}
+.lothero__now { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lotdetail > .backlink { justify-self: start; margin-bottom: 8px; }
+.fb-booked__body { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.fb-store__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.lotgate__row .ladder__act { flex: none; text-decoration: none; }
+
 /*
  * Styles only components/ForwarderBooking.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

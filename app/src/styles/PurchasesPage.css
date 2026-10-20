@@ -1,3 +1,69 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.alloc__pick {
+  display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center;
+  width: 100%; padding: 10px; text-align: left; cursor: pointer;
+  border-radius: var(--r-md); background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); transition: border-color 0.15s ease, background 0.15s ease;
+}
+.alloc__name { font-weight: var(--w-semi); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.icard__go:hover { background: var(--grad-hero); transform: translateY(-1px); }
+.cartbox::after {
+  content: ''; position: absolute; right: -60px; top: -60px; width: 180px; height: 180px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(6, 214, 231, 0.18), transparent 70%);
+}
+.cartbox__text { display: grid; gap: 2px; min-width: 0; }
+.lotbox__peek {
+  position: absolute; z-index: 1; top: -16px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 0;
+  transition: transform 0.4s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.lotbox__peekitem {
+  width: 34px; height: 34px; border-radius: 9px; overflow: hidden; margin-left: -8px;
+  border: 2px solid var(--card, #F4E6C8); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  font-size: var(--t-xs);
+}
+.lotbox__peekitem:first-child { margin-left: 0; transform: rotate(-8deg); }
+.ptrack { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); position: relative; }
+.ptrack--sm { gap: 0; }
+.ptrack::before {
+  content: ''; position: absolute; top: 10px; left: 12%; right: 12%; height: 2px;
+  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px); opacity: 0.25;
+}
+.ptrack__stop { position: relative; display: grid; justify-items: center; gap: 3px; text-align: center; }
+.ptrack__dot {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  background: rgba(127, 127, 127, 0.18); font-size: var(--t-xs); line-height: 1; z-index: 1;
+}
+.ptrack--lg::before { top: 14px; }
+.lotbox .ptrack { color: var(--card-ink); margin: 2px 0; }
+.paychip {
+  display: inline-flex; align-items: center; gap: 4px; width: fit-content;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: var(--w-semi);
+}
+.paychip--ok { background: rgba(52, 211, 153, 0.14); color: #6EE7B7; }
+.paychip--due { background: rgba(248, 113, 113, 0.16); color: #FCA5A5; }
+.paychip--info { background: rgba(96, 165, 250, 0.16); color: #93C5FD; }
+.irow {
+  display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--border);
+  background: var(--surface); color: inherit; text-decoration: none;
+}
+.irow__body { display: grid; gap: 3px; min-width: 0; }
+.irow--urgent { border-color: rgba(248, 113, 113, 0.45); }
+.shelfcard .irow { border: 0; padding: 0; background: transparent; }
+.shelfcard .ptrack { color: var(--text); }
+.peek__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-top: -6px; }
+.peek .ptrack { color: var(--text); margin-top: 6px; }
+.peek__items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.peek__item {
+  display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--r-md); background: rgba(255, 255, 255, 0.04);
+  animation: peek-in 0.35s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+.peek__body { display: grid; gap: 3px; min-width: 0; }
+.peek__go { font-size: 22px; color: var(--text-faint); text-decoration: none; padding: 0 4px; }
+
 /*
  * Styles only components/BuyerLots.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

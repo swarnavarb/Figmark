@@ -30,6 +30,12 @@ export interface SessionPayload {
    */
   jti?: string;
   /**
+   * Issued-at in milliseconds. `iat` is whole seconds, too coarse to tell a
+   * token from just before "sign out everywhere" from one signed in just
+   * after it in the same second. Absent on older tokens.
+   */
+  iam?: number;
+  /**
    * A snapshot of the principal, carried in the token itself.
    *
    * Only populated when the store behind the API is not durable. The host runs
@@ -63,12 +69,13 @@ export function createSessionToken(
   /** When the person signed in, for a refreshed token; now for a new sign-in. */
   authTime?: number,
 ): { token: string; expiresAt: Date } {
-  const issuedAt = Math.floor(Date.now() / 1000);
+  const issuedAtMs = Date.now();
+  const issuedAt = Math.floor(issuedAtMs / 1000);
   const signedInAt = authTime ?? issuedAt;
   // A refresh never stretches a session past its absolute limit.
   const expiry = Math.min(issuedAt + ttlSeconds, signedInAt + SESSION_MAX_AGE_SECONDS);
   const payload: SessionPayload = {
-    sub: userId, iat: issuedAt, exp: expiry, aut: signedInAt, jti: randomBytes(9).toString('base64url'),
+    sub: userId, iat: issuedAt, iam: issuedAtMs, exp: expiry, aut: signedInAt, jti: randomBytes(9).toString('base64url'),
   };
   if (snapshot !== undefined) payload.usr = snapshot;
   const encoded = base64url(JSON.stringify(payload));

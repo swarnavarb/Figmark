@@ -1,3 +1,23 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.affcard__text { display: grid; gap: 2px; min-width: 0; }
+.simcard__body { display: grid; gap: 2px; padding: 9px 11px 11px; min-width: 0; }
+.affowed .notice { flex-basis: 100%; margin: 0; }
+.earnpill {
+  position: relative; isolation: isolate; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center;
+  padding: 0.22em 0.7em; border-radius: var(--r-pill); overflow: hidden; white-space: nowrap;
+  font-size: clamp(8px, 6.4cqi, 12px); font-weight: var(--w-bold); line-height: 1.2; letter-spacing: 0; color: var(--lime);
+}
+.earnpill::before {
+  content: ''; position: absolute; inset: 0; z-index: -2; border-radius: inherit;
+  background: conic-gradient(from var(--earn-angle), var(--lime), #06D6E7 25%, rgba(163, 230, 53, 0.15) 45%, rgba(163, 230, 53, 0.15) 70%, var(--lime));
+  animation: earn-spin 2.6s linear infinite;
+}
+.earnpill::after { content: ''; position: absolute; inset: 1.5px; z-index: -1; border-radius: inherit; background: #10180B; }
+.earnpill__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) {
+  .earnpill::before { animation: none; }
+}
+
 /*
  * Styles only components/Affiliate.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

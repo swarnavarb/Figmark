@@ -38,7 +38,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const [stores, setStores] = useState<SocialIdentity[]>([]);
   const [chosen, setChosen] = useState<string | null>(remembered);
 
+  // Asked again whenever the account changes: signing in without a reload
+  // must find its shops, and signing out must not leave the last one's.
+  const userId = user?.id ?? null;
   useEffect(() => {
+    setStores([]);
+    if (!userId) return;
     let live = true;
     api.stores()
       .then((result) => {
@@ -51,7 +56,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false;
     };
-  }, []);
+  }, [userId]);
 
   const me = useMemo<SocialIdentity>(
     () => ({ storeId: null, name: user?.displayName ?? 'Me', handle: user?.username ?? null }),

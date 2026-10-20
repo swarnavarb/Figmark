@@ -1,3 +1,11 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.sc-hero__actions .btn--ghost { background: rgba(8, 11, 18, 0.6); backdrop-filter: blur(8px); }
+.sc-hero__text { display: grid; gap: 2px; padding-bottom: 2px; min-width: 0; }
+.sc-tabs__count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--warn-ink); font-size: var(--t-2xs); font-weight: var(--w-bold); }
+.sc-callout > span:nth-child(2) { flex: 1; }
+.sc-job__title { display: grid; gap: 2px; min-width: 0; }
+.sc-person__body { flex: 1; min-width: 0; display: grid; gap: 3px; }
+
 /*
  * Styles only pages/StoreConsolePage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

@@ -1,3 +1,8 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.qhero__body { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.qtask__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.qnobump__text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+
 /*
  * Styles only components/QuestKit.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

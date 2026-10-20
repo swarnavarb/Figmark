@@ -1,3 +1,95 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.ladder__stage {
+  display: flex; align-items: center; gap: 6px;
+  margin: 10px 0 2px 30px; padding: 0;
+  font-size: var(--t-2xs); font-weight: var(--w-semi);
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim);
+}
+.ladder__row::before {
+  content: ''; position: absolute; left: 9px; top: 0; bottom: 0;
+  width: 1px; background: var(--border);
+}
+.ladder__row:first-child::before { top: 50%; }
+.ladder__row:last-child::before { bottom: 50%; }
+.ladder__dot {
+  position: relative; z-index: 1;
+  width: 19px; height: 19px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: var(--t-2xs); line-height: 1;
+}
+.ladder__name { min-width: 0; }
+.ladder__body { display: grid; gap: 3px; min-width: 0; }
+.ladder__note {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  margin-top: 4px; padding: 7px 9px;
+  border-left: 2px solid var(--accent-line); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface-2);
+  font-size: var(--t-xs); color: var(--text-dim);
+}
+.ladder__note-body { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.ladder__note-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ladder__note-when {
+  flex: 0 0 auto; margin-left: auto;
+  font-family: var(--mono); font-size: var(--t-2xs); font-weight: var(--w-medium);
+  color: var(--accent-text); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ladder__track-link {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 6px;
+  color: var(--accent-text); text-decoration: none; font-weight: var(--w-semi);
+}
+.ladder__forward-example {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  margin-top: 4px; padding: 6px 9px;
+  border: 1px dashed var(--border-strong); border-radius: var(--r-sm);
+  font-size: var(--t-2xs); color: var(--text-faint);
+}
+.ladder__lot {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
+  column-gap: 8px; row-gap: 8px; align-items: start;
+  margin-top: 4px; padding: 7px 9px;
+  border-left: 2px solid var(--aqua); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--aqua-soft);
+  font-size: var(--t-xs); color: var(--text);
+}
+.ladder__lot-icon { display: grid; place-items: center; height: 1.45em; color: var(--aqua); }
+.ladder__lot-text { min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
+.ladder__lot-no {
+  display: block; margin-top: 1px;
+  font-family: var(--mono); font-size: var(--t-2xs); letter-spacing: 0.04em; color: var(--text-faint);
+}
+.ladder__lot > .ladder__note-when { grid-column: 3; line-height: 1.45; }
+.ladder__leave {
+  position: relative;
+  display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: center;
+  padding: 6px 0;
+}
+.ladder__leave::before {
+  content: ''; position: absolute; left: 9px; top: 0; bottom: 0; width: 1px; background: var(--border);
+}
+.ladder__leave-body {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
+  padding-top: 6px; border-top: 1px dashed var(--border-strong);
+}
+.ladder__leave-text {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: var(--t-2xs); letter-spacing: 0.02em; color: var(--text-faint);
+}
+.ladder--live .ladder__row { padding: 8px 0; }
+.ladder__acts {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  max-height: 0; overflow: hidden; opacity: 0;
+  transition: max-height var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
+}
+.ladder__write { display: grid; gap: 7px; margin-top: 6px; }
+.ladder__write-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ladder__row--pre, .ladder__row--lot, .ladder__row--post { padding-left: 10px; }
+.ladder__row--pre { box-shadow: inset 3px 0 0 var(--aqua-line); }
+.ladder__row--lot { box-shadow: inset 3px 0 0 var(--coral-line); }
+.ladder__row--post { box-shadow: inset 3px 0 0 var(--lime-line); }
+
 /*
  * Styles only components/Ladder.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

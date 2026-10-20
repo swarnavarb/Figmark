@@ -337,22 +337,22 @@ export function ListingPage() {
                 <div className={`sellercard__stat sellercard__stat--${seller.trustScore >= 80 ? 'ok' : seller.trustScore >= 50 ? 'warn' : 'low'}`}>
                   <dt><Svg name="star" size={13} /> Trust</dt>
                   <dd>{seller.trustScore}<small>/100</small></dd>
-                  <span>From buyer reviews</span>
+                  <dd className="sellercard__note">From buyer reviews</dd>
                 </div>
                 <div className="sellercard__stat">
                   <dt><Svg name="users" size={13} /> Followers</dt>
                   <dd>{seller.followerCount}</dd>
-                  <span>Get their new drops</span>
+                  <dd className="sellercard__note">Get their new drops</dd>
                 </div>
                 <div className="sellercard__stat">
                   <dt><Svg name="box" size={13} /> Sales</dt>
                   <dd>{seller.completedSales}</dd>
-                  <span>Delivered, no lost disputes</span>
+                  <dd className="sellercard__note">Delivered, no lost disputes</dd>
                 </div>
                 <div className="sellercard__stat">
                   <dt><Svg name="calendar" size={13} /> Here since</dt>
                   <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>
-                  <span>On Figmark</span>
+                  <dd className="sellercard__note">On Figmark</dd>
                 </div>
               </dl>
 

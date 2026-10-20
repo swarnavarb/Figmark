@@ -5,7 +5,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { forgetEndpoints, pushKeys, pushToUser, sendHeldPushes } from '../push.js';
 import { tooFast } from '../rate-limit.js';
-import { error, handler, json } from './http.js';
+import { cached, error, handler, json } from './http.js';
 
 /**
  * Turning lock-screen notifications on and off, one device at a time.
@@ -20,7 +20,8 @@ const MAX_DEVICES = 10;
 
 /** GET /api/push/key - the public key, or null when push is not set up here. */
 async function key(_request: HttpRequest, _context: InvocationContext) {
-  return json(200, { publicKey: pushKeys()?.publicKey ?? null });
+  // Asked on every page load; it changes only when the keys are rotated.
+  return cached(json(200, { publicKey: pushKeys()?.publicKey ?? null }), 'public, max-age=3600');
 }
 
 /** A short name for the device, from its user agent. For telling them apart, nothing more. */

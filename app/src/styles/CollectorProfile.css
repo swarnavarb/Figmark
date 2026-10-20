@@ -1,3 +1,76 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.listing__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+@media (max-width: 560px) {
+  .listing__meta { flex-wrap: wrap; overflow: visible; margin-inline: 0; padding-inline: 0; }
+  .listing__meta { gap: 4px; }
+}
+.starpick {
+  background: none; border: 0; cursor: pointer; padding: 0 2px;
+  font-size: 24px; line-height: 1; color: var(--border-strong);
+}
+.qstickers--row { display: flex; gap: 10px; overflow-x: auto; margin-top: 12px; scrollbar-width: none; }
+.qprofile__face {
+  position: relative; width: 76px; height: 76px; border-radius: 50%; overflow: hidden; display: grid; place-items: center;
+  border: 3px solid var(--bg); background: var(--surface-2);
+}
+.qprofile__lv {
+  position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%);
+  padding: 1px 8px; border-radius: var(--r-pill); background: var(--violet); color: #fff;
+  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-bold); white-space: nowrap; border: 2px solid var(--bg);
+}
+.qprofile__xp { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); }
+.qstats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.qstat {
+  display: grid; gap: 1px; text-align: center; padding: 10px 6px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.qstat__value { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-lg); font-weight: var(--w-bold); }
+.qtone--gold { color: var(--q-gold); }
+.qtone--ok { color: var(--ok); }
+.qtone--hot { color: var(--coral); }
+.qshowcase {
+  appearance: none;
+  padding: 14px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); margin-bottom: 6px;
+}
+.qshowcase__cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.qprofile__penalty { margin: -6px 0 10px; font-size: var(--t-xs); color: var(--coral); }
+.qshowcase { display: grid; gap: 0; width: 100%; text-align: left; }
+.qshowcase__title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.qshowcase__empty { display: block; margin-top: 8px; font-size: var(--t-xs); }
+.qcollection { margin-top: 4px; }
+.qready { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-lg); border: 1px solid var(--q-gold-line); background: linear-gradient(160deg, rgba(245, 197, 66, 0.07), var(--surface)); }
+.qready__row { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; }
+.qready__row::-webkit-scrollbar { display: none; }
+.qready__item { flex: none; width: 120px; display: grid; gap: 4px; justify-items: start; font-size: var(--t-xs); }
+.qready__name { width: 100%; font-weight: var(--w-semi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qshelves { margin-top: 2px; }
+.qitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 10px; }
+.qitem { position: relative; display: grid; gap: 6px; min-width: 0; }
+.revcard__who { display: grid; gap: 1px; min-width: 0; font-weight: var(--w-semi); font-size: var(--t-sm); }
+.revcard__item:hover { background: var(--surface-hover); }
+.pbtn--message:hover {
+  background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
+    linear-gradient(135deg, var(--aqua), var(--violet) 55%, var(--pink)) border-box;
+}
+.pbio::before {
+  content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--grad-hero);
+}
+.rsheet__stat { display: grid; justify-items: center; gap: 2px; min-height: 54px; padding: 10px 4px; border-radius: 12px; background: var(--surface-2); text-align: center; }
+.slevel__how li b { font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--q-gold); white-space: nowrap; }
+.royal__frame::after {
+  content: ''; position: absolute; inset: 3px; border-radius: 6px; pointer-events: none;
+  border: 1px solid rgba(255, 230, 150, 0.75); box-shadow: inset 0 0 14px rgba(59, 42, 5, 0.6);
+}
+.shelfhead::before, .shelfhead::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(245, 197, 66, 0.75));
+  box-shadow: 0 0 6px rgba(245, 197, 66, 0.35);
+}
+.shelfhead::after { background: linear-gradient(90deg, rgba(245, 197, 66, 0.75), transparent); }
+.qviewer__tools .field { width: 100%; text-align: left; }
+.winchip { border-color: rgba(251, 191, 36, 0.45); color: var(--warn); background: var(--warn-soft); text-decoration: none; }
+
 /*
  * Styles only components/ProfileParts.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

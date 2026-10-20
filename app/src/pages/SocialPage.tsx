@@ -12,7 +12,7 @@ import { useGoBack } from '../components/ScrollManager';
 import { timeAgo } from '../format';
 import { MessagesView } from './MessagesPage';
 import { WantedPage } from './WantedPage';
-import { VerifyNudge } from './VerifyPage';
+import { VerifyNudge } from '../components/VerifyNudges';
 import { useToast } from '../components/Feedback';
 import { Spinner } from '../components/Spinner';
 import { FollowSuggestions } from '../components/FollowSuggestions';

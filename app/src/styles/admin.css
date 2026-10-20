@@ -1,3 +1,36 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.ops__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.ops__brand { display: flex; align-items: center; gap: 10px; font-weight: var(--w-bold); }
+.ops__tag {
+  padding: 2px 8px; border-radius: var(--r-pill);
+  background: var(--danger-soft); color: #FB7185;
+  font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.04em;
+}
+.ops__body { padding: 20px; max-width: 1100px; margin: 0 auto; }
+.userrow {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 12px 14px;
+  border: 0; border-bottom: 1px solid var(--border);
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.userrow:hover { background: var(--surface-2); }
+.userrow__main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.userrow__name { font-weight: var(--w-semi); font-size: var(--t-sm); }
+.userrow__meta { font-size: var(--t-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.userrow__tags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.ops__status { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); }
+.learned__pick { flex: 1; min-width: 0; text-align: left; border: 0; background: none; color: var(--text); font: inherit; padding: 6px 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.learned__edit { display: grid; gap: 12px; min-width: 0; }
+.learned__fold { flex: 1; min-width: 0; text-align: left; border: 0; background: none; color: var(--text); font: inherit; cursor: pointer; padding: 4px 0; }
+.learned__steptitle { flex: 1; min-width: 0; font-weight: var(--w-semi); }
+.ops-st__id { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.devstats__table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.devstats__meter { display: flex; align-items: center; gap: 8px; min-width: 160px; }
+.devstats__label { font-variant-numeric: tabular-nums; min-width: 64px; }
+
 /*
  * Styles only admin/main.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

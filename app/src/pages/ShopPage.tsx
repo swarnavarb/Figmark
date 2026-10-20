@@ -24,7 +24,7 @@ import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { RoutesList } from './RoutesPage';
-import { SetupChecklist } from './VerifyPage';
+import { SetupChecklist } from '../components/VerifyNudges';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,

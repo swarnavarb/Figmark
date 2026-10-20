@@ -15,7 +15,7 @@ import type {
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
 import { newestOrder, popularity, searchWords } from '../../../shared/catalog.js';
-import type { CosmosConfig } from '../config.js';
+import { runningInAzure, type CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { mapLimit } from './lot-view.js';
@@ -60,13 +60,6 @@ import {
 import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
 
-/**
- * Whether an empty database may be filled with the development fixtures.
- *
- * On by default: the alternative is a deployment that connects successfully and
- * then behaves as though every password were wrong. Set COSMOS_AUTOSEED=off for
- * a database that is meant to start empty.
- */
 /** Site-content id of the marker left once rows are in the current buyer-protection shape. */
 const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
 /** Site-content id of the marker left once messages between an owner and their own shop are gone. */
@@ -80,8 +73,21 @@ const CONTAINER_POLICY_MARKER = 'migration:container-policies';
 /** How long a refused policy update waits before it is tried again. */
 const POLICY_RETRY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Whether an empty database may be filled with the development fixtures, and
+ * a seeded one topped up with fixtures a later release added.
+ *
+ * The fixtures include accounts whose password is published in this
+ * repository - one of them a community manager who decides where held money
+ * goes - so on Azure they are written only when COSMOS_AUTOSEED=on says this
+ * database is a demo. Off Azure (a laptop, the tests) they are on unless
+ * COSMOS_AUTOSEED=off. A database left empty says so on /api/health.
+ */
 function autoSeedEnabled(): boolean {
-  return (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase() !== 'off';
+  const declared = (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase();
+  if (declared === 'on') return true;
+  if (declared === 'off') return false;
+  return !runningInAzure();
 }
 
 /**
@@ -2686,19 +2692,24 @@ export class CosmosRepository implements Repository {
   }
 
   async bumpListing(sellerId: string, listingId: string): Promise<boolean> {
-    try {
-      const { resource } = await this.container('listings').item(listingId, sellerId).read<Listing>();
-      if (!resource) return false;
-      const last = resource.bumpedAt ? Date.parse(resource.bumpedAt) : 0;
-      if (Date.now() - last < BUMP_COOLDOWN_MS) return false;
-      await this.container('listings')
-        .item(listingId, sellerId)
-        .replace({ ...resource, bumpedAt: new Date().toISOString() });
-      return true;
-    } catch (error) {
-      if (isNotFound(error)) return false;
-      throw error;
+    const item = this.container('listings').item(listingId, sellerId);
+    // Checked against the copy read, so an edit landing between the read and
+    // the write is not overwritten with the old listing; read again and retry.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const { resource } = await item.read<Listing & { _etag?: string }>();
+        if (!resource) return false;
+        const last = resource.bumpedAt ? Date.parse(resource.bumpedAt) : 0;
+        if (Date.now() - last < BUMP_COOLDOWN_MS) return false;
+        const options = resource._etag ? { accessCondition: { type: 'IfMatch', condition: resource._etag } } : undefined;
+        await item.replace({ ...resource, bumpedAt: new Date().toISOString() }, options);
+        return true;
+      } catch (error) {
+        if (isNotFound(error)) return false;
+        if ((error as { code?: number }).code !== 412) throw error;
+      }
     }
+    return false;
   }
 
   async createLot(lot: Lot): Promise<Lot> {

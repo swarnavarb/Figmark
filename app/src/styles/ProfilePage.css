@@ -1,0 +1,5 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.badges { display: flex; flex-wrap: wrap; gap: 5px; }
+.photogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; border-radius: var(--r-md); overflow: hidden; }
+.qme__facts { display: grid; gap: 8px; margin: 14px 0; }
+

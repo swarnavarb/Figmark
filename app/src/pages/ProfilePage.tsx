@@ -17,6 +17,7 @@ import { verifiedChecks } from '@shared/verification';
 import { VerifiedChips } from '../components/VerifiedChips';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import { PushCard } from '../components/PushControls';
+import '../styles/ProfilePage.css';
 
 type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
 

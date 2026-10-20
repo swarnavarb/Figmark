@@ -29,8 +29,9 @@ simply what happens when an account lists something — so a single mutually
 exclusive role cannot describe a real user. `canBuy`, `canSell` and `canForward`
 are *derived* from verification state by `deriveCapabilities` in
 `shared/capabilities.ts`, shared by both sides so the client never reimplements
-the rules. `isAdmin` is the exception: a genuine assigned role, stored on the
-record.
+the rules. `isAdmin` is the exception: a genuine assigned role, but not one
+stored on the record - it is derived at request time from the `ADMIN_EMAILS`
+setting, so no write path can grant it.
 
 Capability is not authorisation on its own — and less so than a role was.
 `requireCapability(request, ['sell'])` answers "may this account sell?", to which

@@ -1,3 +1,12 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.dealclock__pick {
+  min-width: 52px; padding: 8px 12px; border-radius: var(--r-pill); cursor: pointer; font-weight: var(--w-bold);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font-variant-numeric: tabular-nums;
+}
+.lbox__titles { display: grid; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.lbox__body { display: grid; gap: 12px; min-width: 0; }
+.ltoggle__text { display: grid; gap: 1px; flex: 1 1 auto; min-width: 0; cursor: pointer; font-size: var(--t-sm); }
+
 /*
  * Styles only components/Buy.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

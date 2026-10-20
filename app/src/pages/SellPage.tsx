@@ -23,7 +23,7 @@ import { CostSheetField, type CostSheetDraft } from '../components/CostSheetFiel
 import { useGoBack } from '../components/ScrollManager';
 import { lotLabel } from '../components/LotName';
 import { NewLotForm } from './LotsPage';
-import { SetupChecklist } from './VerifyPage';
+import { SetupChecklist } from '../components/VerifyNudges';
 import '../styles/SellPage.css';
 
 /**

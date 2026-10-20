@@ -64,7 +64,9 @@ export class BlobPhotoStore implements PhotoStore {
       .getContainerClient(PHOTO_CONTAINER_NAME)
       .getBlockBlobClient(blobName);
     await blob.uploadData(bytes, {
-      blobHTTPHeaders: { blobContentType: contentType },
+      // Every name is a fresh UUID and a photo is never rewritten in place, so
+      // browsers and any CDN in front may keep it for good.
+      blobHTTPHeaders: { blobContentType: contentType, blobCacheControl: 'public, max-age=31536000, immutable' },
       ...(uploadedBy ? { metadata: { uploadedby: uploadedBy } } : {}),
     });
     // The container is public-read, so the storage URL is the fast path and
@@ -123,7 +125,7 @@ export class BlobPhotoStore implements PhotoStore {
     const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
     // The container has no anonymous access, so this blob has no public URL.
     await this.chatBlob(blobName).uploadData(bytes, {
-      blobHTTPHeaders: { blobContentType: contentType },
+      blobHTTPHeaders: { blobContentType: contentType, blobCacheControl: 'private, max-age=31536000, immutable' },
       metadata: { uploadedby: uploadedBy },
     });
     return { blobName };

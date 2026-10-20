@@ -68,7 +68,7 @@ export function TrackBoxes({ boxes }: { boxes: TrackBox[] }) {
     if (list && item) list.scrollTo({ left: item.offsetLeft, behavior: 'smooth' });
   }, [here]);
   return (
-    <ol ref={row} className="trkbox" aria-label="Milestones">
+    <ol ref={row} className="trkbox" aria-label="Milestones" tabIndex={0}>
       {boxes.map((box, index) => (
         <li key={box.key} className={`trkbox__item is-${box.state}`} style={{ ['--i' as string]: index }}
           title={`${box.label}${box.state === 'locked' ? ' — unlocks as the journey gets there' : ''}`}>

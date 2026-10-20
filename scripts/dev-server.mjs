@@ -110,7 +110,7 @@ const {
 } = await import(new URL('store-routes.js', apiRoot));
 const {
   creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute,
-  saveReversalDetailsRoute, reversalDetailsRoute,
+  saveReversalDetailsRoute, reversalDetailsRoute, saveProfileRoute,
 } = await import(new URL('profile-routes.js', apiRoot));
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
@@ -133,7 +133,9 @@ const {
 } = await import(new URL('collection-routes.js', apiRoot));
 const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
 const { settingsRoute, opsSettingsRoute, opsSettingsSaveRoute } = await import(new URL('settings-routes.js', apiRoot));
-const { routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute } = await import(new URL('route-admin-routes.js', apiRoot));
+const {
+  routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute, opsRouteCommonSaveRoute, opsRouteButtonsSaveRoute,
+} = await import(new URL('route-admin-routes.js', apiRoot));
 const {
   reportCreateRoute, reportMineRoute, opsReportsRoute, opsReportResolveRoute,
 } = await import(new URL('report-routes.js', apiRoot));
@@ -337,6 +339,8 @@ const routes = [
   ['GET', '/api/ops/route-library', opsRouteLibraryRoute],
   ['POST', '/api/ops/route-samples/save', opsRouteSamplesSaveRoute],
   ['POST', '/api/ops/route-words/save', opsRouteWordsSaveRoute],
+  ['POST', '/api/ops/route-common/save', opsRouteCommonSaveRoute],
+  ['POST', '/api/ops/route-buttons/save', opsRouteButtonsSaveRoute],
   ['POST', '/api/reports', reportCreateRoute],
   ['GET', '/api/reports/mine', reportMineRoute],
   ['GET', '/api/ops/reports', opsReportsRoute],
@@ -457,6 +461,7 @@ const routes = [
   ['GET', '/api/users/:id/reviews', tradeReviewsRoute],
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],
+  ['POST', '/api/me/profile', saveProfileRoute],
   ['POST', '/api/users/:id/page-reviews/new', writePageReviewRoute],
 ];
 

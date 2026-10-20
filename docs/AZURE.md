@@ -73,10 +73,12 @@ credentials were present. These steps need a machine that can reach Azure:
    > used to look exactly like a wrong password: sign-in resolves every
    > identifier to nobody, including the demo account, and no amount of
    > retyping fixes it. The API now says which of those it is — on
-   > `/api/health`, and on the sign-in page itself — and seeds a database it
-   > finds provisioned but completely empty, so this step is the explicit path
-   > rather than the only one. Set `COSMOS_AUTOSEED=off` for a database that is
-   > meant to start empty. Containers still have to exist first: creating them
+   > `/api/health`, and on the sign-in page itself. On Azure it no longer
+   > seeds an empty database by itself: the fixtures carry a published
+   > password, including a community manager's, so they are written only
+   > where `COSMOS_AUTOSEED=on` marks the database as a demo (it also keeps a
+   > seeded demo topped up with fixtures later releases add). **Never set it
+   > on production.** Off Azure it stays on unless `COSMOS_AUTOSEED=off`. Containers still have to exist first: creating them
    > is what step 3 does, and nothing can be written to a database without
    > them.
 

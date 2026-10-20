@@ -182,7 +182,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
                     </span>
                   )}
                   {earned.length > 0 && (
-                    <span className="qstickers qstickers--row">
+                    <span className="qstickers qstickers--row" role="group" aria-label="Stickers" tabIndex={0}>
                       {earned.slice(0, 8).map((entry) => <Sticker key={entry.id} sticker={entry} />)}
                     </span>
                   )}

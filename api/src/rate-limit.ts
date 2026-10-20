@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { HttpRequest } from '@azure/functions';
+import { runningInAzure } from './config.js';
 import { getRepository } from './data/index.js';
 import { error } from './functions/http.js';
 
@@ -196,15 +197,22 @@ export async function forget(subject: string, action: Action): Promise<void> {
 /**
  * The address a request came from, as the platform reports it.
  *
- * Azure's front ends set `x-azure-clientip` and `x-client-ip` themselves; the
- * first `x-forwarded-for` entry is the fallback. A port, if one is attached,
- * is dropped. 'unknown' when nothing says - every such request then shares
- * one bucket, which errs towards limiting.
+ * Every per-address limit (sign-ups, sign-ins) rests on this, so on Azure it
+ * believes only what the platform's own proxies wrote: `x-azure-clientip`,
+ * else the last `x-forwarded-for` hop - the one the nearest proxy appended.
+ * The first hop, and `x-client-ip`, are whatever the caller chose to send,
+ * and trusting them let one machine open accounts under a new address per
+ * request. Off Azure (the dev server, the tests) there is no proxy to trust,
+ * and the first hop is taken as given. A port, if one is attached, is dropped.
+ * 'unknown' when nothing says - every such request then shares one bucket,
+ * which errs towards limiting.
  */
 export function clientIp(request: HttpRequest): string {
+  const forwarded = (request.headers.get('x-forwarded-for') ?? '').split(',').map((hop) => hop.trim()).filter(Boolean);
   const raw = request.headers.get('x-azure-clientip')
-    ?? request.headers.get('x-client-ip')
-    ?? request.headers.get('x-forwarded-for')?.split(',')[0]
+    ?? (runningInAzure()
+      ? forwarded[forwarded.length - 1]
+      : request.headers.get('x-client-ip') ?? forwarded[0])
     ?? '';
   const value = raw.trim();
   if (!value) return 'unknown';

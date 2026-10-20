@@ -1,3 +1,9 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.discitem__photo .ctype {
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(8, 11, 18, 0.72); backdrop-filter: blur(6px);
+}
+
 /* Discover: the public side, ranked. */
 
 .discpage { display: grid; gap: 14px; max-width: 680px; margin-inline: auto; }

@@ -13,7 +13,7 @@ start from here.
 ```bash
 npm run install:all     # install api/ and app/ dependencies
 npm run build           # build both
-npm test                # 57 checks over the auth seam and HTTP contract
+npm test                # ~900 checks: routes, styles, auth seam, HTTP contract, smoke flows
 npm run serve           # http://127.0.0.1:5173
 ```
 

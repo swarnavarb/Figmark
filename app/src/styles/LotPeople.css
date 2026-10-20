@@ -1,3 +1,35 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.bands { display: grid; gap: 2px; border-radius: var(--r-md); overflow: hidden; }
+.band--china { background: rgba(244, 63, 94, 0.16); }
+.band--india { background: rgba(52, 211, 153, 0.14); }
+.band__side {
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.band__count {
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  font-size: var(--t-xs);
+  color: var(--text-dim);
+}
+.cust {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+.cust__head { display: grid; gap: 3px; padding: 13px 15px; background: var(--surface-2); }
+.cust__name { font-weight: var(--w-bold); font-size: var(--t-md); }
+.cust__meta, .cust__track { font-size: var(--t-xs); color: var(--text-faint); }
+.orderrow { display: grid; gap: 8px; padding: 12px 15px; border-bottom: 1px solid var(--border); }
+.orderrow:last-child { border-bottom: none; }
+.orderrow__top { display: flex; gap: 8px; align-items: baseline; }
+.orderrow__index { color: var(--text-faint); font-size: var(--t-xs); }
+.orderrow__item { font-weight: var(--w-semi); font-size: var(--t-sm); }
+.orderrow__meta { display: flex; align-items: center; gap: 8px; }
+.orderrow__ticks { display: flex; flex-wrap: wrap; gap: 6px; }
+
 /*
  * Styles only components/LotPeople.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

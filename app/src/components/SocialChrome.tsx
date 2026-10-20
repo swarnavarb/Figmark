@@ -157,7 +157,8 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
         </div>
       </header>
 
-      <div className={`soccompact${compact ? ' is-on' : ''}`} aria-hidden={!compact}>
+      {/* Inert while folded away, so nothing in it can take focus unseen. */}
+      <div className={`soccompact${compact ? ' is-on' : ''}`} aria-hidden={!compact} {...(compact ? {} : { inert: '' })}>
         <div className="soccompact__in">
           <button type="button" className="soccompact__mark" aria-label="Back to the top"
             tabIndex={compact ? 0 : -1} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />

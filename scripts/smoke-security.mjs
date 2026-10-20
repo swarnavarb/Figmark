@@ -337,6 +337,19 @@ await check('the client address is read from the platform\'s headers, without a 
   assert.equal(clientIp({ headers: new Headers() }), 'unknown');
 });
 
+await check('on Azure the address comes from the platform, never from what the caller sent', () => {
+  process.env.WEBSITE_INSTANCE_ID = 'test-instance';
+  try {
+    // A caller rotating x-client-ip or the first forwarded hop stays one address.
+    assert.equal(clientIp({ headers: new Headers({ 'x-client-ip': '10.0.0.9', 'x-forwarded-for': '10.0.0.9, 203.0.113.7' }) }), '203.0.113.7');
+    assert.equal(clientIp({ headers: new Headers({ 'x-forwarded-for': '10.1.1.1, 10.2.2.2, 203.0.113.8:5050' }) }), '203.0.113.8');
+    assert.equal(clientIp({ headers: new Headers({ 'x-azure-clientip': '203.0.113.9', 'x-forwarded-for': '10.0.0.1' }) }), '203.0.113.9');
+    assert.equal(clientIp({ headers: new Headers({ 'x-client-ip': '10.0.0.9' }) }), 'unknown');
+  } finally {
+    delete process.env.WEBSITE_INSTANCE_ID;
+  }
+});
+
 /* ── Passwords ─────────────────────────────────────────────────────────── */
 console.log('\npasswords');
 
@@ -459,6 +472,51 @@ await check('signing out on one device leaves another signed in, even when both 
   const one = createSessionToken('usr_demo', 'test-secret', 3600);
   const two = createSessionToken('usr_demo', 'test-secret', 3600);
   assert.notEqual(one.token, two.token);
+});
+
+await check('signing in again right after signing out everywhere stays signed in', async () => {
+  resetRateLimits();
+  const at = { ip: '198.51.100.61' };
+  const first = await auth.login({ identifier: 'packer@baiyunhobby.example', password: DEMO_PASSWORD }, at);
+  await auth.logoutEverywhere(cookieFor(first.token));
+  // The same second, more often than not: the new session must hold.
+  const again = await auth.login({ identifier: 'packer@baiyunhobby.example', password: DEMO_PASSWORD }, at);
+  assert.equal((await auth.getCurrentUser(cookieFor(again.token)))?.id, 'usr_packer');
+  assert.equal(await auth.getCurrentUser(cookieFor(first.token)), null, 'the one from before is still over');
+});
+
+await check('a password hashed at the old cost is re-made at the new one on a good sign-in', async () => {
+  resetRateLimits();
+  const studio = { identifier: 'studio@inkwell.example', password: DEMO_PASSWORD };
+  const user = await repository.getUserById('usr_art_inkwell');
+  assert.ok(!user.passwordHash.startsWith('s2:'), 'seeded at the old cost');
+  await auth.login(studio, { ip: '198.51.100.62' });
+  const after = await repository.getUserById('usr_art_inkwell');
+  assert.ok(after.passwordHash.startsWith('s2:'));
+  // And it still opens.
+  await auth.login(studio, { ip: '198.51.100.62' });
+});
+
+await check('a body larger than any route accepts is refused before it is read', async () => {
+  let read = false;
+  const response = await loginRoute({
+    method: 'POST',
+    headers: new Headers({ 'content-length': String(50 * 1024 * 1024), 'content-type': 'application/json' }),
+    json: async () => { read = true; return {}; },
+  }, ctx);
+  assert.equal(response.status, 413);
+  assert.equal(read, false);
+});
+
+await check('a write posted as a form or plain text is refused, so no other page can forge one', async () => {
+  for (const type of ['application/x-www-form-urlencoded', 'multipart/form-data; boundary=x', 'text/plain;charset=UTF-8']) {
+    const response = await loginRoute({
+      method: 'POST',
+      headers: new Headers({ 'content-type': type }),
+      json: async () => ({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
+    }, ctx);
+    assert.equal(response.status, 415, type);
+  }
 });
 
 /* ── Static Web Apps principal ─────────────────────────────────────────── */

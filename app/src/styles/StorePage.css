@@ -1,3 +1,7 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.sp-hero__text { display: grid; gap: 4px; min-width: 0; }
+.sp-steps li::marker { color: var(--sk-text); font-weight: var(--w-bold); }
+
 /*
  * Styles only pages/StorePage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

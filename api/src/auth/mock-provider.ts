@@ -15,7 +15,7 @@ import type { Repository } from '../data/repository.js';
 import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, handleShapeProblem, suggestUsername } from '../../../shared/handles.js';
-import { PASSWORD_MAX_LENGTH, hashPasswordAsync, passwordProblem, verifyPasswordAsync } from './passwords.js';
+import { PASSWORD_MAX_LENGTH, hashPasswordAsync, passwordNeedsRehash, passwordProblem, verifyPasswordAsync } from './passwords.js';
 import { normalizeIndianMobile } from '../../../shared/verification.js';
 import {
   SESSION_COOKIE_NAME,
@@ -280,6 +280,17 @@ export class MockAuthProvider implements AuthService {
     // twice is not held back by it.
     await forget(key, 'login_fail');
 
+    // A hash from before the cost was raised is re-made now that the password
+    // is known. Best effort: failing to save it costs nothing but the upgrade.
+    if (passwordNeedsRehash(user.passwordHash ?? null)) {
+      try {
+        user.passwordHash = await hashPasswordAsync(credentials.password);
+        await this.repository.updateUser(user);
+      } catch {
+        // Tried again on the next sign-in.
+      }
+    }
+
     const principal = toAuthUser(user);
     const { token, expiresAt } = createSessionToken(
       user.id,
@@ -331,10 +342,9 @@ export class MockAuthProvider implements AuthService {
     const principal = await this.requireAuth(request);
     const user = await this.repository.getUserById(principal.id);
     if (!user) throw AuthError.accountMissing();
-    // Rounded up to the second, as token times are: a token from this same
-    // second is one this request could have been carrying.
-    const at = Math.ceil(Date.now() / 1000) * 1000;
-    user.sessionsValidAfter = new Date(at).toISOString();
+    // To the millisecond: tokens carry their issue time that finely (`iam`),
+    // so signing in again a moment later, in the same second, is not undone.
+    user.sessionsValidAfter = new Date().toISOString();
     await this.repository.updateUser(user);
     await this.logout(request);
   }
@@ -570,7 +580,12 @@ function readCookieTokens(request: HttpRequest): string[] {
 function signedOutEverywhere(user: User, payload: SessionPayload): boolean {
   if (!user.sessionsValidAfter) return false;
   const after = Date.parse(user.sessionsValidAfter);
-  return Number.isFinite(after) && payload.iat * 1000 < after;
+  if (!Number.isFinite(after)) return false;
+  // A token from before `iam` existed only knows its second, so any token from
+  // the second of the sign-out could have been the one in use: refused.
+  return typeof payload.iam === 'number'
+    ? payload.iam < after
+    : payload.iat * 1000 < Math.ceil(after / 1000) * 1000;
 }
 
 /** True when the request presented a session cookie, whatever its state. */
