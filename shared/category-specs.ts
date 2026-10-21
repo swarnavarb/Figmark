@@ -512,22 +512,10 @@ export const CATEGORY_SPECS: readonly CategorySpec[] = [
   },
 ];
 
-/**
- * Names that older listings carry and no seller can pick any more.
- *
- * "Scale figures" became "Figures" when action figures, statues and blind boxes
- * joined it. Listings already stored under the old name keep it, still reach
- * the same buyer-facing heading, and read as the new category everywhere.
- */
-export const LEGACY_CATEGORY_ALIASES: Readonly<Record<string, string>> = {
-  'Scale figures': 'Figures',
-};
-
-/** The category a stored name stands for, or undefined for one nobody has. */
+/** The category a name stands for, or undefined for one nobody has. */
 export function canonicalCategory(name: string | undefined | null): string | undefined {
   if (!name) return undefined;
-  const aliased = LEGACY_CATEGORY_ALIASES[name] ?? name;
-  return CATEGORY_SPECS.some((spec) => spec.name === aliased) ? aliased : undefined;
+  return CATEGORY_SPECS.some((spec) => spec.name === name) ? name : undefined;
 }
 
 export function specFor(category: string | undefined | null): CategorySpec | undefined {

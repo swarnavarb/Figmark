@@ -176,7 +176,7 @@ export function useCatalog() {
   /**
    * Picking a heading drops the finer category with it.
    *
-   * Otherwise "Sneakers & wear" plus a leftover "Scale figures" chip is a
+   * Otherwise "Sneakers & wear" plus a leftover "Figures" chip is a
    * filter pair that can only ever return nothing, and an empty page is read as
    * an empty catalog rather than as a contradiction the reader typed.
    */

@@ -3601,7 +3601,7 @@ await check('a hunt needs saying what and where to look', async () => {
 await check('a budget is optional, because for a rare piece it has to be', async () => {
   const posted = await postWant(req({
     headers: auth,
-    body: { title: 'Anything from the 2019 Kotobukiya run', category: 'Scale figures' },
+    body: { title: 'Anything from the 2019 Kotobukiya run', category: 'Figures' },
   }), ctx);
   assert.equal(posted.status, 201);
   assert.equal(posted.jsonBody.want.budgetMinor, null, 'unstated, not zero');
@@ -4243,7 +4243,7 @@ const openCampaign = async (threshold, title = 'Group-buy fixture') => {
     body: {
       title,
       priceMinor: 120_000,
-      category: 'Scale figures',
+      category: 'Figures',
       preOrder: {
         fillThreshold: threshold,
         cutoffAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
@@ -4572,9 +4572,7 @@ await check('a heading narrows to the categories under it', async () => {
   assert.ok(figures.length < all.length, 'a heading that changes nothing is not a filter');
   for (const listing of figures) {
     assert.ok(
-      // "Scale figures" is the old name of "Figures": stock written under it
-      // must still turn up under this heading.
-      ['Figures', 'Scale figures', 'Anime merch', 'Collectibles'].includes(listing.category),
+      ['Figures', 'Anime merch', 'Collectibles'].includes(listing.category),
       `${listing.category} is not under Figures`,
     );
   }
@@ -4714,12 +4712,6 @@ await check('a listing from an older client, with no attributes, still publishes
   assert.equal(made.jsonBody.listing.attributes, undefined);
 });
 
-await check('a category renamed since is stored under its current name', async () => {
-  const made = await publishWith({ title: 'Old-name figure', category: 'Scale figures', condition: 'MISB' });
-  assert.equal(made.status, 201);
-  assert.equal(made.jsonBody.listing.category, 'Figures');
-});
-
 await check('buyers can ask for the real thing, or for copies, and the two never overlap', async () => {
   const copy = await publishWith({
     title: 'Streetwear copy tee', category: 'Streetwear',
@@ -4755,7 +4747,7 @@ console.log('\nselling on a timer');
 
 const saleItem = (title, price, after, extra = {}) => ({
   title, priceMinor: price, listPriceMinor: after,
-  category: 'Scale figures', condition: 'MISB', quantity: 1, ...extra,
+  category: 'Figures', condition: 'MISB', quantity: 1, ...extra,
 });
 
 await check('a run posts its opening message and its first item', async () => {
@@ -5074,7 +5066,7 @@ await check('deleting an account takes its hidden listings too', async () => {
       windowMinutes: 60,
       items: [{
         title: 'Hidden at deletion time', priceMinor: 11_000, listPriceMinor: 16_000,
-        category: 'Scale figures', condition: 'MISB', quantity: 1,
+        category: 'Figures', condition: 'MISB', quantity: 1,
       }],
     },
   }), ctx);
@@ -5742,7 +5734,7 @@ let earlyBuyer;
 const waitingItem = async (title) => {
   const made = await createListing(req({
     headers: auth,
-    body: { title, priceMinor: 30_000, quantityAvailable: 5, sourcing: 'import', category: 'Scale figures' },
+    body: { title, priceMinor: 30_000, quantityAvailable: 5, sourcing: 'import', category: 'Figures' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   return made.jsonBody.listing.id;
@@ -6420,7 +6412,7 @@ await check('a Quick Fill template is the stationery, not a straitjacket', async
     headers: auth,
     body: {
       name: 'Marvel Standard',
-      category: 'Scale figures',
+      category: 'Figures',
       sourcing: 'import',
       tags: ['Marvel', ' Action figure ', ''],
       condition: 'MISB',
@@ -6446,7 +6438,7 @@ await check('a Quick Fill template is the stationery, not a straitjacket', async
   // Correcting one keeps its identity, so the listings made from it still say
   // where they came from.
   const fixed = await saveTemplate(req({
-    headers: auth, body: { id: template.id, name: 'Marvel Standard v2', category: 'Scale figures' },
+    headers: auth, body: { id: template.id, name: 'Marvel Standard v2', category: 'Figures' },
   }), ctx);
   assert.equal(fixed.status, 200);
   assert.equal(fixed.jsonBody.template.id, template.id);

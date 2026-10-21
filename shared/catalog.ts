@@ -26,11 +26,8 @@ export const CATEGORIES: readonly string[] = CATEGORY_SPECS.map((spec) => spec.n
 export type Category = string;
 
 /**
- * Whether a stored category name is one this catalog knows, old names included.
- *
- * The sell form only offers `CATEGORIES`, but a listing written before a rename
- * still carries the old name and must keep working: this is what the create
- * route and the filters check against.
+ * Whether a category name is one this catalog knows: what the create route and
+ * the filters check against.
  */
 export function isKnownCategory(name: string | undefined | null): boolean {
   return canonicalCategory(name) !== undefined;
@@ -79,9 +76,7 @@ export const CATEGORY_GROUPS: readonly CategoryGroup[] = [
     label: 'Figures',
     glyph: '🧸',
     hue: 'violet',
-    // "Scale figures" is the old name of "Figures": listed here so stock written
-    // under it still turns up under this heading.
-    members: ['Figures', 'Scale figures', 'Anime merch', 'Collectibles'],
+    members: ['Figures', 'Anime merch', 'Collectibles'],
   },
   { id: 'models', label: 'Model kits', glyph: '🤖', hue: 'aqua', members: ['Model kits'] },
   { id: 'cards', label: 'Cards', glyph: '🃏', hue: 'pink', members: ['Trading cards'] },

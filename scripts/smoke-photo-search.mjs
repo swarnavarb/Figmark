@@ -192,7 +192,7 @@ await check('the words with a photo find items by title, and shops by keyword, t
     ...template, id, sellerId, title, category, tags: [], createdAt: now, updatedAt: now, privateFor: null,
     expiresAt: null, unlisted: false, soldCount: 0, status: 'active', photos: [],
   });
-  await make('lst_words_zorblax', template.sellerId, 'Zorblax resin figure — limited', 'Scale figures');
+  await make('lst_words_zorblax', template.sellerId, 'Zorblax resin figure — limited', 'Figures');
   // Nike is on enough titles that one shared word is not a match by itself.
   for (const [at, model] of ['Air Max 95', 'Dunk Low Panda', 'Air Force 1', 'Blazer Mid', 'Cortez'].entries()) {
     await make(`lst_words_nike_${at}`, nikeShop, `Nike ${model} — UK 9`, 'Sneakers');

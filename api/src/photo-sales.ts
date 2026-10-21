@@ -489,7 +489,6 @@ function likelySellers(
   for (const category of [
     ...items.map((item) => item.category), ...matched.map((listing) => listing.category), ...guesses.map((listing) => listing.category),
   ]) {
-    // Listings from before a rename carry the old name; they count as the new one.
     const known = canonicalCategory(category);
     if (known && !kinds.includes(known)) kinds.push(known);
   }
