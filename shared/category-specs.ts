@@ -251,7 +251,7 @@ export const CATEGORY_SPECS: readonly CategorySpec[] = [
   },
   {
     name: 'Anime merch',
-    blurb: 'Keychains, acrylic stands, posters, badges, phone cases, stationery and cosplay.',
+    blurb: 'Keychains, acrylic stands, posters, pin buttons, phone cases, stationery and cosplay.',
     fields: [
       typeField([
         'Keychain / charm',
