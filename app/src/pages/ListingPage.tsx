@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
 import { Avatar, EmptyState, ErrorNotice, Icon, PersonLink, Thumb, TrustBadge, leadPhoto } from '../components/ui';
+import { factsOf } from '@shared/catalog';
 import { FillBlock } from '../components/FillMeter';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -37,6 +38,7 @@ export function ListingPage() {
   if (!data) return <main className="page"><p className="muted">Loading…</p></main>;
 
   const { listing, seller, comments } = data;
+  const facts = factsOf(listing);
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true);
@@ -102,7 +104,12 @@ export function ListingPage() {
         <div>
           <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb detail__hero">
             <div className="thumb__badges">
-              <span className="badge badge--solid">{listing.condition}</span>
+              <span className="badge badge--solid">{facts.condition}</span>
+              {facts.authenticity && (
+                <span className={`badge ${facts.authenticity.genuine ? 'badge--ok' : 'badge--warn'}`}>
+                  {facts.authenticity.label}
+                </span>
+              )}
               {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
             </div>
           </Thumb>
@@ -115,6 +122,33 @@ export function ListingPage() {
               <span>{listing.likeCount} saved</span>
               <span>Listed {timeAgo(listing.createdAt)}</span>
             </div>
+            {/* The facts a buyer checks before reading a word of the
+                description: what it is, what shape it is in, whether it is
+                the real thing, and the size. */}
+            {(facts.details.length > 0 || facts.authenticity) && (
+              <dl className="specs">
+                <div className="specs__row">
+                  <dt>Condition</dt>
+                  <dd>{facts.condition}</dd>
+                </div>
+                {facts.authenticity && (
+                  <div className="specs__row">
+                    <dt>Original or copy</dt>
+                    <dd>
+                      <span className={`badge ${facts.authenticity.genuine ? 'badge--ok' : 'badge--warn'}`}>
+                        {facts.authenticity.label}
+                      </span>
+                    </dd>
+                  </div>
+                )}
+                {facts.details.map((detail) => (
+                  <div key={detail.label} className="specs__row">
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             <p style={{ marginTop: 6, lineHeight: 1.65 }}>{listing.description}</p>
             {listing.tags.length > 0 && (
               <div className="chips">

@@ -3372,7 +3372,9 @@ await check('a heading narrows to the categories under it', async () => {
   assert.ok(figures.length < all.length, 'a heading that changes nothing is not a filter');
   for (const listing of figures) {
     assert.ok(
-      ['Scale figures', 'Anime merch', 'Collectibles'].includes(listing.category),
+      // "Scale figures" is the old name of "Figures": stock written under it
+      // must still turn up under this heading.
+      ['Figures', 'Scale figures', 'Anime merch', 'Collectibles'].includes(listing.category),
       `${listing.category} is not under Figures`,
     );
   }
@@ -3421,6 +3423,134 @@ await check('a category nobody offers cannot be stored as one', async () => {
 });
 
 /* ── power selling ─────────────────────────────────────────────────────── */
+console.log('\nwhat each category asks');
+
+const specs = await import(new URL('../api/dist/shared/category-specs.js', import.meta.url));
+const publishWith = (body) => createListing(req({
+  headers: auth,
+  body: { description: 'Test', priceMinor: 120_000, quantityAvailable: 1, tags: [], ...body },
+}), ctx);
+
+await check('every seeded listing that answers its category agrees with its grade', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings.filter((l) => l.attributes);
+  assert.ok(all.length >= 8, 'the fixtures should show the per-category answers');
+  for (const listing of all) {
+    assert.equal(
+      specs.conditionTagFor(listing.category, listing.attributes), listing.condition,
+      `${listing.id}: ${listing.attributes.condition} is not ${listing.condition}`,
+    );
+    assert.equal(specs.cleanAttributes(listing.category, listing.attributes).error, undefined, listing.id);
+  }
+});
+
+await check('a pair of sneakers must say if it is the real thing, and its size', async () => {
+  const base = { title: 'Retro pair, boxed', category: 'Sneakers' };
+  const noAuthenticity = await publishWith({ ...base, attributes: { condition: 'DEADSTOCK', size: 'UK 8' } });
+  assert.equal(noAuthenticity.status, 400);
+  assert.match(noAuthenticity.jsonBody.message, /original or copy/i);
+  const noSize = await publishWith({ ...base, attributes: { condition: 'DEADSTOCK', authenticity: 'Original' } });
+  assert.equal(noSize.status, 400);
+  assert.match(noSize.jsonBody.message, /size/i);
+});
+
+await check('the category’s own condition becomes the grade the rest of the app uses', async () => {
+  const made = await publishWith({
+    title: 'Retro pair, deadstock', category: 'Sneakers', condition: 'LOOSE',
+    attributes: { condition: 'DEADSTOCK', authenticity: 'Original', size: 'UK 8', stray: 'dropped' },
+  });
+  assert.equal(made.status, 201);
+  const { listing } = made.jsonBody;
+  // The client said LOOSE; the category said Deadstock, and the category wins.
+  assert.equal(listing.condition, 'MISB');
+  assert.deepEqual(listing.attributes, { condition: 'DEADSTOCK', authenticity: 'Original', size: 'UK 8' });
+});
+
+await check('a value that is not one of the options is refused', async () => {
+  const made = await publishWith({
+    title: 'Odd pair', category: 'Sneakers',
+    attributes: { condition: 'PRISTINE-ISH', authenticity: 'Original', size: 'UK 8' },
+  });
+  assert.equal(made.status, 400);
+});
+
+await check('a size is asked for on a hoodie and not on a cap', async () => {
+  const hoodie = await publishWith({
+    title: 'Graphic hoodie', category: 'Streetwear',
+    attributes: { type: 'Hoodie / sweatshirt', condition: 'NWT', authenticity: 'First copy' },
+  });
+  assert.equal(hoodie.status, 400);
+  assert.match(hoodie.jsonBody.message, /size/i);
+
+  const cap = await publishWith({
+    title: 'Plain cap', category: 'Streetwear',
+    attributes: { type: 'Cap / accessory', condition: 'NWT', authenticity: 'Original', size: 'XL' },
+  });
+  assert.equal(cap.status, 201);
+  assert.equal(cap.jsonBody.listing.attributes.size, undefined, 'a size nobody asked for is not stored');
+});
+
+await check('card conditions follow the card type, and a graded slab needs its grade', async () => {
+  const wrong = await publishWith({
+    title: 'Slab', category: 'Trading cards',
+    attributes: { type: 'Graded slab', condition: 'LP', authenticity: 'Official', grade: 'PSA 9' },
+  });
+  assert.equal(wrong.status, 400, 'Lightly played is not a condition a graded slab can have');
+  const noGrade = await publishWith({
+    title: 'Slab', category: 'Trading cards',
+    attributes: { type: 'Graded slab', condition: 'GRADED', authenticity: 'Official' },
+  });
+  assert.equal(noGrade.status, 400);
+  const good = await publishWith({
+    title: 'Slab', category: 'Trading cards',
+    attributes: { type: 'Graded slab', condition: 'GRADED', authenticity: 'Official', grade: 'PSA 9' },
+  });
+  assert.equal(good.status, 201);
+});
+
+await check('a listing from an older client, with no attributes, still publishes', async () => {
+  const made = await publishWith({ title: 'Older client item', category: 'Collectibles', condition: 'BIB' });
+  assert.equal(made.status, 201);
+  assert.equal(made.jsonBody.listing.condition, 'BIB');
+  assert.equal(made.jsonBody.listing.attributes, undefined);
+});
+
+await check('a category renamed since is stored under its current name', async () => {
+  const made = await publishWith({ title: 'Old-name figure', category: 'Scale figures', condition: 'MISB' });
+  assert.equal(made.status, 201);
+  assert.equal(made.jsonBody.listing.category, 'Figures');
+});
+
+await check('buyers can ask for the real thing, or for copies, and the two never overlap', async () => {
+  const copy = await publishWith({
+    title: 'Streetwear copy tee', category: 'Streetwear',
+    attributes: { type: 'T-shirt', condition: 'NWT', authenticity: '7A', size: 'L' },
+  });
+  assert.equal(copy.status, 201);
+
+  const genuine = (await feed(req({ query: { authenticity: 'genuine' } }), ctx)).jsonBody.listings;
+  const copies = (await feed(req({ query: { authenticity: 'copies' } }), ctx)).jsonBody.listings;
+  assert.ok(genuine.length > 0 && copies.length > 0);
+  assert.ok(genuine.every((l) => specs.factsOf(l).authenticity?.genuine === true));
+  assert.ok(copies.every((l) => specs.factsOf(l).authenticity?.genuine === false));
+  assert.ok(copies.some((l) => l.id === copy.jsonBody.listing.id));
+  assert.ok(!genuine.some((l) => l.id === copy.jsonBody.listing.id));
+
+  const exact = (await feed(req({ query: { authenticity: '7A' } }), ctx)).jsonBody.listings;
+  assert.ok(exact.length > 0 && exact.every((l) => l.attributes.authenticity === '7A'));
+});
+
+await check('size and kind narrow within a heading', async () => {
+  const sized = (await feed(req({ query: { group: 'wear', size: 'UK 9' } }), ctx)).jsonBody.listings;
+  assert.ok(sized.length > 0 && sized.every((l) => l.attributes.size === 'UK 9'));
+
+  const tees = (await feed(req({ query: { group: 'wear', type: 'T-shirt' } }), ctx)).jsonBody.listings;
+  assert.ok(tees.length > 0 && tees.every((l) => l.attributes.type === 'T-shirt'));
+
+  // A listing that never answered the question does not match a filter on it.
+  const none = (await feed(req({ query: { size: 'XXL' } }), ctx)).jsonBody.listings;
+  assert.ok(none.every((l) => l.attributes?.size === 'XXL'));
+});
+
 console.log('\nselling on a timer');
 
 const saleItem = (title, price, after, extra = {}) => ({

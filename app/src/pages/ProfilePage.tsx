@@ -8,6 +8,7 @@ import { Avatar, EmptyState, ErrorNotice, Thumb, TrustBadge, leadPhoto } from '.
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { Ladder } from '../components/Ladder';
+import { factsOf } from '@shared/catalog';
 
 type Tab = 'listings' | 'purchases' | 'sales' | 'following' | 'settings';
 
@@ -277,7 +278,7 @@ export function ProfilePage() {
               <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
                 <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                   <div className="thumb__badges">
-                    <span className="badge badge--solid">{listing.condition}</span>
+                    <span className="badge badge--solid">{factsOf(listing).condition}</span>
                     <span className={`badge badge--${listing.status === 'active' ? 'ok' : 'warn'}`}>{listing.status}</span>
                   </div>
                 </Thumb>

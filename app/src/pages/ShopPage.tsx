@@ -6,7 +6,7 @@ import {
   type StorePermission,
 } from '@shared/enums';
 import { countOf, type LotTally } from '@shared/board';
-import { CATEGORIES } from '@shared/catalog';
+import { CATEGORIES, CONDITION_BUCKETS, canonicalCategory, factsOf } from '@shared/catalog';
 import { CONDITION_TAGS, type Sourcing } from '@shared/enums';
 import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import { Ladder } from '../components/Ladder';
@@ -613,7 +613,7 @@ function MyItems({ store }: { store: StoreAccess }) {
               <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
                 <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                   <div className="thumb__badges">
-                    <span className="badge badge--solid">{listing.condition}</span>
+                    <span className="badge badge--solid">{factsOf(listing).condition}</span>
                   </div>
                 </Thumb>
                 <div className="listing__body">
@@ -880,7 +880,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
   onSaved: () => void;
 }) {
   const [name, setName] = useState(template?.name ?? '');
-  const [category, setCategory] = useState(template?.category ?? CATEGORIES[0]!);
+  const [category, setCategory] = useState(canonicalCategory(template?.category) ?? CATEGORIES[0]!);
   const [tags, setTags] = useState((template?.tags ?? []).join(', '));
   const [condition, setCondition] = useState(template?.condition ?? '');
   const [sourcing, setSourcing] = useState<Sourcing>(template?.sourcing ?? 'in_hand');
@@ -957,7 +957,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           <span>Condition</span>
           <select value={condition} onChange={(e) => setCondition(e.target.value)}>
             <option value="">Ask each time</option>
-            {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+            {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
           </select>
         </label>
       </div>

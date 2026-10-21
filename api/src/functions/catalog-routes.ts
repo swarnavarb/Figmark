@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
-import { CATEGORIES, categoriesIn } from '../../../shared/catalog.js';
+import {
+  authenticityValues, canonicalCategory, categoriesIn, cleanAttributes, conditionTagFor,
+} from '../../../shared/catalog.js';
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, sourcingOf } from '../../../shared/fulfilment.js';
 import { lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
@@ -47,11 +49,26 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   // than stored on the row, so re-housing a category is an edit to one file
   // instead of a migration.
   const group = request.query.get('group')?.trim();
+  // "Original" and "copies" are the two questions buyers actually ask, and each
+  // is several stored values (Original and Official; First copy, 7A and so on),
+  // so they are resolved here from the category definitions rather than being
+  // hard-coded into a filter. Anything else is taken as one exact value.
+  const authenticityParam = request.query.get('authenticity')?.trim();
+  const authenticity = !authenticityParam
+    ? undefined
+    : authenticityParam === 'genuine'
+      ? authenticityValues(true)
+      : authenticityParam === 'copies'
+        ? authenticityValues(false)
+        : [authenticityParam];
   const listings = await repository.listListings({
     search: request.query.get('q') ?? undefined,
     category: request.query.get('category') ?? undefined,
     categories: group ? categoriesIn(group) : undefined,
     condition: request.query.get('condition') ?? undefined,
+    type: request.query.get('type') ?? undefined,
+    size: request.query.get('size') ?? undefined,
+    authenticity,
     kind: request.query.get('kind') ?? undefined,
     sort: request.query.get('sort') ?? undefined,
     maxPriceMinor: numeric(request.query.get('maxPrice')),
@@ -224,18 +241,33 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     ? { routeId: null, name: body.preLotName?.trim() || 'Before the lot', steps: preLotSteps }
     : null;
 
+  // An unknown category would be a heading nothing can reach and a chip that
+  // never matches, so it falls back rather than being stored as typed. A name
+  // from before a rename is stored under its current one.
+  const category = canonicalCategory(body.category) ?? 'Collectibles';
+
+  // The questions this category asks - what kind, original or copy, what size -
+  // checked here because the browser is only one of the things that can post a
+  // listing. A client that sends none (the older ones) gets the older, looser
+  // behaviour: just a category and a grade.
+  let attributes: Record<string, string> | undefined;
+  if (body.attributes !== undefined && body.attributes !== null) {
+    const cleaned = cleanAttributes(category, body.attributes);
+    if (cleaned.error) return error(400, 'invalid_listing', cleaned.error);
+    attributes = cleaned.attributes;
+  }
+
   const now = new Date().toISOString();
   const listing: Listing = {
     id: `lst_${randomUUID().slice(0, 12)}`,
     sellerId,
     title,
     description: body.description?.trim() ?? '',
-    // An unknown category would be a heading nothing can reach and a chip that
-    // never matches, so it falls back rather than being stored as typed.
-    category: body.category && (CATEGORIES as readonly string[]).includes(body.category)
-      ? body.category
-      : 'Collectibles',
-    condition: body.condition ?? 'LOOSE',
+    category,
+    // The category's own condition wins, folded back to the four grades the
+    // rest of the app understands; the grade the client sent is the fallback.
+    condition: (attributes && conditionTagFor(category, attributes)) || body.condition || 'LOOSE',
+    ...(attributes ? { attributes } : {}),
     status: 'active',
     priceMinor: Math.round(body.priceMinor),
     currency: 'INR',

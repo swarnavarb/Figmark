@@ -10,6 +10,7 @@ import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { MessageButton } from './MessagesPage';
 import { Stars } from './OrderPage';
+import { factsOf } from '@shared/catalog';
 
 /**
  * Whatever lives at `/<username>`.
@@ -244,7 +245,7 @@ export function ProfileByHandlePage() {
                     <Link key={listing.id} to={`/listing/${listing.id}`} className="card card--link">
                       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                         <div className="thumb__badges">
-                          <span className="badge badge--solid">{listing.condition}</span>
+                          <span className="badge badge--solid">{factsOf(listing).condition}</span>
                         </div>
                       </Thumb>
                       <div className="listing__body">

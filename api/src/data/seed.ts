@@ -423,6 +423,12 @@ interface ListingSeed {
   description: string;
   category: string;
   condition: Listing['condition'];
+  /**
+   * The category's own answers. Where given, `condition` must be the grade
+   * they stand for - the smoke tests check the two agree, because a fixture
+   * that says "Deadstock" and "LOOSE" at once is a bug in the fixture.
+   */
+  attributes?: Record<string, string>;
   /** Opt-in demand pooling, shown to buyers. */
   preOrder?: { fillThreshold: number; cutoffDays: number };
   /** Sold as one assorted lot rather than as a single named item. */
@@ -440,7 +446,8 @@ const LISTINGS: ListingSeed[] = [
   {
     id: 'lst_dragon_knight', sellerId: 'usr_kaiju', title: '1/7 Scale Dragon Knight — resin statue',
     description: 'Factory sealed, sourced direct from the Guangzhou studio. Pre-book against the September lot; ships once the lot clears customs.',
-    category: 'Scale figures', condition: 'MISB', priceMinor: 1_45_000,
+    category: 'Figures', condition: 'MISB', priceMinor: 1_45_000,
+    attributes: { type: 'Statue / resin', condition: 'MISB', authenticity: 'Official', scale: '1/7', release: 'CN' },
     quantity: 17, lotId: 'lot_gz_sep', tags: ['resin', 'scale', 'dragon', 'preorder'],
     preOrder: { fillThreshold: 20, cutoffDays: 9 },
     likeCount: 34, viewCount: 412, ageDays: -6,
@@ -449,6 +456,7 @@ const LISTINGS: ListingSeed[] = [
     id: 'lst_mecha_kit', sellerId: 'usr_kaiju', title: 'HG Mecha model kit — assorted wave 4',
     description: 'In stock in Bengaluru. Ships within 2 working days. Box fresh, unbuilt.',
     category: 'Model kits', condition: 'MIB', priceMinor: 32_000,
+    attributes: { type: 'Gunpla', grade: 'HG', condition: 'OPEN_UNBUILT', authenticity: 'Official', scale: '1/144' },
     quantity: 6, tags: ['mecha', 'kit', 'gundam', 'in-stock'],
     likeCount: 12, viewCount: 188, ageDays: -12,
   },
@@ -456,6 +464,7 @@ const LISTINGS: ListingSeed[] = [
     id: 'lst_card_booster', sellerId: 'usr_tokyoline', title: 'TCG booster box — Japanese print',
     description: 'Sealed Japanese print run, not the English release. One box per buyer while stock lasts.',
     category: 'Trading cards', condition: 'MISB', priceMinor: 78_000,
+    attributes: { type: 'Sealed pack / box', condition: 'SEALED', language: 'Japanese', authenticity: 'Official' },
     quantity: 4, tags: ['tcg', 'cards', 'sealed', 'japanese'],
     likeCount: 51, viewCount: 623, ageDays: -3,
   },
@@ -469,14 +478,16 @@ const LISTINGS: ListingSeed[] = [
   {
     id: 'lst_sneaker_retro', sellerId: 'usr_sneakervault', title: 'Retro high-top — UK 9, deadstock',
     description: 'Deadstock pair, authenticated in-house before dispatch. Original box included.',
-    category: 'Sneakers', condition: 'MIB', priceMinor: 2_15_000,
+    category: 'Sneakers', condition: 'MISB', priceMinor: 2_15_000,
+    attributes: { condition: 'DEADSTOCK', authenticity: 'Original', size: 'UK 9', for: 'Men', box: 'With box' },
     quantity: 1, tags: ['sneakers', 'deadstock', 'uk9'],
     likeCount: 73, viewCount: 1_204, ageDays: -1,
   },
   {
     id: 'lst_sneaker_runner', sellerId: 'usr_sneakervault', title: 'Runner — UK 8.5, worn twice',
     description: 'Worn twice indoors, soles clean. Selling because the fit was wrong for me.',
-    category: 'Sneakers', condition: 'LOOSE', priceMinor: 68_000,
+    category: 'Sneakers', condition: 'BIB', priceMinor: 68_000,
+    attributes: { condition: 'USED_9', authenticity: 'Original', size: 'UK 8.5', for: 'Men' },
     quantity: 1, tags: ['sneakers', 'used', 'uk85'],
     likeCount: 5, viewCount: 71, ageDays: -9,
   },
@@ -484,6 +495,7 @@ const LISTINGS: ListingSeed[] = [
     id: 'lst_iem_audio', sellerId: 'usr_gadgetgrid', title: 'Planar IEM — Shenzhen direct',
     description: 'Group-buy slot against the October Shenzhen consolidation. Balanced cable included.',
     category: 'Electronics', condition: 'MISB', priceMinor: 54_000,
+    attributes: { type: 'Earbuds', condition: 'SEALED', authenticity: 'Original' },
     quantity: 22, lotId: 'lot_sz_oct', tags: ['audio', 'iem', 'planar', 'preorder'],
     preOrder: { fillThreshold: 12, cutoffDays: 16 },
     likeCount: 29, viewCount: 347, ageDays: -4,
@@ -502,6 +514,7 @@ const LISTINGS: ListingSeed[] = [
     id: 'lst_kbeauty', sellerId: 'usr_gadgetgrid', title: 'K-beauty set — cleanser, essence, two sheet masks',
     description: 'Bought in Seoul, sealed. Expiry printed on each box, all 2027 or later.',
     category: 'Beauty', condition: 'MISB', priceMinor: 32_000,
+    attributes: { type: 'Skincare', condition: 'SEALED', authenticity: 'Original', expiry: '2027 or later' },
     quantity: 6, tags: ['skincare', 'korea', 'sealed'],
     likeCount: 12, viewCount: 148, ageDays: -3,
   },
@@ -509,6 +522,7 @@ const LISTINGS: ListingSeed[] = [
     id: 'lst_canvas_tote', sellerId: 'usr_tokyoline', title: 'Japanese canvas tote — Kyoto maker, unused',
     description: 'Brought back two, only need one. Tag still on it.',
     category: 'Bags & watches', condition: 'MIB', priceMinor: 24_000,
+    attributes: { type: 'Handbag', condition: 'NEW', authenticity: 'Original', size: 'Medium', included: 'Box' },
     quantity: 2, tags: ['bag', 'canvas', 'japan'],
     likeCount: 7, viewCount: 91, ageDays: -8,
   },
@@ -518,6 +532,15 @@ const LISTINGS: ListingSeed[] = [
     category: 'Model kits', condition: 'BIB', priceMinor: 1_10_000,
     quantity: 1, bundle: true, tags: ['gunpla', 'bulk', 'clearance'],
     likeCount: 18, viewCount: 203, ageDays: -2,
+  },
+
+  {
+    id: 'lst_manga_boxset', sellerId: 'usr_tokyoline', title: 'Manga box set — volumes 1 to 12, Japanese',
+    description: 'Complete first arc in the publisher box. Read once, spines uncreased.',
+    category: 'Books & manga', condition: 'BIB', priceMinor: 42_000,
+    attributes: { type: 'Manga box set', condition: 'USED_LIKE_NEW', language: 'Japanese', authenticity: 'Original print' },
+    quantity: 1, tags: ['manga', 'boxset', 'japanese'],
+    likeCount: 9, viewCount: 120, ageDays: -5,
   },
 
   /* The demo account's own listings — this is what "My Listings" shows. */
@@ -565,6 +588,7 @@ export function seedListings(): Listing[] {
     description: entry.description,
     category: entry.category,
     condition: entry.condition,
+    ...(entry.attributes ? { attributes: entry.attributes } : {}),
     status: 'active',
     priceMinor: entry.priceMinor,
     currency: 'INR',

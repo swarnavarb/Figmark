@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
 import {
   CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS,
+  CONDITION_BUCKETS, categoriesIn, factsOf, filterOptions,
 } from '@shared/catalog';
 import { preOrderView } from '@shared/preorder';
 import { sourcingOf } from '@shared/fulfilment';
@@ -36,6 +37,12 @@ export function FeedPage() {
   const group = params.get('group') ?? '';
   const category = params.get('category') ?? '';
   const condition = params.get('condition') ?? '';
+  // What the chosen heading asks about: the kind of thing, whether it is the
+  // real thing, and the size. Only offered once a heading is chosen, because
+  // "size" means nothing across figures and sneakers at once.
+  const type = params.get('type') ?? '';
+  const size = params.get('size') ?? '';
+  const authenticity = params.get('authenticity') ?? '';
   const kind = params.get('kind') ?? '';
   const sort = params.get('sort') ?? 'newest';
   const maxPrice = params.get('maxPrice') ?? '';
@@ -44,7 +51,7 @@ export function FeedPage() {
     let cancelled = false;
     setLoading(true);
     void api
-      .feed({ q: search, group, category, condition, kind, sort, maxPrice })
+      .feed({ q: search, group, category, condition, type, size, authenticity, kind, sort, maxPrice })
       .then((result) => {
         if (cancelled) return;
         setData(result);
@@ -55,7 +62,7 @@ export function FeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [search, group, category, condition, kind, sort, maxPrice]);
+  }, [search, group, category, condition, type, size, authenticity, kind, sort, maxPrice]);
 
   /** Selecting an active filter clears it, so chips toggle. */
   const toggle = useCallback(
@@ -71,7 +78,7 @@ export function FeedPage() {
   /**
    * Picking a heading drops the finer category with it.
    *
-   * Otherwise "Sneakers & wear" plus a leftover "Scale figures" chip is a
+   * Otherwise "Sneakers & wear" plus a leftover "Model kits" chip is a
    * filter pair that can only ever return nothing, and an empty page is read as
    * an empty catalog rather than as a contradiction the reader typed.
    */
@@ -79,6 +86,9 @@ export function FeedPage() {
     (id: string) => {
       const next = new URLSearchParams(params);
       next.delete('category');
+      // The kinds and sizes on offer belong to the heading they came from.
+      next.delete('type');
+      next.delete('size');
       if (next.get('group') === id || id === '') next.delete('group');
       else next.set('group', id);
       setParams(next, { replace: true });
@@ -114,7 +124,21 @@ export function FeedPage() {
     [params, setParams],
   );
 
-  const activeFilters = [group, category, condition, kind, maxPrice].filter(Boolean).length;
+  const activeFilters = [group, category, condition, type, size, authenticity, kind, maxPrice]
+    .filter(Boolean).length;
+
+  // The categories under the chosen heading, and what a buyer can narrow them by.
+  const members = group ? categoriesIn(group) : [];
+  const typeOptions = filterOptions(members, 'type');
+  const sizeOptions = filterOptions(members, 'size');
+  const authenticityOptions = [
+    { value: 'genuine', label: 'Original / official only' },
+    { value: 'copies', label: 'Copies only' },
+    ...filterOptions(members, 'authenticity').map((option) => ({ value: option.value, label: option.value })),
+  ];
+  // Across every heading only the two broad answers make sense; the specific
+  // grades ("7A", "Batch / 1:1") appear once a heading narrows what is meant.
+  const authenticityChoices = group ? authenticityOptions : authenticityOptions.slice(0, 2);
 
   return (
     <main className="page">
@@ -189,13 +213,27 @@ export function FeedPage() {
             empty="Any price" options={PRICE_BANDS} />
           <Picker label="Condition" value={condition} onChange={(value) => set('condition', value)}
             empty="Any condition"
-            options={CONDITION_TAGS.map((tag) => ({ value: tag, label: tag }))} />
+            options={CONDITION_TAGS.map((tag) => ({ value: tag, label: CONDITION_BUCKETS[tag].label }))} />
+          <Picker label="Original or copy" value={authenticity} onChange={(value) => set('authenticity', value)}
+            empty="Original or copy" options={authenticityChoices} />
           {/* Only what is actually on screen, so it can never offer a category
               with nothing behind it. */}
           {data && data.categories.length > 1 && (
-            <Picker label="Type" value={category} onChange={(value) => set('category', value)}
-              empty="Any type"
+            <Picker label="Category" value={category} onChange={(value) => set('category', value)}
+              empty="Any category"
               options={data.categories.map((entry) => ({ value: entry, label: entry }))} />
+          )}
+          {/* What the heading asks about. Absent on "Everything", where a size
+              could mean a shoe, a shirt or a bag. */}
+          {typeOptions.length > 0 && (
+            <Picker label="Type" value={type} onChange={(value) => set('type', value)}
+              empty="Any type"
+              options={typeOptions.map((option) => ({ value: option.value, label: option.label }))} />
+          )}
+          {sizeOptions.length > 0 && (
+            <Picker label="Size" value={size} onChange={(value) => set('size', value)}
+              empty="Any size"
+              options={sizeOptions.map((option) => ({ value: option.value, label: option.label }))} />
           )}
           {activeFilters > 0 && (
             <button type="button" className="filters__clear" onClick={() => setParams(
@@ -261,6 +299,8 @@ function ListingCard({ listing }: { listing: FeedListing }) {
   const [liked, setLiked] = useState(listing.liked);
   const [likes, setLikes] = useState(listing.likeCount);
   const view = listing.preOrder ? preOrderView(listing.preOrder) : null;
+  // Condition in the category's own words, and whether it is the real thing.
+  const facts = factsOf(listing);
 
   async function toggleLike(event: React.MouseEvent) {
     // The card is a link; the heart must not navigate.
@@ -290,7 +330,7 @@ function ListingCard({ listing }: { listing: FeedListing }) {
           </button>
         )}
         <div className="thumb__badges">
-          <span className="badge badge--solid">{listing.condition}</span>
+          <span className="badge badge--solid">{facts.condition}</span>
           {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
         </div>
       </Thumb>
@@ -307,6 +347,13 @@ function ListingCard({ listing }: { listing: FeedListing }) {
             {SOURCING_LABELS[sourcingOf(listing)]}
           </span>
           <span className="badge">{listing.category}</span>
+          {/* A copy is never dressed in the colour of an original. */}
+          {facts.authenticity && (
+            <span className={`badge ${facts.authenticity.genuine ? 'badge--ok' : 'badge--warn'}`}>
+              {facts.authenticity.label}
+            </span>
+          )}
+          {facts.size && <span className="badge">{facts.size}</span>}
           {listing.quantityAvailable > 1 && <span className="faint">{listing.quantityAvailable} left</span>}
         </div>
 

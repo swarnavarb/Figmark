@@ -1379,6 +1379,9 @@ export class CosmosRepository implements Repository {
         ' AND (@cat = "" OR c.category = @cat)' +
         ' AND (IS_NULL(@cats) OR ARRAY_CONTAINS(@cats, c.category))' +
         ' AND (@cond = "" OR c.condition = @cond)' +
+        ' AND (@kindOf = "" OR c.attributes["type"] = @kindOf)' +
+        ' AND (@size = "" OR c.attributes["size"] = @size)' +
+        ' AND (IS_NULL(@auths) OR ARRAY_CONTAINS(@auths, c.attributes["authenticity"]))' +
         ' AND (@price = 0 OR c.priceMinor <= @price)' +
         ' AND (@kind = "" OR (@kind = "pre_order" AND IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder))' +
         ' OR (@kind = "mixed_lot" AND c.bundle = true)' +
@@ -1393,6 +1396,11 @@ export class CosmosRepository implements Repository {
         // empty list means none of them, which is what an unknown heading is.
         { name: '@cats', value: query.categories ? [...query.categories] : null },
         { name: '@cond', value: query.condition ?? '' },
+        // `type` is a property name Cosmos accepts, but `@type` reads like a
+        // keyword in a parameter list, so the parameter is named for what it asks.
+        { name: '@kindOf', value: query.type ?? '' },
+        { name: '@size', value: query.size ?? '' },
+        { name: '@auths', value: query.authenticity ? [...query.authenticity] : null },
         { name: '@price', value: query.maxPriceMinor ?? 0 },
         { name: '@kind', value: query.kind && query.kind !== 'all' ? query.kind : '' },
         { name: '@limit', value: limit },

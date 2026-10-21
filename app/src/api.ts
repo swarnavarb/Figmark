@@ -461,6 +461,8 @@ export interface NewListing {
   description: string;
   category: string;
   condition: string;
+  /** What this category asks: kind, condition in its own words, original or copy, size. */
+  attributes?: Record<string, string>;
   priceMinor: number;
   quantityAvailable: number;
   preOrder: { fillThreshold: number; cutoffAt: string } | null;

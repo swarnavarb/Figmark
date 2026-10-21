@@ -1,12 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
-import { CATEGORIES } from '@shared/catalog';
+import { SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import {
+  CATEGORIES, canonicalCategory, conditionTagFor, conditionValueForTag, factsOf, missingFields,
+  pruneAttributes, specFor, type Attributes,
+} from '@shared/catalog';
 import type { Lot } from '@shared/models';
 import type { RouteStep } from '@shared/routes';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
 import { ApiRequestError, api, type PhotoDraft } from '../api';
+import { CategoryFields } from '../components/CategoryFields';
 import { NewLotDialog } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Icon, Thumb } from '../components/ui';
 import { formatMoney } from '../format';
@@ -75,7 +79,13 @@ export function SellPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<string>(CATEGORIES[0]!);
-  const [condition, setCondition] = useState<string>(CONDITION_TAGS[0]);
+  // What this category asks - kind, condition, original or copy, size - kept as
+  // one map so a new question is an edit to the category definition and not
+  // another piece of state here.
+  const [attributes, setAttributes] = useState<Attributes>({});
+  // Only after a first attempt to publish, so the form does not open covered in
+  // red before anybody has done anything.
+  const [triedPublish, setTriedPublish] = useState(false);
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [bundle, setBundle] = useState(false);
@@ -143,9 +153,14 @@ export function SellPage() {
   /** Fill the form in from a template, leaving everything editable. */
   function applyTemplate(template: PostTemplate) {
     const fill = fillFrom(template);
-    if (fill.category) setCategory(fill.category);
+    // A template may carry a category from before a rename; it is shown under
+    // its current name. Its grade ("MISB") is turned into this category's own
+    // wording where one stands for it, and left for the seller to pick if not.
+    const templateCategory = canonicalCategory(fill.category) ?? category;
+    if (fill.category) setCategory(templateCategory);
     if (fill.tags) setTags(fill.tags);
-    if (fill.condition) setCondition(fill.condition);
+    const condition = conditionValueForTag(templateCategory, fill.condition);
+    setAttributes(condition ? { condition } : {});
     if (fill.description) setDescription(fill.description);
     setPreLot(template.preLotRoute?.steps ?? null);
     // A lot named by the template wins; otherwise the template's own answer
@@ -167,16 +182,25 @@ export function SellPage() {
   }
 
   const priceMinor = Math.round(Number(price || 0) * 100);
-  // A lot listing needs a lot; there is nothing to publish into otherwise.
-  // A lot is bookkeeping the shop does when the lot is packed, which is
-  // usually long after the item goes up. Nothing waits on it.
-  const canPublish = title.trim().length > 2 && priceMinor > 0;
+  // The category's required questions gate publishing. A lot does not: filing
+  // an item into one is bookkeeping the shop does when the lot is packed, which
+  // is usually long after the item goes up, so nothing waits on it.
+  const missing = missingFields(category, attributes);
+  const basicsDone = title.trim().length > 2 && priceMinor > 0;
+  // The grade the rest of the app understands, derived from the category's own
+  // wording ("Deadstock", "New with tags") rather than asked for twice.
+  const condition = conditionTagFor(category, attributes) ?? 'LOOSE';
+  const facts = factsOf({ category, condition, attributes });
   // The lot is the answer: in one means import, out of one means in hand.
   const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
   const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;
 
   async function publish(event: FormEvent) {
     event.preventDefault();
+    if (missing.length > 0) {
+      setTriedPublish(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -185,6 +209,7 @@ export function SellPage() {
         description: description.trim(),
         category,
         condition,
+        attributes,
         priceMinor,
         quantityAvailable: Math.max(1, Number(quantity) || 1),
         bundle,
@@ -313,24 +338,30 @@ export function SellPage() {
 
           <PhotoManager photos={photos} onChange={setPhotos} />
 
-          <div className="field-row">
-            <label className="field">
-              <span>Category</span>
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-              </select>
-              <span className="field__hint">
-                Fixed on purpose: one catalog where three sellers type three spellings of the same
-                thing is three categories with a third of the stock each.
-              </span>
-            </label>
-            <label className="field">
-              <span>Condition</span>
-              <select value={condition} onChange={(e) => setCondition(e.target.value)}>
-                {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-              </select>
-            </label>
+          {/* What is it? Chips, not a dropdown: thirteen choices are all
+              visible at once, and the line under them says what lives in the
+              one picked. */}
+          <div className="field" role="group" aria-label="Category">
+            <span>Category</span>
+            <div className="chips">
+              {CATEGORIES.map((entry) => (
+                <button key={entry} type="button" className={`chip${category === entry ? ' is-on' : ''}`}
+                  aria-pressed={category === entry}
+                  onClick={() => {
+                    setCategory(entry);
+                    setAttributes((current) => pruneAttributes(entry, current));
+                  }}>
+                  {entry}
+                </button>
+              ))}
+            </div>
+            <span className="field__hint">{specFor(category)?.blurb}</span>
           </div>
+
+          {/* The questions this category asks. A shirt has a size and a figure
+              has a box grade; one shared form asked everybody the wrong things. */}
+          <CategoryFields category={category} value={attributes} onChange={setAttributes}
+            showMissing={triedPublish} />
 
           {/* A job lot is a different thing to buy from one named item, and the
               people who want one rarely want the other - so buyers can filter
@@ -483,7 +514,15 @@ export function SellPage() {
 
           {error && <ErrorNotice message={error} />}
 
-          <button type="submit" className="btn btn--lg" disabled={busy || !canPublish}>
+          {/* Say what is still needed rather than leaving a button that will
+              not press. A disabled control with no reason is a form that looks
+              broken. */}
+          {missing.length > 0 && (
+            <p className="field__hint">
+              Still to answer: {missing.map((field) => field.label.replace(/\?$/, '').toLowerCase()).join(', ')}.
+            </p>
+          )}
+          <button type="submit" className="btn btn--lg" disabled={busy || !basicsDone}>
             {busy ? 'Publishing…' : 'Publish listing'}
           </button>
         </form>
@@ -493,7 +532,7 @@ export function SellPage() {
           <div className="card" style={{ maxWidth: 280 }}>
             <Thumb seed={title || 'preview'} label={title || 'Your listing'}>
               <div className="thumb__badges">
-                <span className="badge badge--solid">{condition}</span>
+                <span className="badge badge--solid">{attributes['condition'] ? facts.condition : 'Pick a condition'}</span>
                 {preOrderMode && <span className="badge badge--accent">Pre-order</span>}
               </div>
             </Thumb>
@@ -503,6 +542,12 @@ export function SellPage() {
               <div className="listing__meta">
                 <span className="badge">{SOURCING_LABELS[effectiveSourcing]}</span>
                 <span className="badge">{category}</span>
+                {facts.authenticity && (
+                  <span className={`badge ${facts.authenticity.genuine ? 'badge--ok' : 'badge--warn'}`}>
+                    {facts.authenticity.label}
+                  </span>
+                )}
+                {facts.size && <span className="badge">{facts.size}</span>}
               </div>
               <div className="listing__foot">
                 <span className="faint">{user?.sellerProfile?.storefrontName ?? user?.displayName ?? 'You'}</span>
