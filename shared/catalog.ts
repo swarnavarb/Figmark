@@ -43,7 +43,7 @@ export * from './category-specs.js';
 /**
  * A broad heading, and the categories that sit under it.
  *
- * The top row of the buy page. Thirteen chips is a list to read; seven headings
+ * The top row of the buy page. Thirteen tags is a list to read; seven headings
  * is a choice to make, and on a phone the difference is whether the row fits. The
  * `members` array is what the filter actually matches on, so a heading is a
  * shorthand for a set of categories rather than a second field on the row -

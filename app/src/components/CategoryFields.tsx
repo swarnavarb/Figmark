@@ -1,10 +1,10 @@
 /**
  * The questions a category asks, drawn as a form.
  *
- * Choices are chips rather than a dropdown wherever the list is short: every
+ * Choices are tags rather than a dropdown wherever the list is short: every
  * answer is visible without opening anything, one tap sets it, and on a phone a
- * chip is a bigger target than a native select row. A long list (forty shoe
- * sizes) is the exception and becomes a menu, because forty chips is a wall.
+ * tag is a bigger target than a native select row. A long list (forty shoe
+ * sizes) is the exception and becomes a menu, because forty tags is a wall.
  *
  * Nothing here knows what a sneaker is. The questions come from the category's
  * definition in shared/category-specs, so a new category or a new option is an
@@ -15,7 +15,7 @@ import {
   type Attributes, type CategoryField,
 } from '@shared/catalog';
 
-/** More options than this and a row of chips stops being a row. */
+/** More options than this and a row of tags stops being a row. */
 const MENU_ABOVE = 9;
 
 export function CategoryFields({ category, value, onChange, showMissing }: {
@@ -99,7 +99,7 @@ function FieldInput({ field, attributes, missing, onSet }: {
         : [...picked, optionValue];
       onSet(next.join(', '));
     } else {
-      // Tapping the chosen chip clears it: an optional answer has to be
+      // Tapping the chosen tag clears it: an optional answer has to be
       // un-pickable, and a required one is simply asked for again.
       onSet(current === optionValue ? '' : optionValue);
     }
@@ -111,10 +111,10 @@ function FieldInput({ field, attributes, missing, onSet }: {
       {waitingOnType ? (
         <span className="field__hint">Pick what kind it is first.</span>
       ) : (
-        <div className="chips">
+        <div className="tags">
           {options.map((option) => (
             <button key={option.value} type="button"
-              className={`chip${picked.includes(option.value) ? ' is-on' : ''}`}
+              className={`tag${picked.includes(option.value) ? ' is-on' : ''}`}
               aria-pressed={picked.includes(option.value)}
               onClick={() => toggle(option.value)}>
               {option.label}

@@ -748,7 +748,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     ? { routeId: null, name: body.preLotName?.trim() || 'Before the lot', steps: preLotSteps }
     : null;
 
-  // An unknown category would be a heading nothing can reach and a chip that
+  // An unknown category would be a heading nothing can reach and a tag that
   // never matches, so it falls back rather than being stored as typed. A name
   // from before a rename is stored under its current one.
   const category = canonicalCategory(body.category) ?? 'Collectibles';

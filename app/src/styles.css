@@ -823,9 +823,10 @@ code, kbd, samp, pre {
 
 /* ── Chips, badges, pills ──────────────────────────────────────────────── */
 
-.chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.chips, .tags { display: flex; flex-wrap: wrap; gap: 7px; }
 
-.chip {
+.chip,
+.tag {
   padding: 6px 13px;
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
@@ -836,10 +837,11 @@ code, kbd, samp, pre {
   white-space: nowrap;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.chip:hover { color: var(--text); border-color: var(--border-strong); }
+.chip:hover, .tag:hover { color: var(--text); border-color: var(--border-strong); }
 /* Chosen means filled, not tinted. A 14%-opacity wash reads as "slightly
    different"; a solid vibrant pill reads as "this one". */
-.chip.is-on {
+.chip.is-on,
+.tag.is-on {
   background: var(--grad-blue);
   border-color: transparent;
   color: var(--accent-ink);
@@ -1063,7 +1065,7 @@ code, kbd, samp, pre {
 
 /* ── Category questions ────────────────────────────────────────────────────
    What a category asks the seller: kind, condition, original or copy, size.
-   Choices are chips so every answer is visible and one tap sets it; a required
+   Choices are tags so every answer is visible and one tap sets it; a required
    question left blank after a publish attempt is outlined rather than shouted
    at, and says what to do. */
 

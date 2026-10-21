@@ -688,9 +688,9 @@ export function SellPage() {
                 once, and the line under them says what lives in the one picked. */}
             <div className="field" role="group" aria-label="Category">
               <span>Category</span>
-              <div className="chips">
+              <div className="tags">
                 {CATEGORIES.map((entry) => (
-                  <button key={entry} type="button" className={`chip${category === entry ? ' is-on' : ''}`}
+                  <button key={entry} type="button" className={`tag${category === entry ? ' is-on' : ''}`}
                     aria-pressed={category === entry}
                     onClick={() => {
                       setCategory(entry);

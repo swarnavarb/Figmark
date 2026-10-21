@@ -54,8 +54,8 @@ export interface CategoryField {
   hint?: string;
   /** Only asked when another field has one of these values. */
   when?: { key: string; in: readonly string[] };
-  /** Long lists are a menu rather than a row of chips. */
-  display?: 'chips' | 'menu';
+  /** Long lists are a menu rather than a row of tags. */
+  display?: 'tags' | 'menu';
 }
 
 export interface CategorySpec {
