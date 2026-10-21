@@ -8691,12 +8691,12 @@ await check('insights compare this week with last, and rank what is trending', a
 });
 
 await check('market trends show other shops’ items without the shops', async () => {
-  const mine = await createListing(req({ headers: auth, body: { title: 'My Resin Statue', priceMinor: 30_000, quantityAvailable: 3, category: 'Scale figures' } }), ctx);
+  const mine = await createListing(req({ headers: auth, body: { title: 'My Resin Statue', priceMinor: 30_000, quantityAvailable: 3, category: 'Figures' } }), ctx);
   assert.equal(mine.status, 201, JSON.stringify(mine.jsonBody));
   const rival = await newBuyer('Rival Shop');
   const opened = await saveStorefront(req({ headers: rival.headers, body: { storefrontName: 'Rival Figures Co' } }), ctx);
   assert.equal(opened.status, 200, JSON.stringify(opened.jsonBody));
-  const theirs = await createListing(req({ headers: rival.headers, body: { title: 'Their Hot Statue', priceMinor: 25_000, quantityAvailable: 9, category: 'Scale figures' } }), ctx);
+  const theirs = await createListing(req({ headers: rival.headers, body: { title: 'Their Hot Statue', priceMinor: 25_000, quantityAvailable: 9, category: 'Figures' } }), ctx);
   assert.equal(theirs.status, 201, JSON.stringify(theirs.jsonBody));
   const listingId = theirs.jsonBody.listing.id;
   for (const name of ['Fan One', 'Fan Two']) {
@@ -8715,7 +8715,7 @@ await check('market trends show other shops’ items without the shops', async (
   assert.deepEqual(Object.keys(item).sort(), ['category', 'currency', 'level', 'photo', 'priceMinor', 'title']);
   const text = JSON.stringify(read.jsonBody);
   assert.ok(!text.includes(listingId) && !text.includes('Rival Shop') && !text.includes('rival_shop') && !text.includes('Rival Figures'), 'nothing leads back to the shop');
-  assert.ok(read.jsonBody.categories.some((row) => row.category === 'Scale figures'));
+  assert.ok(read.jsonBody.categories.some((row) => row.category === 'Figures'));
   assert.ok(!read.jsonBody.items.some((row) => row.title === 'My Resin Statue'), 'and never the shop’s own items');
 });
 

@@ -30,9 +30,9 @@ const LOTS: {
     description: 'Figures and kits from Akihabara, shipped together by sea.', origin: 'Tokyo, JP',
     originCountry: 'Japan', destinationCountry: 'India', closesInDays: 9,
     items: [
-      ['lst_demo_akiba_1', 'Nendoroid Frieren — Japan exclusive', 'Scale figures', 'MISB', 4_200_00],
+      ['lst_demo_akiba_1', 'Nendoroid Frieren — Japan exclusive', 'Figures', 'MISB', 4_200_00],
       ['lst_demo_akiba_2', 'MG Gundam Aerial — Ver. Permet', 'Model kits', 'MISB', 6_800_00],
-      ['lst_demo_akiba_3', 'Ichiban Kuji — One Piece prize A', 'Scale figures', 'MIB', 5_500_00],
+      ['lst_demo_akiba_3', 'Ichiban Kuji — One Piece prize A', 'Figures', 'MIB', 5_500_00],
     ],
     buyers: ['usr_b_avradeep', 'usr_b_nikhil', 'usr_b_sana', 'usr_b_rohit', 'usr_b_ipsita', 'usr_b_karan', 'usr_b_meghna'],
   },
@@ -183,10 +183,10 @@ export function seedShowcaseSales(base = Date.now()): PowerSale[] {
       everyMinutes: 2 * 24 * 60,
       windowMinutes: 3 * 24 * 60,
       items: [
-        item('psi_demo_live_1', 'Godzilla 1954 — Toho vinyl, 1st run', 'Scale figures', 12_500_00, 15_000_00),
-        item('psi_demo_live_2', 'Ultraman Tiga — S.H.Figuarts Shinkocchou', 'Scale figures', 9_800_00, 11_500_00),
-        item('psi_demo_live_3', 'Mechagodzilla 1974 — X-Plus', 'Scale figures', 14_000_00, 16_500_00),
-        item('psi_demo_live_4', 'Mothra Larva — Bandai Movie Monster', 'Scale figures', 2_400_00, 2_900_00),
+        item('psi_demo_live_1', 'Godzilla 1954 — Toho vinyl, 1st run', 'Figures', 12_500_00, 15_000_00),
+        item('psi_demo_live_2', 'Ultraman Tiga — S.H.Figuarts Shinkocchou', 'Figures', 9_800_00, 11_500_00),
+        item('psi_demo_live_3', 'Mechagodzilla 1974 — X-Plus', 'Figures', 14_000_00, 16_500_00),
+        item('psi_demo_live_4', 'Mothra Larva — Bandai Movie Monster', 'Figures', 2_400_00, 2_900_00),
       ],
     }),
     // About to start: announced now, first item in three hours.
@@ -197,11 +197,11 @@ export function seedShowcaseSales(base = Date.now()): PowerSale[] {
       everyMinutes: 30,
       windowMinutes: 120,
       items: [
-        item('psi_demo_soon_1', 'Evangelion Unit-01 — Metal Build', 'Scale figures', 32_000_00, 38_000_00),
+        item('psi_demo_soon_1', 'Evangelion Unit-01 — Metal Build', 'Figures', 32_000_00, 38_000_00),
         item('psi_demo_soon_2', 'PG Gundam RX-78-2 Unleashed', 'Model kits', 24_500_00, 28_000_00),
-        item('psi_demo_soon_3', 'Chainsaw Man — 1/7 Makima', 'Scale figures', 15_500_00, 18_000_00),
-        item('psi_demo_soon_4', 'Dragon Ball — SHF Ultra Instinct Goku', 'Scale figures', 6_200_00, 7_200_00),
-        item('psi_demo_soon_5', 'Mystery Akiba box', 'Scale figures', 4_999_00, 4_999_00),
+        item('psi_demo_soon_3', 'Chainsaw Man — 1/7 Makima', 'Figures', 15_500_00, 18_000_00),
+        item('psi_demo_soon_4', 'Dragon Ball — SHF Ultra Instinct Goku', 'Figures', 6_200_00, 7_200_00),
+        item('psi_demo_soon_5', 'Mystery Akiba box', 'Figures', 4_999_00, 4_999_00),
       ],
     }),
     // Later this week: announced now, first item in two days.

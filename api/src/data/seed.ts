@@ -1113,7 +1113,7 @@ export function seedWants(): Want[] {
 
   return [
     want('wnt_1', 'usr_demo', 'Arjun Mehta', 'arjun',
-      '1/7 Rem, Furyu — any colourway', 'Scale figures', 6_50_000, 'MIB',
+      '1/7 Rem, Furyu — any colourway', 'Figures', 6_50_000, 'MIB',
       'Box can be scuffed, figure has to be clean. Would take a repaint if the work is good.', -4, 1),
     want('wnt_2', 'usr_gadgetgrid', 'Sneha Pillai', 'gadgetgrid',
       'Sealed Pokemon 151 booster box, JP print', 'Trading cards', null, 'MISB',

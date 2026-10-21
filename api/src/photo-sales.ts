@@ -104,7 +104,7 @@ const STOP = new Set([
 /** Everyday words for a kind of thing, read as the category a shop files it under. */
 const KIND_WORDS: Record<string, string> = {
   shoe: 'Sneakers', sneaker: 'Sneakers', kick: 'Sneakers', trainer: 'Sneakers',
-  figure: 'Scale figures', action: 'Scale figures', figurine: 'Scale figures', statue: 'Scale figures', nendoroid: 'Scale figures', figma: 'Scale figures',
+  figure: 'Figures', action: 'Figures', figurine: 'Figures', statue: 'Figures', nendoroid: 'Figures', figma: 'Figures',
   kit: 'Model kits', gunpla: 'Model kits', model: 'Model kits',
   card: 'Trading cards', tcg: 'Trading cards', booster: 'Trading cards',
   plush: 'Anime merch', plushy: 'Anime merch', plushie: 'Anime merch', keychain: 'Anime merch', acrylic: 'Anime merch',

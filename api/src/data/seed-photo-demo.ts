@@ -55,13 +55,13 @@ const SEEN: ListingSeed[] = [
   {
     id: MARKER, sellerId: 'usr_tokyoline', title: 'Nendoroid Frieren — Good Smile Company',
     description: "Frieren: Beyond Journey's End. Japanese release, sealed, from this month's Akihabara box.",
-    category: 'Scale figures', tags: ['nendoroid', 'frieren', 'good smile'],
+    category: 'Figures', tags: ['nendoroid', 'frieren', 'good smile'],
     photo: 'frieren', status: 'active', priceMinor: 4_600_00, quantity: 3, soldCount: 2, ageDays: 3,
   },
   {
     id: 'lst_seen_frieren_kaiju', sellerId: 'usr_kaiju', title: 'Nendoroid Frieren (2024 run)',
     description: 'First-run Frieren Nendoroid. Sold out - ask in the channel for the next run.',
-    category: 'Scale figures', tags: ['nendoroid', 'frieren'],
+    category: 'Figures', tags: ['nendoroid', 'frieren'],
     photo: 'frieren', status: 'sold_out', priceMinor: 3_900_00, quantity: 0, soldCount: 6, ageDays: 70,
   },
   {
@@ -119,22 +119,22 @@ const CON: ListingSeed[] = [
   },
   {
     id: 'lst_seen_spawn', sellerId: 'usr_kaiju', title: 'McFarlane Spawn 7-inch action figure',
-    description: 'McFarlane Toys, carded.', category: 'Scale figures', tags: ['mcfarlane', 'spawn'],
+    description: 'McFarlane Toys, carded.', category: 'Figures', tags: ['mcfarlane', 'spawn'],
     photo: null, status: 'active', priceMinor: 2_800_00, quantity: 3, soldCount: 4, ageDays: 9,
   },
   {
     id: 'lst_seen_batman', sellerId: 'usr_tokyoline', title: 'McFarlane DC Multiverse Batman',
-    description: 'Carded, from the spring run.', category: 'Scale figures', tags: ['mcfarlane', 'dc'],
+    description: 'Carded, from the spring run.', category: 'Figures', tags: ['mcfarlane', 'dc'],
     photo: null, status: 'sold_out', priceMinor: 2_600_00, quantity: 0, soldCount: 5, ageDays: 50,
   },
   {
     id: 'lst_seen_scorpion', sellerId: 'usr_tokyoline', title: 'McFarlane Mortal Kombat Scorpion',
-    description: 'Carded.', category: 'Scale figures', tags: ['mcfarlane'],
+    description: 'Carded.', category: 'Figures', tags: ['mcfarlane'],
     photo: null, status: 'archived', priceMinor: 2_500_00, quantity: 0, soldCount: 2, ageDays: 95,
   },
   {
     id: 'lst_seen_joker', sellerId: 'usr_tokyoline', title: 'McFarlane DC Multiverse Joker',
-    description: 'Opened once for photos.', category: 'Scale figures', tags: ['mcfarlane', 'dc'],
+    description: 'Opened once for photos.', category: 'Figures', tags: ['mcfarlane', 'dc'],
     photo: null, status: 'active', priceMinor: 2_300_00, quantity: 1, soldCount: 0, ageDays: 12,
   },
 ];
