@@ -349,6 +349,14 @@ export class MemoryRepository implements Repository {
       items = items.filter((l) => wanted.has(l.category));
     }
     if (query.condition) items = items.filter((l) => l.condition === query.condition);
+    // What a category asks about is stored under `attributes`. A listing that
+    // never answered the question does not match a filter on it.
+    if (query.type) items = items.filter((l) => l.attributes?.['type'] === query.type);
+    if (query.size) items = items.filter((l) => l.attributes?.['size'] === query.size);
+    if (query.authenticity) {
+      const wanted = new Set(query.authenticity);
+      items = items.filter((l) => wanted.has(l.attributes?.['authenticity'] ?? ''));
+    }
     // How it is sold is derived from the listing rather than stored, and the
     // rule lives in shared/catalog so the SQL and this agree by construction.
     if (query.kind && query.kind !== 'all') items = items.filter((l) => matchesKind(l, query.kind));

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { contestPhase } from '@shared/play';
-import { IN_DEMAND_SCORE, popularity } from '@shared/catalog';
+import { IN_DEMAND_SCORE, factsOf, popularity } from '@shared/catalog';
 import type { Leaderboard, SpottedItem, TopicChip, WantRow } from '@shared/feed';
 import { tagSlug } from '@shared/shop-tags';
 import { ApiRequestError, api, type DiscoverResponse, type FeedListing, type PostCard } from '../api';
@@ -462,7 +462,7 @@ function FindCard({ find }: { find: Find }) {
         <span className="discitem__name">{listing.title}</span>
         <span className="discitem__meta">
           <strong>{formatMoney(listing.priceMinor, listing.currency)}</strong>
-          <span className="faint">{listing.condition}</span>
+          <span className="faint">{factsOf(listing).condition}</span>
         </span>
       </span>
     </Link>

@@ -1,5 +1,5 @@
 /**
- * The six category marks, drawn.
+ * The category marks, drawn.
  *
  * The rail used colour emoji (🧸 🤖 🃏 👟 🎧 💄), which is a different typeface
  * on every platform, carries somebody else's palette into the row that is
@@ -50,6 +50,13 @@ const MARKS: Record<string, ReactNode> = {
       <path d="M4.6 14.4v-2.2a7.4 7.4 0 0 1 14.8 0v2.2" />
       <rect x="2.8" y="13.8" width="4" height="6.4" rx="2" />
       <rect x="17.2" y="13.8" width="4" height="6.4" rx="2" />
+    </>
+  ),
+  // An open book on a shelf line: books, manga and the things that sit with them.
+  home: (
+    <>
+      <path d="M12 6.4c-1.8-1.5-4.6-2-7.6-1.6v13c3-.4 5.8.1 7.6 1.6 1.8-1.5 4.6-2 7.6-1.6v-13c-3-.4-5.8.1-7.6 1.6Z" />
+      <path d="M12 6.4v13" />
     </>
   ),
   // A handbag, for beauty and bags.

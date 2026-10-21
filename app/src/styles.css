@@ -1060,6 +1060,47 @@ code, kbd, samp, pre {
   .handlefield__mark { animation: none; }
   .handlefield__spin { animation-duration: 1.6s; }
 }
+
+/* ── Category questions ────────────────────────────────────────────────────
+   What a category asks the seller: kind, condition, original or copy, size.
+   Choices are chips so every answer is visible and one tap sets it; a required
+   question left blank after a publish attempt is outlined rather than shouted
+   at, and says what to do. */
+
+.attrs { display: grid; gap: 16px; }
+.attr { display: grid; gap: 7px; min-width: 0; padding: 0; border-radius: var(--r-md); }
+.attr__label { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--text-dim); }
+.attr__req { color: var(--accent-text); }
+.attr input, .attr select {
+  width: 100%;
+  min-width: 0;
+  /* 16px or iOS zooms the page when the field is focused. */
+  font-size: 16px;
+}
+.attr.is-missing {
+  padding: 10px 12px;
+  margin: -10px -12px;
+  box-shadow: inset 0 0 0 1px var(--danger-text);
+}
+.attr__ask { font-size: var(--t-xs); color: var(--danger-text); }
+
+/* ── Listing facts ─────────────────────────────────────────────────────────
+   The rows a buyer reads before the description: condition, original or copy,
+   size and the rest. Label left, answer right, one hairline between. */
+
+.specs { margin: 14px 0 4px; display: grid; }
+.specs__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--t-sm);
+}
+.specs__row:last-child { border-bottom: 0; }
+.specs__row dt { color: var(--text-dim); }
+.specs__row dd { margin: 0; text-align: right; font-weight: var(--w-semi); }
 .field--inline > span:first-child { font-size: var(--t-xs); color: var(--text-dim); }
 
 .notice {

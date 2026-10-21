@@ -2657,6 +2657,13 @@ export class CosmosRepository implements Repository {
     // An empty list means none, which is what an unknown heading is.
     if (query.categories) where('ARRAY_CONTAINS(@cats, c.category)', '@cats', [...query.categories]);
     if (query.condition) where('c.condition = @cond', '@cond', query.condition);
+    // What a category asks about lives under `attributes`. `@kindOf` rather
+    // than `@type`, which reads like a keyword in a parameter list.
+    if (query.type) where('c.attributes["type"] = @kindOf', '@kindOf', query.type);
+    if (query.size) where('c.attributes["size"] = @size', '@size', query.size);
+    if (query.authenticity) {
+      where('ARRAY_CONTAINS(@auths, c.attributes["authenticity"])', '@auths', [...query.authenticity]);
+    }
     if (query.maxPriceMinor && query.maxPriceMinor > 0) where('c.priceMinor <= @price', '@price', query.maxPriceMinor);
     const kind = query.kind && query.kind !== 'all' ? query.kind : '';
     if (kind === 'pre_order') clauses.push('IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder)');

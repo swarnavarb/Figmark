@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useNow } from '../clock';
 import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
-import { isInDemand } from '@shared/catalog';
+import { factsOf, isInDemand } from '@shared/catalog';
 import { SOURCING_LABELS } from '@shared/enums';
 import { isMultiple } from '@shared/payments';
 import type { Listing } from '@shared/models';
@@ -210,7 +210,7 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
       value: RARITY_LABELS[rarity.tier], note: rarity.reasons.slice(0, 2).join(' · ') || undefined,
     });
   }
-  tiles.push({ tone: 'cool', icon: 'shield', label: 'Condition', value: listing.condition });
+  tiles.push({ tone: 'cool', icon: 'shield', label: 'Condition', value: factsOf(listing).condition });
   tiles.push({
     tone: sourcing === 'in_hand' ? 'play' : 'blue', icon: sourcing === 'in_hand' ? 'home' : 'ship', label: 'Sourcing',
     value: SOURCING_LABELS[sourcing],

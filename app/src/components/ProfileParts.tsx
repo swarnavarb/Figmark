@@ -1,3 +1,4 @@
+import { factsOf } from '@shared/catalog';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { StickerView } from '@shared/quest';
@@ -388,7 +389,7 @@ export function ShelfCard({ listing, index }: { listing: PublicProfile['listings
     <Link to={`/listing/${listing.id}`} style={{ ['--i' as string]: Math.min(index, 12) }}
       className={`card card--link shelfcard${over ? ' is-over' : ''}${listing.affiliate ? ' is-affiliate' : ''}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
-        <div className="thumb__badges"><span className="badge badge--solid">{listing.condition}</span></div>
+        <div className="thumb__badges"><span className="badge badge--solid">{factsOf(listing).condition}</span></div>
         {listing.state !== 'active' && (
           <span className={`stamp stamp--${listing.state}`}><span>{STAMPS[listing.state]}</span></span>
         )}

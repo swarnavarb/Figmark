@@ -5,7 +5,7 @@ import {
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
 } from '@shared/enums';
-import { CATEGORIES } from '@shared/catalog';
+import { CATEGORIES, CONDITION_BUCKETS, canonicalCategory, factsOf } from '@shared/catalog';
 import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';
@@ -1391,7 +1391,7 @@ function ShelfCard({ listing, onEdit, onOpenLot, onTag }: {
     <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
         {tier && <RarityRibbon tier={tier} />}
-        <span className="qgrade" title="Condition">{listing.condition}</span>
+        <span className="qgrade" title="Condition">{factsOf(listing).condition}</span>
         {expired
           ? <span className="qsticker-tag qsticker-tag--drop">Expired</span>
           : listing.status === 'sold_out'
@@ -2522,7 +2522,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
   onSaved: () => void;
 }) {
   const [name, setName] = useState(template?.name ?? '');
-  const [category, setCategory] = useState(template?.category ?? CATEGORIES[0]!);
+  const [category, setCategory] = useState(canonicalCategory(template?.category) ?? CATEGORIES[0]!);
   const [tags, setTags] = useState((template?.tags ?? []).join(', '));
   const [condition, setCondition] = useState(template?.condition ?? '');
   const [sourcing, setSourcing] = useState<Sourcing>(template?.sourcing ?? 'in_hand');
@@ -2608,7 +2608,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
             <span>Condition</span>
             <select value={condition} onChange={(e) => setCondition(e.target.value)}>
               <option value="">Ask each time</option>
-              {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+              {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
             </select>
           </label>
         </div>

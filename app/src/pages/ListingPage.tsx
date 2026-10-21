@@ -10,6 +10,7 @@ import { ListingPosts } from '../components/ListingPosts';
 import { Glyph, RarityRibbon } from '../components/Quest';
 import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
+import { factsOf } from '@shared/catalog';
 import { FillBlock } from '../components/FillMeter';
 import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -95,6 +96,8 @@ export function ListingPage() {
   const { listing, seller, comments } = data;
   // The primary photo first, then the rest in the order they were added.
   const rarity = listingRarity(listing);
+  // Condition in the category's own words, and whether it is the real thing.
+  const facts = factsOf(listing);
   const photos = [...(listing.photos ?? [])]
     .sort((a, b) => Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary)))
     .map((photo) => photo.url)
@@ -241,13 +244,45 @@ export function ListingPage() {
             fallback={<Thumb seed={listing.id} label={listing.title} className="thumb gallery__fallback" />}>
             <span className="gallery__badges">
               {rarity.tier && <RarityRibbon tier={rarity.tier} />}
-              <span className="badge badge--solid">{listing.condition}</span>
+              <span className="badge badge--solid">{facts.condition}</span>
+              {facts.authenticity && (
+                <span className={`badge ${facts.authenticity.genuine ? 'badge--ok' : 'badge--warn'}`}>
+                  {facts.authenticity.label}
+                </span>
+              )}
               {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
             </span>
           </Gallery>
 
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
             <h1 className="lp__title">{listing.title}</h1>
+            {/* The facts a buyer checks before reading a word of the
+                description: what it is, what shape it is in, whether it is
+                the real thing, and the size. */}
+            {(facts.details.length > 0 || facts.authenticity) && (
+              <dl className="specs">
+                <div className="specs__row">
+                  <dt>Condition</dt>
+                  <dd>{facts.condition}</dd>
+                </div>
+                {facts.authenticity && (
+                  <div className="specs__row">
+                    <dt>Original or copy</dt>
+                    <dd>
+                      <span className={`badge ${facts.authenticity.genuine ? 'badge--ok' : 'badge--warn'}`}>
+                        {facts.authenticity.label}
+                      </span>
+                    </dd>
+                  </div>
+                )}
+                {facts.details.map((detail) => (
+                  <div key={detail.label} className="specs__row">
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             {listing.privateFor && (
               <div className="lp__private">
                 <span className="lp__privateicon" aria-hidden="true">🤝</span>

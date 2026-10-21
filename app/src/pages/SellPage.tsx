@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { tagKey } from '@shared/shop-tags';
-import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import { SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
-import { CATEGORIES, MIN_PRICE_MINOR } from '@shared/catalog';
+import {
+  CATEGORIES, MIN_PRICE_MINOR, canonicalCategory, conditionTagFor, conditionValueForTag, factsOf,
+  missingFields, pruneAttributes, specFor, type Attributes,
+} from '@shared/catalog';
 import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import type { Lot } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
+import { CategoryFields } from '../components/CategoryFields';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
@@ -80,7 +84,7 @@ function rememberTemplate(id: string): void {
 const DRAFT_KEY = 'figmark:sell-draft';
 
 type SellDraft = {
-  title: string; description: string; category: string; condition: string; price: string;
+  title: string; description: string; category: string; attributes?: Attributes; price: string;
   costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>;
   shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; preOrderDays: string;
   tags: string; calc: SavedCalc | null; templateId: string; photos: PhotoDraft[];
@@ -213,8 +217,23 @@ export function SellPage() {
 
   const [title, setTitle] = useState(restored?.title ?? prefill?.title ?? '');
   const [description, setDescription] = useState(restored?.description ?? prefill?.description ?? '');
-  const [category, setCategory] = useState<string>(restored?.category ?? prefill?.category ?? CATEGORIES[0]!);
-  const [condition, setCondition] = useState<string>(restored?.condition ?? prefill?.condition ?? CONDITION_TAGS[0]);
+  // A draft or template may carry a category from before a rename; it is shown
+  // under its current name.
+  const [category, setCategory] = useState<string>(
+    canonicalCategory(restored?.category ?? prefill?.category) ?? CATEGORIES[0]!);
+  // What this category asks - kind, condition, original or copy, size - kept as
+  // one map so a new question is an edit to the category definition and not
+  // another piece of state here. A grade ("MISB") from a prefill becomes this
+  // category's own wording where one stands for it.
+  const [attributes, setAttributes] = useState<Attributes>(() => {
+    if (restored?.attributes) return restored.attributes;
+    const condition = conditionValueForTag(
+      canonicalCategory(prefill?.category) ?? CATEGORIES[0]!, prefill?.condition);
+    return condition ? { condition } : {};
+  });
+  // Only after a first attempt to publish, so the form does not open covered in
+  // red before anybody has done anything.
+  const [triedPublish, setTriedPublish] = useState(false);
   const [price, setPrice] = useState(() => restored?.price ?? (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
   const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(restored ? restored.costSheet : prefill?.costSheet ?? null);
   const [terms, setTerms] = useState(() => restored?.terms ? { ...termsDraft(), ...restored.terms }
@@ -266,7 +285,7 @@ export function SellPage() {
   const latest = useRef<SellDraft | null>(null);
   const published = useRef(false);
   latest.current = {
-    title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
+    title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
     preOrderMode, fillThreshold, preOrderDays, tags, calc, templateId, photos, preLot, shape, lotId,
     createdListingId,
   };
@@ -275,7 +294,7 @@ export function SellPage() {
       if (!published.current && latest.current) writeDraft(draftKey, latest.current);
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [draftKey, title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
+  }, [draftKey, title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
     preOrderMode, fillThreshold, preOrderDays, tags, calc, templateId, photos, preLot, shape, lotId,
     createdListingId]);
   useEffect(() => () => {
@@ -350,6 +369,7 @@ export function SellPage() {
    * one leaves blank - without touching anything typed by hand since.
    */
   const applied = useRef<{ category: string; tags: string; condition: string; description: string } | null>(null);
+  const conditionNow = attributes['condition'] ?? '';
 
   /**
    * Fill the form in from a template, leaving everything editable.
@@ -359,19 +379,30 @@ export function SellPage() {
    */
   function applyTemplate(template: PostTemplate, initial = false) {
     const fill = fillFrom(template);
+    const templateCategory = canonicalCategory(fill.category) ?? CATEGORIES[0]!;
     const next = {
-      category: fill.category || CATEGORIES[0]!,
+      category: templateCategory,
       tags: fill.tags ?? '',
-      condition: fill.condition || CONDITION_TAGS[0],
+      // The template's grade, in this category's own wording where one stands for it.
+      condition: conditionValueForTag(templateCategory, fill.condition) ?? '',
       description: fill.description ?? '',
     };
     const before = applied.current;
     // Untouched since the last template (or, first time, never prefilled).
     const free = (field: keyof typeof next, current: string, prefilled = false) =>
       before ? current === before[field] : !prefilled;
-    if (free('category', category)) setCategory(next.category);
+    const categoryFree = free('category', category);
+    if (categoryFree) setCategory(next.category);
     if (free('tags', tags)) setTags(next.tags);
-    if (free('condition', condition)) setCondition(next.condition);
+    if (free('condition', conditionNow)) {
+      setAttributes(categoryFree
+        ? (next.condition ? { condition: next.condition } : {})
+        : (current) => {
+          const rest = { ...current };
+          if (next.condition) rest['condition'] = next.condition; else delete rest['condition'];
+          return pruneAttributes(category, rest);
+        });
+    }
     if (free('description', description, initial && Boolean(prefill?.description))) setDescription(next.description);
     applied.current = next;
     setPreLot(template.preLotRoute?.steps ?? null);
@@ -391,6 +422,14 @@ export function SellPage() {
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
   const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR;
+  // The category's required questions are asked after the first press of
+  // Publish, with the unanswered ones marked, rather than leaving a button
+  // that will not press.
+  const missing = missingFields(category, attributes);
+  // The grade the rest of the app understands, derived from the category's own
+  // wording ("Deadstock", "New with tags") rather than asked for twice.
+  const condition = conditionTagFor(category, attributes) ?? 'LOOSE';
+  const facts = factsOf({ category, condition, attributes });
   // The lot is the answer: in one means import, out of one means in hand.
   const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
   const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;
@@ -443,6 +482,11 @@ export function SellPage() {
 
   async function publish(event: FormEvent) {
     event.preventDefault();
+    if (missing.length > 0) {
+      setTriedPublish(true);
+      setError(`Still to answer: ${missing.map((field) => field.label.replace(/\?$/, '').toLowerCase()).join(', ')}.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -453,6 +497,7 @@ export function SellPage() {
         description: description.trim(),
         category,
         condition,
+        attributes,
         priceMinor,
         // A pre-order has no fixed count, and its bookings-close date is
         // the date it comes down.
@@ -638,25 +683,35 @@ export function SellPage() {
                 <input type="number" min="1" step="1" value={price} inputMode="numeric"
                   onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
               </label>
-              <label className="field">
-                <span>Condition</span>
-                <select value={condition} onChange={(e) => setCondition(e.target.value)}>
-                  {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-                </select>
-              </label>
             </div>
+            {/* What is it? Tags, not a dropdown: every category is visible at
+                once, and the line under them says what lives in the one picked. */}
+            <div className="field" role="group" aria-label="Category">
+              <span>Category</span>
+              <div className="chips">
+                {CATEGORIES.map((entry) => (
+                  <button key={entry} type="button" className={`chip${category === entry ? ' is-on' : ''}`}
+                    aria-pressed={category === entry}
+                    onClick={() => {
+                      setCategory(entry);
+                      setAttributes((current) => pruneAttributes(entry, current));
+                    }}>
+                    {entry}
+                  </button>
+                ))}
+              </div>
+              <span className="field__hint">{specFor(category)?.blurb}</span>
+            </div>
+            {/* The questions this category asks. A shirt has a size and a figure
+                has a box grade; one shared form asked everybody the wrong things. */}
+            <CategoryFields category={category} value={attributes} onChange={setAttributes}
+              showMissing={triedPublish} />
             <label className="field">
               <span>Description</span>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
                 placeholder="Condition, what's included…" />
             </label>
             <div className="field-row">
-              <label className="field">
-                <span>Category</span>
-                <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-                </select>
-              </label>
               <div className="field">
                 <label htmlFor="sell-tags">Tags</label>
                 <input id="sell-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, sealed" />
@@ -765,7 +820,7 @@ export function SellPage() {
             <Thumb seed={title || 'preview'} label={title || 'Your listing'} photo={leadPhoto({ photos })}
               className="thumb qloot__art">
               <RarityRibbon tier="new" />
-              <span className="qgrade">{condition}</span>
+              <span className="qgrade">{attributes['condition'] ? facts.condition : 'Pick a condition'}</span>
               {preOrderMode && !deal && <span className="qsticker-tag">Pre-order</span>}
             </Thumb>
             {terms.advance && <AdvanceStrip percent={Number(terms.advancePercent) || 20} />}
@@ -775,6 +830,8 @@ export function SellPage() {
               <span className="qloot__meta">
                 <b className={effectiveSourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[effectiveSourcing]}</b>
                 {' · '}{category}
+                {facts.authenticity && <>{' · '}<b className={facts.authenticity.genuine ? 'qok' : ''}>{facts.authenticity.label}</b></>}
+                {facts.size && <>{' · '}{facts.size}</>}
               </span>
               <span className="qloot__foot">
                 <span className="faint">just now</span>

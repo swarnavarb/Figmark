@@ -1,4 +1,4 @@
-import { CATEGORIES } from '../../shared/catalog.js';
+import { canonicalCategory } from '../../shared/catalog.js';
 import type { Listing } from '../../shared/models.js';
 import { wordKeys } from '../../shared/shop-tags.js';
 import { isExpired } from '../../shared/payments.js';
@@ -489,7 +489,9 @@ function likelySellers(
   for (const category of [
     ...items.map((item) => item.category), ...matched.map((listing) => listing.category), ...guesses.map((listing) => listing.category),
   ]) {
-    if (category && (CATEGORIES as readonly string[]).includes(category) && !kinds.includes(category)) kinds.push(category);
+    // Listings from before a rename carry the old name; they count as the new one.
+    const known = canonicalCategory(category);
+    if (known && !kinds.includes(known)) kinds.push(known);
   }
 
   const likely: LikelySeller[] = [];

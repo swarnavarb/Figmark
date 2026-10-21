@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS } from '@shared/enums';
-import { CATEGORIES } from '@shared/catalog';
+import { CATEGORIES, CONDITION_BUCKETS } from '@shared/catalog';
 import { ApiRequestError, api, type WantCard, type WantDetail, type WantMatch } from '../api';
 import { EmptyState, ErrorNotice, Modal, PersonLink, Thumb } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
@@ -376,7 +376,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
           <span>Condition</span>
           <select value={condition} onChange={(e) => setCondition(e.target.value)}>
             <option value="">Any</option>
-            {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+            {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
           </select>
         </label>
       </div>

@@ -11,6 +11,7 @@
  * "pre-orders" answer different questions, and a single flat chip row that
  * mixes them makes both harder to read.
  */
+import { CATEGORY_SPECS, canonicalCategory } from './category-specs.js';
 
 /**
  * The categories a seller may choose from.
@@ -21,25 +22,29 @@
  * deliberately short - the fine distinctions belong in the title and the tags,
  * which is what search reads.
  */
-export const CATEGORIES = [
-  'Scale figures',
-  'Model kits',
-  'Trading cards',
-  'Anime merch',
-  'Sneakers',
-  'Streetwear',
-  'Electronics',
-  'Beauty',
-  'Bags & watches',
-  'Collectibles',
-] as const;
-export type Category = (typeof CATEGORIES)[number];
+export const CATEGORIES: readonly string[] = CATEGORY_SPECS.map((spec) => spec.name);
+export type Category = string;
+
+/**
+ * Whether a stored category name is one this catalog knows, old names included.
+ *
+ * The sell form only offers `CATEGORIES`, but a listing written before a rename
+ * still carries the old name and must keep working: this is what the create
+ * route and the filters check against.
+ */
+export function isKnownCategory(name: string | undefined | null): boolean {
+  return canonicalCategory(name) !== undefined;
+}
+
+// The per-category questions live beside the list and are re-exported so every
+// caller that already reaches for `@shared/catalog` finds them there.
+export * from './category-specs.js';
 
 /**
  * A broad heading, and the categories that sit under it.
  *
- * The top row of the buy page. Ten chips is a list to read; six headings is a
- * choice to make, and on a phone the difference is whether the row fits. The
+ * The top row of the buy page. Thirteen chips is a list to read; seven headings
+ * is a choice to make, and on a phone the difference is whether the row fits. The
  * `members` array is what the filter actually matches on, so a heading is a
  * shorthand for a set of categories rather than a second field on the row -
  * nothing has to be migrated, and a category can be re-housed by editing this
@@ -74,13 +79,17 @@ export const CATEGORY_GROUPS: readonly CategoryGroup[] = [
     label: 'Figures',
     glyph: '🧸',
     hue: 'violet',
-    members: ['Scale figures', 'Anime merch', 'Collectibles'],
+    // "Scale figures" is the old name of "Figures": listed here so stock written
+    // under it still turns up under this heading.
+    members: ['Figures', 'Scale figures', 'Anime merch', 'Collectibles'],
   },
   { id: 'models', label: 'Model kits', glyph: '🤖', hue: 'aqua', members: ['Model kits'] },
   { id: 'cards', label: 'Cards', glyph: '🃏', hue: 'pink', members: ['Trading cards'] },
   { id: 'wear', label: 'Sneakers & wear', glyph: '👟', hue: 'lime', members: ['Sneakers', 'Streetwear'] },
-  { id: 'tech', label: 'Electronics', glyph: '🎧', hue: 'blue', members: ['Electronics'] },
+  // The id stays `tech`: it is in links people have already shared.
+  { id: 'tech', label: 'Tech & games', glyph: '🎧', hue: 'blue', members: ['Electronics', 'Games & consoles'] },
   { id: 'beauty', label: 'Beauty & bags', glyph: '💄', hue: 'coral', members: ['Beauty', 'Bags & watches'] },
+  { id: 'home', label: 'Books & home', glyph: '📚', hue: 'aqua', members: ['Books & manga', 'Home & decor'] },
 ];
 
 /** The categories under one heading, or an empty list for an unknown one. */

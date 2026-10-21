@@ -863,7 +863,21 @@ export interface Listing extends BaseDocument {
   title: string;
   description: string;
   category: string;
+  /**
+   * The legacy four-grade condition (MISB, MIB, BIB, LOOSE).
+   *
+   * Derived from the category's own condition choice in `attributes` where
+   * there is one, so a "Deadstock" shoe or a "New with tags" shirt still has a
+   * grade the lot tracker and the packing estimate understand.
+   */
   condition: ConditionTag;
+  /**
+   * The answers to the questions this category asks: kind, condition in the
+   * category's own words, original-or-copy, size, scale and so on. Field keys
+   * and options are defined in shared/category-specs. Optional because
+   * listings written before categories had their own questions have none.
+   */
+  attributes?: Record<string, string>;
   status: ListingStatus;
   /** Price in minor units (paise) to avoid float drift. */
   priceMinor: number;

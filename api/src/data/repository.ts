@@ -49,6 +49,18 @@ export interface CatalogQuery {
    */
   categories?: readonly string[];
   condition?: string;
+  /** Exact match on the listing's kind of thing within its category ("Hoodie / sweatshirt"). */
+  type?: string;
+  /** Exact match on a size ("UK 8", "XL"). */
+  size?: string;
+  /**
+   * Any of these authenticity values.
+   *
+   * A list because the buyer's question is often "the real thing" or "copies",
+   * which is several values, not one. Absent means any; an empty list matches
+   * nothing, the same way an unknown heading does.
+   */
+  authenticity?: readonly string[];
   /** See CATALOG_KINDS: how it is sold, not what it is. */
   kind?: string;
   /** See CATALOG_SORTS. Absent means newest first. */

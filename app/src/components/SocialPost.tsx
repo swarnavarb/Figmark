@@ -1,3 +1,4 @@
+import { factsOf } from '@shared/catalog';
 import { askText } from './Ask';
 import { ReportButton } from './ReportButton';
 import { useNow } from '../clock';
@@ -116,7 +117,7 @@ export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['lis
         )}
         <span className="dropcard__body">
           <span className="dropcard__name">{listing.title}</span>
-          <span className="dropcard__cond">{listing.condition} · members only</span>
+          <span className="dropcard__cond">{factsOf(listing).condition} · members only</span>
           <span className="dropcard__prices">
             <b>{formatMoney(drop.memberPriceMinor, listing.currency)}</b>
             {rises && <s>{formatMoney(drop.publicPriceMinor, listing.currency)}</s>}
@@ -229,7 +230,7 @@ function SaleItem({ listing, post, nested, offerTo }: {
           <span className="spost__itemname">{listing.title}</span>
           <span className="spost__itemmeta">
             <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-            <span className="faint">{listing.condition}</span>
+            <span className="faint">{factsOf(listing).condition}</span>
             {!gone && listing.left != null && listing.left > 0 && (
               <span className="spost__left">{listing.left === 1 ? 'Last one' : `${listing.left} left`}</span>
             )}

@@ -20,6 +20,7 @@ import { ShopStrip, tagPath } from '../components/ShopCards';
 import { tagKey } from '@shared/shop-tags';
 import type { ShopCard } from '../api';
 import '../styles/ProfileByHandlePage.css';
+import { factsOf } from '@shared/catalog';
 
 /**
  * Whatever lives at `/<username>`.

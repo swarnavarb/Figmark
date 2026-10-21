@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
-import { CATEGORIES, listablePrice } from '../../../shared/catalog.js';
+import { canonicalCategory, listablePrice } from '../../../shared/catalog.js';
 import type { PowerSale, PowerSaleItem } from '../../../shared/models.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
@@ -166,7 +166,7 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
       id: `psi_${randomUUID().slice(0, 10)}`,
       title,
       description: trimmed(entry.description, 600),
-      category: (CATEGORIES as readonly string[]).includes(category) ? category : 'Collectibles',
+      category: canonicalCategory(category) ?? 'Collectibles',
       condition: (CONDITION_TAGS as readonly string[]).includes(condition)
         ? (condition as ConditionTag)
         : 'MISB',

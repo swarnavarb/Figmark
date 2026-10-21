@@ -19,6 +19,7 @@ import { EarnPill, earnOf } from '../components/Affiliate';
 import { PushCard } from '../components/PushControls';
 import { TwoFactorSettings } from '../components/TwoFactor';
 import '../styles/ProfilePage.css';
+import { factsOf } from '@shared/catalog';
 
 type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
 
@@ -252,7 +253,7 @@ export function ProfilePage() {
               <Link key={listing.id} to={`/listing/${listing.id}`} className={`card card--link${listing.affiliate ? ' is-affiliate' : ''}`}>
                 <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)}>
                   <div className="thumb__badges">
-                    <span className="badge badge--solid">{listing.condition}</span>
+                    <span className="badge badge--solid">{factsOf(listing).condition}</span>
                     <span className={`badge badge--${listing.status === 'active' ? 'ok' : 'warn'}`}>{listing.status}</span>
                   </div>
                 </Thumb>
