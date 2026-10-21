@@ -790,7 +790,7 @@ export function missingFields(category: string | undefined | null, attributes: A
  */
 export function conditionValueForTag(
   category: string | undefined | null,
-  tag: ConditionTag | null | undefined,
+  tag: string | null | undefined,
   attributes: Attributes = {},
 ): string | undefined {
   if (!tag) return undefined;
