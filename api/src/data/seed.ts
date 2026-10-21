@@ -657,7 +657,7 @@ const LISTINGS: ListingSeed[] = [
     id: 'lst_dragon_knight', sellerId: 'usr_kaiju', title: '1/7 Scale Dragon Knight — resin statue',
     description: 'Factory sealed, sourced direct from the Guangzhou studio. Pre-book against the September lot; ships once the lot clears customs.',
     category: 'Figures', condition: 'MISB', priceMinor: 1_45_000,
-    attributes: { type: 'Statue / resin', condition: 'MISB', authenticity: 'Official', scale: '1/7', release: 'CN' },
+    attributes: { type: 'Statue / figurine', condition: 'MISB', authenticity: 'Official', scale: '1/7', release: 'CN' },
     quantity: 17, lotId: 'lot_gz_sep', tags: ['resin', 'scale', 'dragon', 'preorder'],
     preOrder: { fillThreshold: 20, cutoffDays: 9 },
     likeCount: 34, viewCount: 412, ageDays: -6,

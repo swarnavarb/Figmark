@@ -139,20 +139,19 @@ const UK_SHOE_SIZES = (() => {
 
 const FIGURE_TYPES = [
   'Action figure',
-  'Scale figure',
-  'Statue / resin',
+  'Statue / figurine',
   'Nendoroid / chibi',
   'Prize figure',
   'Blind box / gacha',
   'Plush',
 ];
 /** The kinds of figure that come in a scale at all. */
-const SCALED_FIGURES = ['Action figure', 'Scale figure', 'Statue / resin'];
+const SCALED_FIGURES = ['Action figure', 'Statue / figurine'];
 
 export const CATEGORY_SPECS: readonly CategorySpec[] = [
   {
     name: 'Figures',
-    blurb: 'Action figures, scale figures, statues, Nendoroids, prize figures, blind boxes and plush.',
+    blurb: 'Action and scale figures, statues, Nendoroids, prize figures, blind boxes and plush.',
     fields: [
       typeField(FIGURE_TYPES),
       conditionField(
@@ -181,7 +180,7 @@ export const CATEGORY_SPECS: readonly CategorySpec[] = [
         key: 'scale',
         label: 'Scale',
         kind: 'choice',
-        options: plain('1/4', '1/6', '1/7', '1/8', '1/12', 'Non-scale'),
+        options: plain('1/4', '1/6', '1/7', '1/8', '1/9', '1/10', '1/12', '1/18', '1/24', '1/64', 'Non-scale'),
         when: { key: 'type', in: SCALED_FIGURES },
       },
       {
