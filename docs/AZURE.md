@@ -292,6 +292,8 @@ One app per environment. For development, with the names used above:
 ```bash
 # Host storage can be the existing account. Flex Consumption is the plan to
 # use; check the region offers it with: az functionapp list-flexconsumption-locations
+# Node 24 here; the Static Web App's API stays on node:22, the newest it takes.
+# The build runs on both.
 az functionapp create \
   --resource-group rg-figuremarket-dev \
   --name func-figmark-clocks-dev \

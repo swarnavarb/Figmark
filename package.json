@@ -4,7 +4,7 @@
   "private": true,
   "description": "Import-reseller marketplace: lot/manifest seller ops, two-sided verified reviews, Figmark-held buyer protection.",
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
   "scripts": {
     "install:all": "npm --prefix api ci && npm --prefix app ci",

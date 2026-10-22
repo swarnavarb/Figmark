@@ -31,8 +31,11 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          # Matches the apiRuntime pinned in staticwebapp.config.json.
-          node-version: '24'
+          # Matches the apiRuntime pinned in staticwebapp.config.json: the
+          # newest Static Web Apps takes (node:24 fails the deploy with
+          # "Function language info isn't provided"). The clock Function App
+          # runs the same build on Node 24.
+          node-version: '22'
 
       - name: Install API dependencies
         working-directory: api
