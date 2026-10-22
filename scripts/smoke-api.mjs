@@ -119,8 +119,10 @@ const {
 } = await import(new URL('want-routes.js', fns));
 const { notificationsRoute: notifications, notificationsReadRoute: markRead } =
   await import(new URL('notification-routes.js', fns));
-const { preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge } =
-  await import(new URL('preorder-routes.js', fns));
+const {
+  preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge,
+  preOrderEditRoute: editPreOrder, preOrderDecideRoute: decidePreOrder,
+} = await import(new URL('preorder-routes.js', fns));
 const {
   powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSaleRaw,
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
@@ -4237,7 +4239,7 @@ console.log('\nfilling a pre-order together');
  * fixtures: these checks are about numbers moving, and a fixture another check
  * has already bought into has numbers that moved for reasons of its own.
  */
-const openCampaign = async (threshold, title = 'Group-buy fixture') => {
+const openCampaign = async (threshold, title = 'Group-buy fixture', rules = {}) => {
   const made = await createListing(req({
     headers: auth,
     body: {
@@ -4247,6 +4249,7 @@ const openCampaign = async (threshold, title = 'Group-buy fixture') => {
       preOrder: {
         fillThreshold: threshold,
         cutoffAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        ...rules,
       },
       quantityAvailable: 50,
     },
@@ -4287,7 +4290,7 @@ await check('pledging joins the number without paying anything', async () => {
   assert.equal(view.committed, 2);
   assert.equal(view.toGo, 8);
   assert.equal(view.state, 'open');
-  assert.deepEqual(joined.jsonBody.mine, { pledged: true, booked: 0, units: 2, listed: false });
+  assert.deepEqual(joined.jsonBody.mine, { pledged: true, booked: 0, units: 2, listed: false, waitlisted: null, dueAt: null });
 });
 
 await check('a second tap is leaving, and the number goes back down', async () => {
@@ -4404,7 +4407,7 @@ await check('booking a pledge you already made does not count you twice', async 
   assert.equal(after.preOrder.filledCount, 3);
   assert.equal(after.preOrder.pledgedCount, 0, 'the pledge became the order rather than joining it');
   assert.equal(after.preOrder.committed, 3);
-  assert.deepEqual(after.mine, { pledged: false, booked: 3, units: 3, listed: false });
+  assert.deepEqual(after.mine, { pledged: false, booked: 3, units: 3, listed: false, waitlisted: null, dueAt: null });
 });
 
 await check('a campaign that runs out of time says so, and says what happened to the money', async () => {
@@ -4482,6 +4485,232 @@ await check('the credit follows a pledge into the order it becomes', async () =>
 
   const theirs = (await readPreOrder(req({ headers: recruiter.headers, params: { id } }), ctx)).jsonBody;
   assert.deepEqual(theirs.brought.map((ref) => ref.name), ['Credit Recruited']);
+});
+
+/* ── what the seller decides ── */
+
+// A campaign's stored fields moved directly: deadlines are facts arriving
+// sooner, the same way expireCampaign moves the cutoff.
+const patchCampaign = async (id, fields) => {
+  const repository = await getRepository();
+  const listing = await repository.getListing(id);
+  await repository.updateListing({ ...listing, preOrder: { ...listing.preOrder, ...fields } });
+};
+const lapseDeadline = () => new Date(Date.now() - 1000).toISOString();
+const bookingRefusal = async (buyer, id) => {
+  try {
+    await createOrder(req({ headers: buyer.headers, body: { listingId: id } }), ctx);
+    return null;
+  } catch (err) {
+    return err.message;
+  }
+};
+const orderFor = async (id, buyerId) =>
+  (await (await getRepository()).listOrdersForListing(id)).find((order) => order.buyerId === buyerId);
+
+await check('a pre-order has to ask for a real number by a real date', async () => {
+  const cases = [
+    { fillThreshold: 1, cutoffAt: new Date(Date.now() + 86_400_000).toISOString() },
+    { fillThreshold: 10, cutoffAt: new Date(Date.now() - 86_400_000).toISOString() },
+    { fillThreshold: 10, cutoffAt: 'next tuesday' },
+    { fillThreshold: 10, cutoffAt: new Date(Date.now() + 400 * 86_400_000).toISOString() },
+    { fillThreshold: 10, cutoffAt: new Date(Date.now() + 86_400_000).toISOString(), whenShort: 'shrug' },
+  ];
+  for (const preOrder of cases) {
+    const made = await createListing(req({ headers: auth, body: { title: 'Bad campaign', priceMinor: 900, preOrder } }), ctx);
+    assert.equal(made.status, 400, JSON.stringify(preOrder));
+    assert.equal(made.jsonBody.error, 'invalid_preorder');
+  }
+  const id = await openCampaign(5, 'Rules default');
+  const view = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(view.whenShort, 'cancel');
+  assert.equal(view.whenFull, 'keep_open');
+});
+
+await check('a closed campaign takes no bookings, and closing calls off the ones it had', async () => {
+  const id = await openCampaign(10, 'Closing campaign');
+  const buyer = await newBuyer('Closing Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id } }), ctx);
+  await expireCampaign(id);
+
+  const late = await newBuyer('Closing Late');
+  assert.match(await bookingRefusal(late, id), /closed|over/i);
+  assert.equal((await orderFor(id, buyer.id)).status, 'cancelled', 'nothing paid, so it is simply cancelled');
+});
+
+await check('a called-in pledge that is not paid in time is let go', async () => {
+  const id = await openCampaign(2, 'Lapsing campaign', { whenShort: 'proceed' });
+  const buyer = await newBuyer('Lapse Buyer');
+  const pledger = await newBuyer('Lapse Pledger');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id } }), ctx);
+  await pledge(req({ headers: pledger.headers, params: { id } }), ctx);
+
+  await patchCampaign(id, { pledgeDueAt: lapseDeadline() });
+  const view = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(view.pledgedCount, 0, 'the unpaid place no longer counts');
+  assert.equal((await noticesFor(pledger.id)).filter((r) => r.kind === 'preorder_lapsed').length, 1);
+  // Short again, and the seller said in advance to go ahead regardless.
+  assert.equal(view.proceededShort, true);
+  assert.equal(view.state, 'going');
+});
+
+await check('short at the cutoff under "ask me": paused, and the seller decides', async () => {
+  const id = await openCampaign(10, 'Asking campaign', { whenShort: 'ask' });
+  const pledger = await newBuyer('Ask Pledger');
+  const sellerId = (await (await getRepository()).getListing(id)).sellerId;
+  await pledge(req({ headers: pledger.headers, params: { id }, body: { units: 3 } }), ctx);
+  await expireCampaign(id);
+
+  const paused = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(paused.state, 'deciding');
+  assert.ok(paused.decisionDueAt);
+  assert.equal((await noticesFor(sellerId)).filter((r) => r.kind === 'preorder_decide').length, 1);
+  assert.match(await bookingRefusal(await newBuyer('Ask Late'), id), /deciding/);
+
+  // Somebody who is not the seller cannot decide for them.
+  const outsider = await decidePreOrder(req({ headers: pledger.headers, params: { id }, body: { action: 'proceed' } }), ctx);
+  assert.ok(outsider.status === 403 || outsider.status === 401, `got ${outsider.status}`);
+
+  const going = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'proceed' } }), ctx);
+  assert.equal(going.status, 200, JSON.stringify(going.jsonBody));
+  assert.equal(going.jsonBody.preOrder.state, 'called', 'going ahead, with the pledges being called in');
+  assert.equal(going.jsonBody.preOrder.proceededShort, true);
+  assert.equal((await noticesFor(pledger.id)).filter((r) => r.kind === 'preorder_due').length, 1);
+  // ...and the pledger can book their place after the cutoff.
+  assert.equal(await bookingRefusal(pledger, id), null);
+});
+
+await check('a paused campaign can be given more time, and cancels itself if nobody decides', async () => {
+  const id = await openCampaign(10, 'Extend campaign', { whenShort: 'ask' });
+  const pledger = await newBuyer('Extend Pledger');
+  await pledge(req({ headers: pledger.headers, params: { id } }), ctx);
+  await expireCampaign(id);
+  await readPreOrder(req({ params: { id } }), ctx);
+
+  const cutoffAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  const extended = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'extend', cutoffAt } }), ctx);
+  assert.equal(extended.status, 200, JSON.stringify(extended.jsonBody));
+  assert.equal(extended.jsonBody.preOrder.state, 'open');
+  assert.equal(extended.jsonBody.preOrder.cutoffAt, cutoffAt);
+  assert.ok((await noticesFor(pledger.id)).some((r) => r.kind === 'preorder_changed' && /more time/.test(r.title)));
+
+  const idle = await openCampaign(10, 'Undecided campaign', { whenShort: 'ask' });
+  await pledge(req({ headers: pledger.headers, params: { id: idle } }), ctx);
+  await expireCampaign(idle);
+  await readPreOrder(req({ params: { id: idle } }), ctx);
+  await patchCampaign(idle, { decisionDueAt: lapseDeadline() });
+  assert.equal((await readPreOrder(req({ params: { id: idle } }), ctx)).jsonBody.preOrder.state, 'closed');
+});
+
+await check('the seller can go ahead early with fewer, or call it off and refund', async () => {
+  const id = await openCampaign(10, 'Early campaign');
+  const buyer = await newBuyer('Early Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id } }), ctx);
+  const early = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'proceed' } }), ctx);
+  assert.equal(early.jsonBody.preOrder.state, 'going', 'everybody in it has booked');
+
+  const off = await openCampaign(10, 'Called-off campaign');
+  const paid = await newBuyer('Called-off Buyer');
+  await createOrder(req({ headers: paid.headers, body: { listingId: off } }), ctx);
+  const cancelled = await decidePreOrder(req({ headers: auth, params: { id: off }, body: { action: 'cancel' } }), ctx);
+  assert.equal(cancelled.jsonBody.preOrder.state, 'closed');
+  assert.equal((await orderFor(off, paid.id)).status, 'cancelled');
+  assert.ok((await noticesFor(paid.id)).some((r) => r.kind === 'preorder_closed' && /called off/.test(r.title)));
+});
+
+await check('the seller edits the number, the date and the rules', async () => {
+  const id = await openCampaign(10, 'Edited campaign');
+  const pledger = await newBuyer('Edit Pledger');
+  await pledge(req({ headers: pledger.headers, params: { id }, body: { units: 3 } }), ctx);
+
+  const stranger = await editPreOrder(req({ headers: pledger.headers, params: { id }, body: { fillThreshold: 3 } }), ctx);
+  assert.ok(stranger.status === 403 || stranger.status === 401, `got ${stranger.status}`);
+
+  const past = await editPreOrder(req({ headers: auth, params: { id }, body: { cutoffAt: lapseDeadline() } }), ctx);
+  assert.equal(past.status, 409);
+
+  const rules = await editPreOrder(req({ headers: auth, params: { id }, body: { whenShort: 'ask', whenFull: 'waitlist' } }), ctx);
+  assert.equal(rules.status, 200, JSON.stringify(rules.jsonBody));
+  assert.equal(rules.jsonBody.preOrder.whenShort, 'ask');
+  assert.equal(rules.jsonBody.preOrder.whenFull, 'waitlist');
+
+  // Lowered to what is already in: it fills on the spot.
+  const lowered = await editPreOrder(req({ headers: auth, params: { id }, body: { fillThreshold: 3 } }), ctx);
+  assert.equal(lowered.jsonBody.preOrder.state, 'called');
+  assert.ok((await noticesFor(pledger.id)).some((r) => r.kind === 'preorder_changed'));
+  assert.equal((await noticesFor(pledger.id)).filter((r) => r.kind === 'preorder_filled').length, 1);
+
+  const settled = await editPreOrder(req({ headers: auth, params: { id }, body: { fillThreshold: 20 } }), ctx);
+  assert.equal(settled.status, 409, 'the number is settled once it is going ahead');
+});
+
+await check('after it fills, newcomers wait in line, and freed places go to them', async () => {
+  const id = await openCampaign(2, 'Waitlist campaign', { whenFull: 'waitlist' });
+  const first = await newBuyer('Wait First');
+  const second = await newBuyer('Wait Second');
+  const third = await newBuyer('Wait Third');
+  await pledge(req({ headers: first.headers, params: { id } }), ctx);
+  await pledge(req({ headers: second.headers, params: { id } }), ctx);
+
+  const queued = await pledge(req({ headers: third.headers, params: { id } }), ctx);
+  assert.equal(queued.status, 200, JSON.stringify(queued.jsonBody));
+  assert.equal(queued.jsonBody.preOrder.waitlistCount, 1);
+  assert.equal(queued.jsonBody.preOrder.committed, 2, 'waiting is not being in');
+  assert.equal(queued.jsonBody.mine.waitlisted, 1);
+  assert.match(await bookingRefusal(third, id), /waitlist/);
+
+  // The first books; the second does not pay in time, which frees a place.
+  await createOrder(req({ headers: first.headers, body: { listingId: id } }), ctx);
+  await patchCampaign(id, { pledgeDueAt: lapseDeadline() });
+  const after = (await readPreOrder(req({ headers: third.headers, params: { id } }), ctx)).jsonBody;
+  assert.equal(after.preOrder.waitlistCount, 0);
+  assert.equal(after.mine.waitlisted, null);
+  assert.ok(after.mine.dueAt, 'an offer comes with its own deadline');
+  assert.equal((await noticesFor(third.id)).filter((r) => r.kind === 'preorder_offer').length, 1);
+  assert.equal(await bookingRefusal(third, id), null, 'an offered place can be booked');
+});
+
+await check('the seller admits the waitlist, or lets it go', async () => {
+  const id = await openCampaign(2, 'Admit campaign', { whenFull: 'waitlist' });
+  const people = [];
+  for (const name of ['Admit A', 'Admit B', 'Admit C', 'Admit D', 'Admit E']) people.push(await newBuyer(name));
+  for (const person of people) await pledge(req({ headers: person.headers, params: { id } }), ctx);
+
+  const before = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(before.waitlistCount, 3);
+
+  const admitted = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'admit', units: 1 } }), ctx);
+  assert.equal(admitted.status, 200, JSON.stringify(admitted.jsonBody));
+  assert.equal(admitted.jsonBody.preOrder.waitlistCount, 2);
+  assert.equal(admitted.jsonBody.preOrder.committed, 3, 'the seller chose to take one more than the threshold');
+  assert.equal((await noticesFor(people[2].id)).filter((r) => r.kind === 'preorder_offer').length, 1);
+
+  const dismissed = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'dismiss' } }), ctx);
+  assert.equal(dismissed.jsonBody.preOrder.waitlistCount, 0);
+  assert.ok((await noticesFor(people[4].id)).some((r) => r.kind === 'preorder_changed'));
+
+  const closed = await openCampaign(2, 'Full-stop campaign', { whenFull: 'close' });
+  await pledge(req({ headers: people[0].headers, params: { id: closed } }), ctx);
+  await pledge(req({ headers: people[1].headers, params: { id: closed } }), ctx);
+  const turnedAway = await pledge(req({ headers: people[2].headers, params: { id: closed } }), ctx);
+  assert.equal(turnedAway.status, 409);
+  assert.equal(turnedAway.jsonBody.error, 'preorder_full');
+});
+
+await check('one last call on the final day, and the recruiter hears who came', async () => {
+  const id = await openCampaign(10, 'Last call campaign');
+  const recruiter = await newBuyer('Last Recruiter');
+  const recruited = await newBuyer('Last Recruited');
+  await pledge(req({ headers: recruiter.headers, params: { id } }), ctx);
+  await pledge(req({ headers: recruited.headers, params: { id }, body: { via: recruiter.id } }), ctx);
+  const told = (await noticesFor(recruiter.id)).filter((r) => r.kind === 'preorder_brought');
+  assert.equal(told.length, 1);
+  assert.match(told[0].title, /Last Recruited/);
+
+  await patchCampaign(id, { cutoffAt: new Date(Date.now() + 6 * 3_600_000).toISOString() });
+  await readPreOrder(req({ params: { id } }), ctx);
+  await readPreOrder(req({ params: { id } }), ctx);
+  assert.equal((await noticesFor(recruited.id)).filter((r) => r.kind === 'preorder_last_call').length, 1);
 });
 
 await check('the listing page carries the group, not just the counter', async () => {

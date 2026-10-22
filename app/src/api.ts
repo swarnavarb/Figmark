@@ -29,6 +29,7 @@ import type { CostLine, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } fro
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { LotBuyerPhase } from '@shared/fulfilment';
 import type { PreOrderView } from '@shared/preorder';
+import type { PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type {
@@ -417,7 +418,13 @@ export interface PreOrderRoster {
   people: PreOrderMember[];
   /** In it, but not named: being named is opt in. */
   unlisted: number;
-  mine: { pledged: boolean; booked: number; units: number; listed: boolean } | null;
+  mine: {
+    pledged: boolean; booked: number; units: number; listed: boolean;
+    /** Their place on the waitlist, from 1, or null when not waiting. */
+    waitlisted: number | null;
+    /** When their called-in place or waitlist offer must be booked by. */
+    dueAt: string | null;
+  } | null;
   /** Who this reader brought in, which is the only reason sharing is worth doing. */
   brought: PartyRef[];
 }
@@ -1170,7 +1177,7 @@ export interface NewListing {
   affiliateMinor?: number | null;
   /** What a buyer through a link saves per unit, in paise; null turns it off. */
   affiliateOffMinor?: number | null;
-  preOrder: { fillThreshold: number; cutoffAt: string } | null;
+  preOrder: { fillThreshold: number; cutoffAt: string; whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
   /** The seller's own lot to file this into, chosen while listing. */
@@ -2651,6 +2658,15 @@ export const api = {
       ...body,
       via: body.via ?? undefined,
     }),
+  /** The seller changes a pre-order's number, date, or what happens when it is short or full. */
+  editPreOrder: (id: string, body: { fillThreshold?: number; cutoffAt?: string; whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule }) =>
+    post<PreOrderRoster>(`/listings/${encodeURIComponent(id)}/preorder/edit`, body),
+  /** The seller's call: go ahead, cancel, extend, or admit / let go the waitlist. */
+  decidePreOrder: (id: string, body:
+    | { action: 'proceed' | 'cancel' | 'dismiss' }
+    | { action: 'extend'; cutoffAt: string }
+    | { action: 'admit'; units?: number }) =>
+    post<PreOrderRoster>(`/listings/${encodeURIComponent(id)}/preorder/decide`, body),
 
   activity: () => request<ActivityResponse>('/me/activity'),
   /** Just the seller's own stock - what the Items screen shows, without the rest of the account. */

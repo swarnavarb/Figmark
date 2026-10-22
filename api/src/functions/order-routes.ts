@@ -32,6 +32,7 @@ import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
 import { adjustHeldCredit, heldCreditMinor, placeOrder, repriceCheckout, returnKeptCredit, unavailableReason } from './placement.js';
 import { error, handler, json } from './http.js';
+import { callOffOrder } from './call-off.js';
 import { ownPhotos } from '../storage/index.js';
 import { claimPhotos } from '../storage/release.js';
 import { tooFast } from '../rate-limit.js';
@@ -1926,19 +1927,13 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   const reason = (body.reason ?? '').trim();
   if (reason.length < 4) return error(400, 'no_reason', 'Say why, so the buyer knows where they stand.');
 
-  const money = orderMoney(order);
-  const now = new Date().toISOString();
-  order.cancelReason = reason;
-  order.updatedAt = now;
-
   const buyer = await repository.getUserById(order.buyerId);
   const seller = await repository.getUserById(order.sellerId);
 
-  if (money.paidMinor <= 0) {
-    order.status = 'cancelled';
-    note(order, `Order cancelled by seller: ${reason}`, user.id);
-    await repository.updateOrder(order);
+  const owed = callOffOrder(order, reason, user.id);
+  await repository.updateOrder(order);
 
+  if (owed <= 0) {
     const named = await orderNames(repository, order);
     await notify(repository, [order.buyerId], {
       kind: 'order_cancelled',
@@ -1954,35 +1949,10 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
     return json(200, { order });
   }
 
-  order.status = 'payment_reversal_pending';
-  order.reversal = {
-    reasonForCancel: reason,
-    initiatedAt: now,
-    amountMinor: money.paidMinor,
-    buyerConfirmedDetailsAt: null,
-    reference: null,
-    screenshot: null,
-    reversedAt: null,
-    reversedBy: null,
-    buyerResponse: null,
-    buyerRespondedAt: null,
-    disputeRaisedAt: null,
-  };
-  // What was paid is now owed back, and it goes where every refund goes: onto
-  // the seller's Refunds list, to return in one go or in parts, or to put
-  // towards another of this buyer's orders.
-  order.credits = [...(order.credits ?? []), {
-    id: `crd_${randomUUID().slice(0, 12)}`, createdAt: now, amountMinor: money.paidMinor, batchId: null,
-    refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'open', origin: 'cancelled', reason,
-  }];
-  note(order, `Order cancelled by seller, payment reversal pending: ${reason}`, user.id);
-  note(order, `Payment reversal initiated — ${rupees(money.paidMinor)}`, user.id);
-  await repository.updateOrder(order);
-
   const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'payment_reversal_pending',
-    title: `${named.shop} cancelled your order and is returning ${rupees(money.paidMinor)}`,
+    title: `${named.shop} cancelled your order and is returning ${rupees(owed)}`,
     body: `${order.itemName}: ${reason}`,
     link: `/order/${order.id}`,
   });
@@ -1990,13 +1960,13 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   if (buyer && !buyer.reversalDetails) {
     await notify(repository, [order.buyerId], {
       kind: 'reversal_details_needed',
-      title: `Tell ${named.shop} where to send your ${rupees(money.paidMinor)}`,
+      title: `Tell ${named.shop} where to send your ${rupees(owed)}`,
       body: `Add your payment reversal details so the refund for ${order.itemName} can go out.`,
       link: '/wallet?tab=details',
     });
     if (seller) {
       const text = (body.message ?? '').trim()
-        || `Your order for ${order.itemName} is being cancelled and your payment of ${rupees(money.paidMinor)} `
+        || `Your order for ${order.itemName} is being cancelled and your payment of ${rupees(owed)} `
           + `will be reversed. Please update your Payment Reversal Details so we can send it back.`;
       await systemMessage(repository, seller, buyer, text, order.sellerId);
     }

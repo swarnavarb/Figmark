@@ -59,7 +59,10 @@ export function FillGap({ view }: { view: PreOrderView }) {
   // badge beside it and by the legend below, and saying it three times reads as
   // three different facts.
   if (view.state === 'going' || view.state === 'called') {
-    return <span className="gap gap--ok">Filled</span>;
+    return <span className="gap gap--ok">{view.proceededShort ? 'Going ahead' : 'Filled'}</span>;
+  }
+  if (view.state === 'deciding') {
+    return <span className="gap gap--warn">{view.toGo} short</span>;
   }
   return (
     <span className={`gap${view.state === 'nearly' ? ' gap--warn' : ''}`}>
@@ -85,8 +88,10 @@ export function FillKey({ view }: { view: PreOrderView }) {
       )}
       {view.state === 'closed' ? (
         <span>closed {view.fillThreshold - view.committed} short</span>
+      ) : view.state === 'deciding' ? (
+        <span>the seller is deciding</span>
       ) : view.state === 'going' || view.state === 'called' ? (
-        <span>the seller orders now</span>
+        <span>the seller orders now{view.waitlistCount > 0 ? ` · ${view.waitlistCount} waiting` : ''}</span>
       ) : (
         <span>{days > 1 ? `closes in ${days} days` : `closes ${formatDate(view.cutoffAt)}`}</span>
       )}

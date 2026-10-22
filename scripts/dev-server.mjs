@@ -79,7 +79,7 @@ const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } 
 const { deviceReportRoute, deviceFiguresRoute } = await import(new URL('device-routes.js', apiRoot));
 const { notificationsRoute, notificationsReadRoute, notificationSettingsRoute, notificationSettingsSaveRoute } =
   await import(new URL('notification-routes.js', apiRoot));
-const { preOrderReadRoute, preOrderPledgeRoute } =
+const { preOrderReadRoute, preOrderPledgeRoute, preOrderEditRoute, preOrderDecideRoute } =
   await import(new URL('preorder-routes.js', apiRoot));
 const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
@@ -466,6 +466,8 @@ const routes = [
   ['POST', '/api/showcase/drops/:sellerId/:id/remind', remindRoute],
   ['GET', '/api/listings/:id/preorder', preOrderReadRoute],
   ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
+  ['POST', '/api/listings/:id/preorder/edit', preOrderEditRoute],
+  ['POST', '/api/listings/:id/preorder/decide', preOrderDecideRoute],
   ['GET', '/api/notifications', notificationsRoute],
   ['POST', '/api/notifications/read', notificationsReadRoute],
   ['GET', '/api/notifications/settings', notificationSettingsRoute],

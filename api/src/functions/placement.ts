@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { Listing, Order } from '../../../shared/models.js';
+import type { Listing, Order, Pledge } from '../../../shared/models.js';
+import { fullRuleOf, isGoingAhead } from '../../../shared/preorder.js';
 import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { affiliateCommissionMinor } from '../../../shared/affiliate.js';
 import { affiliateFor, creditAffiliate } from '../affiliate.js';
 import type { getRepository } from '../data/index.js';
 import { notify, orderNames } from './notify.js';
-import { reconcilePreOrder } from './preorder.js';
+import { holdsPlace, reconcilePreOrder } from './preorder.js';
 import { storeCreditLeft } from '../../../shared/play.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -42,6 +43,30 @@ export function unavailableReason(listing: Listing | null, order: Order): string
     return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
   }
   return null;
+}
+
+/**
+ * Why this buyer cannot book this pre-order now, or null when they can.
+ *
+ * Before it goes ahead, anyone can book until the cutoff. After, only somebody
+ * whose place is being called in - a pledge, or an offer off the waitlist -
+ * unless the seller chose to keep taking bookings, and then only until the
+ * cutoff. Closed and paused campaigns take nobody: a booking into either is
+ * money held for something that is not happening, or not yet decided.
+ */
+export function preOrderRefusal(listing: Listing, pledges: readonly Pledge[], buyerId: string): string | null {
+  const preOrder = listing.preOrder;
+  if (!preOrder) return null;
+  if (preOrder.closedAt) return 'This pre-order is over.';
+  if (preOrder.decisionDueAt) return 'The seller is deciding whether this goes ahead, so booking is paused.';
+  const holding = pledges.some((pledge) => pledge.userId === buyerId && holdsPlace(pledge));
+  const beforeCutoff = Date.parse(preOrder.cutoffAt) > Date.now();
+  if (!isGoingAhead(preOrder)) return beforeCutoff ? null : 'Booking closed for this one.';
+  if (holding) return null;
+  const rule = fullRuleOf(preOrder);
+  if (rule === 'keep_open') return beforeCutoff ? null : 'Booking closed for this one.';
+  if (rule === 'waitlist') return "It's full. Join the waitlist and you'll be offered a place if one opens.";
+  return 'This one is full, and the seller is not taking more.';
 }
 
 /**
@@ -88,10 +113,19 @@ export async function placeOrder(
 ): Promise<Refusal | null> {
   if (order.placedAt !== null) return null;
 
-  const fetched = await repository.getListing(order.listingId);
+  let fetched = await repository.getListing(order.listingId);
+  // A pre-order as it is now: a cutoff passing or a pledge lapsing is noticed
+  // on read - and going ahead can keep it open past its expiry for the people
+  // called in to book.
+  if (fetched?.preOrder) fetched = (await reconcilePreOrder(repository, fetched)).listing;
   const unavailable = unavailableReason(fetched, order);
   if (unavailable) return { code: 'unavailable', message: unavailable };
   const listing = fetched!;
+
+  if (listing.preOrder) {
+    const refused = preOrderRefusal(listing, await repository.listPledges(listing.id), order.buyerId);
+    if (refused) return { code: 'unavailable', message: refused };
+  }
 
   // Paid at the price on the item now, never the one from when Buy was
   // pressed - and never at a price the buyer has not been shown. A change

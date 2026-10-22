@@ -12,7 +12,9 @@ import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
 import { factsOf } from '@shared/catalog';
 import { FillBlock } from '../components/FillMeter';
-import { brandHueFor, formatDate, formatMoney, timeAgo } from '../format';
+import { brandHueFor, daysUntil, formatDate, formatMoney, timeAgo } from '../format';
+import { PreOrderRules, isoInDays } from '../components/ListingForm';
+import { FULL_RULE_LABELS, SHORT_RULE_LABELS } from '@shared/preorder';
 import { useSession } from '../session';
 import { isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
@@ -331,6 +333,7 @@ export function ListingPage() {
               roster={data.preOrder}
               estimatedDispatchAt={data.estimatedDispatchAt}
               canJoin={!data.isOwn}
+              canRun={data.isOwn}
               meId={user?.id ?? null}
               via={via}
               onChange={(roster) => setData((prev) => (prev ? { ...prev, preOrder: roster } : prev))}
@@ -442,6 +445,7 @@ function PreOrderPanel({
   roster,
   estimatedDispatchAt,
   canJoin,
+  canRun,
   meId,
   via,
   onChange,
@@ -450,6 +454,8 @@ function PreOrderPanel({
   roster: PreOrderRoster;
   estimatedDispatchAt: string | null;
   canJoin: boolean;
+  /** The reader runs this campaign: the seller, or a manager of their store. */
+  canRun: boolean;
   /** The reader's own id, which is what a share link credits. */
   meId: string | null;
   via: string | null;
@@ -463,13 +469,18 @@ function PreOrderPanel({
   const view = roster.preOrder;
   const mine = roster.mine;
   const open = view.state === 'open' || view.state === 'nearly';
+  const ahead = view.state === 'called' || view.state === 'going';
+  // After it is going ahead, a newcomer can only queue - and only where the
+  // seller chose a waitlist. Somebody already in has a place to book instead.
+  const canQueue = ahead && view.whenFull === 'waitlist' && !mine?.pledged && !mine?.booked;
 
   const BADGE: Record<PreOrderRoster['preOrder']['state'], { tone: string; label: string }> = {
     open: { tone: 'warn', label: 'Booking open' },
     nearly: { tone: 'warn', label: 'Nearly there' },
     called: { tone: 'ok', label: 'Going ahead' },
     going: { tone: 'ok', label: 'Going ahead' },
-    closed: { tone: 'danger', label: "Didn't fill" },
+    deciding: { tone: 'warn', label: 'Seller deciding' },
+    closed: { tone: 'danger', label: view.committed >= view.fillThreshold ? 'Called off' : "Didn't fill" },
   };
   const badge = BADGE[view.state];
 
@@ -526,25 +537,57 @@ function PreOrderPanel({
       <p className="pocard__note">
         {view.state === 'closed' ? (
           <>
-            It closed {view.fillThreshold - view.committed} short, so the seller placed no order.
+            {view.committed >= view.fillThreshold
+              ? 'The seller called it off, so no order was placed.'
+              : `It closed ${view.fillThreshold - view.committed} short, so the seller placed no order.`}{' '}
             Bookings are refunded in full and pledges were never charged.
           </>
-        ) : view.state === 'called' || view.state === 'going' ? (
+        ) : view.state === 'deciding' ? (
           <>
-            It reached {view.fillThreshold}, so the seller is placing the order.
+            It came up {view.toGo} short at {view.committed} of {view.fillThreshold}. The seller is deciding whether to
+            go ahead{view.decisionDueAt && ` by ${formatDate(view.decisionDueAt)}`}; nothing more is charged meanwhile.
+            If they do not decide, it is cancelled and refunded.
+          </>
+        ) : ahead ? (
+          <>
+            {view.proceededShort
+              ? `The seller is going ahead with the ${view.committed} committed.`
+              : `It reached ${view.fillThreshold}, so the seller is placing the order.`}
             {view.pledgedCount > 0 && ' Pledges are being called in for payment now.'}
             {estimatedDispatchAt && ` Ships around ${formatDate(estimatedDispatchAt)}.`}
+            {view.whenFull === 'waitlist' && view.waitlistCount > 0 && ` ${view.waitlistCount} waiting for a place.`}
+            {view.whenFull === 'close' && ' The seller is not taking more.'}
           </>
         ) : (
           <>
             The seller places the order at {view.fillThreshold}. Pledging costs nothing now and is
             called in for payment — within a day — the moment it fills. Nobody pays for a lot that
-            does not happen.
+            does not happen.{view.whenShort === 'proceed' && ' If it is short at the close, the seller goes ahead anyway.'}
           </>
         )}
       </p>
 
       {problem && <p className="notice notice--error">{problem}</p>}
+
+      {mine?.dueAt && mine.pledged && (
+        <p className="notice notice--warn">
+          Your place is being called in. Book it by {formatDate(mine.dueAt)} or it goes to whoever is behind you.
+        </p>
+      )}
+
+      {canJoin && canQueue && (
+        <div className="row">
+          <button className={`btn${mine?.waitlisted ? ' btn--ghost' : ''}${user ? '' : ' is-locked'}`} style={{ flex: 1 }}
+            onClick={gate(() => change(), 'Sign in to join the waitlist.')} disabled={busy}>
+            {!user && <span className="lockmark" aria-hidden="true">🔒</span>}
+            {mine?.waitlisted ? <><Icon name="check" size={14} /> On the waitlist · #{mine.waitlisted}</> : '+ Join the waitlist'}
+          </button>
+        </div>
+      )}
+
+      {canRun && view.state !== 'closed' && (
+        <PreOrderControls listingId={listingId} view={view} onChange={onChange} />
+      )}
 
       {canJoin && open && (
         <div className="stack" style={{ gap: 10 }}>
@@ -591,6 +634,160 @@ function PreOrderPanel({
 
       <Roster roster={roster} />
     </section>
+  );
+}
+
+/**
+ * Running a pre-order, for the seller: its terms, its rules, and the calls
+ * only they can make - go ahead with fewer, give it more time, call it off, and
+ * who gets in after it filled.
+ *
+ * Every one of these is told to the people in it by the server, so nothing
+ * here has to say "remember to let your buyers know".
+ */
+function PreOrderControls({ listingId, view, onChange }: {
+  listingId: string;
+  view: PreOrderRoster['preOrder'];
+  onChange: (roster: PreOrderRoster) => void;
+}) {
+  const ahead = view.state === 'called' || view.state === 'going';
+  const [editing, setEditing] = useState(false);
+  const [threshold, setThreshold] = useState(String(view.fillThreshold));
+  const [days, setDays] = useState(String(Math.max(1, daysUntil(view.cutoffAt))));
+  const [whenShort, setWhenShort] = useState(view.whenShort);
+  const [whenFull, setWhenFull] = useState(view.whenFull);
+  const [extendDays, setExtendDays] = useState('7');
+  const [admitUnits, setAdmitUnits] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function run(work: () => Promise<PreOrderRoster>) {
+    setBusy(true);
+    setProblem(null);
+    try {
+      onChange(await work());
+      setEditing(false);
+    } catch (err) {
+      setProblem(err instanceof ApiRequestError ? err.message : 'Could not do that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const save = () => run(() => api.editPreOrder(listingId, {
+    whenShort,
+    whenFull,
+    // The number and the date are settled once it is going ahead.
+    ...(ahead ? {} : {
+      ...(Number(threshold) !== view.fillThreshold ? { fillThreshold: Number(threshold) } : {}),
+      ...(Number(days) !== Math.max(1, daysUntil(view.cutoffAt)) ? { cutoffAt: isoInDays(days) } : {}),
+    }),
+  }));
+  const cancel = () => {
+    if (!window.confirm('Call off this pre-order? Everybody in it is told, and every booking is refunded.')) return;
+    void run(() => api.decidePreOrder(listingId, { action: 'cancel' }));
+  };
+  const proceed = () => run(() => api.decidePreOrder(listingId, { action: 'proceed' }));
+  const extend = () => run(() => api.decidePreOrder(listingId, { action: 'extend', cutoffAt: isoInDays(extendDays) }));
+
+  return (
+    <div className="pocard__run stack" style={{ gap: 10 }}>
+      <b className="pocard__eyebrow"><Svg name="users" size={13} /> Your pre-order</b>
+
+      {view.state === 'deciding' && (
+        <div className="notice notice--warn stack" style={{ gap: 8 }}>
+          <span>
+            It is {view.toGo} short at {view.committed} of {view.fillThreshold}. Decide
+            {view.decisionDueAt && ` by ${formatDate(view.decisionDueAt)}`}, or it cancels and refunds on its own.
+          </span>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <button className="btn" onClick={() => void proceed()} disabled={busy}>Go ahead with {view.committed}</button>
+            <span className="row" style={{ gap: 6 }}>
+              <input type="number" min="1" max="365" value={extendDays} aria-label="Extend by days"
+                onChange={(e) => setExtendDays(e.target.value)} style={{ width: 64 }} />
+              <button className="btn btn--ghost" onClick={() => void extend()} disabled={busy}>Extend (days)</button>
+            </span>
+            <button className="btn btn--ghost" onClick={cancel} disabled={busy}>Cancel and refund</button>
+          </div>
+        </div>
+      )}
+
+      {(view.state === 'open' || view.state === 'nearly') && (
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          {view.committed > 0 && (
+            <button className="btn btn--ghost" onClick={() => void proceed()} disabled={busy}>
+              Go ahead now with {view.committed}
+            </button>
+          )}
+          <button className="btn btn--ghost" onClick={cancel} disabled={busy}>Call it off</button>
+        </div>
+      )}
+
+      {ahead && (
+        <div className="stack" style={{ gap: 8 }}>
+          {view.whenFull === 'waitlist' && (
+            view.waitlistCount > 0 ? (
+              <>
+                <span>{view.waitlistCount} waiting for a place. Admit them and each has a day to book.</span>
+                <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                  <button className="btn" disabled={busy}
+                    onClick={() => void run(() => api.decidePreOrder(listingId, { action: 'admit' }))}>
+                    Admit all {view.waitlistCount}
+                  </button>
+                  <span className="row" style={{ gap: 6 }}>
+                    <input type="number" min="1" max={view.waitlistCount} value={admitUnits} placeholder="n"
+                      aria-label="How many to admit" onChange={(e) => setAdmitUnits(e.target.value)} style={{ width: 64 }} />
+                    <button className="btn btn--ghost" disabled={busy || !(Number(admitUnits) >= 1)}
+                      onClick={() => void run(() => api.decidePreOrder(listingId, { action: 'admit', units: Number(admitUnits) }))}>
+                      Admit
+                    </button>
+                  </span>
+                  <button className="btn btn--ghost" disabled={busy}
+                    onClick={() => void run(() => api.decidePreOrder(listingId, { action: 'dismiss' }))}>
+                    Let them go
+                  </button>
+                </div>
+              </>
+            ) : <span className="faint">Nobody is on the waitlist.</span>
+          )}
+          <div className="row">
+            <button className="btn btn--ghost" onClick={cancel} disabled={busy}>Call it off and refund</button>
+          </div>
+        </div>
+      )}
+
+      {editing ? (
+        <div className="stack" style={{ gap: 8 }}>
+          <div className="field-row">
+            <label className="field">
+              <span>Bookings needed</span>
+              <input type="number" min="2" value={threshold} disabled={ahead} onChange={(e) => setThreshold(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Bookings close in (days)</span>
+              <input type="number" min="1" max="365" value={days} disabled={ahead} onChange={(e) => setDays(e.target.value)} />
+            </label>
+          </div>
+          <div className="field-row">
+            <PreOrderRules whenShort={whenShort} onWhenShort={setWhenShort} whenFull={whenFull} onWhenFull={setWhenFull} />
+          </div>
+          {ahead && <span className="faint">It is going ahead, so the number and the date are settled.</span>}
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn" onClick={() => void save()} disabled={busy}>Save</button>
+            <button className="btn btn--ghost" onClick={() => setEditing(false)} disabled={busy}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn btn--ghost" onClick={() => setEditing(true)} disabled={busy}>Edit pre-order</button>
+          <span className="faint">
+            Short: {SHORT_RULE_LABELS[view.whenShort].toLowerCase()} · Full: {FULL_RULE_LABELS[view.whenFull].toLowerCase()}
+          </span>
+        </div>
+      )}
+
+      {problem && <p className="notice notice--error">{problem}</p>}
+    </div>
   );
 }
 

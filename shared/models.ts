@@ -1070,9 +1070,40 @@ export interface PreOrder {
    * offered to whoever is behind it.
    */
   pledgeDueAt?: string | null;
-  /** When the cutoff passed without the meter filling. */
+  /** When the campaign ended without going ahead: short at the cutoff, or called off. */
   closedAt?: string | null;
+  /**
+   * What happens if the cutoff comes and it is short, chosen by the seller.
+   *
+   * `cancel` closes it and refunds everyone; `proceed` goes ahead with whoever
+   * is in; `ask` pauses it and asks the seller, who has DECISION_HOURS to say.
+   * Absent on campaigns made before sellers could choose, which closed - so
+   * absent reads as `cancel`.
+   */
+  whenShort?: PreOrderShortRule;
+  /**
+   * What happens to people who come after it fills.
+   *
+   * `keep_open` takes more bookings until the cutoff; `waitlist` queues them
+   * behind the places that are taken, for the seller to admit; `close` stops
+   * taking anyone. Absent reads as `keep_open`, which is what it always did.
+   */
+  whenFull?: PreOrderFullRule;
+  /**
+   * Set when it came up short under `ask`: the seller has until then to go
+   * ahead, extend or cancel, and it cancels itself if they say nothing.
+   */
+  decisionDueAt?: string | null;
+  /** The seller went ahead with fewer than the threshold. */
+  proceededShortAt?: string | null;
+  /** When the one "last call" before the cutoff went out, so it goes out once. */
+  lastCallAt?: string | null;
+  /** Units queued after it filled. Denormalised like the other two counts. */
+  waitlistCount?: number;
 }
+
+export type PreOrderShortRule = 'cancel' | 'proceed' | 'ask';
+export type PreOrderFullRule = 'keep_open' | 'waitlist' | 'close';
 
 /**
  * "I am in, if enough others are."
@@ -1103,6 +1134,22 @@ export interface Pledge extends BaseDocument {
   broughtBy: string | null;
   /** The order this became, once the pledge was called in and paid. */
   convertedOrderId: string | null;
+  /**
+   * Joined after it filled, under `whenFull: 'waitlist'`: queued, not counted,
+   * until the seller admits them or a place frees up.
+   */
+  waitlisted?: boolean;
+  /**
+   * Admitted off the waitlist: their own deadline to book, in place of the
+   * campaign's `pledgeDueAt`, which had already started before they were in.
+   */
+  offerDueAt?: string | null;
+  /**
+   * No longer holding a place: called in and not paid in time, or let go from
+   * the waitlist. Kept rather than deleted, because it carries who brought
+   * them in and the seller can see who dropped out.
+   */
+  lapsedAt?: string | null;
 }
 
 /** Public Q&A on a listing, visible to everyone - distinct from private chat. */
@@ -2772,6 +2819,18 @@ export type NotificationKind =
   | 'preorder_filled'
   | 'preorder_due'
   | 'preorder_closed'
+  /** A called-in pledge was not paid in time, and the place was let go. */
+  | 'preorder_lapsed'
+  /** A place opened for somebody on the waitlist. */
+  | 'preorder_offer'
+  /** A pre-order came up short and the seller has to decide what happens. */
+  | 'preorder_decide'
+  /** The seller changed the threshold, the cutoff or the outcome of a pre-order you are in. */
+  | 'preorder_changed'
+  /** One day left and still short: the one reminder before a cutoff. */
+  | 'preorder_last_call'
+  /** Somebody joined a pre-order through your link. */
+  | 'preorder_brought'
   | 'sale_opened'
   | 'sale_item'
   | 'order_placed'

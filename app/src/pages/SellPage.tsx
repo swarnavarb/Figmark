@@ -9,7 +9,7 @@ import {
 } from '@shared/catalog';
 import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
-import type { Lot } from '@shared/models';
+import type { Lot, PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
 import { CategoryFields } from '../components/CategoryFields';
@@ -87,6 +87,7 @@ type SellDraft = {
   title: string; description: string; category: string; attributes?: Attributes; price: string;
   costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>;
   shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; preOrderDays: string;
+  whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule;
   tags: string; calc: SavedCalc | null; templateId: string; photos: PhotoDraft[];
   preLot: RouteStep[] | null; shape: Shape; lotId: string;
   /** The listing already made from this form, when only the step after it failed. */
@@ -240,7 +241,11 @@ export function SellPage() {
     : termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
   const [shareToChannel, setShareToChannel] = useState(restored?.shareToChannel ?? prefill?.share?.channel ?? true);
   const [shareToFeed, setShareToFeed] = useState(restored?.shareToFeed ?? prefill?.share?.feed ?? true);
-  const [preOrderMode, setPreOrderMode] = useState(restored?.preOrderMode ?? false);
+  // The Create sheet's "Pre-order" opens this form already set to take them.
+  const askedPreOrder = params.get('preorder') === '1';
+  const [preOrderMode, setPreOrderMode] = useState(restored?.preOrderMode ?? askedPreOrder);
+  const [whenShort, setWhenShort] = useState<PreOrderShortRule>(restored?.whenShort ?? 'cancel');
+  const [whenFull, setWhenFull] = useState<PreOrderFullRule>(restored?.whenFull ?? 'keep_open');
   const [fillThreshold, setFillThreshold] = useState(restored?.fillThreshold ?? '20');
   /** Days until bookings close - also the item's expiry, so a pre-order has one date, not two. */
   const [preOrderDays, setPreOrderDays] = useState(restored?.preOrderDays ?? '14');
@@ -269,7 +274,7 @@ export function SellPage() {
   /** The new-lot form, open over this one. */
   const [openingLot, setOpeningLot] = useState(false);
   /** Everything past the basics, folded until asked for. */
-  const [more, setMore] = useState(() => Boolean(restored?.preOrderMode || prefill?.costSheet || prefill?.quantity));
+  const [more, setMore] = useState(() => Boolean(restored?.preOrderMode || askedPreOrder || prefill?.costSheet || prefill?.quantity));
   /* The listing this form already made, when publishing got that far and the
      private-deal message after it did not. Publishing again then only retries
      the message, rather than making a second copy of the item. */
@@ -286,7 +291,7 @@ export function SellPage() {
   const published = useRef(false);
   latest.current = {
     title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, preOrderDays, tags, calc, templateId, photos, preLot, shape, lotId,
+    preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId,
     createdListingId,
   };
   useEffect(() => {
@@ -295,7 +300,7 @@ export function SellPage() {
     }, 400);
     return () => window.clearTimeout(timer);
   }, [draftKey, title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, preOrderDays, tags, calc, templateId, photos, preLot, shape, lotId,
+    preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId,
     createdListingId]);
   useEffect(() => () => {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
@@ -520,6 +525,8 @@ export function SellPage() {
           ? {
               fillThreshold: Math.max(2, Number(fillThreshold) || 2),
               cutoffAt: closesAt,
+              whenShort,
+              whenFull,
             }
           : null,
         sourcing: effectiveSourcing,
@@ -776,7 +783,8 @@ export function SellPage() {
               {!deal && (
                 <PreOrderBox on={preOrderMode} onToggle={setPreOrderMode}
                   units={fillThreshold} onUnits={setFillThreshold}
-                  closes={preOrderDays} onCloses={setPreOrderDays} />
+                  closes={preOrderDays} onCloses={setPreOrderDays}
+                  whenShort={whenShort} onWhenShort={setWhenShort} whenFull={whenFull} onWhenFull={setWhenFull} />
               )}
 
               <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} />
