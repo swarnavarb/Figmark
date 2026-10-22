@@ -59,6 +59,7 @@ import {
 } from './seed.js';
 import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
+import { seedTestListings } from './seed-test-catalog.js';
 
 /** Site-content id of the marker left once rows are in the current buyer-protection shape. */
 const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
@@ -1094,7 +1095,7 @@ export class CosmosRepository implements Repository {
 
     for (const [name, items] of [
       ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-      ['listings', [...seedListings(), ...seedShowcaseListings()]],
+      ['listings', [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]],
       ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
       ['powerSales', seedShowcaseSales()],
       ['comments', seedComments()],
@@ -3161,7 +3162,7 @@ function fixtureSets() {
   return [
     ['users', [...seedUsers(), ...seedLotBuyers()]],
     ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-    ['listings', [...seedListings(), ...seedShowcaseListings()]],
+    ['listings', [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]],
     ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
     ['powerSales', seedShowcaseSales()],
     ['comments', seedComments()],

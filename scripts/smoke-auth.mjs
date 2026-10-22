@@ -402,7 +402,10 @@ await check('search matches title, tags and description', async () => {
   assert.ok(sneakers.length >= 2);
   assert.ok(sneakers.every((listing) => [listing.title, listing.description, listing.category, ...listing.tags]
     .some((text) => text.toLowerCase().includes('sneaker'))));
-  assert.equal((await repository.listListings({ search: 'deadstock' })).length, 1);
+  const deadstock = await repository.listListings({ search: 'deadstock' });
+  assert.ok(deadstock.length >= 1);
+  assert.ok(deadstock.every((listing) => [listing.title, listing.description, listing.category, ...listing.tags]
+    .some((text) => text.toLowerCase().includes('deadstock'))));
   assert.equal((await repository.listListings({ search: 'nothingmatchesthis' })).length, 0);
 });
 

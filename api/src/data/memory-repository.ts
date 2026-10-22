@@ -47,6 +47,7 @@ import {
 } from './seed.js';
 import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
+import { seedTestListings } from './seed-test-catalog.js';
 
 /**
  * In-process store used when Cosmos DB is not configured.
@@ -95,7 +96,7 @@ export class MemoryRepository implements Repository {
     }
     // The Buy tab's demo lots and drops, timed off the real clock.
     for (const lot of seedShowcaseLots()) this.lots.set(lot.id, lot);
-    for (const listing of [...seedListings(), ...seedShowcaseListings()]) this.listings.set(listing.id, listing);
+    for (const listing of [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]) this.listings.set(listing.id, listing);
     for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]) {
       this.orders.set(order.id, order);
     }
