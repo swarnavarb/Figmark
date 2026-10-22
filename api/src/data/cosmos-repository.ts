@@ -1976,6 +1976,21 @@ export class CosmosRepository implements Repository {
     await this.container('wantSeekers').item(id, wantId).delete();
   }
 
+  async listOpenGames(nowIso: string, limit: number): Promise<Post[]> {
+    // Every channel's, so cross-partition; IS_STRING is false for absent and null alike.
+    const { resources } = await this.container('posts').items.query<Post>({
+      query: 'SELECT * FROM c WHERE'
+        + ' (IS_OBJECT(c.contest) AND NOT IS_STRING(c.contest.settledAt))'
+        + ' OR (IS_OBJECT(c.guess) AND NOT IS_STRING(c.guess.revealedAt))'
+        + ' OR (IS_STRING(c.poll.closesAt) AND (c.poll.closesAt >= @now'
+        + ' OR (IS_OBJECT(c.debate) AND NOT IS_STRING(c.resultsSentAt))'
+        + ' OR (IS_OBJECT(c.poll.reward) AND NOT IS_STRING(c.poll.reward.paidAt))))'
+        + ' OFFSET 0 LIMIT @limit',
+      parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
+    }).fetchAll();
+    return resources;
+  }
+
   async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
     // Every seller's, so cross-partition; IS_STRING is false for absent and null alike.
     const { resources } = await this.container('listings').items.query<Listing>({

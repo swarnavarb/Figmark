@@ -547,6 +547,16 @@ export interface Repository {
    * there is no such post.
    */
   mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null>;
+  /**
+   * Games not finished yet, anywhere: competitions not settled, guesses not
+   * revealed, polls still open, and closed debates or paid polls whose results
+   * or rewards have not gone out.
+   *
+   * What the games clock settles (see settleDueGames). It is a superset of what
+   * is due - an open poll is listed so its "ending soon" reminder can go out -
+   * and isDue picks from it. Finishing a game takes it off the list.
+   */
+  listOpenGames(nowIso: string, limit: number): Promise<Post[]>;
 
   listForums(): Promise<Forum[]>;
   getForum(id: string): Promise<Forum | null>;

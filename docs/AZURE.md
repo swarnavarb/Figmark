@@ -270,12 +270,13 @@ Some work falls due at a time rather than on a request. That work lives in
 | `power-sale-clock` | minute | moves each live power sale to its next item |
 | `push-clock` | minute | sends notices whose undo window has ended |
 | `preorder-clock` | minute | settles pre-orders past their cutoff or decision deadline |
+| `games-clock` | minute | debate results, poll rewards, guess reveals, competition stages and prizes, "ending soon" reminders |
 | `dispute-clock` | hour | applies dispute deadlines and releases held money |
 
 Static Web Apps' managed functions run **HTTP triggers only**, so none of these
 fire there. Some of them also run when someone reads the related page: the bell
-sends held notices, the feed settles pre-orders, and the seller's console moves
-a sale. That only helps while someone is on the site. So the same API build is
+sends held notices, the feed settles pre-orders and games, and the seller's
+console moves a sale. That only helps while someone is on the site. So the same API build is
 also deployed to a small standalone Function App that starts from
 `clock-host.js`. It runs the timers and **no HTTP routes**: `http-off.ts` turns
 route registration off. Its address is not behind Static Web Apps, so a route
@@ -340,10 +341,10 @@ A clock job is skipped while its variable is empty. Once the variable is set,
 missing credentials fail the run rather than skipping it.
 
 To check it works, open the Function App's **Functions** list in the portal. It
-should show the four clocks and nothing else. Their invocation logs report what
+should show the five clocks and nothing else. Their invocation logs report what
 each one settled.
 
-**Cost**: about 130,000 runs a month at 512 MB. That should stay within or near
+**Cost**: about 175,000 runs a month at 512 MB. That should stay within or near
 Flex Consumption's monthly free grant.
 
 ## Free tier constraints

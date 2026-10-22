@@ -12212,6 +12212,31 @@ await check('a closed debate tells its voters which side won, and comes back on 
   assert.ok(feed[0].badges.includes('result'));
 });
 
+await check('the games clock settles a closed debate nobody reads', async () => {
+  const { settleDueGames } = await import(new URL('../play.js', fns));
+  const author = await newBuyer('Night Debater');
+  const voter = await newBuyer('Night Voter');
+  resetRateLimits();
+  const made = (await createPost(req({
+    headers: author.headers,
+    body: { body: 'Which stand?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], poll: { options: ['Clear', 'Black'] }, debate: { listingIds: [null, null] } },
+  }), ctx)).jsonBody.post;
+  await vote(req({ headers: voter.headers, params: on(made), body: { optionId: made.poll.options[1].id } }), ctx);
+  const repository = await getRepository();
+  const closed = new Date(Date.now() - 60_000).toISOString();
+  await repository.mutatePost(made.channelId, made.id, (post) => ({ ...post, poll: { ...post.poll, closesAt: closed } }));
+  const now = new Date().toISOString();
+  assert.ok((await repository.listOpenGames(now, 1000)).some((post) => post.id === made.id), 'a debate whose result has not gone out is open');
+
+  assert.ok(await settleDueGames(repository) >= 1);
+  const told = (await noticesFor(voter.id)).filter((notice) => notice.kind === 'debate_result');
+  assert.equal(told.length, 1, 'the voter hears with nobody opening a feed');
+  assert.match(told[0].title, /Your pick won: Black/);
+  assert.ok(!(await repository.listOpenGames(now, 1000)).some((post) => post.id === made.id), 'and it is off the list');
+  await settleDueGames(repository);
+  assert.equal((await noticesFor(voter.id)).filter((notice) => notice.kind === 'debate_result').length, 1, 'once');
+});
+
 await check('what was on screen is counted on the post, but not for its author', async () => {
   const reader = await newBuyer('Scroller');
   const writer = await newBuyer('Seen Writer');

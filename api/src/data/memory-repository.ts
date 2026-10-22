@@ -1119,6 +1119,16 @@ export class MemoryRepository implements Repository {
     return post;
   }
 
+  async listOpenGames(nowIso: string, limit: number): Promise<Post[]> {
+    return [...this.posts.values()].filter((post) =>
+      (post.contest && !post.contest.settledAt)
+      || (post.guess && !post.guess.revealedAt)
+      || (post.poll?.closesAt && (post.poll.closesAt >= nowIso
+        || (post.debate && !post.resultsSentAt)
+        || (post.poll.reward && !post.poll.reward.paidAt))),
+    ).slice(0, limit).map((post) => structuredClone(post));
+  }
+
   async listRecentPosts(limit: number): Promise<Post[]> {
     return [...this.posts.values()].sort(newestFirst).slice(0, limit);
   }
