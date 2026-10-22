@@ -5,6 +5,7 @@ import { isCancelledLike } from '../../../shared/orders.js';
 import type { Lot, PowerSale, User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { renewShowcaseSales } from '../data/seed-showcase.js';
 import { advancePowerSale, finishesAt, firstDropAt, nextDropAt } from './power-sale.js';
 import { error, handler, json } from './http.js';
 
@@ -138,6 +139,7 @@ function dropView(sale: PowerSale, shop: User | undefined, viewerId: string | nu
  * timer next runs.
  */
 async function liveSales(repository: Awaited<ReturnType<typeof getRepository>>): Promise<PowerSale[]> {
+  await renewShowcaseSales(repository).catch(() => 0);
   const live = await repository.listLivePowerSales();
   const advanced: PowerSale[] = [];
   for (const sale of live) {

@@ -1,4 +1,5 @@
 import type { Listing, Lot, Order, PowerSale, PowerSaleItem } from '../../../shared/models.js';
+import type { Repository } from './repository.js';
 
 /**
  * Demo fixtures for the Buy tab's two event shelves: lots still filling from
@@ -11,7 +12,9 @@ import type { Listing, Lot, Order, PowerSale, PowerSaleItem } from '../../../sha
  * releases one item every two days, the later one opens two days out - so a
  * deployment seeded today still has something on both shelves next week.
  *
- * Only ever added where missing (see topUpFixtures), like every fixture.
+ * Added where missing (see topUpFixtures), like every fixture. The drops then
+ * renew themselves (see renewShowcaseSales): a drop runs once and is over, and
+ * a demo whose Drops shelf emptied a week after it was seeded is not a demo.
  */
 
 const HOUR = 3_600_000;
@@ -166,7 +169,9 @@ export function seedShowcaseSales(base = Date.now()): PowerSale[] {
     closingBody: 'That is the lot — thank you for coming!',
     openedAt: null,
     closedAt: null,
-    afterWindow: { channel: true, feed: false },
+    // Said on the feed too, so the drops reach Discover and the feed once each
+    // members' window closes - the drop posts themselves stay in the channel.
+    afterWindow: { channel: true, feed: true },
     reminders: [],
     remindedAt: null,
     createdAt: from(base, -1 * DAY),
@@ -181,7 +186,7 @@ export function seedShowcaseSales(base = Date.now()): PowerSale[] {
       openingAt: from(base, -2 * HOUR),
       leadMinutes: 30,
       everyMinutes: 2 * 24 * 60,
-      windowMinutes: 3 * 24 * 60,
+      windowMinutes: 24 * 60,
       items: [
         item('psi_demo_live_1', 'Godzilla 1954 — Toho vinyl, 1st run', 'Figures', 12_500_00, 15_000_00),
         item('psi_demo_live_2', 'Ultraman Tiga — S.H.Figuarts Shinkocchou', 'Figures', 9_800_00, 11_500_00),
@@ -219,4 +224,35 @@ export function seedShowcaseSales(base = Date.now()): PowerSale[] {
       ],
     }),
   ];
+}
+
+/**
+ * Put each demo drop back on the shelf once it has run its course.
+ *
+ * Each of the three keeps its id and starts again from now, with its timings
+ * as seeded. The listings its last run dropped are archived first, so a demo
+ * left running for months does not fill the shops with old drop items; the
+ * posts stay, as a channel's history would. Only on a database that is one of
+ * ours, by the same test as topUpFixtures: `usr_demo` is a fixture account.
+ *
+ * Called wherever live sales are read, so the shelf refills on the next look.
+ * Cheap when nothing is due: the live list the caller reads anyway, then
+ * nothing. Returns how many drops it started again.
+ */
+export async function renewShowcaseSales(repository: Repository, now = new Date()): Promise<number> {
+  const live = new Set((await repository.listLivePowerSales()).map((sale) => sale.id));
+  const due = seedShowcaseSales(now.getTime()).filter((sale) => !live.has(sale.id));
+  if (due.length === 0 || !(await repository.getUserById('usr_demo'))) return 0;
+
+  for (const fresh of due) {
+    const previous = await repository.getPowerSale(fresh.sellerId, fresh.id);
+    for (const item of previous?.items ?? []) {
+      const listing = item.listingId ? await repository.getListing(item.listingId) : null;
+      if (listing && listing.status !== 'archived') {
+        await repository.updateListing({ ...listing, status: 'archived', updatedAt: now.toISOString() });
+      }
+    }
+    await repository.savePowerSale(fresh);
+  }
+  return due.length;
 }
