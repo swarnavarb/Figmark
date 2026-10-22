@@ -260,6 +260,92 @@ Both halves are pre-built in CI and uploaded with `skip_app_build` and
 compiled *into* the API by a `tsconfig` rooted above `api/` — Oryx running
 `npm install` inside `api/` on its own would not reproduce that.
 
+## The clock Function App
+
+Some work falls due at a time rather than on a request. That work lives in
+`api/src/clocks.ts`:
+
+| Clock | Every | What it does |
+|---|---|---|
+| `power-sale-clock` | minute | moves each live power sale to its next item |
+| `push-clock` | minute | sends notices whose undo window has ended |
+| `preorder-clock` | minute | settles pre-orders past their cutoff or decision deadline |
+| `dispute-clock` | hour | applies dispute deadlines and releases held money |
+
+Static Web Apps' managed functions run **HTTP triggers only**, so none of these
+fire there. Some of them also run when someone reads the related page: the bell
+sends held notices, the feed settles pre-orders, and the seller's console moves
+a sale. That only helps while someone is on the site. So the same API build is
+also deployed to a small standalone Function App that starts from
+`clock-host.js`. It runs the timers and **no HTTP routes**: `http-off.ts` turns
+route registration off. Its address is not behind Static Web Apps, so a route
+served there would skip the sign-in Static Web Apps puts in front of the API.
+It is not linked to the Static Web App, so the Free plan is enough.
+
+It reads and writes the same Cosmos DB as the site. An environment still on the
+in-memory store gets nothing from it, because the clock would be working on its
+own copy of the data.
+
+One app per environment. For development, with the names used above:
+
+```bash
+# Host storage can be the existing account. Flex Consumption is the plan to
+# use; check the region offers it with: az functionapp list-flexconsumption-locations
+az functionapp create \
+  --resource-group rg-figuremarket-dev \
+  --name func-figmark-clocks-dev \
+  --storage-account stfiguremarketdev \
+  --flexconsumption-location centralindia \
+  --runtime node --runtime-version 20 \
+  --instance-memory 512
+
+# The settings the clocks read: the same values the Static Web App has
+# (az staticwebapp appsettings list -n stapp-figuremarket-dev).
+az functionapp config appsettings set \
+  --resource-group rg-figuremarket-dev --name func-figmark-clocks-dev \
+  --settings COSMOS_ENDPOINT=... COSMOS_KEY=... COSMOS_DATABASE=figmark \
+             STORAGE_ACCOUNT=... STORAGE_KEY=... \
+             WEB_PUSH_PUBLIC_KEY=... WEB_PUSH_PRIVATE_KEY=... WEB_PUSH_SUBJECT=... \
+             PUBLIC_ORIGIN=...
+```
+
+Notifications link back to the site, so `PUBLIC_ORIGIN` matters here. Without it,
+a notice would point at the Function App's own address.
+
+**Deploying** is the `Deploy clocks` jobs in the workflow. GitHub signs in to
+Azure over OIDC, so no password is stored:
+
+```bash
+APP_ID=$(az ad app create --display-name figmark-github-deploy --query appId -o tsv)
+az ad sp create --id "$APP_ID"
+for env in development production; do
+  az ad app federated-credential create --id "$APP_ID" --parameters "{
+    \"name\": \"figmark-$env\",
+    \"issuer\": \"https://token.actions.githubusercontent.com\",
+    \"subject\": \"repo:swarnavarb/Figmark:environment:$env\",
+    \"audiences\": [\"api://AzureADTokenExchange\"] }"
+done
+az role assignment create --assignee "$APP_ID" --role "Website Contributor" \
+  --scope "$(az functionapp show -g rg-figuremarket-dev -n func-figmark-clocks-dev --query id -o tsv)"
+```
+
+Then, in the repository:
+
+- **Secrets**: `AZURE_CLIENT_ID` (the `$APP_ID`), `AZURE_TENANT_ID`,
+  `AZURE_SUBSCRIPTION_ID`.
+- **Variables**: `CLOCK_APP_DEVELOPMENT=func-figmark-clocks-dev`, plus
+  `CLOCK_APP_PRODUCTION` once production has its own app.
+
+A clock job is skipped while its variable is empty. Once the variable is set,
+missing credentials fail the run rather than skipping it.
+
+To check it works, open the Function App's **Functions** list in the portal. It
+should show the four clocks and nothing else. Their invocation logs report what
+each one settled.
+
+**Cost**: about 130,000 runs a month at 512 MB. That should stay within or near
+Flex Consumption's monthly free grant.
+
 ## Free tier constraints
 
 - Cosmos free tier covers the first 1000 RU/s and 25 GB, and only one account

@@ -17,7 +17,6 @@ import {
   advancePowerSale,
   finishesAt,
   releaseItems,
-  tickPowerSales,
   windowLeftMinutes,
 } from './power-sale.js';
 
@@ -361,17 +360,3 @@ app.http('power-sales', { ...anon, methods: ['GET'], route: 'power-sales', handl
 app.http('power-sale-create', { ...anon, methods: ['POST'], route: 'power-sales/new', handler: powerSaleCreateRoute });
 app.http('power-sale-read', { ...anon, methods: ['GET'], route: 'power-sales/{id}', handler: powerSaleReadRoute });
 app.http('power-sale-stop', { ...anon, methods: ['POST'], route: 'power-sales/{id}/stop', handler: powerSaleStopRoute });
-
-/**
- * The clock: every minute, every live sale moves to where it should be.
- *
- * The console still advances what it reads, so a seller watching sees the next
- * item the moment it is due; this is what moves it when nobody is watching.
- */
-app.timer('power-sale-clock', {
-  schedule: '0 */1 * * * *',
-  handler: async (_timer, context) => {
-    const touched = await tickPowerSales(await getRepository());
-    if (touched > 0) context.log(`power-sale-clock: advanced ${touched} live sale(s)`);
-  },
-});

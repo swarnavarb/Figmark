@@ -1,0 +1,45 @@
+/**
+ * The clocks: work that falls due at a time rather than on a request.
+ *
+ * Static Web Apps' managed functions run HTTP triggers only, so on that host
+ * these never fire; the same registrations run on the clock Function App (see
+ * clock-host.ts and docs/AZURE.md). Each clock is also run on a read where it
+ * can be (sendHeldPushesSoon, closeDuePreOrdersSoon, the power-sale console),
+ * so a host without timers is slower, not stuck.
+ */
+import { app } from '@azure/functions';
+import { getRepository } from './data/index.js';
+import { disputeClock } from './functions/dispute-routes.js';
+import { tickPowerSales } from './functions/power-sale.js';
+import { closeDuePreOrders } from './functions/preorder.js';
+import { sendHeldPushes } from './push.js';
+
+/** Every minute, every live sale moves to where it should be, watched or not. */
+app.timer('power-sale-clock', {
+  schedule: '0 */1 * * * *',
+  handler: async (_timer, context) => {
+    const touched = await tickPowerSales(await getRepository());
+    if (touched > 0) context.log(`power-sale-clock: advanced ${touched} live sale(s)`);
+  },
+});
+
+/** Notices held while their step could still be undone go out once the hold ends. */
+app.timer('push-clock', {
+  schedule: '30 */1 * * * *',
+  handler: async (_timer, context) => {
+    const sent = await sendHeldPushes(await getRepository());
+    if (sent > 0) context.log(`push-clock: sent ${sent} held notice(s)`);
+  },
+});
+
+/** Campaigns past their cutoff or the seller's decision deadline are settled. */
+app.timer('preorder-clock', {
+  schedule: '15 */1 * * * *',
+  handler: async (_timer, context) => {
+    const settled = await closeDuePreOrders(await getRepository());
+    if (settled > 0) context.log(`preorder-clock: settled ${settled} pre-order(s)`);
+  },
+});
+
+/** Dispute deadlines and the release of money they hold. */
+app.timer('dispute-clock', { schedule: '0 7 * * * *', handler: disputeClock });
