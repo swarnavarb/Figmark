@@ -744,6 +744,13 @@ export class MemoryRepository implements Repository {
     this.wantSeekers.delete(id);
   }
 
+  async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
+    return [...this.listings.values()].filter(({ preOrder: pre }) => pre && !pre.closedAt && (
+      (pre.cutoffAt <= nowIso && !pre.filledAt && !pre.proceededShortAt && !pre.decisionDueAt)
+      || (Boolean(pre.decisionDueAt) && pre.decisionDueAt! <= nowIso)
+    )).slice(0, limit);
+  }
+
   async listPledges(listingId: string): Promise<Pledge[]> {
     return [...this.pledges.values()]
       .filter((pledge) => pledge.listingId === listingId)

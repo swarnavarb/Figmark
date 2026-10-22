@@ -1976,6 +1976,20 @@ export class CosmosRepository implements Repository {
     await this.container('wantSeekers').item(id, wantId).delete();
   }
 
+  async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
+    // Every seller's, so cross-partition; IS_STRING is false for absent and null alike.
+    const { resources } = await this.container('listings').items.query<Listing>({
+      query: 'SELECT * FROM c WHERE IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder)'
+        + ' AND NOT IS_STRING(c.preOrder.closedAt) AND ('
+        + '(c.preOrder.cutoffAt <= @now AND NOT IS_STRING(c.preOrder.filledAt)'
+        + ' AND NOT IS_STRING(c.preOrder.proceededShortAt) AND NOT IS_STRING(c.preOrder.decisionDueAt))'
+        + ' OR (IS_STRING(c.preOrder.decisionDueAt) AND c.preOrder.decisionDueAt <= @now))'
+        + ' OFFSET 0 LIMIT @limit',
+      parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
+    }).fetchAll();
+    return resources;
+  }
+
   async listPledges(listingId: string): Promise<Pledge[]> {
     const { resources } = await this.container('pledges')
       .items.query<Pledge>({ query: 'SELECT * FROM c ORDER BY c.createdAt ASC' }, { partitionKey: listingId })

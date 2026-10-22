@@ -286,11 +286,10 @@ async function whenShort(work: Working, moment: 'cutoff' | 'lapse'): Promise<voi
 /**
  * Bring a campaign's stored state up to date, telling whoever is in it.
  *
- * Called after anything that can move the number, and on the reads that
- * display it - there is no scheduler here, so a cutoff or a deadline that has
- * passed is noticed the next time somebody looks. That is late rather than
- * wrong: the outcome is the same either way, and the alternative is a timer
- * nobody is paying for firing on ten thousand listings nobody is reading.
+ * Called after anything that can move the number, on the reads that display
+ * it, and by the pre-order clock (closeDuePreOrders) for a cutoff or deadline
+ * that passed with nobody looking - otherwise the feed keeps advertising a
+ * campaign that is over, and the people in it are never told or refunded.
  *
  * Every notice goes out at most once, guarded by a timestamp on the listing
  * rather than by remembering whether we sent it. Sending "two more to go" every
@@ -451,6 +450,43 @@ export async function reconcilePreOrder(
   }
 
   return save(work, preOrder);
+}
+
+/** The most campaigns one tick of the clock settles; the rest wait for the next. */
+const CLOCK_BATCH = 25;
+
+/**
+ * The pre-order clock: settle every campaign whose deadline has passed.
+ *
+ * Asks only for the due ones, so a tick with nothing due is one small query
+ * however many campaigns are running. One that fails is left for the next
+ * tick rather than holding up the others. Returns how many were settled.
+ */
+export async function closeDuePreOrders(repository: Repo, now = new Date()): Promise<number> {
+  const due = await repository.listPreOrdersDue(now.toISOString(), CLOCK_BATCH);
+  let settled = 0;
+  for (const listing of due) {
+    try {
+      await reconcilePreOrder(repository, listing, { now });
+      settled += 1;
+    } catch {
+      // Still due; the next tick tries again.
+    }
+  }
+  return settled;
+}
+
+let lastTick = 0;
+
+/**
+ * The clock, run on a read rather than a timer - the same arrangement as held
+ * pushes (see sendHeldPushesSoon), for a host without timer triggers. At most
+ * once a minute per instance, and never waited on by the read that called it.
+ */
+export function closeDuePreOrdersSoon(repository: Repo, now = Date.now()): void {
+  if (now - lastTick < 60_000) return;
+  lastTick = now;
+  void closeDuePreOrders(repository, new Date(now)).catch(() => undefined);
 }
 
 /** Write the campaign back when anything about it moved. */

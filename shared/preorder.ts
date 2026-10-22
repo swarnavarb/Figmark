@@ -71,6 +71,26 @@ export const isGoingAhead = (preOrder: PreOrder): boolean =>
   !preOrder.closedAt && Boolean(preOrder.filledAt || preOrder.proceededShortAt);
 
 /**
+ * Still taking bookings, as far as a card can tell from the stored campaign.
+ *
+ * Closing at the cutoff is done by the API when it next reconciles the
+ * campaign, so a stored copy can still say open for a while after it is not.
+ * Badges ask this rather than whether there is a pre-order at all, so a card
+ * stops advertising one the moment its cutoff passes.
+ */
+export const isTakingBookings = (preOrder: PreOrder | null | undefined, now = Date.now()): boolean => {
+  if (!preOrder || preOrder.closedAt || preOrder.decisionDueAt) return false;
+  // The same rule booking is refused by (preOrderRefusal), seen by a stranger:
+  // once it has gone ahead a waitlist still takes names past the cutoff.
+  if (isGoingAhead(preOrder)) {
+    const rule = fullRuleOf(preOrder);
+    if (rule === 'close') return false;
+    if (rule === 'waitlist') return true;
+  }
+  return Date.parse(preOrder.cutoffAt) > now;
+};
+
+/**
  * The states, in the order they exclude each other.
  *
  * `going` before `called` because enough money has actually arrived, which is a

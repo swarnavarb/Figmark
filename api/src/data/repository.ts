@@ -263,6 +263,14 @@ export interface Repository {
    * moment it fills - all three want the whole set, which is one partition.
    */
   listPledges(listingId: string): Promise<Pledge[]>;
+  /**
+   * Pre-orders with a deadline behind them that nobody has acted on yet: the
+   * cutoff passed before it went ahead, or the seller's time to decide ran out.
+   *
+   * What the pre-order clock reconciles. Reconciling one takes it off this
+   * list - it closes, goes ahead or waits on the seller - so the list drains.
+   */
+  listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]>;
   savePledge(pledge: Pledge): Promise<Pledge>;
   deletePledge(id: string, listingId: string): Promise<void>;
   /**

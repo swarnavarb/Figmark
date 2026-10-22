@@ -4437,6 +4437,25 @@ await check('a campaign that runs out of time says so, and says what happened to
   assert.equal(refused.status, 409);
 });
 
+await check('the pre-order clock closes a campaign whose cutoff passed with nobody looking', async () => {
+  const { closeDuePreOrders } = await import(new URL('preorder.js', fns));
+  const repository = await getRepository();
+  const id = await openCampaign(10);
+  const buyer = await newBuyer('Unseen Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id, quantity: 1 } }), ctx);
+
+  await expireCampaign(id);
+  // Nobody has opened it since, so the stored copy - the one the feed draws - still says open.
+  assert.equal((await repository.getListing(id)).preOrder.closedAt ?? null, null);
+  assert.ok((await repository.listPreOrdersDue(new Date().toISOString(), 1000)).some((l) => l.id === id));
+
+  assert.ok(await closeDuePreOrders(repository) >= 1);
+  assert.ok((await repository.getListing(id)).preOrder.closedAt);
+  assert.equal((await noticesFor(buyer.id)).filter((r) => r.kind === 'preorder_closed').length, 1);
+  // Settled, so it is off the clock's list and a second tick does nothing to it.
+  assert.ok(!(await repository.listPreOrdersDue(new Date().toISOString(), 1000)).some((l) => l.id === id));
+});
+
 await check('whoever brought someone in gets the credit, and cannot give it to themselves', async () => {
   const id = await openCampaign(10);
   const recruiter = await newBuyer('Recruiter');

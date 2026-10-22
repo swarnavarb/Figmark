@@ -9,7 +9,7 @@ import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { notify } from './notify.js';
 import {
-  editPreOrder, holdsPlace, isWaiting, reconcilePreOrder, rosterOf, sellerDecides, verifiedReferrer,
+  closeDuePreOrders, editPreOrder, holdsPlace, isWaiting, reconcilePreOrder, rosterOf, sellerDecides, verifiedReferrer,
   type PreOrderEdit, type SellerAction,
 } from './preorder.js';
 
@@ -263,3 +263,15 @@ app.http('preorder-read', { ...anon, methods: ['GET'], route: 'listings/{id}/pre
 app.http('preorder-pledge', { ...anon, methods: ['POST'], route: 'listings/{id}/pledge', handler: preOrderPledgeRoute });
 app.http('preorder-edit', { ...anon, methods: ['POST'], route: 'listings/{id}/preorder/edit', handler: preOrderEditRoute });
 app.http('preorder-decide', { ...anon, methods: ['POST'], route: 'listings/{id}/preorder/decide', handler: preOrderDecideRoute });
+
+/**
+ * The pre-order clock, where the host runs timers. Catalog reads do the same
+ * job where it does not (see closeDuePreOrdersSoon).
+ */
+app.timer('preorder-clock', {
+  schedule: '0 */5 * * * *',
+  handler: async (_timer, context) => {
+    const settled = await closeDuePreOrders(await getRepository());
+    if (settled > 0) context.log(`preorder-clock: settled ${settled} pre-order(s)`);
+  },
+});

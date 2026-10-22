@@ -14,7 +14,7 @@ import { factsOf } from '@shared/catalog';
 import { FillBlock } from '../components/FillMeter';
 import { brandHueFor, daysUntil, formatDate, formatMoney, timeAgo } from '../format';
 import { PreOrderRules, isoInDays } from '../components/ListingForm';
-import { FULL_RULE_LABELS, SHORT_RULE_LABELS } from '@shared/preorder';
+import { FULL_RULE_LABELS, SHORT_RULE_LABELS, isTakingBookings } from '@shared/preorder';
 import { useSession } from '../session';
 import { isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
@@ -252,7 +252,7 @@ export function ListingPage() {
                   {facts.authenticity.label}
                 </span>
               )}
-              {listing.preOrder && <span className="badge badge--accent">Pre-order</span>}
+              {isTakingBookings(listing.preOrder) && <span className="badge badge--accent">Pre-order</span>}
             </span>
           </Gallery>
 

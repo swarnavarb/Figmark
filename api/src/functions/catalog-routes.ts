@@ -36,7 +36,7 @@ import { recordOpen } from '../share.js';
 import {
   AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor, cleanBuyerOffMinor, linkDiscountMinor,
 } from '../../../shared/affiliate.js';
-import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
+import { closeDuePreOrdersSoon, reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
 import { FULL_RULES, SHORT_RULES, cutoffProblem, thresholdProblem } from '../../../shared/preorder.js';
 import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { thumbNameOf } from '../storage/types.js';
@@ -126,6 +126,8 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     sellerId: request.query.get('seller') ?? undefined,
   });
   catalogRead.catch(() => undefined);
+  // Every feed load is a chance to settle campaigns whose cutoff passed unseen.
+  closeDuePreOrdersSoon(repository);
   const viewer = await auth.getCurrentUser(request);
   const [followedSellerIds, liked, catalog] = await Promise.all([
     viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([] as string[]),
