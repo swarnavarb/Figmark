@@ -297,7 +297,7 @@ az functionapp create \
   --name func-figmark-clocks-dev \
   --storage-account stfiguremarketdev \
   --flexconsumption-location centralindia \
-  --runtime node --runtime-version 20 \
+  --runtime node --runtime-version 22 \
   --instance-memory 512
 
 # The settings the clocks read: the same values the Static Web App has

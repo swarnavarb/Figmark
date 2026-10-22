@@ -5,8 +5,8 @@
  * these never fire; the same registrations run on the clock Function App (see
  * clock-host.ts and docs/AZURE.md). Each clock is also run on a read where it
  * can be (sendHeldPushesSoon, closeDuePreOrdersSoon, the power-sale console,
- * settlePlay on the social feeds),
- * so a host without timers is slower, not stuck.
+ * settlePlay on the social feeds), so a host without timers is slower, not
+ * stuck.
  */
 import { app } from '@azure/functions';
 import { getRepository } from './data/index.js';
