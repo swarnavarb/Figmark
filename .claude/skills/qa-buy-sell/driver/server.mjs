@@ -17,7 +17,7 @@
  * QA_SLOWMO (ms between actions, default 120), QA_DEVICE=phone|desktop.
  */
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
@@ -50,7 +50,8 @@ const DESKTOP = { viewport: { width: 1280, height: 860 } };
 
 /** persona -> { context, page, log: [] } */
 const people = new Map();
-let shotCount = 0;
+// Carry on numbering after a driver restart rather than overwrite earlier shots.
+let shotCount = readdirSync(OUT).filter((name) => name.endsWith('.png')).length;
 
 async function person(name, device) {
   let entry = people.get(name);
@@ -66,10 +67,17 @@ async function person(name, device) {
   entry = { context, page, log: [] };
   // What a person would notice going wrong: the page throwing, or a request failing.
   page.on('pageerror', (err) => entry.log.push(`[pageerror] ${err.message}`));
-  page.on('console', (msg) => { if (msg.type() === 'error') entry.log.push(`[console] ${msg.text()}`); });
-  page.on('response', (res) => {
-    if (res.status() >= 500) entry.log.push(`[http ${res.status()}] ${res.request().method()} ${res.url().replace(BASE, '')}`);
+  // "Failed to load resource" says nothing about which; the response line below names it.
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && !msg.text().startsWith('Failed to load resource')) entry.log.push(`[console] ${msg.text()}`);
   });
+  page.on('response', (res) => {
+    if (res.status() >= 400) entry.log.push(`[http ${res.status()}] ${res.request().method()} ${res.url().replace(BASE, '')}`);
+  });
+  // QA_TRACE=1: every API call this persona makes, into the driver log - for debugging the driver itself.
+  if (process.env.QA_TRACE === '1') {
+    page.on('request', (r) => { if (r.url().includes('/api/')) console.log(`[${name}] ${r.method()} ${r.url().replace(BASE, '')}`); });
+  }
   page.on('dialog', (dialog) => { entry.log.push(`[dialog] ${dialog.message()}`); void dialog.accept(); });
   people.set(name, entry);
   return entry;
@@ -118,38 +126,86 @@ async function look(page, { full = false } = {}) {
       .filter(visible).map((n) => clean(n.innerText)).filter(Boolean).slice(0, 15);
     const dialog = [...document.querySelectorAll('[role=dialog],.modal')].filter(visible).map((d) => clean(d.innerText).slice(0, 600));
     const text = clean(document.querySelector('main')?.innerText ?? document.body.innerText);
-    return { title: document.title, headings, notices, dialog, controls, text: full ? text.slice(0, 8000) : text.slice(0, 1800) };
+    // Panels that float over the page from outside <main> - the bell, a
+    // sheet, a menu - are on screen for the person even though main is not them.
+    const main = document.querySelector('main');
+    const overlays = [];
+    for (const el of document.body.querySelectorAll('*')) {
+      if (main && (main.contains(el) || el.contains(main))) continue;
+      if (overlays.some((o) => o.contains(el))) continue;
+      const pos = getComputedStyle(el).position;
+      if ((pos === 'fixed' || pos === 'absolute') && visible(el) && el.getBoundingClientRect().height > 120 && clean(el.innerText).length > 40) overlays.push(el);
+    }
+    const overlay = overlays.map((el) => clean(el.innerText).slice(0, 1200));
+    // The browser's own "Please enter a valid value" bubble is not in the page,
+    // but a person sees it: name every field the browser would refuse.
+    const invalid = [...document.querySelectorAll('input, textarea, select')]
+      .filter((el) => visible(el) && el.willValidate && !el.checkValidity())
+      .map((el) => `"${nameOf(el)}": ${el.validationMessage}`).slice(0, 10);
+    return { title: document.title, headings, notices, dialog, overlay, invalid, controls, text: full ? text.slice(0, 8000) : text.slice(0, 1800) };
   }, full);
   return [
     `URL: ${page.url().replace(BASE, '') || '/'}   TITLE: ${seen.title}`,
     seen.headings.length ? `HEADINGS:\n  ${seen.headings.join('\n  ')}` : '',
     seen.notices.length ? `NOTICES:\n  ${seen.notices.join('\n  ')}` : '',
     seen.dialog.length ? `DIALOG OPEN:\n  ${seen.dialog.join('\n  ')}` : '',
+    seen.overlay.length ? `PANEL OVER THE PAGE:\n  ${seen.overlay.join('\n  ')}` : '',
+    seen.invalid.length ? `FIELD PROBLEMS (browser would refuse):\n  ${seen.invalid.join('\n  ')}` : '',
     `SCREEN TEXT${full ? '' : ' (first 1800 chars; `look full` for all)'}:\n  ${seen.text}`,
     `CONTROLS:\n  ${seen.controls.join('\n  ')}`,
   ].filter(Boolean).join('\n');
 }
 
-/** "@7", or words a person would use: a button's text, a field's label. */
-function target(page, what) {
+/**
+ * "@7", or words a person would use: a button's text, a field's label.
+ * Tried in this order - a button before a tab or plain text with the same
+ * words - and the first one actually visible wins, the way a person reads.
+ */
+async function target(page, what) {
   if (/^@\d+$/.test(what)) return page.locator(`[data-qa-ref="${what.slice(1)}"]`);
   const exact = what.startsWith('=');
   const name = exact ? what.slice(1) : what;
   const options = { name, exact };
-  return page.getByRole('button', options)
-    .or(page.getByRole('link', options))
-    .or(page.getByRole('radio', options))
-    .or(page.getByRole('tab', options))
-    .or(page.getByRole('switch', options))
-    .or(page.getByRole('checkbox', options))
-    .or(page.getByLabel(name, { exact }))
-    .or(page.getByText(name, { exact }))
-    .first();
+  const candidates = [
+    page.getByRole('button', options),
+    page.getByRole('link', options),
+    page.getByRole('radio', options),
+    page.getByRole('tab', options),
+    page.getByRole('switch', options),
+    page.getByRole('checkbox', options),
+    page.getByRole('menuitem', options),
+    page.getByLabel(name, { exact }),
+    page.getByText(name, { exact }),
+    // What `look` printed, when the accessible name differs (an icon hidden from it, say).
+    // Spacing ignored: look joins "+" and "Upload" with a space the DOM may not have.
+    page.locator('[data-qa-ref]').filter({
+      hasText: new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*'), 'i'),
+    }),
+  ];
+  for (const candidate of candidates) {
+    const visible = candidate.filter({ visible: true });
+    if (await visible.count().catch(() => 0)) return visible.first();
+  }
+  return candidates[0].first();
 }
 
-function field(page, what) {
+/** A box to type in or a list to choose from - never a button that shares its label. */
+async function field(page, what) {
   if (/^@\d+$/.test(what)) return page.locator(`[data-qa-ref="${what.slice(1)}"]`);
-  return page.getByLabel(what).or(page.getByPlaceholder(what)).or(page.getByRole('textbox', { name: what })).first();
+  const inputs = 'input:not([type=hidden]):not([type=checkbox]):not([type=radio]), textarea, select';
+  const candidates = [
+    page.getByLabel(what).and(page.locator(inputs)),
+    page.getByPlaceholder(what),
+    page.getByRole('textbox', { name: what }),
+    page.getByRole('spinbutton', { name: what }),
+    page.getByRole('combobox', { name: what }),
+    page.getByLabel(what),
+  ];
+  for (const candidate of candidates) {
+    const visible = candidate.filter({ visible: true });
+    if (await visible.count().catch(() => 0)) return visible.first();
+  }
+  return candidates[0].first();
 }
 
 async function shot(page, name) {
@@ -164,21 +220,43 @@ const commands = {
   async open(p, [path = '/']) { await p.goto(path.startsWith('http') ? path : BASE + (path.startsWith('/') ? path : `/${path}`)); return look(p); },
   async look(p, [mode]) { return look(p, { full: mode === 'full' }); },
   /** click <@ref | text> */
-  async click(p, [what]) { await target(p, what).click({ timeout: 8000 }); await p.waitForTimeout(400); return look(p); },
+  async click(p, [what]) { await (await target(p, what)).click({ timeout: 8000 }); await p.waitForTimeout(400); return look(p); },
+  /** double <@ref | text> - an impatient double tap. */
+  async double(p, [what]) { await (await target(p, what)).dblclick({ timeout: 8000 }); await p.waitForTimeout(800); return look(p); },
   /** type <@ref | label> <text> - typed key by key, as a person would. */
   async type(p, [what, ...rest]) {
-    const box = field(p, what);
+    const box = await field(p, what);
     await box.click({ timeout: 8000 });
     await box.fill('');
     await box.pressSequentially(rest.join(' '), { delay: 35 });
     return look(p);
   },
   /** choose <@ref | label> <option text> */
-  async choose(p, [what, ...rest]) { await field(p, what).selectOption({ label: rest.join(' ') }); return look(p); },
+  async choose(p, [what, ...rest]) { await (await field(p, what)).selectOption({ label: rest.join(' ') }); return look(p); },
   /** press <key> e.g. Enter, Escape */
   async press(p, [key]) { await p.keyboard.press(key); await p.waitForTimeout(300); return look(p); },
-  /** upload <@ref | label> <file> */
-  async upload(p, [what, file]) { await field(p, what).setInputFiles(resolve(file)); await p.waitForTimeout(600); return look(p); },
+  /** upload <@ref | button text | label> <file> */
+  async upload(p, [what, file]) {
+    const el = await target(p, what);
+    const isFileInput = await el.evaluate((node) => node instanceof HTMLInputElement && node.type === 'file').catch(() => false);
+    if (isFileInput) await el.setInputFiles(resolve(file));
+    else {
+      // The button a person taps opens a hidden file input beside it; hand
+      // the file to that input, which is what the chooser would do.
+      const handle = await el.evaluateHandle((node) => {
+        for (let up = node; up && up !== document.body; up = up.parentElement) {
+          const input = up.querySelector('input[type=file]');
+          if (input) return input;
+        }
+        return null;
+      });
+      const input = handle.asElement();
+      if (!input) throw new Error(`no file input near "${what}"`);
+      await input.setInputFiles(resolve(file));
+    }
+    await p.waitForTimeout(1200);
+    return look(p);
+  },
   async scroll(p, [dir = 'down']) { await p.mouse.wheel(0, dir === 'up' ? -700 : 700); await p.waitForTimeout(300); return look(p); },
   async back(p) { await p.goBack(); return look(p); },
   async reload(p) { await p.reload(); return look(p); },
@@ -216,7 +294,7 @@ const commands = {
     return look(p);
   },
   /** errors - what went wrong under the hood since the last call to errors. */
-  async errors(_p, _a, entry) { const out = entry.log.splice(0); return out.length ? out.join('\n') : 'no page errors, console errors or 5xx responses'; },
+  async errors(_p, _a, entry) { const out = entry.log.splice(0); return out.length ? out.join('\n') : 'no page errors, console errors or 4xx/5xx responses'; },
   async logout(_p, _a, entry, name) { await entry.context.close(); people.delete(name); return `${name} signed out (context closed)`; },
 };
 
@@ -233,7 +311,7 @@ createServer(async (req, res) => {
   const entry = await person(persona, device);
   try {
     const out = await fn(entry.page, args, entry, persona);
-    const trouble = entry.log.length ? `\n\n⚠ ${entry.log.length} new page/console/5xx error(s) - run \`errors\` to read them.` : '';
+    const trouble = entry.log.length ? `\n\n⚠ ${entry.log.length} new page/console/4xx/5xx error(s) - run \`errors\` to read them.` : '';
     send(200, `[${persona}] ${out}${trouble}`);
   } catch (err) {
     const file = await shot(entry.page, `error-${persona}-${command}`).catch(() => null);

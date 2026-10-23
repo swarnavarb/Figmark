@@ -36,6 +36,7 @@ node $A meera open /listing/lst_my_cards
 node $A meera click "Buy now"             # by visible text / label / aria-label
 node $A meera click @14                   # by number from the last screen
 node $A meera click "=Sign in"            # leading = means exact match
+node $A meera double "Buy now"            # an impatient double tap
 node $A meera type "Transaction reference" UPI-4471882211
 node $A arjun choose Lot "Add to a lot later"
 node $A arjun upload @16 api/assets/demo/<file>.jpg
@@ -44,7 +45,7 @@ node $A meera wait "Payment sent"         # waits up to 10s
 node $A meera expect "Waiting for the seller"   # PASS/FAIL line, never throws
 node $A meera absent "Buy now"
 node $A meera shot after-claim            # full-page screenshot into the run folder
-node $A meera errors                      # page errors, console errors, 5xx since last call
+node $A meera errors                      # page errors, console errors, 4xx/5xx (with URL) since last call
 node $A --desktop priya login ...         # this persona gets a desktop screen (default: phone 390x844)
 ```
 
@@ -85,7 +86,9 @@ fresh listings in group B and reuses them later - write their ids down.
 6. **Try what people actually do**: double-tap, go back, reload mid-flow, open
    the same order in a second persona, type nonsense, leave a field empty.
 7. Run `errors` at the end of every scenario. Any 5xx or page error is a bug
-   even if the screen looked fine.
+   even if the screen looked fine. A 4xx is a bug only when the screen
+   did not explain the refusal, or the page asked for something it knew the
+   person could not have (background noise - S3).
 8. **Screenshot** every bug and every scenario's end state.
 
 Business rules worth knowing so you judge correctly (from `shared/orders.ts`):

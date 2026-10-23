@@ -10,6 +10,7 @@
 #   bash .claude/skills/qa-buy-sell/driver/start.sh          # build + fresh start
 #   QA_SKIP_BUILD=1 bash .claude/skills/qa-buy-sell/driver/start.sh
 #   bash .claude/skills/qa-buy-sell/driver/start.sh stop
+#   bash .claude/skills/qa-buy-sell/driver/start.sh driver   # restart the browser only; app data kept
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -38,6 +39,23 @@ wait_for() {
 }
 
 if [ "${1:-}" = "stop" ]; then stop; echo "stopped"; exit 0; fi
+
+if [ "${1:-}" = "driver" ]; then
+  RUN="$(cat qa-runs/LATEST)"
+  curl -s -XPOST "127.0.0.1:$QA_DRIVER_PORT/quit" >/dev/null 2>&1 || true
+  node -e '
+    const port = process.argv[1]; const until = Date.now() + 20000;
+    (async function gone() {
+      try { await fetch(`http://127.0.0.1:${port}/people`); if (Date.now() < until) setTimeout(gone, 300); }
+      catch { /* port free */ }
+    })();' "$QA_DRIVER_PORT"
+  [ -f "$PIDS" ] && { head -1 "$PIDS" > "$PIDS.tmp"; mv "$PIDS.tmp" "$PIDS"; }
+  QA_OUT="$RUN/shots" nohup node .claude/skills/qa-buy-sell/driver/server.mjs >> "$RUN/driver.log" 2>&1 &
+  echo $! >> "$PIDS"
+  wait_for "http://127.0.0.1:$QA_DRIVER_PORT/people" "driver on :$QA_DRIVER_PORT"
+  echo "personas were signed out; screenshots continue in $RUN/shots"
+  exit 0
+fi
 stop
 
 RUN="qa-runs/$(date +%Y%m%d-%H%M%S)-$PORT"
