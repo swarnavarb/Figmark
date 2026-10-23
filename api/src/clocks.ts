@@ -9,6 +9,7 @@
  * stuck.
  */
 import { app } from '@azure/functions';
+import { config } from './config.js';
 import { getRepository } from './data/index.js';
 import { disputeClock } from './functions/dispute-routes.js';
 import { tickPowerSales } from './functions/power-sale.js';
@@ -21,7 +22,10 @@ app.timer('power-sale-clock', {
   schedule: '0 */1 * * * *',
   handler: async (_timer, context) => {
     const touched = await tickPowerSales(await getRepository());
-    if (touched > 0) context.log(`power-sale-clock: advanced ${touched} live sale(s)`);
+    // Names the store: the showcase sales are live on both, so the count alone
+    // cannot tell a missing COSMOS_ENDPOINT from a working one.
+    const store = config.cosmos ? 'Cosmos' : 'the in-memory store';
+    if (touched > 0) context.log(`power-sale-clock: advanced ${touched} live sale(s) on ${store}`);
   },
 });
 
