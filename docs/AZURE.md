@@ -308,12 +308,12 @@ az functionapp config appsettings set \
   --resource-group rg-figuremarket-dev --name func-figmark-clocks-dev \
   --settings COSMOS_ENDPOINT=... COSMOS_KEY=... COSMOS_DATABASE=figmark \
              STORAGE_ACCOUNT=... STORAGE_KEY=... \
-             WEB_PUSH_PUBLIC_KEY=... WEB_PUSH_PRIVATE_KEY=... WEB_PUSH_SUBJECT=... \
-             PUBLIC_ORIGIN=...
+             WEB_PUSH_PUBLIC_KEY=... WEB_PUSH_PRIVATE_KEY=... WEB_PUSH_SUBJECT=...
 ```
 
-Notifications link back to the site, so `PUBLIC_ORIGIN` matters here. Without it,
-a notice would point at the Function App's own address.
+`PUBLIC_ORIGIN` is not needed here: only the share-card routes read it, and the
+clock app serves no routes. A notice carries a path, which the phone opens
+against the site it subscribed from (`app/public/sw.js`).
 
 **Deploying** is the `Deploy clocks` jobs in the workflow. GitHub signs in to
 Azure over OIDC, so no password is stored:
