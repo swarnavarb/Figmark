@@ -332,6 +332,14 @@ az role assignment create --assignee "$APP_ID" --role "Website Contributor" \
   --scope "$(az functionapp show -g rg-figuremarket-dev -n func-figmark-clocks-dev --query id -o tsv)"
 ```
 
+The portal's "GitHub Actions deploying Azure resources" form now builds an
+ID-based subject (`repo:swarnavarb@128403126/Figmark@1357131323:environment:development`,
+the numeric owner and repository IDs). Development has both that one
+(`github-development`) and the classic name-based one above
+(`github-development-classic`), so either form of token GitHub sends signs in.
+A failed login prints the subject it received, so a mismatch is quick to fix
+by adding that one.
+
 Then, in the repository:
 
 - **Secrets**: `AZURE_CLIENT_ID` (the `$APP_ID`), `AZURE_TENANT_ID`,
