@@ -302,14 +302,17 @@ az functionapp create \
   --runtime node --runtime-version 24 \
   --instance-memory 512
 
-# The settings the clocks read: the same values the Static Web App has
-# (az staticwebapp appsettings list -n stapp-figuremarket-dev).
+# Copy the data settings the Static Web App has, with the same values
+# (az staticwebapp appsettings list -n stapp-figuremarket-dev). Today that is
+# the Cosmos pair; add STORAGE_* or WEB_PUSH_* here only once the site has them.
 az functionapp config appsettings set \
   --resource-group rg-figuremarket-dev --name func-figmark-clocks-dev \
-  --settings COSMOS_ENDPOINT=... COSMOS_KEY=... COSMOS_DATABASE=figmark \
-             STORAGE_ACCOUNT=... STORAGE_KEY=... \
-             WEB_PUSH_PUBLIC_KEY=... WEB_PUSH_PRIVATE_KEY=... WEB_PUSH_SUBJECT=...
+  --settings COSMOS_ENDPOINT=... COSMOS_KEY=...
 ```
+
+Without `COSMOS_ENDPOINT` the clocks still run and report success, but on the
+throwaway in-memory store, so they never touch real listings. The clock app
+does not need `ADMIN_EMAILS` or `AUTH_SESSION_SECRET`: both are for sign-in.
 
 `PUBLIC_ORIGIN` is not needed here: only the share-card routes read it, and the
 clock app serves no routes. A notice carries a path, which the phone opens
