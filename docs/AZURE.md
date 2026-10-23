@@ -302,12 +302,15 @@ az functionapp create \
   --runtime node --runtime-version 24 \
   --instance-memory 512
 
-# Copy the data settings the Static Web App has, with the same values
-# (az staticwebapp appsettings list -n stapp-figuremarket-dev). Today that is
-# the Cosmos pair; add STORAGE_* or WEB_PUSH_* here only once the site has them.
+# Copy the data settings from the matching site environment, with the same
+# values: the Static Web App's "development" environment for this app, its
+# Production environment for the production clock app. Copy only the names
+# that environment has (Production today has only the Cosmos pair).
 az functionapp config appsettings set \
   --resource-group rg-figuremarket-dev --name func-figmark-clocks-dev \
-  --settings COSMOS_ENDPOINT=... COSMOS_KEY=...
+  --settings COSMOS_ENDPOINT=... COSMOS_KEY=... \
+             STORAGE_ACCOUNT=... STORAGE_KEY=... \
+             WEB_PUSH_PUBLIC_KEY=... WEB_PUSH_PRIVATE_KEY=... WEB_PUSH_SUBJECT=...
 ```
 
 Without `COSMOS_ENDPOINT` the clocks still run and report success, but on the
