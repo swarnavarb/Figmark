@@ -34,3 +34,6 @@ npm-debug.log*
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# human-style QA runs (screenshots, logs, reports)
+qa-runs/

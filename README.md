@@ -25,6 +25,14 @@ frontend work with live reload, run `npm run dev` (Vite on :5173, proxying
 Sign in with the one seeded account — `demo@figmark.in` (or its phone,
 `+919812345678`) and password `figmark123`. The auth page offers to fill it in.
 
+## Human-style QA of buying and selling
+
+In Claude Code, `/qa-buy-sell all` (or a group like `/qa-buy-sell C`, or ids
+like `/qa-buy-sell C4 D6 H2`) has Claude work the running app in a real
+browser as a shop owner, a buyer and a newcomer, across the scenarios in
+[.claude/skills/qa-buy-sell/SCENARIOS.md](.claude/skills/qa-buy-sell/SCENARIOS.md),
+and write a bug report with screenshots to `qa-runs/`.
+
 ## Layout
 
 ```
