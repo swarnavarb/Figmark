@@ -1361,4 +1361,3 @@ app.http('community-managers', { ...anon, methods: ['GET'], route: 'community/ma
 app.http('community-team', { ...anon, methods: ['GET'], route: 'community/team', handler: communityTeamRoute });
 app.http('community-notices', { ...anon, methods: ['GET'], route: 'community/notices', handler: communityNoticesRoute });
 app.http('community-standing', { ...anon, methods: ['GET'], route: 'community/standing/{id}', handler: communityStandingRoute });
-app.timer('dispute-clock', { schedule: '0 7 * * * *', handler: disputeClock });

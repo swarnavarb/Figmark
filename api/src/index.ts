@@ -44,3 +44,7 @@ import './functions/shop-tag-routes.js';
 import './functions/feed-routes.js';
 import './functions/account-routes.js';
 import './functions/bootstrap-routes.js';
+
+// Inert under Static Web Apps (HTTP triggers only); live under `func start`.
+// The clock Function App loads them through clock-host.ts instead.
+import './clocks.js';

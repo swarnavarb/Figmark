@@ -9,7 +9,7 @@ import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefr
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone } from '../../../shared/fulfilment.js';
 import { lotNo, lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
-import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
+import type { Listing, ListingComment, Order, PreOrderFullRule, PreOrderShortRule, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, REACTION_META, isReaction, type ReactionKind } from '../../../shared/social.js';
 import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
@@ -36,7 +36,8 @@ import { recordOpen } from '../share.js';
 import {
   AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor, cleanBuyerOffMinor, linkDiscountMinor,
 } from '../../../shared/affiliate.js';
-import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
+import { closeDuePreOrdersSoon, reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
+import { FULL_RULES, SHORT_RULES, cutoffProblem, thresholdProblem } from '../../../shared/preorder.js';
 import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { thumbNameOf } from '../storage/types.js';
 import { sniffImageType } from '../storage/sanitize.js';
@@ -125,6 +126,8 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     sellerId: request.query.get('seller') ?? undefined,
   });
   catalogRead.catch(() => undefined);
+  // Every feed load is a chance to settle campaigns whose cutoff passed unseen.
+  closeDuePreOrdersSoon(repository);
   const viewer = await auth.getCurrentUser(request);
   const [followedSellerIds, liked, catalog] = await Promise.all([
     viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([] as string[]),
@@ -633,7 +636,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   const repository = await getRepository();
 
   let body: Partial<Listing> & {
-    preOrder?: { fillThreshold: number; cutoffAt: string };
+    preOrder?: { fillThreshold: number; cutoffAt: string; whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule };
     /** The store to list into; absent means the caller's own. */
     storeId?: string;
     quantityMode?: 'fixed' | 'multiple';
@@ -684,6 +687,18 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
 
   const title = body.title?.trim();
   if (!title) return error(400, 'invalid_listing', 'A title is required.');
+
+  // A pre-order is a promise to a group about a number and a date; one that
+  // asks for a single booking, or closes yesterday, is a promise nobody can
+  // keep. Refused here rather than quietly turned into an ordinary listing.
+  if (body.preOrder && !body.privateFor) {
+    const problem = thresholdProblem(body.preOrder.fillThreshold) ?? cutoffProblem(body.preOrder.cutoffAt)
+      ?? (body.preOrder.whenShort !== undefined && !SHORT_RULES.includes(body.preOrder.whenShort)
+        ? 'Pick what happens if it comes up short.' : null)
+      ?? (body.preOrder.whenFull !== undefined && !FULL_RULES.includes(body.preOrder.whenFull)
+        ? 'Pick what happens once it fills.' : null);
+    if (problem) return error(400, 'invalid_preorder', problem);
+  }
 
   // A private deal is for one named buyer, never the shop itself.
   let privateFor: string | null = null;
@@ -784,11 +799,13 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
     preOrder:
-      !privateFor && body.preOrder && body.preOrder.fillThreshold > 0
+      !privateFor && body.preOrder
         ? {
             fillThreshold: Math.round(body.preOrder.fillThreshold),
             filledCount: 0,
-            cutoffAt: body.preOrder.cutoffAt,
+            cutoffAt: new Date(body.preOrder.cutoffAt).toISOString(),
+            whenShort: body.preOrder.whenShort ?? 'cancel',
+            whenFull: body.preOrder.whenFull ?? 'keep_open',
           }
         : null,
     lotId,

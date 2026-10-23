@@ -47,6 +47,7 @@ import {
 } from './seed.js';
 import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
+import { seedTestListings } from './seed-test-catalog.js';
 
 /**
  * In-process store used when Cosmos DB is not configured.
@@ -95,7 +96,7 @@ export class MemoryRepository implements Repository {
     }
     // The Buy tab's demo lots and drops, timed off the real clock.
     for (const lot of seedShowcaseLots()) this.lots.set(lot.id, lot);
-    for (const listing of [...seedListings(), ...seedShowcaseListings()]) this.listings.set(listing.id, listing);
+    for (const listing of [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]) this.listings.set(listing.id, listing);
     for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]) {
       this.orders.set(order.id, order);
     }
@@ -743,6 +744,13 @@ export class MemoryRepository implements Repository {
     this.wantSeekers.delete(id);
   }
 
+  async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
+    return [...this.listings.values()].filter(({ preOrder: pre }) => pre && !pre.closedAt && (
+      (pre.cutoffAt <= nowIso && !pre.filledAt && !pre.proceededShortAt && !pre.decisionDueAt)
+      || (Boolean(pre.decisionDueAt) && pre.decisionDueAt! <= nowIso)
+    )).slice(0, limit);
+  }
+
   async listPledges(listingId: string): Promise<Pledge[]> {
     return [...this.pledges.values()]
       .filter((pledge) => pledge.listingId === listingId)
@@ -1109,6 +1117,16 @@ export class MemoryRepository implements Repository {
     const forum = this.forums.get(post.channelId);
     if (forum) forum.postCount += 1;
     return post;
+  }
+
+  async listOpenGames(nowIso: string, limit: number): Promise<Post[]> {
+    return [...this.posts.values()].filter((post) =>
+      (post.contest && !post.contest.settledAt)
+      || (post.guess && !post.guess.revealedAt)
+      || (post.poll?.closesAt && (post.poll.closesAt >= nowIso
+        || (post.debate && !post.resultsSentAt)
+        || (post.poll.reward && !post.poll.reward.paidAt))),
+    ).slice(0, limit).map((post) => structuredClone(post));
   }
 
   async listRecentPosts(limit: number): Promise<Post[]> {

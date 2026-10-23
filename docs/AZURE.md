@@ -260,6 +260,109 @@ Both halves are pre-built in CI and uploaded with `skip_app_build` and
 compiled *into* the API by a `tsconfig` rooted above `api/` — Oryx running
 `npm install` inside `api/` on its own would not reproduce that.
 
+## The clock Function App
+
+Some work falls due at a time rather than on a request. That work lives in
+`api/src/clocks.ts`:
+
+| Clock | Every | What it does |
+|---|---|---|
+| `power-sale-clock` | minute | moves each live power sale to its next item |
+| `push-clock` | minute | sends notices whose undo window has ended |
+| `preorder-clock` | minute | settles pre-orders past their cutoff or decision deadline |
+| `games-clock` | minute | debate results, poll rewards, guess reveals, competition stages and prizes, "ending soon" reminders |
+| `dispute-clock` | hour | applies dispute deadlines and releases held money |
+
+Static Web Apps' managed functions run **HTTP triggers only**, so none of these
+fire there. Some of them also run when someone reads the related page: the bell
+sends held notices, the feed settles pre-orders and games, and the seller's
+console moves a sale. That only helps while someone is on the site. So the same API build is
+also deployed to a small standalone Function App that starts from
+`clock-host.js`. It runs the timers and **no HTTP routes**: `http-off.ts` turns
+route registration off. Its address is not behind Static Web Apps, so a route
+served there would skip the sign-in Static Web Apps puts in front of the API.
+It is not linked to the Static Web App, so the Free plan is enough.
+
+It reads and writes the same Cosmos DB as the site. An environment still on the
+in-memory store gets nothing from it, because the clock would be working on its
+own copy of the data.
+
+One app per environment. For development, with the names used above:
+
+```bash
+# Host storage can be the existing account. Flex Consumption is the plan to
+# use; check the region offers it with: az functionapp list-flexconsumption-locations
+# Node 24 here; the Static Web App's API stays on node:22, the newest it takes.
+# The build runs on both.
+az functionapp create \
+  --resource-group rg-figuremarket-dev \
+  --name func-figmark-clocks-dev \
+  --storage-account stfiguremarketdev \
+  --flexconsumption-location centralindia \
+  --runtime node --runtime-version 24 \
+  --instance-memory 512
+
+# Copy the data settings from the matching site environment, with the same
+# values: the Static Web App's "development" environment for this app, its
+# Production environment for the production clock app. Copy only the names
+# that environment has (Production today has only the Cosmos pair).
+az functionapp config appsettings set \
+  --resource-group rg-figuremarket-dev --name func-figmark-clocks-dev \
+  --settings COSMOS_ENDPOINT=... COSMOS_KEY=... \
+             STORAGE_ACCOUNT=... STORAGE_KEY=... \
+             WEB_PUSH_PUBLIC_KEY=... WEB_PUSH_PRIVATE_KEY=... WEB_PUSH_SUBJECT=...
+```
+
+Without `COSMOS_ENDPOINT` the clocks still run and report success, but on the
+throwaway in-memory store, so they never touch real listings. The clock app
+does not need `ADMIN_EMAILS` or `AUTH_SESSION_SECRET`: both are for sign-in.
+
+`PUBLIC_ORIGIN` is not needed here: only the share-card routes read it, and the
+clock app serves no routes. A notice carries a path, which the phone opens
+against the site it subscribed from (`app/public/sw.js`).
+
+**Deploying** is the `Deploy clocks` jobs in the workflow. GitHub signs in to
+Azure over OIDC, so no password is stored:
+
+```bash
+APP_ID=$(az ad app create --display-name figmark-github-deploy --query appId -o tsv)
+az ad sp create --id "$APP_ID"
+for env in development production; do
+  az ad app federated-credential create --id "$APP_ID" --parameters "{
+    \"name\": \"figmark-$env\",
+    \"issuer\": \"https://token.actions.githubusercontent.com\",
+    \"subject\": \"repo:swarnavarb/Figmark:environment:$env\",
+    \"audiences\": [\"api://AzureADTokenExchange\"] }"
+done
+az role assignment create --assignee "$APP_ID" --role "Website Contributor" \
+  --scope "$(az functionapp show -g rg-figuremarket-dev -n func-figmark-clocks-dev --query id -o tsv)"
+```
+
+The portal's "GitHub Actions deploying Azure resources" form now builds an
+ID-based subject (`repo:swarnavarb@128403126/Figmark@1357131323:environment:development`,
+the numeric owner and repository IDs). Development has both that one
+(`github-development`) and the classic name-based one above
+(`github-development-classic`), so either form of token GitHub sends signs in.
+A failed login prints the subject it received, so a mismatch is quick to fix
+by adding that one.
+
+Then, in the repository:
+
+- **Secrets**: `AZURE_CLIENT_ID` (the `$APP_ID`), `AZURE_TENANT_ID`,
+  `AZURE_SUBSCRIPTION_ID`.
+- **Variables**: `CLOCK_APP_DEVELOPMENT=func-figmark-clocks-dev`, plus
+  `CLOCK_APP_PRODUCTION` once production has its own app.
+
+A clock job is skipped while its variable is empty. Once the variable is set,
+missing credentials fail the run rather than skipping it.
+
+To check it works, open the Function App's **Functions** list in the portal. It
+should show the five clocks and nothing else. Their invocation logs report what
+each one settled.
+
+**Cost**: about 175,000 runs a month at 512 MB. That should stay within or near
+Flex Consumption's monthly free grant.
+
 ## Free tier constraints
 
 - Cosmos free tier covers the first 1000 RU/s and 25 GB, and only one account

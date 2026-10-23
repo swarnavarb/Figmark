@@ -476,6 +476,33 @@ export async function settlePlay(recent: readonly Post[], repository: Repo): Pro
   return touched;
 }
 
+/* ── The clock ──────────────────────────────────────────────────────────── */
+
+/** How many unfinished games one tick looks through. */
+const CLOCK_WINDOW = 500;
+
+/**
+ * Settle every game that has come due, wherever it is, read or not.
+ *
+ * Reads settle what they show (settlePlay), but only while someone is reading:
+ * a debate closing at 3am told nobody its result until the next visitor came
+ * past. The games clock runs this once a minute. One game that fails is left
+ * for the next tick rather than holding up the rest. Returns how many it
+ * settled, for the log.
+ */
+export async function settleDueGames(repository: Repo, now = Date.now()): Promise<number> {
+  const open = await repository.listOpenGames(new Date(now).toISOString(), CLOCK_WINDOW);
+  let settled = 0;
+  for (const post of open.filter((entry) => isDue(entry, now))) {
+    try {
+      settled += (await settlePlay([post], repository)).size;
+    } catch {
+      /* Retried next minute. */
+    }
+  }
+  return settled;
+}
+
 /* ── The leaderboard ────────────────────────────────────────────────────── */
 
 /**

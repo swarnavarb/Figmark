@@ -50,6 +50,8 @@ const STORE: { label: string; actions: Action[] }[] = [
     label: 'Sell',
     actions: [
       { id: 'slist', emoji: '🛍️', title: 'List an item', line: 'Price, condition, photos and shipping.', to: (store) => `/sell${storeQuery(store)}`, hue: 'blue' },
+      { id: 'spreorder', emoji: '📅', title: 'Pre-order', line: 'Take bookings first; order once enough are in.',
+        to: (store) => `/sell${storeQuery(store) ? `${storeQuery(store)}&` : '?'}preorder=1`, hue: 'violet' },
       { id: 'power', emoji: '⚡', title: 'Power sale', line: 'A run of drops on a timer, in your channel.', pro: true,
         to: (store) => `/shop/power-sale?store=${encodeURIComponent(store!.ownerId)}`, hue: 'gold' },
       { id: 'announce', emoji: '📣', title: 'Announcement', line: 'To your channel, for your followers.', to: (store) => `/social/c/${encodeURIComponent(store!.ownerId)}`, hue: 'coral' },

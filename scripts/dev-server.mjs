@@ -79,7 +79,7 @@ const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } 
 const { deviceReportRoute, deviceFiguresRoute } = await import(new URL('device-routes.js', apiRoot));
 const { notificationsRoute, notificationsReadRoute, notificationSettingsRoute, notificationSettingsSaveRoute } =
   await import(new URL('notification-routes.js', apiRoot));
-const { preOrderReadRoute, preOrderPledgeRoute } =
+const { preOrderReadRoute, preOrderPledgeRoute, preOrderEditRoute, preOrderDecideRoute } =
   await import(new URL('preorder-routes.js', apiRoot));
 const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
@@ -466,6 +466,8 @@ const routes = [
   ['POST', '/api/showcase/drops/:sellerId/:id/remind', remindRoute],
   ['GET', '/api/listings/:id/preorder', preOrderReadRoute],
   ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
+  ['POST', '/api/listings/:id/preorder/edit', preOrderEditRoute],
+  ['POST', '/api/listings/:id/preorder/decide', preOrderDecideRoute],
   ['GET', '/api/notifications', notificationsRoute],
   ['POST', '/api/notifications/read', notificationsReadRoute],
   ['GET', '/api/notifications/settings', notificationSettingsRoute],
@@ -638,12 +640,17 @@ const server = createServer((request, response) => {
 const port = Number(process.env.PORT ?? 5173);
 server.listen(port, () => console.log(`Figmark dev server on http://127.0.0.1:${port}`));
 
-/* The Functions host runs the power-sale and push clocks as timer triggers;
-   this server has no host, so it keeps the same once-a-minute beat itself. */
+/* The clock Function App runs the power-sale, push, pre-order and games clocks as
+   timer triggers (api/src/clocks.ts); this server has no host, so it keeps the
+   same once-a-minute beat itself. */
 const { tickPowerSales } = await import(new URL('power-sale.js', apiRoot));
+const { closeDuePreOrders } = await import(new URL('preorder.js', apiRoot));
+const { settleDueGames } = await import(new URL('../play.js', apiRoot));
 const { sendHeldPushes } = await import(new URL('../push.js', apiRoot));
 const { getRepository } = await import(new URL('../data/index.js', apiRoot));
 setInterval(() => {
   void getRepository().then((repository) => tickPowerSales(repository)).catch(() => undefined);
   void getRepository().then((repository) => sendHeldPushes(repository)).catch(() => undefined);
+  void getRepository().then((repository) => closeDuePreOrders(repository)).catch(() => undefined);
+  void getRepository().then((repository) => settleDueGames(repository)).catch(() => undefined);
 }, 60_000).unref();

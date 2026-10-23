@@ -59,6 +59,7 @@ import {
 } from './seed.js';
 import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
+import { seedTestListings } from './seed-test-catalog.js';
 
 /** Site-content id of the marker left once rows are in the current buyer-protection shape. */
 const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
@@ -1094,7 +1095,7 @@ export class CosmosRepository implements Repository {
 
     for (const [name, items] of [
       ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-      ['listings', [...seedListings(), ...seedShowcaseListings()]],
+      ['listings', [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]],
       ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
       ['powerSales', seedShowcaseSales()],
       ['comments', seedComments()],
@@ -1973,6 +1974,35 @@ export class CosmosRepository implements Repository {
 
   async deleteWantSeeker(id: string, wantId: string): Promise<void> {
     await this.container('wantSeekers').item(id, wantId).delete();
+  }
+
+  async listOpenGames(nowIso: string, limit: number): Promise<Post[]> {
+    // Every channel's, so cross-partition; IS_STRING is false for absent and null alike.
+    const { resources } = await this.container('posts').items.query<Post>({
+      query: 'SELECT * FROM c WHERE'
+        + ' (IS_OBJECT(c.contest) AND NOT IS_STRING(c.contest.settledAt))'
+        + ' OR (IS_OBJECT(c.guess) AND NOT IS_STRING(c.guess.revealedAt))'
+        + ' OR (IS_STRING(c.poll.closesAt) AND (c.poll.closesAt >= @now'
+        + ' OR (IS_OBJECT(c.debate) AND NOT IS_STRING(c.resultsSentAt))'
+        + ' OR (IS_OBJECT(c.poll.reward) AND NOT IS_STRING(c.poll.reward.paidAt))))'
+        + ' OFFSET 0 LIMIT @limit',
+      parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
+    }).fetchAll();
+    return resources;
+  }
+
+  async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
+    // Every seller's, so cross-partition; IS_STRING is false for absent and null alike.
+    const { resources } = await this.container('listings').items.query<Listing>({
+      query: 'SELECT * FROM c WHERE IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder)'
+        + ' AND NOT IS_STRING(c.preOrder.closedAt) AND ('
+        + '(c.preOrder.cutoffAt <= @now AND NOT IS_STRING(c.preOrder.filledAt)'
+        + ' AND NOT IS_STRING(c.preOrder.proceededShortAt) AND NOT IS_STRING(c.preOrder.decisionDueAt))'
+        + ' OR (IS_STRING(c.preOrder.decisionDueAt) AND c.preOrder.decisionDueAt <= @now))'
+        + ' OFFSET 0 LIMIT @limit',
+      parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
+    }).fetchAll();
+    return resources;
   }
 
   async listPledges(listingId: string): Promise<Pledge[]> {
@@ -3161,7 +3191,7 @@ function fixtureSets() {
   return [
     ['users', [...seedUsers(), ...seedLotBuyers()]],
     ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-    ['listings', [...seedListings(), ...seedShowcaseListings()]],
+    ['listings', [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]],
     ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
     ['powerSales', seedShowcaseSales()],
     ['comments', seedComments()],

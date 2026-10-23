@@ -122,6 +122,9 @@
 .buybox__fine { margin: 0; font-size: var(--t-2xs); color: var(--text-faint); }
 .pocard__title { font-family: var(--display); font-size: var(--t-lg); line-height: 1.15; }
 .pocard__note { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.55; }
+/* The seller's own controls, set apart from what buyers see by a rule above them. */
+.pocard__run { padding-top: 12px; border-top: 1px dashed var(--border); font-size: var(--t-sm); }
+.pocard__run input[type="number"] { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; }
 .fillring__track { fill: none; stroke: rgba(255, 255, 255, 0.08); stroke-width: 6; }
 .gallery__badges .qribbon { position: static; transform: none; border-radius: var(--r-pill); padding: 4px 10px; }
 .hashtag__hash {

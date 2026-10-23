@@ -10,7 +10,7 @@ import {
   CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, CONDITION_BUCKETS, categoriesIn, factsOf, filterOptions, matchesKind, priceCeiling,
   type CatalogKind,
 } from '@shared/catalog';
-import { preOrderView } from '@shared/preorder';
+import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
 import { ShopStrip } from '../components/ShopCards';
@@ -617,7 +617,8 @@ export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) 
   const [pop, setPop] = useState<{ id: number; gain: boolean } | null>(null);
   const { rarity } = listing;
   const tier = rarity.tier;
-  const view = listing.preOrder ? preOrderView(listing.preOrder) : null;
+  // A closed campaign stays on the listing; the card only advertises one still taking bookings.
+  const view = isTakingBookings(listing.preOrder) ? preOrderView(listing.preOrder!) : null;
   const left = listing.quantityMode === 'multiple' ? null : listing.quantityAvailable;
   const wasPrice = rarity.priceDropPercent
     ? Math.max(...(listing.priceHistory ?? []).map((entry) => entry.priceMinor))
@@ -644,7 +645,7 @@ export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) 
           {pop && <HeartPop key={pop.id} gain={pop.gain} />}
         </button>
         {rarity.priceDropPercent && <span className="qsticker-tag qsticker-tag--drop">−{rarity.priceDropPercent}%</span>}
-        {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
+        {view && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
       </Thumb>
       {/* Under the picture rather than on it: on the picture it sat on the
           condition stamp. With a booking amount too, the two share one strip

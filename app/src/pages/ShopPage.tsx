@@ -9,7 +9,7 @@ import { CATEGORIES, CONDITION_BUCKETS, canonicalCategory, factsOf } from '@shar
 import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';
-import { preOrderView } from '@shared/preorder';
+import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
 import { LotName, LotPhaseBadge, lotLabel } from '../components/LotName';
 import { useUndo } from '../components/Undo';
@@ -1396,7 +1396,7 @@ function ShelfCard({ listing, onEdit, onOpenLot, onTag }: {
           ? <span className="qsticker-tag qsticker-tag--drop">Expired</span>
           : listing.status === 'sold_out'
             ? <span className="qsticker-tag qsticker-tag--drop">Sold out</span>
-            : listing.preOrder && <span className="qsticker-tag">Pre-order</span>}
+            : isTakingBookings(listing.preOrder) && <span className="qsticker-tag">Pre-order</span>}
         <DropTag on={listing.channelDrop} />
       </Thumb>
       <AdvanceStrip percent={listing.advancePercent} />

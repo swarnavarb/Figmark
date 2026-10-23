@@ -263,6 +263,14 @@ export interface Repository {
    * moment it fills - all three want the whole set, which is one partition.
    */
   listPledges(listingId: string): Promise<Pledge[]>;
+  /**
+   * Pre-orders with a deadline behind them that nobody has acted on yet: the
+   * cutoff passed before it went ahead, or the seller's time to decide ran out.
+   *
+   * What the pre-order clock reconciles. Reconciling one takes it off this
+   * list - it closes, goes ahead or waits on the seller - so the list drains.
+   */
+  listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]>;
   savePledge(pledge: Pledge): Promise<Pledge>;
   deletePledge(id: string, listingId: string): Promise<void>;
   /**
@@ -539,6 +547,16 @@ export interface Repository {
    * there is no such post.
    */
   mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null>;
+  /**
+   * Games not finished yet, anywhere: competitions not settled, guesses not
+   * revealed, polls still open, and closed debates or paid polls whose results
+   * or rewards have not gone out.
+   *
+   * What the games clock settles (see settleDueGames). It is a superset of what
+   * is due - an open poll is listed so its "ending soon" reminder can go out -
+   * and isDue picks from it. Finishing a game takes it off the list.
+   */
+  listOpenGames(nowIso: string, limit: number): Promise<Post[]>;
 
   listForums(): Promise<Forum[]>;
   getForum(id: string): Promise<Forum | null>;
