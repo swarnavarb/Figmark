@@ -234,9 +234,7 @@ export class MockAuthProvider implements AuthService {
     }
 
     // An email or phone first; failing that, a username - with or without its @.
-    const handle = identifier.replace(/^@/, '');
-    const user = (await this.repository.getUserByIdentifier(identifier))
-      ?? (handleShapeProblem(handle) === null ? (await this.repository.getByHandle(handle))?.user ?? null : null);
+    const user = await this.accountFor(identifier);
 
     // Guessing spread over many addresses is capped per account - but only for
     // devices that have never signed in to it. The owner's browser carries the
@@ -443,7 +441,11 @@ export class MockAuthProvider implements AuthService {
   /** The account an email, phone or username names, as sign-in finds it. */
   private async accountFor(identifier: string): Promise<User | null> {
     const handle = identifier.replace(/^@/, '');
-    return (await this.repository.getUserByIdentifier(identifier))
+    // A mobile number however it is typed - 98765 43210, 09876543210, +91… -
+    // is the one sign-up stored, which is always +91 and ten digits.
+    const mobile = identifier.includes('@') ? null : normalizeIndianMobile(identifier);
+    return (mobile ? await this.repository.getUserByIdentifier(mobile) : null)
+      ?? (await this.repository.getUserByIdentifier(identifier))
       ?? (handleShapeProblem(handle) === null ? (await this.repository.getByHandle(handle))?.user ?? null : null);
   }
 

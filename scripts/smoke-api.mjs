@@ -8185,6 +8185,36 @@ await check('a checkout nobody has placed cannot be disputed', async () => {
   assert.equal(refused.jsonBody.error, 'not_placed');
 });
 
+await check('cancelling an accepted, unpaid order puts its stock back, as rejecting one does', async () => {
+  const listing = await list({ title: 'Item Restock', priceMinor: 30_000, quantityAvailable: 3 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx);
+  const repository = await getRepository();
+  assert.equal((await repository.getListing(listing.id)).quantityAvailable, 2);
+  await acceptOrder(req({ headers: auth, params: { id: opened.id }, body: {} }), ctx);
+  const cancelled = await cancelOrder(req({ headers: auth, params: { id: opened.id }, body: { reason: 'Damaged on the shelf' } }), ctx);
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.jsonBody));
+  assert.equal((await repository.getListing(listing.id)).quantityAvailable, 3);
+});
+
+await check('removing an item archives it: gone from the shop, still there for its orders', async () => {
+  const listing = await list({ title: 'Item Removed', priceMinor: 30_000 });
+  const removed = await deleteListing(req({ headers: auth, params: { id: listing.id }, body: { remove: true } }), ctx);
+  assert.equal(removed.status, 200, JSON.stringify(removed.jsonBody));
+  assert.equal(removed.jsonBody.removed, true);
+  const stored = await (await getRepository()).getListing(listing.id);
+  assert.equal(stored.status, 'archived', 'archived, never erased');
+  assert.equal((await buy(listing.id)).status, 409);
+});
+
+await check('an advance is a whole rupee, so advance and balance add up to the total', async () => {
+  const { advanceMinor } = await import(new URL('../api/dist/shared/payments.js', import.meta.url));
+  assert.equal(advanceMinor(199_800, 25), 50_000);
+  assert.equal(advanceMinor(99_900, 25), 25_000);
+  assert.equal(advanceMinor(100_000, 20), 20_000);
+  assert.equal(advanceMinor(150, 50), 100, 'never more than the total, never a fraction of a rupee');
+});
+
 await check('a group paid two different ways is refused rather than switched', async () => {
   const lD = await list({ title: 'Item D', priceMinor: 200_000, advancePercent: 50 });
   const lE = await list({ title: 'Item E', priceMinor: 200_000, advancePercent: 50 });

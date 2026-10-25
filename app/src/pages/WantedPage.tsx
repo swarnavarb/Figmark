@@ -592,11 +592,28 @@ function WantDialog({ card, onClose, onChanged }: {
                     )}
                     {/* An answer with nothing attached is the one that matters
                         here: most of what is wanted has not been bought yet. */}
-                    {offer.listing && (
+                    {offer.listing && !data.mine && (
                       <a className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
                         href={`/listing/${offer.listing.id}`}>
                         {offer.listing.title} · {formatMoney(offer.listing.priceMinor, offer.listing.currency)}
                       </a>
+                    )}
+                    {/* The asker's way forward: buy what is listed, or talk it
+                        through - a private deal at their price is made in the chat. */}
+                    {data.mine && (
+                      <div className="row" style={{ flexWrap: 'wrap' }}>
+                        {offer.listing && (
+                          <Link className="btn btn--sm" to={`/listing/${offer.listing.id}`}>
+                            🛒 View and buy · {formatMoney(offer.listing.priceMinor, offer.listing.currency)}
+                          </Link>
+                        )}
+                        {offer.seller.handle && (
+                          <Link className="btn btn--quiet btn--sm"
+                            to={`/messages/${encodeURIComponent(offer.seller.handle)}${offer.listing ? `?about=${encodeURIComponent(offer.listing.id)}` : ''}`}>
+                            💬 Message {offer.seller.name}
+                          </Link>
+                        )}
+                      </div>
                     )}
                   </article>
                 ))}

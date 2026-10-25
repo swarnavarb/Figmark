@@ -622,6 +622,11 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     // Lets the seller's cancel/reversal screen know, before they try, whether
     // the buyer has somewhere for the money to go.
     buyerHasReversalDetails: side === 'seller' ? Boolean(other?.reversalDetails) : null,
+    // Where to send it, once money is owed back - the same details the
+    // seller's Refunds tab shows for this buyer, and only then.
+    buyerReversalDetails: side === 'seller' && order.status === 'payment_reversal_pending'
+      ? other?.reversalDetails ?? null
+      : null,
     myReview: mine,
     // Only if it may be seen: an unrevealed review is exactly what this whole
     // mechanism exists to keep out of the counterparty's hands.
@@ -1701,6 +1706,27 @@ export const claimPaymentRoute = handler(claimPayment);
  * dispute - different rules, different screen, and a held payment that can be
  * emptied by one side calling it off is not being held.
  */
+/**
+ * Put back what an order took. A called-off order that still holds a unit is
+ * stock nobody can buy and a pre-order that can never fill.
+ */
+async function restock(repository: Repo, order: Order, now: string): Promise<void> {
+  const listing = await repository.getListing(order.listingId);
+  if (!listing) return;
+  await repository.updateListing({
+    ...listing,
+    quantityAvailable: listing.quantityAvailable + order.quantity,
+    status: listing.status === 'sold_out' ? 'active' : listing.status,
+    preOrder: listing.preOrder
+      ? {
+          ...listing.preOrder,
+          filledCount: Math.max(0, listing.preOrder.filledCount - order.quantity),
+        }
+      : null,
+    updatedAt: now,
+  });
+}
+
 async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -1746,23 +1772,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   note(order, `Seller could not serve this order: ${reason}`, user.id);
   await repository.updateOrder(order);
 
-  // Put back what the order took. A cancelled order that still holds a unit is
-  // stock nobody can buy and a pre-order that can never fill.
-  const listing = await repository.getListing(order.listingId);
-  if (listing) {
-    await repository.updateListing({
-      ...listing,
-      quantityAvailable: listing.quantityAvailable + order.quantity,
-      status: listing.status === 'sold_out' ? 'active' : listing.status,
-      preOrder: listing.preOrder
-        ? {
-            ...listing.preOrder,
-            filledCount: Math.max(0, listing.preOrder.filledCount - order.quantity),
-          }
-        : null,
-      updatedAt: now,
-    });
-  }
+  await restock(repository, order, now);
 
   const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
@@ -1938,8 +1948,12 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   const buyer = await repository.getUserById(order.buyerId);
   const seller = await repository.getUserById(order.sellerId);
 
+  // A parcel already on its way is not back on the shelf; anything that never
+  // left is, the same as a rejected order's.
+  const shippedOut = order.status === 'shipped';
   const owed = callOffOrder(order, reason, user.id);
   await repository.updateOrder(order);
+  if (!shippedOut) await restock(repository, order, new Date().toISOString());
 
   if (owed <= 0) {
     const named = await orderNames(repository, order);

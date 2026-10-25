@@ -1678,11 +1678,15 @@ async function deleteListing(request: HttpRequest, _context: InvocationContext) 
   const found = await manageable(request);
   if ('refusal' in found) return found.refusal;
   const { listing, repository } = found;
+  // `remove: true` also takes it out of the shop and the seller's own lists -
+  // archived, still never erased, so every order that names it keeps it.
+  const body = await request.json().catch(() => ({})) as { remove?: unknown };
+  const remove = body?.remove === true;
 
   const now = new Date().toISOString();
-  await repository.updateListing({ ...listing, expiresAt: now, updatedAt: now });
+  await repository.updateListing({ ...listing, expiresAt: now, ...(remove ? { status: 'archived' as const } : {}), updatedAt: now });
   await refreshIdentity(repository, listing.sellerId);
-  return json(200, { expired: true });
+  return json(200, { expired: true, removed: remove });
 }
 
 /** GET /api/forwarders - the freight forwarder directory. */

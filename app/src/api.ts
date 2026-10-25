@@ -1134,6 +1134,8 @@ export interface OrderState {
   dispute: Dispute | null;
   /** Seller-side only: whether the buyer has somewhere for a reversal to go. */
   buyerHasReversalDetails: boolean | null;
+  /** Seller side, while a reversal is pending: where the buyer wants the money sent. */
+  buyerReversalDetails?: BuyerReversalDetails | null;
   /** The protection window operators have set today, in days. */
   autoReleaseDays: number;
   /** Buyer-side: already on one of their collection shelves. */
@@ -2586,6 +2588,9 @@ export const api = {
     post<{ listing: Listing }>(`/listings/${encodeURIComponent(id)}/edit`, body),
   expireListing: (id: string) =>
     post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
+  /** Off sale and out of the shop for good. Orders that name it keep it. */
+  removeListing: (id: string) =>
+    post<{ expired: boolean; removed: boolean }>(`/listings/${encodeURIComponent(id)}/delete`, { remove: true }),
   payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
     post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
   refundCredit: (id: string, body: {

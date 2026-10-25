@@ -197,8 +197,12 @@ export function DirectTrack({ order, actFor }: {
   const steps = directSteps(order);
   const done = steps.filter((step) => step.done).length;
   const current = steps.findIndex((step) => !step.done);
-  const here = current === -1 ? steps[steps.length - 1]! : steps[Math.max(0, current - 1)]!;
-  const next = current === -1 ? null : steps[current]!;
+  // Where it actually is: the furthest step reached. A parcel sent out on
+  // trust is dispatched even while its payment step is still open, and the
+  // open step stays visibly unticked below.
+  const furthest = steps.map((step) => step.done).lastIndexOf(true);
+  const here = steps[Math.max(0, furthest)]!;
+  const next = steps.slice(furthest + 1).find((step) => !step.done) ?? (current === -1 ? null : steps[current]!);
   // What the seller said along the way, newest first, so nothing typed is lost.
   const notes = settledHistory(order.stageHistory)
     .filter((event) => event.note && !/^Courier:/.test(event.note))

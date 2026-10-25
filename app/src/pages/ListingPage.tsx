@@ -16,7 +16,7 @@ import { brandHueFor, daysUntil, formatDate, formatMoney, timeAgo } from '../for
 import { PreOrderRules, isoInDays } from '../components/ListingForm';
 import { FULL_RULE_LABELS, SHORT_RULE_LABELS, isTakingBookings } from '@shared/preorder';
 import { useSession } from '../session';
-import { isExpired, isMultiple } from '@shared/payments';
+import { advanceMinor, isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
 import { AffiliateCard, ReferredBy, SimilarItems } from '../components/Affiliate';
 import { AFFILIATE_PARAM } from '@shared/affiliate';
@@ -167,7 +167,7 @@ export function ListingPage() {
       {listing.advancePercent ? (
         <p className="buybox__adv">
           <Svg name="coin" size={15} /> Book with{' '}
-          <b>{formatMoney(Math.round(listing.priceMinor * listing.advancePercent / 100), listing.currency)}</b>{' '}
+          <b>{formatMoney(advanceMinor(listing.priceMinor, listing.advancePercent), listing.currency)}</b>{' '}
           ({listing.advancePercent}%) now, the rest later
         </p>
       ) : null}

@@ -595,7 +595,9 @@ export function FollowCounts({ userId, followerCount, isStore }: { userId: strin
     setData(null);
     void api.follows(userId, isStore ? 'store' : 'person').then(setData).catch(() => setData(null));
   }, [userId, isStore, followerCount]);
-  const followers = data?.followers.length ?? followerCount;
+  // The count the follow itself keeps, the one every other screen shows - not
+  // the length of the list fetched for the sheet, which can be a partial page.
+  const followers = followerCount;
   const following = data?.following.length ?? 0;
   const tabs = isStore ? (['followers'] as const) : (['followers', 'following'] as const);
   // Each count is a cell of the page's stats row (.pstats), the same size as its neighbours.

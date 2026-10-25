@@ -54,7 +54,8 @@ await check('signs in by phone, resolving the same account', async () => {
 });
 
 await check('identifier matching ignores case and phone punctuation', async () => {
-  for (const variant of [DEMO_EMAIL.toUpperCase(), ' +91 98123 45678 ']) {
+  // The ten digits as typed at sign-up, and with a trunk 0, are the same number.
+  for (const variant of [DEMO_EMAIL.toUpperCase(), ' +91 98123 45678 ', '9812345678', '09812345678', '98123 45678']) {
     const result = await auth.login({ identifier: variant, password: DEMO_PASSWORD });
     assert.equal(result.user.id, session.user.id, `failed for ${variant}`);
   }

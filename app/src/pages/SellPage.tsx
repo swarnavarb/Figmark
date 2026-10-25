@@ -787,7 +787,7 @@ export function SellPage() {
                   whenShort={whenShort} onWhenShort={setWhenShort} whenFull={whenFull} onWhenFull={setWhenFull} />
               )}
 
-              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} />
+              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} priceMinor={priceMinor} />
 
               {/* Telling people is part of listing, not a second job to remember
                   afterwards. Both on unless the seller says otherwise. */}

@@ -11,7 +11,7 @@ import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex, renderStepTe
 import { REVIEW_REVEAL_DAYS, isCancelledLike, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
-import type { Order, SellerPaymentDetails } from '@shared/models';
+import type { BuyerReversalDetails, Order, SellerPaymentDetails } from '@shared/models';
 import {
   ApiRequestError, api,
   type Checkout, type EvidenceDraft, type LotSummary, type OrderState, type OrderTracking,
@@ -175,7 +175,7 @@ export function OrderPage() {
         ]}>
         {!placed && (
           <p className="icard__note">
-            <b>Not placed yet.</b> The seller only gets your order once you choose how to buy below.
+            <b>Not placed yet.</b> Nothing is ordered until you choose how to buy below. The shop can see that you pressed Buy, and may message you about it.
           </p>
         )}
         {order.affiliate && (seller
@@ -524,8 +524,20 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [cancelling, setCancelling] = useState(false);
   const [reversing, setReversing] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  // The fee for disputing a reversal, shown before it is paid - never taken on one tap.
+  const [disputeFee, setDisputeFee] = useState<{ feeMinor: number; currency: string } | null>(null);
 
   const { order, actions } = state;
+
+  async function askDisputeFee() {
+    setError(null);
+    try {
+      const body = await api.communityManagers(order.sellerId);
+      setDisputeFee({ feeMinor: body.feeMinor, currency: body.currency });
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load the dispute fee.');
+    }
+  }
 
   async function run(name: string, fn: () => Promise<unknown>) {
     setBusy(name);
@@ -732,11 +744,25 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
                 </span>
               </div>
             )}
-            {actions.includes('raise_dispute') && (
-              <button className="btn btn--danger" disabled={busy !== null}
-                onClick={() => void run('dispute-reversal', () => api.raiseDispute(order.id))}>
-                {busy === 'dispute-reversal' ? 'Raising…' : 'Raise a Dispute'}
+            {actions.includes('raise_dispute') && !disputeFee && (
+              <button className="btn btn--danger" disabled={busy !== null} onClick={() => void askDisputeFee()}>
+                Raise a Dispute
               </button>
+            )}
+            {actions.includes('raise_dispute') && disputeFee && (
+              <div className="claimcard__ask">
+                <p style={{ margin: 0 }}>
+                  A community manager hears it with both of you. Raising it costs the dispute fee of{' '}
+                  <b>{formatMoney(disputeFee.feeMinor, disputeFee.currency)}</b>.
+                </p>
+                <span className="row" style={{ flexWrap: 'wrap' }}>
+                  <button className="btn btn--danger" disabled={busy !== null}
+                    onClick={() => void run('dispute-reversal', () => api.raiseDispute(order.id))}>
+                    {busy === 'dispute-reversal' ? 'Raising…' : `Pay ${formatMoney(disputeFee.feeMinor, disputeFee.currency)} and raise`}
+                  </button>
+                  <button className="btn btn--quiet" disabled={busy !== null} onClick={() => setDisputeFee(null)}>Back</button>
+                </span>
+              </div>
             )}
           </div>
 
@@ -762,6 +788,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
             <ReversalPanel
               order={order}
               buyerHasReversalDetails={state.buyerHasReversalDetails}
+              buyerDetails={state.buyerReversalDetails ?? null}
               busy={busy}
               onRequestDetails={(message) => run('request-details', () => api.requestReversalDetails(order.id, message))}
               onSubmit={(body) => run('submit-reversal', () => api.submitReversal(order.id, body))}
@@ -1048,6 +1075,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   if (route === 'direct' && quote.sellerPayment) {
     return (
       <DirectPay
+        orderId={order.id}
         quote={{ ...quote, itemMinor: dueNow }}
         payment={quote.sellerPayment}
         busy={busy === 'claim'}
@@ -1181,7 +1209,9 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
  * make the buyer's proof part of the order, because the screenshot is the whole
  * of their case if the seller later says nothing arrived.
  */
-function DirectPay({ quote, payment, busy, onPaid, onBack }: {
+function DirectPay({ orderId, quote, payment, busy, onPaid, onBack }: {
+  /** Quoted in the payment note, so the seller can match the money to the order. */
+  orderId: string;
   quote: Checkout;
   payment: SellerPaymentDetails;
   busy: boolean;
@@ -1230,6 +1260,10 @@ function DirectPay({ quote, payment, busy, onPaid, onBack }: {
             <dd><code>{value}</code></dd>
           </div>
         ))}
+        <div className="kv">
+          <dt>Order number <span className="faint">· put it in the payment note</span></dt>
+          <dd><code>{orderId}</code></dd>
+        </div>
         {payment.qrUrl && (
           <figure className="payqr">
             <img loading="lazy" decoding="async" src={payment.qrUrl} alt={`QR code to pay ${quote.seller.name ?? 'the seller'}`} className="payqr__img" />
@@ -1316,14 +1350,27 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
   const balanceAfter = Math.max(0, money.outstandingMinor - claimedMinor);
   const claimLabel = claim?.plan === 'additional' ? 'Additional payment'
     : claim?.plan === 'advance' ? 'Advance payment' : 'Full payment';
+  // What actually left the buyer's account: one payment can cover other items
+  // of theirs, or be more than was owed. The seller checks their bank for this.
+  const excessMinor = claim?.excessMinor ?? 0;
+  const sentMinor = Math.max(claim?.batchTotalMinor ?? 0, claimedMinor + excessMinor);
 
   return (
     <div className="stack">
       <div className="card card--pad stack claimcard">
         <div className="claimcard__hero">
           <span className="claimcard__label">{claimLabel}</span>
-          <span className="claimcard__amount">{formatMoney(claimedMinor, order.currency)}</span>
+          <span className="claimcard__amount">{formatMoney(sentMinor, order.currency)}</span>
         </div>
+        {sentMinor !== claimedMinor && (
+          <div className="kv"><dt>Towards this order</dt><dd>{formatMoney(claimedMinor, order.currency)}</dd></div>
+        )}
+        {excessMinor > 0 && (
+          <div className="kv"><dt>Over what was owed (credit for the buyer)</dt><dd>{formatMoney(excessMinor, order.currency)}</dd></div>
+        )}
+        {sentMinor - claimedMinor - excessMinor > 0 && (
+          <div className="kv"><dt>For their other items, in the same payment</dt><dd>{formatMoney(sentMinor - claimedMinor - excessMinor, order.currency)}</dd></div>
+        )}
         <div className="kv"><dt>Already paid before this</dt><dd>{formatMoney(money.paidMinor, order.currency)}</dd></div>
         <div className="kv"><dt>Order total</dt><dd>{formatMoney(money.totalMinor, order.currency)}</dd></div>
         <div className="kv"><dt>Balance left if accepted</dt><dd>{formatMoney(balanceAfter, order.currency)}</dd></div>
@@ -1341,7 +1388,7 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
       </div>
 
       <p className="faint" style={{ margin: 0 }}>
-        Check your own account before answering. Accepting is you saying this {formatMoney(claimedMinor, order.currency)} is there.
+        Check your own account before answering. Accepting is you saying this {formatMoney(sentMinor, order.currency)} is there.
       </p>
 
       {denying ? (
@@ -1471,9 +1518,10 @@ function CancelOrder({ order, busy, onCancel, onClose }: {
  * Refuses to let the seller submit proof until the buyer has somewhere for
  * the money to go, and offers the nudge-the-buyer message instead.
  */
-function ReversalPanel({ order, buyerHasReversalDetails, busy, onRequestDetails, onSubmit, onClose }: {
+function ReversalPanel({ order, buyerHasReversalDetails, buyerDetails, busy, onRequestDetails, onSubmit, onClose }: {
   order: Order;
   buyerHasReversalDetails: boolean | null;
+  buyerDetails: BuyerReversalDetails | null;
   busy: string | null;
   onRequestDetails: (message?: string) => void | Promise<void>;
   onSubmit: (body: { reference?: string; screenshot?: string }) => void | Promise<void>;
@@ -1511,6 +1559,18 @@ function ReversalPanel({ order, buyerHasReversalDetails, busy, onRequestDetails,
   return (
     <div className="stack">
       <div className="kv"><dt>Reversal amount</dt><dd>{formatMoney(reversal?.amountMinor ?? 0, order.currency)}</dd></div>
+      {buyerDetails && (
+        <div className="card card--pad stack">
+          <strong>Send it to</strong>
+          <div className="kv"><dt>Method</dt><dd>{buyerDetails.method}</dd></div>
+          <div className="kv"><dt>Account / UPI</dt><dd><code>{buyerDetails.identifier}</code></dd></div>
+          <div className="kv"><dt>Name</dt><dd>{buyerDetails.accountName}</dd></div>
+          {buyerDetails.notes && <p className="faint" style={{ margin: 0 }}>{buyerDetails.notes}</p>}
+          {buyerDetails.qrCodeUrl && (
+            <img loading="lazy" decoding="async" src={buyerDetails.qrCodeUrl} alt="The buyer's payment QR code" className="payqr__img" />
+          )}
+        </div>
+      )}
       <label className="field">
         <span>Transaction reference</span>
         <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UTR / reference" />

@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
 import { factsOf, isInDemand } from '@shared/catalog';
 import { SOURCING_LABELS } from '@shared/enums';
-import { isMultiple } from '@shared/payments';
+import { advanceMinor, isMultiple } from '@shared/payments';
 import type { Listing } from '@shared/models';
 import { formatMoney, formatDateTime } from '../format';
 import type { PriceChange } from '../api';
@@ -222,7 +222,7 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
     note: listing.soldCount ? `${listing.soldCount} sold so far` : undefined,
   });
   if (listing.advancePercent) {
-    const now = Math.round(listing.priceMinor * listing.advancePercent / 100);
+    const now = advanceMinor(listing.priceMinor, listing.advancePercent);
     tiles.push({
       tone: 'warm', icon: 'coin', label: 'Booking amount', value: `${listing.advancePercent}% · ${formatMoney(now, listing.currency)}`,
       note: `Pay this now, ${formatMoney(listing.priceMinor - now, listing.currency)} later`,
