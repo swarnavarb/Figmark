@@ -26,5 +26,8 @@
     "@types/node": "^22.10.2",
     "@types/web-push": "^3.6.4",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "@azure/msal-node": "^7.1.1"
   }
 }
