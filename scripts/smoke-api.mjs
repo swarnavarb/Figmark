@@ -8189,16 +8189,20 @@ await check('a checkout nobody has placed cannot be disputed', async () => {
   assert.equal(refused.jsonBody.error, 'not_placed');
 });
 
-await check('cancelling an accepted, unpaid order puts its stock back, as rejecting one does', async () => {
-  const listing = await list({ title: 'Item Restock', priceMinor: 30_000, quantityAvailable: 3 });
-  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
-  await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx);
+await check('cancelling an accepted order puts the stock back only when the seller says so', async () => {
   const repository = await getRepository();
-  assert.equal((await repository.getListing(listing.id)).quantityAvailable, 2);
-  await acceptOrder(req({ headers: auth, params: { id: opened.id }, body: {} }), ctx);
-  const cancelled = await cancelOrder(req({ headers: auth, params: { id: opened.id }, body: { reason: 'Damaged on the shelf' } }), ctx);
-  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.jsonBody));
-  assert.equal((await repository.getListing(listing.id)).quantityAvailable, 3);
+  const listing = await list({ title: 'Item Restock', priceMinor: 30_000, quantityAvailable: 3 });
+  const cancelWith = async (restock) => {
+    const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+    await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx);
+    await acceptOrder(req({ headers: auth, params: { id: opened.id }, body: {} }), ctx);
+    const cancelled = await cancelOrder(req({ headers: auth, params: { id: opened.id }, body: { reason: 'Damaged on the shelf', restock } }), ctx);
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelled.jsonBody));
+  };
+  await cancelWith(false);
+  assert.equal((await repository.getListing(listing.id)).quantityAvailable, 2, 'kept off sale: damaged stock stays gone');
+  await cancelWith(true);
+  assert.equal((await repository.getListing(listing.id)).quantityAvailable, 2, 'put back: the unit is for sale again');
 });
 
 await check('removing an item archives it: gone from the shop, still there for its orders', async () => {

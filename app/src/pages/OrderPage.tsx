@@ -1,6 +1,7 @@
 import { InfoTip } from '../components/InfoTip';
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
+import { RestockChoice } from '../components/RestockChoice';
 import { ManagerMark } from '../components/ManagerBadge';
 import { compressImage } from '../imageCompress';
 import { OrderServices } from '../components/OrderServices';
@@ -1479,12 +1480,14 @@ function RejectOrder({ order, busy, onReject, onClose }: {
 function CancelOrder({ order, busy, onCancel, onClose }: {
   order: Order;
   busy: string | null;
-  onCancel: (body: { reason: string; message?: string }) => void | Promise<void>;
+  onCancel: (body: { reason: string; message?: string; restock?: boolean }) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState('');
+  const [restock, setRestock] = useState<boolean | null>(null);
   const paid = orderMoney(order).paidMinor > 0;
+  const askStock = order.status !== 'shipped';
 
   return (
     <div className="stack">
@@ -1499,6 +1502,9 @@ function CancelOrder({ order, busy, onCancel, onClose }: {
           placeholder={`Your order for ${order.itemName} has been cancelled${reason ? `: ${reason}` : '.'}`} />
         <span className="field__hint">Sent to them as a message. Edit it, or leave it blank for the default.</span>
       </label>
+      {askStock && (
+        <RestockChoice quantity={order.quantity} value={restock} onChange={setRestock} />
+      )}
       {paid && (
         <p className="notice notice--warn" style={{ margin: 0 }}>
           Money has already been paid on this order. Cancelling starts a payment reversal — the order
@@ -1506,8 +1512,9 @@ function CancelOrder({ order, busy, onCancel, onClose }: {
         </p>
       )}
       <div className="row">
-        <button type="button" className="btn btn--danger" disabled={busy !== null || reason.trim().length < 4}
-          onClick={() => void onCancel({ reason: reason.trim(), message: message.trim() || undefined })}>
+        <button type="button" className="btn btn--danger"
+          disabled={busy !== null || reason.trim().length < 4 || (askStock && restock === null)}
+          onClick={() => void onCancel({ reason: reason.trim(), message: message.trim() || undefined, restock: restock === true })}>
           {busy === 'cancel' ? 'Cancelling…' : 'Cancel order'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onClose}>Back</button>

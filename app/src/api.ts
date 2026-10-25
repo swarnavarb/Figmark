@@ -2889,7 +2889,7 @@ export const api = {
   /** Takes a never-paid Buy out of the cart; `save` keeps the item on Saved. */
   discardCheckout: (id: string, save = false) =>
     post<{ removed: string; saved: boolean }>(`/orders/${encodeURIComponent(id)}/discard`, { save }),
-  cancelOrder: (id: string, body: { reason: string; message?: string }) =>
+  cancelOrder: (id: string, body: { reason: string; message?: string; restock?: boolean }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/cancel`, body),
   requestReversalDetails: (id: string, message?: string) =>
     post<{ sent: boolean }>(`/orders/${encodeURIComponent(id)}/reversal/request-details`, { message }),

@@ -1710,13 +1710,13 @@ export const claimPaymentRoute = handler(claimPayment);
  * Put back what an order took. A called-off order that still holds a unit is
  * stock nobody can buy and a pre-order that can never fill.
  */
-async function restock(repository: Repo, order: Order, now: string): Promise<void> {
+async function restock(repository: Repo, order: Order, now: string, units = true): Promise<void> {
   const listing = await repository.getListing(order.listingId);
   if (!listing) return;
   await repository.updateListing({
     ...listing,
-    quantityAvailable: listing.quantityAvailable + order.quantity,
-    status: listing.status === 'sold_out' ? 'active' : listing.status,
+    quantityAvailable: listing.quantityAvailable + (units ? order.quantity : 0),
+    status: units && listing.status === 'sold_out' ? 'active' : listing.status,
     preOrder: listing.preOrder
       ? {
           ...listing.preOrder,
@@ -1938,7 +1938,7 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'cannot_cancel', 'This order cannot be cancelled here.');
   }
 
-  let body: { reason?: string; message?: string };
+  let body: { reason?: string; message?: string; restock?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -1950,12 +1950,13 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   const buyer = await repository.getUserById(order.buyerId);
   const seller = await repository.getUserById(order.sellerId);
 
-  // A parcel already on its way is not back on the shelf; anything that never
-  // left is, the same as a rejected order's.
+  // Whether the unit goes back on sale is the seller's call: it may be
+  // damaged, lost or sold elsewhere. A parcel already on its way never is.
+  // The order's pre-order place is freed either way.
   const shippedOut = order.status === 'shipped';
   const owed = callOffOrder(order, reason, user.id);
   await repository.updateOrder(order);
-  if (!shippedOut) await restock(repository, order, new Date().toISOString());
+  await restock(repository, order, new Date().toISOString(), body.restock === true && !shippedOut);
 
   if (owed <= 0) {
     const named = await orderNames(repository, order);

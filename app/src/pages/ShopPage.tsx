@@ -32,6 +32,7 @@ import {
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { OrderPhotos } from '../components/OrderPhotos';
+import { RestockChoice } from '../components/RestockChoice';
 import { ConditionTag } from '../components/ConditionTag';
 import { SlideToConfirm } from '../components/SlideToConfirm';
 import { Spinner } from '../components/Spinner';
@@ -3980,16 +3981,18 @@ function CancelOrderRow({ row, onClose, onDone }: {
 }) {
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState('');
+  const [restock, setRestock] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const paid = row.paymentStatus === 'paid' || row.paymentStatus === 'partially_paid';
+  const askStock = row.status !== 'shipped';
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.cancelOrder(row.id, { reason: reason.trim(), message: message.trim() || undefined });
+      await api.cancelOrder(row.id, { reason: reason.trim(), message: message.trim() || undefined, restock: restock === true });
       onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not cancel that.');
@@ -4015,6 +4018,7 @@ function CancelOrderRow({ row, onClose, onDone }: {
             placeholder={`Your order for ${row.itemName} has been cancelled.`} />
           <span className="field__hint">Edit it, or leave it blank for the default.</span>
         </label>
+        {askStock && <RestockChoice quantity={row.quantity} value={restock} onChange={setRestock} />}
         {error && <p className="notice notice--error">{error}</p>}
         {paid ? (
           <p className="notice notice--warn" style={{ margin: 0 }}>
@@ -4026,7 +4030,7 @@ function CancelOrderRow({ row, onClose, onDone }: {
             The order becomes <strong>Cancelled</strong>. This cannot be undone.
           </p>
         )}
-        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
+        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4 || (askStock && restock === null)}>
           {busy ? 'Cancelling…' : 'Cancel order'}
         </button>
       </form>
