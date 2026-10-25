@@ -42,6 +42,8 @@ export interface StatusFacts {
   inHand: boolean;
   /** Held money that either side has disputed. */
   disputed?: boolean;
+  /** The seller's own words for turning it down or calling it off. */
+  reason?: string | null;
 }
 
 /** The facts, read off a whole order and what this viewer may do to it. */
@@ -61,6 +63,7 @@ export function factsFromOrder(order: Order, actions: readonly OrderAction[]): S
     receivedAt: order.receivedAt ?? null,
     inHand: order.lotId === 'direct',
     disputed: order.hold.state === 'disputed',
+    reason: order.cancelReason ?? null,
   };
 }
 
@@ -74,10 +77,11 @@ function stopped(f: StatusFacts, side: 'buyer' | 'seller'): StatusLine | null {
   switch (f.status) {
     case 'rejected':
       return side === 'buyer'
-        ? { tone: 'danger', icon: '❌', title: 'The seller declined this order', note: 'Nothing was charged.' }
+        ? { tone: 'danger', icon: '❌', title: 'The seller declined this order',
+          note: f.reason ? `“${f.reason}” Nothing was charged.` : 'Nothing was charged.' }
         : { tone: 'danger', icon: '❌', title: 'You declined this order' };
     case 'cancelled':
-      return { tone: 'quiet', icon: '🚫', title: 'Order cancelled' };
+      return { tone: 'quiet', icon: '🚫', title: 'Order cancelled', note: f.reason ? `“${f.reason}”` : undefined };
     case 'payment_reversal_pending':
       return side === 'buyer'
         ? { tone: 'info', icon: '↩️', title: 'Cancelled — your money is on its way back' }

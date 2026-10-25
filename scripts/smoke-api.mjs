@@ -2843,8 +2843,12 @@ await check('the Sell tab counts on the server what it used to count from the wh
 await check('the Sell tab dashboard has a card for each tab, and only for its own store', async () => {
   const card = (await sellDashboard(req({ headers: auth }), ctx)).jsonBody;
   for (const key of ['listings', 'orders', 'shipments', 'money', 'shop']) assert.ok(card[key], `the owner sees ${key}`);
-  const shelf = await (await getRepository()).listListings({ sellerId: 'usr_demo', limit: 10_000 });
+  // Every listing of the shop's, not only the ones on sale: drafts and sold-out
+  // items are what the card counts (an active-only read made both always 0).
+  const shelf = (await (await getRepository()).listListings({ sellerId: 'usr_demo', limit: 10_000, includeHidden: true }))
+    .filter((listing) => listing.status !== 'archived');
   assert.equal(card.listings.drafts, shelf.filter((listing) => listing.status === 'draft').length);
+  assert.equal(card.listings.soldOut, shelf.filter((listing) => listing.status === 'sold_out').length);
   assert.equal(card.listings.views, shelf.reduce((sum, listing) => sum + listing.viewCount, 0));
   // The open orders are the ones the to-do counts read.
   const counts = (await sellTodo(req({ headers: auth }), ctx)).jsonBody;

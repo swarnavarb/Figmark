@@ -861,6 +861,9 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
   };
 
   if (state.side === 'seller') {
+    // Not a sale until money has actually arrived: a booking, or a payment the
+    // buyer says they sent, is not something to announce yet.
+    if (order.paymentStatus === 'unpaid' || order.paymentStatus === 'claimed') return null;
     const filled = Boolean(pre && left === 0);
     const kind = filled ? 'filled' as const : 'sold' as const;
     const spec: ShareSpec = {
@@ -976,7 +979,7 @@ function DisputePanel({ state }: { state: OrderState }) {
           <span>⚠️ {entry.label}.</span>
           <button type="button" className="btn btn--sm btn--danger"
             onClick={() => setRaising({ subject: entry.subject, label: `${order.itemName} — ${entry.label}` })}>
-            ⚖️ Dispute
+            ⚖️ Dispute this
           </button>
         </div>
       ))}
@@ -999,7 +1002,8 @@ function DisputePanel({ state }: { state: OrderState }) {
       {order.placedAt !== null && (
         <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
           onClick={() => setRaising({ label: order.itemName })}>
-          ⚖️ Raise a dispute
+          {/* Beside a specific "Dispute this", say this one is for anything else. */}
+          ⚖️ {state.disputable.length > 0 ? 'Something else? Raise a dispute' : 'Raise a dispute'}
         </button>
       )}
       {raising && (

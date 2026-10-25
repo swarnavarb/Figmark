@@ -789,7 +789,10 @@ async function sellDashboard(request: HttpRequest, _context: InvocationContext) 
 
   const [figures, listings, lots] = await Promise.all([
     seesOrders || seesMoney || seesLots ? repository.listOrderFiguresForSeller(storeId) : Promise.resolve([]),
-    repository.listListings({ sellerId: storeId, limit: 10_000 }),
+    // Every listing of theirs, not only those on sale: drafts and sold-out
+    // items are counted below, and the on-sale filter does the rest.
+    repository.listListings({ sellerId: storeId, limit: 10_000, includeHidden: true })
+      .then((rows) => rows.filter((listing) => listing.status !== 'archived')),
     seesLots ? repository.listLots({ sellerId: storeId, limit: 10_000 }) : Promise.resolve([]),
   ]);
 
@@ -803,7 +806,7 @@ async function sellDashboard(request: HttpRequest, _context: InvocationContext) 
   const recent = sold.filter((order) => order.createdAt >= monthAgo);
   const before = sold.filter((order) => order.createdAt >= twoMonthsAgo && order.createdAt < monthAgo);
   const active = placed.filter((order) => !isFinished(order));
-  const onSale = listings.filter((listing) => listing.status === 'active' && !isExpired(listing));
+  const onSale = listings.filter((listing) => listing.status === 'active' && !listing.unlisted && !isExpired(listing));
 
   // Fourteen days of takings, oldest first, for the Data card's line.
   const start = now - 13 * dayMs;

@@ -306,9 +306,13 @@ export function SellPage() {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
   }, [draftKey]);
 
+  // Saved calculations, lots and templates are a verified seller's: an
+  // unverified one is not allowed to read them, so the form does not ask.
+  const canSell = Boolean(user?.capabilities.canSell);
   useEffect(() => {
+    if (!canSell) return;
     void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
-  }, [storeId]);
+  }, [storeId, canSell]);
 
   /** The tags this shop is known for, offered while listing. */
   const [shopTags, setShopTags] = useState<string[]>([]);
@@ -333,6 +337,7 @@ export function SellPage() {
   // The seller's open lots, so an item can be filed as it is listed rather
   // than published first and tidied up afterwards.
   useEffect(() => {
+    if (!canSell) return;
     let cancelled = false;
     void api
       .myLots()
@@ -344,9 +349,10 @@ export function SellPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canSell]);
 
   useEffect(() => {
+    if (!canSell) return;
     let cancelled = false;
     void api
       .templates()
@@ -365,8 +371,9 @@ export function SellPage() {
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
-    // Once: re-applying on every render would undo edits as they were typed.
-  }, []);
+    // Once (and once more if selling opens up): re-applying on every render
+    // would undo edits as they were typed.
+  }, [canSell]);
 
   /**
    * What the last template put in each field, so switching to another one
@@ -427,6 +434,10 @@ export function SellPage() {
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
   const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR;
+  // Said beside a button that will not press, so nobody is left guessing why.
+  const publishBlocker = title.trim().length <= 2 ? 'Give it a title of at least 3 characters.'
+    : priceMinor < MIN_PRICE_MINOR ? `Set a price of at least ${formatMoney(MIN_PRICE_MINOR)}.`
+      : null;
   // The category's required questions are asked after the first press of
   // Publish, with the unanswered ones marked, rather than leaving a button
   // that will not press.
@@ -461,7 +472,7 @@ export function SellPage() {
       preOrdering ? `Pre-order · ${fillThreshold || 2} bookings` : null,
       !preOrdering ? (terms.quantityMode === 'multiple' ? 'No fixed count' : `${Number(terms.quantity) || 0} in stock`) : null,
       terms.advance ? `${Number(terms.advancePercent) || 20}% advance` : null,
-      terms.limited && !deal ? `Ends in ${terms.days} days` : null,
+      terms.limited && !deal ? `Ends in ${terms.days} ${Number(terms.days) === 1 ? 'day' : 'days'}` : null,
       terms.affiliate && !deal ? 'Affiliate commission' : null,
       !deal ? (shareToChannel || shareToFeed
         ? `Posts to ${[shareToChannel && 'channel', shareToFeed && 'feed'].filter(Boolean).join(' & ')}`
@@ -805,6 +816,8 @@ export function SellPage() {
           )}
 
           {error && <ErrorNotice message={error} />}
+
+          {verified && publishBlocker && <p className="field__hint" role="status">{publishBlocker}</p>}
 
           {/* Pinned to the bottom of a phone screen, so it is never a scroll away. */}
           <div className="sellform__bar">

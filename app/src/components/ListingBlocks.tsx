@@ -214,7 +214,8 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
   tiles.push({
     tone: sourcing === 'in_hand' ? 'play' : 'blue', icon: sourcing === 'in_hand' ? 'home' : 'ship', label: 'Sourcing',
     value: SOURCING_LABELS[sourcing],
-    note: sourcing === 'in_hand' ? 'Ships straight from the seller' : 'Imported in a shipment lot',
+    note: sourcing === 'in_hand' ? 'Ships straight from the seller'
+      : listing.lotId ? 'Imported in a shipment lot' : 'Coming in from abroad - the shop puts it in a shipment lot',
   });
   tiles.push({
     tone: 'sea', icon: 'box', label: 'Stock',

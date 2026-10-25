@@ -20,7 +20,8 @@ export function NudgeButton({ request, shop, label = '🔔 Remind' }: {
       await api.nudge(request, shop);
       setState('sent');
     } catch (err) {
-      setState('idle');
+      // Already reminded today: it was sent, just not by this tap.
+      setState(err instanceof ApiRequestError && err.status === 429 ? 'sent' : 'idle');
       setNote(err instanceof ApiRequestError ? err.message : 'Could not send that.');
     }
   }

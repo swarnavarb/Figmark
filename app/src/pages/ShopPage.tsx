@@ -792,8 +792,16 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   if (error && !draft) return <ErrorNotice message={error} />;
   if (!draft) return <Loading />;
 
-  const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) =>
-    setDraft({ ...draft, [key]: value });
+  const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) => {
+    // The starter description names the shop; while it is still untouched it
+    // follows a rename, so "Monsoon Minis" never welcomes people to "Nisha's Shop".
+    const untouchedBio = key === 'storefrontName' && draft.bio === defaultShopBio(draft.storefrontName ?? '');
+    setDraft({
+      ...draft,
+      [key]: value,
+      ...(untouchedBio ? { bio: defaultShopBio(String(value).trim() || draft.storefrontName || '') } : {}),
+    });
+  };
 
   /** One payment field at a time, without losing the others already typed. */
   const setPayment = (key: keyof SellerPaymentDetails, value: string) =>

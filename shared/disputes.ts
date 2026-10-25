@@ -34,7 +34,7 @@ export const DISPUTE_TOPIC_LABELS: Record<DisputeTopic, string> = {
   payment_rejected: 'Payment not acknowledged',
   refund_rejected: 'Refund not acknowledged',
   reversal_rejected: 'Reversal not acknowledged',
-  general: 'Dispute',
+  general: 'About the order',
 };
 
 /** Only a held-payment dispute is about money Figmark is holding, so only it can settle by moving money. */

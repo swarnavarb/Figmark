@@ -485,7 +485,11 @@ export function PowerSaleBuilderPage() {
   const windowText = Number(window_) >= 60 && Number(window_) % 60 === 0
     ? `${Number(window_) / 60} hour${Number(window_) === 60 ? '' : 's'}` : `${Number(window_) || 0} minutes`;
   const saleName = name ?? `${day} drop`;
-  const openingText = opening ?? `⚡ ${day} drop starts now — members get ${windowText} on each piece at the channel price.`;
+  // The message goes out at the start; the first piece drops `lead` minutes later.
+  const leadMinutes = Math.max(0, Number(lead) || 0);
+  const firstDrop = leadMinutes === 0 ? 'starts now'
+    : `starts in ${leadMinutes >= 60 && leadMinutes % 60 === 0 ? `${leadMinutes / 60} hour${leadMinutes === 60 ? '' : 's'}` : `${leadMinutes} minutes`}`;
+  const openingText = opening ?? `⚡ ${day} drop ${firstDrop} — members get ${windowText} on each piece at the channel price.`;
 
   const set = (key: number, patch: Partial<ItemDraft>) =>
     setItems((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));

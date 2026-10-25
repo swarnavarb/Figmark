@@ -246,6 +246,9 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder={mode === 'signup' ? 'At least 8 characters' : ''} required />
+              {mode === 'signup' && (
+                <span className="field__hint">At least 8 characters, without your name, username or email in it.</span>
+              )}
               {mode === 'signin' && (
                 <button type="button" className="linkbtn auth__forgot" onClick={() => { setResetting(true); setError(null); }}>
                   Forgot your password?

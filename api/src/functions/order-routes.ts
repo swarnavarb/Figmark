@@ -1755,6 +1755,8 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
 
   const now = new Date().toISOString();
   order.status = 'rejected';
+  // Said back to the buyer on the order itself, not only in the timeline.
+  order.cancelReason = reason;
   // Any claim on it is answered by the same act: the order is off, so the
   // money - if it was sent - is going back rather than being confirmed.
   if (order.paymentClaim && !order.paymentClaim.decision) {
