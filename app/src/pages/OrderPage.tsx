@@ -649,7 +649,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
               </button>
             )}
             {actions.includes('pay_more') && (
-              <Link to="/purchases" className="btn btn--lg">
+              <Link to={`/purchases?pay=${encodeURIComponent(order.id)}`} className="btn btn--lg">
                 💳 Pay more · {formatMoney(orderMoney(order).outstandingMinor, order.currency)} left
               </Link>
             )}
@@ -967,10 +967,14 @@ function DisputePanel({ state }: { state: OrderState }) {
       {/* Anything else about the order: a community manager the raiser picks
           hears it, for the dispute fee. A protected purchase has its own
           claim above, heard by its assigned manager for free. */}
-      <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
-        onClick={() => setRaising({ label: order.itemName })}>
-        ⚖️ Raise a dispute
-      </button>
+      {/* Not on a checkout: the seller cannot see it yet, so there is nobody
+          to raise it with. */}
+      {order.placedAt !== null && (
+        <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
+          onClick={() => setRaising({ label: order.itemName })}>
+          ⚖️ Raise a dispute
+        </button>
+      )}
       {raising && (
         <RaiseDisputeModal onClose={() => setRaising(null)} orderSubject={raising.subject}
           side={state.side ?? undefined}

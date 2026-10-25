@@ -571,7 +571,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
 
   /* Unpaid balances by how long they have been owed. */
   const owed = kept.filter((order) => order.status !== 'delivered' || order.paymentStatus !== 'paid')
-    .filter((order) => (order.accepted || order.paymentStatus !== 'unpaid') && orderMoney(order).outstandingMinor > 0);
+    // Gone past waiting for payment (shipped, delivered) and still unpaid is owed too.
+    .filter((order) => (order.accepted || order.paymentStatus !== 'unpaid' || order.status !== 'pending_payment')
+      && orderMoney(order).outstandingMinor > 0);
   const owedNames = await names(repository, owed.map((order) => order.buyerId));
   const ageing = owed.map((order) => {
     const since = order.acceptedAt ?? placedAt(order);

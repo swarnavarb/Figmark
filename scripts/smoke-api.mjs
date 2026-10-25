@@ -8151,6 +8151,40 @@ await check('a booking cannot be dispatched or delivered until the seller accept
   assert.equal(shipped.status, 200, JSON.stringify(shipped.jsonBody));
 });
 
+await check('a payment the buyer claimed is answered before the order ships', async () => {
+  const listing = await list({ title: 'Item Claimed', priceMinor: 30_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const claimed = await claimPayment(req({ headers: payAuth, params: { id: opened.id }, body: { reference: 'UTR-CLAIM-1' } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  for (const checkpoint of ['dispatched', 'delivered']) {
+    const refused = await setCheckpoint(req({ headers: auth, params: { id: opened.id }, body: { checkpoint, on: true } }), ctx);
+    assert.equal(refused.status, 409, `${checkpoint}: ${JSON.stringify(refused.jsonBody)}`);
+    assert.equal(refused.jsonBody.error, 'awaiting_payment');
+  }
+});
+
+await check('an accepted booking sent out before payment can still be paid for', async () => {
+  const listing = await list({ title: 'Item Trust', priceMinor: 30_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx);
+  await acceptOrder(req({ headers: auth, params: { id: opened.id }, body: {} }), ctx);
+  const shipped = await setCheckpoint(req({ headers: auth, params: { id: opened.id }, body: { checkpoint: 'dispatched', on: true } }), ctx);
+  assert.equal(shipped.status, 200, JSON.stringify(shipped.jsonBody));
+  const seen = (await orderState(req({ headers: payAuth, params: { id: opened.id } }), ctx)).jsonBody;
+  assert.ok(seen.actions.includes('pay'), JSON.stringify(seen.actions));
+  const claimed = await claimPayment(req({ headers: payAuth, params: { id: opened.id }, body: { reference: 'UTR-TRUST-1' } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  assert.equal(claimed.jsonBody.order.status, 'shipped', 'paying does not rewind where it is');
+});
+
+await check('a checkout nobody has placed cannot be disputed', async () => {
+  const listing = await list({ title: 'Item Unplaced', priceMinor: 30_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const refused = await flagDispute(req({ headers: payAuth, params: { id: opened.id }, body: { reason: 'Not what I wanted at all' } }), ctx);
+  assert.equal(refused.status, 409, JSON.stringify(refused.jsonBody));
+  assert.equal(refused.jsonBody.error, 'not_placed');
+});
+
 await check('a group paid two different ways is refused rather than switched', async () => {
   const lD = await list({ title: 'Item D', priceMinor: 200_000, advancePercent: 50 });
   const lE = await list({ title: 'Item E', priceMinor: 200_000, advancePercent: 50 });

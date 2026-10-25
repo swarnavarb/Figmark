@@ -17,6 +17,7 @@ import {
   daysFrom,
   disputeSubjects,
   isCancelledLike,
+  isPlaced,
   reviewRevealed,
   scoreFrom,
   sideOf,
@@ -1535,6 +1536,13 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
   const side = sideOf(order, user.id)!;
+
+  // A checkout the buyer has not gone ahead with is nobody's business but
+  // theirs: the seller cannot see it, so a dispute over it could never be
+  // answered - and would still have cost the dispute fee.
+  if (!isPlaced(order)) {
+    return error(409, 'not_placed', 'This order has not been placed yet, so there is nothing to dispute. Remove it from your cart instead.');
+  }
 
   const body = await bodyOf<{ subject?: string; reason?: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
   if (!body || typeof body !== 'object') return error(400, 'invalid_body', 'Request body must be JSON.');

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { PAYMENT_METHOD_LABELS, allocatePayment } from '@shared/payments';
 import { ApiRequestError, api, type ItemGroup } from '../api';
 import { BuyerLotBox, ItemRow, LotPeek, ShelfTrack } from '../components/BuyerLots';
@@ -48,6 +48,9 @@ export function PurchasesPage() {
   const [paying, setPaying] = useState<ItemGroup | null>(null);
   const [peeking, setPeeking] = useState<ItemGroup | null>(null);
   const [cartCount, setCartCount] = useState(0);
+  // `?pay=<order>` - the order page's "Pay more" lands here with its dialog open.
+  const [params, setParams] = useSearchParams();
+  const payFor = params.get('pay');
 
   const load = useCallback(async () => {
     try {
@@ -59,12 +62,22 @@ export function PurchasesPage() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!payFor || !groups) return;
+    const group = groups.find((entry) => entry.items.some((item) => item.id === payFor && item.canPayMore));
+    if (group) setPaying(group);
+    setParams((now) => { now.delete('pay'); return now; }, { replace: true });
+  }, [payFor, groups, setParams]);
 
   const all = groups ?? [];
   const items = all.flatMap((group) => group.items);
   const toPay = items.filter((item) => item.canPay);
+  // A balance after an advance is money owed too, and has its own button.
+  const toPayMore = items.filter((item) => item.canPayMore && !item.canPay);
   const toConfirm = items.filter((item) => item.canConfirm);
-  const owedMinor = toPay.reduce((sum, item) => sum + item.outstandingMinor, 0);
+  const owing = [...toPay, ...toPayMore];
+  const owedMinor = owing.reduce((sum, item) => sum + item.outstandingMinor, 0);
+  const groupOf = (item: Item) => all.find((group) => group.items.some((entry) => entry.id === item.id)) ?? null;
   // A lot stays a box on its way until everything of theirs in it has arrived.
   const boxes = all.filter((group) => group.kind === 'lot' && group.items.some((item) => !arrived(item)));
   const shelf = all.filter((group) => group.kind === 'direct').flatMap((group) => group.items).filter((item) => !arrived(item));
@@ -84,7 +97,7 @@ export function PurchasesPage() {
         {items.length > 0 && (
           <div className="cartbox__sum">
             <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
-            {owedMinor > 0 && <b>{formatMoney(owedMinor, toPay[0]?.currency)} due</b>}
+            {owedMinor > 0 && <b>{formatMoney(owedMinor, owing[0]?.currency)} due</b>}
           </div>
         )}
       </header>
@@ -108,7 +121,7 @@ export function PurchasesPage() {
         <div className="stack purch">
           {/* What needs them, and nothing else, first. Money is said plainly. */}
           <section className="needs" aria-label="Needs you">
-            {toPay.length === 0 && toConfirm.length === 0 ? (
+            {owing.length === 0 && toConfirm.length === 0 ? (
               <p className="needs__calm">✨ Nothing needs you right now — sit back, we will shout when something does.</p>
             ) : (
               <>
@@ -119,6 +132,19 @@ export function PurchasesPage() {
                     <div className="needs__chips">
                       {toPay.map((item) => (
                         <Link key={item.id} to={`/order/${item.id}`} className="needs__chip">{item.itemName} →</Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {toPayMore.length > 0 && (
+                  <div className="needs__row needs__row--pay">
+                    <span>💳 Balance left on {toPayMore.length === 1 ? '1 item' : `${toPayMore.length} items`}</span>
+                    <div className="needs__chips">
+                      {toPayMore.map((item) => (
+                        <button key={item.id} type="button" className="needs__chip"
+                          onClick={() => { const group = groupOf(item); if (group) setPaying(group); }}>
+                          💳 Pay more · {item.itemName} · {formatMoney(item.outstandingMinor, item.currency)} left
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -181,6 +207,8 @@ export function PurchasesPage() {
                     <span className="arrived__name">{item.itemName}</span>
                     {item.canConfirm
                       ? <span className="arrived__tag arrived__tag--ask">Confirm it</span>
+                      : item.outstandingMinor > 0
+                        ? <span className="arrived__tag arrived__tag--ask">{formatMoney(item.outstandingMinor, item.currency)} still owed</span>
                       : item.inCollection
                         ? <span className="arrived__tag">On your shelf</span>
                         : <span className="arrived__tag">Unboxed ✓</span>}

@@ -116,6 +116,7 @@
   color: var(--text); font-size: var(--t-xs); font-weight: var(--w-semi); text-decoration: none;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+button.needs__chip { border: 0; font-family: inherit; cursor: pointer; }
 /* The buyer's box: the seller's carton, with their items peeking over the rim. */
 .lot-grid--buyer { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 30px 12px; padding-top: 20px; }
 .lotbox__peekitem:nth-child(3) { transform: rotate(8deg); }
