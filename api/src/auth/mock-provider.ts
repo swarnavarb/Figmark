@@ -362,7 +362,10 @@ export class MockAuthProvider implements AuthService {
     if (!user) throw AuthError.accountMissing();
     // To the millisecond: tokens carry their issue time that finely (`iam`),
     // so signing in again a moment later, in the same second, is not undone.
-    user.sessionsValidAfter = new Date().toISOString();
+    // One past now, so a device that signed in this very millisecond - a fast
+    // host manages it - is signed out too; signing in again takes a password
+    // check, which is never that quick.
+    user.sessionsValidAfter = new Date(Date.now() + 1).toISOString();
     await this.repository.updateUser(user);
     await this.logout(request);
   }
