@@ -327,6 +327,12 @@ await check('health reports the session-key source and account durability', asyn
   assert.equal(body.status, 'degraded');
 });
 
+await check('health names the environment only when SITE_ENVIRONMENT does', async () => {
+  // Unset here: no banner, and nothing pretends to be production either.
+  const body = (await health(req(), ctx)).jsonBody;
+  assert.equal(body.environment, null);
+});
+
 await check('a failure names its kind rather than saying nothing', async () => {
   // The generic "something went wrong" is what made a missing container cost
   // two rounds of guessing. Every unexplained 500 now says what kind it was,

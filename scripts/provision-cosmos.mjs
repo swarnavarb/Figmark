@@ -3,6 +3,9 @@
  *
  *   npm run build:api && npm run azure:provision
  *
+ * Set COSMOS_THROUGHPUT=serverless for a serverless account (see the comment
+ * on the database below); unset, the database gets the free tier's 1000 RU/s.
+ *
  * Pass --seed to also write the development fixtures: the seeded users with
  * their identifier reservations, plus lots, listings, orders, comments, likes
  * and follows. Development environments only - it creates an account whose
@@ -80,12 +83,27 @@ console.log(`Provisioning database "${databaseName}" at ${settings.COSMOS_ENDPOI
 
 // Throughput is provisioned on the database, not per container, so all
 // containers share the free tier's 1000 RU/s rather than each reserving its own.
+// COSMOS_THROUGHPUT overrides it: "serverless" for a serverless account, which
+// refuses any throughput, or a number of RU/s (400 at least) to split the free
+// tier between databases. On an account without the free tier, every RU/s
+// provisioned here is billed, whether used or not.
+const throughputSetting = (settings.COSMOS_THROUGHPUT ?? '').trim().toLowerCase();
+let throughput = SHARED_THROUGHPUT_RU;
+if (throughputSetting === 'serverless') {
+  throughput = null;
+} else if (throughputSetting) {
+  throughput = Number(throughputSetting);
+  if (!Number.isInteger(throughput) || throughput < 400 || throughput % 100 !== 0) {
+    console.error(`COSMOS_THROUGHPUT must be "serverless" or a whole number of RU/s, 400 or more, in hundreds (got "${settings.COSMOS_THROUGHPUT}").`);
+    process.exit(1);
+  }
+}
 const { database, statusCode } = await client.databases.createIfNotExists(
   { id: databaseName },
-  { offerThroughput: SHARED_THROUGHPUT_RU },
+  throughput === null ? undefined : { offerThroughput: throughput },
 );
 console.log(
-  `  database  ${databaseName} ${statusCode === 201 ? 'created' : 'already existed'} (${SHARED_THROUGHPUT_RU} RU/s shared)`,
+  `  database  ${databaseName} ${statusCode === 201 ? 'created' : 'already existed'} (${throughput === null ? 'serverless' : `${throughput} RU/s shared`})`,
 );
 
 for (const definition of CONTAINER_LIST) {

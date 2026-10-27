@@ -40,6 +40,7 @@ async function health(request: HttpRequest, _context: InvocationContext) {
         : 'degraded',
     service: 'figmark-api',
     version: config.version,
+    environment: config.siteEnvironment,
     time: new Date().toISOString(),
     auth: {
       mode: auth.mode,

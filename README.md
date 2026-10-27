@@ -64,6 +64,7 @@ than quietly wrong.
 
 ## Documentation
 
+- [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md) — development and production: resources, settings, releasing
 - [docs/AZURE.md](docs/AZURE.md) — resources, credentials, deployment, current blockers
 - [docs/AUTH.md](docs/AUTH.md) — the auth seam and how to swap in a real provider
 - [docs/PUSH.md](docs/PUSH.md) — lock-screen notifications: turning them on, and installing on a phone

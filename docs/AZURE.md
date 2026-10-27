@@ -1,5 +1,9 @@
 # Azure setup
 
+The two environments (development and production), and the order to set them
+up in, are in [ENVIRONMENTS.md](ENVIRONMENTS.md). This page is the detail
+behind each piece.
+
 ## Provisioned resources
 
 Resource group **`rg-figuremarket-dev`**, all tagged `project: figuremarket-dev`.

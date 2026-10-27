@@ -112,6 +112,14 @@ export interface AppConfig {
    * run on.
    */
   publicOrigins: string[] | null;
+  /**
+   * Which environment this deployment is (SITE_ENVIRONMENT), lower-cased:
+   * `development`, `production`, or whatever else a deployment calls itself.
+   * Anything but `production` puts a standing banner on every page and keeps
+   * the pages out of search engines, so a test site is never mistaken for -
+   * or found instead of - the real one. Null when unset: no banner.
+   */
+  siteEnvironment: string | null;
 }
 
 export interface VerificationConfig {
@@ -355,6 +363,7 @@ export const config: AppConfig = {
   regionGuess: env('REGION_GUESS') ? env('REGION_GUESS') === 'on' : runningInAzure(),
   swaPrincipalTrust: resolveSwaTrust(),
   publicOrigins: resolvePublicOrigins(),
+  siteEnvironment: env('SITE_ENVIRONMENT')?.toLowerCase() ?? null,
 };
 
 function resolvePublicOrigins(): string[] | null {

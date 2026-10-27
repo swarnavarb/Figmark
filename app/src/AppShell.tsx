@@ -29,7 +29,7 @@ const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ defa
 const FORUM_STATUS = '#C627CB';
 
 export function AppShell() {
-  const { user, warning, sessionsInsecure, missingContainers, dataPerWorker, signOut, authPrompt, closeAuth, promptAuth } = useSession();
+  const { user, warning, sessionsInsecure, missingContainers, dataPerWorker, testEnvironment, signOut, authPrompt, closeAuth, promptAuth } = useSession();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const query = params.get('q') ?? '';
@@ -38,6 +38,17 @@ export function AppShell() {
   const social = pathname.startsWith('/social') || pathname.startsWith('/messages/');
   // A room you write in: the tab bar steps aside for the bar you write from.
   const room = pathname.startsWith('/social/c/') || pathname.startsWith('/messages/');
+
+  // A test site is kept out of search results, so nobody finds it instead of
+  // the real one. Added once the health check names the environment.
+  useEffect(() => {
+    if (!testEnvironment) return;
+    const meta = document.createElement('meta');
+    meta.name = 'robots';
+    meta.content = 'noindex, nofollow';
+    document.head.appendChild(meta);
+    return () => meta.remove();
+  }, [testEnvironment]);
 
   useInviteParam();
   // The invite code goes on every link this person shares; ask for it early
@@ -163,6 +174,16 @@ export function AppShell() {
             The database is missing {missingContainers.length === 1 ? 'a container' : 'containers'}:{' '}
             <code>{missingContainers.join(', ')}</code>. Anything that reads {missingContainers.length === 1 ? 'it' : 'them'} will
             fail. Run <code>npm run azure:provision</code> to create {missingContainers.length === 1 ? 'it' : 'them'}.
+          </p>
+        </div>
+      )}
+
+      {/* Development shares the code and the look of the real site, so say on
+          every page which one this is. */}
+      {testEnvironment && (
+        <div className="page page--notice">
+          <p className="notice notice--info notice--standing">
+            <strong>{testEnvironment.toUpperCase()}</strong> - this is a test site with test data. Nothing here is real.
           </p>
         </div>
       )}

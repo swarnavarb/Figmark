@@ -122,6 +122,12 @@ export interface HealthResponse {
   status: 'ok' | 'degraded';
   service: string;
   version: string;
+  /**
+   * The deployment's SITE_ENVIRONMENT (`development`, `production`, ...), or
+   * null when unset. Anything but `production` is a test site: the app says so
+   * on every page and asks search engines not to index it.
+   */
+  environment: string | null;
   /** ISO-8601 server time. */
   time: string;
   auth: {
