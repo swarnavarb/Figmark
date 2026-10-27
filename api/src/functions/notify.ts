@@ -61,7 +61,14 @@ export async function notify(
   repository: Repo,
   audience: readonly (string | null | undefined)[],
   draft: NoticeDraft,
-  options: { except?: string; notBefore?: string; undoId?: string; pushLater?: boolean } = {},
+  options: {
+    except?: string; notBefore?: string; undoId?: string; pushLater?: boolean;
+    /**
+     * Names this notice, so writing it twice writes one row per person - for
+     * work written ahead that a later pass, or a racing one, may write again.
+     */
+    key?: string;
+  } = {},
 ): Promise<void> {
   const now = new Date().toISOString();
   // Held while its step can still be undone: the clock sends it when the hold
@@ -86,7 +93,7 @@ export async function notify(
         const fold = draft.group && !held ? await foldInto(repository, userId, draft, now) : null;
         const folded = fold && later ? { ...withoutPushed(fold), notBefore: now } : fold;
         const notice: Notification = folded ?? {
-          id: `ntf_${randomUUID().slice(0, 12)}`,
+          id: options.key ? `ntf_${options.key}_${userId}` : `ntf_${randomUUID().slice(0, 12)}`,
           userId,
           kind: draft.kind,
           title: draft.title,

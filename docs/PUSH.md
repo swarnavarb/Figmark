@@ -44,10 +44,13 @@ bell works exactly as before.
 
 - `api/src/functions/notify.ts` is the only writer of notices, and it calls
   `api/src/push.ts` for each one, so every event is covered in one place.
-- A notice held for the 3-minute undo window is sent when the window ends, and
-  never if the step was undone. Sent by whichever comes first: a timer on this
-  instance, the five-minute `clock` timer where the host runs timers, or the
-  next time any open copy of the site checks the bell (every minute).
+- A held notice - the 3-minute undo window, or a power sale's notice written
+  ahead for the minute its drop shows - is sent when the hold ends, and never
+  if it was taken back. Sent by whichever comes first: the wake-up queue (a
+  message invisible until the hold ends, read by the clock app; on time to the
+  second, see AZURE.md, "Pushes on the minute"), a timer on this instance, the
+  five-minute `clock` timer, or the next time any open copy of the site checks
+  the bell (every minute).
 - Devices are kept on the account (`User.pushEndpoints`), at most 10, and never
   sent to any client. A device the push service reports gone is dropped. Signing
   out removes the device; signing in as someone else on the same browser moves

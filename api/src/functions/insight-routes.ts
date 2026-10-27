@@ -18,6 +18,7 @@ import {
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { asOf } from './power-sale.js';
 
 /**
  * GET /api/me/insights - what this shop's consignments have been doing.
@@ -230,7 +231,7 @@ async function insights(request: HttpRequest, _context: InvocationContext) {
     }));
 
   const sales = await repository.listPowerSales(sellerId);
-  const saleItems = sales.flatMap((sale) => sale.items).filter((item) => item.postedAt);
+  const saleItems = sales.flatMap((sale) => asOf(sale).items).filter((item) => item.postedAt);
   const soldInWindow = saleItems.filter((item) => item.listingId && !item.liftedAt).length;
   const handedOver = saleItems.filter((item) => item.liftedAt).length;
 

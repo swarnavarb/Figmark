@@ -936,6 +936,21 @@ export interface Listing extends BaseDocument {
    * the catalog by definition.
    */
   unlisted?: boolean;
+  /**
+   * Written ahead, shown from this moment - a power sale item listed before
+   * its drop so it lands on time between clock runs. Every read leaves it out
+   * until then (see timed-view.ts).
+   */
+  visibleAt?: string;
+  /**
+   * A power sale item's members' window, kept on the listing so the price
+   * goes up on time by the clock rather than when the runner next passes.
+   * From `endsAt` every read of the listing sees the public price, checkout
+   * included; the runner then writes the same thing down and clears this,
+   * which is when the catalog's own query starts listing it (within one
+   * clock run).
+   */
+  memberWindow?: { endsAt: string; publicPriceMinor: number; publicExpiresAt: string | null } | null;
   /** First dropped in the shop's channel by a power sale; public cards say so. */
   channelDrop?: boolean;
   /**
@@ -2466,6 +2481,13 @@ export interface Post extends BaseDocument {
   /** Set on a power sale drop: the members' window and what comes after it. */
   drop?: PostDrop | null;
   /**
+   * Written ahead, shown from this moment: a power sale writes what falls due
+   * in the next few minutes on each pass, so it lands on time between clock
+   * runs. Every read leaves it out until then (see timed-view.ts). Absent on
+   * everything posted the moment it was written.
+   */
+  visibleAt?: string;
+  /**
    * Set on a power sale's opening message: which sale, and when its first
    * item drops. The channel draws a countdown and a "Remind me" on it.
    */
@@ -2918,6 +2940,8 @@ export interface PowerSale extends BaseDocument {
   reminders?: string[];
   /** When they were told, so nobody is told twice. */
   remindedAt?: string | null;
+  /** When the closing message shows, once it has been written ahead. */
+  closingAt?: string | null;
 }
 
 export type PowerSaleStatus = 'draft' | 'scheduled' | 'running' | 'done' | 'cancelled';
@@ -2941,12 +2965,17 @@ export interface PowerSaleItem {
   quantity: number;
   /** Whether one buyer may take more than one of it. */
   allowMultiple: boolean;
-  /** When the runner posted it to the channel. */
+  /**
+   * When it shows in the channel. Written up to a few minutes ahead, so this
+   * can be in the future: read a sale through `asOf` to see it as people do.
+   */
   postedAt: string | null;
   /** When the members' price stops. */
   windowEndsAt: string | null;
   /** Set when the window closed and the price went up. */
   liftedAt: string | null;
+  /** When the "now open to everyone" post shows, once written ahead. */
+  publicPostAt?: string | null;
   /** The listing this became, once posted. */
   listingId: string | null;
   /** What one unit cost (Pro), carried onto the listing when it posts. */

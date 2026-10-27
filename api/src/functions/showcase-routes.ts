@@ -6,7 +6,7 @@ import type { Lot, PowerSale, User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { renewShowcaseSales } from '../data/seed-showcase.js';
-import { advancePowerSale, finishesAt, firstDropAt, nextDropAt } from './power-sale.js';
+import { advancePowerSale, asOf, finishesAt, firstDropAt, nextDropAt, remindOne } from './power-sale.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -102,8 +102,9 @@ async function fillingLots(_request: HttpRequest, _context: InvocationContext) {
   });
 }
 
-/** A sale as the shelf and the channel's countdown draw it. */
-function dropView(sale: PowerSale, shop: User | undefined, viewerId: string | null) {
+/** A sale as the shelf and the channel's countdown draw it: as of now, nothing written ahead. */
+function dropView(stored: PowerSale, shop: User | undefined, viewerId: string | null) {
+  const sale = asOf(stored);
   const out = sale.items.filter((item) => item.postedAt).length;
   const startsAt = firstDropAt(sale);
   return {
@@ -157,7 +158,9 @@ async function drops(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
   const viewer = await auth.getCurrentUser(request);
   const shown = (await liveSales(repository))
-    .filter((sale) => sale.openedAt && sale.status === 'running')
+    .map((sale) => ({ sale, seen: asOf(sale) }))
+    .filter(({ seen }) => seen.openedAt && seen.status === 'running')
+    .map(({ sale }) => sale)
     // Soonest to start first; live ones (already started) ahead of all.
     .sort((a, b) => firstDropAt(a).localeCompare(firstDropAt(b)));
   const picked = capPerShop(shown);
@@ -173,7 +176,7 @@ async function drop(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
   const viewer = await auth.getCurrentUser(request);
   const sale = await repository.getPowerSale(sellerId, id);
-  if (!sale || !sale.openedAt) return error(404, 'not_found', 'No such drop.');
+  if (!sale || !asOf(sale).openedAt) return error(404, 'not_found', 'No such drop.');
   const shop = await repository.getUserById(sellerId);
   return json(200, { drop: dropView(sale, shop ?? undefined, viewer?.id ?? null) });
 }
@@ -195,8 +198,9 @@ async function remind(request: HttpRequest, _context: InvocationContext) {
   }
   const repository = await getRepository();
   const sale = await repository.getPowerSale(sellerId, id);
-  if (!sale || !sale.openedAt || sale.status !== 'running') return error(404, 'not_found', 'That drop is not on.');
-  if (sale.items.some((item) => item.postedAt)) {
+  const seen = sale ? asOf(sale) : null;
+  if (!sale || !seen?.openedAt || seen.status !== 'running') return error(404, 'not_found', 'That drop is not on.');
+  if (seen.items.some((item) => item.postedAt)) {
     return error(409, 'already_live', 'It has already started - head to the channel.');
   }
   const on = body.on !== false;
@@ -206,6 +210,8 @@ async function remind(request: HttpRequest, _context: InvocationContext) {
     reminders: on ? [...others, user.id] : others,
     updatedAt: new Date().toISOString(),
   });
+  // The first item may already be written ahead, its reminders held for it.
+  await remindOne(repository, saved, user.id, on);
   const shop = await repository.getUserById(sellerId);
   return json(200, { drop: dropView(saved, shop ?? undefined, user.id) });
 }
