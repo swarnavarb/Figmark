@@ -2,10 +2,12 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import type { Post } from '@shared/models';
+import type { SocialIdentity } from '@shared/social';
 import type { StoreAccess } from '@shared/stores';
 import { api } from '../api';
 import { useSession } from '../session';
 import { Preloader } from './Preloader';
+import { VoiceScope } from './SocialVoice';
 import type { StudioMode } from './PostStudio';
 
 /*
@@ -14,6 +16,8 @@ import type { StudioMode } from './PostStudio';
  * and should not wait on a photo tagger to do it.
  */
 const PostStudio = lazy(() => import('./PostStudio').then((module) => ({ default: module.PostStudio })));
+/** The quick post - "What's new?" - the same box as on top of the Social feed. */
+const Composer = lazy(() => import('./SocialComposer').then((module) => ({ default: module.Composer })));
 
 interface Action {
   id: string;
@@ -138,6 +142,14 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
   }
 
   const groups = side === 'store' && store ? STORE : [{ label: '', actions: YOU }];
+  // Whoever the side is, the quick post speaks as it: you, or the store picked.
+  const voice: SocialIdentity = side === 'store' && store
+    ? { storeId: store.ownerId, name: store.name, handle: store.handle ?? null }
+    : { storeId: null, name: user?.displayName ?? 'Me', handle: user?.username ?? null };
+  const quickPosted = () => {
+    onClose();
+    navigate('/social');
+  };
   let order = 0;
 
   return createPortal(
@@ -171,7 +183,14 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        <div className="csheet__list" key={side}>
+        <div className="csheet__list" key={`${side}:${voice.storeId ?? ''}`}>
+          {user && (
+            <Suspense fallback={null}>
+              <VoiceScope voice={voice} voices={[voice]} choose={() => undefined}>
+                <div className="csheet__quick"><Composer onPosted={quickPosted} /></div>
+              </VoiceScope>
+            </Suspense>
+          )}
           {groups.map((group) => (
             <section key={group.label || 'you'} className="csheet__group" aria-label={group.label || undefined}>
               {group.label && <h3 className="csheet__label">{group.label}</h3>}

@@ -802,7 +802,16 @@ async function watchedBy(userId: string, repository: Repo): Promise<Set<string>>
  * is what was decided.
  */
 async function settleDebates(recent: Post[], repository: Repo): Promise<Post[]> {
-  const touched = await settlePlay(recent, repository);
+  // Settling on a read is a courtesy - the games clock settles everything
+  // anyway - so a game that will not settle (two readers settling it at once,
+  // a payout the store refuses) is left for the clock rather than failing the
+  // page it happened to be on.
+  let touched: Set<string>;
+  try {
+    touched = await settlePlay(recent, repository);
+  } catch {
+    return recent;
+  }
   if (touched.size === 0) return recent;
   const fresh = new Map<string, Post>();
   await Promise.all(recent.filter((post) => touched.has(post.id)).map(async (post) => {
@@ -905,8 +914,10 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   // Where the reader got up to: read before it moves, moved on the first page only.
   const lastVisit = me?.feedPrefs?.seenFeedAt ?? null;
   const newest = followedPosts[0]?.createdAt ?? null;
+  // Only a bookmark: two loads of the feed at once both move it, and the one
+  // that loses must still show its page rather than "someone else changed this".
   if (!before && me && newest && (!lastVisit || newest > lastVisit)) {
-    await repository.updateUser({ ...me, feedPrefs: { ...me.feedPrefs, seenFeedAt: newest } });
+    await repository.updateUser({ ...me, feedPrefs: { ...me.feedPrefs, seenFeedAt: newest } }).catch(() => undefined);
   }
 
   // The Live strip rides on the first page: the same cards, one decorate.

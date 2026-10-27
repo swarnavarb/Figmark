@@ -1126,6 +1126,15 @@ code, kbd, samp, pre {
   border-left-width: 3px;
 }
 .notice--standing.notice--error { border-left-color: var(--danger); }
+/* A standing warning that can be put away for the visit. */
+.notice--closable { display: flex; align-items: center; gap: 8px; }
+.notice--closable > span { flex: 1; min-width: 0; }
+.notice__close {
+  flex: 0 0 auto; display: grid; place-items: center; width: 24px; height: 24px; margin: -4px -6px -4px 0;
+  border: 0; border-radius: 50%; background: transparent; color: inherit; opacity: 0.75;
+  font-size: 12px; line-height: 1; cursor: pointer;
+}
+.notice__close:hover, .notice__close:focus-visible { opacity: 1; background: rgba(255, 255, 255, 0.14); }
 .notice--error { background: var(--danger-soft); border-color: rgba(244, 63, 94, 0.34); color: var(--danger-text); }
 /* Code in a warning keeps the warning's ink on a darker chip, not a pink one it cannot be read on. */
 .notice--error code { color: inherit; background: rgba(12, 4, 9, 0.78); }
@@ -5377,6 +5386,9 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 .shell--social > .page--notice .notice { background: rgba(0, 0, 0, 0.22); border-color: rgba(255, 255, 255, 0.35); color: #fff; }
 .shell--social > .page--notice + .page--notice { padding-top: 0; }
+/* The notice above already keeps clear of the clock, so the header under it
+   does not leave that room a second time. */
+.shell--social > .page--notice ~ * .soctop { padding-top: 8px; --top-band: none; }
 .chhero__tier { justify-self: start; }
 /* At the top: the views with their names, the pin on a line of its own. */
 .chstrip--open { flex-wrap: wrap; position: relative; top: auto; box-shadow: none; }
@@ -8546,6 +8558,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .csheet__thumb--store { transform: translateX(100%); background: var(--grad-gold); }
 .csheet__stores { margin: 0; }
+/* The quick post sits on the sheet like one more row, not a card on a card. */
+.csheet__quick { flex: none; }
+.csheet__quick .writer { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
 .csheet__item {
   display: grid; grid-template-columns: 44px minmax(0, 1fr) 16px; align-items: center; gap: 14px;
   min-height: 68px; height: auto; padding: 12px 14px;
