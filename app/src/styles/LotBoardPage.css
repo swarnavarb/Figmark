@@ -1,0 +1,15 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.lothead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.lothead__name { font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: 0.01em; }
+.lothead__no {
+  font-family: var(--mono);
+  font-size: var(--t-2xs);
+  font-weight: var(--w-medium);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+

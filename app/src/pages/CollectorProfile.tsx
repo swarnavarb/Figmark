@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CARDS } from '@shared/quest';
+import { BADGE_META } from '@shared/play';
 import type { CollectionItem } from '@shared/models';
 import {
   ApiRequestError, api,
@@ -15,8 +16,9 @@ import { shrink } from '../components/PhotoManager';
 import { ManagerTag } from '../components/ManagerBadge';
 import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
-import { brandHueFor, formatDate, timeAgo } from '../format';
+import { brandHueFor, formatDate, timeAgo, formatCount } from '../format';
 import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
+import { PhotoSales } from '../components/PhotoSales';
 
 /**
  * A person's page, as a collector's.
@@ -41,7 +43,7 @@ export interface Person {
 }
 
 export type ProfilePart = Pick<PublicProfile,
-  'sellerId' | 'isStore' | 'handle' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince' | 'rating' | 'followerCount' | 'verified'>;
+  'sellerId' | 'isStore' | 'handle' | 'displayName' | 'ownerHandle' | 'trustScore' | 'memberSince' | 'rating' | 'followerCount' | 'verified' | 'gameBadges'>;
 
 /* ── The header every person page shares ──────────────────────────────── */
 
@@ -77,7 +79,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
   return (
     <>
       <div className={`storefront__cover storefront__cover--${brandHueFor(person.handle ?? person.displayName)}`}>
-        {person.coverUrl && <img src={person.coverUrl} alt="" />}
+        {person.coverUrl && <img loading="lazy" decoding="async" src={person.coverUrl} alt="" />}
       </div>
 
       <div className="storefront__body">
@@ -86,7 +88,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           <div className="phead__face qprofile__avatar">
             {collector && <LevelRing level={collector.level} progress={collector.progress} size={96} />}
             <span className="qprofile__face">
-              {person.photoUrl ? <img src={person.photoUrl} alt="" /> : <Avatar name={person.displayName} size={72} />}
+              {person.photoUrl ? <img loading="lazy" decoding="async" src={person.photoUrl} alt="" /> : <Avatar name={person.displayName} size={72} />}
             </span>
             {collector && <span className="qprofile__lv">Lv {collector.level}</span>}
           </div>
@@ -123,10 +125,21 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           </div>
         )}
 
+        {/* Won, not claimed: competitions, debates and guesses. */}
+        {page?.gameBadges && page.gameBadges.length > 0 && (
+          <div className="chips chips--tight" aria-label="Wins">
+            {page.gameBadges.map((badge) => (
+              <Link key={badge.id} to={badge.link} className="chip winchip" title={badge.detail}>
+                {BADGE_META[badge.kind].emoji} {badge.detail}
+              </Link>
+            ))}
+          </div>
+        )}
+
         {collector && (
           <div className="qprofile__xp">
             <XpBar progress={collector.progress} />
-            <span className="faint">{collector.xp.toLocaleString('en-IN')} XP · {collector.nextLevelXp - collector.xp} to level {collector.level + 1}</span>
+            <span className="faint">{formatCount(collector.xp)} XP · {collector.nextLevelXp - collector.xp} to level {collector.level + 1}</span>
           </div>
         )}
         {collector && collector.penalty > 0 && (
@@ -169,7 +182,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
                     </span>
                   )}
                   {earned.length > 0 && (
-                    <span className="qstickers qstickers--row">
+                    <span className="qstickers qstickers--row" role="group" aria-label="Stickers" tabIndex={0}>
                       {earned.slice(0, 8).map((entry) => <Sticker key={entry.id} sticker={entry} />)}
                     </span>
                   )}
@@ -467,6 +480,7 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
             {photos.map((url, i) => <i key={url} className={`${i === index ? 'is-on' : ''}${hidden.includes(url) ? ' is-hidden' : ''}`} />)}
           </div>
         )}
+        <PhotoSales url={photo} about={item.name} tone="light" onLeave={onClose} />
         <p className="faint" style={{ margin: 0 }}>
           Tap the card to turn it over · delivered {formatDate(item.deliveredAt)}
           {isHidden && ' · this photo is hidden from others'}

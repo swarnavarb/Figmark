@@ -30,10 +30,23 @@ export function verifiedChecks(subject: { verification: VerificationState }): Ve
   };
 }
 
-/** All three, which is the bar for buying and for selling alike. */
+/** All three, which is the bar for selling. */
 export function fullyVerified(subject: { verification: VerificationState }): boolean {
   const checks = verifiedChecks(subject);
   return checks.email && checks.phone && checks.aadhaar;
+}
+
+/**
+ * Email and a WhatsApp-verified phone: the bar for buying.
+ *
+ * Aadhaar is not asked of buyers. A private business may not make Aadhaar a
+ * condition of a service it can provide without it, and a buyer's payment is
+ * held under Buyer Protection, so their identity carries far less risk than a
+ * seller's. Selling still needs all three.
+ */
+export function buyerVerified(subject: { verification: VerificationState }): boolean {
+  const checks = verifiedChecks(subject);
+  return checks.email && checks.phone;
 }
 
 /**

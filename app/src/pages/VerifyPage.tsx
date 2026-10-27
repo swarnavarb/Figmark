@@ -49,13 +49,17 @@ export function VerifyPage() {
     <main className="page vfy">
       <h1>Verification</h1>
       <p className="muted" style={{ marginTop: 0 }}>
-        To buy or sell on Figmark - including private deals and power sales - verify all three. Browsing is open
-        without them. It takes about two minutes.
+        To buy on Figmark, verify your email and WhatsApp number. To sell - including private deals and power
+        sales - verify your Aadhaar too. Browsing is open without any of them. It takes about two minutes.
       </p>
 
       {done ? (
         <p className="notice notice--ok">
           ✓ You are verified. You can buy and sell, and your page shows the Email, WhatsApp and Aadhaar ticks.
+        </p>
+      ) : checks.email && checks.phone ? (
+        <p className="notice notice--ok">
+          ✓ You can buy. Verify your Aadhaar below only if you want to sell. {AADHAAR_MOBILE_RULE}
         </p>
       ) : (
         <p className="notice notice--warn vfy__rule">
@@ -80,7 +84,7 @@ export function VerifyPage() {
         </li>
 
         <li className={`card card--pad stack vfy__step${checks.aadhaar ? ' is-done' : ''}`}>
-          <StepHead n={3} title="Aadhaar" done={checks.aadhaar} />
+          <StepHead n={3} title="Aadhaar (to sell)" done={checks.aadhaar} />
           {checks.aadhaar && status.aadhaar ? (
             <p className="faint">
               Verified as {status.aadhaar.name}, Aadhaar ending {status.aadhaar.last4}, matched to {status.phone}.
@@ -208,8 +212,19 @@ function WhatsAppStep({ status, onChange, reload }: {
   const waiting = Boolean(status.phoneChallenge) && !status.checks.phone;
   useEffect(() => {
     if (!waiting) return;
-    const timer = window.setInterval(() => void reload(), 4000);
-    return () => window.clearInterval(timer);
+    // Every 4 seconds at first, easing off to every 30 the longer it waits,
+    // and not at all while the page is hidden - it looks again on return.
+    let delay = 4000;
+    let timer: number | undefined;
+    const look = () => {
+      if (document.visibilityState === 'visible') void reload();
+      delay = Math.min(30_000, Math.round(delay * 1.25));
+      timer = window.setTimeout(look, delay);
+    };
+    timer = window.setTimeout(look, delay);
+    const onVisible = () => { if (document.visibilityState === 'visible') void reload(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [waiting, reload]);
 
   async function start() {
@@ -475,128 +490,3 @@ function AadhaarStep({ status, onChange }: { status: VerificationStatus; onChang
 }
 
 /* ── Prompts the rest of the app raises ────────────────────────────────── */
-
-/**
- * A slim strip under the header for an account whose email is not verified.
- *
- * This was a dialog over the page straight after sign-up, which put a code
- * between a new person and the thing they came to look at. Browsing needs no
- * verification, so the reminder waits at the top instead: one line, a link to
- * the code, and a way to put it away for this visit.
- */
-const NUDGE_DISMISSED_KEY = 'figmark:verify-nudge-dismissed';
-
-export function VerifyNudge() {
-  const { user } = useSession();
-  const [dismissed, setDismissed] = useState(() => {
-    try {
-      return sessionStorage.getItem(NUDGE_DISMISSED_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  if (!user || dismissed || verifiedChecks(user).email) return null;
-
-  function dismiss() {
-    setDismissed(true);
-    try {
-      sessionStorage.setItem(NUDGE_DISMISSED_KEY, '1');
-    } catch {
-      /* A private window: it comes back next page load, which is fine. */
-    }
-  }
-
-  return (
-    <div className="vnudge" role="status">
-      <span className="vnudge__text">
-        📧 We emailed you a code{user.email ? <> at <b>{user.email}</b></> : null}. Enter it to finish signing up.
-      </span>
-      <Link to="/verify" className="btn btn--sm">Enter code</Link>
-      <button type="button" className="iconbtn vnudge__close" aria-label="Hide for now" onClick={dismiss}>✕</button>
-    </div>
-  );
-}
-
-/**
- * Everything between a new account and its first sale, as one list.
- *
- * Verification and the storefront used to be separate doors - a dialog here, a
- * warning there, a gate on the Sell tab - and nobody could tell how many were
- * left. Shown on the Sell tab until all of it is done.
- */
-/** Whether the Start selling list has been folded on this device. */
-const SETUP_FOLDED_KEY = 'figmark.setup.folded';
-
-export function SetupChecklist({ hasStore, onOpenStore }: { hasStore: boolean; onOpenStore?: () => void }) {
-  const { user } = useSession();
-  /* Open until the seller folds it; folded stays folded on this device. */
-  const [folded, setFolded] = useState(() => {
-    try { return window.localStorage.getItem(SETUP_FOLDED_KEY) === '1'; } catch { return false; }
-  });
-  if (!user) return null;
-  const fold = (next: boolean) => {
-    setFolded(next);
-    try { window.localStorage.setItem(SETUP_FOLDED_KEY, next ? '1' : '0'); } catch { /* Lasts as long as the screen. */ }
-  };
-  const checks = verifiedChecks(user);
-  const rows: { id: string; label: string; done: boolean; go: ReactNode }[] = [
-    { id: 'account', label: 'Create your account', done: true, go: null },
-    { id: 'email', label: 'Confirm your email', done: checks.email, go: <Link to="/verify">Enter code</Link> },
-    { id: 'phone', label: 'Verify your WhatsApp number', done: checks.phone, go: <Link to="/verify">Verify</Link> },
-    { id: 'aadhaar', label: 'Verify your Aadhaar', done: checks.aadhaar, go: <Link to="/verify">Verify</Link> },
-    {
-      id: 'store', label: 'Open your storefront', done: hasStore,
-      go: onOpenStore ? <button type="button" className="linkbtn" onClick={onOpenStore}>Open</button> : null,
-    },
-  ];
-  const done = rows.filter((row) => row.done).length;
-  if (done === rows.length) return null;
-  const next = rows.find((row) => !row.done)!;
-
-  return (
-    <section className={`card card--pad setupcheck${folded ? ' is-folded' : ''}`} aria-label="Start selling">
-      <button type="button" className="setupcheck__head" aria-expanded={!folded} aria-controls="setupcheck-list"
-        onClick={() => fold(!folded)}>
-        <span className="card__title">Start selling</span>
-        <span className="faint">{folded ? `Next: ${next.label}` : `${done} of ${rows.length} done`}</span>
-        <Icon name={folded ? 'down' : 'up'} size={16} />
-      </button>
-      <span className="setupcheck__bar" aria-hidden="true"><span style={{ width: `${(done / rows.length) * 100}%` }} /></span>
-      {!folded && <>
-      <ol className="setupcheck__list" id="setupcheck-list">
-        {rows.map((row) => (
-          <li key={row.id} className={`setupcheck__row${row.done ? ' is-done' : ''}${row === next ? ' is-next' : ''}`}>
-            <span className="setupcheck__tick" aria-hidden="true">{row.done ? '✓' : ''}</span>
-            <span className="setupcheck__label">{row.label}</span>
-            {!row.done && row.go}
-          </li>
-        ))}
-      </ol>
-      {!checks.aadhaar && (
-        <p className="faint" style={{ margin: 0 }}>
-          You can fill in a listing before you are verified - it is kept as a draft and goes live once you are.
-        </p>
-      )}
-      </>}
-    </section>
-  );
-}
-
-/** Opened when the server refuses a purchase or a listing for want of verification. */
-export function VerifyPrompt() {
-  const { verifyPrompt, closeVerifyPrompt } = useSession();
-  if (!verifyPrompt) return null;
-  return (
-    <div className="authpop" role="dialog" aria-modal="true" aria-label="Verification needed"
-      onMouseDown={(event) => event.target === event.currentTarget && closeVerifyPrompt()}>
-      <div className="authpop__panel stack">
-        <h2 style={{ margin: 0 }}>Verify to continue</h2>
-        <p style={{ margin: 0 }}>{verifyPrompt}</p>
-        <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button type="button" className="btn btn--quiet" onClick={closeVerifyPrompt}>Not now</button>
-          <Link to="/verify" className="btn" onClick={closeVerifyPrompt}>Verify now</Link>
-        </div>
-      </div>
-    </div>
-  );
-}

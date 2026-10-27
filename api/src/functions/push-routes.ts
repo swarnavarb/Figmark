@@ -3,9 +3,9 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { PushEndpoint } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { forgetEndpoints, pushKeys, pushToUser, sendHeldPushes } from '../push.js';
+import { forgetEndpoints, pushKeys, pushToUser } from '../push.js';
 import { tooFast } from '../rate-limit.js';
-import { error, handler, json } from './http.js';
+import { cached, error, handler, json } from './http.js';
 
 /**
  * Turning lock-screen notifications on and off, one device at a time.
@@ -20,7 +20,8 @@ const MAX_DEVICES = 10;
 
 /** GET /api/push/key - the public key, or null when push is not set up here. */
 async function key(_request: HttpRequest, _context: InvocationContext) {
-  return json(200, { publicKey: pushKeys()?.publicKey ?? null });
+  // Asked on every page load; it changes only when the keys are rotated.
+  return cached(json(200, { publicKey: pushKeys()?.publicKey ?? null }), 'public, max-age=3600');
 }
 
 /** A short name for the device, from its user agent. For telling them apart, nothing more. */
@@ -170,15 +171,3 @@ app.http('push-key', { ...anon, methods: ['GET'], route: 'push/key', handler: pu
 app.http('push-subscribe', { ...anon, methods: ['POST'], route: 'push/subscribe', handler: pushSubscribeRoute });
 app.http('push-unsubscribe', { ...anon, methods: ['POST'], route: 'push/unsubscribe', handler: pushUnsubscribeRoute });
 app.http('push-test', { ...anon, methods: ['POST'], route: 'push/test', handler: pushTestRoute });
-
-/**
- * The clock for held notices, where the host runs timers. Reads of the bell
- * do the same job where it does not (see sendHeldPushesSoon).
- */
-app.timer('push-clock', {
-  schedule: '30 */1 * * * *',
-  handler: async (_timer, context) => {
-    const sent = await sendHeldPushes(await getRepository());
-    if (sent > 0) context.log(`push-clock: sent ${sent} held notice(s)`);
-  },
-});

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { hoursToEnd, isEndingSoon, isInDemand, popularity } from '@shared/catalog';
-import { preOrderView } from '@shared/preorder';
+import { isTakingBookings, preOrderView } from '@shared/preorder';
 import type { FeedListing } from '../api';
 import { Fire, Rush, Svg } from './ListingBlocks';
 import { Thumb, leadPhoto } from './ui';
@@ -48,7 +48,7 @@ export function earnPicks<T extends FeedListing>(listings: readonly T[]): T[] {
 /** Pre-orders still taking people, the ones closing soonest first. */
 export function preOrderPicks<T extends FeedListing>(listings: readonly T[]): T[] {
   return listings
-    .filter((listing) => listing.preOrder && !listing.preOrder.closedAt)
+    .filter((listing) => isTakingBookings(listing.preOrder))
     .sort((a, b) => Date.parse(a.preOrder!.cutoffAt) - Date.parse(b.preOrder!.cutoffAt));
 }
 
@@ -172,7 +172,7 @@ export function PreOrderRail({ listings, now }: { listings: readonly FeedListing
               <span className="launch__fuel">
                 <span className="launch__count">
                   <b>{view.committed}/{view.fillThreshold}</b> in
-                  <small>{view.toGo === 0 ? 'Going ahead' : days <= 1 ? 'Closes today' : `${days}d left`}</small>
+                  <small>{view.toGo === 0 || view.proceededShort ? 'Going ahead' : view.state === 'deciding' ? 'Seller deciding' : days <= 1 ? 'Closes today' : `${days}d left`}</small>
                 </span>
                 <span className="launch__gauge" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
                   aria-label={`${percent}% full`}>

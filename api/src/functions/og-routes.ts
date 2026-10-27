@@ -3,6 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { Listing, User } from '../../../shared/models.js';
 import { rupees } from '../../../shared/payments.js';
 import { storeTitleFor } from '../../../shared/storefront.js';
+import { tagFromSlug, tagSlug, tidyLabel } from '../../../shared/shop-tags.js';
 import { titleFor } from '../../../shared/quest.js';
 import { linkDiscountMinor } from '../../../shared/affiliate.js';
 import { offersAffiliate, resolveShortCode } from '../affiliate.js';
@@ -254,6 +255,40 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
       title: `${user.displayName} on Figmark`,
       description: [`Level ${level} ${titleFor(level)}`, `${(user.collection ?? []).length} in their collection`, user.bio?.trim().slice(0, 120)].filter(Boolean).join(' · '),
       image: personCardUrl(origin, second, user), large: true, fallback: back, ...CARD_TAGS,
+    };
+  }
+  // Discover, a topic, or one post on it: what a guest is sent when somebody
+  // passes the public side of Figmark along.
+  if (kind === 's' && first === 'd') {
+    return {
+      ...fallbackMeta,
+      title: 'Discover on Figmark - debates, shelves and finds that will not last',
+      description: 'Vote on collector debates, browse the shelves people are proudest of, and catch rare imports before they go.',
+      fallback: '/discover',
+    };
+  }
+  if (kind === 's' && first === 't' && second) {
+    const key = tagFromSlug(second);
+    if (!key) return fallbackMeta;
+    return {
+      ...fallbackMeta,
+      title: `#${tidyLabel(key).replace(/ /g, '')} on Figmark`,
+      description: `Posts, shelves and shops about ${key} - from collectors and import resellers on Figmark.`,
+      fallback: `/tags/${encodeURIComponent(tagSlug(key))}`,
+    };
+  }
+  if (kind === 's' && first === 'x' && second && segments[3]) {
+    const post = await repository.getPost(second, segments[3]);
+    // Only what anybody may read: a broadcast or a forum post, never a room message.
+    if (!post || (post.channel === 'seller' && (post.reach ?? 'feed') !== 'feed')) return fallbackMeta;
+    const photo = post.photoUrl ?? post.photoUrls?.[0] ?? null;
+    const words = post.body.replace(/\s+/g, ' ').trim();
+    return {
+      ...fallbackMeta,
+      title: post.debate ? `${post.authorName} asks: ${words.slice(0, 80) || 'which one?'}` : `${post.authorName} on Figmark`,
+      description: words.slice(0, 180) || (post.flex ? 'A collection, tagged piece by piece.' : 'Shared on Figmark.'),
+      image: photo ? new URL(photo, origin).toString() : fallbackMeta.image,
+      fallback: `/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`,
     };
   }
   return fallbackMeta;
@@ -578,7 +613,7 @@ async function linkPreview(request: HttpRequest, _context: InvocationContext) {
   }
   const item = /^\/listing\/([^/]+)\/?$/.exec(path.pathname);
   if (item) path = new URL(`/s/l/${item[1]}${path.search}`, RELATIVE);
-  if (!/^\/(r|i|s\/l|s\/p)\/[^/]+\/?$/.test(path.pathname)) {
+  if (!/^\/(?:(?:r|i|s\/l|s\/p|s\/t)\/[^/]+|s\/x\/[^/]+\/[^/]+|s\/d)\/?$/.test(path.pathname)) {
     return error(404, 'no_preview', 'Nothing to show for that link.');
   }
   const origin = originOf(request, null);

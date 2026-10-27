@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS } from '@shared/enums';
-import { CATEGORIES } from '@shared/catalog';
-import { ApiRequestError, api, type WantCard, type WantDetail } from '../api';
-import { EmptyState, ErrorNotice, Modal, PersonLink } from '../components/ui';
+import { CATEGORIES, CONDITION_BUCKETS } from '@shared/catalog';
+import { ApiRequestError, api, type WantCard, type WantDetail, type WantMatch } from '../api';
+import { EmptyState, ErrorNotice, Modal, PersonLink, Thumb } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { useSession } from '../session';
 import { Icon } from '../components/Icon';
@@ -30,7 +30,8 @@ export function WantedPage() {
   const [data, setData] = useState<{ wants: WantCard[]; mine: WantCard[] } | null>(null);
   const [category, setCategory] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
+  // The Create sheet's "Post an ISO Request" lands here with the form open.
+  const [asking, setAsking] = useState(params.get('ask') === '1');
   const [openWant, setOpenWant] = useState<WantCard | null>(null);
 
   const load = useCallback(async () => {
@@ -50,6 +51,20 @@ export function WantedPage() {
   // leaving somebody to find it would be most of the way to useless, so the
   // hunt in the URL opens itself — including a closed one, which is exactly
   // the case a stale notification points at.
+  // Arriving again with the form asked for (from the sheet, while already here).
+  const askParam = params.get('ask') === '1';
+  useEffect(() => {
+    if (askParam && user) setAsking(true);
+  }, [askParam, user]);
+  const stopAsking = () => {
+    setAsking(false);
+    if (params.get('ask')) {
+      const next = new URLSearchParams(params);
+      next.delete('ask');
+      setParams(next, { replace: true });
+    }
+  };
+
   const askedFor = params.get('want');
   const askedBuyer = params.get('buyer');
   useEffect(() => {
@@ -137,11 +152,11 @@ export function WantedPage() {
         </div>
       )}
 
-      {asking && (
+      {asking && user && (
         <AskDialog
-          onClose={() => setAsking(false)}
+          onClose={stopAsking}
           onPosted={async () => {
-            setAsking(false);
+            stopAsking();
             await load();
           }}
         />
@@ -208,8 +223,12 @@ function WantRow({ want, mine, onOpen, onChanged }: {
     }
   }
 
+  // Answering a hunt is offering to sell, so it is a seller's button.
+  const seller = Boolean(user?.capabilities.canSell);
+
   return (
     <div className="wantcard">
+      <span className="ctype ctype--iso">ISO request</span>
       <WantBody want={want} onOpen={onOpen} />
       <div className="alsome alsome--card">
         {mine || !user ? (
@@ -221,6 +240,11 @@ function WantRow({ want, mine, onOpen, onChanged }: {
           </button>
         )}
         <span className="alsome__count">{othersLine(want.seekerCount, want.joined)}</span>
+        {!mine && seller && (
+          <button type="button" className="btn btn--sm wantcard__offer" onClick={onOpen}>
+            <Icon name="tag" size={13} /> Offer to sell
+          </button>
+        )}
       </div>
     </div>
   );
@@ -237,6 +261,11 @@ function WantBody({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
           {want.category}
           {want.condition ? ` · ${want.condition}` : ''} · asked {timeAgo(want.createdAt)}
         </span>
+        {(want.matchCount ?? 0) > 0 && (
+          <span className="want__matches">
+            <Icon name="check" size={12} /> {want.matchCount} inventory {want.matchCount === 1 ? 'match' : 'matches'} found
+          </span>
+        )}
       </div>
       <div className="want__side">
         <span className="want__budget">
@@ -318,7 +347,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
       <div className="isophotos">
         {photos.map((url) => (
           <span key={url} className="isophotos__tile">
-            <img src={url} alt="" />
+            <img loading="lazy" decoding="async" src={url} alt="" />
             <button type="button" aria-label="Remove photo" onClick={() => {
               void api.discardPhoto(url);
               setPhotos((all) => all.filter((entry) => entry !== url));
@@ -347,7 +376,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
           <span>Condition</span>
           <select value={condition} onChange={(e) => setCondition(e.target.value)}>
             <option value="">Any</option>
-            {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+            {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
           </select>
         </label>
       </div>
@@ -394,8 +423,12 @@ function WantDialog({ card, onClose, onChanged }: {
   const [data, setData] = useState<WantDetail | null>(null);
   const [message, setMessage] = useState('');
   const [price, setPrice] = useState('');
+  // One of your own items that answers it, attached to the answer.
+  const [offering, setOffering] = useState<WantMatch | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Whose items count as yours here: the shop you are answering as, or you.
+  const speaker = voice.storeId ?? user?.id ?? null;
 
   const load = useCallback(async () => {
     try {
@@ -421,6 +454,7 @@ function WantDialog({ card, onClose, onChanged }: {
         message: message.trim(),
         priceMinor: price.trim() ? Math.round(Number(price) * 100) : null,
         storeId: voice.storeId,
+        listingId: offering?.id ?? null,
       });
       await load();
       await onChanged();
@@ -472,7 +506,7 @@ function WantDialog({ card, onClose, onChanged }: {
       {card.photoUrls?.length > 0 && (
         <div className="isophotos isophotos--view">
           {card.photoUrls.map((url) => (
-            <a key={url} className="isophotos__tile" href={url} target="_blank" rel="noreferrer"><img src={url} alt="" /></a>
+            <a key={url} className="isophotos__tile" href={url} target="_blank" rel="noreferrer"><img loading="lazy" decoding="async" src={url} alt="" /></a>
           ))}
         </div>
       )}
@@ -501,6 +535,39 @@ function WantDialog({ card, onClose, onChanged }: {
         <Loading />
       ) : (
         <>
+          {/* The automated half of answering: what is already listed that looks like it. */}
+          {(data.matches?.length ?? 0) > 0 && (
+            <section className="detail__section">
+              <h3>
+                <Icon name="check" size={14} /> {data.matches!.length} inventory {data.matches!.length === 1 ? 'match' : 'matches'} found
+              </h3>
+              <div className="wantmatch">
+                {data.matches!.map((match) => {
+                  const yours = speaker !== null && match.sellerId === speaker;
+                  return (
+                    <div key={match.id} className={`wantmatch__row${offering?.id === match.id ? ' is-on' : ''}`}>
+                      <Link to={`/listing/${encodeURIComponent(match.id)}`} className="wantmatch__item">
+                        <Thumb seed={match.id} label={match.title} photo={match.photoUrl ? { url: match.photoUrl } : null}
+                          className="thumb wantmatch__photo" />
+                        <span className="wantmatch__name">{match.title}</span>
+                        <span className="faint">{formatMoney(match.priceMinor, match.currency)} · {match.condition}</span>
+                      </Link>
+                      {yours && !data.mine && card.status === 'open' && (
+                        <button type="button" className="btn btn--sm" onClick={() => {
+                          setOffering(match);
+                          setPrice(String(match.priceMinor / 100));
+                          if (!message.trim()) setMessage(`I have this listed: ${match.title}.`);
+                        }}>
+                          {offering?.id === match.id ? '✓ Offering' : 'Offer this'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           <section className="detail__section">
             <h3>Answers {data.offers.length > 0 && <span className="faint">({data.offers.length})</span>}</h3>
             {data.offers.length === 0 ? (
@@ -525,11 +592,28 @@ function WantDialog({ card, onClose, onChanged }: {
                     )}
                     {/* An answer with nothing attached is the one that matters
                         here: most of what is wanted has not been bought yet. */}
-                    {offer.listing && (
+                    {offer.listing && !data.mine && (
                       <a className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
                         href={`/listing/${offer.listing.id}`}>
                         {offer.listing.title} · {formatMoney(offer.listing.priceMinor, offer.listing.currency)}
                       </a>
+                    )}
+                    {/* The asker's way forward: buy what is listed, or talk it
+                        through - a private deal at their price is made in the chat. */}
+                    {data.mine && (
+                      <div className="row" style={{ flexWrap: 'wrap' }}>
+                        {offer.listing && (
+                          <Link className="btn btn--sm" to={`/listing/${offer.listing.id}`}>
+                            🛒 View and buy · {formatMoney(offer.listing.priceMinor, offer.listing.currency)}
+                          </Link>
+                        )}
+                        {offer.seller.handle && (
+                          <Link className="btn btn--quiet btn--sm"
+                            to={`/messages/${encodeURIComponent(offer.seller.handle)}${offer.listing ? `?about=${encodeURIComponent(offer.listing.id)}` : ''}`}>
+                            💬 Message {offer.seller.name}
+                          </Link>
+                        )}
+                      </div>
                     )}
                   </article>
                 ))}
@@ -553,6 +637,14 @@ function WantDialog({ card, onClose, onChanged }: {
                   <span className="faint">Tap the photo to answer as {voice.storeId ? 'yourself' : 'your shop'}.</span>
                 </span>
               </div>
+              {offering && (
+                <div className="itemchip">
+                  <Icon name="tag" size={12} /> With your item: {offering.title}
+                  <button type="button" className="iconbtn" aria-label="Do not attach it" onClick={() => setOffering(null)}>
+                    <Icon name="close" size={12} />
+                  </button>
+                </div>
+              )}
               <label className="field">
                 <span>What you have, or what you can get</span>
                 <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
@@ -566,7 +658,7 @@ function WantDialog({ card, onClose, onChanged }: {
               {error && <ErrorNotice message={error} />}
               <button className="btn" style={{ justifySelf: 'start' }}
                 disabled={busy || message.trim().length < 4} onClick={() => void answer()}>
-                {busy ? 'Sending…' : data.yoursBy?.[as] ? 'Update your answer' : 'Send it'}
+                {busy ? 'Sending…' : data.yoursBy?.[as] ? 'Update your offer' : 'Offer to sell'}
               </button>
             </section>
           ) : (

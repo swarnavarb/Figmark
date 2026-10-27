@@ -111,7 +111,7 @@ export function DisputePage() {
             within two days it moves to another manager automatically.
           </p>
         )}
-        <Rounds rounds={rounds} currency={data.currency} nameOf={nameOf} parties={parties} />
+        <Rounds rounds={rounds} currency={data.currency} nameOf={nameOf} parties={parties} closed={Boolean(dispute.resolvedAt)} />
       </div>
 
       {dispute.offer && !dispute.resolvedAt && (
@@ -228,8 +228,10 @@ function Outcome({ view }: { view: DisputeView }) {
 }
 
 /** Each round: who heard it, who paid, and what they decided. */
-function Rounds({ rounds, currency, nameOf, parties }: {
+function Rounds({ rounds, currency, nameOf, parties, closed = false }: {
   rounds: DisputeRound[];
+  /** Settled or withdrawn before anyone decided: nothing is waiting any more. */
+  closed?: boolean;
   currency: string;
   nameOf: (id: string) => string;
   parties: { raiser: { name: string }; respondent: { name: string } };
@@ -260,7 +262,7 @@ function Rounds({ rounds, currency, nameOf, parties }: {
               {round.decision.reasoning}
               {round.decision.refundMinor !== null && ` · ${formatMoney(round.decision.refundMinor, currency)} back to the buyer`}
             </p>
-          ) : <span className="faint">Waiting for a decision.</span>}
+          ) : <span className="faint">{closed ? 'Closed before a decision was needed.' : 'Waiting for a decision.'}</span>}
         </li>
       ))}
     </ol>

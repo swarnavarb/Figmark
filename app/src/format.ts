@@ -38,6 +38,21 @@ export function formatTotals(rows: readonly { amountMinor: number; currency: str
   return [...sums].map(([currency, minor]) => formatMoney(minor, currency)).join(' + ');
 }
 
+/** Whole rupees (not minor units), to the paisa when small enough for paise to matter: the calculators' figures. */
+export function formatRupees(value: number): string {
+  return `${value < 0 ? '−' : ''}₹${Math.abs(value).toLocaleString('en-IN', { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 })}`;
+}
+
+/** A count as Indian readers group it: 1,25,000. */
+export function formatCount(value: number): string {
+  return value.toLocaleString('en-IN');
+}
+
+/** A moment, date and time, the same on every screen whatever the browser's own language. */
+export function formatDateTime(iso: string | number | Date): string {
+  return new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
 export function formatWeight(grams: number): string {
   return grams >= 1000 ? `${(grams / 1000).toFixed(2)} kg` : `${grams} g`;
 }

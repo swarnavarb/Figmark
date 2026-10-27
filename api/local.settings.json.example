@@ -4,12 +4,15 @@
     "FUNCTIONS_WORKER_RUNTIME": "node",
     "AzureWebJobsStorage": "",
 
+    "SITE_ENVIRONMENT": "<optional: 'development' puts a test-site banner on every page and keeps it out of search engines; 'production' or empty shows none>",
+
     "AUTH_MODE": "mock",
     "AUTH_SESSION_SECRET": "dev-only-change-me",
 
     "COSMOS_ENDPOINT": "https://cosmos-figuremarket-dev.documents.azure.com:443/",
     "COSMOS_KEY": "<primary key from: az cosmosdb keys list -n cosmos-figuremarket-dev -g rg-figuremarket-dev>",
     "COSMOS_DATABASE": "figmark",
+    "COSMOS_THROUGHPUT": "<only for npm run azure:provision: 'serverless' for a serverless account; empty gives the free tier's 1000 RU/s>",
 
     "STORAGE_ACCOUNT": "stfiguremarketdev",
     "STORAGE_KEY": "<key from: az storage account keys list -n stfiguremarketdev -g rg-figuremarket-dev>",

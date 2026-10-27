@@ -73,7 +73,7 @@ function browser() {
 
 async function person(name, phone, username) {
   const made = await signup(req({
-    body: { displayName: name, email: `${name.toLowerCase().replace(/\W/g, '')}@bell.example`, phone, password: 'longenough1' },
+    body: { acceptTerms: true, displayName: name, email: `${name.toLowerCase().replace(/\W/g, '')}@bell.example`, phone, password: 'longenough1' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const auth = { authorization: `Bearer ${made.jsonBody.token}` };
@@ -411,7 +411,9 @@ await check('a poll that sends its version hears "unchanged" until something is 
   await new Promise((resolve) => setTimeout(resolve, 6_000));
   const held = await bell(quiet);
   assert.ok(!held.notifications.some((row) => row.title === 'Held'));
-  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  // Past the hold's end rounded up to its whole second, as versions carry it:
+  // 1.5s here failed whenever the hold began late in a second.
+  await new Promise((resolve) => setTimeout(resolve, 2_500));
   const shown = await bell(quiet, { since: held.version });
   assert.equal(shown.unchanged, undefined);
   assert.ok(shown.notifications.some((row) => row.title === 'Held'));

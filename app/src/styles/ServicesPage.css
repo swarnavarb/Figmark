@@ -1,3 +1,40 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.parcel--gone { opacity: 0.62; border-color: rgba(52, 211, 153, 0.35); }
+.svx-mine__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.svx-mine__ping {
+  flex: 0 0 auto; min-width: 22px; height: 22px; padding: 0 7px;
+  display: grid; place-items: center; border-radius: var(--r-pill);
+  background: var(--pink); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+.svx::before {
+  content: ''; position: absolute; z-index: -1; inset: 0; border-radius: inherit;
+  background: linear-gradient(105deg, transparent 42%, color-mix(in srgb, var(--svx) 10%, transparent) 50%, transparent 58%) 0 0 / 300% 100%;
+  animation: svx-sheen 9s ease-in-out infinite;
+  pointer-events: none;
+}
+.svx__text { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.svx__open::after { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: 22px; }
+.svx__item { min-width: 0; display: grid; animation: svx-rise 480ms var(--ease) both; animation-delay: calc(180ms + var(--i, 0) * 70ms); }
+.svx-card {
+  display: grid; gap: 12px; align-content: start; min-width: 0;
+  padding: 14px; border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+}
+.svx-lane__path { background-position-x: 0; animation: svx-dots 1.6s linear infinite; }
+.svx-card--ghost { min-height: 150px; box-shadow: none; }
+.svx-card__head { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.svx-card__who { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.svx-card__foot .btn--quiet { margin-right: auto; }
+.svx-lane__ends { display: flex; align-items: center; gap: 8px; min-width: 0; font-family: var(--mono); font-size: var(--t-sm); }
+.svx-lane__path {
+  position: relative; flex: 1; min-width: 28px; height: 14px;
+  display: grid; place-items: center;
+  background: radial-gradient(circle, var(--svx-line) 1.2px, transparent 1.6px) 0 50% / 7px 3px repeat-x;
+}
+
 /*
  * Styles only pages/ServicesPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

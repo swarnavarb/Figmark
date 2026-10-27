@@ -1306,6 +1306,13 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
   const courier = typeof body.courier === 'string' ? body.courier.trim().slice(0, 80) : '';
   const awb = typeof body.awb === 'string' ? body.awb.trim().slice(0, 80) : '';
   const withShipment = checkpoint === 'dispatched' && on && Boolean(courier || awb);
+  // A payment the buyer says they sent is answered before anything ships:
+  // dispatching over an unanswered claim let the buyer confirm receipt of an
+  // item the seller then said was never paid for. (An accepted booking may
+  // still go out on trust - its buyer can pay at any point after.)
+  if (on && (checkpoint === 'dispatched' || checkpoint === 'delivered') && order.paymentStatus === 'claimed') {
+    return error(409, 'awaiting_payment', 'The buyer says they paid. Check whether it arrived and answer that first, then dispatch it.');
+  }
   if (withShipment && isStopped(order.status)) {
     return error(409, 'order_stopped', 'That order was called off or refunded, so it is not being shipped.');
   }

@@ -15,8 +15,8 @@ import type {
 import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
 import { newestOrder, popularity, searchWords } from '../../../shared/catalog.js';
-import type { CosmosConfig } from '../config.js';
-import type { BackendStatus, CatalogQuery, OrderFigures, Repository } from './repository.js';
+import { runningInAzure, type CosmosConfig } from '../config.js';
+import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { mapLimit } from './lot-view.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
@@ -57,15 +57,10 @@ import {
   seedPledges,
   seedUsers,
 } from './seed.js';
+import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
+import { seedTestListings } from './seed-test-catalog.js';
 
-/**
- * Whether an empty database may be filled with the development fixtures.
- *
- * On by default: the alternative is a deployment that connects successfully and
- * then behaves as though every password were wrong. Set COSMOS_AUTOSEED=off for
- * a database that is meant to start empty.
- */
 /** Site-content id of the marker left once rows are in the current buyer-protection shape. */
 const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
 /** Site-content id of the marker left once messages between an owner and their own shop are gone. */
@@ -74,13 +69,28 @@ const SELF_MESSAGES_MARKER = 'migration:self-messages';
 const STORAGE_CLEANUP_MARKER = 'migration:storage-cleanup';
 /** Site-content id of the marker left once every listing carries its sourcing and stored popularity. */
 const LISTINGS_MARKER = 'migration:listing-sourcing';
+/** Site-content id of the marker naming the fixture set the database was last topped up with. */
+const FIXTURES_MARKER = 'migration:fixtures-topped-up';
 /** Site-content id recording which container policies were last applied to the database. */
 const CONTAINER_POLICY_MARKER = 'migration:container-policies';
 /** How long a refused policy update waits before it is tried again. */
 const POLICY_RETRY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Whether an empty database may be filled with the development fixtures, and
+ * a seeded one topped up with fixtures a later release added.
+ *
+ * The fixtures include accounts whose password is published in this
+ * repository - one of them a community manager who decides where held money
+ * goes - so on Azure they are written only when COSMOS_AUTOSEED=on says this
+ * database is a demo. Off Azure (a laptop, the tests) they are on unless
+ * COSMOS_AUTOSEED=off. A database left empty says so on /api/health.
+ */
 function autoSeedEnabled(): boolean {
-  return (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase() !== 'off';
+  const declared = (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase();
+  if (declared === 'on') return true;
+  if (declared === 'off') return false;
+  return !runningInAzure();
 }
 
 /**
@@ -885,6 +895,8 @@ export class CosmosRepository implements Repository {
     await this.markSelfMessagesCleared(0);
     await this.markStorageCleaned({});
     await this.markListingsTidied({ legacy: [], relabelled: 0 });
+    // And with this release's fixtures: the next start has nothing to top up.
+    await this.markFixtures(fixtureSignature(fixtureSets()), 0);
     this.seeded = true;
     return ` Seeded ${written} fixture records into an empty database.`;
   }
@@ -956,21 +968,14 @@ export class CosmosRepository implements Repository {
     // What is already there, one container at a time. The usual answer is
     // "everything", and that answer has to be cheap: this runs on every cold
     // start, and every request landing on a cold worker waits behind it.
-    const fixtures = [
-      ['users', [...seedUsers(), ...seedLotBuyers()]],
-      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-      ['listings', [...seedListings(), ...seedShowcaseListings()]],
-      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
-      ['powerSales', seedShowcaseSales()],
-      ['comments', seedComments()],
-      ['forums', seedForums()],
-      ['posts', seedPosts()],
-      ['reviews', seedReviews()],
-      ['disputes', seedDisputes()],
-      ['wants', seedWants()],
-      ['wantOffers', seedWantOffers()],
-      ['pledges', seedPledges()],
-    ] as const;
+    const fixtures = fixtureSets();
+
+    // When the database was last topped up with exactly this release's
+    // fixtures, there is nothing to add, and the id scan of thirteen
+    // containers below is skipped: one point read instead.
+    const signature = fixtureSignature(fixtures);
+    const marker = await this.getSiteContent(FIXTURES_MARKER);
+    if ((marker?.data as { signature?: string } | undefined)?.signature === signature) return '';
 
     let added = 0;
     const newUsers: User[] = [];
@@ -1009,7 +1014,14 @@ export class CosmosRepository implements Repository {
       await Promise.all(reservations.map((row) => this.container('identifiers').items.upsert(row)));
     }
 
+    await this.markFixtures(signature, added);
     return added === 0 ? '' : ` Added ${added} fixture record(s) this database did not have yet.`;
+  }
+
+  /** Which fixture set the database now holds, so the next start can skip the scan. */
+  private async markFixtures(signature: string, added: number): Promise<void> {
+    const now = new Date().toISOString();
+    await this.saveSiteContent({ id: FIXTURES_MARKER, data: { signature, added }, updatedBy: null, createdAt: now, updatedAt: now });
   }
 
   /**
@@ -1083,12 +1095,12 @@ export class CosmosRepository implements Repository {
 
     for (const [name, items] of [
       ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-      ['listings', [...seedListings(), ...seedShowcaseListings()]],
+      ['listings', [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]],
       ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
       ['powerSales', seedShowcaseSales()],
       ['comments', seedComments()],
       ['forums', seedForums()],
-      ['posts', seedPosts()],
+      ['posts', [...seedPosts(), ...seedFeedDemoPosts()]],
       ['reviews', seedReviews()],
       ['disputes', seedDisputes()],
       ['wants', seedWants()],
@@ -1290,8 +1302,19 @@ export class CosmosRepository implements Repository {
       if (isConflict(error)) throw new Error('That email or phone number is already registered.');
       throw error;
     }
-    const { resource } = await this.container('users').items.create(user);
+    const { resource } = await this.container('users').items.create(withSearchKey(user));
     return resource ?? user;
+  }
+
+  async listSellerCardsByIds(ids: readonly string[]): Promise<SellerCardSource[]> {
+    if (ids.length === 0) return [];
+    const { resources } = await this.container('users')
+      .items.query<SellerCardSource>({
+        query: 'SELECT c.id, c.displayName, c.createdAt, c.sellerProfile, c.sellerTrust FROM c WHERE ARRAY_CONTAINS(@ids, c.id)',
+        parameters: [{ name: '@ids', value: [...ids] }],
+      })
+      .fetchAll();
+    return resources;
   }
 
   async listUsersByIds(ids: readonly string[]): Promise<User[]> {
@@ -1470,7 +1493,7 @@ export class CosmosRepository implements Repository {
       versions[part] = { etag: saved._etag ?? null, was: JSON.stringify(fieldsOf(saved, part)) };
     }
 
-    const row = await this.writeChecked('users', user.id, rowOf(joined) as User & { _etag?: string });
+    const row = await this.writeChecked('users', user.id, withSearchKey(rowOf(joined) as User & { _etag?: string }));
     // The caller keeps using its object: give it the stored row, its parts and their new versions.
     for (const key of Object.keys(rowOf(joined))) if (!(key in row)) delete joined[key];
     Object.assign(joined, row);
@@ -1506,8 +1529,21 @@ export class CosmosRepository implements Repository {
   }
 
   async changePhone(user: User, phone: string): Promise<boolean> {
-    const next = normaliseIdentifier(phone);
-    const previous = user.phone ? normaliseIdentifier(user.phone) : null;
+    return this.moveIdentifier(user, user.phone, phone, () => { user.phone = phone; });
+  }
+
+  async changeEmail(user: User, email: string): Promise<boolean> {
+    return this.moveIdentifier(user, user.email, email, () => { user.email = email; });
+  }
+
+  /**
+   * Moves one of the account's sign-in identifiers. Reserves the new one
+   * first, so one somebody else holds is refused (false) with nothing changed;
+   * the old one is released after.
+   */
+  private async moveIdentifier(user: User, from: string | null, to: string, apply: () => void): Promise<boolean> {
+    const next = normaliseIdentifier(to);
+    const previous = from ? normaliseIdentifier(from) : null;
     if (next !== previous) {
       const existing = await this.readReservation(next);
       if (existing && existing.userId !== user.id) return false;
@@ -1520,7 +1556,7 @@ export class CosmosRepository implements Repository {
         }
       }
     }
-    user.phone = phone;
+    apply();
     await this.updateUser(user);
     if (previous && previous !== next) {
       await this.container('identifiers').item(previous, previous).delete().catch(() => {});
@@ -1810,9 +1846,13 @@ export class CosmosRepository implements Repository {
   async searchUsers(needle: string, limit: number): Promise<User[]> {
     const { resources } = await this.container('users')
       .items.query<User>({
-        query: 'SELECT TOP @limit * FROM c WHERE CONTAINS(LOWER(c.displayName), @q) OR CONTAINS(c.username, @q)'
+        // The lowercased words are stored with the account when it is saved
+        // (searchKey), so most rows are matched without lowercasing five
+        // fields of every account; one saved before that is matched the old way.
+        query: 'SELECT TOP @limit * FROM c WHERE (IS_DEFINED(c.searchKey) ? CONTAINS(c.searchKey, @q)'
+          + ' : (CONTAINS(LOWER(c.displayName), @q) OR CONTAINS(c.username, @q)'
           + ' OR CONTAINS(LOWER(c.sellerProfile.storefrontName), @q) OR CONTAINS(c.sellerProfile.username, @q)'
-          + ' OR CONTAINS(LOWER(c.sellerProfile.bio), @q)',
+          + ' OR CONTAINS(LOWER(c.sellerProfile.bio), @q)))',
         parameters: [{ name: '@q', value: needle }, { name: '@limit', value: limit }],
       })
       .fetchAll();
@@ -1934,6 +1974,35 @@ export class CosmosRepository implements Repository {
 
   async deleteWantSeeker(id: string, wantId: string): Promise<void> {
     await this.container('wantSeekers').item(id, wantId).delete();
+  }
+
+  async listOpenGames(nowIso: string, limit: number): Promise<Post[]> {
+    // Every channel's, so cross-partition; IS_STRING is false for absent and null alike.
+    const { resources } = await this.container('posts').items.query<Post>({
+      query: 'SELECT * FROM c WHERE'
+        + ' (IS_OBJECT(c.contest) AND NOT IS_STRING(c.contest.settledAt))'
+        + ' OR (IS_OBJECT(c.guess) AND NOT IS_STRING(c.guess.revealedAt))'
+        + ' OR (IS_STRING(c.poll.closesAt) AND (c.poll.closesAt >= @now'
+        + ' OR (IS_OBJECT(c.debate) AND NOT IS_STRING(c.resultsSentAt))'
+        + ' OR (IS_OBJECT(c.poll.reward) AND NOT IS_STRING(c.poll.reward.paidAt))))'
+        + ' OFFSET 0 LIMIT @limit',
+      parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
+    }).fetchAll();
+    return resources;
+  }
+
+  async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
+    // Every seller's, so cross-partition; IS_STRING is false for absent and null alike.
+    const { resources } = await this.container('listings').items.query<Listing>({
+      query: 'SELECT * FROM c WHERE IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder)'
+        + ' AND NOT IS_STRING(c.preOrder.closedAt) AND ('
+        + '(c.preOrder.cutoffAt <= @now AND NOT IS_STRING(c.preOrder.filledAt)'
+        + ' AND NOT IS_STRING(c.preOrder.proceededShortAt) AND NOT IS_STRING(c.preOrder.decisionDueAt))'
+        + ' OR (IS_STRING(c.preOrder.decisionDueAt) AND c.preOrder.decisionDueAt <= @now))'
+        + ' OFFSET 0 LIMIT @limit',
+      parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
+    }).fetchAll();
+    return resources;
   }
 
   async listPledges(listingId: string): Promise<Pledge[]> {
@@ -2358,6 +2427,25 @@ export class CosmosRepository implements Repository {
    */
   private recentCache: { at: number; limit: number; posts: Promise<Post[]> } | null = null;
 
+  /**
+   * Swap one changed post into the recent-posts cache rather than dropping it.
+   * A vote or a reaction changes one post; reading the whole window again on
+   * the next feed for that would cost a query a hundred times the size.
+   */
+  private patchRecent(post: Post): void {
+    const cached = this.recentCache;
+    if (!cached) return;
+    // A copy: whoever asked for the change keeps the one they were handed.
+    const copy = structuredClone(post);
+    const posts = cached.posts.then((list) => list.map((entry) =>
+      (entry.id === post.id && entry.channelId === post.channelId ? copy : entry)));
+    const entry = { ...cached, posts };
+    this.recentCache = entry;
+    posts.catch(() => {
+      if (this.recentCache === entry) this.recentCache = null;
+    });
+  }
+
   async listRecentPosts(limit: number): Promise<Post[]> {
     const cached = this.recentCache;
     if (cached && cached.limit >= limit && Date.now() - cached.at < RECENT_TTL_MS) {
@@ -2400,12 +2488,17 @@ export class CosmosRepository implements Repository {
         });
       if (!resource) return null;
       const next = change(resource);
-      if (!next) return resource;
-      this.recentCache = null;
+      // Nothing to change: what was read is still the freshest copy there is,
+      // so the cache takes it - a game settled elsewhere stops looking due here.
+      if (!next) {
+        this.patchRecent(resource);
+        return resource;
+      }
       try {
         const { resource: saved } = await this.container('posts').item(id, channelId).replace<Post>(next, {
           accessCondition: { type: 'IfMatch', condition: etag ?? '' },
         });
+        this.patchRecent(saved ?? next);
         return saved ?? next;
       } catch (error) {
         if ((error as { code?: number }).code === 412) continue;
@@ -2525,6 +2618,17 @@ export class CosmosRepository implements Repository {
     return this.queryBySeller<Lot>('lots', query);
   }
 
+  async listLotsNaming(userId: string): Promise<Lot[]> {
+    const { resources } = await this.container('lots')
+      .items.query<Lot>({
+        query: 'SELECT * FROM c WHERE c.forwarder.forwarderUserId = @id OR c.handler.handlerUserId = @id'
+          + ' OR c.supplier.supplierUserId = @id OR c.exporterUserId = @id ORDER BY c.createdAt DESC',
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return this.snapshots.rememberAll('lots', resources);
+  }
+
   async getLot(sellerId: string, lotId: string): Promise<Lot | null> {
     try {
       const { resource } = await this.container('lots').item(lotId, sellerId).read<Lot>();
@@ -2562,38 +2666,45 @@ export class CosmosRepository implements Repository {
     // every word goes in as a parameter, so nothing anybody typed is ever part
     // of the statement.
     const words = searchWords(query.search ?? '');
-    const searched = words.map((_, i) => searchClause(`@w${i}`)).join('');
-    const where =
-      // The operations console passes @all, because it deletes what an
+    // Only the filters in use go into the statement. A clause like
+    // `(@cat = "" OR c.category = @cat)` reads the same, but Cosmos plans it
+    // without the index on category, so every catalog read scanned every
+    // listing. Each value still goes in as a parameter, never as text.
+    const clauses: string[] = [];
+    const parameters: { name: string; value: string | number | boolean | string[] | null }[] = [];
+    const where = (clause: string, name: string, value: string | number | string[]) => {
+      clauses.push(clause);
+      parameters.push({ name, value });
+    };
+    if (query.includeHidden !== true) {
+      // The operations console reads everything, because it deletes what an
       // account made and cannot do that from a filtered list. Everybody else
       // gets the catalog: active, and not hidden behind a members' window.
-      'SELECT * FROM c WHERE (@all = true OR c.status = "active")' +
-      ' AND (@all = true OR NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)' +
-      ' AND (@seller = "" OR c.sellerId = @seller)' +
-      ' AND (@cat = "" OR c.category = @cat)' +
-      ' AND (IS_NULL(@cats) OR ARRAY_CONTAINS(@cats, c.category))' +
-      ' AND (@cond = "" OR c.condition = @cond)' +
-      ' AND (@price = 0 OR c.priceMinor <= @price)' +
-      ' AND (@kind = "" OR (@kind = "pre_order" AND IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder))' +
-      ' OR (@kind = "mixed_lot" AND c.bundle = true)' +
-      ' OR (@kind = "in_hand" AND c.sourcing = "in_hand")' +
-      ' OR (@kind = "in_stock" AND (NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))))' +
-      searched;
-    const bound = {
-      parameters: [
-        { name: '@all', value: query.includeHidden === true },
-        { name: '@seller', value: query.sellerId ?? '' },
-        { name: '@cat', value: query.category ?? '' },
-        // Null rather than an empty array: absent means every category, and an
-        // empty list means none of them, which is what an unknown heading is.
-        { name: '@cats', value: query.categories ? [...query.categories] : null },
-        { name: '@cond', value: query.condition ?? '' },
-        { name: '@price', value: query.maxPriceMinor && query.maxPriceMinor > 0 ? query.maxPriceMinor : 0 },
-        { name: '@kind', value: query.kind && query.kind !== 'all' ? query.kind : '' },
-        { name: '@limit', value: limit },
-        ...words.map((word, i) => ({ name: `@w${i}`, value: word })),
-      ],
-    };
+      clauses.push('c.status = "active"', '(NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)');
+    }
+    if (query.sellerId) where('c.sellerId = @seller', '@seller', query.sellerId);
+    if (query.category) where('c.category = @cat', '@cat', query.category);
+    // An empty list means none, which is what an unknown heading is.
+    if (query.categories) where('ARRAY_CONTAINS(@cats, c.category)', '@cats', [...query.categories]);
+    if (query.condition) where('c.condition = @cond', '@cond', query.condition);
+    // What a category asks about lives under `attributes`. `@kindOf` rather
+    // than `@type`, which reads like a keyword in a parameter list.
+    if (query.type) where('c.attributes["type"] = @kindOf', '@kindOf', query.type);
+    if (query.size) where('c.attributes["size"] = @size', '@size', query.size);
+    if (query.authenticity) {
+      where('ARRAY_CONTAINS(@auths, c.attributes["authenticity"])', '@auths', [...query.authenticity]);
+    }
+    if (query.maxPriceMinor && query.maxPriceMinor > 0) where('c.priceMinor <= @price', '@price', query.maxPriceMinor);
+    const kind = query.kind && query.kind !== 'all' ? query.kind : '';
+    if (kind === 'pre_order') clauses.push('IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder)');
+    if (kind === 'mixed_lot') clauses.push('c.bundle = true');
+    if (kind === 'in_hand') clauses.push('c.sourcing = "in_hand"');
+    if (kind === 'in_stock') clauses.push('(NOT IS_DEFINED(c.preOrder) OR IS_NULL(c.preOrder))');
+    words.forEach((word, i) => parameters.push({ name: `@w${i}`, value: word }));
+    parameters.push({ name: '@limit', value: limit });
+    const searched = words.map((_, i) => searchClause(`@w${i}`)).join('');
+    const whereSql = 'SELECT * FROM c WHERE ' + (clauses.length > 0 ? clauses.join(' AND ') : 'true') + searched;
+    const bound = { parameters };
     const options = query.sellerId ? { partitionKey: query.sellerId } : undefined;
     const read = (sql: string) =>
       this.container('listings').items.query<Listing>({ query: sql, parameters: bound.parameters }, options).fetchAll();
@@ -2603,9 +2714,9 @@ export class CosmosRepository implements Repository {
     // merges: the freshest N are always among the newest N listed plus the N
     // most recently bumped.
     const [listed, bumped] = await Promise.all([
-      read(where + catalogOrder(query.sort)),
+      read(whereSql + catalogOrder(query.sort)),
       ranked
-        ? read(where + ' AND IS_DEFINED(c.bumpedAt) AND NOT IS_NULL(c.bumpedAt) ORDER BY c.bumpedAt DESC OFFSET 0 LIMIT @limit')
+        ? read(whereSql + ' AND IS_DEFINED(c.bumpedAt) AND NOT IS_NULL(c.bumpedAt) ORDER BY c.bumpedAt DESC OFFSET 0 LIMIT @limit')
         : Promise.resolve({ resources: [] as Listing[] }),
     ]);
     if (!ranked) return listed.resources;
@@ -2635,19 +2746,24 @@ export class CosmosRepository implements Repository {
   }
 
   async bumpListing(sellerId: string, listingId: string): Promise<boolean> {
-    try {
-      const { resource } = await this.container('listings').item(listingId, sellerId).read<Listing>();
-      if (!resource) return false;
-      const last = resource.bumpedAt ? Date.parse(resource.bumpedAt) : 0;
-      if (Date.now() - last < BUMP_COOLDOWN_MS) return false;
-      await this.container('listings')
-        .item(listingId, sellerId)
-        .replace({ ...resource, bumpedAt: new Date().toISOString() });
-      return true;
-    } catch (error) {
-      if (isNotFound(error)) return false;
-      throw error;
+    const item = this.container('listings').item(listingId, sellerId);
+    // Checked against the copy read, so an edit landing between the read and
+    // the write is not overwritten with the old listing; read again and retry.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const { resource } = await item.read<Listing & { _etag?: string }>();
+        if (!resource) return false;
+        const last = resource.bumpedAt ? Date.parse(resource.bumpedAt) : 0;
+        if (Date.now() - last < BUMP_COOLDOWN_MS) return false;
+        const options = resource._etag ? { accessCondition: { type: 'IfMatch', condition: resource._etag } } : undefined;
+        await item.replace({ ...resource, bumpedAt: new Date().toISOString() }, options);
+        return true;
+      } catch (error) {
+        if (isNotFound(error)) return false;
+        if ((error as { code?: number }).code !== 412) throw error;
+      }
     }
+    return false;
   }
 
   async createLot(lot: Lot): Promise<Lot> {
@@ -3012,6 +3128,18 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listBuyerIdsForSeller(sellerId: string, since: string): Promise<string[]> {
+    // One column, deduplicated by the database: a shop's whole book would be
+    // every order read whole for the sake of a list of names.
+    const { resources } = await this.container('orders')
+      .items.query<string>({
+        query: 'SELECT DISTINCT VALUE c.buyerId FROM c WHERE c.sellerId = @sellerId AND NOT IS_NULL(c.placedAt) AND c.createdAt >= @since',
+        parameters: [{ name: '@sellerId', value: sellerId }, { name: '@since', value: since }],
+      })
+      .fetchAll();
+    return [...new Set(resources)];
+  }
+
   private async queryBySeller<T>(name: 'lots', query: CatalogQuery): Promise<T[]> {
     const limit = query.limit ?? 100;
     const spec = query.sellerId
@@ -3058,6 +3186,33 @@ const CATALOG_ORDER: Record<string, string> = {
  * in the title, description, category or a tag - the four fields matchesSearch
  * in shared/catalog reads, matched the same way, ignoring case.
  */
+/** The fixtures this release ships, container by container, for the top-up. */
+function fixtureSets() {
+  return [
+    ['users', [...seedUsers(), ...seedLotBuyers()]],
+    ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
+    ['listings', [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]],
+    ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
+    ['powerSales', seedShowcaseSales()],
+    ['comments', seedComments()],
+    ['forums', seedForums()],
+    ['posts', [...seedPosts(), ...seedFeedDemoPosts()]],
+    ['reviews', seedReviews()],
+    ['disputes', seedDisputes()],
+    ['wants', seedWants()],
+    ['wantOffers', seedWantOffers()],
+    ['pledges', seedPledges()],
+  ] as const;
+}
+
+/** One fingerprint of every fixture id (and every retired one): it changes when a release changes them. */
+function fixtureSignature(fixtures: ReturnType<typeof fixtureSets>): string {
+  return createHash('sha256')
+    .update(fixtures.map(([name, items]) => `${name}:${items.map((item) => item.id).join(',')}`).join('|'))
+    .update(RETIRED_FIXTURE_POSTS.map(([, id]) => id).join(','))
+    .digest('hex');
+}
+
 function searchClause(name: string): string {
   return ' AND (CONTAINS(c.title, ' + name + ', true) OR CONTAINS(c.description, ' + name + ', true)' +
     ' OR CONTAINS(c.category, ' + name + ', true)' +
@@ -3110,4 +3265,14 @@ function nameFor(user: { displayName?: string; email?: string; id: string }): st
 function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/**
+ * The account's searchable words, lowercased once, as people search for them:
+ * its name, handle, shop name, shop handle and bio. Never its email or phone.
+ */
+function withSearchKey<T extends User>(user: T): T {
+  const words = [user.displayName, user.username, user.sellerProfile?.storefrontName, user.sellerProfile?.username,
+    user.sellerProfile?.bio].filter((word): word is string => typeof word === 'string' && word.length > 0);
+  return { ...user, searchKey: words.join('\n').toLowerCase() };
 }

@@ -1,3 +1,4 @@
+import { confirmSentence } from './Ask';
 import { useState, type FormEvent } from 'react';
 import type { CreditRecord, Listing, Order } from '@shared/models';
 import { affiliateUnitMinor, linkDiscountMinor } from '@shared/affiliate';
@@ -216,16 +217,25 @@ export function termsBody(draft: TermsDraft) {
  * date is its expiry, so both questions step aside rather than being asked
  * twice.
  */
-export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false }: {
+export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor }: {
   value: TermsDraft;
   onChange: (next: TermsDraft) => void;
   preOrder?: boolean;
+  /** The price as typed, so the link discount can say what the shop is left with. */
+  priceMinor?: number;
   /** A power sale item: the deal clock starts when it goes public, after the member price. */
   publicLater?: boolean;
   /** A private deal: no commission to offer, and its own clock in hours instead of days. */
   privateDeal?: boolean;
 }) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
+  // The most a link may take off: commission and discount together leave the
+  // shop at least ₹1. The API holds to the same rule; saying it here means a
+  // discount is never quietly cut to fit after the seller has published.
+  const commissionRupees = Math.max(0, Math.round(Number(value.affiliateAmount) || 0));
+  const offRupees = Math.max(0, Math.round(Number(value.affiliateOffAmount) || 0));
+  const maxOffRupees = priceMinor && priceMinor > 0 ? Math.floor(priceMinor / 100) - commissionRupees - 1 : null;
+  const keptRupees = priceMinor && priceMinor > 0 ? Math.floor(priceMinor / 100) - commissionRupees - offRupees : null;
   return (
     <>
       <LBox icon="📦" title="Stock & payment">
@@ -284,10 +294,23 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
           <label className="field">
             <span>Buyer's discount per unit (₹)</span>
             <input type="number" min="1" step="1" value={value.affiliateOffAmount}
+              max={maxOffRupees != null && maxOffRupees >= 1 ? maxOffRupees : undefined}
               onChange={(e) => set({ affiliateOffAmount: e.target.value })} />
             <span className="field__hint">
-              Comes off what you are paid. With the commission, it must leave you at least ₹1 of the price.
+              Comes off what you are paid. With the commission, it must leave you at least ₹1 of the price
+              {maxOffRupees != null && maxOffRupees >= 1 ? ` - at most ₹${maxOffRupees.toLocaleString('en-IN')} here` : ''}.
             </span>
+            {keptRupees != null && offRupees > 0 && (
+              keptRupees < 1 ? (
+                <span className="notice notice--error">
+                  ₹{commissionRupees.toLocaleString('en-IN')} commission and ₹{offRupees.toLocaleString('en-IN')} off leave you nothing of the price. Lower one of them.
+                </span>
+              ) : (
+                <span className="field__hint">
+                  A sale through a link pays you ₹{keptRupees.toLocaleString('en-IN')} after the commission and the discount.
+                </span>
+              )
+            )}
           </label>
         )}
       </LBox>}
@@ -419,7 +442,8 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
           </label>
           <PhotoManager photos={photos} onChange={setPhotos} />
         </LBox>
-        <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} privateDeal={privateDeal} />
+        <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} privateDeal={privateDeal}
+          priceMinor={Math.round(Number(price) * 100)} />
         {privateDeal && <DealClock hours={dealHours} onChange={setDealHours} endsAt={listing.expiresAt} />}
         {error && <ErrorNotice message={error} />}
         <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -427,12 +451,20 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
             {expired ? '✨ Make available again' : 'Save'}
           </button>
           <button type="button" className="btn btn--danger" disabled={busy || expired}
-            onClick={() => {
-              if (window.confirm('Expire this item? It comes off sale immediately - you can put it back on with a new expiry any time.')) {
+            onClick={async () => {
+              if (await confirmSentence('Expire this item? It comes off sale immediately - you can put it back on with a new expiry any time.')) {
                 void run(async () => { await api.expireListing(listing.id); return null; });
               }
             }}>
             Expire
+          </button>
+          <button type="button" className="btn btn--quiet" disabled={busy}
+            onClick={async () => {
+              if (await confirmSentence('Remove this item? It leaves your shop and your lists for good. Orders that already have it keep it.')) {
+                void run(async () => { await api.removeListing(listing.id); return null; });
+              }
+            }}>
+            🗑️ Remove
           </button>
         </div>
       </form>

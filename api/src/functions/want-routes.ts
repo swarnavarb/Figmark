@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
-import type { Want, WantOffer } from '../../../shared/models.js';
+import type { Listing, Want, WantOffer } from '../../../shared/models.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
@@ -10,6 +10,8 @@ import { claimPhotos } from '../storage/release.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { notify } from './notify.js';
+import { matchesSearch } from '../../../shared/catalog.js';
 
 /**
  * What people are looking for, and who says they can get it.
@@ -40,7 +42,7 @@ function expiryFrom(now = new Date()): string {
 /** One hunt, as a card on the board reads it. */
 const MAX_PHOTOS = 4;
 
-function card(want: Want) {
+function card(want: Want, matchCount = 0) {
   return {
     id: want.id,
     buyerId: want.buyerId,
@@ -58,6 +60,72 @@ function card(want: Want) {
     createdAt: want.createdAt,
     expiresAt: want.expiresAt,
     closedAt: want.closedAt,
+    /** Items already listed that look like what is being hunted. */
+    matchCount,
+  };
+}
+
+type Repo = Awaited<ReturnType<typeof getRepository>>;
+
+/** Words that say nothing about which item it is. */
+const FILLER = new Set([
+  'the', 'and', 'for', 'any', 'with', 'from', 'one', 'set', 'new', 'box', 'boxed', 'looking', 'iso', 'wtb',
+  'want', 'wanted', 'need', 'please', 'version', 'colourway', 'colorway', 'scale', 'figure', 'item',
+]);
+
+/** The words in a hunt's title that name the thing. */
+function keyWords(title: string): string[] {
+  return [...new Set(title.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 3 && !FILLER.has(word)))];
+}
+
+/**
+ * Whether a listing looks like what a hunt is after: most of the naming words
+ * of its title are somewhere in the listing. Most rather than all, because a
+ * buyer's "Furyu Rem 1/7" and a seller's "Rem Re:Zero 1/7 prize figure" are
+ * the same box written by two people.
+ */
+function looksLike(listing: Listing, words: readonly string[]): boolean {
+  if (words.length === 0) return false;
+  const text = `${listing.title} ${listing.description} ${listing.tags.join(' ')}`.toLowerCase();
+  const hits = words.filter((word) => text.includes(word)).length;
+  return hits >= Math.max(1, Math.ceil(words.length * 0.6));
+}
+
+/** The most-wanted items in a category that a hunt is matched against. */
+const MATCH_POOL = 200;
+
+/**
+ * What is already listed for each open hunt - the automated half of answering
+ * one. One catalog read per category however many hunts there are, so a board
+ * of fifty costs a handful of reads rather than fifty.
+ */
+async function inventoryFor(wants: readonly Want[], repository: Repo): Promise<Map<string, Listing[]>> {
+  const pools = new Map<string, Promise<Listing[]>>();
+  const pool = (category: string) => {
+    if (!pools.has(category)) pools.set(category, repository.listListings({ category, limit: MATCH_POOL, sort: 'popular' }));
+    return pools.get(category)!;
+  };
+  const found = new Map<string, Listing[]>();
+  await Promise.all(wants.filter((want) => want.status === 'open').map(async (want) => {
+    const words = keyWords(want.title);
+    const listings = (await pool(want.category))
+      .filter((listing) => listing.sellerId !== want.buyerId && !listing.privateFor && looksLike(listing, words));
+    found.set(want.id, listings);
+  }));
+  return found;
+}
+
+/** A matched item as the hunt shows it. */
+function matchRow(listing: Listing) {
+  const photos = listing.photos ?? [];
+  return {
+    id: listing.id,
+    title: listing.title,
+    priceMinor: listing.priceMinor,
+    currency: listing.currency,
+    condition: listing.condition,
+    sellerId: listing.sellerId,
+    photoUrl: (photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null,
   };
 }
 
@@ -87,13 +155,18 @@ async function board(request: HttpRequest, _context: InvocationContext) {
   // card — the button under each has to know, and fifty reads to draw a list
   // is fifty too many.
   const joined = viewer ? new Set(await repository.listWantIdsSeekingBy(viewer.id)) : new Set<string>();
-  const withJoined = (want: Want) => ({ ...card(want), joined: joined.has(want.id) });
+  const mine = viewer ? await repository.listWantsBy(viewer.id) : [];
+  const inventory = await inventoryFor([...matching, ...mine], repository);
+  const withJoined = (want: Want) => ({
+    ...card(want, inventory.get(want.id)?.length ?? 0),
+    joined: joined.has(want.id),
+  });
 
   return json(200, {
     wants: matching.map(withJoined),
     // Their own, so the board can say what they are already asking for
     // rather than making them go and look somewhere else.
-    mine: viewer ? (await repository.listWantsBy(viewer.id)).map(withJoined) : [],
+    mine: mine.map(withJoined),
   });
 }
 
@@ -170,7 +243,18 @@ async function post(request: HttpRequest, _context: InvocationContext) {
 
   const savedWant = await repository.saveWant(want);
   await claimPhotos(photoUrls, `want:${savedWant.id}`);
-  return json(201, { want: card(savedWant) });
+
+  // Matching starts the moment it is posted: whoever already lists something
+  // like it hears so, and can answer with the item rather than a promise.
+  const matches = (await inventoryFor([savedWant], repository)).get(savedWant.id) ?? [];
+  await notify(repository, [...new Set(matches.map((listing) => listing.sellerId))], {
+    kind: 'want_matched',
+    title: 'Somebody is hunting for something you list',
+    body: savedWant.title,
+    link: `/social?view=wanted&want=${savedWant.id}&buyer=${savedWant.buyerId}`,
+  }, { except: user.id });
+
+  return json(201, { want: card(savedWant, matches.length) });
 }
 
 /** The hunt, or the refusal. Reading one needs its partition, which is its buyer. */
@@ -204,9 +288,12 @@ async function readWant(request: HttpRequest, _context: InvocationContext) {
   );
 
   const seekers = await repository.listWantSeekers(found.want.id);
+  const matches = (await inventoryFor([found.want], repository)).get(found.want.id) ?? [];
 
   return json(200, {
-    want: card(found.want),
+    want: card(found.want, matches.length),
+    /** What is already listed that looks like it, best-known first. */
+    matches: matches.slice(0, 6).map(matchRow),
     mine: viewer?.id === found.want.buyerId,
     /** Whether this viewer has put their name to it, so the button knows. */
     joined: Boolean(viewer && seekers.some((seeker) => seeker.userId === viewer.id)),
@@ -426,6 +513,38 @@ async function notifySeekers(
       }
     }),
   );
+}
+
+/** The most open wants a new listing is compared with, and the most it alerts. */
+const LISTED_LOOKS = 200;
+const LISTED_ALERTS_MAX = 20;
+
+/**
+ * Tell the people hunting for something that a shop has just listed it.
+ *
+ * A want was answered only when a shop thought to offer on it; a shop that
+ * simply listed the thing left the hunter none the wiser. Now a new listing is
+ * held up against the open wants in its category: every word of the want's
+ * title in the listing (the catalogue search's own rule), within the budget
+ * when one was given, in the condition asked for when one was. The hunter and
+ * everyone who said "me too" hear of it once, and never about their own shop.
+ */
+export async function alertWantsListed(repository: Repo, listing: Listing, shopName: string): Promise<number> {
+  const wants = await repository.listOpenWants({ category: listing.category, limit: LISTED_LOOKS });
+  const matched = wants.filter((want) => want.buyerId !== listing.sellerId
+    && matchesSearch(listing, want.title)
+    && (want.budgetMinor === null || listing.priceMinor <= want.budgetMinor)
+    && (want.condition === null || listing.condition === want.condition)).slice(0, LISTED_ALERTS_MAX);
+  await Promise.all(matched.map(async (want) => {
+    const seekers = await repository.listWantSeekers(want.id).catch(() => []);
+    await notify(repository, [want.buyerId, ...seekers.map((seeker) => seeker.userId)], {
+      kind: 'want_listed',
+      title: `${shopName} just listed something you want`,
+      body: `${listing.title} - for your want "${want.title}"`,
+      link: `/listing/${listing.id}`,
+    }, { except: listing.sellerId, pushLater: true });
+  }));
+  return matched.length;
 }
 
 /**

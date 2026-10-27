@@ -1,3 +1,44 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.qboard__rank--1 { background: var(--q-gold); }
+.qboard__rank--2 { background: #C9D3E3; }
+.qboard__rank--3 { background: #D08A4E; }
+.qboard__rank--4 { background: var(--surface-hover); color: var(--text-dim); }
+.qpanel.qarcade {
+  --strip: 84px;
+  position: relative; overflow: hidden; padding-bottom: var(--strip);
+  color: #EDE9FE;
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(124, 58, 237, 0.28), transparent 60%),
+    radial-gradient(90% 70% at 0% 100%, rgba(8, 145, 178, 0.2), transparent 60%),
+    #0B0820;
+  border-color: rgba(167, 139, 250, 0.3);
+}
+.qarcade > :not(.qworld) { position: relative; z-index: 1; }
+.qworld::after { background-size: 190px 140px; background-position: 70px 40px; opacity: 0.3; animation-duration: 44s; }
+.qpanel {
+  display: grid; gap: 12px; margin-bottom: 14px; padding: 14px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.qtasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.qleaders__rank {
+  flex: none; min-width: 30px; text-align: center; padding: 2px 4px; border-radius: 6px;
+  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-xs); font-weight: var(--w-bold); color: var(--q-gold-ink); background: var(--surface-hover);
+}
+.qleaders__who { flex: 1; min-width: 0; display: grid; font-size: var(--t-sm); }
+.qbreak__row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.qbreak__row dt small { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); color: var(--text-faint); }
+.qareas__tile {
+  display: grid; gap: 2px; justify-items: center; text-align: center; padding: 8px 6px; min-width: 0; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--qa, var(--border));
+}
+@media (max-width: 480px) {
+  .qareas__tile:nth-child(n + 4) { grid-column: span 3; }
+}
+.qstreak__body { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.qstreak .qweek__day i { height: 22px; border-radius: 7px; }
+.qitems-list__row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px; border-radius: 12px; background: var(--surface-2); }
+.qitems-list__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+
 /*
  * Styles only pages/QuestsPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by
@@ -17,7 +58,7 @@
 .qpage { max-width: 760px; }
 .qpanel--gold { border-color: var(--q-gold-line); background: linear-gradient(160deg, rgba(245, 197, 66, 0.08), var(--surface)); }
 .qweek { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.qweek__day { display: grid; gap: 4px; text-align: center; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: 10px; color: var(--text-faint); }
+.qweek__day { display: grid; gap: 4px; text-align: center; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); color: var(--text-faint); }
 .qpacks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .qpack {
   display: grid; justify-items: center; gap: 4px; padding: 14px 10px; cursor: pointer; text-align: center;

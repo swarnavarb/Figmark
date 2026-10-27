@@ -1,4 +1,6 @@
+import { askText } from './Ask';
 import { ReportButton } from './ReportButton';
+import { useNow } from '../clock';
 import { RaiseDisputeModal, ReportModal } from './DisputeFlows';
 import { useSession } from '../session';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
@@ -6,8 +8,9 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
 import {
-  REACTIONS, REACTION_META,
-  type CommentThread, type CommentView, type PollView, type ReactionKind, type ReactionSummary, type ReactorRow,
+  HOTSPOT_LABELS, REACTIONS, REACTION_META,
+  type CommentThread, type CommentView, type PostHotspot, type ReactionKind, type ReactionSummary,
+  type ReactorRow,
 } from '@shared/social';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
@@ -18,7 +21,12 @@ import { useVoice, VoiceAvatar } from './SocialVoice';
 import { PostInFigmark } from './PostInFigmark';
 import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
-import { Loading } from './Feedback';
+import { Loading, useToast } from './Feedback';
+import { PhotoSales } from './PhotoSales';
+import { ContestPlay, GuessPlay, PollPlay, TeamChip } from './PostPlay';
+import { markOpened, useSeen } from '../seen';
+import { HASHTAG, MENTION } from '@shared/feed';
+import { tagKey, tagSlug } from '@shared/shop-tags';
 
 /**
  * One post, and everything people do with it.
@@ -34,6 +42,14 @@ const HOT_WINDOW_MS = 24 * 3_600_000;
 /** Where a post can be read on its own, for links and the share sheet. */
 export function postHref(post: { channelId: string; id: string }): string {
   return `/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`;
+}
+
+/**
+ * The address a post is passed on by: it opens the post, and a chat app that
+ * reads it first is answered with the post's own picture and words.
+ */
+export function shareHref(post: { channelId: string; id: string }): string {
+  return `/s/x/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`;
 }
 
 /** The count, shortened once it stops fitting: 1.2k rather than 1,204. */
@@ -68,13 +84,8 @@ export function withReaction(summary: ReactionSummary, kind: ReactionKind | null
 
 /** mm:ss (or h:mm:ss) until a time, ticking each second; null once it has passed. */
 function useCountdown(endsAt: string): string | null {
-  const [now, setNow] = useState(() => Date.now());
   const end = Date.parse(endsAt);
-  useEffect(() => {
-    if (end <= Date.now()) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [end]);
+  const now = useNow(end > Date.now() ? 1000 : null);
   const left = Math.max(0, Math.floor((end - now) / 1000));
   if (left === 0) return null;
   const h = Math.floor(left / 3600);
@@ -129,9 +140,10 @@ export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['lis
 }
 
 /** What each badge says when tapped: the name first, then why the post is in front of you. */
-const BOOSTS: Record<PostBoost, { icon: 'bolt' | 'rising'; title: string; line: string }> = {
+const BOOSTS: Record<PostBoost, { icon: 'bolt' | 'rising' | 'trophy'; title: string; line: string }> = {
   trending: { icon: 'bolt', title: 'Trending', line: 'One of the most talked-about posts on Figmark right now.' },
   rising: { icon: 'rising', title: 'Rising', line: 'A new post picking up fast. You are seeing it early.' },
+  result: { icon: 'trophy', title: 'Result', line: 'A debate you voted in has closed. Here is how it ended.' },
 };
 
 const TIP_MS = 2600;
@@ -254,10 +266,41 @@ function reduceMotion(): boolean {
 
 /* ── The post ──────────────────────────────────────────────────────────── */
 
+/**
+ * What a card is, said in capitals at its top, so a mixed feed can be read at
+ * a glance: a debate to vote on, a flex to look at, a thing to buy, a hunt.
+ */
+type ContentType = 'sale' | 'debate' | 'flex' | 'iso' | 'thread';
+
+const CONTENT_TYPES: Record<ContentType, string> = {
+  sale: 'For sale',
+  debate: 'Debate poll',
+  flex: 'Collection flex',
+  iso: 'ISO request',
+  thread: 'Hot debate',
+};
+
+function contentTypeOf(card: PostCard, promoted: boolean): ContentType | null {
+  const { post, listing } = card;
+  if (post.debate && card.social.poll) return 'debate';
+  if (post.flex) return 'flex';
+  if (promoted) return 'thread';
+  if (post.answersWant) return 'iso';
+  if (listing || post.kind === 'sale') return 'sale';
+  return null;
+}
+
+export function ContentBadge({ type }: { type: ContentType }) {
+  return <span className={`ctype ctype--${type}`}>{CONTENT_TYPES[type]}</span>;
+}
+
 export function SocialPostCard({
   card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false, canModerate = false, onPinned,
+  promoted = false,
 }: {
   card: PostCard;
+  /** Shown because its conversation took off (Discover's hot debates), not for the post alone. */
+  promoted?: boolean;
   /** Read by the forum's admin or a moderator, who may take it down or pin it. */
   canModerate?: boolean;
   onPinned?: (id: string, pinned: boolean) => void;
@@ -280,17 +323,29 @@ export function SocialPostCard({
   const [showComments, setShowComments] = useState(openComments);
   const [sharing, setSharing] = useState(false);
   const [menu, setMenu] = useState(false);
+  const toast = useToast();
   const [objecting, setObjecting] = useState<'report' | 'dispute' | null>(null);
   const { user } = useSession();
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [burst, setBurst] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
+  const [saved, setSaved] = useState(Boolean(initial.saved));
+  /** Put out of sight by this reader, and how - kept as a stub that can be undone. */
+  const [away, setAway] = useState<'hidden' | 'less' | 'muted' | null>(null);
+  const shell = useRef<HTMLElement>(null);
+  useSeen(shell, initial.post, Boolean(user) && !nested);
 
   useEffect(() => {
     setCard(initial);
     setFollowing(initial.following);
+    setSaved(Boolean(initial.saved));
   }, [initial]);
+
+  // Read on its own page, with its conversation open, is a post opened.
+  useEffect(() => {
+    if (openComments && user && !nested) markOpened(initial.post);
+  }, [openComments, user, nested, initial.post]);
 
   const { post, listing, author, social } = card;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
@@ -336,13 +391,71 @@ export function SocialPostCard({
     }
   }
 
+  /** Whose post it is, for muting: the shop it spoke as, or the person. */
+  const voiceId = card.shop ? post.channelId : post.authorId;
+
+  async function toggleSave() {
+    setMenu(false);
+    const was = saved;
+    setSaved(!was);
+    try {
+      setSaved((await api.savePost(post.channelId, post.id)).saved);
+    } catch (err) {
+      setSaved(was);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
+    }
+  }
+
+  async function putAway(how: 'hidden' | 'less' | 'muted') {
+    setMenu(false);
+    setAway(how);
+    try {
+      if (how === 'muted') await api.muteFeed(voiceId, true);
+      else await api.hidePost(post.channelId, post.id, { notInterested: how === 'less' });
+    } catch (err) {
+      setAway(null);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not do that.');
+    }
+  }
+
+  async function bringBack() {
+    const how = away;
+    setAway(null);
+    try {
+      if (how === 'muted') await api.muteFeed(voiceId, false);
+      else await api.hidePost(post.channelId, post.id, { undo: true });
+    } catch (err) {
+      setAway(how);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not undo that.');
+    }
+  }
+
+  if (away && !nested) {
+    return (
+      <article className="spost spost--away" aria-live="polite">
+        <p className="spost__awayline">
+          <Icon name={away === 'muted' ? 'mute' : 'hide'} size={15} />
+          <span>
+            {away === 'muted' ? <>You will not see <strong>{post.authorName}</strong> in Discover or suggestions.</>
+              : away === 'less' ? 'Hidden. You will see fewer posts like this.'
+                : 'Post hidden.'}
+          </span>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => void bringBack()}>Undo</button>
+        </p>
+        {error && <p className="spost__error" role="alert">{error}</p>}
+      </article>
+    );
+  }
+
   const kindLine = (
     <>
       {/* The item card below already says it is for sale; the pill is for when it has gone. */}
       {post.kind === 'sale' && !listing && (
         <span className="spost__kind spost__kind--sale"><Icon name="tag" size={11} /> For sale</span>
       )}
-      {social.poll && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> Poll</span>}
+      {post.contest ? <span className="spost__kind spost__kind--hot">🏆 Competition</span>
+        : social.guess ? <span className="spost__kind spost__kind--poll">🎯 Guess the price</span>
+          : social.poll && !post.debate && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> {social.poll.stock ? 'Stock poll' : 'Poll'}</span>}
       {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
       {post.answersWant && (
         <Link className="spost__kind spost__kind--poll"
@@ -359,10 +472,19 @@ export function SocialPostCard({
     </>
   );
 
+  const type = nested ? null : contentTypeOf(card, promoted);
+
   return (
-    <article className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
+    <article ref={shell} className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {!nested && <span className="spost__glow" aria-hidden="true" />}
       {dialog}
+      {type && <ContentBadge type={type} />}
+      {!nested && card.followedActed && !following && (
+        <p className="spost__social">
+          <Icon name="users" size={12} />
+          <span>{actedLine(card.followedActed)}</span>
+        </p>
+      )}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
@@ -404,6 +526,7 @@ export function SocialPostCard({
           <span className="spost__meta">
             <Link to={postHref(post)} className="spost__time">{timeAgo(post.createdAt)}</Link>
             {badges.map((kind) => <BoostBadge key={kind} kind={kind} />)}
+            {saved && !nested && <span className="spost__saved" title="Saved"><Icon name="bookmark" size={12} /></span>}
             {/* Only a message said in the room points back at the room. A post
                 that went to the feed is a feed post, wherever else it shows. */}
             {card.shop && !nested && post.reach === 'channel' && (
@@ -423,12 +546,32 @@ export function SocialPostCard({
             </button>
             {menu && (
               <div className="spost__menu" role="menu" onMouseLeave={() => setMenu(false)}>
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); void copyLink(post); }}>
+                <button type="button" role="menuitem" onClick={() => { setMenu(false); void copyLink(post).then((copied) => { if (copied) toast('Link copied'); }); }}>
                   <Icon name="link" size={15} /> Copy link
                 </button>
                 <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
                   <Icon name="external" size={15} /> Open post
                 </Link>
+                {user && (
+                  <button type="button" role="menuitem" onClick={() => void toggleSave()}>
+                    <Icon name="bookmark" size={15} /> {saved ? 'Unsave' : 'Save post'}
+                  </button>
+                )}
+                {user && !social.mine && (
+                  <>
+                    <button type="button" role="menuitem" onClick={() => void putAway('less')}>
+                      <Icon name="down" size={15} /> Not interested
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => void putAway('hidden')}>
+                      <Icon name="hide" size={15} /> Hide post
+                    </button>
+                    {voiceId !== user.id && (
+                      <button type="button" role="menuitem" onClick={() => void putAway('muted')}>
+                        <Icon name="mute" size={15} /> Mute {post.authorName}
+                      </button>
+                    )}
+                  </>
+                )}
                 {canModerate && (
                   <button type="button" role="menuitem" onClick={async () => {
                     setMenu(false);
@@ -483,18 +626,41 @@ export function SocialPostCard({
 
       {linked && <LinkCard path={linked.path} compact={nested} />}
 
-      {photos.length > 0 && (
-        <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
-          onOpen={(index) => setLightbox(index)} onDoubleTap={nested ? undefined : loveFromPhoto} />
-      )}
-
-      {social.poll && (
-        <Poll poll={social.poll} disabled={nested}
-          onVote={async (optionId) => {
-            const { poll } = await api.votePoll(post.channelId, post.id, optionId, as);
-            setCard((current) => ({ ...current, social: { ...current.social, poll } }));
-          }} />
-      )}
+      {(() => {
+        const vote = async (optionId: string) => {
+          const { poll } = await api.votePoll(post.channelId, post.id, optionId, as);
+          setCard((current) => ({ ...current, social: { ...current.social, poll } }));
+        };
+        if (post.contest) {
+          return (
+            <>
+              {photos.length > 0 && (
+                <Carousel photos={photos} alt={post.contest.title} burst={burst}
+                  onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} />
+              )}
+              <ContestPlay card={card} disabled={nested || !user} vote={vote} onCard={setCard} />
+            </>
+          );
+        }
+        // A versus poll draws its own two photos; the post's photos are for everything else.
+        const versus = social.poll && (social.poll.style === 'versus' || (post.debate && !social.poll.style));
+        return (
+          <>
+            {photos.length > 0 && !versus && (post.flex ? (
+              <FlexShelf photos={photos} hotspots={post.flex.hotspots} alt={post.body || `Collection of ${post.authorName}`}
+                onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} />
+            ) : (
+              <Carousel photos={photos} alt={post.body || `Photo by ${post.authorName}`} burst={burst}
+                onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} onDoubleTap={nested ? undefined : loveFromPhoto} />
+            ))}
+            {/* Whether what is in the photo can be bought here, without opening it. */}
+            {/* Not on a guess: matching shops would give the answer away. */}
+            {photos.length > 0 && !versus && !nested && !social.guess && <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline" />}
+            {social.poll && <PollPlay card={card} photos={photos} disabled={nested || !user} vote={vote} />}
+            {social.guess && <GuessPlay card={card} disabled={nested || !user} onCard={setCard} />}
+          </>
+        );
+      })()}
 
       {post.opening && (
         <OpeningCard sellerId={post.opening.sellerId} saleId={post.opening.saleId}
@@ -520,7 +686,10 @@ export function SocialPostCard({
           <div className="spost__actions">
             <ReactButton mine={social.reactions.mine} onReact={(kind) => void react(kind)} />
             <button type="button" className={`spost__action${showComments ? ' is-on' : ''}`}
-              onClick={() => setShowComments(!showComments)} aria-expanded={showComments}>
+              onClick={() => {
+                if (!showComments && user) markOpened(post);
+                setShowComments(!showComments);
+              }} aria-expanded={showComments}>
               <Icon name="message" size={18} /> <span>Comment</span>
             </button>
             <button type="button" className="spost__action" onClick={() => setSharing(true)}>
@@ -552,7 +721,7 @@ export function SocialPostCard({
       )}
 
       {sharing && (
-        <ShareSheet card={card} onClose={() => setSharing(false)}
+        <PostShareSheet card={card} onClose={() => setSharing(false)}
           onShared={(shareCount, repost) => {
             setCard((current) => ({ ...current, social: { ...current.social, shareCount } }));
             if (repost) onReposted?.(repost);
@@ -560,10 +729,18 @@ export function SocialPostCard({
       )}
 
       {lightbox !== null && (
-        <Lightbox photos={photos} start={lightbox} onClose={() => setLightbox(null)} />
+        <Lightbox photos={photos} start={lightbox} about={post.body} by={post.authorId} onClose={() => setLightbox(null)} />
       )}
     </article>
   );
+}
+
+/** "Sana reacted", "Sana and Ravi reacted", "Sana, Ravi and 3 others you follow joined in". */
+function actedLine(acted: NonNullable<PostCard['followedActed']>): string {
+  const [first, second] = acted.names;
+  if (acted.count === 1) return `${first} took part`;
+  if (acted.count === 2 && second) return `${first} and ${second} took part`;
+  return `${first}${second ? `, ${second}` : ''} and ${acted.count - (second ? 2 : 1)} others you follow took part`;
 }
 
 /**
@@ -601,15 +778,45 @@ function Body({ text, long }: { text: string; long: boolean }) {
 }
 
 /**
+ * The @names and #topics in some words, made into links: a handle opens whoever
+ * holds it, a topic opens its page. Everything else is left as written.
+ */
+function Tagged({ text }: { text: string }) {
+  const marks = [
+    ...[...text.matchAll(MENTION)].map((match) => ({ at: match.index! + match[1]!.length, raw: `@${match[2]!}`, kind: 'mention' as const })),
+    ...[...text.matchAll(HASHTAG)].map((match) => ({ at: match.index! + match[1]!.length, raw: `#${match[2]!}`, kind: 'topic' as const })),
+  ].sort((a, b) => a.at - b.at);
+  if (marks.length === 0) return <>{text}</>;
+  const out: ReactNode[] = [];
+  let from = 0;
+  for (const mark of marks) {
+    if (mark.at < from) continue;
+    // A handle never ends on a dot or an underscore; that is the sentence's.
+    const raw = mark.kind === 'mention' ? mark.raw.replace(/[._]+$/, '') : mark.raw;
+    out.push(text.slice(from, mark.at));
+    const to = mark.kind === 'mention'
+      ? `/${encodeURIComponent(raw.slice(1).toLowerCase())}`
+      : `/tags/${encodeURIComponent(tagSlug(tagKey(raw.slice(1).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' '))))}`;
+    out.push(
+      <Link key={`${mark.at}`} className={`spost__${mark.kind}`} to={to} onClick={(event) => event.stopPropagation()}>{raw}</Link>,
+    );
+    from = mark.at + raw.length;
+  }
+  out.push(text.slice(from));
+  return <>{out}</>;
+}
+
+/**
  * Links in a post's words, made pressable. One into Figmark opens in place;
- * anything else opens in a new tab, and is never vouched for.
+ * anything else opens in a new tab, and is never vouched for. @names and
+ * #topics in between are links too.
  */
 export function Linked({ text }: { text: string }) {
   const parts = text.split(/(https?:\/\/[^\s<>"']+)/g);
   return (
     <>
       {parts.map((part, index) => {
-        if (index % 2 === 0) return part;
+        if (index % 2 === 0) return <Tagged key={index} text={part} />;
         // A sentence's full stop or closing bracket is not part of the address.
         const url = part.replace(/[.,!?;:)\]]+$/, '');
         const tail = part.slice(url.length);
@@ -635,12 +842,14 @@ export function Linked({ text }: { text: string }) {
 }
 
 export async function copyLink(post: { channelId: string; id: string }): Promise<boolean> {
-  const url = `${window.location.origin}${postHref(post)}`;
+  const url = `${window.location.origin}${shareHref(post)}`;
   try {
     await navigator.clipboard.writeText(url);
     return true;
   } catch {
-    window.prompt('Copy this link', url);
+    // No clipboard here (an old browser, or permission refused): the link in
+    // a field, selected, to copy by hand.
+    await askText({ title: 'Copy this link', label: 'Link', initial: url, action: 'Done' });
     return false;
   }
 }
@@ -744,7 +953,7 @@ function Carousel({ photos, alt, burst, onOpen, onDoubleTap }: {
 }
 
 /** A photo filling the screen, with the rest a swipe or an arrow key away. */
-export function Lightbox({ photos, start, onClose, title, caption, origin, royal }: {
+export function Lightbox({ photos, start, onClose, title, caption, about, by, origin, royal }: {
   photos: string[];
   start: number;
   onClose: () => void;
@@ -756,6 +965,10 @@ export function Lightbox({ photos, start, onClose, title, caption, origin, royal
   title?: string;
   /** One line under the heading - when it joined the collection. */
   caption?: string;
+  /** The words shown with the photos - a post's text - searched with them for where to buy. Defaults to the title. */
+  about?: string;
+  /** Who posted the photos, so their own listings rank first among probable matches. */
+  by?: string;
 }) {
   const [index, setIndex] = useState(start);
   const touch = useRef<number | null>(null);
@@ -826,7 +1039,7 @@ export function Lightbox({ photos, start, onClose, title, caption, origin, royal
         if (from === null || to === undefined || Math.abs(to - from) < 40) return;
         setIndex((at) => Math.max(0, Math.min(photos.length - 1, at + (to < from ? 1 : -1))));
       }}>
-      {royal && <img className="lightbox__wash" src={photos[index]} alt="" aria-hidden="true" />}
+      {royal && <img loading="lazy" decoding="async" className="lightbox__wash" src={photos[index]} alt="" aria-hidden="true" />}
       <button type="button" className="lightbox__close" aria-label="Close" onClick={close}>
         <Icon name="close" size={20} />
       </button>
@@ -836,7 +1049,9 @@ export function Lightbox({ photos, start, onClose, title, caption, origin, royal
           {caption && <span className="lightbox__caption">{caption}</span>}
         </div>
       )}
-      <img ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
+      <img loading="lazy" decoding="async" ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
+      {/* Following a link out of it leaves the photo behind, without the shrink back into the page. */}
+      <PhotoSales url={photos[index]} about={about ?? title} by={by} onLeave={onClose} />
       {photos.length > 1 && (
         <>
           <span className="lightbox__count">{index + 1} / {photos.length}</span>
@@ -1216,6 +1431,23 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   }, [comment.likedByMe, comment.likeCount]);
 
   const { confirm, dialog } = useConfirm();
+  const debate = card.post.debate;
+  const best = debate?.best?.commentId === comment.id;
+  // A shop that put up a prize and kept the judging picks the best argument, once the debate has closed.
+  const canPick = !small && Boolean(card.social.host) && debate?.prize?.judge === 'store' && !debate.best
+    && Boolean(card.social.poll?.closed) && !comment.mine;
+  const [picking, setPicking] = useState(false);
+
+  async function pickBest() {
+    setPicking(true);
+    try {
+      await api.judge(channelId, id, { action: 'best', commentId: comment.id });
+      const detail = await api.socialPost(channelId, id, voice.storeId);
+      onChanged(detail);
+    } catch {
+      setPicking(false);
+    }
+  }
 
   async function like() {
     setLiked(!liked);
@@ -1240,15 +1472,17 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   }
 
   return (
-    <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}`}>
+    <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}${best ? ' is-best' : ''}`}>
       {dialog}
       <Avatar name={comment.authorName} size={small ? 26 : 32} />
       <div className="cmt__main">
         <div className="cmt__bubble">
           <PersonLink party={comment.author} className="cmt__name">{comment.authorName}</PersonLink>
+          {debate && comment.side && <TeamChip poll={card.social.poll} side={comment.side} />}
+          {best && <span className="teamchip teamchip--best">🎤 Best argument</span>}
           <p className="cmt__body">
             {comment.replyToName && <span className="cmt__to">@{comment.replyToName} </span>}
-            {comment.body}
+            <Tagged text={comment.body} />
           </p>
         </div>
         <div className="cmt__meta">
@@ -1257,6 +1491,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
             {liked ? 'Liked' : 'Like'}
           </button>
           <button type="button" onClick={() => onReply(comment)}>Reply</button>
+          {canPick && <button type="button" disabled={picking} onClick={() => void pickBest()}>🎤 Pick as best</button>}
           {comment.canDelete && <button type="button" onClick={() => void remove()}>Delete</button>}
           {likes > 0 && <span className="cmt__likes">❤️ {likes}</span>}
           {/* Only in the full thread, where the comment carries its moderation state. */}
@@ -1270,74 +1505,79 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   );
 }
 
-/* ── Polls ─────────────────────────────────────────────────────────────── */
+/* ── Collection flexes ─────────────────────────────────────────────────── */
 
-function Poll({ poll, disabled, onVote }: {
-  poll: PollView;
-  disabled: boolean;
-  onVote: (optionId: string) => Promise<void>;
+/**
+ * A collection photo with its pieces tagged.
+ *
+ * Drawn at the photo's own shape rather than the feed's square, because the
+ * tags are placed on the whole photo and a crop would move them off their
+ * pieces. Tap a dot for what it is; a piece for sale opens its item.
+ */
+function FlexShelf({ photos, hotspots, alt, onOpen }: {
+  photos: string[];
+  hotspots: PostHotspot[];
+  alt: string;
+  onOpen: (index: number) => void;
 }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const reveal = poll.myVote !== null || poll.closed || disabled;
-  const leader = Math.max(...poll.options.map((option) => option.votes));
-
-  const closes = poll.closesAt
-    ? poll.closed
-      ? 'Final results'
-      : `Closes ${timeAgoAhead(poll.closesAt)}`
-    : null;
+  const [at, setAt] = useState(0);
+  const [open, setOpen] = useState<number | null>(null);
+  const here = hotspots.map((spot, index) => ({ spot, index })).filter(({ spot }) => spot.photo === at);
+  const counts = hotspots.reduce<Record<string, number>>((all, spot) => ({ ...all, [spot.status]: (all[spot.status] ?? 0) + 1 }), {});
 
   return (
-    <div className="poll">
-      {poll.options.map((option) => {
-        const share = poll.total > 0 ? Math.round((option.votes / poll.total) * 100) : 0;
-        const mine = poll.myVote === option.id;
-        return (
-          <button key={option.id} type="button"
-            className={`poll__option${reveal ? ' is-revealed' : ''}${mine ? ' is-mine' : ''}`
-              + `${reveal && option.votes === leader && leader > 0 ? ' is-leading' : ''}`}
-            disabled={disabled || poll.closed || busy !== null}
-            onClick={async () => {
-              setBusy(option.id);
-              setError(null);
-              try {
-                await onVote(option.id);
-              } catch (err) {
-                setError(err instanceof ApiRequestError ? err.message : 'Could not count that vote.');
-              } finally {
-                setBusy(null);
-              }
-            }}>
-            <span className="poll__fill" style={{ width: reveal ? `${share}%` : '0%' }} />
-            <span className="poll__label">
-              {mine && <Icon name="check" size={14} />}
-              {option.label}
-            </span>
-            {reveal && <span className="poll__share">{share}%</span>}
-          </button>
-        );
-      })}
-      <p className="poll__foot">
-        {poll.total} vote{poll.total === 1 ? '' : 's'}
-        {closes && <> · {closes}</>}
-        {poll.myVote && !poll.closed && <> · tap another to change</>}
-      </p>
-      {error && <p className="spost__error">{error}</p>}
+    <div className="flexshelf">
+      <div className="flexshelf__frame">
+        <img src={photos[at]} alt={alt} loading="lazy" draggable={false} onClick={() => onOpen(at)}
+          role="button" tabIndex={0} aria-label={`${alt || 'Photo'} - open full screen`}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(at); } }} />
+        {here.map(({ spot, index }) => (
+          <span key={index} className="flexshelf__spot" style={{ left: `${spot.x * 100}%`, top: `${spot.y * 100}%` }}>
+            <button type="button" className={`hotdot hotdot--${spot.status}${open === index ? ' is-open' : ''}`}
+              aria-label={`${spot.label}: ${HOTSPOT_LABELS[spot.status]}`} aria-expanded={open === index}
+              onClick={() => setOpen(open === index ? null : index)}>
+              <span aria-hidden="true">{index + 1}</span>
+            </button>
+            {open === index && (
+              <span className={`flexshelf__tip${spot.x > 0.6 ? ' flexshelf__tip--left' : ''}`} role="status">
+                <strong>{spot.label}</strong>
+                <span className={`hotchip hotchip--${spot.status} is-on`}>{HOTSPOT_LABELS[spot.status]}</span>
+                {spot.listingId && (
+                  <Link to={`/listing/${encodeURIComponent(spot.listingId)}`} className="flexshelf__go">
+                    {spot.status === 'for_sale' ? 'View listing' : 'See it on Figmark'} <Icon name="right" size={11} />
+                  </Link>
+                )}
+              </span>
+            )}
+          </span>
+        ))}
+        {photos.length > 1 && <span className="carousel__count">{at + 1}/{photos.length}</span>}
+      </div>
+      {photos.length > 1 && (
+        <div className="flexshelf__thumbs">
+          {photos.map((url, index) => (
+            <button key={`${url}-${index}`} type="button" className={`flexshelf__thumb${index === at ? ' is-on' : ''}`}
+              aria-label={`Photo ${index + 1}`} onClick={() => { setAt(index); setOpen(null); }}>
+              <img src={url} alt="" loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+      {hotspots.length > 0 && (
+        <p className="flexshelf__legend">
+          <Icon name="tag" size={12} /> {hotspots.length} tagged
+          {(['owned', 'wishlist', 'for_sale'] as const).filter((status) => counts[status]).map((status) => (
+            <span key={status} className={`hotchip hotchip--${status} is-on`}>{counts[status]} {HOTSPOT_LABELS[status]}</span>
+          ))}
+        </p>
+      )}
     </div>
   );
 }
 
-function timeAgoAhead(iso: string): string {
-  const hours = Math.max(0, (new Date(iso).getTime() - Date.now()) / 3_600_000);
-  if (hours < 1) return 'in under an hour';
-  if (hours < 48) return `in ${Math.round(hours)}h`;
-  return `in ${Math.round(hours / 24)} days`;
-}
-
 /* ── Sharing ───────────────────────────────────────────────────────────── */
 
-function ShareSheet({ card, onClose, onShared }: {
+function PostShareSheet({ card, onClose, onShared }: {
   card: PostCard;
   onClose: () => void;
   onShared: (shareCount: number, repost: PostCard | null) => void;
@@ -1375,7 +1615,7 @@ function ShareSheet({ card, onClose, onShared }: {
 
   async function link(native: boolean) {
     setError(null);
-    const url = `${window.location.origin}${postHref(target)}`;
+    const url = `${window.location.origin}${shareHref(target)}`;
     try {
       if (native) {
         await navigator.share({ title: `${target.authorName} on Figmark`, text: target.body.slice(0, 120), url });
@@ -1425,7 +1665,7 @@ function ShareSheet({ card, onClose, onShared }: {
         </div>
         {elsewhere && (
           <PostInFigmark feed={false} asStore={Boolean(voice.storeId)}
-            text={`${thought.trim() ? `${thought.trim()}\n` : ''}${window.location.origin}${postHref(target)}`}
+            text={`${thought.trim() ? `${thought.trim()}\n` : ''}${window.location.origin}${shareHref(target)}`}
             onPosted={() => void count('link').catch(() => undefined)} />
         )}
         {done && <p className="sharesheet__done" role="status">{done}</p>}

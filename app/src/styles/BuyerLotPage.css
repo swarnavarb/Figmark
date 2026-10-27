@@ -1,3 +1,7 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.blot__front::before { content: ''; position: absolute; top: 0; left: 50%; width: 30px; height: 14px; transform: translateX(-50%); background: var(--tape); }
+.inside__body { display: grid; gap: 3px; min-width: 0; }
+
 /*
  * Styles only pages/BuyerLotPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

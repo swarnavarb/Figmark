@@ -61,6 +61,17 @@ export interface AppConfig {
    */
   passwordBreachCheck: boolean;
   /**
+   * Whether operators and community managers must have two-factor sign-in on
+   * before they can act as such. On by default when deployed to Azure, off on
+   * a laptop; STAFF_MFA=on|off overrides it.
+   */
+  staffMfa: boolean;
+  /**
+   * Cloudflare Turnstile on sign-up, when both keys are set
+   * (TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY). Null: no CAPTCHA.
+   */
+  captcha: { siteKey: string; secretKey: string } | null;
+  /**
    * Whether a new shop's dispatch region is guessed from the IP address it
    * opens from (one lookup per address, at ipapi.co). On in Azure, off
    * locally; REGION_GUESS=on|off overrides it.
@@ -101,6 +112,14 @@ export interface AppConfig {
    * run on.
    */
   publicOrigins: string[] | null;
+  /**
+   * Which environment this deployment is (SITE_ENVIRONMENT), lower-cased:
+   * `development`, `production`, or whatever else a deployment calls itself.
+   * Anything but `production` puts a standing banner on every page and keeps
+   * the pages out of search engines, so a test site is never mistaken for -
+   * or found instead of - the real one. Null when unset: no banner.
+   */
+  siteEnvironment: string | null;
 }
 
 export interface VerificationConfig {
@@ -149,10 +168,10 @@ function resolveCosmos(): CosmosConfig | null {
 /**
  * Who operates the marketplace.
  *
- * On the in-memory store the demo account is included, because that store is a
- * throwaway fixture whose password is published in this repository - admin over
- * data that resets on restart grants nothing. A durable store gets nobody
- * unless ADMIN_EMAILS says so.
+ * On a laptop's in-memory store the demo account is included, because that
+ * store is a throwaway fixture whose password is published in this repository -
+ * admin over data that resets on restart grants nothing. A durable store, or
+ * anything running on Azure, gets nobody unless ADMIN_EMAILS says so.
  */
 function resolveAdmins(cosmos: CosmosConfig | null): string[] {
   const configured = (env('ADMIN_EMAILS') ?? '')
@@ -160,7 +179,9 @@ function resolveAdmins(cosmos: CosmosConfig | null): string[] {
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
   if (configured.length > 0) return configured;
-  return cosmos ? [] : ['demo@figmark.in'];
+  // Never on Azure: there the in-memory store is still reachable by anyone,
+  // and the demo password is in this repository.
+  return cosmos || runningInAzure() ? [] : ['demo@figmark.in'];
 }
 
 function resolveStorage(): StorageConfig | null {
@@ -335,9 +356,14 @@ export const config: AppConfig = {
   vision: resolveVision(),
   verification: resolveVerification(),
   passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),
+  staffMfa: env('STAFF_MFA') ? env('STAFF_MFA') === 'on' : runningInAzure(),
+  captcha: env('TURNSTILE_SITE_KEY') && env('TURNSTILE_SECRET_KEY')
+    ? { siteKey: env('TURNSTILE_SITE_KEY')!, secretKey: env('TURNSTILE_SECRET_KEY')! }
+    : null,
   regionGuess: env('REGION_GUESS') ? env('REGION_GUESS') === 'on' : runningInAzure(),
   swaPrincipalTrust: resolveSwaTrust(),
   publicOrigins: resolvePublicOrigins(),
+  siteEnvironment: env('SITE_ENVIRONMENT')?.toLowerCase() ?? null,
 };
 
 function resolvePublicOrigins(): string[] | null {

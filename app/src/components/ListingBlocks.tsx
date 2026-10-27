@@ -1,12 +1,13 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { useNow } from '../clock';
 import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
-import { isInDemand } from '@shared/catalog';
+import { factsOf, isInDemand } from '@shared/catalog';
 import { SOURCING_LABELS } from '@shared/enums';
-import { isMultiple } from '@shared/payments';
+import { advanceMinor, isMultiple } from '@shared/payments';
 import type { Listing } from '@shared/models';
-import { formatMoney } from '../format';
+import { formatMoney, formatDateTime } from '../format';
 import type { PriceChange } from '../api';
 import { Lightbox } from './SocialPost';
 
@@ -53,14 +54,8 @@ export function Svg({ name, size = 18 }: { name: Glyph; size?: number }) {
 }
 
 /** Now, once a second, for a clock that is actually counting. */
-function useNow(active: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [active]);
-  return now;
+function useTick(active: boolean) {
+  return useNow(active ? 1000 : null);
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -142,7 +137,7 @@ export function Rush({ streaks = 9, front, bolts = true }: { streaks?: number | 
  */
 export function Urgency({ listing, compact }: { listing: Listing; compact?: boolean }) {
   const until = listing.expiresAt ? Date.parse(listing.expiresAt) : null;
-  const now = useNow(until !== null && until > Date.now());
+  const now = useTick(until !== null && until > Date.now());
   const rarity = listingRarity(listing, now);
   const left = isMultiple(listing) ? null : listing.quantityAvailable;
   const sold = listing.soldCount ?? 0;
@@ -215,11 +210,12 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
       value: RARITY_LABELS[rarity.tier], note: rarity.reasons.slice(0, 2).join(' · ') || undefined,
     });
   }
-  tiles.push({ tone: 'cool', icon: 'shield', label: 'Condition', value: listing.condition });
+  tiles.push({ tone: 'cool', icon: 'shield', label: 'Condition', value: factsOf(listing).condition });
   tiles.push({
     tone: sourcing === 'in_hand' ? 'play' : 'blue', icon: sourcing === 'in_hand' ? 'home' : 'ship', label: 'Sourcing',
     value: SOURCING_LABELS[sourcing],
-    note: sourcing === 'in_hand' ? 'Ships straight from the seller' : 'Imported in a shipment lot',
+    note: sourcing === 'in_hand' ? 'Ships straight from the seller'
+      : listing.lotId ? 'Imported in a shipment lot' : 'Coming in from abroad - the shop puts it in a shipment lot',
   });
   tiles.push({
     tone: 'sea', icon: 'box', label: 'Stock',
@@ -227,7 +223,7 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
     note: listing.soldCount ? `${listing.soldCount} sold so far` : undefined,
   });
   if (listing.advancePercent) {
-    const now = Math.round(listing.priceMinor * listing.advancePercent / 100);
+    const now = advanceMinor(listing.priceMinor, listing.advancePercent);
     tiles.push({
       tone: 'warm', icon: 'coin', label: 'Booking amount', value: `${listing.advancePercent}% · ${formatMoney(now, listing.currency)}`,
       note: `Pay this now, ${formatMoney(listing.priceMinor - now, listing.currency)} later`,
@@ -243,7 +239,7 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
   if (listing.expiresAt) {
     tiles.push({
       tone: 'blue', icon: 'calendar', label: 'Available until',
-      value: new Date(listing.expiresAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }),
+      value: formatDateTime(listing.expiresAt),
     });
   }
   tiles.push({ tone: 'cool', icon: 'tag', label: 'Category', value: listing.category });

@@ -1,3 +1,11 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.lotbox .lotphase { padding: 2px 8px; font-size: var(--t-2xs); gap: 4px; background: rgba(217, 119, 6, 0.14); color: #8A4B05; border-color: rgba(217, 119, 6, 0.35); }
+.lotbox .lotphase--closed { background: rgba(124, 58, 237, 0.12); color: #5B21B6; border-color: rgba(124, 58, 237, 0.35); }
+.lotbox .lotphase--in_transit { background: rgba(37, 99, 235, 0.12); color: #1E4FB8; border-color: rgba(37, 99, 235, 0.35); }
+.lotbox .lotphase--received { background: rgba(5, 150, 105, 0.13); color: #05684A; border-color: rgba(5, 150, 105, 0.35); }
+.lotbox .lotphase--cancelled { background: rgba(220, 38, 38, 0.1); color: #9B1C1C; border-color: rgba(220, 38, 38, 0.3); }
+.lotname__name { font-weight: inherit; min-width: 0; overflow-wrap: anywhere; }
+
 /*
  * Styles only components/LotName.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

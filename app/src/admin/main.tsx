@@ -14,6 +14,7 @@ import { StoresView } from './StoresView';
 import { DevicesView } from './DevicesView';
 import { PhotosView } from './PhotosView';
 import { RoutesView } from './RoutesView';
+import { ChallengeView } from './ChallengeView';
 import { BackButton, goOps, useOpsPath } from './nav';
 import { Loading } from '../components/Feedback';
 import '../styles.css';
@@ -39,7 +40,7 @@ import '../styles/admin.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'routes' | 'settings' | 'learn' | 'audit';
+type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'routes' | 'challenge' | 'settings' | 'learn' | 'audit';
 
 const TAB_LABELS: Record<Tab, string> = {
   users: 'People and stores',
@@ -51,6 +52,7 @@ const TAB_LABELS: Record<Tab, string> = {
   devices: 'Installs & devices',
   photos: 'Stored photos',
   routes: 'Routes',
+  challenge: 'Weekly challenge',
   settings: 'Settings',
   learn: 'Learn page',
   audit: 'Audit trail',
@@ -92,11 +94,30 @@ function Console() {
         </p>
         <p className="notice notice--info">
           Operators are named in the <code>ADMIN_EMAILS</code> application setting, as a comma-separated
-          list of email addresses. Nobody has it by default — including whoever deployed this.
+          list of email addresses. Nobody has it by default — including whoever deployed this. The address
+          must also be confirmed on the account (Profile → Verification).
         </p>
         <button className="btn btn--quiet" style={{ justifySelf: 'start' }}
           onClick={() => void admin.signOut().then(refresh)}>
           Sign out
+        </button>
+      </main>
+    );
+  }
+
+  // An operator, but without the second factor the console requires.
+  if (user.mfaRequired) {
+    return (
+      <main className="ops__body stack">
+        <h1>Turn on two-factor sign-in</h1>
+        <p className="muted">
+          Operators need two-factor sign-in before they can use this console. Turn it on in the marketplace under
+          Profile → Settings → Two-factor sign-in, then come back.
+        </p>
+        <a className="btn" style={{ justifySelf: 'start' }} href="/me?tab=settings">Open settings</a>
+        <button className="btn btn--quiet" style={{ justifySelf: 'start' }}
+          onClick={() => void refresh()}>
+          I have turned it on
         </button>
       </main>
     );
@@ -139,6 +160,7 @@ function Console() {
           : tab === 'devices' ? <DevicesView />
           : tab === 'photos' ? <PhotosView />
           : tab === 'routes' ? <RoutesView />
+          : tab === 'challenge' ? <ChallengeView />
           : tab === 'settings' ? <SettingsView />
           : tab === 'audit' ? <AuditView />
           : <LearnView />}
@@ -197,6 +219,8 @@ function BackendStatus() {
 function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [askOtp, setAskOtp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,10 +229,11 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
     setBusy(true);
     setError(null);
     try {
-      await admin.signIn(identifier, password);
+      await admin.signIn(identifier, password, askOtp ? otp : undefined);
       await onSignedIn();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not sign in.');
+      if (err instanceof ApiRequestError && err.code === 'mfa_required') setAskOtp(true);
+      else setError(err instanceof ApiRequestError ? err.message : 'Could not sign in.');
     } finally {
       setBusy(false);
     }
@@ -230,6 +255,13 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password" required />
         </label>
+        {askOtp && (
+          <label className="field">
+            <span>Code from your authenticator app</span>
+            <input value={otp} onChange={(e) => setOtp(e.target.value.slice(0, 16))} autoFocus
+              autoComplete="one-time-code" required />
+          </label>
+        )}
         {error && <p className="notice notice--error">{error}</p>}
         <button type="submit" className="btn btn--lg btn--block" disabled={busy}>
           {busy ? 'Please wait…' : 'Sign in'}

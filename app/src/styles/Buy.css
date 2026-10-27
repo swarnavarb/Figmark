@@ -1,3 +1,12 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.dealclock__pick {
+  min-width: 52px; padding: 8px 12px; border-radius: var(--r-pill); cursor: pointer; font-weight: var(--w-bold);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font-variant-numeric: tabular-nums;
+}
+.lbox__titles { display: grid; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.lbox__body { display: grid; gap: 12px; min-width: 0; }
+.ltoggle__text { display: grid; gap: 1px; flex: 1 1 auto; min-width: 0; cursor: pointer; font-size: var(--t-sm); }
+
 /*
  * Styles only components/Buy.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by
@@ -50,7 +59,7 @@
 .lbox[class*="lbox--"] .lbox__icon { background: rgba(var(--tint), 0.18); box-shadow: inset 0 0 0 1px rgba(var(--tint), 0.4); }
 .lbox__head { display: flex; align-items: center; gap: 10px; }
 .lbox__icon {
-  display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 10px; font-size: 16px;
+  display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 10px; font-size: var(--t-md);
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
 }
 .lbox__title { font-size: var(--t-base); font-weight: var(--w-semi); }
@@ -70,7 +79,7 @@
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
 }
 .ltoggle.is-on { box-shadow: inset 0 0 0 1px var(--violet-line); }
-.ltoggle__icon { font-size: 17px; flex: none; }
+.ltoggle__icon { font-size: var(--t-md); flex: none; }
 .ltiles { display: grid; gap: 8px; }
 .ltile {
   display: grid; justify-items: start; gap: 2px; padding: 10px 11px; border: 0; border-radius: var(--r-md);
@@ -89,13 +98,13 @@
 .ltile__note { font-size: var(--t-2xs); color: var(--text-faint); }
 /* ── Advance accepted: under a card's picture, and on the item page ── */
 .advstrip {
-  display: block; padding: 5px 10px; font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0.01em;
+  display: block; padding: 5px 10px; font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.01em;
   color: var(--lime-ink); background: linear-gradient(90deg, var(--lime), #4ade80);
 }
 /* On a public card's picture: overlaid so the card keeps its size. */
 .droptag {
   position: absolute; left: 8px; bottom: 8px; z-index: 2; max-width: calc(100% - 16px);
   padding: 3px 7px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 9.5px; font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
   color: #1f1300; background: linear-gradient(90deg, #fde68a, #fbbf24); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }

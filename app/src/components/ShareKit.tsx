@@ -50,16 +50,8 @@ export interface ShareSpec {
 
 /* ── Links ──────────────────────────────────────────────────────────────── */
 
-let invite: { userId: string; code: Promise<string | null> } | null = null;
-
-/** The signed-in person's invite code, asked for once and kept. */
-export function inviteCodeFor(userId: string | null | undefined): Promise<string | null> {
-  if (!userId) return Promise.resolve(null);
-  if (invite?.userId !== userId) {
-    invite = { userId, code: api.myInvite().then((summary) => summary.code).catch(() => null) };
-  }
-  return invite.code;
-}
+export { inviteCodeFor } from './inviteCode';
+import { inviteCodeFor } from './inviteCode';
 
 async function linkFor(link: ShareLink, userId: string | null): Promise<string> {
   const origin = window.location.origin;
@@ -242,7 +234,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
       <div className="shs">
         <div className="shs__stage" style={{ aspectRatio: '1 / 1', background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}>
           {picture ? (
-            <img className="shs__img" src={picture.url} alt={`${spec.moment.headline} - picture to share`} />
+            <img loading="lazy" decoding="async" className="shs__img" src={picture.url} alt={`${spec.moment.headline} - picture to share`} />
           ) : (
             <span className="shs__wait">{failed ? 'Could not draw the picture. The link still works.' : 'Drawing your picture…'}</span>
           )}
@@ -363,7 +355,7 @@ export function MomentBanner({ spec, title, note }: { spec: ShareSpec; title: st
     <section className="mshare" style={{ background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}>
       <div className="mshare__inner">
         <button type="button" className="mshare__thumb" onClick={() => open(spec)} aria-label="Open the picture">
-          {thumb ? <img src={thumb} alt="" /> : <span aria-hidden="true">{theme.glyph}</span>}
+          {thumb ? <img loading="lazy" decoding="async" src={thumb} alt="" /> : <span aria-hidden="true">{theme.glyph}</span>}
         </button>
         <div className="mshare__body">
           <b>{title}</b>

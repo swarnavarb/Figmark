@@ -9,6 +9,7 @@ import {
 } from '../../../shared/profit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { inBatches } from '../data/concurrency.js';
 import { error, handler, json } from './http.js';
 import { names, shopFor } from './insight-routes.js';
 import { notify } from './notify.js';
@@ -208,8 +209,11 @@ async function saveOrderCostsBatch(request: HttpRequest, _context: InvocationCon
 
   const now = new Date().toISOString();
   const byListing = new Map<string, { listing: Listing; orderCosts: Record<string, CostStep[]>; orderIds: string[] }>();
-  for (const change of changes) {
-    const order = typeof change.orderId === 'string' ? await repository.getOrder(change.orderId) : null;
+  // Every order is read up front, a batch at a time, rather than one per change in turn.
+  const orders = await inBatches(changes, 25, (change) =>
+    typeof change.orderId === 'string' ? repository.getOrder(change.orderId) : Promise.resolve(null));
+  for (const [index, change] of changes.entries()) {
+    const order = orders[index] ?? null;
     if (!order || order.sellerId !== shopId) return error(404, 'not_found', 'No such order in this shop.');
     let entry = byListing.get(order.listingId);
     if (!entry) {
@@ -567,7 +571,9 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
 
   /* Unpaid balances by how long they have been owed. */
   const owed = kept.filter((order) => order.status !== 'delivered' || order.paymentStatus !== 'paid')
-    .filter((order) => (order.accepted || order.paymentStatus !== 'unpaid') && orderMoney(order).outstandingMinor > 0);
+    // Gone past waiting for payment (shipped, delivered) and still unpaid is owed too.
+    .filter((order) => (order.accepted || order.paymentStatus !== 'unpaid' || order.status !== 'pending_payment')
+      && orderMoney(order).outstandingMinor > 0);
   const owedNames = await names(repository, owed.map((order) => order.buyerId));
   const ageing = owed.map((order) => {
     const since = order.acceptedAt ?? placedAt(order);

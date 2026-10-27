@@ -1,0 +1,239 @@
+/* Polls in their four faces, competitions and guesses: only PostPlay writes these classes. */
+
+/* ── Around every poll ─────────────────────────────────────────────────── */
+
+.pplay { display: grid; gap: 10px; }
+.pplay__foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  color: var(--text-faint); font-size: var(--t-xs);
+}
+.pplay__foot .debate__cta { margin-left: auto; }
+.pplay__chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text);
+}
+.pplay__chip--gold { background: var(--warn-soft); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.4); }
+.pplay__chip--lime { background: var(--lime-soft); box-shadow: inset 0 0 0 1px var(--lime-line); }
+.pplay__prize, .pplay__best {
+  margin: 0; padding: 8px 12px; border-radius: var(--r-md); font-size: var(--t-sm); line-height: 1.5;
+}
+.pplay__prize { background: linear-gradient(115deg, var(--warn-soft), transparent 80%); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
+.pplay__best { background: linear-gradient(115deg, var(--violet-soft), transparent 80%); box-shadow: inset 0 0 0 1px var(--violet-line); }
+
+/* ── Photo grid ────────────────────────────────────────────────────────── */
+
+.pgrid { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pgrid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pgrid__cell { display: grid; gap: 4px; min-width: 0; animation: pplay-rise 260ms var(--ease-out) both; }
+.pgrid__pick {
+  position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; overflow: hidden;
+  border-radius: var(--r-md); border: 2px solid var(--border); background: #000;
+  color: #fff; font: inherit; cursor: pointer;
+  transition: border-color var(--dur-1) ease, transform 140ms var(--ease-out);
+}
+.pgrid__pick:disabled { cursor: default; }
+.pgrid__pick:active:not(:disabled) { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  .pgrid__pick:hover:not(:disabled) { border-color: var(--aqua-line); }
+}
+.pgrid__pick img { width: 100%; height: 100%; object-fit: cover; user-select: none; }
+.pgrid__none { display: block; width: 100%; height: 100%; background: var(--surface-2); }
+.pgrid__cell.is-mine .pgrid__pick { border-color: var(--aqua); box-shadow: 0 0 0 3px var(--aqua-soft); }
+.pgrid__cell.is-leading .pgrid__pick { border-color: var(--warn); }
+.pgrid__pct {
+  position: absolute; top: 6px; right: 6px; padding: 2px 7px; border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.66); backdrop-filter: blur(6px);
+  font: var(--w-bold) var(--t-xs)/1.3 var(--mono);
+  animation: pplay-pop 220ms var(--ease-out) both;
+}
+.pgrid__crown { position: absolute; top: 4px; left: 6px; font-size: 18px; animation: pplay-pop 260ms var(--ease-out) 120ms both; }
+.pgrid__label {
+  position: absolute; left: 0; right: 0; bottom: 6px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 20px 6px 0; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 1.25; text-align: center;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.78) 60%);
+}
+.pgrid__meter { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: rgba(0, 0, 0, 0.6); }
+.pgrid__meter > span {
+  display: block; height: 100%; background: var(--grad-sea);
+  transform-origin: left center; transform: scaleX(0); transition: transform 320ms var(--ease-out);
+}
+.pgrid__cell.is-leading .pgrid__meter > span { background: var(--grad-gold); }
+
+/* ── Rating ────────────────────────────────────────────────────────────── */
+
+.prate { display: grid; gap: 10px; }
+.prate__stars { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.prate__star {
+  display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
+  border: 0; background: none; color: var(--border-strong); font-size: 32px; line-height: 1; cursor: pointer;
+  transition: color 120ms ease, transform 140ms var(--ease-out);
+}
+.prate__star:disabled { cursor: default; }
+.prate__star.is-lit { color: var(--warn); }
+.prate__star:active:not(:disabled) { transform: scale(0.88); }
+/* Your star pops once, when your rating lands. */
+.prate__star.is-mine { animation: pplay-pop 240ms var(--ease-out); }
+.prate__avg { margin-left: 8px; font-size: var(--t-sm); color: var(--text-dim); animation: pplay-rise 220ms var(--ease-out) both; }
+.prate__avg strong { font: var(--w-bold) var(--t-lg)/1 var(--display); color: var(--text); }
+.prate__bars { display: grid; gap: 4px; max-width: 320px; }
+.prate__row { display: grid; grid-template-columns: 26px minmax(0, 1fr) 28px; align-items: center; gap: 8px; font-size: var(--t-xs); }
+.prate__track { height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
+.prate__track > span {
+  display: block; height: 100%; background: var(--grad-gold);
+  transform-origin: left center; transition: transform 320ms var(--ease-out);
+}
+
+/* ── Debate teams ──────────────────────────────────────────────────────── */
+
+.teamchip {
+  display: inline-flex; align-items: center; margin-left: 6px; padding: 1px 7px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs, 10.5px); font-weight: var(--w-bold); letter-spacing: 0.03em; text-transform: uppercase;
+  vertical-align: 1px;
+}
+.teamchip--a { background: var(--blue-soft); color: var(--blue-text); box-shadow: inset 0 0 0 1px var(--blue-line); }
+.teamchip--b { background: var(--pink-soft); color: var(--pink-text); box-shadow: inset 0 0 0 1px var(--pink-line); }
+.teamchip--best { background: var(--warn-soft); color: var(--warn); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.45); text-transform: none; }
+.cmt.is-best .cmt__bubble { box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.5); }
+
+/* ── Competitions ──────────────────────────────────────────────────────── */
+
+.pcontest {
+  position: relative; display: grid; gap: 12px; padding: 14px;
+  border-radius: var(--r-lg); border: 1px solid rgba(251, 191, 36, 0.35);
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(251, 191, 36, 0.14), transparent 60%),
+    radial-gradient(90% 70% at 0% 100%, rgba(236, 72, 153, 0.1), transparent 60%),
+    var(--surface-2);
+}
+.pcontest--figmark { border-color: var(--violet-line); background: radial-gradient(120% 80% at 100% 0%, var(--violet-soft), transparent 60%), var(--surface-2); }
+.pcontest__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pcontest__trophy {
+  display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 14px;
+  font-size: 22px; background: var(--grad-gold); box-shadow: 0 6px 18px rgba(249, 115, 22, 0.35);
+}
+.pcontest--figmark .pcontest__trophy { background: var(--grad-hero); box-shadow: var(--shadow-violet); }
+/* The name takes the row; the phase sits on its own line under it, so neither is squeezed. */
+.pcontest__titles { display: grid; gap: 2px; flex: 1 1 calc(100% - 52px); min-width: 0; }
+.pcontest__titles strong { font: var(--w-bold) var(--t-md)/1.2 var(--display); }
+.pcontest__titles .faint { font-size: var(--t-xs); }
+.pcontest__phase {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: var(--w-bold); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.pcontest__phase--entries { color: var(--lime); }
+.pcontest__phase--voting { color: var(--aqua); }
+.pcontest__phase--ended { color: var(--warn); }
+.pcontest__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent); }
+.pcontest__prizes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.pcontest__prizes li {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: var(--w-semi); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
+}
+.pcontest__strip { display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.pcontest__strip img {
+  flex: none; width: 64px; height: 64px; object-fit: cover; border-radius: var(--r-md);
+  border: 2px solid var(--surface); animation: pplay-rise 260ms var(--ease-out) both;
+}
+.pcontest__count { flex: none; padding-left: 4px; font-size: var(--t-xs); color: var(--text-dim); font-weight: var(--w-semi); }
+.pcontest__empty { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.pcontest__in { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-sm); color: var(--ok); font-weight: var(--w-semi); }
+.pcontest__go { background: var(--grad-gold); border-color: transparent; color: #241300; }
+.pcontest__cta { justify-self: start; display: inline-flex; align-items: center; gap: 8px; }
+
+.pcontest__enter { display: grid; gap: 12px; }
+.pcontest__drop {
+  display: grid; place-items: center; width: 100%; min-height: 220px; padding: 0; overflow: hidden;
+  border-radius: var(--r-lg); border: 1.5px dashed rgba(251, 191, 36, 0.5); background: var(--warn-soft);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+.pcontest__drop > span { display: grid; justify-items: center; gap: 6px; padding: 20px; }
+.pcontest__drop.has-photo { border-style: solid; background: #000; }
+.pcontest__drop img { width: 100%; max-height: 52vh; object-fit: contain; animation: pplay-rise 240ms var(--ease-out) both; }
+
+.pcontest__picker { display: grid; gap: 10px; }
+.pcontest__pickhead { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.pcontest__entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.pcontest__entry {
+  position: relative; aspect-ratio: 1; padding: 0; overflow: hidden;
+  border-radius: var(--r-md); border: 2px solid var(--border); background: #000; color: #fff; font: inherit; cursor: pointer;
+  transition: border-color var(--dur-1) ease, transform 140ms var(--ease-out);
+}
+.pcontest__entry:active { transform: scale(0.96); }
+.pcontest__entry img { width: 100%; height: 100%; object-fit: cover; }
+.pcontest__entry.is-chosen { border-color: var(--warn); }
+.pcontest__by {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 4px;
+  font-size: var(--t-2xs, 10.5px); font-weight: var(--w-semi); text-align: center;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.8));
+}
+.pcontest__mark {
+  position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 50%; background: var(--warn); color: #241300; font-size: 15px;
+  animation: pplay-pop 200ms var(--ease-out) both;
+}
+
+/* The podium rises once, second then first then third - the one flourish a competition earns. */
+.podium { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 8px; padding-top: 6px; }
+.podium__step { display: grid; gap: 6px; margin: 0; min-width: 0; animation: podium-rise 520ms var(--ease-out) both; }
+.podium__step--1 { order: 2; }
+.podium__step--2 { order: 1; }
+.podium__step--3 { order: 3; }
+.podium__photo { position: relative; aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; border: 2px solid var(--border-strong); }
+.podium__step--1 .podium__photo { border-color: var(--warn); box-shadow: 0 8px 26px rgba(251, 191, 36, 0.35); }
+.podium__photo img { width: 100%; height: 100%; object-fit: cover; }
+.podium__medal { position: absolute; top: 4px; left: 4px; font-size: 22px; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
+.podium__step figcaption { display: grid; gap: 1px; text-align: center; font-size: var(--t-xs); min-width: 0; }
+.podium__step figcaption strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+.podium__prize { color: var(--warn); font-weight: var(--w-semi); }
+.podium__block {
+  display: grid; place-items: center; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  font: var(--w-bold) var(--t-lg)/1 var(--display); color: rgba(255, 255, 255, 0.85);
+  background: linear-gradient(180deg, var(--surface-hover), var(--surface));
+}
+.podium__step--1 .podium__block { height: 54px; background: var(--grad-gold); color: #241300; }
+.podium__step--2 .podium__block { height: 38px; }
+.podium__step--3 .podium__block { height: 26px; }
+@keyframes podium-rise { from { opacity: 0; transform: translateY(28px); } }
+
+/* ── Guess the price ───────────────────────────────────────────────────── */
+
+.pguess {
+  display: grid; gap: 12px; padding: 14px; border-radius: var(--r-lg);
+  border: 1px solid var(--violet-line);
+  background: radial-gradient(120% 90% at 100% 0%, var(--violet-soft), transparent 60%), var(--surface-2);
+}
+.pguess__price { display: grid; gap: 2px; justify-items: start; }
+.pguess__kicker { font-size: var(--t-xs); font-weight: var(--w-bold); text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-text); }
+.pguess__sealed, .pguess__answer { display: inline-flex; align-items: center; gap: 8px; font: var(--w-bold) var(--t-2xl)/1.1 var(--display); }
+.pguess__sealed { color: var(--text-dim); letter-spacing: 0.08em; }
+/* The price unseals: from a blur into focus, once, at the reveal. */
+.pguess__answer {
+  background: var(--grad-gold); -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: guess-unseal 480ms var(--ease-out) both;
+}
+@keyframes guess-unseal { from { opacity: 0; filter: blur(10px); transform: scale(0.94); } }
+.pguess__form { display: flex; gap: 8px; }
+.pguess__box {
+  flex: 1; display: flex; align-items: center; gap: 4px; min-width: 0; padding-left: 12px;
+  border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-dim);
+}
+.pguess__box:focus-within { border-color: var(--violet-lit); }
+.pguess__box input { flex: 1; min-width: 0; border: none; background: none; box-shadow: none; font-size: var(--t-md); }
+.pguess__result { display: grid; gap: 8px; animation: pplay-rise 260ms var(--ease-out) 200ms both; }
+.pguess__result p { margin: 0; }
+.pguess__closest { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); }
+.pguess__closest li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: var(--r-md); background: var(--surface); }
+
+@keyframes pplay-rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes pplay-pop { from { opacity: 0; transform: scale(0.8); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pgrid__cell, .pgrid__pct, .pgrid__crown, .prate__avg, .pcontest__strip img, .pcontest__drop img,
+  .pcontest__mark, .podium__step, .pguess__result, .prate__star.is-mine {
+    animation: fade-in 160ms ease both;
+  }
+  .pguess__answer { animation: fade-in 200ms ease both; }
+  .pgrid__meter > span, .prate__track > span, .pgrid__pick, .prate__star, .pcontest__entry { transition: none; }
+}

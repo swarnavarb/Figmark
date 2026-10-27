@@ -5,7 +5,7 @@ import { isExpired } from '@shared/payments';
 import { UPKEEP_SHARE, type GrowthKind, type GrowthTask } from '@shared/store-growth';
 import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api } from '../api';
-import { formatMoney } from '../format';
+import { formatMoney, formatCount } from '../format';
 import { ErrorNotice, leadPhoto } from './ui';
 import { Glyph } from './Quest';
 import { QuestShooter } from './QuestShooter';
@@ -54,7 +54,7 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
     kind: 'shop',
     moment: {
       photo: data.photoUrl, title: data.name,
-      detail: `Level ${data.levelTag.level} ${data.levelTag.title}${data.followers ? ` · ${data.followers.toLocaleString('en-IN')} followers` : ''}`,
+      detail: `Level ${data.levelTag.level} ${data.levelTag.title}${data.followers ? ` · ${formatCount(data.followers)} followers` : ''}`,
       headline: 'Shop with us', byline: `@${data.handle} on Figmark`, badge,
     },
     link: { to: 'page', handle: data.handle },
@@ -166,7 +166,7 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
       <ul className="qareas" aria-label="Shop XP by area">
         {view.areas.map((area) => (
           <li key={area.area} className={`qareas__tile qareas__tile--${area.area}`}>
-            <b>{area.xp.toLocaleString('en-IN')} XP</b>
+            <b>{formatCount(area.xp)} XP</b>
             <small>{area.label}</small>
           </li>
         ))}
@@ -237,7 +237,7 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
           <ul className="qitems-list">
             {items.map((listing) => (
               <li key={listing.id} className="qitems-list__row">
-                {leadPhoto(listing)?.url ? <img className="qitems-list__thumb" src={leadPhoto(listing)!.url} alt="" /> : <span className="qitems-list__thumb" aria-hidden="true" />}
+                {leadPhoto(listing)?.url ? <img loading="lazy" decoding="async" className="qitems-list__thumb" src={leadPhoto(listing)!.thumbUrl ?? leadPhoto(listing)!.url} alt="" /> : <span className="qitems-list__thumb" aria-hidden="true" />}
                 <span className="qitems-list__name">{listing.title}</span>
                 <span className="qitems-list__btns">
                   <button type="button" className="btn btn--sm btn--quiet" onClick={() => open(itemSpec(listing))}>Share</button>
@@ -261,12 +261,12 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
             {[...level.breakdown].sort((a, b) => Number(a.xp < 0) - Number(b.xp < 0)).map((line) => (
               <div key={line.label} className={`qbreak__row${line.xp < 0 ? ' is-loss' : ''}`}>
                 <dt>{line.label}{line.detail && <small>{line.detail}</small>}</dt>
-                <dd>{line.xp > 0 ? '+' : ''}{line.xp.toLocaleString('en-IN')} XP</dd>
+                <dd>{line.xp > 0 ? '+' : ''}{formatCount(line.xp)} XP</dd>
               </div>
             ))}
             <div className="qbreak__row qbreak__total">
               <dt>Total</dt>
-              <dd>{level.points.toLocaleString('en-IN')} XP</dd>
+              <dd>{formatCount(level.points)} XP</dd>
             </div>
           </dl>
         )}

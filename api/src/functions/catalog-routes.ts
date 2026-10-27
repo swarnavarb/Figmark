@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
-import { CATEGORIES, categoriesIn, listablePrice, priceCeiling } from '../../../shared/catalog.js';
+import {
+  authenticityValues, canonicalCategory, categoriesIn, cleanAttributes, conditionTagFor,
+  listablePrice, priceCeiling,
+} from '../../../shared/catalog.js';
 import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefront.js';
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone } from '../../../shared/fulfilment.js';
 import { lotNo, lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
-import type { Listing, ListingComment, Order, StageEvent, User } from '../../../shared/models.js';
+import type { Listing, ListingComment, Order, PreOrderFullRule, PreOrderShortRule, StageEvent, User } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, REACTION_META, isReaction, type ReactionKind } from '../../../shared/social.js';
 import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
@@ -18,6 +21,7 @@ import { BUMP_GUARD_MS, emptyQuestState, tidyQuestState } from '../../../shared/
 import { emptyGrowth, tidyGrowth } from '../../../shared/store-growth.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import type { SellerCardSource } from '../data/repository.js';
 import { moderation } from '../moderation.js';
 import { isLive } from '../../../shared/service-stores.js';
 import { claimPhotos, releaseListingPhotos } from '../storage/release.js';
@@ -32,17 +36,21 @@ import { recordOpen } from '../share.js';
 import {
   AFFILIATE_PARAM, SHORT_LINK_PREFIX, affiliateUnitMinor, cleanAffiliateMinor, cleanBuyerOffMinor, linkDiscountMinor,
 } from '../../../shared/affiliate.js';
-import { reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
+import { closeDuePreOrdersSoon, reconcilePreOrder, rosterOf, verifiedReferrer } from './preorder.js';
+import { FULL_RULES, SHORT_RULES, cutoffProblem, thresholdProblem } from '../../../shared/preorder.js';
 import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
+import { thumbNameOf } from '../storage/types.js';
 import { sniffImageType } from '../storage/sanitize.js';
-import { fingerprint } from '../image-hash.js';
-import { rankByPhoto } from '../photo-search.js';
+import { fingerprint, storedFingerprint } from '../image-hash.js';
+import { rankByPhoto, type LearnedHash } from '../photo-search.js';
+import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
+import { alertWantsListed } from './want-routes.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
-function toSellerCard(user: User) {
+function toSellerCard(user: SellerCardSource) {
   return {
     id: user.id,
     displayName: user.displayName,
@@ -65,6 +73,11 @@ function toSellerCard(user: User) {
   };
 }
 
+/** Listings a catalog read returns when it names no limit: see listListings. */
+const FEED_PAGE = 100;
+/** The most one catalog read returns, however many times "Show more" is pressed. */
+const FEED_MAX = 400;
+
 /**
  * GET /api/feed - the unified catalog.
  *
@@ -74,28 +87,52 @@ function toSellerCard(user: User) {
  */
 async function feed(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
-  const viewer = await auth.getCurrentUser(request);
 
   // A heading is shorthand for the categories under it, resolved here rather
   // than stored on the row, so re-housing a category is an edit to one file
   // instead of a migration.
   const group = request.query.get('group')?.trim();
-  // The reader's follows and saves do not depend on the catalog, so all three
-  // reads go out together rather than one after another.
-  const [followedSellerIds, liked, catalog] = await Promise.all([
-    viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([] as string[]),
-    viewer ? repository.listLikedListingIds(viewer.id) : Promise.resolve([] as string[]),
-    repository.listListings({
+  // The catalog does not depend on who is reading, so it is asked for at once,
+  // alongside the session; the reader's follows and saves follow the session.
+  // "Show more" asks for a longer list rather than the next page: "newest"
+  // merges two orderings (listed and bumped), and a longer list of it is the
+  // only page that never skips or repeats an item. Capped, so it stays a read.
+  const limit = Math.min(FEED_MAX, Math.max(FEED_PAGE, Math.ceil((Number(request.query.get('limit')) || FEED_PAGE) / FEED_PAGE) * FEED_PAGE));
+  // "Original" and "copies" are the two questions buyers actually ask, and each
+  // is several stored values (Original and Official; First copy, 7A and so on),
+  // so they are resolved here from the category definitions rather than being
+  // hard-coded into a filter. Anything else is taken as one exact value.
+  const authenticityParam = request.query.get('authenticity')?.trim();
+  const authenticity = !authenticityParam
+    ? undefined
+    : authenticityParam === 'genuine'
+      ? authenticityValues(true)
+      : authenticityParam === 'copies'
+        ? authenticityValues(false)
+        : [authenticityParam];
+  const catalogRead = repository.listListings({
+    limit,
     search: request.query.get('q') ?? undefined,
     category: request.query.get('category') ?? undefined,
     categories: group ? categoriesIn(group) : undefined,
     condition: request.query.get('condition') ?? undefined,
+    type: request.query.get('type') ?? undefined,
+    size: request.query.get('size') ?? undefined,
+    authenticity,
     kind: request.query.get('kind') ?? undefined,
     sort: request.query.get('sort') ?? undefined,
     maxPriceMinor: priceCeiling(request.query.get('maxPrice')),
     // One shop's live stock, for its storefront.
     sellerId: request.query.get('seller') ?? undefined,
-    }),
+  });
+  catalogRead.catch(() => undefined);
+  // Every feed load is a chance to settle campaigns whose cutoff passed unseen.
+  closeDuePreOrdersSoon(repository);
+  const viewer = await auth.getCurrentUser(request);
+  const [followedSellerIds, liked, catalog] = await Promise.all([
+    viewer ? repository.listFollowedSellerIds(viewer.id) : Promise.resolve([] as string[]),
+    viewer ? repository.listLikedListingIds(viewer.id) : Promise.resolve([] as string[]),
+    catalogRead,
   ]);
   const likedIds = new Set(liked);
   // Expired is read off the clock, so it is filtered here rather than stored.
@@ -104,7 +141,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   // Only the lots these listings ride in, not every lot on the site.
   const lotKeys = [...new Map(listings.filter((l) => l.lotId).map((l) => [l.lotId!, l.sellerId])).entries()];
   const [sellers, lots] = await Promise.all([
-    repository.listUsersByIds([...new Set(listings.map((l) => l.sellerId))]),
+    repository.listSellerCardsByIds([...new Set(listings.map((l) => l.sellerId))]),
     Promise.all(lotKeys.map(([lotId, sellerId]) => repository.getLot(sellerId, lotId))),
   ]);
   const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
@@ -124,6 +161,9 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     // "what exists somewhere".
     categories: [...new Set(listings.map((l) => l.category))].sort(),
     followedSellerIds,
+    // Under a page's worth: this is every match there is, so a search typed
+    // further can narrow these on the device instead of asking again.
+    complete: catalog.length < limit,
   });
 }
 
@@ -327,19 +367,24 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   }
 
   const hash = fingerprint(bytes, contentType);
+  // The whole catalogue, from the copy kept for photo answers: no read of its
+  // own, and every listing rather than the newest hundred.
   const [description, all] = await Promise.all([
     describePhoto(bytes, contentType),
-    repository.listListings({}),
+    everyListing(repository),
   ]);
   if (!hash && !description) {
     return error(422, 'unreadable_photo', 'Could not read that photo. Try a JPEG, or a clearer picture.');
   }
-  const pool = all.filter((listing) => !isExpired(listing) && !listing.privateFor);
-  const found = await rankByPhoto(pool, hash, description);
+  const pool = all.filter((listing) => onSale(listing) && everListed(listing));
+  const learned: LearnedHash[] = [];
+  const found = await rankByPhoto(pool, hash, description, learned);
+  const storing = storeLearned(repository, learned);
 
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
   const sellers = await repository.listUsersByIds([...new Set(found.map((listing) => listing.sellerId))]);
   const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
+  await storing;
   // One list, best first: what matches the photo, then what is related to it.
   return json(200, {
     listings: found.map((listing) => ({
@@ -350,6 +395,182 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
     })),
     vision: visionAvailable(),
   });
+}
+
+/**
+ * Every listing, kept for a minute per host instance.
+ *
+ * A feed asks about each photo as it scrolls into view, and each answer reads
+ * the whole catalogue; reading it from the database every time would cost a
+ * cross-partition query per photo. A listing made or sold in the last minute
+ * shows up on the next read - fine for a hint under a photo.
+ */
+let catalogue: { at: number; listings: Promise<Listing[]>; next: Promise<Listing[]> | null } | null = null;
+const CATALOGUE_MS = 60_000;
+
+function everyListing(repository: Awaited<ReturnType<typeof getRepository>>): Promise<Listing[]> {
+  if (!catalogue) {
+    const listings = repository.listListings({ includeHidden: true });
+    catalogue = { at: Date.now(), listings, next: null };
+    // A failed read is not kept, so the next photo tries again.
+    listings.catch(() => { if (catalogue?.listings === listings) catalogue = null; });
+  } else if (Date.now() - catalogue.at > CATALOGUE_MS && !catalogue.next) {
+    // Past its minute, the copy is still answered from while a fresh one is
+    // read: nobody waits on the database for a hint under a photo.
+    const held = catalogue;
+    const next = repository.listListings({ includeHidden: true });
+    held.next = next;
+    next.then(
+      () => { if (catalogue === held) catalogue = { at: Date.now(), listings: next, next: null }; },
+      () => { if (catalogue === held) held.next = null; },
+    );
+  }
+  return catalogue.listings;
+}
+
+/** For tests that write listings and then look straight away. */
+export function forgetCatalogue(): void {
+  catalogue = null;
+}
+
+/**
+ * POST /api/search/photo/sales - where the items in a photo on Figmark are, or
+ * were, for sale, and the shops that have sold them.
+ *
+ * Takes the address of a photo this app stores, and the text shown with it
+ * (`about`: a caption or a title), never a photo's bytes and
+ * never anybody else's link: the server reads only what is already public
+ * here, and the answer is about listings, which are public too. Chat photos
+ * live in a store this cannot read, so they are not looked at.
+ */
+/** Listing photo fingerprints stored per answer, at most: the rest wait for the next one. */
+const LEARNED_PER_ANSWER = 25;
+
+/**
+ * Store the fingerprints a look had to work out on the listings they came from,
+ * so every instance after this one compares them for nothing. Best effort: a
+ * listing changed or gone meanwhile is simply left for next time.
+ */
+async function storeLearned(repository: Awaited<ReturnType<typeof getRepository>>, learned: LearnedHash[]): Promise<void> {
+  const byListing = new Map<string, { listing: Listing; hashes: Map<string, string> }>();
+  for (const { listing, blobName, hash } of learned.slice(0, LEARNED_PER_ANSWER)) {
+    const entry = byListing.get(listing.id) ?? { listing, hashes: new Map<string, string>() };
+    entry.hashes.set(blobName, hash);
+    byListing.set(listing.id, entry);
+  }
+  await Promise.all([...byListing.values()].map(async ({ listing, hashes }) => {
+    const stored = await repository.changeListing(listing.id, listing.sellerId, (current) => ({
+      ...current,
+      photos: current.photos.map((photo) => (hashes.has(photo.blobName) ? { ...photo, imageHash: hashes.get(photo.blobName)! } : photo)),
+    })).catch(() => null);
+    // The kept copy of the catalogue learns it too, rather than being read
+    // again: otherwise every look until the next read would store it again.
+    if (stored) {
+      listing.photos = listing.photos.map((photo) => (hashes.has(photo.blobName) ? { ...photo, imageHash: hashes.get(photo.blobName)! } : photo));
+    }
+  }));
+}
+
+/** Photos answered per request, at most: a screenful of the feed. */
+const PHOTOS_PER_ASK = 10;
+
+interface PhotoAsk {
+  /** The photo's blob name, or null for an address this app does not store. */
+  name: string | null;
+  about: string;
+  by: string | null;
+}
+
+/** One photo as the body names it, or a message saying what is wrong with it. */
+async function photoAsk(entry: unknown): Promise<PhotoAsk | string> {
+  const body = (entry && typeof entry === 'object' ? entry : {}) as { url?: unknown; about?: unknown; by?: unknown };
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!url || url.length > 500) return 'Send the address of a photo.';
+  return {
+    // Somebody else's server is never fetched; there is simply nothing to say about it.
+    name: await ownPhotoName(url),
+    // The words shown with the photo - a caption, a title - searched alongside it.
+    about: typeof body.about === 'string' ? body.about.slice(0, 500) : '',
+    // Who posted it: people post what they sell, so their own listings are likelier.
+    by: typeof body.by === 'string' && body.by.length <= 100 ? body.by : null,
+  };
+}
+
+/**
+ * Takes one photo (`url`, `about`, `by`) and answers it, or several
+ * (`photos: [...]`, up to a screenful) and answers each in `answers`, in
+ * order: a feed asks about the photos that came into view together in one
+ * request, and the catalogue, the shops and the reader's saves are looked up
+ * once for all of them.
+ */
+async function photoSales(request: HttpRequest, _context: InvocationContext) {
+  const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
+  let body: { url?: string; about?: string; by?: string; photos?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const several = Array.isArray(body.photos);
+  if (several && ((body.photos as unknown[]).length === 0 || (body.photos as unknown[]).length > PHOTOS_PER_ASK)) {
+    return error(400, 'invalid_photo', `Send between 1 and ${PHOTOS_PER_ASK} photos.`);
+  }
+  const asks: PhotoAsk[] = [];
+  for (const entry of several ? body.photos as unknown[] : [body]) {
+    const ask = await photoAsk(entry);
+    if (typeof ask === 'string') return error(400, 'invalid_photo', ask);
+    asks.push(ask);
+  }
+
+  const vision = visionAvailable();
+  const viewer = asks.some((ask) => ask.name) ? await auth.getCurrentUser(request) : null;
+  // Opening a photo somebody already opened costs nothing; reading a new one may be a call to Claude.
+  for (const ask of asks) {
+    if (!ask.name || alreadyRead(ask.name, vision)) continue;
+    const slow = await tooFast(viewer?.id ?? `ip:${clientIp(request)}`, 'photosales');
+    if (slow) return slow;
+  }
+
+  const catalogue = asks.some((ask) => ask.name) ? await everyListing(repository) : [];
+  const found = await Promise.all(asks.map((ask) => (ask.name ? findSales(ask.name, catalogue, ask.about, ask.by) : null)));
+  const answered = found.filter((entry): entry is PhotoSales => entry !== null);
+
+  const listings = answered.flatMap((entry) => [
+    ...entry.items.flatMap((item) => item.listings), ...entry.probable.map((guess) => guess.listing)]);
+  const [likedIds, sellers] = await Promise.all([
+    viewer && listings.length > 0 ? repository.listLikedListingIds(viewer.id).then((ids) => new Set(ids)) : new Set<string>(),
+    answered.length > 0
+      ? repository.listUsersByIds([...new Set(answered.flatMap((entry) => [
+        ...entry.items.flatMap((item) => item.listings.map((listing) => listing.sellerId)),
+        ...entry.probable.map((guess) => guess.listing.sellerId),
+        ...entry.sellers.map((seller) => seller.sellerId),
+        ...entry.likely.map((seller) => seller.sellerId),
+      ]))])
+      : [],
+    storeLearned(repository, answered.flatMap((entry) => entry.learned)),
+  ]);
+  const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
+  const card = (listing: Listing) => ({
+    ...publicListing(listing),
+    liked: likedIds.has(listing.id),
+    seller: sellerById.get(listing.sellerId) ?? null,
+    estimatedDispatchAt: null,
+    onSale: onSale(listing),
+  });
+  const reply = (entry: PhotoSales | null) => (!entry ? { items: [], sellers: [], likely: [], probable: [], vision } : {
+    items: entry.items.map((item) => ({ label: item.label, listings: item.listings.map(card) })),
+    probable: entry.probable.map((guess) => ({ ...card(guess.listing), chance: Math.round(guess.chance * 100) / 100 })),
+    sellers: entry.sellers.flatMap((seller) => {
+      const shop = sellerById.get(seller.sellerId);
+      return shop ? [{ seller: shop, unitsSold: seller.unitsSold, items: seller.items }] : [];
+    }),
+    likely: entry.likely.flatMap((seller) => {
+      const shop = sellerById.get(seller.sellerId);
+      return shop ? [{ seller: shop, because: seller.because, kind: seller.kind, listings: seller.listings }] : [];
+    }),
+    vision,
+  });
+  return json(200, several ? { answers: found.map(reply) } : reply(found[0]!));
 }
 
 /**
@@ -415,7 +636,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   const repository = await getRepository();
 
   let body: Partial<Listing> & {
-    preOrder?: { fillThreshold: number; cutoffAt: string };
+    preOrder?: { fillThreshold: number; cutoffAt: string; whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule };
     /** The store to list into; absent means the caller's own. */
     storeId?: string;
     quantityMode?: 'fixed' | 'multiple';
@@ -466,6 +687,18 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
 
   const title = body.title?.trim();
   if (!title) return error(400, 'invalid_listing', 'A title is required.');
+
+  // A pre-order is a promise to a group about a number and a date; one that
+  // asks for a single booking, or closes yesterday, is a promise nobody can
+  // keep. Refused here rather than quietly turned into an ordinary listing.
+  if (body.preOrder && !body.privateFor) {
+    const problem = thresholdProblem(body.preOrder.fillThreshold) ?? cutoffProblem(body.preOrder.cutoffAt)
+      ?? (body.preOrder.whenShort !== undefined && !SHORT_RULES.includes(body.preOrder.whenShort)
+        ? 'Pick what happens if it comes up short.' : null)
+      ?? (body.preOrder.whenFull !== undefined && !FULL_RULES.includes(body.preOrder.whenFull)
+        ? 'Pick what happens once it fills.' : null);
+    if (problem) return error(400, 'invalid_preorder', problem);
+  }
 
   // A private deal is for one named buyer, never the shop itself.
   let privateFor: string | null = null;
@@ -530,18 +763,33 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     ? { routeId: null, name: body.preLotName?.trim() || 'Before the lot', steps: preLotSteps }
     : null;
 
+  // An unknown category would be a heading nothing can reach and a tag that
+  // never matches, so it falls back rather than being stored as typed. A name
+  // from before a rename is stored under its current one.
+  const category = canonicalCategory(body.category) ?? 'Collectibles';
+
+  // The questions this category asks - what kind, original or copy, what size -
+  // checked here because the browser is only one of the things that can post a
+  // listing. A client that sends none (the older ones) gets the older, looser
+  // behaviour: just a category and a grade.
+  let attributes: Record<string, string> | undefined;
+  if (body.attributes !== undefined && body.attributes !== null) {
+    const cleaned = cleanAttributes(category, body.attributes);
+    if (cleaned.error) return error(400, 'invalid_listing', cleaned.error);
+    attributes = cleaned.attributes;
+  }
+
   const now = new Date().toISOString();
   const listing: Listing = {
     id: `lst_${randomUUID().slice(0, 12)}`,
     sellerId,
     title,
     description: body.description?.trim() ?? '',
-    // An unknown category would be a heading nothing can reach and a chip that
-    // never matches, so it falls back rather than being stored as typed.
-    category: body.category && (CATEGORIES as readonly string[]).includes(body.category)
-      ? body.category
-      : 'Collectibles',
-    condition: body.condition ?? 'LOOSE',
+    category,
+    // The category's own condition wins, folded back to the four grades the
+    // rest of the app understands; the grade the client sent is the fallback.
+    condition: (attributes && conditionTagFor(category, attributes)) || body.condition || 'LOOSE',
+    ...(attributes ? { attributes } : {}),
     status: 'active',
     priceMinor,
     currency: 'INR',
@@ -551,11 +799,13 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
     preOrder:
-      !privateFor && body.preOrder && body.preOrder.fillThreshold > 0
+      !privateFor && body.preOrder
         ? {
             fillThreshold: Math.round(body.preOrder.fillThreshold),
             filledCount: 0,
-            cutoffAt: body.preOrder.cutoffAt,
+            cutoffAt: new Date(body.preOrder.cutoffAt).toISOString(),
+            whenShort: body.preOrder.whenShort ?? 'cancel',
+            whenFull: body.preOrder.whenFull ?? 'keep_open',
           }
         : null,
     lotId,
@@ -591,6 +841,11 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   await claimPhotos(created.photos.map((photo) => photo.blobName || photo.url), `listing:${created.id}`);
   // What a shop lists is what it is about: its tags count toward its identity.
   if (!privateFor) await refreshIdentity(repository, created.sellerId);
+  // Anybody hunting for this hears it is here. Never the reason a listing fails.
+  if (!privateFor && !created.unlisted) {
+    const shop = await repository.getUserById(sellerId).catch(() => null);
+    await alertWantsListed(repository, created, shop?.sellerProfile?.storefrontName ?? user.displayName).catch(() => 0);
+  }
 
   // Telling people is part of listing, not a second job to remember. The
   // channel is where a shop's followers already are; the feed is everybody.
@@ -1295,7 +1550,11 @@ async function sellerPhotos(
       ours = other === listingId || (await repository.getListing(other))?.sellerId === sellerId;
     }
     if (!ours) return null;
-    rows.push({ blobName: name, url, imageHash: null, isPrimary });
+    // Fingerprinted now, so photo search and "seen for sale" never have to read it again.
+    rows.push({
+      blobName: name, url, imageHash: await storedFingerprint(name), isPrimary,
+      ...(info.hasThumb ? { thumbUrl: store.urlFor(thumbNameOf(name)) ?? undefined } : {}),
+    });
   }
   const lead = Math.max(0, rows.findIndex((photo) => photo.isPrimary));
   return rows.map((photo, index) => ({ ...photo, isPrimary: index === lead }));
@@ -1419,11 +1678,15 @@ async function deleteListing(request: HttpRequest, _context: InvocationContext) 
   const found = await manageable(request);
   if ('refusal' in found) return found.refusal;
   const { listing, repository } = found;
+  // `remove: true` also takes it out of the shop and the seller's own lists -
+  // archived, still never erased, so every order that names it keeps it.
+  const body = await request.json().catch(() => ({})) as { remove?: unknown };
+  const remove = body?.remove === true;
 
   const now = new Date().toISOString();
-  await repository.updateListing({ ...listing, expiresAt: now, updatedAt: now });
+  await repository.updateListing({ ...listing, expiresAt: now, ...(remove ? { status: 'archived' as const } : {}), updatedAt: now });
   await refreshIdentity(repository, listing.sellerId);
-  return json(200, { expired: true });
+  return json(200, { expired: true, removed: remove });
 }
 
 /** GET /api/forwarders - the freight forwarder directory. */
@@ -1468,11 +1731,13 @@ app.http('feed', { ...anon, methods: ['GET'], route: 'feed', handler: feedRoute 
 app.http('listing-detail', { ...anon, methods: ['GET'], route: 'listings/{id}', handler: listingDetailRoute });
 export const similarListingsRoute = handler(similarListings);
 export const photoSearchRoute = handler(photoSearch);
+export const photoSalesRoute = handler(photoSales);
 export const affiliateLinkRoute = handler(affiliateLink);
 export const openShortLinkRoute = handler(openShortLink);
 app.http('listing-affiliate-link', { ...anon, methods: ['POST'], route: 'listings/{id}/affiliate-link', handler: affiliateLinkRoute });
 app.http('short-link', { ...anon, methods: ['GET'], route: 'r/{code}', handler: openShortLinkRoute });
 app.http('photo-search', { ...anon, methods: ['POST'], route: 'search/photo', handler: photoSearchRoute });
+app.http('photo-sales', { ...anon, methods: ['POST'], route: 'search/photo/sales', handler: photoSalesRoute });
 app.http('listing-similar', { ...anon, methods: ['GET'], route: 'listings/{id}/similar', handler: similarListingsRoute });
 app.http('listing-create', { ...anon, methods: ['POST'], route: 'listings', handler: createListingRoute });
 app.http('listing-like', { ...anon, methods: ['POST'], route: 'listings/{id}/like', handler: toggleLikeRoute });

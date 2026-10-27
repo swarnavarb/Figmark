@@ -36,7 +36,7 @@ export function StoreMark({ name, logoUrl, accent, size = 52 }: {
 }) {
   return (
     <span className="sk-mark" style={{ ...accentStyle(accent), width: size, height: size, fontSize: size * 0.36 }} aria-hidden="true">
-      {logoUrl ? <img src={logoUrl} alt="" /> : initialsOf(name)}
+      {logoUrl ? <img loading="lazy" decoding="async" src={logoUrl} alt="" /> : initialsOf(name)}
     </span>
   );
 }
@@ -65,7 +65,7 @@ export function StoreCover({ kind, coverUrl, accent, children }: {
 }) {
   return (
     <div className={`sk-cover sk-cover--${kind}`} style={accentStyle(accent)}>
-      {coverUrl ? <img className="sk-cover__img" src={coverUrl} alt="" /> : kind === 'forwarder' ? (
+      {coverUrl ? <img loading="lazy" decoding="async" className="sk-cover__img" src={coverUrl} alt="" /> : kind === 'forwarder' ? (
         <svg className="sk-cover__art" viewBox="0 0 600 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
           <defs>
             <radialGradient id="skglow" cx="80%" cy="20%" r="70%">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ApiRequestError, admin, type AuditEntry } from './api';
-import { timeAgo } from '../format';
+import { timeAgo, formatDateTime } from '../format';
 import { Loading } from '../components/Feedback';
 
 /**
@@ -77,7 +77,7 @@ export function AuditView() {
               <div className="userrow__main">
                 <span className="userrow__name">{entry.action}</span>
                 <span className="userrow__meta">
-                  {timeAgo(entry.at)} · {new Date(entry.at).toLocaleString()} · {entry.actorEmail ?? entry.actorId ?? 'unknown'}
+                  {timeAgo(entry.at)} · {formatDateTime(entry.at)} · {entry.actorEmail ?? entry.actorId ?? 'unknown'}
                 </span>
                 {entry.detail !== null && entry.detail !== undefined && (
                   <code className="faint" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>

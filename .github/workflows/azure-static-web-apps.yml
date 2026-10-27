@@ -10,7 +10,8 @@ on:
 
 # Nothing by default: each job names the least it needs. No job here writes to
 # the repository or comments on pull requests - deploys authenticate to Azure
-# with their own token - so none is granted a write scope.
+# with their own token (the clock deploys ask for an OIDC one: id-token: write)
+# - so none is granted a write scope.
 #
 # Third-party actions are pinned to a full commit SHA, with the release it was
 # at in the trailing comment: a tag can be moved to other code after review,
@@ -30,8 +31,11 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          # Matches the apiRuntime pinned in staticwebapp.config.json.
-          node-version: '20'
+          # Matches the apiRuntime pinned in staticwebapp.config.json: the
+          # newest Static Web Apps takes (node:24 fails the deploy with
+          # "Function language info isn't provided"). The clock Function App
+          # runs the same build on Node 24.
+          node-version: '22'
 
       - name: Install API dependencies
         working-directory: api
@@ -44,6 +48,13 @@ jobs:
       - name: Install app dependencies
         working-directory: app
         run: npm ci
+
+      # What ships to Azure and to browsers, held to no known high or critical
+      # vulnerability. Development tools are left out: they never run there.
+      - name: Audit shipped dependencies
+        run: |
+          npm --prefix api audit --omit=dev --audit-level=high
+          npm --prefix app audit --omit=dev --audit-level=high
 
       - name: Build app
         working-directory: app
@@ -75,17 +86,26 @@ jobs:
     permissions:
       contents: read
     needs: build
-    # main is the production branch: only it and manual runs deploy here. Other
-    # branches are built and verified above but never published by this job.
+    # main is the production branch: only a push to it, or a manual run of it,
+    # deploys here. Other branches are built and verified above but never
+    # published by this job - a manual run picked on another branch included.
     # Compared against github.ref rather than ref_name so a tag named "main"
     # cannot trigger a production deploy.
+    #
+    # Nothing goes live until someone approves it: add required reviewers to
+    # the "production" environment (Settings -> Environments). Give that
+    # environment its own AZURE_STATIC_WEB_APPS_API_TOKEN, the production
+    # app's; it takes precedence over the repository secret of the same name,
+    # which stays the development app's. See docs/ENVIRONMENTS.md.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://icy-stone-0498a9900.6.azurestaticapps.net
+      # Whichever app the production token belongs to, rather than a fixed
+      # address that would go stale when production moves to its own app.
+      url: ${{ steps.deploy.outputs.static_web_app_url }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -94,6 +114,7 @@ jobs:
           name: figmark-build
 
       - name: Deploy
+        id: deploy
         uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
@@ -153,6 +174,84 @@ jobs:
           # instead of the production slot. This input is load-bearing here:
           # see the comment on the production deploy step above.
           production_branch: main
+
+  # The timers. Static Web Apps' managed functions run HTTP triggers only, so
+  # the same API build also goes to a plain Function App started from
+  # clock-host.js: the clocks and no routes (see docs/AZURE.md, "The clock
+  # Function App"). Each job runs only once its app is named in a repository
+  # variable - an opt-in, set when the app exists, rather than a skip on a
+  # missing secret: with the variable set, missing credentials fail the run.
+  deploy_clocks:
+    name: Deploy clocks (production)
+    permissions:
+      contents: read
+      id-token: write # Azure login over OIDC; no stored password
+    needs: build
+    # Same branches as the Static Web Apps deploy above.
+    if: >-
+      vars.CLOCK_APP_PRODUCTION != '' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: figmark-build
+
+      - name: Start from the clock entry point
+        working-directory: api
+        run: |
+          test -f dist/api/src/clock-host.js
+          npm pkg set main=dist/api/src/clock-host.js
+
+      - uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy
+        uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
+        with:
+          app-name: ${{ vars.CLOCK_APP_PRODUCTION }}
+          package: api
+
+  deploy_clocks_development:
+    name: Deploy clocks (development)
+    permissions:
+      contents: read
+      id-token: write # Azure login over OIDC; no stored password
+    needs: build
+    if: >-
+      vars.CLOCK_APP_DEVELOPMENT != '' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/development'
+    runs-on: ubuntu-latest
+    environment:
+      name: development
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: figmark-build
+
+      - name: Start from the clock entry point
+        working-directory: api
+        run: |
+          test -f dist/api/src/clock-host.js
+          npm pkg set main=dist/api/src/clock-host.js
+
+      - uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy
+        uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
+        with:
+          app-name: ${{ vars.CLOCK_APP_DEVELOPMENT }}
+          package: api
 
   close_preview:
     name: Close pull request preview

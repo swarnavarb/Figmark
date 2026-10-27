@@ -3,15 +3,16 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { FORUM_CAP, FORUM_MODERATORS_MAX, FORUM_UNLOCK_LEVELS, forumLockedMessage, forumSlotsAt } from '../../../shared/enums.js';
 import type { Forum, Listing, Post, User } from '../../../shared/models.js';
 import {
-  COMMENT_MAX_CHARS, POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_COMMENTS,
+  COMMENT_MAX_CHARS, FLEX_MAX_HOTSPOTS, HOTSPOT_LABEL_MAX_CHARS, HOTSPOT_STATUSES, POLL_MAX_OPTIONS,
+  POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_COMMENTS,
   POST_MAX_PHOTOS, REACTION_META, VIBE_MAX_CHARS, actorKey, isReaction, isVibe, reactionActor, summarise,
-  type CommentThread, type CommentView, type PollView, type PostSocial, type ReactorRow,
-  type StoredComment, type StoredPoll, type StoredReaction,
+  type CommentThread, type CommentView, type HotspotStatus, type PollView, type PostDebate, type PostHotspot,
+  type PostSocial, type ReactorRow, type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
 import { can } from '../../../shared/stores.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
-import { PERSON_FOLLOW } from '../../../shared/storefront.js';
+import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { ownPhotos } from '../storage/index.js';
@@ -22,6 +23,20 @@ import { error, handler, json } from './http.js';
 import { notify, storeCrew } from './notify.js';
 import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
 import { levelOf } from './quest-routes.js';
+import { LESS_FROM_LIFT, NO_SCREEN, lessFrom, screenOf, screens, type FeedScreen } from '../feed-prefs.js';
+import { hashtagsIn, mentionsIn, MENTIONS_MAX, type SpottedItem, type TopicChip, type WantRow } from '../../../shared/feed.js';
+import { tagKey, tidyLabel } from '../../../shared/shop-tags.js';
+import {
+  CONTEST_CAPTION_MAX, CONTEST_MAX_ENTRIES, CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, GUESS_MAX_MINOR,
+  PHASE_MAX_HOURS, PHASE_MIN_HOURS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX, SHORTLIST_MAX, SHORTLIST_MIN,
+  closestGuess, contestPhase, isJudging,
+  type ContestPrize, type ContestWinner, type GuessView, type PostContest, type PostGuess,
+} from '../../../shared/play.js';
+import { RATING_LABELS, isPollStyle, type DebatePrize, type PollStyle, type VoterReward } from '../../../shared/social.js';
+import { verifiedChecks } from '../../../shared/verification.js';
+import { gameAudience, gameWhat, isDue, payContest, payDebate, settlePlay } from '../play.js';
+import { ownPhotoName } from '../storage/index.js';
+import { likeness, storedFingerprint } from '../image-hash.js';
 
 /**
  * The social side: what the people you follow are saying, and the forums.
@@ -75,12 +90,23 @@ interface PostCard {
   shop?: boolean;
   /** Why the home feed is showing it, beyond "you follow them". See `home`. */
   badges?: Boost[];
+  /** Saved by this viewer to read again. */
+  saved?: boolean;
+  /**
+   * People the viewer follows who reacted, commented or voted - the reason a
+   * stranger's post is worth a look. Up to three names, and how many in all.
+   */
+  followedActed?: { count: number; names: string[] } | null;
 }
 
-/** Trending: among the liveliest posts anywhere. Rising: new, and being tried on a wider audience. */
-type Boost = 'trending' | 'rising';
+/**
+ * Trending: among the liveliest posts anywhere. Rising: new, and being tried
+ * on a wider audience. Result: a debate this viewer voted in has closed.
+ */
+export type Boost = 'trending' | 'rising' | 'result';
 
-type Repo = Awaited<ReturnType<typeof getRepository>>;
+export type { PostCard };
+export type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /**
  * Who is acting: the signed-in person, or a shop they speak for.
@@ -89,14 +115,14 @@ type Repo = Awaited<ReturnType<typeof getRepository>>;
  * included, because "did I react to this" depends on which of your voices is
  * asking. Rights are checked here, once, so no handler has to remember to.
  */
-interface Actor {
+export interface Actor {
   userId: string;
   storeId: string | null;
   key: string;
   name: string;
 }
 
-async function actorFor(request: HttpRequest, user: Viewer, repository: Repo): Promise<Actor | null> {
+export async function actorFor(request: HttpRequest, user: Viewer, repository: Repo): Promise<Actor | null> {
   const asked = request.query?.get('as')?.trim() || null;
   if (!asked) return { userId: user.id, storeId: null, key: user.id, name: user.displayName };
   const owner = asked === user.id ? await repository.getUserById(user.id) : await repository.getUserById(asked);
@@ -112,7 +138,7 @@ async function actorFor(request: HttpRequest, user: Viewer, repository: Repo): P
 /** The signed-in account, as much of it as choosing a voice needs. */
 type Viewer = { id: string; displayName: string };
 
-const notYours = () => error(403, 'forbidden', 'You cannot speak for that shop.');
+export const notYours = () => error(403, 'forbidden', 'You cannot speak for that shop.');
 
 /** The post as it goes over the wire: the heavy lists summarised elsewhere. */
 function publicPost(post: Post): Post {
@@ -124,18 +150,49 @@ function publicPost(post: Post): Post {
     ...rest,
     likeCount: post.reactions?.length ?? post.likeCount,
     replyCount: post.comments?.length ?? post.replyCount,
+    // Sealed until it is revealed: the answer and everybody's guesses are the
+    // game, and GuessView says what this viewer may see of them.
+    ...(post.guess ? { guess: null } : {}),
+  };
+}
+
+/** A guess-the-price as this viewer may see it: their own guess, and the answer only once it is out. */
+function guessView(guess: PostGuess | null | undefined, viewerId: string): GuessView | null {
+  if (!guess) return null;
+  const revealed = Boolean(guess.revealedAt);
+  return {
+    listingId: guess.listingId,
+    revealAt: guess.revealAt,
+    count: guess.guesses.length,
+    mine: guess.guesses.find((entry) => entry.userId === viewerId)?.amountMinor ?? null,
+    revealed,
+    answerMinor: revealed ? guess.answerMinor : null,
+    winner: revealed ? guess.winner ?? null : null,
+    closest: revealed ? closestGuess(guess).slice(0, 3).map((entry) => ({ name: entry.name, amountMinor: entry.amountMinor })) : [],
   };
 }
 
 function pollView(poll: StoredPoll | null | undefined, viewerId: string): PollView | null {
   if (!poll) return null;
-  const options = poll.options.map((option) => ({ id: option.id, label: option.label, votes: option.voterIds.length }));
+  const options = poll.options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    votes: option.voterIds.length,
+    ...(option.photoUrl ? { photoUrl: option.photoUrl } : {}),
+    ...(option.listingId ? { listingId: option.listingId } : {}),
+  }));
   return {
     options,
     total: options.reduce((sum, option) => sum + option.votes, 0),
     myVote: poll.options.find((option) => option.voterIds.includes(viewerId))?.id ?? null,
     closesAt: poll.closesAt,
     closed: poll.closesAt !== null && poll.closesAt < new Date().toISOString(),
+    ...(poll.style ? { style: poll.style } : {}),
+    ...(poll.switches ? { switches: poll.switches } : {}),
+    ...(poll.stock ? { stock: true } : {}),
+    ...(poll.reward
+      ? { reward: { amountMinor: poll.reward.amountMinor, maxVoters: poll.reward.maxVoters, storeName: poll.reward.storeName, paidCount: poll.reward.paidCount ?? null } }
+      : {}),
   };
 }
 
@@ -156,6 +213,7 @@ function commentView(comment: StoredComment, post: Post, viewer: Actor, people: 
     likedByMe: comment.likedBy.includes(viewer.key),
     canDelete: comment.authorId === viewer.userId || post.authorId === viewer.userId,
     createdAt: comment.createdAt,
+    ...(comment.side ? { side: comment.side } : {}),
   };
 }
 
@@ -230,7 +288,7 @@ function leadPhotoOf(listing: Listing): string | null {
   return (photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null;
 }
 
-async function decorate(
+export async function decorate(
   posts: Post[],
   repository: Repo,
   viewer: Actor,
@@ -268,11 +326,31 @@ async function decorate(
   const ids = [...new Set(posts.map((p) => p.listingId).filter((id): id is string => id !== null))];
   const listings = new Map<string, Listing>();
   const originals = new Map<string, Post>();
-  const [people, followedIds] = await Promise.all([
-    peopleFor(posts, repository),
+  const guest = viewer.userId === GUEST.userId;
+  const top = !guest && !options.nested;
+  const [followedIds, me, follows] = await Promise.all([
     options.followed
       ? Promise.resolve(options.followed)
-      : repository.listFollowedSellerIds(viewer.userId).then((list) => new Set(list)),
+      : guest ? Promise.resolve(new Set<string>()) : repository.listFollowedSellerIds(viewer.userId).then((list) => new Set(list)),
+    top ? repository.getUserById(viewer.userId) : Promise.resolve(null),
+    top ? repository.listFollowsBy(viewer.userId) : Promise.resolve([]),
+  ]);
+  // Who the viewer follows - shops and people both - that took part, named:
+  // the line on a card costs a name or two per post, not a read of every reactor.
+  const watched = new Set(follows.map((follow) => (isPersonFollow(follow.sellerId)
+    ? follow.sellerId.slice(PERSON_FOLLOW.length) : follow.sellerId)));
+  const actedBy = new Map<string, string[]>();
+  if (watched.size > 0) {
+    for (const post of posts) {
+      const who = [...engagedActors(post)]
+        .map((key) => (key.startsWith('store:') ? key.slice('store:'.length) : key))
+        .filter((id) => watched.has(id) && id !== viewer.userId);
+      if (who.length) actedBy.set(post.id, [...new Set(who)]);
+    }
+  }
+  const savedIds = new Set((me?.feedPrefs?.saved ?? []).map((entry) => entry.postId));
+  const [people] = await Promise.all([
+    peopleFor(posts, repository, [...actedBy.values()].flatMap((list) => list.slice(0, 3))),
     Promise.all(
       ids.map(async (id) => {
         const listing = await repository.getListing(id);
@@ -340,10 +418,25 @@ async function decorate(
         shareCount: post.shareCount ?? 0,
         poll: pollView(post.poll, viewer.userId),
         mine: post.authorId === viewer.userId,
+        ...(post.guess ? { guess: guessView(post.guess, viewer.userId) } : {}),
+        ...((post.contest || post.debate?.prize || post.poll?.stock) && (post.authorId === viewer.userId
+          || (post.channel === 'seller' && channelOwner?.sellerProfile && can(channelOwner, viewer.userId, 'posts')))
+          ? { host: true } : {}),
       },
       following: followedIds.has(post.channelId) || post.channelId === viewer.userId,
       shop: spokenAsShop,
     };
+    if (savedIds.has(post.id)) card.saved = true;
+    const acted = actedBy.get(post.id);
+    if (acted) {
+      card.followedActed = {
+        count: acted.length,
+        names: acted.slice(0, 3).map((id) => {
+          const who = people.get(id);
+          return who?.sellerProfile?.storefrontName ?? who?.displayName ?? 'Someone';
+        }),
+      };
+    }
     if (post.repostOf) card.original = originalCards.get(post.id) ?? null;
     if (post.channel === 'forum') {
       card.forum = { id: post.channelId, name: forumNames.get(post.channelId) ?? 'Forum' };
@@ -356,12 +449,12 @@ async function decorate(
 }
 
 /** Where a post is read in full, for notifications and shared links. */
-function linkTo(post: Pick<Post, 'channelId' | 'id'>): string {
+export function linkTo(post: Pick<Post, 'channelId' | 'id'>): string {
   return `/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`;
 }
 
 /** A line of the post, for a notification that has to say which one. */
-function gist(text: string): string {
+export function gist(text: string): string {
   const line = text.replace(/\s+/g, ' ').trim();
   return line.length > 60 ? `${line.slice(0, 57)}…` : line || 'your post';
 }
@@ -431,6 +524,9 @@ async function withoutShops(posts: Post[], repository: Repo): Promise<Post[]> {
   });
 }
 
+/** How long a debate stays open when its author did not say. */
+const DEBATE_DEFAULT_HOURS = 72;
+
 /** Said when a shop tries to take part in a forum. */
 const MAX_ALSO_FORUMS = 2;
 const FORUM_NAME_MAX = 60;
@@ -467,17 +563,96 @@ async function socialFeed(request: HttpRequest, _context: InvocationContext) {
  * is gentle - a day-old post with real conversation still beats a fresh one
  * nobody has touched - but it is there, so the list turns over.
  */
-function heat(post: Post, now: number): number {
+export function heat(post: Post, now: number): number {
   const votes = post.poll?.options.reduce((sum, option) => sum + option.voterIds.length, 0) ?? 0;
   // A sale is the strongest thing a post can do: somebody paid because of it.
+  // A vote is a tap like a reaction, and counts as one: polls are what people
+  // come back to take part in.
   const engagement = (post.reactions?.length ?? post.likeCount)
     + 2 * (post.comments?.length ?? post.replyCount)
     + 3 * (post.shareCount ?? 0)
     + 4 * (post.buyCount ?? 0)
-    + 0.5 * votes;
+    + votes
+    + (post.guess?.guesses.length ?? 0)
+    + 2 * (post.contest?.entries.length ?? 0);
+  // Reading counts for something before anybody presses anything: an open is
+  // half a reaction, and every twenty seconds people spent on it is one more.
+  const reading = 0.5 * (post.opens ?? 0) + (post.dwellMs ?? 0) / 20_000;
+  // Shown to plenty and touched by nobody: people are scrolling past it.
+  const ignored = (post.views ?? 0) >= IGNORED_AFTER_VIEWS && engagement === 0 ? 0.5 : 1;
   const hours = Math.max(0, (now - new Date(post.createdAt).getTime()) / 3_600_000);
-  return engagement / Math.pow(hours / 24 + 1, 0.6);
+  // Something still open to take part in - a poll, a guess, a competition -
+  // is worth more while it is open: a closed one can only be read.
+  const lift = isLive(post, now) ? LIVE_LIFT + (endsSoon(post, now) ? ENDING_LIFT : 0) : 1;
+  return (lift * ignored * (engagement + reading + (lift > 1 ? 1 : 0))) / Math.pow(hours / 24 + 1, 0.6);
 }
+
+/** How much an open poll, guess or competition is lifted, and more again in its last day. */
+const LIVE_LIFT = 1.6;
+const ENDING_LIFT = 0.6;
+const ENDING_WINDOW_MS = 24 * 3_600_000;
+
+/** When whatever is open on this post stops taking part, or null when nothing is open. */
+export function liveUntil(post: Post, now: number): number | null {
+  if (post.contest && !post.contest.settledAt) {
+    const phase = contestPhase(post.contest, now);
+    if (phase === 'entries') return Date.parse(post.contest.entriesCloseAt);
+    if (phase === 'voting') return Date.parse(post.contest.endsAt);
+    if (phase === 'shortlisting' || phase === 'judging') return null;
+  }
+  if (post.guess && !post.guess.revealedAt && Date.parse(post.guess.revealAt) > now) return Date.parse(post.guess.revealAt);
+  if (post.poll && !post.contest && post.poll.options.length > 0) {
+    if (!post.poll.closesAt) return Number.POSITIVE_INFINITY;
+    const closes = Date.parse(post.poll.closesAt);
+    return closes > now ? closes : null;
+  }
+  return null;
+}
+
+export const isLive = (post: Post, now: number) => liveUntil(post, now) !== null;
+
+/** Whether this person has already taken part: voted, guessed, or entered. */
+export function playedBy(post: Post, userId: string | null): boolean {
+  if (!userId) return false;
+  return Boolean(post.poll?.options.some((option) => option.voterIds.includes(userId))
+    || post.guess?.guesses.some((entry) => entry.userId === userId)
+    || post.contest?.entries.some((entry) => entry.userId === userId));
+}
+
+/** How many open games the Live strip shows. */
+const LIVE_SIZE = 10;
+/** How long a finished competition stays on the competitions row, with its podium. */
+const CONTEST_SHOWN_MS = 3 * 86_400_000;
+
+/**
+ * What is open to take part in right now, for the Live strip: polls, guesses
+ * and competitions the reader has not joined yet, hottest first, those about
+ * to close lifted. Public broadcasts only, and nothing the reader screened out.
+ */
+function liveFor(posts: readonly Post[], userId: string | null, now: number, score: (post: Post) => number): Post[] {
+  return posts
+    .filter((post) => isLive(post, now) && !playedBy(post, userId) && !post.repostOf && !post.wallOf
+      && post.authorId !== userId && (post.channel === 'forum' || (post.reach ?? 'feed') === 'feed'))
+    .sort((a, b) => score(b) - score(a))
+    .slice(0, LIVE_SIZE);
+}
+
+/** Competitions running or just finished, open ones first, those closing soonest first. */
+function contestsOf(posts: readonly Post[], now: number): Post[] {
+  const open = (post: Post) => contestPhase(post.contest!, now) !== 'ended';
+  return posts
+    .filter((post) => post.contest && (open(post) || now - Date.parse(post.contest.settledAt ?? post.contest.endsAt) < CONTEST_SHOWN_MS))
+    .sort((a, b) => Number(open(b)) - Number(open(a))
+      || (liveUntil(a, now) ?? Number.POSITIVE_INFINITY) - (liveUntil(b, now) ?? Number.POSITIVE_INFINITY))
+    .slice(0, 12);
+}
+const endsSoon = (post: Post, now: number) => {
+  const until = liveUntil(post, now);
+  return until !== null && Number.isFinite(until) && until - now < ENDING_WINDOW_MS;
+};
+
+/** Views with nothing pressed before a post counts as scrolled past. */
+const IGNORED_AFTER_VIEWS = 30;
 
 /**
  * GET /api/social/trending - what everyone is reacting to, followed or not.
@@ -506,26 +681,8 @@ async function trending(request: HttpRequest, _context: InvocationContext) {
   return json(200, { posts: await decorate(ranked, repository, actor) });
 }
 
-/** How many of the hottest posts count as trending. */
-const TRENDING_SIZE = 12;
-/**
- * And never more than this share of the posts anybody engaged with: on a quiet
- * day the top twelve is most of them, and a lightning on everything means nothing.
- */
-const TRENDING_SHARE = 0.25;
-/** How long a post counts as new, and so may rise. */
-const RISING_WINDOW_MS = 48 * 3_600_000;
-/** Share of everybody else a new post is tried on before it has earned more. */
-const RISING_SEED_PERCENT = 15;
-/** Different people engaging before a new post is shown to everyone. */
-const RISING_GRADUATE = 3;
-/** Followed posts per page of the home feed. */
-const HOME_PAGE = 40;
-/** One followed post, then one found post, in this rhythm. */
-const DISCOVER_EVERY = 3;
-
 /** Everyone who reacted, commented or voted, not counting whoever wrote it. */
-function engagedActors(post: Post): Set<string> {
+export function engagedActors(post: Post): Set<string> {
   const actors = new Set<string>();
   for (const reaction of post.reactions ?? []) actors.add(reactionActor(reaction));
   for (const comment of post.comments ?? []) actors.add(actorKey(comment.authorId, comment.asStore));
@@ -549,8 +706,111 @@ function bucket(postId: string, viewerId: string): number {
 }
 
 /** A broadcast on somebody's feed, as opposed to a room message, a forum post or a wall echo of one. */
-const isBroadcast = (post: Post) =>
+export const isBroadcast = (post: Post) =>
   post.channel === 'seller' && (post.reach ?? 'feed') === 'feed' && !post.wallOf;
+
+/** How many of the hottest posts count as trending. */
+const TRENDING_SIZE = 12;
+/**
+ * And never more than this share of the posts anybody engaged with: on a quiet
+ * day the top twelve is most of them, and a lightning on everything means nothing.
+ */
+const TRENDING_SHARE = 0.25;
+/** How long a post counts as new, and so may rise. */
+const RISING_WINDOW_MS = 48 * 3_600_000;
+/** Share of everybody else a new post is tried on before it has earned more. */
+const RISING_SEED_PERCENT = 15;
+/** Different people engaging before a new post is shown to everyone. */
+const RISING_GRADUATE = 3;
+/** Followed posts per page of the home feed. */
+const HOME_PAGE = 40;
+/** One followed post, then one found post, in this rhythm. */
+const DISCOVER_EVERY = 3;
+/** How long after a debate closes its result is put back in front of the people who voted. */
+const RESULT_WINDOW_MS = 72 * 3_600_000;
+
+/**
+ * Who a viewer is, as far as ranking strangers' posts goes: whose posts they
+ * engage with, who they follow, what they saved, and what they asked not to see.
+ */
+interface Reader {
+  /** Null for a guest, who is shown what is proven and nothing tried. */
+  userId: string | null;
+  actorKey: string | null;
+  /** Shops and people followed, by id. */
+  watched: ReadonlySet<string>;
+  /** Listings saved. */
+  wished: ReadonlySet<string>;
+  screen: FeedScreen;
+}
+
+/** Channels whose posts this reader reacted to, commented on or voted in, lately. */
+function affinityOf(recent: readonly Post[], reader: Reader): Set<string> {
+  const affinity = new Set<string>();
+  if (!reader.userId) return affinity;
+  for (const post of recent) {
+    const who = engagedActors(post);
+    if (who.has(reader.userId) || (reader.actorKey && who.has(reader.actorKey))) affinity.add(post.channelId);
+  }
+  return affinity;
+}
+
+const followedActed = (post: Post, watched: ReadonlySet<string>) =>
+  (post.reactions ?? []).some((reaction) => watched.has(reaction.asStore ?? reaction.userId))
+  || (post.comments ?? []).some((comment) => watched.has(comment.asStore ?? comment.authorId));
+
+/**
+ * The new posts rising for this reader.
+ *
+ * New (under two days old), a broadcast, from somebody else, and either
+ * proven - enough different people engaged - or tried on this reader first:
+ * they engaged with its author before, somebody they follow reacted to it,
+ * it answers their hunt or sells what they saved, or they fall in the stable
+ * slice of everybody a new post is tried on. A guest gets the proven ones.
+ */
+function risingFor(recent: readonly Post[], reader: Reader, now: number, affinity: ReadonlySet<string>): Set<string> {
+  const rising = new Set<string>();
+  for (const post of recent) {
+    if (!isBroadcast(post) || post.repostOf || now - new Date(post.createdAt).getTime() > RISING_WINDOW_MS) continue;
+    if (reader.userId && (post.authorId === reader.userId || post.channelId === reader.userId)) continue;
+    if (screens(reader.screen, post)) continue;
+    const proven = engagedActors(post).size >= RISING_GRADUATE;
+    if (proven) {
+      rising.add(post.id);
+      continue;
+    }
+    if (!reader.userId) continue;
+    const wanted = (post.audience ?? []).includes(reader.userId) || (post.listingId !== null && reader.wished.has(post.listingId));
+    const tried = wanted || (!reader.watched.has(post.channelId) && (affinity.has(post.channelId)
+      || followedActed(post, reader.watched) || bucket(post.id, reader.userId) < RISING_SEED_PERCENT));
+    if (tried) rising.add(post.id);
+  }
+  return rising;
+}
+
+/** Shops and people this person follows, by id: who their "people you follow" are. */
+async function watchedBy(userId: string, repository: Repo): Promise<Set<string>> {
+  const follows = await repository.listFollowsBy(userId);
+  return new Set(follows.map((follow) => (isPersonFollow(follow.sellerId)
+    ? follow.sellerId.slice(PERSON_FOLLOW.length) : follow.sellerId)));
+}
+
+/**
+ * Settle the games among these posts that have come due - debates closed,
+ * guesses to reveal, competitions to move on, voters to pay (see play.ts) -
+ * and hand back the posts with the settled ones read again, so what is drawn
+ * is what was decided.
+ */
+async function settleDebates(recent: Post[], repository: Repo): Promise<Post[]> {
+  const touched = await settlePlay(recent, repository);
+  if (touched.size === 0) return recent;
+  const fresh = new Map<string, Post>();
+  await Promise.all(recent.filter((post) => touched.has(post.id)).map(async (post) => {
+    const read = await repository.getPost(post.channelId, post.id);
+    if (read) fresh.set(post.id, read);
+  }));
+  return recent.map((post) => fresh.get(post.id) ?? post);
+}
 
 /**
  * GET /api/social/home - one feed: who you follow, with what is catching on mixed in.
@@ -560,14 +820,15 @@ const isBroadcast = (post: Post) =>
  * kinds come from outside, and each carries a badge saying why it is there:
  *
  * - trending: among the liveliest posts anywhere right now (see `heat`).
- * - rising: new (under two days old), from somebody you do not follow, and
- *   either tried on you first or already proven. A new post goes to a small
- *   audience - people who have engaged with its author before, people whose
- *   follows reacted to it, and a stable slice of everybody else - and once
- *   enough different people engage it goes to everyone.
+ * - rising: see `risingFor`.
  *
  * A followed post that is also trending or rising stays where it is and gets
- * the badge, rather than showing twice.
+ * the badge, rather than showing twice. A debate the viewer voted in that has
+ * closed comes back once, on top, badged as its result.
+ *
+ * The first page also says where the viewer read up to last time
+ * (`lastVisit`) and moves that mark to the newest post shown now, so the app
+ * can draw "You're all caught up" between the new and the already seen.
  */
 async function home(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -579,59 +840,61 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   // `before` is the next page: older followed posts only. What is catching on
   // is chosen once, on the first page, so it is not offered twice.
   const before = request.query?.get('before') || undefined;
+  // `following=1` is the Social tab: who you chose, in order, and nobody else.
+  // Finding new people is Discover's job.
+  const onlyFollowed = request.query?.get('following') === '1';
+  const findNew = !before && !onlyFollowed;
   const followed = await repository.listFollowedSellerIds(user.id);
   const followedSet = new Set(followed);
-  const [ownFeed, recent, liked] = await Promise.all([
+  const [ownFeed, recentRead, liked, me, watched] = await Promise.all([
     repository.listPostsForChannels([...new Set([...followed, user.id])], HOME_PAGE, { before, feedOnly: true }),
     before ? Promise.resolve([] as Post[]) : repository.listRecentPosts(200),
-    before ? Promise.resolve([] as string[]) : repository.listLikedListingIds(user.id),
+    findNew ? repository.listLikedListingIds(user.id) : Promise.resolve([] as string[]),
+    repository.getUserById(user.id),
+    findNew ? watchedBy(user.id, repository) : Promise.resolve(followedSet),
   ]);
-  // Items this person saved: a new post selling one is news to them.
-  const wished = new Set(liked);
+  const screen = screenOf(me);
+  const recent = await settleDebates(recentRead, repository);
+  const reader: Reader = { userId: user.id, actorKey: actor.key, watched, wished: new Set(liked), screen };
   const now = Date.now();
   const scores = new Map(recent.map((post) => [post.id, heat(post, now)]));
-  const engaged = new Map(recent.map((post) => [post.id, engagedActors(post)]));
 
-  const lively = recent.filter((post) => isBroadcast(post) && scores.get(post.id)! > 0);
-  const trendingIds = new Set(lively
-    .sort((a, b) => scores.get(b.id)! - scores.get(a.id)!)
-    .slice(0, Math.min(TRENDING_SIZE, Math.ceil(lively.length * TRENDING_SHARE)))
-    .map((post) => post.id));
-
-  // Whose posts this viewer has engaged with lately: the strongest sign a new
-  // one from them is wanted.
-  const affinity = new Set<string>();
-  for (const post of recent) {
-    const who = engaged.get(post.id)!;
-    if (who.has(actor.key) || who.has(user.id)) affinity.add(post.channelId);
-  }
-  const followedActed = (post: Post) =>
-    (post.reactions ?? []).some((reaction) => followedSet.has(reaction.asStore ?? reaction.userId))
-    || (post.comments ?? []).some((comment) => followedSet.has(comment.asStore ?? comment.authorId));
-
+  const trendingIds = new Set<string>();
   const risingIds = new Set<string>();
-  for (const post of recent) {
-    if (!isBroadcast(post) || post.repostOf || now - new Date(post.createdAt).getTime() > RISING_WINDOW_MS) continue;
-    if (post.authorId === user.id || post.channelId === user.id) continue;
-    const proven = engaged.get(post.id)!.size >= RISING_GRADUATE;
-    const wanted = (post.audience ?? []).includes(user.id) || (post.listingId !== null && wished.has(post.listingId));
-    const tried = wanted || (!followedSet.has(post.channelId) && (affinity.has(post.channelId) || followedActed(post)
-      || bucket(post.id, user.id) < RISING_SEED_PERCENT));
-    if (proven || tried) risingIds.add(post.id);
+  if (findNew) {
+    const lively = recent.filter((post) => isBroadcast(post) && scores.get(post.id)! > 0 && !screens(screen, post));
+    lively
+      .sort((a, b) => scores.get(b.id)! - scores.get(a.id)!)
+      .slice(0, Math.min(TRENDING_SIZE, Math.ceil(lively.length * TRENDING_SHARE)))
+      .forEach((post) => trendingIds.add(post.id));
+    risingFor(recent, reader, now, affinityOf(recent, reader)).forEach((id) => risingIds.add(id));
   }
 
-  // Room messages never reach the feed, whatever the read let through.
-  const followedPosts = ownFeed.filter((post) => post.channel !== 'seller' || (post.reach ?? 'feed') === 'feed');
+  // Debates this viewer voted in, closed lately: the ending of an argument
+  // they took part in is news, wherever it was had.
+  const results = before ? [] : recent.filter((post) => post.debate && post.poll?.closesAt
+    && post.poll.closesAt < new Date(now).toISOString()
+    && now - Date.parse(post.poll.closesAt) < RESULT_WINDOW_MS
+    && post.poll.options.some((option) => option.voterIds.includes(user.id))
+    && !screen.hidden.has(post.id));
+  const resultIds = new Set(results.map((post) => post.id));
+
+  // Room messages never reach the feed, whatever the read let through, and a
+  // post hidden is hidden here too.
+  const followedPosts = ownFeed.filter((post) => (post.channel !== 'seller' || (post.reach ?? 'feed') === 'feed')
+    && !screen.hidden.has(post.id) && !resultIds.has(post.id));
   const inFeed = new Set(followedPosts.map((post) => post.id));
   // Trending first, hottest first; then rising, proven before merely tried.
+  // Somebody marked "not interested" sinks to the end of what is found.
+  const sink = (post: Post) => (lessFrom(screen, post) ? 1 : 0);
   const found = [
     ...recent.filter((post) => trendingIds.has(post.id))
-      .sort((a, b) => scores.get(b.id)! - scores.get(a.id)!),
+      .sort((a, b) => sink(a) - sink(b) || scores.get(b.id)! - scores.get(a.id)!),
     ...recent.filter((post) => risingIds.has(post.id) && !trendingIds.has(post.id))
-      .sort((a, b) => engaged.get(b.id)!.size - engaged.get(a.id)!.size || b.createdAt.localeCompare(a.createdAt)),
-  ].filter((post) => !inFeed.has(post.id) && post.authorId !== user.id && post.channelId !== user.id);
+      .sort((a, b) => sink(a) - sink(b) || engagedActors(b).size - engagedActors(a).size || b.createdAt.localeCompare(a.createdAt)),
+  ].filter((post) => !inFeed.has(post.id) && !resultIds.has(post.id) && post.authorId !== user.id && post.channelId !== user.id);
 
-  const merged: Post[] = [];
+  const merged: Post[] = [...results];
   let next = 0;
   followedPosts.forEach((post, index) => {
     merged.push(post);
@@ -639,17 +902,314 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   });
   merged.push(...found.slice(next));
 
-  const cards = await decorate(merged, repository, actor, { followed: followedSet });
+  // Where the reader got up to: read before it moves, moved on the first page only.
+  const lastVisit = me?.feedPrefs?.seenFeedAt ?? null;
+  const newest = followedPosts[0]?.createdAt ?? null;
+  if (!before && me && newest && (!lastVisit || newest > lastVisit)) {
+    await repository.updateUser({ ...me, feedPrefs: { ...me.feedPrefs, seenFeedAt: newest } });
+  }
+
+  // The Live strip rides on the first page: the same cards, one decorate.
+  const live = findNew ? liveFor(recent.filter((post) => !screens(screen, post)), user.id, now, (post) => scores.get(post.id) ?? 0) : [];
+  const shown = new Set(merged.map((post) => post.id));
+  const cards = await decorate([...merged, ...live.filter((post) => !shown.has(post.id))], repository, actor, { followed: followedSet });
+  const cardById = new Map(cards.map((card) => [card.post.id, card]));
   return json(200, {
+    live: live.map((post) => cardById.get(post.id)).filter((card): card is PostCard => Boolean(card)),
     /** Pass back as `before` for the next page; null when there is none. */
     next: ownFeed.length === HOME_PAGE ? ownFeed.at(-1)!.createdAt : null,
-    posts: cards.map((card) => {
+    lastVisit: before ? null : lastVisit,
+    posts: cards.slice(0, merged.length).map((card) => {
       const badges: Boost[] = [];
+      if (resultIds.has(card.post.id)) badges.push('result');
       if (trendingIds.has(card.post.id)) badges.push('trending');
       if (risingIds.has(card.post.id)) badges.push('rising');
       return badges.length ? { ...card, badges } : card;
     }),
   });
+}
+
+/**
+ * GET /api/social/home/new?since=<iso> - how many followed posts arrived after
+ * the newest one on screen, and from whom: the "new posts" pill, without
+ * reading a page of cards to draw it.
+ */
+async function homeNew(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const since = request.query?.get('since') ?? '';
+  if (!since || Number.isNaN(Date.parse(since))) return error(400, 'invalid_request', 'Say since when.');
+  const repository = await getRepository();
+  const [followed, me] = await Promise.all([repository.listFollowedSellerIds(user.id), repository.getUserById(user.id)]);
+  const screen = screenOf(me);
+  const posts = await repository.listPostsForChannels(followed, HOME_PAGE, { feedOnly: true });
+  const fresh = posts.filter((post) => post.createdAt > since && post.authorId !== user.id
+    && (post.reach ?? 'feed') === 'feed' && !screen.hidden.has(post.id));
+  return json(200, {
+    count: fresh.length,
+    names: [...new Set(fresh.map((post) => post.authorName))].slice(0, 3),
+  });
+}
+
+/** How many of each kind one page of Discover shows. */
+const DISCOVER_DEBATES = 10;
+const DISCOVER_THREADS = 8;
+const DISCOVER_FLEXES = 10;
+const DISCOVER_RISING = 10;
+/** Pages of Discover there are at most: past this, it is the archive, not discovery. */
+const DISCOVER_PAGES = 10;
+/** Posts Discover ranks from. */
+const DISCOVER_WINDOW = 500;
+/** Comments before a conversation counts as a hot debate. */
+const HOT_THREAD_COMMENTS = 3;
+/**
+ * Places a second post from the same channel is pushed down, and a third
+ * twice as far: so one busy shop cannot fill a page, without dropping it.
+ */
+const SPREAD_GAP = 6;
+/** How far down a post under an open report sits until somebody decides. */
+const REPORTED_LIFT = 0.3;
+/** Topic chips, hunts and spotted items on the first page. */
+const DISCOVER_TOPICS = 8;
+const DISCOVER_WANTS = 8;
+const DISCOVER_SPOTTED = 12;
+const TOPIC_WINDOW_MS = 14 * 86_400_000;
+
+/** Somebody reading Discover without an account: nothing is theirs, nothing is voted. */
+export const GUEST: Actor = { userId: 'guest', storeId: null, key: 'guest', name: 'Guest' };
+
+/**
+ * Reorder a ranked list so nobody's posts sit in a run: each further post
+ * from the same channel moves `SPREAD_GAP` places further down than its rank.
+ */
+function spread(posts: readonly Post[]): Post[] {
+  const seen = new Map<string, number>();
+  return posts
+    .map((post, index) => {
+      const count = seen.get(post.channelId) ?? 0;
+      seen.set(post.channelId, count + 1);
+      return { post, at: index + count * SPREAD_GAP };
+    })
+    .sort((a, b) => a.at - b.at)
+    .map((entry) => entry.post);
+}
+
+/**
+ * GET /api/social/discover?page=<n> - the public side, ranked rather than followed.
+ *
+ * Four kinds of post worth finding, from anybody:
+ *
+ * - debates: A-versus-B polls, liveliest first, so the arguments worth joining
+ *   are on top;
+ * - threads: posts - in the feed or in a forum - whose conversation has taken
+ *   off, promoted for the comments rather than the post;
+ * - flexes: collection photos, most reacted to first;
+ * - rising: new posts being tried on a wider audience (see `risingFor`), so a
+ *   newcomer is seen before they are popular.
+ *
+ * Ranked for whoever asks: a post from somebody whose posts they engage with,
+ * that the people they follow took part in, or that sells what they saved is
+ * lifted; one from somebody they marked "not interested", or under an open
+ * report, is lowered; muted people and hidden posts are left out. Then spread
+ * so one channel cannot fill a page.
+ *
+ * The first page carries the rails too - the topics people are posting under,
+ * the hunts this person could answer, and items seen in posts that can be
+ * bought - and `next` pages on through the same ranking.
+ *
+ * Open to guests, as browsing is everywhere else: a guest sees the same cards
+ * and is asked to sign in when they press anything.
+ */
+async function discover(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.getCurrentUser(request);
+  const repository = await getRepository();
+  const actor = user ? await actorFor(request, user, repository) : GUEST;
+  if (!actor) return notYours();
+  const page = Math.min(DISCOVER_PAGES - 1, Math.max(0, Math.floor(Number(request.query?.get('page')) || 0)));
+
+  const now = Date.now();
+  const [recentRead, me, watched, liked, moderated] = await Promise.all([
+    repository.listRecentPosts(DISCOVER_WINDOW),
+    user ? repository.getUserById(user.id) : Promise.resolve(null),
+    user ? watchedBy(user.id, repository) : Promise.resolve(new Set<string>()),
+    user ? repository.listLikedListingIds(user.id) : Promise.resolve([] as string[]),
+    moderation(repository),
+  ]);
+  const recent = page === 0 ? await settleDebates(recentRead, repository) : recentRead;
+  const screen = user ? screenOf(me) : NO_SCREEN;
+  const reader: Reader = { userId: user?.id ?? null, actorKey: user ? actor.key : null, watched, wished: new Set(liked), screen };
+  const affinity = affinityOf(recent, reader);
+
+  const removed = (post: Post) => moderated.isRemoved(post.channel === 'forum' ? 'forum_post' : 'post', post.id);
+  const reported = (post: Post) => moderated.mark(post.channel === 'forum' ? 'forum_post' : 'post', post.id, null).underReview;
+  /** How much this reader's own signals move a post. */
+  const lift = (post: Post) => {
+    let by = 1;
+    if (affinity.has(post.channelId)) by *= 1.5;
+    if (followedActed(post, watched)) by *= 1.3;
+    if (post.listingId && reader.wished.has(post.listingId)) by *= 1.4;
+    if (lessFrom(screen, post)) by *= LESS_FROM_LIFT;
+    if (reported(post)) by *= REPORTED_LIFT;
+    return by;
+  };
+  const score = new Map(recent.map((post) => [post.id, heat(post, now) * lift(post)]));
+  const ranked = (a: Post, b: Post) => score.get(b.id)! - score.get(a.id)! || b.createdAt.localeCompare(a.createdAt);
+  const reactionsOf = (post: Post) => post.reactions?.length ?? post.likeCount;
+  const commentsOf = (post: Post) => post.comments?.length ?? post.replyCount;
+  // Public and first-hand: no room messages, no wall echoes, no reposts; and
+  // nothing taken down, muted or hidden.
+  const open = recent.filter((post) => !post.repostOf && !post.wallOf
+    && (post.channel === 'forum' || (post.reach ?? 'feed') === 'feed')
+    && !removed(post) && !screens(screen, post));
+
+  const allDebates = spread(open.filter((post) => post.debate && post.poll).sort(ranked));
+  const allFlexes = spread(open.filter((post) => post.flex && !post.debate)
+    .sort((a, b) => reactionsOf(b) * lift(b) - reactionsOf(a) * lift(a) || ranked(a, b)));
+  const kinded = new Set([...allDebates, ...allFlexes].map((post) => post.id));
+  const talk = (post: Post) => (commentsOf(post) * lift(post)) / Math.pow((now - Date.parse(post.createdAt)) / 86_400_000 + 1, 0.6);
+  const allThreads = spread(open.filter((post) => !kinded.has(post.id) && commentsOf(post) >= HOT_THREAD_COMMENTS)
+    .sort((a, b) => talk(b) - talk(a)));
+  const threaded = new Set(allThreads.map((post) => post.id));
+  const risingIds = risingFor(open, reader, now, affinity);
+  const allRising = spread(open.filter((post) => risingIds.has(post.id) && !kinded.has(post.id) && !threaded.has(post.id))
+    .sort((a, b) => engagedActors(b).size - engagedActors(a).size || ranked(a, b)));
+
+  const slice = (list: Post[], size: number) => list.slice(page * size, (page + 1) * size);
+  const debates = slice(allDebates, DISCOVER_DEBATES);
+  const threads = slice(allThreads, DISCOVER_THREADS);
+  const flexes = slice(allFlexes, DISCOVER_FLEXES);
+  const rising = slice(allRising, DISCOVER_RISING);
+  const more = page + 1 < DISCOVER_PAGES && (
+    allDebates.length > (page + 1) * DISCOVER_DEBATES || allThreads.length > (page + 1) * DISCOVER_THREADS
+    || allFlexes.length > (page + 1) * DISCOVER_FLEXES || allRising.length > (page + 1) * DISCOVER_RISING);
+
+  // The Live strip and the competitions row ride on the first page.
+  const live = page === 0 ? liveFor(open, user?.id ?? null, now, (post) => score.get(post.id) ?? 0) : [];
+  const contests = page === 0 ? contestsOf(open, now) : [];
+  const listed = [...debates, ...threads, ...flexes, ...rising];
+  const listedIds = new Set(listed.map((post) => post.id));
+  const extra = [...new Map([...live, ...contests].filter((post) => !listedIds.has(post.id)).map((post) => [post.id, post])).values()];
+  const cards = await decorate([...listed, ...extra], repository, actor);
+  const byId = new Map(cards.map((card) => [card.post.id, card]));
+  const pick = (posts: Post[]) => posts.map((post) => byId.get(post.id)).filter((card): card is PostCard => Boolean(card));
+
+  const rails = page === 0
+    ? {
+        topics: topicsOf(open, now),
+        wants: await wantsFor(user?.id ?? null, me, repository),
+        spotted: await spottedIn(open, user?.id ?? null, score, repository),
+      }
+    : {};
+  return json(200, {
+    ...(page === 0 ? { live: pick(live), contests: pick(contests) } : {}),
+    debates: pick(debates),
+    threads: pick(threads),
+    flexes: pick(flexes),
+    rising: pick(rising).map((card) => ({ ...card, badges: ['rising'] as Boost[] })),
+    ...rails,
+    next: more ? page + 1 : null,
+  });
+}
+
+/** The topics people are posting under lately, most used first. */
+function topicsOf(posts: readonly Post[], now: number): TopicChip[] {
+  const counts = new Map<string, TopicChip>();
+  for (const post of posts) {
+    if (now - Date.parse(post.createdAt) > TOPIC_WINDOW_MS) continue;
+    const words = new Set([
+      ...hashtagsIn(post.body),
+      ...(post.flex?.hotspots ?? []).map((spot) => tagKey(spot.label)).filter((key) => key.length >= 3),
+    ]);
+    for (const key of words) {
+      const chip = counts.get(key) ?? { key, label: tidyLabel(key), posts: 0 };
+      chip.posts += 1;
+      counts.set(key, chip);
+    }
+  }
+  return [...counts.values()]
+    // A word on one post is a word, not a topic - unless there is little else.
+    .filter((chip, _index, all) => chip.posts >= 2 || all.length <= DISCOVER_TOPICS)
+    .sort((a, b) => b.posts - a.posts || a.key.localeCompare(b.key))
+    .slice(0, DISCOVER_TOPICS);
+}
+
+/**
+ * The hunts this person could do something about.
+ *
+ * A shop sees the hunts in the categories it sells; a collector, the ones in
+ * the categories they save from - somebody else hunting the same thing is a
+ * reason to join the hunt. Then, for everybody, the hunts with most people on
+ * them, newest first.
+ */
+async function wantsFor(userId: string | null, me: User | null, repository: Repo): Promise<WantRow[]> {
+  const open = (await repository.listOpenWants({ limit: 60 })).filter((want) => want.buyerId !== userId);
+  if (open.length === 0) return [];
+  const sells = new Set<string>();
+  const collects = new Set<string>();
+  if (userId && me) {
+    if (me.sellerProfile) {
+      for (const listing of await repository.listListings({ sellerId: userId, limit: 50 })) sells.add(listing.category);
+    }
+    const liked = (await repository.listLikedListingIds(userId)).slice(0, 20);
+    const listings = await Promise.all(liked.map((id) => repository.getListing(id)));
+    for (const listing of listings) if (listing) collects.add(listing.category);
+  }
+  const why = (category: string) => (sells.has(category) ? `You sell ${category}` : collects.has(category) ? `You collect ${category}` : null);
+  return open
+    .map((want) => ({ want, why: why(want.category) }))
+    .sort((a, b) => Number(Boolean(b.why)) - Number(Boolean(a.why))
+      || (b.want.seekerCount ?? 1) - (a.want.seekerCount ?? 1)
+      || b.want.createdAt.localeCompare(a.want.createdAt))
+    .slice(0, DISCOVER_WANTS)
+    .map(({ want, why: reason }) => ({
+      id: want.id,
+      buyerId: want.buyerId,
+      buyerName: want.buyerName,
+      buyerHandle: want.buyerHandle,
+      title: want.title,
+      category: want.category,
+      budgetMinor: want.budgetMinor,
+      currency: want.currency,
+      photoUrl: want.photoUrls?.[0] ?? null,
+      seekerCount: want.seekerCount ?? 1,
+      offerCount: want.offerCount,
+      why: reason ?? ((want.seekerCount ?? 1) > 1 ? `${want.seekerCount} hunting` : null),
+    }));
+}
+
+/**
+ * Items somebody showed on their shelf or put up in a debate that can be
+ * bought right now - the post was the advert nobody paid for. Their own
+ * shop's things are not "spotted", and neither are the reader's.
+ */
+async function spottedIn(posts: readonly Post[], userId: string | null, score: ReadonlyMap<string, number>, repository: Repo): Promise<SpottedItem[]> {
+  const seen = new Map<string, { post: Post; how: SpottedItem['how'] }>();
+  for (const post of [...posts].sort((a, b) => (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0))) {
+    const ids: string[] = [
+      ...(post.flex?.hotspots ?? []).flatMap((spot) => (spot.status === 'for_sale' && spot.listingId ? [spot.listingId] : [])),
+      ...(post.debate?.listingIds ?? []).flatMap((id) => (id ? [id] : [])),
+    ];
+    for (const id of ids) if (!seen.has(id)) seen.set(id, { post, how: post.debate ? 'debate' : 'flex' });
+    if (seen.size >= DISCOVER_SPOTTED * 2) break;
+  }
+  const found = await Promise.all([...seen.entries()].map(async ([id, where]) => ({ listing: await repository.getListing(id), ...where })));
+  return found
+    .filter((entry): entry is { listing: Listing; post: Post; how: SpottedItem['how'] } => Boolean(entry.listing))
+    .filter(({ listing, post }) => listing.sellerId !== userId && listing.sellerId !== post.authorId
+      && listing.sellerId !== post.channelId && saleState(listing).buyable && !listing.unlisted)
+    .slice(0, DISCOVER_SPOTTED)
+    .map(({ listing, post, how }) => ({
+      listingId: listing.id,
+      title: listing.title,
+      priceMinor: listing.priceMinor,
+      currency: listing.currency,
+      photoUrl: leadPhotoOf(listing),
+      postId: post.id,
+      channelId: post.channelId,
+      spottedBy: post.authorName,
+      how,
+    }));
 }
 
 /**
@@ -726,7 +1286,7 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   // whether or not it has ever been posted in: it is the one channel you write
   // rather than read, so an empty one is a prompt, not an absence. Shops you
   // help run count too - a manager posting for a shop needs its channel.
-  const owners = await repository.listStoreOwners();
+  const owners = await repository.listStoresManagedBy(user.id);
   const run = owners.filter((owner) => can(owner, user.id, 'posts')).map((owner) => owner.id);
   const mineToo = [...new Set([...followed, ...run, user.id])];
   const candidates = await repository.listUsersByIds(mineToo);
@@ -770,12 +1330,15 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
   // Read from the newest posts anywhere - one shared, cached window - rather
   // than a query per shop on the platform: a room nobody has spoken in lately
   // is not one to recommend anyway.
-  const strangers = new Map(owners
-    .filter((owner) => owner.sellerProfile && !mineToo.includes(owner.id))
+  // Only the shops that spoke lately are read, not every shop there is.
+  const recent = (await repository.listRecentPosts(200))
+    .filter((post) => post.channel === 'seller' && !mineToo.includes(post.channelId));
+  const strangers = new Map((await repository.listUsersByIds([...new Set(recent.map((post) => post.channelId))]))
+    .filter((owner) => owner.sellerProfile)
     .map((owner) => [owner.id, owner]));
   const byRoom = new Map<string, Post[]>();
-  for (const post of await repository.listRecentPosts(200)) {
-    if (post.channel !== 'seller' || !strangers.has(post.channelId)) continue;
+  for (const post of recent) {
+    if (!strangers.has(post.channelId)) continue;
     const list = byRoom.get(post.channelId) ?? [];
     if (list.length < 20) list.push(post);
     byRoom.set(post.channelId, list);
@@ -958,6 +1521,34 @@ async function announcePost(post: Post, answered: Post | null, writerId: string,
   }
 }
 
+/**
+ * The tags on a flex, checked and tidied, or null when any one is wrong.
+ *
+ * Positions are clamped into the photo rather than refused: a dot dragged a
+ * hair past the edge meant the edge.
+ */
+function readHotspots(raw: unknown, photos: number): PostHotspot[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > FLEX_MAX_HOTSPOTS) return null;
+  const spots: PostHotspot[] = [];
+  for (const entry of raw as Record<string, unknown>[]) {
+    if (!entry || typeof entry !== 'object') return null;
+    const photo = Number(entry.photo ?? 0);
+    const x = Number(entry.x);
+    const y = Number(entry.y);
+    const label = typeof entry.label === 'string' ? entry.label.trim() : '';
+    const status = entry.status as HotspotStatus;
+    if (!Number.isInteger(photo) || photo < 0 || photo >= photos) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (!label || label.length > HOTSPOT_LABEL_MAX_CHARS) return null;
+    if (!HOTSPOT_STATUSES.includes(status)) return null;
+    const listingId = typeof entry.listingId === 'string' && entry.listingId.trim() ? entry.listingId.trim() : null;
+    const clamp = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000;
+    spots.push({ photo, x: clamp(x), y: clamp(y), label, status, listingId });
+  }
+  return spots;
+}
+
 async function createPost(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -971,7 +1562,15 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     /** Uploaded photos, in order. Several make a carousel. */
     photoUrls?: unknown;
     /** A question to vote on: the body is the question, these the answers. */
-    poll?: { options?: unknown; closesInHours?: unknown } | null;
+    poll?: {
+      options?: unknown; closesInHours?: unknown;
+      /** text, photo, versus or rating. */
+      style?: unknown;
+      /** A shop asking what to stock next. */
+      stock?: unknown;
+      /** A shop's store credit for whoever voted for the winner. */
+      reward?: { amountMinor?: unknown; maxVoters?: unknown } | null;
+    } | null;
     /** A short line on one of the brand gradients. */
     vibe?: unknown;
     /** The message in the same room this one answers. */
@@ -980,6 +1579,17 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     toWall?: boolean;
     /** Up to two more forums to share the same post into. */
     alsoForumIds?: unknown;
+    /** A collection flex: tagged pieces on the photos. */
+    flex?: { hotspots?: unknown } | null;
+    /** A debate: photo A against photo B, each side optionally an item; a shop may put up a prize. */
+    debate?: { listingIds?: unknown; prize?: { amountMinor?: unknown; judge?: unknown } | null } | null;
+    /** A guess-the-price: the answer, sealed, and when it comes out. */
+    guess?: { answerMinor?: unknown; revealInHours?: unknown; listingId?: unknown } | null;
+    /** A photo competition. Shops run them; Figmark runs the weekly challenge. */
+    contest?: {
+      title?: unknown; rules?: unknown; entriesHours?: unknown; votingHours?: unknown; judging?: unknown;
+      prizes?: unknown; host?: unknown;
+    } | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -999,25 +1609,59 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   if (slow) return slow;
 
   let poll: StoredPoll | null = null;
+  // Photos on the answers themselves, checked as the post's own are.
+  const optionPhotos: string[] = [];
   if (body.poll) {
     const raw = Array.isArray(body.poll.options) ? body.poll.options : [];
-    const labels = raw.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean);
+    const style: PollStyle = isPollStyle(body.poll.style) ? body.poll.style : 'text';
     if (!text) return error(400, 'invalid_poll', 'A poll needs a question.');
-    if (labels.length < POLL_MIN_OPTIONS || labels.length > POLL_MAX_OPTIONS) {
-      return error(400, 'invalid_poll', `A poll takes ${POLL_MIN_OPTIONS} to ${POLL_MAX_OPTIONS} answers.`);
-    }
-    if (labels.some((label) => label.length > POLL_OPTION_MAX_CHARS)) {
-      return error(400, 'invalid_poll', `Keep each answer under ${POLL_OPTION_MAX_CHARS} characters.`);
-    }
-    if (new Set(labels.map((label) => label.toLowerCase())).size !== labels.length) {
-      return error(400, 'invalid_poll', 'Two answers say the same thing.');
+    type Draft = { label: string; photoUrl: string | null; listingId: string | null };
+    let drafts: Draft[];
+    if (style === 'rating') {
+      // Rated out of five, on the post's own photo: the answers are always the stars.
+      if (photoUrls.length === 0) return error(400, 'invalid_poll', 'A rating needs a photo to rate.');
+      drafts = RATING_LABELS.map((label) => ({ label, photoUrl: null, listingId: null }));
+    } else {
+      drafts = raw.map((entry) => {
+        const item = (typeof entry === 'string' ? { label: entry } : entry) as Record<string, unknown> | null;
+        const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+        return { label: text(item?.label) ?? '', photoUrl: text(item?.photoUrl), listingId: text(item?.listingId) };
+      }).filter((draft) => draft.label);
+      if (drafts.length !== raw.length) return error(400, 'invalid_poll', 'Every answer needs a few words.');
+      if (drafts.length < POLL_MIN_OPTIONS || drafts.length > POLL_MAX_OPTIONS) {
+        return error(400, 'invalid_poll', `A poll takes ${POLL_MIN_OPTIONS} to ${POLL_MAX_OPTIONS} answers.`);
+      }
+      if (style === 'versus' && drafts.length !== 2) return error(400, 'invalid_poll', 'A versus poll is two sides.');
+      if ((style === 'photo' || style === 'versus') && drafts.some((draft) => !draft.photoUrl)) {
+        return error(400, 'invalid_poll', 'Every answer needs its photo.');
+      }
+      if (style === 'text' && drafts.some((draft) => draft.photoUrl)) {
+        return error(400, 'invalid_poll', 'Pick a photo poll to put photos on the answers.');
+      }
+      if (drafts.some((draft) => draft.label.length > POLL_OPTION_MAX_CHARS)) {
+        return error(400, 'invalid_poll', `Keep each answer under ${POLL_OPTION_MAX_CHARS} characters.`);
+      }
+      if (new Set(drafts.map((draft) => draft.label.toLowerCase())).size !== drafts.length) {
+        return error(400, 'invalid_poll', 'Two answers say the same thing.');
+      }
+      const pictures = drafts.flatMap((draft) => (draft.photoUrl ? [draft.photoUrl] : []));
+      const owned = await ownPhotos(pictures, POLL_MAX_OPTIONS);
+      if (!owned || owned.length !== pictures.length) return error(400, 'invalid_poll', 'Answer photos are uploaded here first.');
+      optionPhotos.push(...owned);
     }
     const hours = Number(body.poll.closesInHours);
     poll = {
-      options: labels.map((label, index) => ({ id: `opt_${index + 1}`, label, voterIds: [] })),
+      options: drafts.map((draft, index) => ({
+        id: `opt_${index + 1}`,
+        label: draft.label,
+        voterIds: [],
+        ...(draft.photoUrl ? { photoUrl: draft.photoUrl } : {}),
+        ...(draft.listingId ? { listingId: draft.listingId } : {}),
+      })),
       closesAt: Number.isFinite(hours) && hours > 0
         ? new Date(Date.now() + Math.min(hours, 24 * 30) * 3_600_000).toISOString()
         : null,
+      ...(style !== 'text' ? { style } : {}),
     };
   }
 
@@ -1031,7 +1675,70 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     vibe = body.vibe;
   }
 
+  // A flex is a shelf photo with its pieces tagged; the tags need a photo to sit on.
+  let hotspots: PostHotspot[] | null = null;
+  if (body.flex) {
+    if (photoUrls.length === 0) return error(400, 'invalid_flex', 'A flex needs a photo of the collection.');
+    hotspots = readHotspots(body.flex.hotspots, photoUrls.length);
+    if (!hotspots) {
+      return error(400, 'invalid_flex', `Up to ${FLEX_MAX_HOTSPOTS} tags, each on a photo, named in under ${HOTSPOT_LABEL_MAX_CHARS} characters.`);
+    }
+  }
+
+  // A debate is A against B: two photos, and a poll whose two answers name them.
+  // Either the post's two photos are the sides (as debates were first made),
+  // or the poll is a versus poll whose two answers carry their own.
+  let debateIds: PostDebate['listingIds'] | null = null;
+  if (body.debate) {
+    const versus = poll?.style === 'versus';
+    if (poll?.options.length !== 2 || (!versus && photoUrls.length !== 2)) {
+      return error(400, 'invalid_debate', 'A debate is two photos and a question with two answers.');
+    }
+    const raw = Array.isArray(body.debate.listingIds) ? body.debate.listingIds : [];
+    const side = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+    debateIds = versus
+      ? [poll.options[0]!.listingId ?? side(raw[0]), poll.options[1]!.listingId ?? side(raw[1])]
+      : [side(raw[0]), side(raw[1])];
+  }
+  if (hotspots && debateIds) return error(400, 'invalid_post', 'A post is a flex or a debate, not both.');
+
+  // The games a shop runs for money: who may, and for how much, is checked
+  // once the voice is known, below.
+  const prizeAsked = Boolean(body.debate?.prize || body.poll?.reward || body.poll?.stock || body.contest);
+
+  let guess: PostGuess | null = null;
+  if (body.guess) {
+    const answer = Number(body.guess.answerMinor);
+    const hours = Number(body.guess.revealInHours);
+    if (!Number.isInteger(answer) || answer < 100 || answer > GUESS_MAX_MINOR) {
+      return error(400, 'invalid_guess', 'Set the real price, in rupees.');
+    }
+    if (!Number.isFinite(hours) || hours < PHASE_MIN_HOURS || hours > PHASE_MAX_HOURS) {
+      return error(400, 'invalid_guess', 'Reveal it between an hour and 30 days from now.');
+    }
+    if (!text) return error(400, 'invalid_guess', 'Say what people are guessing the price of.');
+    if (poll || body.listingId) return error(400, 'invalid_guess', 'A guess is a post of its own.');
+    const listingId = typeof body.guess.listingId === 'string' && body.guess.listingId.trim() ? body.guess.listingId.trim() : null;
+    guess = { listingId, answerMinor: answer, revealAt: new Date(Date.now() + hours * 3_600_000).toISOString(), guesses: [] };
+  }
+
   const repository = await getRepository();
+
+  // Items named on a flex or a debate must be real, public items - anybody's,
+  // since a debate is usually about two things neither side sells.
+  // A debate settles: three days unless its author said otherwise, so the
+  // people who voted find out which side won.
+  if (debateIds && poll && !poll.closesAt) {
+    poll = { ...poll, closesAt: new Date(Date.now() + DEBATE_DEFAULT_HOURS * 3_600_000).toISOString() };
+  }
+  const linked = [
+    ...(hotspots ?? []).map((spot) => spot.listingId), ...(debateIds ?? []),
+    ...(poll?.options ?? []).map((option) => option.listingId ?? null), guess?.listingId ?? null,
+  ].filter((id): id is string => id !== null);
+  const listed = await Promise.all([...new Set(linked)].map((id) => repository.getListing(id)));
+  if (listed.some((listing) => !listing || listing.privateFor || listing.status !== 'active')) {
+    return error(404, 'not_found', 'One of the tagged items is not on Figmark any more.');
+  }
 
   let channelId = user.id;
   let channel: Post['channel'] = 'seller';
@@ -1039,6 +1746,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   // Posting as yourself is the default; posting as a store you manage puts it
   // in that store's channel, under the store's name, for its followers.
   let authorName = user.displayName;
+  /** The shop this is said as, when it is: who pays a prize, and whose followers hear. */
+  let shop: { id: string; name: string } | null = null;
 
   if (body.storeId && body.storeId !== user.id) {
     const owner = await repository.getUserById(body.storeId);
@@ -1048,8 +1757,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     }
     channelId = owner.id;
     authorName = owner.sellerProfile.storefrontName;
+    shop = { id: owner.id, name: authorName };
   } else if (body.storeId === user.id) {
     authorName = user.sellerProfile?.storefrontName ?? user.displayName;
+    if (user.sellerProfile) shop = { id: user.id, name: authorName };
   }
 
   // Speaking in a shop's channel. Anybody may - that is the difference between
@@ -1069,7 +1780,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     if (can(owner, user.id, 'posts')) {
       authorName = owner.sellerProfile.storefrontName;
       voice = 'store';
+      shop = { id: owner.id, name: authorName };
     } else {
+      shop = null;
       // A customer is a person. A shop does not speak in another shop's room.
       authorName = user.displayName;
       if (body.storeId) return shopsStayHome();
@@ -1114,6 +1827,87 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     voice = 'visitor';
     reach = 'channel';
     announcement = false;
+    shop = null;
+  }
+
+  // Prizes, voter rewards, stock polls and competitions are a shop speaking to
+  // the whole feed - and the credit they promise is spent at that shop.
+  // Figmark's weekly challenge is the one game run by the operators.
+  const figmarkHost = body.contest?.host === 'figmark';
+  if (figmarkHost && !user.capabilities.isAdmin) return error(403, 'forbidden', 'Only Figmark runs the weekly challenge.');
+  if (prizeAsked && !figmarkHost && (!shop || reach !== 'feed')) {
+    return error(403, 'store_only', 'Prizes, rewards and competitions are run by a store, posting to its feed. Switch to your store.');
+  }
+  // A guess-the-price is a shop teasing what it sells: the answer is its own price.
+  if (body.guess && (!shop || reach !== 'feed')) {
+    return error(403, 'store_only', 'Guess the price is run by a store, posting to its feed. Switch to your store.');
+  }
+  /** Store credit as asked for, in paise: null when it is not a whole amount in range. */
+  const credit = (value: unknown): number | null => {
+    const amount = value === undefined || value === null || value === '' ? 0 : Number(value);
+    return Number.isInteger(amount) && amount >= 0 && amount <= PRIZE_MAX_MINOR ? amount : null;
+  };
+  const badCredit = () => error(400, 'invalid_prize', `A prize is store credit from ₹0 to ₹${PRIZE_MAX_MINOR / 100}.`);
+
+  let debatePrize: DebatePrize | null = null;
+  if (body.debate?.prize && shop) {
+    const amount = credit(body.debate.prize.amountMinor);
+    if (amount === null) return badCredit();
+    if (amount === 0) return error(400, 'invalid_prize', 'Set the prize, or leave it off.');
+    debatePrize = { storeId: shop.id, storeName: shop.name, amountMinor: amount, judge: body.debate.prize.judge === 'store' ? 'store' : 'likes' };
+  }
+
+  const pollExtra = body.poll;
+  if (poll && shop && pollExtra?.stock === true) poll = { ...poll, stock: true };
+  if (poll && shop && pollExtra?.reward) {
+    const amount = credit(pollExtra.reward.amountMinor);
+    if (amount === null) return badCredit();
+    const most = Number(pollExtra.reward.maxVoters);
+    if (amount === 0) return error(400, 'invalid_prize', 'Set the reward, or leave it off.');
+    if (!Number.isInteger(most) || most < 1 || most > 500) return error(400, 'invalid_prize', 'Reward between 1 and 500 voters.');
+    if (!poll.closesAt) return error(400, 'invalid_prize', 'A rewarded poll needs an end, so it is known who won.');
+    const voterReward: VoterReward = { storeId: shop.id, storeName: shop.name, amountMinor: amount, maxVoters: most };
+    poll = { ...poll, reward: voterReward };
+  }
+
+  let contest: PostContest | null = null;
+  if (body.contest) {
+    const raw = body.contest;
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    const rules = typeof raw.rules === 'string' ? raw.rules.trim() : '';
+    const entriesHours = Number(raw.entriesHours);
+    const votingHours = Number(raw.votingHours);
+    const judging = isJudging(raw.judging) ? raw.judging : 'audience';
+    if (!title || title.length > CONTEST_TITLE_MAX) return error(400, 'invalid_contest', `Name the competition, in under ${CONTEST_TITLE_MAX} characters.`);
+    if (rules.length > CONTEST_RULES_MAX) return error(400, 'invalid_contest', `Keep the rules under ${CONTEST_RULES_MAX} characters.`);
+    const hoursOk = (value: number) => Number.isFinite(value) && value >= PHASE_MIN_HOURS && value <= PHASE_MAX_HOURS;
+    if (!hoursOk(entriesHours) || (judging !== 'store' && !hoursOk(votingHours))) {
+      return error(400, 'invalid_contest', 'Each phase runs between an hour and 30 days.');
+    }
+    if (poll || guess || hotspots || debateIds || body.listingId || vibe) return error(400, 'invalid_contest', 'A competition is a post of its own.');
+    const prizes: ContestPrize[] = [];
+    const rawPrizes = Array.isArray(raw.prizes) ? raw.prizes.slice(0, CONTEST_MAX_PRIZES) : [];
+    for (const [index, entry] of (rawPrizes as (Record<string, unknown> | null)[]).entries()) {
+      const amount = figmarkHost ? 0 : credit(entry?.amountMinor);
+      if (amount === null) return badCredit();
+      const note = typeof entry?.note === 'string' ? entry.note.trim().slice(0, PRIZE_NOTE_MAX) : '';
+      if (amount > 0 || note) prizes.push({ place: (index + 1) as 1 | 2 | 3, amountMinor: amount, note });
+    }
+    const opens = Date.now();
+    const entriesCloseAt = new Date(opens + entriesHours * 3_600_000).toISOString();
+    const endsAt = new Date(Date.parse(entriesCloseAt) + (judging === 'store' ? PHASE_MAX_HOURS : votingHours) * 3_600_000).toISOString();
+    contest = {
+      host: figmarkHost ? 'figmark' : 'store',
+      storeId: figmarkHost ? null : shop!.id,
+      hostName: figmarkHost ? 'Figmark' : shop!.name,
+      title, rules, entriesCloseAt, endsAt, judging, prizes, entries: [],
+    };
+    if (figmarkHost) {
+      authorName = 'Figmark';
+      channelId = user.id;
+    }
+    // The audience vote is the post's own poll, its answers the entries.
+    if (judging !== 'store') poll = { options: [], closesAt: endsAt, style: 'photo' };
   }
 
   // A sale post has to point at an item this account actually sells.
@@ -1166,6 +1960,11 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     poll,
     vibe,
     replyTo,
+    ...(hotspots ? { flex: { hotspots } } : {}),
+    ...(debateIds ? { debate: { listingIds: debateIds, ...(debatePrize ? { prize: debatePrize } : {}) } } : {}),
+    ...(guess ? { guess } : {}),
+    ...(contest ? { contest } : {}),
+    ...(shop && reach === 'feed' && (poll || guess || contest) ? { hostShopId: shop.id } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -1194,7 +1993,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     }
   }
   const saved = await repository.createPost(post);
-  await claimPhotos(photoUrls, `post:${saved.id}`);
+  await claimPhotos([...photoUrls, ...optionPhotos], `post:${saved.id}`);
   if (forumName && post.wallPostId) {
     await repository.createPost({
       ...post,
@@ -1207,6 +2006,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
       photoUrl: null,
       photoUrls: [],
       poll: null,
+      flex: null,
+      debate: null,
+      guess: null,
+      contest: null,
       voice: 'store',
       reach: 'feed',
       announcement: false,
@@ -1216,7 +2019,70 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     });
   }
   await announcePost(saved, answered, user.id, forumName, repository);
+  if (shop && saved.hostShopId) await announceGame(saved, shop, user.id, repository);
+  await tellMentioned(text, saved, { userId: user.id, storeId: null, key: user.id, name: authorName }, 'post', repository);
   return json(201, { post: saved });
+}
+
+/**
+ * A shop starting something to take part in tells its followers and the
+ * people who bought from it lately: polls are meant to be seen, and a
+ * competition nobody hears about has no entries. Folded per shop, so a shop
+ * running three polls is one line in the bell.
+ */
+async function announceGame(post: Post, shop: { id: string; name: string }, writerId: string, repository: Repo) {
+  const { audience } = await gameAudience(repository, shop.id);
+  if (audience.length === 0) return;
+  const name = actorName(shop.name);
+  const what = gameWhat(post);
+  const prize = post.contest?.prizes.some((entry) => entry.amountMinor > 0 || entry.note) || post.debate?.prize || post.poll?.reward;
+  await notify(repository, audience, {
+    kind: 'poll_started',
+    title: `${name} started ${what}${prize ? ' 🎁' : ''}`,
+    body: post.contest ? (post.contest.rules ? gist(post.contest.rules) : 'Enter a photo before entries close.') : gist(post.body),
+    link: linkTo(post),
+    group: {
+      key: `game:${shop.id}`,
+      actor: name,
+      title: ({ count }) => (count === 1 ? `${name} started ${what}` : `${name} started ${count} things to vote on`),
+    },
+  }, { except: writerId, pushLater: audience.length > 1 });
+}
+
+/**
+ * Tell whoever a post or comment names with an @.
+ *
+ * A handle can be a person's or a shop's; a shop hears through everybody who
+ * speaks for it. Nobody hears twice - `already` holds who has just been told
+ * something else about the same words - and nobody hears about a message they
+ * could not open, or from somebody they have blocked.
+ */
+async function tellMentioned(
+  text: string, post: Post, actor: Actor, where: 'post' | 'comment', repository: Repo, already: ReadonlySet<string> = new Set(),
+): Promise<void> {
+  const handles = mentionsIn(text).slice(0, MENTIONS_MAX);
+  if (handles.length === 0) return;
+  const named = (await Promise.all(handles.map((handle) => repository.getByHandle(handle))))
+    .filter((entry): entry is { user: User; isStore: boolean } => Boolean(entry));
+  const told = new Set<string>(already);
+  const who = actorName(actor.name);
+  for (const { user: target, isStore } of named) {
+    if (target.messageBlocks?.includes(actor.userId)) continue;
+    const audience = isStore ? storeCrew(target, 'posts') : [target.id];
+    const fresh: string[] = [];
+    for (const id of audience) {
+      if (told.has(id) || id === actor.userId || !(await mayRead(post, id, repository))) continue;
+      told.add(id);
+      fresh.push(id);
+    }
+    if (fresh.length === 0) continue;
+    await notify(repository, fresh, {
+      kind: 'mentioned',
+      title: `${who} mentioned ${toWhom(isStore ? target.sellerProfile?.storefrontName : null)} in a ${where}`,
+      body: gist(text),
+      link: linkTo(post),
+    }, { except: actor.userId });
+  }
 }
 
 /* ── Reacting, commenting, sharing, voting ─────────────────────────────── */
@@ -1233,7 +2099,7 @@ async function target(request: HttpRequest) {
   return { user, repository, post, actor };
 }
 
-async function readJson<T>(request: HttpRequest): Promise<T | null> {
+export async function readJson<T>(request: HttpRequest): Promise<T | null> {
   try {
     return (await request.json()) as T;
   } catch {
@@ -1276,7 +2142,7 @@ const followFirst = () => error(403, 'follow_required', 'Follow the shop to read
  * inside a shop's channel is for the people who follow the shop, and for
  * whoever runs it.
  */
-async function mayRead(post: Post, userId: string, repository: Repo): Promise<boolean> {
+export async function mayRead(post: Post, userId: string, repository: Repo): Promise<boolean> {
   if (post.channel !== 'seller' || (post.reach ?? 'feed') === 'feed') return true;
   const owner = await repository.getUserById(post.channelId);
   if (!owner?.sellerProfile || can(owner, userId, 'posts')) return true;
@@ -1289,9 +2155,11 @@ async function readPost(request: HttpRequest, _context: InvocationContext) {
   if (!actor) return notYours();
   if (!post) return noPost();
   if (!(await mayRead(post, user.id, repository))) return followFirst();
+  // Opened after its time was up: settled now, so the page shows the result.
+  const current = isDue(post, Date.now()) ? (await settleDebates([post], repository))[0]! : post;
   return json(200, {
-    card: await cardFor(post, repository, actor),
-    comments: await commentsFor(post, repository, actor),
+    card: await cardFor(current, repository, actor),
+    comments: await commentsFor(current, repository, actor),
   });
 }
 
@@ -1411,6 +2279,8 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   }
 
   const now = new Date().toISOString();
+  // In a debate, an argument is on the side its writer voted for.
+  const side = post.debate ? post.poll?.options.find((option) => option.voterIds.includes(user.id))?.id ?? null : null;
   const comment: StoredComment = {
     id: `cmt_${randomUUID().slice(0, 12)}`,
     authorId: user.id,
@@ -1421,6 +2291,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
     replyToName: answering && answering.id !== parent?.id ? answering.authorName : null,
     likedBy: [],
     createdAt: now,
+    ...(side ? { side } : {}),
   };
 
   let full = false;
@@ -1465,6 +2336,8 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
         : count > 1 ? `${who} left ${count} comments on ${what}` : `${who} commented on ${what}`),
     },
   }, { except: user.id });
+  await tellMentioned(text, saved, actor, 'comment', repository,
+    new Set([...replied, ...listeners(owner, actor)]));
 
   return json(201, {
     comment: comment.id,
@@ -1663,15 +2536,34 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
   if (post.poll.closesAt && post.poll.closesAt < new Date().toISOString()) {
     return error(409, 'poll_closed', 'Voting on this one has closed.');
   }
+  // A competition's vote decides who gets paid, so it is held to more: open
+  // only in its voting phase, one verified person one vote, and never for
+  // your own entry or by whoever runs it.
+  if (post.contest) {
+    if (contestPhase(post.contest) !== 'voting') return error(409, 'not_voting', 'Voting is not open on this one.');
+    if (!verifiedChecks(user).phone) {
+      return error(403, 'verify_to_vote', 'Verify your phone number to vote in competitions.');
+    }
+    if (post.contest.entries.some((entry) => entry.id === optionId && entry.userId === user.id)) {
+      return error(403, 'own_entry', 'Vote for somebody else\'s photo.');
+    }
+    if (post.authorId === user.id || (post.contest.storeId && actor.storeId === post.contest.storeId)) {
+      return error(403, 'host_vote', 'Whoever runs a competition does not vote in it.');
+    }
+  }
   const slow = await tooFast(user.id, 'react');
   if (slow) return slow;
 
   const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
     if (!current.poll) return null;
+    const had = current.poll.options.find((option) => option.voterIds.includes(user.id))?.id ?? null;
+    if (had === optionId) return null;
     return {
       ...current,
       poll: {
         ...current.poll,
+        // Changing your mind is part of a debate: counted, so the post can say so.
+        ...(had ? { switches: (current.poll.switches ?? 0) + 1 } : {}),
         options: current.poll.options.map((option) => {
           const others = option.voterIds.filter((id) => id !== user.id);
           return { ...option, voterIds: option.id === optionId ? [...others, user.id] : others };
@@ -2186,12 +3078,250 @@ export const pinPostRoute = handler(pinPost);
 export const joinForumRoute = handler(joinForum);
 export const socialSearchRoute = handler(search);
 
+/* ── The games: entering, guessing, judging, and who is winning ──────── */
+
+/** Whether this person runs the post's game: wrote it, or speaks for its shop. */
+async function runsGame(post: Post, userId: string, repository: Repo): Promise<boolean> {
+  if (post.authorId === userId) return true;
+  const shopId = post.contest?.storeId ?? post.debate?.prize?.storeId ?? (post.channel === 'seller' ? post.channelId : null);
+  if (!shopId) return false;
+  const owner = await repository.getUserById(shopId);
+  return Boolean(owner?.sellerProfile && can(owner, userId, 'posts'));
+}
+
+/** The blob behind a photo address, for comparing two entries by their pixels. */
+async function fingerprintOfUrl(url: string): Promise<string | null> {
+  const name = await ownPhotoName(url);
+  return name ? storedFingerprint(name).catch(() => null) : null;
+}
+
+/**
+ * POST /api/social/posts/{channel}/{id}/enter - put a photo into a competition.
+ *
+ * One entry per person, while entries are open, from a verified phone - the
+ * prize is real credit. A photo that is the same picture as an entry already
+ * in (recompressed, resized or screenshotted) is refused: entering somebody
+ * else's photo is the one way to cheat a photo competition.
+ */
+async function enterContest(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post } = await target(request);
+  if (!post) return noPost();
+  const contest = post.contest;
+  if (!contest) return error(400, 'invalid_entry', 'That post is not a competition.');
+  if (contestPhase(contest) !== 'entries') return error(409, 'entries_closed', 'Entries have closed.');
+  if (!verifiedChecks(user).phone) return error(403, 'verify_to_enter', 'Verify your phone number to enter competitions.');
+  if (await runsGame(post, user.id, repository)) return error(403, 'host_entry', 'Whoever runs a competition does not enter it.');
+  const body = await readJson<{ photoUrl?: unknown; caption?: unknown }>(request);
+  if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
+  const photos = await ownPhotos(typeof body.photoUrl === 'string' ? [body.photoUrl] : [], 1);
+  if (!photos?.[0]) return error(400, 'invalid_entry', 'Upload your photo first.');
+  const caption = typeof body.caption === 'string' ? body.caption.trim() : '';
+  if (caption.length > CONTEST_CAPTION_MAX) return error(400, 'invalid_entry', `Keep the caption under ${CONTEST_CAPTION_MAX} characters.`);
+  if (contest.entries.some((entry) => entry.userId === user.id)) return error(409, 'already_entered', 'You have already entered this one.');
+  if (contest.entries.length >= CONTEST_MAX_ENTRIES) return error(409, 'contest_full', 'This competition is full.');
+  const slow = await tooFast(user.id, 'post');
+  if (slow) return slow;
+
+  // Fingerprints are worked out once per photo and kept, so this costs a
+  // photo read the first time any entry is compared and nothing after.
+  const mine = await fingerprintOfUrl(photos[0]);
+  if (mine) {
+    const theirs = await Promise.all(contest.entries.map((entry) => fingerprintOfUrl(entry.photoUrl)));
+    if (theirs.some((hash) => hash && likeness(mine, hash)?.samePhoto)) {
+      return error(409, 'same_photo', 'That photo is already in this competition.');
+    }
+  }
+
+  const entry = { id: `ent_${randomUUID().slice(0, 10)}`, userId: user.id, name: user.displayName, photoUrl: photos[0], caption, at: new Date().toISOString() };
+  let refused: ReturnType<typeof error> | null = null;
+  const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+    const now = current.contest;
+    if (!now || contestPhase(now) !== 'entries') { refused = error(409, 'entries_closed', 'Entries have closed.'); return null; }
+    if (now.entries.some((other) => other.userId === user.id)) { refused = error(409, 'already_entered', 'You have already entered this one.'); return null; }
+    if (now.entries.length >= CONTEST_MAX_ENTRIES) { refused = error(409, 'contest_full', 'This competition is full.'); return null; }
+    return {
+      ...current,
+      contest: { ...now, entries: [...now.entries, entry] },
+      // Audience judging votes on every entry; a shortlist puts its own in later.
+      ...(current.poll && now.judging === 'audience'
+        ? { poll: { ...current.poll, options: [...current.poll.options, { id: entry.id, label: entry.name, voterIds: [], photoUrl: entry.photoUrl }] } }
+        : {}),
+    };
+  });
+  if (refused) return refused;
+  if (!saved) return noPost();
+  await claimPhotos([entry.photoUrl], `post:${post.id}`);
+  const actor = await actorFor(request, user, repository) ?? personActor(user);
+  return json(201, { entryId: entry.id, card: await cardFor(saved, repository, actor) });
+}
+
+/**
+ * POST /api/social/posts/{channel}/{id}/guess - say what you think it costs.
+ * One guess per person, changeable until the price is revealed.
+ */
+async function guessPrice(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
+  if (!post) return noPost();
+  if (!post.guess) return error(400, 'invalid_guess', 'That post is not a guessing game.');
+  if (!(await mayRead(post, user.id, repository))) return followFirst();
+  if (post.guess.revealedAt || post.guess.revealAt < new Date().toISOString()) return error(409, 'revealed', 'The price is already out.');
+  if (post.authorId === user.id) return error(403, 'own_guess', 'You know the answer to this one.');
+  const body = await readJson<{ amountMinor?: unknown }>(request);
+  const amount = Number(body?.amountMinor);
+  if (!Number.isInteger(amount) || amount < 100 || amount > GUESS_MAX_MINOR) return error(400, 'invalid_guess', 'Guess a price in rupees.');
+  const slow = await tooFast(user.id, 'react');
+  if (slow) return slow;
+  const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+    if (!current.guess || current.guess.revealedAt) return null;
+    const others = current.guess.guesses.filter((entry) => entry.userId !== user.id);
+    return { ...current, guess: { ...current.guess, guesses: [...others, { userId: user.id, name: user.displayName, amountMinor: amount, at: new Date().toISOString() }] } };
+  });
+  if (!saved) return noPost();
+  return json(200, { guess: guessView(saved.guess, user.id) });
+}
+
+/**
+ * POST /api/social/posts/{channel}/{id}/judge - the host's decisions.
+ *
+ * - shortlist: mixed judging, entries closed - the entries that go to the vote;
+ * - winners: store judging, entries closed - first, second and third, in order;
+ * - best: a shop's prize debate judged by the shop, closed - the best argument;
+ * - sent: a prize that is not credit, marked handed over.
+ */
+async function judge(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
+  if (!post) return noPost();
+  if (!(await runsGame(post, user.id, repository))) return error(403, 'forbidden', 'Only whoever runs it decides.');
+  const body = await readJson<{ action?: unknown; entryIds?: unknown; commentId?: unknown; place?: unknown }>(request);
+  if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
+  const ids = Array.isArray(body.entryIds) ? [...new Set(body.entryIds.filter((id): id is string => typeof id === 'string'))] : [];
+  const nowIso = new Date().toISOString();
+
+  if (body.action === 'shortlist') {
+    const contest = post.contest;
+    if (!contest || contest.judging !== 'mixed') return error(400, 'invalid_judging', 'Only a shortlisted competition takes a shortlist.');
+    if (contestPhase(contest) !== 'shortlisting') return error(409, 'not_now', 'The shortlist is picked once entries close.');
+    if (ids.length < SHORTLIST_MIN || ids.length > SHORTLIST_MAX || ids.some((id) => !contest.entries.some((entry) => entry.id === id))) {
+      return error(400, 'invalid_shortlist', `Shortlist ${SHORTLIST_MIN} to ${SHORTLIST_MAX} of the entries.`);
+    }
+    // The vote gets its full length from now: the time spent shortlisting is not taken off it.
+    const voteMs = Math.max(Date.parse(contest.endsAt) - Date.parse(contest.entriesCloseAt), 3_600_000);
+    const endsAt = new Date(Date.now() + voteMs).toISOString();
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+      if (!current.contest || current.contest.shortlist?.length) return null;
+      const chosen = current.contest.entries.filter((entry) => ids.includes(entry.id));
+      return {
+        ...current,
+        contest: { ...current.contest, shortlist: chosen.map((entry) => entry.id), endsAt },
+        poll: { options: chosen.map((entry) => ({ id: entry.id, label: entry.name, voterIds: [], photoUrl: entry.photoUrl })), closesAt: endsAt, style: 'photo' },
+      };
+    });
+    if (!saved) return noPost();
+    const shortlisted = saved.contest!.entries.filter((entry) => ids.includes(entry.id)).map((entry) => entry.userId);
+    await notify(repository, shortlisted, {
+      kind: 'contest_update', title: `You made the shortlist: ${contest.title}`, body: 'Voting is open. Share it so people vote for yours.', link: linkTo(saved),
+    });
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
+  if (body.action === 'winners') {
+    const contest = post.contest;
+    if (!contest || contest.judging !== 'store') return error(400, 'invalid_judging', 'The audience picks this one.');
+    if (contestPhase(contest) !== 'judging') return error(409, 'not_now', 'Winners are picked once entries close.');
+    const max = Math.min(3, contest.entries.length);
+    if (ids.length < 1 || ids.length > max || ids.some((id) => !contest.entries.some((entry) => entry.id === id))) {
+      return error(400, 'invalid_winners', 'Pick up to three of the entries, first place first.');
+    }
+    const winners: ContestWinner[] = ids.map((id, index) => {
+      const entry = contest.entries.find((candidate) => candidate.id === id)!;
+      return { place: (index + 1) as 1 | 2 | 3, entryId: entry.id, userId: entry.userId, name: entry.name, photoUrl: entry.photoUrl, votes: null };
+    });
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) =>
+      (!current.contest || current.contest.settledAt ? null : { ...current, contest: { ...current.contest, winners, settledAt: nowIso, endsAt: nowIso } }));
+    if (!saved) return noPost();
+    if (saved.contest?.settledAt === nowIso) await payContest(repository, saved);
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
+  if (body.action === 'best') {
+    const debate = post.debate;
+    if (!debate?.prize || debate.prize.judge !== 'store') return error(400, 'invalid_judging', 'The likes decide this one.');
+    if (!post.poll?.closesAt || post.poll.closesAt > nowIso) return error(409, 'not_now', 'Pick the best argument once the debate closes.');
+    const comment = post.comments?.find((entry) => entry.id === body.commentId && entry.parentId === null);
+    if (!comment || comment.authorId === post.authorId || comment.asStore) return error(400, 'invalid_best', 'Pick somebody\'s argument.');
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) =>
+      (!current.debate || current.debate.best ? null
+        : { ...current, debate: { ...current.debate, best: { userId: comment.authorId, name: comment.authorName, commentId: comment.id, side: comment.side ?? null } } }));
+    if (!saved) return noPost();
+    if (saved.debate?.best?.commentId === comment.id && !post.debate?.best) await payDebate(repository, saved);
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
+  if (body.action === 'sent') {
+    const place = Number(body.place);
+    if (!post.contest?.winners?.some((winner) => winner.place === place)) return error(400, 'invalid_place', 'No winner in that place.');
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) =>
+      (!current.contest ? null : { ...current, contest: { ...current.contest, prizeSent: [...new Set([...(current.contest.prizeSent ?? []), place])] } }));
+    if (!saved) return noPost();
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
+  return error(400, 'invalid_action', 'Shortlist, pick winners, pick the best argument, or mark a prize sent.');
+}
+
+/** Posts a shop's Engage screen reads back: the most recent hundred in its channel. */
+const GAMES_WINDOW = 100;
+
+/**
+ * GET /api/social/shops/{id}/games - everything a shop is running to take part
+ * in: polls, debates, guesses and competitions, newest first, settled on the
+ * way past so a closed one shows its result. Only for whoever speaks for it.
+ */
+async function shopGames(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const shopId = request.params.id ?? '';
+  const owner = await repository.getUserById(shopId);
+  if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+  if (!can(owner, user.id, 'posts')) return notYours();
+  const posts = (await repository.listPostsForChannels([shopId], GAMES_WINDOW))
+    .filter((post) => post.poll || post.contest || post.guess);
+  const settled = await settleDebates(posts, repository);
+  const actor: Actor = { userId: user.id, storeId: shopId, key: actorKey(user.id, shopId), name: owner.sellerProfile.storefrontName };
+  return json(200, { posts: await decorate(settled, repository, actor) });
+}
+
+/**
+ * GET /api/me/rewards - store credit won and badges earned.
+ * The person's own: credit is money, and nobody else's business.
+ */
+async function myRewards(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const me = await repository.getUserById(user.id);
+  return json(200, {
+    credits: [...(me?.storeCredits ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    badges: [...(me?.badges ?? [])].sort((a, b) => b.at.localeCompare(a.at)),
+  });
+}
+
 const anon = { authLevel: 'anonymous' } as const;
 
 export const forumMembersRoute = handler(forumMembers);
 export const moderateForumRoute = handler(moderateForum);
 export const shopFeedRoute = handler(shopFeed);
 export const followsRoute = handler(follows);
+export const discoverRoute = handler(discover);
+export const homeNewRoute = handler(homeNew);
+export const enterContestRoute = handler(enterContest);
+export const guessPriceRoute = handler(guessPrice);
+export const judgeRoute = handler(judge);
+export const myRewardsRoute = handler(myRewards);
+export const shopGamesRoute = handler(shopGames);
 app.http('me-posts', { ...anon, methods: ['GET'], route: 'me/posts', handler: myPostsRoute });
 app.http('person-posts', { ...anon, methods: ['GET'], route: 'users/{id}/posts', handler: personPostsRoute });
 app.http('social-feed', { ...anon, methods: ['GET'], route: 'social/feed', handler: socialFeedRoute });
@@ -2212,6 +3342,8 @@ app.http('social-post-vote', { ...anon, methods: ['POST'], route: 'social/posts/
 app.http('social-post-delete', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/delete', handler: removePostRoute });
 app.http('social-trending', { ...anon, methods: ['GET'], route: 'social/trending', handler: trendingRoute });
 app.http('social-home', { ...anon, methods: ['GET'], route: 'social/home', handler: homeRoute });
+app.http('social-home-new', { ...anon, methods: ['GET'], route: 'social/home/new', handler: homeNewRoute });
+app.http('social-discover', { ...anon, methods: ['GET'], route: 'social/discover', handler: discoverRoute });
 app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });
 app.http('social-post-pin', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/pin', handler: pinPostRoute });
 app.http('social-forum-join', { ...anon, methods: ['POST'], route: 'social/forums/{id}/join', handler: joinForumRoute });
@@ -2219,4 +3351,9 @@ app.http('social-forum-members', { ...anon, methods: ['GET'], route: 'social/for
 app.http('social-forum-moderate', { ...anon, methods: ['POST'], route: 'social/forums/{id}/moderate', handler: moderateForumRoute });
 app.http('social-shop-feed', { ...anon, methods: ['GET'], route: 'social/shops/{id}/feed', handler: shopFeedRoute });
 app.http('user-follows', { ...anon, methods: ['GET'], route: 'users/{id}/follows', handler: followsRoute });
+app.http('social-post-enter', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/enter', handler: enterContestRoute });
+app.http('social-post-guess', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/guess', handler: guessPriceRoute });
+app.http('social-post-judge', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/judge', handler: judgeRoute });
+app.http('social-shop-games', { ...anon, methods: ['GET'], route: 'social/shops/{id}/games', handler: shopGamesRoute });
+app.http('me-rewards', { ...anon, methods: ['GET'], route: 'me/rewards', handler: myRewardsRoute });
 app.http('social-search', { ...anon, methods: ['GET'], route: 'social/search', handler: socialSearchRoute });

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
 
 /**
  * Password hashing for the mock auth provider only.
@@ -17,20 +17,77 @@ export function hashPassword(password: string): string {
 }
 
 export function verifyPassword(password: string, stored: string | null): boolean {
-  if (!stored) return false;
-  const [saltHex, hashHex] = stored.split(':');
-  if (!saltHex || !hashHex) return false;
+  const parsed = parseStored(stored);
+  if (!parsed) return false;
+  const actual = scryptSync(password, parsed.salt, KEY_LENGTH, parsed.params);
+  return timingSafeEqual(actual, parsed.expected);
+}
 
-  let expected: Buffer;
-  try {
-    expected = Buffer.from(hashHex, 'hex');
-  } catch {
+/**
+ * The cost new hashes are made at: N=2^14, r=8, p=5, one of OWASP's
+ * equivalent scrypt settings. It raises the work per guess fivefold over
+ * Node's default (p=1) while keeping each hash to 16 MB of memory, so a burst
+ * of sign-ins cannot exhaust a worker the way N=2^17 (128 MB each) would.
+ * Stored as `s2:<salt>:<hash>`; a bare `<salt>:<hash>` is the older p=1 form,
+ * still accepted and re-made at this cost on the next good sign-in.
+ */
+const CURRENT_PREFIX = 's2';
+const CURRENT_PARAMS = { N: 16384, r: 8, p: 5 } as const;
+const LEGACY_PARAMS = { N: 16384, r: 8, p: 1 } as const;
+
+type Params = typeof CURRENT_PARAMS | typeof LEGACY_PARAMS;
+
+/**
+ * scrypt off the main thread. The sync form held the whole worker for the
+ * length of every hash, so a burst of sign-ins queued every other request
+ * behind them.
+ */
+function scryptAsync(password: string, salt: Buffer, params: Params = CURRENT_PARAMS): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, KEY_LENGTH, params, (err, derived) => (err ? reject(err) : resolve(derived)));
+  });
+}
+
+/** `hashPassword`, without blocking the worker: for sign-up. */
+export async function hashPasswordAsync(password: string): Promise<string> {
+  const salt = randomBytes(16);
+  const derived = await scryptAsync(password, salt);
+  return `${CURRENT_PREFIX}:${salt.toString('hex')}:${derived.toString('hex')}`;
+}
+
+/** Hashed against when there is no account, so "no such account" takes as long as "wrong password". */
+const DECOY_SALT = randomBytes(16);
+
+/** A stored hash's salt, digest and the cost it was made at; null when unreadable. */
+function parseStored(stored: string | null): { salt: Buffer; expected: Buffer; params: Params } | null {
+  const parts = (stored ?? '').split(':');
+  const [saltHex, hashHex, params] = parts.length === 3 && parts[0] === CURRENT_PREFIX
+    ? [parts[1], parts[2], CURRENT_PARAMS]
+    : parts.length === 2 ? [parts[0], parts[1], LEGACY_PARAMS] : [undefined, undefined, LEGACY_PARAMS];
+  if (!saltHex || !hashHex) return null;
+  const expected = Buffer.from(hashHex, 'hex');
+  if (expected.length !== KEY_LENGTH) return null;
+  return { salt: Buffer.from(saltHex, 'hex'), expected, params };
+}
+
+/**
+ * `verifyPassword`, without blocking the worker: for sign-in. An absent or
+ * unreadable hash still costs one scrypt, so how long a sign-in takes does
+ * not say whether the account exists.
+ */
+export async function verifyPasswordAsync(password: string, stored: string | null): Promise<boolean> {
+  const parsed = parseStored(stored);
+  if (!parsed) {
+    await scryptAsync(password, DECOY_SALT);
     return false;
   }
-  if (expected.length !== KEY_LENGTH) return false;
+  const actual = await scryptAsync(password, parsed.salt, parsed.params);
+  return timingSafeEqual(actual, parsed.expected);
+}
 
-  const actual = scryptSync(password, Buffer.from(saltHex, 'hex'), KEY_LENGTH);
-  return timingSafeEqual(actual, expected);
+/** True for a hash made at less than today's cost, to be re-made once the password is known good. */
+export function passwordNeedsRehash(stored: string | null): boolean {
+  return !(stored ?? '').startsWith(`${CURRENT_PREFIX}:`);
 }
 
 /** Long enough to resist guessing once breached and common passwords are out. */

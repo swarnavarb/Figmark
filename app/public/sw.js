@@ -1,17 +1,38 @@
 /*
- * Figmark's service worker: lock-screen notifications, and nothing else.
+ * Figmark's service worker: lock-screen notifications, and a page to show
+ * when there is no connection.
  *
- * Deliberately no fetch handler and no page cache. The site is always loaded fresh
- * from the network exactly as before; this file only wakes when a push
- * arrives or a notification is tapped. A caching worker is a different piece
- * of work with its own way of serving yesterday's site, and nothing here
- * needs it.
+ * Still no page cache. The site is always loaded fresh from the network
+ * exactly as before - a caching worker has its own way of serving yesterday's
+ * site, and nothing here wants that. The one thing kept is offline.html: a
+ * page load that cannot reach the network at all gets it, instead of the
+ * browser's own error, and its button tries again.
  *
  * The message is what api/src/push.ts sends: { id, title, body, link, unread,
  * tag?, silent? }.
  */
 
-self.addEventListener('install', () => self.skipWaiting());
+const OFFLINE_CACHE = 'figmark-offline-v1';
+const OFFLINE_PAGE = '/offline.html';
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(OFFLINE_CACHE)
+    .then((cache) => cache.addAll([OFFLINE_PAGE, '/icons/icon-192.png']))
+    .catch(() => undefined)
+    .then(() => self.skipWaiting()));
+});
+
+/* Page loads only, and only when the network fails outright: an answer from
+   the server, whatever its status, is always what is shown. Every other
+   request - scripts, the API, photos - is left to the browser untouched. */
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (request.mode !== 'navigate' || request.method !== 'GET') return;
+  event.respondWith(fetch(request).catch(async () => {
+    const offline = await caches.match(OFFLINE_PAGE, { cacheName: OFFLINE_CACHE });
+    return offline || Response.error();
+  }));
+});
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', (event) => {

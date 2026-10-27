@@ -24,6 +24,7 @@ const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js
 const { StaticWebAppsAuthProvider } = await import(new URL('api/src/auth/swa-provider.js', base));
 const { createSessionToken, SESSION_COOKIE_NAME } = await import(new URL('api/src/auth/tokens.js', base));
 const { resetRateLimits, clientIp } = await import(new URL('api/src/rate-limit.js', base));
+const { codeAt, stepAt } = await import(new URL('api/src/auth/totp.js', base));
 const { DEMO_EMAIL, DEMO_PASSWORD } = await import(new URL('api/src/data/seed.js', base));
 const { loginRoute, meRoute } = await import(new URL('auth-routes.js', fns));
 const { adminSuspendRoute, adminAuditRoute } = await import(new URL('admin-routes.js', fns));
@@ -273,7 +274,7 @@ const auth = new MockAuthProvider(repository, 'test-secret', 3600);
 await check('wrong passwords lock out that address for that account, and nobody else', async () => {
   resetRateLimits();
   const target = 'victim@figmark.example';
-  await auth.signup({ displayName: 'Vic Tim', email: target, phone: '+919777001001', password: 'correct horse battery' });
+  await auth.signup({ acceptTerms: true, displayName: 'Vic Tim', email: target, phone: '+919777001001', password: 'correct horse battery' });
   let locked = false;
   for (let attempt = 0; attempt < 12 && !locked; attempt += 1) {
     await auth.login({ identifier: target, password: 'wrong' }, { ip: '203.0.113.9' }).catch((err) => {
@@ -307,7 +308,7 @@ await check('guessing spread over many addresses is capped, and the owner\'s own
   resetRateLimits();
   const target = 'spread@figmark.example';
   const password = 'correct horse battery';
-  await auth.signup({ displayName: 'Spread Out', email: target, phone: '+919777001003', password });
+  await auth.signup({ acceptTerms: true, displayName: 'Spread Out', email: target, phone: '+919777001003', password });
   // The owner signed in on this browser before, so it carries the device cookie.
   const first = await auth.login({ identifier: target, password }, { ip: '198.51.100.50' });
   const device = auth.deviceCookies(first.user.id, { headers: new Headers() })[0].split(';')[0].split('=').slice(1).join('=');
@@ -337,11 +338,24 @@ await check('the client address is read from the platform\'s headers, without a 
   assert.equal(clientIp({ headers: new Headers() }), 'unknown');
 });
 
+await check('on Azure the address comes from the platform, never from what the caller sent', () => {
+  process.env.WEBSITE_INSTANCE_ID = 'test-instance';
+  try {
+    // A caller rotating x-client-ip or the first forwarded hop stays one address.
+    assert.equal(clientIp({ headers: new Headers({ 'x-client-ip': '10.0.0.9', 'x-forwarded-for': '10.0.0.9, 203.0.113.7' }) }), '203.0.113.7');
+    assert.equal(clientIp({ headers: new Headers({ 'x-forwarded-for': '10.1.1.1, 10.2.2.2, 203.0.113.8:5050' }) }), '203.0.113.8');
+    assert.equal(clientIp({ headers: new Headers({ 'x-azure-clientip': '203.0.113.9', 'x-forwarded-for': '10.0.0.1' }) }), '203.0.113.9');
+    assert.equal(clientIp({ headers: new Headers({ 'x-client-ip': '10.0.0.9' }) }), 'unknown');
+  } finally {
+    delete process.env.WEBSITE_INSTANCE_ID;
+  }
+});
+
 /* ── Passwords ─────────────────────────────────────────────────────────── */
 console.log('\npasswords');
 
 const signupWith = (password, extra = {}) => auth.signup({
-  displayName: 'Priya Raman', email: `p${Math.random().toString(36).slice(2, 8)}@figmark.example`,
+  acceptTerms: true, displayName: 'Priya Raman', email: `p${Math.random().toString(36).slice(2, 8)}@figmark.example`,
   phone: `+9197770${Math.floor(10000 + Math.random() * 89999)}`, password, ...extra,
 });
 
@@ -384,7 +398,7 @@ await check('a session in use is renewed, but never past its absolute limit', as
   // Not the demo account: the check above signed it out everywhere, and a
   // session from two hours ago is rightly over for it.
   const email = 'renewed@figmark.example';
-  await auth.signup({ displayName: 'Renee Wal', email, phone: '+919777001002', password: 'correct horse battery' });
+  await auth.signup({ acceptTerms: true, displayName: 'Renee Wal', email, phone: '+919777001002', password: 'correct horse battery' });
   // The real session length, so a two-hour-old session is still alive to renew.
   const twelveHours = new MockAuthProvider(repository, 'test-secret', 12 * 3600);
   const realNow = Date.now;
@@ -459,6 +473,123 @@ await check('signing out on one device leaves another signed in, even when both 
   const one = createSessionToken('usr_demo', 'test-secret', 3600);
   const two = createSessionToken('usr_demo', 'test-secret', 3600);
   assert.notEqual(one.token, two.token);
+});
+
+await check('signing in again right after signing out everywhere stays signed in', async () => {
+  resetRateLimits();
+  const at = { ip: '198.51.100.61' };
+  const first = await auth.login({ identifier: 'packer@baiyunhobby.example', password: DEMO_PASSWORD }, at);
+  await auth.logoutEverywhere(cookieFor(first.token));
+  // The same second, more often than not: the new session must hold.
+  const again = await auth.login({ identifier: 'packer@baiyunhobby.example', password: DEMO_PASSWORD }, at);
+  assert.equal((await auth.getCurrentUser(cookieFor(again.token)))?.id, 'usr_packer');
+  assert.equal(await auth.getCurrentUser(cookieFor(first.token)), null, 'the one from before is still over');
+});
+
+await check('a password hashed at the old cost is re-made at the new one on a good sign-in', async () => {
+  resetRateLimits();
+  const studio = { identifier: 'studio@inkwell.example', password: DEMO_PASSWORD };
+  const user = await repository.getUserById('usr_art_inkwell');
+  assert.ok(!user.passwordHash.startsWith('s2:'), 'seeded at the old cost');
+  await auth.login(studio, { ip: '198.51.100.62' });
+  const after = await repository.getUserById('usr_art_inkwell');
+  assert.ok(after.passwordHash.startsWith('s2:'));
+  // And it still opens.
+  await auth.login(studio, { ip: '198.51.100.62' });
+});
+
+await check('a body larger than any route accepts is refused before it is read', async () => {
+  let read = false;
+  const response = await loginRoute({
+    method: 'POST',
+    headers: new Headers({ 'content-length': String(50 * 1024 * 1024), 'content-type': 'application/json' }),
+    json: async () => { read = true; return {}; },
+  }, ctx);
+  assert.equal(response.status, 413);
+  assert.equal(read, false);
+});
+
+await check('a write posted as a form or plain text is refused, so no other page can forge one', async () => {
+  for (const type of ['application/x-www-form-urlencoded', 'multipart/form-data; boundary=x', 'text/plain;charset=UTF-8']) {
+    const response = await loginRoute({
+      method: 'POST',
+      headers: new Headers({ 'content-type': type }),
+      json: async () => ({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
+    }, ctx);
+    assert.equal(response.status, 415, type);
+  }
+});
+
+await check('a forgotten password is reset with an emailed code, and every old session ends', async () => {
+  resetRateLimits();
+  const who = 'meera@figmark.in';
+  const at = { ip: '198.51.100.71' };
+  const before = await auth.login({ identifier: who, password: DEMO_PASSWORD }, at);
+
+  // Nobody learns from the form whether an account exists.
+  assert.deepEqual(await auth.requestPasswordReset('nobody-here@figmark.example'), {});
+  const { devCode } = await auth.requestPasswordReset(who);
+  assert.match(devCode, /^\d{6}$/);
+
+  const wrong = devCode === '000000' ? '111111' : '000000';
+  await assert.rejects(auth.resetPassword({ identifier: who, code: wrong, password: 'a-new-passphrase-42' }, at), { code: 'wrong_code' });
+  // A weak password is refused before the code is spent.
+  await assert.rejects(auth.resetPassword({ identifier: who, code: devCode, password: 'short' }, at), { code: 'invalid_password' });
+
+  const after = await auth.resetPassword({ identifier: who, code: devCode, password: 'a-new-passphrase-42' }, at);
+  assert.equal((await auth.getCurrentUser(cookieFor(after.token)))?.email, who);
+  assert.equal(await auth.getCurrentUser(cookieFor(before.token)), null, 'the session from before the reset is over');
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD }, at), { code: 'invalid_credentials' });
+  await auth.login({ identifier: who, password: 'a-new-passphrase-42' }, at);
+  // A reset lifts a hold somebody else's guessing put on the account.
+  for (let i = 0; i < 25; i += 1) {
+    await auth.login({ identifier: who, password: `guess-${i}` }, { ip: `203.0.113.${100 + i}` }).catch(() => undefined);
+  }
+  await assert.rejects(auth.login({ identifier: who, password: 'a-new-passphrase-42' }, { ip: '198.51.100.72' }), { code: 'too_many_attempts' });
+  const { devCode: unlock } = await auth.requestPasswordReset(who);
+  await auth.resetPassword({ identifier: who, code: unlock, password: 'a-newer-passphrase-43' }, { ip: '198.51.100.72' });
+  await auth.login({ identifier: who, password: 'a-newer-passphrase-43' }, { ip: '198.51.100.73' });
+  // The code was spent.
+  await assert.rejects(auth.resetPassword({ identifier: who, code: unlock, password: 'another-passphrase-7' }, at), { code: 'code_expired' });
+});
+
+await check('no reset code goes to an email nobody has confirmed', async () => {
+  resetRateLimits();
+  const fresh = await auth.signup({ acceptTerms: true,
+    displayName: 'Unconfirmed Person', email: `u${Date.now()}@figmark.example`, phone: `+9198${String(Date.now()).slice(-8)}`, password: 'a-fine-passphrase-9',
+  });
+  assert.deepEqual(await auth.requestPasswordReset(fresh.user.email), {});
+});
+
+await check('two-factor: set up with a code, then sign-in asks for one, once each, with recovery codes as a way back', async () => {
+  resetRateLimits();
+  const who = 'ops@lotusfreight.example';
+  const at = { ip: '198.51.100.81' };
+  const first = await auth.login({ identifier: who, password: DEMO_PASSWORD }, at);
+  const me = await auth.getCurrentUser(cookieFor(first.token));
+  await assert.rejects(auth.startMfaSetup(me.id, 'wrong'), { code: 'wrong_password' });
+  const { secret, uri } = await auth.startMfaSetup(me.id, DEMO_PASSWORD);
+  assert.match(uri, /^otpauth:\/\/totp\/Figmark/);
+  await assert.rejects(auth.enableMfa(me.id, '000000'), { code: 'wrong_code' });
+  const { recoveryCodes } = await auth.enableMfa(me.id, codeAt(secret, stepAt(Date.now())));
+  assert.equal(recoveryCodes.length, 10);
+
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD }, at), { code: 'mfa_required' });
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD, otp: '123456' }, at), { code: 'mfa_invalid' });
+  // The code that turned it on was spent; the next step's is good, once.
+  const next = codeAt(secret, stepAt(Date.now()) + 1);
+  const signedIn = await auth.login({ identifier: who, password: DEMO_PASSWORD, otp: next }, at);
+  assert.equal((await auth.getCurrentUser(cookieFor(signedIn.token))).mfaEnabled, true);
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD, otp: next }, at), { code: 'mfa_invalid' });
+  // A recovery code works once.
+  await auth.login({ identifier: who, password: DEMO_PASSWORD, otp: recoveryCodes[0] }, at);
+  await assert.rejects(auth.login({ identifier: who, password: DEMO_PASSWORD, otp: recoveryCodes[0] }, at), { code: 'mfa_invalid' });
+  // A password reset by email alone does not get past it.
+  const { devCode } = await auth.requestPasswordReset(who);
+  await assert.rejects(auth.resetPassword({ identifier: who, code: devCode, password: 'a-new-passphrase-55' }, at), { code: 'mfa_required' });
+  // Off again, with the password and a code.
+  await auth.disableMfa(me.id, DEMO_PASSWORD, recoveryCodes[1]);
+  await auth.login({ identifier: who, password: DEMO_PASSWORD }, at);
 });
 
 /* ── Static Web Apps principal ─────────────────────────────────────────── */

@@ -1,0 +1,323 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.discitem__photo .ctype {
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(8, 11, 18, 0.72); backdrop-filter: blur(6px);
+}
+
+/* Discover: the public side, ranked. */
+
+.discpage { display: grid; gap: 14px; max-width: 680px; margin-inline: auto; }
+
+/* The top: the brand's own gradient - the same violet, pink and coral the
+   chosen lens and the + wear - with an aurora drifting slowly behind glass. */
+.dischero {
+  position: relative; overflow: hidden; isolation: isolate;
+  display: grid; gap: 8px;
+  padding: 18px;
+  border-radius: 24px; border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(150deg, rgba(124, 58, 237, 0.5) 0%, rgba(236, 72, 153, 0.28) 55%, rgba(255, 90, 95, 0.22) 100%),
+    color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 44px rgba(124, 58, 237, 0.22);
+  animation: disc-in 380ms var(--ease-out) both;
+}
+.dischero__aurora { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.dischero__aurora span { position: absolute; border-radius: 50%; filter: blur(42px); opacity: 0.75; will-change: transform; }
+.dischero__aurora span:nth-child(1) { width: 240px; height: 240px; top: -110px; right: -70px; background: #EC4899; animation: aurora-a 14s ease-in-out infinite alternate; }
+.dischero__aurora span:nth-child(2) { width: 200px; height: 200px; bottom: -120px; left: -50px; background: #7C3AED; animation: aurora-b 17s ease-in-out infinite alternate; }
+.dischero__aurora span:nth-child(3) { width: 140px; height: 140px; bottom: -60px; right: 22%; background: #FF5A5F; opacity: 0.45; animation: aurora-a 20s ease-in-out infinite alternate-reverse; }
+@keyframes aurora-a { to { transform: translate(-40px, 30px) scale(1.15); } }
+@keyframes aurora-b { to { transform: translate(50px, -24px) scale(1.1); } }
+.dischero__stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.dischero__stat {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px;
+  border-radius: var(--r-pill); border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(8, 11, 18, 0.38); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: #fff; font: inherit; font-size: var(--t-sm); cursor: pointer;
+  transition: border-color var(--dur-1) ease, background-color var(--dur-1) ease, transform 140ms var(--ease-out);
+}
+.dischero__stat:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) { .dischero__stat:hover { border-color: rgba(255, 255, 255, 0.4); background: rgba(8, 11, 18, 0.5); } }
+.dischero__stat strong { font-family: var(--display); }
+/* Live: a lit dot, the colour of "now", breathing. */
+.dischero__pulse {
+  position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--coral); box-shadow: 0 0 10px var(--coral);
+}
+.dischero__pulse::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--coral);
+  animation: disc-ping 1.8s var(--ease-out) infinite;
+}
+@keyframes disc-ping { from { transform: scale(1); opacity: 0.7; } to { transform: scale(3); opacity: 0; } }
+.dischero__kicker {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.78);
+}
+.dischero__title {
+  margin: 0; font-family: var(--display); font-size: calc(var(--t-2xl) * 1.3); font-weight: var(--w-bold);
+  letter-spacing: -0.035em; line-height: 0.95;
+  background: linear-gradient(110deg, #fff 25%, #FBCFE8 60%, #FFB4B6); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.dischero__sub { margin: 0; max-width: 46ch; color: rgba(255, 255, 255, 0.78); font-size: var(--t-sm); line-height: 1.45; }
+.dischero__share { color: #fff; background: rgba(8, 11, 18, 0.3); border-color: rgba(255, 255, 255, 0.16); }
+
+/* The spotlight: a deck of cards to flick through. The top one is big; two
+   more peek out behind it, smaller and lower, so it reads as a pile. */
+.spotdeck { display: grid; gap: 10px; }
+.spotdeck__head { display: flex; align-items: baseline; justify-content: space-between; }
+.spotdeck__head h2 { margin: 0; font-size: var(--t-md); font-weight: var(--w-bold); }
+.spotdeck__count { font-family: var(--mono); font-size: var(--t-xs); color: var(--text-faint); }
+.spotdeck__stack {
+  position: relative; height: clamp(250px, 64vw, 330px); margin-bottom: 26px;
+  touch-action: pan-y; user-select: none; -webkit-user-select: none;
+}
+.spotcard {
+  position: absolute; inset: 0; overflow: hidden; isolation: isolate;
+  display: grid; align-items: end;
+  border-radius: 22px; border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--surface-2); color: #fff; text-decoration: none;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+  transform-origin: 50% 100%;
+  transition: transform 360ms var(--ease-out), opacity 300ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.spotcard[data-depth='0'] { z-index: 4; }
+.spotcard[data-depth='1'] { z-index: 3; transform: translateY(12px) scale(0.94); opacity: 0.8; pointer-events: none; }
+.spotcard[data-depth='2'] { z-index: 2; transform: translateY(24px) scale(0.88); opacity: 0.5; pointer-events: none; }
+.spotcard[data-depth='3'] { z-index: 1; transform: translateY(26px) scale(0.84); opacity: 0; visibility: hidden; transition: none; pointer-events: none; }
+.spotcard.is-flying { z-index: 5; transition: transform 260ms var(--ease-out), opacity 200ms ease 60ms; opacity: 0; pointer-events: none; }
+.spotcard.is-flying--left { transform: translateX(-120%) rotate(-14deg); }
+.spotcard.is-flying--right { transform: translateX(120%) rotate(14deg); }
+.spotcard--violet { background: linear-gradient(160deg, #4C1D95, #1E1B4B); }
+.spotcard--pink { background: linear-gradient(160deg, #9D174D, #3B0764); }
+.spotcard--aqua { background: linear-gradient(160deg, #0E7490, #172554); }
+.spotcard--gold { background: linear-gradient(160deg, #B45309, #451A03); }
+.spotcard--coral { background: linear-gradient(160deg, #BE123C, #3F0D1E); }
+.spotcard__photo { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; }
+.spotcard__emoji { position: absolute; inset: 0; z-index: -2; display: grid; place-items: center; font-size: 84px; opacity: 0.9; }
+.spotcard__shade { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, transparent 30%, rgba(4, 6, 12, 0.88) 100%); }
+.spotcard__body { display: grid; gap: 6px; padding: 16px; min-width: 0; }
+.spotcard__kind {
+  justify-self: start; padding: 4px 10px; border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.16); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em;
+}
+.spotcard__title {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font: var(--w-bold) var(--t-lg)/1.2 var(--display); letter-spacing: -0.01em;
+}
+.spotcard__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.spotcard__line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); color: rgba(255, 255, 255, 0.78); }
+.spotcard__cta {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 7px 13px; border-radius: var(--r-pill);
+  background: var(--grad-hero); box-shadow: var(--shadow-violet); font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+.spotdeck__controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.spotdeck__dots { display: flex; gap: 5px; }
+.spotdeck__dots span { width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--border-strong); transition: transform 240ms var(--ease-out), background-color 240ms ease; }
+.spotdeck__dots span.is-on { background: #EC4899; transform: scaleX(2.4); margin-inline: 5px; }
+.spotdeck__next {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 16px;
+  border-radius: var(--r-pill); border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
+  transition: border-color var(--dur-1) ease, transform 120ms var(--ease-out);
+}
+.spotdeck__next:active { transform: scale(0.96); }
+@media (hover: hover) and (pointer: fine) {
+  .spotdeck__next:hover { border-color: var(--violet-lit); }
+  .spotcard[data-depth='0']:not(.is-flying):hover { transform: translateY(-3px); }
+}
+
+/* The lenses: one sticky strip under the header, the chosen one lit. */
+.dislens {
+  position: sticky; top: var(--nav-h); z-index: var(--z-popover);
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin-inline: calc(var(--page-pad) * -1); padding: 8px var(--page-pad);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  /* It sticks under the header, and to the very top while the header is
+     away. Its stuck place moves rather than the bar itself: a bar shifted up
+     before it has stuck would leave a gap where it was. */
+  transition: top 280ms var(--ease);
+}
+:root[data-bars='hidden'] .dislens { top: env(safe-area-inset-top, 0px); }
+.dislens::-webkit-scrollbar { display: none; }
+.dislens__tab {
+  flex: none; min-height: 36px; padding: 0 14px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+  font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
+  transition: background-color var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease, transform 120ms var(--ease-out);
+}
+.dislens__tab:active { transform: scale(0.96); }
+.dislens__tab.is-on { background: var(--grad-hero); border-color: transparent; color: #fff; box-shadow: var(--shadow-violet); }
+@media (hover: hover) and (pointer: fine) { .dislens__tab:hover:not(.is-on) { color: var(--text); border-color: var(--border-strong); } }
+
+/* Live now and the competitions: sideways rows of doors into the posts. */
+.dislive { display: grid; gap: 8px; }
+.dislive .discrail__head h2 { display: flex; align-items: center; gap: 8px; }
+.dislive__row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 72%);
+  gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  margin-inline: calc(var(--page-pad) * -1); padding: 2px var(--page-pad) 6px;
+}
+.dislive__row::-webkit-scrollbar { display: none; }
+@media (min-width: 640px) { .dislive__row { grid-auto-columns: minmax(0, 46%); } }
+.livecard, .contestcard {
+  display: grid; grid-template-rows: auto 1fr; overflow: hidden; scroll-snap-align: start;
+  border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface);
+  color: inherit; text-decoration: none;
+  animation: disc-in 300ms var(--ease-out) both;
+  transition: border-color var(--dur-1) ease, transform 140ms var(--ease-out);
+}
+.livecard:active, .contestcard:active { transform: scale(0.98); }
+@media (hover: hover) and (pointer: fine) {
+  .livecard:hover, .contestcard:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+}
+.livecard--aqua { border-top: 3px solid var(--aqua); }
+.livecard--pink { border-top: 3px solid var(--pink); }
+.livecard--gold { border-top: 3px solid var(--warn); }
+.livecard--violet { border-top: 3px solid var(--violet-lit); }
+.livecard__art {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-rows: 100%;
+  gap: 2px; height: 112px; overflow: hidden; background: var(--surface-2);
+}
+.livecard__art img { width: 100%; height: 100%; min-height: 0; object-fit: cover; }
+.livecard__art--0 { place-items: center; }
+.livecard__emoji { font-size: 40px; }
+.livecard__body { display: grid; gap: 6px; align-content: start; padding: 10px 12px 12px; min-width: 0; }
+.livecard__kind { font-size: var(--t-2xs); font-weight: var(--w-bold); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+.livecard__q {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: var(--t-base); font-weight: var(--w-semi); line-height: 1.3;
+}
+.livecard__meta { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t-xs); color: var(--text-dim); }
+.livecard__left { color: var(--coral); font-weight: var(--w-semi); }
+.livecard__cta {
+  justify-self: start; display: inline-flex; align-items: center; gap: 4px; margin-top: 2px;
+  padding: 6px 12px; border-radius: var(--r-pill); background: var(--grad-hero); color: #fff;
+  font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+.contestcard { border-color: rgba(251, 191, 36, 0.35); }
+.contestcard__art { position: relative; display: grid; place-items: center; height: 128px; overflow: hidden; background: var(--grad-gold); font-size: 44px; }
+.contestcard__art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.contestcard__phase {
+  position: absolute; top: 8px; left: 8px; padding: 3px 9px; border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  font-size: var(--t-2xs); font-weight: var(--w-bold); color: #fff;
+}
+.contestcard__phase--entries { color: var(--lime); }
+.contestcard__phase--voting { color: var(--aqua); }
+.contestcard__phase--ended { color: var(--warn); }
+.contestcard__body { display: grid; gap: 4px; align-content: start; padding: 10px 12px 12px; min-width: 0; }
+.contestcard__body strong { font: var(--w-bold) var(--t-base)/1.25 var(--display); }
+.contestcard__body .faint { font-size: var(--t-xs); }
+.contestcard__prize { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--warn); }
+
+@keyframes disc-in { from { opacity: 0; transform: translateY(10px); } }
+
+/* The stream rises into place as it scrolls into view, where the browser can
+   tie an animation to scrolling; elsewhere it simply is there. */
+@supports (animation-timeline: view()) {
+  .discover__stream > * {
+    animation: disc-rise linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 28%;
+  }
+}
+@keyframes disc-rise { from { opacity: 0; transform: translateY(24px) scale(0.98); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .dischero, .livecard, .contestcard { animation: fade-in 160ms ease both; }
+  .livecard, .contestcard, .dislens__tab, .dischero__stat, .dislens, .spotcard, .spotdeck__dots span { transition: none; }
+  .dischero__aurora span, .dischero__pulse::after { animation: none; }
+  .discover__stream > * { animation: none; }
+}
+.dischero__guest { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 0; font-size: var(--t-sm); }
+
+.discover__stream { display: grid; gap: 14px; }
+
+/* A rail of finds between posts: sideways on a phone, a row of four wider. */
+.discrail { display: grid; gap: 8px; }
+.discrail__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.discrail__head h2 { margin: 0; font-size: var(--t-md); font-weight: var(--w-bold); }
+.discrail__all {
+  padding: 0; border: 0; background: none; cursor: pointer; font: inherit;
+  font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--accent-text); text-decoration: none;
+}
+.discrail__row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 46%);
+  gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  margin-inline: calc(var(--page-pad) * -1); padding-inline: var(--page-pad);
+}
+.discrail__row::-webkit-scrollbar { display: none; }
+@media (min-width: 640px) {
+  .discrail__row { grid-auto-columns: minmax(0, 1fr); margin-inline: 0; padding-inline: 0; }
+}
+.discgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+
+.discitem {
+  display: grid; align-content: start; gap: 0; overflow: hidden; scroll-snap-align: start;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  color: inherit; text-decoration: none;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.discitem:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.discitem__photo { aspect-ratio: 1; border-radius: 0; }
+.discitem__body { display: grid; gap: 4px; padding: 10px; min-width: 0; }
+.discitem__why {
+  justify-self: start; padding: 2px 7px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: var(--w-bold);
+  color: var(--violet-text); background: var(--violet-soft);
+}
+.discitem__why--rare { color: #FF8A8D; background: var(--coral-soft); }
+.discitem__why--filling { color: #67E8F9; background: var(--aqua-soft); }
+.discitem__why--hot { color: var(--warn); background: var(--warn-soft); }
+.discitem__why--yours { color: var(--accent-text); background: var(--accent-soft); }
+.discitem__name {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.35;
+}
+.discitem__meta { display: flex; align-items: baseline; gap: 6px; font-size: var(--t-sm); }
+.discitem__meta strong { font-family: var(--mono); font-weight: var(--w-medium); }
+
+/* The title, with a way to pass Discover on beside it. */
+.dischero__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* What people are posting about: one sideways line of #topics. */
+.distopics {
+  display: flex; gap: 6px; margin: 0 calc(var(--page-pad) * -1); padding-inline: var(--page-pad);
+  overflow-x: auto; scrollbar-width: none;
+}
+.distopics::-webkit-scrollbar { display: none; }
+.distopic {
+  display: inline-flex; align-items: baseline; gap: 5px; flex: 0 0 auto;
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  color: var(--accent-text); font-size: var(--t-xs); font-weight: var(--w-semi); text-decoration: none;
+}
+.distopic:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+
+/* Where a guest's scrolling stops. */
+.discwall {
+  display: grid; gap: 8px; justify-items: center; text-align: center;
+  padding: 22px 18px; border: 1px solid var(--accent-line); border-radius: var(--r-lg, 16px);
+  background: var(--accent-soft);
+}
+.discwall h2 { margin: 0; font-size: var(--t-lg); }
+.discwall p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); max-width: 42ch; }
+
+/* This week's best: three short ranked lists. */
+.discweek { display: grid; gap: 16px; }
+.discweek__block { display: grid; gap: 8px; }
+.discweek__block h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-md); }
+.discweek__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.discweek__row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  color: inherit; text-decoration: none;
+}
+a.discweek__row:hover { border-color: var(--border-strong); }
+.discweek__rank { width: 1.4em; text-align: center; font-family: var(--mono); font-weight: var(--w-bold); color: var(--accent-text); }
+.discweek__photo { width: 40px; height: 40px; border-radius: 8px; flex: 0 0 auto; }
+.discweek__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+.discweek__count { flex: 0 0 auto; color: var(--text-dim); font-size: var(--t-xs); font-family: var(--mono); }

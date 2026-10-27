@@ -30,8 +30,14 @@ export function json(status: number, body: unknown, cookies: string[] = []): Htt
   return { status, headers, jsonBody: withoutStoreFields(body) };
 }
 
-/** What Cosmos adds to every document it hands back: how it is stored, which no reader needs. */
-const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', '_parts']);
+/**
+ * Fields no response ever carries, at any depth: what Cosmos adds to every
+ * document it hands back (how it is stored, which no reader needs), and what
+ * an account keeps for the server alone - its password hash and its search
+ * words. Routes map accounts to what each screen shows; this is the net under
+ * that, so a route that forgets cannot send a hash to the browser.
+ */
+const STORE_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', '_parts', 'passwordHash', 'searchKey', 'mfa', 'challenges']);
 
 /**
  * The body with Cosmos's own fields taken out, at any depth. Routes return
@@ -48,6 +54,15 @@ function withoutStoreFields(value: unknown): unknown {
     if (!STORE_FIELDS.has(key)) out[key] = withoutStoreFields(entry);
   }
   return out;
+}
+
+/**
+ * A response the browser may reuse for a while without asking again. For the
+ * few reads every page load makes whose answer rarely changes.
+ */
+export function cached(response: HttpResponseInit, cacheControl: string): HttpResponseInit {
+  (response.headers as Headers).set('Cache-Control', cacheControl);
+  return response;
 }
 
 export function error(status: number, code: string, message: string): HttpResponseInit {
@@ -116,12 +131,53 @@ export function toErrorResponse(err: unknown, context: InvocationContext): HttpR
   return error(500, 'internal_error', `Something went wrong handling this request (${kind}).`);
 }
 
+/**
+ * The largest request body any route reads.
+ *
+ * Every route parses its whole body before it can say "too long", so without
+ * a cap here a 60 MB post cost a second of CPU and 150 MB of memory before
+ * being refused - a few at once could take a worker down. The biggest real
+ * body is one photo sent as a data URL (900 KB of image, a third more as
+ * base64) with room to spare.
+ */
+export const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+/** A refusal for a body declared larger than any route accepts, before it is read. */
+function oversized(request: unknown): HttpResponseInit | null {
+  const headers = (request as { headers?: { get?: (name: string) => string | null } } | undefined)?.headers;
+  if (typeof headers?.get !== 'function') return null;
+  const declared = Number(headers.get('content-length'));
+  if (!Number.isFinite(declared) || declared <= MAX_BODY_BYTES) return null;
+  return error(413, 'body_too_large', 'That is more than Figmark accepts in one go. Send something smaller.');
+}
+
+/**
+ * A write sent the way only a cross-site form or a no-CORS request could.
+ *
+ * Browsers let another page post a form - urlencoded, multipart or plain text
+ * - anywhere, cookies and all where SameSite allows it (a sibling subdomain
+ * counts as the same site). This app never sends those: its writes are JSON,
+ * or a photo's own image type. So a write in one of them is refused before it
+ * is read, which closes form-based CSRF whatever the cookie's scope.
+ */
+function crossSiteForm(request: unknown): HttpResponseInit | null {
+  const req = request as { method?: string; headers?: { get?: (name: string) => string | null } } | undefined;
+  if (typeof req?.headers?.get !== 'function') return null;
+  const method = (req.method ?? 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
+  const type = (req.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+  if (type !== 'application/x-www-form-urlencoded' && type !== 'multipart/form-data' && type !== 'text/plain') return null;
+  return error(415, 'unsupported_media_type', 'Send this as JSON.');
+}
+
 /** Wrap a handler so every route gets uniform error translation. */
 export function handler<Args extends unknown[]>(
   fn: (...args: [...Args, InvocationContext]) => Promise<HttpResponseInit>,
 ): (...args: [...Args, InvocationContext]) => Promise<HttpResponseInit> {
   return async (...args) => {
     const context = args[args.length - 1] as InvocationContext;
+    const refused = oversized(args[0]) ?? crossSiteForm(args[0]);
+    if (refused) return refused;
     try {
       /* The route short forms every label is drawn with: read at most once a
          minute per worker, and never the reason a request fails. */

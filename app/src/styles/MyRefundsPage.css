@@ -1,3 +1,9 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.claimcard__link { color: #FAE8FF; font-weight: var(--w-semi); }
+.earnrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); }
+.earnrow__what { display: grid; gap: 2px; min-width: 0; }
+.earnrow__side { display: grid; justify-items: end; gap: 4px; }
+
 /*
  * Styles only pages/MyRefundsPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by
@@ -5,3 +11,24 @@
  */
 .earnrow--void { opacity: 0.6; }
 .earnrow--void .earnrow__side b { text-decoration: line-through; }
+
+/* Store credit won, by shop, and the badges that came with it. */
+.wallet-credits { display: grid; gap: 12px; }
+.wallet-credit { display: grid; gap: 8px; border-color: rgba(251, 191, 36, 0.35); }
+.wallet-credit__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.wallet-credit__left {
+  font: var(--w-bold) var(--t-xl)/1 var(--display);
+  background: var(--grad-gold); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.wallet-credit__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); }
+.wallet-credit__list li { display: grid; gap: 2px; }
+.wallet-badges { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.wallet-badge {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r-lg);
+  border: 1px solid var(--border); background: var(--surface); color: inherit; text-decoration: none;
+}
+.wallet-badge > span:last-child { display: grid; gap: 2px; min-width: 0; font-size: var(--t-sm); }
+.wallet-badge__emoji {
+  display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 14px;
+  font-size: 22px; background: var(--warn-soft); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.4);
+}

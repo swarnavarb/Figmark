@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { BlobEntry, PhotoScope, PhotoStore, PrivatePhotoInfo, PublicPhotoInfo, StoredPhoto, StorageStatus } from './types.js';
+import { isThumbName, thumbNameOf, type BlobEntry, type PhotoScope, type PhotoStore, type PrivatePhotoInfo, type PublicPhotoInfo, type StoredPhoto, type StorageStatus } from './types.js';
 
 /**
  * Used when no storage account is configured.
@@ -35,12 +35,14 @@ export class MemoryPhotoStore implements PhotoStore {
     return `/api/photos/${encodeURIComponent(blobName)}`;
   }
 
-  async upload(bytes: Uint8Array, contentType: string, uploadedBy?: string): Promise<StoredPhoto> {
+  async upload(bytes: Uint8Array, contentType: string, uploadedBy?: string, thumb?: Uint8Array): Promise<StoredPhoto> {
     const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
-    this.blobs.set(blobName, {
-      bytes, contentType, createdAt: new Date().toISOString(), uploadedBy: uploadedBy ?? null, attachedTo: null,
-    });
-    return { blobName, url: this.urlFor(blobName)! };
+    const createdAt = new Date().toISOString();
+    this.blobs.set(blobName, { bytes, contentType, createdAt, uploadedBy: uploadedBy ?? null, attachedTo: null });
+    if (!thumb) return { blobName, url: this.urlFor(blobName)! };
+    const small = thumbNameOf(blobName);
+    this.blobs.set(small, { bytes: thumb, contentType: 'image/jpeg', createdAt, uploadedBy: uploadedBy ?? null, attachedTo: null });
+    return { blobName, url: this.urlFor(blobName)!, thumbUrl: this.urlFor(small)! };
   }
 
   async read(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
@@ -49,7 +51,9 @@ export class MemoryPhotoStore implements PhotoStore {
 
   async publicInfo(blobName: string): Promise<PublicPhotoInfo | null> {
     const found = this.blobs.get(blobName);
-    return found ? { uploadedBy: found.uploadedBy, attachedTo: found.attachedTo, uploadedAt: found.createdAt } : null;
+    return found
+      ? { uploadedBy: found.uploadedBy, attachedTo: found.attachedTo, uploadedAt: found.createdAt, hasThumb: this.blobs.has(thumbNameOf(blobName)) }
+      : null;
   }
 
   async claimPublic(blobName: string, owner: string): Promise<boolean> {
@@ -87,6 +91,7 @@ export class MemoryPhotoStore implements PhotoStore {
   async list(): Promise<BlobEntry[]> {
     const entries: BlobEntry[] = [];
     for (const [name, blob] of this.blobs) {
+      if (isThumbName(name)) continue;
       entries.push({ scope: 'public', name, size: blob.bytes.byteLength, uploadedAt: blob.createdAt });
     }
     for (const [name, blob] of this.privateBlobs) {
@@ -96,6 +101,7 @@ export class MemoryPhotoStore implements PhotoStore {
   }
 
   async remove(scope: PhotoScope, blobName: string): Promise<boolean> {
+    if (scope === 'public' && !isThumbName(blobName)) this.blobs.delete(thumbNameOf(blobName));
     return (scope === 'public' ? this.blobs : this.privateBlobs).delete(blobName);
   }
 }

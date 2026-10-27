@@ -1,4 +1,9 @@
+import { daysUntil as daysLeft } from '../format';
 import type { ReactNode } from 'react';
+import type { PreOrderFullRule, PreOrderShortRule } from '@shared/models';
+import {
+  FULL_RULES, FULL_RULE_LABELS, MAX_CUTOFF_DAYS, MAX_THRESHOLD, SHORT_RULES, SHORT_RULE_LABELS,
+} from '@shared/preorder';
 
 /**
  * The pieces every listing form is built from - the sell page, a private
@@ -48,8 +53,7 @@ export function isoInDays(days: string | number): string {
 
 /** Whole days until an ISO time, at least 1. */
 export function daysUntil(iso: string | null | undefined, fallback = 2): number {
-  if (!iso) return fallback;
-  return Math.max(1, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
+  return iso ? Math.max(1, daysLeft(iso)) : fallback;
 }
 
 /** An on/off switch, labelled. */
@@ -124,7 +128,9 @@ export const SHAPE_OPTIONS: { id: Shape; icon: string; title: string; note: stri
  * pre-order has no fixed stock count, so the quantity and expiry questions
  * step aside while this is on.
  */
-export function PreOrderBox({ on, onToggle, units, onUnits, closes, onCloses }: {
+export function PreOrderBox({
+  on, onToggle, units, onUnits, closes, onCloses, whenShort, onWhenShort, whenFull, onWhenFull,
+}: {
   on: boolean;
   onToggle: (next: boolean) => void;
   units: string;
@@ -132,23 +138,60 @@ export function PreOrderBox({ on, onToggle, units, onUnits, closes, onCloses }: 
   /** Days from now. */
   closes: string;
   onCloses: (next: string) => void;
+  whenShort: PreOrderShortRule;
+  onWhenShort: (next: PreOrderShortRule) => void;
+  whenFull: PreOrderFullRule;
+  onWhenFull: (next: PreOrderFullRule) => void;
 }) {
   return (
     <LBox icon="📅" title="Pre-order" hint="Buyers book first; you order once enough are in."
       right={<Switch checked={on} onChange={onToggle} label="Take pre-orders" />}>
       {on && (
-        <div className="field-row">
-          <label className="field">
-            <span>Bookings needed</span>
-            <input type="number" min="2" value={units} onChange={(e) => onUnits(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Bookings close in (days)</span>
-            <input type="number" min="1" max="365" value={closes} onChange={(e) => onCloses(e.target.value)} />
-          </label>
-        </div>
+        <>
+          <div className="field-row">
+            <label className="field">
+              <span>Bookings needed</span>
+              <input type="number" min="2" max={MAX_THRESHOLD} value={units} onChange={(e) => onUnits(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Bookings close in (days)</span>
+              <input type="number" min="1" max={MAX_CUTOFF_DAYS} value={closes} onChange={(e) => onCloses(e.target.value)} />
+            </label>
+          </div>
+          {/* Both answerable later from the item's page; asked here so nobody
+              finds out what happens at the cutoff by watching it happen. */}
+          <div className="field-row">
+            <PreOrderRules whenShort={whenShort} onWhenShort={onWhenShort} whenFull={whenFull} onWhenFull={onWhenFull} />
+          </div>
+        </>
       )}
     </LBox>
+  );
+}
+
+/** The two choices a seller makes about a pre-order: when it is short, and once it is full. */
+export function PreOrderRules({ whenShort, onWhenShort, whenFull, onWhenFull, disabled }: {
+  whenShort: PreOrderShortRule;
+  onWhenShort: (next: PreOrderShortRule) => void;
+  whenFull: PreOrderFullRule;
+  onWhenFull: (next: PreOrderFullRule) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <label className="field">
+        <span>If it is short when bookings close</span>
+        <select value={whenShort} disabled={disabled} onChange={(e) => onWhenShort(e.target.value as PreOrderShortRule)}>
+          {SHORT_RULES.map((rule) => <option key={rule} value={rule}>{SHORT_RULE_LABELS[rule]}</option>)}
+        </select>
+      </label>
+      <label className="field">
+        <span>Once it fills, new people</span>
+        <select value={whenFull} disabled={disabled} onChange={(e) => onWhenFull(e.target.value as PreOrderFullRule)}>
+          {FULL_RULES.map((rule) => <option key={rule} value={rule}>{FULL_RULE_LABELS[rule]}</option>)}
+        </select>
+      </label>
+    </>
   );
 }
 

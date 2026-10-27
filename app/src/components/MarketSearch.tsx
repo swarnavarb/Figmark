@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { matchesSearch, searchWords } from '@shared/catalog';
 import { ApiRequestError, api, type FeedListing, type ShopCard, type SocialSearchResult } from '../api';
+import { useSession } from '../session';
 import { formatMoney } from '../format';
 import { compressImage } from '../imageCompress';
 import { Avatar, Icon, Thumb, leadPhoto } from './ui';
@@ -20,6 +22,40 @@ const ITEMS_SHOWN = 6;
  * The camera in the field searches with a photo instead, and the catalogue is
  * where that search shows: the sheet only takes the picture and hands it over.
  */
+/**
+ * Item results already fetched while typing, by what was typed. When one was
+ * every match there is, anything typed further can only narrow it - each word
+ * must appear somewhere, so "frieren" finds a subset of "frie" - and is
+ * filtered here rather than asked again.
+ */
+const typed = new Map<string, { at: number; listings: FeedListing[]; complete: boolean }>();
+const TYPED_MS = 60_000;
+const TYPED_MAX = 40;
+
+/** Whether every listing matching `next` also matches `before`. */
+function narrows(before: string, next: string): boolean {
+  const had = searchWords(before);
+  const has = searchWords(next);
+  return had.length > 0 && had.every((word) => has.some((longer) => longer.includes(word)));
+}
+
+/** The items for a search, from what was fetched already when it can be, from the server otherwise. */
+async function itemsFor(needle: string): Promise<FeedListing[]> {
+  const now = Date.now();
+  for (const [key, entry] of typed) if (now - entry.at > TYPED_MS) typed.delete(key);
+  const same = typed.get(needle);
+  if (same) return same.listings;
+  for (const [before, entry] of typed) {
+    if (entry.complete && narrows(before, needle)) return entry.listings.filter((listing) => matchesSearch(listing, needle));
+  }
+  const found = await api.feed({ q: needle });
+  if (typed.size >= TYPED_MAX) typed.delete(typed.keys().next().value!);
+  typed.set(needle, { at: Date.now(), listings: found.listings, complete: found.complete === true });
+  return found.listings;
+}
+
+const NOBODY: SocialSearchResult = { people: [], shops: [], forums: [] };
+
 export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
   initial: string;
   onClose: () => void;
@@ -29,6 +65,7 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
   onPhoto: (dataUrl: string) => void;
 }) {
   const navigate = useNavigate();
+  const { user } = useSession();
   const [q, setQ] = useState(initial);
   const [items, setItems] = useState<FeedListing[] | null>(null);
   const [others, setOthers] = useState<SocialSearchResult | null>(null);
@@ -67,9 +104,15 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
     setBusy(true);
     const timer = window.setTimeout(() => {
       // Either half can fail on its own; whatever came back is still shown.
-      void Promise.allSettled([api.feed({ q: needle }), api.socialSearch(needle), api.searchShops(needle)]).then(([feed, social, found]) => {
+      // People and forums are only for the signed in, and shops need two
+      // letters, so neither is asked for when the answer is known to be empty.
+      void Promise.allSettled([
+        itemsFor(needle),
+        user ? api.socialSearch(needle) : Promise.resolve(NOBODY),
+        needle.length >= 2 ? api.searchShops(needle) : Promise.resolve({ shops: [] as ShopCard[] }),
+      ]).then(([feed, social, found]) => {
         if (!live) return;
-        setItems(feed.status === 'fulfilled' ? feed.value.listings : []);
+        setItems(feed.status === 'fulfilled' ? feed.value : []);
         const tagged = found.status === 'fulfilled' ? found.value.shops : [];
         setShops(tagged);
         // A shop shown above for its tags is not shown again by name below.
@@ -86,7 +129,7 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
       live = false;
       window.clearTimeout(timer);
     };
-  }, [q]);
+  }, [q, user]);
 
   const open = (to: string) => {
     onClose();
@@ -148,7 +191,7 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
               <div key={shop.id} className="socsearch__row">
                 <button type="button" className="socsearch__open" onClick={() => shop.handle && open(`/${shop.handle}`)}>
                   {shop.photoUrl
-                    ? <img className="mktsearch__shop" src={shop.photoUrl} alt="" />
+                    ? <img loading="lazy" decoding="async" className="mktsearch__shop" src={shop.photoUrl} alt="" />
                     : <Avatar name={shop.name} size={40} />}
                   <span className="socsearch__who">
                     <strong>{shop.name}</strong>

@@ -57,6 +57,16 @@ export function tagKey(raw: string): string {
   return SAME[key] ?? key;
 }
 
+/**
+ * The single words in a piece of text, keyed the way tags are: lowercase,
+ * accents and punctuation gone, plurals folded, "nendo" read as "nendoroid".
+ * "Pokémon Center plushies" reads as pokemon, center, plushy.
+ */
+export function wordKeys(raw: string): string[] {
+  return raw.toLowerCase().normalize('NFKD').replace(/\p{M}+/gu, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+    .split(' ').filter(Boolean).map(singular).map((word) => SAME[word] ?? word);
+}
+
 /** A tag key as a URL segment and back: "resin kit" ↔ "resin-kit". */
 export const tagSlug = (key: string) => key.replace(/ /g, '-');
 export const tagFromSlug = (slug: string) => tagKey(decodeURIComponent(slug).replace(/-/g, ' '));

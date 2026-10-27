@@ -17,6 +17,7 @@ import {
   daysFrom,
   disputeSubjects,
   isCancelledLike,
+  isPlaced,
   reviewRevealed,
   scoreFrom,
   sideOf,
@@ -32,6 +33,7 @@ import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
 import { adjustHeldCredit, heldCreditMinor, placeOrder, repriceCheckout, returnKeptCredit, unavailableReason } from './placement.js';
 import { error, handler, json } from './http.js';
+import { callOffOrder } from './call-off.js';
 import { ownPhotos } from '../storage/index.js';
 import { claimPhotos } from '../storage/release.js';
 import { tooFast } from '../rate-limit.js';
@@ -620,6 +622,11 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     // Lets the seller's cancel/reversal screen know, before they try, whether
     // the buyer has somewhere for the money to go.
     buyerHasReversalDetails: side === 'seller' ? Boolean(other?.reversalDetails) : null,
+    // Where to send it, once money is owed back - the same details the
+    // seller's Refunds tab shows for this buyer, and only then.
+    buyerReversalDetails: side === 'seller' && order.status === 'payment_reversal_pending'
+      ? other?.reversalDetails ?? null
+      : null,
     myReview: mine,
     // Only if it may be seen: an unrevealed review is exactly what this whole
     // mechanism exists to keep out of the counterparty's hands.
@@ -899,11 +906,13 @@ async function payMore(request: HttpRequest, _context: InvocationContext) {
   const ids = [...new Set(body.orderIds ?? [])];
   const amountMinor = Math.round(Number(body.amountMinor) || 0);
   if (ids.length === 0) return error(400, 'no_items', 'Choose at least one item to pay towards.');
+  if (ids.length > 100) return error(400, 'too_many_items', 'Up to 100 items at a time.');
   if (amountMinor <= 0) return error(400, 'invalid_amount', 'Enter an amount above zero.');
 
   const selected: Order[] = [];
-  for (const id of ids) {
-    const order = await repository.getOrder(id);
+  // Read together, then judged in the order they were asked for.
+  const read = await Promise.all(ids.map((id) => repository.getOrder(id)));
+  for (const order of read) {
     if (!order || order.buyerId !== user.id) return error(404, 'not_found', 'No such purchase of yours.');
     if (!actionsFor(order, user.id).includes('pay_more')) {
       return error(409, 'not_payable', `${order.itemName} is not waiting on a further payment.`);
@@ -1533,6 +1542,13 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
   const order = found.order;
   const side = sideOf(order, user.id)!;
 
+  // A checkout the buyer has not gone ahead with is nobody's business but
+  // theirs: the seller cannot see it, so a dispute over it could never be
+  // answered - and would still have cost the dispute fee.
+  if (!isPlaced(order)) {
+    return error(409, 'not_placed', 'This order has not been placed yet, so there is nothing to dispute. Remove it from your cart instead.');
+  }
+
   const body = await bodyOf<{ subject?: string; reason?: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
   if (!body || typeof body !== 'object') return error(400, 'invalid_body', 'Request body must be JSON.');
 
@@ -1690,6 +1706,27 @@ export const claimPaymentRoute = handler(claimPayment);
  * dispute - different rules, different screen, and a held payment that can be
  * emptied by one side calling it off is not being held.
  */
+/**
+ * Put back what an order took. A called-off order that still holds a unit is
+ * stock nobody can buy and a pre-order that can never fill.
+ */
+async function restock(repository: Repo, order: Order, now: string, units = true): Promise<void> {
+  const listing = await repository.getListing(order.listingId);
+  if (!listing) return;
+  await repository.updateListing({
+    ...listing,
+    quantityAvailable: listing.quantityAvailable + (units ? order.quantity : 0),
+    status: units && listing.status === 'sold_out' ? 'active' : listing.status,
+    preOrder: listing.preOrder
+      ? {
+          ...listing.preOrder,
+          filledCount: Math.max(0, listing.preOrder.filledCount - order.quantity),
+        }
+      : null,
+    updatedAt: now,
+  });
+}
+
 async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -1718,6 +1755,8 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
 
   const now = new Date().toISOString();
   order.status = 'rejected';
+  // Said back to the buyer on the order itself, not only in the timeline.
+  order.cancelReason = reason;
   // Any claim on it is answered by the same act: the order is off, so the
   // money - if it was sent - is going back rather than being confirmed.
   if (order.paymentClaim && !order.paymentClaim.decision) {
@@ -1735,23 +1774,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   note(order, `Seller could not serve this order: ${reason}`, user.id);
   await repository.updateOrder(order);
 
-  // Put back what the order took. A cancelled order that still holds a unit is
-  // stock nobody can buy and a pre-order that can never fill.
-  const listing = await repository.getListing(order.listingId);
-  if (listing) {
-    await repository.updateListing({
-      ...listing,
-      quantityAvailable: listing.quantityAvailable + order.quantity,
-      status: listing.status === 'sold_out' ? 'active' : listing.status,
-      preOrder: listing.preOrder
-        ? {
-            ...listing.preOrder,
-            filledCount: Math.max(0, listing.preOrder.filledCount - order.quantity),
-          }
-        : null,
-      updatedAt: now,
-    });
-  }
+  await restock(repository, order, now);
 
   const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
@@ -1915,7 +1938,7 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'cannot_cancel', 'This order cannot be cancelled here.');
   }
 
-  let body: { reason?: string; message?: string };
+  let body: { reason?: string; message?: string; restock?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -1924,19 +1947,18 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   const reason = (body.reason ?? '').trim();
   if (reason.length < 4) return error(400, 'no_reason', 'Say why, so the buyer knows where they stand.');
 
-  const money = orderMoney(order);
-  const now = new Date().toISOString();
-  order.cancelReason = reason;
-  order.updatedAt = now;
-
   const buyer = await repository.getUserById(order.buyerId);
   const seller = await repository.getUserById(order.sellerId);
 
-  if (money.paidMinor <= 0) {
-    order.status = 'cancelled';
-    note(order, `Order cancelled by seller: ${reason}`, user.id);
-    await repository.updateOrder(order);
+  // Whether the unit goes back on sale is the seller's call: it may be
+  // damaged, lost or sold elsewhere. A parcel already on its way never is.
+  // The order's pre-order place is freed either way.
+  const shippedOut = order.status === 'shipped';
+  const owed = callOffOrder(order, reason, user.id);
+  await repository.updateOrder(order);
+  await restock(repository, order, new Date().toISOString(), body.restock === true && !shippedOut);
 
+  if (owed <= 0) {
     const named = await orderNames(repository, order);
     await notify(repository, [order.buyerId], {
       kind: 'order_cancelled',
@@ -1952,35 +1974,10 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
     return json(200, { order });
   }
 
-  order.status = 'payment_reversal_pending';
-  order.reversal = {
-    reasonForCancel: reason,
-    initiatedAt: now,
-    amountMinor: money.paidMinor,
-    buyerConfirmedDetailsAt: null,
-    reference: null,
-    screenshot: null,
-    reversedAt: null,
-    reversedBy: null,
-    buyerResponse: null,
-    buyerRespondedAt: null,
-    disputeRaisedAt: null,
-  };
-  // What was paid is now owed back, and it goes where every refund goes: onto
-  // the seller's Refunds list, to return in one go or in parts, or to put
-  // towards another of this buyer's orders.
-  order.credits = [...(order.credits ?? []), {
-    id: `crd_${randomUUID().slice(0, 12)}`, createdAt: now, amountMinor: money.paidMinor, batchId: null,
-    refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'open', origin: 'cancelled', reason,
-  }];
-  note(order, `Order cancelled by seller, payment reversal pending: ${reason}`, user.id);
-  note(order, `Payment reversal initiated — ${rupees(money.paidMinor)}`, user.id);
-  await repository.updateOrder(order);
-
   const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'payment_reversal_pending',
-    title: `${named.shop} cancelled your order and is returning ${rupees(money.paidMinor)}`,
+    title: `${named.shop} cancelled your order and is returning ${rupees(owed)}`,
     body: `${order.itemName}: ${reason}`,
     link: `/order/${order.id}`,
   });
@@ -1988,13 +1985,13 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   if (buyer && !buyer.reversalDetails) {
     await notify(repository, [order.buyerId], {
       kind: 'reversal_details_needed',
-      title: `Tell ${named.shop} where to send your ${rupees(money.paidMinor)}`,
+      title: `Tell ${named.shop} where to send your ${rupees(owed)}`,
       body: `Add your payment reversal details so the refund for ${order.itemName} can go out.`,
       link: '/wallet?tab=details',
     });
     if (seller) {
       const text = (body.message ?? '').trim()
-        || `Your order for ${order.itemName} is being cancelled and your payment of ${rupees(money.paidMinor)} `
+        || `Your order for ${order.itemName} is being cancelled and your payment of ${rupees(owed)} `
           + `will be reversed. Please update your Payment Reversal Details so we can send it back.`;
       await systemMessage(repository, seller, buyer, text, order.sellerId);
     }

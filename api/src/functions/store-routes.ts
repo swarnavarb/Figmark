@@ -20,12 +20,14 @@ import { orderMoney } from '../../../shared/payments.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { withOwners } from '../data/lot-owners.js';
 import { forwarderTookLot } from '../service-access.js';
 import { ownedLot } from './fulfilment-routes.js';
 import { gistOf } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { error, handler, json } from './http.js';
 import { audited } from '../audit.js';
+import { ownPhotoName, ownPhotos } from '../storage/index.js';
 
 /**
  * Service stores: applying for one, running one, and the people it serves.
@@ -179,6 +181,21 @@ function readPayment(input: unknown, previous: SellerPaymentDetails | null | und
 }
 
 /**
+ * A refusal when the logo or cover is not a picture uploaded here. Pictures
+ * from other servers would show those servers every visitor, and the site's
+ * policy does not load them.
+ */
+async function foreignImage(input: StoreBody) {
+  for (const value of [input.logoUrl, input.coverUrl]) {
+    const link = typeof value === 'string' ? value.trim() : '';
+    if (link && (link.length > 500 || !(await ownPhotoName(link)))) {
+      return error(400, 'invalid_photo', 'Upload the logo and cover here rather than linking to them.');
+    }
+  }
+  return null;
+}
+
+/**
  * A store as the form describes it, laid over what is already there. One
  * reader for applying and for editing, so a field you can apply with is a
  * field you can correct afterwards.
@@ -281,6 +298,8 @@ async function apply(request: HttpRequest, _context: InvocationContext) {
   const status = statusOf(storeOf(account, kind));
   if (status === 'approved') return error(409, 'already_live', 'Your store is live. Edit it from its console.');
   if (status === 'suspended') return error(409, 'suspended', 'This store is suspended. Message Figmark to talk about it.');
+  const foreign = await foreignImage(input);
+  if (foreign) return foreign;
 
   const store = mergeStore(kind, account, input);
   const gaps = applicationGaps(kind, store);
@@ -354,6 +373,8 @@ async function saveStore(request: HttpRequest, _context: InvocationContext) {
   const input = await body<StoreBody>(request);
   if (!input) return error(400, 'invalid_body', 'Request body must be JSON.');
   const { owner, kind, repository, user } = found;
+  const foreign = await foreignImage(input);
+  if (foreign) return foreign;
 
   const store = mergeStore(kind, owner, input);
   if (isLive(store)) {
@@ -411,13 +432,8 @@ async function storeTeam(request: HttpRequest, _context: InvocationContext) {
 
 /** Every lot, in every shop, that books this forwarder. */
 async function lotsBooking(repository: Repo, forwarderId: string): Promise<{ owner: User; lot: Lot }[]> {
-  const rows: { owner: User; lot: Lot }[] = [];
-  for (const owner of await repository.listStoreOwners()) {
-    for (const lot of await repository.listLots({ sellerId: owner.id })) {
-      if (lot.forwarder?.forwarderUserId === forwarderId) rows.push({ owner, lot });
-    }
-  }
-  return rows;
+  return withOwners(repository, (await repository.listLotsNaming(forwarderId))
+    .filter((lot) => lot.forwarder?.forwarderUserId === forwarderId));
 }
 
 /** A lot's own countries, for the `{origin}`/`{destination}` in its step names. */
@@ -568,7 +584,8 @@ async function artistAct(request: HttpRequest, _context: InvocationContext) {
       jobEvent(job, user.id, note || 'Work started.');
       break;
     case 'ready': {
-      const photos = (input.photos ?? []).map((value) => url(value)).filter((value): value is string => Boolean(value)).slice(0, 8);
+      // Finished-work photos are shown to the customer: uploaded here only.
+      const photos = (await ownPhotos((input.photos ?? []).slice(0, 8), 8)) ?? [];
       job.photos = photos.length ? photos : job.photos;
       job.status = 'ready';
       jobEvent(job, user.id, note || 'Finished.');
@@ -1035,18 +1052,29 @@ interface CrewSeat { role: CrewRole; owner: User; lot: Lot; forwarder: User | nu
 
 /** Every lot this person works, and as what. */
 async function seatsOf(repository: Repo, userId: string): Promise<CrewSeat[]> {
-  const seats: CrewSeat[] = [];
-  const [forwarderOwners, sellers] = await Promise.all([repository.listServiceStoreOwners('forwarder'), repository.listStoreOwners()]);
+  // Only the lots that could seat this person are read: those naming them,
+  // those booked with a forwarder they work for, and every lot of a shop that
+  // lets them pack for it - never every lot of every shop.
+  const [forwarderOwners, naming, managed] = await Promise.all([
+    repository.listServiceStoreOwners('forwarder'), repository.listLotsNaming(userId), repository.listStoresManagedBy(userId),
+  ]);
   const forwarders = new Map(forwarderOwners.filter((user) => isLive(user.forwarderProfile) && hasRight(user, 'forwarder', userId, 'work'))
     .map((user) => [user.id, user]));
-  for (const owner of sellers) {
-    const packsAll = can(owner, userId, 'export') && owner.id !== userId;
-    for (const lot of await repository.listLots({ sellerId: owner.id })) {
-      if (supplierIdOf(lot) === userId || (packsAll && lot.status !== 'closed')) seats.push({ role: 'supplier', owner, lot, forwarder: null });
-      if (lot.handler?.handlerUserId === userId) seats.push({ role: 'handler', owner, lot, forwarder: null });
-      const fwd = lot.forwarder?.forwarderUserId ? forwarders.get(lot.forwarder.forwarderUserId) : undefined;
-      if (fwd && forwarderTookLot(lot)) seats.push({ role: 'forwarder', owner, lot, forwarder: fwd });
-    }
+  const packing = new Set(managed.filter((owner) => owner.id !== userId && can(owner, userId, 'export')).map((owner) => owner.id));
+  const [packed, booked] = await Promise.all([
+    Promise.all([...packing].map((sellerId) => repository.listLots({ sellerId }))),
+    Promise.all([...forwarders.keys()].map((id) => repository.listLotsNaming(id))),
+  ]);
+  const lots = new Map<string, Lot>();
+  for (const lot of [...naming, ...packed.flat(), ...booked.flat()]) lots.set(`${lot.sellerId}:${lot.id}`, lot);
+
+  const seats: CrewSeat[] = [];
+  for (const { owner, lot } of await withOwners(repository, [...lots.values()])) {
+    const packsAll = packing.has(owner.id);
+    if (supplierIdOf(lot) === userId || (packsAll && lot.status !== 'closed')) seats.push({ role: 'supplier', owner, lot, forwarder: null });
+    if (lot.handler?.handlerUserId === userId) seats.push({ role: 'handler', owner, lot, forwarder: null });
+    const fwd = lot.forwarder?.forwarderUserId ? forwarders.get(lot.forwarder.forwarderUserId) : undefined;
+    if (fwd && forwarderTookLot(lot)) seats.push({ role: 'forwarder', owner, lot, forwarder: fwd });
   }
   return seats;
 }

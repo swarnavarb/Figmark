@@ -6,7 +6,7 @@ import { audited } from '../audit.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { cleanCommonSteps, cleanSample, commonSteps, readButtonLibrary, readRouteWords, routeSamples, syncRouteWords } from '../route-library.js';
-import { error, handler, json } from './http.js';
+import { cached, error, handler, json } from './http.js';
 
 /**
  * The route library the operators keep for every shop: the sample routes
@@ -27,7 +27,8 @@ async function body(request: HttpRequest): Promise<unknown> {
 
 /** GET /api/route-words - the short forms, for the app to draw buttons with. */
 async function words(_request: HttpRequest, _context: InvocationContext) {
-  return json(200, await readRouteWords(await getRepository()));
+  // Asked on every page load. An operator's edit reaches everyone within a minute.
+  return cached(json(200, await readRouteWords(await getRepository())), 'public, max-age=60');
 }
 
 /** GET /api/ops/route-library - the samples and short forms, with who changed them last. */

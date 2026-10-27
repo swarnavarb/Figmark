@@ -1,3 +1,4 @@
+import { confirmSentence } from '../components/Ask';
 import { Fragment, createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
@@ -402,7 +403,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   async function remove() {
     if (sample?.onDelete) { sample.onDelete(); return; }
     if (!editing) return;
-    if (!window.confirm(`Delete "${name.trim() || 'this route'}"? Lots already on it keep their steps.`)) return;
+    if (!await confirmSentence(`Delete "${name.trim() || 'this route'}"? Lots already on it keep their steps.`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -417,9 +418,9 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   }
 
   /** Leaving asks first whenever there is anything on screen that was not saved. */
-  function leave() {
+  async function leave() {
     const dirty = started && savedAs !== snapshot(name, steps, joinAt, leaveAt);
-    if (dirty && !window.confirm('Leave without saving? This route will be lost.')) return;
+    if (dirty && !await confirmSentence('Leave without saving? This route will be lost.')) return;
     onCancel();
   }
 

@@ -1,26 +1,21 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiRequestError, api, type ForumRow, type ShareableListing } from '../api';
 import { Thumb } from './ui';
 import { Icon } from './Icon';
 import { Confetti } from './Confetti';
 import { VoiceAvatar, VoicePicker, useVoice } from './SocialVoice';
 import { shrink } from './PhotoManager';
-import {
-  POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_MAX_PHOTOS, VIBES, VIBE_MAX_CHARS,
-  type Vibe,
-} from '@shared/social';
+import { POST_MAX_PHOTOS, VIBES, VIBE_MAX_CHARS, type Vibe } from '@shared/social';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Loading } from './Feedback';
 import '../styles/SocialComposer.css';
 
-/** How long a poll runs, as offered. */
-const POLL_LENGTHS: { hours: number; label: string }[] = [
-  { hours: 24, label: '1 day' },
-  { hours: 72, label: '3 days' },
-  { hours: 168, label: '1 week' },
-  { hours: 0, label: 'No end' },
-];
+/*
+ * Polls are made in the studio - the same form the + opens - so a poll from
+ * the feed and a poll from the + can never differ. It arrives on first tap.
+ */
+const PostStudio = lazy(() => import('./PostStudio').then((module) => ({ default: module.PostStudio })));
 
 /** A post from the feed goes into three forums at most. */
 const MAX_FORUMS = 3;
@@ -60,8 +55,7 @@ export function Composer({ onPosted, forum = null }: {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState('');
   const [photos, setPhotos] = useState<DraftPhoto[]>([]);
-  const [poll, setPoll] = useState<string[] | null>(null);
-  const [pollHours, setPollHours] = useState(24);
+  const [polling, setPolling] = useState(false);
   const [vibe, setVibe] = useState<Vibe | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,11 +102,9 @@ export function Composer({ onPosted, forum = null }: {
   // A shop is addressed by its name; a person by their first one.
   const first = voice.storeId ? voice.name : (user?.displayName.split(' ')[0] ?? 'there');
   const uploading = photos.some((photo) => !photo.url && !photo.failed);
-  const pollReady = !poll || poll.filter((option) => option.trim()).length >= POLL_MIN_OPTIONS;
-  const canPost = !busy && !uploading && pollReady
+  const canPost = !busy && !uploading
     && (body.trim().length >= 2 || photos.some((photo) => photo.url) || Boolean(item))
-    && (!vibe || body.trim().length <= VIBE_MAX_CHARS)
-    && (!poll || body.trim().length >= 2);
+    && (!vibe || body.trim().length <= VIBE_MAX_CHARS);
 
   function expand(then?: () => void) {
     setOpen(true);
@@ -151,7 +143,6 @@ export function Composer({ onPosted, forum = null }: {
     photos.forEach((photo) => URL.revokeObjectURL(photo.preview));
     setBody('');
     setPhotos([]);
-    setPoll(null);
     setVibe(null);
     setItem(null);
     setPicking(false);
@@ -176,7 +167,6 @@ export function Composer({ onPosted, forum = null }: {
           : {}),
         ...(item ? { listingId: item.id } : {}),
         photoUrls: photos.map((photo) => photo.url).filter((url): url is string => Boolean(url)),
-        ...(poll ? { poll: { options: poll.map((option) => option.trim()).filter(Boolean), closesInHours: pollHours } } : {}),
         ...(vibe ? { vibe } : {}),
       });
       reset();
@@ -196,12 +186,7 @@ export function Composer({ onPosted, forum = null }: {
         onClick={() => (open ? picker.current?.click() : expand(() => picker.current?.click()))}>
         <Icon name="image" size={18} /> <span>Photo</span>
       </button>
-      <button type="button" className={`writer__tool writer__tool--poll${poll ? ' is-on' : ''}`}
-        onClick={() => {
-          if (!open) expand();
-          setVibe(null);
-          setPoll(poll ? null : ['', '']);
-        }}>
+      <button type="button" className="writer__tool writer__tool--poll" onClick={() => setPolling(true)}>
         <Icon name="poll" size={18} /> <span>Poll</span>
       </button>
       <button type="button" className={`writer__tool writer__tool--vibe${vibe ? ' is-on' : ''}`}
@@ -210,7 +195,6 @@ export function Composer({ onPosted, forum = null }: {
           if (vibe) {
             setVibe(null);
           } else {
-            setPoll(null);
             setPhotos([]);
             setVibe('hero');
           }
@@ -241,10 +225,23 @@ export function Composer({ onPosted, forum = null }: {
     </div>
   );
 
+  const studio = polling && (
+    <Suspense fallback={null}>
+      <PostStudio mode="poll" storeId={forum ? null : voice.storeId} storeName={forum ? null : voice.name}
+        forumId={forum?.id ?? null} onClose={() => setPolling(false)}
+        onPosted={() => {
+          setPolling(false);
+          setParty((count) => count + 1);
+          void onPosted();
+        }} />
+    </Suspense>
+  );
+
   if (!open) {
     return (
       <div className="writer writer--closed">
         <Confetti run={party} />
+        {studio}
         <div className="writer__prompt">
           {forum ? <VoiceAvatar voice={voice} size={44} /> : <VoicePicker size={44} />}
           <button type="button" className="writer__fake" onClick={() => expand()}>
@@ -260,6 +257,7 @@ export function Composer({ onPosted, forum = null }: {
 
   return (
     <form className="writer" onSubmit={submit}>
+      {studio}
       <div className="writer__prompt">
         {forum ? <VoiceAvatar voice={voice} size={44} /> : <VoicePicker size={44} />}
         <div className="writer__as">
@@ -286,9 +284,7 @@ export function Composer({ onPosted, forum = null }: {
         <textarea ref={text} className="writer__text" value={body} rows={vibe ? 3 : 3}
           maxLength={vibe ? VIBE_MAX_CHARS : 2000}
           onChange={(e) => setBody(e.target.value)}
-          placeholder={poll
-            ? 'Ask a question…'
-            : vibe
+          placeholder={vibe
               ? 'Say it big…'
               : item
                 ? `Say something about ${item.title}…`
@@ -312,7 +308,7 @@ export function Composer({ onPosted, forum = null }: {
         <div className="writer__photos">
           {photos.map((photo, index) => (
             <div key={photo.key} className={`writer__photo${photo.failed ? ' is-failed' : ''}`}>
-              <img src={photo.preview} alt={`Attached photo ${index + 1}`} />
+              <img loading="lazy" decoding="async" src={photo.preview} alt={`Attached photo ${index + 1}`} />
               {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
               {photo.failed && <span className="writer__failed">Failed</span>}
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
@@ -346,10 +342,9 @@ export function Composer({ onPosted, forum = null }: {
                 onClick={() => {
                   setItem(entry);
                   setPicking(false);
-                  setPoll(null);
                 }}>
                 {entry.photoUrl ? (
-                  <img src={entry.photoUrl} alt="" className="stockpick__img" />
+                  <img loading="lazy" decoding="async" src={entry.photoUrl} alt="" className="stockpick__img" />
                 ) : (
                   <Thumb seed={entry.id} label={entry.title} className="stockpick__img" />
                 )}
@@ -364,7 +359,7 @@ export function Composer({ onPosted, forum = null }: {
       {item && (
         <div className="writer__item">
           {item.photoUrl ? (
-            <img src={item.photoUrl} alt="" className="writer__itemimg" />
+            <img loading="lazy" decoding="async" src={item.photoUrl} alt="" className="writer__itemimg" />
           ) : (
             <Thumb seed={item.id} label={item.title} className="writer__itemimg" />
           )}
@@ -427,39 +422,6 @@ export function Composer({ onPosted, forum = null }: {
           <span className="writer__switch" aria-hidden="true" />
           <span>Also share on my feed <span className="faint">· shows as {voice.name} <Icon name="right" size={10} /> {forum.name}</span></span>
         </label>
-      )}
-
-      {poll && (
-        <div className="writer__poll">
-          {poll.map((option, index) => (
-            <div key={index} className="writer__pollrow">
-              <input value={option} maxLength={POLL_OPTION_MAX_CHARS}
-                placeholder={`Option ${index + 1}`}
-                onChange={(e) => setPoll(poll.map((entry, at) => (at === index ? e.target.value : entry)))} />
-              {poll.length > POLL_MIN_OPTIONS && (
-                <button type="button" className="iconbtn iconbtn--sm" aria-label={`Remove option ${index + 1}`}
-                  onClick={() => setPoll(poll.filter((_, at) => at !== index))}>
-                  <Icon name="close" size={12} />
-                </button>
-              )}
-            </div>
-          ))}
-          <div className="writer__pollfoot">
-            {poll.length < POLL_MAX_OPTIONS && (
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setPoll([...poll, ''])}>
-                <Icon name="plus" size={12} /> Add option
-              </button>
-            )}
-            <label className="writer__pollfor">
-              <span className="faint">Runs for</span>
-              <select value={pollHours} onChange={(e) => setPollHours(Number(e.target.value))}>
-                {POLL_LENGTHS.map((entry) => (
-                  <option key={entry.hours} value={entry.hours}>{entry.label}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
       )}
 
       <input ref={picker} type="file" accept="image/*" multiple hidden

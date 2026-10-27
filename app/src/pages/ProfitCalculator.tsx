@@ -1,3 +1,4 @@
+import { confirmSentence } from '../components/Ask';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
@@ -7,7 +8,7 @@ import {
   type ProfitInput, type ProfitTemplate, type Scenario,
 } from '@shared/profit';
 import { ApiRequestError, api, type SheetItem } from '../api';
-import { formatMoney } from '../format';
+import { formatMoney, formatRupees } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
 import { scrollToTopOf, useGoBack } from '../components/ScrollManager';
@@ -43,8 +44,7 @@ function readInput(): ProfitInput {
 }
 
 /** Rupees, to the paisa when small enough for paise to matter. */
-const inr = (value: number) =>
-  `${value < 0 ? '−' : ''}₹${Math.abs(value).toLocaleString('en-IN', { maximumFractionDigits: Math.abs(value) < 100 ? 2 : 0 })}`;
+const inr = formatRupees;
 const pct = (value: number | null) => (value === null ? '—' : `${value.toFixed(1)}%`);
 
 function freshTemplate(starter: CostLine[], name: string): ProfitTemplate {
@@ -162,7 +162,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   }
 
   async function remove(id: string) {
-    if (!window.confirm('Delete this calculator? Its rates and costs go with it.')) return;
+    if (!await confirmSentence('Delete this calculator? Its rates and costs go with it.')) return;
     setBusy(true);
     try {
       const { templates: next } = await api.deleteProfitTemplate(id, shop);
@@ -772,7 +772,7 @@ function SaveToItem({ template, result, shop, itemPrice, quantity, sellingPrice,
 
   async function save() {
     if (!item) return;
-    if (item.sheet && !window.confirm(`Replace the costs already saved for ${item.title}?`)) return;
+    if (item.sheet && !await confirmSentence(`Replace the costs already saved for ${item.title}?`)) return;
     setBusy(true);
     setNote(null);
     try {

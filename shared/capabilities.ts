@@ -1,6 +1,6 @@
 import type { Capability } from './enums.js';
 import type { User } from './models.js';
-import { fullyVerified } from './verification.js';
+import { buyerVerified, fullyVerified } from './verification.js';
 
 /**
  * What an account may currently do.
@@ -11,9 +11,9 @@ import { fullyVerified } from './verification.js';
  * sell, or both at once.
  */
 export interface UserCapabilities {
-  /** Browsing is always open; buying needs email, WhatsApp and Aadhaar verified. */
+  /** Browsing is always open; buying needs email and WhatsApp verified. */
   canBuy: boolean;
-  /** Listing, private deals and power sales: the same bar as buying. */
+  /** Listing, private deals and power sales: email, WhatsApp and Aadhaar. */
   canSell: boolean;
   /** Quoting on lots and appearing in the directory. */
   canForward: boolean;
@@ -36,12 +36,11 @@ function allowed(user: User, side: 'buy' | 'sell', verified: boolean): boolean {
 }
 
 export function deriveCapabilities(user: User): UserCapabilities {
-  // Everyone is both buyer and seller, so the bar is the same on both sides:
-  // email, a WhatsApp-verified phone, and an Aadhaar that matches that phone.
-  const verified = fullyVerified(user);
-  const canSell = allowed(user, 'sell', verified);
+  // Buying needs email and a WhatsApp-verified phone; selling also needs an
+  // Aadhaar that matches that phone (see buyerVerified for why not buyers).
+  const canSell = allowed(user, 'sell', fullyVerified(user));
   return {
-    canBuy: allowed(user, 'buy', verified),
+    canBuy: allowed(user, 'buy', buyerVerified(user)),
     // Note this is not gated on sellerProfile: an account with no profile yet
     // is one listing away from having one.
     canSell,

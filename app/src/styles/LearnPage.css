@@ -1,9 +1,24 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.learn__rail {
+  position: sticky; top: calc(var(--nav-h) + 8px); display: grid; gap: 6px;
+  max-height: calc(100vh - var(--nav-h) - var(--tabbar-h) - 24px); overflow-y: auto; scrollbar-width: none;
+}
+.learn__rail::-webkit-scrollbar { display: none; }
+.learn__tab {
+  display: grid; justify-items: center; gap: 4px; padding: 10px 4px; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+  font: inherit; font-size: var(--t-2xs); font-weight: var(--w-semi); text-align: center;
+}
+.learn__body { min-width: 0; display: grid; gap: 18px; padding-bottom: var(--s6); }
+.learn__head { display: flex; gap: 12px; align-items: flex-start; }
+.learn__figure { margin: 4px 0 0; display: grid; gap: 6px; }
+
 /*
  * Styles only pages/LearnPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-.learn__railhead { display: none; margin: 0 0 4px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+.learn__railhead { display: none; margin: 0 0 4px; font-family: var(--mono); font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
 .learn__tab:hover { border-color: var(--border-strong); color: var(--text); }
 .learn__tab.is-on { background: var(--violet-soft); border-color: var(--violet-line); color: var(--text); }
 .learn__icon { font-size: 22px; line-height: 1; }
@@ -27,5 +42,5 @@
 @media (min-width: 720px) {
   .learn__railhead { display: block; }
   .learn__tab { grid-template-columns: 28px 1fr; justify-items: start; align-items: center; padding: 10px 12px; font-size: var(--t-sm); text-align: left; }
-  .learn__icon { font-size: 20px; }
+  .learn__icon { font-size: var(--t-lg); }
 }

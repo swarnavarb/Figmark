@@ -119,7 +119,11 @@ export function actionsFor(
   // a pledge, not a payment - it asks for money only once the seller has
   // said yes, per the tagline on the Book option itself.
   const mayPayNow = !order.bookingOnly || order.accepted === true;
-  if (side === 'buyer' && mayPayNow && order.paymentStatus === 'unpaid' && order.status === 'pending_payment') {
+  // An accepted booking the seller sent out on trust is still owed: its buyer
+  // can pay once it is on its way or has arrived, too.
+  const payableStatus = order.status === 'pending_payment'
+    || (order.placedAt != null && (order.status === 'shipped' || order.status === 'delivered'));
+  if (side === 'buyer' && mayPayNow && order.paymentStatus === 'unpaid' && payableStatus) {
     actions.push('pay');
   }
 

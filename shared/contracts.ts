@@ -51,6 +51,13 @@ export interface AuthUser {
    * row again on every request that acts on it.
    */
   managerRights: ManagerRights | null;
+  /** Whether sign-in asks this account for an authenticator code. */
+  mfaEnabled: boolean;
+  /**
+   * Operators and community managers must turn two-factor on before they can
+   * act as such; true while this one has not. The app says so where it matters.
+   */
+  mfaRequired: boolean;
   /** This person's own page, as distinct from their shop's. */
   bio: string;
   coverUrl: string | null;
@@ -61,6 +68,8 @@ export interface LoginRequest {
   /** Email, phone or username; the server normalises and resolves any of them. */
   identifier: string;
   password: string;
+  /** For an account with two-factor on: the authenticator code, or a recovery code. */
+  otp?: string;
 }
 
 export interface SignupRequest {
@@ -75,6 +84,10 @@ export interface SignupRequest {
   email: string;
   phone: string;
   password: string;
+  /** Ticked "I agree to the Terms and the Privacy Policy". Sign-up is refused without it. */
+  acceptTerms?: boolean;
+  /** The Turnstile token, when the server asks for a CAPTCHA. */
+  captchaToken?: string;
 }
 
 export interface LoginResponse {
@@ -109,12 +122,20 @@ export interface HealthResponse {
   status: 'ok' | 'degraded';
   service: string;
   version: string;
+  /**
+   * The deployment's SITE_ENVIRONMENT (`development`, `production`, ...), or
+   * null when unset. Anything but `production` is a test site: the app says so
+   * on every page and asks search engines not to index it.
+   */
+  environment: string | null;
   /** ISO-8601 server time. */
   time: string;
   auth: {
     mode: AuthMode;
     /** Seeded logins, exposed only while the mock provider is active. */
     demoAccounts: DemoAccount[];
+    /** Cloudflare Turnstile's public site key when sign-up asks for a CAPTCHA; null when it does not. */
+    captchaSiteKey: string | null;
     /**
      * Where the session signing key came from. 'development' means the constant
      * published in this repository - sessions are forgeable and this must never

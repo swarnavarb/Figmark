@@ -14,6 +14,7 @@ import { actionsFor, sideOf } from '../../../shared/orders.js';
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import { roundFeeMinor } from '../../../shared/settings.js';
 import { getAuthService } from '../auth/index.js';
+import { staffMfaMissing } from '../auth/mock-provider.js';
 import { getRepository } from '../data/index.js';
 import { countCompleted, dropFromCollection } from '../delivery.js';
 import {
@@ -918,6 +919,7 @@ async function decide(request: HttpRequest, _context: InvocationContext) {
   if (!isManager(await repository.getUserById(user.id))) {
     return error(403, 'not_a_manager', 'You are no longer a community manager, so this round is being handed on.');
   }
+  if (user.mfaRequired) throw staffMfaMissing();
   if (round.decision) return error(409, 'already_decided', 'You have already decided this round.');
   if (round.n === 1 && dispute.status === 'awaiting_response'
     && !(dispute.respondByAt && Date.parse(dispute.respondByAt) <= Date.now())) {
@@ -1107,6 +1109,7 @@ async function release(request: HttpRequest, _context: InvocationContext) {
   if (!isManager(await repository.getUserById(user.id))) {
     return error(403, 'not_a_manager', 'You are no longer a community manager, so this release is being handed on.');
   }
+  if (user.mfaRequired) throw staffMfaMissing();
   if (!communityActionsFor(dispute, user.id).includes('release') || order.hold.state !== 'disputed') {
     return error(409, 'not_releasable', dispute.release
       ? 'This payment has already been released.'
@@ -1358,4 +1361,3 @@ app.http('community-managers', { ...anon, methods: ['GET'], route: 'community/ma
 app.http('community-team', { ...anon, methods: ['GET'], route: 'community/team', handler: communityTeamRoute });
 app.http('community-notices', { ...anon, methods: ['GET'], route: 'community/notices', handler: communityNoticesRoute });
 app.http('community-standing', { ...anon, methods: ['GET'], route: 'community/standing/{id}', handler: communityStandingRoute });
-app.timer('dispute-clock', { schedule: '0 7 * * * *', handler: disputeClock });

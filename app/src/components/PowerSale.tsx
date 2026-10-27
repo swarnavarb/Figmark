@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useNow } from '../clock';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { PostTemplate } from '@shared/templates';
 import { useSession } from '../session';
@@ -14,7 +15,7 @@ import { PhotoManager } from './PhotoManager';
 import { EmptyState, ErrorNotice, Icon } from './ui';
 import type { SavedCalc } from '@shared/profit';
 import { CostSheetField, type CostSheetDraft } from './CostSheetField';
-import { formatMoney, timeAgo } from '../format';
+import { formatMoney, timeAgo, formatDateTime } from '../format';
 import '../styles/PowerSale.css';
 
 /**
@@ -225,7 +226,7 @@ function SaleCard({ sale, storeId, onChanged }: {
             <span className="faint">
               {sale.openedAt
                 ? `Opened ${timeAgo(sale.openedAt)}`
-                : `Opens ${new Date(sale.openingAt).toLocaleString()}`}
+                : `Opens ${formatDateTime(sale.openingAt)}`}
             </span>
             {live && (
               <button className="btn btn--ghost btn--sm" onClick={() => void stop()} disabled={busy}>
@@ -255,18 +256,14 @@ function SaleCard({ sale, storeId, onChanged }: {
  * minute. Only the ticking is local.
  */
 function Countdown({ to }: { to: string }) {
-  const [left, setLeft] = useState(() => Date.parse(to) - Date.now());
-  // A minute apart once there is more than an hour on it: a second hand on a
-  // four-hour countdown is motion for its own sake, and a render a second for
-  // every card on the screen. Crossing under the hour re-arms the timer, so
-  // the seconds start moving the moment they are shown.
-  const long = left > 3_600_000;
-
-  useEffect(() => {
-    setLeft(Date.parse(to) - Date.now());
-    const timer = window.setInterval(() => setLeft(Date.parse(to) - Date.now()), long ? 30_000 : 1_000);
-    return () => window.clearInterval(timer);
-  }, [to, long]);
+  // Half a minute apart while there is more than an hour on it: a second hand
+  // on a four-hour countdown is motion for its own sake. Crossing under the
+  // hour moves it to the one-second clock, so the seconds start moving the
+  // moment they are shown.
+  const slow = useNow(30_000);
+  const long = Date.parse(to) - slow > 3_600_000;
+  const fast = useNow(long ? null : 1_000);
+  const left = Date.parse(to) - (long ? slow : Math.max(slow, fast));
 
   if (left <= 0) return <span className="countdown countdown--done">handing over…</span>;
 
@@ -276,7 +273,7 @@ function Countdown({ to }: { to: string }) {
   const secs = total % 60;
 
   return (
-    <span className="countdown" title={`All public by ${new Date(to).toLocaleString()}`}>
+    <span className="countdown" title={`All public by ${formatDateTime(to)}`}>
       <span className="countdown__value">
         {hours > 0 ? `${hours}h ${String(mins).padStart(2, '0')}m` : `${mins}m ${String(secs).padStart(2, '0')}s`}
       </span>
@@ -488,7 +485,11 @@ export function PowerSaleBuilderPage() {
   const windowText = Number(window_) >= 60 && Number(window_) % 60 === 0
     ? `${Number(window_) / 60} hour${Number(window_) === 60 ? '' : 's'}` : `${Number(window_) || 0} minutes`;
   const saleName = name ?? `${day} drop`;
-  const openingText = opening ?? `⚡ ${day} drop starts now — members get ${windowText} on each piece at the channel price.`;
+  // The message goes out at the start; the first piece drops `lead` minutes later.
+  const leadMinutes = Math.max(0, Number(lead) || 0);
+  const firstDrop = leadMinutes === 0 ? 'starts now'
+    : `starts in ${leadMinutes >= 60 && leadMinutes % 60 === 0 ? `${leadMinutes / 60} hour${leadMinutes === 60 ? '' : 's'}` : `${leadMinutes} minutes`}`;
+  const openingText = opening ?? `⚡ ${day} drop ${firstDrop} — members get ${windowText} on each piece at the channel price.`;
 
   const set = (key: number, patch: Partial<ItemDraft>) =>
     setItems((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));

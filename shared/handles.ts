@@ -30,8 +30,8 @@ export const USERNAME_PATTERN = /^[a-z0-9](?:[a-z0-9_.]{1,28}[a-z0-9])$/;
  * the kind of thing that only breaks for the one person who kept the link.
  */
 export const APP_ROUTE_SEGMENTS: readonly string[] = [
-  'admin', 'api', 'assets', 'batches', 'boot', 'buyer-settings', 'cart', 'community-service', 'dispute', 'disputes',
-  'fonts', 'forwarders', 'i', 'index.html', 'learn', 'listing', 'lot', 'lots', 'me', 'messages', 'order', 'packing',
+  'admin', 'api', 'assets', 'batches', 'boot', 'buyer-settings', 'cart', 'community-service', 'discover', 'dispute', 'disputes',
+  'fonts', 'forwarders', 'i', 'index.html', 'learn', 'legal', 'listing', 'lot', 'lots', 'me', 'messages', 'order', 'packing',
   'purchases', 'quests', 'r', 'refunds', 'routes', 's', 'sell', 'services', 'shop', 'social', 'sw.js', 'tags',
   'verify', 'wallet',
 ];

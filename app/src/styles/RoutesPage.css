@@ -1,3 +1,24 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.rlist { display: grid; gap: 8px; }
+.rrow:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.rrow--fixed { cursor: default; background: var(--surface-2); }
+.rrow--fixed:hover { border-color: var(--border); background: var(--surface-2); }
+.rlist__label { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-faint); margin-top: 4px; }
+.rrow__body { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.rrow__name { font-weight: var(--w-semi); font-size: var(--t-base); }
+.rrow__sum {
+  font-size: var(--t-xs); color: var(--accent-text); font-variant-numeric: tabular-nums;
+}
+.rrow__note { font-size: var(--t-xs); color: var(--text-faint); }
+.faq__item {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.faq__item:first-of-type { border-top: none; padding-top: 0; }
+.faq__item > summary::-webkit-details-marker { display: none; }
+.faq__item[open] > summary::before { content: '– '; }
+.rlist__item > .rrow { flex: 1; min-width: 0; }
+
 /*
  * Styles only pages/RoutesPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

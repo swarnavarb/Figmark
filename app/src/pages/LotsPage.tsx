@@ -1,3 +1,4 @@
+import { confirmSentence } from '../components/Ask';
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -321,7 +322,7 @@ export function RouteSheet({ onSaved, onClose }: {
 }) {
   return (
     <Modal title="New route"
-      onClose={() => { if (window.confirm('Close the route builder? A route not saved yet is lost.')) onClose(); }}>
+      onClose={async () => { if (await confirmSentence('Close the route builder? A route not saved yet is lost.')) onClose(); }}>
       <RouteStudio editing={null} onSaved={onSaved} onCancel={onClose}
         intro={<p className="muted" style={{ marginTop: 0 }}>
           Write it once - it is picked for this lot as soon as it is saved, and any lot after can use it.

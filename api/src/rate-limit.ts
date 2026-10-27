@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { HttpRequest } from '@azure/functions';
+import { runningInAzure } from './config.js';
 import { getRepository } from './data/index.js';
 import { error } from './functions/http.js';
 
@@ -14,9 +15,10 @@ import { error } from './functions/http.js';
  * reached the local count still applies: a limit that fails open is better
  * than an endpoint that fails closed.
  */
-export type Action = 'post' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch'
+export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
   | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
-  | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check';
+  | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check'
+  | 'reset' | 'reset_account' | 'export' | 'clienterror';
 
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
@@ -25,6 +27,10 @@ const DAY = HOUR * 24;
 /** Each action's windows: at most `max` in any `ms`. */
 const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   post: [{ max: 10, ms: MINUTE }, { max: 60, ms: HOUR }],
+  // A batch of what was on screen, sent every few seconds while somebody scrolls.
+  seen: [{ max: 30, ms: MINUTE }, { max: 600, ms: HOUR }],
+  // Saving, hiding and muting: a tap each, but a tap that writes the account.
+  feedpref: [{ max: 60, ms: MINUTE }],
   comment: [{ max: 20, ms: MINUTE }, { max: 200, ms: HOUR }],
   react: [{ max: 60, ms: MINUTE }],
   share: [{ max: 20, ms: MINUTE }],
@@ -35,6 +41,9 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   chatphoto: [{ max: 20, ms: MINUTE }, { max: 150, ms: HOUR }],
   // Each one may be a call to Claude, which is paid for.
   photosearch: [{ max: 10, ms: MINUTE }, { max: 60, ms: HOUR }],
+  // Only counted when a photo nobody has opened yet is read by Claude; scrolling
+  // through a feed opens many, so it allows more than a search does.
+  photosales: [{ max: 30, ms: MINUTE }, { max: 300, ms: HOUR }],
   // Each email sent counts against the free daily quota.
   verify_email: [{ max: 3, ms: 600_000 }, { max: 8, ms: DAY }],
   verify_code: [{ max: 10, ms: 600_000 }],
@@ -49,6 +58,16 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   // address and they must not be refused for each other.
   login: [{ max: 30, ms: MINUTE }, { max: 300, ms: HOUR }],
   signup: [{ max: 20, ms: HOUR }, { max: 100, ms: DAY }],
+  // Password reset requests and code tries, per address: each request may
+  // send an email, and each try is a guess at a six-digit code.
+  reset: [{ max: 10, ms: 600_000 }, { max: 40, ms: DAY }],
+  // Reset emails per account, wherever they are asked from: nobody can fill
+  // somebody's inbox with codes.
+  reset_account: [{ max: 3, ms: HOUR }, { max: 6, ms: DAY }],
+  // Downloading everything an account holds reads a lot of rows.
+  export: [{ max: 3, ms: HOUR }, { max: 10, ms: DAY }],
+  // Error reports from a browser: enough for a page that breaks, not a flood.
+  clienterror: [{ max: 20, ms: MINUTE }, { max: 200, ms: HOUR }],
   // One per pause in typing a username on the sign-up form.
   handle_check: [{ max: 60, ms: MINUTE }, { max: 600, ms: HOUR }],
   // Wrong passwords for one account from one address. Keyed by both, so
@@ -133,25 +152,31 @@ async function sharedLimit(subject: string, action: Action, count: boolean, now:
     return null;
   }
   const digest = createHash('sha256').update(subject).digest('base64url').slice(0, 22);
-  const bumped: string[] = [];
+  // Every window is counted at once rather than one after another: an upload
+  // has three, and each is a round trip to the store.
+  const windows = LIMITS[action].map((limit) => ({
+    limit,
+    id: `rl:${action}:${digest}:${limit.ms}:${Math.floor(now / limit.ms)}`,
+    ttl: Math.ceil(limit.ms / 1000) + 60,
+  }));
+  let totals: (number | null)[];
   try {
-    for (const limit of LIMITS[action]) {
-      const id = `rl:${action}:${digest}:${limit.ms}:${Math.floor(now / limit.ms)}`;
-      const ttl = Math.ceil(limit.ms / 1000) + 60;
-      const total = await repository.bumpCounter(id, count ? 1 : 0, ttl);
-      if (total === null) return null;
-      if (count) bumped.push(id);
-      if (count ? total > limit.max : total >= limit.max) {
-        // Refused attempts are not counted: take this one back off.
-        for (const taken of bumped) void repository.bumpCounter(taken, -1, ttl).catch(() => undefined);
-        return waitFor(limit.ms);
-      }
-    }
+    totals = await Promise.all(windows.map(({ id, ttl }) => repository.bumpCounter(id, count ? 1 : 0, ttl)));
   } catch {
     // The store is unreachable or refusing; the local count still stands.
     return null;
   }
-  return null;
+  if (totals.some((total) => total === null)) return null;
+  const over = windows.find(({ limit }, index) => {
+    const total = totals[index]!;
+    return count ? total > limit.max : total >= limit.max;
+  });
+  if (!over) return null;
+  // Refused attempts are not counted: take this one back off every window.
+  if (count) {
+    for (const { id, ttl } of windows) void repository.bumpCounter(id, -1, ttl).catch(() => undefined);
+  }
+  return waitFor(over.limit.ms);
 }
 
 /** Drop subjects that have been quiet for longer than any window, now and then. */
@@ -170,11 +195,11 @@ export async function forget(subject: string, action: Action): Promise<void> {
     const repository = await getRepository();
     const digest = createHash('sha256').update(subject).digest('base64url').slice(0, 22);
     const now = Date.now();
-    for (const limit of LIMITS[action]) {
+    await Promise.all(LIMITS[action].map(async (limit) => {
       const id = `rl:${action}:${digest}:${limit.ms}:${Math.floor(now / limit.ms)}`;
       const total = await repository.bumpCounter(id, 0, 1);
       if (total) await repository.bumpCounter(id, -total, 1);
-    }
+    }));
   } catch {
     // Best effort: the window expires on its own.
   }
@@ -183,15 +208,22 @@ export async function forget(subject: string, action: Action): Promise<void> {
 /**
  * The address a request came from, as the platform reports it.
  *
- * Azure's front ends set `x-azure-clientip` and `x-client-ip` themselves; the
- * first `x-forwarded-for` entry is the fallback. A port, if one is attached,
- * is dropped. 'unknown' when nothing says - every such request then shares
- * one bucket, which errs towards limiting.
+ * Every per-address limit (sign-ups, sign-ins) rests on this, so on Azure it
+ * believes only what the platform's own proxies wrote: `x-azure-clientip`,
+ * else the last `x-forwarded-for` hop - the one the nearest proxy appended.
+ * The first hop, and `x-client-ip`, are whatever the caller chose to send,
+ * and trusting them let one machine open accounts under a new address per
+ * request. Off Azure (the dev server, the tests) there is no proxy to trust,
+ * and the first hop is taken as given. A port, if one is attached, is dropped.
+ * 'unknown' when nothing says - every such request then shares one bucket,
+ * which errs towards limiting.
  */
 export function clientIp(request: HttpRequest): string {
+  const forwarded = (request.headers.get('x-forwarded-for') ?? '').split(',').map((hop) => hop.trim()).filter(Boolean);
   const raw = request.headers.get('x-azure-clientip')
-    ?? request.headers.get('x-client-ip')
-    ?? request.headers.get('x-forwarded-for')?.split(',')[0]
+    ?? (runningInAzure()
+      ? forwarded[forwarded.length - 1]
+      : request.headers.get('x-client-ip') ?? forwarded[0])
     ?? '';
   const value = raw.trim();
   if (!value) return 'unknown';

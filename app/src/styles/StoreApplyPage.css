@@ -1,3 +1,8 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.sa-steps::-webkit-scrollbar { display: none; }
+.sa-mini__id > div { padding-bottom: 2px; }
+.sa-timeline__row:not(:last-child)::before { content: ''; position: absolute; left: 5px; top: 14px; bottom: 0; width: 2px; background: var(--border); }
+
 /*
  * Styles only components/StoreForm.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by

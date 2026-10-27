@@ -15,7 +15,9 @@ import type {
 } from '@shared/contracts';
 import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, OrderStatus, Sourcing, StorePermission } from '@shared/enums';
 import type { DealState } from '@shared/deals';
+import type { Badge, ContestJudging, GuessView, StoreCredit } from '@shared/play';
 import type { LotTally } from '@shared/board';
+import type { FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
@@ -27,10 +29,11 @@ import type { CostLine, CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } fro
 import type { PostTemplate, TemplateTerms } from '@shared/templates';
 import type { LotBuyerPhase } from '@shared/fulfilment';
 import type { PreOrderView } from '@shared/preorder';
+import type { PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type {
-  CommentThread, PollView, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
+  CommentThread, PollView, PostHotspot, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe, PollStyle,
 } from '@shared/social';
 import type { CommunityAction } from '@shared/disputes';
 import type { MarketSettings } from '@shared/settings';
@@ -139,7 +142,60 @@ const READ_TTL_MS = 5_000;
 const reads = new Map<string, { at: number; promise: Promise<unknown> }>();
 
 function forgetReads(): void {
-  reads.clear();
+  // Startup reads still on their way stay: they answer for before the write
+  // just as their own requests would have.
+  for (const path of [...reads.keys()]) if (!primed.has(path)) reads.delete(path);
+}
+
+/**
+ * The reads every page load starts with, asked as one request (/api/bootstrap)
+ * rather than seven. Each is filed here under its own path, so whichever
+ * screen asks for it gets the bootstrap's answer - or, when the bootstrap did
+ * not carry it (signed out, or the request failed), its own request, sent only
+ * if something actually asks.
+ */
+const BOOT_PATHS = ['/auth/me', '/health', '/route-words', '/push/key', '/me/items', '/invite/me', '/quest/me'];
+/** Paths primed from the bootstrap and not yet answered, with whether something has asked. */
+const primed = new Map<string, { asked: boolean; settle: (answer: { status: number; body: unknown } | null) => void }>();
+
+export function primeStartupReads(): void {
+  const at = Date.now();
+  for (const path of BOOT_PATHS) {
+    let settle!: (answer: { status: number; body: unknown } | null) => void;
+    const promise = new Promise<unknown>((resolve, reject) => {
+      settle = (answer) => {
+        primed.delete(path);
+        if (answer && answer.status >= 200 && answer.status < 300) return resolve(answer.body);
+        if (answer) {
+          const body = answer.body as ApiError | null;
+          return reject(new ApiRequestError(answer.status, body?.error ?? 'http_error', body?.message ?? `Request failed with status ${answer.status}.`));
+        }
+        // Not carried: ask for it now, but only for whoever is waiting.
+        reads.delete(path);
+        send(path).then(resolve, reject);
+      };
+    });
+    promise.catch(() => {
+      if (reads.get(path)?.promise === promise) reads.delete(path);
+    });
+    reads.set(path, { at, promise });
+    primed.set(path, { asked: false, settle });
+  }
+  const finish = (answers: Record<string, { status: number; body: unknown }>) => {
+    for (const [path, entry] of [...primed]) {
+      const answer = answers[path] ?? null;
+      if (answer || entry.asked) entry.settle(answer);
+      else {
+        // Nobody wanted it and it was not carried: forget it unanswered.
+        primed.delete(path);
+        if (reads.get(path)) reads.delete(path);
+      }
+    }
+  };
+  void fetch('/api/bootstrap', { credentials: 'same-origin' })
+    .then((response) => (response.ok ? response.json() : { answers: {} }))
+    .then((body: { answers?: Record<string, { status: number; body: unknown }> }) => finish(body.answers ?? {}))
+    .catch(() => finish({}));
 }
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -148,8 +204,10 @@ function request<T>(path: string, init?: RequestInit): Promise<T> {
     forgetReads();
     return send<T>(path, init);
   }
+  const waiting = primed.get(path);
+  if (waiting) waiting.asked = true;
   const held = reads.get(path);
-  if (held && Date.now() - held.at < READ_TTL_MS) return held.promise as Promise<T>;
+  if (held && (waiting || Date.now() - held.at < READ_TTL_MS)) return held.promise as Promise<T>;
   const promise = send<T>(path, init);
   reads.set(path, { at: Date.now(), promise });
   // A failure is not an answer worth keeping: the next ask tries again.
@@ -203,6 +261,32 @@ const visitorKnown = () => request<unknown>('/auth/me').catch(() => undefined);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
+/** A data URL's bytes, as the Blob it describes. */
+function blobOf(dataUrl: string): Blob {
+  const match = /^data:([^;,]+);base64,(.*)$/.exec(dataUrl);
+  if (!match) throw new ApiRequestError(400, 'invalid_photo', 'That photo could not be read.');
+  const binary = atob(match[2]!);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: match[1] });
+}
+
+/**
+ * A photo upload, sent as the picture's own bytes rather than as base64 in
+ * JSON: a third smaller on the wire, with nothing for the server to decode.
+ */
+const postPhoto = <T>(path: string, dataUrl: string) => {
+  const blob = blobOf(dataUrl);
+  return request<T>(path, { method: 'POST', body: blob, headers: { 'Content-Type': blob.type } });
+};
+
+/**
+ * A question sent as a POST because it carries a body - a photo, a list of
+ * photos - but changes nothing anybody can see: the reads kept above stay
+ * kept. A feed asks one of these per screenful of photos.
+ */
+const ask = <T>(path: string, body: unknown) => send<T>(path, { method: 'POST', body: JSON.stringify(body) });
+
 export interface SellerCard {
   id: string;
   displayName: string;
@@ -235,6 +319,8 @@ export interface FeedResponse {
   listings: FeedListing[];
   categories: string[];
   followedSellerIds: string[];
+  /** Every match there is, not the first page of them. */
+  complete?: boolean;
 }
 
 export type { PreOrderView };
@@ -332,7 +418,13 @@ export interface PreOrderRoster {
   people: PreOrderMember[];
   /** In it, but not named: being named is opt in. */
   unlisted: number;
-  mine: { pledged: boolean; booked: number; units: number; listed: boolean } | null;
+  mine: {
+    pledged: boolean; booked: number; units: number; listed: boolean;
+    /** Their place on the waitlist, from 1, or null when not waiting. */
+    waitlisted: number | null;
+    /** When their called-in place or waitlist offer must be booked by. */
+    dueAt: string | null;
+  } | null;
   /** Who this reader brought in, which is the only reason sharing is worth doing. */
   brought: PartyRef[];
 }
@@ -1042,6 +1134,8 @@ export interface OrderState {
   dispute: Dispute | null;
   /** Seller-side only: whether the buyer has somewhere for a reversal to go. */
   buyerHasReversalDetails: boolean | null;
+  /** Seller side, while a reversal is pending: where the buyer wants the money sent. */
+  buyerReversalDetails?: BuyerReversalDetails | null;
   /** The protection window operators have set today, in days. */
   autoReleaseDays: number;
   /** Buyer-side: already on one of their collection shelves. */
@@ -1074,6 +1168,8 @@ export interface NewListing {
   description: string;
   category: string;
   condition: string;
+  /** What this category asks: kind, condition in its own words, original or copy, size. */
+  attributes?: Record<string, string>;
   priceMinor: number;
   quantityAvailable: number;
   quantityMode?: 'fixed' | 'multiple';
@@ -1083,7 +1179,7 @@ export interface NewListing {
   affiliateMinor?: number | null;
   /** What a buyer through a link saves per unit, in paise; null turns it off. */
   affiliateOffMinor?: number | null;
-  preOrder: { fillThreshold: number; cutoffAt: string } | null;
+  preOrder: { fillThreshold: number; cutoffAt: string; whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;
   /** The seller's own lot to file this into, chosen while listing. */
@@ -1150,9 +1246,57 @@ export interface PostCard {
   shop?: boolean;
   /** Why the home feed shows it: trending anywhere, or new and rising past its followers. */
   badges?: PostBoost[];
+  /** Saved by this viewer to read again. */
+  saved?: boolean;
+  /** People the viewer follows who took part: up to three names, and how many in all. */
+  followedActed?: { count: number; names: string[] } | null;
 }
 
-export type PostBoost = 'trending' | 'rising';
+export type PostBoost = 'trending' | 'rising' | 'result';
+
+/** One answer as the composer sends it: words, and on a photo poll its picture and item. */
+export interface NewPollOption {
+  label: string;
+  photoUrl?: string | null;
+  listingId?: string | null;
+}
+
+/** Everything a post can be made with. The server decides which combinations make sense. */
+export interface NewPost {
+  body: string; forumId?: string; listingId?: string; storeId?: string;
+  channelId?: string; announcement?: boolean;
+  photoUrls?: string[];
+  poll?: {
+    options: (string | NewPollOption)[]; closesInHours?: number; style?: PollStyle;
+    stock?: boolean; reward?: { amountMinor: number; maxVoters: number } | null;
+  } | null;
+  vibe?: Vibe | null;
+  replyToId?: string; toWall?: boolean; alsoForumIds?: string[];
+  flex?: { hotspots: PostHotspot[] } | null;
+  debate?: { listingIds?: [string | null, string | null]; prize?: { amountMinor: number; judge: 'store' | 'likes' } | null } | null;
+  guess?: { answerMinor: number; revealInHours: number; listingId?: string | null } | null;
+  contest?: {
+    title: string; rules: string; entriesHours: number; votingHours: number; judging: ContestJudging;
+    prizes: { amountMinor: number; note: string }[]; host?: 'store' | 'figmark';
+  } | null;
+}
+
+/** What Discover is made of, each list already ranked. The rails come on the first page only. */
+export interface DiscoverResponse {
+  /** Open to take part in and not yet joined: polls, guesses, competitions. First page only. */
+  live?: PostCard[];
+  /** Competitions running or just finished. First page only. */
+  contests?: PostCard[];
+  debates: PostCard[];
+  threads: PostCard[];
+  flexes: PostCard[];
+  rising?: PostCard[];
+  topics?: TopicChip[];
+  wants?: WantRow[];
+  spotted?: SpottedItem[];
+  /** The page after this one, or null at the end. */
+  next?: number | null;
+}
 
 /** One post read in full, with everything said under it. */
 export interface PostDetail {
@@ -1255,6 +1399,19 @@ export interface WantCard {
   createdAt: string;
   expiresAt: string;
   closedAt: string | null;
+  /** Items already listed that look like what is being hunted. */
+  matchCount?: number;
+}
+
+/** An item already on Figmark that looks like what a hunt is after. */
+export interface WantMatch {
+  id: string;
+  title: string;
+  priceMinor: number;
+  currency: string;
+  condition: string;
+  sellerId: string;
+  photoUrl: string | null;
 }
 
 export interface WantOfferRow {
@@ -1311,6 +1468,8 @@ export interface WantDetail {
   /** Your answers by the voice you gave them in. */
   yoursBy: Partial<Record<'person' | 'shop', { id: string; message: string; priceMinor: number | null; listingId: string | null }>>;
   offers: WantOfferRow[];
+  /** What is already listed that looks like it. */
+  matches?: WantMatch[];
 }
 
 export type ForumRole = 'admin' | 'moderator' | 'member';
@@ -1372,6 +1531,25 @@ export interface DashboardResponse {
     daily: { date: string; orders: number; revenueMinor: number }[];
     topListings: { id: string; title: string; viewCount: number; likeCount: number; unitsSold: number }[];
   };
+}
+
+/** The card over the Sell tab: a few figures for each tab, read in one go. Null where this person may not see one. */
+export interface SellDashboard {
+  currency: string;
+  listings: {
+    onSale: number; drafts: number; soldOut: number; endingSoon: number; views: number; saves: number;
+    best: { id: string; title: string; units: number } | null;
+  } | null;
+  orders: { open: number; unpaid: number; claimed: number; inTransit: number; delivered30: number; cancelled30: number } | null;
+  shipments: { open: number; moving: number; done: number; ordersNoLot: number; listingsNoLot: number } | null;
+  money: {
+    revenue30Minor: number; revenuePrev30Minor: number; orders30: number; units30: number; averageMinor: number;
+    conversion: number; daily: { date: string; revenueMinor: number }[];
+  } | null;
+  shop: {
+    followers: number; team: number; tier: string;
+    setup: { photo: boolean; cover: boolean; bio: boolean; payment: boolean };
+  } | null;
 }
 
 /* ── Pro analytics ─────────────────────────────────────────────────────── */
@@ -1906,6 +2084,32 @@ export interface PhotoSearchResponse {
   vision: boolean;
 }
 
+/** One item read in a photo, and the listings it is or was for sale under. */
+export interface PhotoSalesItem {
+  /** What the item was read as, or null for listings found by the picture alone. */
+  label: string | null;
+  /** On sale first, then those sold out or taken down. */
+  listings: (FeedListing & { onSale: boolean })[];
+}
+
+export interface PhotoSalesResponse {
+  items: PhotoSalesItem[];
+  /** Shops that have sold the matching items, most sold first. */
+  sellers: { seller: SellerCard; unitsSold: number; items: number }[];
+  /**
+   * Shops likely to get the items: by keyword first (a brand, a name), then by
+   * category. `listings` is how many of theirs carry it, past or present.
+   */
+  likely: { seller: SellerCard; because: string; kind: 'keyword' | 'similar' | 'category'; listings: number }[];
+  /**
+   * Listings that may be the thing in the photo - a guess from its colours,
+   * the words with it, and who posted it - likeliest first, none of those in
+   * `items`. `chance` is 0 to 1.
+   */
+  probable: (FeedListing & { onSale: boolean; chance: number })[];
+  vision: boolean;
+}
+
 export interface StoredPhoto {
   blobName: string;
   url: string;
@@ -2046,6 +2250,8 @@ export interface TagInsights {
 }
 
 export interface PublicProfile {
+  /** What a person won in competitions, debates and guesses. Empty for a shop. */
+  gameBadges?: Badge[];
   handle: string;
   isStore: boolean;
   displayName: string;
@@ -2282,11 +2488,19 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),
 
-  login: (identifier: string, password: string) =>
-    post<LoginResponse>('/auth/login', { identifier, password }),
+  login: (identifier: string, password: string, otp?: string) =>
+    post<LoginResponse>('/auth/login', { identifier, password, ...(otp ? { otp } : {}) }),
 
-  signup: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) =>
+  signup: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string; acceptTerms: boolean; captchaToken?: string }) =>
     post<SignupResponse>('/auth/signup', body),
+
+  /** Emails a reset code when the account has a confirmed email; answers alike either way. */
+  startPasswordReset: (identifier: string) =>
+    post<{ sent: boolean; message: string; devCode?: string }>('/auth/reset/start', { identifier }),
+
+  /** Sets a new password with the emailed code, ends every other session, and signs in. */
+  confirmPasswordReset: (body: { identifier: string; code: string; password: string; otp?: string }) =>
+    post<LoginResponse>('/auth/reset/confirm', body),
 
   /** Whether a username is still free, asked while it is typed on the sign-up form. */
   usernameAvailable: (name: string, signal?: AbortSignal) =>
@@ -2297,6 +2511,10 @@ export const api = {
   verifyStatus: () => send<VerificationStatus>('/verify/status'),
   sendEmailCode: () => post<{ sentTo: string; devCode?: string; status: VerificationStatus }>('/verify/email/send'),
   confirmEmailCode: (code: string) => post<{ status: VerificationStatus }>('/verify/email/confirm', { code }),
+  /** Sends a code to a new address; the password is asked again. */
+  startEmailChange: (email: string, password: string) =>
+    post<{ sentTo: string; devCode?: string; status: VerificationStatus }>('/verify/email/change', { email, password }),
+  confirmEmailChange: (code: string) => post<{ status: VerificationStatus }>('/verify/email/change/confirm', { code }),
   startWhatsApp: () =>
     post<{ link: string; message: string; businessNumber: string; expiresAt: string; status: VerificationStatus }>('/verify/phone/start'),
   changePhone: (phone: string) => post<{ status: VerificationStatus }>('/verify/phone/number', { phone }),
@@ -2305,6 +2523,19 @@ export const api = {
   logout: () => post<{ ok: true }>('/auth/logout'),
   /** Ends every session this account has, on every device - this one too. */
   logoutAll: () => post<{ ok: true }>('/auth/logout-all'),
+
+  /** Two-factor sign-in: a new key to add to an authenticator app (password asked again). */
+  startMfaSetup: (password: string) => post<{ secret: string; uri: string }>('/me/mfa/setup', { password }),
+  /** The first code from the new key turns it on; the recovery codes come back once. */
+  enableMfa: (code: string) => post<{ recoveryCodes: string[] }>('/me/mfa/enable', { code }),
+  disableMfa: (password: string, code: string) => post<{ ok: true }>('/me/mfa/disable', { password, code }),
+
+  /** The address that downloads everything this account holds, as one JSON file. */
+  exportUrl: '/api/me/export',
+
+  /** Deletes this account and what it made, asked with its password. Refused while money or a dispute is open. */
+  deleteAccount: (password: string) =>
+    post<{ deleted: { user: string; listings: number; lots: number; posts: number } }>('/me/delete', { password }),
 
   feed: (params: Record<string, string | undefined>) => {
     const query = new URLSearchParams();
@@ -2316,7 +2547,13 @@ export const api = {
   listing: (id: string, ref?: string | null) =>
     request<ListingDetail>(`/listings/${encodeURIComponent(id)}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
   /** Items like the one in the photo. The photo is read and dropped, never stored. */
-  photoSearch: (dataUrl: string) => post<PhotoSearchResponse>('/search/photo', { dataUrl }),
+  photoSearch: (dataUrl: string) => ask<PhotoSearchResponse>('/search/photo', { dataUrl }),
+  /** Where the items in a photo already on Figmark are, or were, for sale. */
+  photoSales: (url: string, about?: string, by?: string) =>
+    ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by }),
+  /** The same for several photos at once, answered in order: up to ten. */
+  photoSalesMany: (photos: { url: string; about?: string; by?: string }[]) =>
+    ask<{ answers: PhotoSalesResponse[] }>('/search/photo/sales', { photos }),
   similar: (id: string) => request<{ listings: FeedListing[] }>(`/listings/${encodeURIComponent(id)}/similar`),
   affiliateLink: (listingId: string) =>
     post<{ code: string; path: string }>(`/listings/${encodeURIComponent(listingId)}/affiliate-link`, {}),
@@ -2351,6 +2588,9 @@ export const api = {
     post<{ listing: Listing }>(`/listings/${encodeURIComponent(id)}/edit`, body),
   expireListing: (id: string) =>
     post<{ expired: boolean }>(`/listings/${encodeURIComponent(id)}/delete`),
+  /** Off sale and out of the shop for good. Orders that name it keep it. */
+  removeListing: (id: string) =>
+    post<{ expired: boolean; removed: boolean }>(`/listings/${encodeURIComponent(id)}/delete`, { remove: true }),
   payMore: (body: { orderIds: string[]; amountMinor: number; reference?: string }) =>
     post<{ allocation: Allocation; method: PaymentMethod; orders: Order[] }>('/me/purchases/pay', body),
   refundCredit: (id: string, body: {
@@ -2423,6 +2663,15 @@ export const api = {
       ...body,
       via: body.via ?? undefined,
     }),
+  /** The seller changes a pre-order's number, date, or what happens when it is short or full. */
+  editPreOrder: (id: string, body: { fillThreshold?: number; cutoffAt?: string; whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule }) =>
+    post<PreOrderRoster>(`/listings/${encodeURIComponent(id)}/preorder/edit`, body),
+  /** The seller's call: go ahead, cancel, extend, or admit / let go the waitlist. */
+  decidePreOrder: (id: string, body:
+    | { action: 'proceed' | 'cancel' | 'dismiss' }
+    | { action: 'extend'; cutoffAt: string }
+    | { action: 'admit'; units?: number }) =>
+    post<PreOrderRoster>(`/listings/${encodeURIComponent(id)}/preorder/decide`, body),
 
   activity: () => request<ActivityResponse>('/me/activity'),
   /** Just the seller's own stock - what the Items screen shows, without the rest of the account. */
@@ -2567,7 +2816,7 @@ export const api = {
   deleteTemplate: (id: string) =>
     post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
-  uploadPhoto: (dataUrl: string) => post<StoredPhoto>('/uploads', { dataUrl }),
+  uploadPhoto: (dataUrl: string) => postPhoto<StoredPhoto>('/uploads', dataUrl),
   /** The shop's photo or banner: open to any signed-in account, unlike listing photos. */
   uploadStorefrontPhoto: (dataUrl: string) => post<StoredPhoto>('/me/storefront/photo', { dataUrl }),
   /** Shops whose name or tags match a search. */
@@ -2620,6 +2869,8 @@ export const api = {
   /** The operators' short forms for route buttons. */
   routeWords: () => request<RouteWords>('/route-words'),
   /** The Sell tab's three counts; null where this person may not see one. */
+  sellDashboard: (storeId?: string) =>
+    request<SellDashboard>(`/me/sell/dashboard${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
   sellTodo: (storeId?: string) =>
     request<{
       answer: number | null; answerSince?: string[] | null; noLot: number | null; noLotListings?: number | null; lots: number | null;
@@ -2638,7 +2889,7 @@ export const api = {
   /** Takes a never-paid Buy out of the cart; `save` keeps the item on Saved. */
   discardCheckout: (id: string, save = false) =>
     post<{ removed: string; saved: boolean }>(`/orders/${encodeURIComponent(id)}/discard`, { save }),
-  cancelOrder: (id: string, body: { reason: string; message?: string }) =>
+  cancelOrder: (id: string, body: { reason: string; message?: string; restock?: boolean }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/cancel`, body),
   requestReversalDetails: (id: string, message?: string) =>
     post<{ sent: boolean }>(`/orders/${encodeURIComponent(id)}/reversal/request-details`, { message }),
@@ -2765,7 +3016,7 @@ export const api = {
       ...(photos?.length ? { photos } : {}),
     }),
   /** A picture for a chat, in: a private name out, with no address of its own. */
-  uploadChatPhoto: (dataUrl: string) => post<{ blobName: string }>('/message-photos', { dataUrl }),
+  uploadChatPhoto: (dataUrl: string) => postPhoto<{ blobName: string }>('/message-photos', dataUrl),
   discardChatPhoto: (blobName: string) => post<{ discarded: boolean }>('/message-photos/discard', { blobName }).catch(() => null),
   /** Take back a message you sent; its photos are deleted with it. */
   deleteMessage: (handle: string, messageId: string, as?: string) =>
@@ -2842,14 +3093,36 @@ export const api = {
 
   socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
   trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
-  /** Who you follow, with trending and rising posts mixed in and badged. */
-  socialHome: (as?: string | null, before?: string) => {
+  /**
+   * Who you follow, with trending and rising posts mixed in and badged - or,
+   * with `following`, who you follow and nobody else, newest first.
+   */
+  /** How many followed posts arrived after `since`, for the "new posts" pill. */
+  socialHomeNew: (since: string) =>
+    request<{ count: number; names: string[] }>(`/social/home/new?since=${encodeURIComponent(since)}`),
+  savePost: (channelId: string, postId: string) =>
+    post<{ saved: boolean; count: number }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(postId)}/save`),
+  savedPosts: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/saved${voice(as)}`),
+  hidePost: (channelId: string, postId: string, options: { notInterested?: boolean; undo?: boolean } = {}) =>
+    post<{ hidden: boolean }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(postId)}/hide`, options),
+  muteFeed: (id: string, on: boolean) => post<{ muted: boolean; count: number }>('/social/mute', { id, on }),
+  feedMutes: () => request<{ muted: { id: string; name: string; handle: string | null; shop: boolean }[] }>('/social/mutes'),
+  /** What was on screen, in a batch. Fire and forget: a lost batch only means a post counts one view short. */
+  seenPosts: (items: SeenEntry[]) => post<{ counted: number }>('/social/seen', { items }),
+  followSuggestions: () => request<{ suggestions: FollowSuggestion[] }>('/social/suggestions'),
+  weeklyBest: () => request<Leaderboard>('/social/leaderboard'),
+  topicPosts: (slug: string) =>
+    request<{ topic: { key: string; label: string }; posts: PostCard[] }>(`/social/topics/${encodeURIComponent(slug)}`),
+  socialHome: (as?: string | null, before?: string, following = false) => {
     const query = new URLSearchParams();
     if (as) query.set('as', as);
     if (before) query.set('before', before);
+    if (following) query.set('following', '1');
     const tail = query.toString();
-    return request<{ posts: PostCard[]; next: string | null }>(`/social/home${tail ? `?${tail}` : ''}`);
+    return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null; live?: PostCard[] }>(`/social/home${tail ? `?${tail}` : ''}`);
   },
+  /** The public side, ranked: debates, conversations that took off, and collection flexes. */
+  discover: (page = 0) => request<DiscoverResponse>(`/social/discover${page ? `?page=${page}` : ''}`),
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
   /** `light` is the refresh while a room is open: the posts only, without the shop's item list. */
@@ -2866,13 +3139,18 @@ export const api = {
   },
   pinPost: (channelId: string, id: string) =>
     post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
-  createPost: (body: {
-    body: string; forumId?: string; listingId?: string; storeId?: string;
-    channelId?: string; announcement?: boolean;
-    photoUrls?: string[]; poll?: { options: string[]; closesInHours?: number } | null; vibe?: Vibe | null;
-    replyToId?: string; toWall?: boolean; alsoForumIds?: string[];
-  }) =>
-    post<{ post: Post }>('/social/posts', body),
+  createPost: (body: NewPost) => post<{ post: Post }>('/social/posts', body),
+  /** Put a photo into a competition: one each, while entries are open. */
+  enterContest: (channelId: string, id: string, photoUrl: string, caption: string) =>
+    post<{ entryId: string; card: PostCard }>(`${postPath(channelId, id)}/enter`, { photoUrl, caption }),
+  guessPrice: (channelId: string, id: string, amountMinor: number) =>
+    post<{ guess: GuessView }>(`${postPath(channelId, id)}/guess`, { amountMinor }),
+  /** The host's decisions: a shortlist, the winners, a debate's best argument, a prize handed over. */
+  judge: (channelId: string, id: string, body: { action: 'shortlist' | 'winners'; entryIds: string[] } | { action: 'best'; commentId: string } | { action: 'sent'; place: number }) =>
+    post<{ card: PostCard }>(`${postPath(channelId, id)}/judge`, body),
+  myRewards: () => request<{ credits: StoreCredit[]; badges: Badge[] }>('/me/rewards'),
+  /** A shop's polls, debates, guesses and competitions, for its Engage screen. */
+  shopGames: (storeId: string) => request<{ posts: PostCard[] }>(`/social/shops/${encodeURIComponent(storeId)}/games`),
   socialPost: (channelId: string, id: string, as?: string | null) =>
     request<PostDetail>(`${postPath(channelId, id)}${voice(as)}`),
   react: (channelId: string, id: string, kind: ReactionKind | null, as?: string | null) =>

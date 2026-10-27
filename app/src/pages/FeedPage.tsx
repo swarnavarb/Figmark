@@ -1,3 +1,4 @@
+import { useNow } from '../clock';
 import {
   Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
   type MouseEvent, type PointerEvent, type ReactNode,
@@ -6,10 +7,10 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AdvanceStrip } from '../components/Buy';
 import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
 import {
-  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, categoriesIn, matchesKind, priceCeiling,
+  CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, CONDITION_BUCKETS, categoriesIn, factsOf, filterOptions, matchesKind, priceCeiling,
   type CatalogKind,
 } from '@shared/catalog';
-import { preOrderView } from '@shared/preorder';
+import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
 import { ShopStrip } from '../components/ShopCards';
@@ -43,6 +44,11 @@ export const PRICE_BANDS = [
  * behaves. "Newest" is the same for everyone: the latest listed or bumped
  * item leads, whoever the reader follows.
  */
+/** Listings per catalogue page, as the API counts them. */
+const CATALOG_PAGE = 100;
+/** The API's own ceiling (400 listings). */
+const CATALOG_MAX_PAGES = 4;
+
 export function useCatalog() {
   const [params, setParams] = useSearchParams();
   const [data, setData] = useState<FeedResponse | null>(null);
@@ -53,6 +59,12 @@ export function useCatalog() {
   const group = params.get('group') ?? '';
   const category = params.get('category') ?? '';
   const condition = params.get('condition') ?? '';
+  // What the chosen heading asks about: the kind of thing, whether it is the
+  // real thing, and the size. Only offered once a heading is chosen, because
+  // "size" means nothing across figures and sneakers at once.
+  const type = params.get('type') ?? '';
+  const size = params.get('size') ?? '';
+  const authenticity = params.get('authenticity') ?? '';
   // Mixed lots are no longer a tab; an old link to them shows everything.
   const kind = params.get('kind') === 'mixed_lot' ? '' : params.get('kind') ?? '';
   const sort = params.get('sort') ?? 'newest';
@@ -99,20 +111,37 @@ export function useCatalog() {
       (!inGroup || inGroup.has(listing.category))
       && (!category || listing.category === category)
       && (!condition || listing.condition === condition)
+      && (!type || listing.attributes?.['type'] === type)
+      && (!size || listing.attributes?.['size'] === size)
+      && matchesAuthenticity(listing, authenticity)
       && (!kind || matchesKind(listing, kind))
       && (ceiling === undefined || listing.priceMinor <= ceiling));
     // Best match first unless a price order was asked for.
     if (sort === 'price_asc') listings.sort((a, b) => a.priceMinor - b.priceMinor);
     if (sort === 'price_desc') listings.sort((a, b) => b.priceMinor - a.priceMinor);
     return { listings, categories: [...new Set(listings.map((l) => l.category))].sort(), followedSellerIds: [] };
-  }, [photoFound, group, category, condition, kind, maxPrice, sort]);
+  }, [photoFound, group, category, condition, type, size, authenticity, kind, maxPrice, sort]);
+
+  // How many pages of the catalogue are asked for: "Show more" adds one, and
+  // any change of filter starts again from the first.
+  const [pages, setPages] = useState(1);
+  const filters = `${search}|${group}|${category}|${condition}|${type}|${size}|${authenticity}|${kind}|${sort}|${maxPrice}`;
+  const [pagesFor, setPagesFor] = useState(filters);
+  if (pagesFor !== filters) {
+    setPagesFor(filters);
+    setPages(1);
+  }
+  const showMore = useCallback(() => setPages((count) => Math.min(CATALOG_MAX_PAGES, count + 1)), []);
 
   useEffect(() => {
     if (photoId) return;
     let cancelled = false;
     setLoading(true);
     void api
-      .feed({ q: search, group, category, condition, kind, sort, maxPrice })
+      .feed({
+        q: search, group, category, condition, type, size, authenticity, kind, sort, maxPrice,
+        limit: pages > 1 ? String(pages * CATALOG_PAGE) : undefined,
+      })
       .then((result) => {
         if (cancelled) return;
         setData(result);
@@ -123,7 +152,7 @@ export function useCatalog() {
     return () => {
       cancelled = true;
     };
-  }, [photoId, search, group, category, condition, kind, sort, maxPrice]);
+  }, [photoId, search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, pages]);
 
   /** Back to the ordinary catalogue, with the filters as they are. */
   const clearPhoto = useCallback(() => {
@@ -147,7 +176,7 @@ export function useCatalog() {
   /**
    * Picking a heading drops the finer category with it.
    *
-   * Otherwise "Sneakers & wear" plus a leftover "Scale figures" chip is a
+   * Otherwise "Sneakers & wear" plus a leftover "Figures" chip is a
    * filter pair that can only ever return nothing, and an empty page is read as
    * an empty catalog rather than as a contradiction the reader typed.
    */
@@ -190,10 +219,13 @@ export function useCatalog() {
     [params, setParams],
   );
 
-  const activeFilters = [group, category, condition, kind, maxPrice].filter(Boolean).length;
+  const activeFilters = [group, category, condition, type, size, authenticity, kind, maxPrice]
+    .filter(Boolean).length;
   return {
     params, setParams, data: photoId ? photoData : data, error, loading, setData,
-    search, group, category, condition, kind, sort, maxPrice,
+    // More to come: the server said this is not every match, and there is room to ask for more.
+    canShowMore: !photoId && data?.complete === false && pages < CATALOG_MAX_PAGES, showMore,
+    search, group, category, condition, type, size, authenticity, kind, sort, maxPrice,
     photo, clearPhoto,
     toggle, chooseGroup, chooseKind, set, activeFilters,
   };
@@ -217,18 +249,15 @@ const RARITY_FILTERS: readonly RarityTier[] = ['legendary', 'epic', 'new'];
 export function FeedPage() {
   const {
     params, setParams, data, error, loading,
-    search, group, category, condition, kind, sort, maxPrice,
+    search, group, category, condition, type, size, authenticity, kind, sort, maxPrice,
     photo, clearPhoto,
     chooseGroup, chooseKind, set, activeFilters,
+    canShowMore, showMore,
   } = useCatalog();
   const rarityFilter = (params.get('rarity') ?? '') as RarityTier | '';
 
   // Read against one clock per render so every card agrees on "now".
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const now = useNow(60_000);
 
   const rated: Rated[] = useMemo(
     () => (data?.listings ?? []).map((listing) => ({ ...listing, rarity: listingRarity(listing, now) })),
@@ -271,6 +300,19 @@ export function FeedPage() {
     void api.shopsForYou().then((result) => setForYou(result.shops)).catch(() => setForYou(null));
   }, []);
 
+  // The categories under the chosen heading, and what a buyer can narrow them by.
+  const members = group ? categoriesIn(group) : [];
+  const typeOptions = filterOptions(members, 'type');
+  const sizeOptions = filterOptions(members, 'size');
+  const authenticityOptions = [
+    { value: 'genuine', label: 'Original / official only' },
+    { value: 'copies', label: 'Copies only' },
+    ...filterOptions(members, 'authenticity').map((option) => ({ value: option.value, label: option.value })),
+  ];
+  // Across every heading only the two broad answers make sense; the specific
+  // grades ("7A", "Batch / 1:1") appear once a heading narrows what is meant.
+  const authenticityChoices = group ? authenticityOptions : authenticityOptions.slice(0, 2);
+
   const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView;
   const counts = useMemo(() => Object.fromEntries(
     RARITY_FILTERS.map((tier) => [tier, rated.filter((listing) => listing.rarity.tier === tier).length]),
@@ -310,13 +352,26 @@ export function FeedPage() {
           <Picker label="Price" icon="price" value={maxPrice} onChange={(value) => set('maxPrice', value)}
             empty="Any price" options={PRICE_BANDS} />
           <Picker label="Condition" icon="condition" value={condition} onChange={(value) => set('condition', value)}
-            empty="Any condition" options={CONDITION_TAGS.map((tag) => ({ value: tag, label: tag }))} />
+            empty="Any condition"
+            options={CONDITION_TAGS.map((tag) => ({ value: tag, label: CONDITION_BUCKETS[tag].label }))} />
+          <Picker label="Original or copy" icon="authentic" value={authenticity}
+            onChange={(value) => set('authenticity', value)} empty="Original or copy" options={authenticityChoices} />
           <Picker label="Rarity" icon="rarity" value={rarityFilter} onChange={(value) => set('rarity', value)}
             empty="Any rarity"
             options={RARITY_FILTERS.map((tier) => ({ value: tier, label: `${RARITY_LABELS[tier]} · ${counts[tier]}` }))} />
           {data && data.categories.length > 1 && (
-            <Picker label="Type" icon="type" value={category} onChange={(value) => set('category', value)}
-              empty="Any type" options={data.categories.map((entry) => ({ value: entry, label: entry }))} />
+            <Picker label="Category" icon="type" value={category} onChange={(value) => set('category', value)}
+              empty="Any category" options={data.categories.map((entry) => ({ value: entry, label: entry }))} />
+          )}
+          {/* What the heading asks about. Absent on "Everything", where a size
+              could mean a shoe, a shirt or a bag. */}
+          {typeOptions.length > 0 && (
+            <Picker label="Type" icon="type" value={type} onChange={(value) => set('type', value)}
+              empty="Any type" options={typeOptions.map((option) => ({ value: option.value, label: option.label }))} />
+          )}
+          {sizeOptions.length > 0 && (
+            <Picker label="Size" icon="size" value={size} onChange={(value) => set('size', value)}
+              empty="Any size" options={sizeOptions.map((option) => ({ value: option.value, label: option.label }))} />
           )}
           {(activeFilters > 0 || rarityFilter || feedView) && (
             <button type="button" className="filters__clear" onClick={() => setParams(
@@ -341,7 +396,7 @@ export function FeedPage() {
       <div className="qrow__head">
         {photo ? (
           <h2 className="qphoto">
-            <img src={photo.dataUrl} alt="" />
+            <img loading="lazy" decoding="async" src={photo.dataUrl} alt="" />
             Your photo
             <button type="button" className="qphoto__clear" aria-label="Clear photo search" onClick={clearPhoto}>
               <Icon name="close" size={12} />
@@ -375,6 +430,13 @@ export function FeedPage() {
             </Fragment>
           ))}
           {drawn < shown.length && <span ref={more} className="qgrid__more" aria-hidden="true" />}
+        </div>
+      )}
+      {drawn >= shown.length && canShowMore && (
+        <div className="qgrid__showmore">
+          <button type="button" className="btn btn--ghost" onClick={showMore} disabled={loading}>
+            {loading ? 'Loading…' : 'Show more'}
+          </button>
         </div>
       )}
     </main>
@@ -555,7 +617,8 @@ export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) 
   const [pop, setPop] = useState<{ id: number; gain: boolean } | null>(null);
   const { rarity } = listing;
   const tier = rarity.tier;
-  const view = listing.preOrder ? preOrderView(listing.preOrder) : null;
+  // A closed campaign stays on the listing; the card only advertises one still taking bookings.
+  const view = isTakingBookings(listing.preOrder) ? preOrderView(listing.preOrder!) : null;
   const left = listing.quantityMode === 'multiple' ? null : listing.quantityAvailable;
   const wasPrice = rarity.priceDropPercent
     ? Math.max(...(listing.priceHistory ?? []).map((entry) => entry.priceMinor))
@@ -574,7 +637,7 @@ export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) 
       className={`qloot qloot--${tier ?? 'plain'}${listing.affiliate ? ' is-affiliate' : ''}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
         {tier && <RarityRibbon tier={tier} />}
-        <span className="qgrade" title="Condition">{listing.condition}</span>
+        <span className="qgrade" title="Condition">{factsOf(listing).condition}</span>
         <button type="button" className={`qheart${liked ? ' is-on' : ''}`} onClick={toggleSave}
           onPointerDown={(event) => event.stopPropagation()}
           aria-label={liked ? 'Remove from your saves' : 'Save'} aria-pressed={liked}>
@@ -582,7 +645,7 @@ export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) 
           {pop && <HeartPop key={pop.id} gain={pop.gain} />}
         </button>
         {rarity.priceDropPercent && <span className="qsticker-tag qsticker-tag--drop">−{rarity.priceDropPercent}%</span>}
-        {listing.preOrder && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
+        {view && !rarity.priceDropPercent && <span className="qsticker-tag">Pre-order</span>}
       </Thumb>
       {/* Under the picture rather than on it: on the picture it sat on the
           condition stamp. With a booking amount too, the two share one strip
@@ -721,12 +784,22 @@ export function Picker({ label, value, onChange, options, empty, icon }: {
   );
 }
 
-type PickerIcon = 'sort' | 'price' | 'condition' | 'rarity' | 'type';
+type PickerIcon = 'sort' | 'price' | 'condition' | 'rarity' | 'type' | 'authentic' | 'size';
 
 const icon = (path: ReactNode) => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
     strokeLinecap="round" strokeLinejoin="round">{path}</svg>
 );
+
+/** The seller's "original or copy" answer against a buyer's pick of it. */
+function matchesAuthenticity(listing: FeedListing, wanted: string): boolean {
+  if (!wanted) return true;
+  const facts = factsOf(listing).authenticity;
+  if (!facts) return false;
+  if (wanted === 'genuine') return facts.genuine;
+  if (wanted === 'copies') return !facts.genuine;
+  return facts.label === wanted;
+}
 
 const PICKER_ICONS: Record<PickerIcon, ReactNode> = {
   sort: icon(<><path d="M7 4v16M3 16l4 4 4-4" /><path d="M17 20V4M13 8l4-4 4 4" /></>),
@@ -734,6 +807,8 @@ const PICKER_ICONS: Record<PickerIcon, ReactNode> = {
   condition: icon(<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z" />),
   rarity: icon(<path d="M6 3h12l3 6-9 12L3 9z M3 9h18" />),
   type: icon(<><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" /></>),
+  authentic: icon(<><path d="M12 3 4 6v6c0 4.5 3.2 7.8 8 9 4.8-1.2 8-4.5 8-9V6z" /><path d="m9 12 2 2 4-4" /></>),
+  size: icon(<path d="M3 16 16 3l5 5L8 21zM7 12l2 2M10 9l2 2M13 6l2 2" />),
 };
 
 /** The tabs on the bar: mixed lots were dropped from it. */

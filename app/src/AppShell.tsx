@@ -1,20 +1,22 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FloatingCalc } from './components/FloatingCalcFab';
 import { Notifications } from './components/Notifications';
 import { ScrollBars } from './components/ScrollBars';
 import { ScrollManager } from './components/ScrollManager';
-import { TABS, TabBar } from './components/TabBar';
+import { TabBar, tabFor, type TabId } from './components/TabBar';
 import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
-import { AuthModal } from './pages/AuthPage';
-import { VerifyNudge, VerifyPrompt } from './pages/VerifyPage';
-import { inviteCodeFor } from './components/ShareKit';
+import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
+import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
 import { Preloader } from './components/Preloader';
+
+/** The sign-in sheet, fetched the first time somebody needs it. */
+const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthModal })));
 
 /**
  * Persistent chrome: brand, search, the cart and who you are.
@@ -27,7 +29,7 @@ import { Preloader } from './components/Preloader';
 const FORUM_STATUS = '#C627CB';
 
 export function AppShell() {
-  const { user, warning, sessionsInsecure, missingContainers, dataPerWorker, signOut, authPrompt, closeAuth, promptAuth } = useSession();
+  const { user, warning, sessionsInsecure, missingContainers, dataPerWorker, testEnvironment, signOut, authPrompt, closeAuth, promptAuth } = useSession();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const query = params.get('q') ?? '';
@@ -37,25 +39,36 @@ export function AppShell() {
   // A room you write in: the tab bar steps aside for the bar you write from.
   const room = pathname.startsWith('/social/c/') || pathname.startsWith('/messages/');
 
+  // A test site is kept out of search results, so nobody finds it instead of
+  // the real one. Added once the health check names the environment.
+  useEffect(() => {
+    if (!testEnvironment) return;
+    const meta = document.createElement('meta');
+    meta.name = 'robots';
+    meta.content = 'noindex, nofollow';
+    document.head.appendChild(meta);
+    return () => meta.remove();
+  }, [testEnvironment]);
+
   useInviteParam();
   // The invite code goes on every link this person shares; ask for it early
   // so the share sheet never waits on it.
   useEffect(() => { void inviteCodeFor(user?.id); }, [user?.id]);
 
   // Each section's header carries that section's hue, the same one its pill
-  // in the tab bar does; a page outside the four reads as Buy, as the bar does.
-  const tone = TONES[Math.max(0, TABS.findIndex((tab) => tab.match(pathname)))] ?? TONES[0];
+  // in the tab bar does; a page outside the six reads as Shop, as the bar does.
+  const tone = tabFor(pathname).id;
   // Before paint: Safari picks its status bar colour from the first frame it
   // sees, so a frame in the wrong tone sticks. (public/boot/tone.js sets the first
   // page's tone before any of this loads.)
   useLayoutEffect(() => {
-    document.documentElement.dataset.tone = tone.id;
+    document.documentElement.dataset.tone = tone;
     // The phone's own status bar takes the header's colour, so the header
     // reads as running to the very top of the screen. A new tag rather than
     // a changed one: Safari does not always notice an edited theme-color.
     const meta = document.createElement('meta');
     meta.name = 'theme-color';
-    meta.content = pathname.startsWith('/social/f/') ? FORUM_STATUS : tone.status;
+    meta.content = pathname.startsWith('/social/f/') ? FORUM_STATUS : TONE_STATUS[tone];
     document.querySelectorAll('meta[name="theme-color"]').forEach((old) => old.remove());
     document.head.append(meta);
   }, [tone, pathname]);
@@ -87,12 +100,12 @@ export function AppShell() {
           bar (see .topstrip in the stylesheet). A new element for each
           section: Safari samples its status bar colour again when the bar
           at the top is replaced, but not when its colour changes. */}
-      <div key={pathname.startsWith('/social/f/') ? `${tone.id}-forum` : tone.id} className="topstrip" aria-hidden="true" />
+      <div key={pathname.startsWith('/social/f/') ? `${tone}-forum` : tone} className="topstrip" aria-hidden="true" />
       <ScrollManager />
       <ScrollBars />
       <ViewportSync />
       <header className="nav">
-        <NavLink to="/" className="brand">
+        <NavLink to="/" className="brand" aria-label="Figmark home">
           <span className="brand__mark" aria-hidden="true" />
           <span className="brand__name">Figmark</span>
         </NavLink>
@@ -129,14 +142,25 @@ export function AppShell() {
           )}
         </nav>
       </header>
-      {/* Not a dialog: browsing needs no verification, so the reminder waits up here. */}
-      {!room && <VerifyNudge />}
+      {/* Not a dialog: browsing needs no verification, so the reminder waits up here.
+          The social screens' headers run to the top of the screen, so there it
+          sits under the social header instead (see SocialPage). */}
+      {!social && <VerifyNudge />}
 
       {sessionsInsecure && (
         <div className="page page--notice">
           <p className="notice notice--error notice--standing">
             Sessions are signed with the development key published in this repository, so they can be
             forged. Set <code>AUTH_SESSION_SECRET</code> in the app settings before any real user data.
+          </p>
+        </div>
+      )}
+
+      {/* Staff act on other people's money: until two-factor is on, say so on every screen. */}
+      {user?.mfaRequired && (
+        <div className="page page--notice">
+          <p className="notice notice--warn notice--standing">
+            Turn on two-factor sign-in to keep acting as staff. <Link to="/me?tab=settings">Set it up</Link>
           </p>
         </div>
       )}
@@ -150,6 +174,16 @@ export function AppShell() {
             The database is missing {missingContainers.length === 1 ? 'a container' : 'containers'}:{' '}
             <code>{missingContainers.join(', ')}</code>. Anything that reads {missingContainers.length === 1 ? 'it' : 'them'} will
             fail. Run <code>npm run azure:provision</code> to create {missingContainers.length === 1 ? 'it' : 'them'}.
+          </p>
+        </div>
+      )}
+
+      {/* Development shares the code and the look of the real site, so say on
+          every page which one this is. */}
+      {testEnvironment && (
+        <div className="page page--notice">
+          <p className="notice notice--info notice--standing">
+            <strong>{testEnvironment.toUpperCase()}</strong> - this is a test site with test data. Nothing here is real.
           </p>
         </div>
       )}
@@ -181,7 +215,7 @@ export function AppShell() {
 
       <TabBar />
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
-      {authPrompt && <AuthModal reason={authPrompt.reason} onClose={closeAuth} />}
+      {authPrompt && <Suspense fallback={null}><AuthModal reason={authPrompt.reason} onClose={closeAuth} /></Suspense>}
       <VerifyPrompt />
     </div>
   );
@@ -189,17 +223,19 @@ export function AppShell() {
 
 /**
  * The colour each section's header runs in, keyed in the stylesheet by
- * `data-tone` on the root, in the order of the tabs. `status` is the phone's
- * status bar under the clock, and the same colour as the header's top edge
- * (--top-rgb in the stylesheet), so the two read as one block. public/boot/tone.js
- * repeats the paths and colours, to set the first page's tone before paint.
+ * `data-tone` on the root. This is the phone's status bar under the clock, and
+ * the same colour as the header's top edge (--top-rgb in the stylesheet), so
+ * the two read as one block. public/boot/tone.js repeats the paths and
+ * colours, to set the first page's tone before paint.
  */
-const TONES = [
-  { id: 'buy', status: '#5B5EF1' },
-  { id: 'sell', status: '#177ACE' },
-  { id: 'services', status: '#3A8C4E' },
-  { id: 'social', status: '#FF3471' },
-] as const;
+const TONE_STATUS: Record<TabId, string> = {
+  buy: '#5B5EF1',
+  discover: '#8B2FC9',
+  sell: '#177ACE',
+  services: '#3A8C4E',
+  social: '#FF3471',
+  quests: '#C46A08',
+};
 
 /**
  * The cart, with how many items are waiting in it.
@@ -280,6 +316,7 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <Link role="menuitem" to="/wallet" className="pmenu__item">👛 My wallet</Link>
           <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
           <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>
+          <Link role="menuitem" to="/legal" className="pmenu__item">📄 Terms &amp; policies</Link>
           <button role="menuitem" type="button" className="pmenu__item pmenu__item--out"
             onClick={() => { setOpen(false); setChoosing(true); }}>
             👋 Sign Out

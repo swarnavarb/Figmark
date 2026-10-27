@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { confirmSentence } from '../components/Ask';
+import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
 } from '@shared/enums';
-import { CATEGORIES } from '@shared/catalog';
+import { CATEGORIES, CONDITION_BUCKETS, canonicalCategory, factsOf } from '@shared/catalog';
 import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';
-import { preOrderView } from '@shared/preorder';
+import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
 import { LotName, LotPhaseBadge, lotLabel } from '../components/LotName';
 import { useUndo } from '../components/Undo';
@@ -23,7 +24,7 @@ import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { RoutesList } from './RoutesPage';
-import { SetupChecklist } from './VerifyPage';
+import { SetupChecklist } from '../components/VerifyNudges';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
@@ -31,10 +32,12 @@ import {
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { OrderPhotos } from '../components/OrderPhotos';
+import { RestockChoice } from '../components/RestockChoice';
 import { ConditionTag } from '../components/ConditionTag';
 import { SlideToConfirm } from '../components/SlideToConfirm';
 import { Spinner } from '../components/Spinner';
-import { REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
+import { EXPIRY_WARNING_HOURS, REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
+import { isOpen, waitingOnShop } from '../engage';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
 import { shrink } from '../components/PhotoManager';
@@ -45,6 +48,8 @@ import {
   api,
   mergeSales,
   type DashboardResponse,
+  type PostCard,
+  type SellDashboard as SellDashboardData,
   type InsightsResponse,
   type PartyRef,
   type StorefrontDraft,
@@ -65,7 +70,7 @@ import { ProfitCalculator } from './ProfitCalculator';
 import { SalesPanel } from './SalesPanel';
 import { LotDetail, NewLotForm } from './LotsPage';
 import {
-  currencySymbol, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
+  currencySymbol, formatCount, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
 } from '../format';
 import { useSession } from '../session';
 import { Svg } from '../components/ListingBlocks';
@@ -75,7 +80,10 @@ import { EarnPill, earnOf } from '../components/Affiliate';
 import { Preloader } from '../components/Preloader';
 import '../styles/ShopPage.css';
 
-type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people';
+/* The Engage screen carries the whole post card; it arrives when it is opened. */
+const EngagePanel = lazy(() => import('../components/EngagePanel').then((module) => ({ default: module.EngagePanel })));
+
+type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -96,6 +104,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
+  // Polls, debates, competitions and guesses the shop runs for its buyers.
+  { id: 'engage', label: 'Engage' },
 ];
 
 /** Sections that are Pro: they wear the gold chip and the PRO badge. */
@@ -111,12 +121,13 @@ const PRO_SECTIONS: readonly Section[] = ['insights', 'calculator'];
  * screen. Each opens on its first section; the rest of its sections are chips
  * under it. Packing is not here: a packer works from My services.
  */
-type Group = 'items' | 'orders' | 'lots' | 'money' | 'settings';
+type Group = 'items' | 'orders' | 'lots' | 'engage' | 'money' | 'settings';
 
 const SECTION_GROUPS: Record<Group, Section[]> = {
   items: ['items'],
   orders: ['payments', 'refunds'],
   lots: ['lots', 'routes'],
+  engage: ['engage'],
   money: ['analytics', 'insights', 'calculator'],
   settings: ['storefront', 'people'],
 };
@@ -125,6 +136,7 @@ const GROUP_TABS: { id: Group; label: string; icon: IconName }[] = [
   { id: 'items', label: 'Listings', icon: 'tag' },
   { id: 'orders', label: 'Orders', icon: 'box' },
   { id: 'lots', label: 'Shipments', icon: 'truck' },
+  { id: 'engage', label: 'Engage', icon: 'poll' },
   { id: 'money', label: 'Data', icon: 'spark' },
   { id: 'settings', label: 'Shop settings', icon: 'bank' },
 ];
@@ -258,6 +270,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     if (entry.id === 'analytics' || entry.id === 'insights' || entry.id === 'calculator') return store.permissions.includes('analytics');
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
+    if (entry.id === 'engage') return store.permissions.includes('posts');
     return true;
   });
   // No tab, or a tab this store cannot open: the first section it can, so
@@ -334,6 +347,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
+          {active === 'engage' && <Suspense fallback={<Preloader small />}><EngagePanel store={store} /></Suspense>}
         </div>
       )}
     </main>
@@ -414,6 +428,7 @@ function SellHome({ store, canList, onGo, section }: {
 
   return (
     <div className="sellhome">
+      <SellDashboard store={store} group={section ? groupOf(section) : 'items'} onGo={onGo} />
       {canList && (
         <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`}
           className={`btn sellhome__list${section === 'items' || section === null ? ' btn--lg' : ' sellhome__list--slim'}`}>
@@ -433,6 +448,195 @@ function SellHome({ store, canList, onGo, section }: {
         </div>
       )}
     </div>
+  );
+}
+
+/** One figure on the dashboard card, and where a tap on it goes. */
+interface DashTile { label: string; value: string; hint?: string; hot?: boolean; go?: () => void }
+
+const DASH_TITLES: Record<Group, string> = {
+  items: 'Your listings',
+  orders: 'Your orders',
+  lots: 'Your shipments',
+  engage: 'Your games',
+  money: 'Last 30 days',
+  settings: 'Your shop',
+};
+
+/**
+ * The dashboard at the top of the Sell tab: four figures about whichever tab
+ * is open, so Listings shows the shelf, Orders the book, Data the money.
+ *
+ * Every tab's figures come in one read, so changing tab swaps the card at
+ * once. It is read again when the store changes, when the bell brings news of
+ * a sale, and quietly on each change of tab, as the to-do counts are. Engage
+ * is the one exception - its games are a different read, made the first time
+ * that tab is opened.
+ */
+function SellDashboard({ store, group, onGo }: {
+  store: StoreAccess;
+  group: Group;
+  onGo: (section: Section, extra?: Record<string, string>) => void;
+}) {
+  const [data, setData] = useState<SellDashboardData | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [games, setGames] = useState<PostCard[] | null>(null);
+  const wantsGames = group === 'engage';
+
+  useEffect(() => {
+    let cancelled = false;
+    const read = () => void api.sellDashboard(store.ownerId)
+      .then((next) => !cancelled && (setData(next), setFailed(false)))
+      .catch(() => !cancelled && setFailed(true));
+    read();
+    window.addEventListener(SALES_NEWS_EVENT, read);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SALES_NEWS_EVENT, read);
+    };
+  }, [store.ownerId, group]);
+
+  useEffect(() => setGames(null), [store.ownerId]);
+  useEffect(() => {
+    if (!wantsGames || games) return;
+    let cancelled = false;
+    api.shopGames(store.ownerId).then((result) => !cancelled && setGames(result.posts)).catch(() => !cancelled && setGames([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [wantsGames, games, store.ownerId]);
+
+  const money = (minor: number) => formatMoney(minor, data?.currency);
+  const count = (value: number) => formatCount(value);
+  let tiles: DashTile[] | null = null;
+  let note: ReactNode = null;
+  let chart: { date: string; revenueMinor: number }[] | null = null;
+
+  if (group === 'items' && data?.listings) {
+    const it = data.listings;
+    tiles = [
+      { label: 'On sale', value: count(it.onSale), go: () => onGo('items') },
+      { label: 'Drafts', value: count(it.drafts), go: () => onGo('items') },
+      { label: 'Sold out', value: count(it.soldOut), go: () => onGo('items') },
+      { label: `Ending in ${EXPIRY_WARNING_HOURS}h`, value: count(it.endingSoon), hot: it.endingSoon > 0, go: () => onGo('items') },
+    ];
+    note = (
+      <>
+        <span>{count(it.views)} views</span>
+        <span><Icon name="heart" size={14} /> {count(it.saves)} saves</span>
+        {it.best && <span className="sdash__best">Best seller this month: <b>{it.best.title}</b> · {count(it.best.units)} sold</span>}
+      </>
+    );
+  } else if (group === 'orders' && data?.orders) {
+    const it = data.orders;
+    tiles = [
+      { label: 'Open orders', value: count(it.open), go: () => onGo('payments') },
+      { label: 'Payment to confirm', value: count(it.claimed), hot: it.claimed > 0, go: () => onGo('payments', { show: 'answer' }) },
+      { label: 'Not paid yet', value: count(it.unpaid), go: () => onGo('payments') },
+      { label: 'On the way', value: count(it.inTransit), go: () => onGo('payments') },
+    ];
+    note = (
+      <>
+        <span>{count(it.delivered30)} delivered in 30 days</span>
+        {it.cancelled30 > 0 && <span>{count(it.cancelled30)} called off</span>}
+      </>
+    );
+  } else if (group === 'lots' && data?.shipments) {
+    const it = data.shipments;
+    tiles = [
+      { label: 'Lots open to join', value: count(it.open), go: () => onGo('lots') },
+      { label: 'Lots on the move', value: count(it.moving), go: () => onGo('lots') },
+      { label: 'Orders not in a lot', value: count(it.ordersNoLot), hot: it.ordersNoLot > 0, go: () => onGo('lots', { view: 'unlotted' }) },
+      { label: 'Imports not in a lot', value: count(it.listingsNoLot), hot: it.listingsNoLot > 0, go: () => onGo('lots', { view: 'unlotted' }) },
+    ];
+    note = <span>{count(it.done)} {it.done === 1 ? 'lot' : 'lots'} delivered or closed</span>;
+  } else if (group === 'engage' && games) {
+    const waiting = games.filter((card) => waitingOnShop(card)).length;
+    const stock = games.filter((card) => card.social.poll?.stock).length;
+    const running = games.filter((card) => isOpen(card)).length;
+    tiles = [
+      { label: 'Running now', value: count(running), go: () => onGo('engage') },
+      { label: 'Waiting on you', value: count(waiting), hot: waiting > 0, go: () => onGo('engage') },
+      { label: 'Stock polls', value: count(stock), go: () => onGo('engage') },
+      { label: 'Run so far', value: count(games.length), go: () => onGo('engage') },
+    ];
+  } else if (group === 'money' && data?.money) {
+    const it = data.money;
+    const change = it.revenuePrev30Minor > 0 ? (it.revenue30Minor - it.revenuePrev30Minor) / it.revenuePrev30Minor : null;
+    tiles = [
+      { label: 'Takings', value: money(it.revenue30Minor),
+        hint: change === null ? undefined : `${change >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(change * 100))}% on the 30 days before`,
+        go: () => onGo('analytics') },
+      { label: 'Orders', value: count(it.orders30), go: () => onGo('analytics') },
+      { label: 'Average order', value: money(it.averageMinor), go: () => onGo('analytics') },
+      { label: 'Conversion', value: `${(it.conversion * 100).toFixed(1)}%`, hint: 'Units sold per view', go: () => onGo('analytics') },
+    ];
+    // A flat line over a quiet fortnight says nothing the ₹0 does not.
+    chart = it.daily.some((day) => day.revenueMinor > 0) ? it.daily : null;
+    note = <span>{count(it.units30)} {it.units30 === 1 ? 'piece' : 'pieces'} sold</span>;
+  } else if (group === 'settings' && data?.shop) {
+    const it = data.shop;
+    const setup = [
+      { done: it.setup.photo, label: 'Shop photo' },
+      { done: it.setup.cover, label: 'Cover' },
+      { done: it.setup.bio, label: 'Bio' },
+      { done: it.setup.payment, label: 'Payment details' },
+    ];
+    const ready = setup.filter((step) => step.done).length;
+    tiles = [
+      { label: 'Followers', value: count(it.followers), go: () => onGo('storefront') },
+      { label: 'Team', value: count(it.team + 1), hint: it.team ? undefined : 'Just you', go: () => onGo('people') },
+      { label: 'Tier', value: it.tier.charAt(0).toUpperCase() + it.tier.slice(1), go: () => onGo('storefront') },
+      { label: 'Storefront set up', value: `${ready}/${setup.length}`, hot: ready < setup.length, go: () => onGo('storefront') },
+    ];
+    note = setup.map((step) => (
+      <span key={step.label} className={`sdash__step${step.done ? ' is-done' : ''}`}>
+        <Icon name={step.done ? 'check' : 'plus'} size={12} /> {step.label}
+      </span>
+    ));
+  }
+
+  // A card this person may not see is left out, rather than shown empty.
+  const hidden = data && !tiles && group !== 'engage';
+  if (hidden || (failed && !data)) return null;
+
+  return (
+    <section className="sdash" aria-label={`Dashboard: ${DASH_TITLES[group]}`} aria-busy={!tiles}>
+      <div className="sdash__body" key={group}>
+        <h2 className="sdash__title">{DASH_TITLES[group]}</h2>
+        {chart && <DashLine days={chart} />}
+        <div className="sdash__grid">
+          {(tiles ?? Array.from({ length: 4 }, () => null)).map((tile, index) => tile ? (
+            <button key={tile.label} type="button" className={`sdash__tile${tile.hot ? ' is-hot' : ''}`} onClick={tile.go}
+              style={{ animationDelay: `${index * 40}ms` }}>
+              <b className="sdash__value">{tile.value}</b>
+              <span className="sdash__label">{tile.label}</span>
+              {tile.hint && <span className="sdash__hint">{tile.hint}</span>}
+            </button>
+          ) : (
+            <span key={index} className="sdash__tile sdash__tile--wait" aria-hidden="true">
+              <b className="sdash__value">–</b>
+              <span className="sdash__label">&nbsp;</span>
+            </span>
+          ))}
+        </div>
+        {note && <p className="sdash__note">{note}</p>}
+      </div>
+    </section>
+  );
+}
+
+/** Fourteen days of takings, as a line under the Data card's title. */
+function DashLine({ days }: { days: { date: string; revenueMinor: number }[] }) {
+  const most = Math.max(1, ...days.map((day) => day.revenueMinor));
+  const step = 100 / Math.max(1, days.length - 1);
+  const points = days.map((day, index) => `${(index * step).toFixed(2)},${(28 - (day.revenueMinor / most) * 26).toFixed(2)}`);
+  return (
+    <svg className="sdash__line" viewBox="0 0 100 30" preserveAspectRatio="none" role="img"
+      aria-label="Takings over the last fourteen days">
+      <polygon className="sdash__area" points={`0,30 ${points.join(' ')} 100,30`} />
+      <polyline className="sdash__stroke" points={points.join(' ')} vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 
@@ -589,8 +793,16 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   if (error && !draft) return <ErrorNotice message={error} />;
   if (!draft) return <Loading />;
 
-  const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) =>
-    setDraft({ ...draft, [key]: value });
+  const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) => {
+    // The starter description names the shop; while it is still untouched it
+    // follows a rename, so "Monsoon Minis" never welcomes people to "Nisha's Shop".
+    const untouchedBio = key === 'storefrontName' && draft.bio === defaultShopBio(draft.storefrontName ?? '');
+    setDraft({
+      ...draft,
+      [key]: value,
+      ...(untouchedBio ? { bio: defaultShopBio(String(value).trim() || draft.storefrontName || '') } : {}),
+    });
+  };
 
   /** One payment field at a time, without losing the others already typed. */
   const setPayment = (key: keyof SellerPaymentDetails, value: string) =>
@@ -748,12 +960,12 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const preview = (
     <div className="card sfpreview">
       {draft.coverUrl
-        ? <img className="sfpreview__cover" src={draft.coverUrl} alt="" />
+        ? <img loading="lazy" decoding="async" className="sfpreview__cover" src={draft.coverUrl} alt="" />
         : <div className="sfpreview__cover sfpreview__cover--empty" />}
       <div className="sfpreview__body stack">
         <div className="row">
           {draft.photoUrl ? (
-            <img className="channel__photo" src={draft.photoUrl} alt=""
+            <img loading="lazy" decoding="async" className="channel__photo" src={draft.photoUrl} alt=""
               onError={(e) => ((e.currentTarget.style.display = 'none'))} />
           ) : (
             <Avatar name={name} size={46} />
@@ -950,7 +1162,7 @@ function ShopPictureField({ label, hint, value, onChange, shape }: {
       <span>{label}</span>
       <div className={`sfpic sfpic--${shape}`}>
         {value
-          ? <img className="sfpic__img" src={value} alt={label} />
+          ? <img loading="lazy" decoding="async" className="sfpic__img" src={value} alt={label} />
           : <span className="sfpic__empty" aria-hidden="true"><Icon name="camera" size={20} /></span>}
         <div className="sfpic__acts">
           <label className={`btn btn--quiet btn--sm sfpic__pick${busy ? ' is-busy' : ''}`}>
@@ -1188,12 +1400,12 @@ function ShelfCard({ listing, onEdit, onOpenLot, onTag }: {
     <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}`}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
         {tier && <RarityRibbon tier={tier} />}
-        <span className="qgrade" title="Condition">{listing.condition}</span>
+        <span className="qgrade" title="Condition">{factsOf(listing).condition}</span>
         {expired
           ? <span className="qsticker-tag qsticker-tag--drop">Expired</span>
           : listing.status === 'sold_out'
             ? <span className="qsticker-tag qsticker-tag--drop">Sold out</span>
-            : listing.preOrder && <span className="qsticker-tag">Pre-order</span>}
+            : isTakingBookings(listing.preOrder) && <span className="qsticker-tag">Pre-order</span>}
         <DropTag on={listing.channelDrop} />
       </Thumb>
       <AdvanceStrip percent={listing.advancePercent} />
@@ -2229,7 +2441,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
   }, [load]);
 
   async function remove(template: PostTemplate) {
-    if (!window.confirm(`Delete the template "${template.name}"? Items already listed from it keep what it filled in.`)) return;
+    if (!await confirmSentence(`Delete the template "${template.name}"? Items already listed from it keep what it filled in.`)) return;
     setBusy(template.id);
     setError(null);
     try {
@@ -2319,7 +2531,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
   onSaved: () => void;
 }) {
   const [name, setName] = useState(template?.name ?? '');
-  const [category, setCategory] = useState(template?.category ?? CATEGORIES[0]!);
+  const [category, setCategory] = useState(canonicalCategory(template?.category) ?? CATEGORIES[0]!);
   const [tags, setTags] = useState((template?.tags ?? []).join(', '));
   const [condition, setCondition] = useState(template?.condition ?? '');
   const [sourcing, setSourcing] = useState<Sourcing>(template?.sourcing ?? 'in_hand');
@@ -2405,7 +2617,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
             <span>Condition</span>
             <select value={condition} onChange={(e) => setCondition(e.target.value)}>
               <option value="">Ask each time</option>
-              {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
+              {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
             </select>
           </label>
         </div>
@@ -3225,7 +3437,7 @@ function PayoutDetails({ orderId, buyerName, details, check, onChanged }: {
           </dl>
           {details.qrCodeUrl && (
             <a href={details.qrCodeUrl} target="_blank" rel="noopener noreferrer" className="payout__qr">
-              <img src={details.qrCodeUrl} alt={`${buyerName}'s payment QR code`} />
+              <img loading="lazy" decoding="async" src={details.qrCodeUrl} alt={`${buyerName}'s payment QR code`} />
             </a>
           )}
         </div>
@@ -3769,16 +3981,18 @@ function CancelOrderRow({ row, onClose, onDone }: {
 }) {
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState('');
+  const [restock, setRestock] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const paid = row.paymentStatus === 'paid' || row.paymentStatus === 'partially_paid';
+  const askStock = row.status !== 'shipped';
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.cancelOrder(row.id, { reason: reason.trim(), message: message.trim() || undefined });
+      await api.cancelOrder(row.id, { reason: reason.trim(), message: message.trim() || undefined, restock: restock === true });
       onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not cancel that.');
@@ -3804,6 +4018,7 @@ function CancelOrderRow({ row, onClose, onDone }: {
             placeholder={`Your order for ${row.itemName} has been cancelled.`} />
           <span className="field__hint">Edit it, or leave it blank for the default.</span>
         </label>
+        {askStock && <RestockChoice quantity={row.quantity} value={restock} onChange={setRestock} />}
         {error && <p className="notice notice--error">{error}</p>}
         {paid ? (
           <p className="notice notice--warn" style={{ margin: 0 }}>
@@ -3815,7 +4030,7 @@ function CancelOrderRow({ row, onClose, onDone }: {
             The order becomes <strong>Cancelled</strong>. This cannot be undone.
           </p>
         )}
-        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}>
+        <button type="submit" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4 || (askStock && restock === null)}>
           {busy ? 'Cancelling…' : 'Cancel order'}
         </button>
       </form>
@@ -4743,8 +4958,8 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
               <div className="channel__top">
                 <span className="channel__name">{manager.displayName}</span>
                 <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
-                  onClick={() => {
-                    if (!window.confirm(`Remove ${manager.displayName} from this shop? They lose every right here at once.`)) return;
+                  onClick={async () => {
+                    if (!await confirmSentence(`Remove ${manager.displayName} from this shop? They lose every right here at once.`)) return;
                     void run(
                       () => api.updateManager({ storeId: store.ownerId, identifier: manager.userId, remove: true }),
                       'Removed.',

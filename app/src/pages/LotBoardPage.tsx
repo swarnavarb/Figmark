@@ -6,6 +6,7 @@ import { ApiRequestError, api, type LotBoard } from '../api';
 import { ErrorNotice, Icon } from '../components/ui';
 import { LotPeople } from '../components/LotPeople';
 import { Preloader } from '../components/Preloader';
+import '../styles/LotBoardPage.css';
 
 /**
  * The packing board: one lot, worked customer by customer.

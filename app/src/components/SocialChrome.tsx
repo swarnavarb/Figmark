@@ -10,7 +10,7 @@ import { Avatar } from './ui';
 import { Icon, type IconName } from './Icon';
 import { MESSAGES_NEWS_EVENT, Notifications } from './Notifications';
 import { VoicePicker, useVoice } from './SocialVoice';
-import { seenMap, unreadOf } from './Channels';
+import { forumHasNews, seenMap, unreadOf } from './channelSeen';
 
 /**
  * The social tab's own chrome: one gradient block for the header, a slim bar
@@ -25,10 +25,10 @@ import { seenMap, unreadOf } from './Channels';
 export type SocialView = 'feed' | 'channels' | 'wanted' | 'forums' | 'messages';
 
 export const SOCIAL_VIEWS: { id: SocialView; label: string; icon: IconName }[] = [
-  { id: 'feed', label: 'Feed', icon: 'spark' },
+  { id: 'feed', label: 'Following', icon: 'spark' },
   { id: 'channels', label: 'Channels', icon: 'megaphone' },
-  { id: 'wanted', label: 'ISO', icon: 'target' },
-  { id: 'forums', label: 'Forums', icon: 'forum' },
+  { id: 'wanted', label: 'Wanted (ISO)', icon: 'target' },
+  { id: 'forums', label: 'Groups', icon: 'forum' },
   { id: 'messages', label: 'Messages', icon: 'mail' },
 ];
 
@@ -53,7 +53,7 @@ function usePulse(): Pulse {
           : 0,
         // Joined forums with a post since you last looked in.
         forums: forums.status === 'fulfilled'
-          ? forums.value.forums.filter((row) => row.member && row.lastPostAt && (!seen[row.id] || row.lastPostAt > seen[row.id]!)).length
+          ? forums.value.forums.filter((row) => forumHasNews(row, seen)).length
           : 0,
       });
     });
@@ -157,7 +157,8 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
         </div>
       </header>
 
-      <div className={`soccompact${compact ? ' is-on' : ''}`} aria-hidden={!compact}>
+      {/* Inert while folded away, so nothing in it can take focus unseen. */}
+      <div className={`soccompact${compact ? ' is-on' : ''}`} aria-hidden={!compact} {...(compact ? {} : { inert: '' })}>
         <div className="soccompact__in">
           <button type="button" className="soccompact__mark" aria-label="Back to the top"
             tabIndex={compact ? 0 : -1} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
@@ -311,7 +312,7 @@ export function SocialMatches({ result, open, onError }: {
             <div key={shop.id} className="socsearch__row">
               <button type="button" className="socsearch__open"
                 onClick={() => open(shop.handle ? `/${shop.handle}` : `/social/c/${shop.id}`)}>
-                {shop.photoUrl ? <img className="socsearch__photo" src={shop.photoUrl} alt="" /> : <Avatar name={shop.name} size={44} />}
+                {shop.photoUrl ? <img loading="lazy" decoding="async" className="socsearch__photo" src={shop.photoUrl} alt="" /> : <Avatar name={shop.name} size={44} />}
                 <span className="socsearch__who">
                   <strong>{shop.name} <span className="socsearch__kind">Shop</span></strong>
                   <span className="faint">{shop.handle ? `@${shop.handle} · ` : ''}{shop.followerCount} followers</span>

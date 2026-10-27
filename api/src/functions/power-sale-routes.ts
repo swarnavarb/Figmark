@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
-import { CATEGORIES, listablePrice } from '../../../shared/catalog.js';
+import { canonicalCategory, listablePrice } from '../../../shared/catalog.js';
 import type { PowerSale, PowerSaleItem } from '../../../shared/models.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
@@ -17,7 +17,6 @@ import {
   advancePowerSale,
   finishesAt,
   releaseItems,
-  tickPowerSales,
   windowLeftMinutes,
 } from './power-sale.js';
 
@@ -166,7 +165,7 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
       id: `psi_${randomUUID().slice(0, 10)}`,
       title,
       description: trimmed(entry.description, 600),
-      category: (CATEGORIES as readonly string[]).includes(category) ? category : 'Collectibles',
+      category: canonicalCategory(category) ?? 'Collectibles',
       condition: (CONDITION_TAGS as readonly string[]).includes(condition)
         ? (condition as ConditionTag)
         : 'MISB',
@@ -361,17 +360,3 @@ app.http('power-sales', { ...anon, methods: ['GET'], route: 'power-sales', handl
 app.http('power-sale-create', { ...anon, methods: ['POST'], route: 'power-sales/new', handler: powerSaleCreateRoute });
 app.http('power-sale-read', { ...anon, methods: ['GET'], route: 'power-sales/{id}', handler: powerSaleReadRoute });
 app.http('power-sale-stop', { ...anon, methods: ['POST'], route: 'power-sales/{id}/stop', handler: powerSaleStopRoute });
-
-/**
- * The clock: every minute, every live sale moves to where it should be.
- *
- * The console still advances what it reads, so a seller watching sees the next
- * item the moment it is due; this is what moves it when nobody is watching.
- */
-app.timer('power-sale-clock', {
-  schedule: '0 */1 * * * *',
-  handler: async (_timer, context) => {
-    const touched = await tickPowerSales(await getRepository());
-    if (touched > 0) context.log(`power-sale-clock: advanced ${touched} live sale(s)`);
-  },
-});

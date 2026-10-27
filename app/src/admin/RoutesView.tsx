@@ -1,3 +1,4 @@
+import { confirmSentence } from '../components/Ask';
 import { useEffect, useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { STAGE_ICONS, routePartsLine, type RouteStep, type StageIcon } from '@shared/routes';
@@ -99,7 +100,7 @@ function Common({ data, onSaved }: { data: Library; onSaved: (steps: RouteStep[]
   const [note, setNote] = useState<string | null>(null);
 
   async function restore() {
-    if (!window.confirm('Put back Figmark’s built-in common steps?')) return;
+    if (!await confirmSentence('Put back Figmark’s built-in common steps?')) return;
     setBusy(true);
     try {
       const result = await admin.saveRouteCommon(null);
@@ -338,8 +339,8 @@ function Samples({ data, onSaved }: { data: Library; onSaved: (samples: SampleRo
     }
   }
 
-  function remove(sample: SampleRoute) {
-    if (!window.confirm(`Delete the sample "${sample.name}"? Shops stop being offered it. Routes shops already saved from it are not touched.`)) return;
+  async function remove(sample: SampleRoute) {
+    if (!await confirmSentence(`Delete the sample "${sample.name}"? Shops stop being offered it. Routes shops already saved from it are not touched.`)) return;
     void publish(list.filter((entry) => entry.id !== sample.id), `"${sample.name}" deleted.`);
   }
 
@@ -389,8 +390,8 @@ function Samples({ data, onSaved }: { data: Library; onSaved: (samples: SampleRo
       {list.length === 0 && <p className="muted">No samples: shops start from common steps or a blank route.</p>}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <button type="button" className="btn btn--quiet btn--sm" disabled={busy}
-          onClick={() => {
-            if (!window.confirm('Put back Figmark’s built-in samples? Your list is replaced.')) return;
+          onClick={async () => {
+            if (!await confirmSentence('Put back Figmark’s built-in samples? Your list is replaced.')) return;
             void publish(builtInSamples(), 'Built-in samples restored.');
           }}>
           Restore built-in samples
@@ -455,8 +456,8 @@ function SampleEditor({ data, id, onSaved }: { data: Library; id: string; onSave
         sample={{
           name: sample?.name ?? '',
           steps: start as RouteStep[],
-          onDelete: sample ? () => {
-            if (!window.confirm(`Delete the sample "${sample.name}"? Shops stop being offered it.`)) return;
+          onDelete: sample ? async () => {
+            if (!await confirmSentence(`Delete the sample "${sample.name}"? Shops stop being offered it.`)) return;
             void publish(data.samples.filter((entry) => entry.id !== sample.id)).catch(() => {});
           } : undefined,
           onSave: (name, steps) => {

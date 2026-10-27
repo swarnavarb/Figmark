@@ -4,7 +4,7 @@ import { CHAT_PHOTO_CONTAINER_NAME, PHOTO_CONTAINER_NAME } from '../../../shared
 import type { StorageConfig } from '../config.js';
 import { randomUUID } from 'node:crypto';
 import { extensionFor } from './memory-store.js';
-import type { BlobEntry, PhotoScope, PhotoStore, PrivatePhotoInfo, PublicPhotoInfo, StoredPhoto, StorageStatus } from './types.js';
+import { isThumbName, thumbNameOf, type BlobEntry, type PhotoScope, type PhotoStore, type PrivatePhotoInfo, type PublicPhotoInfo, type StoredPhoto, type StorageStatus } from './types.js';
 
 /** Azure Blob Storage implementation for listing and condition photos. */
 export class BlobPhotoStore implements PhotoStore {
@@ -58,18 +58,26 @@ export class BlobPhotoStore implements PhotoStore {
     return `${this.client.url.replace(/\/$/, '')}/${PHOTO_CONTAINER_NAME}/${encodeURIComponent(blobName)}`;
   }
 
-  async upload(bytes: Uint8Array, contentType: string, uploadedBy?: string): Promise<StoredPhoto> {
+  async upload(bytes: Uint8Array, contentType: string, uploadedBy?: string, thumb?: Uint8Array): Promise<StoredPhoto> {
     const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
-    const blob = this.client
-      .getContainerClient(PHOTO_CONTAINER_NAME)
-      .getBlockBlobClient(blobName);
-    await blob.uploadData(bytes, {
-      blobHTTPHeaders: { blobContentType: contentType },
-      ...(uploadedBy ? { metadata: { uploadedby: uploadedBy } } : {}),
+    const container = this.client.getContainerClient(PHOTO_CONTAINER_NAME);
+    const metadata = { ...(uploadedBy ? { uploadedby: uploadedBy } : {}), ...(thumb ? { thumb: '1' } : {}) };
+    // Every name is a fresh UUID and a photo is never rewritten in place, so
+    // browsers and any CDN in front may keep it for good.
+    const cacheControl = 'public, max-age=31536000, immutable';
+    // The small copy first: a photo that says it has one always does.
+    if (thumb) {
+      await container.getBlockBlobClient(thumbNameOf(blobName)).uploadData(thumb, {
+        blobHTTPHeaders: { blobContentType: 'image/jpeg', blobCacheControl: cacheControl },
+      });
+    }
+    await container.getBlockBlobClient(blobName).uploadData(bytes, {
+      blobHTTPHeaders: { blobContentType: contentType, blobCacheControl: cacheControl },
+      ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     });
     // The container is public-read, so the storage URL is the fast path and
     // this app never has to proxy the bytes.
-    return { blobName, url: this.urlFor(blobName)! };
+    return { blobName, url: this.urlFor(blobName)!, ...(thumb ? { thumbUrl: this.urlFor(thumbNameOf(blobName))! } : {}) };
   }
 
   async read(blobName: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
@@ -97,6 +105,7 @@ export class BlobPhotoStore implements PhotoStore {
         uploadedBy: properties.metadata?.uploadedby ?? null,
         attachedTo: properties.metadata?.attachedto ?? null,
         uploadedAt: (properties.lastModified ?? new Date()).toISOString(),
+        hasThumb: properties.metadata?.thumb === '1',
       };
     } catch {
       return null;
@@ -123,7 +132,7 @@ export class BlobPhotoStore implements PhotoStore {
     const blobName = `${randomUUID()}.${extensionFor(contentType)}`;
     // The container has no anonymous access, so this blob has no public URL.
     await this.chatBlob(blobName).uploadData(bytes, {
-      blobHTTPHeaders: { blobContentType: contentType },
+      blobHTTPHeaders: { blobContentType: contentType, blobCacheControl: 'private, max-age=31536000, immutable' },
       metadata: { uploadedby: uploadedBy },
     });
     return { blobName };
@@ -165,6 +174,8 @@ export class BlobPhotoStore implements PhotoStore {
       const container = this.client.getContainerClient(containerName);
       try {
         for await (const blob of container.listBlobsFlat()) {
+          // A small copy lives and dies with its photo; never listed on its own.
+          if (scope === 'public' && isThumbName(blob.name)) continue;
           entries.push({
             scope,
             name: blob.name,
@@ -181,6 +192,9 @@ export class BlobPhotoStore implements PhotoStore {
 
   async remove(scope: PhotoScope, blobName: string): Promise<boolean> {
     const containerName = scope === 'public' ? PHOTO_CONTAINER_NAME : CHAT_PHOTO_CONTAINER_NAME;
+    if (scope === 'public' && !isThumbName(blobName)) {
+      await this.client.getContainerClient(containerName).getBlockBlobClient(thumbNameOf(blobName)).deleteIfExists().catch(() => undefined);
+    }
     const gone = await this.client.getContainerClient(containerName).getBlockBlobClient(blobName).deleteIfExists();
     return gone.succeeded;
   }

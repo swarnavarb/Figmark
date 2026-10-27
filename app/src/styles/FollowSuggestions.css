@@ -1,0 +1,33 @@
+/* People and shops to follow: a sideways row of small cards. */
+.fsug { display: grid; gap: 8px; }
+.fsug__title {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  font-size: var(--t-md); font-weight: var(--w-bold);
+}
+.fsug__row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 160px); gap: 10px;
+  overflow-x: auto; scrollbar-width: none;
+  margin-inline: calc(var(--page-pad) * -1); padding: 2px var(--page-pad) 6px;
+  scroll-snap-type: x mandatory;
+}
+.fsug__row::-webkit-scrollbar { display: none; }
+.fsug__card {
+  position: relative; display: grid; gap: 8px; align-content: space-between;
+  padding: 14px 10px 10px; scroll-snap-align: start;
+  border: 1px solid var(--border); border-radius: var(--r-lg, 16px); background: var(--surface);
+}
+.fsug__x {
+  position: absolute; top: 6px; right: 6px; display: grid; place-items: center;
+  width: 24px; height: 24px; border: 0; border-radius: 50%;
+  background: transparent; color: var(--text-faint); cursor: pointer;
+}
+.fsug__x:hover { background: var(--surface-2); color: var(--text); }
+.fsug__who { display: grid; justify-items: center; gap: 3px; text-align: center; color: inherit; text-decoration: none; min-width: 0; }
+.fsug__photo { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; }
+.fsug__name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+.fsug__kind { color: var(--text-faint); font-size: var(--t-2xs); }
+.fsug__why {
+  color: var(--text-dim); font-size: var(--t-2xs); line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.fsug__follow { justify-content: center; width: 100%; }

@@ -245,7 +245,9 @@ it has no such check.
 
 The lists on an account that only grow live in `userParts`, one document per
 part in the account's partition (`api/src/data/user-parts.ts`): `collection`
-(cards and shelves), `sharing`, `affiliate`, `push`, `devices` and `profit`.
+(cards and shelves), `sharing`, `affiliate`, `push`, `devices`, `profit` and
+`feed` (saved, hidden and muted posts and people, and where the feed was read
+up to - written on every feed visit, so kept off the row).
 On the `users` row they pushed it toward Cosmos's 2 MB item limit, and every
 screen touching any of them wrote the same document.
 
@@ -260,6 +262,14 @@ Rows written before the split carried these fields inline; a one-off pass on
 start-up saves each such account once, which moves them into their parts. The
 game state (`quest`) stays on the row: it is capped, and the leaderboard sorts
 on it.
+
+## What the feed counts
+
+A post carries its own reading counters - `views`, `opens`, `dwellMs` - added
+to in batches from `POST /api/social/seen`, through the same read-change-write
+reactions use. They are totals, not a list of readers: ranking needs to know
+whether people stop on a post, not who did. `resultsSentAt` marks a debate
+whose voters have been told how it ended, so they are told once.
 
 ## Not yet modelled
 

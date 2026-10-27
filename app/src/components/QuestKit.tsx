@@ -1,3 +1,4 @@
+import { formatCount } from '../format';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
@@ -65,8 +66,8 @@ export function QuestHero({ who, eyebrow, title, level, progress, xp, toNext, ne
         <p className="qhero__eyebrow"><Link to={who.href} className="qhero__who">{who.name}</Link> · {eyebrow}</p>
         <h2 className="qhero__title">{title} <InfoTip label="How XP and levels work">{info}</InfoTip></h2>
         <p className="qhero__xp">
-          <b>{xp.toLocaleString('en-IN')} XP</b>
-          {toNext !== null && <> · {toNext.toLocaleString('en-IN')} to level {nextLevel}</>}
+          <b>{formatCount(xp)} XP</b>
+          {toNext !== null && <> · {formatCount(toNext)} to level {nextLevel}</>}
         </p>
         <XpBar progress={progress} />
       </div>
@@ -165,7 +166,7 @@ export function InviteStrip({ title, stats, actions, info }: {
       <span className="qstrip__title"><Glyph name="gift" size={15} /> {title} <InfoTip label={`About ${title}`}>{info}</InfoTip></span>
       {stats.length > 0 && (
         <span className="qstrip__stats">
-          {stats.map((stat) => <span key={stat.label}><b>{stat.value.toLocaleString('en-IN')}</b> {stat.label}</span>)}
+          {stats.map((stat) => <span key={stat.label}><b>{formatCount(stat.value)}</b> {stat.label}</span>)}
         </span>
       )}
       <span className="qstrip__acts">{actions}</span>

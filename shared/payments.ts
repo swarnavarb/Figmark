@@ -54,10 +54,15 @@ export function timeLeft(expiresAt: string, now = new Date()): string {
 
 /* ── Advance ───────────────────────────────────────────────────────────── */
 
-/** The advance on an order, rounded up so the balance is never the larger surprise. */
+/**
+ * The advance on an order, rounded up to a whole rupee so the balance is never
+ * the larger surprise - and so the advance and balance shown, which are always
+ * whole rupees, add up to the total (₹499.50 shown as ₹500 beside a ₹1,499
+ * balance did not).
+ */
 export function advanceMinor(totalMinor: number, percent: number | null | undefined): number {
   if (!percent || percent <= 0 || percent >= 100) return totalMinor;
-  return Math.ceil((totalMinor * percent) / 100);
+  return Math.min(totalMinor, Math.ceil((totalMinor * percent) / 100 / 100) * 100);
 }
 
 /* ── Money on an order ─────────────────────────────────────────────────── */

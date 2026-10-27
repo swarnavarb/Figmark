@@ -88,9 +88,9 @@ async function addOrderPhoto(request: HttpRequest, _context: InvocationContext) 
     return error(409, 'too_many_photos', `An order holds ${MAX_ORDER_PHOTOS} photos. Remove one first.`);
   }
 
-  const read = readPhoto(body.dataUrl);
+  const read = await readPhoto(body.dataUrl);
   if ('refusal' in read) return read.refusal;
-  const stored = await (await getPhotoStore()).upload(read.photo.bytes, read.photo.contentType, user.id);
+  const stored = await (await getPhotoStore()).upload(read.photo.bytes, read.photo.contentType, user.id, read.photo.thumb);
 
   const photo: OrderPhoto = {
     id: `oph_${randomUUID().slice(0, 12)}`,

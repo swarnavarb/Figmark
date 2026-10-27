@@ -6,7 +6,7 @@ import {
   ApiRequestError, api,
   type Credit, type FollowRow, type PageReviews, type PageSide, type PublicProfile, type ReviewsAbout,
 } from '../api';
-import { formatMoney, timeAgo } from '../format';
+import { formatMoney, timeAgo, formatCount } from '../format';
 import { useSession } from '../session';
 import { EarnPill, earnOf } from './Affiliate';
 import { SkeletonText, useToast } from './Feedback';
@@ -80,7 +80,7 @@ type SharedProfile = Pick<PublicProfile, 'sellerId' | 'isStore' | 'handle' | 'di
  */
 function profileShareSpec(profile: SharedProfile, isMe: boolean): ShareSpec {
   const level = `Level ${profile.levelTag.level} ${profile.levelTag.title}`;
-  const followers = profile.followerCount > 0 ? ` · ${profile.followerCount.toLocaleString('en-IN')} followers` : '';
+  const followers = profile.followerCount > 0 ? ` · ${formatCount(profile.followerCount)} followers` : '';
   if (profile.isStore) {
     return {
       kind: 'shop',
@@ -595,7 +595,9 @@ export function FollowCounts({ userId, followerCount, isStore }: { userId: strin
     setData(null);
     void api.follows(userId, isStore ? 'store' : 'person').then(setData).catch(() => setData(null));
   }, [userId, isStore, followerCount]);
-  const followers = data?.followers.length ?? followerCount;
+  // The count the follow itself keeps, the one every other screen shows - not
+  // the length of the list fetched for the sheet, which can be a partial page.
+  const followers = followerCount;
   const following = data?.following.length ?? 0;
   const tabs = isStore ? (['followers'] as const) : (['followers', 'following'] as const);
   // Each count is a cell of the page's stats row (.pstats), the same size as its neighbours.
@@ -603,12 +605,12 @@ export function FollowCounts({ userId, followerCount, isStore }: { userId: strin
     <>
       <button type="button" className="pstat pstat--tap" onClick={() => setOpen('followers')}
         aria-label={`${followers} ${followers === 1 ? 'follower' : 'followers'}`}>
-        <b>{followers.toLocaleString('en-IN')}</b><small>{followers === 1 ? 'follower' : 'followers'}</small>
+        <b>{formatCount(followers)}</b><small>{followers === 1 ? 'follower' : 'followers'}</small>
       </button>
       {!isStore && (
         <button type="button" className="pstat pstat--tap" onClick={() => setOpen('following')}
           aria-label={`${following} following`}>
-          <b>{following.toLocaleString('en-IN')}</b><small>following</small>
+          <b>{formatCount(following)}</b><small>following</small>
         </button>
       )}
       {open && (

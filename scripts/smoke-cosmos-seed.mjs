@@ -323,6 +323,8 @@ await check('gains the fixtures a later release added, and keeps what it had', a
   const touched = orders.get('ord_1001');
   touched.itemName = 'Renamed by somebody using the site';
   orders.set('ord_1001', touched);
+  // An older seed was topped up with an older fixture set, if it was marked at all.
+  containers.get('siteContent').delete('migration:fixtures-topped-up');
 
   const updated = repositoryOn(containers);
   await updated.init();
@@ -393,6 +395,9 @@ await check('rows from older buyer protection are moved to the new shape, holder
   assert.equal(order.disputeLinks[0].topic, 'held_payment');
   assert.equal(dispute.topic, 'held_payment');
   assert.match(restarted.status().detail, /Moved \d+ row\(s\)/);
+  // Its background pass finishes first: it leaves the fixture marker that lets
+  // later starts skip the fixture scan.
+  await restarted.settled();
 
   // Once, and never again.
   resetCalls();

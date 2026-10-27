@@ -13,7 +13,7 @@ import type {
 import { handleKey } from '../../../shared/handles.js';
 import { STORE_KINDS, storeOf, type StoreKind } from '../../../shared/service-stores.js';
 import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
-import type { BackendStatus, CatalogQuery, OrderFigures, Repository } from './repository.js';
+import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
 import { BUMP_COOLDOWN_MS, ORDER_FIGURE_FIELDS, sessionDigest } from './repository.js';
 import { photoNamesIn } from '../storage/unused.js';
 import {
@@ -45,7 +45,9 @@ import {
   seedPledges,
   seedUsers,
 } from './seed.js';
+import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
+import { seedTestListings } from './seed-test-catalog.js';
 
 /**
  * In-process store used when Cosmos DB is not configured.
@@ -94,7 +96,7 @@ export class MemoryRepository implements Repository {
     }
     // The Buy tab's demo lots and drops, timed off the real clock.
     for (const lot of seedShowcaseLots()) this.lots.set(lot.id, lot);
-    for (const listing of [...seedListings(), ...seedShowcaseListings()]) this.listings.set(listing.id, listing);
+    for (const listing of [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]) this.listings.set(listing.id, listing);
     for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]) {
       this.orders.set(order.id, order);
     }
@@ -105,7 +107,7 @@ export class MemoryRepository implements Repository {
       this.follows.set(followKey(follow.followerId, follow.sellerId), follow);
     }
     for (const forum of seedForums()) this.forums.set(forum.id, forum);
-    for (const post of seedPosts()) this.posts.set(post.id, post);
+    for (const post of [...seedPosts(), ...seedFeedDemoPosts()]) this.posts.set(post.id, post);
     for (const review of seedReviews()) this.reviews.set(review.id, review);
     for (const record of seedDisputes()) this.disputes.set(record.id, record);
     for (const record of seedWants()) this.wants.set(record.id, record);
@@ -190,6 +192,12 @@ export class MemoryRepository implements Repository {
     }
     this.indexUser(user);
     return user;
+  }
+
+  async listSellerCardsByIds(ids: readonly string[]): Promise<SellerCardSource[]> {
+    return (await this.listUsersByIds(ids)).map(({ id, displayName, createdAt, sellerProfile, sellerTrust }) => ({
+      id, displayName, createdAt, sellerProfile, sellerTrust,
+    }));
   }
 
   async listUsersByIds(ids: readonly string[]): Promise<User[]> {
@@ -310,6 +318,13 @@ export class MemoryRepository implements Repository {
     return filtered.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  async listLotsNaming(userId: string): Promise<Lot[]> {
+    return [...this.lots.values()]
+      .filter((lot) => lot.forwarder?.forwarderUserId === userId || lot.handler?.handlerUserId === userId
+        || lot.supplier?.supplierUserId === userId || lot.exporterUserId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   async getLot(sellerId: string, lotId: string): Promise<Lot | null> {
     const lot = this.lots.get(lotId);
     return lot && lot.sellerId === sellerId ? lot : null;
@@ -335,6 +350,14 @@ export class MemoryRepository implements Repository {
       items = items.filter((l) => wanted.has(l.category));
     }
     if (query.condition) items = items.filter((l) => l.condition === query.condition);
+    // What a category asks about is stored under `attributes`. A listing that
+    // never answered the question does not match a filter on it.
+    if (query.type) items = items.filter((l) => l.attributes?.['type'] === query.type);
+    if (query.size) items = items.filter((l) => l.attributes?.['size'] === query.size);
+    if (query.authenticity) {
+      const wanted = new Set(query.authenticity);
+      items = items.filter((l) => wanted.has(l.attributes?.['authenticity'] ?? ''));
+    }
     // How it is sold is derived from the listing rather than stored, and the
     // rule lives in shared/catalog so the SQL and this agree by construction.
     if (query.kind && query.kind !== 'all') items = items.filter((l) => matchesKind(l, query.kind));
@@ -610,6 +633,18 @@ export class MemoryRepository implements Repository {
     return true;
   }
 
+  async changeEmail(user: User, email: string): Promise<boolean> {
+    const next = normaliseIdentifier(email);
+    const holder = this.identifiers.get(next);
+    if (holder && holder !== user.id) return false;
+    const previous = user.email ? normaliseIdentifier(user.email) : null;
+    this.identifiers.set(next, user.id);
+    user.email = email;
+    await this.updateUser(user);
+    if (previous && previous !== next) this.identifiers.delete(previous);
+    return true;
+  }
+
   async listMessages(threadId: string, limit = 200, before?: string): Promise<Message[]> {
     return [...this.messages.values()]
       .filter((message) => message.threadId === threadId && (!before || message.createdAt <= before))
@@ -707,6 +742,13 @@ export class MemoryRepository implements Repository {
 
   async deleteWantSeeker(id: string): Promise<void> {
     this.wantSeekers.delete(id);
+  }
+
+  async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
+    return [...this.listings.values()].filter(({ preOrder: pre }) => pre && !pre.closedAt && (
+      (pre.cutoffAt <= nowIso && !pre.filledAt && !pre.proceededShortAt && !pre.decisionDueAt)
+      || (Boolean(pre.decisionDueAt) && pre.decisionDueAt! <= nowIso)
+    )).slice(0, limit);
   }
 
   async listPledges(listingId: string): Promise<Pledge[]> {
@@ -1041,6 +1083,12 @@ export class MemoryRepository implements Repository {
       order.lotId === lotId && order.sellerId === sellerId && isPlaced(order));
   }
 
+  async listBuyerIdsForSeller(sellerId: string, since: string): Promise<string[]> {
+    return [...new Set([...this.orders.values()]
+      .filter((order) => order.sellerId === sellerId && isPlaced(order) && order.createdAt >= since)
+      .map((order) => order.buyerId))];
+  }
+
   async listOrdersForSeller(sellerId: string): Promise<Order[]> {
     return [...this.orders.values()].filter((order) => order.sellerId === sellerId && isPlaced(order));
   }
@@ -1069,6 +1117,16 @@ export class MemoryRepository implements Repository {
     const forum = this.forums.get(post.channelId);
     if (forum) forum.postCount += 1;
     return post;
+  }
+
+  async listOpenGames(nowIso: string, limit: number): Promise<Post[]> {
+    return [...this.posts.values()].filter((post) =>
+      (post.contest && !post.contest.settledAt)
+      || (post.guess && !post.guess.revealedAt)
+      || (post.poll?.closesAt && (post.poll.closesAt >= nowIso
+        || (post.debate && !post.resultsSentAt)
+        || (post.poll.reward && !post.poll.reward.paidAt))),
+    ).slice(0, limit).map((post) => structuredClone(post));
   }
 
   async listRecentPosts(limit: number): Promise<Post[]> {

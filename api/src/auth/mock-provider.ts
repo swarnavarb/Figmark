@@ -15,8 +15,9 @@ import type { Repository } from '../data/repository.js';
 import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, handleShapeProblem, suggestUsername } from '../../../shared/handles.js';
-import { PASSWORD_MAX_LENGTH, hashPassword, passwordProblem, verifyPassword } from './passwords.js';
-import { normalizeIndianMobile } from '../../../shared/verification.js';
+import { PASSWORD_MAX_LENGTH, hashPasswordAsync, passwordNeedsRehash, passwordProblem, verifyPasswordAsync } from './passwords.js';
+import { normalizeIndianMobile, verifiedChecks } from '../../../shared/verification.js';
+import { LEGAL_VERSION } from '../../../shared/legal.js';
 import {
   SESSION_COOKIE_NAME,
   SESSION_REFRESH_AFTER_SECONDS,
@@ -33,6 +34,16 @@ import {
 } from './tokens.js';
 import type { AuthService, ClientContext } from './types.js';
 import { forget, limited } from '../rate-limit.js';
+import { hashRecovery, matchStep, newRecoveryCodes, newSecret, otpauthUri } from './totp.js';
+import { VerificationError, consumePasswordResetCode, startPasswordReset } from '../verification/index.js';
+
+/** Who a request turned out to be, and the session and account record that said so. */
+interface Resolution {
+  user: AuthUser | null;
+  token?: string;
+  /** The account as read; null when the answer came from the token's snapshot. */
+  record?: User | null;
+}
 
 /**
  * Development-only auth provider: username + password against seeded users.
@@ -74,8 +85,29 @@ export class MockAuthProvider implements AuthService {
     return this.repository.backend === 'memory';
   }
 
-  async getCurrentUser(request: HttpRequest): Promise<AuthUser | null> {
-    if (!this.sessionSecret) return null;
+  /**
+   * Who a request is, worked out once per request.
+   *
+   * Every route asks, and /api/auth/me then asks twice more - to renew the
+   * cookie and to hand out the device cookie - and each answer is a revocation
+   * read, an account read and its parts. Held against the request object, the
+   * second and third ask cost nothing; the next request starts afresh.
+   */
+  private readonly resolved = new WeakMap<object, Promise<Resolution>>();
+
+  private resolve(request: HttpRequest): Promise<Resolution> {
+    let found = this.resolved.get(request);
+    if (!found) {
+      found = this.lookUp(request);
+      this.resolved.set(request, found);
+      // A failed read is not an answer: the next ask in this request tries again.
+      found.catch(() => this.resolved.delete(request));
+    }
+    return found;
+  }
+
+  private async lookUp(request: HttpRequest): Promise<Resolution> {
+    if (!this.sessionSecret) return { user: null };
     // Any one of the tokens presented may be the live one, so a dead cookie
     // sitting alongside a good one must not decide the answer.
     for (const token of readTokens(request)) {
@@ -88,16 +120,20 @@ export class MockAuthProvider implements AuthService {
       const user = await this.repository.getUserById(payload.sub);
       if (user) {
         if (signedOutEverywhere(user, payload)) continue;
-        return user.suspended ? null : toAuthUser(user);
+        return { user: user.suspended ? null : toAuthUser(user), token, record: user };
       }
 
       // It found nobody. With a real database that means the account is gone
       // and the session is over. With the per-worker store it far more likely
       // means this worker simply never saw the sign-up, so fall back to the
       // snapshot the token carries rather than throwing the user out.
-      if (this.storeIsEphemeral && payload.usr) return fromSnapshot(payload.usr as AuthUser);
+      if (this.storeIsEphemeral && payload.usr) return { user: fromSnapshot(payload.usr as AuthUser), token, record: null };
     }
-    return null;
+    return { user: null };
+  }
+
+  async getCurrentUser(request: HttpRequest): Promise<AuthUser | null> {
+    return (await this.resolve(request)).user;
   }
 
   async requireAuth(request: HttpRequest): Promise<AuthUser> {
@@ -163,6 +199,8 @@ export class MockAuthProvider implements AuthService {
     capabilities: readonly Capability[],
   ): Promise<AuthUser> {
     const user = await this.requireAuth(request);
+    // Operating the marketplace moves other people's money: not on a password alone.
+    if (capabilities.includes('admin') && user.capabilities.isAdmin && user.mfaRequired) throw staffMfaMissing();
     if (!hasAnyCapability(user.capabilities, capabilities)) {
       // Buying and selling are closed until verification is done, and the
       // person needs to be told what to do rather than that they may not.
@@ -196,9 +234,7 @@ export class MockAuthProvider implements AuthService {
     }
 
     // An email or phone first; failing that, a username - with or without its @.
-    const handle = identifier.replace(/^@/, '');
-    const user = (await this.repository.getUserByIdentifier(identifier))
-      ?? (handleShapeProblem(handle) === null ? (await this.repository.getByHandle(handle))?.user ?? null : null);
+    const user = await this.accountFor(identifier);
 
     // Guessing spread over many addresses is capped per account - but only for
     // devices that have never signed in to it. The owner's browser carries the
@@ -209,13 +245,14 @@ export class MockAuthProvider implements AuthService {
       throw new AuthError(
         429,
         'too_many_attempts',
-        'Too many failed sign-in attempts on this account. Try again later, or from a device you have signed in on before.',
+        'Too many failed sign-in attempts on this account. Try again later, from a device you have signed in on before, ' +
+          'or reset your password with "Forgot your password?" - that lifts this hold.',
       );
     }
 
     // Compare regardless of whether the user exists so a missing account and a
     // wrong password take the same time to answer.
-    const ok = verifyPassword(credentials.password, user?.passwordHash ?? null);
+    const ok = await verifyPasswordAsync(credentials.password, user?.passwordHash ?? null);
 
     // Before blaming the credentials, rule out the case where nothing could
     // have matched them. A store that is unreachable, unprovisioned or empty
@@ -243,9 +280,34 @@ export class MockAuthProvider implements AuthService {
       throw AuthError.invalidCredentials();
     }
     if (user.suspended) throw AuthError.suspended();
+
+    // The second factor, for an account that has one. A wrong code counts as
+    // a failed sign-in like a wrong password does.
+    if (mfaOn(user)) {
+      if (!credentials.otp?.trim()) {
+        throw new AuthError(401, 'mfa_required', 'Enter the 6-digit code from your authenticator app.');
+      }
+      if (!(await this.spendSecondFactor(user, credentials.otp))) {
+        await limited(key, 'login_fail', { force: true });
+        if (!trusted) await limited(accountKey, 'login_fail_account', { force: true });
+        throw new AuthError(401, 'mfa_invalid', 'That code is not right. Use the newest code in your app, or a recovery code.');
+      }
+    }
+
     // A good password clears the record, so a legitimate user who mistyped
     // twice is not held back by it.
     await forget(key, 'login_fail');
+
+    // A hash from before the cost was raised is re-made now that the password
+    // is known. Best effort: failing to save it costs nothing but the upgrade.
+    if (passwordNeedsRehash(user.passwordHash ?? null)) {
+      try {
+        user.passwordHash = await hashPasswordAsync(credentials.password);
+        await this.repository.updateUser(user);
+      } catch {
+        // Tried again on the next sign-in.
+      }
+    }
 
     const principal = toAuthUser(user);
     const { token, expiresAt } = createSessionToken(
@@ -280,7 +342,8 @@ export class MockAuthProvider implements AuthService {
    */
   async missingDeviceCookies(userId: string, request: HttpRequest): Promise<string[]> {
     if (!this.sessionSecret) return [];
-    const user = await this.repository.getUserById(userId);
+    const known = await this.resolve(request);
+    const user = known.record?.id === userId ? known.record : await this.repository.getUserById(userId);
     if (!user || this.trustsDevice(user, deviceCookieValue(request.headers.get('cookie')))) return [];
     return this.deviceCookies(userId, request);
   }
@@ -297,12 +360,159 @@ export class MockAuthProvider implements AuthService {
     const principal = await this.requireAuth(request);
     const user = await this.repository.getUserById(principal.id);
     if (!user) throw AuthError.accountMissing();
-    // Rounded up to the second, as token times are: a token from this same
-    // second is one this request could have been carrying.
-    const at = Math.ceil(Date.now() / 1000) * 1000;
-    user.sessionsValidAfter = new Date(at).toISOString();
+    // To the millisecond: tokens carry their issue time that finely (`iam`),
+    // so signing in again a moment later, in the same second, is not undone.
+    user.sessionsValidAfter = new Date().toISOString();
     await this.repository.updateUser(user);
     await this.logout(request);
+  }
+
+  /** Whether this is the account's password, for an action that asks for it again. */
+  async passwordMatches(userId: string, password: string): Promise<boolean> {
+    if (!password || password.length > PASSWORD_MAX_LENGTH) return false;
+    const user = await this.repository.getUserById(userId);
+    return verifyPasswordAsync(password, user?.passwordHash ?? null);
+  }
+
+  /**
+   * Checks an authenticator or recovery code and spends it: the step is
+   * recorded so the same code cannot sign in twice, a recovery code is struck.
+   */
+  private async spendSecondFactor(user: User, code: string): Promise<boolean> {
+    const mfa = user.mfa;
+    if (!mfa?.secret) return false;
+    const step = matchStep(mfa.secret, code, mfa.lastStep ?? null);
+    if (step !== null) {
+      user.mfa = { ...mfa, lastStep: step };
+      await this.repository.updateUser(user);
+      return true;
+    }
+    const hash = hashRecovery(code);
+    if (mfa.recovery.includes(hash)) {
+      user.mfa = { ...mfa, recovery: mfa.recovery.filter((entry) => entry !== hash) };
+      await this.repository.updateUser(user);
+      return true;
+    }
+    return false;
+  }
+
+  /** Starts setting up two-factor: a fresh key, held until a code from it comes back. */
+  async startMfaSetup(userId: string, password: string): Promise<{ secret: string; uri: string }> {
+    const user = await this.repository.getUserById(userId);
+    if (!user) throw AuthError.accountMissing();
+    if (!(await this.passwordMatches(userId, password))) throw new AuthError(403, 'wrong_password', 'That is not your password.');
+    if (mfaOn(user)) throw new AuthError(409, 'mfa_on', 'Two-factor sign-in is already on.');
+    const secret = newSecret();
+    user.mfa = { secret: null, enabledAt: null, lastStep: null, recovery: [], ...user.mfa, pending: { secret, createdAt: new Date().toISOString() } };
+    await this.repository.updateUser(user);
+    return { secret, uri: otpauthUri(secret, user.email) };
+  }
+
+  /** Turns two-factor on with the first code from the new key. Returns the recovery codes, shown once. */
+  async enableMfa(userId: string, code: string): Promise<{ recoveryCodes: string[] }> {
+    const user = await this.repository.getUserById(userId);
+    if (!user) throw AuthError.accountMissing();
+    const pending = user.mfa?.pending;
+    if (!pending || Date.now() - Date.parse(pending.createdAt) > 30 * 60_000) {
+      throw new AuthError(410, 'setup_expired', 'Setting up took too long. Start again.');
+    }
+    const step = matchStep(pending.secret, code, null);
+    if (step === null) throw new AuthError(400, 'wrong_code', 'That code is not right. Check the time on your phone and try the newest code.');
+    const recoveryCodes = newRecoveryCodes();
+    user.mfa = {
+      secret: pending.secret, enabledAt: new Date().toISOString(), lastStep: step,
+      recovery: recoveryCodes.map(hashRecovery), pending: null,
+    };
+    await this.repository.updateUser(user);
+    return { recoveryCodes };
+  }
+
+  /** Turns two-factor off, with the password and a current code (or a recovery code). */
+  async disableMfa(userId: string, password: string, code: string): Promise<void> {
+    const user = await this.repository.getUserById(userId);
+    if (!user) throw AuthError.accountMissing();
+    if (!mfaOn(user)) return;
+    if (!(await this.passwordMatches(userId, password))) throw new AuthError(403, 'wrong_password', 'That is not your password.');
+    if (!(await this.spendSecondFactor(user, code))) throw new AuthError(400, 'wrong_code', 'That code is not right.');
+    user.mfa = null;
+    await this.repository.updateUser(user);
+  }
+
+  /** The account an email, phone or username names, as sign-in finds it. */
+  private async accountFor(identifier: string): Promise<User | null> {
+    const handle = identifier.replace(/^@/, '');
+    // A mobile number however it is typed - 98765 43210, 09876543210, +91… -
+    // is the one sign-up stored, which is always +91 and ten digits.
+    const mobile = identifier.includes('@') ? null : normalizeIndianMobile(identifier);
+    return (mobile ? await this.repository.getUserByIdentifier(mobile) : null)
+      ?? (await this.repository.getUserByIdentifier(identifier))
+      ?? (handleShapeProblem(handle) === null ? (await this.repository.getByHandle(handle))?.user ?? null : null);
+  }
+
+  /**
+   * Emails a password reset code, when the identifier names an account with a
+   * confirmed email. Answers alike whether or not it does, so the form cannot
+   * be used to find out who has an account here.
+   */
+  async requestPasswordReset(identifier: string): Promise<{ devCode?: string }> {
+    this.requireSigningKey();
+    const named = identifier.trim();
+    if (!named) throw new AuthError(400, 'invalid_request', 'Enter the email, phone or username you sign in with.');
+    const user = await this.accountFor(named);
+    if (!user) return {};
+    if (await limited(`acct:${user.id}`, 'reset_account')) return {};
+    const sent = await startPasswordReset(this.repository, user);
+    return sent.devCode ? { devCode: sent.devCode } : {};
+  }
+
+  /**
+   * Sets a new password with an emailed code, and signs in with it.
+   *
+   * Every other session ends: whoever made the reset necessary may be signed
+   * in somewhere. Failed sign-ins counted against the account are cleared, so
+   * the owner is not held back by the guessing that may have led here.
+   */
+  async resetPassword(body: { identifier?: string; code?: string; password?: string; otp?: string }, client: ClientContext = {}): Promise<LoginResponse> {
+    this.requireSigningKey();
+    const named = body.identifier?.trim() ?? '';
+    const password = body.password ?? '';
+    const user = named ? await this.accountFor(named) : null;
+    if (!user || user.suspended) throw new AuthError(410, 'code_expired', 'That code has expired, or none was sent. Ask for a new one.');
+
+    const weak = await passwordProblem(password, {
+      email: user.email, username: user.username ?? undefined, displayName: user.displayName,
+    }, { breachCheck: config.passwordBreachCheck });
+    if (weak) throw new AuthError(400, 'invalid_password', weak);
+
+    // An emailed code alone must not undo two-factor: whoever holds the inbox
+    // still needs the app, or a recovery code.
+    if (mfaOn(user)) {
+      if (!body.otp?.trim()) throw new AuthError(401, 'mfa_required', 'Enter the 6-digit code from your authenticator app too.');
+      if (!(await this.spendSecondFactor(user, body.otp))) {
+        throw new AuthError(401, 'mfa_invalid', 'That authenticator code is not right. Use the newest code, or a recovery code.');
+      }
+    }
+    try {
+      await consumePasswordResetCode(this.repository, user, body.code ?? '');
+    } catch (err) {
+      if (err instanceof VerificationError) throw new AuthError(err.status, err.code, err.message);
+      throw err;
+    }
+    user.passwordHash = await hashPasswordAsync(password);
+    user.sessionsValidAfter = new Date().toISOString();
+    user.updatedAt = new Date().toISOString();
+    await this.repository.updateUser(user);
+    await forget(`acct:${user.id}`, 'login_fail_account');
+    await forget(`${named.toLowerCase()}|${client.ip ?? 'unknown'}`, 'login_fail');
+
+    const principal = toAuthUser(user);
+    const { token, expiresAt } = createSessionToken(
+      user.id,
+      this.sessionSecret,
+      this.sessionTtlSeconds,
+      this.storeIsEphemeral ? principal : undefined,
+    );
+    return { user: principal, token, expiresAt: expiresAt.toISOString() };
   }
 
   /**
@@ -322,8 +532,10 @@ export class MockAuthProvider implements AuthService {
       if (!payload) continue;
       const now = Math.floor(Date.now() / 1000);
       if (now - payload.iat < SESSION_REFRESH_AFTER_SECONDS) return [];
-      if (await this.repository.isSessionRevoked(token)) continue;
-      const user = await this.repository.getUserById(payload.sub);
+      // The token this request was already recognised by needs no second look.
+      const known = await this.resolve(request);
+      if (known.token !== token && await this.repository.isSessionRevoked(token)) continue;
+      const user = known.token === token ? known.record ?? null : await this.repository.getUserById(payload.sub);
       if (user ? user.suspended || signedOutEverywhere(user, payload) : !this.storeIsEphemeral) continue;
       const principal = user ? toAuthUser(user) : payload.usr ? fromSnapshot(payload.usr as AuthUser) : null;
       if (!principal) continue;
@@ -342,6 +554,8 @@ export class MockAuthProvider implements AuthService {
   }
 
   async logout(request: HttpRequest): Promise<void> {
+    // Whoever this request was, it is nobody once signed out.
+    this.resolved.delete(request);
     const token = readToken(request);
     if (!token) return;
     const payload = verifySessionToken(token, this.sessionSecret);
@@ -366,6 +580,9 @@ export class MockAuthProvider implements AuthService {
     const phone = normalizeIndianMobile(request.phone);
 
     if (!displayName) throw new AuthError(400, 'invalid_signup', 'Please enter your name.');
+    if (request.acceptTerms !== true) {
+      throw new AuthError(400, 'terms_required', 'Agree to the Terms and the Privacy Policy to create an account.');
+    }
     if (!email || !email.includes('@')) {
       throw new AuthError(400, 'invalid_signup', 'Please enter a valid email address.');
     }
@@ -434,7 +651,7 @@ export class MockAuthProvider implements AuthService {
         displayName,
         username,
         isAdmin: false,
-        passwordHash: hashPassword(request.password),
+        passwordHash: await hashPasswordAsync(request.password),
         verification: blank,
         buyerTrust: { score: 0, completedTransactions: 0, disputesLost: 0, computedAt: null },
         sellerTrust: {
@@ -444,6 +661,7 @@ export class MockAuthProvider implements AuthService {
         // No storefront yet: it appears the first time they list something.
         sellerProfile: null,
         forwarderProfile: null,
+        consent: { terms: LEGAL_VERSION, at: now },
         suspended: false,
         createdAt: now,
         updatedAt: now,
@@ -532,7 +750,12 @@ function readCookieTokens(request: HttpRequest): string[] {
 function signedOutEverywhere(user: User, payload: SessionPayload): boolean {
   if (!user.sessionsValidAfter) return false;
   const after = Date.parse(user.sessionsValidAfter);
-  return Number.isFinite(after) && payload.iat * 1000 < after;
+  if (!Number.isFinite(after)) return false;
+  // A token from before `iam` existed only knows its second, so any token from
+  // the second of the sign-out could have been the one in use: refused.
+  return typeof payload.iam === 'number'
+    ? payload.iam < after
+    : payload.iat * 1000 < Math.ceil(after / 1000) * 1000;
 }
 
 /** True when the request presented a session cookie, whatever its state. */
@@ -586,12 +809,22 @@ function forwarderSummary(profile: User['forwarderProfile']): AuthUser['forwarde
  * trustworthy as its signature - and admin is never taken on a token's word.
  */
 function fromSnapshot(user: AuthUser): AuthUser {
-  const operator = config.adminEmails.includes(user.email.trim().toLowerCase());
-  return { ...user, capabilities: { ...user.capabilities, isAdmin: operator } };
+  return { ...user, capabilities: { ...user.capabilities, isAdmin: isOperator(user) } };
+}
+
+/**
+ * An operator: an address listed in ADMIN_EMAILS that this account has proved
+ * it holds. The proof matters - without it, whoever signed up first with a
+ * listed address that its owner had not yet registered was an operator.
+ */
+function isOperator(user: { email: string; verification: VerificationState }): boolean {
+  if (!config.adminEmails.includes(user.email.trim().toLowerCase())) return false;
+  const proof = user.verification.proofs?.email;
+  return verifiedChecks(user).email && (proof?.address === 'seed' || proof?.address?.toLowerCase() === user.email.trim().toLowerCase());
 }
 
 export function toAuthUser(user: User): AuthUser {
-  const operator = config.adminEmails.includes(user.email.trim().toLowerCase());
+  const operator = isOperator(user);
   return {
     id: user.id,
     displayName: user.displayName,
@@ -605,8 +838,24 @@ export function toAuthUser(user: User): AuthUser {
     sellerProfile: user.sellerProfile,
     forwarderProfile: forwarderSummary(user.forwarderProfile),
     managerRights: user.managerRights ?? null,
+    mfaEnabled: mfaOn(user),
+    mfaRequired: config.staffMfa && !mfaOn(user) && (operator || Boolean(user.managerRights)),
     bio: user.bio ?? '',
     coverUrl: user.coverUrl ?? null,
     tags: user.tags ?? [],
   };
+}
+
+/** Whether sign-in asks this account for a second factor. */
+export function mfaOn(user: Pick<User, 'mfa'>): boolean {
+  return Boolean(user.mfa?.secret && user.mfa.enabledAt);
+}
+
+/** Refusal for staff who have not turned two-factor on yet. */
+export function staffMfaMissing(): AuthError {
+  return new AuthError(
+    403,
+    'mfa_required_for_staff',
+    'Turn on two-factor sign-in first (Profile → Settings → Two-factor sign-in). Operators and community managers need it to act.',
+  );
 }

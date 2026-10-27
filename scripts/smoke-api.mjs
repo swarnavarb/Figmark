@@ -16,7 +16,7 @@ process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse, json: jsonResponse } = await import(new URL('http.js', fns));
-const { loginRoute: login, signupRoute: rawSignup, meRoute: me, usernameAvailableRoute: usernameAvailable } = await import(new URL('auth-routes.js', fns));
+const { loginRoute: login, signupRoute: rawSignup, meRoute: me, usernameAvailableRoute: usernameAvailable, deleteMeRoute: deleteMe } = await import(new URL('auth-routes.js', fns));
 const { verifiedSignup } = await import('./verified-signup.mjs');
 // Verified on the way out: this suite tests trading, smoke-verify.mjs tests verification.
 const signup = verifiedSignup(rawSignup);
@@ -75,6 +75,7 @@ const createLot = (request, ctx) => {
 const {
   storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, storefrontPhotoRoute: storefrontPhoto, regionGuessRoute: regionGuess, dashboardRoute: dashboard,
   myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales, sellTodoRoute: sellTodo,
+  sellDashboardRoute: sellDashboard,
 } = await import(new URL('seller-routes.js', fns));
 const {
   socialFeedRoute: socialFeed, channelsRoute: channels, channelThreadRoute: channelThread,
@@ -85,6 +86,8 @@ const {
   removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, shareableRoute: shareable, pinPostRoute: pinPost,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
   forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
+  discoverRoute: discover,
+  enterContestRoute: enterContest, guessPriceRoute: guessPrice, judgeRoute: judgeGame, myRewardsRoute: myRewards,
 } = await import(new URL('social-routes.js', fns));
 const {
   assignToLotRoute: assignToLot, advanceStageRoute: advanceStage,
@@ -116,8 +119,10 @@ const {
 } = await import(new URL('want-routes.js', fns));
 const { notificationsRoute: notifications, notificationsReadRoute: markRead } =
   await import(new URL('notification-routes.js', fns));
-const { preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge } =
-  await import(new URL('preorder-routes.js', fns));
+const {
+  preOrderReadRoute: readPreOrder, preOrderPledgeRoute: pledge,
+  preOrderEditRoute: editPreOrder, preOrderDecideRoute: decidePreOrder,
+} = await import(new URL('preorder-routes.js', fns));
 const {
   powerSalesRoute: powerSales, powerSaleCreateRoute: schedulePowerSaleRaw,
   powerSaleReadRoute: readPowerSale, powerSaleStopRoute: stopPowerSale,
@@ -246,13 +251,18 @@ const expireCampaign = async (id) => {
     preOrder: { ...listing.preOrder, cutoffAt: new Date(Date.now() - 1000).toISOString() },
   });
 };
-const req = ({ headers = {}, body, query = {}, params = {} } = {}) => ({
+const req = ({ headers = {}, body, query = {}, params = {}, bytes } = {}) => ({
   headers: new Headers(headers),
   query: new URLSearchParams(query),
   params,
   json: async () => {
     if (body === undefined) throw new Error('no body');
     return body;
+  },
+  // A photo sent as its own bytes, the way the app uploads one now.
+  arrayBuffer: async () => {
+    if (bytes === undefined) throw new Error('no body');
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   },
 });
 
@@ -315,6 +325,12 @@ await check('health reports the session-key source and account durability', asyn
   assert.equal(body.auth.accountsDurable, false);
   // ...and that alone is enough to keep the deployment out of "ok".
   assert.equal(body.status, 'degraded');
+});
+
+await check('health names the environment only when SITE_ENVIRONMENT does', async () => {
+  // Unset here: no banner, and nothing pretends to be production either.
+  const body = (await health(req(), ctx)).jsonBody;
+  assert.equal(body.environment, null);
 });
 
 await check('a failure names its kind rather than saying nothing', async () => {
@@ -451,7 +467,7 @@ await check('rejects a wrong password with 401', async () => {
 
 await check('signup creates an account with no storefront', async () => {
   const created = await rawSignup(req({
-    body: { displayName: 'New Person', email: 'new@figmark.example', phone: '+919000012345', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'New Person', email: 'new@figmark.example', phone: '+919000012345', password: 'longenough1' },
   }), ctx);
   assert.equal(created.status, 201);
   assert.equal(created.jsonBody.user.sellerProfile, null);
@@ -462,14 +478,14 @@ await check('signup creates an account with no storefront', async () => {
 
 await check('signup refuses a duplicate identifier with 409', async () => {
   const dup = await signup(req({
-    body: { displayName: 'Impostor', email: DEMO_EMAIL, phone: '+919000099999', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Impostor', email: DEMO_EMAIL, phone: '+919000099999', password: 'longenough1' },
   }), ctx);
   assert.equal(dup.status, 409);
 });
 
 await check('signup validates a short password', async () => {
   const weak = await signup(req({
-    body: { displayName: 'X', email: 'x@figmark.example', phone: '+919000088888', password: 'short' },
+    body: { acceptTerms: true, displayName: 'X', email: 'x@figmark.example', phone: '+919000088888', password: 'short' },
   }), ctx);
   assert.equal(weak.status, 400);
 });
@@ -886,7 +902,7 @@ await check('a lot cannot be renamed to nothing, or by someone else', async () =
   // A lot is read from its owner's partition, so another seller's id does not
   // resolve at all - it is not found rather than forbidden.
   const stranger = await signup(req({
-    body: { displayName: 'Other Seller', email: 'other@figmark.example', phone: '+919000077777', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Other Seller', email: 'other@figmark.example', phone: '+919000077777', password: 'longenough1' },
   }), ctx);
   const theirs = await updateLotDetails(req({
     headers: { authorization: `Bearer ${stranger.jsonBody.token}` },
@@ -1041,7 +1057,7 @@ await check('advancing a lot writes tracking onto every order in it', async () =
   // Put a real order in the lot first.
   await assignToLot(req({ headers: auth, params: { id: lotId }, body: { listingIds: [published.jsonBody.listing.id] } }), ctx);
   const buyer = await signup(req({
-    body: { displayName: 'Buyer Two', email: 'b2@figmark.example', phone: '+919000054321', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Buyer Two', email: 'b2@figmark.example', phone: '+919000054321', password: 'longenough1' },
   }), ctx);
   const buyerAuth = { authorization: `Bearer ${buyer.jsonBody.token}` };
   const placed = await createOrder(req({ headers: buyerAuth, body: { listingId: published.jsonBody.listing.id } }), ctx);
@@ -1087,7 +1103,7 @@ await check('a direct sale tracks against the short vocabulary', async () => {
 
 await check('an order is private to its buyer and seller', async () => {
   const stranger = await signup(req({
-    body: { displayName: 'Nosy', email: 'nosy@figmark.example', phone: '+919000011111', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Nosy', email: 'nosy@figmark.example', phone: '+919000011111', password: 'longenough1' },
   }), ctx);
   const orders = (await myActivity(req({ headers: auth }), ctx)).jsonBody.orders;
   const peek = await orderTracking(req({
@@ -1143,7 +1159,7 @@ await check('the storefront is private to its owner', async () => {
 await check('storefront pictures are uploaded here, by a new account too, and never linked', async () => {
   const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
   const fresh = await rawSignup(req({
-    body: { displayName: 'Fresh Shop', email: 'freshshop@figmark.example', phone: '+919777003111', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Fresh Shop', email: 'freshshop@figmark.example', phone: '+919777003111', password: 'longenough1' },
   }), ctx);
   assert.equal(fresh.status, 201, JSON.stringify(fresh.jsonBody));
   const headers = { authorization: `Bearer ${fresh.jsonBody.token}` };
@@ -1263,7 +1279,7 @@ await check('only a shop has a channel', async () => {
   // this list with rooms nobody has a reason to open.
   const buyer = await signup(req({
     body: {
-      displayName: 'Channelless', email: 'nochannel@figmark.example',
+      acceptTerms: true, displayName: 'Channelless', email: 'nochannel@figmark.example',
       phone: '+919000045801', password: 'longenough1',
     },
   }), ctx);
@@ -1281,7 +1297,7 @@ await check('a follower may speak in a shop\'s room, as themselves', async () =>
   // the questions only end up in twenty separate private messages instead.
   const visitor = await signup(req({
     body: {
-      displayName: 'Curious Buyer', email: 'curious@figmark.example',
+      acceptTerms: true, displayName: 'Curious Buyer', email: 'curious@figmark.example',
       phone: '+919000045802', password: 'longenough1',
     },
   }), ctx);
@@ -1443,7 +1459,7 @@ await check('comments thread two deep, and a reply to a reply names who it answe
 
 await check('only the writer or the post\'s author can delete a comment', async () => {
   const stranger = await signup(req({
-    body: { displayName: 'Commenter', email: 'commenter@figmark.example', phone: '+919000045811', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Commenter', email: 'commenter@figmark.example', phone: '+919000045811', password: 'longenough1' },
   }), ctx);
   const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
   const post = (await createPost(req({ headers: auth, body: { body: 'Mine.' } }), ctx)).jsonBody.post;
@@ -1481,7 +1497,7 @@ await check('a repost reaches your followers and points at the original', async 
   assert.equal(counted.jsonBody.repost, null);
   assert.equal(counted.jsonBody.shareCount, again.jsonBody.shareCount, 'the same sharer is counted once');
   const sharer = await signup(req({
-    body: { displayName: 'Link Sharer', email: 'linksharer@figmark.example', phone: '+919000045833', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Link Sharer', email: 'linksharer@figmark.example', phone: '+919000045833', password: 'longenough1' },
   }), ctx);
   const byThem = await sharePost(req({
     headers: { authorization: `Bearer ${sharer.jsonBody.token}` },
@@ -1513,7 +1529,7 @@ await check('a poll counts one vote per person and lets them change it', async (
   assert.equal(card.social.poll.options.find((option) => option.id === blue).votes, 1);
 
   assert.equal((await vote(req({ headers: auth, params: on(post), body: { optionId: 'opt_9' } }), ctx)).status, 400);
-  for (const bad of [{ options: ['Only one'] }, { options: ['a', 'b', 'c', 'd', 'e'] }, { options: ['Same', 'same'] }]) {
+  for (const bad of [{ options: ['Only one'] }, { options: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }, { options: ['Same', 'same'] }]) {
     assert.equal((await createPost(req({ headers: auth, body: { body: 'Q?', poll: bad } }), ctx)).status, 400);
   }
 });
@@ -1671,7 +1687,7 @@ await check('only the shop pins in its room, three at most', async () => {
 
 await check('the author hears about reactions and comments, and can take the post down', async () => {
   const fan = await signup(req({
-    body: { displayName: 'Big Fan', email: 'bigfan@figmark.example', phone: '+919000045812', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Big Fan', email: 'bigfan@figmark.example', phone: '+919000045812', password: 'longenough1' },
   }), ctx);
   const theirs = { authorization: `Bearer ${fan.jsonBody.token}` };
   const post = (await createPost(req({ headers: auth, body: { body: 'Notice me.' } }), ctx)).jsonBody.post;
@@ -1690,7 +1706,7 @@ await check('the author hears about reactions and comments, and can take the pos
 await check('a customer cannot announce in somebody else\'s room', async () => {
   const visitor = await signup(req({
     body: {
-      displayName: 'Loud Visitor', email: 'loud@figmark.example',
+      acceptTerms: true, displayName: 'Loud Visitor', email: 'loud@figmark.example',
       phone: '+919000045804', password: 'longenough1',
     },
   }), ctx);
@@ -1730,7 +1746,7 @@ await check('a message from before the choice existed still reads as one', async
 await check('a visitor cannot advertise in somebody else\'s room', async () => {
   const visitor = await signup(req({
     body: {
-      displayName: 'Would Be Advertiser', email: 'advert@figmark.example',
+      acceptTerms: true, displayName: 'Would Be Advertiser', email: 'advert@figmark.example',
       phone: '+919000045803', password: 'longenough1',
     },
   }), ctx);
@@ -1839,7 +1855,7 @@ console.log('\nstores and who runs them');
 
 // A second account, to be brought into the demo account's shop.
 const helperSession = await signup(req({
-  body: { displayName: 'Helper Person', email: 'helper@figmark.example', phone: '+919000088888', password: 'longenough1' },
+  body: { acceptTerms: true, displayName: 'Helper Person', email: 'helper@figmark.example', phone: '+919000088888', password: 'longenough1' },
 }), ctx);
 const helper = { authorization: `Bearer ${helperSession.jsonBody.token}` };
 const helperId = helperSession.jsonBody.user.id;
@@ -2047,7 +2063,7 @@ await check('an unknown checkpoint is refused rather than stored', async () => {
 
 await check('another seller cannot read or tick this lot', async () => {
   const stranger = await signup(req({
-    body: { displayName: 'Rival Seller', email: 'rival@figmark.example', phone: '+919000066666', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Rival Seller', email: 'rival@figmark.example', phone: '+919000066666', password: 'longenough1' },
   }), ctx);
   assert.equal(stranger.status, 201, `signup failed: ${JSON.stringify(stranger.jsonBody)}`);
   const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
@@ -2069,7 +2085,7 @@ console.log('\nusernames');
 await check('a username is claimed at sign-up, and is where that person lives', async () => {
   const made = await signup(req({
     body: {
-      displayName: 'Nadia Rao', username: 'nadia_r',
+      acceptTerms: true, displayName: 'Nadia Rao', username: 'nadia_r',
       email: 'nadia@figmark.example', phone: '+919000022221', password: 'longenough1',
     },
   }), ctx);
@@ -2084,7 +2100,7 @@ await check('a username is claimed at sign-up, and is where that person lives', 
 await check('one namespace: a person and a shop cannot hold the same handle', async () => {
   const clash = await signup(req({
     body: {
-      displayName: 'Impostor', username: 'arjun_collects',
+      acceptTerms: true, displayName: 'Impostor', username: 'arjun_collects',
       email: 'impostor@figmark.example', phone: '+919000022222', password: 'longenough1',
     },
   }), ctx);
@@ -2110,7 +2126,7 @@ await check('a person can claim a username of their own, apart from any shop', a
   // and running a shop gives the shop an address rather than giving them one.
   const made = await signup(req({
     body: {
-      displayName: 'Late Comer', email: 'late@figmark.example',
+      acceptTerms: true, displayName: 'Late Comer', email: 'late@figmark.example',
       phone: '+919000022224', password: 'longenough1',
     },
   }), ctx);
@@ -2164,7 +2180,7 @@ console.log('\nlisting needs a storefront');
 
 const noShop = await signup(req({
   body: {
-    displayName: 'Shopless Sam', email: 'sam@figmark.example',
+    acceptTerms: true, displayName: 'Shopless Sam', email: 'sam@figmark.example',
     phone: '+919000022223', password: 'longenough1',
   },
 }), ctx);
@@ -2406,6 +2422,19 @@ await check('only a signed-in account may upload, and the same limits as any pho
   assert.equal((await uploadChatPhoto(req({ headers: auth, body: { dataUrl: huge } }), ctx)).status, 413);
 });
 
+await check('a chat photo sent as its own bytes is taken like a data URL, and held to the same limits', async () => {
+  const png = Buffer.from(chatPixel.split(',')[1], 'base64');
+  const stored = await uploadChatPhoto(req({ headers: { ...auth, 'content-type': 'image/png' }, bytes: png }), ctx);
+  assert.equal(stored.status, 201, JSON.stringify(stored.jsonBody));
+  assert.ok(stored.jsonBody.blobName.endsWith('.png'));
+  const wrong = await uploadChatPhoto(req({ headers: { ...auth, 'content-type': 'image/jpeg' }, bytes: png }), ctx);
+  assert.equal(wrong.status, 400, 'the bytes decide what it is, not the header');
+  const big = await uploadChatPhoto(req({
+    headers: { ...auth, 'content-type': 'image/jpeg', 'content-length': '2000000' }, bytes: new Uint8Array(10),
+  }), ctx);
+  assert.equal(big.status, 413);
+});
+
 await check("somebody else's upload cannot be sent as yours, and made-up names are refused", async () => {
   const theirs = (await uploadChatPhoto(req({ headers: packer, body: { dataUrl: chatPixel } }), ctx)).jsonBody.blobName;
   const stolen = await sendMessage(req({
@@ -2574,7 +2603,7 @@ await check('every order in a lot is offered the same protection, held by Figmar
 
   const buyer = await signup(req({
     body: {
-      displayName: 'Lot Buyer', email: 'lot@figmark.example',
+      acceptTerms: true, displayName: 'Lot Buyer', email: 'lot@figmark.example',
       phone: '+919000045511', password: 'longenough1',
     },
   }), ctx);
@@ -2703,7 +2732,7 @@ await check('the checkout carries the seller\'s details, so there is somewhere t
 /* A whole direct sale, end to end, on an order of its own. */
 const directBuyer = await signup(req({
   body: {
-    displayName: 'Direct Buyer', email: 'direct@figmark.example',
+    acceptTerms: true, displayName: 'Direct Buyer', email: 'direct@figmark.example',
     phone: '+919000045512', password: 'longenough1',
   },
 }), ctx);
@@ -2814,6 +2843,25 @@ await check('the Sell tab counts on the server what it used to count from the wh
   assert.ok(counts.answerSince.every((at) => typeof at === 'string' && !Number.isNaN(Date.parse(at))));
   assert.equal(typeof counts.lots, 'number');
   const refused = await sellTodo(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
+  assert.equal(refused.status, 403);
+});
+
+await check('the Sell tab dashboard has a card for each tab, and only for its own store', async () => {
+  const card = (await sellDashboard(req({ headers: auth }), ctx)).jsonBody;
+  for (const key of ['listings', 'orders', 'shipments', 'money', 'shop']) assert.ok(card[key], `the owner sees ${key}`);
+  // Every listing of the shop's, not only the ones on sale: drafts and sold-out
+  // items are what the card counts (an active-only read made both always 0).
+  const shelf = (await (await getRepository()).listListings({ sellerId: 'usr_demo', limit: 10_000, includeHidden: true }))
+    .filter((listing) => listing.status !== 'archived');
+  assert.equal(card.listings.drafts, shelf.filter((listing) => listing.status === 'draft').length);
+  assert.equal(card.listings.soldOut, shelf.filter((listing) => listing.status === 'sold_out').length);
+  assert.equal(card.listings.views, shelf.reduce((sum, listing) => sum + listing.viewCount, 0));
+  // The open orders are the ones the to-do counts read.
+  const counts = (await sellTodo(req({ headers: auth }), ctx)).jsonBody;
+  assert.equal(card.shipments.ordersNoLot, counts.noLot);
+  assert.equal(card.money.daily.length, 14);
+  assert.ok(card.money.revenue30Minor >= card.money.daily.reduce((sum, day) => sum + day.revenueMinor, 0));
+  const refused = await sellDashboard(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
   assert.equal(refused.status, 403);
 });
 
@@ -3365,7 +3413,7 @@ await check("the credit record counts rows rather than reporting a stored grade"
 await check('an unrated side reads as unrated, not as nought per cent', async () => {
   const fresh = await signup(req({
     body: {
-      displayName: 'Nobody Yet', email: 'nobody@figmark.example',
+      acceptTerms: true, displayName: 'Nobody Yet', email: 'nobody@figmark.example',
       phone: '+919000045711', password: 'longenough1',
     },
   }), ctx);
@@ -3380,7 +3428,7 @@ await check('an unrated side reads as unrated, not as nought per cent', async ()
    number that was earned by trading. */
 const opinionAuthor = await signup(req({
   body: {
-    displayName: 'Passing Visitor', email: 'visitor@figmark.example',
+    acceptTerms: true, displayName: 'Passing Visitor', email: 'visitor@figmark.example',
     phone: '+919000045712', password: 'longenough1',
   },
 }), ctx);
@@ -3441,7 +3489,7 @@ await check('and none of it touches the record earned by trading', async () => {
 
   const second = await signup(req({
     body: {
-      displayName: 'Another Visitor', email: 'visitor2@figmark.example',
+      acceptTerms: true, displayName: 'Another Visitor', email: 'visitor2@figmark.example',
       phone: '+919000045713', password: 'longenough1',
     },
   }), ctx);
@@ -3565,7 +3613,7 @@ await check('a hunt needs saying what and where to look', async () => {
 await check('a budget is optional, because for a rare piece it has to be', async () => {
   const posted = await postWant(req({
     headers: auth,
-    body: { title: 'Anything from the 2019 Kotobukiya run', category: 'Scale figures' },
+    body: { title: 'Anything from the 2019 Kotobukiya run', category: 'Figures' },
   }), ctx);
   assert.equal(posted.status, 201);
   assert.equal(posted.jsonBody.want.budgetMinor, null, 'unstated, not zero');
@@ -3662,7 +3710,7 @@ await check("an offered item has to be the seller's own", async () => {
 /* Somebody who is neither the buyer nor already involved. */
 const bystander = await signup(req({
   body: {
-    displayName: 'Not Their Business', email: 'notmine@figmark.example',
+    acceptTerms: true, displayName: 'Not Their Business', email: 'notmine@figmark.example',
     phone: '+919000045911', password: 'longenough1',
   },
 }), ctx);
@@ -3754,7 +3802,7 @@ await check('reading one marks it read without touching the others', async () =>
 await check('notifications are yours alone', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Uninvolved', email: 'uninvolved@figmark.example',
+      acceptTerms: true, displayName: 'Uninvolved', email: 'uninvolved@figmark.example',
       phone: '+919000045921', password: 'longenough1',
     },
   }), ctx);
@@ -3798,7 +3846,7 @@ console.log('\nbeing told what happened');
 await check('a claimed payment tells the seller, and nobody else', async () => {
   const buyer = await signup(req({
     body: {
-      displayName: 'Told You', email: 'toldyou@figmark.example',
+      acceptTerms: true, displayName: 'Told You', email: 'toldyou@figmark.example',
       phone: '+919000046101', password: 'longenough1',
     },
   }), ctx);
@@ -3894,7 +3942,7 @@ await check('a dispute tells the other side and whoever holds the money', async 
 
   const buyer = await signup(req({
     body: {
-      displayName: 'Will Dispute', email: 'willdispute@figmark.example',
+      acceptTerms: true, displayName: 'Will Dispute', email: 'willdispute@figmark.example',
       phone: '+919000046102', password: 'longenough1',
     },
   }), ctx);
@@ -4166,7 +4214,7 @@ await check('deleting an account takes what it made and frees its identifiers', 
   // something no other test depends on.
   const made = await signup(req({
     body: {
-      displayName: 'Passing Through', username: 'passing_through',
+      acceptTerms: true, displayName: 'Passing Through', username: 'passing_through',
       email: 'passing@figmark.example', phone: '+919000045499', password: 'longenough1',
     },
   }), ctx);
@@ -4186,7 +4234,7 @@ await check('deleting an account takes what it made and frees its identifiers', 
   assert.equal((await publicProfile(req({ params: { handle: 'passing_through' } }), ctx)).status, 404);
   const reclaimed = await signup(req({
     body: {
-      displayName: 'Someone Else', username: 'passing_through',
+      acceptTerms: true, displayName: 'Someone Else', username: 'passing_through',
       email: 'passing@figmark.example', phone: '+919000045499', password: 'longenough1',
     },
   }), ctx);
@@ -4201,16 +4249,17 @@ console.log('\nfilling a pre-order together');
  * fixtures: these checks are about numbers moving, and a fixture another check
  * has already bought into has numbers that moved for reasons of its own.
  */
-const openCampaign = async (threshold, title = 'Group-buy fixture') => {
+const openCampaign = async (threshold, title = 'Group-buy fixture', rules = {}) => {
   const made = await createListing(req({
     headers: auth,
     body: {
       title,
       priceMinor: 120_000,
-      category: 'Scale figures',
+      category: 'Figures',
       preOrder: {
         fillThreshold: threshold,
         cutoffAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        ...rules,
       },
       quantityAvailable: 50,
     },
@@ -4223,7 +4272,7 @@ let buyerSeq = 0;
 const newBuyer = async (name) => {
   buyerSeq += 1;
   const made = await signup(req({
-    body: {
+    body: { acceptTerms: true,
       displayName: name,
       email: `pledger${buyerSeq}@figmark.example`,
       phone: `+91900007${String(1000 + buyerSeq).slice(-4)}`,
@@ -4251,7 +4300,7 @@ await check('pledging joins the number without paying anything', async () => {
   assert.equal(view.committed, 2);
   assert.equal(view.toGo, 8);
   assert.equal(view.state, 'open');
-  assert.deepEqual(joined.jsonBody.mine, { pledged: true, booked: 0, units: 2, listed: false });
+  assert.deepEqual(joined.jsonBody.mine, { pledged: true, booked: 0, units: 2, listed: false, waitlisted: null, dueAt: null });
 });
 
 await check('a second tap is leaving, and the number goes back down', async () => {
@@ -4368,7 +4417,7 @@ await check('booking a pledge you already made does not count you twice', async 
   assert.equal(after.preOrder.filledCount, 3);
   assert.equal(after.preOrder.pledgedCount, 0, 'the pledge became the order rather than joining it');
   assert.equal(after.preOrder.committed, 3);
-  assert.deepEqual(after.mine, { pledged: false, booked: 3, units: 3, listed: false });
+  assert.deepEqual(after.mine, { pledged: false, booked: 3, units: 3, listed: false, waitlisted: null, dueAt: null });
 });
 
 await check('a campaign that runs out of time says so, and says what happened to the money', async () => {
@@ -4396,6 +4445,25 @@ await check('a campaign that runs out of time says so, and says what happened to
   const late = await newBuyer('Late Pledger');
   const refused = await pledge(req({ headers: late.headers, params: { id } }), ctx);
   assert.equal(refused.status, 409);
+});
+
+await check('the pre-order clock closes a campaign whose cutoff passed with nobody looking', async () => {
+  const { closeDuePreOrders } = await import(new URL('preorder.js', fns));
+  const repository = await getRepository();
+  const id = await openCampaign(10);
+  const buyer = await newBuyer('Unseen Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id, quantity: 1 } }), ctx);
+
+  await expireCampaign(id);
+  // Nobody has opened it since, so the stored copy - the one the feed draws - still says open.
+  assert.equal((await repository.getListing(id)).preOrder.closedAt ?? null, null);
+  assert.ok((await repository.listPreOrdersDue(new Date().toISOString(), 1000)).some((l) => l.id === id));
+
+  assert.ok(await closeDuePreOrders(repository) >= 1);
+  assert.ok((await repository.getListing(id)).preOrder.closedAt);
+  assert.equal((await noticesFor(buyer.id)).filter((r) => r.kind === 'preorder_closed').length, 1);
+  // Settled, so it is off the clock's list and a second tick does nothing to it.
+  assert.ok(!(await repository.listPreOrdersDue(new Date().toISOString(), 1000)).some((l) => l.id === id));
 });
 
 await check('whoever brought someone in gets the credit, and cannot give it to themselves', async () => {
@@ -4446,6 +4514,232 @@ await check('the credit follows a pledge into the order it becomes', async () =>
 
   const theirs = (await readPreOrder(req({ headers: recruiter.headers, params: { id } }), ctx)).jsonBody;
   assert.deepEqual(theirs.brought.map((ref) => ref.name), ['Credit Recruited']);
+});
+
+/* ── what the seller decides ── */
+
+// A campaign's stored fields moved directly: deadlines are facts arriving
+// sooner, the same way expireCampaign moves the cutoff.
+const patchCampaign = async (id, fields) => {
+  const repository = await getRepository();
+  const listing = await repository.getListing(id);
+  await repository.updateListing({ ...listing, preOrder: { ...listing.preOrder, ...fields } });
+};
+const lapseDeadline = () => new Date(Date.now() - 1000).toISOString();
+const bookingRefusal = async (buyer, id) => {
+  try {
+    await createOrder(req({ headers: buyer.headers, body: { listingId: id } }), ctx);
+    return null;
+  } catch (err) {
+    return err.message;
+  }
+};
+const orderFor = async (id, buyerId) =>
+  (await (await getRepository()).listOrdersForListing(id)).find((order) => order.buyerId === buyerId);
+
+await check('a pre-order has to ask for a real number by a real date', async () => {
+  const cases = [
+    { fillThreshold: 1, cutoffAt: new Date(Date.now() + 86_400_000).toISOString() },
+    { fillThreshold: 10, cutoffAt: new Date(Date.now() - 86_400_000).toISOString() },
+    { fillThreshold: 10, cutoffAt: 'next tuesday' },
+    { fillThreshold: 10, cutoffAt: new Date(Date.now() + 400 * 86_400_000).toISOString() },
+    { fillThreshold: 10, cutoffAt: new Date(Date.now() + 86_400_000).toISOString(), whenShort: 'shrug' },
+  ];
+  for (const preOrder of cases) {
+    const made = await createListing(req({ headers: auth, body: { title: 'Bad campaign', priceMinor: 900, preOrder } }), ctx);
+    assert.equal(made.status, 400, JSON.stringify(preOrder));
+    assert.equal(made.jsonBody.error, 'invalid_preorder');
+  }
+  const id = await openCampaign(5, 'Rules default');
+  const view = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(view.whenShort, 'cancel');
+  assert.equal(view.whenFull, 'keep_open');
+});
+
+await check('a closed campaign takes no bookings, and closing calls off the ones it had', async () => {
+  const id = await openCampaign(10, 'Closing campaign');
+  const buyer = await newBuyer('Closing Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id } }), ctx);
+  await expireCampaign(id);
+
+  const late = await newBuyer('Closing Late');
+  assert.match(await bookingRefusal(late, id), /closed|over/i);
+  assert.equal((await orderFor(id, buyer.id)).status, 'cancelled', 'nothing paid, so it is simply cancelled');
+});
+
+await check('a called-in pledge that is not paid in time is let go', async () => {
+  const id = await openCampaign(2, 'Lapsing campaign', { whenShort: 'proceed' });
+  const buyer = await newBuyer('Lapse Buyer');
+  const pledger = await newBuyer('Lapse Pledger');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id } }), ctx);
+  await pledge(req({ headers: pledger.headers, params: { id } }), ctx);
+
+  await patchCampaign(id, { pledgeDueAt: lapseDeadline() });
+  const view = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(view.pledgedCount, 0, 'the unpaid place no longer counts');
+  assert.equal((await noticesFor(pledger.id)).filter((r) => r.kind === 'preorder_lapsed').length, 1);
+  // Short again, and the seller said in advance to go ahead regardless.
+  assert.equal(view.proceededShort, true);
+  assert.equal(view.state, 'going');
+});
+
+await check('short at the cutoff under "ask me": paused, and the seller decides', async () => {
+  const id = await openCampaign(10, 'Asking campaign', { whenShort: 'ask' });
+  const pledger = await newBuyer('Ask Pledger');
+  const sellerId = (await (await getRepository()).getListing(id)).sellerId;
+  await pledge(req({ headers: pledger.headers, params: { id }, body: { units: 3 } }), ctx);
+  await expireCampaign(id);
+
+  const paused = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(paused.state, 'deciding');
+  assert.ok(paused.decisionDueAt);
+  assert.equal((await noticesFor(sellerId)).filter((r) => r.kind === 'preorder_decide').length, 1);
+  assert.match(await bookingRefusal(await newBuyer('Ask Late'), id), /deciding/);
+
+  // Somebody who is not the seller cannot decide for them.
+  const outsider = await decidePreOrder(req({ headers: pledger.headers, params: { id }, body: { action: 'proceed' } }), ctx);
+  assert.ok(outsider.status === 403 || outsider.status === 401, `got ${outsider.status}`);
+
+  const going = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'proceed' } }), ctx);
+  assert.equal(going.status, 200, JSON.stringify(going.jsonBody));
+  assert.equal(going.jsonBody.preOrder.state, 'called', 'going ahead, with the pledges being called in');
+  assert.equal(going.jsonBody.preOrder.proceededShort, true);
+  assert.equal((await noticesFor(pledger.id)).filter((r) => r.kind === 'preorder_due').length, 1);
+  // ...and the pledger can book their place after the cutoff.
+  assert.equal(await bookingRefusal(pledger, id), null);
+});
+
+await check('a paused campaign can be given more time, and cancels itself if nobody decides', async () => {
+  const id = await openCampaign(10, 'Extend campaign', { whenShort: 'ask' });
+  const pledger = await newBuyer('Extend Pledger');
+  await pledge(req({ headers: pledger.headers, params: { id } }), ctx);
+  await expireCampaign(id);
+  await readPreOrder(req({ params: { id } }), ctx);
+
+  const cutoffAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  const extended = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'extend', cutoffAt } }), ctx);
+  assert.equal(extended.status, 200, JSON.stringify(extended.jsonBody));
+  assert.equal(extended.jsonBody.preOrder.state, 'open');
+  assert.equal(extended.jsonBody.preOrder.cutoffAt, cutoffAt);
+  assert.ok((await noticesFor(pledger.id)).some((r) => r.kind === 'preorder_changed' && /more time/.test(r.title)));
+
+  const idle = await openCampaign(10, 'Undecided campaign', { whenShort: 'ask' });
+  await pledge(req({ headers: pledger.headers, params: { id: idle } }), ctx);
+  await expireCampaign(idle);
+  await readPreOrder(req({ params: { id: idle } }), ctx);
+  await patchCampaign(idle, { decisionDueAt: lapseDeadline() });
+  assert.equal((await readPreOrder(req({ params: { id: idle } }), ctx)).jsonBody.preOrder.state, 'closed');
+});
+
+await check('the seller can go ahead early with fewer, or call it off and refund', async () => {
+  const id = await openCampaign(10, 'Early campaign');
+  const buyer = await newBuyer('Early Buyer');
+  await createOrder(req({ headers: buyer.headers, body: { listingId: id } }), ctx);
+  const early = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'proceed' } }), ctx);
+  assert.equal(early.jsonBody.preOrder.state, 'going', 'everybody in it has booked');
+
+  const off = await openCampaign(10, 'Called-off campaign');
+  const paid = await newBuyer('Called-off Buyer');
+  await createOrder(req({ headers: paid.headers, body: { listingId: off } }), ctx);
+  const cancelled = await decidePreOrder(req({ headers: auth, params: { id: off }, body: { action: 'cancel' } }), ctx);
+  assert.equal(cancelled.jsonBody.preOrder.state, 'closed');
+  assert.equal((await orderFor(off, paid.id)).status, 'cancelled');
+  assert.ok((await noticesFor(paid.id)).some((r) => r.kind === 'preorder_closed' && /called off/.test(r.title)));
+});
+
+await check('the seller edits the number, the date and the rules', async () => {
+  const id = await openCampaign(10, 'Edited campaign');
+  const pledger = await newBuyer('Edit Pledger');
+  await pledge(req({ headers: pledger.headers, params: { id }, body: { units: 3 } }), ctx);
+
+  const stranger = await editPreOrder(req({ headers: pledger.headers, params: { id }, body: { fillThreshold: 3 } }), ctx);
+  assert.ok(stranger.status === 403 || stranger.status === 401, `got ${stranger.status}`);
+
+  const past = await editPreOrder(req({ headers: auth, params: { id }, body: { cutoffAt: lapseDeadline() } }), ctx);
+  assert.equal(past.status, 409);
+
+  const rules = await editPreOrder(req({ headers: auth, params: { id }, body: { whenShort: 'ask', whenFull: 'waitlist' } }), ctx);
+  assert.equal(rules.status, 200, JSON.stringify(rules.jsonBody));
+  assert.equal(rules.jsonBody.preOrder.whenShort, 'ask');
+  assert.equal(rules.jsonBody.preOrder.whenFull, 'waitlist');
+
+  // Lowered to what is already in: it fills on the spot.
+  const lowered = await editPreOrder(req({ headers: auth, params: { id }, body: { fillThreshold: 3 } }), ctx);
+  assert.equal(lowered.jsonBody.preOrder.state, 'called');
+  assert.ok((await noticesFor(pledger.id)).some((r) => r.kind === 'preorder_changed'));
+  assert.equal((await noticesFor(pledger.id)).filter((r) => r.kind === 'preorder_filled').length, 1);
+
+  const settled = await editPreOrder(req({ headers: auth, params: { id }, body: { fillThreshold: 20 } }), ctx);
+  assert.equal(settled.status, 409, 'the number is settled once it is going ahead');
+});
+
+await check('after it fills, newcomers wait in line, and freed places go to them', async () => {
+  const id = await openCampaign(2, 'Waitlist campaign', { whenFull: 'waitlist' });
+  const first = await newBuyer('Wait First');
+  const second = await newBuyer('Wait Second');
+  const third = await newBuyer('Wait Third');
+  await pledge(req({ headers: first.headers, params: { id } }), ctx);
+  await pledge(req({ headers: second.headers, params: { id } }), ctx);
+
+  const queued = await pledge(req({ headers: third.headers, params: { id } }), ctx);
+  assert.equal(queued.status, 200, JSON.stringify(queued.jsonBody));
+  assert.equal(queued.jsonBody.preOrder.waitlistCount, 1);
+  assert.equal(queued.jsonBody.preOrder.committed, 2, 'waiting is not being in');
+  assert.equal(queued.jsonBody.mine.waitlisted, 1);
+  assert.match(await bookingRefusal(third, id), /waitlist/);
+
+  // The first books; the second does not pay in time, which frees a place.
+  await createOrder(req({ headers: first.headers, body: { listingId: id } }), ctx);
+  await patchCampaign(id, { pledgeDueAt: lapseDeadline() });
+  const after = (await readPreOrder(req({ headers: third.headers, params: { id } }), ctx)).jsonBody;
+  assert.equal(after.preOrder.waitlistCount, 0);
+  assert.equal(after.mine.waitlisted, null);
+  assert.ok(after.mine.dueAt, 'an offer comes with its own deadline');
+  assert.equal((await noticesFor(third.id)).filter((r) => r.kind === 'preorder_offer').length, 1);
+  assert.equal(await bookingRefusal(third, id), null, 'an offered place can be booked');
+});
+
+await check('the seller admits the waitlist, or lets it go', async () => {
+  const id = await openCampaign(2, 'Admit campaign', { whenFull: 'waitlist' });
+  const people = [];
+  for (const name of ['Admit A', 'Admit B', 'Admit C', 'Admit D', 'Admit E']) people.push(await newBuyer(name));
+  for (const person of people) await pledge(req({ headers: person.headers, params: { id } }), ctx);
+
+  const before = (await readPreOrder(req({ params: { id } }), ctx)).jsonBody.preOrder;
+  assert.equal(before.waitlistCount, 3);
+
+  const admitted = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'admit', units: 1 } }), ctx);
+  assert.equal(admitted.status, 200, JSON.stringify(admitted.jsonBody));
+  assert.equal(admitted.jsonBody.preOrder.waitlistCount, 2);
+  assert.equal(admitted.jsonBody.preOrder.committed, 3, 'the seller chose to take one more than the threshold');
+  assert.equal((await noticesFor(people[2].id)).filter((r) => r.kind === 'preorder_offer').length, 1);
+
+  const dismissed = await decidePreOrder(req({ headers: auth, params: { id }, body: { action: 'dismiss' } }), ctx);
+  assert.equal(dismissed.jsonBody.preOrder.waitlistCount, 0);
+  assert.ok((await noticesFor(people[4].id)).some((r) => r.kind === 'preorder_changed'));
+
+  const closed = await openCampaign(2, 'Full-stop campaign', { whenFull: 'close' });
+  await pledge(req({ headers: people[0].headers, params: { id: closed } }), ctx);
+  await pledge(req({ headers: people[1].headers, params: { id: closed } }), ctx);
+  const turnedAway = await pledge(req({ headers: people[2].headers, params: { id: closed } }), ctx);
+  assert.equal(turnedAway.status, 409);
+  assert.equal(turnedAway.jsonBody.error, 'preorder_full');
+});
+
+await check('one last call on the final day, and the recruiter hears who came', async () => {
+  const id = await openCampaign(10, 'Last call campaign');
+  const recruiter = await newBuyer('Last Recruiter');
+  const recruited = await newBuyer('Last Recruited');
+  await pledge(req({ headers: recruiter.headers, params: { id } }), ctx);
+  await pledge(req({ headers: recruited.headers, params: { id }, body: { via: recruiter.id } }), ctx);
+  const told = (await noticesFor(recruiter.id)).filter((r) => r.kind === 'preorder_brought');
+  assert.equal(told.length, 1);
+  assert.match(told[0].title, /Last Recruited/);
+
+  await patchCampaign(id, { cutoffAt: new Date(Date.now() + 6 * 3_600_000).toISOString() });
+  await readPreOrder(req({ params: { id } }), ctx);
+  await readPreOrder(req({ params: { id } }), ctx);
+  assert.equal((await noticesFor(recruited.id)).filter((r) => r.kind === 'preorder_last_call').length, 1);
 });
 
 await check('the listing page carries the group, not just the counter', async () => {
@@ -4536,7 +4830,7 @@ await check('a heading narrows to the categories under it', async () => {
   assert.ok(figures.length < all.length, 'a heading that changes nothing is not a filter');
   for (const listing of figures) {
     assert.ok(
-      ['Scale figures', 'Anime merch', 'Collectibles'].includes(listing.category),
+      ['Figures', 'Anime merch', 'Collectibles'].includes(listing.category),
       `${listing.category} is not under Figures`,
     );
   }
@@ -4585,11 +4879,133 @@ await check('a category nobody offers cannot be stored as one', async () => {
 });
 
 /* ── power selling ─────────────────────────────────────────────────────── */
+console.log('\nwhat each category asks');
+
+const specs = await import(new URL('../api/dist/shared/category-specs.js', import.meta.url));
+const publishWith = (body) => createListing(req({
+  headers: auth,
+  body: { description: 'Test', priceMinor: 120_000, quantityAvailable: 1, tags: [], ...body },
+}), ctx);
+
+await check('every seeded listing that answers its category agrees with its grade', async () => {
+  const all = (await feed(req(), ctx)).jsonBody.listings.filter((l) => l.attributes);
+  assert.ok(all.length >= 8, 'the fixtures should show the per-category answers');
+  for (const listing of all) {
+    assert.equal(
+      specs.conditionTagFor(listing.category, listing.attributes), listing.condition,
+      `${listing.id}: ${listing.attributes.condition} is not ${listing.condition}`,
+    );
+    assert.equal(specs.cleanAttributes(listing.category, listing.attributes).error, undefined, listing.id);
+  }
+});
+
+await check('a pair of sneakers must say if it is the real thing, and its size', async () => {
+  const base = { title: 'Retro pair, boxed', category: 'Sneakers' };
+  const noAuthenticity = await publishWith({ ...base, attributes: { condition: 'DEADSTOCK', size: 'UK 8' } });
+  assert.equal(noAuthenticity.status, 400);
+  assert.match(noAuthenticity.jsonBody.message, /original or copy/i);
+  const noSize = await publishWith({ ...base, attributes: { condition: 'DEADSTOCK', authenticity: 'Original' } });
+  assert.equal(noSize.status, 400);
+  assert.match(noSize.jsonBody.message, /size/i);
+});
+
+await check('the category’s own condition becomes the grade the rest of the app uses', async () => {
+  const made = await publishWith({
+    title: 'Retro pair, deadstock', category: 'Sneakers', condition: 'LOOSE',
+    attributes: { condition: 'DEADSTOCK', authenticity: 'Original', size: 'UK 8', stray: 'dropped' },
+  });
+  assert.equal(made.status, 201);
+  const { listing } = made.jsonBody;
+  // The client said LOOSE; the category said Deadstock, and the category wins.
+  assert.equal(listing.condition, 'MISB');
+  assert.deepEqual(listing.attributes, { condition: 'DEADSTOCK', authenticity: 'Original', size: 'UK 8' });
+});
+
+await check('a value that is not one of the options is refused', async () => {
+  const made = await publishWith({
+    title: 'Odd pair', category: 'Sneakers',
+    attributes: { condition: 'PRISTINE-ISH', authenticity: 'Original', size: 'UK 8' },
+  });
+  assert.equal(made.status, 400);
+});
+
+await check('a size is asked for on a hoodie and not on a cap', async () => {
+  const hoodie = await publishWith({
+    title: 'Graphic hoodie', category: 'Streetwear',
+    attributes: { type: 'Hoodie / sweatshirt', condition: 'NWT', authenticity: 'First copy' },
+  });
+  assert.equal(hoodie.status, 400);
+  assert.match(hoodie.jsonBody.message, /size/i);
+
+  const cap = await publishWith({
+    title: 'Plain cap', category: 'Streetwear',
+    attributes: { type: 'Cap / accessory', condition: 'NWT', authenticity: 'Original', size: 'XL' },
+  });
+  assert.equal(cap.status, 201);
+  assert.equal(cap.jsonBody.listing.attributes.size, undefined, 'a size nobody asked for is not stored');
+});
+
+await check('card conditions follow the card type, and a graded slab needs its grade', async () => {
+  const wrong = await publishWith({
+    title: 'Slab', category: 'Trading cards',
+    attributes: { type: 'Graded slab', condition: 'LP', authenticity: 'Official', grade: 'PSA 9' },
+  });
+  assert.equal(wrong.status, 400, 'Lightly played is not a condition a graded slab can have');
+  const noGrade = await publishWith({
+    title: 'Slab', category: 'Trading cards',
+    attributes: { type: 'Graded slab', condition: 'GRADED', authenticity: 'Official' },
+  });
+  assert.equal(noGrade.status, 400);
+  const good = await publishWith({
+    title: 'Slab', category: 'Trading cards',
+    attributes: { type: 'Graded slab', condition: 'GRADED', authenticity: 'Official', grade: 'PSA 9' },
+  });
+  assert.equal(good.status, 201);
+});
+
+await check('a listing from an older client, with no attributes, still publishes', async () => {
+  const made = await publishWith({ title: 'Older client item', category: 'Collectibles', condition: 'BIB' });
+  assert.equal(made.status, 201);
+  assert.equal(made.jsonBody.listing.condition, 'BIB');
+  assert.equal(made.jsonBody.listing.attributes, undefined);
+});
+
+await check('buyers can ask for the real thing, or for copies, and the two never overlap', async () => {
+  const copy = await publishWith({
+    title: 'Streetwear copy tee', category: 'Streetwear',
+    attributes: { type: 'T-shirt', condition: 'NWT', authenticity: '7A', size: 'L' },
+  });
+  assert.equal(copy.status, 201);
+
+  const genuine = (await feed(req({ query: { authenticity: 'genuine' } }), ctx)).jsonBody.listings;
+  const copies = (await feed(req({ query: { authenticity: 'copies' } }), ctx)).jsonBody.listings;
+  assert.ok(genuine.length > 0 && copies.length > 0);
+  assert.ok(genuine.every((l) => specs.factsOf(l).authenticity?.genuine === true));
+  assert.ok(copies.every((l) => specs.factsOf(l).authenticity?.genuine === false));
+  assert.ok(copies.some((l) => l.id === copy.jsonBody.listing.id));
+  assert.ok(!genuine.some((l) => l.id === copy.jsonBody.listing.id));
+
+  const exact = (await feed(req({ query: { authenticity: '7A' } }), ctx)).jsonBody.listings;
+  assert.ok(exact.length > 0 && exact.every((l) => l.attributes.authenticity === '7A'));
+});
+
+await check('size and kind narrow within a heading', async () => {
+  const sized = (await feed(req({ query: { group: 'wear', size: 'UK 9' } }), ctx)).jsonBody.listings;
+  assert.ok(sized.length > 0 && sized.every((l) => l.attributes.size === 'UK 9'));
+
+  const tees = (await feed(req({ query: { group: 'wear', type: 'T-shirt' } }), ctx)).jsonBody.listings;
+  assert.ok(tees.length > 0 && tees.every((l) => l.attributes.type === 'T-shirt'));
+
+  // A listing that never answered the question does not match a filter on it.
+  const none = (await feed(req({ query: { size: 'XXL' } }), ctx)).jsonBody.listings;
+  assert.ok(none.every((l) => l.attributes?.size === 'XXL'));
+});
+
 console.log('\nselling on a timer');
 
 const saleItem = (title, price, after, extra = {}) => ({
   title, priceMinor: price, listPriceMinor: after,
-  category: 'Scale figures', condition: 'MISB', quantity: 1, ...extra,
+  category: 'Figures', condition: 'MISB', quantity: 1, ...extra,
 });
 
 await check('a run posts its opening message and its first item', async () => {
@@ -4889,7 +5305,7 @@ await check('deleting an account takes its hidden listings too', async () => {
   // how a row outlives the account that wrote it.
   const seller = await signup(req({
     body: {
-      displayName: 'Briefly Selling', username: 'briefly_selling',
+      acceptTerms: true, displayName: 'Briefly Selling', username: 'briefly_selling',
       email: 'briefly@figmark.example', phone: '+919000078801', password: 'longenough1',
     },
   }), ctx);
@@ -4908,7 +5324,7 @@ await check('deleting an account takes its hidden listings too', async () => {
       windowMinutes: 60,
       items: [{
         title: 'Hidden at deletion time', priceMinor: 11_000, listPriceMinor: 16_000,
-        category: 'Scale figures', condition: 'MISB', quantity: 1,
+        category: 'Figures', condition: 'MISB', quantity: 1,
       }],
     },
   }), ctx);
@@ -4928,7 +5344,7 @@ await check('deleting an account takes its hidden listings too', async () => {
 
 await check('a run belongs to the shop that scheduled it', async () => {
   const stranger = await signup(req({
-    body: { displayName: 'Not A Seller', email: 'nps@figmark.example', phone: '+919000077771', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Not A Seller', email: 'nps@figmark.example', phone: '+919000077771', password: 'longenough1' },
   }), ctx);
   const theirs = { authorization: `Bearer ${stranger.jsonBody.token}` };
   // No storefront, so there is no shop to run one in.
@@ -4951,7 +5367,7 @@ await check('a seller can turn an order down, and the stock comes back', async (
   const id = listed.jsonBody.listing.id;
 
   const buyer = await signup(req({
-    body: { displayName: 'Turned Down', email: 'td@figmark.example', phone: '+919000077772', password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Turned Down', email: 'td@figmark.example', phone: '+919000077772', password: 'longenough1' },
   }), ctx);
   const theirs = { authorization: `Bearer ${buyer.jsonBody.token}` };
   const placed = await createOrder(req({ headers: theirs, body: { listingId: id } }), ctx);
@@ -5197,7 +5613,7 @@ await check('a shop reads its own figures and nobody else reads them', async () 
 
   const stranger = await signup(req({
     body: {
-      displayName: 'Nosy Analyst', email: 'nosy-analyst@figmark.example',
+      acceptTerms: true, displayName: 'Nosy Analyst', email: 'nosy-analyst@figmark.example',
       phone: '+919000078801', password: 'longenough1',
     },
   }), ctx);
@@ -5309,7 +5725,7 @@ await check('an unlisted handler is a working handler, not a listed one', async 
 await check('offering a service puts you on the list, and withdrawing takes you off', async () => {
   const made = await signup(req({
     body: {
-      displayName: 'Kochi Parcel Co', email: 'kochi@figmark.example',
+      acceptTerms: true, displayName: 'Kochi Parcel Co', email: 'kochi@figmark.example',
       phone: '+919000078811', password: 'longenough1',
     },
   }), ctx);
@@ -5436,7 +5852,7 @@ await check('a handler works the India end, and no earlier', async () => {
 await check('somebody else’s lot is not on your screen and not yours to tick', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Unnamed Handler', email: 'unnamed@figmark.example',
+      acceptTerms: true, displayName: 'Unnamed Handler', email: 'unnamed@figmark.example',
       phone: '+919000078812', password: 'longenough1',
     },
   }), ctx);
@@ -5457,7 +5873,7 @@ await check('somebody else’s lot is not on your screen and not yours to tick',
 await check('naming a supplier on one lot hands over that lot and no other', async () => {
   const checker = await signup(req({
     body: {
-      displayName: 'One Run Checker', email: 'checker@figmark.example',
+      acceptTerms: true, displayName: 'One Run Checker', email: 'checker@figmark.example',
       phone: '+919000078813', password: 'longenough1',
     },
   }), ctx);
@@ -5516,7 +5932,7 @@ await check('a forwarder finally has a screen of their own', async () => {
   // Listing yourself is gone too - a forwarder applies for a store now.
   const made = await signup(req({
     body: {
-      displayName: 'Harbour Air Cargo', email: 'harbour@figmark.example',
+      acceptTerms: true, displayName: 'Harbour Air Cargo', email: 'harbour@figmark.example',
       phone: '+919000078815', password: 'longenough1',
     },
   }), ctx);
@@ -5553,7 +5969,7 @@ await check('a forwarder finally has a screen of their own', async () => {
 await check('only the shop that owns a lot may name who works it', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Not Their Shop', email: 'notshop@figmark.example',
+      acceptTerms: true, displayName: 'Not Their Shop', email: 'notshop@figmark.example',
       phone: '+919000078814', password: 'longenough1',
     },
   }), ctx);
@@ -5576,7 +5992,7 @@ let earlyBuyer;
 const waitingItem = async (title) => {
   const made = await createListing(req({
     headers: auth,
-    body: { title, priceMinor: 30_000, quantityAvailable: 5, sourcing: 'import', category: 'Scale figures' },
+    body: { title, priceMinor: 30_000, quantityAvailable: 5, sourcing: 'import', category: 'Figures' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   return made.jsonBody.listing.id;
@@ -6089,7 +6505,7 @@ await check('a lot walks its own half of the route, and neither end past it', as
 await check('a lot is only steppable by the shop that owns it', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Not This Shop', email: 'notthisshop@figmark.example',
+      acceptTerms: true, displayName: 'Not This Shop', email: 'notthisshop@figmark.example',
       phone: '+919000078821', password: 'longenough1',
     },
   }), ctx);
@@ -6254,7 +6670,7 @@ await check('a Quick Fill template is the stationery, not a straitjacket', async
     headers: auth,
     body: {
       name: 'Marvel Standard',
-      category: 'Scale figures',
+      category: 'Figures',
       sourcing: 'import',
       tags: ['Marvel', ' Action figure ', ''],
       condition: 'MISB',
@@ -6280,7 +6696,7 @@ await check('a Quick Fill template is the stationery, not a straitjacket', async
   // Correcting one keeps its identity, so the listings made from it still say
   // where they came from.
   const fixed = await saveTemplate(req({
-    headers: auth, body: { id: template.id, name: 'Marvel Standard v2', category: 'Scale figures' },
+    headers: auth, body: { id: template.id, name: 'Marvel Standard v2', category: 'Figures' },
   }), ctx);
   assert.equal(fixed.status, 200);
   assert.equal(fixed.jsonBody.template.id, template.id);
@@ -6294,7 +6710,7 @@ await check('a Quick Fill template is the stationery, not a straitjacket', async
 await check('somebody else’s stationery is not yours to read or edit', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Other Shop', email: 'othershop@figmark.example',
+      acceptTerms: true, displayName: 'Other Shop', email: 'othershop@figmark.example',
       phone: '+919000078831', password: 'longenough1',
     },
   }), ctx);
@@ -7264,7 +7680,7 @@ await check('a domestic sale is not something to file into a crate', async () =>
 await check('only the shop that sold it may file it, or tick it', async () => {
   const stranger = await signup(req({
     body: {
-      displayName: 'Passing Stranger', email: 'passing-by@figmark.example',
+      acceptTerms: true, displayName: 'Passing Stranger', email: 'passing-by@figmark.example',
       phone: '+919000078832', password: 'longenough1',
     },
   }), ctx);
@@ -7280,7 +7696,7 @@ await check('only the shop that sold it may file it, or tick it', async () => {
 console.log('\nstock, expiry and instalments');
 
 const payBuyer = await signup(req({
-  body: { displayName: 'Instalment Buyer', email: 'instal@figmark.example', phone: '+919000045599', password: 'longenough1' },
+  body: { acceptTerms: true, displayName: 'Instalment Buyer', email: 'instal@figmark.example', phone: '+919000045599', password: 'longenough1' },
 }), ctx);
 const payAuth = { authorization: `Bearer ${payBuyer.jsonBody.token}` };
 await saveReversalDetails(req({ headers: payAuth,
@@ -7743,6 +8159,74 @@ await check('a booking cannot be dispatched or delivered until the seller accept
   await acceptOrder(req({ headers: auth, params: { id: booked.id }, body: {} }), ctx);
   const shipped = await tick('dispatched');
   assert.equal(shipped.status, 200, JSON.stringify(shipped.jsonBody));
+});
+
+await check('a payment the buyer claimed is answered before the order ships', async () => {
+  const listing = await list({ title: 'Item Claimed', priceMinor: 30_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const claimed = await claimPayment(req({ headers: payAuth, params: { id: opened.id }, body: { reference: 'UTR-CLAIM-1' } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  for (const checkpoint of ['dispatched', 'delivered']) {
+    const refused = await setCheckpoint(req({ headers: auth, params: { id: opened.id }, body: { checkpoint, on: true } }), ctx);
+    assert.equal(refused.status, 409, `${checkpoint}: ${JSON.stringify(refused.jsonBody)}`);
+    assert.equal(refused.jsonBody.error, 'awaiting_payment');
+  }
+});
+
+await check('an accepted booking sent out before payment can still be paid for', async () => {
+  const listing = await list({ title: 'Item Trust', priceMinor: 30_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx);
+  await acceptOrder(req({ headers: auth, params: { id: opened.id }, body: {} }), ctx);
+  const shipped = await setCheckpoint(req({ headers: auth, params: { id: opened.id }, body: { checkpoint: 'dispatched', on: true } }), ctx);
+  assert.equal(shipped.status, 200, JSON.stringify(shipped.jsonBody));
+  const seen = (await orderState(req({ headers: payAuth, params: { id: opened.id } }), ctx)).jsonBody;
+  assert.ok(seen.actions.includes('pay'), JSON.stringify(seen.actions));
+  const claimed = await claimPayment(req({ headers: payAuth, params: { id: opened.id }, body: { reference: 'UTR-TRUST-1' } }), ctx);
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.jsonBody));
+  assert.equal(claimed.jsonBody.order.status, 'shipped', 'paying does not rewind where it is');
+});
+
+await check('a checkout nobody has placed cannot be disputed', async () => {
+  const listing = await list({ title: 'Item Unplaced', priceMinor: 30_000 });
+  const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const refused = await flagDispute(req({ headers: payAuth, params: { id: opened.id }, body: { reason: 'Not what I wanted at all' } }), ctx);
+  assert.equal(refused.status, 409, JSON.stringify(refused.jsonBody));
+  assert.equal(refused.jsonBody.error, 'not_placed');
+});
+
+await check('cancelling an accepted order puts the stock back only when the seller says so', async () => {
+  const repository = await getRepository();
+  const listing = await list({ title: 'Item Restock', priceMinor: 30_000, quantityAvailable: 3 });
+  const cancelWith = async (restock) => {
+    const opened = (await openCheckout(req({ headers: payAuth, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+    await bookOrder(req({ headers: payAuth, params: { id: opened.id }, body: {} }), ctx);
+    await acceptOrder(req({ headers: auth, params: { id: opened.id }, body: {} }), ctx);
+    const cancelled = await cancelOrder(req({ headers: auth, params: { id: opened.id }, body: { reason: 'Damaged on the shelf', restock } }), ctx);
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelled.jsonBody));
+  };
+  await cancelWith(false);
+  assert.equal((await repository.getListing(listing.id)).quantityAvailable, 2, 'kept off sale: damaged stock stays gone');
+  await cancelWith(true);
+  assert.equal((await repository.getListing(listing.id)).quantityAvailable, 2, 'put back: the unit is for sale again');
+});
+
+await check('removing an item archives it: gone from the shop, still there for its orders', async () => {
+  const listing = await list({ title: 'Item Removed', priceMinor: 30_000 });
+  const removed = await deleteListing(req({ headers: auth, params: { id: listing.id }, body: { remove: true } }), ctx);
+  assert.equal(removed.status, 200, JSON.stringify(removed.jsonBody));
+  assert.equal(removed.jsonBody.removed, true);
+  const stored = await (await getRepository()).getListing(listing.id);
+  assert.equal(stored.status, 'archived', 'archived, never erased');
+  assert.equal((await buy(listing.id)).status, 409);
+});
+
+await check('an advance is a whole rupee, so advance and balance add up to the total', async () => {
+  const { advanceMinor } = await import(new URL('../api/dist/shared/payments.js', import.meta.url));
+  assert.equal(advanceMinor(199_800, 25), 50_000);
+  assert.equal(advanceMinor(99_900, 25), 25_000);
+  assert.equal(advanceMinor(100_000, 20), 20_000);
+  assert.equal(advanceMinor(150, 50), 100, 'never more than the total, never a fraction of a rupee');
 });
 
 await check('a group paid two different ways is refused rather than switched', async () => {
@@ -8525,12 +9009,12 @@ await check('insights compare this week with last, and rank what is trending', a
 });
 
 await check('market trends show other shops’ items without the shops', async () => {
-  const mine = await createListing(req({ headers: auth, body: { title: 'My Resin Statue', priceMinor: 30_000, quantityAvailable: 3, category: 'Scale figures' } }), ctx);
+  const mine = await createListing(req({ headers: auth, body: { title: 'My Resin Statue', priceMinor: 30_000, quantityAvailable: 3, category: 'Figures' } }), ctx);
   assert.equal(mine.status, 201, JSON.stringify(mine.jsonBody));
   const rival = await newBuyer('Rival Shop');
   const opened = await saveStorefront(req({ headers: rival.headers, body: { storefrontName: 'Rival Figures Co' } }), ctx);
   assert.equal(opened.status, 200, JSON.stringify(opened.jsonBody));
-  const theirs = await createListing(req({ headers: rival.headers, body: { title: 'Their Hot Statue', priceMinor: 25_000, quantityAvailable: 9, category: 'Scale figures' } }), ctx);
+  const theirs = await createListing(req({ headers: rival.headers, body: { title: 'Their Hot Statue', priceMinor: 25_000, quantityAvailable: 9, category: 'Figures' } }), ctx);
   assert.equal(theirs.status, 201, JSON.stringify(theirs.jsonBody));
   const listingId = theirs.jsonBody.listing.id;
   for (const name of ['Fan One', 'Fan Two']) {
@@ -8549,7 +9033,7 @@ await check('market trends show other shops’ items without the shops', async (
   assert.deepEqual(Object.keys(item).sort(), ['category', 'currency', 'level', 'photo', 'priceMinor', 'title']);
   const text = JSON.stringify(read.jsonBody);
   assert.ok(!text.includes(listingId) && !text.includes('Rival Shop') && !text.includes('rival_shop') && !text.includes('Rival Figures'), 'nothing leads back to the shop');
-  assert.ok(read.jsonBody.categories.some((row) => row.category === 'Scale figures'));
+  assert.ok(read.jsonBody.categories.some((row) => row.category === 'Figures'));
   assert.ok(!read.jsonBody.items.some((row) => row.title === 'My Resin Statue'), 'and never the shop’s own items');
 });
 
@@ -10481,7 +10965,7 @@ await check('a short link opened signed out is remembered through sign-up, with 
   buyerSeq += 1;
   const made = await signup(req({
     headers: withCookies({}, cookies),
-    body: { displayName: 'Cookie Buyer', email: `cookie${buyerSeq}@figmark.example`, phone: `+91900008${String(1000 + buyerSeq).slice(-4)}`, password: 'longenough1' },
+    body: { acceptTerms: true, displayName: 'Cookie Buyer', email: `cookie${buyerSeq}@figmark.example`, phone: `+91900008${String(1000 + buyerSeq).slice(-4)}`, password: 'longenough1' },
   }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const headers = { authorization: `Bearer ${made.jsonBody.token}` };
@@ -10778,7 +11262,7 @@ const signInAs = async (identifier) =>
 const lotusTeam = await signInAs('ops@lotusfreight.example');
 const inkwellTeam = await signInAs('studio@inkwell.example');
 const newMember = async (name, email, phone) => {
-  const made = await signup(req({ body: { displayName: name, email, phone, password: 'longenough1' } }), ctx);
+  const made = await signup(req({ body: { acceptTerms: true, displayName: name, email, phone, password: 'longenough1' } }), ctx);
   return { id: made.jsonBody.user.id, headers: { authorization: `Bearer ${made.jsonBody.token}` } };
 };
 
@@ -11536,6 +12020,689 @@ await check('operators set the short forms every button is drawn with', async ()
   assert.deepEqual((await readWords(req(), ctx)).jsonBody, { flags: false, terms: [{ from: 'warehouse', to: 'Depot' }] });
   assert.equal(renderButtonText('Received at {origin} warehouse', { origin: 'China' }), 'Received at China Depot');
   await saveWords(req({ headers: auth, body: DEFAULT_ROUTE_WORDS }), ctx);
+});
+
+
+await check('the Social tab reads who you follow and nobody else, newest first', async () => {
+  const home = await socialHome(req({ headers: auth, query: { following: '1' } }), ctx);
+  assert.equal(home.status, 200);
+  // The one exception is the ending of a debate this person voted in, which
+  // leads the feed with its result wherever the debate was had.
+  const results = home.jsonBody.posts.filter((card) => card.badges?.includes('result'));
+  assert.ok(results.every((card) => card.post.debate && card.social.poll.closed && card.social.poll.myVote));
+  const cards = home.jsonBody.posts.slice(results.length);
+  assert.ok(cards.length > 0);
+  assert.ok(cards.every((card) => card.following || card.post.channelId === 'usr_demo'), 'only people you follow');
+  assert.ok(cards.every((card) => !card.badges), 'nothing slotted in from outside');
+  const times = cards.map((card) => card.post.createdAt);
+  assert.deepEqual(times, [...times].sort().reverse(), 'in the order it was said');
+  // Without it, the old mixed feed is unchanged.
+  const mixed = (await socialHome(req({ headers: auth }), ctx)).jsonBody.posts;
+  assert.ok(mixed.some((card) => card.badges?.length), 'the mixed feed still finds new people');
+});
+
+let flexPost = null;
+/** An item that is certainly on sale, whatever the checks above did to the seeded ones. */
+const taggable = async () => {
+  const repository = await getRepository();
+  if (!(await repository.getListing('lst_taggable'))) {
+    const base = await repository.getListing('lst_handheld');
+    await repository.createListing({ ...base, id: 'lst_taggable', status: 'active', unlisted: false, privateFor: null, quantityAvailable: 5 });
+  }
+  return 'lst_taggable';
+};
+await check('a collection flex carries its tagged pieces, and a bad tag is refused', async () => {
+  const item = await taggable();
+  resetRateLimits();
+  const post = (body) => createPost(req({ headers: auth, body }), ctx);
+  const made = await post({
+    body: 'The shelf.', photoUrls: ['/api/photos/shelf.jpg'],
+    flex: { hotspots: [
+      { photo: 0, x: 0.3, y: 1.4, label: 'Rem crystal dress', status: 'owned' },
+      { photo: 0, x: 0.6, y: 0.5, label: 'Spare handheld', status: 'for_sale', listingId: item },
+    ] },
+  });
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  flexPost = made.jsonBody.post;
+  assert.equal(flexPost.flex.hotspots.length, 2);
+  assert.equal(flexPost.flex.hotspots[0].y, 1, 'a dot past the edge meant the edge');
+  assert.equal(flexPost.flex.hotspots[1].listingId, item);
+  assert.equal(flexPost.flex.hotspots[0].listingId, null);
+
+  resetRateLimits();
+  const shelf = ['/api/photos/shelf.jpg'];
+  assert.equal((await post({ body: 'x', photoUrls: shelf, flex: { hotspots: [{ photo: 1, x: 0.5, y: 0.5, label: 'A', status: 'owned' }] } })).status, 400, 'a tag on a photo that is not there');
+  assert.equal((await post({ body: 'x', photoUrls: shelf, flex: { hotspots: [{ photo: 0, x: 0.5, y: 0.5, label: 'A', status: 'stolen' }] } })).status, 400);
+  assert.equal((await post({ body: 'x', photoUrls: shelf, flex: { hotspots: [{ photo: 0, x: 0.5, y: 0.5, label: '', status: 'owned' }] } })).status, 400);
+  assert.equal((await post({ body: 'No photo', flex: { hotspots: [] } })).status, 400, 'a flex needs a photo');
+  assert.equal((await post({ body: 'x', photoUrls: shelf, flex: { hotspots: [{ photo: 0, x: 0.5, y: 0.5, label: 'A', status: 'for_sale', listingId: 'lst_nope' }] } })).status, 404);
+});
+
+await check('a debate is two photos and two answers, and Discover ranks debates, threads and flexes for anyone', async () => {
+  const item = await taggable();
+  resetRateLimits();
+  const post = (body) => createPost(req({ headers: auth, body }), ctx);
+  const poll = { options: ['Original run', 'Reissue'] };
+  assert.equal((await post({ body: 'Which?', photoUrls: ['/api/photos/a.jpg'], poll, debate: { listingIds: [null, null] } })).status, 400, 'one photo is not a debate');
+  assert.equal((await post({ body: 'Which?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], debate: { listingIds: [null, null] } })).status, 400, 'nor is one without a vote');
+  assert.equal((await post({ body: 'Which?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], poll, debate: { listingIds: ['lst_nope', null] } })).status, 404);
+  const made = await post({ body: 'Which paint job is cleaner?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], poll, debate: { listingIds: [item, null] } });
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const debate = made.jsonBody.post;
+
+  // A conversation that took off, from somebody else.
+  const talker = await newBuyer('Thread Starter');
+  const thread = (await createPost(req({ headers: talker.headers, body: { body: 'Is the 2019 run worth the premium?' } }), ctx)).jsonBody.post;
+  for (const who of [await newBuyer('Thread One'), await newBuyer('Thread Two'), await newBuyer('Thread Three')]) {
+    assert.equal((await commentOn(req({ headers: who.headers, params: on(thread), body: { body: 'Depends on the box.' } }), ctx)).status, 201);
+  }
+
+  // A guest reads it too: browsing needs no account.
+  const guest = await discover(req(), ctx);
+  assert.equal(guest.status, 200);
+  const { debates, threads, flexes } = guest.jsonBody;
+  const found = debates.find((card) => card.post.id === debate.id);
+  assert.ok(found, 'the debate is on Discover');
+  assert.deepEqual(found.post.debate.listingIds, [item, null]);
+  assert.equal(found.social.poll.options.length, 2);
+  assert.equal(found.social.poll.myVote, null);
+  assert.ok(threads.some((card) => card.post.id === thread.id), 'the conversation is promoted');
+  assert.ok(flexes.some((card) => card.post.id === flexPost.id), 'the flex is on Discover');
+  assert.ok([...debates, ...threads, ...flexes].every((card) => !card.post.repostOf && !card.post.wallOf));
+  assert.ok(!threads.some((card) => card.post.debate || card.post.flex), 'nothing twice');
+  assert.equal((await discover(req({ headers: auth }), ctx)).status, 200);
+});
+
+await check('a new ISO is matched against what is listed, and the seller hears', async () => {
+  const repository = await getRepository();
+  const base = await repository.getListing('lst_handheld');
+  await repository.createListing({
+    ...base, id: 'lst_iso_rem', title: 'Furyu Rem Crystal Dress prize figure', description: 'Sealed.', tags: [],
+    status: 'active', unlisted: false, privateFor: null, preOrder: null, quantityAvailable: 3,
+  });
+  const hunter = await newBuyer('Rem Hunter');
+  resetRateLimits();
+  const posted = await postWant(req({ headers: hunter.headers, body: { title: 'Furyu Rem crystal dress', category: base.category } }), ctx);
+  assert.equal(posted.status, 201, JSON.stringify(posted.jsonBody));
+  const want = posted.jsonBody.want;
+  assert.ok(want.matchCount >= 1, 'matched the moment it is posted');
+
+  const board = (await wantsBoard(req({ headers: hunter.headers }), ctx)).jsonBody;
+  assert.ok(board.mine.find((row) => row.id === want.id).matchCount >= 1);
+  const detail = (await readWant(req({ params: { id: want.id }, query: { buyer: hunter.id } }), ctx)).jsonBody;
+  const match = detail.matches.find((row) => row.id === 'lst_iso_rem');
+  assert.ok(match, 'the listed item is offered as a match');
+  assert.equal(match.sellerId, base.sellerId);
+  assert.ok((await noticesFor(base.sellerId)).some((notice) => notice.kind === 'want_matched' && notice.link.includes(want.id)),
+    'the seller whose item matches is told');
+
+  // A hunt nobody can answer from stock says so.
+  resetRateLimits();
+  const rare = (await postWant(req({ headers: hunter.headers, body: { title: 'Zzyzx prototype resin', category: base.category } }), ctx)).jsonBody.want;
+  assert.equal(rare.matchCount, 0);
+});
+
+/* ── discovery and the feed: preferences, ranking signals, rails ─────────── */
+console.log('\ndiscovery and the feed');
+const {
+  savePostRoute: savePostR, savedPostsRoute: savedPostsR, hidePostRoute: hidePostR, muteRoute: feedMute,
+  seenRoute: seenR, suggestionsRoute: suggestionsR, leaderboardRoute: leaderboardR, topicPostsRoute: topicPostsR,
+} = await import(new URL('feed-routes.js', fns));
+const { homeNewRoute: homeNew } = await import(new URL('social-routes.js', fns));
+const discoverIds = async (headers, query = {}) => {
+  const body = (await discover(req({ headers, query }), ctx)).jsonBody;
+  return new Set([...body.debates, ...body.threads, ...body.flexes, ...(body.rising ?? [])].map((card) => card.post.id));
+};
+
+await check('an @handle in a post or a comment tells whoever holds it, once', async () => {
+  const named = await newBuyer('Mention Target');
+  assert.equal((await setUsername(req({ headers: named.headers, body: { username: 'mention_target' } }), ctx)).status, 200);
+  const writer = await newBuyer('Mention Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Look at this, @mention_target. And @nobody_here_at_all' } }), ctx)).jsonBody.post;
+  const told = (await noticesFor(named.id)).filter((notice) => notice.kind === 'mentioned');
+  assert.equal(told.length, 1, 'mentioned in the post');
+  assert.ok(told[0].link.includes(made.id));
+  assert.ok(told[0].title.includes('Mention Writer'));
+  await commentOn(req({ headers: writer.headers, params: on(made), body: { body: '@MENTION_TARGET what do you think?' } }), ctx);
+  assert.equal((await noticesFor(named.id)).filter((notice) => notice.kind === 'mentioned').length, 2, 'and again in a comment');
+  // Naming yourself is not news.
+  resetRateLimits();
+  await createPost(req({ headers: named.headers, body: { body: 'Me: @mention_target' } }), ctx);
+  assert.equal((await noticesFor(named.id)).filter((notice) => notice.kind === 'mentioned').length, 2);
+});
+
+await check('a post can be saved, listed back, and unsaved', async () => {
+  const reader = await newBuyer('Saver');
+  const writer = await newBuyer('Saved Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Worth keeping' } }), ctx)).jsonBody.post;
+  const saved = await savePostR(req({ headers: reader.headers, params: on(made) }), ctx);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.jsonBody.saved, true);
+  const list = (await savedPostsR(req({ headers: reader.headers }), ctx)).jsonBody.posts;
+  assert.deepEqual(list.map((card) => card.post.id), [made.id]);
+  assert.equal(list[0].saved, true);
+  assert.equal((await readPost(req({ headers: reader.headers, params: on(made) }), ctx)).jsonBody.card.saved, true, 'the card says so anywhere');
+  assert.equal((await savePostR(req({ headers: reader.headers, params: on(made) }), ctx)).jsonBody.saved, false);
+  assert.equal((await savedPostsR(req({ headers: reader.headers }), ctx)).jsonBody.posts.length, 0);
+  assert.equal((await savePostR(req({ headers: reader.headers, params: { channel: made.channelId, id: 'pst_nope' } }), ctx)).status, 404);
+});
+
+await check('hiding a post or muting its author keeps them out of Discover, and both undo', async () => {
+  const reader = await newBuyer('Hider');
+  const loud = await newBuyer('Loud Poster');
+  resetRateLimits();
+  const thread = (await createPost(req({ headers: loud.headers, body: { body: 'Hot take: boxes do not matter.' } }), ctx)).jsonBody.post;
+  for (const who of [await newBuyer('Hot One'), await newBuyer('Hot Two'), await newBuyer('Hot Three')]) {
+    await commentOn(req({ headers: who.headers, params: on(thread), body: { body: 'They do.' } }), ctx);
+  }
+  assert.ok((await discoverIds(reader.headers)).has(thread.id), 'on Discover to begin with');
+
+  assert.equal((await hidePostR(req({ headers: reader.headers, params: on(thread), body: {} }), ctx)).status, 200);
+  assert.ok(!(await discoverIds(reader.headers)).has(thread.id), 'hidden');
+  assert.ok((await discoverIds(auth)).has(thread.id), 'for this reader only');
+  await hidePostR(req({ headers: reader.headers, params: on(thread), body: { undo: true } }), ctx);
+  assert.ok((await discoverIds(reader.headers)).has(thread.id), 'and back');
+
+  assert.equal((await feedMute(req({ headers: reader.headers, body: { id: loud.id, on: true } }), ctx)).jsonBody.muted, true);
+  assert.ok(!(await discoverIds(reader.headers)).has(thread.id), 'muted');
+  await feedMute(req({ headers: reader.headers, body: { id: loud.id, on: false } }), ctx);
+  assert.ok((await discoverIds(reader.headers)).has(thread.id));
+
+  assert.equal((await feedMute(req({ headers: reader.headers, body: { id: reader.id } }), ctx)).status, 400, 'not yourself');
+  assert.equal((await hidePostR(req({ headers: loud.headers, params: on(thread), body: {} }), ctx)).status, 400, 'nor your own post');
+});
+
+await check('"not interested" sinks a post without hiding its author', async () => {
+  const reader = await newBuyer('Picky Reader');
+  const repository = await getRepository();
+  const me = await repository.getUserById(reader.id);
+  const writer = await newBuyer('Less Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Meh' } }), ctx)).jsonBody.post;
+  await hidePostR(req({ headers: reader.headers, params: on(made), body: { notInterested: true } }), ctx);
+  const after = await repository.getUserById(reader.id);
+  assert.ok(after.feedPrefs.hidden.includes(made.id));
+  assert.ok(after.feedPrefs.lessFrom.includes(writer.id), 'less from them, not none');
+  assert.ok(!(after.feedPrefs.muted ?? []).includes(writer.id));
+  assert.equal(me.feedPrefs, undefined, 'nothing written before they asked');
+});
+
+await check('Discover pages on, carries rising posts, topics and the rails, and stays open to guests', async () => {
+  resetRateLimits();
+  const poster = await newBuyer('Topic Poster');
+  const tagged = (await createPost(req({ headers: poster.headers, body: { body: 'New arrivals for my #ResinKits shelf' } }), ctx)).jsonBody.post;
+  await createPost(req({ headers: poster.headers, body: { body: 'More #resin_kits today' } }), ctx);
+  const first = (await discover(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(Array.isArray(first.rising));
+  assert.ok(first.rising.every((card) => card.badges?.includes('rising')));
+  assert.ok(first.topics.some((topic) => topic.key === 'resin kit' && topic.posts >= 2), JSON.stringify(first.topics));
+  assert.ok(Array.isArray(first.wants) && Array.isArray(first.spotted));
+  assert.ok(first.next === null || first.next === 1);
+  const later = (await discover(req({ headers: auth, query: { page: '1' } }), ctx)).jsonBody;
+  assert.equal(later.topics, undefined, 'the rails come once, on the first page');
+  const ids = (body) => [...body.debates, ...body.threads, ...body.flexes, ...body.rising].map((card) => card.post.id);
+  assert.ok(!ids(later).some((id) => ids(first).includes(id)), 'a later page does not repeat the first');
+
+  const topic = (await topicPostsR(req({ params: { slug: 'resin-kit' } }), ctx)).jsonBody;
+  assert.equal(topic.topic.key, 'resin kit');
+  assert.ok(topic.posts.some((card) => card.post.id === tagged.id), 'the topic page finds it, for a guest too');
+  const guest = (await discover(req(), ctx)).jsonBody;
+  assert.ok(guest.rising.every((card) => !card.social.mine));
+});
+
+await check('the item tagged for sale on a shelf is spotted on Discover', async () => {
+  const body = (await discover(req({ headers: auth }), ctx)).jsonBody;
+  const tagged = flexPost.flex.hotspots.find((spot) => spot.listingId)?.listingId;
+  const spotted = body.spotted.find((item) => item.listingId === tagged);
+  assert.ok(spotted, JSON.stringify(body.spotted));
+  // The same item is in an earlier debate too; it is credited to the hotter post, once.
+  assert.ok(['flex', 'debate'].includes(spotted.how));
+  assert.equal(body.spotted.filter((item) => item.listingId === tagged).length, 1);
+  assert.ok(body.spotted.every((item) => item.listingId && item.spottedBy));
+});
+
+await check('a closed debate tells its voters which side won, and comes back on their feed', async () => {
+  const author = await newBuyer('Debater');
+  const voter = await newBuyer('Debate Voter');
+  resetRateLimits();
+  const made = (await createPost(req({
+    headers: author.headers,
+    body: { body: 'Which box art?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], poll: { options: ['Japanese', 'Western'] }, debate: { listingIds: [null, null] } },
+  }), ctx)).jsonBody.post;
+  assert.ok(made.poll.closesAt, 'a debate closes by itself when its author does not say');
+  const option = made.poll.options[0].id;
+  assert.equal((await vote(req({ headers: voter.headers, params: on(made), body: { optionId: option } }), ctx)).status, 200);
+  const repository = await getRepository();
+  await repository.mutatePost(made.channelId, made.id, (post) => ({ ...post, poll: { ...post.poll, closesAt: new Date(Date.now() - 60_000).toISOString() } }));
+
+  await discover(req(), ctx);
+  const told = (await noticesFor(voter.id)).filter((notice) => notice.kind === 'debate_result');
+  assert.equal(told.length, 1);
+  assert.match(told[0].title, /Your pick won: Japanese/);
+  assert.ok((await noticesFor(author.id)).some((notice) => notice.kind === 'debate_result'), 'the author hears too');
+  await discover(req(), ctx);
+  assert.equal((await noticesFor(voter.id)).filter((notice) => notice.kind === 'debate_result').length, 1, 'once');
+
+  const feed = (await socialHome(req({ headers: voter.headers, query: { following: '1' } }), ctx)).jsonBody.posts;
+  assert.equal(feed[0].post.id, made.id, 'the result is on top of their feed');
+  assert.ok(feed[0].badges.includes('result'));
+});
+
+await check('the games clock settles a closed debate nobody reads', async () => {
+  const { settleDueGames } = await import(new URL('../play.js', fns));
+  const author = await newBuyer('Night Debater');
+  const voter = await newBuyer('Night Voter');
+  resetRateLimits();
+  const made = (await createPost(req({
+    headers: author.headers,
+    body: { body: 'Which stand?', photoUrls: ['/api/photos/a.jpg', '/api/photos/b.jpg'], poll: { options: ['Clear', 'Black'] }, debate: { listingIds: [null, null] } },
+  }), ctx)).jsonBody.post;
+  await vote(req({ headers: voter.headers, params: on(made), body: { optionId: made.poll.options[1].id } }), ctx);
+  const repository = await getRepository();
+  const closed = new Date(Date.now() - 60_000).toISOString();
+  await repository.mutatePost(made.channelId, made.id, (post) => ({ ...post, poll: { ...post.poll, closesAt: closed } }));
+  const now = new Date().toISOString();
+  assert.ok((await repository.listOpenGames(now, 1000)).some((post) => post.id === made.id), 'a debate whose result has not gone out is open');
+
+  assert.ok(await settleDueGames(repository) >= 1);
+  const told = (await noticesFor(voter.id)).filter((notice) => notice.kind === 'debate_result');
+  assert.equal(told.length, 1, 'the voter hears with nobody opening a feed');
+  assert.match(told[0].title, /Your pick won: Black/);
+  assert.ok(!(await repository.listOpenGames(now, 1000)).some((post) => post.id === made.id), 'and it is off the list');
+  await settleDueGames(repository);
+  assert.equal((await noticesFor(voter.id)).filter((notice) => notice.kind === 'debate_result').length, 1, 'once');
+});
+
+await check('what was on screen is counted on the post, but not for its author', async () => {
+  const reader = await newBuyer('Scroller');
+  const writer = await newBuyer('Seen Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Look at me' } }), ctx)).jsonBody.post;
+  const sent = await seenR(req({ headers: reader.headers, body: { items: [
+    { channelId: made.channelId, postId: made.id, ms: 4000, opened: true },
+    { channelId: made.channelId, postId: 'pst_gone', ms: 100 },
+    { nonsense: true },
+  ] } }), ctx);
+  assert.equal(sent.status, 200);
+  assert.equal(sent.jsonBody.counted, 1);
+  await seenR(req({ headers: reader.headers, body: { items: [{ channelId: made.channelId, postId: made.id, ms: 10_000_000 }] } }), ctx);
+  await seenR(req({ headers: writer.headers, body: { items: [{ channelId: made.channelId, postId: made.id, ms: 5000 }] } }), ctx);
+  const stored = await (await getRepository()).getPost(made.channelId, made.id);
+  assert.equal(stored.views, 2, 'the author looking at their own post is not a view');
+  assert.equal(stored.opens, 1);
+  assert.equal(stored.dwellMs, 4000 + 60_000, 'a minute is all one view can add');
+});
+
+await check('suggestions name people you engage with, never anybody followed or yourself', async () => {
+  const reader = await newBuyer('Suggest Reader');
+  const writer = await newBuyer('Suggested Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Follow-worthy' } }), ctx)).jsonBody.post;
+  await reactTo(req({ headers: reader.headers, params: on(made), body: { kind: 'love' } }), ctx);
+  const rows = (await suggestionsR(req({ headers: reader.headers }), ctx)).jsonBody.suggestions;
+  const row = rows.find((entry) => entry.id === writer.id);
+  assert.ok(row, JSON.stringify(rows));
+  assert.equal(row.followKey, `person:${writer.id}`);
+  assert.match(row.reason, /engaged/);
+  assert.ok(rows.every((entry) => entry.id !== reader.id));
+  await toggleFollow(req({ headers: reader.headers, params: { id: row.followKey } }), ctx);
+  assert.ok(!(await suggestionsR(req({ headers: reader.headers }), ctx)).jsonBody.suggestions.some((entry) => entry.id === writer.id));
+});
+
+await check('the week\'s best ranks loved shelves and argued debates', async () => {
+  resetRateLimits();
+  await reactTo(req({ headers: auth, params: on(flexPost), body: { kind: 'fire' } }), ctx);
+  const board = (await leaderboardR(req(), ctx)).jsonBody;
+  assert.ok(board.shelves.some((shelf) => shelf.postId === flexPost.id));
+  assert.ok(board.debates.every((debate) => debate.votes > 0));
+  assert.ok(board.voices.length > 0 && board.voices.every((voice) => voice.reactions > 0));
+});
+
+await check('the feed says how many new posts are waiting, and where the last visit stopped', async () => {
+  const fan = await newBuyer('Feed Fan');
+  await toggleFollow(req({ headers: fan.headers, params: { id: 'usr_demo' } }), ctx);
+  const first = (await socialHome(req({ headers: fan.headers, query: { following: '1' } }), ctx)).jsonBody;
+  const newest = first.posts.find((card) => !card.badges)?.post.createdAt;
+  assert.ok(newest, 'the shop has posts');
+  assert.equal(first.lastVisit, null, 'a first visit has nothing to be caught up on');
+  assert.equal((await homeNew(req({ headers: fan.headers, query: { since: newest } }), ctx)).jsonBody.count, 0);
+  resetRateLimits();
+  await createPost(req({ headers: auth, body: { body: 'Fresh drop', storeId: 'usr_demo' } }), ctx);
+  const waiting = (await homeNew(req({ headers: fan.headers, query: { since: newest } }), ctx)).jsonBody;
+  assert.equal(waiting.count, 1);
+  assert.equal(waiting.names.length, 1);
+  const second = (await socialHome(req({ headers: fan.headers, query: { following: '1' } }), ctx)).jsonBody;
+  assert.equal(second.lastVisit, newest, 'the last visit read up to the newest post then');
+  assert.equal((await homeNew(req({ headers: fan.headers }), ctx)).status, 400);
+});
+
+await check('a card says which of the people you follow took part', async () => {
+  const fan = await newBuyer('Watcher');
+  const friend = await newBuyer('Friend Reactor');
+  const stranger = await newBuyer('Stranger Poster');
+  await toggleFollow(req({ headers: fan.headers, params: { id: `person:${friend.id}` } }), ctx);
+  resetRateLimits();
+  const made = (await createPost(req({ headers: stranger.headers, body: { body: 'Unknown to you' } }), ctx)).jsonBody.post;
+  await reactTo(req({ headers: friend.headers, params: on(made), body: { kind: 'love' } }), ctx);
+  const card = (await readPost(req({ headers: fan.headers, params: on(made) }), ctx)).jsonBody.card;
+  assert.deepEqual(card.followedActed, { count: 1, names: ['Friend Reactor'] });
+  const plain = (await readPost(req({ headers: stranger.headers, params: on(made) }), ctx)).jsonBody.card;
+  assert.ok(!plain.followedActed);
+});
+
+await check('a shop listing what somebody hunts for tells them, within their budget and never itself', async () => {
+  const unread = async () => (await notifications(req({ headers: bystanderAuth }), ctx)).jsonBody.notifications
+    .filter((row) => row.kind === 'want_listed');
+  const before = (await unread()).length;
+  const over = await createListing(req({ headers: auth, body: {
+    title: 'HG Gundam kits, bulk lot for a class (premium)', description: 'Twenty kits', category: 'Model kits',
+    condition: 'MIB', priceMinor: 20_00_000, quantityAvailable: 1, tags: ['gunpla'],
+  } }), ctx);
+  assert.equal(over.status, 201, JSON.stringify(over.jsonBody));
+  assert.equal((await unread()).length, before, 'over their budget is not an answer');
+
+  const fits = await createListing(req({ headers: auth, body: {
+    title: 'HG Gundam kits, bulk lot for a class', description: 'Twenty kits, mixed grades', category: 'Model kits',
+    condition: 'MIB', priceMinor: 9_00_000, quantityAvailable: 1, tags: ['gunpla'],
+  } }), ctx);
+  assert.equal(fits.status, 201, JSON.stringify(fits.jsonBody));
+  const rows = await unread();
+  assert.equal(rows.length, before + 1, 'somebody who joined the hunt hears it is listed');
+  assert.equal(rows[0].link, `/listing/${fits.jsonBody.listing.id}`);
+  const mine = (await notifications(req({ headers: auth }), ctx)).jsonBody.notifications;
+  assert.equal(mine.some((row) => row.kind === 'want_listed'), false, 'a shop is not told about its own listing');
+});
+
+/* ── Polls, debates, competitions and guesses ─────────────────────────── */
+
+/** A buyer with a verified phone: competitions take entries and votes from those only. */
+const verifiedBuyer = async (name) => {
+  const made = await newBuyer(name);
+  const repository = await getRepository();
+  const user = await repository.getUserById(made.id);
+  await repository.updateUser({
+    ...user,
+    verification: { ...user.verification, phone: 'verified', proofs: { ...(user.verification.proofs ?? {}), phone: { number: '+919000000000', via: 'seed', at: new Date().toISOString() } } },
+  });
+  return made;
+};
+/** And one without: the suite's sign-ups arrive verified, so this undoes the phone. */
+const unverifiedBuyer = async (name) => {
+  const made = await newBuyer(name);
+  const repository = await getRepository();
+  const user = await repository.getUserById(made.id);
+  await repository.updateUser({ ...user, verification: { ...user.verification, phone: 'unverified', proofs: { ...(user.verification.proofs ?? {}), phone: null } } });
+  return made;
+};
+const backdate = async (post, change) => (await getRepository()).mutatePost(post.channelId, post.id, change);
+const ago = (ms) => new Date(Date.now() - ms).toISOString();
+
+await check('a photo poll carries a picture on every answer, and a rating poll is always five stars', async () => {
+  resetRateLimits();
+  const photo = await createPost(req({ headers: auth, body: {
+    body: 'Which repaint?',
+    poll: { style: 'photo', options: [{ label: 'Red', photoUrl: '/api/photos/r.jpg' }, { label: 'Blue', photoUrl: '/api/photos/b2.jpg' }, { label: 'Gold', photoUrl: '/api/photos/g.jpg' }] },
+  } }), ctx);
+  assert.equal(photo.status, 201, JSON.stringify(photo.jsonBody));
+  assert.equal(photo.jsonBody.post.poll.style, 'photo');
+  assert.equal(photo.jsonBody.post.poll.options[2].photoUrl, '/api/photos/g.jpg');
+  const missing = await createPost(req({ headers: auth, body: {
+    body: 'Which?', poll: { style: 'photo', options: [{ label: 'A', photoUrl: '/api/photos/r.jpg' }, { label: 'B' }] },
+  } }), ctx);
+  assert.equal(missing.status, 400, 'a photo poll needs every photo');
+  const outside = await createPost(req({ headers: auth, body: {
+    body: 'Which?', poll: { style: 'photo', options: [{ label: 'A', photoUrl: 'https://evil.example/x.jpg' }, { label: 'B', photoUrl: '/api/photos/r.jpg' }] },
+  } }), ctx);
+  assert.equal(outside.status, 400, 'answer photos are our own uploads');
+  const rating = await createPost(req({ headers: auth, body: { body: 'Rate my shelf', photoUrls: ['/api/photos/shelf.jpg'], poll: { style: 'rating', options: ['ignored'] } } }), ctx);
+  assert.equal(rating.status, 201, JSON.stringify(rating.jsonBody));
+  assert.deepEqual(rating.jsonBody.post.poll.options.map((option) => option.label), ['1', '2', '3', '4', '5']);
+});
+
+await check('a debate puts arguments on the voter\'s side, and counts people changing their minds', async () => {
+  resetRateLimits();
+  const voter = await newBuyer('Side Taker');
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'Original or reissue?',
+    poll: { style: 'versus', options: [{ label: 'Original', photoUrl: '/api/photos/o.jpg' }, { label: 'Reissue', photoUrl: '/api/photos/re.jpg' }] },
+    debate: {},
+  } }), ctx)).jsonBody.post;
+  const [a, b] = made.poll.options.map((option) => option.id);
+  await vote(req({ headers: voter.headers, params: on(made), body: { optionId: a } }), ctx);
+  const argued = await commentOn(req({ headers: voter.headers, params: on(made), body: { body: 'The paint on the original is unbeatable' } }), ctx);
+  assert.equal(argued.status, 201, JSON.stringify(argued.jsonBody));
+  assert.equal(argued.jsonBody.comments[0].side, a, 'the argument is on the side they voted for');
+  const moved = await vote(req({ headers: voter.headers, params: on(made), body: { optionId: b } }), ctx);
+  assert.equal(moved.jsonBody.poll.switches, 1);
+  const again = await vote(req({ headers: voter.headers, params: on(made), body: { optionId: b } }), ctx);
+  assert.equal(again.jsonBody.poll.switches, 1, 'voting the same way twice is not a change of mind');
+});
+
+await check('a prize is for a store to give: a person cannot put one up', async () => {
+  resetRateLimits();
+  const person = await newBuyer('Prize Promiser');
+  const refused = await createPost(req({ headers: person.headers, body: {
+    body: 'Best custom wins', contest: { title: 'Customs', entriesHours: 24, votingHours: 24, prizes: [{ amountMinor: 50000 }] },
+  } }), ctx);
+  assert.equal(refused.status, 403);
+  const reward = await createPost(req({ headers: person.headers, body: {
+    body: 'Which?', poll: { options: ['A', 'B'], closesInHours: 24, reward: { amountMinor: 1000, maxVoters: 5 } },
+  } }), ctx);
+  assert.equal(reward.status, 403);
+  const challenge = await createPost(req({ headers: person.headers, body: {
+    body: 'This week', contest: { host: 'figmark', title: 'Weekly', entriesHours: 24, votingHours: 24 },
+  } }), ctx);
+  assert.equal(challenge.status, 403, 'only Figmark runs the weekly challenge');
+});
+
+await check('a store debate with a store-judged prize pays the best argument in store credit', async () => {
+  resetRateLimits();
+  const arguer = await newBuyer('Best Arguer');
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'Which grade is worth it?', storeId: 'usr_demo',
+    poll: { style: 'versus', options: [{ label: 'MG', photoUrl: '/api/photos/mg.jpg' }, { label: 'RG', photoUrl: '/api/photos/rg.jpg' }], closesInHours: 24 },
+    debate: { prize: { amountMinor: 25000, judge: 'store' } },
+  } }), ctx)).jsonBody.post;
+  assert.equal(made.debate.prize.storeId, 'usr_demo');
+  await vote(req({ headers: arguer.headers, params: on(made), body: { optionId: made.poll.options[1].id } }), ctx);
+  const commented = (await commentOn(req({ headers: arguer.headers, params: on(made), body: { body: 'RG has the inner frame' } }), ctx)).jsonBody;
+  const early = await judgeGame(req({ headers: auth, params: on(made), body: { action: 'best', commentId: commented.comment } }), ctx);
+  assert.equal(early.status, 409, 'picked once it closes');
+  await backdate(made, (post) => ({ ...post, poll: { ...post.poll, closesAt: ago(60_000) } }));
+  const stranger = await judgeGame(req({ headers: arguer.headers, params: on(made), body: { action: 'best', commentId: commented.comment } }), ctx);
+  assert.equal(stranger.status, 403, 'only the store judges');
+  const picked = await judgeGame(req({ headers: auth, params: on(made), body: { action: 'best', commentId: commented.comment } }), ctx);
+  assert.equal(picked.status, 200, JSON.stringify(picked.jsonBody));
+  const rewards = (await myRewards(req({ headers: arguer.headers }), ctx)).jsonBody;
+  assert.equal(rewards.credits.length, 1);
+  assert.equal(rewards.credits[0].amountMinor, 25000);
+  assert.equal(rewards.credits[0].storeId, 'usr_demo');
+  assert.ok(rewards.badges.some((badge) => badge.kind === 'debate_winner'));
+  await judgeGame(req({ headers: auth, params: on(made), body: { action: 'best', commentId: commented.comment } }), ctx);
+  assert.equal((await myRewards(req({ headers: arguer.headers }), ctx)).jsonBody.credits.length, 1, 'paid once');
+
+  const { heldCreditMinor } = await import(new URL('placement.js', fns));
+  assert.equal(await heldCreditMinor(await getRepository(), { id: 'ord_none', buyerId: arguer.id, sellerId: 'usr_demo' }), 25000,
+    'the credit comes off their next order at that store');
+  assert.equal(await heldCreditMinor(await getRepository(), { id: 'ord_none', buyerId: arguer.id, sellerId: 'usr_other' }), 0,
+    'and only at that store');
+});
+
+await check('a photo competition takes verified entries, votes when entries close, and pays its podium', async () => {
+  resetRateLimits();
+  const made = await createPost(req({ headers: auth, body: {
+    body: 'Show us your best custom paint job', storeId: 'usr_demo',
+    contest: { title: 'Best custom paint', rules: 'One photo each', entriesHours: 24, votingHours: 24, judging: 'audience',
+      prizes: [{ amountMinor: 50000, note: 'Signed print' }, { amountMinor: 20000 }] },
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const contest = made.jsonBody.post;
+  assert.equal(contest.contest.prizes.length, 2);
+
+  const unverified = await unverifiedBuyer('Unverified Painter');
+  const tried = await enterContest(req({ headers: unverified.headers, params: on(contest), body: { photoUrl: '/api/photos/p0.jpg' } }), ctx);
+  assert.equal(tried.status, 403, JSON.stringify(tried.jsonBody));
+  assert.equal((await enterContest(req({ headers: auth, params: on(contest), body: { photoUrl: '/api/photos/p0.jpg' } }), ctx)).status, 403,
+    'the host does not enter');
+  const painters = [await verifiedBuyer('Painter One'), await verifiedBuyer('Painter Two'), await verifiedBuyer('Painter Three')];
+  for (const [index, painter] of painters.entries()) {
+    const entered = await enterContest(req({ headers: painter.headers, params: on(contest), body: { photoUrl: `/api/photos/p${index + 1}.jpg`, caption: 'Mine' } }), ctx);
+    assert.equal(entered.status, 201, JSON.stringify(entered.jsonBody));
+  }
+  assert.equal((await enterContest(req({ headers: painters[0].headers, params: on(contest), body: { photoUrl: '/api/photos/p9.jpg' } }), ctx)).status, 409,
+    'one entry each');
+
+  const read = (await readPost(req({ headers: auth, params: on(contest) }), ctx)).jsonBody.card;
+  assert.equal(read.post.contest.entries.length, 3);
+  assert.equal(read.social.poll.options.length, 3, 'every entry is an answer in the vote');
+  assert.equal(read.social.host, true);
+  const entryOf = (index) => read.post.contest.entries[index].id;
+
+  const voter = await verifiedBuyer('Contest Voter');
+  assert.equal((await vote(req({ headers: voter.headers, params: on(contest), body: { optionId: entryOf(0) } }), ctx)).status, 409,
+    'no votes while entries are open');
+  await backdate(contest, (post) => ({ ...post, contest: { ...post.contest, entriesCloseAt: ago(60_000) } }));
+  assert.equal((await vote(req({ headers: painters[0].headers, params: on(contest), body: { optionId: entryOf(0) } }), ctx)).status, 403,
+    'not for your own photo');
+  assert.equal((await vote(req({ headers: unverified.headers, params: on(contest), body: { optionId: entryOf(1) } }), ctx)).status, 403,
+    'verified voters only');
+  assert.equal((await vote(req({ headers: voter.headers, params: on(contest), body: { optionId: entryOf(1) } }), ctx)).status, 200);
+  assert.equal((await vote(req({ headers: painters[0].headers, params: on(contest), body: { optionId: entryOf(1) } }), ctx)).status, 200);
+  assert.equal((await vote(req({ headers: painters[1].headers, params: on(contest), body: { optionId: entryOf(0) } }), ctx)).status, 200);
+
+  const live = (await discover(req({ headers: unverified.headers }), ctx)).jsonBody;
+  assert.ok(live.contests.some((card) => card.post.id === contest.id), 'on the competitions row');
+
+  await backdate(contest, (post) => ({ ...post, contest: { ...post.contest, endsAt: ago(1000) }, poll: { ...post.poll, closesAt: ago(1000) } }));
+  const settled = (await readPost(req({ headers: auth, params: on(contest) }), ctx)).jsonBody.card;
+  assert.deepEqual(settled.post.contest.winners.map((winner) => winner.userId), [painters[1].id, painters[0].id]);
+  const first = (await myRewards(req({ headers: painters[1].headers }), ctx)).jsonBody;
+  assert.equal(first.credits[0].amountMinor, 50000);
+  assert.ok(first.badges.some((badge) => badge.kind === 'contest_winner'));
+  assert.equal((await myRewards(req({ headers: painters[0].headers }), ctx)).jsonBody.credits[0].amountMinor, 20000);
+  assert.equal((await myRewards(req({ headers: painters[2].headers }), ctx)).jsonBody.credits.length, 0, 'no votes, no place');
+  await discover(req(), ctx);
+  assert.equal((await myRewards(req({ headers: painters[1].headers }), ctx)).jsonBody.credits.length, 1, 'paid once');
+  assert.ok((await noticesFor(painters[1].id)).some((notice) => notice.kind === 'prize_won'));
+});
+
+await check('a store-judged competition is decided by the store once entries close', async () => {
+  resetRateLimits();
+  const contest = (await createPost(req({ headers: auth, body: {
+    body: 'Best diorama', storeId: 'usr_demo', contest: { title: 'Diorama', entriesHours: 24, judging: 'store', prizes: [{ note: 'Free kit' }] },
+  } }), ctx)).jsonBody.post;
+  assert.equal(contest.poll, null, 'no audience vote');
+  const maker = await verifiedBuyer('Diorama Maker');
+  await enterContest(req({ headers: maker.headers, params: on(contest), body: { photoUrl: '/api/photos/d1.jpg' } }), ctx);
+  const entryId = (await readPost(req({ headers: auth, params: on(contest) }), ctx)).jsonBody.card.post.contest.entries[0].id;
+  assert.equal((await judgeGame(req({ headers: auth, params: on(contest), body: { action: 'winners', entryIds: [entryId] } }), ctx)).status, 409);
+  await backdate(contest, (post) => ({ ...post, contest: { ...post.contest, entriesCloseAt: ago(1000) } }));
+  const decided = await judgeGame(req({ headers: auth, params: on(contest), body: { action: 'winners', entryIds: [entryId] } }), ctx);
+  assert.equal(decided.status, 200, JSON.stringify(decided.jsonBody));
+  assert.equal(decided.jsonBody.card.post.contest.winners[0].userId, maker.id);
+  const rewards = (await myRewards(req({ headers: maker.headers }), ctx)).jsonBody;
+  assert.equal(rewards.credits.length, 0, 'a prize that is not credit is not credit');
+  assert.ok(rewards.badges.some((badge) => badge.kind === 'contest_winner'));
+  const sent = await judgeGame(req({ headers: auth, params: on(contest), body: { action: 'sent', place: 1 } }), ctx);
+  assert.deepEqual(sent.jsonBody.card.post.contest.prizeSent, [1]);
+});
+
+await check('a guess-the-price keeps its answer sealed until the reveal, then names the closest', async () => {
+  resetRateLimits();
+  const near = await newBuyer('Near Guesser');
+  const far = await newBuyer('Far Guesser');
+  const asPerson = await createPost(req({ headers: near.headers, body: { body: 'Guess mine', photoUrls: ['/api/photos/guess.jpg'], guess: { answerMinor: 1000, revealInHours: 24 } } }), ctx);
+  assert.equal(asPerson.status, 403, 'a guess-the-price is a store\'s');
+  const made = (await createPost(req({ headers: auth, body: { body: 'What did this sell for?', storeId: 'usr_demo', photoUrls: ['/api/photos/guess.jpg'], guess: { answerMinor: 450000, revealInHours: 24 } } }), ctx)).jsonBody.post;
+  assert.equal(made.guess.answerMinor, 450000, 'the author sees their own answer when posting');
+  const seen = (await readPost(req({ headers: near.headers, params: on(made) }), ctx)).jsonBody.card;
+  assert.equal(seen.post.guess, null, 'nobody else reads the answer');
+  assert.equal(seen.social.guess.answerMinor, null);
+  assert.equal((await guessPrice(req({ headers: auth, params: on(made), body: { amountMinor: 450000 } }), ctx)).status, 403);
+  const guessed = await guessPrice(req({ headers: near.headers, params: on(made), body: { amountMinor: 440000 } }), ctx);
+  assert.equal(guessed.jsonBody.guess.mine, 440000);
+  await guessPrice(req({ headers: far.headers, params: on(made), body: { amountMinor: 900000 } }), ctx);
+  await backdate(made, (post) => ({ ...post, guess: { ...post.guess, revealAt: ago(1000) } }));
+  const out = (await readPost(req({ headers: far.headers, params: on(made) }), ctx)).jsonBody.card.social.guess;
+  assert.equal(out.revealed, true);
+  assert.equal(out.answerMinor, 450000);
+  assert.equal(out.winner.userId, near.id);
+  assert.ok((await myRewards(req({ headers: near.headers }), ctx)).jsonBody.badges.some((badge) => badge.kind === 'guess_winner'));
+});
+
+await check('a store poll with a voter reward pays the winning side, up to its cap, once it closes', async () => {
+  resetRateLimits();
+  const fans = [await newBuyer('Fan One'), await newBuyer('Fan Two'), await newBuyer('Fan Three')];
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'What should we stock next?', storeId: 'usr_demo',
+    poll: { options: ['Gunpla', 'Figma'], closesInHours: 24, stock: true, reward: { amountMinor: 5000, maxVoters: 1 } },
+  } }), ctx)).jsonBody.post;
+  assert.equal(made.poll.stock, true);
+  await vote(req({ headers: fans[0].headers, params: on(made), body: { optionId: made.poll.options[0].id } }), ctx);
+  await vote(req({ headers: fans[1].headers, params: on(made), body: { optionId: made.poll.options[0].id } }), ctx);
+  await vote(req({ headers: fans[2].headers, params: on(made), body: { optionId: made.poll.options[1].id } }), ctx);
+  const open = (await discover(req({ headers: (await newBuyer('Live Reader')).headers }), ctx)).jsonBody;
+  assert.ok(open.live.some((card) => card.post.id === made.id), 'an open poll is on the Live strip');
+  await backdate(made, (post) => ({ ...post, poll: { ...post.poll, closesAt: ago(1000) } }));
+  await readPost(req({ headers: auth, params: on(made) }), ctx);
+  const paid = await Promise.all(fans.map(async (fan) => (await myRewards(req({ headers: fan.headers }), ctx)).jsonBody.credits.length));
+  assert.deepEqual(paid, [1, 0, 0], 'the earliest winning voter, up to the cap');
+});
+
+await check('a store game reaches its recent buyers too, and reminds who has not played before it closes', async () => {
+  resetRateLimits();
+  const repository = await getRepository();
+  const base = await repository.getOrder('ord_1001');
+  const boughtFrom = (id, buyerId, at) => repository.createOrder({
+    ...structuredClone(base), id, buyerId, sellerId: 'usr_demo', placedAt: at, createdAt: at, updatedAt: at,
+  });
+  const [lately, voted, longAgo] = [await newBuyer('Recent Buyer'), await newBuyer('Voting Buyer'), await newBuyer('Lapsed Buyer')];
+  await boughtFrom('ord_game_recent', lately.id, ago(30 * 86_400_000));
+  await boughtFrom('ord_game_voted', voted.id, ago(30 * 86_400_000));
+  await boughtFrom('ord_game_lapsed', longAgo.id, ago(400 * 86_400_000));
+
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'Which line should we carry?', storeId: 'usr_demo', poll: { options: ['Gunpla', 'Figma'], closesInHours: 24 },
+  } }), ctx)).jsonBody.post;
+  assert.equal(made.hostShopId, 'usr_demo');
+  const heard = async (who, kind) => (await noticesFor(who.id)).filter((row) => row.kind === kind && row.link.includes(made.id)).length;
+  assert.equal(await heard(lately, 'poll_started'), 1, 'a recent buyer hears it started');
+  assert.equal(await heard(longAgo, 'poll_started'), 0, 'a buyer from over a year ago does not');
+
+  await vote(req({ headers: voted.headers, params: on(made), body: { optionId: made.poll.options[0].id } }), ctx);
+  await readPost(req({ headers: auth, params: on(made) }), ctx);
+  assert.equal(await heard(lately, 'game_ending'), 0, 'no reminder while it has most of its time left');
+
+  await backdate(made, (post) => ({ ...post, createdAt: ago(20 * 3_600_000), poll: { ...post.poll, closesAt: new Date(Date.now() + 2 * 3_600_000).toISOString() } }));
+  await readPost(req({ headers: auth, params: on(made) }), ctx);
+  await readPost(req({ headers: lately.headers, params: on(made) }), ctx);
+  assert.equal(await heard(lately, 'game_ending'), 1, 'reminded once, near the end');
+  assert.equal(await heard(voted, 'game_ending'), 0, 'not somebody who already voted');
+  assert.equal(await heard(longAgo, 'game_ending'), 0);
+  const title = (await noticesFor(lately.id)).find((row) => row.kind === 'game_ending').title;
+  assert.match(title, /^2 hours left to vote/);
+});
+
+await check('an account can delete itself with its password, but not while it holds money or a dispute', async () => {
+  const made = await rawSignup(req({
+    body: { acceptTerms: true, displayName: 'Leaving Soon', email: 'leaving@figmark.example', phone: '+919000077001', password: 'a-long-passphrase-1' },
+  }), ctx);
+  assert.equal(made.status, 201);
+  const leaver = { authorization: `Bearer ${made.jsonBody.token}` };
+  assert.equal((await deleteMe(req({ headers: leaver, body: { password: 'not-it' } }), ctx)).status, 403);
+  const gone = await deleteMe(req({ headers: leaver, body: { password: 'a-long-passphrase-1' } }), ctx);
+  assert.equal(gone.status, 200);
+  assert.equal(gone.jsonBody.deleted.user, made.jsonBody.user.id);
+  const again = await login(req({ body: { identifier: 'leaving@figmark.example', password: 'a-long-passphrase-1' } }), ctx);
+  assert.equal(again.status, 401);
+
+  // The demo account is party to an open dispute: refused, and told why.
+  const demo = await login(req({ body: { identifier: DEMO_EMAIL, password: DEMO_PASSWORD } }), ctx);
+  const refused = await deleteMe(req({ headers: { authorization: `Bearer ${demo.jsonBody.token}` }, body: { password: DEMO_PASSWORD } }), ctx);
+  assert.equal(refused.status, 409);
+  assert.match(refused.jsonBody.message, /dispute|money/);
 });
 
 console.log(`\n${passed} checks passed`);

@@ -1,3 +1,4 @@
+import { formatCount } from '../format';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -5,6 +6,7 @@ import {
 } from '@shared/quest';
 import type { StoreAccess } from '@shared/stores';
 import { api, type InviteSummary, type LeaderRow } from '../api';
+import type { PlayerRow } from '@shared/play';
 import { useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { SkeletonText } from '../components/Feedback';
 import {
@@ -251,6 +253,8 @@ export function QuestsPage() {
         {!board ? <SkeletonText lines={3} /> : <Leaderboard board={board} />}
       </section>
 
+      <GamePlayers />
+
       <section className="qpanel">
         <div className="qpanel__head"><h3>Where your XP came from</h3></div>
         {view.breakdown.length === 0 ? (
@@ -260,12 +264,12 @@ export function QuestsPage() {
             {[...view.breakdown].sort((a, b) => Number(a.xp < 0) - Number(b.xp < 0)).map((line) => (
               <div key={line.label} className={`qbreak__row${line.xp < 0 ? ' is-loss' : ''}`}>
                 <dt>{line.label}{line.detail && <small>{line.detail}</small>}</dt>
-                <dd>{line.xp > 0 ? '+' : ''}{line.xp.toLocaleString('en-IN')} XP</dd>
+                <dd>{line.xp > 0 ? '+' : ''}{formatCount(line.xp)} XP</dd>
               </div>
             ))}
             <div className="qbreak__row qbreak__total">
               <dt>Total{view.penalty > 0 && <small>after −{view.penalty} XP of losses</small>}</dt>
-              <dd>{view.xp.toLocaleString('en-IN')} XP</dd>
+              <dd>{formatCount(view.xp)} XP</dd>
             </div>
           </dl>
         )}
@@ -383,9 +387,54 @@ function Leaderboard({ board }: { board: { top: LeaderRow[]; me: LeaderRow | nul
             {row.handle ? <Link to={`/${row.handle}`}>{row.name}</Link> : row.name}
             <small>Level {row.level} · {row.cards} cards</small>
           </span>
-          <b className="qleaders__xp">{row.xp.toLocaleString('en-IN')} XP</b>
+          <b className="qleaders__xp">{formatCount(row.xp)} XP</b>
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * Who is winning the games: competitions, debates and guesses, with every
+ * vote cast counting a point - from the same board Discover's "This week" reads.
+ */
+function GamePlayers() {
+  const { user } = useSession();
+  const [players, setPlayers] = useState<PlayerRow[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.weeklyBest().then((board) => live && setPlayers(board.players ?? [])).catch(() => live && setPlayers([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <section className="qpanel">
+      <div className="qpanel__head">
+        <h3>🏅 Top players</h3>
+        <Link to="/discover#competitions" className="faint">Play</Link>
+        <InfoTip label="About top players">
+          <b>Top players</b>
+          <p>Points from the games: 10 for a competition win, 6 and 4 for second and third, 5 for the best argument or the closest guess, and 1 for every vote.</p>
+        </InfoTip>
+      </div>
+      {!players ? <SkeletonText lines={3} /> : players.length === 0 ? (
+        <p className="faint" style={{ margin: 0 }}>Nobody has played yet. Vote in a poll or enter a competition to get on the board.</p>
+      ) : (
+        <ol className="qleaders">
+          {players.map((row, index) => (
+            <li key={row.userId} className={row.userId === user?.id ? 'is-me' : ''}>
+              <span className={`qleaders__rank qboard__rank--${Math.min(index + 1, 4)}`}>#{index + 1}</span>
+              <Avatar name={row.name} size={30} />
+              <span className="qleaders__who">
+                {row.handle ? <Link to={`/${row.handle}`}>{row.name}</Link> : row.name}
+                <small>{row.wins} win{row.wins === 1 ? '' : 's'} · {row.votes} vote{row.votes === 1 ? '' : 's'}</small>
+              </span>
+              <b className="qleaders__xp">{row.points} pts</b>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }

@@ -1,3 +1,20 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.post__name { font-weight: var(--w-semi); font-size: var(--t-sm); }
+.post--mine { border-color: var(--accent-line); background: var(--accent-soft); }
+.post.dmsg { grid-template-columns: minmax(0, 1fr); }
+.evidence__item { display: grid; gap: 4px; text-decoration: none; color: inherit; }
+.dthread__quote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); color: var(--text); overflow-wrap: anywhere; }
+.drounds { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.dsteps { list-style: none; margin: 0 0 16px; padding: 0; display: flex; align-items: center; gap: 0; overflow-x: auto; scrollbar-width: none; }
+.dsteps__step + .dsteps__step::before { content: ''; width: 18px; height: 2px; margin: 0 6px; background: var(--border-strong); border-radius: 2px; }
+.dsteps__dot {
+  width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%;
+  border: 2px solid var(--border-strong); font-size: var(--t-2xs); font-weight: var(--w-bold); color: #fff;
+}
+.dnote > span:first-child { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); }
+.evidence__item--link { padding: 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-sm); }
+.drounds__item { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--r-md); border: 1px dashed var(--border-strong); }
+
 /*
  * Styles only pages/DisputePage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by
@@ -12,7 +29,7 @@
 /* Dispute header: what it is about as a kicker, the two sides as the title. */
 .dhead { align-items: flex-start; gap: 12px; }
 .dhead__kicker { display: block; font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); }
-.dhead__title { margin: 2px 0 0; font-size: 20px; line-height: 1.25; overflow-wrap: anywhere; }
+.dhead__title { margin: 2px 0 0; font-size: var(--t-lg); line-height: 1.25; overflow-wrap: anywhere; }
 .dsteps__step { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
 .dsteps__step.is-done + .dsteps__step::before { background: var(--accent); }
 .dsteps__step.is-done { color: var(--text-dim); }

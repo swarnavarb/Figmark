@@ -1,3 +1,109 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.meter__fill {
+  height: 100%;
+  width: 100%;
+  border-radius: var(--r-pill);
+  background: var(--grad-blue);
+  transform-origin: left center;
+  /* Defaults to 1, not 0. Two other meters in the app size themselves with an
+     inline width instead of this variable - the lot stage bar and the
+     social fill meter - and a default of 0 scaled both of them to nothing. */
+  transform: scaleX(var(--fill, 1));
+  transition: transform var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
+}
+.meter--social { position: relative; }
+.meter--social .meter__fill { position: absolute; top: 0; bottom: 0; left: 0; height: auto; }
+.meter__fill--booked { background: var(--accent); z-index: 2; }
+.meter__fill--pledged {
+  z-index: 1;
+  background: repeating-linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--accent) 45%, transparent) 0 4px,
+    color-mix(in srgb, var(--accent) 10%, transparent) 4px 9px
+  );
+}
+.fillblock { display: grid; gap: 8px; }
+.fillblock__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gap--warn { color: var(--warn); }
+.gap--ok { color: var(--ok); }
+.gap--dead { color: var(--text-faint); }
+.fillkey { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.fillkey__booked { background: var(--accent); }
+.fillkey__pledged {
+  background: repeating-linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--accent) 45%, transparent) 0 3px,
+    color-mix(in srgb, var(--accent) 10%, transparent) 3px 7px
+  );
+}
+.pile { display: flex; align-items: center; }
+.pile b.pile__more { background: var(--surface-2); color: var(--text-dim); margin-right: 0; font-size: var(--t-2xs); }
+.roster__row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.roster__who { flex: 1; min-width: 0; }
+.roster__quiet {
+  width: 30px; height: 30px; flex: none;
+  display: grid; place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text-dim);
+  font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+.post__foot { display: flex; align-items: center; gap: 14px; color: var(--text-faint); font-size: var(--t-xs); }
+.lp__private {
+  display: flex; align-items: center; gap: 12px; margin: 10px 0; padding: 12px 14px; border-radius: 16px;
+  border: 1px solid var(--pink-line);
+  background: radial-gradient(120% 120% at 100% 0%, rgba(236, 72, 153, 0.2), transparent 60%), var(--surface);
+}
+.lp__privateicon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--pink-soft); font-size: var(--t-lg); flex: none; }
+.buybox__ask:hover { border-color: var(--border-strong); }
+@media (min-width: 900px) {
+  .lp__rail { position: sticky; top: 76px; }
+}
+.lpcard__title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--t-md); }
+.buybox { display: grid; gap: 10px; padding: 14px; }
+.buybox__top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.buybox__adv { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.buybox__acts { display: flex; gap: 8px; }
+.qtystep {
+  display: inline-flex; align-items: center; flex: none;
+  border-radius: var(--r-pill); background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.buybox__buy:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(236, 72, 153, 0.4); background: var(--grad-hero); }
+.buybox__save { flex: 0 0 48px; padding: 0; justify-content: center; }
+.buybox__opening::after { content: '…'; display: inline-block; width: 1em; text-align: left; animation: lp-dots 1s steps(4) infinite; }
+.pocard__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.pocard__what { display: grid; gap: 2px; min-width: 0; }
+.pocard__eyebrow { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--aqua); }
+.fillring { position: relative; display: grid; place-items: center; width: 64px; height: 64px; }
+.gallery__fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gallery__badges { position: absolute; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.hashtags { display: flex; flex-wrap: wrap; gap: 8px; }
+.hashtag:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(168, 85, 247, 0.25); color: var(--text); }
+.posts__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.posts__count {
+  min-width: 26px; padding: 2px 8px; border-radius: var(--r-pill); text-align: center; font-size: var(--t-xs); font-weight: var(--w-semi);
+  background: var(--surface-2); color: var(--text-dim);
+}
+.posts__list { display: grid; gap: 14px; }
+.post__col { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+.sellercard { position: relative; overflow: hidden; display: grid; gap: 12px; padding: 0 14px 14px; }
+.sellercard__hero {
+  position: relative; margin: 0 -14px; padding: 58px 14px 0; isolation: isolate;
+  background: var(--sf-grad, var(--grad-hero));
+  box-shadow: inset 0 -30px 34px -20px rgba(0, 0, 0, 0.45);
+}
+.sellercard__awning { position: absolute; inset: 0 0 auto; height: 40px; z-index: 1; }
+.sellercard__sign { position: relative; z-index: 2; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.sellercard__who { display: grid; gap: 0; min-width: 0; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45); }
+.sellercard__who .dtile__label, .sellercard__who .sellercard__where, .sellercard__who .sellercard__name { color: #fff; }
+.sellercard__stat dd small { font-size: var(--t-xs); color: var(--text-faint); font-weight: var(--w-semi); }
+.sellercard__acts .btn:not(.btn--ghost) { background: var(--sf-grad, var(--grad-hero)); color: #fff; border: 0; }
+.lshare__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+
 /*
  * Styles only pages/ListingPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by
@@ -11,11 +117,14 @@
 .roster__row:last-child { border-bottom: 0; }
 .lp__title { margin: 0; font-family: var(--display); font-size: clamp(26px, 4vw, 38px); line-height: 1.1; letter-spacing: -0.02em; }
 .buybox__price { font-family: var(--display); font-size: 30px; font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1; }
-.buybox__was { font-size: 16px; font-weight: var(--w-medium); color: var(--text-faint); letter-spacing: 0; }
+.buybox__was { font-size: var(--t-md); font-weight: var(--w-medium); color: var(--text-faint); letter-spacing: 0; }
 .buybox__buy:active:not(:disabled) { transform: scale(0.97); }
 .buybox__fine { margin: 0; font-size: var(--t-2xs); color: var(--text-faint); }
 .pocard__title { font-family: var(--display); font-size: var(--t-lg); line-height: 1.15; }
 .pocard__note { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.55; }
+/* The seller's own controls, set apart from what buyers see by a rule above them. */
+.pocard__run { padding-top: 12px; border-top: 1px dashed var(--border); font-size: var(--t-sm); }
+.pocard__run input[type="number"] { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; }
 .fillring__track { fill: none; stroke: rgba(255, 255, 255, 0.08); stroke-width: 6; }
 .gallery__badges .qribbon { position: static; transform: none; border-radius: var(--r-pill); padding: 4px 10px; }
 .hashtag__hash {
@@ -37,7 +146,7 @@
 .post--reply .post__bubble { background: rgba(168, 85, 247, 0.1); }
 .post.is-open .post__bubble { transform: scale(1.02); box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.55), 0 10px 24px rgba(0, 0, 0, 0.35); }
 .post__seller {
-  padding: 1px 7px; border-radius: var(--r-pill); font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
   color: #fff; background: var(--grad-hero);
 }
 .post__time { font-size: var(--t-2xs); color: var(--text-faint); }

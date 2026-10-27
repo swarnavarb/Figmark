@@ -9,6 +9,7 @@ import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb, useConfirm } from '
 import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
 import { DropCard, Lightbox, Linked, copyLink, withReaction } from './SocialPost';
+import { PhotoSales } from './PhotoSales';
 import { figmarkLink, LinkCard } from './LinkCard';
 import { PersonVoice, useVoice } from './SocialVoice';
 import { RoomBar, useLongPress, useScrolledPast } from './SocialChrome';
@@ -27,40 +28,9 @@ import { OpeningCard } from './Showcase';
  * standing out of it.
  */
 
-/* ── What you have seen ────────────────────────────────────────────────── */
-
-const SEEN_KEY = 'figmark.channels.seen';
-
-/**
- * When each room was last opened on this device.
- *
- * Kept on the device rather than on the server: it is a nudge, not a record,
- * and a read receipt per person per room would be a write on every visit for
- * something a phone can remember perfectly well.
- */
-export function seenMap(): Record<string, string> {
-  try {
-    return JSON.parse(window.localStorage.getItem(SEEN_KEY) ?? '{}') as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-export function markSeen(channelId: string) {
-  try {
-    const map = seenMap();
-    map[channelId] = new Date().toISOString();
-    window.localStorage.setItem(SEEN_KEY, JSON.stringify(map));
-  } catch {
-    /* Unread counts just stay; nothing else depends on it. */
-  }
-}
-
-/** How many messages arrived since you last opened it. Never opened: all of the recent ones. */
-export function unreadOf(row: ChannelRow, seen: Record<string, string>): number {
-  const since = seen[row.sellerId];
-  return (row.recent ?? []).filter((at) => !since || at > since).length;
-}
+/* What you have seen: see channelSeen.ts, kept apart so the header can read it without this screen. */
+export { forumHasNews, markSeen, seenMap, unreadOf } from './channelSeen';
+import { seenMap, markSeen, unreadOf, forumHasNews } from './channelSeen';
 
 /* ── The list ──────────────────────────────────────────────────────────── */
 
@@ -151,7 +121,7 @@ function ChannelRowView({ row, unread }: { row: ChannelRow; unread: number }) {
   return (
     <Link to={`/social/c/${row.sellerId}`} className={`chrow${unread > 0 ? ' is-unread' : ''}`}>
       <span className={`chrow__ring${unread > 0 ? ' is-lit' : ''}`}>
-        {row.photoUrl ? <img className="chrow__photo" src={row.photoUrl} alt="" /> : <Avatar name={row.name} size={48} />}
+        {row.photoUrl ? <img loading="lazy" decoding="async" className="chrow__photo" src={row.photoUrl} alt="" /> : <Avatar name={row.name} size={48} />}
       </span>
       <span className="chrow__body">
         <span className="chrow__top">
@@ -266,7 +236,7 @@ function Room() {
   const [replyTo, setReplyTo] = useState<PostCard | null>(null);
   const [fresh, setFresh] = useState(0);
   const [pinAt, setPinAt] = useState(0);
-  const [lightbox, setLightbox] = useState<{ photos: string[]; start: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; start: number; about?: string; by?: string } | null>(null);
   const [following, setFollowing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const known = useRef<Set<string>>(new Set());
@@ -418,7 +388,7 @@ function Room() {
       <Message key={card.post.id} card={card} startsRun={startsRun}
         mine={card.post.authorId === user?.id} isForum={Boolean(isForum)} canPin={canPin}
         onReply={() => setReplyTo(card)} onJump={jump}
-        onOpenPhoto={(start) => setLightbox({ photos: photosOf(card), start })}
+        onOpenPhoto={(start) => setLightbox({ photos: photosOf(card), start, about: card.post.body, by: card.post.authorId })}
         onChange={(change) => patch(card.post.id, change)}
         onNotice={setNotice} />,
     );
@@ -429,7 +399,7 @@ function Room() {
   return (
     <div className="social">
       <RoomBar onBack={back} reveal
-        avatar={channel.photoUrl ? <img className="roombar__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={34} />}
+        avatar={channel.photoUrl ? <img loading="lazy" decoding="async" className="roombar__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={34} />}
         title={<>{channel.name}{channel.tier === 'pro' && <span className="roombar__tier">PRO</span>}</>}
         sub={<>{channel.followerCount ?? 0} followers{channel.handle && <> · @{channel.handle}</>}</>}
         action={channel.handle && (
@@ -441,7 +411,7 @@ function Room() {
           <Icon name="back" size={18} />
         </button>
         <div className="chhero__row">
-          {channel.photoUrl ? <img className="chhero__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={64} />}
+          {channel.photoUrl ? <img loading="lazy" decoding="async" className="chhero__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={64} />}
           <div className="chhero__text">
             <h1 className="chhero__name">{channel.name}</h1>
             {channel.tier === 'pro' && <span className="chhero__tier">PRO</span>}
@@ -521,7 +491,7 @@ function Room() {
           <div className="chmedia">
             {media.flatMap((card) => photosOf(card).map((url, at) => (
               <button key={`${card.post.id}-${at}`} type="button" className="chmedia__tile"
-                onClick={() => setLightbox({ photos: photosOf(card), start: at })}>
+                onClick={() => setLightbox({ photos: photosOf(card), start: at, about: card.post.body, by: card.post.authorId })}>
                 <img src={url} alt={card.post.body || `Photo from ${card.post.authorName}`} loading="lazy" />
               </button>
             )))}
@@ -563,7 +533,7 @@ function Room() {
       </>
       )}
 
-      {lightbox && <Lightbox photos={lightbox.photos} start={lightbox.start} onClose={() => setLightbox(null)} />}
+      {lightbox && <Lightbox photos={lightbox.photos} start={lightbox.start} about={lightbox.about} by={lightbox.by} onClose={() => setLightbox(null)} />}
     </main>
     </div>
   );
@@ -689,6 +659,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
               ))}
             </div>
           )}
+          {photos.length > 0 && <PhotoSales url={photos[0]} about={card.post.body} by={card.post.authorId} tone="inline" />}
           {(linked ? linked.rest : post.body) && !(listing && post.drop) && <p className="cmsg__body"><Linked text={linked ? linked.rest : post.body} /></p>}
           {linked && <LinkCard path={linked.path} compact />}
           {post.opening && (
@@ -699,7 +670,7 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
           {listing && !post.drop && (
             <Link to={`/listing/${listing.id}`} className="cmsg__item">
               {listing.photoUrl
-                ? <img src={listing.photoUrl} alt="" className="cmsg__itemimg" />
+                ? <img loading="lazy" decoding="async" src={listing.photoUrl} alt="" className="cmsg__itemimg" />
                 : <Thumb seed={listing.id} label={listing.title} className="cmsg__itemimg" />}
               <span className="cmsg__itembody">
                 <span className="cmsg__itemname">{listing.title}</span>
@@ -896,7 +867,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
         <div className="writer__photos">
           {photos.map((photo, index) => (
             <div key={photo.key} className={`writer__photo${photo.failed ? ' is-failed' : ''}`}>
-              <img src={photo.preview} alt={`Attached photo ${index + 1}`} />
+              <img loading="lazy" decoding="async" src={photo.preview} alt={`Attached photo ${index + 1}`} />
               {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
                 onClick={() => {
@@ -913,7 +884,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
       {item && (
         <div className="writer__item">
           {item.photoUrl
-            ? <img src={item.photoUrl} alt="" className="writer__itemimg" />
+            ? <img loading="lazy" decoding="async" src={item.photoUrl} alt="" className="writer__itemimg" />
             : <Thumb seed={item.id} label={item.title} className="writer__itemimg" />}
           <span className="writer__itembody">
             <span className="spost__itemtag">For sale</span>
@@ -932,7 +903,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
             <button key={entry.id} type="button" className="stockpick__item"
               onClick={() => { setItemId(entry.id); setPicking(false); }}>
               {entry.photoUrl
-                ? <img src={entry.photoUrl} alt="" className="stockpick__img" />
+                ? <img loading="lazy" decoding="async" src={entry.photoUrl} alt="" className="stockpick__img" />
                 : <Thumb seed={entry.id} label={entry.title} className="stockpick__img" />}
               <span className="stockpick__name">{entry.title}</span>
               <span className="stockpick__price">{formatMoney(entry.priceMinor, entry.currency)}</span>

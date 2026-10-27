@@ -145,6 +145,142 @@ export async function confirmEmail(repository: Repository, user: User, code: str
   await repository.updateUser(user);
 }
 
+/* ── Changing the email ────────────────────────────────────────────────── */
+
+const EMAIL_CHANGE_ATTEMPTS = 5;
+
+/**
+ * Sends a code to the address the account wants to move to. Nothing changes
+ * until the code comes back: whoever asks has to hold the new inbox.
+ */
+export async function startEmailChange(repository: Repository, user: User, address: string): Promise<{ sentTo: string; devCode?: string }> {
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  user.challenges = {
+    ...user.challenges,
+    emailChange: { hash: hashCode(user.id, code), address, expiresAt: minutesFromNow(EMAIL_CODE_MINUTES), attempts: 0 },
+  };
+  if (!devCodesAllowed()) {
+    try {
+      await sendEmail(repository, {
+        to: address,
+        subject: `${code} is your Figmark code`,
+        text: `Enter ${code} in Figmark to make this your account's email. It expires in ${EMAIL_CODE_MINUTES} minutes. If you did not ask for this, ignore this email.`,
+        html: `<p>Enter this code in Figmark to make this your account's email:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p>` +
+          `<p>It expires in ${EMAIL_CODE_MINUTES} minutes. If you did not ask for this, ignore this email.</p>`,
+      });
+    } catch (err) {
+      if (err instanceof EmailUnavailableError) {
+        throw new VerificationError(503, 'email_unavailable', 'Email codes are not going out right now. Try again later.');
+      }
+      throw err;
+    }
+  }
+  user.updatedAt = now();
+  await repository.updateUser(user);
+  return devCodesAllowed() ? { sentTo: address, devCode: code } : { sentTo: address };
+}
+
+/**
+ * Moves the account to the address the code was sent to, verified, and tells
+ * the old address it happened - so an account taken over this way does not
+ * change hands in silence.
+ */
+export async function confirmEmailChange(repository: Repository, user: User, code: string): Promise<void> {
+  const challenge = user.challenges?.emailChange;
+  if (!challenge || Date.parse(challenge.expiresAt) < Date.now()) {
+    throw new VerificationError(410, 'code_expired', 'That code has expired, or none was sent. Start again.');
+  }
+  if (challenge.attempts >= EMAIL_CHANGE_ATTEMPTS) {
+    throw new VerificationError(429, 'too_many_attempts', 'Too many wrong codes. Start again.');
+  }
+  if (!/^\d{6}$/.test(code.trim()) || !sameHash(challenge.hash, hashCode(user.id, code))) {
+    challenge.attempts += 1;
+    await repository.updateUser(user);
+    throw new VerificationError(400, 'wrong_code', 'That code is not right. Check the email and try again.');
+  }
+  const previous = user.email;
+  user.challenges = { ...user.challenges, emailChange: null, email: null, reset: null };
+  if (!(await repository.changeEmail(user, challenge.address))) {
+    throw new VerificationError(409, 'email_taken', 'That email is already on another Figmark account.');
+  }
+  user.verification = {
+    ...user.verification,
+    email: 'verified',
+    proofs: { ...user.verification.proofs, email: { address: challenge.address, at: now() } },
+  };
+  user.updatedAt = now();
+  await repository.updateUser(user);
+  if (!devCodesAllowed() && previous && previous !== challenge.address) {
+    await sendEmail(repository, {
+      to: previous,
+      subject: 'Your Figmark email was changed',
+      text: `The email on your Figmark account was changed to ${challenge.address}. If this was not you, reply to this email or contact Figmark support now.`,
+      html: `<p>The email on your Figmark account was changed to <b>${challenge.address.replace(/[<>&"]/g, '')}</b>.</p>` +
+        '<p>If this was not you, reply to this email or contact Figmark support now.</p>',
+    }).catch(() => undefined);
+  }
+}
+
+/* ── Password reset ────────────────────────────────────────────────────── */
+
+const RESET_CODE_MINUTES = 15;
+const RESET_CODE_ATTEMPTS = 5;
+
+/**
+ * Emails a code that lets the account set a new password.
+ *
+ * Only to an address the account has proved it holds: a code sent to an
+ * unconfirmed address - a typo, somebody else's inbox - would hand that
+ * person the account. The caller answers the same either way, so nobody can
+ * use this to learn which addresses have accounts.
+ */
+export async function startPasswordReset(repository: Repository, user: User): Promise<{ sent: boolean; devCode?: string }> {
+  if (!verifiedChecks(user).email || user.suspended) return { sent: false };
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  user.challenges = {
+    ...user.challenges,
+    reset: { hash: hashCode(user.id, code), address: user.email, expiresAt: minutesFromNow(RESET_CODE_MINUTES), attempts: 0 },
+  };
+
+  if (!devCodesAllowed()) {
+    try {
+      await sendEmail(repository, {
+        to: user.email,
+        subject: `${code} is your Figmark password reset code`,
+        text: `Someone asked to reset the password for your Figmark account. The code is ${code}. It expires in ${RESET_CODE_MINUTES} minutes. ` +
+          'If it was not you, ignore this email: your password stays as it is.',
+        html: `<p>Someone asked to reset the password for your Figmark account. The code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p>` +
+          `<p>It expires in ${RESET_CODE_MINUTES} minutes. If it was not you, ignore this email: your password stays as it is.</p>`,
+      });
+    } catch (err) {
+      if (err instanceof EmailUnavailableError) {
+        throw new VerificationError(503, 'email_unavailable', 'Reset codes are not going out right now. Try again later.');
+      }
+      throw err;
+    }
+  }
+  user.updatedAt = now();
+  await repository.updateUser(user);
+  return devCodesAllowed() ? { sent: true, devCode: code } : { sent: true };
+}
+
+/** Checks and spends a reset code. Throws, counting the attempt, when it is not right. */
+export async function consumePasswordResetCode(repository: Repository, user: User, code: string): Promise<void> {
+  const challenge = user.challenges?.reset;
+  if (!challenge || Date.parse(challenge.expiresAt) < Date.now() || challenge.address !== user.email) {
+    throw new VerificationError(410, 'code_expired', 'That code has expired, or none was sent. Ask for a new one.');
+  }
+  if (challenge.attempts >= RESET_CODE_ATTEMPTS) {
+    throw new VerificationError(429, 'too_many_attempts', 'Too many wrong codes. Ask for a new one.');
+  }
+  if (!/^\d{6}$/.test(code.trim()) || !sameHash(challenge.hash, hashCode(user.id, code))) {
+    challenge.attempts += 1;
+    await repository.updateUser(user);
+    throw new VerificationError(400, 'wrong_code', 'That code is not right. Check the email and try again.');
+  }
+  user.challenges = { ...user.challenges, reset: null };
+}
+
 /* ── Phone, over WhatsApp ──────────────────────────────────────────────── */
 
 /** The exact words the person sends. The webhook reads the code and account back out of it. */

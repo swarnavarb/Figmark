@@ -1,10 +1,13 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.qcrest { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
 /*
  * Styles only pages/SellPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
 .dealfrom { margin: 8px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--pink-soft); font-size: var(--t-sm); }
-.dealfrom__state { margin-left: 6px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--surface-2); font-size: 11px; font-weight: var(--w-bold); }
+.dealfrom__state { margin-left: 6px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--t-xs); font-weight: var(--w-bold); }
 .sellgrid { display: grid; gap: 22px; align-items: start; }
 @media (min-width: 900px) {
   .sellgrid { grid-template-columns: minmax(0, 1fr) 280px; }

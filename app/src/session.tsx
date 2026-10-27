@@ -26,8 +26,12 @@ interface SessionValue {
   missingContainers: string[];
   /** True when a hosted deployment keeps its data in each worker's memory. */
   dataPerWorker: boolean;
-  signIn: (identifier: string, password: string) => Promise<void>;
-  signUp: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string }) => Promise<void>;
+  /** The deployment's SITE_ENVIRONMENT, when it names a test site; null on production and when unset. */
+  testEnvironment: string | null;
+  signIn: (identifier: string, password: string, otp?: string) => Promise<void>;
+  /** Sets a new password with an emailed code and signs in with it. */
+  resetPassword: (identifier: string, code: string, password: string, otp?: string) => Promise<void>;
+  signUp: (body: { displayName: string; username?: string; usernameSuggested?: boolean; email: string; phone: string; password: string; acceptTerms: boolean; captchaToken?: string }) => Promise<void>;
   signOut: () => Promise<void>;
   /** Sign out on every device this account is signed in on, this one included. */
   signOutEverywhere: () => Promise<void>;
@@ -67,6 +71,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessionsInsecure, setSessionsInsecure] = useState(false);
   const [missingContainers, setMissingContainers] = useState<string[]>([]);
   const [dataPerWorker, setDataPerWorker] = useState(false);
+  const [testEnvironment, setTestEnvironment] = useState<string | null>(null);
   const [authPrompt, setAuthPrompt] = useState<{ reason: string | null } | null>(null);
   const [signupEmail, setSignupEmail] = useState<SignupResponse['emailCode'] | null>(null);
   const [verifyPrompt, setVerifyPrompt] = useState<string | null>(null);
@@ -111,6 +116,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setSessionsInsecure(h.auth.sessionSecretSource === 'development');
         setMissingContainers(h.data.missingContainers ?? []);
         setDataPerWorker(h.data.perWorker === true);
+        setTestEnvironment(h.environment && h.environment !== 'production' ? h.environment : null);
       })
       .catch(() => undefined);
     return () => {
@@ -153,15 +159,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => setSessionRejectedHandler(null);
   }, []);
 
-  const signIn = useCallback(async (identifier: string, password: string) => {
+  const signIn = useCallback(async (identifier: string, password: string, otp?: string) => {
     // The warning belongs to the account it was raised for, so signing in as
     // someone else must clear it.
     setWarning(null);
-    const result = await api.login(identifier, password);
+    const result = await api.login(identifier, password, otp);
     justSignedIn.current = true;
     setUser(result.user);
     // The sign-in response can carry only the session cookie; this hands out
     // the device cookie that keeps this browser trusted for the account.
+    void api.me().catch(() => undefined);
+  }, []);
+
+  const resetPassword = useCallback(async (identifier: string, code: string, password: string, otp?: string) => {
+    setWarning(null);
+    const result = await api.confirmPasswordReset({ identifier, code, password, ...(otp ? { otp } : {}) });
+    justSignedIn.current = true;
+    setUser(result.user);
     void api.me().catch(() => undefined);
   }, []);
 
@@ -235,10 +249,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, signIn, signUp, signOut, signOutEverywhere, refresh,
+      user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, testEnvironment, signIn, resetPassword, signUp, signOut, signOutEverywhere, refresh,
       promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt,
     }),
-    [user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, signIn, signUp, signOut, signOutEverywhere, refresh,
+    [user, loading, warning, sessionsInsecure, missingContainers, dataPerWorker, testEnvironment, signIn, resetPassword, signUp, signOut, signOutEverywhere, refresh,
       promptAuth, gate, authPrompt, closeAuth, signupEmail, verifyPrompt, closeVerifyPrompt],
   );
 

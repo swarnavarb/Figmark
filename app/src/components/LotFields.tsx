@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
 import type { LotDetails } from '../api';
+import { Modal as SharedModal } from './ui';
 
 /**
  * The details that describe a lot, in one place.
@@ -148,22 +149,11 @@ export const lotDetailsOf = (lot: Lot): LotDetails => ({
   supplierReference: lot.supplier?.reference ?? '',
 });
 
-/** A centred panel over a scrim; on a phone it becomes a sheet from the bottom. */
-export function Modal({ title, onClose, children }: {
-  title: string;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label={title}
-      onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="modal__panel">
-        <div className="modal__head">
-          <h2>{title}</h2>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="modal__body">{children}</div>
-      </div>
-    </div>
-  );
+/**
+ * A centred panel over a scrim; on a phone it becomes a sheet from the bottom.
+ * The one dialog in ui.tsx, in its panel layout - so it is portalled above the
+ * tab bar and keeps keyboard focus like every other.
+ */
+export function Modal(props: { title: string; onClose: () => void; children: ReactNode }) {
+  return <SharedModal {...props} layout="panel" />;
 }

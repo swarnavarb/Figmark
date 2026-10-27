@@ -107,8 +107,22 @@ for (const file of unimported) {
 }
 assert.equal(unimported.length, 0, `${unimported.length} route module(s) missing from the entry point`);
 
+// The dev server keeps a route table of its own, and every smoke test runs
+// against it - so a route registered for Azure but left out of that table is
+// one no local check ever calls. Profile saving went untested that way.
+const devServer = await readFile(new URL('./dev-server.mjs', import.meta.url), 'utf8');
+const mounted = new Set(
+  [...devServer.matchAll(/\[\s*'(GET|POST|PUT|PATCH|DELETE)'\s*,\s*'\/api\/([^']+)'/g)]
+    .map(([, method, route]) => `${method} ${route.replace(/:[^/]+/g, '{}')}`),
+);
+const unmounted = registrations.flatMap((entry) => entry.methods
+  .map((method) => `${method} ${entry.route.replace(/\{[^}]*\}/g, '{}')}`)
+  .filter((key) => !mounted.has(key)));
+for (const key of unmounted) console.error(`  UNMOUNTED  ${key} is registered but scripts/dev-server.mjs never serves it`);
+assert.equal(unmounted.length, 0, `${unmounted.length} route(s) missing from the dev server`);
+
 console.log(
-  `  ok  ${registrations.length} routes registered: templates, names and shapes unique, every module imported`,
+  `  ok  ${registrations.length} routes registered: templates, names and shapes unique, every module imported and served locally`,
 );
 for (const entry of registrations.sort((a, b) => a.route.localeCompare(b.route))) {
   console.log(`      ${entry.methods.join('/').padEnd(5)} /api/${entry.route}`);

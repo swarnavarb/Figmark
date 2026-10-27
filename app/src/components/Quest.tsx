@@ -1,3 +1,4 @@
+import { formatCount } from '../format';
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react';
@@ -243,7 +244,7 @@ export function LevelRing({ level, progress, size = 40 }: { level: number; progr
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
   return (
-    <span className="qring" style={{ width: size, height: size }} aria-label={`Level ${level}`}>
+    <span className="qring" style={{ width: size, height: size }} role="img" aria-label={`Level ${level}`}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--q-track)" strokeWidth={stroke} />
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="url(#qring-grad)" strokeWidth={stroke}
@@ -312,7 +313,11 @@ export function CollectorChip() {
 /** The first shop you run, as the same chip: its level and XP, one tap from its quests. */
 export function StoreChip() {
   const [shop, setShop] = useState<{ id: string; name: string; level: Awaited<ReturnType<typeof api.growth>>['level'] } | null>(null);
+  // Asked again when the account changes, and not at all for a guest.
+  const userId = useSession().user?.id ?? null;
   useEffect(() => {
+    setShop(null);
+    if (!userId) return;
     let live = true;
     void api.stores().then(async ({ stores }) => {
       const first = stores[0];
@@ -321,7 +326,7 @@ export function StoreChip() {
       if (live) setShop({ id: first.ownerId, name: board.name, level: board.level });
     }).catch(() => undefined);
     return () => { live = false; };
-  }, []);
+  }, [userId]);
   if (!shop) return null;
   const { level } = shop;
   return (
@@ -330,7 +335,7 @@ export function StoreChip() {
       <LevelRing level={level.level} progress={level.progress} size={30} />
       <span className="qchip__text">
         <small>Store</small>
-        <span>{level.points.toLocaleString('en-IN')}{level.next === null ? '' : `/${level.next.toLocaleString('en-IN')}`} XP</span>
+        <span>{formatCount(level.points)}{level.next === null ? '' : `/${formatCount(level.next)}`} XP</span>
       </span>
     </Link>
   );

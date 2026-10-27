@@ -15,8 +15,13 @@ import { keepFresh } from './freshness';
 import { PullToRefresh } from './components/PullToRefresh';
 import { Preloader, liftBootScreen } from './components/Preloader';
 import { loadRouteWords } from './routeWords';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { listenForErrors } from './errors';
+import { primeStartupReads } from './api';
 import './styles.css';
 
+// The reads every screen starts with, as one request, before anything asks.
+primeStartupReads();
 loadRouteWords();
 
 /**
@@ -32,6 +37,8 @@ function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
 }
 
 const FeedPage = page(() => import('./pages/FeedPage'), 'FeedPage');
+const DiscoverPage = page(() => import('./pages/DiscoverPage'), 'DiscoverPage');
+const LegalPage = page(() => import('./pages/LegalPage'), 'LegalPage');
 const ListingPage = page(() => import('./pages/ListingPage'), 'ListingPage');
 const SellPage = page(() => import('./pages/SellPage'), 'SellPage');
 const ShopPage = page(() => import('./pages/ShopPage'), 'ShopPage');
@@ -70,6 +77,9 @@ const ShortLinkPage = page(() => import('./pages/ShortLinkPage'), 'ShortLinkPage
 const InvitePage = page(() => import('./pages/InvitePage'), 'InvitePage');
 const SharedItem = page(() => import('./pages/InvitePage'), 'SharedItem');
 const SharedPage = page(() => import('./pages/InvitePage'), 'SharedPage');
+const SharedPost = page(() => import('./pages/InvitePage'), 'SharedPost');
+const SharedTopic = page(() => import('./pages/InvitePage'), 'SharedTopic');
+const SharedDiscover = page(() => import('./pages/InvitePage'), 'SharedDiscover');
 const PowerSaleBuilderPage = page(() => import('./components/PowerSale'), 'PowerSaleBuilderPage');
 
 /**
@@ -102,6 +112,8 @@ function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<FeedPage />} />
+        {/* Open to everybody, as the catalogue is: the community side, ranked. */}
+        <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/listing/:id" element={<ListingPage />} />
         {/* A short affiliate link: resolved, remembered, then the item. */}
         <Route path="/r/:code" element={<ShortLinkPage />} />
@@ -109,6 +121,9 @@ function App() {
         <Route path="/i/:code" element={<InvitePage />} />
         <Route path="/s/l/:id" element={<SharedItem />} />
         <Route path="/s/p/:handle" element={<SharedPage />} />
+        <Route path="/s/x/:channel/:id" element={<SharedPost />} />
+        <Route path="/s/t/:slug" element={<SharedTopic />} />
+        <Route path="/s/d" element={<SharedDiscover />} />
         <Route path="/sell" element={members(<SellPage />)} />
         <Route path="/shop" element={members(<ShopPage />)} />
         <Route path="/shop/power-sale" element={members(<PowerSaleBuilderPage />)} />
@@ -157,6 +172,8 @@ function App() {
         <Route path="/disputes" element={members(<MyDisputesPage />)} />
         <Route path="/quests" element={members(<QuestsPage />)} />
         <Route path="/learn" element={<LearnPage />} />
+        <Route path="/legal" element={<LegalPage />} />
+        <Route path="/legal/:doc" element={<LegalPage />} />
         <Route path="/tags/:slug" element={<TagPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
@@ -168,6 +185,8 @@ function App() {
   );
 }
 
+// Errors in the browser reach the server's log.
+listenForErrors();
 // Only shows notifications; it caches nothing, so the site loads as before.
 registerServiceWorker();
 // Android's install prompt can arrive at any moment; keep it for the guide.
@@ -186,7 +205,9 @@ createRoot(container).render(
       <SessionProvider>
         <ToastHost>
           <UndoHost>
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
           </UndoHost>
         </ToastHost>
       </SessionProvider>

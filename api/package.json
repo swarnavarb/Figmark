@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist/api/src/index.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json",
@@ -26,5 +26,8 @@
     "@types/node": "^22.10.2",
     "@types/web-push": "^3.6.4",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "@azure/msal-node": "^7.1.1"
   }
 }

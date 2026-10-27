@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { tagKey } from '@shared/shop-tags';
-import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
+import { SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
-import { CATEGORIES, MIN_PRICE_MINOR } from '@shared/catalog';
+import {
+  CATEGORIES, MIN_PRICE_MINOR, canonicalCategory, conditionTagFor, conditionValueForTag, factsOf,
+  missingFields, pruneAttributes, specFor, type Attributes,
+} from '@shared/catalog';
 import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
-import type { Lot } from '@shared/models';
+import type { Lot, PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
+import { CategoryFields } from '../components/CategoryFields';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
@@ -23,7 +27,7 @@ import { CostSheetField, type CostSheetDraft } from '../components/CostSheetFiel
 import { useGoBack } from '../components/ScrollManager';
 import { lotLabel } from '../components/LotName';
 import { NewLotForm } from './LotsPage';
-import { SetupChecklist } from './VerifyPage';
+import { SetupChecklist } from '../components/VerifyNudges';
 import '../styles/SellPage.css';
 
 /**
@@ -80,9 +84,10 @@ function rememberTemplate(id: string): void {
 const DRAFT_KEY = 'figmark:sell-draft';
 
 type SellDraft = {
-  title: string; description: string; category: string; condition: string; price: string;
+  title: string; description: string; category: string; attributes?: Attributes; price: string;
   costSheet: CostSheetDraft | null; terms: ReturnType<typeof termsDraft>;
   shareToChannel: boolean; shareToFeed: boolean; preOrderMode: boolean; fillThreshold: string; preOrderDays: string;
+  whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule;
   tags: string; calc: SavedCalc | null; templateId: string; photos: PhotoDraft[];
   preLot: RouteStep[] | null; shape: Shape; lotId: string;
   /** The listing already made from this form, when only the step after it failed. */
@@ -213,15 +218,34 @@ export function SellPage() {
 
   const [title, setTitle] = useState(restored?.title ?? prefill?.title ?? '');
   const [description, setDescription] = useState(restored?.description ?? prefill?.description ?? '');
-  const [category, setCategory] = useState<string>(restored?.category ?? prefill?.category ?? CATEGORIES[0]!);
-  const [condition, setCondition] = useState<string>(restored?.condition ?? prefill?.condition ?? CONDITION_TAGS[0]);
+  // A draft or template may carry a category from before a rename; it is shown
+  // under its current name.
+  const [category, setCategory] = useState<string>(
+    canonicalCategory(restored?.category ?? prefill?.category) ?? CATEGORIES[0]!);
+  // What this category asks - kind, condition, original or copy, size - kept as
+  // one map so a new question is an edit to the category definition and not
+  // another piece of state here. A grade ("MISB") from a prefill becomes this
+  // category's own wording where one stands for it.
+  const [attributes, setAttributes] = useState<Attributes>(() => {
+    if (restored?.attributes) return restored.attributes;
+    const condition = conditionValueForTag(
+      canonicalCategory(prefill?.category) ?? CATEGORIES[0]!, prefill?.condition);
+    return condition ? { condition } : {};
+  });
+  // Only after a first attempt to publish, so the form does not open covered in
+  // red before anybody has done anything.
+  const [triedPublish, setTriedPublish] = useState(false);
   const [price, setPrice] = useState(() => restored?.price ?? (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
   const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(restored ? restored.costSheet : prefill?.costSheet ?? null);
   const [terms, setTerms] = useState(() => restored?.terms ? { ...termsDraft(), ...restored.terms }
     : termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
   const [shareToChannel, setShareToChannel] = useState(restored?.shareToChannel ?? prefill?.share?.channel ?? true);
   const [shareToFeed, setShareToFeed] = useState(restored?.shareToFeed ?? prefill?.share?.feed ?? true);
-  const [preOrderMode, setPreOrderMode] = useState(restored?.preOrderMode ?? false);
+  // The Create sheet's "Pre-order" opens this form already set to take them.
+  const askedPreOrder = params.get('preorder') === '1';
+  const [preOrderMode, setPreOrderMode] = useState(restored?.preOrderMode ?? askedPreOrder);
+  const [whenShort, setWhenShort] = useState<PreOrderShortRule>(restored?.whenShort ?? 'cancel');
+  const [whenFull, setWhenFull] = useState<PreOrderFullRule>(restored?.whenFull ?? 'keep_open');
   const [fillThreshold, setFillThreshold] = useState(restored?.fillThreshold ?? '20');
   /** Days until bookings close - also the item's expiry, so a pre-order has one date, not two. */
   const [preOrderDays, setPreOrderDays] = useState(restored?.preOrderDays ?? '14');
@@ -250,7 +274,7 @@ export function SellPage() {
   /** The new-lot form, open over this one. */
   const [openingLot, setOpeningLot] = useState(false);
   /** Everything past the basics, folded until asked for. */
-  const [more, setMore] = useState(() => Boolean(restored?.preOrderMode || prefill?.costSheet || prefill?.quantity));
+  const [more, setMore] = useState(() => Boolean(restored?.preOrderMode || askedPreOrder || prefill?.costSheet || prefill?.quantity));
   /* The listing this form already made, when publishing got that far and the
      private-deal message after it did not. Publishing again then only retries
      the message, rather than making a second copy of the item. */
@@ -266,8 +290,8 @@ export function SellPage() {
   const latest = useRef<SellDraft | null>(null);
   const published = useRef(false);
   latest.current = {
-    title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, preOrderDays, tags, calc, templateId, photos, preLot, shape, lotId,
+    title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
+    preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId,
     createdListingId,
   };
   useEffect(() => {
@@ -275,16 +299,20 @@ export function SellPage() {
       if (!published.current && latest.current) writeDraft(draftKey, latest.current);
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [draftKey, title, description, category, condition, price, costSheet, terms, shareToChannel, shareToFeed,
-    preOrderMode, fillThreshold, preOrderDays, tags, calc, templateId, photos, preLot, shape, lotId,
+  }, [draftKey, title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
+    preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId,
     createdListingId]);
   useEffect(() => () => {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
   }, [draftKey]);
 
+  // Saved calculations, lots and templates are a verified seller's: an
+  // unverified one is not allowed to read them, so the form does not ask.
+  const canSell = Boolean(user?.capabilities.canSell);
   useEffect(() => {
+    if (!canSell) return;
     void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
-  }, [storeId]);
+  }, [storeId, canSell]);
 
   /** The tags this shop is known for, offered while listing. */
   const [shopTags, setShopTags] = useState<string[]>([]);
@@ -309,6 +337,7 @@ export function SellPage() {
   // The seller's open lots, so an item can be filed as it is listed rather
   // than published first and tidied up afterwards.
   useEffect(() => {
+    if (!canSell) return;
     let cancelled = false;
     void api
       .myLots()
@@ -320,9 +349,10 @@ export function SellPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canSell]);
 
   useEffect(() => {
+    if (!canSell) return;
     let cancelled = false;
     void api
       .templates()
@@ -341,8 +371,9 @@ export function SellPage() {
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
-    // Once: re-applying on every render would undo edits as they were typed.
-  }, []);
+    // Once (and once more if selling opens up): re-applying on every render
+    // would undo edits as they were typed.
+  }, [canSell]);
 
   /**
    * What the last template put in each field, so switching to another one
@@ -350,6 +381,7 @@ export function SellPage() {
    * one leaves blank - without touching anything typed by hand since.
    */
   const applied = useRef<{ category: string; tags: string; condition: string; description: string } | null>(null);
+  const conditionNow = attributes['condition'] ?? '';
 
   /**
    * Fill the form in from a template, leaving everything editable.
@@ -359,19 +391,30 @@ export function SellPage() {
    */
   function applyTemplate(template: PostTemplate, initial = false) {
     const fill = fillFrom(template);
+    const templateCategory = canonicalCategory(fill.category) ?? CATEGORIES[0]!;
     const next = {
-      category: fill.category || CATEGORIES[0]!,
+      category: templateCategory,
       tags: fill.tags ?? '',
-      condition: fill.condition || CONDITION_TAGS[0],
+      // The template's grade, in this category's own wording where one stands for it.
+      condition: conditionValueForTag(templateCategory, fill.condition) ?? '',
       description: fill.description ?? '',
     };
     const before = applied.current;
     // Untouched since the last template (or, first time, never prefilled).
     const free = (field: keyof typeof next, current: string, prefilled = false) =>
       before ? current === before[field] : !prefilled;
-    if (free('category', category)) setCategory(next.category);
+    const categoryFree = free('category', category);
+    if (categoryFree) setCategory(next.category);
     if (free('tags', tags)) setTags(next.tags);
-    if (free('condition', condition)) setCondition(next.condition);
+    if (free('condition', conditionNow)) {
+      setAttributes(categoryFree
+        ? (next.condition ? { condition: next.condition } : {})
+        : (current) => {
+          const rest = { ...current };
+          if (next.condition) rest['condition'] = next.condition; else delete rest['condition'];
+          return pruneAttributes(category, rest);
+        });
+    }
     if (free('description', description, initial && Boolean(prefill?.description))) setDescription(next.description);
     applied.current = next;
     setPreLot(template.preLotRoute?.steps ?? null);
@@ -391,6 +434,18 @@ export function SellPage() {
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
   const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR;
+  // Said beside a button that will not press, so nobody is left guessing why.
+  const publishBlocker = title.trim().length <= 2 ? 'Give it a title of at least 3 characters.'
+    : priceMinor < MIN_PRICE_MINOR ? `Set a price of at least ${formatMoney(MIN_PRICE_MINOR)}.`
+      : null;
+  // The category's required questions are asked after the first press of
+  // Publish, with the unanswered ones marked, rather than leaving a button
+  // that will not press.
+  const missing = missingFields(category, attributes);
+  // The grade the rest of the app understands, derived from the category's own
+  // wording ("Deadstock", "New with tags") rather than asked for twice.
+  const condition = conditionTagFor(category, attributes) ?? 'LOOSE';
+  const facts = factsOf({ category, condition, attributes });
   // The lot is the answer: in one means import, out of one means in hand.
   const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
   const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;
@@ -417,7 +472,7 @@ export function SellPage() {
       preOrdering ? `Pre-order · ${fillThreshold || 2} bookings` : null,
       !preOrdering ? (terms.quantityMode === 'multiple' ? 'No fixed count' : `${Number(terms.quantity) || 0} in stock`) : null,
       terms.advance ? `${Number(terms.advancePercent) || 20}% advance` : null,
-      terms.limited && !deal ? `Ends in ${terms.days} days` : null,
+      terms.limited && !deal ? `Ends in ${terms.days} ${Number(terms.days) === 1 ? 'day' : 'days'}` : null,
       terms.affiliate && !deal ? 'Affiliate commission' : null,
       !deal ? (shareToChannel || shareToFeed
         ? `Posts to ${[shareToChannel && 'channel', shareToFeed && 'feed'].filter(Boolean).join(' & ')}`
@@ -443,6 +498,11 @@ export function SellPage() {
 
   async function publish(event: FormEvent) {
     event.preventDefault();
+    if (missing.length > 0) {
+      setTriedPublish(true);
+      setError(`Still to answer: ${missing.map((field) => field.label.replace(/\?$/, '').toLowerCase()).join(', ')}.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -453,6 +513,7 @@ export function SellPage() {
         description: description.trim(),
         category,
         condition,
+        attributes,
         priceMinor,
         // A pre-order has no fixed count, and its bookings-close date is
         // the date it comes down.
@@ -475,6 +536,8 @@ export function SellPage() {
           ? {
               fillThreshold: Math.max(2, Number(fillThreshold) || 2),
               cutoffAt: closesAt,
+              whenShort,
+              whenFull,
             }
           : null,
         sourcing: effectiveSourcing,
@@ -638,25 +701,35 @@ export function SellPage() {
                 <input type="number" min="1" step="1" value={price} inputMode="numeric"
                   onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
               </label>
-              <label className="field">
-                <span>Condition</span>
-                <select value={condition} onChange={(e) => setCondition(e.target.value)}>
-                  {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-                </select>
-              </label>
             </div>
+            {/* What is it? Tags, not a dropdown: every category is visible at
+                once, and the line under them says what lives in the one picked. */}
+            <div className="field" role="group" aria-label="Category">
+              <span>Category</span>
+              <div className="tags">
+                {CATEGORIES.map((entry) => (
+                  <button key={entry} type="button" className={`tag${category === entry ? ' is-on' : ''}`}
+                    aria-pressed={category === entry}
+                    onClick={() => {
+                      setCategory(entry);
+                      setAttributes((current) => pruneAttributes(entry, current));
+                    }}>
+                    {entry}
+                  </button>
+                ))}
+              </div>
+              <span className="field__hint">{specFor(category)?.blurb}</span>
+            </div>
+            {/* The questions this category asks. A shirt has a size and a figure
+                has a box grade; one shared form asked everybody the wrong things. */}
+            <CategoryFields category={category} value={attributes} onChange={setAttributes}
+              showMissing={triedPublish} />
             <label className="field">
               <span>Description</span>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
                 placeholder="Condition, what's included…" />
             </label>
             <div className="field-row">
-              <label className="field">
-                <span>Category</span>
-                <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-                </select>
-              </label>
               <div className="field">
                 <label htmlFor="sell-tags">Tags</label>
                 <input id="sell-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, sealed" />
@@ -721,10 +794,11 @@ export function SellPage() {
               {!deal && (
                 <PreOrderBox on={preOrderMode} onToggle={setPreOrderMode}
                   units={fillThreshold} onUnits={setFillThreshold}
-                  closes={preOrderDays} onCloses={setPreOrderDays} />
+                  closes={preOrderDays} onCloses={setPreOrderDays}
+                  whenShort={whenShort} onWhenShort={setWhenShort} whenFull={whenFull} onWhenFull={setWhenFull} />
               )}
 
-              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} />
+              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} priceMinor={priceMinor} />
 
               {/* Telling people is part of listing, not a second job to remember
                   afterwards. Both on unless the seller says otherwise. */}
@@ -742,6 +816,8 @@ export function SellPage() {
           )}
 
           {error && <ErrorNotice message={error} />}
+
+          {verified && publishBlocker && <p className="field__hint" role="status">{publishBlocker}</p>}
 
           {/* Pinned to the bottom of a phone screen, so it is never a scroll away. */}
           <div className="sellform__bar">
@@ -765,7 +841,7 @@ export function SellPage() {
             <Thumb seed={title || 'preview'} label={title || 'Your listing'} photo={leadPhoto({ photos })}
               className="thumb qloot__art">
               <RarityRibbon tier="new" />
-              <span className="qgrade">{condition}</span>
+              <span className="qgrade">{attributes['condition'] ? facts.condition : 'Pick a condition'}</span>
               {preOrderMode && !deal && <span className="qsticker-tag">Pre-order</span>}
             </Thumb>
             {terms.advance && <AdvanceStrip percent={Number(terms.advancePercent) || 20} />}
@@ -775,6 +851,8 @@ export function SellPage() {
               <span className="qloot__meta">
                 <b className={effectiveSourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[effectiveSourcing]}</b>
                 {' · '}{category}
+                {facts.authenticity && <>{' · '}<b className={facts.authenticity.genuine ? 'qok' : ''}>{facts.authenticity.label}</b></>}
+                {facts.size && <>{' · '}{facts.size}</>}
               </span>
               <span className="qloot__foot">
                 <span className="faint">just now</span>

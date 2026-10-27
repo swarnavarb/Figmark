@@ -3,7 +3,11 @@ import type { DealState } from './deals.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
-import type { ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe } from './social.js';
+import type { FeedPrefs } from './feed.js';
+import type { Badge, GameStage, PostContest, PostGuess, StoreCredit } from './play.js';
+import type {
+  PostDebate, PostFlex, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
+} from './social.js';
 import type {
   ConditionTag,
   FulfilmentStage,
@@ -117,6 +121,10 @@ export interface TradeOverride {
  */
 export interface VerificationChallenges {
   email?: { hash: string; address: string; expiresAt: string; sentAt: string; attempts: number } | null;
+  /** A code sent to a new address the account wants to move its email to. */
+  emailChange?: { hash: string; address: string; expiresAt: string; attempts: number } | null;
+  /** A password reset code emailed to the account's verified address. */
+  reset?: { hash: string; address: string; expiresAt: string; attempts: number } | null;
   phone?: {
     hash: string;
     expiresAt: string;
@@ -188,6 +196,8 @@ export interface User extends BaseDocument {
   messageBlocks?: string[];
   /** Conversations this account keeps but is not told about: no unread count. */
   mutedThreads?: string[];
+  /** Who the feed should leave out, what was saved to read again, where the feed was read up to. */
+  feedPrefs?: FeedPrefs;
   /**
    * Platform administration: verification queue, dispute console, payouts.
    * A real assigned role, not a capability derived from verification, so it is
@@ -257,6 +267,22 @@ export interface User extends BaseDocument {
    * every account no dispute has been lost by.
    */
   standing?: CommunityStanding | null;
+  /**
+   * Two-factor sign-in with an authenticator app. `secret` is the shared TOTP
+   * key, `lastStep` the newest 30-second step already used (so no code works
+   * twice), `recovery` the hashes of the unused one-time recovery codes.
+   * `pending` is a key being set up, not yet confirmed with a code. Never
+   * leaves the API (stripped from every response by name).
+   */
+  mfa?: {
+    secret: string | null;
+    enabledAt: string | null;
+    lastStep: number | null;
+    recovery: string[];
+    pending: { secret: string; createdAt: string } | null;
+  } | null;
+  /** Which version of the Terms and Privacy Policy the account agreed to, and when. Absent on older accounts. */
+  consent?: { terms: string; at: string } | null;
   /** Soft-disable without deleting history. */
   suspended: boolean;
   /**
@@ -310,6 +336,13 @@ export interface User extends BaseDocument {
   affiliateOrderIds?: string[];
   /** This person's short link code for each item, so sharing twice gives the same link. */
   affiliateLinks?: Record<string, string>;
+  /**
+   * Store credit won in competitions, debates and polls, spendable only at
+   * the shop that gave it. Stored in the account's `rewards` part.
+   */
+  storeCredits?: StoreCredit[];
+  /** What this person has won, for their page. In the `rewards` part too. */
+  badges?: Badge[];
   /** This person's invite code, for `/i/<code>`: made the first time they invite anybody. */
   inviteCode?: string;
   /** Who brought this account to Figmark, if anybody did. Set once, at sign-up. */
@@ -817,6 +850,8 @@ export interface ListingPhoto {
    * same order. Absent on rows written before photos could be uploaded at all.
    */
   url?: string;
+  /** A small copy for cards and grids; absent on photos stored before these were made, and on pasted links. */
+  thumbUrl?: string;
   /** Perceptual hash, reserved for reverse-image search. */
   imageHash: string | null;
   isPrimary: boolean;
@@ -828,7 +863,21 @@ export interface Listing extends BaseDocument {
   title: string;
   description: string;
   category: string;
+  /**
+   * The legacy four-grade condition (MISB, MIB, BIB, LOOSE).
+   *
+   * Derived from the category's own condition choice in `attributes` where
+   * there is one, so a "Deadstock" shoe or a "New with tags" shirt still has a
+   * grade the lot tracker and the packing estimate understand.
+   */
   condition: ConditionTag;
+  /**
+   * The answers to the questions this category asks: kind, condition in the
+   * category's own words, original-or-copy, size, scale and so on. Field keys
+   * and options are defined in shared/category-specs. Optional because
+   * listings written before categories had their own questions have none.
+   */
+  attributes?: Record<string, string>;
   status: ListingStatus;
   /** Price in minor units (paise) to avoid float drift. */
   priceMinor: number;
@@ -1021,9 +1070,40 @@ export interface PreOrder {
    * offered to whoever is behind it.
    */
   pledgeDueAt?: string | null;
-  /** When the cutoff passed without the meter filling. */
+  /** When the campaign ended without going ahead: short at the cutoff, or called off. */
   closedAt?: string | null;
+  /**
+   * What happens if the cutoff comes and it is short, chosen by the seller.
+   *
+   * `cancel` closes it and refunds everyone; `proceed` goes ahead with whoever
+   * is in; `ask` pauses it and asks the seller, who has DECISION_HOURS to say.
+   * Absent on campaigns made before sellers could choose, which closed - so
+   * absent reads as `cancel`.
+   */
+  whenShort?: PreOrderShortRule;
+  /**
+   * What happens to people who come after it fills.
+   *
+   * `keep_open` takes more bookings until the cutoff; `waitlist` queues them
+   * behind the places that are taken, for the seller to admit; `close` stops
+   * taking anyone. Absent reads as `keep_open`, which is what it always did.
+   */
+  whenFull?: PreOrderFullRule;
+  /**
+   * Set when it came up short under `ask`: the seller has until then to go
+   * ahead, extend or cancel, and it cancels itself if they say nothing.
+   */
+  decisionDueAt?: string | null;
+  /** The seller went ahead with fewer than the threshold. */
+  proceededShortAt?: string | null;
+  /** When the one "last call" before the cutoff went out, so it goes out once. */
+  lastCallAt?: string | null;
+  /** Units queued after it filled. Denormalised like the other two counts. */
+  waitlistCount?: number;
 }
+
+export type PreOrderShortRule = 'cancel' | 'proceed' | 'ask';
+export type PreOrderFullRule = 'keep_open' | 'waitlist' | 'close';
 
 /**
  * "I am in, if enough others are."
@@ -1054,6 +1134,22 @@ export interface Pledge extends BaseDocument {
   broughtBy: string | null;
   /** The order this became, once the pledge was called in and paid. */
   convertedOrderId: string | null;
+  /**
+   * Joined after it filled, under `whenFull: 'waitlist'`: queued, not counted,
+   * until the seller admits them or a place frees up.
+   */
+  waitlisted?: boolean;
+  /**
+   * Admitted off the waitlist: their own deadline to book, in place of the
+   * campaign's `pledgeDueAt`, which had already started before they were in.
+   */
+  offerDueAt?: string | null;
+  /**
+   * No longer holding a place: called in and not paid in time, or let go from
+   * the waitlist. Kept rather than deleted, because it carries who brought
+   * them in and the seller can see who dropped out.
+   */
+  lapsedAt?: string | null;
 }
 
 /** Public Q&A on a listing, visible to everyone - distinct from private chat. */
@@ -2410,6 +2506,21 @@ export interface Post extends BaseDocument {
   boughtBy?: string[];
   /** A question with a few answers to pick from. */
   poll?: StoredPoll | null;
+  /** A collection flex: the photos are a shelf, and these are its pieces. */
+  flex?: PostFlex | null;
+  /** A two-sided debate: photo A against photo B, voted on by the poll. */
+  debate?: PostDebate | null;
+  /** A photo competition this post runs; its audience vote is the post's poll. */
+  contest?: PostContest | null;
+  /** A guess-the-price, sealed until it is revealed. */
+  guess?: PostGuess | null;
+  /**
+   * The shop running this game, when a shop is: its followers and recent
+   * buyers heard when it started, and hear again before it closes.
+   */
+  hostShopId?: string | null;
+  /** When each "ending soon" reminder went out. Stamped first, so it goes out once. */
+  lastCalls?: Partial<Record<GameStage, string>>;
   /** Set when this post is somebody else's, passed on to the reposter's followers. */
   repostOf?: RepostRef | null;
   /** A short line set on one of the brand gradients. */
@@ -2442,6 +2553,18 @@ export interface Post extends BaseDocument {
    * Each is a post of its own there; this is so a card can say where else.
    */
   alsoIn?: { forumId: string; forumName: string; postId: string }[] | null;
+  /**
+   * How often it was on somebody's screen, opened, and for how long in all.
+   *
+   * Counted rather than kept per reader: what ranking needs is whether people
+   * stop on it, not who did. A post shown a great deal that nobody touches is
+   * weighed down; one people linger on is lifted before anybody reacts.
+   */
+  views?: number;
+  opens?: number;
+  dwellMs?: number;
+  /** When the voters were told how a debate ended. Set once, so they are told once. */
+  resultsSentAt?: string | null;
 }
 
 /**
@@ -2661,6 +2784,10 @@ export type NotificationKind =
   /** A forum's founder or a moderator warned, removed or appointed you. */
   | 'forum_moderation'
   | 'want_answered'
+  /** A shop listed something that answers your want, before anybody offered it to you. */
+  | 'want_listed'
+  /** A new ISO matches something this seller has listed. */
+  | 'want_matched'
   | 'payment_claimed'
   | 'payment_received'
   | 'credit_refunded'
@@ -2692,6 +2819,18 @@ export type NotificationKind =
   | 'preorder_filled'
   | 'preorder_due'
   | 'preorder_closed'
+  /** A called-in pledge was not paid in time, and the place was let go. */
+  | 'preorder_lapsed'
+  /** A place opened for somebody on the waitlist. */
+  | 'preorder_offer'
+  /** A pre-order came up short and the seller has to decide what happens. */
+  | 'preorder_decide'
+  /** The seller changed the threshold, the cutoff or the outcome of a pre-order you are in. */
+  | 'preorder_changed'
+  /** One day left and still short: the one reminder before a cutoff. */
+  | 'preorder_last_call'
+  /** Somebody joined a pre-order through your link. */
+  | 'preorder_brought'
   | 'sale_opened'
   | 'sale_item'
   | 'order_placed'
@@ -2711,6 +2850,18 @@ export type NotificationKind =
   | 'post_commented'
   | 'comment_replied'
   | 'post_shared'
+  /** Somebody named you, or a store you speak for, with an @ in a post or a comment. */
+  | 'mentioned'
+  /** A debate you voted in closed: which side won. */
+  | 'debate_result'
+  /** A shop you follow started a poll, a debate, a competition or a guess. */
+  | 'poll_started'
+  /** A shop's game you have not played yet closes within hours. */
+  | 'game_ending'
+  /** A competition you entered or run moved: voting opened, winners named. */
+  | 'contest_update'
+  /** You won something: store credit, a badge, or both. */
+  | 'prize_won'
   /** A service store's application was decided, or a lot was booked with one. */
   | 'service_store'
   /** An artist commission moved: quoted, paid, finished, shipped. */

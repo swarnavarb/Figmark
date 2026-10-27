@@ -88,7 +88,7 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
             onDragStart={() => setDragging(index)}
             onDragEnd={() => setDragging(null)}
           >
-            <img src={photo.url} alt={`Item photo ${index + 1}`} />
+            <img loading="lazy" decoding="async" src={photo.url} alt={`Item photo ${index + 1}`} />
             {photo.isPrimary && <figcaption>Main</figcaption>}
             <div className="photo__acts">
               <button type="button" className="iconbtn" aria-label={`Move photo ${index + 1} left`}

@@ -21,7 +21,7 @@ import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
 import { getPhotoStore } from '../storage/index.js';
-import { readPhoto } from './template-routes.js';
+import { readPhotoRequest } from './template-routes.js';
 import { earnedTags } from '../../../shared/shop-tags.js';
 
 /**
@@ -59,7 +59,8 @@ async function handlesFor(userId: string, repository: Repo): Promise<MessagePart
       displayName: me.sellerProfile!.storefrontName,
     });
   }
-  for (const owner of await repository.listStoreOwners()) {
+  // Only the shops that name this account as a manager can lend it their voice.
+  for (const owner of await repository.listStoresManagedBy(userId)) {
     if (owner.id === userId) continue;
     const access = accessFor(owner, userId);
     if (!access?.permissions.includes('posts')) continue;
@@ -690,14 +691,7 @@ async function uploadChatPhoto(request: HttpRequest, _context: InvocationContext
   const slow = await tooFast(user.id, 'chatphoto');
   if (slow) return slow;
 
-  let body: { dataUrl?: string };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return error(400, 'invalid_body', 'Request body must be JSON.');
-  }
-
-  const read = readPhoto(body.dataUrl);
+  const read = await readPhotoRequest(request);
   if ('refusal' in read) return read.refusal;
   const photo = read.photo;
   const stored = await (await getPhotoStore()).uploadPrivate(photo.bytes, photo.contentType, user.id);
@@ -1024,6 +1018,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     lastSeenAt: user.lastSeenAt ?? null,
     // Which checks the account behind this page passed - a shop's are its owner's.
     verified: verifiedChecks(user),
+    // What the person has won in competitions, debates and guesses: a person's page only.
+    gameBadges: isStore ? [] : [...(user.badges ?? [])].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
     /** What the tabs and chips count, so neither has to guess. */
     counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },
     // Active first, then sold out, then expired.

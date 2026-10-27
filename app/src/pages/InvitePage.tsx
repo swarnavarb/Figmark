@@ -135,3 +135,21 @@ export function SharedPage() {
   const { search } = useLocation();
   return <Navigate to={`/${encodeURIComponent(handle)}${inviteOnly(search)}`} replace />;
 }
+
+/** `/s/x/<channel>/<post>`: a shared post, opened inside the app. */
+export function SharedPost() {
+  const { channel = '', id = '' } = useParams();
+  return <Navigate to={`/social/p/${encodeURIComponent(channel)}/${encodeURIComponent(id)}`} replace />;
+}
+
+/** `/s/t/<topic>`: a shared topic. */
+export function SharedTopic() {
+  const { slug = '' } = useParams();
+  return <Navigate to={`/tags/${encodeURIComponent(slug)}`} replace />;
+}
+
+/** `/s/d`: Discover, shared. */
+export function SharedDiscover() {
+  const { search } = useLocation();
+  return <Navigate to={`/discover${inviteOnly(search)}`} replace />;
+}

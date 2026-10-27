@@ -4,6 +4,7 @@ import type { getRepository } from '../data/index.js';
 import { actorName } from '../../../shared/notifications.js';
 import { notify } from './notify.js';
 import { refreshIdentity } from '../shop-identity.js';
+import { renewShowcaseSales } from '../data/seed-showcase.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -342,9 +343,10 @@ export async function advancePowerSale(
  */
 export async function releaseItems(repository: Repo, sale: PowerSale, now = new Date()): Promise<void> {
   const stamp = now.toISOString();
-  for (const item of sale.items) {
-    if (!item.listingId || item.liftedAt) continue;
-    const listing = await repository.getListing(item.listingId);
+  const pending = sale.items.filter((item) => item.listingId && !item.liftedAt);
+  const listings = await Promise.all(pending.map((item) => repository.getListing(item.listingId!)));
+  for (const [index, item] of pending.entries()) {
+    const listing = listings[index];
     if (!listing) continue;
     await repository.updateListing({
       ...listing,
@@ -367,6 +369,7 @@ export async function releaseItems(repository: Repo, sale: PowerSale, now = new 
  * sales it touched, for the log.
  */
 export async function tickPowerSales(repository: Repo, now = new Date()): Promise<number> {
+  await renewShowcaseSales(repository, now).catch(() => 0);
   const live = await repository.listLivePowerSales();
   for (const sale of live) {
     try {

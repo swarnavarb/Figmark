@@ -4,6 +4,7 @@ import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handl
 import { ApiRequestError, api } from '../api';
 import { ErrorNotice, Icon } from '../components/ui';
 import { useSession } from '../session';
+import { Captcha } from '../components/Captcha';
 
 type Mode = 'signin' | 'signup';
 
@@ -88,6 +89,15 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const [phone, setPhone] = useState('');
   /** Whether the username field is unfolded; most people keep the one made from their name. */
   const [pickHandle, setPickHandle] = useState(false);
+  /** Showing the password reset form in place of sign-in. */
+  const [resetting, setResetting] = useState(false);
+  /** Set once the server asks this account for its authenticator code. */
+  const [askOtp, setAskOtp] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  /** Turnstile's site key when the server asks sign-up for a CAPTCHA, and the token it gave. */
+  const [captchaKey, setCaptchaKey] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   // The seeded sign-in hint, shown only while the mock provider is active.
   useEffect(() => {
@@ -98,6 +108,7 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
         if (cancelled) return;
         if (health.auth.mode === 'mock') setDemo(health.auth.demoAccounts);
         setDurable(health.auth.accountsDurable);
+        setCaptchaKey(health.auth.captchaSiteKey ?? null);
         // Say why sign-in cannot work before the form is filled in, rather
         // than letting an empty or unreachable database answer a correct
         // password with "that password is wrong".
@@ -153,11 +164,17 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
     setBusy(true);
     setError(null);
     try {
-      if (mode === 'signin') await signIn(identifier, password);
-      else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password });
-      else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password });
+      if (mode === 'signin') await signIn(identifier, password, askOtp ? otp : undefined);
+      else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password, acceptTerms: agreed, captchaToken: captchaToken ?? undefined });
+      else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password, acceptTerms: agreed, captchaToken: captchaToken ?? undefined });
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
+      if (err instanceof ApiRequestError && err.code === 'mfa_required') {
+        // Not a failure: the password was right and the second step is next.
+        setAskOtp(true);
+        setError(null);
+      } else {
+        setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
+      }
     } finally {
       setBusy(false);
     }
@@ -169,6 +186,14 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
     // The label carries the demo password after the separator.
     setPassword(account.label.split('·').pop()?.trim() ?? '');
     setError(null);
+  }
+
+  if (resetting) {
+    return (
+      <div className="card auth__card">
+        <ResetPassword initialIdentifier={identifier} onDone={() => setResetting(false)} />
+      </div>
+    );
   }
 
   return (
@@ -221,7 +246,24 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder={mode === 'signup' ? 'At least 8 characters' : ''} required />
+              {mode === 'signup' && (
+                <span className="field__hint">At least 8 characters, without your name, username or email in it.</span>
+              )}
+              {mode === 'signin' && (
+                <button type="button" className="linkbtn auth__forgot" onClick={() => { setResetting(true); setError(null); }}>
+                  Forgot your password?
+                </button>
+              )}
             </label>
+
+            {mode === 'signin' && askOtp && (
+              <label className="field">
+                <span>Code from your authenticator app</span>
+                <input value={otp} onChange={(e) => setOtp(e.target.value.slice(0, 16))} autoFocus
+                  inputMode="text" autoComplete="one-time-code" placeholder="123456" required />
+                <span className="field__hint">Lost your phone? Enter one of your recovery codes instead.</span>
+              </label>
+            )}
 
             {mode === 'signup' && (
               <>
@@ -263,6 +305,18 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
               </>
             )}
 
+            {mode === 'signup' && (
+              <label className="auth__consent">
+                <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} required />
+                <span>
+                  I am 18 or older and agree to the <a href="/legal/terms" target="_blank" rel="noopener">Terms of Use</a> and
+                  the <a href="/legal/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+                </span>
+              </label>
+            )}
+
+            {mode === 'signup' && captchaKey && <Captcha siteKey={captchaKey} onToken={setCaptchaToken} />}
+
             {blocked && !error && <p className="notice notice--warn">{blocked}</p>}
 
             {error && <ErrorNotice message={error} />}
@@ -276,10 +330,15 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
             )}
 
             <button type="submit" className="btn btn--lg btn--block"
-              disabled={busy || (mode === 'signup' && (usernameState === 'taken' || usernameState === 'checking'))}>
+              disabled={busy || (mode === 'signup' && (!agreed || (captchaKey !== null && !captchaToken) || usernameState === 'taken' || usernameState === 'checking'))}>
               {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
           </form>
+
+          <p className="faint auth__legal">
+            <a href="/legal/terms" target="_blank" rel="noopener">Terms</a> · <a href="/legal/privacy" target="_blank" rel="noopener">Privacy</a> ·{' '}
+            <a href="/legal/grievance" target="_blank" rel="noopener">Grievance Officer</a>
+          </p>
 
           {/* Every seeded sign-in, not just the first: the shop owner and the
               supplier who packs for them see different halves of the same lot,
@@ -301,6 +360,103 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
             </div>
           )}
         </div>
+  );
+}
+
+/**
+ * A forgotten password: a code to the account's confirmed email, then a new
+ * password, which signs in and ends every other session. The first step
+ * answers the same whether or not the account exists.
+ */
+function ResetPassword({ initialIdentifier, onDone }: { initialIdentifier: string; onDone: () => void }) {
+  const { resetPassword } = useSession();
+  const [identifier, setIdentifier] = useState(initialIdentifier);
+  const [sent, setSent] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [askOtp, setAskOtp] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.startPasswordReset(identifier);
+      setSent(result.message);
+      if (result.devCode) setCode(result.devCode);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirm(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await resetPassword(identifier, code, password, askOtp ? otp : undefined);
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.code === 'mfa_required') setAskOtp(true);
+      setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <h2 style={{ margin: 0 }}>Reset your password</h2>
+      {sent === null ? (
+        <form className="form" onSubmit={send}>
+          <p className="faint" style={{ margin: 0 }}>
+            We email a code to the address on your account, if it is confirmed.
+          </p>
+          <label className="field">
+            <span>Email, phone or username</span>
+            <input value={identifier} onChange={(e) => setIdentifier(e.target.value)}
+              autoComplete="username" autoCapitalize="off" autoCorrect="off" spellCheck={false} required />
+          </label>
+          {error && <ErrorNotice message={error} />}
+          <button type="submit" className="btn btn--lg btn--block" disabled={busy}>
+            {busy ? 'Please wait…' : 'Email me a code'}
+          </button>
+        </form>
+      ) : (
+        <form className="form" onSubmit={confirm}>
+          <p className="notice notice--info" role="status">{sent}</p>
+          <label className="field">
+            <span>Code from the email</span>
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric" autoComplete="one-time-code" placeholder="123456" required />
+          </label>
+          <label className="field">
+            <span>New password</span>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password" placeholder="At least 8 characters" required />
+            <span className="field__hint">Every other device signed in to this account is signed out.</span>
+          </label>
+          {askOtp && (
+            <label className="field">
+              <span>Code from your authenticator app</span>
+              <input value={otp} onChange={(e) => setOtp(e.target.value.slice(0, 16))} autoComplete="one-time-code" required />
+              <span className="field__hint">Or one of your recovery codes.</span>
+            </label>
+          )}
+          {error && <ErrorNotice message={error} />}
+          <button type="submit" className="btn btn--lg btn--block" disabled={busy || code.length !== 6}>
+            {busy ? 'Please wait…' : 'Set password and sign in'}
+          </button>
+          <button type="button" className="linkbtn" onClick={() => { setSent(null); setError(null); }}>
+            Send a new code
+          </button>
+        </form>
+      )}
+      <button type="button" className="linkbtn" onClick={onDone}>Back to sign in</button>
+    </div>
   );
 }
 

@@ -49,6 +49,18 @@ export interface CatalogQuery {
    */
   categories?: readonly string[];
   condition?: string;
+  /** Exact match on the listing's kind of thing within its category ("Hoodie / sweatshirt"). */
+  type?: string;
+  /** Exact match on a size ("UK 8", "XL"). */
+  size?: string;
+  /**
+   * Any of these authenticity values.
+   *
+   * A list because the buyer's question is often "the real thing" or "copies",
+   * which is several values, not one. Absent means any; an empty list matches
+   * nothing, the same way an unknown heading does.
+   */
+  authenticity?: readonly string[];
   /** See CATALOG_KINDS: how it is sold, not what it is. */
   kind?: string;
   /** See CATALOG_SORTS. Absent means newest first. */
@@ -110,11 +122,23 @@ export interface Repository {
   bumpCounter(id: string, by: number, ttlSeconds: number): Promise<number | null>;
 
   listUsersByIds(ids: readonly string[]): Promise<User[]>;
+  /**
+   * Only what a seller card shows, for many accounts at once. The feed draws a
+   * card per listing, and the whole account - its sign-in, its game, its
+   * settings - was read for each just to name the shop.
+   */
+  listSellerCardsByIds(ids: readonly string[]): Promise<SellerCardSource[]>;
   listForwarders(): Promise<User[]>;
   listHandlers(): Promise<User[]>;
 
   listLots(query?: CatalogQuery): Promise<Lot[]>;
   getLot(sellerId: string, lotId: string): Promise<Lot | null>;
+  /**
+   * Every lot, in any shop, that names this account as its forwarder, handler
+   * or supplier. One query across shops, rather than reading each shop's lots
+   * in turn - which grew with the whole platform on every crew page open.
+   */
+  listLotsNaming(userId: string): Promise<Lot[]>;
 
   /** The Quick Fill templates a shop lists from. */
   listTemplates(sellerId: string): Promise<PostTemplate[]>;
@@ -239,6 +263,14 @@ export interface Repository {
    * moment it fills - all three want the whole set, which is one partition.
    */
   listPledges(listingId: string): Promise<Pledge[]>;
+  /**
+   * Pre-orders with a deadline behind them that nobody has acted on yet: the
+   * cutoff passed before it went ahead, or the seller's time to decide ran out.
+   *
+   * What the pre-order clock reconciles. Reconciling one takes it off this
+   * list - it closes, goes ahead or waits on the seller - so the list drains.
+   */
+  listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]>;
   savePledge(pledge: Pledge): Promise<Pledge>;
   deletePledge(id: string, listingId: string): Promise<void>;
   /**
@@ -398,6 +430,11 @@ export interface Repository {
    * rare and deliberate - not on any page render.
    */
   listFollowerIds(sellerId: string): Promise<string[]>;
+  /**
+   * Everybody who placed an order with this shop since a date, once each.
+   * The ids alone: told when the shop starts a game, as its followers are.
+   */
+  listBuyerIdsForSeller(sellerId: string, since: string): Promise<string[]>;
   /** Who follows this shop or person, with when they started. */
   listFollowsOf(sellerId: string): Promise<Follow[]>;
 
@@ -435,6 +472,8 @@ export interface Repository {
    * (false) with nothing changed; the old one is released after.
    */
   changePhone(user: User, phone: string): Promise<boolean>;
+  /** The same for the account's email, the other sign-in identifier. */
+  changeEmail(user: User, email: string): Promise<boolean>;
 
   /* Messages. */
 
@@ -508,6 +547,16 @@ export interface Repository {
    * there is no such post.
    */
   mutatePost(channelId: string, id: string, change: (post: Post) => Post | null): Promise<Post | null>;
+  /**
+   * Games not finished yet, anywhere: competitions not settled, guesses not
+   * revealed, polls still open, and closed debates or paid polls whose results
+   * or rewards have not gone out.
+   *
+   * What the games clock settles (see settleDueGames). It is a superset of what
+   * is due - an open poll is listed so its "ending soon" reminder can go out -
+   * and isDue picks from it. Finishing a game takes it off the list.
+   */
+  listOpenGames(nowIso: string, limit: number): Promise<Post[]>;
 
   listForums(): Promise<Forum[]>;
   getForum(id: string): Promise<Forum | null>;
@@ -526,3 +575,6 @@ export const BUMP_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 export function sessionDigest(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
+
+/** The parts of an account a public seller card is drawn from. */
+export type SellerCardSource = Pick<User, 'id' | 'displayName' | 'createdAt' | 'sellerProfile' | 'sellerTrust'>;

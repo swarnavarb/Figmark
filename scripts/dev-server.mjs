@@ -21,15 +21,19 @@ process.env.FIGMARK_SHELL_FILE ??= join(staticRoot, 'index.html');
 const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
-const { loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute, usernameAvailableRoute } = await import(new URL('auth-routes.js', apiRoot));
+const {
+  loginRoute, logoutRoute, logoutAllRoute, meRoute, signupRoute, usernameAvailableRoute, resetStartRoute, resetConfirmRoute, deleteMeRoute,
+  mfaSetupRoute, mfaEnableRoute, mfaDisableRoute,
+} = await import(new URL('auth-routes.js', apiRoot));
 const {
   verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
+  verifyEmailChangeRoute, verifyEmailChangeConfirmRoute,
   verifyAadhaarRoute, whatsappWebhookRoute,
 } = await import(new URL('verify-routes.js', apiRoot));
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
   addCommentRoute, reactToCommentRoute, toggleFollowRoute, createOrderRoute, myActivityRoute, myListingsRoute, forwardersRoute,
-  editListingRoute, deleteListingRoute, similarListingsRoute, photoSearchRoute, affiliateLinkRoute, openShortLinkRoute, mySavedRoute,
+  editListingRoute, deleteListingRoute, similarListingsRoute, photoSearchRoute, photoSalesRoute, affiliateLinkRoute, openShortLinkRoute, mySavedRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affiliate-routes.js', apiRoot));
 const {
@@ -43,15 +47,20 @@ const {
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute, sellTodoRoute } =
+const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute, sellTodoRoute, sellDashboardRoute } =
   await import(new URL('seller-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
   removePostRoute, trendingRoute, homeRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
-  forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute,
+  forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute, discoverRoute, homeNewRoute,
+  enterContestRoute, guessPriceRoute, judgeRoute, myRewardsRoute, shopGamesRoute,
 } = await import(new URL('social-routes.js', apiRoot));
+const {
+  savePostRoute, savedPostsRoute, hidePostRoute, muteRoute: feedMuteRoute, mutesRoute: feedMutesRoute, seenRoute,
+  suggestionsRoute, leaderboardRoute, topicPostsRoute,
+} = await import(new URL('feed-routes.js', apiRoot));
 const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUsernameRoute, reactToMessageRoute, blockRoute, muteRoute, dealItemsRoute,
   blockedListRoute, unblockRoute, uploadChatPhotoRoute, chatPhotoRoute, deleteMessageRoute, discardChatPhotoRoute } =
   await import(new URL('message-routes.js', apiRoot));
@@ -70,7 +79,7 @@ const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } 
 const { deviceReportRoute, deviceFiguresRoute } = await import(new URL('device-routes.js', apiRoot));
 const { notificationsRoute, notificationsReadRoute, notificationSettingsRoute, notificationSettingsSaveRoute } =
   await import(new URL('notification-routes.js', apiRoot));
-const { preOrderReadRoute, preOrderPledgeRoute } =
+const { preOrderReadRoute, preOrderPledgeRoute, preOrderEditRoute, preOrderDecideRoute } =
   await import(new URL('preorder-routes.js', apiRoot));
 const {
   powerSalesRoute, powerSaleCreateRoute, powerSaleReadRoute, powerSaleStopRoute,
@@ -105,7 +114,7 @@ const {
 } = await import(new URL('store-routes.js', apiRoot));
 const {
   creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute,
-  saveReversalDetailsRoute, reversalDetailsRoute,
+  saveReversalDetailsRoute, reversalDetailsRoute, saveProfileRoute,
 } = await import(new URL('profile-routes.js', apiRoot));
 const {
   openDisputeRoute, readDisputeRoute, replyDisputeRoute, offerDisputeRoute,
@@ -128,7 +137,9 @@ const {
 } = await import(new URL('collection-routes.js', apiRoot));
 const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
 const { settingsRoute, opsSettingsRoute, opsSettingsSaveRoute } = await import(new URL('settings-routes.js', apiRoot));
-const { routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute } = await import(new URL('route-admin-routes.js', apiRoot));
+const {
+  routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute, opsRouteCommonSaveRoute, opsRouteButtonsSaveRoute,
+} = await import(new URL('route-admin-routes.js', apiRoot));
 const {
   reportCreateRoute, reportMineRoute, opsReportsRoute, opsReportResolveRoute,
 } = await import(new URL('report-routes.js', apiRoot));
@@ -137,10 +148,22 @@ const {
  * [method, path pattern, handler]. `:name` segments become route params.
  * Mirrors the routes registered with app.http() in the API.
  */
+const { exportMineRoute, clientErrorRoute } = await import(new URL('account-routes.js', apiRoot));
+const { bootstrapRoute } = await import(new URL('bootstrap-routes.js', apiRoot));
+
 const routes = [
   ['GET', '/api/health', healthRoute],
   ['GET', '/api/auth/me', meRoute],
   ['POST', '/api/auth/login', loginRoute],
+  ['POST', '/api/auth/reset/start', resetStartRoute],
+  ['POST', '/api/auth/reset/confirm', resetConfirmRoute],
+  ['POST', '/api/me/delete', deleteMeRoute],
+  ['GET', '/api/me/export', exportMineRoute],
+  ['GET', '/api/bootstrap', bootstrapRoute],
+  ['POST', '/api/client-errors', clientErrorRoute],
+  ['POST', '/api/me/mfa/setup', mfaSetupRoute],
+  ['POST', '/api/me/mfa/enable', mfaEnableRoute],
+  ['POST', '/api/me/mfa/disable', mfaDisableRoute],
   ['GET', '/api/auth/username/:name', usernameAvailableRoute],
   ['POST', '/api/auth/signup', signupRoute],
   ['POST', '/api/auth/logout', logoutRoute],
@@ -148,6 +171,8 @@ const routes = [
   ['GET', '/api/verify/status', verifyStatusRoute],
   ['POST', '/api/verify/email/send', verifyEmailSendRoute],
   ['POST', '/api/verify/email/confirm', verifyEmailConfirmRoute],
+  ['POST', '/api/verify/email/change', verifyEmailChangeRoute],
+  ['POST', '/api/verify/email/change/confirm', verifyEmailChangeConfirmRoute],
   ['POST', '/api/verify/phone/start', verifyPhoneStartRoute],
   ['POST', '/api/verify/phone/number', verifyPhoneNumberRoute],
   ['POST', '/api/verify/aadhaar', verifyAadhaarRoute],
@@ -165,6 +190,7 @@ const routes = [
   ['GET', '/api/listings/:id', listingDetailRoute],
   ['GET', '/api/listings/:id/similar', similarListingsRoute],
   ['POST', '/api/search/photo', photoSearchRoute],
+  ['POST', '/api/search/photo/sales', photoSalesRoute],
   ['POST', '/api/listings/:id/affiliate-link', affiliateLinkRoute],
   ['GET', '/api/r/:code', openShortLinkRoute],
   ['GET', '/api/me/affiliate', myAffiliateRoute],
@@ -207,6 +233,7 @@ const routes = [
   ['GET', '/api/me/dashboard', dashboardRoute],
   ['GET', '/api/me/sales', salesRoute],
   ['GET', '/api/me/sell/todo', sellTodoRoute],
+  ['GET', '/api/me/sell/dashboard', sellDashboardRoute],
   ['GET', '/api/me/stores', myStoresRoute],
   ['POST', '/api/me/storefront/managers', updateManagersRoute],
   ['GET', '/api/social/feed', socialFeedRoute],
@@ -221,10 +248,23 @@ const routes = [
   ['GET', '/api/social/forums/:id/members', forumMembersRoute],
   ['POST', '/api/social/forums/:id/moderate', moderateForumRoute],
   ['GET', '/api/social/shops/:id/feed', shopFeedRoute],
+  ['GET', '/api/social/shops/:id/games', shopGamesRoute],
+  ['GET', '/api/me/rewards', myRewardsRoute],
   ['GET', '/api/users/:id/follows', followsRoute],
   ['GET', '/api/social/search', socialSearchRoute],
   ['GET', '/api/social/trending', trendingRoute],
   ['GET', '/api/social/home', homeRoute],
+  ['GET', '/api/social/home/new', homeNewRoute],
+  ['POST', '/api/social/posts/:channel/:id/save', savePostRoute],
+  ['POST', '/api/social/posts/:channel/:id/hide', hidePostRoute],
+  ['GET', '/api/social/saved', savedPostsRoute],
+  ['POST', '/api/social/mute', feedMuteRoute],
+  ['GET', '/api/social/mutes', feedMutesRoute],
+  ['POST', '/api/social/seen', seenRoute],
+  ['GET', '/api/social/suggestions', suggestionsRoute],
+  ['GET', '/api/social/leaderboard', leaderboardRoute],
+  ['GET', '/api/social/topics/:slug', topicPostsRoute],
+  ['GET', '/api/social/discover', discoverRoute],
   ['GET', '/api/social/shareable', shareableRoute],
   ['GET', '/api/social/posts/:channel/:id', readPostRoute],
   ['POST', '/api/social/posts/:channel/:id/react', reactRoute],
@@ -234,6 +274,9 @@ const routes = [
   ['POST', '/api/social/posts/:channel/:id/comments/:comment/delete', deletePostCommentRoute],
   ['POST', '/api/social/posts/:channel/:id/share', sharePostRoute],
   ['POST', '/api/social/posts/:channel/:id/vote', voteRoute],
+  ['POST', '/api/social/posts/:channel/:id/enter', enterContestRoute],
+  ['POST', '/api/social/posts/:channel/:id/guess', guessPriceRoute],
+  ['POST', '/api/social/posts/:channel/:id/judge', judgeRoute],
   ['POST', '/api/social/posts/:channel/:id/delete', removePostRoute],
   ['POST', '/api/social/posts/:channel/:id/pin', pinPostRoute],
   ['GET', '/api/messages', inboxRoute],
@@ -314,6 +357,8 @@ const routes = [
   ['GET', '/api/ops/route-library', opsRouteLibraryRoute],
   ['POST', '/api/ops/route-samples/save', opsRouteSamplesSaveRoute],
   ['POST', '/api/ops/route-words/save', opsRouteWordsSaveRoute],
+  ['POST', '/api/ops/route-common/save', opsRouteCommonSaveRoute],
+  ['POST', '/api/ops/route-buttons/save', opsRouteButtonsSaveRoute],
   ['POST', '/api/reports', reportCreateRoute],
   ['GET', '/api/reports/mine', reportMineRoute],
   ['GET', '/api/ops/reports', opsReportsRoute],
@@ -421,6 +466,8 @@ const routes = [
   ['POST', '/api/showcase/drops/:sellerId/:id/remind', remindRoute],
   ['GET', '/api/listings/:id/preorder', preOrderReadRoute],
   ['POST', '/api/listings/:id/pledge', preOrderPledgeRoute],
+  ['POST', '/api/listings/:id/preorder/edit', preOrderEditRoute],
+  ['POST', '/api/listings/:id/preorder/decide', preOrderDecideRoute],
   ['GET', '/api/notifications', notificationsRoute],
   ['POST', '/api/notifications/read', notificationsReadRoute],
   ['GET', '/api/notifications/settings', notificationSettingsRoute],
@@ -434,6 +481,7 @@ const routes = [
   ['GET', '/api/users/:id/reviews', tradeReviewsRoute],
   ['GET', '/api/users/:id/credit', creditRoute],
   ['GET', '/api/users/:id/page-reviews', pageReviewsRoute],
+  ['POST', '/api/me/profile', saveProfileRoute],
   ['POST', '/api/users/:id/page-reviews/new', writePageReviewRoute],
 ];
 
@@ -480,7 +528,7 @@ function matchRoute(method, pathname) {
 async function readBody(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
 
 /**
@@ -523,8 +571,10 @@ const server = createServer((request, response) => {
           headers: new Headers(Object.entries(request.headers).map(([k, v]) => [k, String(v)])),
           query: url.searchParams,
           params: route.params,
-          json: async () => JSON.parse(raw),
-          text: async () => raw,
+          json: async () => JSON.parse(raw.toString('utf8')),
+          text: async () => raw.toString('utf8'),
+          // A photo is sent as its own bytes (see readPhotoRequest).
+          arrayBuffer: async () => raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength),
         },
         { error: console.error, log: () => {}, warn: console.warn, info: () => {} },
       );
@@ -590,12 +640,17 @@ const server = createServer((request, response) => {
 const port = Number(process.env.PORT ?? 5173);
 server.listen(port, () => console.log(`Figmark dev server on http://127.0.0.1:${port}`));
 
-/* The Functions host runs the power-sale and push clocks as timer triggers;
-   this server has no host, so it keeps the same once-a-minute beat itself. */
+/* The clock Function App runs the power-sale, push, pre-order and games clocks as
+   timer triggers (api/src/clocks.ts); this server has no host, so it keeps the
+   same once-a-minute beat itself. */
 const { tickPowerSales } = await import(new URL('power-sale.js', apiRoot));
+const { closeDuePreOrders } = await import(new URL('preorder.js', apiRoot));
+const { settleDueGames } = await import(new URL('../play.js', apiRoot));
 const { sendHeldPushes } = await import(new URL('../push.js', apiRoot));
 const { getRepository } = await import(new URL('../data/index.js', apiRoot));
 setInterval(() => {
   void getRepository().then((repository) => tickPowerSales(repository)).catch(() => undefined);
   void getRepository().then((repository) => sendHeldPushes(repository)).catch(() => undefined);
+  void getRepository().then((repository) => closeDuePreOrders(repository)).catch(() => undefined);
+  void getRepository().then((repository) => settleDueGames(repository)).catch(() => undefined);
 }, 60_000).unref();

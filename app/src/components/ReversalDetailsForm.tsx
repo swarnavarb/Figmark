@@ -104,7 +104,7 @@ export function ReversalDetailsForm({ onSaved }: { onSaved?: () => void | Promis
           <input type="file" accept="image/*" onChange={(e) => void uploadQr(e.target.files?.[0])} />
           <span className="field__hint">{uploading ? 'Uploading…' : 'A payment QR image, if you have one.'}</span>
         </label>
-        {qrCodeUrl && <img src={qrCodeUrl} alt="Your payment QR code" className="proof" />}
+        {qrCodeUrl && <img loading="lazy" decoding="async" src={qrCodeUrl} alt="Your payment QR code" className="proof" />}
 
         {error && <ErrorNotice message={error} />}
         {saved && <p className="notice notice--ok" style={{ margin: 0 }}>{saved}</p>}

@@ -148,9 +148,9 @@ export function SalesPanel({ shop }: { shop?: string }) {
           <span className="field__hint">Balances on orders you accepted, counted from when you accepted them.</span>
         </div>
         <div className="sales__ages">
-          <div className="sales__age"><small>0–3 days</small><b>{formatMoney(data.ageing.fresh.amountMinor)}</b><small>{data.ageing.fresh.count} orders</small></div>
-          <div className="sales__age sales__age--warn"><small>4–7 days</small><b>{formatMoney(data.ageing.week.amountMinor)}</b><small>{data.ageing.week.count} orders</small></div>
-          <div className="sales__age sales__age--bad"><small>8+ days</small><b>{formatMoney(data.ageing.old.amountMinor)}</b><small>{data.ageing.old.count} orders</small></div>
+          <div className="sales__age"><small>0–3 days</small><b>{formatMoney(data.ageing.fresh.amountMinor)}</b><small>{data.ageing.fresh.count} {data.ageing.fresh.count === 1 ? 'order' : 'orders'}</small></div>
+          <div className="sales__age sales__age--warn"><small>4–7 days</small><b>{formatMoney(data.ageing.week.amountMinor)}</b><small>{data.ageing.week.count} {data.ageing.week.count === 1 ? 'order' : 'orders'}</small></div>
+          <div className="sales__age sales__age--bad"><small>8+ days</small><b>{formatMoney(data.ageing.old.amountMinor)}</b><small>{data.ageing.old.count} {data.ageing.old.count === 1 ? 'order' : 'orders'}</small></div>
         </div>
         {data.ageing.rows.length === 0 ? <p className="muted">Nobody owes you anything.</p> : (
           data.ageing.rows.map((row) => (

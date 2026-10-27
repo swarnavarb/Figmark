@@ -1,3 +1,51 @@
+/* Moved from styles.css: rules only this chunk's code can match. */
+.dealcard {
+  display: grid; gap: 8px; min-width: min(260px, 70vw); max-width: 320px; padding: 12px;
+  border-radius: 16px; border: 1px solid rgba(251, 191, 36, 0.45);
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.04));
+}
+.dealcard__item { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.dealcard__body { display: grid; gap: 2px; min-width: 0; }
+.dealcard__go { justify-self: stretch; justify-content: center; }
+.dealcard .btn { margin-top: 2px; }
+.itemref { display: grid; gap: 6px; min-width: min(250px, 68vw); max-width: 320px; margin-bottom: 6px; }
+.itemref__item:hover { border-color: var(--border-strong); }
+.cmsg--mine .itemref__item { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.itemref__body { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.dealpick__row:hover { border-color: var(--pink-line); }
+.dealpick__body { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.cbar__about { display: grid; gap: 6px; }
+.cbar__aboutitem {
+  display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 6px; border-radius: 12px;
+  background: var(--surface-2); border-left: 3px solid var(--pink);
+}
+.cbar__aboutbody { display: grid; min-width: 0; flex: 1; font-size: var(--t-xs); }
+.cbar__prompts { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.dmactions { display: inline-flex; align-items: center; gap: 6px; }
+.chunread { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; color: var(--accent-text); }
+.chunread::before, .chunread::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: 0.45; }
+.cbar__photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.inbox__boxes .chip { display: inline-flex; align-items: center; gap: 6px; }
+.chip__count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill);
+  background: var(--sx-volt); color: var(--sx-ink); font-size: var(--t-2xs); font-weight: 800; line-height: 18px; text-align: center;
+}
+.dmroom {
+  display: flex; flex-direction: column;
+  min-height: calc(100dvh - var(--roombar-h));
+}
+.dmroom .chthread { flex: 1; min-height: 0; }
+.dmscreen {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.chip__count {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.08); color: var(--text-dim);
+}
+.cmsg__link { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 40px; margin-top: 6px; padding: 8px 14px; border-radius: 999px; background: var(--warn); color: var(--warn-ink); font-size: var(--t-sm); font-weight: var(--w-bold); text-decoration: none; }
+
 /*
  * Styles only pages/MessagesPage.tsx and what it brings in can draw, loaded with that
  * chunk rather than in front of every page. Split out of styles.css by
@@ -11,10 +59,10 @@
   box-shadow: 0 8px 22px -14px rgba(236, 72, 153, 0.7);
 }
 .dealcard__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dealcard__tag { white-space: nowrap; font-size: 11px; font-weight: var(--w-bold); letter-spacing: 0.04em; color: var(--pink-text); text-transform: uppercase; }
+.dealcard__tag { white-space: nowrap; font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.04em; color: var(--pink-text); text-transform: uppercase; }
 .dealcard--ask .dealcard__tag { color: #FBBF24; }
 .dealcard__clock {
-  flex: none; padding: 3px 8px; border-radius: var(--r-pill); font-size: 11px; font-weight: var(--w-bold);
+  flex: none; padding: 3px 8px; border-radius: var(--r-pill); font-size: var(--t-xs); font-weight: var(--w-bold);
   background: var(--pink-soft); color: var(--pink-text); font-variant-numeric: tabular-nums;
 }
 .dealcard__clock.is-done { background: var(--surface-2); color: var(--text-dim); }
@@ -27,7 +75,7 @@
 .dealcard__ended { font-size: var(--t-xs); color: var(--text-dim); text-align: center; }
 .dealcard.is-expired, .dealcard.is-gone { filter: saturate(0.35); }
 .dealcard.is-expired .dealcard__price, .dealcard.is-gone .dealcard__price { text-decoration: line-through; text-decoration-thickness: 1px; opacity: 0.7; }
-.itemref__tag { font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.itemref__tag { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
 .itemref__title { font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .itemref__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); }
 .itemref__price { display: inline-flex; gap: 5px; align-items: baseline; font-weight: var(--w-bold); }
@@ -37,7 +85,7 @@
   color: var(--pink-text); font-weight: var(--w-bold); font-size: var(--t-sm); cursor: pointer;
 }
 .itemref__deal:hover { border-style: solid; }
-.dealstate { padding: 1px 7px; border-radius: var(--r-pill); font-size: 10px; font-weight: var(--w-bold); letter-spacing: 0.03em; white-space: nowrap; }
+.dealstate { padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.03em; white-space: nowrap; }
 .dealstate--live { background: rgba(163, 230, 53, 0.16); color: var(--lime); }
 .dealstate--bought { background: var(--surface-2); color: var(--text-dim); }
 .dealstate--expired { background: rgba(251, 191, 36, 0.15); color: #FBBF24; }
@@ -50,7 +98,7 @@
 }
 .dealpick__freshicon {
   display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
-  background: var(--pink); color: var(--pink-ink); font-size: 20px; font-weight: var(--w-bold);
+  background: var(--pink); color: var(--pink-ink); font-size: var(--t-lg); font-weight: var(--w-bold);
 }
 .dealpick__or { margin: 2px 0 0; font-size: var(--t-xs); color: var(--text-dim); text-align: center; }
 .dealpick__tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
