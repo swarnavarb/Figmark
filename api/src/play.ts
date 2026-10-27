@@ -486,7 +486,7 @@ const CLOCK_WINDOW = 500;
  *
  * Reads settle what they show (settlePlay), but only while someone is reading:
  * a debate closing at 3am told nobody its result until the next visitor came
- * past. The games clock runs this once a minute. One game that fails is left
+ * past. The games clock runs this every five minutes. One game that fails is left
  * for the next tick rather than holding up the rest. Returns how many it
  * settled, for the log.
  */

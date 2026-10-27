@@ -46,7 +46,7 @@ bell works exactly as before.
   `api/src/push.ts` for each one, so every event is covered in one place.
 - A notice held for the 3-minute undo window is sent when the window ends, and
   never if the step was undone. Sent by whichever comes first: a timer on this
-  instance, the `push-clock` timer trigger where the host runs timers, or the
+  instance, the five-minute `clock` timer where the host runs timers, or the
   next time any open copy of the site checks the bell (every minute).
 - Devices are kept on the account (`User.pushEndpoints`), at most 10, and never
   sent to any client. A device the push service reports gone is dropped. Signing

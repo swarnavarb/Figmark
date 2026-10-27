@@ -269,13 +269,22 @@ compiled *into* the API by a `tsconfig` rooted above `api/` — Oryx running
 Some work falls due at a time rather than on a request. That work lives in
 `api/src/clocks.ts`:
 
+One timer, `clock`, runs every five minutes and does each of these in turn:
+
 | Clock | Every | What it does |
 |---|---|---|
-| `power-sale-clock` | minute | moves each live power sale to its next item |
-| `push-clock` | minute | sends notices whose undo window has ended |
-| `preorder-clock` | minute | settles pre-orders past their cutoff or decision deadline |
-| `games-clock` | minute | debate results, poll rewards, guess reveals, competition stages and prizes, "ending soon" reminders |
-| `dispute-clock` | hour | applies dispute deadlines and releases held money |
+| `power-sale-clock` | 5 minutes | moves each live power sale to its next item |
+| `push-clock` | 5 minutes | sends notices whose undo window has ended |
+| `preorder-clock` | 5 minutes | settles pre-orders past their cutoff or decision deadline |
+| `games-clock` | 5 minutes | debate results, poll rewards, guess reveals, competition stages and prizes, "ending soon" reminders |
+| `dispute-clock` | hour (the run at :00) | applies dispute deadlines and releases held money |
+
+One failing clock is logged and the rest still run. Five minutes, not one:
+four timers once a minute, staggered fifteen seconds apart, kept a Flex
+Consumption instance awake around the clock and billed it as if always on
+(about ₹250 a day at the 2048 MB default). With five quiet minutes between
+runs the instance scales to zero. The price is that, with nobody on the site,
+timed work can land up to five minutes late; a read still runs it at once.
 
 Static Web Apps' managed functions run **HTTP triggers only**, so none of these
 fire there. Some of them also run when someone reads the related page: the bell
@@ -361,11 +370,25 @@ A clock job is skipped while its variable is empty. Once the variable is set,
 missing credentials fail the run rather than skipping it.
 
 To check it works, open the Function App's **Functions** list in the portal. It
-should show the five clocks and nothing else. Their invocation logs report what
-each one settled.
+should show `clock` and nothing else. Its invocation logs report what each
+clock settled.
 
-**Cost**: about 175,000 runs a month at 512 MB. That should stay within or near
-Flex Consumption's monthly free grant.
+**Cost**: about 8,600 runs a month. At 512 MB that is well inside Flex
+Consumption's monthly free grant. Keep `--instance-memory 512`: the portal's
+default is 2048 MB, which bills four times as much per second for timers that
+need nowhere near it. To check or fix an existing app:
+
+```bash
+az functionapp show -g rg-figuremarket-dev -n func-figmark-clocks-dev \
+  --query "functionAppConfig.scaleAndConcurrency.instanceMemoryMB"
+az functionapp scale config set -g rg-figuremarket-dev -n func-figmark-clocks-dev \
+  --instance-memory 512
+```
+
+`host.json` samples request telemetry like everything else (at most five items
+a second), so Application Insights no longer stores every run in full. Put a
+ceiling on it too: the Application Insights resource's **Usage and estimated
+costs → Daily cap**, 0.1 GB is plenty for this app.
 
 ## Free tier constraints
 
