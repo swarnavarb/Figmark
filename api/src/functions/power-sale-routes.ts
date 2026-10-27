@@ -15,6 +15,8 @@ import {
   MIN_WINDOW_MINUTES,
   advanceAll,
   advancePowerSale,
+  asOf,
+  callOffAhead,
   finishesAt,
   releaseItems,
   windowLeftMinutes,
@@ -23,9 +25,8 @@ import {
 /**
  * Power selling: a sale a shop schedules once and does not have to sit through.
  *
- * The console half, plus the once-a-minute clock at the bottom. The runner is
- * in power-sale.ts; the console calls it before answering too, so what it
- * shows is never a minute behind.
+ * The console half. The runner is in power-sale.ts; the console calls it before
+ * answering too, so what it shows is never behind the clock app's timer.
  */
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -81,8 +82,9 @@ async function readBody(request: HttpRequest): Promise<Record<string, unknown>> 
   return bodies.get(request) ?? {};
 }
 
-/** One sale, as the console draws it. */
-function card(sale: PowerSale, now = new Date()) {
+/** One sale, as the console draws it: as of now, so nothing written ahead shows early. */
+function card(stored: PowerSale, now = new Date()) {
+  const sale = asOf(stored, now);
   const posted = sale.items.filter((item) => item.postedAt).length;
   return {
     id: sale.id,
@@ -338,8 +340,10 @@ async function stop(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'already_over', 'That sale is already over.');
   }
 
-  // Whatever it already dropped goes to the catalog rather than being stranded
-  // out of it, priced for a window that will never close.
+  // What was written ahead and has not shown yet is taken back, held notices
+  // included. Whatever it already dropped goes to the catalog rather than
+  // being stranded out of it, priced for a window that will never close.
+  await callOffAhead(repository, sale);
   await releaseItems(repository, sale);
 
   const now = new Date().toISOString();

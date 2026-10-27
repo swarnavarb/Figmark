@@ -2,6 +2,7 @@ import webpush from 'web-push';
 import type { Notification, PushEndpoint } from '../../shared/models.js';
 import { categoryOf, inQuietHours, type NotificationCategory } from '../../shared/notifications.js';
 import type { getRepository } from './data/index.js';
+import { wakeAt } from './push-queue.js';
 
 /**
  * Putting a notice on somebody's lock screen.
@@ -242,13 +243,16 @@ export async function sendHeldPushesSoon(repository: Repo, now = Date.now()): Pr
 }
 
 /**
- * Also try right when a hold ends, if this instance is still alive then.
+ * Also try right when a hold ends: on a timer, if this instance is still
+ * alive then, and by a wake-up queued for the clock app (push-queue.ts) when
+ * one is configured, which is what makes it on time with nobody on the site.
  *
  * Best effort and nothing depends on it: the reads and the timer are the
  * guarantee. Unreferenced so it never keeps a process up on its own.
  */
 export function sendHeldPushesAt(repository: Repo, notBefore: string): void {
   if (!pushEnabled()) return;
+  void wakeAt(notBefore);
   const wait = Date.parse(notBefore) - Date.now() + 1000;
   if (!Number.isFinite(wait) || wait > LOOKBACK_MS) return;
   const timer = setTimeout(() => {

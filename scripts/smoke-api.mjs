@@ -5251,6 +5251,80 @@ await check('an item nobody has taken goes public at the higher price', async ()
   assert.ok(catalog.some((entry) => entry.id === item.listingId), 'it is on the buy page now');
 });
 
+await check('an item due within the next few minutes is written ahead and shows at its minute', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      name: 'Written ahead',
+      openingBody: 'Starting soon.',
+      leadMinutes: 30,
+      everyMinutes: 60,
+      windowMinutes: 60,
+      items: [saleItem('Ahead of time', 25_000, 30_000)],
+    },
+  }), ctx);
+  const saleId = made.jsonBody.sale.id;
+  const buyer = await newBuyer('Ahead Watcher');
+  await remindDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx);
+
+  // Bring the first item to three minutes from now, inside one clock period.
+  const repository = await getRepository();
+  const stored = await repository.getPowerSale('usr_demo', saleId);
+  const dueAt = Date.now() + 3 * 60_000;
+  await repository.savePowerSale({ ...stored, leadMinutes: (dueAt - Date.parse(stored.openingAt)) / 60_000 });
+
+  const sale = (await readPowerSale(req({ headers: auth, params: { id: saleId } }), ctx)).jsonBody.sale;
+  assert.equal(sale.posted, 0, 'not out yet as far as anyone can see');
+  assert.equal(sale.items[0].listingId, null);
+
+  // Written, with the minute it shows.
+  const written = await repository.getPowerSale('usr_demo', saleId);
+  const item = written.items[0];
+  assert.ok(item.listingId, 'the listing is written ahead');
+  assert.ok(Math.abs(Date.parse(item.postedAt) - dueAt) < 1000, 'to show at its own minute, not the next clock run');
+  assert.equal(Date.parse(item.windowEndsAt) - Date.parse(item.postedAt), 60 * 60_000, 'its window counts from then');
+
+  // And hidden until then, everywhere.
+  assert.equal((await listingDetail(req({ params: { id: item.listingId } }), ctx)).status, 404);
+  const thread = (await channelThread(req({ headers: auth, params: { id: 'usr_demo' } }), ctx)).jsonBody;
+  assert.ok(!thread.posts.some((card) => card.post.listingId === item.listingId), 'not in the channel yet');
+  assert.equal((await remindDrop(req({ headers: buyer.headers, params: { sellerId: 'usr_demo', id: saleId }, body: { on: true } }), ctx)).status, 200,
+    'a reminder can still be set until it shows');
+
+  // The reminder is written too, held to the same minute.
+  const held = (await noticesFor(buyer.id)).filter((notice) => notice.title.includes('Written ahead is dropping now'));
+  assert.equal(held.length, 1, 'once, however many times it is written');
+  assert.equal(held[0].notBefore, item.postedAt);
+
+  // Calling it off takes back what has not shown.
+  await stopPowerSale(req({ headers: auth, params: { id: saleId } }), ctx);
+  const after = await repository.getPowerSale('usr_demo', saleId);
+  assert.equal(after.items[0].postedAt, null);
+  assert.equal(await repository.getListing(item.listingId), null, 'the listing is gone');
+  assert.ok(!(await noticesFor(buyer.id)).some((notice) => notice.title.includes('Written ahead is dropping now')), 'and the reminder');
+});
+
+await check('the price goes up the minute the window ends, before the runner passes', async () => {
+  const made = await schedulePowerSale(req({
+    headers: auth,
+    body: {
+      openingBody: 'One piece.', everyMinutes: 60, windowMinutes: 60,
+      items: [saleItem('Rises on time', 30_000, 41_000)],
+    },
+  }), ctx);
+  const { listingId } = made.jsonBody.sale.items[0];
+  const repository = await getRepository();
+  const listing = await repository.getListing(listingId);
+  assert.equal(listing.priceMinor, 30_000);
+  // The window runs out; nothing has advanced the sale since.
+  await repository.updateListing({
+    ...listing, memberWindow: { ...listing.memberWindow, endsAt: new Date(Date.now() - 1000).toISOString() },
+  });
+  const page = (await listingDetail(req({ params: { id: listingId } }), ctx)).jsonBody.listing;
+  assert.equal(page.priceMinor, 41_000);
+  assert.equal(page.unlisted, false);
+});
+
 await check('the price after the window is never below the members\' price', async () => {
   const same = await schedulePowerSale(req({
     headers: auth,

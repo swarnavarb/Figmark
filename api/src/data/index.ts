@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { CosmosRepository } from './cosmos-repository.js';
 import { MemoryRepository } from './memory-repository.js';
 import { withLotView } from './lot-view.js';
+import { withTimedView } from './timed-view.js';
 import { topUpPhotoDemo } from './seed-photo-demo.js';
 import type { Repository } from './repository.js';
 
@@ -26,8 +27,9 @@ export function getRepository(): Promise<Repository> {
       // The one fixture with photos in the store; see seed-photo-demo.ts.
       await topUpPhotoDemo(repository);
       // Orders are read with their lot's news and position, and written back
-      // as only their own - see lot-view.ts.
-      return withLotView(repository);
+      // as only their own - see lot-view.ts. Posts and listings written ahead
+      // stay out of sight until their moment - see timed-view.ts.
+      return withTimedView(withLotView(repository));
     })();
   }
   return cached;

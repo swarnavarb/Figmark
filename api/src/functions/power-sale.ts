@@ -16,21 +16,26 @@ type Repo = Awaited<ReturnType<typeof getRepository>>;
  * message saying it is over. What this replaces is somebody sitting with a
  * phone for two hours doing exactly that.
  *
- * ── Why it advances on a read ──────────────────────────────────────────────
- * There is no scheduler. Managed functions on Static Web Apps are HTTP-only,
- * so a timer trigger is not available to deploy, and inventing one would mean
- * a second piece of infrastructure to keep alive for a feature that is idle
- * most of the day. So a sale moves when somebody looks at it - the shop's
- * console, the channel, the sale's own page - the same way a pre-order notices
- * its own cutoff.
+ * ── When it moves ──────────────────────────────────────────────────────────
+ * Two things move a sale: the clock app's timer, every five minutes, and
+ * anybody looking at it - the shop's console, the channel, the Drops shelf -
+ * the same way a pre-order notices its own cutoff.
  *
- * What that costs is honest and worth saying out loud: a post is due at the
- * minute it is due, and lands the first time anyone opens the room after that.
- * For a sale whose whole point is that the shop's followers are watching, the
- * gap is seconds. For one scheduled at 3am with nobody looking, everything
- * queued lands together when the first person arrives - which is why the runner
- * posts at most one item per pass, so a quiet night cannot dump eleven items
- * into the channel in one scroll.
+ * Five minutes is too coarse for a drop due at 9:02, so each pass writes what
+ * falls due in the next LOOKAHEAD, not just what is due now: the posts and
+ * listings with the moment they show (`visibleAt`, hidden by every read until
+ * then - see timed-view.ts), the notices held until the same moment, and each
+ * listing's members' window, so its price goes up on time by itself. Nothing
+ * waits for a run to land on time; the runs only have to come often enough
+ * to stay ahead.
+ *
+ * Behind schedule - the clock was down, or a sale was set to open in the
+ * past - it catches up one item per pass, posted when it is written, so a
+ * quiet night cannot dump eleven items into the channel in one scroll.
+ *
+ * Everything written ahead has a fixed id, so a pass that runs twice, or two
+ * that race, write it once; and calling a sale off takes back whatever has
+ * not shown yet (`callOffAhead`).
  */
 
 /** The most a single sale may carry, so one run cannot flood a channel. */
@@ -53,14 +58,64 @@ function minutes(n: number): number {
   return n * 60_000;
 }
 
+/**
+ * How far ahead each pass writes: the clock's five minutes, and two more so a
+ * run that starts late still finds the next minutes already written.
+ */
+export const LOOKAHEAD_MS = minutes(7);
+
+const iso = (ms: number) => new Date(ms).toISOString();
+const later = (stamp: string | null | undefined, now: number) => Boolean(stamp && Date.parse(stamp) > now);
+
+/** Fixed ids, so what is written ahead is written once however many passes write it. */
+const ids = {
+  opening: (sale: PowerSale) => `pst_${sale.id}_open`,
+  drop: (sale: PowerSale, index: number) => `pst_${sale.id}_${index}`,
+  public: (sale: PowerSale, index: number) => `pst_${sale.id}_${index}_public`,
+  closing: (sale: PowerSale) => `pst_${sale.id}_close`,
+  listing: (sale: PowerSale, index: number) => `lst_${sale.id}_${index}`,
+  /* Notice keys: one row per person per key (see notify). */
+  opened: (sale: PowerSale) => `${sale.id}_open`,
+  remind: (sale: PowerSale) => `${sale.id}_remind`,
+};
+
+/** Write once: a second write of the same id is the first one already done. */
+async function once(write: () => Promise<unknown>): Promise<void> {
+  try {
+    await write();
+  } catch (err) {
+    if ((err as { code?: number } | null)?.code !== 409) throw err;
+  }
+}
+
+/**
+ * The sale as people see it at `now`: what was written ahead and has not
+ * shown yet reads as not done. Every view of a sale goes through this, so the
+ * console, the shelf and the reminder button agree with the channel.
+ */
+export function asOf(sale: PowerSale, now = new Date()): PowerSale {
+  const t = now.getTime();
+  const openedAt = later(sale.openedAt, t) ? null : sale.openedAt;
+  return {
+    ...sale,
+    openedAt,
+    status: sale.status === 'running' && !openedAt ? 'scheduled' : sale.status,
+    items: sale.items.map((item) => (later(item.postedAt, t)
+      ? { ...item, postedAt: null, windowEndsAt: null, listingId: null, publicPostAt: null }
+      : item)),
+  };
+}
+
 /** A post the runner writes as the shop, into the shop's own channel. */
 function shopPost(
   shop: User, body: string, listingId: string | null, announcement: boolean, reach: Post['reach'] = 'channel',
   drop: Post['drop'] = null, opening: Post['opening'] = null,
+  /** Its fixed id, and when it shows: dated then, and hidden until then when that is ahead. */
+  timing: { id: string; at: number } | null = null,
 ): Post {
-  const now = new Date().toISOString();
+  const now = timing ? iso(timing.at) : new Date().toISOString();
   return {
-    id: `pst_${randomUUID().slice(0, 12)}`,
+    id: timing?.id ?? `pst_${randomUUID().slice(0, 12)}`,
     channelId: shop.id,
     channel: 'seller',
     kind: listingId ? 'sale' : 'update',
@@ -80,15 +135,17 @@ function shopPost(
     ...(drop ? { drop } : {}),
     ...(opening ? { opening } : {}),
     powerSale: true,
+    ...(timing && timing.at > Date.now() ? { visibleAt: now } : {}),
     createdAt: now,
     updatedAt: now,
   };
 }
 
 /** The listing one sale item becomes when its turn comes. */
-function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing {
+function listingFor(sale: PowerSale, item: PowerSaleItem, index: number, showAt: number, endsAt: number): Listing {
+  const now = iso(showAt);
   return {
-    id: `lst_${randomUUID().slice(0, 12)}`,
+    id: ids.listing(sale, index),
     sellerId: sale.sellerId,
     title: item.title,
     description: item.description,
@@ -96,10 +153,16 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     condition: item.condition,
     status: 'active',
     // Opens at the members' price. The public price is what it moves to when
-    // the window closes, which `liftPrice` does rather than a second listing -
-    // a buyer who bookmarked it should find the same item at a new price, not
-    // a dead link beside a fresh one.
+    // the window closes - on the same listing rather than a second one, so a
+    // buyer who bookmarked it finds the same item at a new price, not a dead
+    // link beside a fresh one. `memberWindow` makes that happen on the minute,
+    // on every read; the runner writes it down when it next passes.
     priceMinor: item.priceMinor,
+    memberWindow: {
+      endsAt: iso(endsAt),
+      publicPriceMinor: item.listPriceMinor,
+      publicExpiresAt: publicExpiry(item, new Date(endsAt)),
+    },
     currency: 'INR',
     quantityAvailable: item.quantity,
     quantityMode: item.quantityMode ?? 'fixed',
@@ -121,6 +184,7 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, now: string): Listing 
     likeCount: 0,
     viewCount: 0,
     bumpedAt: null,
+    ...(showAt > Date.now() ? { visibleAt: now } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -180,12 +244,23 @@ export function windowLeftMinutes(item: PowerSaleItem, now = new Date()): number
   return Math.max(0, Math.ceil((Date.parse(item.windowEndsAt) - now.getTime()) / 60_000));
 }
 
+/** What the people who pressed "Remind me" are told when the first item drops. */
+function reminderDraft(sale: PowerSale, shop: User) {
+  const first = sale.items[0]!;
+  return {
+    kind: 'sale_opened' as const,
+    title: `⚡ ${sale.name} is dropping now at ${actorName(shop.sellerProfile!.storefrontName, shop.sellerProfile!.username)}`,
+    body: `${first.title} is first - members' price for ${sale.windowMinutes} min.`,
+    link: `/social/c/${encodeURIComponent(sale.sellerId)}`,
+  };
+}
+
+/** Held until `at` when that is ahead; sent now when it is not. */
+const heldUntil = (at: number, now: number) => (at > now ? { notBefore: iso(at) } : {});
+
 /**
- * Move a sale to where the clock says it should be.
- *
- * At most one item per pass. Everything else - the opening message, closing a
- * window that has expired, the closing message - happens as soon as it is due,
- * because none of those are things a reader has to scroll past.
+ * Move a sale to where the clock says it should be, and write what falls due
+ * within LOOKAHEAD so it shows on the minute (see the note at the top).
  */
 export async function advancePowerSale(
   repository: Repo,
@@ -194,8 +269,9 @@ export async function advancePowerSale(
 ): Promise<PowerSale> {
   if (sale.status === 'draft' || sale.status === 'cancelled' || sale.status === 'done') return sale;
 
-  const now = options.now ?? new Date();
-  const stamp = now.toISOString();
+  const now = (options.now ?? new Date()).getTime();
+  const horizon = now + LOOKAHEAD_MS;
+  const stamp = iso(now);
   let changed = false;
 
   const shop = await repository.getUserById(sale.sellerId);
@@ -204,18 +280,20 @@ export async function advancePowerSale(
   // 1. The opening message. Nothing else can happen before it: an item posted
   //    into a room that was never told a sale was starting is just an item.
   if (!sale.openedAt) {
-    if (Date.parse(sale.openingAt) > now.getTime()) return sale;
+    const opensAt = Date.parse(sale.openingAt);
+    if (opensAt > horizon) return sale;
+    const showAt = Math.max(opensAt, now);
     // The opening message carries the sale, so the channel can count down to
     // the first item and offer a reminder - and the Buy tab's Drops shelf
     // shows the sale from this moment on.
-    await repository.createPost(shopPost(shop, sale.openingBody, null, true, 'channel', null, {
+    await once(() => repository.createPost(shopPost(shop, sale.openingBody, null, true, 'channel', null, {
       saleId: sale.id,
       sellerId: sale.sellerId,
       startsAt: firstDropAt(sale),
       saleName: sale.name,
       itemCount: sale.items.length,
-    }));
-    sale.openedAt = stamp;
+    }, { id: ids.opening(sale), at: showAt })));
+    sale.openedAt = iso(showAt);
     sale.status = 'running';
     changed = true;
 
@@ -225,16 +303,65 @@ export async function advancePowerSale(
       title: `${shop.sellerProfile.storefrontName} has started a sale`,
       body: sale.openingBody.slice(0, 140),
       link: `/social/c/${encodeURIComponent(sale.sellerId)}`,
-    });
+    }, { ...heldUntil(showAt, now), key: ids.opened(sale) });
+  }
+  const openedAt = Date.parse(sale.openedAt);
+
+  // 2. Items due within the lookahead, each written to show at its own time.
+  //    Behind schedule, one per pass and shown now - see the note at the top.
+  let caughtUp = false;
+  for (const [index, item] of sale.items.entries()) {
+    if (item.postedAt) continue;
+    // Never ahead of the message that opens the sale.
+    const due = Math.max(dueAt(sale, index), openedAt);
+    if (due > horizon) break;
+    let showAt = due;
+    if (due <= now) {
+      if (caughtUp) break;
+      caughtUp = true;
+      showAt = now;
+    }
+    await dropItem(repository, shop, sale, index, showAt, now);
+    changed = true;
   }
 
-  // 2. Windows that have run out. The item stays; the price goes up to what
-  //    everybody else pays, which is the whole bargain: the window rewards
-  //    being here, it does not punish being late.
-  for (const item of sale.items) {
-    if (!item.postedAt || item.liftedAt || !item.listingId) continue;
-    if (!item.windowEndsAt || Date.parse(item.windowEndsAt) > now.getTime()) continue;
+  // 3. Windows. The item stays; the price goes up to what everybody else pays,
+  //    which is the whole bargain: the window rewards being here, it does not
+  //    punish being late. The listing reads that way from the minute the
+  //    window ends (its `memberWindow`); here it is written down.
+  for (const [index, item] of sale.items.entries()) {
+    if (!item.postedAt || item.liftedAt || !item.listingId || !item.windowEndsAt) continue;
+    const endsAt = Date.parse(item.windowEndsAt);
 
+    // Now it is everybody's, so it can be said to everybody - where the shop
+    // chose when it scheduled the sale, at the minute the window ends. One
+    // post: a feed post is already in the channel, so asking for both writes
+    // it once.
+    const after = sale.afterWindow;
+    if (!item.publicPostAt && endsAt <= horizon && after && (after.channel || after.feed)) {
+      const showAt = Math.max(endsAt, now);
+      try {
+        await once(() => repository.createPost(shopPost(
+          shop,
+          // A feed post is read outside the room, so it does not talk about it.
+          after.feed
+            ? `✨ Now open to everyone: ${item.title}.`
+            : `✨ Exclusive channel drop, now open to everyone: ${item.title}.`,
+          item.listingId,
+          true,
+          after.feed ? 'feed' : 'channel',
+          null,
+          null,
+          { id: ids.public(sale, index), at: showAt },
+        )));
+      } catch {
+        /* The item goes public either way; a lost announcement is the lesser loss. */
+      }
+      item.publicPostAt = iso(showAt);
+      changed = true;
+    }
+
+    if (endsAt > now) continue;
     const listing = await repository.getListing(item.listingId);
     if (listing) {
       // The handover: the price goes up to what everybody else pays, and the
@@ -244,85 +371,32 @@ export async function advancePowerSale(
         ...listing,
         priceMinor: item.listPriceMinor,
         unlisted: false,
-        expiresAt: publicExpiry(item, now) ?? listing.expiresAt,
+        expiresAt: publicExpiry(item, new Date(endsAt)) ?? listing.expiresAt,
+        memberWindow: null,
         updatedAt: stamp,
       });
     }
     item.liftedAt = stamp;
     changed = true;
-
-    // Now it is everybody's, so it can be said to everybody - where the shop
-    // chose when it scheduled the sale. One post: a feed post is already in
-    // the channel, so asking for both writes it once.
-    const after = sale.afterWindow;
-    if (listing && after && (after.channel || after.feed)) {
-      try {
-        await repository.createPost(shopPost(
-          shop,
-          // A feed post is read outside the room, so it does not talk about it.
-          after.feed
-            ? `✨ Now open to everyone: ${item.title}.`
-            : `✨ Exclusive channel drop, now open to everyone: ${item.title}.`,
-          item.listingId,
-          true,
-          after.feed ? 'feed' : 'channel',
-        ));
-      } catch {
-        /* The item went public either way; a lost announcement is the lesser loss. */
-      }
-    }
   }
 
-  // 3. The next item, if its turn has come. One per pass - see the note at the
-  //    top: a sale nobody watched overnight must not arrive as one scroll.
-  const next = sale.items.findIndex((item) => !item.postedAt);
-  if (next !== -1 && dueAt(sale, next) <= now.getTime()) {
-    const item = sale.items[next]!;
-    const listing = await repository.createListing(listingFor(sale, item, stamp));
-    await refreshIdentity(repository, sale.sellerId);
-    const endsAt = new Date(now.getTime() + minutes(sale.windowMinutes)).toISOString();
-
-    const rises = item.listPriceMinor > item.priceMinor;
-    await repository.createPost(
-      shopPost(
-        shop,
-        rises
-          ? `⚡ Drop ${next + 1}/${sale.items.length}: ${item.title} — members' price for ${sale.windowMinutes} min, then the price goes up.`
-          : `⚡ Drop ${next + 1}/${sale.items.length}: ${item.title} — yours first for ${sale.windowMinutes} min, then it goes public.`,
-        listing.id,
-        false,
-        'channel',
-        {
-          endsAt, memberPriceMinor: item.priceMinor, publicPriceMinor: item.listPriceMinor,
-          index: next + 1, total: sale.items.length, saleName: sale.name,
-        },
-      ),
-    );
-
-    item.postedAt = stamp;
-    item.windowEndsAt = endsAt;
-    item.listingId = listing.id;
-    changed = true;
-
-    // The first item is what everyone who pressed "Remind me" was waiting for.
-    if (next === 0 && !sale.remindedAt && (sale.reminders ?? []).length > 0) {
-      await notify(repository, sale.reminders ?? [], {
-        kind: 'sale_opened',
-        title: `⚡ ${sale.name} is dropping now at ${actorName(shop.sellerProfile.storefrontName, shop.sellerProfile.username)}`,
-        body: `${item.title} is first - members' price for ${sale.windowMinutes} min.`,
-        link: `/social/c/${encodeURIComponent(sale.sellerId)}`,
-      }, { except: sale.sellerId });
-      sale.remindedAt = stamp;
-    }
-  }
-
-  // 4. The closing message, once every item is out and every window is shut.
+  // 4. The closing message, at the minute the last window shuts; and the run
+  //    is done once every window has been written down as shut.
   const allPosted = sale.items.every((item) => item.postedAt);
-  const allSettled = sale.items.every((item) => item.liftedAt);
-  if (allPosted && allSettled && !sale.closedAt) {
-    if (sale.closingBody.trim()) {
-      await repository.createPost(shopPost(shop, sale.closingBody, null, true));
+  if (allPosted && !sale.closingAt) {
+    const last = Math.max(...sale.items.map((item) => Date.parse(item.windowEndsAt ?? item.postedAt!)));
+    if (last <= horizon) {
+      const showAt = Math.max(last, now);
+      if (sale.closingBody.trim()) {
+        await once(() => repository.createPost(shopPost(
+          shop, sale.closingBody, null, true, 'channel', null, null, { id: ids.closing(sale), at: showAt },
+        )));
+      }
+      sale.closingAt = iso(showAt);
+      changed = true;
     }
+  }
+  if (allPosted && sale.items.every((item) => item.liftedAt) && !sale.closedAt) {
     sale.closedAt = stamp;
     sale.status = 'done';
     changed = true;
@@ -331,6 +405,105 @@ export async function advancePowerSale(
   if (!changed) return sale;
   sale.updatedAt = stamp;
   return repository.savePowerSale(sale);
+}
+
+/** One item out: its listing and its post, both showing at `showAt`. */
+async function dropItem(
+  repository: Repo, shop: User, sale: PowerSale, index: number, showAt: number, now: number,
+): Promise<void> {
+  const item = sale.items[index]!;
+  const endsAt = showAt + minutes(sale.windowMinutes);
+  const listing = listingFor(sale, item, index, showAt, endsAt);
+  await once(() => repository.createListing(listing));
+  await refreshIdentity(repository, sale.sellerId);
+
+  const rises = item.listPriceMinor > item.priceMinor;
+  await once(() => repository.createPost(
+    shopPost(
+      shop,
+      rises
+        ? `⚡ Drop ${index + 1}/${sale.items.length}: ${item.title} — members' price for ${sale.windowMinutes} min, then the price goes up.`
+        : `⚡ Drop ${index + 1}/${sale.items.length}: ${item.title} — yours first for ${sale.windowMinutes} min, then it goes public.`,
+      listing.id,
+      false,
+      'channel',
+      {
+        endsAt: iso(endsAt), memberPriceMinor: item.priceMinor, publicPriceMinor: item.listPriceMinor,
+        index: index + 1, total: sale.items.length, saleName: sale.name,
+      },
+      null,
+      { id: ids.drop(sale, index), at: showAt },
+    ),
+  ));
+
+  item.postedAt = iso(showAt);
+  item.windowEndsAt = iso(endsAt);
+  item.listingId = listing.id;
+
+  // The first item is what everyone who pressed "Remind me" was waiting for:
+  // held until it shows, so the phone buzzes as the post appears.
+  if (index === 0 && !sale.remindedAt && (sale.reminders ?? []).length > 0) {
+    await notify(repository, sale.reminders ?? [], reminderDraft(sale, shop), {
+      except: sale.sellerId, ...heldUntil(showAt, now), key: ids.remind(sale),
+    });
+    sale.remindedAt = iso(showAt);
+  }
+}
+
+/**
+ * Somebody pressed "Remind me", or took it back, after the first item was
+ * already written ahead - their notice is written, or withdrawn, to match.
+ * Nothing to do before then: the item's own pass tells everyone on the list.
+ */
+export async function remindOne(repository: Repo, sale: PowerSale, userId: string, on: boolean): Promise<void> {
+  const showAt = sale.items[0]?.postedAt;
+  if (!sale.remindedAt || !showAt || userId === sale.sellerId) return;
+  if (!on) {
+    await repository.deleteNotification(userId, `ntf_${ids.remind(sale)}_${userId}`).catch(() => undefined);
+    return;
+  }
+  const shop = await repository.getUserById(sale.sellerId);
+  if (!shop?.sellerProfile) return;
+  await notify(repository, [userId], reminderDraft(sale, shop), {
+    ...heldUntil(Date.parse(showAt), Date.now()), key: ids.remind(sale),
+  });
+}
+
+/**
+ * Take back everything written ahead that has not shown yet: the posts, the
+ * listings, the notices held for them. Calling a sale off at 9:01 must not
+ * still drop the item written for 9:03.
+ */
+export async function callOffAhead(repository: Repo, sale: PowerSale, now = new Date()): Promise<void> {
+  const t = now.getTime();
+  const gone = (channelId: string, id: string) => repository.deletePost(channelId, id).catch(() => undefined);
+  const unsay = (userIds: readonly string[], key: string) => Promise.all(userIds.map((userId) =>
+    repository.deleteNotification(userId, `ntf_${key}_${userId}`).catch(() => undefined)));
+
+  if (later(sale.openedAt, t)) {
+    await gone(sale.sellerId, ids.opening(sale));
+    await unsay(await repository.listFollowerIds(sale.sellerId), ids.opened(sale));
+    sale.openedAt = null;
+  }
+  if (later(sale.remindedAt, t)) {
+    await unsay(sale.reminders ?? [], ids.remind(sale));
+    sale.remindedAt = null;
+  }
+  for (const [index, item] of sale.items.entries()) {
+    if (later(item.postedAt, t)) {
+      await gone(sale.sellerId, ids.drop(sale, index));
+      if (item.listingId) await repository.deleteListing(sale.sellerId, item.listingId);
+      Object.assign(item, { postedAt: null, windowEndsAt: null, listingId: null });
+    }
+    if (later(item.publicPostAt, t)) {
+      await gone(sale.sellerId, ids.public(sale, index));
+      item.publicPostAt = null;
+    }
+  }
+  if (later(sale.closingAt, t)) {
+    await gone(sale.sellerId, ids.closing(sale));
+    sale.closingAt = null;
+  }
 }
 
 /**
@@ -353,6 +526,7 @@ export async function releaseItems(repository: Repo, sale: PowerSale, now = new 
       priceMinor: item.listPriceMinor,
       unlisted: false,
       expiresAt: publicExpiry(item, now) ?? listing.expiresAt,
+      memberWindow: null,
       updatedAt: stamp,
     });
     item.liftedAt = stamp;
@@ -363,10 +537,10 @@ export async function releaseItems(repository: Repo, sale: PowerSale, now = new 
 /**
  * Advance every live sale on the platform, whoever is or is not watching.
  *
- * The clock the timer trigger (and the local dev server) runs once a minute.
- * Before it, a sale only moved while its shop had the console open, so an
- * item due at 3am went out whenever the seller next looked. Returns how many
- * sales it touched, for the log.
+ * What the clock app's timer runs every five minutes (the local dev server,
+ * every minute). Each pass writes the next LOOKAHEAD ahead, so a drop due at
+ * 3am shows at 3am with nobody watching. Returns how many sales it touched,
+ * for the log.
  */
 export async function tickPowerSales(repository: Repo, now = new Date()): Promise<number> {
   await renewShowcaseSales(repository, now).catch(() => 0);
@@ -375,7 +549,7 @@ export async function tickPowerSales(repository: Repo, now = new Date()): Promis
     try {
       await advancePowerSale(repository, sale, { now });
     } catch {
-      /* One stuck sale must not hold up the others; it is retried next minute. */
+      /* One stuck sale must not hold up the others; it is retried next pass. */
     }
   }
   return live.length;
