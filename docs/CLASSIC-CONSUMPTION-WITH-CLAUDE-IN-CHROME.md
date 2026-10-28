@@ -155,7 +155,8 @@ az role assignment list --assignee "$APP_ID" --all --query "[].{role:roleDefinit
 ```
 
 Then on <https://github.com/swarnavarb/Figmark/actions>, open the latest
-**Build and deploy** run on branch `development` and use **Re-run jobs →
+**Build and deploy** run on branch `development` whose event is **push** (a
+pull request run never deploys the clocks) and use **Re-run jobs →
 Re-run all jobs**. It doesn't ask for approval. Wait for
 **Deploy clocks (development)** to finish, and tell me whether it succeeded.
 If it failed, copy the error lines (no secrets).
