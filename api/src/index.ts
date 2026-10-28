@@ -31,6 +31,7 @@ import './functions/store-routes.js';
 import './functions/tracking-routes.js';
 import './functions/template-routes.js';
 import './functions/admin-routes.js';
+import './functions/overview-routes.js';
 import './functions/quest-routes.js';
 import './functions/collection-routes.js';
 import './functions/learn-routes.js';

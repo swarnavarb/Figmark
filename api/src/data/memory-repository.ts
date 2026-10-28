@@ -920,6 +920,10 @@ export class MemoryRepository implements Repository {
     return [...this.users.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  async listSignupTimes(since: string): Promise<string[]> {
+    return [...this.users.values()].map((user) => user.createdAt).filter((at) => at >= since);
+  }
+
   async pageUsers(options: { search?: string; limit: number; cursor?: string | null }) {
     const search = (options.search ?? '').trim().toLowerCase();
     const all = await this.listAllUsers();
