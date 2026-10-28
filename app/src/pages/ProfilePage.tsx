@@ -1,6 +1,6 @@
 import { TEXT_SIZES, readTextSize, setTextSize, type TextSize } from '../textSize';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
@@ -18,6 +18,7 @@ import { VerifiedChips } from '../components/VerifiedChips';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import { PushCard } from '../components/PushControls';
 import { TwoFactorSettings } from '../components/TwoFactor';
+import { PictureField, TagInput } from '../components/PageFields';
 import '../styles/ProfilePage.css';
 import { factsOf } from '@shared/catalog';
 
@@ -75,6 +76,16 @@ export function ProfilePage() {
     void api.profile(user.username).then(setPublicPage).catch(() => setPublicPage(null));
   }, [user?.username]);
   const setTab = (next: Tab) => setParams({ tab: next }, { replace: true });
+  const location = useLocation();
+  /** Edit profile: the Settings tab, scrolled to, so the tap lands somewhere visible. */
+  const editProfile = () => navigate({ search: '?tab=settings', hash: '#settings' }, { replace: true });
+
+  // `#settings` (from Edit profile here or on your public page) brings the
+  // settings into view once the tab has rendered.
+  useEffect(() => {
+    if (tab !== 'settings' || location.hash !== '#settings') return;
+    requestAnimationFrame(() => document.getElementById('settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [tab, location.hash, location.key]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,10 +121,11 @@ export function ProfilePage() {
           userId: user.id,
           displayName: user.displayName,
           handle: user.username,
-          photoUrl: publicPage?.photoUrl ?? null,
-          coverUrl: publicPage?.coverUrl ?? null,
-          bio: publicPage?.bio ?? user.bio ?? '',
-          tags: publicPage?.tags ?? [],
+          // Read from the session, so a save in Settings shows up here at once.
+          photoUrl: user.photoUrl ?? user.sellerProfile?.photoUrl ?? null,
+          coverUrl: user.coverUrl ?? null,
+          bio: user.bio ?? '',
+          tags: user.tags ?? [],
           memberSince: publicPage?.memberSince,
           lastSeenAt: null,
         }}
@@ -121,7 +133,7 @@ export function ProfilePage() {
         onReviews={() => user.username && navigate(`/${user.username}`)}
         actions={
           <div className="pacts">
-            <button type="button" className="pbtn pbtn--follow" onClick={() => setTab('settings')}>Edit profile</button>
+            <button type="button" className="pbtn pbtn--follow" onClick={editProfile}>Edit profile</button>
           </div>
         } />
 
@@ -194,7 +206,7 @@ export function ProfilePage() {
         </div>
       )}
 
-      <div className="tabs">
+      <div className="tabs" id="settings" style={{ scrollMarginTop: 'calc(var(--nav-h, 56px) + 12px)' }}>
         {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
@@ -216,10 +228,10 @@ export function ProfilePage() {
         <SavedItems />
       ) : tab === 'settings' ? (
         <>
+          <MyPageSettings />
           <UsernameSettings />
           <EmailSettings />
           <TwoFactorSettings />
-          <MyPageSettings />
           <DisplaySettings />
           <BlockedList />
           <DeleteAccount />
@@ -361,8 +373,9 @@ function DisplaySettings() {
 function MyPageSettings() {
   const { user, refresh } = useSession();
   const [bio, setBio] = useState(user?.bio ?? '');
+  const [photoUrl, setPhotoUrl] = useState(user?.photoUrl ?? '');
   const [coverUrl, setCoverUrl] = useState(user?.coverUrl ?? '');
-  const [tags, setTags] = useState((user?.tags ?? []).join(', '));
+  const [tags, setTags] = useState<string[]>(user?.tags ?? []);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -374,11 +387,7 @@ function MyPageSettings() {
     setError(null);
     setFlash(null);
     try {
-      await api.saveProfile({
-        bio: bio.trim(),
-        coverUrl: coverUrl.trim(),
-        tags: tags.split(',').map((tag: string) => tag.trim()).filter(Boolean),
-      });
+      await api.saveProfile({ bio: bio.trim(), photoUrl, coverUrl, tags });
       await refresh();
       setFlash('Saved.');
     } catch (err) {
@@ -398,11 +407,11 @@ function MyPageSettings() {
         )}
       </p>
 
-      <label className="field">
-        <span>Banner</span>
-        <input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)}
-          placeholder="https://…" inputMode="url" />
-      </label>
+      <PictureField label="Profile photo" shape="square" value={photoUrl} onChange={setPhotoUrl}
+        hint="A clear, square picture of you works best." />
+
+      <PictureField label="Cover photo" shape="wide" value={coverUrl} onChange={setCoverUrl}
+        hint="The wide banner across the top of your page." />
 
       <label className="field">
         <span>About you</span>
@@ -410,12 +419,8 @@ function MyPageSettings() {
           placeholder="What you collect, what you are hunting for." />
       </label>
 
-      <label className="field">
-        <span>Chips</span>
-        <input value={tags} onChange={(e) => setTags(e.target.value)}
-          placeholder="Gunpla, Mumbai, pays fast" />
-        <span className="field__hint">Up to six, separated by commas.</span>
-      </label>
+      <TagInput value={tags} onChange={setTags}
+        hint="Short facts about you, like Gunpla, Mumbai or pays fast." fullHint="Six tags is the most a page shows." />
 
       {flash && <p className="notice notice--ok">{flash}</p>}
       {error && <ErrorNotice message={error} />}
@@ -508,7 +513,7 @@ function UsernameSettings() {
             {user.sellerProfile?.username ? (
               <Link to={`/${user.sellerProfile.username}`}>@{user.sellerProfile.username}</Link>
             ) : user.sellerProfile ? (
-              <Link to="/shop">Set one in the storefront editor</Link>
+              <Link to="/shop?tab=storefront#settings">Set one in the storefront editor</Link>
             ) : (
               <Link to="/shop">No storefront yet</Link>
             )}

@@ -567,7 +567,7 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
     <main className="storefront qprofile">
       <CollectorHeader person={person} page={profile} onReviews={() => setTab('reviews')}
         actions={<PageActions profile={profile} isMe={isMe} onFollow={onFollow}
-          edit={<Link to="/me?tab=settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
+          edit={<Link to="/me?tab=settings#settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
 
       <div className="storefront__body">
         <div className="tabs" style={{ marginTop: 16 }}>

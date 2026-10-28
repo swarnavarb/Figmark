@@ -164,7 +164,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
         </header>
 
         <PageActions profile={data} isMe={isMe} onFollow={onFollow}
-          edit={<Link to="/shop" className="pbtn pbtn--follow">Edit shop</Link>} />
+          edit={<Link to="/shop?tab=storefront#settings" className="pbtn pbtn--follow">Edit shop</Link>} />
 
         <div className="pstats">
           <FollowCounts userId={data.sellerId} followerCount={data.followerCount} isStore />

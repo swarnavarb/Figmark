@@ -327,7 +327,7 @@ async function saveProfile(request: HttpRequest, _context: InvocationContext) {
   const record = await repository.getUserById(user.id);
   if (!record) return error(404, 'not_found', 'This account no longer exists.');
 
-  let body: { bio?: string; coverUrl?: string; tags?: string[] };
+  let body: { bio?: string; photoUrl?: string; coverUrl?: string; tags?: string[] };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -344,6 +344,13 @@ async function saveProfile(request: HttpRequest, _context: InvocationContext) {
     }
     record.coverUrl = cover || null;
   }
+  if (body.photoUrl !== undefined) {
+    const photo = body.photoUrl.trim();
+    if (photo && !(await ownPhotoName(photo))) {
+      return error(400, 'invalid_profile', 'Upload your photo here rather than linking to it.');
+    }
+    record.photoUrl = photo || null;
+  }
   if (body.tags !== undefined) {
     record.tags = [...new Set(body.tags.map((tag) => tag.trim()).filter(Boolean))]
       .map((tag) => tag.slice(0, 24))
@@ -353,7 +360,7 @@ async function saveProfile(request: HttpRequest, _context: InvocationContext) {
   record.updatedAt = new Date().toISOString();
   const saved = await repository.updateUser(record);
   return json(200, {
-    profile: { bio: saved.bio ?? '', coverUrl: saved.coverUrl ?? null, tags: saved.tags ?? [] },
+    profile: { bio: saved.bio ?? '', photoUrl: saved.photoUrl ?? null, coverUrl: saved.coverUrl ?? null, tags: saved.tags ?? [] },
   });
 }
 

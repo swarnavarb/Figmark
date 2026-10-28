@@ -40,7 +40,6 @@ import { EXPIRY_WARNING_HOURS, REFUND_ORIGIN_LABELS, isExpired } from '@shared/p
 import { isOpen, waitingOnShop } from '../engage';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
-import { shrink } from '../components/PhotoManager';
 import type { StoreAccess } from '@shared/stores';
 import type { SavedCalc } from '@shared/profit';
 import {
@@ -75,6 +74,7 @@ import {
 import { useSession } from '../session';
 import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
+import { PictureField, TagInput } from '../components/PageFields';
 import { MoreMenu } from '../components/MoreMenu';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import { Preloader } from '../components/Preloader';
@@ -302,7 +302,8 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </label>
       )}
 
-      <div className="selltabs" role="tablist" aria-label="Shop">
+      <div className="selltabs" role="tablist" aria-label="Shop" id="settings"
+        style={{ scrollMarginTop: 'calc(var(--nav-h, 56px) + 12px)' }}>
         {groups.map((group) => (
           <button key={group.id} type="button" role="tab" aria-selected={active ? groupOf(active) === group.id : false}
             className={`selltabs__tab${active && groupOf(active) === group.id ? ' is-on' : ''}`}
@@ -738,6 +739,16 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const [reached, setReached] = useState(0);
   /** Whether the shop username is free, asked a moment after typing stops. */
   const [handleFree, setHandleFree] = useState<{ name: string; free: boolean | null } | null>(null);
+  const location = useLocation();
+  const loaded = draft !== null;
+
+  // Edit shop (from the shop's page) lands on these settings, scrolled to
+  // rather than left under the Sell home - once the form is in, so the page
+  // is tall enough to scroll that far.
+  useEffect(() => {
+    if (wizard || !loaded || location.hash !== '#settings') return;
+    requestAnimationFrame(() => document.getElementById('settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [wizard, loaded, location.hash, location.key]);
 
   useEffect(() => {
     void api
@@ -876,10 +887,10 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
 
   const photoFields = (
     <>
-      <ShopPictureField label="Shop photo" shape="square" value={draft.photoUrl ?? ''}
+      <PictureField label="Shop photo" shape="square" value={draft.photoUrl ?? ''}
         onChange={(url) => set('photoUrl', url)}
         hint="Your logo, or a photo of your shelf. Square works best." />
-      <ShopPictureField label="Banner" shape="wide" value={draft.coverUrl ?? ''}
+      <PictureField label="Banner" shape="wide" value={draft.coverUrl ?? ''}
         onChange={(url) => set('coverUrl', url)}
         hint="The wide band behind your shop's name." />
     </>
@@ -893,7 +904,8 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           placeholder="What you sell, where you import from, how often you run a lot." rows={4} />
       </label>
 
-      <TagInput value={tags} onChange={(next) => set('tags', next)} ideas={tagIdeas} />
+      <TagInput value={tags} onChange={(next) => set('tags', next)} ideas={tagIdeas}
+        hint="Up to six short facts buyers scan at a glance." fullHint="Six tags is the most a shop shows." />
 
       <div className="field-row">
         <label className="field">
@@ -926,7 +938,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           onChange={(e) => setPayment('upiId', e.target.value)}
           placeholder="yourshop@okhdfcbank" />
       </label>
-      <ShopPictureField label="UPI QR code" shape="qr" value={draft.payment?.qrUrl ?? ''}
+      <PictureField label="UPI QR code" shape="qr" value={draft.payment?.qrUrl ?? ''}
         onChange={(url) => setPayment('qrUrl', url)}
         hint="A screenshot of the QR from your UPI app. Buyers scan it at checkout." />
       <div className="field-row">
@@ -1124,130 +1136,6 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           </button>
         </div>
       </form>
-    </div>
-  );
-}
-
-/**
- * One storefront picture: uploaded from the device, never typed as a link.
- *
- * Shrunk on the phone first, so a 12 MB camera photo goes up as a few hundred
- * kilobytes, and shown back as it will look on the shop.
- */
-function ShopPictureField({ label, hint, value, onChange, shape }: {
-  label: string;
-  hint: string;
-  value: string;
-  onChange: (url: string) => void;
-  shape: 'square' | 'wide' | 'qr';
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function pick(file: File | undefined) {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      onChange((await api.uploadStorefrontPhoto(await shrink(file))).url);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload. Try another.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="field">
-      <span>{label}</span>
-      <div className={`sfpic sfpic--${shape}`}>
-        {value
-          ? <img loading="lazy" decoding="async" className="sfpic__img" src={value} alt={label} />
-          : <span className="sfpic__empty" aria-hidden="true"><Icon name="camera" size={20} /></span>}
-        <div className="sfpic__acts">
-          <label className={`btn btn--quiet btn--sm sfpic__pick${busy ? ' is-busy' : ''}`}>
-            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={busy}
-              onChange={(event) => { void pick(event.target.files?.[0]); event.target.value = ''; }} />
-            {busy ? 'Uploading…' : value ? 'Change' : 'Upload photo'}
-          </label>
-          {value && !busy && (
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => onChange('')}>Remove</button>
-          )}
-        </div>
-      </div>
-      {error ? <span className="field__hint" style={{ color: 'var(--danger-text)' }}>{error}</span>
-        : <span className="field__hint">{hint}</span>}
-    </div>
-  );
-}
-
-/**
- * Tags as pills: typing a comma (or Enter) turns what was typed into one.
- *
- * Backspace in the empty box takes the last one back off; suggestions below
- * add with a tap. Six at most, 24 characters each - the rule the server keeps.
- */
-function TagInput({ value, onChange, ideas }: { value: string[]; onChange: (tags: string[]) => void; ideas: string[] }) {
-  const [text, setText] = useState('');
-  const full = value.length >= 6;
-  const has = (tag: string) => value.some((row) => row.toLowerCase() === tag.toLowerCase());
-
-  const add = (raw: string[]) => {
-    const next = [...value];
-    for (const piece of raw) {
-      const tag = piece.trim().slice(0, 24);
-      if (tag && next.length < 6 && !next.some((row) => row.toLowerCase() === tag.toLowerCase())) next.push(tag);
-    }
-    if (next.length !== value.length) onChange(next);
-  };
-
-  const type = (input: string) => {
-    if (!input.includes(',')) return setText(input);
-    const parts = input.split(',');
-    add(parts.slice(0, -1));
-    setText(parts[parts.length - 1]!.trimStart());
-  };
-
-  const suggestions = ideas.filter((idea) => !has(idea)).slice(0, 8);
-
-  return (
-    <div className="field">
-      <span id="shop-tags-label">Tags</span>
-      <div className="taginput" onClick={(event) => event.currentTarget.querySelector('input')?.focus()}>
-        {value.map((tag) => (
-          <span key={tag} className="taginput__tag">
-            {tag}
-            <button type="button" className="taginput__x" aria-label={`Remove ${tag}`}
-              onClick={(event) => { event.stopPropagation(); onChange(value.filter((row) => row !== tag)); }}>
-              ×
-            </button>
-          </span>
-        ))}
-        {!full && (
-          <input className="taginput__box" value={text} aria-labelledby="shop-tags-label"
-            placeholder={value.length === 0 ? 'Type a tag, then a comma' : 'Add another'}
-            onChange={(event) => type(event.target.value)}
-            onBlur={() => { if (text.trim()) { add([text]); setText(''); } }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                if (text.trim()) { add([text]); setText(''); }
-              } else if (event.key === 'Backspace' && !text && value.length > 0) {
-                onChange(value.slice(0, -1));
-              }
-            }} />
-        )}
-      </div>
-      <span className="field__hint">
-        {full ? 'Six tags is the most a shop shows.' : `Up to six short facts buyers scan at a glance. ${6 - value.length} left.`}
-      </span>
-      {!full && suggestions.length > 0 && (
-        <div className="taginput__ideas" aria-label="Suggested tags">
-          {suggestions.map((idea) => (
-            <button key={idea} type="button" className="taginput__idea" onClick={() => add([idea])}>+ {idea}</button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

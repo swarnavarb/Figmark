@@ -992,7 +992,9 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     isStore,
     displayName: shop?.storefrontName ?? user.displayName,
     bio: (isStore ? shop?.bio : user.bio) ?? '',
-    photoUrl: shop?.photoUrl ?? null,
+    // A person's own picture, falling back to their shop's for accounts that
+    // only ever set the one.
+    photoUrl: (isStore ? shop?.photoUrl : (user.photoUrl ?? shop?.photoUrl)) ?? null,
     coverUrl: (isStore ? shop?.coverUrl : user.coverUrl) ?? null,
     tags: (isStore ? shop?.tags : user.tags) ?? [],
     // What the shop is known for beyond its own tags, from what it lists;

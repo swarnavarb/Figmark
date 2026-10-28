@@ -3042,8 +3042,8 @@ export const api = {
   /** The shop-wide rules, such as how long protected payments are held. */
   writePageReview: (userId: string, body: { rating: number; body: string; side: PageSide }) =>
     post<{ review: PageReview }>(`/users/${encodeURIComponent(userId)}/page-reviews/new`, body),
-  saveProfile: (body: { bio?: string; coverUrl?: string; tags?: string[] }) =>
-    post<{ profile: { bio: string; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
+  saveProfile: (body: { bio?: string; photoUrl?: string; coverUrl?: string; tags?: string[] }) =>
+    post<{ profile: { bio: string; photoUrl: string | null; coverUrl: string | null; tags: string[] } }>('/me/profile', body),
   setUsername: (username: string) => post<{ username: string }>('/me/username', { username }),
 
   storefront: () =>

@@ -844,6 +844,7 @@ export function toAuthUser(user: User): AuthUser {
     mfaEnabled: mfaOn(user),
     mfaRequired: config.staffMfa && !mfaOn(user) && (operator || Boolean(user.managerRights)),
     bio: user.bio ?? '',
+    photoUrl: user.photoUrl ?? null,
     coverUrl: user.coverUrl ?? null,
     tags: user.tags ?? [],
   };

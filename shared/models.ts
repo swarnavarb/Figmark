@@ -298,10 +298,11 @@ export interface User extends BaseDocument {
    * The person's own page, as distinct from their shop's.
    *
    * A buyer is somebody a seller decides whether to trust, so they get a page
-   * with the same shape - a banner, a line about themselves, and chips - rather
-   * than a name and nothing. Absent on accounts that predate it.
+   * with the same shape - a picture, a banner, a line about themselves, and
+   * tags - rather than a name and nothing. Absent on accounts that predate it.
    */
   bio?: string;
+  photoUrl?: string | null;
   coverUrl?: string | null;
   tags?: string[];
   /** People following the person's page (a shop's count is on its profile). */
