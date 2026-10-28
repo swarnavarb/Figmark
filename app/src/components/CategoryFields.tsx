@@ -14,6 +14,7 @@ import {
   optionsOf, pruneAttributes, splitMulti, visibleFields,
   type Attributes, type CategoryField,
 } from '@shared/catalog';
+import { Select } from './Select';
 
 /** More options than this and a row of tags stops being a row. */
 const MENU_ABOVE = 9;
@@ -81,10 +82,10 @@ function FieldInput({ field, attributes, missing, onSet }: {
     return (
       <label className={`attr${missing ? ' is-missing' : ''}`}>
         {label}
-        <select value={current} onChange={(event) => onSet(event.target.value)}>
+        <Select value={current} onChange={(event) => onSet(event.target.value)}>
           <option value="">Choose…</option>
           {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+        </Select>
         {field.hint && <span className="field__hint">{field.hint}</span>}
       </label>
     );

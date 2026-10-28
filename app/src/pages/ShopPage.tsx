@@ -13,6 +13,10 @@ import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
 import { LotName, LotPhaseBadge, lotLabel } from '../components/LotName';
 import { useUndo } from '../components/Undo';
+import { InsightsPanel } from './InsightsPanel';
+import { ProfitCalculator } from './ProfitCalculator';
+import { SalesPanel } from './SalesPanel';
+import { BackBar } from '../components/ScrollManager';
 import { RarityRibbon, XpBar } from '../components/Quest';
 import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderStatus';
 import { LBox, OptionTiles } from '../components/ListingForm';
@@ -23,7 +27,6 @@ import { SALES_NEWS_EVENT } from '../components/Notifications';
 import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
-import { RoutesList } from './RoutesPage';
 import { SetupChecklist } from '../components/VerifyNudges';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
@@ -40,7 +43,6 @@ import { EXPIRY_WARNING_HOURS, REFUND_ORIGIN_LABELS, isExpired } from '@shared/p
 import { isOpen, waitingOnShop } from '../engage';
 import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
-import { shrink } from '../components/PhotoManager';
 import type { StoreAccess } from '@shared/stores';
 import type { SavedCalc } from '@shared/profit';
 import {
@@ -62,26 +64,38 @@ import {
   type RoutesResponse,
 } from '../api';
 import { ItemHead } from '../components/ItemHead';
-import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
-import { PowerSalePanel } from '../components/PowerSale';
-import { SkeletonText, useToast, Loading } from '../components/Feedback';
-import { InsightsPanel } from './InsightsPanel';
-import { ProfitCalculator } from './ProfitCalculator';
-import { SalesPanel } from './SalesPanel';
-import { LotDetail, NewLotForm } from './LotsPage';
+import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto, PageError } from '../components/ui';
+import { SkeletonText, useToast, Loading, PageLoading } from '../components/Feedback';
 import {
   currencySymbol, formatCount, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
 } from '../format';
 import { useSession } from '../session';
 import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
+import { PictureField, TagInput } from '../components/PageFields';
 import { MoreMenu } from '../components/MoreMenu';
 import { EarnPill, earnOf } from '../components/Affiliate';
-import { Preloader } from '../components/Preloader';
 import '../styles/ShopPage.css';
+import { Select } from '../components/Select';
 
 /* The Engage screen carries the whole post card; it arrives when it is opened. */
 const EngagePanel = lazy(() => import('../components/EngagePanel').then((module) => ({ default: module.EngagePanel })));
+/*
+ * The parts that bring a lot of code and styles of their own - the lots
+ * console, the route list, power sales - are fetched when one is opened, not
+ * with the Sell page. Opening Sell used to download every one of them and their
+ * stylesheets: 44 scripts and 21 sheets. Insights, sales and the calculator
+ * share the Sell page's own stylesheet, so they still come with it.
+ */
+const RoutesList = lazy(() => import('./RoutesPage').then((module) => ({ default: module.RoutesList })));
+const PowerSalePanel = lazy(() => import('../components/PowerSale').then((module) => ({ default: module.PowerSalePanel })));
+const LotDetail = lazy(() => import('./LotsPage').then((module) => ({ default: module.LotDetail })));
+const NewLotForm = lazy(() => import('./LotsPage').then((module) => ({ default: module.NewLotForm })));
+
+/** A part of the page whose code is still on its way: the loading mark in its place. */
+function Later({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<Loading />}>{children}</Suspense>;
+}
 
 type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage';
 
@@ -170,8 +184,8 @@ export function ShopPage() {
     void load();
   }, [load]);
 
-  if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!stores) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
+  if (error) return <PageError message={error} />;
+  if (!stores) return <PageLoading />;
 
   if (stores.length === 0 && !opening) {
     return <ShopStart onOpen={() => setOpening(true)} />;
@@ -179,13 +193,9 @@ export function ShopPage() {
   if (stores.length === 0) {
     return (
       <main className="page tab-view">
-        <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start', marginBottom: 12 }}
-          onClick={() => setOpening(false)}>
-          <Icon name="back" size={14} /> Back
-        </button>
+        <BackBar onBack={() => setOpening(false)} title="Open your storefront" />
         <div className="page__head">
           <div>
-            <h1>Open your storefront</h1>
             <p className="muted">
               Five short steps. Only the name is needed; everything else can be skipped and changed later.
             </p>
@@ -285,6 +295,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
 
   return (
     <main className="page tab-view">
+      <h1 className="sr-only">Sell</h1>
       <SetupChecklist hasStore />
       <SellHome store={store} canList={store.permissions.includes('listings')} onGo={setSection}
         section={active} />
@@ -292,20 +303,21 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       {stores.length > 1 && (
         <label className="field" style={{ marginBlock: 14 }}>
           <span>Store</span>
-          <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+          <Select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
             {stores.map((entry) => (
               <option key={entry.ownerId} value={entry.ownerId}>
                 {entry.name}{entry.isOwner ? '' : ' — you help run this'}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       )}
 
-      <div className="selltabs" role="tablist" aria-label="Shop">
+      <div className="tabs selltabs" role="tablist" aria-label="Shop" id="settings"
+        style={{ scrollMarginTop: 'calc(var(--nav-h, 56px) + 12px)' }}>
         {groups.map((group) => (
           <button key={group.id} type="button" role="tab" aria-selected={active ? groupOf(active) === group.id : false}
-            className={`selltabs__tab${active && groupOf(active) === group.id ? ' is-on' : ''}`}
+            className={`tab${active && groupOf(active) === group.id ? ' is-on' : ''}`}
             onClick={() => openGroup(group.id)}>
             <Icon name={group.icon} size={16} />
             {group.label}
@@ -343,11 +355,11 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'calculator' && <ProfitCalculator store={store} />}
           {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
-          {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}
+          {active === 'routes' && <Later><RoutesList spotlightNew={params.get('spotlight') === 'new'} /></Later>}
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
-          {active === 'engage' && <Suspense fallback={<Preloader small />}><EngagePanel store={store} /></Suspense>}
+          {active === 'engage' && <Later><EngagePanel store={store} /></Later>}
         </div>
       )}
     </main>
@@ -738,6 +750,16 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const [reached, setReached] = useState(0);
   /** Whether the shop username is free, asked a moment after typing stops. */
   const [handleFree, setHandleFree] = useState<{ name: string; free: boolean | null } | null>(null);
+  const location = useLocation();
+  const loaded = draft !== null;
+
+  // Edit shop (from the shop's page) lands on these settings, scrolled to
+  // rather than left under the Sell home - once the form is in, so the page
+  // is tall enough to scroll that far.
+  useEffect(() => {
+    if (wizard || !loaded || location.hash !== '#settings') return;
+    requestAnimationFrame(() => document.getElementById('settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [wizard, loaded, location.hash, location.key]);
 
   useEffect(() => {
     void api
@@ -876,10 +898,10 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
 
   const photoFields = (
     <>
-      <ShopPictureField label="Shop photo" shape="square" value={draft.photoUrl ?? ''}
+      <PictureField label="Shop photo" shape="square" value={draft.photoUrl ?? ''}
         onChange={(url) => set('photoUrl', url)}
         hint="Your logo, or a photo of your shelf. Square works best." />
-      <ShopPictureField label="Banner" shape="wide" value={draft.coverUrl ?? ''}
+      <PictureField label="Banner" shape="wide" value={draft.coverUrl ?? ''}
         onChange={(url) => set('coverUrl', url)}
         hint="The wide band behind your shop's name." />
     </>
@@ -893,7 +915,8 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           placeholder="What you sell, where you import from, how often you run a lot." rows={4} />
       </label>
 
-      <TagInput value={tags} onChange={(next) => set('tags', next)} ideas={tagIdeas} />
+      <TagInput value={tags} onChange={(next) => set('tags', next)} ideas={tagIdeas}
+        hint="Up to six short facts buyers scan at a glance." fullHint="Six tags is the most a shop shows." />
 
       <div className="field-row">
         <label className="field">
@@ -926,7 +949,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           onChange={(e) => setPayment('upiId', e.target.value)}
           placeholder="yourshop@okhdfcbank" />
       </label>
-      <ShopPictureField label="UPI QR code" shape="qr" value={draft.payment?.qrUrl ?? ''}
+      <PictureField label="UPI QR code" shape="qr" value={draft.payment?.qrUrl ?? ''}
         onChange={(url) => setPayment('qrUrl', url)}
         hint="A screenshot of the QR from your UPI app. Buyers scan it at checkout." />
       <div className="field-row">
@@ -1128,130 +1151,6 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   );
 }
 
-/**
- * One storefront picture: uploaded from the device, never typed as a link.
- *
- * Shrunk on the phone first, so a 12 MB camera photo goes up as a few hundred
- * kilobytes, and shown back as it will look on the shop.
- */
-function ShopPictureField({ label, hint, value, onChange, shape }: {
-  label: string;
-  hint: string;
-  value: string;
-  onChange: (url: string) => void;
-  shape: 'square' | 'wide' | 'qr';
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function pick(file: File | undefined) {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      onChange((await api.uploadStorefrontPhoto(await shrink(file))).url);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload. Try another.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="field">
-      <span>{label}</span>
-      <div className={`sfpic sfpic--${shape}`}>
-        {value
-          ? <img loading="lazy" decoding="async" className="sfpic__img" src={value} alt={label} />
-          : <span className="sfpic__empty" aria-hidden="true"><Icon name="camera" size={20} /></span>}
-        <div className="sfpic__acts">
-          <label className={`btn btn--quiet btn--sm sfpic__pick${busy ? ' is-busy' : ''}`}>
-            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={busy}
-              onChange={(event) => { void pick(event.target.files?.[0]); event.target.value = ''; }} />
-            {busy ? 'Uploading…' : value ? 'Change' : 'Upload photo'}
-          </label>
-          {value && !busy && (
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => onChange('')}>Remove</button>
-          )}
-        </div>
-      </div>
-      {error ? <span className="field__hint" style={{ color: 'var(--danger-text)' }}>{error}</span>
-        : <span className="field__hint">{hint}</span>}
-    </div>
-  );
-}
-
-/**
- * Tags as pills: typing a comma (or Enter) turns what was typed into one.
- *
- * Backspace in the empty box takes the last one back off; suggestions below
- * add with a tap. Six at most, 24 characters each - the rule the server keeps.
- */
-function TagInput({ value, onChange, ideas }: { value: string[]; onChange: (tags: string[]) => void; ideas: string[] }) {
-  const [text, setText] = useState('');
-  const full = value.length >= 6;
-  const has = (tag: string) => value.some((row) => row.toLowerCase() === tag.toLowerCase());
-
-  const add = (raw: string[]) => {
-    const next = [...value];
-    for (const piece of raw) {
-      const tag = piece.trim().slice(0, 24);
-      if (tag && next.length < 6 && !next.some((row) => row.toLowerCase() === tag.toLowerCase())) next.push(tag);
-    }
-    if (next.length !== value.length) onChange(next);
-  };
-
-  const type = (input: string) => {
-    if (!input.includes(',')) return setText(input);
-    const parts = input.split(',');
-    add(parts.slice(0, -1));
-    setText(parts[parts.length - 1]!.trimStart());
-  };
-
-  const suggestions = ideas.filter((idea) => !has(idea)).slice(0, 8);
-
-  return (
-    <div className="field">
-      <span id="shop-tags-label">Tags</span>
-      <div className="taginput" onClick={(event) => event.currentTarget.querySelector('input')?.focus()}>
-        {value.map((tag) => (
-          <span key={tag} className="taginput__tag">
-            {tag}
-            <button type="button" className="taginput__x" aria-label={`Remove ${tag}`}
-              onClick={(event) => { event.stopPropagation(); onChange(value.filter((row) => row !== tag)); }}>
-              ×
-            </button>
-          </span>
-        ))}
-        {!full && (
-          <input className="taginput__box" value={text} aria-labelledby="shop-tags-label"
-            placeholder={value.length === 0 ? 'Type a tag, then a comma' : 'Add another'}
-            onChange={(event) => type(event.target.value)}
-            onBlur={() => { if (text.trim()) { add([text]); setText(''); } }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                if (text.trim()) { add([text]); setText(''); }
-              } else if (event.key === 'Backspace' && !text && value.length > 0) {
-                onChange(value.slice(0, -1));
-              }
-            }} />
-        )}
-      </div>
-      <span className="field__hint">
-        {full ? 'Six tags is the most a shop shows.' : `Up to six short facts buyers scan at a glance. ${6 - value.length} left.`}
-      </span>
-      {!full && suggestions.length > 0 && (
-        <div className="taginput__ideas" aria-label="Suggested tags">
-          {suggestions.map((idea) => (
-            <button key={idea} type="button" className="taginput__idea" onClick={() => add([idea])}>+ {idea}</button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /** One titled block of Shop settings. */
 function SettingsSection({ icon, title, note, children }: { icon: IconName; title: string; note: string; children: ReactNode }) {
   return (
@@ -1343,7 +1242,7 @@ function MyItems({ store }: { store: StoreAccess }) {
       {mode === 'templates' ? (
         <TemplatesPanel store={store} />
       ) : mode === 'power' ? (
-        <PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} />
+        <Later><PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} /></Later>
       ) : !data ? (
         <Loading />
       ) : (
@@ -2609,16 +2508,16 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
         <div className="field-row">
           <label className="field">
             <span>Category</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
               {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-            </select>
+            </Select>
           </label>
           <label className="field">
             <span>Condition</span>
-            <select value={condition} onChange={(e) => setCondition(e.target.value)}>
+            <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
               <option value="">Ask each time</option>
               {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
         <label className="field">
@@ -2640,14 +2539,14 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           ]} />
         <label className="field">
           <span>Default lot</span>
-          <select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
+          <Select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
             <option value="">No lot — filed after it sells</option>
             {lots.map(({ lot }) => (
               <option key={lot.id} value={lot.id}>
                 {lotLabel(lot)}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </LBox>
 
@@ -2655,7 +2554,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           stops travelling alone, so both halves come from the same list and
           cannot contradict each other the way two written ones did. */}
       <LBox icon="🧭" title="Tracking" hint="The journey a customer of this item follows.">
-        <select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)} aria-label="Route">
+        <Select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)} aria-label="Route">
           <option value="">
             {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
           </option>
@@ -2664,7 +2563,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
               {route.name} — {route.steps.length} steps
             </option>
           ))}
-        </select>
+        </Select>
         <span className="lbox__hint">
           None fit? <Link to="/routes/studio/new" target="_blank" rel="noopener">Write a route</Link> (new tab).
         </span>
@@ -3311,7 +3210,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           {mode === 'apply' && (
             <label className="field">
               <span>Put it towards</span>
-              <select value={target} onChange={(e) => {
+              <Select value={target} onChange={(e) => {
                 setTarget(e.target.value);
                 const next = credit.targets.find((entry) => entry.orderId === e.target.value);
                 if (next) setAmount(fromMinor(Math.min(credit.leftMinor, next.outstandingMinor)));
@@ -3321,7 +3220,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
                     {entry.itemName} — {formatMoney(entry.outstandingMinor, credit.currency)} owed
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
           <label className="field">
@@ -3587,14 +3486,14 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
         <>
           <label className="field">
             <span>Order</span>
-            <select value={orderId} onChange={(e) => { setOrderId(e.target.value); setAmount(''); }}>
+            <Select value={orderId} onChange={(e) => { setOrderId(e.target.value); setAmount(''); }}>
               <option value="">Choose an order…</option>
               {refundable.map((entry) => (
                 <option key={entry.orderId} value={entry.orderId}>
                   {entry.buyer.name} — {entry.itemName} (up to {formatMoney(entry.refundableMinor, entry.currency)})
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           {chosen && (
             <>
@@ -4076,11 +3975,8 @@ function Unlotted({ store, onBack }: {
 
   return (
     <div className="stack">
-      <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={onBack}>
-        <Icon name="back" size={14} /> All lots
-      </button>
+      <BackBar onBack={onBack}>Not in a lot yet</BackBar>
       <div>
-        <h2 className="card__title" style={{ fontSize: '1.2rem' }}>Not in a lot yet</h2>
         <p className="faint">Their buyers see no shipment tracking until they are in one.</p>
       </div>
       {error && <ErrorNotice message={error} />}
@@ -4276,7 +4172,7 @@ function ShipTogether({ store, orders, listings, onClose, onDone }: {
     return (
       <Modal title="New lot" onClose={onClose}>
         {busy ? <p className="muted">Filing {count === 1 ? '1 item' : `${count} items`}…</p> : (
-          <NewLotForm bare onCancel={() => setCreating(false)} onDone={(lot) => void fill(lot)} />
+          <Later><NewLotForm bare onCancel={() => setCreating(false)} onDone={(lot) => void fill(lot)} /></Later>
         )}
       </Modal>
     );
@@ -4469,10 +4365,12 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
     return (
       <>
       {notice && <p className="notice notice--ok" role="status">{notice}</p>}
-      <LotDetail lotId={openId} onBack={() => { setNotice(null); setOpenId(null); void load(); }}
-        customers={({ onChanged, onTracking }) => (
-          <Orders store={store} lotId={openId} onChanged={onChanged} onTracking={onTracking} />
-        )} />
+      <Later>
+        <LotDetail lotId={openId} onBack={() => { setNotice(null); setOpenId(null); void load(); }}
+          customers={({ onChanged, onTracking }) => (
+            <Orders store={store} lotId={openId} onChanged={onChanged} onTracking={onTracking} />
+          )} />
+      </Later>
       </>
     );
   }
@@ -4489,10 +4387,12 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
     <div className="stack">
       {error && <ErrorNotice message={error} />}
       {creating ? (
-        <NewLotForm
-          onDone={(lot) => void created(lot)}
-          onCancel={() => { setCreating(false); dropFileOrder(); }}
-        />
+        <Later>
+          <NewLotForm
+            onDone={(lot) => void created(lot)}
+            onCancel={() => { setCreating(false); dropFileOrder(); }}
+          />
+        </Later>
       ) : (
         // Routes now live on their own Sell-home card, not beside this button.
         <span className="spotlight-row" style={{ justifySelf: 'start' }}>

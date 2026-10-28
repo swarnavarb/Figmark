@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { ApiRequestError, api, type CommunityDesk } from '../api';
-import { EmptyState, ErrorNotice } from '../components/ui';
+import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 import { BackLink } from '../components/ScrollManager';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 import '../styles/CommunityServicePage.css';
 
 type Tab = 'waiting' | 'all' | 'earnings';
@@ -38,8 +38,8 @@ export function CommunityServicePage() {
     void load();
   }, [load]);
 
-  if (error && !desk) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!desk) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
+  if (error && !desk) return <PageError message={error} />;
+  if (!desk) return <PageLoading />;
 
   const waiting = desk.cases.filter((row) => row.waitingOnMe)
     .sort((a, b) => (a.decideBy ?? '').localeCompare(b.decideBy ?? ''));
@@ -58,10 +58,9 @@ export function CommunityServicePage() {
 
   return (
     <main className="page tab-view">
-      <BackLink to="/services/mine">← My services</BackLink>
+      <BackLink to="/services/mine" title="Community Service" />
       <div className="page__head">
         <div>
-          <h1>Community Service</h1>
           <p className="muted">{desk.manager.name} · community manager since {formatDateOrdinal(desk.manager.since)}</p>
         </div>
         {/* Green when new disputes can reach them, red when they cannot - the
@@ -87,7 +86,7 @@ export function CommunityServicePage() {
         </p>
       </div>
 
-      <div className="tabs tabs--vivid" style={{ marginBottom: 14 }}>
+      <div className="tabs" style={{ marginBottom: 14 }}>
         <button type="button" className={`tab${tab === 'waiting' ? ' is-on' : ''}`} onClick={() => setTab('waiting')}>
           Waiting {waiting.length}
         </button>

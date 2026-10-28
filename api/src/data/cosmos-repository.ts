@@ -1769,6 +1769,16 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listSignupTimes(since: string): Promise<string[]> {
+    const { resources } = await this.container('users')
+      .items.query<string>({
+        query: 'SELECT VALUE c.createdAt FROM c WHERE c.createdAt >= @since',
+        parameters: [{ name: '@since', value: since }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async pageUsers(options: { search?: string; limit: number; cursor?: string | null }) {
     const search = (options.search ?? '').trim().toLowerCase();
     const users = this.container('users');

@@ -1,9 +1,47 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+/**
+ * The loading screen paints before anything else has arrived.
+ *
+ * Its rules are written into index.html rather than linked, which saves a
+ * round trip. And the app's own stylesheet, which Vite links in the head, no
+ * longer blocks that first paint: a head stylesheet holds back the whole page
+ * until it has downloaded, so the loading screen used to appear only after
+ * 65 KB of styles it does not use. It is fetched at the same priority as before
+ * (the preload), but applied by main.tsx, and the loading screen covers the
+ * page until it is in (components/Preloader.tsx). The CSP allows inline styles
+ * and no inline script, so the switch is made from the bundle, not an onload.
+ */
+function bootFirst(): Plugin {
+  const loader = fileURLToPath(new URL('public/boot/loader.css', import.meta.url));
+  return {
+    name: 'figmark-boot-first',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, context) {
+        if (!context.filename.endsWith('index.html')) return html;
+        const rules = readFileSync(loader, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/\s*\n\s*/g, ' ')
+          .trim();
+        let page = html.replace(/<link rel="stylesheet" href="\/boot\/loader\.css"\s*\/?>/, `<style>${rules}</style>`);
+        if (context.bundle) {
+          page = page.replace(
+            /<link rel="stylesheet" crossorigin href="(\/assets\/[^"]+\.css)">/g,
+            '<link rel="preload" as="style" crossorigin href="$1">\n    <link rel="stylesheet" crossorigin href="$1" media="print" data-fm-css>',
+          );
+        }
+        return page;
+      },
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), bootFirst()],
   resolve: {
     alias: {
       // The domain model is shared with the API rather than duplicated, so a

@@ -4,10 +4,11 @@ import { ApiRequestError, api, type DisputeRow, type MyDisputesResponse } from '
 import { DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { ManagerMark } from '../components/ManagerBadge';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
-import { EmptyState, ErrorNotice } from '../components/ui';
+import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 import '../styles/MyDisputesPage.css';
+import { Select } from '../components/Select';
 
 type Tab = 'buyer' | 'store' | 'community';
 
@@ -42,8 +43,8 @@ export function MyDisputesPage() {
     void load();
   }, [load]);
 
-  if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (error && !data) return <PageError message={error} />;
+  if (!data) return <PageLoading />;
 
   const rows = tab === 'buyer' ? data.asBuyer : tab === 'store' ? data.asStore : data.community;
   const choices = data.orders.filter((order) => tab === 'community' || order.side === (tab === 'buyer' ? 'buyer' : 'seller'));
@@ -53,13 +54,13 @@ export function MyDisputesPage() {
   return (
     <main className="page stack page--top">
       <div className="page__head">
-        <h1>⚖️ My disputes</h1>
+        <h1>My disputes</h1>
         <button type="button" className="btn btn--danger btn--sm" onClick={() => setPicking((open) => !open)}>
           {picking ? 'Close' : '＋ Raise a dispute'}
         </button>
       </div>
 
-      <div className="tabs tabs--vivid">
+      <div className="tabs">
         <button type="button" className={`tab${tab === 'buyer' ? ' is-on' : ''}`} onClick={() => go('buyer')}>
           Purchases {data.asBuyer.length}
         </button>
@@ -75,7 +76,7 @@ export function MyDisputesPage() {
         <section className="card card--pad stack">
           <label className="field">
             <span>Which order?</span>
-            <select value={orderId} onChange={(e) => setOrderId(e.target.value)}>
+            <Select value={orderId} onChange={(e) => setOrderId(e.target.value)}>
               <option value="">Choose an order…</option>
               {choices.map((order) => (
                 <option key={order.id} value={order.id}>
@@ -83,7 +84,7 @@ export function MyDisputesPage() {
                   {order.protectedNow ? ' · protected' : ''}
                 </option>
               ))}
-            </select>
+            </Select>
             <span className="field__hint">
               A purchase still under buyer protection goes to the community manager assigned to it, free. Anything
               else is heard by a community manager you pick, for the dispute fee. To dispute a review, comment or post,

@@ -1,9 +1,9 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
-.rlist { display: grid; gap: 8px; }
+.rlist { display: grid; gap: var(--s2); }
 .rrow:hover { border-color: var(--border-strong); background: var(--surface-hover); }
 .rrow--fixed { cursor: default; background: var(--surface-2); }
 .rrow--fixed:hover { border-color: var(--border); background: var(--surface-2); }
-.rlist__label { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-faint); margin-top: 4px; }
+.rlist__label { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-faint); margin-top: var(--s1); }
 .rrow__body { display: grid; gap: 3px; min-width: 0; flex: 1; }
 .rrow__name { font-weight: var(--w-semi); font-size: var(--t-base); }
 .rrow__sum {

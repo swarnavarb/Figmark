@@ -1,6 +1,7 @@
 import { confirmSentence } from '../components/Ask';
 import { Fragment, createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { BackLink } from '../components/ScrollManager';
 import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
 import { setButtonLibrary, stepKinds } from '@shared/route-buttons';
 import {
@@ -19,6 +20,7 @@ import {
 import { InfoTip } from '../components/InfoTip';
 import { MoreMenu } from '../components/MoreMenu';
 import { RoutePreview } from '../components/RoutePreview';
+import { Select } from '../components/Select';
 
 /**
  * Stands in for the real lot's countries while a route is being written -
@@ -93,9 +95,7 @@ export function RouteStudioPage() {
   const back = () => navigate('/shop?tab=routes');
   return (
     <main className="page">
-      <Link to="/shop?tab=routes" className="backlink">
-        <Icon name="back" size={14} /> Routes
-      </Link>
+      <BackLink to="/shop?tab=routes">{id && id !== 'new' ? 'Edit route' : 'New route'}</BackLink>
       <RouteStudio editing={id && id !== 'new' ? id : null} onSaved={back} onCancel={back} />
     </main>
   );
@@ -884,7 +884,7 @@ function WaitMessageEditor({ step, onChange, onDone }: {
 
   return (
     <div className="rsgap__editor">
-      <select value={customMode ? 'Custom' : (isPreset ? step.waitMessage : (step.waitMessage ?? ''))}
+      <Select value={customMode ? 'Custom' : (isPreset ? step.waitMessage : (step.waitMessage ?? ''))}
         aria-label="Pick a wait message"
         onChange={(event) => {
           if (event.target.value === 'Custom') { setCustomMode(true); return; }
@@ -898,7 +898,7 @@ function WaitMessageEditor({ step, onChange, onDone }: {
         {defaultWait && <option value={NO_WAIT_MESSAGE}>Nothing — the gap stays quiet</option>}
         {WAIT_MESSAGE_PRESETS.map((text) => <option key={text} value={text}>{renderStepText(text, vars)}</option>)}
         <option value="Custom">Custom…</option>
-      </select>
+      </Select>
       {customMode && (
         <input value={step.waitMessage ?? ''} placeholder="e.g. Leaving {origin}"
           aria-label="Custom wait message"

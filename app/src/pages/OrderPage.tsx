@@ -7,6 +7,7 @@ import { compressImage } from '../imageCompress';
 import { OrderServices } from '../components/OrderServices';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BackBar, canGoBack } from '../components/ScrollManager';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex, renderStepText } from '@shared/routes';
 import { REVIEW_REVEAL_DAYS, isCancelledLike, type OrderSide } from '@shared/orders';
@@ -23,7 +24,7 @@ import { ReportButton } from '../components/ReportButton';
 import { ProofPicker } from '../components/ProofPicker';
 import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
-import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
+import { ErrorNotice, Icon, Modal, PersonLink, PageError } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
 import { DirectTrack, TrackHero, endedOf, boxesFor, withLastMile } from '../components/OrderTrack';
 import { useStepActs } from '../components/StepActs';
@@ -33,9 +34,9 @@ import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
 import { MomentBanner, shopBadge, type ShareSpec } from '../components/ShareKit';
 import { OrderPhotos } from '../components/OrderPhotos';
-import { Loading } from '../components/Feedback';
-import { Preloader } from '../components/Preloader';
+import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/OrderPage.css';
+import { Select } from '../components/Select';
 
 /**
  * One order, as the buyer sees it.
@@ -109,8 +110,8 @@ export function OrderPage() {
     return () => { cancelled = true; };
   }, [checkoutOf]);
 
-  if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data || !state) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (error && !data) return <PageError message={error} />;
+  if (!data || !state) return <PageLoading />;
 
   const { order } = data;
   /** The lot it is in now, as opposed to the ones it has been in. */
@@ -151,13 +152,12 @@ export function OrderPage() {
           this order within it - rather than to the top of some list. Opened
           from anywhere that did not say (a notification, a shared link), a
           seller lands on their orders with this one in view. */}
-      <button className="btn btn--quiet lp__back"
-        onClick={() => navigate(
-          cameFrom ?? (state.side === 'seller' ? '/shop?tab=payments' : order.placedAt === null ? '/cart' : '/purchases'),
-          { state: { focusOrder: order.id } },
-        )}>
-        <Icon name="back" size={14} /> {state.side === 'seller' ? 'Orders' : order.placedAt === null ? 'Cart' : 'My Purchases'}
-      </button>
+      <BackBar onBack={() => (canGoBack() ? navigate(-1) : navigate(
+        cameFrom ?? (state.side === 'seller' ? '/shop?tab=payments' : order.placedAt === null ? '/cart' : '/purchases'),
+        { state: { focusOrder: order.id } },
+      ))}>
+        {state.side === 'seller' ? 'Order' : order.placedAt === null ? 'Checkout' : 'Your order'}
+      </BackBar>
 
       {/* The item, as one card - the same card the cart shows it in, so the
           two screens read as one journey. Until the order is placed, the
@@ -209,7 +209,7 @@ export function OrderPage() {
           what can be added to this item, by the people who would do it. */}
       <OrderServices orderId={order.id} onChanged={load} />
 
-      {placed && <div className="tabs tabs--vivid">
+      {placed && <div className="tabs">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
           onClick={() => setTab('tracking')}>
           Tracking
@@ -472,14 +472,14 @@ function ChangeLotDialog({ orderId, current, onClose, onDone }: {
 
         <label className="field">
           <span>Move it to</span>
-          <select value={lotId} onChange={(event) => setLotId(event.target.value)}>
+          <Select value={lotId} onChange={(event) => setLotId(event.target.value)}>
             <option value="">Pick a lot…</option>
             {(lots ?? []).map((row) => (
               <option key={row.lot.id} value={row.lot.id}>
                 {lotLabel(row.lot)}
               </option>
             ))}
-          </select>
+          </Select>
           {lots !== null && lots.length === 0 && (
             <span className="field__hint">
               No other lot to move it to. Open one on the Track tab first.
@@ -1251,9 +1251,7 @@ function DirectPay({ orderId, quote, payment, busy, onPaid, onBack }: {
 
   return (
     <div className="stack">
-      <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }} onClick={onBack}>
-        ← Other ways to pay
-      </button>
+      <BackBar onBack={onBack}>Pay another way</BackBar>
 
       <div className="card card--pad stack">
         <div className="row row--between">
@@ -1632,11 +1630,11 @@ function DisputeForm({ side, busy, onOpen, onCancel }: {
     >
       <label className="field">
         <span>What went wrong?</span>
-        <select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
+        <Select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
           {reasons.map((code) => (
             <option key={code} value={code}>{DISPUTE_REASON_LABELS[code]}</option>
           ))}
-        </select>
+        </Select>
       </label>
       <label className="field">
         <span>In your own words</span>

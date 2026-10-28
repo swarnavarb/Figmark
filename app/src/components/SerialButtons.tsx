@@ -4,6 +4,7 @@ import type { SerialButton } from '@shared/buttons';
 import { shortButtonLabel } from '@shared/routes';
 import { Modal } from './ui';
 import { ShipDialog, type Shipment } from './ShipDialog';
+import '../styles/SerialButtons.css';
 
 type ItemButton = Extract<SerialButton, { kind: 'item' }>;
 
@@ -132,7 +133,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
     if (entry.kind === 'lot') {
       return (
         <li key="lot" style={style}>
-          <button type="button" className={className}
+          <button type="button" className={className} data-serial-state={state}
             title={done ? 'The lot has done its part — open its Tracking' : `Open the lot's Tracking to move it — next: ${entry.step}`}
             onClick={onLot}>
             <span className="serial__n" aria-hidden="true">{done ? '✓' : index + 1}</span>
@@ -153,7 +154,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
     if (button.lastMile === 'dispatched' && !done && shipHere && !shut) {
       return (
         <li key={button.key} style={style}>
-          <button type="button" className={className} disabled={busy || shut} title="Asks for the courier and AWB"
+          <button type="button" className={className} data-serial-state={state} disabled={busy || shut} title="Asks for the courier and AWB"
             onClick={() => setShipping(button)}>
             {body}
           </button>
@@ -164,7 +165,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
       return (
         <li key={button.key} style={style}>
           <Link to={orderLink.to} state={{ ...(orderLink.state as object | undefined), act: 'dispatched' }}
-            className={className} title="Opens the order for the courier and AWB">
+            className={className} data-serial-state={state} title="Opens the order for the courier and AWB">
             {body}
           </Link>
         </li>
@@ -172,7 +173,7 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
     }
     return (
       <li key={button.key} style={style}>
-        <button type="button" className={className} disabled={busy || shut}
+        <button type="button" className={className} data-serial-state={state} disabled={busy || shut}
           title={shut ? (done ? 'Done. Undo the buttons after it first.' : 'Opens once the button before it is pressed')
             : done ? `Done — press to undo: ${button.step}` : `Moves this item to: ${button.step}`}
           onClick={() => setAsking({ button, on: !done })}>

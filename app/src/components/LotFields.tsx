@@ -3,6 +3,8 @@ import type { Lot } from '@shared/models';
 import { COUNTRIES } from '@shared/countries';
 import type { LotDetails } from '../api';
 import { Modal as SharedModal } from './ui';
+import { Select } from './Select';
+import { DateField } from './DateField';
 
 /**
  * The details that describe a lot, in one place.
@@ -48,26 +50,26 @@ export function LotDetailFields({ value, onChange, compact = false }: {
       <div className="row" style={{ gap: 10 }}>
         <label className="field" style={{ flex: 1 }}>
           <span>Origin country *</span>
-          <select value={value.originCountry ?? ''} required
+          <Select value={value.originCountry ?? ''} required
             onChange={(e) => set('originCountry', e.target.value)}>
             <option value="" disabled>Country</option>
             {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field" style={{ flex: 1 }}>
           <span>Destination country *</span>
-          <select value={value.destinationCountry ?? ''} required
+          <Select value={value.destinationCountry ?? ''} required
             onChange={(e) => set('destinationCountry', e.target.value)}>
             <option value="" disabled>Country</option>
             {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
 
       <Extras compact={compact}>
       <label className="field">
         <span>Est. dispatch</span>
-        <input type="date" value={(value.estimatedDispatchAt ?? '').slice(0, 10)}
+        <DateField value={(value.estimatedDispatchAt ?? '').slice(0, 10)}
           onChange={(e) => set('estimatedDispatchAt', e.target.value ? new Date(e.target.value).toISOString() : null)} />
         <span className="field__hint">Buyers see this date on their order.</span>
       </label>

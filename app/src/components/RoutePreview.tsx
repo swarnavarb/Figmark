@@ -110,7 +110,7 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
     if (!root) return;
     root.querySelectorAll('.is-spot').forEach((node) => node.classList.remove('is-spot'));
     if (!spot) return;
-    const target = root.querySelector('.ladder .stepact__btn.is-next') ?? root.querySelector('.serial__btn--next');
+    const target = root.querySelector('.ladder .stepact__btn.is-next') ?? root.querySelector('[data-serial-state="next"]');
     if (!target) return;
     target.classList.add('is-spot');
     target.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -292,6 +292,14 @@ function TourCard({ index, script, steps, vars, reached, viewing, onNext, onBack
   onClose: () => void;
   onCustomer: () => void;
 }) {
+  // Escape ends the walkthrough, as it closes anything else laid over a page.
+  // The card sits beside the route rather than over it, so focus stays free.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const total = script.length + 2;
   const entry = index >= 1 && index <= script.length ? script[index - 1]! : null;
   const last = index > script.length;

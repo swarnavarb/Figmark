@@ -9,7 +9,7 @@ import {
 import { formatDate, formatMoney, timeAgo, formatCount } from '../format';
 import { EmptyState, ErrorNotice, PersonLink, Thumb, Tile } from '../components/ui';
 import { NudgeButton } from '../components/NudgeButton';
-import { scrollToTopOf, useBack } from '../components/ScrollManager';
+import { BackBar, scrollToTopOf, useBack } from '../components/ScrollManager';
 import { Bundles, Digest, Forecast, Loyalty, Pricing, Reminders, Returns } from './ProPanels';
 import { ProfitBook, bookTotals } from './ProfitBook';
 import { CalcIcon } from '../components/CalcIcon';
@@ -111,8 +111,9 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
     return (
       <div className="stack ins insview prozone">
         <div className="insview__bar" ref={barRef}>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={back}>← Insights</button>
-          <h2 className="insview__title"><span aria-hidden="true">{entry.icon}</span> {entry.label} <span className="probadge">PRO</span></h2>
+          <BackBar onBack={back}>
+            <span className="insview__title"><span aria-hidden="true">{entry.icon}</span> {entry.label} <span className="probadge">PRO</span></span>
+          </BackBar>
         </div>
         {view === 'saved' && <Saved data={data} />}
         {view === 'checkout' && <Checkout data={data} shop={shop} />}

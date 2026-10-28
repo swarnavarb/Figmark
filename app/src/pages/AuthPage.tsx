@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { DemoAccount } from '@shared/contracts';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api } from '../api';
-import { ErrorNotice, Icon } from '../components/ui';
+import { ErrorNotice, Icon, useDialog } from '../components/ui';
 import { useSession } from '../session';
 import { Captcha } from '../components/Captcha';
 
@@ -46,19 +46,12 @@ function AuthBrand() {
  * on the page they were reading, now able to do the thing they pressed.
  */
 export function AuthModal({ reason, onClose }: { reason: string | null; onClose: () => void }) {
-  useEffect(() => {
-    const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
-    document.addEventListener('keydown', escape);
-    const was = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', escape);
-      document.body.style.overflow = was;
-    };
-  }, [onClose]);
+  // Escape, focus kept inside, the page still behind: what every dialog does.
+  const box = useRef<HTMLDivElement>(null);
+  useDialog(box, onClose);
 
   return (
-    <div className="authpop" role="dialog" aria-modal="true" aria-label="Sign in or create an account"
+    <div ref={box} tabIndex={-1} className="authpop" role="dialog" aria-modal="true" aria-label="Sign in or create an account"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="authpop__panel">
         <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>

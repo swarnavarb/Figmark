@@ -8,7 +8,7 @@ import { formatMoney } from '../format';
 import {
   LaneTicket, OfferingCard, PlanCard, PortfolioGrid, StatusPill, StoreCover, StoreMark, accentStyle,
 } from '../components/StoreKit';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 import '../styles/StorePage.css';
 
 /**
@@ -33,9 +33,9 @@ export function StorePage() {
   }, [kind, slug]);
 
   if (error) {
-    return <main className="page"><BackLink to={`/services/${kind}`}>← Back</BackLink><EmptyState icon="◌" title="No such store">{error}</EmptyState></main>;
+    return <main className="page"><BackLink to={`/services/${kind}`} title="Store" /><EmptyState icon="◌" title="No such store">{error}</EmptyState></main>;
   }
-  if (!data) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (!data) return <PageLoading />;
 
   const { store, stats } = data;
   const modes = [...new Set(store.lanes.map((lane) => lane.mode))];
@@ -55,7 +55,7 @@ export function StorePage() {
 
   return (
     <main className="page sp-page" style={accentStyle(store.accent)}>
-      <BackLink to={`/services/${store.kind}`}>← {STORE_KIND_LABELS[store.kind].many}</BackLink>
+      <BackLink to={`/services/${store.kind}`}>{store.name}</BackLink>
 
       <section className="sp-hero">
         <StoreCover kind={store.kind} coverUrl={store.coverUrl} accent={store.accent} />

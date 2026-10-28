@@ -1,5 +1,5 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
-.lothead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.lothead { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s3); }
 .lothead__name { font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: 0.01em; }
 .lothead__no {
   font-family: var(--mono);

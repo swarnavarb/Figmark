@@ -13,7 +13,7 @@ import { useSession } from './session';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
 import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
-import { Preloader } from './components/Preloader';
+import { PageLoading } from './components/Feedback';
 
 /** The sign-in sheet, fetched the first time somebody needs it. */
 const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthModal })));
@@ -157,13 +157,7 @@ export function AppShell() {
       )}
 
       {/* Staff act on other people's money: until two-factor is on, say so on every screen. */}
-      {user?.mfaRequired && (
-        <div className="page page--notice">
-          <p className="notice notice--warn notice--standing">
-            Turn on two-factor sign-in to keep acting as staff. <Link to="/me?tab=settings">Set it up</Link>
-          </p>
-        </div>
-      )}
+      {user?.mfaRequired && <StaffMfaNotice />}
 
       {/* A feature whose container does not exist fails on its own screen and
           nowhere else, which makes it look like a bug in that screen. Name it
@@ -207,7 +201,7 @@ export function AppShell() {
 
       {/* Each screen is its own download (see main.tsx), fetched the first
           time it is opened; the chrome around it stays put meanwhile. */}
-      <Suspense fallback={<main className="page pagewait" data-boot-pending><Preloader small /></main>}>
+      <Suspense fallback={<PageLoading />}>
         <Outlet />
       </Suspense>
 
@@ -372,4 +366,41 @@ function useInviteParam() {
     // Only the code arriving somewhere it can be counted is an event.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, pathname.startsWith('/s/')]);
+}
+
+/** Set once the two-factor reminder is closed; back on the next visit. */
+const MFA_NOTICE_HIDDEN_KEY = 'figmark.staffMfa.hidden';
+
+/**
+ * Operators and community managers without two-factor: staff actions are
+ * refused until it is on, so the reminder comes back every visit - but it can
+ * be closed for this one, rather than sitting over every screen.
+ */
+function StaffMfaNotice() {
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return sessionStorage.getItem(MFA_NOTICE_HIDDEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  if (hidden) return null;
+
+  function hide() {
+    setHidden(true);
+    try {
+      sessionStorage.setItem(MFA_NOTICE_HIDDEN_KEY, '1');
+    } catch {
+      /* A private window: it comes back next page load, which is fine. */
+    }
+  }
+
+  return (
+    <div className="page page--notice">
+      <p className="notice notice--warn notice--standing notice--closable">
+        <span>Turn on two-factor sign-in to keep acting as staff. <Link to="/me?tab=settings">Set it up</Link></span>
+        <button type="button" className="notice__close" aria-label="Hide for now" onClick={hide}>✕</button>
+      </p>
+    </div>
+  );
 }

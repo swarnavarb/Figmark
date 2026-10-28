@@ -17,6 +17,7 @@ import type { SavedCalc } from '@shared/profit';
 import { CostSheetField, type CostSheetDraft } from './CostSheetField';
 import { formatMoney, timeAgo, formatDateTime } from '../format';
 import '../styles/PowerSale.css';
+import { Select } from './Select';
 
 /**
  * Power selling: a channel sale a shop schedules once and walks away from.
@@ -388,15 +389,15 @@ function FillFields({ value, onChange, lots }: {
       <div className="field-row">
         <label className="field">
           <span>Category</span>
-          <select value={value.category} onChange={(e) => set({ category: e.target.value })}>
+          <Select value={value.category} onChange={(e) => set({ category: e.target.value })}>
             {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field">
           <span>Condition</span>
-          <select value={value.condition} onChange={(e) => set({ condition: e.target.value })}>
+          <Select value={value.condition} onChange={(e) => set({ condition: e.target.value })}>
             {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       <label className="field">
@@ -595,10 +596,7 @@ export function PowerSaleBuilderPage() {
 
   return (
     <main className="page">
-      <div className="page__head">
-        <BackLink to={back}>‹ Back</BackLink>
-        <h1>⚡ Power selling</h1>
-      </div>
+      <BackLink to={back} title="Power selling" />
       <form className="sellform psform" onSubmit={submit}>
         <LBox icon="📝" title="The sale" hint="The name is only for you; the channel sees the message.">
           <label className="field">
@@ -625,10 +623,10 @@ export function PowerSaleBuilderPage() {
           )}>
           {fillOpen && (<>
             {fills.length > 0 && (
-              <select value={fillId} onChange={(e) => pickFill(e.target.value)} aria-label="Saved quick fill">
+              <Select value={fillId} onChange={(e) => pickFill(e.target.value)} aria-label="Saved quick fill">
                 <option value="">Start from a saved quick fill…</option>
                 {fills.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-              </select>
+              </Select>
             )}
             <label className="field">
               <span>Description</span>
@@ -654,7 +652,7 @@ export function PowerSaleBuilderPage() {
                 <span className="saleitem__num">{index + 1}</span>
                 <b>{item.title.trim() || `Item ${index + 1}`}</b>
                 {!touched(item) && calcs.length > 0 && (
-                  <select value="" aria-label={`Fill item ${index + 1} from a saved calculation`} className="saleitem__calc"
+                  <Select value="" aria-label={`Fill item ${index + 1} from a saved calculation`} className="saleitem__calc"
                     onChange={(e) => {
                       const calc = calcs.find((entry) => entry.id === e.target.value);
                       if (calc) set(item.key, itemFromCalc(calc, item));
@@ -665,7 +663,7 @@ export function PowerSaleBuilderPage() {
                         {calc.title} · {formatMoney(calc.sellingPriceMinor)}{calc.listingId ? ' (listed)' : ''}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 )}
               </div>
               <PhotoManager photos={item.photos} onChange={(photos) => set(item.key, { photos })} label={null} />

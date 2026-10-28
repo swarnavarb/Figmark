@@ -1,10 +1,10 @@
 /* The one loading screen.
  *
- * Linked from index.html rather than bundled, so it paints before any script
- * has arrived. It stays over the page until the first screen has its content
- * (see src/components/Preloader.tsx), which is what keeps a refresh from
- * showing this and then a skeleton after it. The same mark, smaller, is what
- * a screen shows while its own code downloads.
+ * Written into index.html at build (see bootFirst in vite.config.ts) rather
+ * than bundled, so it paints before any script or stylesheet has arrived. It
+ * stays over the page until the first screen has its content, or for at most
+ * a couple of seconds before the page's own skeletons take over (see
+ * src/components/Preloader.tsx). The mark is only for the app starting up.
  */
 .boot {
   position: fixed; inset: 0; z-index: 2147483000;
@@ -15,7 +15,6 @@
 .boot--out { opacity: 0; visibility: hidden; }
 
 .fmload { position: relative; width: 112px; height: 112px; display: grid; place-items: center; }
-.fmload--sm { transform: scale(0.62); }
 
 /* A thin arc chasing round the mark. */
 .fmload__ring {
@@ -64,9 +63,6 @@
   animation: fmload-word 2.2s linear infinite;
 }
 
-/* A screen's own code on its way, after the first load. */
-.pagewait { display: grid; place-items: center; min-height: 52vh; }
-
 @keyframes fmload-spin { to { transform: rotate(360deg); } }
 @keyframes fmload-breathe {
   0%, 100% { transform: scale(0.92) rotate(-6deg); }
@@ -78,9 +74,18 @@
 }
 @keyframes fmload-word { from { background-position: 100% 0; } to { background-position: -150% 0; } }
 
+/* With motion reduced, the mark fades gently in and out instead: still
+   plainly at work, never spinning. The app's global reduced-motion rule
+   (styles.css) cuts every animation to one frame with !important, which froze
+   the mark and made a slow load look like a hang, so this one says
+   !important back. */
 @media (prefers-reduced-motion: reduce) {
   .fmload__ring, .fmload__orbit, .fmload__mark::after { animation: none; }
-  .fmload__mark { animation: fmload-fade 1.6s ease-in-out infinite; }
+  .fmload__mark {
+    animation: fmload-fade 1.6s ease-in-out infinite !important;
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
   .boot__word { animation: none; color: #9FB0C9; background: none; }
-  @keyframes fmload-fade { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+  @keyframes fmload-fade { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 }

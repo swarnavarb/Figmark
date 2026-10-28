@@ -8,6 +8,7 @@ import type { RouteWords } from '@shared/route-words';
 import type { RouteStep } from '@shared/routes';
 import type { ButtonLibrary } from '@shared/route-buttons';
 import type { DeviceFigures } from '@shared/devices';
+import type { OpsOverview } from '@shared/overview';
 import { ApiRequestError, api as marketplace, type OpsStoreRow } from '../api';
 import type { StoreStatus } from '@shared/models';
 import type { StoreKind } from '@shared/service-stores';
@@ -221,6 +222,9 @@ export const admin = {
   stores: () => request<{ stores: OpsStoreRow[] }>('/ops/stores'),
   reviewStore: (kind: StoreKind, ownerId: string, body: { decision: StoreStatus; note: string }) =>
     post<{ ok: true; status: StoreStatus }>(`/ops/stores/${kind}/${encodeURIComponent(ownerId)}/review`, body),
+
+  /** The first screen: people, activity, queues and money, counted in one request. */
+  overview: () => request<OpsOverview>('/ops/overview'),
 
   /** What the API is actually running on, for the status line. */
   health: () => request<HealthResponse>('/health'),

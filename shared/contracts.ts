@@ -60,6 +60,7 @@ export interface AuthUser {
   mfaRequired: boolean;
   /** This person's own page, as distinct from their shop's. */
   bio: string;
+  photoUrl: string | null;
   coverUrl: string | null;
   tags: string[];
 }

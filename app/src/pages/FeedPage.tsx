@@ -28,6 +28,7 @@ import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
 import { clearPhotoQuery, usePhotoQuery } from '../photoQuery';
 import '../styles/FeedPage.css';
+import { Select } from '../components/Select';
 
 export const PRICE_BANDS = [
   { label: 'Under ₹500', value: '50000' },
@@ -320,6 +321,8 @@ export function FeedPage() {
 
   return (
     <main className="page qfeed">
+      {/* The catalogue's cards are its heading; this names the page for screen readers. */}
+      <h1 className="sr-only">Shop</h1>
       <QuestBar />
 
       {browsing && <DailyDrop listings={rated} now={now} />}
@@ -425,7 +428,7 @@ export function FeedPage() {
         <div className="grid qgrid">
           {shown.slice(0, drawn).map((listing, n) => (
             <Fragment key={listing.id}>
-              <LootCard listing={listing} />
+              <LootCard listing={listing} priority={n < 2} />
               {browsing && rails.map((entry, r) => entry.at === n && <Fragment key={r}>{entry.rail}</Fragment>)}
             </Fragment>
           ))}
@@ -609,7 +612,7 @@ function HeartPop({ gain }: { gain: boolean }) {
  * A listing as a collectible: a frame in its rarity, the condition stamped on
  * like a stamp, the save button as a chest, and a pre-order's fill as a level.
  */
-export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) {
+export const LootCard = memo(function LootCard({ listing, priority = false }: { listing: Rated; priority?: boolean }) {
   const { refresh } = useQuest();
   // Saves count towards quests, so the level chip is re-read after one.
   const [liked, toggle] = useSave(listing.id, listing.liked, refresh);
@@ -635,7 +638,7 @@ export const LootCard = memo(function LootCard({ listing }: { listing: Rated }) 
   return (
     <Link to={`/listing/${listing.id}`} onPointerDown={tapFx}
       className={`qloot qloot--${tier ?? 'plain'}${listing.affiliate ? ' is-affiliate' : ''}`}>
-      <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
+      <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art" priority={priority}>
         {tier && <RarityRibbon tier={tier} />}
         <span className="qgrade" title="Condition">{factsOf(listing).condition}</span>
         <button type="button" className={`qheart${liked ? ' is-on' : ''}`} onClick={toggleSave}
@@ -774,12 +777,12 @@ export function Picker({ label, value, onChange, options, empty, icon }: {
       {icon && <span className="picker__icon" aria-hidden="true">{PICKER_ICONS[icon]}</span>}
       {/* Keyed on the value, so a new choice lands with a pop. */}
       <span key={value} className="picker__val">{chosen ? chosen.label : (empty ?? label)}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>
+      <Select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>
         {empty && <option value="">{empty}</option>}
         {options.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
-      </select>
+      </Select>
     </label>
   );
 }

@@ -4,11 +4,11 @@ import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api, type PostCard } from '../api';
 import { SocialPostCard, postHref } from './SocialPost';
 import { EmptyState, ErrorNotice } from './ui';
-import { Preloader } from './Preloader';
 import { Icon } from './Icon';
 import { isOpen, waitingOnShop } from '../engage';
 import type { StudioMode } from './PostStudio';
 import '../styles/EngagePanel.css';
+import { Loading } from './Feedback';
 
 const PostStudio = lazy(() => import('./PostStudio').then((module) => ({ default: module.PostStudio })));
 
@@ -65,7 +65,7 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
       </section>
 
       {error && <ErrorNotice message={error} />}
-      {!cards && !error && <Preloader small />}
+      {!cards && !error && <Loading label="Loading your engagement" />}
 
       {waiting.length > 0 && (
         <section className="sengage__block">

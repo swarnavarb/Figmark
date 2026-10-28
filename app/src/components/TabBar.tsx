@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useSession } from '../session';
 import { CreateSheet } from './CreateSheet';
+import { warmTab } from '../pageLoaders';
 
 /**
  * Six places and one action.
@@ -164,6 +165,7 @@ export function TabBar() {
         to={tab.to}
         className={`tab-item${on ? ' is-on' : ''}`}
         aria-current={on ? 'page' : undefined}
+        onPointerDown={() => warmTab(tab.to)}
         onClick={(event) => {
           if (user || !tab.members) return;
           event.preventDefault();

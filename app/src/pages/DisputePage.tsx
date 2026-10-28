@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { BackLink } from '../components/ScrollManager';
 import { ManagerMark } from '../components/ManagerBadge';
 import { DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
 import {
@@ -8,10 +9,11 @@ import {
 import type { DisputeRound, DisputeSanction, DisputeSanctionKind } from '@shared/models';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumRow } from '../api';
 import { ScreenshotPicker } from '../components/DisputeFlows';
-import { Avatar, ErrorNotice, Icon, useConfirm } from '../components/ui';
+import { Avatar, ErrorNotice, Icon, useConfirm, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney, timeAgo } from '../format';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 import '../styles/DisputePage.css';
+import { Select } from '../components/Select';
 
 /**
  * One dispute: a three-way thread between the person who raised it, the
@@ -39,8 +41,8 @@ export function DisputePage() {
     void load();
   }, [load]);
 
-  if (error && !data) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
+  if (error && !data) return <PageError message={error} />;
+  if (!data) return <PageLoading />;
 
   const { dispute, order, parties, role } = data;
   const rounds = dispute.rounds ?? [];
@@ -61,9 +63,7 @@ export function DisputePage() {
 
   return (
     <main className="page tab-view">
-      <Link to={back.to} className="btn btn--quiet" style={{ marginBottom: 14 }}>
-        <Icon name="back" size={14} /> {back.label}
-      </Link>
+      <BackLink to={back.to}>{back.label}</BackLink>
 
       <div className="page__head dhead">
         <div style={{ minWidth: 0 }}>
@@ -636,19 +636,19 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
                     {kind === 'warning_post' && (
                       <label className="field">
                         <span>Where</span>
-                        <select value={entry.forumId ?? ''} onChange={(e) => edit(kind, { forumId: e.target.value || null })}>
+                        <Select value={entry.forumId ?? ''} onChange={(e) => edit(kind, { forumId: e.target.value || null })}>
                           <option value="">The feed</option>
                           {forums.map((forum) => <option key={forum.id} value={forum.id}>{forum.name}</option>)}
-                        </select>
+                        </Select>
                       </label>
                     )}
                     {kind === 'xp_deduction' && (
                       <label className="field">
                         <span>Severity</span>
-                        <select value={entry.severity} onChange={(e) => edit(kind, { severity: e.target.value as 'light' | 'severe' })}>
+                        <Select value={entry.severity} onChange={(e) => edit(kind, { severity: e.target.value as 'light' | 'severe' })}>
                           <option value="light">Light (−{XP_PENALTY.light} XP)</option>
                           <option value="severe">Severe (−{XP_PENALTY.severe} XP)</option>
-                        </select>
+                        </Select>
                       </label>
                     )}
                     {kind === 'rating_reduction' && (

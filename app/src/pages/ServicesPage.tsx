@@ -17,13 +17,12 @@ import {
   type ProviderCard,
 } from '../api';
 import { formatMoney } from '../format';
-import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName, PageError } from '../components/ui';
 import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
-import { BackLink } from '../components/ScrollManager';
+import { BackBar, BackLink } from '../components/ScrollManager';
 import { ConditionTag } from '../components/ConditionTag';
-import { Loading } from '../components/Feedback';
-import { Preloader } from '../components/Preloader';
+import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/ServicesPage.css';
 
 /**
@@ -438,7 +437,7 @@ export function ServiceDirectoryPage() {
 
   return (
     <main className="page">
-      <BackLink to="/services">← Services</BackLink>
+      <BackLink to="/services">{STORE_KIND_LABELS[kind].many}</BackLink>
       <ServiceSection key={kind} kind={kind} mine={mine} />
     </main>
   );
@@ -473,7 +472,7 @@ export function MyServicesPage() {
   if (!user) {
     return (
       <main className="page">
-        <BackLink to="/services">← Services</BackLink>
+        <BackLink to="/services" title="My services" />
         <EmptyState icon="◍" title="Sign in to see your services">
           <Link to="/" className="btn">Sign in</Link>
         </EmptyState>
@@ -483,10 +482,9 @@ export function MyServicesPage() {
 
   return (
     <main className="page">
-      <BackLink to="/services">← Services</BackLink>
+      <BackLink to="/services" title="My services" />
       <div className="page__head">
         <div>
-          <h1>My services</h1>
           <p className="muted">The stores you run, and the lots shops have named you on.</p>
         </div>
       </div>
@@ -615,10 +613,9 @@ export function ConsignmentsPage() {
 
   return (
     <main className="page">
-      <BackLink to="/services/mine">← My services</BackLink>
+      <BackLink to="/services/mine" title="Consigned to you" />
       <div className="page__head">
         <div>
-          <h1>Consigned to you</h1>
           <p className="muted">Lots a shop has named you on. Weight and orders, as loaded.</p>
         </div>
       </div>
@@ -686,10 +683,9 @@ export function DistributionPage() {
 
   return (
     <main className="page">
-      <BackLink to="/services/mine">← My services</BackLink>
+      <BackLink to="/services/mine" title="To distribute" />
       <div className="page__head">
         <div>
-          <h1>To distribute</h1>
           <p className="muted">
             Lots named to you. Counted in customers — three orders for one customer is one
             job.
@@ -775,15 +771,14 @@ function DistributionDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
     }
   }
 
-  if (error) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (error) return <PageError message={error} />;
+  if (!data) return <PageLoading />;
 
   return (
     <main className="page">
-      <button type="button" className="backlink" onClick={onBack}>← To distribute</button>
+      <BackBar onBack={onBack} title={data.lot.name} />
       <div className="page__head">
         <div>
-          <h1>{data.lot.name}</h1>
           <p className="muted">
             {data.store.name}{data.city ? ` · ${data.city}` : ''} · {data.parcels.length} customers
           </p>

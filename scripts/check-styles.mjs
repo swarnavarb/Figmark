@@ -164,4 +164,35 @@ check('every chunk stylesheet is imported, exactly once', () => {
   }
 });
 
+check('a colour or size the tokens name is written as the token', () => {
+  // The audit found the same colours typed out hundreds of times and font
+  // sizes that ignored the reader's text size. The tokens are the one place
+  // a colour or size is decided; this keeps them that way.
+  const root = parsed.find((rule) => rule.selector === ':root' && rule.body.includes('--bg:'));
+  assert.ok(root, 'the :root token block');
+  const tokens = new Map();
+  for (const [, name, value] of root.body.matchAll(/--([\w-]+):\s*(#[0-9A-Fa-f]{6})\s*;/g)) {
+    // Plain white is white, whichever token also happens to be it.
+    if (value.toUpperCase() !== '#FFFFFF' && !tokens.has(value.toUpperCase())) tokens.set(value.toUpperCase(), name);
+  }
+  const retyped = [];
+  const unscaled = [];
+  for (const rule of parsed) {
+    // The token blocks themselves, the section tones and the text sizes.
+    if (rule.selector.startsWith(':root')) continue;
+    for (const [declaration, property, value] of rule.body.matchAll(/([\w-]+)\s*:\s*([^;]+)/g)) {
+      if (value.includes('url(')) continue;
+      for (const [hex] of value.matchAll(/#[0-9A-Fa-f]{6}\b/g)) {
+        const name = tokens.get(hex.toUpperCase());
+        if (name) retyped.push(`${rule.selector} { ${declaration.trim()} } → var(--${name})`);
+      }
+      if (property === 'font-size' && /^\s*[\d.]+(px|rem)\s*$/.test(value)) {
+        unscaled.push(`${rule.selector} { ${declaration.trim()} }`);
+      }
+    }
+  }
+  assert.deepEqual(retyped, [], 'colours that have a token: use the token');
+  assert.deepEqual(unscaled, [], 'font sizes must follow the text size: use a --t- step or calc(… * var(--text-scale))');
+});
+
 console.log(`\n${passed} checks passed`);

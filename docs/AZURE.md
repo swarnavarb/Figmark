@@ -280,11 +280,9 @@ One timer, `clock`, runs every five minutes and does each of these in turn:
 | `dispute-clock` | hour (the run at :00) | applies dispute deadlines and releases held money |
 
 One failing clock is logged and the rest still run. Five minutes, not one:
-four timers once a minute, staggered fifteen seconds apart, kept a Flex
-Consumption instance awake around the clock and billed it as if always on
-(about ₹250 a day at the 2048 MB default). With five quiet minutes between
-runs the instance scales to zero. The price is that, with nobody on the site,
-timed work can land up to five minutes late; a read still runs it at once.
+the app wakes, runs for under a second and goes back to sleep, about 8,600
+runs a month. The price is that, with nobody on the site, timed work can land
+up to five minutes late; a read still runs it at once.
 Power sales are the exception: each run writes the next seven minutes ahead,
 hidden until their minute (`api/src/data/timed-view.ts`), so drops, prices and
 the bell are on time regardless. Pushes are on time with the wake-up queue
@@ -304,20 +302,25 @@ It reads and writes the same Cosmos DB as the site. An environment still on the
 in-memory store gets nothing from it, because the clock would be working on its
 own copy of the data.
 
-One app per environment. For development, with the names used above:
+One app per environment, each on the **classic Consumption plan, Windows,
+Node 22**. For development, with the names used above:
 
 ```bash
-# Host storage can be the existing account. Flex Consumption is the plan to
-# use; check the region offers it with: az functionapp list-flexconsumption-locations
-# Node 24 here; the Static Web App's API stays on node:22, the newest it takes.
-# The build runs on both.
+# Host storage can be the existing account. Classic Consumption bills per run
+# and the subscription's monthly free grant (400,000 GB-s, 1 million runs)
+# covers both clock apps. Windows, because Linux Consumption retires in
+# September 2028 and stops at Node 22. Node 22, the same as the Static Web
+# App's API; Node 24 is still in preview on Functions.
+# Development runs without Application Insights (see "Telemetry" below);
+# production leaves out --disable-app-insights.
 az functionapp create \
   --resource-group rg-figuremarket-dev \
   --name func-figmark-clocks-dev \
   --storage-account stfiguremarketdev \
-  --flexconsumption-location centralindia \
-  --runtime node --runtime-version 24 \
-  --instance-memory 512
+  --consumption-plan-location centralindia \
+  --os-type Windows --functions-version 4 \
+  --runtime node --runtime-version 22 \
+  --disable-app-insights
 
 # Copy the data settings from the matching site environment, with the same
 # values: the Static Web App's "development" environment for this app, its
@@ -378,33 +381,48 @@ should show `clock`, plus `push-wake` once the wake-up queue is set up (see
 "Pushes on the minute"), and nothing else. Its invocation logs report what each
 clock settled.
 
-**Cost**: about 8,600 runs a month. At 512 MB that is well inside Flex
-Consumption's monthly free grant. Keep `--instance-memory 512`: the portal's
-default is 2048 MB, which bills four times as much per second for timers that
-need nowhere near it. To check or fix an existing app:
+**Cost**: about 8,600 runs a month per app, each under a second. Both apps
+together stay inside classic Consumption's free grant, so compute is ₹0; what
+remains is storage (roughly ₹20–50 a month per app) and production's
+telemetry. The price is a cold start of a few seconds on the first run after
+the app has slept, which a five-minute timer does not notice.
 
-```bash
-az functionapp show -g rg-figuremarket-dev -n func-figmark-clocks-dev \
-  --query "functionAppConfig.scaleAndConcurrency.instanceMemoryMB"
-az functionapp scale config set -g rg-figuremarket-dev -n func-figmark-clocks-dev \
-  --instance-memory 512
-```
+Not Flex Consumption: the development app ran there from October 2026 and was
+billed under the "Always Ready" meters although it had no always-ready
+instances configured (about ₹70–180 a day for a timer). A billing support
+ticket is open on it. Do not move back until that is explained.
 
-`host.json` samples request telemetry like everything else (at most five items
-a second), so Application Insights no longer stores every run in full. Put a
-ceiling on it too: the Application Insights resource's **Usage and estimated
-costs → Daily cap**, 0.1 GB is plenty for this app.
+**Telemetry** is optional: the clocks run the same without it. It is how a
+failed sale step or push gets noticed before a user reports it, and what the
+portal's Invocations / Monitor tab reads. So:
+
+- **Production** keeps Application Insights, trimmed by `host.json`: run
+  results and the clocks' own log lines at Information, everything else at
+  Warning, and no performance counters, live metrics or dependency tracking.
+  That is about ₹50–100 a month. Put a ceiling on it too: the Application
+  Insights resource's **Usage and estimated costs → Daily cap**, 0.1 GB.
+- **Development** runs without it (`--disable-app-insights`, no
+  `APPLICATIONINSIGHTS_CONNECTION_STRING`). To debug, add that setting back
+  for a day, then remove it. The platform metrics (Function Execution Count)
+  still show that the clock runs.
+
+`host.json` is shared with the Static Web App's API, so the same trim applies
+to its telemetry, where it has any.
 
 ### Pushes on the minute
 
 A notice held until a set time (an undo window ending, a power sale drop
 written ahead) shows in the bell on time by itself, but reaches the phone only
 when something sends it: the bell check of whoever has the site open, or the
-five-minute clock. To send it on the second with nobody on the site, the
+five-minute clock. To send it on time with nobody on the site, the
 holder also drops a message on a Storage queue, invisible until the hold ends,
-and the clock app's `push-wake` queue trigger sends what is due. One message
-per due time; the instance wakes for a few seconds per message and still scales
-to zero between them.
+and the clock app's `push-wake` queue trigger sends what is due, usually
+within a minute on classic Consumption, which polls the queue while asleep.
+One message per due time; each is one short run inside the free grant.
+
+On in production. Off in development (neither `PUSH_WAKE_*` setting is set
+on its clock app or site), where held pushes wait for the next bell check or
+clock run.
 
 Off until both sides name the queue. On the clock app:
 

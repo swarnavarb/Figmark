@@ -3,6 +3,7 @@ import { SANCTION_LABELS, XP_PENALTY } from '@shared/disputes';
 import { ApiRequestError, admin, type PendingAction } from './api';
 import { timeAgo } from '../format';
 import { Loading } from '../components/Feedback';
+import { Select } from '../components/Select';
 
 /**
  * What community managers decided that waits for Figmark.
@@ -101,10 +102,10 @@ function ApprovalCard({ action, busy, onDecide }: {
       ) : (
         <label className="field">
           <span>Severity</span>
-          <select value={severity} onChange={(e) => setSeverity(e.target.value as 'light' | 'severe')} style={{ maxWidth: 220 }}>
+          <Select value={severity} onChange={(e) => setSeverity(e.target.value as 'light' | 'severe')} style={{ maxWidth: 220 }}>
             <option value="light">Light (−{XP_PENALTY.light} XP)</option>
             <option value="severe">Severe (−{XP_PENALTY.severe} XP)</option>
-          </select>
+          </Select>
         </label>
       )}
       <div className="row" style={{ flexWrap: 'wrap' }}>

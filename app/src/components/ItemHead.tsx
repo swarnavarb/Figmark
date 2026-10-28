@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Thumb } from './ui';
+import '../styles/ItemHead.css';
 
 /**
  * The item at the top of an order card: picture, name, a meta line, and the

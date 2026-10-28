@@ -8,6 +8,7 @@ import { CalcInputs, CalcLines, PriceRoute } from './CostSheetField';
 import { ErrorNotice } from './ui';
 import { CalcIcon } from './CalcIcon';
 import { Loading } from './Feedback';
+import { Select } from './Select';
 
 /**
  * The calculator, one tap from anywhere (Pro).
@@ -237,9 +238,9 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
         {stores.length > 1 && (
           <label className="field">
             <span>Shop</span>
-            <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+            <Select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
               {stores.map((entry) => <option key={entry.ownerId} value={entry.ownerId}>{entry.name}</option>)}
-            </select>
+            </Select>
           </label>
         )}
         {tab === 'saved' ? (
@@ -258,9 +259,9 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
               </label>
               <label className="field">
                 <span>Calculator</span>
-                <select value={pick} onChange={(e) => setPick(e.target.value)}>
+                <Select value={pick} onChange={(e) => setPick(e.target.value)}>
                   {templates.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
-                </select>
+                </Select>
               </label>
             </div>
             <CalcInputs template={template} input={input} onChange={setInput} withSelling shop={storeId} onLeave={onLeave} />
