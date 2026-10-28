@@ -9,28 +9,28 @@
 }
 .pplay__foot .debate__cta { margin-left: auto; }
 .pplay__chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 8px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; gap: var(--s1);
+  padding: 3px var(--s2); border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text);
 }
 .pplay__chip--gold { background: var(--warn-soft); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.4); }
 .pplay__chip--lime { background: var(--lime-soft); box-shadow: inset 0 0 0 1px var(--lime-line); }
 .pplay__prize, .pplay__best {
-  margin: 0; padding: 8px 12px; border-radius: var(--r-md); font-size: var(--t-sm); line-height: 1.5;
+  margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); font-size: var(--t-sm); line-height: 1.5;
 }
 .pplay__prize { background: linear-gradient(115deg, var(--warn-soft), transparent 80%); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3); }
 .pplay__best { background: linear-gradient(115deg, var(--violet-soft), transparent 80%); box-shadow: inset 0 0 0 1px var(--violet-line); }
 
 /* ── Photo grid ────────────────────────────────────────────────────────── */
 
-.pgrid { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pgrid { display: grid; gap: var(--s2); grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pgrid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.pgrid__cell { display: grid; gap: 4px; min-width: 0; animation: pplay-rise 260ms var(--ease-out) both; }
+.pgrid__cell { display: grid; gap: var(--s1); min-width: 0; animation: pplay-rise 260ms var(--ease-out) both; }
 .pgrid__pick {
   position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; overflow: hidden;
   border-radius: var(--r-md); border: 2px solid var(--border); background: #000;
   color: #fff; font: inherit; cursor: pointer;
-  transition: border-color var(--dur-1) ease, transform 140ms var(--ease-out);
+  transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
 .pgrid__pick:disabled { cursor: default; }
 .pgrid__pick:active:not(:disabled) { transform: scale(0.97); }
@@ -47,10 +47,10 @@
   font: var(--w-bold) var(--t-xs)/1.3 var(--mono);
   animation: pplay-pop 220ms var(--ease-out) both;
 }
-.pgrid__crown { position: absolute; top: 4px; left: 6px; font-size: 18px; animation: pplay-pop 260ms var(--ease-out) 120ms both; }
+.pgrid__crown { position: absolute; top: 4px; left: 6px; font-size: calc(18px * var(--text-scale)); animation: pplay-pop 260ms var(--ease-out) 120ms both; }
 .pgrid__label {
   position: absolute; left: 0; right: 0; bottom: 6px;
-  display: flex; align-items: center; justify-content: center; gap: 4px;
+  display: flex; align-items: center; justify-content: center; gap: var(--s1);
   padding: 20px 6px 0; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 1.25; text-align: center;
   background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.78) 60%);
 }
@@ -67,18 +67,18 @@
 .prate__stars { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
 .prate__star {
   display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
-  border: 0; background: none; color: var(--border-strong); font-size: 32px; line-height: 1; cursor: pointer;
-  transition: color 120ms ease, transform 140ms var(--ease-out);
+  border: 0; background: none; color: var(--border-strong); font-size: calc(32px * var(--text-scale)); line-height: 1; cursor: pointer;
+  transition: color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
 .prate__star:disabled { cursor: default; }
 .prate__star.is-lit { color: var(--warn); }
 .prate__star:active:not(:disabled) { transform: scale(0.88); }
 /* Your star pops once, when your rating lands. */
 .prate__star.is-mine { animation: pplay-pop 240ms var(--ease-out); }
-.prate__avg { margin-left: 8px; font-size: var(--t-sm); color: var(--text-dim); animation: pplay-rise 220ms var(--ease-out) both; }
+.prate__avg { margin-left: var(--s2); font-size: var(--t-sm); color: var(--text-dim); animation: pplay-rise 220ms var(--ease-out) both; }
 .prate__avg strong { font: var(--w-bold) var(--t-lg)/1 var(--display); color: var(--text); }
-.prate__bars { display: grid; gap: 4px; max-width: 320px; }
-.prate__row { display: grid; grid-template-columns: 26px minmax(0, 1fr) 28px; align-items: center; gap: 8px; font-size: var(--t-xs); }
+.prate__bars { display: grid; gap: var(--s1); max-width: 320px; }
+.prate__row { display: grid; grid-template-columns: 26px minmax(0, 1fr) 28px; align-items: center; gap: var(--s2); font-size: var(--t-xs); }
 .prate__track { height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
 .prate__track > span {
   display: block; height: 100%; background: var(--grad-gold);
@@ -100,7 +100,7 @@
 /* ── Competitions ──────────────────────────────────────────────────────── */
 
 .pcontest {
-  position: relative; display: grid; gap: 12px; padding: 14px;
+  position: relative; display: grid; gap: var(--s3); padding: 14px;
   border-radius: var(--r-lg); border: 1px solid rgba(251, 191, 36, 0.35);
   background:
     radial-gradient(120% 80% at 100% 0%, rgba(251, 191, 36, 0.14), transparent 60%),
@@ -110,8 +110,8 @@
 .pcontest--figmark { border-color: var(--violet-line); background: radial-gradient(120% 80% at 100% 0%, var(--violet-soft), transparent 60%), var(--surface-2); }
 .pcontest__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pcontest__trophy {
-  display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 14px;
-  font-size: 22px; background: var(--grad-gold); box-shadow: 0 6px 18px rgba(249, 115, 22, 0.35);
+  display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: var(--r-md);
+  font-size: calc(22px * var(--text-scale)); background: var(--grad-gold); box-shadow: 0 6px 18px rgba(249, 115, 22, 0.35);
 }
 .pcontest--figmark .pcontest__trophy { background: var(--grad-hero); box-shadow: var(--shadow-violet); }
 /* The name takes the row; the phase sits on its own line under it, so neither is squeezed. */
@@ -119,7 +119,7 @@
 .pcontest__titles strong { font: var(--w-bold) var(--t-md)/1.2 var(--display); }
 .pcontest__titles .faint { font-size: var(--t-xs); }
 .pcontest__phase {
-  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; gap: 6px; padding: var(--s1) 10px; border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: var(--w-bold); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 .pcontest__phase--entries { color: var(--lime); }
@@ -136,13 +136,13 @@
   flex: none; width: 64px; height: 64px; object-fit: cover; border-radius: var(--r-md);
   border: 2px solid var(--surface); animation: pplay-rise 260ms var(--ease-out) both;
 }
-.pcontest__count { flex: none; padding-left: 4px; font-size: var(--t-xs); color: var(--text-dim); font-weight: var(--w-semi); }
+.pcontest__count { flex: none; padding-left: var(--s1); font-size: var(--t-xs); color: var(--text-dim); font-weight: var(--w-semi); }
 .pcontest__empty { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
 .pcontest__in { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-sm); color: var(--ok); font-weight: var(--w-semi); }
 .pcontest__go { background: var(--grad-gold); border-color: transparent; color: #241300; }
-.pcontest__cta { justify-self: start; display: inline-flex; align-items: center; gap: 8px; }
+.pcontest__cta { justify-self: start; display: inline-flex; align-items: center; gap: var(--s2); }
 
-.pcontest__enter { display: grid; gap: 12px; }
+.pcontest__enter { display: grid; gap: var(--s3); }
 .pcontest__drop {
   display: grid; place-items: center; width: 100%; min-height: 220px; padding: 0; overflow: hidden;
   border-radius: var(--r-lg); border: 1.5px dashed rgba(251, 191, 36, 0.5); background: var(--warn-soft);
@@ -154,28 +154,28 @@
 
 .pcontest__picker { display: grid; gap: 10px; }
 .pcontest__pickhead { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
-.pcontest__entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.pcontest__entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--s2); }
 .pcontest__entry {
   position: relative; aspect-ratio: 1; padding: 0; overflow: hidden;
   border-radius: var(--r-md); border: 2px solid var(--border); background: #000; color: #fff; font: inherit; cursor: pointer;
-  transition: border-color var(--dur-1) ease, transform 140ms var(--ease-out);
+  transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
 .pcontest__entry:active { transform: scale(0.96); }
 .pcontest__entry img { width: 100%; height: 100%; object-fit: cover; }
 .pcontest__entry.is-chosen { border-color: var(--warn); }
 .pcontest__by {
-  position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 4px;
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px var(--s1);
   font-size: var(--t-2xs, 10.5px); font-weight: var(--w-semi); text-align: center;
   background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.8));
 }
 .pcontest__mark {
   position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 26px; height: 26px;
-  border-radius: 50%; background: var(--warn); color: #241300; font-size: 15px;
+  border-radius: 50%; background: var(--warn); color: #241300; font-size: calc(15px * var(--text-scale));
   animation: pplay-pop 200ms var(--ease-out) both;
 }
 
 /* The podium rises once, second then first then third - the one flourish a competition earns. */
-.podium { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 8px; padding-top: 6px; }
+.podium { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: var(--s2); padding-top: 6px; }
 .podium__step { display: grid; gap: 6px; margin: 0; min-width: 0; animation: podium-rise 520ms var(--ease-out) both; }
 .podium__step--1 { order: 2; }
 .podium__step--2 { order: 1; }
@@ -183,7 +183,7 @@
 .podium__photo { position: relative; aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; border: 2px solid var(--border-strong); }
 .podium__step--1 .podium__photo { border-color: var(--warn); box-shadow: 0 8px 26px rgba(251, 191, 36, 0.35); }
 .podium__photo img { width: 100%; height: 100%; object-fit: cover; }
-.podium__medal { position: absolute; top: 4px; left: 4px; font-size: 22px; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
+.podium__medal { position: absolute; top: 4px; left: 4px; font-size: calc(22px * var(--text-scale)); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
 .podium__step figcaption { display: grid; gap: 1px; text-align: center; font-size: var(--t-xs); min-width: 0; }
 .podium__step figcaption strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
 .podium__prize { color: var(--warn); font-weight: var(--w-semi); }
@@ -200,13 +200,13 @@
 /* ── Guess the price ───────────────────────────────────────────────────── */
 
 .pguess {
-  display: grid; gap: 12px; padding: 14px; border-radius: var(--r-lg);
+  display: grid; gap: var(--s3); padding: 14px; border-radius: var(--r-lg);
   border: 1px solid var(--violet-line);
   background: radial-gradient(120% 90% at 100% 0%, var(--violet-soft), transparent 60%), var(--surface-2);
 }
 .pguess__price { display: grid; gap: 2px; justify-items: start; }
 .pguess__kicker { font-size: var(--t-xs); font-weight: var(--w-bold); text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-text); }
-.pguess__sealed, .pguess__answer { display: inline-flex; align-items: center; gap: 8px; font: var(--w-bold) var(--t-2xl)/1.1 var(--display); }
+.pguess__sealed, .pguess__answer { display: inline-flex; align-items: center; gap: var(--s2); font: var(--w-bold) var(--t-2xl)/1.1 var(--display); }
 .pguess__sealed { color: var(--text-dim); letter-spacing: 0.08em; }
 /* The price unseals: from a blur into focus, once, at the reveal. */
 .pguess__answer {
@@ -214,17 +214,17 @@
   animation: guess-unseal 480ms var(--ease-out) both;
 }
 @keyframes guess-unseal { from { opacity: 0; filter: blur(10px); transform: scale(0.94); } }
-.pguess__form { display: flex; gap: 8px; }
+.pguess__form { display: flex; gap: var(--s2); }
 .pguess__box {
-  flex: 1; display: flex; align-items: center; gap: 4px; min-width: 0; padding-left: 12px;
+  flex: 1; display: flex; align-items: center; gap: var(--s1); min-width: 0; padding-left: var(--s3);
   border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-dim);
 }
 .pguess__box:focus-within { border-color: var(--violet-lit); }
 .pguess__box input { flex: 1; min-width: 0; border: none; background: none; box-shadow: none; font-size: var(--t-md); }
-.pguess__result { display: grid; gap: 8px; animation: pplay-rise 260ms var(--ease-out) 200ms both; }
+.pguess__result { display: grid; gap: var(--s2); animation: pplay-rise 260ms var(--ease-out) 200ms both; }
 .pguess__result p { margin: 0; }
-.pguess__closest { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); }
-.pguess__closest li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: var(--r-md); background: var(--surface); }
+.pguess__closest { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); }
+.pguess__closest li { display: flex; justify-content: space-between; gap: var(--s2); padding: 6px 10px; border-radius: var(--r-md); background: var(--surface); }
 
 @keyframes pplay-rise { from { opacity: 0; transform: translateY(8px); } }
 @keyframes pplay-pop { from { opacity: 0; transform: scale(0.8); } }

@@ -1,6 +1,6 @@
 /* The row of route buttons on an order (SerialButtons.tsx): kept with the component,
    which the Sell page draws without the route studio having loaded. */
-.serial { display: grid; gap: 8px; min-width: 0; }
+.serial { display: grid; gap: var(--s2); min-width: 0; }
 .serial__head {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: var(--t-2xs); font-weight: var(--w-semi); text-transform: uppercase; letter-spacing: 0.08em;
@@ -13,8 +13,8 @@
   display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 6px;
 }
 .serial__btn {
-  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
-  min-height: 36px; padding: 4px 12px 4px 5px; border-radius: 18px; border: 0; cursor: pointer;
+  display: flex; align-items: center; gap: var(--s2); width: 100%; min-width: 0;
+  min-height: 36px; padding: var(--s1) var(--s3) var(--s1) 5px; border-radius: var(--r-lg); border: 0; cursor: pointer;
   font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 1.2;
   text-align: left; text-decoration: none;
   color: var(--text-dim); background: rgba(255, 255, 255, 0.04);
@@ -42,14 +42,14 @@
 .serial__btn--lot { color: var(--aqua); background: var(--aqua-soft); }
 .serial__btn--lot.serial__btn--done { color: var(--ok); background: var(--ok-soft); }
 .serial__btn--next.serial__btn--lot {
-  background: linear-gradient(135deg, #0891B2, #06D6E7); color: #032027;
+  background: linear-gradient(135deg, #0891B2, var(--aqua)); color: #032027;
   box-shadow: 0 6px 16px -8px rgba(6, 214, 231, 0.85);
 }
 .serial__btn--later { opacity: 0.8; }
 .serial__btn--next.serial__btn--lot { animation-name: serial-next-lot; }
 .serial__fold { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
 .serial__where {
-  display: grid; gap: 4px; flex: none; min-width: 4.5rem;
+  display: grid; gap: var(--s1); flex: none; min-width: 4.5rem;
   font-size: var(--t-2xs); font-weight: var(--w-semi); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint);
 }
 .serial__list--one { display: flex; flex: 1 1 9rem; min-width: 0; }
@@ -61,13 +61,13 @@
 .serial--compact { gap: 0; }
 .serial--compact .serial__head { display: none; }
 .serial--compact .serial__list { display: flex; flex-wrap: wrap; gap: 5px; }
-.serial--compact .serial__btn { width: auto; min-height: 28px; gap: 5px; padding: 2px 10px 2px 3px; border-radius: 14px; font-size: var(--t-2xs); }
+.serial--compact .serial__btn { width: auto; min-height: 28px; gap: 5px; padding: 2px 10px 2px 3px; border-radius: var(--r-md); font-size: var(--t-2xs); }
 .serial--compact .serial__n { width: 20px; height: 20px; font-size: var(--t-2xs); }
 .serial--compact .serial__label { display: block; max-width: 10rem; text-overflow: ellipsis; white-space: nowrap; }
 .serial__meter { display: block; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .serial__list--one > li { flex: 1; }
 .serial__more {
-  flex: none; margin-left: auto; padding: 4px 2px; border: 0; background: none; cursor: pointer;
+  flex: none; margin-left: auto; padding: var(--s1) 2px; border: 0; background: none; cursor: pointer;
   font: inherit; font-size: var(--t-2xs); color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px;
 }
 .serial__head .serial__more { text-transform: none; letter-spacing: 0; font-weight: var(--w-semi); }

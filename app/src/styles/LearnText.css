@@ -3,5 +3,5 @@
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-.learntext { display: grid; gap: 8px; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.6; }
+.learntext { display: grid; gap: var(--s2); color: var(--text-dim); font-size: var(--t-sm); line-height: 1.6; }
 .learntext strong { color: var(--text); }

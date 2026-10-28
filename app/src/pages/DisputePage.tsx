@@ -9,7 +9,7 @@ import {
 import type { DisputeRound, DisputeSanction, DisputeSanctionKind } from '@shared/models';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumRow } from '../api';
 import { ScreenshotPicker } from '../components/DisputeFlows';
-import { Avatar, ErrorNotice, Icon, useConfirm } from '../components/ui';
+import { Avatar, ErrorNotice, Icon, useConfirm, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { PageLoading } from '../components/Feedback';
 import '../styles/DisputePage.css';
@@ -41,7 +41,7 @@ export function DisputePage() {
     void load();
   }, [load]);
 
-  if (error && !data) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
+  if (error && !data) return <PageError message={error} />;
   if (!data) return <PageLoading />;
 
   const { dispute, order, parties, role } = data;

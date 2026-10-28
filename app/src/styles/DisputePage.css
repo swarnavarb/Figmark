@@ -2,18 +2,18 @@
 .post__name { font-weight: var(--w-semi); font-size: var(--t-sm); }
 .post--mine { border-color: var(--accent-line); background: var(--accent-soft); }
 .post.dmsg { grid-template-columns: minmax(0, 1fr); }
-.evidence__item { display: grid; gap: 4px; text-decoration: none; color: inherit; }
-.dthread__quote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); color: var(--text); overflow-wrap: anywhere; }
+.evidence__item { display: grid; gap: var(--s1); text-decoration: none; color: inherit; }
+.dthread__quote { margin: 0; padding: var(--s2) var(--s3); border-left: 3px solid var(--accent); color: var(--text); overflow-wrap: anywhere; }
 .drounds { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.dsteps { list-style: none; margin: 0 0 16px; padding: 0; display: flex; align-items: center; gap: 0; overflow-x: auto; scrollbar-width: none; }
+.dsteps { list-style: none; margin: 0 0 var(--s4); padding: 0; display: flex; align-items: center; gap: 0; overflow-x: auto; scrollbar-width: none; }
 .dsteps__step + .dsteps__step::before { content: ''; width: 18px; height: 2px; margin: 0 6px; background: var(--border-strong); border-radius: 2px; }
 .dsteps__dot {
   width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%;
   border: 2px solid var(--border-strong); font-size: var(--t-2xs); font-weight: var(--w-bold); color: #fff;
 }
-.dnote > span:first-child { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); }
+.dnote > span:first-child { display: inline-block; padding: var(--s1) 10px; border-radius: var(--r-pill); background: var(--surface-2); }
 .evidence__item--link { padding: 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-sm); }
-.drounds__item { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--r-md); border: 1px dashed var(--border-strong); }
+.drounds__item { display: grid; gap: var(--s1); padding: 10px var(--s3); border-radius: var(--r-md); border: 1px dashed var(--border-strong); }
 
 /*
  * Styles only pages/DisputePage.tsx and what it brings in can draw, loaded with that
@@ -25,9 +25,9 @@
 .decide__sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
 .decide__sides .raise__manager { width: 100%; }
 /* A chosen action's settings sit under it, indented, so the list stays scannable. */
-.decide__sanction .field-row { margin: 6px 0 10px 10px; padding-left: 12px; border-left: 2px solid var(--accent-line); }
+.decide__sanction .field-row { margin: 6px 0 10px 10px; padding-left: var(--s3); border-left: 2px solid var(--accent-line); }
 /* Dispute header: what it is about as a kicker, the two sides as the title. */
-.dhead { align-items: flex-start; gap: 12px; }
+.dhead { align-items: flex-start; gap: var(--s3); }
 .dhead__kicker { display: block; font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); }
 .dhead__title { margin: 2px 0 0; font-size: var(--t-xl); line-height: 1.25; overflow-wrap: anywhere; }
 .dsteps__step { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
@@ -40,9 +40,9 @@
 .dnote { margin: 2px 0; text-align: center; font-size: var(--t-xs); color: var(--text-dim); }
 .evidence__host { font-size: var(--t-sm); color: var(--accent); overflow-wrap: anywhere; }
 .drounds__item.is-decided { border-style: solid; }
-.drounds__head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.drounds__decision { margin: 4px 0 0; }
-.decide__sanctions { display: grid; gap: 10px; margin: 0; padding: 12px; border: 1px solid var(--border-strong); border-radius: var(--r-md); }
+.drounds__head { display: flex; gap: var(--s2); align-items: baseline; flex-wrap: wrap; }
+.drounds__decision { margin: var(--s1) 0 0; }
+.decide__sanctions { display: grid; gap: 10px; margin: 0; padding: var(--s3); border: 1px solid var(--border-strong); border-radius: var(--r-md); }
 .decide__sanctions legend { padding: 0 6px; font-weight: 600; }
-.decide__sanction { display: grid; gap: 8px; }
-.decide__check { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; cursor: pointer; }
+.decide__sanction { display: grid; gap: var(--s2); }
+.decide__check { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; cursor: pointer; }

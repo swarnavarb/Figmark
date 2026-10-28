@@ -80,7 +80,7 @@ export function AuditView() {
                   {timeAgo(entry.at)} · {formatDateTime(entry.at)} · {entry.actorEmail ?? entry.actorId ?? 'unknown'}
                 </span>
                 {entry.detail !== null && entry.detail !== undefined && (
-                  <code className="faint" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>
+                  <code className="faint" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 'var(--t-xs)' }}>
                     {typeof entry.detail === 'string' ? entry.detail : JSON.stringify(entry.detail)}
                   </code>
                 )}

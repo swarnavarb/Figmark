@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { ApiRequestError, api, type CommunityDesk } from '../api';
-import { EmptyState, ErrorNotice } from '../components/ui';
+import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 import { BackLink } from '../components/ScrollManager';
 import { PageLoading } from '../components/Feedback';
@@ -38,7 +38,7 @@ export function CommunityServicePage() {
     void load();
   }, [load]);
 
-  if (error && !desk) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
+  if (error && !desk) return <PageError message={error} />;
   if (!desk) return <PageLoading />;
 
   const waiting = desk.cases.filter((row) => row.waitingOnMe)

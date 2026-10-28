@@ -12,11 +12,11 @@
   animation: svx-sheen 9s ease-in-out infinite;
   pointer-events: none;
 }
-.svx__text { flex: 1; min-width: 0; display: grid; gap: 4px; }
-.svx__open::after { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: 22px; }
+.svx__text { flex: 1; min-width: 0; display: grid; gap: var(--s1); }
+.svx__open::after { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: var(--r-xl); }
 .svx__item { min-width: 0; display: grid; animation: svx-rise 480ms var(--ease) both; animation-delay: calc(180ms + var(--i, 0) * 70ms); }
 .svx-card {
-  display: grid; gap: 12px; align-content: start; min-width: 0;
+  display: grid; gap: var(--s3); align-content: start; min-width: 0;
   padding: 14px; border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
@@ -28,7 +28,7 @@
 .svx-card__head { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .svx-card__who { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .svx-card__foot .btn--quiet { margin-right: auto; }
-.svx-lane__ends { display: flex; align-items: center; gap: 8px; min-width: 0; font-family: var(--mono); font-size: var(--t-sm); }
+.svx-lane__ends { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-family: var(--mono); font-size: var(--t-sm); }
 .svx-lane__path {
   position: relative; flex: 1; min-width: 28px; height: 14px;
   display: grid; place-items: center;
@@ -47,7 +47,7 @@
 .svx-mine {
   position: relative;
   display: flex; align-items: center; gap: 14px;
-  margin-bottom: 6px; padding: 16px 18px;
+  margin-bottom: 6px; padding: var(--s4) 18px;
   border-radius: var(--r-lg);
   background:
     radial-gradient(120% 140% at 100% 0%, var(--violet-soft), transparent 60%),
@@ -60,14 +60,14 @@
 .svx-mine:active { transform: scale(0.99); }
 .svx-mine__icon {
   display: grid; place-items: center; flex: 0 0 auto;
-  width: 44px; height: 44px; border-radius: 14px;
+  width: 44px; height: 44px; border-radius: var(--r-md);
   background: var(--grad-hero); color: #fff;
 }
 .svx-mine__title { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.02em; }
 .svx-mine__line { font-size: var(--t-sm); color: var(--text-dim); }
 .svx-mine__go { flex: 0 0 auto; color: var(--violet-text); }
 /* Room under the last block for its glow to clear the tab bar. */
-.svx-stack { display: grid; gap: 22px; padding-bottom: 48px; }
+.svx-stack { display: grid; gap: 22px; padding-bottom: var(--s7); }
 /* Each service is one block: its banner, and the people offering it inside. */
 .svx {
   --svx: var(--aqua);
@@ -77,7 +77,7 @@
   --svx-grad: var(--grad-sea);
   position: relative; isolation: isolate;
   display: grid;
-  border-radius: 22px;
+  border-radius: var(--r-xl);
   background:
     radial-gradient(110% 60% at 0% 0%, var(--svx-soft), transparent 70%),
     linear-gradient(180deg, color-mix(in srgb, var(--svx) 7%, var(--surface)), var(--surface) 55%);
@@ -86,18 +86,18 @@
 }
 .svx--artist { animation-delay: 110ms; }
 .svx--artist::before { animation-delay: -4.5s; }
-.svx__body { display: grid; gap: 12px; padding: 0 12px 14px; }
+.svx__body { display: grid; gap: var(--s3); padding: 0 var(--s3) 14px; }
 .svx--artist {
   --svx: var(--pink);
   --svx-text: var(--pink-text);
   --svx-soft: var(--pink-soft);
   --svx-line: var(--pink-line);
-  --svx-grad: linear-gradient(135deg, #EC4899 0%, #7C3AED 100%);
+  --svx-grad: linear-gradient(135deg, var(--pink) 0%, var(--violet) 100%);
 }
 .svx__hero {
   position: relative;
   display: flex; align-items: flex-start; gap: 14px;
-  padding: 18px 16px 16px 18px;
+  padding: 18px var(--s4) var(--s4) 18px;
 }
 .svx__art {
   position: absolute; z-index: -1; right: 0; bottom: 0;
@@ -106,7 +106,7 @@
 }
 .svx__mark {
   display: grid; place-items: center; flex: 0 0 auto;
-  width: 48px; height: 48px; border-radius: 15px;
+  width: 48px; height: 48px; border-radius: var(--r-lg);
   background: var(--svx-grad); color: #fff;
   box-shadow: 0 8px 22px color-mix(in srgb, var(--svx) 35%, transparent);
 }
@@ -127,7 +127,7 @@
 .svx--tile .svx__menuwrap { z-index: 2; }
 .svx__foot {
   display: flex; align-items: center; gap: 10px;
-  margin: 0 12px 12px; padding: 10px 12px;
+  margin: 0 var(--s3) var(--s3); padding: 10px var(--s3);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--surface) 70%, transparent);
   box-shadow: inset 0 0 0 1px var(--border);
@@ -146,19 +146,19 @@
   font-size: var(--t-2xs); font-weight: var(--w-bold);
 }
 .svx__foot .svx__count { margin: 0; flex: 1; min-width: 0; }
-.svx__go { display: inline-flex; align-items: center; gap: 4px; color: var(--svx-text); font-size: var(--t-sm); font-weight: var(--w-semi); }
+.svx__go { display: inline-flex; align-items: center; gap: var(--s1); color: var(--svx-text); font-size: var(--t-sm); font-weight: var(--w-semi); }
 .svx__go svg { transition: transform var(--dur-2) var(--ease); }
 .svx--tile:hover .svx__go svg { transform: translateX(3px); }
 /* A service's own page: the banner at full height, the list under it. */
-.svx--page { margin: 6px 0 48px; }
+.svx--page { margin: 6px 0 var(--s7); }
 .svx--page .svx__hero { padding: 26px 18px 22px 22px; min-height: 190px; }
 .svx--page .svx__art { width: 340px; height: 190px; max-width: 75%; opacity: 0.28; }
-.svx--page .svx__mark { width: 58px; height: 58px; border-radius: 18px; }
+.svx--page .svx__mark { width: 58px; height: 58px; border-radius: var(--r-lg); }
 .svx--page .svx__title { font-size: clamp(28px, 7vw, 38px); }
-.svx--page .svx__body { padding: 0 14px 16px; }
+.svx--page .svx__body { padding: 0 14px var(--s4); }
 .svx--page .svx__search { max-width: none; }
 .svx__line { margin: 0; max-width: 520px; font-size: var(--t-sm); line-height: 1.45; color: var(--text-dim); }
-.svx__count { margin-top: 4px; font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.svx__count { margin-top: var(--s1); font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
 .svx__menuwrap { position: relative; flex: 0 0 auto; margin: -4px -4px 0 0; }
 .svx__more {
   display: grid; place-items: center; width: 36px; height: 36px;
@@ -169,7 +169,7 @@
 .svx__menuwrap .spost__menu { min-width: 230px; }
 .svx__menunote { padding: 2px 10px 6px; }
 .svx__search { max-width: 420px; }
-.svx__empty { margin: 0; padding: 16px; border-radius: var(--r-md); border: 1px dashed var(--svx-line); color: var(--text-dim); font-size: var(--t-sm); text-align: center; }
+.svx__empty { margin: 0; padding: var(--s4); border-radius: var(--r-md); border: 1px dashed var(--svx-line); color: var(--text-dim); font-size: var(--t-sm); text-align: center; }
 .svx__list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
 .svx-card:hover { box-shadow: inset 0 0 0 1px var(--svx-line), 0 10px 26px color-mix(in srgb, var(--svx) 14%, transparent); transform: translateY(-2px); }
 .svx-card__name { font-weight: var(--w-semi); font-size: var(--t-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -181,29 +181,29 @@
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase;
 }
 .svx-card__note { font-size: var(--t-sm); color: var(--text-faint); }
-.svx-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.svx-card__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .svx-card__more { background: var(--svx-grad); color: #fff; border-color: transparent; }
 .svx-card__from { font-size: var(--t-sm); color: var(--text-dim); }
 /* Routes as a boarding pass: two ends, a dotted path, the plane between. */
 .svx-lanes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .svx-lane {
-  display: grid; gap: 4px; padding: 9px 11px;
+  display: grid; gap: var(--s1); padding: 9px 11px;
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--svx) 6%, var(--surface-2));
   border: 1px dashed var(--svx-line);
 }
-.svx-lane__facts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--t-2xs); color: var(--text-faint); }
+.svx-lane__facts { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); font-size: var(--t-2xs); color: var(--text-faint); }
 .svx-lane__rate { color: var(--svx-text); font-weight: var(--w-semi); }
 .svx-lanes__more { font-size: var(--t-2xs); color: var(--text-faint); padding-left: 2px; }
 /* The studio: a tilted strip of work, and specialties as paint swatches. */
 .svx-gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.svx-gallery__pic { aspect-ratio: 1; overflow: hidden; border-radius: 10px; background: var(--surface-2); box-shadow: 0 0 0 1px var(--svx-line); }
+.svx-gallery__pic { aspect-ratio: 1; overflow: hidden; border-radius: var(--r-sm); background: var(--surface-2); box-shadow: 0 0 0 1px var(--svx-line); }
 .svx-gallery__pic:nth-child(odd) { transform: rotate(-2deg); }
 .svx-gallery__pic:nth-child(even) { transform: rotate(2deg); }
 .svx-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .svx-tags:empty { display: none; }
 .svx-tag {
-  padding: 4px 10px; border-radius: 999px 999px 999px 4px;
+  padding: var(--s1) 10px; border-radius: 999px 999px 999px 4px;
   background: var(--svx-soft); color: var(--svx-text);
   font-size: var(--t-2xs); font-weight: var(--w-semi);
 }

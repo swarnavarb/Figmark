@@ -2,25 +2,25 @@
 
 .sengage { display: grid; gap: 18px; }
 .sengage__hero {
-  display: grid; gap: 12px; padding: 16px; border-radius: var(--r-lg);
+  display: grid; gap: var(--s3); padding: var(--s4); border-radius: var(--r-lg);
   border: 1px solid var(--violet-line);
   background: radial-gradient(120% 120% at 100% 0%, rgba(236, 72, 153, 0.18), transparent 60%),
     radial-gradient(100% 100% at 0% 100%, var(--violet-soft), transparent 60%), var(--surface);
 }
-.sengage__hero h2 { margin: 0 0 4px; font: var(--w-bold) var(--t-lg)/1.2 var(--display); }
+.sengage__hero h2 { margin: 0 0 var(--s1); font: var(--w-bold) var(--t-lg)/1.2 var(--display); }
 .sengage__hero p { margin: 0; font-size: var(--t-sm); }
-.sengage__starts { display: flex; flex-wrap: wrap; gap: 8px; }
+.sengage__starts { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .sengage__start {
   display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px;
   border-radius: var(--r-pill); border: 1px solid var(--border-strong); background: var(--surface-2);
   color: var(--text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
   animation: engage-in 260ms var(--ease-out) both;
-  transition: border-color var(--dur-1) ease, transform 120ms var(--ease-out);
+  transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
 .sengage__start:active { transform: scale(0.96); }
 @media (hover: hover) and (pointer: fine) { .sengage__start:hover { border-color: var(--violet-lit); } }
 .sengage__block { display: grid; gap: 10px; }
-.sengage__block h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--t-md); }
+.sengage__block h3 { display: flex; align-items: center; gap: var(--s2); margin: 0; font-size: var(--t-md); }
 .sengage__badge {
   display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: var(--r-pill);
   background: var(--coral); color: #fff; font-size: var(--t-xs);
@@ -29,16 +29,16 @@
 .sengage__todo { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--warn); }
 .sengage__stock { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 .sengage__stockcard {
-  display: grid; gap: 8px; padding: 12px; border-radius: var(--r-lg);
+  display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r-lg);
   border: 1px solid var(--lime-line); background: var(--surface); color: inherit; text-decoration: none;
 }
-.sengage__stockrow { display: grid; grid-template-columns: minmax(0, 1fr) 90px 28px; align-items: center; gap: 8px; font-size: var(--t-sm); }
+.sengage__stockrow { display: grid; grid-template-columns: minmax(0, 1fr) 90px 28px; align-items: center; gap: var(--s2); font-size: var(--t-sm); }
 .sengage__stockrow > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sengage__track { height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
 .sengage__track > span { display: block; height: 100%; background: var(--grad-play); transform-origin: left center; transition: transform 320ms var(--ease-out); }
 .sengage__done { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .sengage__done a {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r-md);
+  display: flex; align-items: center; gap: 10px; padding: 10px var(--s3); border-radius: var(--r-md);
   border: 1px solid var(--border); background: var(--surface); color: inherit; text-decoration: none; font-size: var(--t-sm);
 }
 .sengage__donetitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

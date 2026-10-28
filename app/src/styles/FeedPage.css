@@ -5,7 +5,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 26px 6px 12px;
+  padding: 6px 26px 6px var(--s3);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
   background: var(--surface);
@@ -13,7 +13,7 @@
   font-size: var(--t-sm);
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  transition: border-color var(--dur-1), color var(--dur-1), background var(--dur-1);
 }
 .picker::after {
   content: '';
@@ -28,7 +28,7 @@
 .picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .filters__clear {
   flex: none;
-  border: 0; background: none; padding: 6px 4px;
+  border: 0; background: none; padding: 6px var(--s1);
   color: var(--text-faint); font-size: var(--t-sm); cursor: pointer;
   text-decoration: underline; text-underline-offset: 3px;
 }
@@ -42,21 +42,21 @@
 }
 .qhot { color: var(--coral); font-weight: var(--w-semi); }
 .qdrop {
-  position: relative; overflow: hidden; display: flex; gap: 16px; align-items: center;
-  margin-bottom: 14px; padding: 14px; border-radius: 18px;
+  position: relative; overflow: hidden; display: flex; gap: var(--s4); align-items: center;
+  margin-bottom: 14px; padding: 14px; border-radius: var(--r-lg);
   background: radial-gradient(120% 140% at 100% 0%, rgba(245, 197, 66, 0.26), transparent 55%),
     linear-gradient(135deg, #1C1530, #141A2A);
   border: 1px solid var(--q-gold-line);
 }
-.qdrop__body { position: relative; z-index: 1; min-width: 0; display: grid; gap: 4px; justify-items: start; }
+.qdrop__body { position: relative; z-index: 1; min-width: 0; display: grid; gap: var(--s1); justify-items: start; }
 .qdrop__eyebrow {
   margin: 0; display: inline-flex; align-items: center; gap: 5px;
   font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--q-gold);
 }
-.qdrop__meta { margin: 0 0 4px; font-size: var(--t-xs); color: var(--text-dim); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.qdrop__meta { margin: 0 0 var(--s1); font-size: var(--t-xs); color: var(--text-dim); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .qdrop__flip { width: 86px; height: 118px; flex: none; transform: rotate(-5deg); }
-.qdrop__blank { display: block; width: 100%; height: 100%; border-radius: 12px; background: var(--surface-2); }
-.qzones { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: none; }
+.qdrop__blank { display: block; width: 100%; height: 100%; border-radius: var(--r-md); background: var(--surface-2); }
+.qzones { display: flex; gap: var(--s3); overflow-x: auto; padding: 2px 2px var(--s1); scrollbar-width: none; }
 .qzones::-webkit-scrollbar { display: none; }
 .qzone {
   flex: none; width: 70px; display: grid; justify-items: center; gap: 6px;
@@ -67,16 +67,16 @@
   background: var(--surface-2); border: 1.5px solid var(--border-strong); color: var(--qh, var(--text));
   transition: box-shadow var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
-.qrow__head { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0 10px; }
+.qrow__head { display: flex; justify-content: space-between; align-items: baseline; margin: var(--s1) 0 10px; }
 .qphoto__clear {
   display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
   border: 0; border-radius: 50%; background: var(--surface); color: var(--text-dim); cursor: pointer;
 }
 .qheart {
   position: absolute; top: 8px; right: 8px; z-index: 2;
-  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; cursor: pointer;
+  width: 34px; height: 34px; border-radius: var(--r-sm); display: grid; place-items: center; cursor: pointer;
   background: rgba(8, 11, 18, 0.7); border: 1px solid rgba(255, 255, 255, 0.14); color: #fff;
-  transition: background 160ms var(--ease), border-color 160ms var(--ease);
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
 .qpop { position: absolute; inset: 0; pointer-events: none; }
 .qpop__heart {
@@ -94,7 +94,7 @@
   .qpop { display: none; }
 }
 .qloot__meta b.qhot { color: var(--coral); }
-.qtimer { display: inline-flex; align-items: center; gap: 4px; font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
+.qtimer { display: inline-flex; align-items: center; gap: var(--s1); font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
 .qtimer.qhot { color: var(--coral); }
 .qcrest__mark--gold { color: var(--q-gold); }
 .qcrest__mark--silver { color: #C9D3E3; }
@@ -103,13 +103,13 @@
   display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 7px; row-gap: 3px; align-items: center; min-width: 0;
 }
 .qseller__crest {
-  grid-row: span 2; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+  grid-row: span 2; width: 26px; height: 26px; border-radius: var(--r-sm); display: grid; place-items: center;
   background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 .qseller__crest { position: relative; overflow: hidden; }
 .qseller__pic {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit;
-  opacity: 0; transition: opacity 240ms var(--ease);
+  opacity: 0; transition: opacity var(--dur-2) var(--ease);
 }
 .qseller__name {
   font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-dim);
@@ -118,22 +118,22 @@
 .qseller__lv { display: flex; min-width: 0; }
 .qtimer--ago { color: var(--text-faint); }
 .qheart:active { transform: scale(0.85); }
-.qheart { transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms var(--ease), border-color 160ms var(--ease); }
+.qheart { transition: transform var(--dur-1) cubic-bezier(0.34, 1.56, 0.64, 1), background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
 .qloot__drop {
   position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 5px;
-  padding: 5px 8px; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase;
-  white-space: nowrap; color: #1f1300; background: linear-gradient(90deg, #fde68a, #fbbf24 55%, #f59e0b);
+  padding: 5px var(--s2); font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase;
+  white-space: nowrap; color: var(--gold-ink); background: linear-gradient(90deg, var(--gold-text), var(--warn) 55%, var(--gold));
 }
 @media (max-width: 380px) {
   .qloot__drop { letter-spacing: 0.03em; font-size: var(--t-2xs); }
 }
 .qloot__strips { display: flex; }
 .qloot__book {
-  flex: none; display: flex; align-items: center; padding: 5px 8px;
+  flex: none; display: flex; align-items: center; padding: 5px var(--s2);
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
   color: var(--lime-ink); background: linear-gradient(90deg, var(--lime), #4ade80);
   clip-path: polygon(7px 0, 100% 0, 100% 100%, 0 100%);
-  margin-left: -7px; padding-left: 12px; letter-spacing: 0.03em;
+  margin-left: -7px; padding-left: var(--s3); letter-spacing: 0.03em;
 }
 .qripple {
   position: absolute; border-radius: 50%; pointer-events: none; z-index: 3;
@@ -141,7 +141,7 @@
   transform: scale(0); animation: qripple 620ms ease-out forwards;
 }
 .qkinds {
-  position: relative; display: flex; gap: 2px; padding: 4px; width: fit-content; max-width: 100%;
+  position: relative; display: flex; gap: 2px; padding: var(--s1); width: fit-content; max-width: 100%;
   overflow-x: auto; scrollbar-width: none;
   border-radius: var(--r-pill); background: rgba(8, 11, 22, 0.75);
   box-shadow: inset 0 0 0 1px var(--border), inset 0 2px 8px rgba(0, 0, 0, 0.45);
@@ -159,7 +159,7 @@
   transform: translateX(-100%); animation: qkinds-flash 700ms 120ms ease-out forwards;
 }
 .qkind:active { transform: scale(0.92); }
-.qkind__icon { display: grid; opacity: 0.7; transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 200ms; }
+.qkind__icon { display: grid; opacity: 0.7; transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1), opacity var(--dur-2); }
 .qkind:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .qfeed .filters .picker:nth-child(2) { animation-delay: 60ms; }
 .qfeed .filters .picker:nth-child(3) { animation-delay: 120ms; }
@@ -168,9 +168,9 @@
 .picker__icon {
   width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none;
   background: rgba(255, 255, 255, 0.07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.picker::after { transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.picker::after { transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1); }
 .picker:focus-within::after { transform: translateY(1px) rotate(225deg); }
 @media (prefers-reduced-motion: reduce) {
   .qripple, .qkinds__flash { display: none; }
@@ -199,9 +199,9 @@
 }
 /* Where the next cards are drawn from: invisible, the width of the grid. */
 .qgrid__more { grid-column: 1 / -1; height: 1px; }
-.qgrid__showmore { display: flex; justify-content: center; margin: 18px 0 8px; }
+.qgrid__showmore { display: flex; justify-content: center; margin: 18px 0 var(--s2); }
 /* A photo search: the photo stands where the heading's words would. */
-.qrow__head h2.qphoto { gap: 8px; }
+.qrow__head h2.qphoto { gap: var(--s2); }
 .qseller__pic.is-in { opacity: 1; }
 .qseller__lv .lvtag { font-size: var(--t-2xs); }
 /* On a half-width card the shop mark pushed the level title off; the crest already says store. */
@@ -220,7 +220,7 @@
 .qfeed { overflow-x: clip; }
 .rail__track {
   position: relative; z-index: 1; display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory; scroll-padding: 0 16px; padding: 4px 16px 40px; margin-bottom: -34px; scrollbar-width: none;
+  scroll-snap-type: x mandatory; scroll-padding: 0 16px; padding: var(--s1) var(--s4) 40px; margin-bottom: -34px; scrollbar-width: none;
 }
 .railitem:hover .railitem__photo { transform: translateY(-4px); }
 /* The name sits on the photo, at its foot, over a dark fade. */
@@ -241,7 +241,7 @@
 /* Rush: streaks race right to left, a few of them across the photos too. */
 .rail--rush { background: radial-gradient(90% 80% at 0% 50%, #1E3A8A 0%, #111338 50%, #0B0B1A 100%); }
 .railitem__left {
-  position: absolute; top: 8px; left: 8px; z-index: 1; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: var(--r-pill);
+  position: absolute; top: 8px; left: 8px; z-index: 1; display: inline-flex; align-items: center; gap: var(--s1); padding: 3px var(--s2); border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0; color: #fff; text-shadow: none;
   background: rgba(11, 11, 26, 0.72); box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.5); backdrop-filter: blur(4px);
 }
@@ -252,10 +252,10 @@
 .honey__lux--front { z-index: 2; }
 .honey__spark {
   position: absolute; width: 14px; height: 14px; opacity: 0;
-  background: radial-gradient(circle, #FFFBEB 0 12%, transparent 13%), conic-gradient(from 45deg, transparent 0 20deg, #FDE68A 22deg 24deg, transparent 26deg 110deg, #FDE68A 112deg 114deg, transparent 116deg 200deg, #FDE68A 202deg 204deg, transparent 206deg 290deg, #FDE68A 292deg 294deg, transparent 296deg);
+  background: radial-gradient(circle, #FFFBEB 0 12%, transparent 13%), conic-gradient(from 45deg, transparent 0 20deg, var(--gold-text) 22deg 24deg, transparent 26deg 110deg, var(--gold-text) 112deg 114deg, transparent 116deg 200deg, var(--gold-text) 202deg 204deg, transparent 206deg 290deg, var(--gold-text) 292deg 294deg, transparent 296deg);
   filter: drop-shadow(0 0 4px #FACC15); animation: honey-twinkle 1.8s ease-in-out infinite;
 }
-.rail__rupee { font-size: 18px; font-weight: 900; line-height: 1; }
+.rail__rupee { font-size: calc(18px * var(--text-scale)); font-weight: 900; line-height: 1; }
 .rail--honey .rail__all { box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.5); }
 .honey__rain { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .honey__rain--front { z-index: 2; }
@@ -265,7 +265,7 @@
   text-shadow: 0 0 8px rgba(250, 204, 21, 0.8), 0 2px 0 #A16207;
   animation: honey-fall 5s linear infinite;
 }
-.honey__rupee:nth-child(3n) { color: #BEF264; text-shadow: 0 0 8px rgba(163, 230, 53, 0.7), 0 2px 0 #3F6212; }
+.honey__rupee:nth-child(3n) { color: var(--lime-pale); text-shadow: 0 0 8px rgba(163, 230, 53, 0.7), 0 2px 0 #3F6212; }
 .honey__rain--front .honey__rupee { font-size: calc(16px * var(--s, 1)); }
 /* Pre-orders: a night sky, a rocket crossing it, and a fuel gauge per item. */
 .rail--launch { background: radial-gradient(100% 90% at 100% 100%, #5B21B6 0%, #1E1B4B 45%, #050816 100%); }
@@ -273,12 +273,12 @@
 .launch__star:nth-child(3n) { width: 2px; height: 2px; }
 .launch__front { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
 .launch__rocket {
-  position: absolute; left: -10%; bottom: 10%; color: #FDE68A; opacity: 0;
+  position: absolute; left: -10%; bottom: 10%; color: var(--gold-text); opacity: 0;
   filter: drop-shadow(0 0 6px rgba(253, 230, 138, 0.8));
   animation: launch-fly 8s cubic-bezier(0.45, 0, 0.7, 1) infinite;
 }
 .launch__fuel { display: grid; gap: 5px; margin-bottom: 6px; }
-.launch__count { display: flex; align-items: baseline; gap: 4px; font-size: var(--t-xs); font-weight: var(--w-semi); }
+.launch__count { display: flex; align-items: baseline; gap: var(--s1); font-size: var(--t-xs); font-weight: var(--w-semi); }
 .launch__gauge { display: block; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, 0.18); }
 /* Shooting stars streaking down and across. */
 .launch__shoot {
@@ -289,8 +289,8 @@
 .launch__shoot + .launch__shoot { left: 70%; top: 15%; animation-delay: -1.6s; animation-duration: 4.1s; }
 /* Bookings floating up: tags, boxes, calendars, people. */
 .launch__ticket {
-  position: absolute; bottom: -24px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
-  color: #FDE68A; background: rgba(139, 92, 246, 0.25); box-shadow: inset 0 0 0 1px rgba(196, 181, 253, 0.4);
+  position: absolute; bottom: -24px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--r-sm);
+  color: var(--gold-text); background: rgba(139, 92, 246, 0.25); box-shadow: inset 0 0 0 1px rgba(196, 181, 253, 0.4);
   animation: launch-float 4.5s ease-in infinite;
 }
 /* Smoke puffing off the launch pad at the foot. */

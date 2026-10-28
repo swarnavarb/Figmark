@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { BackLink } from '../components/ScrollManager';
 import { LOT_CARD_LABELS } from '@shared/enums';
 import { ApiRequestError, api, type LotBoard } from '../api';
-import { ErrorNotice, Icon } from '../components/ui';
+import { Icon, PageError } from '../components/ui';
 import { LotPeople } from '../components/LotPeople';
 import { PageLoading } from '../components/Feedback';
 import '../styles/LotBoardPage.css';
@@ -36,7 +36,7 @@ export function LotBoardPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
+  if (error) return <PageError message={error} />;
   if (!data) return <PageLoading />;
 
   const { lot, tally } = data;

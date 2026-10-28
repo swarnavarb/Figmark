@@ -17,7 +17,7 @@
  * where each class is used; see the note at the top of styles.css.
  */
 .trk {
-  display: grid; gap: 14px; padding: 16px; border-radius: var(--r-lg);
+  display: grid; gap: 14px; padding: var(--s4); border-radius: var(--r-lg);
   background:
     radial-gradient(110% 90% at 100% 0%, rgba(6, 214, 231, 0.12), transparent 60%),
     radial-gradient(100% 100% at 0% 100%, rgba(124, 58, 237, 0.12), transparent 60%),
@@ -25,9 +25,9 @@
   box-shadow: inset 0 0 0 1px var(--border), 0 10px 28px rgba(0, 0, 0, 0.3);
 }
 /* ── The tracking card ─────────────────────────────────────────────────── */
-.trk__hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.trk__hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s3); align-items: center; }
 .trk__icon {
-  display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; font-size: var(--t-xl);
+  display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-lg); font-size: var(--t-xl);
   background: var(--grad-sea); box-shadow: 0 8px 22px rgba(6, 214, 231, 0.3);
 }
 .trk__eyebrow {
@@ -36,21 +36,21 @@
 .trk__title { font-family: var(--display); font-size: var(--t-lg); line-height: 1.15; }
 .trk__sub { font-size: var(--t-xs); color: var(--text-dim); }
 .trk__pct { font-family: var(--mono); font-size: var(--t-lg); font-weight: var(--w-bold); color: var(--aqua); }
-.trk__bar { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
-.trk__notes { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.trk__bar { height: 8px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.trk__notes { display: grid; gap: 6px; padding-top: var(--s3); border-top: 1px solid rgba(255, 255, 255, 0.06); }
 .trk__note {
-  display: flex; justify-content: space-between; gap: 10px; margin: 0; padding: 8px 10px; border-radius: 10px;
+  display: flex; justify-content: space-between; gap: 10px; margin: 0; padding: var(--s2) 10px; border-radius: var(--r-sm);
   font-size: var(--t-xs); background: rgba(255, 255, 255, 0.03);
 }
 /* The milestones as boxes across the top of a timeline - order placed, the
    warehouse, on to delivered - each ticked once reached and locked until the
    journey is one step away from it. */
 .trkbox {
-  position: relative; display: flex; gap: 0; margin: 0; padding: 2px 0 4px; list-style: none;
+  position: relative; display: flex; gap: 0; margin: 0; padding: 2px 0 var(--s1); list-style: none;
   overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity;
 }
 .trkbox__icon {
-  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; font-size: var(--t-lg);
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-md); font-size: var(--t-lg);
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
 }
 .trkbox__item.is-done .trkbox__icon {
@@ -77,5 +77,5 @@
 @media (prefers-reduced-motion: reduce) {
   .trkbox__item.is-here .trkbox__icon { animation: none; }
 }
-.stepact__who { font-size: var(--t-2xs); padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-dim); }
+.stepact__who { font-size: var(--t-2xs); padding: 2px var(--s2); border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-dim); }
 

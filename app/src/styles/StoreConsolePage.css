@@ -1,7 +1,7 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .sc-hero__actions .btn--ghost { background: rgba(8, 11, 18, 0.6); backdrop-filter: blur(8px); }
 .sc-hero__text { display: grid; gap: 2px; padding-bottom: 2px; min-width: 0; }
-.sc-tabs__count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--warn-ink); font-size: var(--t-2xs); font-weight: var(--w-bold); }
+.sc-tabs__count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: var(--r-sm); background: var(--warn); color: var(--warn-ink); font-size: var(--t-2xs); font-weight: var(--w-bold); }
 .sc-callout > span:nth-child(2) { flex: 1; }
 .sc-job__title { display: grid; gap: 2px; min-width: 0; }
 .sc-person__body { flex: 1; min-width: 0; display: grid; gap: 3px; }
@@ -15,12 +15,12 @@
 /* ==========================================================================
    The store console.
    ========================================================================== */
-.sc-hero { position: relative; margin-bottom: 8px; }
-.sc-hero__actions { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
-.sc-hero__id { display: flex; align-items: flex-end; gap: 14px; margin: -36px 0 0 16px; position: relative; }
+.sc-hero { position: relative; margin-bottom: var(--s2); }
+.sc-hero__actions { position: absolute; top: 12px; right: 12px; display: flex; gap: var(--s2); }
+.sc-hero__id { display: flex; align-items: flex-end; gap: 14px; margin: -36px 0 0 var(--s4); position: relative; }
 .sc-hero__id .sk-mark { box-shadow: 0 0 0 4px var(--bg), 0 10px 30px color-mix(in srgb, var(--sk) 35%, transparent); }
-.sc-tabs { margin: 14px 0 16px; }
-.sc-banner { display: grid; gap: 10px; justify-items: start; padding: 16px; border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); }
+.sc-tabs { margin: 14px 0 var(--s4); }
+.sc-banner { display: grid; gap: 10px; justify-items: start; padding: var(--s4); border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); }
 .sc-banner--pending { border-color: rgba(251, 191, 36, 0.4); background: linear-gradient(120deg, var(--warn-soft), transparent 70%), var(--surface); }
 .sc-banner--changes { border-color: var(--coral-line); background: linear-gradient(120deg, var(--coral-soft), transparent 70%), var(--surface); }
 .sc-banner--rejected, .sc-banner--suspended { border-color: rgba(244, 63, 94, 0.4); background: linear-gradient(120deg, var(--danger-soft), transparent 70%), var(--surface); }
@@ -29,7 +29,7 @@
   .sc-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .sc-callout {
-  display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; text-align: left;
+  display: flex; align-items: center; gap: var(--s3); width: 100%; padding: 14px var(--s4); text-align: left;
   border: 1px solid rgba(251, 191, 36, 0.45); border-radius: var(--r-lg);
   background: linear-gradient(110deg, var(--warn-soft), transparent 70%), var(--surface);
   color: var(--text); font: inherit; cursor: pointer;
@@ -41,30 +41,30 @@
 .sc-glance__cell { display: grid; gap: 2px; padding: 14px; border: 0; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .sc-glance__cell:hover { background: var(--surface-2); }
 .sc-sub { margin: 6px 0 0; font-size: var(--t-sm); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
-.sc-lot { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); color: inherit; text-decoration: none; }
+.sc-lot { display: grid; gap: var(--s2); padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); color: inherit; text-decoration: none; }
 .sc-lot--tap { transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
 .sc-lot--tap:hover { border-color: var(--sk-line); transform: translateY(-1px); }
 .sc-lot--pending { border-color: rgba(251, 191, 36, 0.45); background: linear-gradient(110deg, var(--warn-soft), transparent 60%), var(--surface); }
 .sc-lot--off { opacity: 0.55; }
-.sc-lot__top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; }
+.sc-lot__top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px var(--s3); }
 .sc-lot__name { font-weight: var(--w-semi); font-size: var(--t-md); }
 .sc-lot__lane { display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 3px 10px; border-radius: var(--r-pill); background: var(--sk-soft); color: var(--sk-text); font-size: var(--t-xs); font-weight: var(--w-semi); }
-.sc-lot__stats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--t-xs); color: var(--text-dim); }
-.sc-lot__acts { display: flex; gap: 8px; }
-.sc-lot__go { justify-self: end; display: inline-flex; align-items: center; gap: 4px; color: var(--sk-text); font-size: var(--t-sm); font-weight: var(--w-semi); }
-.sc-declined[open] { display: grid; gap: 8px; }
+.sc-lot__stats { display: flex; flex-wrap: wrap; gap: 6px var(--s4); font-size: var(--t-xs); color: var(--text-dim); }
+.sc-lot__acts { display: flex; gap: var(--s2); }
+.sc-lot__go { justify-self: end; display: inline-flex; align-items: center; gap: var(--s1); color: var(--sk-text); font-size: var(--t-sm); font-weight: var(--w-semi); }
+.sc-declined[open] { display: grid; gap: var(--s2); }
 .sc-job { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
 .sc-job--warn { border-color: rgba(251, 191, 36, 0.4); }
 .sc-job--accent { border-color: var(--sk-line); }
 .sc-job__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .sc-job__item { font-weight: var(--w-semi); font-size: var(--t-md); }
-.sc-flow { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
-.sc-job__refs { display: flex; flex-wrap: wrap; gap: 8px; }
-.sc-job__facts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--t-sm); color: var(--text-dim); }
+.sc-flow { display: grid; grid-template-columns: repeat(8, 1fr); gap: var(--s1); }
+.sc-job__refs { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.sc-job__facts { display: flex; flex-wrap: wrap; gap: 6px var(--s4); font-size: var(--t-sm); color: var(--text-dim); }
 .sc-job__claim { color: var(--warn); }
-.sc-job__form { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; align-items: end; padding: 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.sc-job__form { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; align-items: end; padding: var(--s3); border-radius: var(--r-md); background: var(--surface-2); }
 .sc-job__wide { grid-column: 1 / -1; }
-.sc-job__photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+.sc-job__photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: var(--s2); }
 .sc-editor { display: grid; gap: 14px; }
 @media (min-width: 860px) {
   .sc-editor { grid-template-columns: 200px 1fr; align-items: start; }
@@ -74,16 +74,16 @@
 @media (min-width: 860px) {
   .sc-editor__nav { flex-direction: column; }
 }
-.sc-editor__link { flex: 0 0 auto; padding: 9px 12px; border: 1px solid transparent; border-radius: var(--r-md); background: none; color: var(--text-dim); font: inherit; font-size: var(--t-sm); text-align: left; cursor: pointer; white-space: nowrap; }
+.sc-editor__link { flex: 0 0 auto; padding: 9px var(--s3); border: 1px solid transparent; border-radius: var(--r-md); background: none; color: var(--text-dim); font: inherit; font-size: var(--t-sm); text-align: left; cursor: pointer; white-space: nowrap; }
 .sc-editor__link:hover { color: var(--text); background: var(--surface); }
 .sc-editor__link.is-on { color: var(--text); background: var(--sk-soft); border-color: var(--sk-line); font-weight: var(--w-semi); }
-.sc-savebar { position: sticky; bottom: calc(var(--tabbar-h) + 8px); display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; margin: 0 -6px -6px; border-radius: var(--r-md); background: rgba(15, 20, 32, 0.92); backdrop-filter: blur(10px); border: 1px solid var(--border); }
+.sc-savebar { position: sticky; bottom: calc(var(--tabbar-h) + 8px); display: flex; justify-content: space-between; align-items: center; gap: var(--s3); padding: var(--s3) 14px; margin: 0 -6px -6px; border-radius: var(--r-md); background: rgba(15, 20, 32, 0.92); backdrop-filter: blur(10px); border: 1px solid var(--border); }
 .sc-people { display: grid; gap: 1px; border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--border); }
-.sc-person { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); }
-.sc-person__rights { display: flex; flex-wrap: wrap; gap: 4px; }
-.sc-rights { display: grid; gap: 8px; }
-.sc-right { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); cursor: pointer; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+.sc-person { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) 14px; background: var(--surface); }
+.sc-person__rights { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.sc-rights { display: grid; gap: var(--s2); }
+.sc-right { display: flex; align-items: flex-start; gap: 10px; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); cursor: pointer; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
 .sc-right.is-on { border-color: var(--sk-line); background: var(--sk-soft); }
-.sc-job__body { gap: 12px; }
+.sc-job__body { gap: var(--s3); }
 .sc-hero__id { align-items: flex-start; }
 .sc-hero__text { padding-top: 42px; }

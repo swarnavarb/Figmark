@@ -24,7 +24,7 @@ import { ReportButton } from '../components/ReportButton';
 import { ProofPicker } from '../components/ProofPicker';
 import { PaymentHistory } from '../components/Buy';
 import { orderMoney } from '@shared/payments';
-import { ErrorNotice, Icon, Modal, PersonLink } from '../components/ui';
+import { ErrorNotice, Icon, Modal, PersonLink, PageError } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
 import { DirectTrack, TrackHero, endedOf, boxesFor, withLastMile } from '../components/OrderTrack';
 import { useStepActs } from '../components/StepActs';
@@ -110,7 +110,7 @@ export function OrderPage() {
     return () => { cancelled = true; };
   }, [checkoutOf]);
 
-  if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
+  if (error && !data) return <PageError message={error} />;
   if (!data || !state) return <PageLoading />;
 
   const { order } = data;

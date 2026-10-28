@@ -17,7 +17,7 @@ import {
   type ProviderCard,
 } from '../api';
 import { formatMoney } from '../format';
-import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName, PageError } from '../components/ui';
 import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
 import { BackBar, BackLink } from '../components/ScrollManager';
@@ -771,7 +771,7 @@ function DistributionDetail({ lotId, onBack }: { lotId: string; onBack: () => vo
     }
   }
 
-  if (error) return <main className="page"><ErrorNotice message={error} /></main>;
+  if (error) return <PageError message={error} />;
   if (!data) return <PageLoading />;
 
   return (

@@ -64,7 +64,7 @@ import {
   type RoutesResponse,
 } from '../api';
 import { ItemHead } from '../components/ItemHead';
-import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto, PageError } from '../components/ui';
 import { SkeletonText, useToast, Loading, PageLoading } from '../components/Feedback';
 import {
   currencySymbol, formatCount, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
@@ -184,7 +184,7 @@ export function ShopPage() {
     void load();
   }, [load]);
 
-  if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
+  if (error) return <PageError message={error} />;
   if (!stores) return <PageLoading />;
 
   if (stores.length === 0 && !opening) {

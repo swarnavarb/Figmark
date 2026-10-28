@@ -2,7 +2,7 @@ import { ReportButton } from '../components/ReportButton';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
-import { Avatar, ErrorNotice, Icon, PersonLink, Thumb, useConfirm } from '../components/ui';
+import { Avatar, Icon, PersonLink, Thumb, useConfirm, PageError } from '../components/ui';
 import { SkeletonText } from '../components/Feedback';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
@@ -82,7 +82,7 @@ export function ListingPage() {
   const [liked, toggleLike] = useSave(id, data?.liked ?? false, onSaved);
   const shareSheet = useShareSheet();
 
-  if (error) return <main className="page"><ErrorNotice message={error} /></main>;
+  if (error) return <PageError message={error} />;
   if (!data) {
     return (
       <main className="page lp" role="status" aria-label="Loading the item">

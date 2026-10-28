@@ -1,12 +1,14 @@
 /** Anything on screen that is still standing in for content. */
 const PENDING = '.skel, .skel-card, .skel-row, .pskel__slab, .pskel__face, [data-boot-pending]';
 /**
- * How long the loading screen waits for the first screen's content. Past this
- * the page's own skeletons take over: they show the shape of what is coming,
- * which a logo cannot, and a page that is drawn but still filling in feels
- * faster than one hidden behind a veil.
+ * How long after the page was opened the loading screen waits for the first
+ * screen's content. Past this the page's own skeletons take over: they show
+ * the shape of what is coming, which a logo cannot, and a page that is drawn
+ * but still filling in feels faster than one hidden behind a veil. Counted from
+ * the tap that opened the page (performance.now() starts there), not from when
+ * the app's script arrived, which on a slow phone is already a second or two in.
  */
-const HOLD_MS = 2500;
+const HOLD_MS = 2000;
 /** If the stylesheet never arrives, the page is not held hostage past this. */
 const LONGEST_MS = 8000;
 /** A screen can hand over from one placeholder to the next with a frame of nothing between. */
@@ -55,7 +57,6 @@ export function liftBootScreen(then?: () => void): void {
     then?.();
     return;
   }
-  const started = performance.now();
   let timer = 0;
   let done = false;
 
@@ -73,17 +74,17 @@ export function liftBootScreen(then?: () => void): void {
   const ready = () => {
     if (!styled()) return false;
     if (!document.getElementById('root')?.firstElementChild) return false;
-    return performance.now() - started > HOLD_MS || !waiting();
+    return performance.now() > HOLD_MS || !waiting();
   };
   const check = () => {
     window.clearTimeout(timer);
-    if (performance.now() - started > LONGEST_MS) return lift();
+    if (performance.now() > LONGEST_MS) return lift();
     timer = window.setTimeout(() => (ready() ? lift() : check()), ready() ? SETTLE_MS : 120);
   };
 
   const observer = new MutationObserver(check);
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   for (const link of document.querySelectorAll<HTMLLinkElement>('link[data-fm-css]')) link.addEventListener('load', check);
-  window.setTimeout(lift, LONGEST_MS);
+  window.setTimeout(lift, Math.max(0, LONGEST_MS - performance.now()));
   check();
 }

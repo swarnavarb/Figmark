@@ -9,7 +9,7 @@ import { PayChip, PhaseTrack, factsOf, hueOfLot, laneFlags, type BuyerItem } fro
 import { Ladder } from '../components/Ladder';
 import { LotPhaseBadge } from '../components/LotName';
 import { buyerStatus, ShipmentChip } from '../components/OrderStatus';
-import { ErrorNotice, Icon, Thumb } from '../components/ui';
+import { ErrorNotice, Icon, Thumb, PageError } from '../components/ui';
 import { formatDate } from '../format';
 import { PayMore } from './PurchasesPage';
 import { Loading, PageLoading } from '../components/Feedback';
@@ -43,7 +43,7 @@ export function BuyerLotPage() {
   }, [lotId]);
   useEffect(() => { void load(); }, [load]);
 
-  if (error) return <main className="page"><ErrorNotice message={error} /></main>;
+  if (error) return <PageError message={error} />;
   if (missing) {
     return (
       <main className="page">

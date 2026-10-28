@@ -1,6 +1,6 @@
 import { StrictMode, lazy, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { SessionProvider, useSession } from './session';
 import { PageLoading, ToastHost } from './components/Feedback';
@@ -88,6 +88,12 @@ const SharedDiscover = page(loaders.invite, 'SharedDiscover');
 const PowerSaleBuilderPage = page(loaders.powerSale, 'PowerSaleBuilderPage');
 const NotFoundPage = page(loaders.notFound, 'NotFoundPage');
 
+/** An old address, sent on to its new one with whatever it asked for (the tab, a highlight). */
+function MovedTo({ pathname }: { pathname: string }) {
+  const { search, hash } = useLocation();
+  return <Navigate to={{ pathname, search, hash }} replace />;
+}
+
 /**
  * Everyone lands on the catalog. Signed-out visitors can read every public
  * page - items, shops, services - and anything that needs an account opens a
@@ -171,8 +177,8 @@ function App() {
         {/* Old notifications still link here; the details live under My wallet now. */}
         <Route path="/buyer-settings" element={<Navigate to="/wallet?tab=details" replace />} />
         <Route path="/wallet" element={members(<MyRefundsPage />)} />
-        {/* My refunds became My wallet; older links and notifications still land. */}
-        <Route path="/refunds" element={members(<MyRefundsPage />)} />
+        {/* My refunds became My wallet; older links and notifications still land, on its one address. */}
+        <Route path="/refunds" element={<MovedTo pathname="/wallet" />} />
         <Route path="/disputes" element={members(<MyDisputesPage />)} />
         <Route path="/quests" element={members(<QuestsPage />)} />
         <Route path="/learn" element={<LearnPage />} />

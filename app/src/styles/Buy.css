@@ -1,10 +1,10 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .dealclock__pick {
-  min-width: 52px; padding: 8px 12px; border-radius: var(--r-pill); cursor: pointer; font-weight: var(--w-bold);
+  min-width: 52px; padding: var(--s2) var(--s3); border-radius: var(--r-pill); cursor: pointer; font-weight: var(--w-bold);
   border: 1px solid var(--border); background: var(--surface); color: var(--text); font-variant-numeric: tabular-nums;
 }
 .lbox__titles { display: grid; gap: 1px; min-width: 0; flex: 1 1 auto; }
-.lbox__body { display: grid; gap: 12px; min-width: 0; }
+.lbox__body { display: grid; gap: var(--s3); min-width: 0; }
 .ltoggle__text { display: grid; gap: 1px; flex: 1 1 auto; min-width: 0; cursor: pointer; font-size: var(--t-sm); }
 
 /*
@@ -14,27 +14,27 @@
  */
 .stockchip--multi { background: var(--violet-soft); color: var(--violet-text); box-shadow: inset 0 0 0 1px var(--violet-line); }
 .expchip--gone { background: var(--danger-soft); color: var(--danger-text); box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.4); }
-.expchip--big { font-size: var(--t-sm); padding: 6px 12px; }
-.moneybar { display: grid; gap: 8px; }
-.moneybar__nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
+.expchip--big { font-size: var(--t-sm); padding: 6px var(--s3); }
+.moneybar { display: grid; gap: var(--s2); }
+.moneybar__nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: var(--s2); }
 .moneybar__due { border-color: var(--coral-line) !important; }
 .moneybar__credit { border-color: var(--pink-line) !important; }
 .moneybar__track { display: block; height: 8px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
 .payhist__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .payhist__row {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
-  padding: 8px 10px; border-radius: var(--r-md); background: var(--surface-2);
+  padding: var(--s2) 10px; border-radius: var(--r-md); background: var(--surface-2);
   border-left: 3px solid var(--ok);
 }
 .payhist__row--advance { border-left-color: var(--aqua); }
 .payhist__row--additional { border-left-color: var(--violet-lit); }
 .payhist__row--refund { border-left-color: var(--pink); }
-.payhist__icon { font-size: 18px; }
+.payhist__icon { font-size: calc(18px * var(--text-scale)); }
 .payhist__what { display: grid; }
 .payhist__amt { font-variant-numeric: tabular-nums; }
 .payhist__row--refund .payhist__amt { color: var(--pink-text); }
 .creditline {
-  display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--r-md);
+  display: grid; gap: 2px; padding: 10px var(--s3); border-radius: var(--r-md);
   background: var(--pink-soft); box-shadow: inset 0 0 0 1px var(--pink-line);
 }
 .creditline.is-done { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
@@ -42,7 +42,7 @@
 .dealclock { display: flex; flex-wrap: wrap; gap: 6px; }
 .dealclock__pick.is-on { background: var(--pink); border-color: var(--pink); color: var(--pink-ink); box-shadow: 0 6px 16px -8px var(--pink); }
 .lbox {
-  display: grid; gap: 12px; padding: 14px; border-radius: var(--r-lg);
+  display: grid; gap: var(--s3); padding: 14px; border-radius: var(--r-lg);
   background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
 }
 .lbox--pro, .lbox--gold { --tint: 251, 191, 36; }
@@ -59,12 +59,12 @@
 .lbox[class*="lbox--"] .lbox__icon { background: rgba(var(--tint), 0.18); box-shadow: inset 0 0 0 1px rgba(var(--tint), 0.4); }
 .lbox__head { display: flex; align-items: center; gap: 10px; }
 .lbox__icon {
-  display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 10px; font-size: var(--t-md);
+  display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: var(--r-sm); font-size: var(--t-md);
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
 }
 .lbox__title { font-size: var(--t-base); font-weight: var(--w-semi); }
 .lswitch {
-  position: relative; flex: none; width: 44px; height: 26px; padding: 0; border: 0; border-radius: 999px; cursor: pointer;
+  position: relative; flex: none; width: 44px; height: 26px; padding: 0; border: 0; border-radius: var(--r-pill); cursor: pointer;
   background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--border-strong);
   transition: background var(--dur-1) var(--ease);
 }
@@ -75,12 +75,12 @@
 .lswitch.is-on { background: var(--grad-blue); box-shadow: 0 2px 10px rgba(124, 58, 237, 0.38); }
 .lswitch.is-on .lswitch__knob { transform: translateX(18px); background: #fff; }
 .ltoggle {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r-md);
+  display: flex; align-items: center; gap: 10px; padding: 10px var(--s3); border-radius: var(--r-md);
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
 }
 .ltoggle.is-on { box-shadow: inset 0 0 0 1px var(--violet-line); }
 .ltoggle__icon { font-size: var(--t-md); flex: none; }
-.ltiles { display: grid; gap: 8px; }
+.ltiles { display: grid; gap: var(--s2); }
 .ltile {
   display: grid; justify-items: start; gap: 2px; padding: 10px 11px; border: 0; border-radius: var(--r-md);
   cursor: pointer; text-align: left; color: var(--text-dim);
@@ -93,7 +93,7 @@
   background: radial-gradient(120% 120% at 0% 0%, var(--violet-soft), transparent 70%), var(--surface-2);
   box-shadow: inset 0 0 0 1.5px var(--violet-lit), 0 4px 14px rgba(124, 58, 237, 0.25);
 }
-.ltile__icon { font-size: 18px; line-height: 1; }
+.ltile__icon { font-size: calc(18px * var(--text-scale)); line-height: 1; }
 .ltile__title { font-size: var(--t-sm); font-weight: var(--w-semi); }
 .ltile__note { font-size: var(--t-2xs); color: var(--text-faint); }
 /* ── Advance accepted: under a card's picture, and on the item page ── */
@@ -104,7 +104,7 @@
 /* On a public card's picture: overlaid so the card keeps its size. */
 .droptag {
   position: absolute; left: 8px; bottom: 8px; z-index: 2; max-width: calc(100% - 16px);
-  padding: 3px 7px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 3px 7px; border-radius: var(--r-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
-  color: #1f1300; background: linear-gradient(90deg, #fde68a, #fbbf24); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  color: var(--gold-ink); background: linear-gradient(90deg, var(--gold-text), var(--warn)); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }

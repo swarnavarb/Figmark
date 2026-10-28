@@ -11,6 +11,7 @@ import { brandHueFor, gradientFor, initialsOf } from '../format';
  */
 export { Icon } from './Icon';
 import { Icon } from './Icon';
+import { BackLink } from './ScrollManager';
 import { ManagerMark } from './ManagerBadge';
 export type { IconName } from './Icon';
 
@@ -117,6 +118,25 @@ export function EmptyState({ icon, title, children }: {
 
 export function ErrorNotice({ message }: { message: string }) {
   return <p className="notice notice--error">{message}</p>;
+}
+
+/**
+ * A whole page that could not load: what went wrong, and two ways on.
+ *
+ * Used to be the message alone, a dead end short of reloading by hand. Trying
+ * again reloads the page, which starts every read it makes afresh; back goes
+ * where you came from, as every back does.
+ */
+export function PageError({ message, title = 'This page did not load' }: { message: string; title?: string }) {
+  return (
+    <main className="page pageerror">
+      <BackLink to="/">Back</BackLink>
+      <EmptyState icon={<Icon name="close" size={26} />} title={title}>{message}</EmptyState>
+      <div className="pageerror__acts">
+        <button type="button" className="btn" onClick={() => window.location.reload()}>Try again</button>
+      </div>
+    </main>
+  );
 }
 
 export type { StepState };

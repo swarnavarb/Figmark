@@ -95,12 +95,14 @@ const TAB_PAGES: LoaderName[] = ['feed', 'discover', 'shop', 'services', 'social
 
 /**
  * Fetch the tabs' screens once the phone has nothing else to do, so switching
- * tab draws the page rather than the loading mark. Skipped when the reader
- * asked to save data or the connection is too slow to spare.
+ * tab draws the page rather than its skeleton. Only on a connection the browser
+ * reports as fast and not saving data: it is a few hundred kilobytes a reader
+ * on a metered plan may never need, and a tab's code is still fetched the
+ * moment a finger lands on it (warmTab).
  */
 export function warmTabsWhenIdle(): void {
   const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-  if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType ?? '')) return;
+  if (!connection || connection.saveData || connection.effectiveType !== '4g') return;
   const idle = (run: () => void) =>
     typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback(run, { timeout: 4000 }) : window.setTimeout(run, 1500);
   // One at a time, each in its own quiet moment, so none competes with the page.

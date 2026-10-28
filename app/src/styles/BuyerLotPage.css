@@ -25,9 +25,9 @@
     var(--card);
   color: var(--card-ink); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
 }
-.blot__front .ptrack { width: 100%; color: var(--card-ink); margin-top: 4px; }
+.blot__front .ptrack { width: 100%; color: var(--card-ink); margin-top: var(--s1); }
 .blot__name { margin: 0; font-size: var(--t-xl, 24px); line-height: 1.15; letter-spacing: -0.02em; }
-.blot__ids { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: var(--t-xs); color: var(--card-dim); }
+.blot__ids { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); font-size: var(--t-xs); color: var(--card-dim); }
 .blot__ids .lotname__no { opacity: 1; }
 .blot__hint { margin: 0; font-size: var(--t-sm); color: var(--card-dim); }
 .blot__facts { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
@@ -37,9 +37,9 @@
 .blot__front .lotphase--received { background: rgba(5, 150, 105, 0.13); color: #05684A; border-color: rgba(5, 150, 105, 0.35); }
 .blot__h { margin: 0; font-size: var(--t-lg); }
 .blot__now { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
-.inside__main { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; }
+.inside__main { display: grid; grid-template-columns: 56px 1fr; gap: var(--s3); align-items: center; }
 .inside__status { font-size: var(--t-xs); color: var(--text-dim); }
 .inside__step { font-size: var(--t-xs); color: var(--text-faint); }
-.inside__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.inside__acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .inside__link { margin-left: auto; font-size: var(--t-xs); color: var(--accent-text); text-decoration: none; }
 .inside__track { border-top: 1px dashed var(--border); padding-top: 10px; }

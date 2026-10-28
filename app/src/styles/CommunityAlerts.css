@@ -3,20 +3,20 @@
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-.cnotices { display: grid; gap: 10px; margin-bottom: 16px; }
+.cnotices { display: grid; gap: 10px; margin-bottom: var(--s4); }
 .cnotice {
-  display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--r-md);
+  display: grid; gap: var(--s1); padding: var(--s3) 14px; border-radius: var(--r-md);
   background: var(--warn-soft); border: 1px solid var(--warn);
 }
 .cnotice__tag { font-size: var(--t-xs, 12px); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--warn); }
 .cnotice__body { margin: 0; overflow-wrap: anywhere; }
 .cnotice__meta { font-size: var(--t-sm); opacity: 0.8; }
 .calert {
-  display: grid; gap: 4px; max-width: 960px; margin: 12px auto 0; padding: 10px 16px;
+  display: grid; gap: var(--s1); max-width: 960px; margin: var(--s3) auto 0; padding: 10px var(--s4);
   border-radius: var(--r-md); background: var(--warn-soft); border: 1px solid var(--warn);
 }
 .calert__line { margin: 0; overflow-wrap: anywhere; }
 .calert__meta { font-size: var(--t-sm); opacity: 0.85; }
 @media (max-width: 640px) {
-  .calert { margin: 12px 16px 0; }
+  .calert { margin: var(--s3) var(--s4) 0; }
 }

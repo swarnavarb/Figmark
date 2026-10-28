@@ -1,7 +1,7 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .field--inline { gap: 5px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .row--tight { gap: 7px; flex-shrink: 0; }
-.lothero { display: grid; gap: 7px; margin-bottom: 16px; }
+.lothero { display: grid; gap: 7px; margin-bottom: var(--s4); }
 .lothero__name {
   margin: 0;
   font-size: var(--t-2xl); font-weight: var(--w-bold); letter-spacing: -0.025em;
@@ -10,27 +10,27 @@
 }
 .lothero__id {
   padding: 3px 9px;
-  border: 1px solid var(--border-strong); border-radius: 999px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
   background: var(--surface-2);
   font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em;
   color: var(--text-dim); font-variant-numeric: tabular-nums;
 }
 .lothero__state {
-  padding: 3px 10px; border-radius: 999px;
+  padding: 3px 10px; border-radius: var(--r-pill);
   font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .lothero__line { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
 .lothero__bar { height: 3px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
 .lotnav {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
-  margin-bottom: 16px; padding: 4px;
-  border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s1);
+  margin-bottom: var(--s4); padding: var(--s1);
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
 }
 .lotnav__tab {
   display: grid; justify-items: center; align-content: center; gap: 3px; min-width: 0;
-  padding: 9px 4px;
-  border: 0; border-radius: 14px;
+  padding: 9px var(--s1);
+  border: 0; border-radius: var(--r-md);
   background: transparent; color: var(--text-faint);
   font: inherit; text-align: center; cursor: pointer;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
@@ -40,14 +40,14 @@
   font-size: var(--t-xs); font-weight: var(--w-semi);
 }
 .factlist { display: grid; gap: 7px; margin: 0; }
-.tagrow { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.tagrow { padding-bottom: var(--s2); border-bottom: 1px solid var(--border); }
 .tagrow__name { min-width: 0; font-size: var(--t-sm); overflow-wrap: anywhere; }
 .settings__sub { margin: 10px 0 0; font-size: var(--t-sm); color: var(--text-dim); }
 .ladder__leave-go:hover { border-color: var(--accent); color: var(--text); }
-.silkcta--sm { flex-direction: row; align-items: center; width: auto; padding: 7px 12px; gap: 6px; }
+.silkcta--sm { flex-direction: row; align-items: center; width: auto; padding: 7px var(--s3); gap: 6px; }
 .lotitem:last-of-type { border-bottom: none; }
 .picker-panel {
-  padding: 12px;
+  padding: var(--s3);
   border: 1px solid var(--accent-line); border-radius: var(--r-md);
   background: var(--surface-2);
 }
@@ -68,15 +68,15 @@
 }
 .lotitem__own {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
-  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-strong); font-size: var(--t-2xs);
+  margin-top: var(--s2); padding-top: var(--s2); border-top: 1px dashed var(--border-strong); font-size: var(--t-2xs);
 }
 .lotitem__more {
-  justify-self: start; display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 2px; border: 0; background: none; cursor: pointer;
+  justify-self: start; display: inline-flex; align-items: center; gap: var(--s1);
+  padding: var(--s1) 2px; border: 0; background: none; cursor: pointer;
   font: inherit; font-size: var(--t-2xs); color: var(--text-faint);
 }
-.lothero__now { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.lotdetail > .backlink { justify-self: start; margin-bottom: 8px; }
+.lothero__now { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.lotdetail > .backlink { justify-self: start; margin-bottom: var(--s2); }
 .fb-booked__body { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .fb-store__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .lotgate__row .ladder__act { flex: none; text-decoration: none; }
@@ -95,8 +95,8 @@
  * One lot, tightened: less air between the hero, the tabs and the content,
  * and customers that read as heads over their own indented orders.
  */
-.lotnav { margin-bottom: 10px; padding: 3px; gap: 3px; border-radius: 14px; }
-.lotnav__tab { grid-auto-flow: column; gap: 6px; padding: 7px 4px; border-radius: 11px; }
+.lotnav { margin-bottom: 10px; padding: 3px; gap: 3px; border-radius: var(--r-md); }
+.lotnav__tab { grid-auto-flow: column; gap: 6px; padding: 7px var(--s1); border-radius: var(--r-md); }
 
 .lotitem { border-bottom: none; }
 /*
@@ -106,8 +106,8 @@
  */
 .lothero {
   --hue: 124 58 237;
-  display: grid; gap: 10px; margin-bottom: 10px; padding: 14px 16px;
-  border-radius: 20px;
+  display: grid; gap: 10px; margin-bottom: 10px; padding: 14px var(--s4);
+  border-radius: var(--r-xl);
   background:
     radial-gradient(120% 100% at 100% 0%, rgb(var(--hue) / 0.18), transparent 60%),
     linear-gradient(160deg, var(--surface-2), var(--surface));
@@ -133,44 +133,44 @@
   color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lothero__step { flex: none; font-family: var(--mono); font-size: var(--t-xs); color: var(--text-faint); }
-.lothero .lothero__bar { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); }
-.lothero__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.lothero .lothero__bar { height: 6px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.07); }
+.lothero__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2); }
 /* A lot opened inside the Sell tab: the tab already pads the page, so this adds none. */
 .lotdetail { display: grid; gap: 0; }
 /* ── Tagging people, and what they may press ───────────────────────────── */
 .ptag { position: relative; display: block; }
-.ptag__list { position: absolute; z-index: var(--z-popover); top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
+.ptag__list { position: absolute; z-index: var(--z-popover); top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: var(--s1); list-style: none; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
 .ptag__opt { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: var(--r-sm); cursor: pointer; }
 .ptag__opt:hover, .ptag__opt.is-active { background: var(--surface-hover); }
 .ptag__name { font-weight: var(--w-semi); color: var(--text); }
 .ptag__handle { font-size: var(--t-xs); color: var(--text-faint); }
-.crewbtns__role { display: grid; gap: 6px; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); }
-.crewbtns__opt { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 10px; row-gap: 2px; padding: 8px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.crewbtns__role { display: grid; gap: 6px; margin: 0; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); }
+.crewbtns__opt { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 10px; row-gap: 2px; padding: var(--s2) 10px; border-radius: var(--r-sm); cursor: pointer; }
 .crewbtns__opt:hover { background: var(--surface-2); }
 .crewbtns__opt.is-on { background: var(--accent-soft); }
 .crewbtns__label { font-weight: var(--w-semi); }
 .crewbtns__fixed { grid-template-columns: 1fr; cursor: default; }
 .crewbtns__fixed:hover { background: var(--accent-soft); }
-.fb__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.fb__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s3); }
 /* ==========================================================================
    Booking a forwarder on a lot.
    ========================================================================== */
-.fb__weight { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--t-xs); color: var(--text-dim); }
-.fb-booked { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--sk-line, var(--border)); border-radius: var(--r-lg); background: linear-gradient(110deg, var(--sk-soft, transparent), transparent 60%), var(--surface-2); }
-.fb-booked__name { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: var(--w-semi); }
+.fb__weight { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: var(--s1) 10px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--t-xs); color: var(--text-dim); }
+.fb-booked { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border: 1px solid var(--sk-line, var(--border)); border-radius: var(--r-lg); background: linear-gradient(110deg, var(--sk-soft, transparent), transparent 60%), var(--surface-2); }
+.fb-booked__name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-weight: var(--w-semi); }
 .fb-booked__cover { font-size: var(--t-xs); color: var(--ok); }
-.fb-stores { display: grid; gap: 8px; }
-.fb-store { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+.fb-stores { display: grid; gap: var(--s2); }
+.fb-store { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
 .fb-store:hover { border-color: var(--sk-line); }
 .fb-store.is-on { border-color: var(--sk); background: linear-gradient(110deg, var(--sk-soft), transparent 70%), var(--surface-2); box-shadow: 0 0 0 1px var(--sk); }
 .fb-store__name { font-weight: var(--w-semi); }
 .fb-store__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
 .fb-store__price { display: grid; justify-items: end; font-family: var(--display); font-weight: var(--w-bold); color: var(--sk-text); }
-.fb-tag { padding: 2px 8px; border-radius: var(--r-pill); background: var(--surface-hover); color: var(--text-dim); font-size: var(--t-2xs); font-weight: var(--w-semi); }
+.fb-tag { padding: 2px var(--s2); border-radius: var(--r-pill); background: var(--surface-hover); color: var(--text-dim); font-size: var(--t-2xs); font-weight: var(--w-semi); }
 .fb-tag--ok { background: var(--ok-soft); color: var(--ok); }
 .fb-tag--cover { background: var(--blue-soft); color: var(--blue-text); }
-.fb-sub { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; margin-top: 6px; }
-.fb-plans { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+.fb-sub { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px var(--s3); margin-top: 6px; }
+.fb-plans { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
 .fb-offer { font-size: var(--t-2xs); color: var(--text-faint); font-weight: var(--w-semi); }
 .fb-offer.is-on { color: var(--ok); }
 .fb-confirm { display: grid; gap: 10px; padding: 14px; border-radius: var(--r-md); background: var(--sk-soft, var(--accent-soft)); font-size: var(--t-sm); }
@@ -184,7 +184,7 @@
 .lotgate { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 46vh; overflow: auto; }
 .lotgate__row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2);
+  padding: var(--s2) 10px; border-radius: var(--r-sm); background: var(--surface-2);
 }
 .lotgate__who { display: grid; gap: 2px; min-width: 0; font-size: var(--t-sm); }
 .lotgate__who .faint { font-size: var(--t-2xs); }

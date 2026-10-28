@@ -5,7 +5,7 @@ import { ApiRequestError, api } from '../api';
 import { SkeletonText } from '../components/Feedback';
 import { LearnText } from '../components/LearnText';
 import { Lightbox } from '../components/SocialPost';
-import { ErrorNotice } from '../components/ui';
+import { PageError } from '../components/ui';
 import '../styles/LearnPage.css';
 
 /**
@@ -29,7 +29,7 @@ export function LearnPage() {
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the guide.'));
   }, []);
 
-  if (error) return <main className="page"><ErrorNotice message={error} /></main>;
+  if (error) return <PageError message={error} />;
   if (!doc) return <main className="page"><SkeletonText lines={8} /></main>;
 
   const asked = params.get('tab');

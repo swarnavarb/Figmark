@@ -4,7 +4,7 @@ import { ApiRequestError, api, type DisputeRow, type MyDisputesResponse } from '
 import { DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { ManagerMark } from '../components/ManagerBadge';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
-import { EmptyState, ErrorNotice } from '../components/ui';
+import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 import { PageLoading } from '../components/Feedback';
 import '../styles/MyDisputesPage.css';
@@ -43,7 +43,7 @@ export function MyDisputesPage() {
     void load();
   }, [load]);
 
-  if (error && !data) return <main className="page"><ErrorNotice message={error} /></main>;
+  if (error && !data) return <PageError message={error} />;
   if (!data) return <PageLoading />;
 
   const rows = tab === 'buyer' ? data.asBuyer : tab === 'store' ? data.asStore : data.community;
