@@ -143,14 +143,40 @@ Then tell me which of these are still missing. I will provide them later:
 
 ## Step 5: Production clock app
 
+Classic Consumption, Windows, Node 22. **Not** Flex Consumption, even if the
+portal suggests it.
+
 ```bash
 az functionapp create --resource-group rg-figmark-prod --name func-figmark-clocks-prod \
-  --storage-account stfigmarkprod --flexconsumption-location centralindia \
-  --runtime node --runtime-version 24 --instance-memory 512
+  --storage-account stfigmarkprod --consumption-plan-location centralindia \
+  --os-type Windows --functions-version 4 --runtime node --runtime-version 22
 
 az functionapp config appsettings set --resource-group rg-figmark-prod --name func-figmark-clocks-prod \
   --settings COSMOS_ENDPOINT="$P_ENDPOINT" COSMOS_KEY="$P_KEY" \
              STORAGE_ACCOUNT=stfigmarkprod STORAGE_KEY="$S_KEY" > /dev/null
+```
+
+The create command also makes an Application Insights resource called
+`func-figmark-clocks-prod`. Open it → **Usage and estimated costs → Daily cap**
+→ 0.1 GB.
+
+Push keys: the clock app needs the same three `WEB_PUSH_*` values as the
+production site (Step 4). If the site has them, copy them across without
+showing them:
+
+```bash
+for n in WEB_PUSH_PUBLIC_KEY WEB_PUSH_PRIVATE_KEY WEB_PUSH_SUBJECT; do
+  v=$(az staticwebapp appsettings list -n stapp-figmark-prod -g rg-figmark-prod --query "properties.$n" -o tsv)
+  [ -n "$v" ] && az functionapp config appsettings set -g rg-figmark-prod -n func-figmark-clocks-prod --settings "$n=$v" > /dev/null && echo "$n copied"
+done
+unset v
+```
+
+If the site doesn't have them yet, tell me, and do this when it does.
+
+```bash
+APP_ID=$(az ad app list --display-name figmark-github-deploy --query "[0].appId" -o tsv)
+az ad app federated-credential list --id "$APP_ID" --query "[].subject" -o tsv
 
 APP_ID=$(az ad app list --display-name figmark-github-deploy --query "[0].appId" -o tsv)
 az ad app federated-credential list --id "$APP_ID" --query "[].subject" -o tsv

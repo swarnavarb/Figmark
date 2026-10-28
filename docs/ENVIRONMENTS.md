@@ -11,7 +11,7 @@ clock app. Nothing is shared between them.
 | Cosmos DB | `cosmos-figmark-dev`, **serverless** (pay per use) | `cosmos-figmark-prod`, **free tier** (1000 RU/s, 25 GB) |
 | Storage | `stfiguremarketdev` | `stfigmarkprod` |
 | Static Web App | `stapp-figuremarket-dev`, Free plan | `stapp-figmark-prod`, Free plan |
-| Clock Function App | `func-figmark-clocks-dev` (optional) | `func-figmark-clocks-prod` |
+| Clock Function App | `func-figmark-clocks-dev` (optional; classic Consumption, Windows, Node 22, no Application Insights, no `push-wake`) | `func-figmark-clocks-prod` (classic Consumption, Windows, Node 22, trimmed Application Insights, `push-wake` on) |
 | `SITE_ENVIRONMENT` | `development` (test-site banner, kept out of search engines) | `production` |
 | `COSMOS_AUTOSEED` | `on` (demo accounts) | **unset, always** |
 
@@ -164,8 +164,9 @@ Never set `COSMOS_AUTOSEED` here.
 az functionapp create \
   --resource-group rg-figmark-prod --name func-figmark-clocks-prod \
   --storage-account stfigmarkprod \
-  --flexconsumption-location centralindia \
-  --runtime node --runtime-version 24 --instance-memory 512
+  --consumption-plan-location centralindia \
+  --os-type Windows --functions-version 4 \
+  --runtime node --runtime-version 22
 
 az functionapp config appsettings set \
   --resource-group rg-figmark-prod --name func-figmark-clocks-prod \
@@ -189,9 +190,16 @@ az role assignment create --assignee "$APP_ID" --role "Website Contributor" \
   --scope "$(az functionapp show -g rg-figmark-prod -n func-figmark-clocks-prod --query id -o tsv)"
 ```
 
-The clocks share the subscription's monthly Flex Consumption free grant. One
-app fits inside it; with the development one also running, the total is
-about $1 a month.
+This creates an Application Insights resource with the same name. Give it a
+**Daily cap** of 0.1 GB (Usage and estimated costs). The push keys are the
+production ones from step 4; without them the clock sends no pushes.
+
+Both clock apps fit in the subscription's classic Consumption free grant.
+What they cost is storage and this app's telemetry: about ₹100–200 a month
+together. Why classic and not Flex Consumption: [AZURE.md](AZURE.md#the-clock-function-app).
+
+For pushes on time with nobody on the site, also set up the `push-wake`
+queue: [PUSH-WAKE-WITH-CLAUDE-IN-CHROME.md](PUSH-WAKE-WITH-CLAUDE-IN-CHROME.md), production part.
 
 ## 6. GitHub
 
