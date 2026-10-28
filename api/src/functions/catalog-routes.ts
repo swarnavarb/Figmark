@@ -150,7 +150,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     listings: listings.map((listing) => ({
-      ...publicListing(listing),
+      ...cardListing(publicListing(listing)),
       liked: likedIds.has(listing.id),
       seller: sellerById.get(listing.sellerId) ?? null,
       estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
@@ -189,6 +189,26 @@ function publicListing(listing: Listing): Listing {
   return highest > listing.priceMinor
     ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }
     : rest;
+}
+
+/** How much of a description a card carries: enough for a line or two, never the whole text. */
+const CARD_DESCRIPTION = 240;
+
+/**
+ * A listing as a catalogue card draws it. A card shows one photo, so only the
+ * one it leads with travels, and the description is cut to what a card can
+ * hold. The item's own page reads the whole listing. A hundred cards with every
+ * photo and every word was most of the feed's weight.
+ */
+function cardListing(listing: Listing): Listing {
+  const photos = listing.photos ?? [];
+  const lead = photos.find((photo) => photo.isPrimary) ?? photos[0];
+  const description = listing.description ?? '';
+  return {
+    ...listing,
+    photos: lead ? [lead] : [],
+    description: description.length > CARD_DESCRIPTION ? `${description.slice(0, CARD_DESCRIPTION).trimEnd()}…` : description,
+  };
 }
 
 async function listingDetail(request: HttpRequest, _context: InvocationContext) {

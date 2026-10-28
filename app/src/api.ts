@@ -149,12 +149,12 @@ function forgetReads(): void {
 
 /**
  * The reads every page load starts with, asked as one request (/api/bootstrap)
- * rather than seven. Each is filed here under its own path, so whichever
+ * rather than nine. Each is filed here under its own path, so whichever
  * screen asks for it gets the bootstrap's answer - or, when the bootstrap did
  * not carry it (signed out, or the request failed), its own request, sent only
  * if something actually asks.
  */
-const BOOT_PATHS = ['/auth/me', '/health', '/route-words', '/push/key', '/me/items', '/invite/me', '/quest/me'];
+const BOOT_PATHS = ['/auth/me', '/health', '/route-words', '/push/key', '/me/items', '/invite/me', '/quest/me', '/notifications', '/me/stores'];
 /** Paths primed from the bootstrap and not yet answered, with whether something has asked. */
 const primed = new Map<string, { asked: boolean; settle: (answer: { status: number; body: unknown } | null) => void }>();
 

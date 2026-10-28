@@ -104,11 +104,6 @@
 .opsroutes__studio { min-width: 0; }
 /* A screen opened inside a console tab: back, a title, then the work, edge to edge. */
 .opsedit { display: grid; gap: 12px; min-width: 0; }
-.opsback {
-  justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 8px;
-  border: 0; border-radius: 999px; background: var(--surface-2); color: var(--text);
-  font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
-}
 .opsbtns { display: grid; gap: 10px; }
 .opsbtns__head { margin: 6px 0 0; font-size: var(--t-sm); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
 .opsbtns__row {

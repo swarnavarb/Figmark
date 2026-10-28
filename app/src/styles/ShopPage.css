@@ -466,16 +466,8 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, .35); animation: todo-new-pop .4s var(--ease, ease-out) both;
 }
 .sellhome__list--slim { justify-self: start; }
-.selltabs {
-  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
-  margin: 18px calc(var(--page-pad) * -1) 0; padding: 0 var(--page-pad) 2px;
-  border-bottom: 1px solid var(--border);
-}
-.selltabs__tab {
-  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
-  padding: 10px 12px; border: 0; border-bottom: 2px solid transparent; background: none;
-  color: var(--text-dim); font: inherit; font-size: var(--t-sm); font-weight: var(--w-medium); cursor: pointer;
-}
+.selltabs { margin: 18px 0 0; }
+.selltabs .tab { gap: 6px; }
 .sfwiz__step { position: relative; display: grid; justify-items: center; }
 .sfwiz__jump {
   position: relative; z-index: 1; display: grid; justify-items: center; gap: 3px;
@@ -780,7 +772,7 @@ label.rdy__line { cursor: pointer; }
 .pbook__money input { flex: 1 1 auto; min-width: 0; width: 100%; }
 .pbook__split { overflow: hidden; }
 .pbook__step { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.field .pbook__sum select.pbook__of, .field .pbook__step select { width: auto; flex: 0 1 auto; }
+.field .pbook__sum select.pbook__of, .field .pbook__step select, .field .pbook__sum .fmselect.pbook__of, .field .pbook__step .fmselect { width: auto; flex: 0 1 auto; }
 .pbook__name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .pbook__find {
   width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface-2);
@@ -799,9 +791,6 @@ label.rdy__line { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .todo__new { animation: none; }
 }
-.selltabs::-webkit-scrollbar { display: none; }
-.selltabs__tab:hover { color: var(--text); }
-.selltabs__tab.is-on { color: var(--text); border-bottom-color: var(--accent, var(--violet-lit)); font-weight: var(--w-bold); }
 /* The timeline on top: every step, done ones ticked, the rest pending. */
 .sfwiz { display: grid; gap: var(--s4); max-width: 640px; }
 /* ── Opening a storefront: a walkthrough ─────────────────────────────── */

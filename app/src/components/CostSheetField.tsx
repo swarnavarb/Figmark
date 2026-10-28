@@ -10,6 +10,7 @@ import { STAGE_TONES } from '../pages/ProfitCalculator';
 import { CalcIcon } from './CalcIcon';
 import { Loading } from './Feedback';
 import '../styles/FloatingCalc.css';
+import { Select } from './Select';
 
 /**
  * An item's costs (Pro), wherever an item is made or kept.
@@ -100,9 +101,9 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
         <div className="stack" style={{ gap: 10 }}>
           <label className="field">
             <span>Calculator</span>
-            <select value={pick} onChange={(e) => setPick(e.target.value)}>
+            <Select value={pick} onChange={(e) => setPick(e.target.value)}>
               {templates.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
-            </select>
+            </Select>
           </label>
           {template && (
             <>
@@ -123,9 +124,9 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
         <div key={step.id} className="pc__steprow">
           <span className={`pc__dot pc__dot--${STAGE_TONES[step.stage]}`} />
           <input aria-label="Step" value={step.label} onChange={(e) => change(at, { label: e.target.value })} />
-          <select aria-label="Stage" value={step.stage} onChange={(e) => change(at, { stage: e.target.value as CostStage })}>
+          <Select aria-label="Stage" value={step.stage} onChange={(e) => change(at, { stage: e.target.value as CostStage })}>
             {COST_STAGES.map((stage) => <option key={stage} value={stage}>{STAGE_LABELS[stage]}</option>)}
-          </select>
+          </Select>
           <label className="pc__stepamt">
             <span>₹</span>
             <input type="number" inputMode="decimal" min={0} step={0.01} aria-label="Amount per unit"

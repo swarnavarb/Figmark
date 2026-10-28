@@ -1,11 +1,12 @@
 import { lotNo } from '@shared/routes';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { BackLink } from '../components/ScrollManager';
 import { LOT_CARD_LABELS } from '@shared/enums';
 import { ApiRequestError, api, type LotBoard } from '../api';
 import { ErrorNotice, Icon } from '../components/ui';
 import { LotPeople } from '../components/LotPeople';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 import '../styles/LotBoardPage.css';
 
 /**
@@ -36,15 +37,13 @@ export function LotBoardPage() {
   useEffect(() => { void load(); }, [load]);
 
   if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!data) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
+  if (!data) return <PageLoading />;
 
   const { lot, tally } = data;
 
   return (
     <main className="page tab-view">
-      <Link to="/shop?tab=lots" className="backlink">
-        <Icon name="back" size={14} /> Track
-      </Link>
+      <BackLink to="/shop?tab=lots">Track</BackLink>
 
       <div className="lothead">
         <span className="lothead__name">{lot.name}</span>

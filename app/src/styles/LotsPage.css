@@ -52,12 +52,7 @@
   background: var(--surface-2);
 }
 .picker-panel .search { max-width: none; }
-.ocard__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
-.ocard__title { min-width: 0; display: grid; gap: 3px; }
-.ocard__name:hover { color: var(--accent-text); }
-.ocard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--t-xs); color: var(--text-faint); }
-.ocard__price { display: grid; justify-items: end; gap: 6px; }
-.ocard__price .badge { white-space: nowrap; }
+
 .pickset__sub {
   margin-top: var(--s1);
   font-size: var(--t-xs);
@@ -102,8 +97,7 @@
  */
 .lotnav { margin-bottom: 10px; padding: 3px; gap: 3px; border-radius: 14px; }
 .lotnav__tab { grid-auto-flow: column; gap: 6px; padding: 7px 4px; border-radius: 11px; }
-.ocust .ocard__name { font-size: var(--t-sm); font-weight: var(--w-semi); }
-.ocust .ocard__img { width: 40px; height: 40px; border-radius: 10px; }
+
 .lotitem { border-bottom: none; }
 /*
  * The lot's hero: one card. Name and number on top, where it is right now

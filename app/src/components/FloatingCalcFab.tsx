@@ -1,4 +1,5 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { useDialog } from './ui';
 import { CalcIcon } from './CalcIcon';
 import { Loading } from './Feedback';
 
@@ -46,18 +47,24 @@ export function useFloatingCalc(): [boolean, (on: boolean) => void] {
   return [on, set];
 }
 
+/** The calculator over the page: a dialog like any other. */
+function CalcSheet({ onClose }: { onClose: () => void }) {
+  const box = useRef<HTMLElement>(null);
+  useDialog(box, onClose);
+  return (
+    <section ref={box} tabIndex={-1} className="fcalc__sheet prozone" role="dialog" aria-modal="true" aria-label="Profit calculator">
+      <Suspense fallback={<Loading />}>
+        <QuickCalc onLeave={onClose} />
+      </Suspense>
+    </section>
+  );
+}
+
 /** The button and the calculator it opens. Mounted once, in the app shell. */
 export function FloatingCalc() {
   const [on] = useFloatingCalc();
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
 
   function close() {
     // The sheet folds back into the button before it goes.
@@ -75,11 +82,7 @@ export function FloatingCalc() {
       {open && (
         <div className={`fcalc${closing ? ' is-closing' : ''}`}>
           <button type="button" className="fcalc__scrim" aria-label="Close the calculator" onClick={close} />
-          <section className="fcalc__sheet prozone" role="dialog" aria-modal="true" aria-label="Profit calculator">
-            <Suspense fallback={<Loading />}>
-              <QuickCalc onLeave={close} />
-            </Suspense>
-          </section>
+          <CalcSheet onClose={close} />
         </div>
       )}
     </>

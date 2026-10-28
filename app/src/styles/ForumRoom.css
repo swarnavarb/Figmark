@@ -8,8 +8,7 @@
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   min-height: 40px; border: 0; border-radius: var(--r-pill);
   background: transparent; color: var(--text-dim);
-  font-weight: var(--w-bold); font-size: var(--t-sm);
-  letter-spacing: 0.04em; text-transform: uppercase; font-style: italic;
+  font-weight: var(--w-semi); font-size: var(--t-sm);
   cursor: pointer;
   transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
@@ -64,7 +63,7 @@
  * where each class is used; see the note at the top of styles.css.
  */
 .streams__tab:hover { color: var(--text); }
-.streams__tab.is-on { background: var(--sx-grad); color: #fff; box-shadow: var(--sx-glow); }
+.streams__tab.is-on { background: var(--grad-blue); color: var(--accent-ink); box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4); }
 .forumroom { --page-max: 720px; }
 .forumhero__back { margin-left: -8px; }
 .forumhero__back:hover, .forumhero__icon:hover { background: rgba(255, 255, 255, 0.18); }

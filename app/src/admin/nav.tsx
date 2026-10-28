@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
+import { BackBar } from '../components/ScrollManager';
 
 /**
  * Where the console is: the tab, and any screen opened inside it, kept in the
  * address's hash ("#routes/common") so the phone's own back button, the
- * browser's, and the console's ← Back all step back the same way.
+ * browser's, and the console's back control all step back the same way.
  */
 
 const CHANGED = 'figmark:ops-nav';
@@ -57,11 +58,7 @@ export function backOps(fallback: string): void {
   window.dispatchEvent(new Event(CHANGED));
 }
 
-/** The ← Back at the top of every screen inside the console. */
+/** The back control at the top of every screen inside the console: the app's own "<", the same everywhere. */
 export function BackButton({ to, label = 'Back' }: { to: string; label?: string }) {
-  return (
-    <button type="button" className="opsback" onClick={() => backOps(to)}>
-      <span aria-hidden="true">←</span> {label}
-    </button>
-  );
+  return <BackBar onBack={() => backOps(to)}>{label}</BackBar>;
 }

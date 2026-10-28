@@ -13,7 +13,7 @@ import { useSession } from './session';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
 import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
-import { Preloader } from './components/Preloader';
+import { PageLoading } from './components/Feedback';
 
 /** The sign-in sheet, fetched the first time somebody needs it. */
 const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthModal })));
@@ -201,7 +201,7 @@ export function AppShell() {
 
       {/* Each screen is its own download (see main.tsx), fetched the first
           time it is opened; the chrome around it stays put meanwhile. */}
-      <Suspense fallback={<main className="page pagewait" data-boot-pending><Preloader small /></main>}>
+      <Suspense fallback={<PageLoading />}>
         <Outlet />
       </Suspense>
 

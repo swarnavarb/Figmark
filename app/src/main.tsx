@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { SessionProvider, useSession } from './session';
-import { ToastHost } from './components/Feedback';
+import { PageLoading, ToastHost } from './components/Feedback';
 import { UndoHost } from './components/Undo';
 import { QuestProvider } from './components/Quest';
 import { GuestWall } from './components/GuestWall';
@@ -13,16 +13,21 @@ import { PushHost } from './components/PushControls';
 import { FreshOnNavigate, NotificationLinks } from './components/Notifications';
 import { keepFresh } from './freshness';
 import { PullToRefresh } from './components/PullToRefresh';
-import { Preloader, liftBootScreen } from './components/Preloader';
+import { applyDeferredStyles, liftBootScreen } from './components/Preloader';
 import { loadRouteWords } from './routeWords';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { listenForErrors } from './errors';
 import { primeStartupReads } from './api';
+import { loaders, warmPage, warmTabsWhenIdle } from './pageLoaders';
 import './styles.css';
 
+// The stylesheet index.html fetched without blocking the loading screen's paint.
+applyDeferredStyles();
 // The reads every screen starts with, as one request, before anything asks.
 primeStartupReads();
 loadRouteWords();
+// This address's screen, fetched alongside the session rather than after it.
+warmPage(location.pathname);
 
 /**
  * A screen, fetched the first time it is opened.
@@ -36,51 +41,52 @@ function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
   return lazy(() => load().then((module) => ({ default: module[name] as ComponentType })));
 }
 
-const FeedPage = page(() => import('./pages/FeedPage'), 'FeedPage');
-const DiscoverPage = page(() => import('./pages/DiscoverPage'), 'DiscoverPage');
-const LegalPage = page(() => import('./pages/LegalPage'), 'LegalPage');
-const ListingPage = page(() => import('./pages/ListingPage'), 'ListingPage');
-const SellPage = page(() => import('./pages/SellPage'), 'SellPage');
-const ShopPage = page(() => import('./pages/ShopPage'), 'ShopPage');
-const LotBoardPage = page(() => import('./pages/LotBoardPage'), 'LotBoardPage');
-const RouteRedirect = page(() => import('./pages/RoutesPage'), 'RouteRedirect');
-const RouteStudioPage = page(() => import('./pages/RouteStudioPage'), 'RouteStudioPage');
-const ServicesPage = page(() => import('./pages/ServicesPage'), 'ServicesPage');
-const MyServicesPage = page(() => import('./pages/ServicesPage'), 'MyServicesPage');
-const ConsignmentsPage = page(() => import('./pages/ServicesPage'), 'ConsignmentsPage');
-const DistributionPage = page(() => import('./pages/ServicesPage'), 'DistributionPage');
-const ServiceDirectoryPage = page(() => import('./pages/ServicesPage'), 'ServiceDirectoryPage');
-const StoreApplyPage = page(() => import('./pages/StoreApplyPage'), 'StoreApplyPage');
-const StoreConsolePage = page(() => import('./pages/StoreConsolePage'), 'StoreConsolePage');
-const StorePage = page(() => import('./pages/StorePage'), 'StorePage');
-const CrewLotPage = page(() => import('./pages/CrewLotPage'), 'CrewLotPage');
-const SocialPage = page(() => import('./pages/SocialPage'), 'SocialPage');
-const ChannelPage = page(() => import('./pages/SocialPage'), 'ChannelPage');
-const PostPage = page(() => import('./pages/SocialPage'), 'PostPage');
-const ForumRoom = page(() => import('./components/ForumRoom'), 'ForumRoom');
-const ThreadPage = page(() => import('./pages/MessagesPage'), 'ThreadPage');
-const OrderPage = page(() => import('./pages/OrderPage'), 'OrderPage');
-const DisputePage = page(() => import('./pages/DisputePage'), 'DisputePage');
-const CommunityServicePage = page(() => import('./pages/CommunityServicePage'), 'CommunityServicePage');
-const ProfilePage = page(() => import('./pages/ProfilePage'), 'ProfilePage');
-const VerifyPage = page(() => import('./pages/VerifyPage'), 'VerifyPage');
-const PurchasesPage = page(() => import('./pages/PurchasesPage'), 'PurchasesPage');
-const CartPage = page(() => import('./pages/PurchasesPage'), 'CartPage');
-const BuyerLotPage = page(() => import('./pages/BuyerLotPage'), 'BuyerLotPage');
-const MyRefundsPage = page(() => import('./pages/MyRefundsPage'), 'MyRefundsPage');
-const MyDisputesPage = page(() => import('./pages/MyDisputesPage'), 'MyDisputesPage');
-const QuestsPage = page(() => import('./pages/QuestsPage'), 'QuestsPage');
-const LearnPage = page(() => import('./pages/LearnPage'), 'LearnPage');
-const TagPage = page(() => import('./pages/TagPage'), 'TagPage');
-const ProfileByHandlePage = page(() => import('./pages/ProfileByHandlePage'), 'ProfileByHandlePage');
-const ShortLinkPage = page(() => import('./pages/ShortLinkPage'), 'ShortLinkPage');
-const InvitePage = page(() => import('./pages/InvitePage'), 'InvitePage');
-const SharedItem = page(() => import('./pages/InvitePage'), 'SharedItem');
-const SharedPage = page(() => import('./pages/InvitePage'), 'SharedPage');
-const SharedPost = page(() => import('./pages/InvitePage'), 'SharedPost');
-const SharedTopic = page(() => import('./pages/InvitePage'), 'SharedTopic');
-const SharedDiscover = page(() => import('./pages/InvitePage'), 'SharedDiscover');
-const PowerSaleBuilderPage = page(() => import('./components/PowerSale'), 'PowerSaleBuilderPage');
+const FeedPage = page(loaders.feed, 'FeedPage');
+const DiscoverPage = page(loaders.discover, 'DiscoverPage');
+const LegalPage = page(loaders.legal, 'LegalPage');
+const ListingPage = page(loaders.listing, 'ListingPage');
+const SellPage = page(loaders.sell, 'SellPage');
+const ShopPage = page(loaders.shop, 'ShopPage');
+const LotBoardPage = page(loaders.lotBoard, 'LotBoardPage');
+const RouteRedirect = page(loaders.routes, 'RouteRedirect');
+const RouteStudioPage = page(loaders.routeStudio, 'RouteStudioPage');
+const ServicesPage = page(loaders.services, 'ServicesPage');
+const MyServicesPage = page(loaders.services, 'MyServicesPage');
+const ConsignmentsPage = page(loaders.services, 'ConsignmentsPage');
+const DistributionPage = page(loaders.services, 'DistributionPage');
+const ServiceDirectoryPage = page(loaders.services, 'ServiceDirectoryPage');
+const StoreApplyPage = page(loaders.storeApply, 'StoreApplyPage');
+const StoreConsolePage = page(loaders.storeConsole, 'StoreConsolePage');
+const StorePage = page(loaders.store, 'StorePage');
+const CrewLotPage = page(loaders.crewLot, 'CrewLotPage');
+const SocialPage = page(loaders.social, 'SocialPage');
+const ChannelPage = page(loaders.social, 'ChannelPage');
+const PostPage = page(loaders.social, 'PostPage');
+const ForumRoom = page(loaders.forumRoom, 'ForumRoom');
+const ThreadPage = page(loaders.messages, 'ThreadPage');
+const OrderPage = page(loaders.order, 'OrderPage');
+const DisputePage = page(loaders.dispute, 'DisputePage');
+const CommunityServicePage = page(loaders.communityService, 'CommunityServicePage');
+const ProfilePage = page(loaders.profile, 'ProfilePage');
+const VerifyPage = page(loaders.verify, 'VerifyPage');
+const PurchasesPage = page(loaders.purchases, 'PurchasesPage');
+const CartPage = page(loaders.purchases, 'CartPage');
+const BuyerLotPage = page(loaders.buyerLot, 'BuyerLotPage');
+const MyRefundsPage = page(loaders.refunds, 'MyRefundsPage');
+const MyDisputesPage = page(loaders.disputes, 'MyDisputesPage');
+const QuestsPage = page(loaders.quests, 'QuestsPage');
+const LearnPage = page(loaders.learn, 'LearnPage');
+const TagPage = page(loaders.tag, 'TagPage');
+const ProfileByHandlePage = page(loaders.profileByHandle, 'ProfileByHandlePage');
+const ShortLinkPage = page(loaders.shortLink, 'ShortLinkPage');
+const InvitePage = page(loaders.invite, 'InvitePage');
+const SharedItem = page(loaders.invite, 'SharedItem');
+const SharedPage = page(loaders.invite, 'SharedPage');
+const SharedPost = page(loaders.invite, 'SharedPost');
+const SharedTopic = page(loaders.invite, 'SharedTopic');
+const SharedDiscover = page(loaders.invite, 'SharedDiscover');
+const PowerSaleBuilderPage = page(loaders.powerSale, 'PowerSaleBuilderPage');
+const NotFoundPage = page(loaders.notFound, 'NotFoundPage');
 
 /**
  * Everyone lands on the catalog. Signed-out visitors can read every public
@@ -92,9 +98,7 @@ function App() {
 
   if (loading) {
     return (
-      <div className="pagewait" data-boot-pending>
-        <Preloader />
-      </div>
+      <PageLoading />
     );
   }
 
@@ -178,7 +182,7 @@ function App() {
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
         <Route path="/:username" element={<ProfileByHandlePage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
     </QuestProvider>
@@ -197,7 +201,7 @@ keepFresh();
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element #root is missing from index.html.');
 
-liftBootScreen();
+liftBootScreen(warmTabsWhenIdle);
 
 createRoot(container).render(
   <StrictMode>

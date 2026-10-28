@@ -13,6 +13,10 @@ import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
 import { LotName, LotPhaseBadge, lotLabel } from '../components/LotName';
 import { useUndo } from '../components/Undo';
+import { InsightsPanel } from './InsightsPanel';
+import { ProfitCalculator } from './ProfitCalculator';
+import { SalesPanel } from './SalesPanel';
+import { BackBar } from '../components/ScrollManager';
 import { RarityRibbon, XpBar } from '../components/Quest';
 import { ShipmentChip, StatusBanner, sellerStatus } from '../components/OrderStatus';
 import { LBox, OptionTiles } from '../components/ListingForm';
@@ -23,7 +27,6 @@ import { SALES_NEWS_EVENT } from '../components/Notifications';
 import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
-import { RoutesList } from './RoutesPage';
 import { SetupChecklist } from '../components/VerifyNudges';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
@@ -62,12 +65,7 @@ import {
 } from '../api';
 import { ItemHead } from '../components/ItemHead';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto } from '../components/ui';
-import { PowerSalePanel } from '../components/PowerSale';
-import { SkeletonText, useToast, Loading } from '../components/Feedback';
-import { InsightsPanel } from './InsightsPanel';
-import { ProfitCalculator } from './ProfitCalculator';
-import { SalesPanel } from './SalesPanel';
-import { LotDetail, NewLotForm } from './LotsPage';
+import { SkeletonText, useToast, Loading, PageLoading } from '../components/Feedback';
 import {
   currencySymbol, formatCount, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
 } from '../format';
@@ -77,11 +75,27 @@ import { CalcIcon } from '../components/CalcIcon';
 import { PictureField, TagInput } from '../components/PageFields';
 import { MoreMenu } from '../components/MoreMenu';
 import { EarnPill, earnOf } from '../components/Affiliate';
-import { Preloader } from '../components/Preloader';
 import '../styles/ShopPage.css';
+import { Select } from '../components/Select';
 
 /* The Engage screen carries the whole post card; it arrives when it is opened. */
 const EngagePanel = lazy(() => import('../components/EngagePanel').then((module) => ({ default: module.EngagePanel })));
+/*
+ * The parts that bring a lot of code and styles of their own - the lots
+ * console, the route list, power sales - are fetched when one is opened, not
+ * with the Sell page. Opening Sell used to download every one of them and their
+ * stylesheets: 44 scripts and 21 sheets. Insights, sales and the calculator
+ * share the Sell page's own stylesheet, so they still come with it.
+ */
+const RoutesList = lazy(() => import('./RoutesPage').then((module) => ({ default: module.RoutesList })));
+const PowerSalePanel = lazy(() => import('../components/PowerSale').then((module) => ({ default: module.PowerSalePanel })));
+const LotDetail = lazy(() => import('./LotsPage').then((module) => ({ default: module.LotDetail })));
+const NewLotForm = lazy(() => import('./LotsPage').then((module) => ({ default: module.NewLotForm })));
+
+/** A part of the page whose code is still on its way: the loading mark in its place. */
+function Later({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<Loading />}>{children}</Suspense>;
+}
 
 type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage';
 
@@ -171,7 +185,7 @@ export function ShopPage() {
   }, [load]);
 
   if (error) return <main className="page tab-view"><ErrorNotice message={error} /></main>;
-  if (!stores) return <main className="page tab-view pagewait" data-boot-pending><Preloader small /></main>;
+  if (!stores) return <PageLoading />;
 
   if (stores.length === 0 && !opening) {
     return <ShopStart onOpen={() => setOpening(true)} />;
@@ -179,13 +193,9 @@ export function ShopPage() {
   if (stores.length === 0) {
     return (
       <main className="page tab-view">
-        <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start', marginBottom: 12 }}
-          onClick={() => setOpening(false)}>
-          <Icon name="back" size={14} /> Back
-        </button>
+        <BackBar onBack={() => setOpening(false)} title="Open your storefront" />
         <div className="page__head">
           <div>
-            <h1>Open your storefront</h1>
             <p className="muted">
               Five short steps. Only the name is needed; everything else can be skipped and changed later.
             </p>
@@ -285,6 +295,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
 
   return (
     <main className="page tab-view">
+      <h1 className="sr-only">Sell</h1>
       <SetupChecklist hasStore />
       <SellHome store={store} canList={store.permissions.includes('listings')} onGo={setSection}
         section={active} />
@@ -292,21 +303,21 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       {stores.length > 1 && (
         <label className="field" style={{ marginBlock: 14 }}>
           <span>Store</span>
-          <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+          <Select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
             {stores.map((entry) => (
               <option key={entry.ownerId} value={entry.ownerId}>
                 {entry.name}{entry.isOwner ? '' : ' — you help run this'}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       )}
 
-      <div className="selltabs" role="tablist" aria-label="Shop" id="settings"
+      <div className="tabs selltabs" role="tablist" aria-label="Shop" id="settings"
         style={{ scrollMarginTop: 'calc(var(--nav-h, 56px) + 12px)' }}>
         {groups.map((group) => (
           <button key={group.id} type="button" role="tab" aria-selected={active ? groupOf(active) === group.id : false}
-            className={`selltabs__tab${active && groupOf(active) === group.id ? ' is-on' : ''}`}
+            className={`tab${active && groupOf(active) === group.id ? ' is-on' : ''}`}
             onClick={() => openGroup(group.id)}>
             <Icon name={group.icon} size={16} />
             {group.label}
@@ -344,11 +355,11 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'calculator' && <ProfitCalculator store={store} />}
           {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
-          {active === 'routes' && <RoutesList spotlightNew={params.get('spotlight') === 'new'} />}
+          {active === 'routes' && <Later><RoutesList spotlightNew={params.get('spotlight') === 'new'} /></Later>}
           {active === 'analytics' && <Analytics store={store} />}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
-          {active === 'engage' && <Suspense fallback={<Preloader small />}><EngagePanel store={store} /></Suspense>}
+          {active === 'engage' && <Later><EngagePanel store={store} /></Later>}
         </div>
       )}
     </main>
@@ -1231,7 +1242,7 @@ function MyItems({ store }: { store: StoreAccess }) {
       {mode === 'templates' ? (
         <TemplatesPanel store={store} />
       ) : mode === 'power' ? (
-        <PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} />
+        <Later><PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} /></Later>
       ) : !data ? (
         <Loading />
       ) : (
@@ -2497,16 +2508,16 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
         <div className="field-row">
           <label className="field">
             <span>Category</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
               {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-            </select>
+            </Select>
           </label>
           <label className="field">
             <span>Condition</span>
-            <select value={condition} onChange={(e) => setCondition(e.target.value)}>
+            <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
               <option value="">Ask each time</option>
               {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
         <label className="field">
@@ -2528,14 +2539,14 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           ]} />
         <label className="field">
           <span>Default lot</span>
-          <select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
+          <Select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
             <option value="">No lot — filed after it sells</option>
             {lots.map(({ lot }) => (
               <option key={lot.id} value={lot.id}>
                 {lotLabel(lot)}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </LBox>
 
@@ -2543,7 +2554,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           stops travelling alone, so both halves come from the same list and
           cannot contradict each other the way two written ones did. */}
       <LBox icon="🧭" title="Tracking" hint="The journey a customer of this item follows.">
-        <select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)} aria-label="Route">
+        <Select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)} aria-label="Route">
           <option value="">
             {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
           </option>
@@ -2552,7 +2563,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
               {route.name} — {route.steps.length} steps
             </option>
           ))}
-        </select>
+        </Select>
         <span className="lbox__hint">
           None fit? <Link to="/routes/studio/new" target="_blank" rel="noopener">Write a route</Link> (new tab).
         </span>
@@ -3199,7 +3210,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           {mode === 'apply' && (
             <label className="field">
               <span>Put it towards</span>
-              <select value={target} onChange={(e) => {
+              <Select value={target} onChange={(e) => {
                 setTarget(e.target.value);
                 const next = credit.targets.find((entry) => entry.orderId === e.target.value);
                 if (next) setAmount(fromMinor(Math.min(credit.leftMinor, next.outstandingMinor)));
@@ -3209,7 +3220,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
                     {entry.itemName} — {formatMoney(entry.outstandingMinor, credit.currency)} owed
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
           <label className="field">
@@ -3475,14 +3486,14 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
         <>
           <label className="field">
             <span>Order</span>
-            <select value={orderId} onChange={(e) => { setOrderId(e.target.value); setAmount(''); }}>
+            <Select value={orderId} onChange={(e) => { setOrderId(e.target.value); setAmount(''); }}>
               <option value="">Choose an order…</option>
               {refundable.map((entry) => (
                 <option key={entry.orderId} value={entry.orderId}>
                   {entry.buyer.name} — {entry.itemName} (up to {formatMoney(entry.refundableMinor, entry.currency)})
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           {chosen && (
             <>
@@ -3964,11 +3975,8 @@ function Unlotted({ store, onBack }: {
 
   return (
     <div className="stack">
-      <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={onBack}>
-        <Icon name="back" size={14} /> All lots
-      </button>
+      <BackBar onBack={onBack}>Not in a lot yet</BackBar>
       <div>
-        <h2 className="card__title" style={{ fontSize: '1.2rem' }}>Not in a lot yet</h2>
         <p className="faint">Their buyers see no shipment tracking until they are in one.</p>
       </div>
       {error && <ErrorNotice message={error} />}
@@ -4164,7 +4172,7 @@ function ShipTogether({ store, orders, listings, onClose, onDone }: {
     return (
       <Modal title="New lot" onClose={onClose}>
         {busy ? <p className="muted">Filing {count === 1 ? '1 item' : `${count} items`}…</p> : (
-          <NewLotForm bare onCancel={() => setCreating(false)} onDone={(lot) => void fill(lot)} />
+          <Later><NewLotForm bare onCancel={() => setCreating(false)} onDone={(lot) => void fill(lot)} /></Later>
         )}
       </Modal>
     );
@@ -4357,10 +4365,12 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
     return (
       <>
       {notice && <p className="notice notice--ok" role="status">{notice}</p>}
-      <LotDetail lotId={openId} onBack={() => { setNotice(null); setOpenId(null); void load(); }}
-        customers={({ onChanged, onTracking }) => (
-          <Orders store={store} lotId={openId} onChanged={onChanged} onTracking={onTracking} />
-        )} />
+      <Later>
+        <LotDetail lotId={openId} onBack={() => { setNotice(null); setOpenId(null); void load(); }}
+          customers={({ onChanged, onTracking }) => (
+            <Orders store={store} lotId={openId} onChanged={onChanged} onTracking={onTracking} />
+          )} />
+      </Later>
       </>
     );
   }
@@ -4377,10 +4387,12 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
     <div className="stack">
       {error && <ErrorNotice message={error} />}
       {creating ? (
-        <NewLotForm
-          onDone={(lot) => void created(lot)}
-          onCancel={() => { setCreating(false); dropFileOrder(); }}
-        />
+        <Later>
+          <NewLotForm
+            onDone={(lot) => void created(lot)}
+            onCancel={() => { setCreating(false); dropFileOrder(); }}
+          />
+        </Later>
       ) : (
         // Routes now live on their own Sell-home card, not beside this button.
         <span className="spotlight-row" style={{ justifySelf: 'start' }}>

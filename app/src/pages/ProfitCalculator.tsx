@@ -11,10 +11,11 @@ import { ApiRequestError, api, type SheetItem } from '../api';
 import { formatMoney, formatRupees } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
-import { scrollToTopOf, useGoBack } from '../components/ScrollManager';
+import { BackBar, scrollToTopOf, useGoBack } from '../components/ScrollManager';
 import { CalcIcon } from '../components/CalcIcon';
 import { PriceRoute } from '../components/CostSheetField';
 import { Loading } from '../components/Feedback';
+import { Select } from '../components/Select';
 
 /**
  * The profit calculator (Pro).
@@ -192,7 +193,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
     <div className="stack prozone">
       {params.get('edit') && (
         // Opened from "Edit calculator" on a listing: back to it, as it was left.
-        <button type="button" className="backlink" onClick={goBack}>← Back to your listing</button>
+        <BackBar onBack={goBack}>Your listing's calculator</BackBar>
       )}
       <section className="inshero pc__top">
         <div className="inshero__title">
@@ -302,7 +303,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
           </div>
 
           {draft && params.get('edit') && (
-            <button type="button" className="backlink pc__editback" onClick={goBack}>← Back to your listing, without saving</button>
+            <button type="button" className="btn btn--quiet pc__editback" onClick={goBack}>Leave without saving</button>
           )}
 
           <Rates sheet={active} onChange={edit} />
@@ -418,23 +419,23 @@ function Rates({ sheet, onChange }: { sheet: ProfitTemplate; onChange: (patch: P
       <div className="pc__ratechain">
         <label className="field">
           <span>Item priced in</span>
-          <select value={sheet.currency}
+          <Select value={sheet.currency}
             onChange={(e) => onChange({ currency: e.target.value, ...(e.target.value === sheet.payCurrency ? { payCurrency: null } : {}) })}>
             {/* A code saved before the list had it stays pickable. */}
             {[...new Set([...COMMON_CURRENCIES, sheet.currency])].filter(Boolean).map((code) => (
               <option key={code} value={code}>{currencyName(code)}</option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="field">
           <span>Supplier paid in</span>
-          <select value={via ? sheet.payCurrency! : ''}
+          <Select value={via ? sheet.payCurrency! : ''}
             onChange={(e) => onChange(e.target.value
               ? { payCurrency: e.target.value, payRate: sheet.payRate || 1 }
               : { payCurrency: null })}>
             <option value="">{currencyName(sheet.currency)} (same)</option>
             {COMMON_CURRENCIES.filter((code) => code !== sheet.currency).map((code) => <option key={code} value={code}>{currencyName(code)}</option>)}
-          </select>
+          </Select>
         </label>
         {via && (
           <Num label={`${sheet.currency} for 1 ${pay}`} value={sheet.payRate ?? 0} step={0.01} onChange={(payRate) => onChange({ payRate })} />
@@ -645,31 +646,31 @@ function Charges({ sheet, result, onChange }: {
                       onClick={() => (line.id.startsWith('c_') ? drop(line.id) : setLine(line.id, { enabled: false }))}>✕</button>
                   </div>
                   <div className="pc__rowbody">
-                    <select value={line.kind} aria-label="How it is charged"
+                    <Select value={line.kind} aria-label="How it is charged"
                       onChange={(e) => setLine(line.id, { kind: e.target.value as CostKind, basis: line.basis ?? 'item' })}>
                       {(Object.keys(KIND_LABELS) as CostKind[]).map((kind) => <option key={kind} value={kind}>{KIND_LABELS[kind]}</option>)}
-                    </select>
+                    </Select>
                     {line.kind === 'percent' && (
-                      <select value={line.basis ?? 'item'} aria-label="Percent of"
+                      <Select value={line.basis ?? 'item'} aria-label="Percent of"
                         onChange={(e) => setLine(line.id, { basis: e.target.value as CostBasis })}>
                         {(Object.keys(BASIS_LABELS) as CostBasis[]).map((basis) => <option key={basis} value={basis}>{BASIS_LABELS[basis]}</option>)}
-                      </select>
+                      </Select>
                     )}
                     {line.kind === 'percent' && line.basis === 'line' && (
-                      <select value={line.basisLineId ?? ''} aria-label="Which line"
+                      <Select value={line.basisLineId ?? ''} aria-label="Which line"
                         onChange={(e) => setLine(line.id, { basisLineId: e.target.value })}>
                         <option value="">Pick a line above…</option>
                         {earlier.map((prior) => <option key={prior.id} value={prior.id}>{prior.label}</option>)}
-                      </select>
+                      </Select>
                     )}
                     <label className="pc__paidin">
                       paid in
-                      <select value={line.currency === 'pay' && !via ? 'foreign' : line.currency} aria-label="Paid in"
+                      <Select value={line.currency === 'pay' && !via ? 'foreign' : line.currency} aria-label="Paid in"
                         onChange={(e) => setLine(line.id, { currency: e.target.value as LineCurrency })}>
                         <option value="INR">₹ INR</option>
                         <option value="foreign">{symbolOf(sheet.currency).trim()} {sheet.currency}</option>
                         {via && <option value="pay">{symbolOf(sheet.payCurrency!).trim()} {sheet.payCurrency}</option>}
-                      </select>
+                      </Select>
                     </label>
                     <span className="pc__tools">
                       <button type="button" className="btn btn--quiet btn--sm" aria-label="Move up" disabled={first}
@@ -798,14 +799,14 @@ function SaveToItem({ template, result, shop, itemPrice, quantity, sellingPrice,
       {items && items.length > 0 && <>
       <label className="field">
         <span>Or save them to an item you already have</span>
-        <select value={pick} onChange={(e) => choose(e.target.value)}>
+        <Select value={pick} onChange={(e) => choose(e.target.value)}>
           <option value="">Choose an item…</option>
           {items.map((row) => (
             <option key={row.listingId} value={row.listingId}>
               {row.sheet ? '✓ ' : ''}{row.title} · {formatMoney(row.priceMinor, row.currency)}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       {item && <span className="field__hint">{steps.length} steps · {inr(result.landed)} per unit · selling price set to the item's</span>}
       <button type="button" className="btn btn--sm" disabled={!item || busy || steps.length === 0} onClick={() => void save()}>

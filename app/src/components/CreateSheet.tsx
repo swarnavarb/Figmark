@@ -6,9 +6,9 @@ import type { SocialIdentity } from '@shared/social';
 import type { StoreAccess } from '@shared/stores';
 import { api } from '../api';
 import { useSession } from '../session';
-import { Preloader } from './Preloader';
 import { VoiceScope } from './SocialVoice';
 import type { StudioMode } from './PostStudio';
+import { Loading } from './Feedback';
 
 /*
  * The studio arrives with the first tap on one of its kinds, as every screen
@@ -134,7 +134,7 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
 
   if (making) {
     return (
-      <Suspense fallback={createPortal(<div className="csheet"><Preloader small /></div>, document.body)}>
+      <Suspense fallback={createPortal(<div className="csheet"><Loading /></div>, document.body)}>
         <PostStudio mode={making.action.studio!} storeId={making.store?.ownerId ?? null} storeName={making.store?.name ?? null}
           presets={making.action.presets} onClose={onClose} onPosted={posted} />
       </Suspense>

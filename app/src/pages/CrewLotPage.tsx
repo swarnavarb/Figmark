@@ -13,8 +13,9 @@ import { OrderPhotos } from '../components/OrderPhotos';
 import { ConditionTag } from '../components/ConditionTag';
 import { shrink } from '../components/PhotoManager';
 import { useSession } from '../session';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 import '../styles/CrewLotPage.css';
+import { Select } from '../components/Select';
 
 /**
  * One lot, as the crew works it.
@@ -151,12 +152,12 @@ export function CrewLotPage() {
   if (error && !view) {
     return (
       <main className="page">
-        <BackLink to="/services/mine">← My services</BackLink>
+        <BackLink to="/services/mine" title="Lot" />
         <EmptyState icon={<Icon name="lock" size={26} />} title="Not your lot">{error}</EmptyState>
       </main>
     );
   }
-  if (!view) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (!view) return <PageLoading />;
 
   const done = (key: string) => view.items.filter((item) => item.ticks[key]).length;
   const visible = (key: string) => filter === 'all' || (filter === `todo:${key}`);
@@ -168,7 +169,7 @@ export function CrewLotPage() {
   return (
     <main className={`page cl-page${view.role === 'handler' ? ' cl-page--handler' : ''}`}>
       <BackLink to={view.role === 'forwarder' && view.forwarder ? `/services/store/forwarder/${view.forwarder.ownerId}?tab=work` : '/services/mine'}>
-        ← {view.role === 'forwarder' && view.forwarder ? view.forwarder.name : 'My services'}
+        {view.lot.name}
       </BackLink>
 
       <header className="cl-head">
@@ -189,13 +190,13 @@ export function CrewLotPage() {
           <label className="cl-lotpick">
             <span className="cl-lotpick__no">LOT {view.lot.number}</span>
             <Icon name="sort" size={15} />
-            <select aria-label="Switch lot" value={`${view.lot.sellerId}/${view.lot.id}`}
+            <Select aria-label="Switch lot" value={`${view.lot.sellerId}/${view.lot.id}`}
               onChange={(event) => navigate(`/services/crew/${event.target.value}?role=${view.role}`)}>
               {(view.lots.some((row) => row.lotId === view.lot.id) ? view.lots : [{ sellerId: view.lot.sellerId, lotId: view.lot.id, name: view.lot.name, number: view.lot.number }, ...view.lots])
                 .map((row) => (
                   <option key={`${row.sellerId}/${row.lotId}`} value={`${row.sellerId}/${row.lotId}`}>LOT {row.number} · {row.name}</option>
                 ))}
-            </select>
+            </Select>
           </label>
           <span className="cl-orders"><b>{view.items.length}</b> {view.items.length === 1 ? 'Order' : 'Orders'}</span>
         </div>

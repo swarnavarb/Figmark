@@ -1,0 +1,10 @@
+/* An item's head on an order card (ItemHead.tsx): kept with the component, which the
+   Sell page draws before the lots console it used to ship with has loaded. */
+.ocard__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.ocard__title { min-width: 0; display: grid; gap: 3px; }
+.ocard__name:hover { color: var(--accent-text); }
+.ocard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--t-xs); color: var(--text-faint); }
+.ocard__price { display: grid; justify-items: end; gap: 6px; }
+.ocard__price .badge { white-space: nowrap; }
+.ocust .ocard__name { font-size: var(--t-sm); font-weight: var(--w-semi); }
+.ocust .ocard__img { width: 40px; height: 40px; border-radius: 10px; }

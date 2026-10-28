@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type ChannelRow, type ForumRow } from '../api';
+import { Select } from './Select';
 
 /*
  * Sharing inside the app: the same thing, posted to your feed, a forum you
@@ -143,10 +144,10 @@ export function PostInFigmark({ text, photo, feed = true, asStore = false, store
               : <>Follow a shop to post in its channel. <Link to="/social?view=channels">See channels</Link></>}
           </p>
         ) : (
-          <select className="pif__room" value={picked} aria-label={where === 'forum' ? 'Forum' : 'Channel'}
+          <Select className="pif__room" value={picked} aria-label={where === 'forum' ? 'Forum' : 'Channel'}
             onChange={(event) => setRoom(event.target.value)}>
             {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-          </select>
+          </Select>
         )
       )}
       <textarea className="pif__text" rows={3} maxLength={2000} value={body}

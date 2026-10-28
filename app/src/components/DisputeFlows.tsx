@@ -9,6 +9,7 @@ import { useToast, Loading } from './Feedback';
 import { ManagerMark } from './ManagerBadge';
 import { Modal } from './LotFields';
 import { shrink } from './PhotoManager';
+import { Select } from './Select';
 
 /**
  * The two ways to object to something, and the pieces both share.
@@ -208,10 +209,10 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
         {claim && (
           <label className="field">
             <span>What went wrong</span>
-            <select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
+            <Select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
               <option value="">Pick one…</option>
               {reasons.map((code) => <option key={code} value={code}>{DISPUTE_REASON_LABELS[code]}</option>)}
-            </select>
+            </Select>
           </label>
         )}
 

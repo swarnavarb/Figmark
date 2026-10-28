@@ -8,11 +8,7 @@
 .trkbox__item.is-done::before, .trkbox__item.is-here::before { background: var(--ok); }
 .stepact__who.is-supplier { background: var(--aqua-soft); color: var(--aqua); }
 .stepact__who.is-handler { background: var(--lime-soft); color: var(--lime); }
-.rcvd__option {
-  display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 12px; text-align: left;
-  border: 1px solid var(--aqua-line); border-radius: var(--r-md); background: var(--aqua-soft);
-  color: var(--text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
-}
+
 .stepact__who.is-forwarder { background: var(--blue-soft); color: var(--blue-text); }
 
 /*
@@ -82,16 +78,4 @@
   .trkbox__item.is-here .trkbox__icon { animation: none; }
 }
 .stepact__who { font-size: var(--t-2xs); padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-dim); }
-/* The warehouse button for an item with no lot: put it in one, or say where it was received. */
-.rcvd__intro { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.45; }
-.rcvd__lot {
-  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: center; text-align: left;
-  padding: 12px; border: 1px solid var(--coral-line); border-radius: var(--r-md); cursor: pointer;
-  background: var(--coral-soft); color: var(--text); font: inherit; font-size: 22px;
-}
-.rcvd__text { display: grid; gap: 2px; font-size: var(--t-sm); }
-.rcvd__or { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; text-align: center; }
-.rcvd__options { display: grid; gap: 6px; }
-.rcvd__option:hover:not(:disabled), .rcvd__lot:hover:not(:disabled) { transform: translateY(-1px); }
-.rcvd__option--own { background: transparent; border-style: dashed; font-weight: var(--w-normal); color: var(--text-dim); }
-.rcvd__own { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+

@@ -372,6 +372,11 @@ h1, h2, h3, h4 {
    would not do better, so h3 and h4 stay on Archivo. */
 h3, h4 { font-family: var(--ui); font-weight: var(--w-semi); letter-spacing: -0.015em; }
 h1 { font-size: var(--t-xl); }
+/* Named for a screen reader, not drawn: a page whose heading is a picture or a row of cards. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
 h2 { font-size: var(--t-lg); }
 h3 { font-size: var(--t-md); }
 p { margin: 0; }
@@ -628,6 +633,7 @@ code, kbd, samp, pre {
 }
 .search input {
   width: 100%;
+  min-height: 44px;
   padding: 10px 14px 10px 38px;
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
@@ -731,7 +737,7 @@ code, kbd, samp, pre {
 .modal__body { padding: 18px; overflow-y: auto; }
 .btn--block { width: 100%; }
 .btn--lg { padding: 12px 20px; font-size: var(--t-base); }
-.btn--danger { background: transparent; border-color: var(--border-strong); color: var(--danger); }
+/* .btn--danger is defined once, with the dialogs below: a solid red for what cannot be undone. */
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */
 
@@ -877,7 +883,7 @@ code, kbd, samp, pre {
 /* The real control, laid over the pill it is drawn as. Invisible rather than
    replaced: it is what opens the platform's own picker, takes focus, and is
    read out by a screen reader. */
-.picker select {
+.picker select, .picker .fmselect {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1017,7 +1023,7 @@ code, kbd, samp, pre {
    than scrolling to it. */
 .field { display: grid; gap: 6px; min-width: 0; }
 .field > span { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--text-dim); }
-.field input, .field select, .field textarea {
+.field input, .field select, .field textarea, .field .fmselect {
   min-width: 0;
   max-width: 100%;
   padding: 10px 12px;
@@ -1026,11 +1032,167 @@ code, kbd, samp, pre {
   background: var(--surface-2);
   font-size: var(--t-base);
 }
-.field input:focus, .field select:focus, .field textarea:focus {
+.field input:focus, .field select:focus, .field textarea:focus, .field .fmselect:focus {
   border-color: var(--accent-line);
   background: var(--surface-hover);
 }
 .field textarea { resize: vertical; min-height: 92px; line-height: 1.55; }
+
+/* ── Figmark's own controls ──────────────────────────────────────────────
+   Nothing on a form is drawn by the phone. A checkbox, a radio, a number
+   field's arrows and a file field's button each took the operating system's
+   own look (and Android's and iOS's differ); these are the app's instead.
+   Dropdowns and dates are components (Select.tsx, DateField.tsx), since a
+   native one opens the system's picker however it is styled. */
+
+/* A text field nobody styled still looks like one of ours. :where() keeps
+   this at no specificity, so any component's own rule wins over it. */
+:where(input:not([type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='hidden'], [type='image'], [type='submit'], [type='button']), textarea) {
+  min-width: 0; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text);
+}
+:where(input, textarea)::placeholder { color: var(--text-faint); opacity: 1; }
+
+:where(input[type='checkbox']:not(.phoneprefs__switch, .sf-toggle input), input[type='radio']) {
+  appearance: none; -webkit-appearance: none;
+  flex: none; display: inline-grid; place-content: center;
+  width: 20px; height: 20px; margin: 0;
+  border: 1.5px solid var(--border-strong); border-radius: 6px;
+  background: var(--surface-2); color: var(--accent-ink);
+  vertical-align: middle; cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+:where(input[type='radio']) { border-radius: 50%; }
+:where(input[type='checkbox']:not(.phoneprefs__switch, .sf-toggle input), input[type='radio'])::before {
+  content: ''; width: 12px; height: 12px; background: currentColor;
+  transform: scale(0); transition: transform var(--dur-1) var(--ease-out);
+}
+:where(input[type='checkbox']:not(.phoneprefs__switch, .sf-toggle input))::before {
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5' fill='none' stroke='%23000' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5' fill='none' stroke='%23000' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+:where(input[type='radio'])::before { width: 8px; height: 8px; border-radius: 50%; }
+:where(input[type='checkbox']:not(.phoneprefs__switch, .sf-toggle input), input[type='radio']):hover:not(:disabled) { border-color: var(--accent-line); }
+:where(input[type='checkbox']:not(.phoneprefs__switch, .sf-toggle input), input[type='radio']):checked {
+  border-color: transparent; background: var(--grad-blue);
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
+}
+:where(input[type='checkbox']:not(.phoneprefs__switch, .sf-toggle input), input[type='radio']):checked::before { transform: scale(1); }
+:where(input[type='checkbox']:not(.phoneprefs__switch, .sf-toggle input)):indeterminate { border-color: transparent; background: var(--grad-blue); }
+:where(input[type='checkbox']:not(.phoneprefs__switch, .sf-toggle input)):indeterminate::before {
+  -webkit-mask: none; mask: none; width: 10px; height: 2.5px; border-radius: 2px; transform: none;
+}
+:where(input[type='checkbox'], input[type='radio']):disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* A number field is typed, not clicked up and down: the system's tiny arrows go. */
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* A search field's clear cross is the system's; ours fields clear with their own. */
+input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+/* A file field that shows: our ghost button, not the system's grey one. */
+.field input[type='file'] { padding: 6px; color: var(--text-dim); font-size: var(--t-sm); cursor: pointer; }
+input[type='file']::file-selector-button {
+  margin-right: var(--s3); padding: 8px 14px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text);
+  font: inherit; font-weight: var(--w-semi); cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+input[type='file']::file-selector-button:hover { background: var(--surface-hover); border-color: var(--accent-line); }
+
+/* The dropdown (Select.tsx): a field that opens Figmark's own list. */
+.fmselect {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+  min-width: 0; max-width: 100%; min-height: 42px; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text);
+  font: inherit; font-size: var(--t-base); text-align: left; cursor: pointer;
+}
+.fmselect:hover:not(:disabled) { border-color: var(--border-strong); }
+.fmselect[aria-expanded='true'] { border-color: var(--accent-line); background: var(--surface-hover); }
+.fmselect:disabled { opacity: 0.5; cursor: not-allowed; }
+.fmselect > svg { flex: none; color: var(--text-faint); transition: transform var(--dur-1) var(--ease); }
+.fmselect[aria-expanded='true'] > svg { transform: rotate(180deg); }
+.fmselect__value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fmselect.is-empty .fmselect__value { color: var(--text-faint); }
+.fmdate > svg, .fmdate[aria-expanded='true'] > svg { transform: none; }
+/* Keeps a required dropdown in the form's own check, without being seen. */
+.fmselect__required { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+
+/* Its list: a sheet from the bottom of a phone, a list under the field on a
+   wider screen. The calendar (DateField.tsx) uses the same frame. */
+.fmlist__scrim {
+  /* Over everything, a photo sheet included: a list is opened from whatever is on top. */
+  position: fixed; inset: 0; z-index: calc(var(--z-photo-sheet) + 10);
+  display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(4, 6, 12, 0.6);
+  animation: fmlist-fade var(--dur-2) var(--ease) both;
+}
+.fmlist {
+  display: flex; flex-direction: column; width: 100%; max-height: min(72vh, 560px);
+  padding: var(--s2) var(--s2) calc(var(--s3) + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--border-strong); border-bottom: 0; border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: var(--surface); box-shadow: var(--shadow);
+  animation: fmlist-rise var(--dur-2) var(--ease-out) both;
+}
+.fmlist__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2) var(--s2) var(--s2) var(--s3); }
+.fmlist__title { min-width: 0; font-weight: var(--w-bold); font-size: var(--t-md); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fmlist__close {
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+  border: 0; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-dim); cursor: pointer;
+}
+.fmlist__close:hover { color: var(--text); background: var(--surface-hover); }
+.fmlist__filter {
+  display: flex; align-items: center; gap: var(--s2); margin: 0 var(--s1) var(--s2); padding: 0 var(--s3);
+  min-height: 44px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); color: var(--text-faint);
+}
+.fmlist__filter:focus-within { border-color: var(--accent-line); }
+.fmlist__filter input { flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font-size: var(--t-base); outline: none; }
+.fmlist__options { display: grid; gap: 2px; overflow-y: auto; overscroll-behavior: contain; }
+.fmlist__option {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  min-height: 46px; padding: 10px var(--s3);
+  border: 0; border-radius: var(--r-md); background: transparent; color: var(--text);
+  font: inherit; font-size: var(--t-base); text-align: left; cursor: pointer;
+}
+.fmlist__option:hover:not(:disabled), .fmlist__option:focus-visible { background: var(--surface-hover); outline: none; }
+.fmlist__option.is-on { background: var(--accent-soft); color: var(--accent-text); font-weight: var(--w-semi); }
+.fmlist__option:disabled { color: var(--text-faint); cursor: default; }
+.fmlist__option > svg { flex: none; }
+.fmlist__none { margin: var(--s3); color: var(--text-faint); font-size: var(--t-sm); }
+@media (min-width: 640px) {
+  .fmlist__scrim { display: block; background: transparent; animation: none; }
+  .fmlist {
+    position: fixed; top: var(--fmlist-top, 20vh); left: var(--fmlist-left, 50%);
+    width: max(var(--fmlist-width, 260px), 240px); max-width: min(420px, calc(100vw - 32px)); max-height: min(50vh, 420px);
+    padding: var(--s1); border-bottom: 1px solid var(--border-strong); border-radius: var(--r-md);
+    animation: fmlist-drop var(--dur-1) var(--ease-out) both;
+  }
+  .fmlist--up { transform: translateY(-100%); }
+  .fmlist__head { display: none; }
+  .fmcal .fmlist__head { display: flex; }
+  .fmcal { width: 320px; }
+}
+@keyframes fmlist-fade { from { opacity: 0; } }
+@keyframes fmlist-rise { from { transform: translateY(24px); opacity: 0; } }
+@keyframes fmlist-drop { from { opacity: 0; } }
+
+/* The calendar. */
+.fmcal__nav { display: inline-flex; gap: var(--s1); }
+.fmcal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding: 0 var(--s1); }
+.fmcal__weekday { padding: var(--s1) 0; text-align: center; font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-faint); }
+.fmcal__day {
+  aspect-ratio: 1; min-height: 40px; padding: 0; border: 0; border-radius: var(--r-pill);
+  background: transparent; color: var(--text); font: inherit; font-size: var(--t-sm); font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.fmcal__day:hover:not(:disabled), .fmcal__day:focus-visible { background: var(--surface-hover); outline: none; }
+.fmcal__day.is-today { box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+.fmcal__day.is-on { background: var(--grad-blue); color: var(--accent-ink); font-weight: var(--w-bold); }
+.fmcal__day:disabled { color: var(--text-faint); opacity: 0.45; cursor: default; }
+.fmcal__foot { display: flex; justify-content: flex-end; gap: var(--s2); padding: var(--s2) var(--s1) 0; }
 .field__hint { font-size: var(--t-xs); color: var(--text-faint); }
 /* A link in a hint is still a link: the sentence is quiet, the way out of it
    is not. */
@@ -1073,7 +1235,7 @@ code, kbd, samp, pre {
 .attr { display: grid; gap: 7px; min-width: 0; padding: 0; border-radius: var(--r-md); }
 .attr__label { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--text-dim); }
 .attr__req { color: var(--accent-text); }
-.attr input, .attr select {
+.attr input, .attr select, .attr .fmselect {
   width: 100%;
   min-width: 0;
   /* 16px or iOS zooms the page when the field is focused. */
@@ -1337,13 +1499,12 @@ code, kbd, samp, pre {
   cursor: pointer; transition: background 180ms, color 180ms;
 }
 .tab:hover { color: var(--text); background: var(--surface-hover); }
-.tab.is-on { color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.tab.is-on { color: var(--accent-ink); background: var(--grad-blue); box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4); }
 .tab .faint { margin-left: 2px !important; font-size: var(--t-xs); }
 
-/* A bolder fill where a page has few enough tabs to make a statement of it. */
-.tabs--vivid .tab.is-on {
-  color: #fff; background: linear-gradient(90deg, var(--accent), var(--aqua)); box-shadow: none;
-}
+/* One look for a chosen tab, a chosen segment and a chosen tab in any other
+   row of tabs (Sell's sections, a channel's views, a forum's order): the
+   app used five, and the same choice looked different on every page. */
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
 
@@ -2280,14 +2441,35 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 /* Ticked reads as ticked without a second colour to learn. */
 .tickbtn.is-on::before { content: '✓ '; }
 
-/* Back out of a console without hunting for the bar. */
-.backlink {
-  display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px;
-  padding: 0; border: 0; background: none;
-  color: var(--text-dim); font: inherit; font-size: var(--t-sm); text-decoration: none;
-  cursor: pointer;
+/* The one back control (BackBar in ScrollManager.tsx): a round "<" and,
+   beside it, the screen's title or a word on where you are. */
+.backbar {
+  display: flex; align-items: center; gap: var(--s2); min-height: 40px;
+  margin-bottom: var(--s3);
 }
-.backlink:hover { color: var(--text); }
+.backbar__btn {
+  flex: none; display: grid; place-items: center;
+  width: 40px; height: 40px; padding: 0; border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), transform 60ms var(--ease);
+}
+.backbar__btn:hover { background: var(--surface-hover); border-color: var(--accent-line); }
+.backbar__btn:active { transform: scale(0.94); }
+.backbar__text {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-dim); font-size: var(--t-base); font-weight: var(--w-semi);
+}
+.backbar__title {
+  min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold);
+  letter-spacing: -0.02em; line-height: 1.15; color: var(--text);
+}
+.backbar__actions { margin-left: auto; display: inline-flex; gap: var(--s2); flex: none; }
+
+/* An address with no screen (NotFoundPage.tsx). */
+.notfound__path { font-family: var(--mono); color: var(--text); word-break: break-all; }
+.notfound__go { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); }
 
 /* ── Routes, ladders and the items that ride them ──────────────────────── */
 
@@ -2540,6 +2722,10 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
   to { background-position: -130% 0; }
 }
 .skel-stack { display: grid; gap: 7px; min-width: 0; }
+/* A whole page on its way (PageLoading in Feedback.tsx). */
+.pageload { display: grid; gap: var(--s4); align-content: start; }
+.pageload__head { display: flex; align-items: center; gap: var(--s3); }
+.pageload__card { display: block; }
 .skel-card { display: block; }
 .skel-thumb { aspect-ratio: 4 / 3; width: 100%; border-radius: 0; }
 .skel-card__body { display: grid; gap: 9px; padding: var(--s3) var(--s3) var(--s4); }
@@ -3621,7 +3807,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
   animation: pop-in var(--dur-2) var(--ease) both;
 }
 .writer__as strong { font-size: var(--t-sm); }
-.writer__as select {
+.writer__as select, .writer__as .fmselect {
   justify-self: start; max-width: 100%; padding: 2px 8px;
   border: 1px solid var(--border); border-radius: var(--r-pill);
   background: var(--surface-2); color: var(--text-dim); font-size: var(--t-xs);
@@ -3661,7 +3847,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .writer__pollrow input:focus { outline: none; border-color: var(--aqua); }
 .writer__pollfoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .writer__pollfor { display: flex; align-items: center; gap: 6px; }
-.writer__pollfor select {
+.writer__pollfor select, .writer__pollfor .fmselect {
   padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface-2); color: var(--text); font-size: var(--t-xs);
 }
@@ -3705,7 +3891,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .rsmap__seg b { color: var(--zone); font-size: var(--t-sm); }
 .rsgap__wait span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rsgap__wait .waveloader { width: 12px; height: 12px; color: var(--warn); }
-.rsgap__editor select, .rsgap__editor input {
+.rsgap__editor select, .rsgap__editor input, .rsgap__editor .fmselect {
   padding: 7px 9px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface);
   font-size: var(--t-xs);
 }
@@ -3877,26 +4063,26 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .pc__seg--coral, .pc__dot--coral { background: #FB7185; }
 .pc__seg--profit, .pc__dot--profit { background: #34D399; }
 .pc__line > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.pc__row input, .pc__row select {
+.pc__row input, .pc__row select, .pc__row .fmselect {
   min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface); color: var(--text); font: inherit; font-size: var(--t-sm);
 }
-.pc__row input:focus, .pc__row select:focus { outline: none; border-color: var(--accent-line); }
-.pc__rowbody select { font-size: var(--t-xs); color: var(--text-dim); }
-.pc__rowbody select { max-width: 100%; }
+.pc__row input:focus, .pc__row select:focus, .pc__row .fmselect:focus { outline: none; border-color: var(--accent-line); }
+.pc__rowbody select, .pc__rowbody .fmselect { font-size: var(--t-xs); color: var(--text-dim); }
+.pc__rowbody select, .pc__rowbody .fmselect { max-width: 100%; }
 .pc__amount input { width: 84px; text-align: right; }
 .pc__kg label { display: inline-flex; align-items: center; gap: 6px; }
 .pc__kg input[type="number"] { width: 70px; }
 
 /* ── Nudges ───────────────────────────────────────────────────────────── */
 .nudge { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-.pc__steprow input, .pc__steprow select {
+.pc__steprow input, .pc__steprow select, .pc__steprow .fmselect {
   min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface-2); color: var(--text); font-size: var(--t-sm);
 }
-.pc__steprow input:focus, .pc__steprow select:focus { border-color: var(--accent-line); background: var(--surface-hover); }
+.pc__steprow input:focus, .pc__steprow select:focus, .pc__steprow .fmselect:focus { border-color: var(--accent-line); background: var(--surface-hover); }
 @media (max-width: 560px) {
-  .pc__steprow select, .pc__steprow .pc__stepamt { grid-column: 2 / 3; }
+.pc__steprow select, .pc__steprow .pc__stepamt, .pc__steprow .fmselect { grid-column: 2 / 3; }
 }
 @media (max-width: 480px) { .insprices__row small { grid-column: 1 / -1; order: 5; } }
 .insdigest__cols ul, .insdigest__cols ol { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: var(--t-sm); }
@@ -4412,11 +4598,11 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .chlist { display: grid; gap: 16px; max-width: 640px; margin: 0 auto; width: 100%; }
 .chlist__search {
   display: flex; align-items: center; gap: 10px;
-  padding: 0 16px; min-height: 46px;
+  padding: 0 14px; min-height: 44px;
   border: 1px solid var(--border); border-radius: var(--r-pill);
   background: var(--surface); color: var(--text-faint);
 }
-.chlist__search:focus-within { border-color: var(--sx-line); box-shadow: 0 0 0 3px rgba(255, 91, 31, 0.12); }
+.chlist__search:focus-within { border-color: var(--accent-line); background: var(--surface-2); }
 .chlist__search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font-size: var(--t-base); }
 .chlist__search input:focus { outline: none; }
 
@@ -4589,7 +4775,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
   font-weight: var(--w-semi); font-size: var(--t-sm); cursor: pointer;
 }
 .chtabs__tab:hover { color: var(--text); border-color: var(--sx-line); }
-.chtabs__tab.is-on { background: var(--sx-grad); border-color: transparent; color: #fff; box-shadow: 0 4px 14px rgba(255, 70, 80, 0.3); }
+.chtabs__tab.is-on { background: var(--grad-blue); border-color: transparent; color: var(--accent-ink); box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4); }
 
 .chmedia { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; border-radius: 16px; overflow: hidden; }
 .chmedia__tile { padding: 0; border: 0; aspect-ratio: 1; background: var(--surface-2); cursor: zoom-in; overflow: hidden; }
@@ -4979,7 +5165,7 @@ body.is-locked { overflow: hidden; }
 }
 .socsearch__field {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
-  padding: 0 12px; height: 44px; border-radius: 14px;
+  padding: 0 14px; height: 44px; border-radius: var(--r-pill);
   background: rgba(0, 0, 0, 0.24); color: #fff;
 }
 .socsearch__field input {
@@ -6136,14 +6322,14 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 /* A box's own bare controls - a template picker, an end date, a closing
    message - dressed like every other field. */
 .lbox__body > input, .lbox__body > select, .lbox__body > textarea,
-.lbox__body > .row > select, .lbox__body > .row > input, .sellform > .row > select {
+.lbox__body > .row > select, .lbox__body > .row > input, .sellform > .row > select, .lbox__body > .row > .fmselect, .sellform > .row > .fmselect {
   min-width: 0; max-width: 100%; width: 100%;
   padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-base);
 }
 .lbox__body > textarea { resize: vertical; min-height: 72px; line-height: 1.55; }
 .lbox__body > input:focus, .lbox__body > select:focus, .lbox__body > textarea:focus,
-.lbox__body > .row > select:focus, .lbox__body > .row > input:focus, .sellform > .row > select:focus {
+.lbox__body > .row > select:focus, .lbox__body > .row > input:focus, .sellform > .row > select:focus, .lbox__body > .row > .fmselect:focus, .sellform > .row > .fmselect:focus {
   outline: none; border-color: var(--accent-line); background: var(--surface-hover);
 }
 .lotpick__new {
@@ -6414,7 +6600,6 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
   transition: transform 240ms var(--bounce), box-shadow 240ms var(--spring), filter 240ms;
 }
 .seg--vivid button { transition: background 240ms var(--spring), color 240ms, transform 200ms var(--bounce); }
-.seg--vivid button.is-on { color: #fff; background: var(--grad-hero); box-shadow: 0 6px 16px rgba(236, 72, 153, 0.35); }
 .seg--vivid button:active { transform: scale(0.97); }
 
 /* The tracking card arrives, and its bar fills, the same for every journey. */
@@ -7702,7 +7887,7 @@ a.ocust__name:hover { color: var(--accent-text); }
   min-width: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-sm);
 }
-.sf-editor .field input, .sf-editor .field textarea, .sf-editor .field select { background: var(--surface); }
+.sf-editor .field input, .sf-editor .field textarea, .sf-editor .field select, .sf-editor .field .fmselect { background: var(--surface); }
 .sf-pair input { width: 100%; }
 .sf-toggle input { appearance: none; flex: 0 0 auto; width: 36px; height: 21px; margin: 0; border-radius: 11px; background: var(--border-strong); position: relative; cursor: pointer; transition: background var(--dur-1) var(--ease); }
 .sf-toggle input:checked { background: var(--ok); }
@@ -7756,7 +7941,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .cl-btncard__foot b { color: var(--text); }
 .cl-filter.is-on { color: var(--accent-text); }
 .cl-move__ship input { width: 150px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-xs); }
-.cl-lotpick select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: var(--t-md); }
+.cl-lotpick select, .cl-lotpick .fmselect { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: var(--t-md); }
 .cl-orders b { color: var(--coral); font-size: var(--t-lg); font-weight: var(--w-bold); }
 .ctile.is-done { border-color: rgba(52, 211, 153, 0.45); }
 .ctile__pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -8378,7 +8563,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pbook__owed a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-strong); }
 .pbook__item a { color: var(--text); display: block; overflow-wrap: anywhere; }
 .pbook__costhead > span { display: block; overflow-wrap: break-word; }
-.pbook__step select, .pbook__of {
+.pbook__step select, .pbook__of, .pbook__step .fmselect {
   width: auto; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
   font: inherit; font-size: var(--t-xs);
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { RECEIVED_AS_MAX, RECEIVED_AS_OPTIONS } from '@shared/buttons';
 import { Modal } from './ui';
+import '../styles/ReceivedDialog.css';
 
 /**
  * The warehouse button, pressed for an item that is not in a lot yet.

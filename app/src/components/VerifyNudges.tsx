@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { verifiedChecks } from '@shared/verification';
-import { Icon } from './ui';
+import { Icon, useDialog } from './ui';
 import { useSession } from '../session';
 
 /*
@@ -120,8 +120,14 @@ export function SetupChecklist({ hasStore, onOpenStore }: { hasStore: boolean; o
 export function VerifyPrompt() {
   const { verifyPrompt, closeVerifyPrompt } = useSession();
   if (!verifyPrompt) return null;
+  return <VerifyPromptBox message={verifyPrompt} onClose={closeVerifyPrompt} />;
+}
+
+function VerifyPromptBox({ message: verifyPrompt, onClose: closeVerifyPrompt }: { message: string; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDialog(box, closeVerifyPrompt);
   return (
-    <div className="authpop" role="dialog" aria-modal="true" aria-label="Verification needed"
+    <div ref={box} tabIndex={-1} className="authpop" role="dialog" aria-modal="true" aria-label="Verification needed"
       onMouseDown={(event) => event.target === event.currentTarget && closeVerifyPrompt()}>
       <div className="authpop__panel stack">
         <h2 style={{ margin: 0 }}>Verify to continue</h2>

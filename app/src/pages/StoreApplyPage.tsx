@@ -12,7 +12,7 @@ import {
   emptyLane, type SectionProps,
 } from '../components/StoreForm';
 import type { StoreReviewEvent, StoreStatus } from '@shared/models';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 
 /**
  * Applying for a service store.
@@ -84,7 +84,7 @@ export function StoreApplyPage() {
   if (!user) {
     return <main className="page"><EmptyState icon="◍" title="Sign in to apply"><Link to="/" className="btn">Sign in</Link></EmptyState></main>;
   }
-  if (!draft) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (!draft) return <PageLoading />;
 
   if (status === 'approved' || status === 'suspended') {
     return (
@@ -122,7 +122,7 @@ export function StoreApplyPage() {
   if (status === 'pending' && !editing) {
     return (
       <main className="page sa-page" style={accentStyle(draft.accent)}>
-        <BackLink to="/services/mine">← My services</BackLink>
+        <BackLink to="/services/mine">Your application</BackLink>
         <section className="sa-sent">
           <span className="sa-sent__seal" aria-hidden="true"><Icon name="send" size={26} /></span>
           <h1>Application sent</h1>
@@ -146,7 +146,7 @@ export function StoreApplyPage() {
 
   return (
     <main className="page sa-page" style={accentStyle(draft.accent)}>
-      <BackLink to="/services/mine">← My services</BackLink>
+      <BackLink to="/services/mine">{status ? 'Your application' : `Apply · ${STORE_KIND_LABELS[kind].store}`}</BackLink>
       <header className="sa-head">
         <span className="sa-head__eyebrow">{status ? 'Your application' : 'Apply'} · {STORE_KIND_LABELS[kind].store}</span>
         <h1>{kind === 'forwarder' ? 'Open your forwarding store' : 'Open your artist studio'}</h1>

@@ -24,11 +24,12 @@ import {
 } from '../components/ListingForm';
 import { RarityRibbon } from '../components/Quest';
 import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
-import { useGoBack } from '../components/ScrollManager';
+import { BackBar, useGoBack } from '../components/ScrollManager';
 import { lotLabel } from '../components/LotName';
 import { NewLotForm } from './LotsPage';
 import { SetupChecklist } from '../components/VerifyNudges';
 import '../styles/SellPage.css';
+import { Select } from '../components/Select';
 
 /**
  * The template this browser used last.
@@ -612,10 +613,9 @@ export function SellPage() {
 
   return (
     <main className="page">
-      <button type="button" className="backlink" onClick={goBack}>← Back</button>
+      <BackBar onBack={goBack} title={deal ? `Private deal for ${deal.displayName}` : 'List an item'} />
       <div className="page__head">
         <div>
-          <h1>{deal ? `🤝 Private deal for ${deal.displayName}` : 'List an item'}</h1>
           <p className="muted">
             {deal
               ? `Only ${deal.displayName} can see and buy this. It never appears in your shop, channel or the feed - once bought it is a normal order.`
@@ -665,14 +665,14 @@ export function SellPage() {
                 </div>
               )}
               {calcs.length > 0 && (
-                <select value={calc?.id ?? ''} aria-label="From your saved items" onChange={(e) => fillFromSaved(e.target.value)}>
+                <Select value={calc?.id ?? ''} aria-label="From your saved items" onChange={(e) => fillFromSaved(e.target.value)}>
                   <option value="">🧮 Fill from a saved calculation…</option>
                   {calcs.map((entry) => (
                     <option key={entry.id} value={entry.id}>
                       {entry.title} · {formatMoney(entry.sellingPriceMinor)}{entry.listingId ? ' (listed)' : ''}
                     </option>
                   ))}
-                </select>
+                </Select>
               )}
             </LBox>
           )}
@@ -754,7 +754,7 @@ export function SellPage() {
             {where === 'import' && (
               <label className="field">
                 <span>Lot</span>
-                <select value={shape === 'lot' ? lotId : LOT_LATER} onChange={(e) => pickLot(e.target.value)}>
+                <Select value={shape === 'lot' ? lotId : LOT_LATER} onChange={(e) => pickLot(e.target.value)}>
                   <option value={LOT_LATER}>Add to a lot later</option>
                   {lots.map(({ lot, orderCount }) => (
                     <option key={lot.id} value={lot.id}>
@@ -767,7 +767,7 @@ export function SellPage() {
                     </option>
                   ))}
                   {verified && <option value={LOT_NEW}>+ Open a new lot…</option>}
-                </select>
+                </Select>
                 <span className="field__hint">
                   {shape === 'lot'
                     ? 'Buyers follow this lot’s tracking from the day they order.'

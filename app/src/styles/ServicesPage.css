@@ -114,7 +114,7 @@
 .svx--artist .svx__mark { border-radius: 50% 42% 50% 38%; animation: svx-blob 7s ease-in-out infinite; }
 .svx__eyebrow { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.12em; text-transform: uppercase; color: var(--svx-text); }
 .svx--forwarder .svx__eyebrow { font-family: var(--mono); letter-spacing: 0.06em; }
-.svx__title { margin: 0; font-family: var(--display); font-size: 24px; font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1.1; }
+.svx__title { margin: 0; font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1.1; }
 /* The tab's tiles: the whole block opens the service's page. */
 .svx--tile { transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease); }
 .svx--tile:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--svx), 0 18px 40px color-mix(in srgb, var(--svx) 22%, transparent); }

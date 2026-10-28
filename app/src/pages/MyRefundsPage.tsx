@@ -7,8 +7,7 @@ import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../a
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
-import { Loading } from '../components/Feedback';
-import { Preloader } from '../components/Preloader';
+import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/MyRefundsPage.css';
 
 /**
@@ -99,7 +98,7 @@ export function MyRefundsPage() {
   ));
 
   const tabs = (
-    <div className="tabs tabs--vivid">
+    <div className="tabs">
       <button type="button" className={`tab${tab === 'refunds' ? ' is-on' : ''}`} onClick={() => setParams({}, { replace: true })}>
         Refunds
       </button>
@@ -121,7 +120,7 @@ export function MyRefundsPage() {
   if (tab === 'credit') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>👛 My wallet</h1></div>
+        <div className="page__head"><h1>My wallet</h1></div>
         {tabs}
         <CreditTab />
       </main>
@@ -131,7 +130,7 @@ export function MyRefundsPage() {
   if (tab === 'earnings') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>👛 My wallet</h1></div>
+        <div className="page__head"><h1>My wallet</h1></div>
         {tabs}
         <EarningsTab />
       </main>
@@ -141,7 +140,7 @@ export function MyRefundsPage() {
   if (tab === 'details') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>👛 My wallet</h1></div>
+        <div className="page__head"><h1>My wallet</h1></div>
         {tabs}
         {asks}
         <ReversalDetailsForm onSaved={load} />
@@ -150,7 +149,7 @@ export function MyRefundsPage() {
   }
 
   if (error && !refunds) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!refunds) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (!refunds) return <PageLoading />;
 
   const currency = refunds[0]?.currency ?? 'INR';
   const owed = refunds.reduce((sum, refund) => sum + refund.leftMinor, 0);
@@ -160,7 +159,7 @@ export function MyRefundsPage() {
   return (
     <main className="page stack page--top">
       <div className="page__head">
-        <h1>👛 My wallet</h1>
+        <h1>My wallet</h1>
       </div>
       {tabs}
       {asks}

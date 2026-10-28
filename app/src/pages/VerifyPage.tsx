@@ -4,7 +4,7 @@ import { AADHAAR_MOBILE_RULE, maskMobile, verifiedChecks } from '@shared/verific
 import { ApiRequestError, api, type VerificationStatus } from '../api';
 import { ErrorNotice, Icon } from '../components/ui';
 import { useSession } from '../session';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 
 /**
  * Verification: email, then WhatsApp, then Aadhaar.
@@ -40,7 +40,7 @@ export function VerifyPage() {
 
   if (!user) return null;
   if (error && !status) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!status) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (!status) return <PageLoading />;
 
   const { checks } = status;
   const done = checks.email && checks.phone && checks.aadhaar;

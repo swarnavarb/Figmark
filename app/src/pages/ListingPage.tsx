@@ -2,8 +2,9 @@ import { ReportButton } from '../components/ReportButton';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
-import { Avatar, ErrorNotice, Icon, PersonLink, Thumb } from '../components/ui';
+import { Avatar, ErrorNotice, Icon, PersonLink, Thumb, useConfirm } from '../components/ui';
 import { SkeletonText } from '../components/Feedback';
+import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
 import { ListingPosts } from '../components/ListingPosts';
@@ -232,13 +233,7 @@ export function ListingPage() {
     <main className="page lp">
       {/* Back to where they were - filters, search and scroll - when they came
           from inside the app; a link opened cold goes to the catalogue. */}
-      <Link to="/" className="btn btn--quiet lp__back" onClick={(event) => {
-        if (location.key === 'default') return;
-        event.preventDefault();
-        navigate(-1);
-      }}>
-        <Icon name="back" size={14} /> Back to browse
-      </Link>
+      <BackLink to="/">{listing.category || 'Item'}</BackLink>
 
       <div className="detail">
         <div>
@@ -660,6 +655,7 @@ function PreOrderControls({ listingId, view, onChange }: {
   const [admitUnits, setAdmitUnits] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   async function run(work: () => Promise<PreOrderRoster>) {
     setBusy(true);
@@ -683,15 +679,21 @@ function PreOrderControls({ listingId, view, onChange }: {
       ...(Number(days) !== Math.max(1, daysUntil(view.cutoffAt)) ? { cutoffAt: isoInDays(days) } : {}),
     }),
   }));
-  const cancel = () => {
-    if (!window.confirm('Call off this pre-order? Everybody in it is told, and every booking is refunded.')) return;
-    void run(() => api.decidePreOrder(listingId, { action: 'cancel' }));
+  const cancel = async () => {
+    const sure = await confirm({
+      title: 'Call off this pre-order?',
+      body: 'Everybody in it is told, and every booking is refunded.',
+      action: 'Call it off',
+      danger: true,
+    });
+    if (sure) void run(() => api.decidePreOrder(listingId, { action: 'cancel' }));
   };
   const proceed = () => run(() => api.decidePreOrder(listingId, { action: 'proceed' }));
   const extend = () => run(() => api.decidePreOrder(listingId, { action: 'extend', cutoffAt: isoInDays(extendDays) }));
 
   return (
     <div className="pocard__run stack" style={{ gap: 10 }}>
+      {dialog}
       <b className="pocard__eyebrow"><Svg name="users" size={13} /> Your pre-order</b>
 
       {view.state === 'deciding' && (
