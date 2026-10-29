@@ -19,6 +19,19 @@ site. A pull request from `development` into `main`, merged, builds once; the
 production deploy then waits in GitHub Actions until an approver presses
 **Approve and deploy**.
 
+## Status (29 October 2026)
+
+| | Development | Production |
+|---|---|---|
+| Address | `icy-stone-0498a9900.6.azurestaticapps.net` | `proud-flower-00cef0800.4.azurestaticapps.net` |
+| Database | `cosmos-figmark-dev`, serverless, 25 empty containers | `cosmos-figmark-prod`, free tier, shared 1000 RU/s, 25 empty containers |
+| Photos / accounts | 0 / 0 | 0 / 0 |
+
+The old free-tier `cosmos-figuremarket-dev` is deleted, and the old
+`-development` preview address returns 404 (development now deploys to the
+app's own address). Still to confirm: the `figmark.in` and `dev.figmark.in`
+domains, and production's settings (see OPERATIONS.md section 1).
+
 Expected cost at launch: a few dollars a month on Azure, plus 18% GST. The
 free Cosmos tier is the one allowance worth the most, so it goes to
 production. There is one per subscription.
@@ -73,7 +86,7 @@ Check the development site: it should show the DEVELOPMENT banner, and
 `/api/health` should report Cosmos DB connected, with no accounts until
 somebody signs up.
 
-Then delete the old free-tier account. It holds only test data, and the demo
+Then delete the old free-tier account (done 29 October 2026). It holds only test data, and the demo
 accounts in it have a password published in this repository, so it must not
 become production:
 
