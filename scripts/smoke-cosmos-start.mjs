@@ -551,4 +551,56 @@ await check('refuses sign-in with the reason, not "wrong password"', async () =>
   }
 });
 
+/* A worker that started while the database was away ----------------------- */
+
+const { openOnce } = await import(new URL('api/src/data/index.js', base));
+
+await check('a store that came up unreachable is opened again after the wait, not kept for good', async () => {
+  let clock = 0;
+  let opens = 0;
+  let reachable = false;
+  const open = async () => {
+    opens += 1;
+    const connected = reachable;
+    return { status: () => ({ connected }) };
+  };
+  const get = openOnce(open, 30_000, () => clock);
+
+  const [first, again] = await Promise.all([get(), get()]);
+  assert.equal(opens, 1, 'concurrent calls share one attempt');
+  assert.equal(first, again);
+  assert.equal(first.status().connected, false);
+
+  reachable = true;
+  clock = 29_999;
+  assert.equal(await get(), first, 'the failure is kept until the wait is over');
+  assert.equal(opens, 1);
+
+  clock = 30_000;
+  const healed = await get();
+  assert.equal(opens, 2);
+  assert.equal(healed.status().connected, true);
+
+  clock = 10_000_000;
+  assert.equal(await get(), healed, 'a connected store is kept');
+  assert.equal(opens, 2);
+});
+
+await check('an open that throws is retried after the wait too', async () => {
+  let clock = 0;
+  let opens = 0;
+  const get = openOnce(async () => {
+    opens += 1;
+    if (opens === 1) throw new Error('no route to host');
+    return { status: () => ({ connected: true }) };
+  }, 30_000, () => clock);
+
+  await assert.rejects(get(), /no route to host/);
+  await assert.rejects(get(), /no route to host/);
+  assert.equal(opens, 1);
+  clock = 30_000;
+  assert.equal((await get()).status().connected, true);
+  assert.equal(opens, 2);
+});
+
 console.log(`\n${passed} checks passed`);
