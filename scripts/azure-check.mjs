@@ -169,7 +169,7 @@ try {
 
   let detail;
   if (health) {
-    detail = `API is live: data=${health.data.backend}, storage=${health.storage.backend}, auth=${health.auth.mode}.`;
+    detail = `API is live: data=${health.data.backend}, storage=${health.storage.backend}, auth=${health.auth.mode ?? 'hidden (sign in as an operator to see it)'}.`;
   } else if (response.status === 403) {
     // A network policy denying the host and the site itself refusing look the
     // same from here, so name both rather than guessing.

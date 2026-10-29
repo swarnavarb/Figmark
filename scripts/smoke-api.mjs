@@ -401,6 +401,40 @@ await check('sign-in emits a real Set-Cookie header', () => {
 /** Headers as a browser would send them back: the cookie pair, nothing else. */
 const cookieAuth = { cookie: sessionCookie.split(';')[0] };
 
+await check('on Azure, health tells visitors and signed-in members only what the app needs, and an operator everything', async () => {
+  process.env.WEBSITE_INSTANCE_ID = 'test-instance';
+  try {
+    const visitor = (await health(req(), ctx)).jsonBody;
+    assert.equal(visitor.version, undefined);
+    assert.equal(visitor.auth.mode, undefined);
+    assert.equal(visitor.data.database, null);
+    assert.equal(visitor.storage.account, null);
+    // Whether anybody can sign in, never how many people can.
+    assert.equal(visitor.data.signInAccounts, 1);
+    assert.doesNotMatch(visitor.photoSearch.detail, /ANTHROPIC|KEY/);
+    // What the banners and the sign-up form read is all still there.
+    assert.equal(typeof visitor.data.connected, 'boolean');
+    assert.ok(Array.isArray(visitor.data.missingContainers));
+    assert.ok('captchaSiteKey' in visitor.auth);
+    assert.ok(['configured', 'development', 'missing'].includes(visitor.auth.sessionSecretSource));
+
+    // Signed in is not enough: only an operator sees the rest.
+    const member = await login(req({ body: { identifier: PACKER_EMAIL, password: DEMO_PASSWORD } }), ctx);
+    const signedIn = (await health(req({ headers: { authorization: `Bearer ${member.jsonBody.token}` } }), ctx)).jsonBody;
+    assert.equal(signedIn.version, undefined);
+    assert.equal(signedIn.auth.mode, undefined);
+    assert.equal(signedIn.data.signInAccounts, 1);
+
+    const operator = (await health(req({ headers: cookieAuth }), ctx)).jsonBody;
+    assert.equal(typeof operator.version, 'string');
+    assert.equal(operator.auth.mode, 'mock');
+    assert.ok(operator.data.signInAccounts > 1, 'the operator sees the real count');
+    assert.match(operator.photoSearch.detail, /ANTHROPIC_API_KEY/);
+  } finally {
+    delete process.env.WEBSITE_INSTANCE_ID;
+  }
+});
+
 await check('the cookie alone is enough to be signed in', async () => {
   const who = await me(req({ headers: cookieAuth }), ctx);
   assert.equal(who.status, 200);
