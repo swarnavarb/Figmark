@@ -140,10 +140,18 @@ Anything else: stop and tell me.
    AZURE_CLIENT_SECRET=
    ```
 
-   If the page has a separate secrets section for environment variables, put
-   `AZURE_CLIENT_SECRET` there instead.
+   The environment has no secrets section for variables, so the secret is
+   stored as a plain variable that anyone who uses this environment can see.
+   "Network secrets" is something else: the proxy adds a value to requests to
+   chosen hosts, which the Azure CLI cannot sign in with. On a personal
+   account only I use the environment; on a shared one, stop and ask me.
+   Every session in this environment gets the variables, whatever repository
+   it works on.
 4. **The secret, handed to me.** Leave `AZURE_CLIENT_SECRET` empty, do not save
-   yet, and tell me: "Run `echo "$SP_SECRET"` in Cloud Shell, paste the printed
+   yet, and tell me: "In Cloud Shell, first shorten the secret's life by
+   replacing it with one that ends on 31 December:
+   `SP_SECRET=$(az ad sp credential reset --id "$SP_APP_ID" --end-date 2026-12-31 --query password -o tsv); echo ${#SP_SECRET}`
+   (it should print about 40). Then run `echo "$SP_SECRET"`, paste the printed
    value after `AZURE_CLIENT_SECRET=` in the environment settings, then run
    `clear` in Cloud Shell." Look away from the Cloud
    Shell tab (no screenshots of it) until I say it is done.
