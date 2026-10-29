@@ -210,6 +210,19 @@ const BATCHES: Batch[] = [
   },
 ];
 
+/**
+ * Every document the demo writes, by id and partition key: what
+ * scripts/remove-photo-demo.mjs deletes from a database that should never
+ * have had them.
+ */
+export function photoDemoRecords(): { listings: { id: string; sellerId: string }[]; posts: { id: string; channelId: string }[] } {
+  const noPhotos = new Proxy({}, { get: () => ({ blobName: '', url: '' }) }) as Uploaded;
+  return {
+    listings: BATCHES.flatMap((batch) => batch.listings.map(({ id, sellerId }) => ({ id, sellerId }))),
+    posts: BATCHES.flatMap((batch) => batch.posts(noPhotos).map(({ id, channelId }) => ({ id, channelId }))),
+  };
+}
+
 /** Upload the demo photos and write what uses them, batch by batch, unless already there. Never fails boot. */
 export async function topUpPhotoDemo(repository: Repository): Promise<void> {
   for (const batch of BATCHES) {

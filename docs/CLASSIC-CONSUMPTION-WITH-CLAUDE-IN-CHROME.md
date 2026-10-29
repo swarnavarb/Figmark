@@ -44,7 +44,7 @@ message there.
 az account show --query name -o tsv
 RG=rg-figuremarket-dev
 CLOCK=func-figmark-clocks-dev
-az functionapp show -g $RG -n $CLOCK --query "{plan:serverFarmId, kind:kind, state:state}" -o json
+az functionapp show -g $RG -n $CLOCK --query "{kind:kind, plan:serverFarmId || properties.serverFarmId, state:state || properties.state}" -o json
 az functionapp config appsettings list -g $RG -n $CLOCK --query "[].name" -o tsv
 ```
 
@@ -119,12 +119,17 @@ If it says the name is taken, wait five minutes and try again (up to three
 times). Then check:
 
 ```bash
-az functionapp show -g $RG -n $CLOCK --query "{kind:kind, sku:sku, plan:serverFarmId}" -o json
+az functionapp show -g $RG -n $CLOCK --query "{kind:kind, sku:sku || properties.sku, plan:serverFarmId || properties.serverFarmId}" -o json
 az functionapp config appsettings list -g $RG -n $CLOCK --query "[].name" -o tsv
+az functionapp config appsettings list -g $RG -n $CLOCK --query "[?name=='WEBSITE_NODE_DEFAULT_VERSION'].value | [0]" -o tsv
 ```
 
-The plan should end in a name like `CentralIndiaPlan` and the SKU should be
-`Dynamic`. The settings list must **not** contain
+Some Azure CLI versions put `sku` and `serverFarmId` under `properties`; the
+query reads either. The kind should be `functionapp` (no `linux`), the plan
+should end in a name like `CentralIndiaPlan`, the SKU should be `Dynamic`, and
+the Node version `~22`. Node 22 is deliberate: the old Flex app ran Node 24,
+but the code needs Node 22 or later, CI builds on 22, and Node 24 is still a
+preview on Windows. The settings list must **not** contain
 `APPLICATIONINSIGHTS_CONNECTION_STRING`. If it does, tell me.
 
 ## Step 5: Put the settings back
@@ -139,7 +144,10 @@ unset ARGS
 az functionapp config appsettings list -g $RG -n $CLOCK --query "[].name" -o tsv
 ```
 
-Check that every name from before is still there, plus the saved ones. Don't
+Check that every name from Step 4's list is still there, plus the saved
+ones. The new app's platform names differ from the Flex app's (for example
+`WEBSITE_CONTENTSHARE` instead of `DEPLOYMENT_STORAGE_CONNECTION_STRING`);
+that is expected. Don't
 add `PUSH_WAKE_QUEUE` or `PUSH_WAKE_STORAGE`: the wake-up queue stays off in
 development.
 
@@ -155,7 +163,8 @@ az role assignment list --assignee "$APP_ID" --all --query "[].{role:roleDefinit
 ```
 
 Then on <https://github.com/swarnavarb/Figmark/actions>, open the latest
-**Build and deploy** run on branch `development` and use **Re-run jobs →
+**Build and deploy** run on branch `development` whose event is **push** (a
+pull request run never deploys the clocks) and use **Re-run jobs →
 Re-run all jobs**. It doesn't ask for approval. Wait for
 **Deploy clocks (development)** to finish, and tell me whether it succeeded.
 If it failed, copy the error lines (no secrets).
