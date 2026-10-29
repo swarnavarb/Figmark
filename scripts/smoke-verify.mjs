@@ -8,6 +8,7 @@
  * signature over all of it, compressed and written as one decimal number.
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 import { createHash, createHmac, generateKeyPairSync, sign } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 
@@ -33,6 +34,7 @@ const {
 const { createOrderRoute: createOrder } = await import(new URL('catalog-routes.js', fns));
 const { adminRightsRoute: rights, adminUsersRoute: adminUsers } = await import(new URL('admin-routes.js', fns));
 const { publicProfileRoute: publicProfile } = await import(new URL('message-routes.js', fns));
+await useFixtures();
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
 const { MemoryRepository } = await import(new URL('api/src/data/memory-repository.js', dist));
 const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js', dist));
@@ -402,7 +404,7 @@ await check('only an operator can change rights', async () => {
 console.log('\nsession key');
 
 await check('with no signing key, nothing is issued or accepted', async () => {
-  const store = new MemoryRepository();
+  const store = new MemoryRepository(fixtures.fixtureSet());
   await store.init();
   const keyless = new MockAuthProvider(store, '', 3600);
   await assert.rejects(keyless.login({ identifier: 'demo@figmark.in', password: 'figmark123' }), (err) => err.code === 'sign_in_unavailable');

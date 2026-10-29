@@ -1,5 +1,5 @@
-import type { Listing } from '../../../shared/models.js';
-import { conditionTagFor, optionsOf, specFor, visibleFields, type Attributes } from '../../../shared/category-specs.js';
+import type { Listing } from '../shared/models.js';
+import { conditionTagFor, optionsOf, specFor, visibleFields, type Attributes } from '../shared/category-specs.js';
 import { seedArt } from './seed.js';
 
 /**

@@ -62,27 +62,17 @@ credentials were present. These steps need a machine that can reach Azure:
    npm run azure:provision
    ```
 
-   Add `-- --seed` to also write the development fixtures, so the deployed
-   status page shows real data from Cosmos rather than an empty database:
-
-   ```bash
-   npm run azure:provision -- --seed
-   ```
-
-   Development environments only — it creates an account whose password is
-   committed to this repository.
+   It writes no data. A new database starts empty, development included,
+   and the first account is whoever signs up.
 
    > **The order of steps 3 and 5 matters.** Pointing the deployed API at a
    > database that does not exist, has no containers, or has no accounts in it
    > used to look exactly like a wrong password: sign-in resolves every
    > identifier to nobody, including the demo account, and no amount of
    > retyping fixes it. The API now says which of those it is — on
-   > `/api/health`, and on the sign-in page itself. On Azure it no longer
-   > seeds an empty database by itself: the fixtures carry a published
-   > password, including a community manager's, so they are written only
-   > where `COSMOS_AUTOSEED=on` marks the database as a demo (it also keeps a
-   > seeded demo topped up with fixtures later releases add). **Never set it
-   > on production.** Off Azure it stays on unless `COSMOS_AUTOSEED=off`. Containers still have to exist first: creating them
+   > `/api/health`, and on the sign-in page itself. It never writes demo data:
+   > the fixtures live in `test-fixtures/`, which nothing under `api/` imports.
+   > Containers still have to exist first: creating them
    > is what step 3 does, and nothing can be written to a database without
    > them.
 
@@ -184,9 +174,8 @@ succeeds, with the operator, the target and what they sent (secrets redacted).
 It is kept one document per day in `siteContent` (`audit-YYYY-MM-DD`) and shown
 under **Audit trail**, or at `GET /api/ops/audit?days=N`.
 
-On the in-memory store the demo account is an operator by default. That store is
-a throwaway whose password is published in this repository, so admin over data
-that resets on restart grants nothing; a durable store gets nobody.
+Operators are the accounts `ADMIN_EMAILS` names, and nobody else, wherever the
+API runs. The tests and `npm run serve -- --fixtures` set it to the demo account.
 
 ### Putting it on a subdomain
 

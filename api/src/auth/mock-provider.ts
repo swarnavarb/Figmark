@@ -46,7 +46,7 @@ interface Resolution {
 }
 
 /**
- * Development-only auth provider: username + password against seeded users.
+ * The password provider: username + password against the accounts in the store.
  *
  * PLACEHOLDER. This exists so role-aware features can be built before a real
  * identity provider is chosen. It must not reach production with real users -
@@ -268,8 +268,8 @@ export class MockAuthProvider implements AuthService {
       }
       if (status.signInAccounts === 0) {
         throw AuthError.signInUnavailable(
-          'Sign-in is unavailable: this deployment is connected to a database that holds no accounts. ' +
-            `${status.detail} Seed it with "npm run build:api && npm run azure:provision -- --seed".`,
+          'Nobody has an account here yet: this deployment is connected to a database that holds none. ' +
+            `${status.detail} Sign up to create the first one.`,
         );
       }
     }

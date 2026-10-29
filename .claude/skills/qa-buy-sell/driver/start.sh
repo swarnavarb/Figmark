@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Boots everything a human-style QA run needs, from a clean in-memory store:
 #   1. builds the app and API (skip with QA_SKIP_BUILD=1),
-#   2. restarts `npm run serve` on $PORT (5173) - a restart is also how the data resets,
+#   2. restarts `npm run serve -- --fixtures` on $PORT (5173) - a restart is also how the data resets,
 #   3. restarts the browser driver on $QA_DRIVER_PORT (9333).
 # Logs and screenshots land in qa-runs/<timestamp>/ (gitignored). Only the
 # processes this script started on these ports are stopped, so two runs on
@@ -64,10 +64,10 @@ echo "$RUN" > qa-runs/LATEST
 
 if [ "${QA_SKIP_BUILD:-0}" != "1" ]; then
   [ -d api/node_modules ] && [ -d app/node_modules ] || npm run install:all > "$RUN/install.log" 2>&1
-  npm run build > "$RUN/build.log" 2>&1 || { echo "build failed - see $RUN/build.log"; tail -20 "$RUN/build.log"; exit 1; }
+  { npm run build && npm run build:fixtures; } > "$RUN/build.log" 2>&1 || { echo "build failed - see $RUN/build.log"; tail -20 "$RUN/build.log"; exit 1; }
 fi
 
-nohup node scripts/dev-server.mjs > "$RUN/server.log" 2>&1 &
+nohup node scripts/dev-server.mjs --fixtures > "$RUN/server.log" 2>&1 &
 echo $! > "$PIDS"
 wait_for "$QA_BASE_URL/api/health" "app on $QA_BASE_URL"
 

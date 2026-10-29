@@ -4,6 +4,7 @@
  * because configuration is read once at import.
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 
 process.env.STAFF_MFA = 'on';
 process.env.FIGMARK_RATE_LIMITS = 'off';
@@ -13,6 +14,7 @@ const fns = new URL('api/src/functions/', base);
 const { loginRoute: login, mfaSetupRoute: setup, mfaEnableRoute: enable } = await import(new URL('auth-routes.js', fns));
 const { adminUsersRoute: adminUsers } = await import(new URL('admin-routes.js', fns));
 const { codeAt, stepAt } = await import(new URL('api/src/auth/totp.js', base));
+await useFixtures();
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 const req = ({ headers = {}, body, query = {} } = {}) => ({

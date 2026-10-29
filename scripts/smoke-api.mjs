@@ -6,6 +6,7 @@
  * Functions host. Run `npm run build:api` first.
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 import { createRequire } from 'node:module';
 
 // Steps are undoable for three minutes in the app; these checks read every
@@ -13,6 +14,7 @@ import { createRequire } from 'node:module';
 process.env.FIGMARK_UNDO_WINDOW_MS = '0';
 // One account here does a day's posting in seconds; the limit has its own check.
 process.env.FIGMARK_RATE_LIMITS = 'off';
+await useFixtures();
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { healthRoute: health } = await import(new URL('health.js', fns));
 const { toErrorResponse, json: jsonResponse } = await import(new URL('http.js', fns));
@@ -210,9 +212,7 @@ const { tally: tallyOf } = await import(new URL('../api/dist/shared/board.js', i
 const {
   DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD, PACKER_EMAIL, MANAGER_EMAIL, HANDLER_EMAIL,
   seedListings, seedReviews,
-} = await import(
-  new URL('../api/dist/api/src/data/seed.js', import.meta.url)
-);
+} = fixtures;
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 

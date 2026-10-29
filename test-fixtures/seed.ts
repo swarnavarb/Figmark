@@ -17,11 +17,11 @@ import type {
   VerificationState,
   Want,
   WantOffer,
-} from '../../../shared/models.js';
-import { DIRECT_LOT_ID } from '../../../shared/fulfilment.js';
-import { isCancelledLike } from '../../../shared/orders.js';
-import type { ReactionKind, StoredComment } from '../../../shared/social.js';
-import { hashPassword } from '../auth/passwords.js';
+} from '../shared/models.js';
+import { DIRECT_LOT_ID } from '../shared/fulfilment.js';
+import { isCancelledLike } from '../shared/orders.js';
+import type { ReactionKind, StoredComment } from '../shared/social.js';
+import { hashPassword } from '../api/src/auth/passwords.js';
 
 /**
  * Development seed data.

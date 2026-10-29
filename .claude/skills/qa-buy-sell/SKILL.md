@@ -39,7 +39,7 @@ node $A meera click "=Sign in"            # leading = means exact match
 node $A meera double "Buy now"            # an impatient double tap
 node $A meera type "Transaction reference" UPI-4471882211
 node $A arjun choose Lot "Add to a lot later"
-node $A arjun upload @16 api/assets/demo/<file>.jpg
+node $A arjun upload @16 app/public/learn/buy-feed.jpg
 node $A meera press Escape | scroll down | back | reload | look | look full
 node $A meera wait "Payment sent"         # waits up to 10s
 node $A meera expect "Waiting for the seller"   # PASS/FAIL line, never throws

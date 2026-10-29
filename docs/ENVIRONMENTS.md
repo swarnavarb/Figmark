@@ -13,7 +13,6 @@ clock app. Nothing is shared between them.
 | Static Web App | `stapp-figuremarket-dev`, Free plan | `stapp-figmark-prod`, Free plan |
 | Clock Function App | `func-figmark-clocks-dev` (optional; classic Consumption, Windows, Node 22, no Application Insights, no `push-wake`) | `func-figmark-clocks-prod` (classic Consumption, Windows, Node 22, trimmed Application Insights, `push-wake` on) |
 | `SITE_ENVIRONMENT` | `development` (test-site banner, kept out of search engines) | `production` |
-| `COSMOS_AUTOSEED` | unset (starts empty, like production; set `on` to get the demo accounts) | **unset, always** |
 
 A release: work lands on `development` and is checked on the development
 site. A pull request from `development` into `main`, merged, builds once; the
@@ -48,20 +47,18 @@ ENDPOINT=$(az cosmosdb show -n cosmos-figmark-dev -g rg-figuremarket-dev --query
 KEY=$(az cosmosdb keys list -n cosmos-figmark-dev -g rg-figuremarket-dev --query primaryMasterKey -o tsv)
 
 # Serverless refuses a throughput setting, hence COSMOS_THROUGHPUT.
-# --seed writes the demo accounts: development only.
+# It writes no data: development starts empty, like production.
 COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" COSMOS_THROUGHPUT=serverless \
-  npm run azure:provision -- --seed
+  npm run azure:provision
 ```
 
-Point the development site at it. Today development is the app's
-`development` environment (step 9 changes that):
+Point the development site at it (the app's production slot; see step 9):
 
 ```bash
 az staticwebapp appsettings set \
   --name stapp-figuremarket-dev --resource-group rg-figuremarket-dev \
-  --environment-name development \
   --setting-names COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" \
-    COSMOS_AUTOSEED=on SITE_ENVIRONMENT=development
+    SITE_ENVIRONMENT=development
 ```
 
 Do the same for the development clock app, if it exists:
@@ -72,8 +69,9 @@ az functionapp config appsettings set \
   --settings COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY"
 ```
 
-Check the development site: it should show the DEVELOPMENT banner, the demo
-sign-in should work, and `/api/health` should report Cosmos DB connected.
+Check the development site: it should show the DEVELOPMENT banner, and
+`/api/health` should report Cosmos DB connected, with no accounts until
+somebody signs up.
 
 Then delete the old free-tier account. It holds only test data, and the demo
 accounts in it have a password published in this repository, so it must not
@@ -113,8 +111,8 @@ az staticwebapp create \
   --location eastasia --sku Free
 ```
 
-Create the database and containers, **without `--seed`** and without
-`COSMOS_THROUGHPUT` (the free tier's 1000 RU/s):
+Create the database and containers, without `COSMOS_THROUGHPUT` (the free
+tier's 1000 RU/s):
 
 ```bash
 P_ENDPOINT=$(az cosmosdb show -n cosmos-figmark-prod -g rg-figmark-prod --query documentEndpoint -o tsv)
@@ -155,8 +153,6 @@ Then, as each one is ready (full table in [OPERATIONS.md](OPERATIONS.md#1-produc
 - Aadhaar: `AADHAAR_QR_CERT`.
 - Push: `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` (new keys from `npm run push:keys`, not development's).
 - CAPTCHA: `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`.
-
-Never set `COSMOS_AUTOSEED` here.
 
 ## 5. Production clock app
 
@@ -242,9 +238,9 @@ az staticwebapp hostname set -n stapp-figmark-prod -g rg-figmark-prod \
 
 Done on 29 October 2026: development deploys to the production slot of
 `stapp-figuremarket-dev` (`icy-stone-0498a9900.6.azurestaticapps.net`), and the
-app's `development` environment was deleted. Its database was emptied and
-`COSMOS_AUTOSEED` removed, so development starts empty like production. The
-steps, for reference:
+app's `development` environment was deleted. Its database was emptied, and
+the API no longer carries any demo data, so development starts empty like
+production. The steps, for reference:
 
 A custom domain attaches to an app's production environment only, which is
 why development moved there. Steps 1 and 2 are done; step 3 gives it

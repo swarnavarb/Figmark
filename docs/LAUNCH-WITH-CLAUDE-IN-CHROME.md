@@ -20,13 +20,11 @@ these steps are not detailed enough.
 2. **Never show secrets.** Keys, tokens and passwords stay in Cloud Shell
    variables. Do not print them, do not paste them into chat, do not put them in
    screenshots. If a command prints one, clear the screen (`clear`).
-3. **Never** set `COSMOS_AUTOSEED` on production, and never run the provision
-   command with `--seed` against the production database.
-4. Production's `AUTH_SESSION_SECRET` must be newly generated, never copied from
+3. Production's `AUTH_SESSION_SECRET` must be newly generated, never copied from
    development.
-5. After each numbered step, tell me in one line what is done, then continue.
+4. After each numbered step, tell me in one line what is done, then continue.
    If a command fails, stop, show me the error (no secrets) and ask.
-6. Cloud Shell forgets variables when its session restarts. If one is empty,
+5. Cloud Shell forgets variables when its session restarts. If one is empty,
    re-run the lines that set it.
 
 ## Step 0: Cloud Shell
@@ -59,11 +57,10 @@ ENDPOINT=$(az cosmosdb show -n cosmos-figmark-dev -g rg-figuremarket-dev --query
 KEY=$(az cosmosdb keys list -n cosmos-figmark-dev -g rg-figuremarket-dev --query primaryMasterKey -o tsv)
 
 COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" COSMOS_THROUGHPUT=serverless \
-  npm run azure:provision -- --seed
+  npm run azure:provision
 
 az staticwebapp appsettings set --name stapp-figuremarket-dev --resource-group rg-figuremarket-dev \
-  --environment-name development \
-  --setting-names COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" COSMOS_AUTOSEED=on SITE_ENVIRONMENT=development
+  --setting-names COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" SITE_ENVIRONMENT=development
 ```
 
 If `func-figmark-clocks-dev` exists (`az functionapp list -g rg-figuremarket-dev -o table`):
@@ -73,7 +70,7 @@ az functionapp config appsettings set --resource-group rg-figuremarket-dev --nam
   --settings COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY"
 ```
 
-Then check <https://icy-stone-0498a9900-development.eastasia.6.azurestaticapps.net>:
+Then check <https://icy-stone-0498a9900.6.azurestaticapps.net>:
 - It shows a **DEVELOPMENT** banner.
 - `/api/health` says Cosmos DB is connected.
 
@@ -108,7 +105,7 @@ az staticwebapp create --name stapp-figmark-prod --resource-group rg-figmark-pro
 If the Cosmos create says a free-tier account already exists, wait 5 minutes
 (the delete is still finishing) and retry.
 
-Set up the database structure. Do not use `--seed` here:
+Set up the database structure (it writes no data):
 
 ```bash
 P_ENDPOINT=$(az cosmosdb show -n cosmos-figmark-prod -g rg-figmark-prod --query documentEndpoint -o tsv)

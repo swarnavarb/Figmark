@@ -1,25 +1,29 @@
 /**
- * Smoke test for what a Cosmos-backed deployment does with an empty database.
+ * Smoke test for what the Cosmos repository does when it starts.
  *
- * This is the failure it exists to prevent: COSMOS_ENDPOINT is set in the
- * portal, the API connects successfully, and every sign-in - including the demo
- * account, with the password printed on the sign-in page - is answered with
- * "Username or password is incorrect", because the database resolves every
- * identifier to nobody. Retyping a correct password never fixes it.
+ * A database starts empty and stays empty: the API writes no accounts, no
+ * listings, nothing, until somebody signs up. What start-up does do is bring
+ * an existing database up to date - rows moved to a newer shape, leftovers
+ * cleared, containers created and given their policies - without making the
+ * first request wait for it.
  *
  * Cosmos is stood in for by Maps with the shape the repository actually calls:
- * point reads, upserts, and the one count query. That is enough to prove the
- * seeding path writes rows sign-in can resolve, which is the part that was
- * wrong - the SDK's own behaviour is not what is under test.
+ * point reads, upserts, projections and the one count query. A populated
+ * database is built from test-fixtures/, written the way the repository
+ * writes rows.
  */
 import assert from 'node:assert/strict';
+import { fixtures } from './fixtures.mjs';
 
 const base = new URL('../api/dist/', import.meta.url);
 const { CosmosRepository } = await import(new URL('api/src/data/cosmos-repository.js', base));
 const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js', base));
 const { AuthError } = await import(new URL('api/src/auth/errors.js', base));
-const { DEMO_EMAIL, DEMO_PASSWORD, seedUsers } = await import(new URL('api/src/data/seed.js', base));
+const { identifiersOf } = await import(new URL('api/src/data/memory-repository.js', base));
 const { CONTAINER_LIST } = await import(new URL('shared/containers.js', base));
+const { handleKey } = await import(new URL('shared/handles.js', base));
+const { popularity } = await import(new URL('shared/catalog.js', base));
+const { DEMO_EMAIL, DEMO_PASSWORD, fixtureSet } = fixtures;
 
 let passed = 0;
 const check = async (name, fn) => {
@@ -187,86 +191,72 @@ function provisioned(names = CONTAINER_LIST.map((definition) => definition.name)
   return new Map(names.map((name) => [name, new Map()]));
 }
 
-console.log('an empty Cosmos database');
-
-const containers = provisioned();
-const repository = repositoryOn(containers);
-await repository.init();
-
-await check('is seeded on init rather than served empty', () => {
-  assert.equal(repository.status().connected, true);
-  assert.equal(repository.status().signInAccounts, repository.listDemoAccounts().length);
-  assert.match(repository.status().detail, /Seeded \d+ fixture records/);
-});
-
-await check('carries identifier reservations, which sign-in resolves through', async () => {
-  const reservations = containers.get('identifiers');
-  assert.ok(reservations.size >= 2, 'expected at least the demo email and phone');
-  assert.equal(reservations.get(DEMO_EMAIL).userId, 'usr_demo');
-  const user = await repository.getUserByIdentifier(DEMO_EMAIL);
-  assert.equal(user.id, 'usr_demo');
-});
-
-await check('signs the demo account in, which is the whole point', async () => {
-  const auth = new MockAuthProvider(repository, 'test-secret', 3600);
-  const session = await auth.login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
-  assert.equal(session.user.displayName, 'Arjun Mehta');
-});
-
-await check('advertises the demo hint it just seeded, so the password is findable', () => {
-  const [account] = repository.listDemoAccounts();
-  assert.equal(account.identifier, DEMO_EMAIL);
-  assert.equal(account.label.split('\u00b7').pop().trim(), DEMO_PASSWORD);
-});
-
-await check('holds the catalog too, so the feed is not empty either', () => {
-  assert.ok(containers.get('listings').size >= 2);
-  assert.ok(containers.get('lots').size >= 1);
-});
-
-await check('addresses likes and follows by the id that toggling reads back', () => {
-  for (const id of containers.get('likes').keys()) assert.match(id, /^usr_[a-z]+__lst_/);
-  for (const id of containers.get('follows').keys()) assert.match(id, /^usr_[a-z]+__usr_/);
-});
-
-console.log('\na database left half-seeded');
 
 /**
- * What the old provisioning script actually produced: it wrote each user row
- * before its reservations, and threw on the first user (reading a `username`
- * field the capabilities model had removed). The result is one account with a
- * password hash and no reservation behind it - so the database is not empty,
- * every sign-in for it is answered "incorrect", and nothing about the page
- * says why.
+ * A database somebody has been using: the fixtures, written as the repository
+ * writes rows - reservations beside each account, listings with their stored
+ * popularity, likes and follows under the composite id toggling reads back.
  */
-const halfSeeded = provisioned();
-halfSeeded.set('users', new Map([['usr_demo', seedUsers().find((u) => u.id === 'usr_demo')]]));
-const repaired = repositoryOn(halfSeeded);
+function populated() {
+  const containers = provisioned();
+  const set = fixtureSet();
+  const put = (name, doc) => containers.get(name).set(doc.id, doc);
+  for (const user of set.users) {
+    put('users', structuredClone(user));
+    for (const identifier of identifiersOf(user)) put('identifiers', { id: identifier, userId: user.id });
+    if (user.username) put('identifiers', { id: handleKey(user.username), userId: user.id, isStore: false });
+    if (user.sellerProfile?.username) {
+      put('identifiers', { id: handleKey(user.sellerProfile.username), userId: user.id, isStore: true });
+    }
+  }
+  for (const [name, items] of [
+    ['lots', [...set.routedLots, ...set.lots]], ['orders', set.orders], ['powerSales', set.powerSales],
+    ['comments', set.comments], ['forums', set.forums], ['posts', set.posts], ['reviews', set.reviews],
+    ['disputes', set.disputes], ['wants', set.wants], ['wantOffers', set.wantOffers], ['pledges', set.pledges],
+  ]) {
+    for (const item of items) put(name, structuredClone(item));
+  }
+  for (const listing of set.listings) put('listings', { ...structuredClone(listing), popularity: popularity(listing) });
+  for (const like of set.likes) put('likes', { ...like, id: `${like.userId}__${like.listingId}` });
+  for (const follow of set.follows) put('follows', { ...follow, id: `${follow.followerId}__${follow.sellerId}` });
+  return containers;
+}
 
-await check('starts out unable to sign that account in', async () => {
-  // Before init: the row is there, the reservation is not.
-  assert.equal(halfSeeded.get('users').size, 1);
-  assert.equal(halfSeeded.get('identifiers').size, 0);
+console.log('an empty Cosmos database');
+
+await check('stays empty: nothing is written into it', async () => {
+  const containers = provisioned();
+  const repository = repositoryOn(containers);
+  await repository.init();
+  await repository.settled();
+  assert.equal(repository.status().connected, true);
+  assert.equal(repository.status().signInAccounts, 0);
+  for (const name of CONTAINER_LIST.map((definition) => definition.name).filter((name) => name !== 'siteContent')) {
+    assert.equal(containers.get(name).size, 0, `${name} should be empty`);
+  }
+  assert.deepEqual(repository.listDemoAccounts(), [], 'there is no published password to offer');
 });
 
-await repaired.init();
-await repaired.settled();
-
-await check('is not mistaken for an empty database', () => {
-  assert.equal(repaired.status().signInAccounts, repaired.listDemoAccounts().length);
-  assert.match(repaired.status().detail, /half-written seed/);
+await check('creates the schema, so the first sign-up has somewhere to go', async () => {
+  const nothing = new Map();
+  const repository = repositoryOn(nothing);
+  await repository.init();
+  for (const definition of CONTAINER_LIST) assert.ok(nothing.has(definition.name), `${definition.name} should exist`);
+  assert.deepEqual(repository.status().missingContainers, []);
 });
 
-await check('restores the reservation, so the demo account signs in again', async () => {
-  assert.equal(halfSeeded.get('identifiers').get(DEMO_EMAIL).userId, 'usr_demo');
-  const auth = new MockAuthProvider(repaired, 'test-secret', 3600);
-  const session = await auth.login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
-  assert.equal(session.user.displayName, 'Arjun Mehta');
-});
-
-await check('completes the catalog the half-written seed never reached', () => {
-  assert.ok(halfSeeded.get('listings').size >= 2);
-  assert.ok(halfSeeded.get('lots').size >= 1);
+await check('says nobody has an account yet, rather than "wrong password"', async () => {
+  const repository = repositoryOn(provisioned());
+  await repository.init();
+  const auth = new MockAuthProvider(repository, 'test-secret', 3600);
+  try {
+    await auth.login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
+    assert.fail('expected the sign-in to be refused');
+  } catch (err) {
+    assert.ok(err instanceof AuthError);
+    assert.equal(err.code, 'sign_in_unavailable');
+    assert.match(err.message, /sign up/i);
+  }
 });
 
 console.log('\na database that already holds accounts');
@@ -279,7 +269,7 @@ await check('is left exactly as it is', async () => {
   const untouched = repositoryOn(existing);
   await untouched.init();
   await untouched.settled();
-  assert.equal(existing.get('users').size, 1, 'seeding must not touch a populated database');
+  assert.equal(existing.get('users').size, 1, 'start-up must not write accounts');
   assert.equal(untouched.status().signInAccounts, 1);
   // The container exists - init() creates whatever the schema declares - but
   // nothing was written into it, which is the promise that matters.
@@ -287,67 +277,11 @@ await check('is left exactly as it is', async () => {
   assert.deepEqual(untouched.listDemoAccounts(), [], 'never advertise a password against real accounts');
 });
 
-await check('a real account missing its reservation is restored, and nothing else', async () => {
-  // The repair is not a licence to write fixtures into someone's database: only
-  // the gap is filled, because the fixture account is not among the rows.
-  const orphaned = new Map([
-    ['users', new Map([['usr_real', { id: 'usr_real', email: 'Someone@Example.com', passwordHash: 'x:y' }]])],
-  ]);
-  const fixed = repositoryOn(orphaned);
-  await fixed.init();
-  await fixed.settled();
-  assert.equal(orphaned.get('identifiers').get('someone@example.com').userId, 'usr_real');
-  assert.equal(orphaned.get('listings').size, 0, 'no fixtures in a database of real accounts');
-  assert.deepEqual(fixed.listDemoAccounts(), []);
-  assert.match(fixed.status().detail, /Restored 1 missing identifier reservation/);
-});
-
-console.log('\na database seeded by an older release');
-
-await check('gains the fixtures a later release added, and keeps what it had', async () => {
-  // The failure this exists to prevent: the seed only ran on an empty
-  // database, so a deployment seeded once and then updated kept day-one data
-  // forever. Three releases of protection, reviews and disputes were in the code
-  // and absent from the site, and nothing said so.
-  const containers = provisioned();
-  const repository = repositoryOn(containers);
-  await repository.init();
-  await repository.settled();
-
-  // Stand in for an older seed: drop the fixtures a later release introduced,
-  // and put real use onto one of the rows that stayed.
-  const users = containers.get('users');
-  const orders = containers.get('orders');
-  users.delete('usr_escrow_meera');
-  orders.delete('ord_1005');
-  const touched = orders.get('ord_1001');
-  touched.itemName = 'Renamed by somebody using the site';
-  orders.set('ord_1001', touched);
-  // An older seed was topped up with an older fixture set, if it was marked at all.
-  containers.get('siteContent').delete('migration:fixtures-topped-up');
-
-  const updated = repositoryOn(containers);
-  await updated.init();
-  await updated.settled();
-
-  assert.ok(users.has('usr_escrow_meera'), 'the new account arrives');
-  assert.ok(orders.has('ord_1005'), 'and the new order with it');
-  assert.match(updated.status().detail, /Added \d+ fixture record/);
-
-  // A row already there is left exactly as it is: by then it may carry real
-  // use, and somebody's order state is not ours to reset.
-  assert.equal(orders.get('ord_1001').itemName, 'Renamed by somebody using the site');
-
-  // And the new account is reachable, not merely present.
-  assert.ok(containers.get('identifiers').has('meera@figmark.in'));
-  assert.equal((await updated.getUserByIdentifier('meera@figmark.in')).id, 'usr_escrow_meera');
-});
-
 await check('rows from older buyer protection are moved to the new shape, holders becoming managers', async () => {
   // Protected payments used to be held by a member the buyer picked, and rows
   // named them. A deployed database still holds those rows, and every read
   // expects the new shape - so they are moved before anybody reads one.
-  const containers = provisioned();
+  const containers = populated();
   const repository = repositoryOn(containers);
   await repository.init();
   await repository.settled();
@@ -395,8 +329,8 @@ await check('rows from older buyer protection are moved to the new shape, holder
   assert.equal(order.disputeLinks[0].topic, 'held_payment');
   assert.equal(dispute.topic, 'held_payment');
   assert.match(restarted.status().detail, /Moved \d+ row\(s\)/);
-  // Its background pass finishes first: it leaves the fixture marker that lets
-  // later starts skip the fixture scan.
+  // Its background passes finish first: each leaves the marker that lets later
+  // starts skip it.
   await restarted.settled();
 
   // Once, and never again.
@@ -408,15 +342,15 @@ await check('rows from older buyer protection are moved to the new shape, holder
 });
 
 await check('starting against an up-to-date database is cheap', async () => {
-  // The regression this exists to catch. Checking each fixture with its own
-  // round trip is correct and unusable: two hundred sequential calls on every
-  // cold start is a request that never comes back, and the page behind it sits
-  // on "Loading…" forever. The healthy case is a handful of projections and no
-  // writes at all.
-  const containers = provisioned();
-  const seeded = repositoryOn(containers);
-  await seeded.init();
-  await seeded.settled();
+  // The regression this exists to catch. Checking each row with its own round
+  // trip is correct and unusable: two hundred sequential calls on every cold
+  // start is a request that never comes back, and the page behind it sits on
+  // "Loading…" forever. The healthy case is a handful of reads and no writes
+  // at all.
+  const containers = populated();
+  const warm = repositoryOn(containers);
+  await warm.init();
+  await warm.settled();
 
   resetCalls();
   const restarted = repositoryOn(containers);
@@ -428,17 +362,17 @@ await check('starting against an up-to-date database is cheap', async () => {
   assert.ok(calls.reads < 10, `init should not read row by row: ${calls.reads} point reads`);
 });
 
-await check('a populated database serves before the fixture pass has run', async () => {
+await check('a populated database serves before its background passes have run', async () => {
   // What actually kept the operations console on "Loading…". Making init cheap
   // was not enough, because cheap still meant a full pass over every container
   // in front of the first request on every cold worker - and a serverless host
   // makes cold workers whenever it feels like it.
   //
   // So the cost is measured where it is paid: what init does before it returns.
-  // A database that already holds accounts is already serving, and checking its
-  // fixtures is maintenance. Maintenance runs behind the request, not in front
-  // of it.
-  const containers = provisioned();
+  // A database that already holds accounts is already serving, and bringing it
+  // up to date is maintenance. Maintenance runs behind the request, not in
+  // front of it.
+  const containers = populated();
   const warm = repositoryOn(containers);
   await warm.init();
   await warm.settled();
@@ -452,123 +386,16 @@ await check('a populated database serves before the fixture pass has run', async
     onTheRequestPath <= 4,
     `init should connect and hand back, not sweep the database: ${onTheRequestPath} calls`,
   );
-
-  // And it still happens - moved off the path, not dropped.
   await restarted.settled();
-  assert.ok(calls.queries > onTheRequestPath, 'the fixture pass should still have run');
-});
-
-await check('an empty database is filled before it serves anybody', async () => {
-  // The one case that must still block: there is nothing to serve. A database
-  // with no accounts answers every correct password with "that is wrong", so
-  // handing it back early would trade a slow console for a broken sign-in.
-  const empty = provisioned();
-  const fresh = repositoryOn(empty);
-  await fresh.init();
-
-  assert.ok(empty.get('users').size > 0, 'an empty database must be filled by init itself');
-  assert.equal(fresh.status().signInAccounts, fresh.listDemoAccounts().length);
-});
-
-await check('an account written before handles existed is given one', async () => {
-  // The gap that made every mention of somebody render as plain text on the
-  // deployed site: a row from before handles carries no username, nothing
-  // backfills one, and an account with no address cannot be linked to from
-  // anywhere. The fixture top-up correctly refuses to touch existing rows, so
-  // it was never going to close this.
-  const containers = provisioned();
-  const seeded = repositoryOn(containers);
-  await seeded.init();
-  await seeded.settled();
-
-  // Strip the handles off two rows, the way an older seed left them.
-  const users = containers.get('users');
-  const kaiju = users.get('usr_kaiju');
-  delete kaiju.username;
-  delete kaiju.sellerProfile.username;
-  users.set('usr_kaiju', kaiju);
-
-  const restarted = repositoryOn(containers);
-  await restarted.init();
-  await restarted.settled();
-
-  const fixed = containers.get('users').get('usr_kaiju');
-  assert.ok(fixed.username, 'the person has an address again');
-  assert.ok(fixed.sellerProfile.username, 'and so does their shop');
-  // Reachable, not merely present: the handle resolves.
-  assert.equal((await restarted.getByHandle(fixed.username)).user.id, 'usr_kaiju');
-  assert.equal((await restarted.getByHandle(fixed.sellerProfile.username)).isStore, true);
-  assert.match(restarted.status().detail, /Gave \d+ handle/);
-});
-
-await check('a handle somebody already chose is left alone', async () => {
-  // Only an absent handle is filled. A name they picked is not ours to change.
-  const containers = provisioned();
-  const seeded = repositoryOn(containers);
-  await seeded.init();
-  await seeded.settled();
-
-  const before = containers.get('users').get('usr_kaiju').sellerProfile.username;
-
-  const restarted = repositoryOn(containers);
-  await restarted.init();
-  await restarted.settled();
-
-  assert.equal(containers.get('users').get('usr_kaiju').sellerProfile.username, before);
-  assert.doesNotMatch(restarted.status().detail, /Gave \d+ handle/);
-});
-
-await check('two shops of the same name do not both get the same address', async () => {
-  const containers = provisioned();
-  const seeded = repositoryOn(containers);
-  await seeded.init();
-  await seeded.settled();
-
-  const users = containers.get('users');
-  // Two handle-less rows that would both want the same one.
-  for (const id of ['usr_twin_a', 'usr_twin_b']) {
-    users.set(id, {
-      id, email: `${id}@example.com`, phone: null, displayName: 'Same Name Shop',
-      passwordHash: null, isAdmin: false, suspended: false,
-      verification: {}, buyerTrust: {}, sellerTrust: {},
-      sellerProfile: { storefrontName: 'Same Name Shop', bio: '', tier: 'unverified' },
-      forwarderProfile: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    });
-  }
-
-  const restarted = repositoryOn(containers);
-  await restarted.init();
-  await restarted.settled();
-
-  const a = users.get('usr_twin_a');
-  const b = users.get('usr_twin_b');
-  assert.ok(a.username && b.username, 'both are addressable');
-  assert.notEqual(a.username, b.username, 'and not at the same address');
-  assert.notEqual(a.sellerProfile.username, b.sellerProfile.username);
-});
-
-await check('a database of real accounts is never topped up with fixtures', async () => {
-  // `usr_demo` is a fixture id. Without it this is somebody's real database,
-  // and writing our demo accounts into it would be indefensible.
-  const real = provisioned();
-  real.set('users', new Map([['usr_real', { id: 'usr_real', email: 'someone@example.com', passwordHash: 'x:y' }]]));
-  real.set('identifiers', new Map([['someone@example.com', { id: 'someone@example.com', userId: 'usr_real' }]]));
-
-  const repository = repositoryOn(real);
-  await repository.init();
-
-  assert.equal(real.get('users').size, 1, 'nothing was added');
-  assert.equal(real.get('listings').size, 0);
-  assert.equal(/Added \d+ fixture record/.test(repository.status().detail), false);
 });
 
 console.log('\na database from before the space savings');
 
 await check('leftovers are removed once, and existing containers take the new policy', async () => {
-  const containers = provisioned();
-  const seeded = repositoryOn(containers);
-  await seeded.init();
-  await seeded.settled();
+  const containers = populated();
+  const warm = repositoryOn(containers);
+  await warm.init();
+  await warm.settled();
 
   // What an older release left: a taken-back notice kept with a flag, a
   // notice and a save belonging to an account deleted without them, audit
@@ -615,10 +442,10 @@ await check('leftovers are removed once, and existing containers take the new po
 });
 
 await check('listings are relabelled to match their lot and given their popularity, once', async () => {
-  const containers = provisioned();
-  const seeded = repositoryOn(containers);
-  await seeded.init();
-  await seeded.settled();
+  const containers = populated();
+  const warm = repositoryOn(containers);
+  await warm.init();
+  await warm.settled();
 
   // What an older release left: an item filed into a lot while still marked
   // in hand, one from before sourcing existed, and no stored popularity.
@@ -721,57 +548,6 @@ await check('refuses sign-in with the reason, not "wrong password"', async () =>
     assert.ok(err instanceof AuthError);
     assert.equal(err.code, 'sign_in_unavailable');
     assert.match(err.message, /not reachable/);
-  }
-});
-
-console.log('\nopting out');
-
-await check('COSMOS_AUTOSEED=off leaves an empty database empty', async () => {
-  process.env.COSMOS_AUTOSEED = 'off';
-  try {
-    const empty = new Map();
-    const optedOut = repositoryOn(empty);
-    await optedOut.init();
-    assert.equal(optedOut.status().signInAccounts, 0);
-    assert.equal(empty.get('listings').size, 0);
-  } finally {
-    delete process.env.COSMOS_AUTOSEED;
-  }
-});
-
-await check('opting out declines the fixtures, not the schema', async () => {
-  // Containers are what the code needs to run at all, and creating an empty one
-  // writes nothing. Withholding them would leave the same opaque 500 behind,
-  // with the operator no better informed.
-  process.env.COSMOS_AUTOSEED = 'off';
-  try {
-    const empty = new Map();
-    const optedOut = repositoryOn(empty);
-    await optedOut.init();
-    for (const definition of CONTAINER_LIST) {
-      assert.ok(empty.has(definition.name), `${definition.name} should exist`);
-      assert.equal(empty.get(definition.name).size, 0, `${definition.name} should be empty`);
-    }
-  } finally {
-    delete process.env.COSMOS_AUTOSEED;
-  }
-});
-
-await check('on Azure, the fixtures (the photo demo included) wait for COSMOS_AUTOSEED=on', async () => {
-  // data/index.ts asks the same question before uploading the photo demo. It
-  // once asked nothing, and a fresh production database gained the demo's
-  // listings and posts the first time the API started.
-  const { autoSeedEnabled } = await import(new URL('api/src/data/cosmos-repository.js', base));
-  const index = await import('node:fs').then((fs) => fs.readFileSync(new URL('../api/src/data/index.ts', import.meta.url), 'utf8'));
-  assert.match(index, /if \(!config\.cosmos \|\| autoSeedEnabled\(\)\) await topUpPhotoDemo\(repository\);/);
-  process.env.WEBSITE_INSTANCE_ID = 'smoke';
-  try {
-    assert.equal(autoSeedEnabled(), false);
-    process.env.COSMOS_AUTOSEED = 'on';
-    assert.equal(autoSeedEnabled(), true);
-  } finally {
-    delete process.env.WEBSITE_INSTANCE_ID;
-    delete process.env.COSMOS_AUTOSEED;
   }
 });
 

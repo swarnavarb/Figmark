@@ -13,6 +13,7 @@
  * Runs against the compiled API (`npm run build:api` first).
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 
 const base = new URL('../api/dist/', import.meta.url);
 const fns = new URL('api/src/functions/', base);
@@ -25,10 +26,11 @@ const { StaticWebAppsAuthProvider } = await import(new URL('api/src/auth/swa-pro
 const { createSessionToken, SESSION_COOKIE_NAME } = await import(new URL('api/src/auth/tokens.js', base));
 const { resetRateLimits, clientIp } = await import(new URL('api/src/rate-limit.js', base));
 const { codeAt, stepAt } = await import(new URL('api/src/auth/totp.js', base));
-const { DEMO_EMAIL, DEMO_PASSWORD } = await import(new URL('api/src/data/seed.js', base));
+const { DEMO_EMAIL, DEMO_PASSWORD } = fixtures;
 const { loginRoute, meRoute } = await import(new URL('auth-routes.js', fns));
 const { adminSuspendRoute, adminAuditRoute } = await import(new URL('admin-routes.js', fns));
 const { opsSettingsSaveRoute } = await import(new URL('settings-routes.js', fns));
+await useFixtures();
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 
@@ -267,7 +269,7 @@ await check('the bookkeeping of the join never reaches a response', () => {
 
 console.log('\nsign-in throttling');
 
-const repository = new MemoryRepository();
+const repository = new MemoryRepository(fixtures.fixtureSet());
 await repository.init();
 const auth = new MockAuthProvider(repository, 'test-secret', 3600);
 
