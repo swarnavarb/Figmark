@@ -6,11 +6,13 @@ behind each piece.
 
 ## Provisioned resources
 
+Development resources are below; production's are in [ENVIRONMENTS.md](ENVIRONMENTS.md).
+
 Resource group **`rg-figuremarket-dev`**, all tagged `project: figuremarket-dev`.
 
 | Resource | Name | Details |
 |---|---|---|
-| Database | `cosmos-figuremarket-dev` | Cosmos DB, Core (SQL) API, Central India, free tier (1000 RU/s + 25 GB) |
+| Database | `cosmos-figmark-dev` | Cosmos DB, Core (SQL) API, Central India, serverless (pay per use). Replaced `cosmos-figuremarket-dev`, now deleted |
 | Storage | `stfiguremarketdev` | StorageV2, Standard_LRS, Central India — listing and condition photos |
 | Hosting | `stapp-figuremarket-dev` | Static Web App, Free tier, East Asia — `icy-stone-0498a9900.6.azurestaticapps.net` |
 | Auth | *not provisioned* | Deferred; see [AUTH.md](AUTH.md) |
@@ -41,7 +43,7 @@ credentials were present. These steps need a machine that can reach Azure:
 
    ```bash
    az cosmosdb keys list \
-     --name cosmos-figuremarket-dev \
+     --name cosmos-figmark-dev \
      --resource-group rg-figuremarket-dev \
      --query "primaryMasterKey" -o tsv
 
@@ -94,7 +96,7 @@ credentials were present. These steps need a machine that can reach Azure:
      --name stapp-figuremarket-dev \
      --resource-group rg-figuremarket-dev \
      --setting-names \
-       COSMOS_ENDPOINT="https://cosmos-figuremarket-dev.documents.azure.com:443/" \
+       COSMOS_ENDPOINT="https://cosmos-figmark-dev.documents.azure.com:443/" \
        COSMOS_KEY="<key>" \
        COSMOS_DATABASE="figmark" \
        STORAGE_ACCOUNT="stfiguremarketdev" \
