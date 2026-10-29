@@ -4,13 +4,15 @@
  * `npm run build:api` first.
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 
 process.env.FIGMARK_RATE_LIMITS = 'off';
 const fns = new URL('../api/dist/api/src/functions/', import.meta.url);
 const { signupRoute: signup, loginRoute: login, meRoute: me } = await import(new URL('auth-routes.js', fns));
 const { deviceReportRoute: report, deviceFiguresRoute: figuresRoute } = await import(new URL('device-routes.js', fns));
 const { deviceFigures, percent } = await import(new URL('../api/dist/shared/devices.js', import.meta.url));
-const { DEMO_EMAIL, DEMO_PASSWORD } = await import(new URL('../api/dist/api/src/data/seed.js', import.meta.url));
+const { DEMO_EMAIL, DEMO_PASSWORD } = fixtures;
+await useFixtures();
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
 const repository = await getRepository();
 

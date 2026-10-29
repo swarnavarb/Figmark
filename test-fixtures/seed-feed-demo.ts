@@ -1,5 +1,5 @@
-import type { Post } from '../../../shared/models.js';
-import type { PostHotspot, ReactionKind, StoredComment } from '../../../shared/social.js';
+import type { Post } from '../shared/models.js';
+import type { PostHotspot, ReactionKind, StoredComment } from '../shared/social.js';
 import { reactorIds, seedArt } from './seed.js';
 
 /**

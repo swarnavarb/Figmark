@@ -6,6 +6,10 @@
  * reload during frontend work use `npm run dev` (Vite) with the Functions host
  * on :7071 instead; this exists so the whole stack can be exercised anywhere,
  * including CI.
+ *
+ * It starts empty, like a real deployment. `npm run serve -- --fixtures`
+ * starts it with the demo accounts, shops and lots from test-fixtures/
+ * instead (run `npm run build:fixtures` first): what the QA personas use.
  */
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -19,6 +23,11 @@ const staticRoot = join(root, 'app', 'dist');
 // it from disk rather than fetching it from this very server.
 process.env.FIGMARK_SHELL_FILE ??= join(staticRoot, 'index.html');
 const apiRoot = new URL('../api/dist/api/src/functions/', import.meta.url);
+
+if (process.argv.includes('--fixtures')) {
+  const { useFixtures } = await import('./fixtures.mjs');
+  await useFixtures();
+}
 
 const { healthRoute } = await import(new URL('health.js', apiRoot));
 const {

@@ -6,6 +6,7 @@
  * in-memory store. Run `npm run build:api` first.
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,6 +33,7 @@ const { ogRoute: og, ogCardRoute: ogCard, linkPreviewRoute: linkPreview, injectM
 const { questMeRoute: questMe, questClaimRoute: questClaim } = await import(new URL('quest-routes.js', fns));
 const { questView, emptyQuestState } = await import(new URL('quest.js', shared));
 const { growthView, claimGrowth: claimRule } = await import(new URL('store-growth.js', shared));
+await useFixtures();
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };

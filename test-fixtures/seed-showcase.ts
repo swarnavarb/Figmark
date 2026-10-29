@@ -1,5 +1,5 @@
-import type { Listing, Lot, Order, PowerSale, PowerSaleItem } from '../../../shared/models.js';
-import type { Repository } from './repository.js';
+import type { Listing, Lot, Order, PowerSale, PowerSaleItem } from '../shared/models.js';
+import type { Repository } from '../api/src/data/repository.js';
 
 /**
  * Demo fixtures for the Buy tab's two event shelves: lots still filling from

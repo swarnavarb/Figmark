@@ -20,7 +20,7 @@ const user = await auth.requireCapability(request, ['sell']); // throws 401 / 40
 ```
 
 `AuthUser` (in `shared/contracts.ts`) is provider-agnostic: the mock provider
-builds it from a seeded user record, and a real provider builds the same shape
+builds it from a stored user record, and a real provider builds the same shape
 from its own claims. Because it is shared with the frontend, both sides see the
 same identity type.
 
@@ -43,7 +43,7 @@ routes need both. `lot-routes.ts` shows the pattern.
 
 `MockAuthProvider` — development only, in `api/src/auth/mock-provider.ts`.
 
-- Username and password against users seeded into the repository.
+- Username and password against the accounts in the store.
 - Passwords are scrypt-hashed, compared in constant time, and compared even when
   the user does not exist so a missing account and a wrong password take the
   same time to answer.
@@ -143,8 +143,9 @@ whose linked mobile is that same phone** - see [VERIFICATION.md](VERIFICATION.md
 Nothing typed in at sign-up is treated as verified. Each status needs its proof
 in `verification.proofs`; accounts marked verified before real checks existed
 have no proof and so are not trusted. An operator can grant or block buying and
-selling per account from the admin user list. Seeded fixtures are fully
-verified (with `via: 'seed'` proofs) so the demo works end to end.
+selling per account from the admin user list. The test fixtures
+(`test-fixtures/`) are fully verified (with `via: 'seed'` proofs) so the tests
+work end to end.
 
 ## Before this goes near real users
 
@@ -155,6 +156,6 @@ verified (with `via: 'seed'` proofs) so the demo works end to end.
   developer's machine with the in-memory store.
 - The password provider (`AUTH_MODE=mock`, the default) is the live sign-in
   until an external identity provider replaces it. It no longer marks anything
-  verified at sign-up. Its seeded demo accounts have passwords published in this
-  repository and are fully verified, so do not seed a production database
-  (`azure:provision -- --seed`).
+  verified at sign-up. The demo accounts in `test-fixtures/` have passwords
+  published in this repository; they exist only for the tests and local runs,
+  and the API cannot write them anywhere.

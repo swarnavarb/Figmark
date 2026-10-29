@@ -22,8 +22,12 @@ so the whole stack runs with no cloud resources and no Functions Core Tools. For
 frontend work with live reload, run `npm run dev` (Vite on :5173, proxying
 `/api` to :7071) alongside `cd api && npm start` (Functions Core Tools).
 
-Sign in with the one seeded account — `demo@figmark.in` (or its phone,
-`+919812345678`) and password `figmark123`. The auth page offers to fill it in.
+It starts empty, like a real deployment: sign up to create the first account.
+`npm run build:fixtures && npm run serve -- --fixtures` starts it with the demo
+world from `test-fixtures/` instead (shops, lots, orders, and `demo@figmark.in`
+/ `figmark123`, which the sign-in page offers to fill in). Those fixtures exist
+for the tests and local runs only: nothing under `api/` imports them, so no
+deployment can carry them.
 
 ## Human-style QA of buying and selling
 
@@ -53,7 +57,7 @@ browsable with nothing provisioned:
 
 | Seam | Configured | Fallback |
 |---|---|---|
-| Database | Cosmos DB, when `COSMOS_ENDPOINT` is set | In-memory store with seeded data |
+| Database | Cosmos DB, when `COSMOS_ENDPOINT` is set | In-memory store, empty until somebody signs up |
 | Storage | Blob Storage, when `STORAGE_ACCOUNT` is set | In-memory (photos resolve to nothing) |
 | Auth | Static Web Apps identity, when `AUTH_MODE=swa` | Mock username/password provider |
 | Photo search | Claude reads the photo, when `ANTHROPIC_API_KEY` is set | Matches by picture, caption words and probable look-alikes |

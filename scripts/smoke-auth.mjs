@@ -6,17 +6,18 @@
  * revocation, and that credentials never leave the API.
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 
 const base = new URL('../api/dist/', import.meta.url);
 const { MemoryRepository } = await import(new URL('api/src/data/memory-repository.js', base));
 const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js', base));
 const { AuthError } = await import(new URL('api/src/auth/errors.js', base));
-const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD } = await import(new URL('api/src/data/seed.js', base));
+const { DEMO_EMAIL, DEMO_PHONE, DEMO_PASSWORD } = fixtures;
 
 /** Minimal stand-in for HttpRequest: handlers only read headers. */
 const requestWith = (headers = {}) => ({ headers: new Headers(headers) });
 
-const repository = new MemoryRepository();
+const repository = new MemoryRepository(fixtures.fixtureSet());
 await repository.init();
 const auth = new MockAuthProvider(repository, 'test-secret', 3600);
 
@@ -293,7 +294,7 @@ await check('with a durable store, a deleted account ends the session honestly',
     acceptTerms: true, displayName: 'Ghost', email: 'ghost@figmark.example', phone: '+919777000444', password: 'longenough1',
   });
 
-  const durable = new MemoryRepository();
+  const durable = new MemoryRepository(fixtures.fixtureSet());
   await durable.init();
   Object.defineProperty(durable, 'backend', { value: 'cosmos' });
   const other = new MockAuthProvider(durable, 'test-secret', 3600);
@@ -322,7 +323,7 @@ await check('a signed-up account still works on a worker that never saw it', asy
     acceptTerms: true, displayName: 'Cross Worker', email: 'cross@figmark.example', phone: '+919777000888', password: 'longenough1',
   });
 
-  const otherWorker = new MemoryRepository();
+  const otherWorker = new MemoryRepository(fixtures.fixtureSet());
   await otherWorker.init();
   const workerB = new MockAuthProvider(otherWorker, 'test-secret', 3600);
   const carried = requestWith({ authorization: `Bearer ${created.token}` });
@@ -477,7 +478,7 @@ await expectAuthError(
     ).login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
 );
 
-await check('the reason names the store, so the fix is visible', async () => {
+await check('the reason says what to do: sign up', async () => {
   try {
     await new MockAuthProvider(
       stubStore({ connected: true, database: 'figmark', detail: 'connected', signInAccounts: 0 }),
@@ -486,8 +487,8 @@ await check('the reason names the store, so the fix is visible', async () => {
     ).login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
     assert.fail('expected the sign-in to be refused');
   } catch (err) {
-    assert.match(err.message, /no accounts/i);
-    assert.match(err.message, /azure:provision/);
+    assert.match(err.message, /nobody has an account/i);
+    assert.match(err.message, /sign up/i);
     assert.equal(err.status, 503);
   }
 });
@@ -508,14 +509,14 @@ await check('a freshly seeded store counts exactly the accounts it advertises', 
   // the shared one. Catalog sellers and forwarders carry no password hash, so
   // the seed contributes exactly the accounts the sign-in page offers — the
   // number the health check reports is what a visitor could actually use.
-  const fresh = new MemoryRepository();
+  const fresh = new MemoryRepository(fixtures.fixtureSet());
   await fresh.init();
   assert.equal(fresh.status().signInAccounts, fresh.listDemoAccounts().length);
   assert.equal(fresh.status().connected, true);
 });
 
 await check('sign-up needs the Terms agreed, and keeps which version was', async () => {
-  const fresh = new MockAuthProvider(new MemoryRepository(), 'test-secret', 3600);
+  const fresh = new MockAuthProvider(new MemoryRepository(fixtures.fixtureSet()), 'test-secret', 3600);
   const body = { displayName: 'Terms Reader', email: 'terms@figmark.example', phone: '+919811100001', password: 'a-fine-passphrase-3' };
   await assert.rejects(fresh.signup(body), (err) => err.code === 'terms_required');
   const made = await fresh.signup({ ...body, acceptTerms: true });

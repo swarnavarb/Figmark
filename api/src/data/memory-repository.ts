@@ -16,38 +16,29 @@ import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../sh
 import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
 import { BUMP_COOLDOWN_MS, ORDER_FIGURE_FIELDS, sessionDigest } from './repository.js';
 import { photoNamesIn } from '../storage/unused.js';
-import {
-  DEMO_EMAIL,
-  DEMO_PASSWORD,
-  DEMO_PHONE,
-  MANAGER_EMAIL,
-  HANDLER_EMAIL,
-  ARTIST_EMAIL,
-  FORWARDER_EMAIL,
-  PACKER_EMAIL,
-  seedComments,
-  seedFollows,
-  seedForums,
-  seedLikes,
-  seedListings,
-  seedLotBuyers,
-  seedLotOrders,
-  seedLots,
-  seedOpenLot,
-  seedShippedLot,
-  seedLiveSale,
-  seedOrders,
-  seedPosts,
-  seedReviews,
-  seedDisputes,
-  seedWants,
-  seedWantOffers,
-  seedPledges,
-  seedUsers,
-} from './seed.js';
-import { seedFeedDemoPosts } from './seed-feed-demo.js';
-import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
-import { seedTestListings } from './seed-test-catalog.js';
+
+/** What a test or the local server can start the in-memory store with: test-fixtures/ builds one. */
+export interface Fixtures {
+  users: User[];
+  /** Lots that travel their seller's sample route. */
+  routedLots: Lot[];
+  lots: Lot[];
+  listings: Listing[];
+  orders: Order[];
+  powerSales: PowerSale[];
+  comments: ListingComment[];
+  likes: Like[];
+  follows: Follow[];
+  forums: Forum[];
+  posts: Post[];
+  reviews: Review[];
+  disputes: Dispute[];
+  wants: Want[];
+  wantOffers: WantOffer[];
+  pledges: Pledge[];
+  /** The accounts the sign-in page offers, with their published password. */
+  demoAccounts: DemoAccount[];
+}
 
 /**
  * In-process store used when Cosmos DB is not configured.
@@ -89,30 +80,32 @@ export class MemoryRepository implements Repository {
   private readonly handles = new Map<string, { userId: string; isStore: boolean }>();
   private readonly revokedSessions = new Map<string, number>();
 
+  /**
+   * Starts empty, as a real database does. Tests and the local server hand in
+   * the fixtures from test-fixtures/ when they want something to look at; the
+   * API never ships with any.
+   */
+  constructor(private readonly fixtures: Fixtures | null = null) {}
+
   async init(): Promise<void> {
-    for (const user of [...seedUsers(), ...seedLotBuyers()]) this.indexUser(user);
-    for (const lot of [...seedLots(), seedOpenLot(), seedShippedLot()].map((one) => this.withSampleRoute(one))) {
-      this.lots.set(lot.id, lot);
-    }
-    // The Buy tab's demo lots and drops, timed off the real clock.
-    for (const lot of seedShowcaseLots()) this.lots.set(lot.id, lot);
-    for (const listing of [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]) this.listings.set(listing.id, listing);
-    for (const order of [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]) {
-      this.orders.set(order.id, order);
-    }
-    for (const sale of seedShowcaseSales()) this.powerSales.set(sale.id, sale);
-    for (const comment of seedComments()) this.comments.set(comment.id, comment);
-    for (const like of seedLikes()) this.likes.set(likeKey(like.userId, like.listingId), like);
-    for (const follow of seedFollows()) {
-      this.follows.set(followKey(follow.followerId, follow.sellerId), follow);
-    }
-    for (const forum of seedForums()) this.forums.set(forum.id, forum);
-    for (const post of [...seedPosts(), ...seedFeedDemoPosts()]) this.posts.set(post.id, post);
-    for (const review of seedReviews()) this.reviews.set(review.id, review);
-    for (const record of seedDisputes()) this.disputes.set(record.id, record);
-    for (const record of seedWants()) this.wants.set(record.id, record);
-    for (const record of seedWantOffers()) this.wantOffers.set(record.id, record);
-    for (const record of seedPledges()) this.pledges.set(record.id, record);
+    const set = this.fixtures;
+    if (!set) return;
+    for (const user of set.users) this.indexUser(user);
+    for (const lot of set.routedLots.map((one) => this.withSampleRoute(one))) this.lots.set(lot.id, lot);
+    for (const lot of set.lots) this.lots.set(lot.id, lot);
+    for (const listing of set.listings) this.listings.set(listing.id, listing);
+    for (const order of set.orders) this.orders.set(order.id, order);
+    for (const sale of set.powerSales) this.powerSales.set(sale.id, sale);
+    for (const comment of set.comments) this.comments.set(comment.id, comment);
+    for (const like of set.likes) this.likes.set(likeKey(like.userId, like.listingId), like);
+    for (const follow of set.follows) this.follows.set(followKey(follow.followerId, follow.sellerId), follow);
+    for (const forum of set.forums) this.forums.set(forum.id, forum);
+    for (const post of set.posts) this.posts.set(post.id, post);
+    for (const review of set.reviews) this.reviews.set(review.id, review);
+    for (const record of set.disputes) this.disputes.set(record.id, record);
+    for (const record of set.wants) this.wants.set(record.id, record);
+    for (const record of set.wantOffers) this.wantOffers.set(record.id, record);
+    for (const record of set.pledges) this.pledges.set(record.id, record);
   }
 
   private indexUser(user: User): void {
@@ -280,16 +273,7 @@ export class MemoryRepository implements Repository {
   }
 
   listDemoAccounts(): DemoAccount[] {
-    // The accounts that can actually be signed into: the shop, the two people
-    // who work its lots at either end of the water, and a community manager.
-    return [
-      { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
-      { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
-      { identifier: MANAGER_EMAIL, label: `a community manager who decides disputes · ${DEMO_PASSWORD}` },
-      { identifier: HANDLER_EMAIL, label: `the handler getting the parcels out · ${DEMO_PASSWORD}` },
-      { identifier: FORWARDER_EMAIL, label: `the freight forwarder's store · ${DEMO_PASSWORD}` },
-      { identifier: ARTIST_EMAIL, label: `the artist studio taking commissions · ${DEMO_PASSWORD}` },
-    ];
+    return this.fixtures?.demoAccounts ?? [];
   }
 
   async revokeSession(token: string, expiresAt: Date): Promise<void> {
@@ -1187,4 +1171,3 @@ export function identifiersOf(user: User): string[] {
 const likeKey = (userId: string, listingId: string) => `${userId}::${listingId}`;
 const followKey = (followerId: string, sellerId: string) => `${followerId}::${sellerId}`;
 
-export { DEMO_EMAIL, DEMO_PASSWORD, DEMO_PHONE, MANAGER_EMAIL, HANDLER_EMAIL, PACKER_EMAIL };
