@@ -143,8 +143,10 @@ jobs:
     permissions:
       contents: read
     needs: build
-    # development is a permanent, stable non-production environment: every
-    # push to it deploys here, separately from the production job above.
+    # Every push to development deploys here: the production slot of the
+    # development app (stapp-figuremarket-dev, the repository's token), the
+    # app's own address. The production job above uses the production app's
+    # token from the "production" environment instead.
     if: github.event_name == 'push' && github.ref == 'refs/heads/development'
     runs-on: ubuntu-latest
     environment:
@@ -169,11 +171,10 @@ jobs:
           output_location: ''
           skip_app_build: true
           skip_api_build: true
-          # main stays production; deploying from "development" (not main)
-          # makes Azure publish this to its own stable branch environment
-          # instead of the production slot. This input is load-bearing here:
-          # see the comment on the production deploy step above.
-          production_branch: main
+          # This app's production branch is development, so this lands on
+          # its production slot rather than a branch environment of its own.
+          # Load-bearing: see the comment on the production deploy step above.
+          production_branch: development
 
   # The timers. Static Web Apps' managed functions run HTTP triggers only, so
   # the same API build also goes to a plain Function App started from

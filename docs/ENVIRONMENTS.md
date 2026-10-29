@@ -13,7 +13,7 @@ clock app. Nothing is shared between them.
 | Static Web App | `stapp-figuremarket-dev`, Free plan | `stapp-figmark-prod`, Free plan |
 | Clock Function App | `func-figmark-clocks-dev` (optional; classic Consumption, Windows, Node 22, no Application Insights, no `push-wake`) | `func-figmark-clocks-prod` (classic Consumption, Windows, Node 22, trimmed Application Insights, `push-wake` on) |
 | `SITE_ENVIRONMENT` | `development` (test-site banner, kept out of search engines) | `production` |
-| `COSMOS_AUTOSEED` | `on` (demo accounts) | **unset, always** |
+| `COSMOS_AUTOSEED` | unset (starts empty, like production; set `on` to get the demo accounts) | **unset, always** |
 
 A release: work lands on `development` and is checked on the development
 site. A pull request from `development` into `main`, merged, builds once; the
@@ -238,12 +238,17 @@ az staticwebapp hostname set -n stapp-figmark-prod -g rg-figmark-prod \
   --hostname figmark.in --validation-method dns-txt-token
 ```
 
-## 9. Development on its own address (optional)
+## 9. Development on its own address
 
-A custom domain attaches to an app's production environment only. The
-development site is today the `development` environment of
-`stapp-figuremarket-dev`, whose production slot served the old production
-until step 7. To give development `dev.figmark.in`:
+Done on 29 October 2026: development deploys to the production slot of
+`stapp-figuremarket-dev` (`icy-stone-0498a9900.6.azurestaticapps.net`), and the
+app's `development` environment was deleted. Its database was emptied and
+`COSMOS_AUTOSEED` removed, so development starts empty like production. The
+steps, for reference:
+
+A custom domain attaches to an app's production environment only, which is
+why development moved there. Steps 1 and 2 are done; step 3 gives it
+`dev.figmark.in` whenever that is wanted:
 
 1. Copy every setting of the app's `development` environment onto its
    production slot (`az staticwebapp appsettings list ... --environment-name development`,
