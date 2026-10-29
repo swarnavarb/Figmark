@@ -1,5 +1,5 @@
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNow } from '../clock';
 import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';

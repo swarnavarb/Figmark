@@ -13,14 +13,13 @@ import { brandHueFor, formatDate, timeAgo } from '../format';
 import { useSession } from '../session';
 import { Canopy } from '../components/ListingBlocks';
 import {
-  Bio, FollowButton, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
+  Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
 } from '../components/ProfileParts';
 import { CollectorProfile } from './CollectorProfile';
 import { ShopStrip, tagPath } from '../components/ShopCards';
 import { tagKey } from '@shared/shop-tags';
 import type { ShopCard } from '../api';
 import '../styles/ProfileByHandlePage.css';
-import { factsOf } from '@shared/catalog';
 
 /**
  * Whatever lives at `/<username>`.

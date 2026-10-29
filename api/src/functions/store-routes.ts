@@ -11,7 +11,7 @@ import {
 } from '../../../shared/service-stores.js';
 import { crewButtons, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import {
-  currentStepOf, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, stepButtonLabel, stepTickKey, ticksOf,
+  currentStepOf, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, stepTickKey, ticksOf,
 } from '../../../shared/routes.js';
 import { isCancelledLike, protectionFeeMinor } from '../../../shared/orders.js';
 import { marketSettings } from '../settings.js';

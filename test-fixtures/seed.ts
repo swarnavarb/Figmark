@@ -23,6 +23,10 @@ import { isCancelledLike } from '../shared/orders.js';
 import type { ReactionKind, StoredComment } from '../shared/social.js';
 import { hashPassword } from '../api/src/auth/passwords.js';
 
+/** Every fixture account shares one password, so it is hashed once. */
+let DEMO_HASH: string | null = null;
+const demoHash = () => (DEMO_HASH ??= hashPassword(DEMO_PASSWORD));
+
 /**
  * Development seed data.
  *
@@ -143,7 +147,7 @@ export function seedUsers(): User[] {
       bio: 'Collect 1/7 scale and the odd Gunpla. Pay the same day, always.',
       tags: ['Scale figures', 'Mumbai', 'Pays fast'],
       isAdmin: false,
-      passwordHash: hashPassword(DEMO_PASSWORD),
+      passwordHash: demoHash(),
       verification: verification(true),
       buyerTrust: trust(72, 6),
       sellerTrust: sellerTrust(58, 3, 1),
@@ -198,7 +202,7 @@ export function seedUsers(): User[] {
       phone: '+919812300099',
       displayName: 'Meera Iyer',
       isAdmin: false,
-      passwordHash: hashPassword(DEMO_PASSWORD),
+      passwordHash: demoHash(),
       verification: verification(true),
       buyerTrust: trust(88, 12),
       sellerTrust: sellerTrust(),
@@ -222,7 +226,7 @@ export function seedUsers(): User[] {
       phone: PACKER_PHONE,
       displayName: 'Baiyun Hobby Trading',
       isAdmin: false,
-      passwordHash: hashPassword(DEMO_PASSWORD),
+      passwordHash: demoHash(),
       verification: verification(false),
       buyerTrust: trust(),
       sellerTrust: sellerTrust(),
@@ -379,7 +383,7 @@ function handler(
     phone,
     displayName: company,
     isAdmin: false,
-    passwordHash: password ? hashPassword(DEMO_PASSWORD) : null,
+    passwordHash: password ? demoHash() : null,
     verification: verification(true),
     buyerTrust: trust(),
     sellerTrust: sellerTrust(),
@@ -558,7 +562,7 @@ function artist(
     phone,
     displayName: studio.companyName,
     isAdmin: false,
-    passwordHash: password ? hashPassword(DEMO_PASSWORD) : null,
+    passwordHash: password ? demoHash() : null,
     verification: verification(true),
     buyerTrust: trust(),
     sellerTrust: sellerTrust(),
@@ -595,7 +599,7 @@ function forwarder(
     phone,
     displayName: company,
     isAdmin: false,
-    passwordHash: password ? hashPassword(DEMO_PASSWORD) : null,
+    passwordHash: password ? demoHash() : null,
     verification: verification(true),
     buyerTrust: trust(),
     sellerTrust: sellerTrust(),

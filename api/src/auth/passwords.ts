@@ -4,47 +4,37 @@ import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'no
  * Password hashing for the mock auth provider only.
  *
  * A real provider owns credentials externally and never calls this. It exists
- * so seeded development accounts are not stored as plaintext, not because this
- * project intends to run its own credential store.
+ * so accounts are not stored as plaintext, not because this project intends
+ * to run its own credential store.
  */
 
 const KEY_LENGTH = 64;
 
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16);
-  const derived = scryptSync(password, salt, KEY_LENGTH);
-  return `${salt.toString('hex')}:${derived.toString('hex')}`;
-}
-
-export function verifyPassword(password: string, stored: string | null): boolean {
-  const parsed = parseStored(stored);
-  if (!parsed) return false;
-  const actual = scryptSync(password, parsed.salt, KEY_LENGTH, parsed.params);
-  return timingSafeEqual(actual, parsed.expected);
-}
-
 /**
- * The cost new hashes are made at: N=2^14, r=8, p=5, one of OWASP's
- * equivalent scrypt settings. It raises the work per guess fivefold over
- * Node's default (p=1) while keeping each hash to 16 MB of memory, so a burst
- * of sign-ins cannot exhaust a worker the way N=2^17 (128 MB each) would.
- * Stored as `s2:<salt>:<hash>`; a bare `<salt>:<hash>` is the older p=1 form,
- * still accepted and re-made at this cost on the next good sign-in.
+ * The cost hashes are made at: N=2^14, r=8, p=5, one of OWASP's equivalent
+ * scrypt settings. It raises the work per guess fivefold over Node's default
+ * (p=1) while keeping each hash to 16 MB of memory, so a burst of sign-ins
+ * cannot exhaust a worker the way N=2^17 (128 MB each) would. Stored as
+ * `s2:<salt>:<hash>`.
  */
 const CURRENT_PREFIX = 's2';
 const CURRENT_PARAMS = { N: 16384, r: 8, p: 5 } as const;
-const LEGACY_PARAMS = { N: 16384, r: 8, p: 1 } as const;
 
-type Params = typeof CURRENT_PARAMS | typeof LEGACY_PARAMS;
+/** The blocking form, for the test fixtures; the API itself uses `hashPasswordAsync`. */
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  const derived = scryptSync(password, salt, KEY_LENGTH, CURRENT_PARAMS);
+  return `${CURRENT_PREFIX}:${salt.toString('hex')}:${derived.toString('hex')}`;
+}
 
 /**
  * scrypt off the main thread. The sync form held the whole worker for the
  * length of every hash, so a burst of sign-ins queued every other request
  * behind them.
  */
-function scryptAsync(password: string, salt: Buffer, params: Params = CURRENT_PARAMS): Promise<Buffer> {
+function scryptAsync(password: string, salt: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    scrypt(password, salt, KEY_LENGTH, params, (err, derived) => (err ? reject(err) : resolve(derived)));
+    scrypt(password, salt, KEY_LENGTH, CURRENT_PARAMS, (err, derived) => (err ? reject(err) : resolve(derived)));
   });
 }
 
@@ -58,16 +48,13 @@ export async function hashPasswordAsync(password: string): Promise<string> {
 /** Hashed against when there is no account, so "no such account" takes as long as "wrong password". */
 const DECOY_SALT = randomBytes(16);
 
-/** A stored hash's salt, digest and the cost it was made at; null when unreadable. */
-function parseStored(stored: string | null): { salt: Buffer; expected: Buffer; params: Params } | null {
-  const parts = (stored ?? '').split(':');
-  const [saltHex, hashHex, params] = parts.length === 3 && parts[0] === CURRENT_PREFIX
-    ? [parts[1], parts[2], CURRENT_PARAMS]
-    : parts.length === 2 ? [parts[0], parts[1], LEGACY_PARAMS] : [undefined, undefined, LEGACY_PARAMS];
-  if (!saltHex || !hashHex) return null;
+/** A stored hash's salt and digest; null when unreadable. */
+function parseStored(stored: string | null): { salt: Buffer; expected: Buffer } | null {
+  const [prefix, saltHex, hashHex, ...rest] = (stored ?? '').split(':');
+  if (prefix !== CURRENT_PREFIX || !saltHex || !hashHex || rest.length > 0) return null;
   const expected = Buffer.from(hashHex, 'hex');
   if (expected.length !== KEY_LENGTH) return null;
-  return { salt: Buffer.from(saltHex, 'hex'), expected, params };
+  return { salt: Buffer.from(saltHex, 'hex'), expected };
 }
 
 /**
@@ -81,13 +68,8 @@ export async function verifyPasswordAsync(password: string, stored: string | nul
     await scryptAsync(password, DECOY_SALT);
     return false;
   }
-  const actual = await scryptAsync(password, parsed.salt, parsed.params);
+  const actual = await scryptAsync(password, parsed.salt);
   return timingSafeEqual(actual, parsed.expected);
-}
-
-/** True for a hash made at less than today's cost, to be re-made once the password is known good. */
-export function passwordNeedsRehash(stored: string | null): boolean {
-  return !(stored ?? '').startsWith(`${CURRENT_PREFIX}:`);
 }
 
 /** Long enough to resist guessing once breached and common passwords are out. */

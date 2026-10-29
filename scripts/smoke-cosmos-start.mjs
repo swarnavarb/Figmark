@@ -3,9 +3,8 @@
  *
  * A database starts empty and stays empty: the API writes no accounts, no
  * listings, nothing, until somebody signs up. What start-up does do is bring
- * an existing database up to date - rows moved to a newer shape, leftovers
- * cleared, containers created and given their policies - without making the
- * first request wait for it.
+ * an existing database up to date - containers created and given their
+ * policies - without making the first request wait for it.
  *
  * Cosmos is stood in for by Maps with the shape the repository actually calls:
  * point reads, upserts, projections and the one count query. A populated
@@ -77,18 +76,14 @@ function fakeContainer(store) {
             if (/WHERE c\.id >= @from AND c\.id < @to$/.test(query)) {
               return { resources: [...store.values()].filter((doc) => doc.id >= params['@from'] && doc.id < params['@to']) };
             }
-            // `SELECT c.id, c.<key> AS pk[, c.<field> AS ref] FROM c [WHERE c.withdrawn = true]`
-            const projected = query.match(/^SELECT c\.id, c\.(\w+) AS pk(?:, c\.(\w+) AS ref)? FROM c( WHERE c\.withdrawn = true)?$/);
+            // `SELECT c.id, c.<key> AS pk[, c.<field> AS ref] FROM c`
+            const projected = query.match(/^SELECT c\.id, c\.(\w+) AS pk(?:, c\.(\w+) AS ref)? FROM c$/);
             if (projected) {
-              const [, pk, ref, withdrawnOnly] = projected;
+              const [, pk, ref] = projected;
               return {
-                resources: [...store.values()]
-                  .filter((doc) => !withdrawnOnly || doc.withdrawn === true)
-                  .map((doc) => ({ id: doc.id, pk: doc[pk], ...(ref ? { ref: doc[ref] } : {}) })),
+                resources: [...store.values()].map((doc) => ({ id: doc.id, pk: doc[pk], ...(ref ? { ref: doc[ref] } : {}) })),
               };
             }
-            // The legacy-parts projection: nothing in these fixtures is inline.
-            if (/AS legacy FROM c$/.test(query)) return { resources: [...store.values()].map((doc) => ({ id: doc.id, legacy: false })) };
             return { resources: [...store.values()] };
           },
         };
@@ -277,70 +272,6 @@ await check('is left exactly as it is', async () => {
   assert.deepEqual(untouched.listDemoAccounts(), [], 'never advertise a password against real accounts');
 });
 
-await check('rows from older buyer protection are moved to the new shape, holders becoming managers', async () => {
-  // Protected payments used to be held by a member the buyer picked, and rows
-  // named them. A deployed database still holds those rows, and every read
-  // expects the new shape - so they are moved before anybody reads one.
-  const containers = populated();
-  const repository = repositoryOn(containers);
-  await repository.init();
-  await repository.settled();
-
-  const users = containers.get('users');
-  const orders = containers.get('orders');
-  const disputes = containers.get('disputes');
-  const meera = users.get('usr_escrow_meera');
-  meera.escrowRights = { ...meera.managerRights, feeBasisPoints: 150 };
-  delete meera.managerRights;
-  // The original shape: the holder named on the order.
-  const order = orders.get('ord_1001');
-  order.escrow = order.hold;
-  delete order.hold;
-  delete order.protection.managerId;
-  delete order.protection.managerName;
-  order.protection = { ...order.protection, escrowAgentId: 'usr_escrow_meera', escrowName: 'Meera Iyer' };
-  order.disputeLinks = [{ id: 'dsp_old', topic: 'escrow', subject: 'dsp_old', raisedBy: 'usr_demo', raisedSide: 'buyer', raisedAt: order.createdAt }];
-  // The shape the release before this one left: the holder dropped, but the
-  // protection fee in the ledger still says who it paid.
-  const dropped = orders.get('ord_1002');
-  delete dropped.protection.managerId;
-  delete dropped.protection.managerName;
-  containers.get('siteContent').set('fee-ledger', {
-    id: 'fee-ledger', data: { entries: [{ kind: 'protection', reference: 'ord_1002', managerId: 'usr_escrow_meera' }] },
-  });
-  const dispute = [...disputes.values()][0];
-  dispute.topic = 'escrow';
-  containers.get('siteContent').delete('migration:protection-managers');
-
-  resetCalls();
-  const restarted = repositoryOn(containers);
-  await restarted.init();
-  assert.ok(calls.writes >= 5, `expected the moved rows to be written, saw ${calls.writes} writes`);
-
-  assert.ok(!('escrowRights' in meera));
-  assert.ok(meera.managerRights?.grantedAt, 'the grant is kept, under its new name');
-  assert.ok(!('feeBasisPoints' in meera.managerRights));
-  assert.ok(!('escrow' in order));
-  assert.equal(order.hold.state, 'held');
-  assert.ok(!('escrowAgentId' in order.protection) && !('escrowName' in order.protection));
-  assert.equal(order.protection.managerId, 'usr_escrow_meera', 'the holder is now the assigned manager');
-  assert.equal(order.protection.managerName, 'Meera Iyer');
-  assert.equal(dropped.protection.managerId, 'usr_escrow_meera', 'recovered from the fee it paid');
-  assert.equal(order.disputeLinks[0].topic, 'held_payment');
-  assert.equal(dispute.topic, 'held_payment');
-  assert.match(restarted.status().detail, /Moved \d+ row\(s\)/);
-  // Its background passes finish first: each leaves the marker that lets later
-  // starts skip it.
-  await restarted.settled();
-
-  // Once, and never again.
-  resetCalls();
-  const again = repositoryOn(containers);
-  await again.init();
-  await again.settled();
-  assert.equal(calls.writes, 0);
-});
-
 await check('starting against an up-to-date database is cheap', async () => {
   // The regression this exists to catch. Checking each row with its own round
   // trip is correct and unusable: two hundred sequential calls on every cold
@@ -389,85 +320,27 @@ await check('a populated database serves before its background passes have run',
   await restarted.settled();
 });
 
-console.log('\na database from before the space savings');
+console.log('\na database from before a container policy');
 
-await check('leftovers are removed once, and existing containers take the new policy', async () => {
+await check('existing containers take the policy the schema declares, once', async () => {
   const containers = populated();
   const warm = repositoryOn(containers);
   await warm.init();
   await warm.settled();
 
-  // What an older release left: a taken-back notice kept with a flag, a
-  // notice and a save belonging to an account deleted without them, audit
-  // days with no expiry, and containers created before TTL and exclusions.
-  const site = containers.get('siteContent');
-  site.delete('migration:storage-cleanup');
-  site.delete('migration:container-policies');
-  const notifications = containers.get('notifications');
-  const at = new Date().toISOString();
-  notifications.set('ntf_withdrawn', { id: 'ntf_withdrawn', userId: 'usr_demo', withdrawn: true, createdAt: at });
-  notifications.set('ntf_kept', { id: 'ntf_kept', userId: 'usr_demo', createdAt: at });
-  notifications.set('ntf_orphan', { id: 'ntf_orphan', userId: 'usr_deleted', createdAt: at });
-  const listingId = [...containers.get('listings').keys()][0];
-  containers.get('likes').set('usr_deleted__x', { id: 'usr_deleted__x', userId: 'usr_deleted', listingId });
-  containers.get('comments').set('cmt_orphan', { id: 'cmt_orphan', listingId: 'lst_deleted', body: 'hello' });
-  const old = new Date(Date.now() - 120 * 86_400_000).toISOString();
-  site.set('audit-2000-01-01', { id: 'audit-2000-01-01', data: { entries: [] }, createdAt: old, updatedAt: old });
-  site.set('audit-recent', { id: 'audit-recent', data: { entries: [] }, createdAt: at, updatedAt: at });
+  // A container created before its TTL and exclusions were declared.
+  containers.get('siteContent').delete('migration:container-policies');
   policies.set('notifications', { id: 'notifications', partitionKey: { paths: ['/userId'] }, indexingPolicy: {} });
 
   const restarted = repositoryOn(containers);
   await restarted.init();
   await restarted.settled();
 
-  assert.ok(!notifications.has('ntf_withdrawn'), 'a taken-back notice is deleted');
-  assert.ok(!notifications.has('ntf_orphan'), "a deleted account's notice is deleted");
-  assert.ok(notifications.has('ntf_kept'), 'an ordinary notice stays');
-  assert.ok(!containers.get('likes').has('usr_deleted__x'));
-  assert.ok(!containers.get('comments').has('cmt_orphan'));
-  assert.ok(!site.has('audit-2000-01-01'), 'an audit day past its 90 is deleted');
-  assert.ok(site.get('audit-recent').ttl > 89 * 86_400, 'a recent one is given its expiry');
   const notificationsPolicy = policies.get('notifications');
   assert.equal(notificationsPolicy.defaultTtl, 90 * 86_400, 'notifications now expire');
   assert.ok(notificationsPolicy.indexingPolicy.excludedPaths.some((entry) => entry.path === '/body/?'));
   assert.deepEqual(notificationsPolicy.partitionKey, { paths: ['/userId'] }, 'the partition key is kept');
-  assert.match(restarted.status().detail, /Removed .*withdrawn notice/);
-
-  // Once, and never again.
-  resetCalls();
-  const again = repositoryOn(containers);
-  await again.init();
-  await again.settled();
-  assert.equal(calls.writes, 0, `nothing left to do, but wrote ${calls.writes} times`);
-});
-
-await check('listings are relabelled to match their lot and given their popularity, once', async () => {
-  const containers = populated();
-  const warm = repositoryOn(containers);
-  await warm.init();
-  await warm.settled();
-
-  // What an older release left: an item filed into a lot while still marked
-  // in hand, one from before sourcing existed, and no stored popularity.
-  const listings = containers.get('listings');
-  const [filed, unsourced, plain] = [...listings.values()];
-  Object.assign(filed, { lotId: 'lot_any', sourcing: 'in_hand' });
-  Object.assign(unsourced, { lotId: null });
-  delete unsourced.sourcing;
-  Object.assign(plain, { viewCount: 7, likeCount: 2 });
-  for (const listing of listings.values()) delete listing.popularity;
-  containers.get('siteContent').delete('migration:listing-sourcing');
-
-  const restarted = repositoryOn(containers);
-  await restarted.init();
-  await restarted.settled();
-
-  assert.equal(filed.sourcing, 'import', 'an item in a lot is an import');
-  assert.equal(unsourced.sourcing, 'in_hand', 'an item from before sourcing, in no lot, is in hand');
-  assert.ok(listings.has(unsourced.id), 'nothing is deleted');
-  assert.deepEqual(containers.get('siteContent').get('migration:listing-sourcing').data.legacy, [unsourced.id]);
-  assert.equal(plain.popularity, 27);
-  assert.ok([...listings.values()].every((l) => l.popularity === (l.viewCount ?? 0) + (l.likeCount ?? 0) * 10));
+  assert.match(restarted.status().detail, /Applied indexing and expiry policy to: .*notifications/);
 
   // Once, and never again.
   resetCalls();

@@ -3,7 +3,7 @@ import { CommunityNotices } from '../components/CommunityAlerts';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ForumRow, type ForumsResponse, type PostCard } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
-import { SocialPostCard, postHref } from '../components/SocialPost';
+import { SocialPostCard } from '../components/SocialPost';
 import { PersonVoice, VoicePicker, VoiceProvider, useVoice } from '../components/SocialVoice';
 import { ChannelList, ChannelRoom, forumHasNews, seenMap } from '../components/Channels';
 import { Composer } from '../components/SocialComposer';

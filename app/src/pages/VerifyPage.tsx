@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { AADHAAR_MOBILE_RULE, maskMobile, verifiedChecks } from '@shared/verification';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { AADHAAR_MOBILE_RULE, maskMobile } from '@shared/verification';
 import { ApiRequestError, api, type VerificationStatus } from '../api';
-import { ErrorNotice, Icon, PageError } from '../components/ui';
+import { ErrorNotice, PageError } from '../components/ui';
 import { useSession } from '../session';
 import { PageLoading } from '../components/Feedback';
 

@@ -1,6 +1,6 @@
 import { confirmSentence } from '../components/Ask';
-import { Fragment, createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { BackLink } from '../components/ScrollManager';
 import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
 import { setButtonLibrary, stepKinds } from '@shared/route-buttons';

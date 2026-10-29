@@ -142,12 +142,7 @@ export function payoutRef(): string {
  * The fee ledger is one document per calendar month (`fee-ledger-2026-10`),
  * split further only if a month outgrows a document - see site-log.ts. It is a
  * financial record, so nothing is ever trimmed from it.
- *
- * Before the split it was the single document `fee-ledger`, trimmed to its
- * newest 5,000 entries. Whatever that still holds moves into its months the
- * first time the ledger is read or written, and the old document goes.
  */
-const LEGACY_LEDGER_ID = 'fee-ledger';
 const LEDGER_PREFIX = 'fee-ledger-';
 const ledgerMonthId = (paidAt: string) => `${LEDGER_PREFIX}${paidAt.slice(0, 7)}`;
 export const ACTIONS_ID = 'dispute-actions';
@@ -217,33 +212,13 @@ export async function mutateList<T>(
   });
 }
 
-/** Moves the pre-split ledger into its months, once; a no-op point read after that. */
-async function migrateLegacyLedger(repository: Repo): Promise<void> {
-  const saved = await repository.getSiteContent(LEGACY_LEDGER_ID);
-  if (!saved) return;
-  const legacy = (saved.data as { entries?: unknown } | undefined)?.entries;
-  if (Array.isArray(legacy) && legacy.length > 0) {
-    const byMonth = new Map<string, LedgerEntry[]>();
-    for (const entry of legacy as LedgerEntry[]) {
-      const id = ledgerMonthId(entry.paidAt);
-      byMonth.set(id, [...(byMonth.get(id) ?? []), entry]);
-    }
-    // Appends skip ids already there, so a pass cut short and run again
-    // records nothing twice.
-    for (const [id, entries] of byMonth) await appendToLog(repository, id, 'entries', entries, 'system');
-  }
-  await repository.deleteSiteContent(LEGACY_LEDGER_ID);
-}
-
 /** Every fee ever paid, oldest first. */
 export async function loadLedger(repository: Repo): Promise<LedgerEntry[]> {
-  await migrateLegacyLedger(repository);
   const entries = await readLog<LedgerEntry>(repository, LEDGER_PREFIX, `${LEDGER_PREFIX}~`, 'entries');
   return entries.sort((a, b) => a.paidAt.localeCompare(b.paidAt));
 }
 
 async function recordLedger(repository: Repo, entry: LedgerEntry): Promise<void> {
-  await migrateLegacyLedger(repository);
   await appendToLog(repository, ledgerMonthId(entry.paidAt), 'entries', [entry], entry.payerId);
 }
 

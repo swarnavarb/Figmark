@@ -962,15 +962,8 @@ function DisputePanel({ state }: { state: OrderState }) {
   const [raising, setRaising] = useState<{ subject?: string; label: string } | null>(null);
   const { order } = state;
   // Every dispute on the order, of any kind, each opening the one page it is
-  // worked on. A held-payment dispute from before orders indexed them is found by
-  // the pointer it left.
-  const raised = [...(order.disputeLinks ?? [])];
-  if (order.hold.disputeId && !raised.some((link) => link.id === order.hold.disputeId)) {
-    raised.push({
-      id: order.hold.disputeId, topic: 'held_payment', subject: order.hold.disputeId,
-      raisedBy: '', raisedSide: state.side ?? 'buyer', raisedAt: order.updatedAt,
-    });
-  }
+  // worked on.
+  const raised = order.disputeLinks ?? [];
   const counterpartyId = state.side === 'buyer' ? order.sellerId : order.buyerId;
 
   return (

@@ -132,7 +132,7 @@ async function list(request: HttpRequest, _context: InvocationContext) {
   const latest = await repository.listNotifications(user.id, UNREAD_WINDOW);
   // The next held notice to come into view, which needs no write to appear.
   const heldUntil = latest.reduce((soonest, row) => {
-    const at = row.notBefore && !row.withdrawn ? Date.parse(row.notBefore) : NaN;
+    const at = row.notBefore ? Date.parse(row.notBefore) : NaN;
     return at > now && (soonest === 0 || at < soonest) ? at : soonest;
   }, 0);
   // Counted as the bell shows them: a group is unread when its line is.

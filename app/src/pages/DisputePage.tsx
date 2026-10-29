@@ -9,7 +9,7 @@ import {
 import type { DisputeRound, DisputeSanction, DisputeSanctionKind } from '@shared/models';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumRow } from '../api';
 import { ScreenshotPicker } from '../components/DisputeFlows';
-import { Avatar, ErrorNotice, Icon, useConfirm, PageError } from '../components/ui';
+import { Avatar, ErrorNotice, useConfirm, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { PageLoading } from '../components/Feedback';
 import '../styles/DisputePage.css';

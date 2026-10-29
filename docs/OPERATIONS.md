@@ -2,7 +2,7 @@
 
 What has to be true before real people use Figmark, and how to keep it that
 way. Resource names follow `docs/AZURE.md` (`rg-figuremarket-dev`,
-`cosmos-figuremarket-dev`, `stfiguremarketdev`, `stapp-figuremarket-dev`);
+`cosmos-figmark-dev`, `stfiguremarketdev`, `stapp-figuremarket-dev`);
 use the production ones in their place.
 
 ## 1. Production settings
