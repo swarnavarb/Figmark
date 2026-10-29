@@ -1,6 +1,5 @@
-import { ReportButton } from '../components/ReportButton';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
 import { Avatar, Icon, PersonLink, Thumb, useConfirm, PageError } from '../components/ui';
 import { SkeletonText } from '../components/Feedback';
@@ -37,7 +36,6 @@ export function ListingPage() {
   const { user, gate } = useSession();
   const navigate = useNavigate();
   const bumpItem = useBump();
-  const location = useLocation();
   // Anything here a guest reaches for opens the sign-in popup; they stay on this item.
   const lock = user ? '' : ' is-locked';
   const lockMark = user ? null : <span className="lockmark" aria-hidden="true">🔒</span>;

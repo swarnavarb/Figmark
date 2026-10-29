@@ -17,7 +17,6 @@ import { error, handler, json } from './http.js';
  * when listing, and the Data tab's view of how each tag does.
  */
 
-type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** The keys a listing stands for: its tags and its category. */
 const keysOf = (listing: Pick<Listing, 'tags' | 'category'>) =>

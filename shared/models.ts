@@ -2713,11 +2713,6 @@ export interface Notification extends BaseDocument {
   /** The undoable action it reports, so undoing it can take the notice back. */
   undoId?: string;
   /**
-   * Taken back because what it reported was undone. Never shown. Only rows
-   * written before take-backs became deletes carry it; start-up removes them.
-   */
-  withdrawn?: boolean;
-  /**
    * When it went out to the person's devices. Set as it is written for an
    * ordinary notice; left off a held one until the clock sends it, which is
    * how the clock knows what is still owed.

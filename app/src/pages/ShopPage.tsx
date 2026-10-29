@@ -65,9 +65,9 @@ import {
 } from '../api';
 import { ItemHead } from '../components/ItemHead';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto, PageError } from '../components/ui';
-import { SkeletonText, useToast, Loading, PageLoading } from '../components/Feedback';
+import { Loading, PageLoading } from '../components/Feedback';
 import {
-  currencySymbol, formatCount, formatDateOrdinal, formatMoney, formatTotals, formatWeight, fromMinor, timeAgo, toMinor,
+  currencySymbol, formatCount, formatDateOrdinal, formatMoney, formatTotals, fromMinor, timeAgo, toMinor,
 } from '../format';
 import { useSession } from '../session';
 import { Svg } from '../components/ListingBlocks';
@@ -1381,12 +1381,6 @@ const ORDER_STATE_LABELS: Record<OrderState, string> = {
   active: 'Active',
   completed: 'Completed',
   closed: 'Cancelled',
-};
-
-const ORDER_STATE_ICONS: Record<OrderState, string> = {
-  active: '🔥',
-  completed: '✅',
-  closed: '🚫',
 };
 
 /**

@@ -1,5 +1,5 @@
 import { formatCount } from '../format';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { BUMPS_FOR } from '@shared/quest';

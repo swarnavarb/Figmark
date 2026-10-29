@@ -18,7 +18,7 @@ import { staffMfaMissing } from '../auth/mock-provider.js';
 import { getRepository } from '../data/index.js';
 import { countCompleted, dropFromCollection } from '../delivery.js';
 import {
-  Refusal, activeAlert, activeNotices, availableManagers, bringReleaseUpToDate, bringUpToDate, chargeFee, excludedFrom, favouredName, finalizeDecided,
+  Refusal, activeAlert, activeNotices, availableManagers, bringReleaseUpToDate, bringUpToDate, chargeFee, favouredName, finalizeDecided,
   commit, isManager, loadLedger, managerName, newRound, openCaseCount, orderOf, payoutRef, personName, pickManager,
   pickManagerFor, recordSettled,
 } from '../community.js';

@@ -1,10 +1,10 @@
 import { lotNo } from '@shared/routes';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { BackLink } from '../components/ScrollManager';
 import { LOT_CARD_LABELS } from '@shared/enums';
 import { ApiRequestError, api, type LotBoard } from '../api';
-import { Icon, PageError } from '../components/ui';
+import { PageError } from '../components/ui';
 import { LotPeople } from '../components/LotPeople';
 import { PageLoading } from '../components/Feedback';
 import '../styles/LotBoardPage.css';

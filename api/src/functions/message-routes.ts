@@ -178,9 +178,7 @@ async function inbox(request: HttpRequest, _context: InvocationContext) {
       unread: isMuted ? 0 : unread,
       muted: isMuted,
     };
-  // A thread between two of one account's own handles is nobody's
-  // conversation; any written before that was refused stays out of the list.
-  }).filter((row) => !blocked.has(row.them.userId) && row.them.userId !== row.us.userId);
+  }).filter((row) => !blocked.has(row.them.userId));
 
   rows.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
   // The names are snapshots; their levels are read fresh, in one batch.

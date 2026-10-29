@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactN
 import { Link, useSearchParams } from 'react-router-dom';
 import { BackBar } from '../components/ScrollManager';
 import {
-  WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
+  WAITING_FOR_LOT, itemLeaveIndex, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
   type RouteStep, type TrackingRoute, lotNo,
 } from '@shared/routes';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';

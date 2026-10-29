@@ -115,9 +115,9 @@ export function pushEnabled(): boolean {
   return replaced || pushKeys() !== null;
 }
 
-/** Shown in the bell: not taken back, and not still held. */
+/** Shown in the bell: not still held. */
 export function isVisibleNotice(row: Notification, now = Date.now()): boolean {
-  return !row.withdrawn && !(row.notBefore && Date.parse(row.notBefore) > now);
+  return !(row.notBefore && Date.parse(row.notBefore) > now);
 }
 
 /**

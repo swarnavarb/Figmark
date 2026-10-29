@@ -15,7 +15,7 @@ import type { Repository } from '../data/repository.js';
 import { config } from '../config.js';
 import { AuthError } from './errors.js';
 import { USERNAME_PROBLEMS, checkUsername, handleShapeProblem, suggestUsername } from '../../../shared/handles.js';
-import { PASSWORD_MAX_LENGTH, hashPasswordAsync, passwordNeedsRehash, passwordProblem, verifyPasswordAsync } from './passwords.js';
+import { PASSWORD_MAX_LENGTH, hashPasswordAsync, passwordProblem, verifyPasswordAsync } from './passwords.js';
 import { normalizeIndianMobile, verifiedChecks } from '../../../shared/verification.js';
 import { LEGAL_VERSION } from '../../../shared/legal.js';
 import {
@@ -297,17 +297,6 @@ export class MockAuthProvider implements AuthService {
     // A good password clears the record, so a legitimate user who mistyped
     // twice is not held back by it.
     await forget(key, 'login_fail');
-
-    // A hash from before the cost was raised is re-made now that the password
-    // is known. Best effort: failing to save it costs nothing but the upgrade.
-    if (passwordNeedsRehash(user.passwordHash ?? null)) {
-      try {
-        user.passwordHash = await hashPasswordAsync(credentials.password);
-        await this.repository.updateUser(user);
-      } catch {
-        // Tried again on the next sign-in.
-      }
-    }
 
     const principal = toAuthUser(user);
     const { token, expiresAt } = createSessionToken(

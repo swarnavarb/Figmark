@@ -38,8 +38,8 @@ app.timer('clock', {
   schedule: '0 */5 * * * *',
   handler: async (timer: Timer, context: InvocationContext) => {
     const repository = await getRepository();
-    // Names the store: the showcase sales are live on both, so the count alone
-    // cannot tell a missing COSMOS_ENDPOINT from a working one.
+    // Names the store, so the count alone never hides a missing
+    // COSMOS_ENDPOINT behind a working-looking log line.
     const store = config.cosmos ? 'Cosmos' : 'the in-memory store';
 
     /* Every live sale moves to where it should be, watched or not. */

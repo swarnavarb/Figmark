@@ -30,7 +30,7 @@ import { OpeningCard } from './Showcase';
 
 /* What you have seen: see channelSeen.ts, kept apart so the header can read it without this screen. */
 export { forumHasNews, markSeen, seenMap, unreadOf } from './channelSeen';
-import { seenMap, markSeen, unreadOf, forumHasNews } from './channelSeen';
+import { seenMap, markSeen, unreadOf } from './channelSeen';
 
 /* ── The list ──────────────────────────────────────────────────────────── */
 

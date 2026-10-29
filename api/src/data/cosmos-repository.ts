@@ -4,7 +4,7 @@ import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import { createHash } from 'node:crypto';
-import { CosmosClient, type Container, type ContainerRequest, type Database, type IndexingPolicy, type PatchOperation } from '@azure/cosmos';
+import { CosmosClient, type Container, type ContainerRequest, type Database, type IndexingPolicy } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
@@ -15,27 +15,18 @@ import type {
 import { handleKey } from '../../../shared/handles.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
 import { newestOrder, popularity, searchWords } from '../../../shared/catalog.js';
-import { runningInAzure, type CosmosConfig } from '../config.js';
+import type { CosmosConfig } from '../config.js';
 import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
 import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { mapLimit } from './lot-view.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
 import { photoNamesIn } from '../storage/unused.js';
-import { AUDIT_KEEP_DAYS, AUDIT_PREFIX } from '../site-log.js';
 import { ReadSnapshots, StaleWriteError, adopt, mergeChanges } from './concurrency.js';
 import {
   USER_PART_NAMES, fieldsOf, joinUser, mentions, partDoc, partId, rowOf,
   type JoinedUser, type PartVersion, type UserPartDoc, type UserPartName,
 } from './user-parts.js';
 
-/** Site-content id of the marker left once rows are in the current buyer-protection shape. */
-const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
-/** Site-content id of the marker left once messages between an owner and their own shop are gone. */
-const SELF_MESSAGES_MARKER = 'migration:self-messages';
-/** Site-content id of the marker left once the one-off storage clean-up has run. */
-const STORAGE_CLEANUP_MARKER = 'migration:storage-cleanup';
-/** Site-content id of the marker left once every listing carries its sourcing and stored popularity. */
-const LISTINGS_MARKER = 'migration:listing-sourcing';
 /** Site-content id recording which container policies were last applied to the database. */
 const CONTAINER_POLICY_MARKER = 'migration:container-policies';
 /** How long a refused policy update waits before it is tried again. */
@@ -81,11 +72,8 @@ export class CosmosRepository implements Repository {
   private database!: Database;
   private state: BackendStatus;
 
-  /** The one-off removal of owner-to-own-shop messages, when it is running. */
-  private selfMessages: Promise<void> | null = null;
-  private storage: Promise<void> | null = null;
-  /** The one-off listing tidy, when it is running. */
-  private listingsPass: Promise<void> | null = null;
+  /** Bringing container policies up to date, when it is running. */
+  private policies: Promise<void> | null = null;
 
   constructor(private readonly cosmosConfig: CosmosConfig) {
     // A key is used when supplied; otherwise managed identity, which is the
@@ -167,47 +155,19 @@ export class CosmosRepository implements Repository {
       return;
     }
 
-    // Before any request reads a row: an order or user still in the old shape
-    // would fail every read that expects the new one. Once done it costs one
-    // point read of the marker it leaves.
-    // An empty database has nothing in the old shape, and is left untouched.
-    let migrated = '';
-    try {
-      if (signInAccounts > 0) migrated = await this.migratePaymentHolds();
-    } catch (error) {
-      migrated = ` Payment-hold migration failed: ${describeError(error)}.`;
-    }
-    // Messages between an owner and their own shop: sending one is refused
-    // now, and the ones already written sat unread in the inbox that sent
-    // them. Once, behind a marker - and behind the request rather than in
-    // front of it: nothing reads wrongly while it runs, since the inbox
-    // already leaves those threads out.
-    if (signInAccounts > 0) {
-      // A tick later, so not even the marker read sits on the start-up path.
-      this.selfMessages = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.removeSelfMessages()).catch((error) => {
-        this.state = { ...this.state, detail: `${this.state.detail} Self-message cleanup failed: ${describeError(error)}.` };
-      }).then(() => undefined);
-    }
-
-    // Space: what earlier releases left behind, once, and then the indexing and
-    // expiry the schema declares, applied to containers created before it said
-    // so. Both behind the request; both cost one marker read once done.
-    const populated = signInAccounts > 0;
-    this.storage = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.tidyStorage(populated)).catch(() => undefined);
-
-    // Listings in the shape the catalog reads: once, behind a marker, and
-    // behind the request - a row not yet tidied is at worst missing from one
-    // filter or sort for a moment.
-    if (populated) {
-      this.listingsPass = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.tidyListings()).catch((error) => {
-        this.state = { ...this.state, detail: `${this.state.detail} Listing tidy failed: ${describeError(error)}.` };
-      }).then(() => undefined);
-    }
+    // The indexing and expiry the schema declares, applied to containers
+    // created before it said so. Behind the request; once done it costs one
+    // marker read.
+    this.policies = new Promise((resolve) => setTimeout(resolve, 0)).then(() => this.applyContainerPolicies()).then((applied) => {
+      if (applied) this.state = { ...this.state, detail: `${this.state.detail}${applied}` };
+    }, (error) => {
+      this.state = { ...this.state, detail: `${this.state.detail} Container policies were not applied: ${describeError(error)}.` };
+    });
 
     this.state = {
       connected: true,
       database: this.cosmosConfig.database,
-      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${migrated}`,
+      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}`,
       signInAccounts,
       missingContainers: containers.missing,
     };
@@ -254,187 +214,6 @@ export class CosmosRepository implements Repository {
       }
     }
     return { created, missing, failure };
-  }
-
-  /**
-   * Rewrites rows stored in an older shape of buyer protection.
-   *
-   * Once a member the buyer picked held the payment, and rows named them as
-   * its holder: the user's grant, the order's hold and the dispute topic all
-   * carried the old name. Now Figmark holds every payment and a community
-   * manager is assigned to the purchase, so the grant and hold are renamed,
-   * the topic moved, and the holder becomes the assigned manager.
-   *
-   * An earlier release of this pass dropped the holder instead of keeping
-   * them. Those orders get their manager back from the fee ledger - the
-   * protection fee was recorded with the manager it paid - or, failing that,
-   * the longest-serving manager who is neither party.
-   *
-   * Once: a marker records that the pass finished, and a row already in the
-   * new shape is never rewritten.
-   */
-  private async migratePaymentHolds(): Promise<string> {
-    if (await this.getSiteContent(PAYMENT_HOLDS_MARKER)) return '';
-
-    const LEGACY_HOLD = 'escrow';
-    const LEGACY_GRANT = 'escrowRights';
-    type Row = Record<string, unknown> & { id: string };
-    let moved = 0;
-
-    const { resources: users } = await this.container('users').items.query<Row>({
-      query: 'SELECT * FROM c WHERE IS_DEFINED(c.escrowRights)',
-    }).fetchAll();
-    for (const user of users) {
-      if (!(LEGACY_GRANT in user)) continue;
-      const grant = user[LEGACY_GRANT] as Record<string, unknown> | null;
-      delete user[LEGACY_GRANT];
-      if (grant) delete grant.feeBasisPoints;
-      user.managerRights = user.managerRights ?? grant ?? null;
-      await this.container('users').items.upsert(user);
-      moved += 1;
-    }
-
-    // Who each protection fee paid, by order: the record of the manager an
-    // order was protected with, if the order itself lost it.
-    // The ledger is `fee-ledger` before its split into months and
-    // `fee-ledger-YYYY-MM` after; this range holds either.
-    const ledger = await this.listSiteContentRange('fee-ledger', 'fee-ledger-~');
-    const paidTo = new Map<string, string>();
-    const fees = ledger.flatMap((month) => (month.data as { entries?: { kind?: string; reference?: string; managerId?: string | null }[] } | undefined)?.entries ?? []);
-    for (const entry of fees) {
-      if (entry.kind === 'protection' && entry.reference && entry.managerId) paidTo.set(entry.reference, entry.managerId);
-    }
-    const managers = (await this.listManagers())
-      .filter((user) => user.managerRights && !user.suspended)
-      .sort((a, b) => (a.managerRights?.grantedAt ?? '').localeCompare(b.managerRights?.grantedAt ?? ''));
-    const named = new Map(managers.map((user) => [user.id, user]));
-    /** Gives a protection record its manager: the holder it named, the ledger's, or a neutral one. */
-    const assign = async (record: Record<string, unknown>, orderId: string, parties: string[]): Promise<boolean> => {
-      const legacyId = record.escrowAgentId as string | undefined;
-      const legacyName = record.escrowName as string | undefined;
-      const had = 'escrowAgentId' in record || 'escrowName' in record;
-      delete record.escrowAgentId;
-      delete record.escrowName;
-      if (record.managerId) return had;
-      const id = legacyId ?? paidTo.get(orderId) ?? managers.find((user) => !parties.includes(user.id))?.id;
-      if (!id) return had;
-      const user = named.get(id) ?? await this.getUserById(id);
-      record.managerId = id;
-      record.managerName = legacyName ?? user?.displayName ?? 'Community manager';
-      return true;
-    };
-
-    const { resources: orders } = await this.container('orders').items.query<Row>({
-      query: 'SELECT * FROM c WHERE IS_DEFINED(c.escrow) OR (IS_DEFINED(c.protection) AND c.protection != null AND NOT IS_DEFINED(c.protection.managerId))'
-        + " OR (c.artistJob.method = 'protected' AND NOT IS_DEFINED(c.artistJob.managerId))"
-        + " OR ARRAY_CONTAINS(c.disputeLinks, { topic: 'escrow' }, true)",
-    }).fetchAll();
-    for (const order of orders) {
-      let changed = false;
-      const parties = [order.buyerId as string, order.sellerId as string];
-      if (LEGACY_HOLD in order) {
-        order.hold = order.hold ?? order[LEGACY_HOLD];
-        delete order[LEGACY_HOLD];
-        changed = true;
-      }
-      if (order.protection && typeof order.protection === 'object') {
-        if (await assign(order.protection as Record<string, unknown>, order.id, parties)) changed = true;
-      }
-      const job = order.artistJob as Record<string, unknown> | null | undefined;
-      if (job && job.method === 'protected') {
-        if (await assign(job, order.id, [order.buyerId as string, job.artistId as string])) changed = true;
-      }
-      for (const link of (order.disputeLinks as { topic?: string }[] | undefined) ?? []) {
-        if (link.topic === LEGACY_HOLD) {
-          link.topic = 'held_payment';
-          changed = true;
-        }
-      }
-      if (!changed) continue;
-      await this.container('orders').items.upsert(order);
-      moved += 1;
-    }
-
-    const { resources: disputes } = await this.container('disputes').items.query<Row>({
-      query: "SELECT * FROM c WHERE c.topic = 'escrow'",
-    }).fetchAll();
-    for (const dispute of disputes) {
-      if (dispute.topic !== LEGACY_HOLD) continue;
-      dispute.topic = 'held_payment';
-      await this.container('disputes').items.upsert(dispute);
-      moved += 1;
-    }
-
-    await this.markPaymentHoldsMigrated(moved);
-    return moved ? ` Moved ${moved} row(s) to Figmark-held payments with assigned managers.` : '';
-  }
-
-  /** Records that every row is in the Figmark-held shape, so the pass never runs again. */
-  private async removeSelfMessages(): Promise<void> {
-    if (await this.getSiteContent(SELF_MESSAGES_MARKER)) return;
-    const removed = await this.deleteSelfMessages();
-    await this.markSelfMessagesCleared(removed);
-    if (removed > 0) {
-      this.state = { ...this.state, detail: `${this.state.detail} Removed ${removed} message(s) between owners and their own shops.` };
-    }
-  }
-
-  /**
-   * Brings every listing into the shape the catalog reads, once.
-   *
-   * Sourcing follows the lot: a listing in one is an import, which is what
-   * filing it in now does, and a listing from before sourcing existed gets the
-   * answer its lot gives. Those older rows are only relabelled here, never
-   * deleted - their ids are kept on the marker so removing them is a decision
-   * somebody makes with the list in front of them. And every row gets the
-   * stored popularity the catalog orders by.
-   */
-  private async tidyListings(): Promise<void> {
-    if (await this.getSiteContent(LISTINGS_MARKER)) return;
-    const { resources } = await this.container('listings').items.query<Listing>({ query: 'SELECT * FROM c' }).fetchAll();
-
-    const legacy: string[] = [];
-    let relabelled = 0;
-    for (const listing of resources) {
-      const unsourced = listing.sourcing !== 'import' && listing.sourcing !== 'in_hand';
-      if (unsourced) legacy.push(listing.id);
-      const sourcing = listing.lotId ? 'import' : unsourced ? 'in_hand' : listing.sourcing;
-      const score = popularity(listing);
-      const ops: PatchOperation[] = [];
-      if (sourcing !== listing.sourcing) ops.push({ op: 'set', path: '/sourcing', value: sourcing });
-      if (listing.popularity !== score) ops.push({ op: 'set', path: '/popularity', value: score });
-      if (ops.length === 0) continue;
-      await this.container('listings').item(listing.id, listing.sellerId).patch(ops);
-      if (sourcing !== listing.sourcing) relabelled += 1;
-    }
-
-    await this.markListingsTidied({ legacy, relabelled });
-    if (relabelled > 0) {
-      this.state = {
-        ...this.state,
-        detail: `${this.state.detail} Relabelled ${relabelled} listing(s) to match their lot; ${legacy.length} predate sourcing.`,
-      };
-    }
-  }
-
-  /** Records that every listing is in the shape the catalog reads, so the pass never runs again. */
-  private async markListingsTidied(data: { legacy: string[]; relabelled: number }): Promise<void> {
-    const now = new Date().toISOString();
-    await this.saveSiteContent({ id: LISTINGS_MARKER, data, updatedBy: null, createdAt: now, updatedAt: now });
-  }
-
-  private async markSelfMessagesCleared(removed: number): Promise<void> {
-    const now = new Date().toISOString();
-    await this.saveSiteContent({ id: SELF_MESSAGES_MARKER, data: { removed }, updatedBy: null, createdAt: now, updatedAt: now });
-  }
-
-  private async tidyStorage(populated: boolean): Promise<void> {
-    // The clean-up first: it reads fields the new policy stops indexing.
-    const cleaned = populated
-      ? await this.cleanUpStorage().catch((error) => ` Storage clean-up failed: ${describeError(error)}.`)
-      : '';
-    const applied = await this.applyContainerPolicies().catch((error) => ` Container policies were not applied: ${describeError(error)}.`);
-    if (cleaned || applied) this.state = { ...this.state, detail: `${this.state.detail}${cleaned}${applied}` };
   }
 
   /**
@@ -490,142 +269,13 @@ export class CosmosRepository implements Repository {
   }
 
   /**
-   * Removes what earlier releases left behind, once.
-   *
-   * - Notices taken back by an undo, which used to be kept with a flag.
-   * - Audit days written before they expired on their own.
-   * - Collection, devices and the other growing lists still inline on account
-   *   rows from before `userParts`: each such account is saved once, which
-   *   moves them into their parts.
-   * - Rows pointing at an account or listing that was deleted before deleting
-   *   took them along.
-   */
-  private async cleanUpStorage(): Promise<string> {
-    if (await this.getSiteContent(STORAGE_CLEANUP_MARKER)) return '';
-    const withdrawn = await this.deleteMatching('notifications', {
-      query: 'SELECT c.id, c.userId AS pk FROM c WHERE c.withdrawn = true',
-    });
-    const audit = await this.expireAuditDays();
-    const moved = await this.moveInlineParts();
-    const orphans = await this.deleteOrphans();
-    await this.markStorageCleaned({ withdrawn, audit, moved, orphans });
-    const said = [
-      withdrawn && `${withdrawn} withdrawn notice(s)`,
-      audit && `${audit} expired audit day(s)`,
-      orphans && `${orphans} row(s) left by deleted accounts and listings`,
-    ].filter(Boolean);
-    return (said.length > 0 ? ` Removed ${said.join(', ')}.` : '') + (moved > 0 ? ` Moved ${moved} account(s) to separate parts.` : '');
-  }
-
-  private async markStorageCleaned(counts: Record<string, number>): Promise<void> {
-    const now = new Date().toISOString();
-    await this.saveSiteContent({ id: STORAGE_CLEANUP_MARKER, data: counts, updatedBy: null, createdAt: now, updatedAt: now });
-  }
-
-  /** Audit days from before they carried an expiry: the expired ones go, the rest get theirs. */
-  private async expireAuditDays(): Promise<number> {
-    const keepMs = AUDIT_KEEP_DAYS * 86_400_000;
-    let removed = 0;
-    for (const day of await this.listSiteContentRange(AUDIT_PREFIX, `${AUDIT_PREFIX}~`)) {
-      if (day.ttl !== undefined) continue;
-      const left = keepMs - (Date.now() - Date.parse(day.updatedAt));
-      if (!(left > 0)) {
-        await this.deleteSiteContent(day.id);
-        removed += 1;
-      } else {
-        await this.saveSiteContent({ ...day, ttl: Math.ceil(left / 1000) });
-      }
-    }
-    return removed;
-  }
-
-  /** Accounts still carrying a part on the row, each saved once so it moves out. */
-  private async moveInlineParts(): Promise<number> {
-    // Projected rather than filtered: the policy this pass precedes stops
-    // indexing these fields, and a projection reads the document either way.
-    // Every field in USER_PARTS, spelled out so the statement stays checkable.
-    const { resources } = await this.container('users')
-      .items.query<{ id: string; legacy: boolean }>({
-        query: 'SELECT c.id, (IS_DEFINED(c.collection) OR IS_DEFINED(c.collectionGroups) OR IS_DEFINED(c.shareOpens)'
-          + ' OR IS_DEFINED(c.shareLog) OR IS_DEFINED(c.invitees) OR IS_DEFINED(c.referrals) OR IS_DEFINED(c.affiliateOrderIds)'
-          + ' OR IS_DEFINED(c.affiliateLinks) OR IS_DEFINED(c.pushEndpoints) OR IS_DEFINED(c.clientDevices)'
-          + ' OR IS_DEFINED(c.profitTemplates) OR IS_DEFINED(c.savedCalcs)) AS legacy FROM c',
-      })
-      .fetchAll();
-    let moved = 0;
-    for (const { id } of resources.filter((row) => row.legacy)) {
-      const user = await this.getUserById(id);
-      if (!user) continue;
-      await this.updateUser(user);
-      moved += 1;
-    }
-    return moved;
-  }
-
-  /** Rows whose account or listing is gone. Projections only; each deletion is a point delete. */
-  private async deleteOrphans(): Promise<number> {
-    const users = await this.existingIds('users');
-    const listings = await this.existingIds('listings');
-    const account = (id: string) => users.has(isPersonFollow(id) ? id.slice(personFollowId('').length) : id);
-    type Row = { id: string; pk: string; ref?: string };
-    const sweep = async (name: keyof typeof CONTAINERS, query: string, gone: (row: Row) => boolean) => {
-      const { resources } = await this.container(name).items.query<Row>({ query }).fetchAll();
-      let count = 0;
-      for (const row of resources.filter(gone)) {
-        await this.container(name).item(row.id, row.pk).delete().catch((error: unknown) => {
-          if (!isNotFound(error)) throw error;
-        });
-        count += 1;
-      }
-      return count;
-    };
-    let removed = 0;
-    removed += await sweep('notifications', 'SELECT c.id, c.userId AS pk FROM c', (row) => !users.has(row.pk));
-    removed += await sweep('userParts', 'SELECT c.id, c.userId AS pk FROM c', (row) => !users.has(row.pk));
-    removed += await sweep('likes', 'SELECT c.id, c.userId AS pk, c.listingId AS ref FROM c',
-      (row) => !users.has(row.pk) || !listings.has(row.ref ?? ''));
-    removed += await sweep('follows', 'SELECT c.id, c.followerId AS pk, c.sellerId AS ref FROM c',
-      (row) => !users.has(row.pk) || !account(row.ref ?? ''));
-    removed += await sweep('wants', 'SELECT c.id, c.buyerId AS pk FROM c', (row) => !users.has(row.pk));
-    const wants = await this.existingIds('wants');
-    removed += await sweep('wantOffers', 'SELECT c.id, c.wantId AS pk FROM c', (row) => !wants.has(row.pk));
-    removed += await sweep('wantSeekers', 'SELECT c.id, c.wantId AS pk FROM c', (row) => !wants.has(row.pk));
-    removed += await sweep('storeReviews', 'SELECT c.id, c.subjectId AS pk FROM c', (row) => !users.has(row.pk));
-    removed += await sweep('comments', 'SELECT c.id, c.listingId AS pk FROM c', (row) => !listings.has(row.pk));
-    removed += await sweep('pledges', 'SELECT c.id, c.listingId AS pk FROM c', (row) => !listings.has(row.pk));
-    return removed;
-  }
-
-  private async markPaymentHoldsMigrated(moved: number): Promise<void> {
-    const now = new Date().toISOString();
-    await this.saveSiteContent({ id: PAYMENT_HOLDS_MARKER, data: { moved }, updatedBy: null, createdAt: now, updatedAt: now });
-  }
-
-  /**
-   * Waits for the background passes started by init, if any are running.
+   * Waits for the background pass started by init, if it is running.
    *
    * Only the tests call this: a request that waited for them would be back to
    * paying for them, which is the whole thing they moved off that path.
    */
   async settled(): Promise<void> {
-    await this.selfMessages;
-    await this.storage;
-    await this.listingsPass;
-  }
-
-  /**
-   * The ids a container already holds.
-   *
-   * One projection query instead of a point read per row. Init runs on every
-   * cold start and every request that lands on a cold worker waits for it, so
-   * the difference between one round trip and two hundred is the difference
-   * between a slow page and a page that never arrives.
-   */
-  private async existingIds(container: keyof typeof CONTAINERS): Promise<Set<string>> {
-    const { resources } = await this.container(container)
-      .items.query<string>({ query: 'SELECT VALUE c.id FROM c' })
-      .fetchAll();
-    return new Set(resources);
+    await this.policies;
   }
 
   private async readReservation(identifier: string): Promise<IdentifierReservation | null> {
@@ -1130,15 +780,6 @@ export class CosmosRepository implements Repository {
 
   async deleteMessage(threadId: string, id: string): Promise<void> {
     await this.container('messages').item(id, threadId).delete().catch(() => {});
-  }
-
-  async deleteSelfMessages(): Promise<number> {
-    const { resources } = await this.container('messages').items.query<{ id: string; threadId: string }>({
-      // Bracketed: `from` and `to` are reserved words in Cosmos SQL.
-      query: 'SELECT c.id, c.threadId FROM c WHERE c["from"].userId = c["to"].userId',
-    }).fetchAll();
-    for (const row of resources) await this.deleteMessage(row.threadId, row.id);
-    return resources.length;
   }
 
   async updateMessage(message: Message): Promise<Message> {
@@ -1654,7 +1295,7 @@ export class CosmosRepository implements Repository {
     const { resources } = await this.container('notifications')
       .items.query<Notification>({
         query: 'SELECT * FROM c WHERE IS_DEFINED(c.notBefore) AND c.notBefore >= @since AND c.notBefore <= @until'
-          + ' AND NOT IS_DEFINED(c.pushedAt) AND (NOT IS_DEFINED(c.withdrawn) OR c.withdrawn = false)',
+          + ' AND NOT IS_DEFINED(c.pushedAt)',
         parameters: [{ name: '@since', value: from }, { name: '@until', value: until }],
       })
       .fetchAll();

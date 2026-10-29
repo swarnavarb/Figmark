@@ -6,7 +6,6 @@ import {
   type DirectStage,
   type FulfilmentStage,
   type LotStage,
-  type Sourcing,
 } from './enums.js';
 import type { Lot, Order, StageEvent, StageEventKind } from './models.js';
 import { currentStepOf, lotEndIndex, lotOffset, routeOf } from './routes.js';

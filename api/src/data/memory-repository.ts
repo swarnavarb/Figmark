@@ -653,16 +653,6 @@ export class MemoryRepository implements Repository {
     this.messages.delete(id);
   }
 
-  async deleteSelfMessages(): Promise<number> {
-    let gone = 0;
-    for (const [id, message] of this.messages) {
-      if (message.from.userId !== message.to.userId) continue;
-      this.messages.delete(id);
-      gone += 1;
-    }
-    return gone;
-  }
-
   async updateMessage(message: Message): Promise<Message> {
     this.messages.set(message.id, message);
     return message;
@@ -820,7 +810,7 @@ export class MemoryRepository implements Repository {
   async listHeldNotificationsDue(from: string, until: string): Promise<Notification[]> {
     return [...this.notifications.values()].filter((entry) =>
       entry.notBefore !== undefined && entry.notBefore >= from && entry.notBefore <= until
-      && entry.pushedAt === undefined && !entry.withdrawn);
+      && entry.pushedAt === undefined);
   }
 
   async listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>> {

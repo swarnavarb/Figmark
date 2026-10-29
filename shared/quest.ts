@@ -646,29 +646,8 @@ for (const ladder of LADDERS) {
   });
 }
 
-/**
- * Tasks from the first version of the game, which people may already have
- * collected. Kept so nobody loses XP or an unopened pack to a redesign.
- */
-const LEGACY: Record<string, KnownTask> = {
-  save: { kind: 'daily', xp: 15, title: 'Save something', pack: false },
-  order: { kind: 'weekly', xp: 60, title: 'Place an order', pack: false },
-  group: { kind: 'weekly', xp: 40, title: 'Join a pre-order', pack: false },
-  social: { kind: 'weekly', xp: 25, title: 'Post in Social', pack: false },
-  streak5: { kind: 'weekly', xp: 50, title: 'Check in five days', pack: false },
-  'first-order': { kind: 'milestone', xp: 100, title: 'First haul', pack: true },
-  'five-orders': { kind: 'milestone', xp: 250, title: 'Regular', pack: true },
-  'first-review': { kind: 'milestone', xp: 80, title: 'Critic', pack: true },
-  'five-reviews': { kind: 'milestone', xp: 200, title: 'Trusted voice', pack: true },
-  'ten-saves': { kind: 'milestone', xp: 60, title: 'Wishlist', pack: true },
-  'three-follows': { kind: 'milestone', xp: 60, title: 'Fan club', pack: true },
-  profile: { kind: 'milestone', xp: 50, title: 'Show yourself', pack: true },
-  want: { kind: 'milestone', xp: 40, title: 'Bounty hunter', pack: true },
-  streak7: { kind: 'milestone', xp: 150, title: 'On fire', pack: true },
-};
-
 function known(taskId: string): KnownTask | null {
-  return KNOWN.get(taskId) ?? LEGACY[taskId] ?? null;
+  return KNOWN.get(taskId) ?? null;
 }
 
 /**

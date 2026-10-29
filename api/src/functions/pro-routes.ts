@@ -1,6 +1,6 @@
 import { lotNo } from '../../../shared/routes.js';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { Listing, Lot, Order, User } from '../../../shared/models.js';
+import type { Listing, Order, User } from '../../../shared/models.js';
 import type { OrderStatus } from '../../../shared/enums.js';
 import { isExpired, orderMoney } from '../../../shared/payments.js';
 import {

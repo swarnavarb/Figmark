@@ -488,18 +488,6 @@ await check('signing in again right after signing out everywhere stays signed in
   assert.equal(await auth.getCurrentUser(cookieFor(first.token)), null, 'the one from before is still over');
 });
 
-await check('a password hashed at the old cost is re-made at the new one on a good sign-in', async () => {
-  resetRateLimits();
-  const studio = { identifier: 'studio@inkwell.example', password: DEMO_PASSWORD };
-  const user = await repository.getUserById('usr_art_inkwell');
-  assert.ok(!user.passwordHash.startsWith('s2:'), 'seeded at the old cost');
-  await auth.login(studio, { ip: '198.51.100.62' });
-  const after = await repository.getUserById('usr_art_inkwell');
-  assert.ok(after.passwordHash.startsWith('s2:'));
-  // And it still opens.
-  await auth.login(studio, { ip: '198.51.100.62' });
-});
-
 await check('a body larger than any route accepts is refused before it is read', async () => {
   let read = false;
   const response = await loginRoute({

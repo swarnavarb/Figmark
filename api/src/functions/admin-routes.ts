@@ -7,7 +7,6 @@ import { currentRound, decisionOverdue, isClosed, releaseOverdue, roundsOf, stan
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { inBatches } from '../data/concurrency.js';
 import {
   applySanction, bringReleaseUpToDate, bringUpToDate, commit, excludedFrom, isManager, loadActions, loadLedger, mutateActions, pickManager,
   pickManagerFor, reassignRelease, reassignRound,
@@ -40,7 +39,6 @@ import { deletionBlockers, eraseAccount } from '../account-deletion.js';
  * of what an operator wants is the first one.
  */
 
-type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** Everyone who runs the marketplace passes through here, and nobody else. */
 async function operator(request: HttpRequest) {

@@ -9,7 +9,7 @@ import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefr
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone } from '../../../shared/fulfilment.js';
 import { lotNo, lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
-import type { Listing, ListingComment, Order, PreOrderFullRule, PreOrderShortRule, StageEvent, User } from '../../../shared/models.js';
+import type { Listing, ListingComment, Order, PreOrderFullRule, PreOrderShortRule, StageEvent } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, REACTION_META, isReaction, type ReactionKind } from '../../../shared/social.js';
 import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
