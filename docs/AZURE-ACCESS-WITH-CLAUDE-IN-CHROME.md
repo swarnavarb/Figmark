@@ -143,8 +143,9 @@ Anything else: stop and tell me.
    If the page has a separate secrets section for environment variables, put
    `AZURE_CLIENT_SECRET` there instead.
 4. **The secret, handed to me.** Leave `AZURE_CLIENT_SECRET` empty, do not save
-   yet, and tell me: "Run `echo "$SP_SECRET"` in Cloud Shell, copy the value
-   after `AZURE_CLIENT_SECRET=`, then run `clear`." Look away from the Cloud
+   yet, and tell me: "Run `echo "$SP_SECRET"` in Cloud Shell, paste the printed
+   value after `AZURE_CLIENT_SECRET=` in the environment settings, then run
+   `clear` in Cloud Shell." Look away from the Cloud
    Shell tab (no screenshots of it) until I say it is done.
 5. When I say it is done, save the environment. Check the saved variables list
    shows all four names (do not read the secret's value back).
