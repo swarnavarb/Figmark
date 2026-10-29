@@ -67,17 +67,42 @@ async function health(request: HttpRequest, _context: InvocationContext) {
       : { vision: false, detail: 'Matching by picture only. Set ANTHROPIC_API_KEY to also find items from what is in the photo.' },
   };
 
-  // The detail lines name the database endpoint, the storage account and raw
-  // store errors: for the people running the site, not for anyone who asks.
-  // Everyone still gets every yes/no the app's own banners are drawn from.
+  // Everyone gets what the app's own banners and sign-up form are drawn from;
+  // the people running the site get the rest. Hidden from everybody else: the
+  // database endpoint and name, the storage account, raw store errors, how
+  // many accounts there are (a growth figure, not a banner), which version and
+  // sign-in setup this is, and which settings exist.
   if (runningInAzure() && !(await auth.getCurrentUser(request).catch(() => null))?.capabilities.isAdmin) {
-    body.data.detail = describeData(body.data);
-    body.storage = { ...body.storage, account: null, detail: body.storage.connected ? `${body.storage.backend === 'azure_blob' ? 'Blob Storage' : 'In-memory photos'} connected.` : 'Photo storage is not reachable.' };
+    publicView(body);
   }
 
   // Asked on every page load for the banners; a few seconds old is fine, and
   // it differs by who asks, so only this browser keeps it.
   return cached(json(200, body), 'private, max-age=30');
+}
+
+/** Trim a health report down to what a visitor's browser needs. */
+function publicView(body: HealthResponse): void {
+  delete body.version;
+  delete body.auth.mode;
+  // A key that works is "configured" however it was made; the two that do not
+  // still say so, since the app warns about them on every page.
+  if (body.auth.sessionSecretSource === 'derived') body.auth.sessionSecretSource = 'configured';
+  body.data.detail = describeData(body.data);
+  body.data.database = null;
+  // Zero still says "nobody can sign in here"; anything more is just "some".
+  if (body.data.signInAccounts !== null) body.data.signInAccounts = Math.min(body.data.signInAccounts, 1);
+  body.storage = {
+    ...body.storage,
+    account: null,
+    detail: body.storage.connected
+      ? `${body.storage.backend === 'azure_blob' ? 'Blob Storage' : 'In-memory photos'} connected.`
+      : 'Photo storage is not reachable.',
+  };
+  body.photoSearch = {
+    vision: body.photoSearch.vision,
+    detail: body.photoSearch.vision ? 'Matching by picture and by what is in the photo.' : 'Matching by picture only.',
+  };
 }
 
 /** What the database's state is, without where it is or what it said. */

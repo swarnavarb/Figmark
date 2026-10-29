@@ -122,7 +122,8 @@ export type BackendKind = 'cosmos' | 'memory';
 export interface HealthResponse {
   status: 'ok' | 'degraded';
   service: string;
-  version: string;
+  /** Left out for anyone but an operator on a hosted deployment. */
+  version?: string;
   /**
    * The deployment's SITE_ENVIRONMENT (`development`, `production`, ...), or
    * null when unset. Anything but `production` is a test site: the app says so
@@ -132,7 +133,8 @@ export interface HealthResponse {
   /** ISO-8601 server time. */
   time: string;
   auth: {
-    mode: AuthMode;
+    /** Left out for anyone but an operator on a hosted deployment. */
+    mode?: AuthMode;
     /** Seeded logins, exposed only while the mock provider is active. */
     demoAccounts: DemoAccount[];
     /** Cloudflare Turnstile's public site key when sign-up asks for a CAPTCHA; null when it does not. */
@@ -162,6 +164,8 @@ export interface HealthResponse {
     /**
      * Accounts that can be signed into. Zero means sign-in cannot succeed for
      * anyone, whatever they type; null means the store could not be asked.
+     * On a hosted deployment, anyone but an operator sees at most 1: whether
+     * there are accounts, not how many.
      */
     signInAccounts: number | null;
     /**
