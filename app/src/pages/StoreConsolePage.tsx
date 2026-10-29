@@ -18,7 +18,7 @@ import {
   type SectionProps,
 } from '../components/StoreForm';
 import { Timeline } from './StoreApplyPage';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 import '../styles/StoreConsolePage.css';
 
 /**
@@ -64,14 +64,14 @@ export function StoreConsolePage() {
   if (error && !console) {
     return (
       <main className="page">
-        <BackLink to="/services/mine">← My services</BackLink>
+        <BackLink to="/services/mine" title="Your store" />
         <EmptyState icon={<Icon name="lock" size={26} />} title="Not your store">
           {error} <Link to={`/services/apply/${kind}`}>Apply for one</Link>
         </EmptyState>
       </main>
     );
   }
-  if (!console) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (!console) return <PageLoading />;
 
   const store = console.store;
   const live = console.status === 'approved';
@@ -86,7 +86,7 @@ export function StoreConsolePage() {
 
   return (
     <main className="page sc-page" style={accentStyle(store.accent)}>
-      <BackLink to="/services/mine">← My services</BackLink>
+      <BackLink to="/services/mine">{store.companyName}</BackLink>
       <section className="sc-hero">
         <StoreCover kind={kind} coverUrl={store.coverUrl} accent={store.accent}>
           <div className="sc-hero__actions">

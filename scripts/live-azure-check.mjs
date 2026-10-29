@@ -17,7 +17,7 @@
  * 3. The deployed site: the security headers are actually being sent
  *    (SWA_HOSTNAME, default the production hostname).
  *
- * The app's init() is never called, so nothing is seeded or migrated.
+ * The app's init() is never called, so nothing is migrated.
  */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -65,7 +65,7 @@ if (!settings.COSMOS_ENDPOINT) {
   const { CONTAINER_LIST } = await import(new URL('shared/containers.js', base));
   const databaseName = settings.COSMOS_DATABASE ?? 'figmark';
   const repository = new CosmosRepository({ endpoint: settings.COSMOS_ENDPOINT, key: settings.COSMOS_KEY ?? null, database: databaseName });
-  // What init() would do first, without the seeding and repairs that follow it.
+  // What init() would do first, without the migrations that follow it.
   repository.database = repository.client.database(databaseName);
 
   console.log(`cosmos: ${settings.COSMOS_ENDPOINT} / ${databaseName}`);

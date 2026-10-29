@@ -9,6 +9,7 @@ import { ApiRequestError, api, type BookLot, type BookRow, type CostsResponse } 
 import { formatMoney } from '../format';
 import { ErrorNotice, Modal, PersonLink, Tile } from '../components/ui';
 import { Loading } from '../components/Feedback';
+import { Select } from '../components/Select';
 
 /**
  * Real profit as a book: lots, and what was sold from hand. A lot opens to
@@ -811,9 +812,9 @@ function CustomerSheets({ title, rows: given, customers, shop, onChange, onFaile
           <div className="pbook__splitrow">
             <label className="field">
               <span>Field</span>
-              <select value={split.partKey} onChange={(event) => setSplit({ ...split, partKey: event.target.value })}>
+              <Select value={split.partKey} onChange={(event) => setSplit({ ...split, partKey: event.target.value })}>
                 {splitParts.map((part) => <option key={part.key} value={part.key}>{partName(part)}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span>Paid</span>
@@ -1220,17 +1221,17 @@ function FormulaEditor({ row, column, start, onClose, onSave }: {
             <div className="pbook__formularow">
               <label className="field">
                 <span>Priced in</span>
-                <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
+                <Select value={currency} onChange={(event) => setCurrency(event.target.value)}>
                   {CURRENCIES(currency).map((code) => <option key={code} value={code}>{code} {sym(code)}</option>)}
-                </select>
+                </Select>
               </label>
               <label className="field">
                 <span>Charged</span>
-                <select value={per} onChange={(event) => setPer(event.target.value as Per)}>
+                <Select value={per} onChange={(event) => setPer(event.target.value as Per)}>
                   <option value="unit">Per unit</option>
                   <option value="kg">By weight - rate × kg</option>
                   <option value="shipment">Per shipment - shared</option>
-                </select>
+                </Select>
               </label>
             </div>
 
@@ -1251,9 +1252,9 @@ function FormulaEditor({ row, column, start, onClose, onSave }: {
               <div className="field">
                 <span className="pbook__step">
                   Paid in
-                  <select value={via.currency} aria-label="Paid in" onChange={(event) => setVia({ ...via, currency: event.target.value })}>
+                  <Select value={via.currency} aria-label="Paid in" onChange={(event) => setVia({ ...via, currency: event.target.value })}>
                     {CURRENCIES(via.currency).map((code) => <option key={code} value={code}>{code} {sym(code)}</option>)}
-                  </select>
+                  </Select>
                   <button type="button" className="btn btn--quiet btn--sm" onClick={() => setVia(null)}>Remove this step</button>
                 </span>
                 <Sum tokens={via.tokens} onTokens={(next) => setVia({ ...via, tokens: next })}

@@ -16,27 +16,27 @@
 .qarcade > :not(.qworld) { position: relative; z-index: 1; }
 .qworld::after { background-size: 190px 140px; background-position: 70px 40px; opacity: 0.3; animation-duration: 44s; }
 .qpanel {
-  display: grid; gap: 12px; margin-bottom: 14px; padding: 14px; border-radius: var(--r-lg);
+  display: grid; gap: var(--s3); margin-bottom: 14px; padding: 14px; border-radius: var(--r-lg);
   background: var(--surface); border: 1px solid var(--border);
 }
-.qtasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.qtasks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
 .qleaders__rank {
-  flex: none; min-width: 30px; text-align: center; padding: 2px 4px; border-radius: 6px;
+  flex: none; min-width: 30px; text-align: center; padding: 2px var(--s1); border-radius: var(--r-sm);
   font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-xs); font-weight: var(--w-bold); color: var(--q-gold-ink); background: var(--surface-hover);
 }
 .qleaders__who { flex: 1; min-width: 0; display: grid; font-size: var(--t-sm); }
 .qbreak__row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
 .qbreak__row dt small { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); color: var(--text-faint); }
 .qareas__tile {
-  display: grid; gap: 2px; justify-items: center; text-align: center; padding: 8px 6px; min-width: 0; border-radius: 12px;
+  display: grid; gap: 2px; justify-items: center; text-align: center; padding: var(--s2) 6px; min-width: 0; border-radius: var(--r-md);
   background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--qa, var(--border));
 }
 @media (max-width: 480px) {
   .qareas__tile:nth-child(n + 4) { grid-column: span 3; }
 }
 .qstreak__body { flex: 1; min-width: 0; display: grid; gap: 6px; }
-.qstreak .qweek__day i { height: 22px; border-radius: 7px; }
-.qitems-list__row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px; border-radius: 12px; background: var(--surface-2); }
+.qstreak .qweek__day i { height: 22px; border-radius: var(--r-sm); }
+.qitems-list__row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px; border-radius: var(--r-md); background: var(--surface-2); }
 .qitems-list__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
 
 /*
@@ -44,7 +44,7 @@
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-.qpage__title { margin: 0; font-size: var(--t-lg); }
+.qpage__title { margin: 0; font-size: var(--t-xl); }
 .qworld { position: absolute; inset: 0; pointer-events: none; }
 .qworld__game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 /* The rows as HUD panels over the starfield. */
@@ -58,11 +58,11 @@
 .qpage { max-width: 760px; }
 .qpanel--gold { border-color: var(--q-gold-line); background: linear-gradient(160deg, rgba(245, 197, 66, 0.08), var(--surface)); }
 .qweek { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.qweek__day { display: grid; gap: 4px; text-align: center; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); color: var(--text-faint); }
+.qweek__day { display: grid; gap: var(--s1); text-align: center; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); color: var(--text-faint); }
 .qpacks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .qpack {
-  display: grid; justify-items: center; gap: 4px; padding: 14px 10px; cursor: pointer; text-align: center;
-  border-radius: 14px; border: 2px solid var(--qp, var(--blue)); color: var(--text); font: inherit;
+  display: grid; justify-items: center; gap: var(--s1); padding: 14px 10px; cursor: pointer; text-align: center;
+  border-radius: var(--r-md); border: 2px solid var(--qp, var(--blue)); color: var(--text); font: inherit;
   background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.03) 0 6px, transparent 6px 12px), linear-gradient(160deg, #1B2238, #10162A);
   box-shadow: 0 0 18px -4px var(--qp, var(--blue));
   transition: transform var(--dur-1) var(--ease);
@@ -80,11 +80,11 @@
 .qbreak__row.is-loss dt { color: var(--coral); }
 .qbreak__row.is-loss dd { color: var(--coral); }
 .qbreak__total { border-bottom: 0; }
-.qside { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.qside { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
 /* ── Quest boards: the parts a person's and a shop's share ─────────────── */
 .qside > .qpanel, .qside > .qhero { margin-bottom: 0; }
 @media (max-width: 520px) {
-  .qside .qhero { flex-wrap: wrap; gap: 14px; padding: 16px; }
+  .qside .qhero { flex-wrap: wrap; gap: 14px; padding: var(--s4); }
   .qside .qhero .qbump { flex: 1 1 100%; }
 }
 /* A shop's XP by area: five small tiles. */
@@ -99,22 +99,22 @@
   .qareas__tile { grid-column: span 2; }
 }
 /* The streak as one row: flame count, the week, the check-in. */
-.qpanel.qstreak { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.qpanel.qstreak { display: flex; align-items: center; gap: var(--s3); padding: 10px var(--s3); }
 .qstreak__flame {
-  flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px;
+  flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: var(--r-md);
   background: rgba(255, 159, 67, 0.15); border: 1px solid rgba(255, 159, 67, 0.45); color: var(--q-flame); line-height: 1;
 }
-.qstreak__head { display: flex; align-items: center; gap: 8px; font-size: var(--t-sm); }
-.qstreak .qweek { gap: 4px; }
+.qstreak__head { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm); }
+.qstreak .qweek { gap: var(--s1); }
 .qstreak__done { flex: none; font-size: var(--t-sm); }
 /* A shop's live items, to share or bump. */
 .qitems-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
-.qitems-list__thumb { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 9px; object-fit: cover; background: var(--surface-hover); }
+.qitems-list__thumb { width: 40px; height: 40px; flex: 0 0 auto; border-radius: var(--r-sm); object-fit: cover; background: var(--surface-hover); }
 .qitems-list__btns { display: flex; gap: 6px; flex: 0 0 auto; }
 /* Item rarity as three chips, each with its ⓘ. */
 .qpanel.qrarities { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; }
 .qrarities h3 { margin: 0; font-size: var(--t-sm); }
-.qrarities__list { display: inline-flex; gap: 12px; flex-wrap: wrap; }
-.qrarities__item { display: inline-flex; align-items: center; gap: 4px; }
+.qrarities__list { display: inline-flex; gap: var(--s3); flex-wrap: wrap; }
+.qrarities__item { display: inline-flex; align-items: center; gap: var(--s1); }
 /* The switch between your own quests and a shop's. */
 .qsides { margin-left: auto; max-width: 100%; overflow-x: auto; padding: 3px; }

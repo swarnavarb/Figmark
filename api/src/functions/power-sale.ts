@@ -4,7 +4,6 @@ import type { getRepository } from '../data/index.js';
 import { actorName } from '../../../shared/notifications.js';
 import { notify } from './notify.js';
 import { refreshIdentity } from '../shop-identity.js';
-import { renewShowcaseSales } from '../data/seed-showcase.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -543,7 +542,6 @@ export async function releaseItems(repository: Repo, sale: PowerSale, now = new 
  * for the log.
  */
 export async function tickPowerSales(repository: Repo, now = new Date()): Promise<number> {
-  await renewShowcaseSales(repository, now).catch(() => 0);
   const live = await repository.listLivePowerSales();
   for (const sale of live) {
     try {

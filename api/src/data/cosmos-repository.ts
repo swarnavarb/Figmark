@@ -12,7 +12,7 @@ import type {
   ClientDevice,
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
 } from '../../../shared/models.js';
-import { checkUsername, handleKey, suggestUsername } from '../../../shared/handles.js';
+import { handleKey } from '../../../shared/handles.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
 import { newestOrder, popularity, searchWords } from '../../../shared/catalog.js';
 import { runningInAzure, type CosmosConfig } from '../config.js';
@@ -27,39 +27,6 @@ import {
   USER_PART_NAMES, fieldsOf, joinUser, mentions, partDoc, partId, rowOf,
   type JoinedUser, type PartVersion, type UserPartDoc, type UserPartName,
 } from './user-parts.js';
-import {
-  DEMO_EMAIL,
-  DEMO_PASSWORD,
-  DEMO_PHONE,
-  MANAGER_EMAIL,
-  HANDLER_EMAIL,
-  ARTIST_EMAIL,
-  FORWARDER_EMAIL,
-  PACKER_EMAIL,
-  seedComments,
-  seedFollows,
-  seedForums,
-  RETIRED_FIXTURE_POSTS,
-  seedLikes,
-  seedListings,
-  seedLotBuyers,
-  seedLotOrders,
-  seedLots,
-  seedOpenLot,
-  seedShippedLot,
-  seedLiveSale,
-  seedOrders,
-  seedPosts,
-  seedReviews,
-  seedDisputes,
-  seedWants,
-  seedWantOffers,
-  seedPledges,
-  seedUsers,
-} from './seed.js';
-import { seedFeedDemoPosts } from './seed-feed-demo.js';
-import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
-import { seedTestListings } from './seed-test-catalog.js';
 
 /** Site-content id of the marker left once rows are in the current buyer-protection shape. */
 const PAYMENT_HOLDS_MARKER = 'migration:protection-managers';
@@ -69,29 +36,10 @@ const SELF_MESSAGES_MARKER = 'migration:self-messages';
 const STORAGE_CLEANUP_MARKER = 'migration:storage-cleanup';
 /** Site-content id of the marker left once every listing carries its sourcing and stored popularity. */
 const LISTINGS_MARKER = 'migration:listing-sourcing';
-/** Site-content id of the marker naming the fixture set the database was last topped up with. */
-const FIXTURES_MARKER = 'migration:fixtures-topped-up';
 /** Site-content id recording which container policies were last applied to the database. */
 const CONTAINER_POLICY_MARKER = 'migration:container-policies';
 /** How long a refused policy update waits before it is tried again. */
 const POLICY_RETRY_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Whether an empty database may be filled with the development fixtures, and
- * a seeded one topped up with fixtures a later release added.
- *
- * The fixtures include accounts whose password is published in this
- * repository - one of them a community manager who decides where held money
- * goes - so on Azure they are written only when COSMOS_AUTOSEED=on says this
- * database is a demo. Off Azure (a laptop, the tests) they are on unless
- * COSMOS_AUTOSEED=off. A database left empty says so on /api/health.
- */
-function autoSeedEnabled(): boolean {
-  const declared = (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase();
-  if (declared === 'on') return true;
-  if (declared === 'off') return false;
-  return !runningInAzure();
-}
 
 /**
  * Cosmos DB (Core/SQL) implementation.
@@ -104,9 +52,6 @@ function autoSeedEnabled(): boolean {
 /** How long one instance reuses the newest-posts window and the forum list. */
 const RECENT_TTL_MS = 15_000;
 const FORUM_TTL_MS = 60_000;
-/** Forums made up to here predate admins, and go to the site owner. */
-const FORUM_OWNER_CUTOFF = '2026-10-07T00:00:00.000Z';
-
 /** Accounts holding a service store of one kind, or of either. */
 const STORE_OWNERS: Record<StoreKind, string> = {
   forwarder: 'SELECT * FROM c WHERE IS_DEFINED(c.forwarderProfile) AND NOT IS_NULL(c.forwarderProfile)',
@@ -132,26 +77,10 @@ function samePolicy(
 export class CosmosRepository implements Repository {
   readonly backend: BackendKind = 'cosmos';
 
-  /**
-   * Whether this instance put the development fixtures into the database.
-   *
-   * Only then is the demo sign-in hint shown. A database that arrived populated
-   * holds someone's real accounts, and advertising a password from this
-   * repository against it would be a fabrication at best.
-   */
-  private seeded = false;
-
   private readonly client: CosmosClient;
   private database!: Database;
   private state: BackendStatus;
 
-  /**
-   * The background fixture pass, while it is still running.
-   *
-   * Nothing on a request path waits for this. It is held so that the tests can
-   * assert on what it did, and so a second `init()` cannot start a second one.
-   */
-  private maintenance: Promise<void> | null = null;
   /** The one-off removal of owner-to-own-shop messages, when it is running. */
   private selfMessages: Promise<void> | null = null;
   private storage: Promise<void> | null = null;
@@ -275,32 +204,10 @@ export class CosmosRepository implements Repository {
       }).then(() => undefined);
     }
 
-    let seeded = '';
-    if (autoSeedEnabled()) {
-      if (signInAccounts === 0) {
-        // An empty database cannot serve anybody: every password is answered
-        // "incorrect" until something is in it. So this one waits.
-        try {
-          seeded = await this.fill();
-          signInAccounts = await this.countSignInAccounts();
-        } catch (error) {
-          seeded = ` Preparing the database failed: ${describeError(error)}.`;
-        }
-      } else {
-        // A populated database already serves. Repairing it and adding what a
-        // later release introduced are both maintenance, and maintenance does
-        // not belong in front of a request: it used to run here, so the first
-        // person to reach a cold worker waited for a full pass over every
-        // container before their own read even started.
-        seeded = ' Checking the fixtures in the background.';
-        this.maintenance = this.runMaintenance(via, created).catch(() => undefined);
-      }
-    }
-
     this.state = {
       connected: true,
       database: this.cosmosConfig.database,
-      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${migrated}${seeded}`,
+      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${migrated}`,
       signInAccounts,
       missingContainers: containers.missing,
     };
@@ -347,39 +254,6 @@ export class CosmosRepository implements Repository {
       }
     }
     return { created, missing, failure };
-  }
-
-  /**
-   * Clears out the unpaid orders left from before the cart.
-   *
-   * Pressing Buy used to make a real order at once, unpaid, and take stock for
-   * it; those piled up on profiles as "pay" rows nobody meant. Now an unpaid
-   * Buy is a cart item (`placedAt: null`) and an order exists only once it is
-   * paid or booked. An old row - no `placedAt` at all - still waiting on a
-   * first payment, never booked, accepted or claimed, is one of those clicks:
-   * its stock goes back on the shelf and the row goes. Anything with money or
-   * a seller's decision on it is a real order and stays. Safe on every start.
-   */
-  private async clearLegacyUnpaid(): Promise<string> {
-    const { resources } = await this.container('orders').items.query<Order>({
-      query: "SELECT * FROM c WHERE NOT IS_DEFINED(c.placedAt) AND c.status = 'pending_payment' AND c.paymentStatus = 'unpaid'",
-    }).fetchAll();
-    const stale = resources.filter((order) => !order.bookingOnly && !order.accepted && !order.paymentClaim
-      && !(order.payments?.length) && !(order.credits?.length));
-    for (const order of stale) {
-      const listing = await this.getListing(order.listingId);
-      if (listing) {
-        if (listing.quantityMode !== 'multiple') {
-          listing.quantityAvailable += order.quantity;
-          if (listing.status === 'sold_out') listing.status = 'active';
-        }
-        if (listing.preOrder) listing.preOrder.filledCount = Math.max(0, listing.preOrder.filledCount - order.quantity);
-        listing.soldCount = Math.max(0, (listing.soldCount ?? 0) - order.quantity);
-        await this.updateListing(listing);
-      }
-      await this.deleteOrder(order);
-    }
-    return stale.length ? ` Cleared ${stale.length} unpaid order(s) from before the cart.` : '';
   }
 
   /**
@@ -728,300 +602,15 @@ export class CosmosRepository implements Repository {
   }
 
   /**
-   * Makes the site owner the admin of every forum that existed before forums
-   * had admins. Forums opened after the cutoff keep whoever opened them, so
-   * this is safe to run on every start. The owner's handle comes from
-   * FORUM_OWNER_HANDLE (default `swarnava`), matched by handle, else by first name.
-   */
-  private async assignForumOwner(): Promise<string> {
-    const wanted = (process.env.FORUM_OWNER_HANDLE ?? 'swarnava').trim().toLowerCase();
-    const users = await this.listAllUsers();
-    const byHandle = users.filter((user) => (user.username ?? '').toLowerCase() === wanted);
-    const byName = users.filter((user) => (user.displayName ?? '').trim().toLowerCase().split(/\s+/)[0] === wanted);
-    // One account, or nobody: never guess between two people of the same name.
-    const owner = byHandle.length === 1 ? byHandle[0] : byName.length === 1 ? byName[0] : null;
-    if (!owner) return '';
-    let moved = 0;
-    for (const forum of await this.listForums()) {
-      if (forum.createdBy === owner.id || forum.createdAt > FORUM_OWNER_CUTOFF) continue;
-      await this.saveForum({
-        ...forum,
-        createdBy: owner.id,
-        memberIds: [...new Set([...(forum.memberIds ?? []), owner.id])],
-        moderatorIds: (forum.moderatorIds ?? []).filter((id) => id !== owner.id),
-        bannedIds: (forum.bannedIds ?? []).filter((id) => id !== owner.id),
-        updatedAt: new Date().toISOString(),
-      });
-      moved += 1;
-    }
-    return moved ? ` Made @${owner.username ?? owner.displayName} admin of ${moved} forum(s).` : '';
-  }
-
-  /**
-   * Gives a handle to any account that has none.
+   * Waits for the background passes started by init, if any are running.
    *
-   * A row written before handles existed carries no username, and nothing
-   * backfills one - the fixture top-up only ever adds whole rows and leaves
-   * existing ones untouched, which is the right rule and the reason this gap
-   * stayed open. The effect is an account with no address: it cannot be linked
-   * to, `/<username>` has nothing to resolve, and every mention of that person
-   * anywhere in the app renders as plain text because there is nowhere to send
-   * the reader.
-   *
-   * Only an absent handle is filled. A handle somebody already has is theirs,
-   * and a name they chose is not ours to change.
-   */
-  private async backfillHandles(): Promise<string> {
-    const users = await this.listAllUsers();
-    // Handle reservations share the identifiers container with sign-in
-    // identifiers - one namespace, one uniqueness guarantee - so what is
-    // already claimed is exactly what is in there.
-    const claimed = await this.existingIds('identifiers');
-
-    let given = 0;
-    for (const user of users) {
-      const wantsPersonal = !user.username;
-      const wantsStore = Boolean(user.sellerProfile) && !user.sellerProfile!.username;
-      if (!wantsPersonal && !wantsStore) continue;
-
-      if (wantsPersonal) {
-        const handle = await this.freeHandle(suggestUsername(nameFor(user)), claimed);
-        if (handle && (await this.reserveHandle(handle, user.id, false))) {
-          user.username = handle;
-          claimed.add(handleKey(handle));
-          given += 1;
-        }
-      }
-      if (wantsStore) {
-        const shop = user.sellerProfile!;
-        const handle = await this.freeHandle(suggestUsername(shop.storefrontName || nameFor(user)), claimed);
-        if (handle && (await this.reserveHandle(handle, user.id, true))) {
-          shop.username = handle;
-          claimed.add(handleKey(handle));
-          given += 1;
-        }
-      }
-
-      user.updatedAt = new Date().toISOString();
-      await this.updateUser(user);
-    }
-
-    return given === 0 ? '' : ` Gave ${given} handle(s) to accounts that had none.`;
-  }
-
-  /**
-   * The wanted handle, or the first numbered variant nobody holds.
-   *
-   * Two shops called "Kaiju Imports" cannot both be at /kaiju_imports, and the
-   * second one silently getting no handle at all is worse than it getting
-   * kaiju_imports2.
-   */
-  private async freeHandle(wanted: string, claimed: Set<string>): Promise<string | null> {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const candidate = attempt === 0 ? wanted : `${wanted}${attempt + 1}`;
-      if (checkUsername(candidate)) continue;
-      if (!claimed.has(handleKey(candidate))) return candidate;
-    }
-    return null;
-  }
-
-  /**
-   * Waits for the background fixture pass, if one is running.
-   *
-   * Only the tests call this: a request that waited for maintenance would be
-   * back to paying for it, which is the whole thing this moved off that path.
+   * Only the tests call this: a request that waited for them would be back to
+   * paying for them, which is the whole thing they moved off that path.
    */
   async settled(): Promise<void> {
-    await this.maintenance;
     await this.selfMessages;
     await this.storage;
     await this.listingsPass;
-  }
-
-  /**
-   * Repair, then top up, with nobody waiting on the result.
-   *
-   * Runs against a database that is already serving, so it may only ever add
-   * what is missing - never rewrite a row somebody is using. The outcome lands
-   * in the status detail, because a maintenance pass nobody can see the result
-   * of is one that fails silently.
-   */
-  private async runMaintenance(via: string, created: string): Promise<void> {
-    let outcome: string;
-    try {
-      // Independent passes over different containers, so they overlap rather
-      // than queue: the repair reads users and identifiers, the top-up reads
-      // the nine containers that hold fixtures.
-      // First, so the fixtures this removes come straight back - as cart items.
-      const cleared = await this.clearLegacyUnpaid().catch((error) => ` Unpaid clean-up failed: ${describeError(error)}.`);
-      const [repaired, toppedUp] = await Promise.all([this.repair(), this.topUpFixtures()]);
-      // After the rows are in place, so anything the top-up just added is
-      // considered too.
-      const handles = await this.backfillHandles();
-      // Never lets a failure here stop the start-up repairs reporting.
-      const forums = await this.assignForumOwner().catch((error) => ` Forum owner pass failed: ${describeError(error)}.`);
-      outcome = `${cleared}${repaired}${toppedUp}${handles}${forums}` || ' Fixtures were already up to date.';
-    } catch (error) {
-      outcome = ` Preparing the database failed: ${describeError(error)}.`;
-    }
-
-    let signInAccounts = this.state.signInAccounts;
-    try {
-      signInAccounts = await this.countSignInAccounts();
-    } catch {
-      // Leave the count as init found it; the outcome above is the news here.
-    }
-
-    this.state = {
-      ...this.state,
-      detail: `Connected to ${this.cosmosConfig.endpoint} using ${via}. ${signInAccounts} sign-in account(s).${created}${outcome}`,
-      signInAccounts,
-    };
-    this.maintenance = null;
-  }
-
-  /**
-   * Fills a database with nothing in it.
-   *
-   * Whoever sets COSMOS_ENDPOINT in the portal does not have a terminal with the
-   * account key in it to hand, which is what the provisioning script needs. This
-   * is safe precisely because the database is empty: there is nothing to
-   * overwrite.
-   */
-  private async fill(): Promise<string> {
-    const written = await this.seedFixtures();
-    // Seeded in the current shape: there is nothing for the migration to move.
-    await this.markPaymentHoldsMigrated(0);
-    await this.markSelfMessagesCleared(0);
-    await this.markStorageCleaned({});
-    await this.markListingsTidied({ legacy: [], relabelled: 0 });
-    // And with this release's fixtures: the next start has nothing to top up.
-    await this.markFixtures(fixtureSignature(fixtureSets()), 0);
-    this.seeded = true;
-    return ` Seeded ${written} fixture records into an empty database.`;
-  }
-
-  /**
-   * Repairs accounts that exist but cannot be signed into.
-   *
-   * Sign-in resolves an identifier through the reservation container, so a user
-   * row with no reservation behind it is unreachable - the account is there, and
-   * every password for it is answered "incorrect". A half-written seed leaves
-   * exactly that, because the user row is written before its reservations.
-   *
-   * Creating the missing reservation is what writing the account should have
-   * done. A reservation already claimed by a different account is left alone:
-   * that is a genuine conflict, not a gap to fill.
-   */
-  private async repair(): Promise<string> {
-    const users = await this.listAllUsers();
-    // One projection rather than a point read per identifier. This runs on
-    // every cold start, so the healthy case - nothing missing - must cost one
-    // round trip and not one per account.
-    const present = await this.existingIds('identifiers');
-
-    const missing: { id: string; userId: string }[] = [];
-    const repaired: string[] = [];
-    for (const user of users) {
-      for (const identifier of identifiersOf(user)) {
-        if (present.has(identifier)) continue;
-        missing.push({ id: identifier, userId: user.id });
-        repaired.push(user.id);
-      }
-    }
-    await Promise.all(missing.map((row) => this.container('identifiers').items.upsert(row)));
-
-    if (repaired.length === 0) return '';
-
-    // A half-written seed loses the catalog along with the reservations, so
-    // finish the job rather than leaving a signed-in user staring at nothing.
-    // Guarded on the fixture account being one of the unreachable rows, which
-    // only a seed of ours puts there - a database of real accounts never
-    // reaches this.
-    if (repaired.includes('usr_demo')) {
-      const written = await this.seedFixtures();
-      this.seeded = true;
-      return ` Completed a half-written seed: ${written} fixture records, including the identifier reservations sign-in resolves through.`;
-    }
-
-    return ` Restored ${repaired.length} missing identifier reservation(s), without which those accounts could not be signed into.`;
-  }
-
-  /**
-   * Adds fixture rows a later release introduced and this database never got.
-   *
-   * The seed only ran on an empty database, so a deployment seeded once and
-   * then updated kept whatever it had on day one: every account, order and
-   * fixture added afterwards was in the code and absent from the data, and the
-   * site quietly showed an older product than the one that was deployed. Three
-   * releases of protection, reviews and disputes landed that way and none of them
-   * were visible.
-   *
-   * Only ever adds. A row already there is left exactly as it is, because by
-   * then it may carry real use — somebody's order state is not ours to reset.
-   * And only on a database that is demonstrably one of ours: `usr_demo` is a
-   * fixture id, so a database of real accounts never reaches this at all.
-   */
-  private async topUpFixtures(): Promise<string> {
-    if (!(await this.getUserById('usr_demo'))) return '';
-
-    // What is already there, one container at a time. The usual answer is
-    // "everything", and that answer has to be cheap: this runs on every cold
-    // start, and every request landing on a cold worker waits behind it.
-    const fixtures = fixtureSets();
-
-    // When the database was last topped up with exactly this release's
-    // fixtures, there is nothing to add, and the id scan of thirteen
-    // containers below is skipped: one point read instead.
-    const signature = fixtureSignature(fixtures);
-    const marker = await this.getSiteContent(FIXTURES_MARKER);
-    if ((marker?.data as { signature?: string } | undefined)?.signature === signature) return '';
-
-    let added = 0;
-    const newUsers: User[] = [];
-    let postIds = new Set<string>();
-
-    for (const [name, items] of fixtures) {
-      const present = await this.existingIds(name);
-      if (name === 'posts') postIds = present;
-      const missing = items.filter((item) => !present.has(item.id));
-      if (missing.length === 0) continue;
-
-      // Only the genuinely absent ones are written, and in parallel: a handful
-      // of rows after a release, none at all on the run after that.
-      await Promise.all(missing.map((item) => this.container(name).items.upsert(fixtureRow(name, item))));
-      added += missing.length;
-      if (name === 'users') newUsers.push(...(missing as readonly User[]));
-    }
-
-    // Shops do not belong in forums - a forum is people talking as themselves.
-    // The first fixture rooms were seeded with shops speaking in them; take
-    // those out wherever they are still standing.
-    const retired = RETIRED_FIXTURE_POSTS.filter(([, id]) => postIds.has(id));
-    await Promise.all(retired.map(([channelId, id]) => this.deletePost(channelId, id)));
-
-    // A new fixture account needs the reservations sign-in and `/<username>`
-    // resolve through, or it exists and cannot be reached.
-    if (newUsers.length > 0) {
-      const reservations: { id: string; userId: string; isStore?: boolean }[] = [];
-      for (const user of newUsers) {
-        for (const identifier of identifiersOf(user)) reservations.push({ id: identifier, userId: user.id });
-        if (user.username) reservations.push({ id: handleKey(user.username), userId: user.id, isStore: false });
-        if (user.sellerProfile?.username) {
-          reservations.push({ id: handleKey(user.sellerProfile.username), userId: user.id, isStore: true });
-        }
-      }
-      await Promise.all(reservations.map((row) => this.container('identifiers').items.upsert(row)));
-    }
-
-    await this.markFixtures(signature, added);
-    return added === 0 ? '' : ` Added ${added} fixture record(s) this database did not have yet.`;
-  }
-
-  /** Which fixture set the database now holds, so the next start can skip the scan. */
-  private async markFixtures(signature: string, added: number): Promise<void> {
-    const now = new Date().toISOString();
-    await this.saveSiteContent({ id: FIXTURES_MARKER, data: { signature, added }, updatedBy: null, createdAt: now, updatedAt: now });
   }
 
   /**
@@ -1059,71 +648,6 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources[0] ?? 0;
-  }
-
-  /**
-   * Writes the development fixtures, including the identifier reservations that
-   * sign-in resolves through.
-   *
-   * Upserts rather than creates: two workers may reach this at the same moment
-   * on a cold start, and the fixtures are identical, so last write wins is the
-   * correct outcome rather than a conflict to handle.
-   */
-  private async seedFixtures(): Promise<number> {
-    const users = [...seedUsers(), ...seedLotBuyers()];
-    let written = 0;
-
-    for (const user of users) {
-      await this.container('users').items.upsert(user);
-      for (const identifier of identifiersOf(user)) {
-        await this.container('identifiers').items.upsert({ id: identifier, userId: user.id });
-      }
-      // Handles share the reservation container, so a seeded account is
-      // addressable at /<username> without a second pass.
-      if (user.username) {
-        await this.container('identifiers').items.upsert({
-          id: handleKey(user.username), userId: user.id, isStore: false,
-        });
-      }
-      if (user.sellerProfile?.username) {
-        await this.container('identifiers').items.upsert({
-          id: handleKey(user.sellerProfile.username), userId: user.id, isStore: true,
-        });
-      }
-      written += 1;
-    }
-
-    for (const [name, items] of [
-      ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-      ['listings', [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]],
-      ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
-      ['powerSales', seedShowcaseSales()],
-      ['comments', seedComments()],
-      ['forums', seedForums()],
-      ['posts', [...seedPosts(), ...seedFeedDemoPosts()]],
-      ['reviews', seedReviews()],
-      ['disputes', seedDisputes()],
-      ['wants', seedWants()],
-      ['wantOffers', seedWantOffers()],
-      ['pledges', seedPledges()],
-    ] as const) {
-      for (const item of items) await this.container(name).items.upsert(fixtureRow(name, item));
-      written += items.length;
-    }
-
-    // Likes and follows are addressed by a composite id here, since that is
-    // what toggling them reads back. Seeding the fixture ids verbatim would
-    // leave rows this repository could never find again.
-    for (const like of seedLikes()) {
-      await this.container('likes').items.upsert({ ...like, id: `${like.userId}__${like.listingId}` });
-      written += 1;
-    }
-    for (const follow of seedFollows()) {
-      await this.container('follows').items.upsert({ ...follow, id: `${follow.followerId}__${follow.sellerId}` });
-      written += 1;
-    }
-
-    return written;
   }
 
   status(): BackendStatus {
@@ -1765,6 +1289,16 @@ export class CosmosRepository implements Repository {
   async listAllUsers(): Promise<User[]> {
     const { resources } = await this.container('users')
       .items.query<User>({ query: 'SELECT * FROM c ORDER BY c.createdAt DESC' })
+      .fetchAll();
+    return resources;
+  }
+
+  async listSignupTimes(since: string): Promise<string[]> {
+    const { resources } = await this.container('users')
+      .items.query<string>({
+        query: 'SELECT VALUE c.createdAt FROM c WHERE c.createdAt >= @since',
+        parameters: [{ name: '@since', value: since }],
+      })
       .fetchAll();
     return resources;
   }
@@ -2549,18 +2083,9 @@ export class CosmosRepository implements Repository {
   }
 
   listDemoAccounts(): DemoAccount[] {
-    // Only for a database this instance seeded itself: those fixtures are the
-    // ones in this repository, so naming them tells the user nothing the source
-    // does not. A database holding real accounts is never advertised.
-    if (!this.seeded) return [];
-    return [
-      { identifier: DEMO_EMAIL, label: `${DEMO_PHONE} · ${DEMO_PASSWORD}` },
-      { identifier: PACKER_EMAIL, label: `the supplier's packing view · ${DEMO_PASSWORD}` },
-      { identifier: MANAGER_EMAIL, label: `a community manager who decides disputes · ${DEMO_PASSWORD}` },
-      { identifier: HANDLER_EMAIL, label: `the handler getting the parcels out · ${DEMO_PASSWORD}` },
-      { identifier: FORWARDER_EMAIL, label: `the freight forwarder's store · ${DEMO_PASSWORD}` },
-      { identifier: ARTIST_EMAIL, label: `the artist studio taking commissions · ${DEMO_PASSWORD}` },
-    ];
+    // A database holds real accounts or none: there is never a published
+    // password to offer against it.
+    return [];
   }
 
   async revokeSession(token: string, expiresAt: Date): Promise<void> {
@@ -3186,33 +2711,6 @@ const CATALOG_ORDER: Record<string, string> = {
  * in the title, description, category or a tag - the four fields matchesSearch
  * in shared/catalog reads, matched the same way, ignoring case.
  */
-/** The fixtures this release ships, container by container, for the top-up. */
-function fixtureSets() {
-  return [
-    ['users', [...seedUsers(), ...seedLotBuyers()]],
-    ['lots', [...seedLots(), seedOpenLot(), seedShippedLot(), ...seedShowcaseLots()]],
-    ['listings', [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()]],
-    ['orders', [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()]],
-    ['powerSales', seedShowcaseSales()],
-    ['comments', seedComments()],
-    ['forums', seedForums()],
-    ['posts', [...seedPosts(), ...seedFeedDemoPosts()]],
-    ['reviews', seedReviews()],
-    ['disputes', seedDisputes()],
-    ['wants', seedWants()],
-    ['wantOffers', seedWantOffers()],
-    ['pledges', seedPledges()],
-  ] as const;
-}
-
-/** One fingerprint of every fixture id (and every retired one): it changes when a release changes them. */
-function fixtureSignature(fixtures: ReturnType<typeof fixtureSets>): string {
-  return createHash('sha256')
-    .update(fixtures.map(([name, items]) => `${name}:${items.map((item) => item.id).join(',')}`).join('|'))
-    .update(RETIRED_FIXTURE_POSTS.map(([, id]) => id).join(','))
-    .digest('hex');
-}
-
 function searchClause(name: string): string {
   return ' AND (CONTAINS(c.title, ' + name + ', true) OR CONTAINS(c.description, ' + name + ', true)' +
     ' OR CONTAINS(c.category, ' + name + ', true)' +
@@ -3222,11 +2720,6 @@ function searchClause(name: string): string {
 /** A listing as it is stored: with the popularity the catalog orders by. */
 function withPopularity(listing: Listing): Listing {
   return { ...listing, popularity: popularity(listing) };
-}
-
-/** A fixture as it is written: listings carry their stored popularity like any other. */
-function fixtureRow<T>(container: string, item: T): T {
-  return container === 'listings' ? withPopularity(item as Listing) as T : item;
 }
 
 /** The clause for one sort, falling back to newest for anything unrecognised. */
@@ -3248,18 +2741,6 @@ function isConflict(error: unknown): boolean {
 
 function isNotFound(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: number }).code === 404;
-}
-
-/**
- * Something to build a handle from, for a row that may be missing pieces.
- *
- * A partial row is a fact of any database that has been running a while, and a
- * maintenance pass that throws on one leaves every later row unrepaired. The
- * email's local part, then the id, are both worse than a display name and both
- * better than nothing.
- */
-function nameFor(user: { displayName?: string; email?: string; id: string }): string {
-  return user.displayName?.trim() || user.email?.split('@')[0] || user.id.replace(/^usr_/, '');
 }
 
 function describeError(error: unknown): string {

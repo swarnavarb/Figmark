@@ -5,6 +5,7 @@ import { Confirm } from './Confirm';
 import { formatDate, formatMoney } from '../format';
 import { Loading } from '../components/Feedback';
 import { Spinner } from '../components/Spinner';
+import { Select } from '../components/Select';
 
 /**
  * Everyone, and what they have made.
@@ -434,15 +435,15 @@ function RightsPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
       <div className="field-row">
         <label className="field">
           <span>Buy</span>
-          <select value={buy} onChange={(event) => setBuy(event.target.value as TradeRight)}>
+          <Select value={buy} onChange={(event) => setBuy(event.target.value as TradeRight)}>
             {(Object.keys(RIGHT_LABELS) as TradeRight[]).map((right) => <option key={right} value={right}>{RIGHT_LABELS[right]}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field">
           <span>Sell (listings, private deals, power sales)</span>
-          <select value={sell} onChange={(event) => setSell(event.target.value as TradeRight)}>
+          <Select value={sell} onChange={(event) => setSell(event.target.value as TradeRight)}>
             {(Object.keys(RIGHT_LABELS) as TradeRight[]).map((right) => <option key={right} value={right}>{RIGHT_LABELS[right]}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       <label className="field">

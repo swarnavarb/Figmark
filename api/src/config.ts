@@ -166,22 +166,15 @@ function resolveCosmos(): CosmosConfig | null {
 }
 
 /**
- * Who operates the marketplace.
- *
- * On a laptop's in-memory store the demo account is included, because that
- * store is a throwaway fixture whose password is published in this repository -
- * admin over data that resets on restart grants nothing. A durable store, or
- * anything running on Azure, gets nobody unless ADMIN_EMAILS says so.
+ * Who operates the marketplace: the accounts ADMIN_EMAILS names, and nobody
+ * else, wherever it runs.
  */
-function resolveAdmins(cosmos: CosmosConfig | null): string[] {
+function resolveAdmins(): string[] {
   const configured = (env('ADMIN_EMAILS') ?? '')
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
-  if (configured.length > 0) return configured;
-  // Never on Azure: there the in-memory store is still reachable by anyone,
-  // and the demo password is in this repository.
-  return cosmos || runningInAzure() ? [] : ['demo@figmark.in'];
+  return configured;
 }
 
 function resolveStorage(): StorageConfig | null {
@@ -352,7 +345,7 @@ export const config: AppConfig = {
   sessionTtlSeconds: 60 * 60 * 12,
   cosmos,
   storage: resolveStorage(),
-  adminEmails: resolveAdmins(cosmos),
+  adminEmails: resolveAdmins(),
   vision: resolveVision(),
   verification: resolveVerification(),
   passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),

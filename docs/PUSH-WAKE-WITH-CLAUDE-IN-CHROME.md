@@ -6,8 +6,12 @@ tabs and sign in to both.
 
 This turns on the wake-up queue described in `docs/AZURE.md` ("Pushes on the
 minute"). It makes held notices (power sale drops, undo windows) reach phones
-on time, even when nobody has the site open. Do development first, check that
-it works, then production.
+on time, even when nobody has the site open.
+
+Development was tested and then turned off again (28 October 2026) to keep its
+cost at zero; it stays off. For production, go straight to "Step 7: Production" once
+`func-figmark-clocks-prod` exists. To try it on development again, do Steps
+1–6 and turn it off afterwards.
 
 ---
 

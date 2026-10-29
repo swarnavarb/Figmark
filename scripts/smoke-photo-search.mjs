@@ -7,6 +7,7 @@
  * description instead of a live call.
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 import { createRequire } from 'node:module';
 
 delete process.env.ANTHROPIC_API_KEY;
@@ -19,6 +20,7 @@ const { fingerprint, likeness } = await import(new URL('image-hash.js', dist));
 const { describedScore } = await import(new URL('photo-search.js', dist));
 const { photoSearchRoute, photoSalesRoute, forgetCatalogue } = await import(new URL('functions/catalog-routes.js', dist));
 const { healthRoute } = await import(new URL('functions/health.js', dist));
+await useFixtures();
 const { getRepository } = await import(new URL('data/index.js', dist));
 const { getPhotoStore } = await import(new URL('storage/index.js', dist));
 

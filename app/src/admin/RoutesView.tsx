@@ -13,6 +13,7 @@ import { ApiRequestError, admin } from './api';
 import { BackButton, backOps, goOps, useOpsPath } from './nav';
 import { timeAgo } from '../format';
 import { Loading } from '../components/Feedback';
+import { Select } from '../components/Select';
 
 type Library = Awaited<ReturnType<typeof admin.routeLibrary>>;
 
@@ -275,16 +276,16 @@ function Buttons({ data, onSaved }: { data: Library; onSaved: (library: ButtonLi
             </label>
             <label className="field">
               <span>Where</span>
-              <select value={entry.place} onChange={(event) => setExtraAt(index, { place: event.target.value as ButtonPlace })}>
+              <Select value={entry.place} onChange={(event) => setExtraAt(index, { place: event.target.value as ButtonPlace })}>
                 {(Object.keys(PLACE_LABEL) as ButtonPlace[]).map((place) => <option key={place} value={place}>{PLACE_LABEL[place]}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span>Who presses it</span>
-              <select value={entry.assignee ?? ''} onChange={(event) => setExtraAt(index, { assignee: (event.target.value || undefined) as StepAssignee | undefined })}>
+              <Select value={entry.assignee ?? ''} onChange={(event) => setExtraAt(index, { assignee: (event.target.value || undefined) as StepAssignee | undefined })}>
                 <option value="">Only you</option>
                 {WHO_FOR[entry.place].map((who) => <option key={who} value={who}>{WHO_LABEL[who]}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="field opsbtns__wide">
               <span>One line for the customer (optional)</span>
@@ -447,9 +448,9 @@ function SampleEditor({ data, id, onSaved }: { data: Library; id: string; onSave
         </label>
         <label className="field">
           <span>Icon</span>
-          <select value={icon} onChange={(event) => setIcon(event.target.value as StageIcon)}>
+          <Select value={icon} onChange={(event) => setIcon(event.target.value as StageIcon)}>
             {STAGE_ICONS.map((entry) => <option key={entry} value={entry}>{ICON_LABEL[entry]}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       <RouteStudio editing={null} onSaved={() => {}} onCancel={() => backOps('routes')} cancelLabel="Back to routes"

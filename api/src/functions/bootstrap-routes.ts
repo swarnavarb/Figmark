@@ -2,9 +2,11 @@ import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } 
 import { meRoute } from './auth-routes.js';
 import { healthRoute } from './health.js';
 import { handler, json } from './http.js';
+import { notificationsRoute } from './notification-routes.js';
 import { pushKeyRoute } from './push-routes.js';
 import { questMeRoute } from './quest-routes.js';
 import { routeWordsRoute } from './route-admin-routes.js';
+import { myStoresRoute } from './seller-routes.js';
 import { myInviteRoute } from './share-routes.js';
 import { myItemsRoute } from './tracking-routes.js';
 
@@ -31,6 +33,10 @@ const SIGNED_IN: [string, Route][] = [
   ['/me/items', myItemsRoute],
   ['/invite/me', myInviteRoute],
   ['/quest/me', questMeRoute],
+  // The bell's first page and the shops this account can post as: the header
+  // and the composer ask for both on every page.
+  ['/notifications', notificationsRoute],
+  ['/me/stores', myStoresRoute],
 ];
 
 async function bootstrap(request: HttpRequest, context: InvocationContext) {

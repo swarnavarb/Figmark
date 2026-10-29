@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { useDialog } from '../components/ui';
 
 /**
  * The dialog in front of anything irreversible.
@@ -22,19 +23,14 @@ export function Confirm({ title, children, confirmWord, confirmLabel, onConfirm,
   const [typed, setTyped] = useState('');
 
   // Escape cancels, because the safe way out of a destructive dialog should be
-  // the one people reach for without thinking.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
+  // the one people reach for without thinking; focus stays inside, as in any dialog.
+  const box = useRef<HTMLDivElement>(null);
+  useDialog(box, onCancel);
 
   const unlocked = !confirmWord || typed.trim().toUpperCase() === confirmWord.toUpperCase();
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label={title}
+    <div ref={box} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-label={title}
       onClick={(event) => event.target === event.currentTarget && onCancel()}>
       <div className="modal__box">
         <h2 className="modal__title">{title}</h2>

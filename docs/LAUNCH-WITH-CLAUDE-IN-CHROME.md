@@ -20,13 +20,11 @@ these steps are not detailed enough.
 2. **Never show secrets.** Keys, tokens and passwords stay in Cloud Shell
    variables. Do not print them, do not paste them into chat, do not put them in
    screenshots. If a command prints one, clear the screen (`clear`).
-3. **Never** set `COSMOS_AUTOSEED` on production, and never run the provision
-   command with `--seed` against the production database.
-4. Production's `AUTH_SESSION_SECRET` must be newly generated, never copied from
+3. Production's `AUTH_SESSION_SECRET` must be newly generated, never copied from
    development.
-5. After each numbered step, tell me in one line what is done, then continue.
+4. After each numbered step, tell me in one line what is done, then continue.
    If a command fails, stop, show me the error (no secrets) and ask.
-6. Cloud Shell forgets variables when its session restarts. If one is empty,
+5. Cloud Shell forgets variables when its session restarts. If one is empty,
    re-run the lines that set it.
 
 ## Step 0: Cloud Shell
@@ -59,11 +57,10 @@ ENDPOINT=$(az cosmosdb show -n cosmos-figmark-dev -g rg-figuremarket-dev --query
 KEY=$(az cosmosdb keys list -n cosmos-figmark-dev -g rg-figuremarket-dev --query primaryMasterKey -o tsv)
 
 COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" COSMOS_THROUGHPUT=serverless \
-  npm run azure:provision -- --seed
+  npm run azure:provision
 
 az staticwebapp appsettings set --name stapp-figuremarket-dev --resource-group rg-figuremarket-dev \
-  --environment-name development \
-  --setting-names COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" COSMOS_AUTOSEED=on SITE_ENVIRONMENT=development
+  --setting-names COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" SITE_ENVIRONMENT=development
 ```
 
 If `func-figmark-clocks-dev` exists (`az functionapp list -g rg-figuremarket-dev -o table`):
@@ -73,7 +70,7 @@ az functionapp config appsettings set --resource-group rg-figuremarket-dev --nam
   --settings COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY"
 ```
 
-Then check <https://icy-stone-0498a9900-development.eastasia.6.azurestaticapps.net>:
+Then check <https://icy-stone-0498a9900.6.azurestaticapps.net>:
 - It shows a **DEVELOPMENT** banner.
 - `/api/health` says Cosmos DB is connected.
 
@@ -108,7 +105,7 @@ az staticwebapp create --name stapp-figmark-prod --resource-group rg-figmark-pro
 If the Cosmos create says a free-tier account already exists, wait 5 minutes
 (the delete is still finishing) and retry.
 
-Set up the database structure. Do not use `--seed` here:
+Set up the database structure (it writes no data):
 
 ```bash
 P_ENDPOINT=$(az cosmosdb show -n cosmos-figmark-prod -g rg-figmark-prod --query documentEndpoint -o tsv)
@@ -143,14 +140,40 @@ Then tell me which of these are still missing. I will provide them later:
 
 ## Step 5: Production clock app
 
+Classic Consumption, Windows, Node 22. **Not** Flex Consumption, even if the
+portal suggests it.
+
 ```bash
 az functionapp create --resource-group rg-figmark-prod --name func-figmark-clocks-prod \
-  --storage-account stfigmarkprod --flexconsumption-location centralindia \
-  --runtime node --runtime-version 24 --instance-memory 512
+  --storage-account stfigmarkprod --consumption-plan-location centralindia \
+  --os-type Windows --functions-version 4 --runtime node --runtime-version 22
 
 az functionapp config appsettings set --resource-group rg-figmark-prod --name func-figmark-clocks-prod \
   --settings COSMOS_ENDPOINT="$P_ENDPOINT" COSMOS_KEY="$P_KEY" \
              STORAGE_ACCOUNT=stfigmarkprod STORAGE_KEY="$S_KEY" > /dev/null
+```
+
+The create command also makes an Application Insights resource called
+`func-figmark-clocks-prod`. Open it → **Usage and estimated costs → Daily cap**
+→ 0.1 GB.
+
+Push keys: the clock app needs the same three `WEB_PUSH_*` values as the
+production site (Step 4). If the site has them, copy them across without
+showing them:
+
+```bash
+for n in WEB_PUSH_PUBLIC_KEY WEB_PUSH_PRIVATE_KEY WEB_PUSH_SUBJECT; do
+  v=$(az staticwebapp appsettings list -n stapp-figmark-prod -g rg-figmark-prod --query "properties.$n" -o tsv)
+  [ -n "$v" ] && az functionapp config appsettings set -g rg-figmark-prod -n func-figmark-clocks-prod --settings "$n=$v" > /dev/null && echo "$n copied"
+done
+unset v
+```
+
+If the site doesn't have them yet, tell me, and do this when it does.
+
+```bash
+APP_ID=$(az ad app list --display-name figmark-github-deploy --query "[0].appId" -o tsv)
+az ad app federated-credential list --id "$APP_ID" --query "[].subject" -o tsv
 
 APP_ID=$(az ad app list --display-name figmark-github-deploy --query "[0].appId" -o tsv)
 az ad app federated-credential list --id "$APP_ID" --query "[].subject" -o tsv

@@ -81,6 +81,29 @@ export function SkeletonRows({ count = 6 }: { count?: number }) {
 }
 
 /**
+ * A whole screen whose content has not arrived: a page-shaped skeleton.
+ *
+ * The one full-page wait. Screens used to show the boot screen's mark here
+ * (orders, disputes, stores, the wallet) while the catalogue and an item
+ * showed skeletons, so the same wait looked different from page to page. Now
+ * every page waits the same way; the mark is for the app starting up, `Loading`
+ * for a part of a page, and the Spinner for a button at work.
+ */
+export function PageLoading({ label = 'Loading the page' }: { label?: string }) {
+  return (
+    <main className="page pageload" role="status" aria-label={label} data-boot-pending>
+      <span className="pageload__head" aria-hidden="true">
+        <Skeleton w={40} h={40} radius={999} />
+        <Skeleton w="48%" h={22} radius={8} />
+      </span>
+      <SkeletonText lines={2} />
+      <Skeleton className="pageload__card" w="100%" h={132} radius={16} />
+      <SkeletonRows count={4} />
+    </main>
+  );
+}
+
+/**
  * Something is on its way and a skeleton would be guessing at its shape: the
  * boot screen's mark, small. `label` is what a screen reader hears; `size`
  * "sm" sits inline with text.

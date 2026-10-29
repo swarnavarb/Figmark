@@ -1,14 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { REFUND_ORIGIN_LABELS } from '@shared/payments';
 import { AFFILIATE_STATUS_LABELS } from '@shared/affiliate';
 import { BADGE_META, storeCreditLeft, type Badge, type StoreCredit } from '@shared/play';
 import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../api';
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
-import { EmptyState, ErrorNotice } from '../components/ui';
+import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
-import { Loading } from '../components/Feedback';
-import { Preloader } from '../components/Preloader';
+import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/MyRefundsPage.css';
 
 /**
@@ -46,6 +45,13 @@ export function MyRefundsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A link to a tab further along the row (reversal details is the last)
+  // brings it into view, so the page plainly says which one it opened on.
+  const tabRow = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabRow.current?.querySelector('.tab.is-on')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [tab]);
 
   async function answer(refund: MyRefund, received: boolean) {
     const key = `${refund.creditId}:${received}`;
@@ -99,7 +105,7 @@ export function MyRefundsPage() {
   ));
 
   const tabs = (
-    <div className="tabs tabs--vivid">
+    <div className="tabs" ref={tabRow}>
       <button type="button" className={`tab${tab === 'refunds' ? ' is-on' : ''}`} onClick={() => setParams({}, { replace: true })}>
         Refunds
       </button>
@@ -121,7 +127,7 @@ export function MyRefundsPage() {
   if (tab === 'credit') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>👛 My wallet</h1></div>
+        <div className="page__head"><h1>My wallet</h1></div>
         {tabs}
         <CreditTab />
       </main>
@@ -131,7 +137,7 @@ export function MyRefundsPage() {
   if (tab === 'earnings') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>👛 My wallet</h1></div>
+        <div className="page__head"><h1>My wallet</h1></div>
         {tabs}
         <EarningsTab />
       </main>
@@ -141,7 +147,7 @@ export function MyRefundsPage() {
   if (tab === 'details') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>👛 My wallet</h1></div>
+        <div className="page__head"><h1>My wallet</h1></div>
         {tabs}
         {asks}
         <ReversalDetailsForm onSaved={load} />
@@ -149,8 +155,8 @@ export function MyRefundsPage() {
     );
   }
 
-  if (error && !refunds) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!refunds) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (error && !refunds) return <PageError message={error} />;
+  if (!refunds) return <PageLoading />;
 
   const currency = refunds[0]?.currency ?? 'INR';
   const owed = refunds.reduce((sum, refund) => sum + refund.leftMinor, 0);
@@ -160,7 +166,7 @@ export function MyRefundsPage() {
   return (
     <main className="page stack page--top">
       <div className="page__head">
-        <h1>👛 My wallet</h1>
+        <h1>My wallet</h1>
       </div>
       {tabs}
       {asks}

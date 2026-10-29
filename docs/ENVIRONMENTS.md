@@ -11,14 +11,26 @@ clock app. Nothing is shared between them.
 | Cosmos DB | `cosmos-figmark-dev`, **serverless** (pay per use) | `cosmos-figmark-prod`, **free tier** (1000 RU/s, 25 GB) |
 | Storage | `stfiguremarketdev` | `stfigmarkprod` |
 | Static Web App | `stapp-figuremarket-dev`, Free plan | `stapp-figmark-prod`, Free plan |
-| Clock Function App | `func-figmark-clocks-dev` (optional) | `func-figmark-clocks-prod` |
+| Clock Function App | `func-figmark-clocks-dev` (optional; classic Consumption, Windows, Node 22, no Application Insights, no `push-wake`) | `func-figmark-clocks-prod` (classic Consumption, Windows, Node 22, trimmed Application Insights, `push-wake` on) |
 | `SITE_ENVIRONMENT` | `development` (test-site banner, kept out of search engines) | `production` |
-| `COSMOS_AUTOSEED` | `on` (demo accounts) | **unset, always** |
 
 A release: work lands on `development` and is checked on the development
 site. A pull request from `development` into `main`, merged, builds once; the
 production deploy then waits in GitHub Actions until an approver presses
 **Approve and deploy**.
+
+## Status (29 October 2026)
+
+| | Development | Production |
+|---|---|---|
+| Address | `icy-stone-0498a9900.6.azurestaticapps.net` | `proud-flower-00cef0800.4.azurestaticapps.net` |
+| Database | `cosmos-figmark-dev`, serverless, 25 empty containers | `cosmos-figmark-prod`, free tier, shared 1000 RU/s, 25 empty containers |
+| Photos / accounts | 0 / 0 | 0 / 0 |
+
+The old free-tier `cosmos-figuremarket-dev` is deleted, and the old
+`-development` preview address returns 404 (development now deploys to the
+app's own address). Still to confirm: the `figmark.in` and `dev.figmark.in`
+domains, and production's settings (see OPERATIONS.md section 1).
 
 Expected cost at launch: a few dollars a month on Azure, plus 18% GST. The
 free Cosmos tier is the one allowance worth the most, so it goes to
@@ -48,20 +60,18 @@ ENDPOINT=$(az cosmosdb show -n cosmos-figmark-dev -g rg-figuremarket-dev --query
 KEY=$(az cosmosdb keys list -n cosmos-figmark-dev -g rg-figuremarket-dev --query primaryMasterKey -o tsv)
 
 # Serverless refuses a throughput setting, hence COSMOS_THROUGHPUT.
-# --seed writes the demo accounts: development only.
+# It writes no data: development starts empty, like production.
 COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" COSMOS_THROUGHPUT=serverless \
-  npm run azure:provision -- --seed
+  npm run azure:provision
 ```
 
-Point the development site at it. Today development is the app's
-`development` environment (step 9 changes that):
+Point the development site at it (the app's production slot; see step 9):
 
 ```bash
 az staticwebapp appsettings set \
   --name stapp-figuremarket-dev --resource-group rg-figuremarket-dev \
-  --environment-name development \
   --setting-names COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY" \
-    COSMOS_AUTOSEED=on SITE_ENVIRONMENT=development
+    SITE_ENVIRONMENT=development
 ```
 
 Do the same for the development clock app, if it exists:
@@ -72,10 +82,11 @@ az functionapp config appsettings set \
   --settings COSMOS_ENDPOINT="$ENDPOINT" COSMOS_KEY="$KEY"
 ```
 
-Check the development site: it should show the DEVELOPMENT banner, the demo
-sign-in should work, and `/api/health` should report Cosmos DB connected.
+Check the development site: it should show the DEVELOPMENT banner, and
+`/api/health` should report Cosmos DB connected, with no accounts until
+somebody signs up.
 
-Then delete the old free-tier account. It holds only test data, and the demo
+Then delete the old free-tier account (done 29 October 2026). It holds only test data, and the demo
 accounts in it have a password published in this repository, so it must not
 become production:
 
@@ -113,8 +124,8 @@ az staticwebapp create \
   --location eastasia --sku Free
 ```
 
-Create the database and containers, **without `--seed`** and without
-`COSMOS_THROUGHPUT` (the free tier's 1000 RU/s):
+Create the database and containers, without `COSMOS_THROUGHPUT` (the free
+tier's 1000 RU/s):
 
 ```bash
 P_ENDPOINT=$(az cosmosdb show -n cosmos-figmark-prod -g rg-figmark-prod --query documentEndpoint -o tsv)
@@ -156,16 +167,15 @@ Then, as each one is ready (full table in [OPERATIONS.md](OPERATIONS.md#1-produc
 - Push: `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` (new keys from `npm run push:keys`, not development's).
 - CAPTCHA: `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`.
 
-Never set `COSMOS_AUTOSEED` here.
-
 ## 5. Production clock app
 
 ```bash
 az functionapp create \
   --resource-group rg-figmark-prod --name func-figmark-clocks-prod \
   --storage-account stfigmarkprod \
-  --flexconsumption-location centralindia \
-  --runtime node --runtime-version 24 --instance-memory 512
+  --consumption-plan-location centralindia \
+  --os-type Windows --functions-version 4 \
+  --runtime node --runtime-version 22
 
 az functionapp config appsettings set \
   --resource-group rg-figmark-prod --name func-figmark-clocks-prod \
@@ -189,9 +199,16 @@ az role assignment create --assignee "$APP_ID" --role "Website Contributor" \
   --scope "$(az functionapp show -g rg-figmark-prod -n func-figmark-clocks-prod --query id -o tsv)"
 ```
 
-The clocks share the subscription's monthly Flex Consumption free grant. One
-app fits inside it; with the development one also running, the total is
-about $1 a month.
+This creates an Application Insights resource with the same name. Give it a
+**Daily cap** of 0.1 GB (Usage and estimated costs). The push keys are the
+production ones from step 4; without them the clock sends no pushes.
+
+Both clock apps fit in the subscription's classic Consumption free grant.
+What they cost is storage and this app's telemetry: about ₹100–200 a month
+together. Why classic and not Flex Consumption: [AZURE.md](AZURE.md#the-clock-function-app).
+
+For pushes on time with nobody on the site, also set up the `push-wake`
+queue: [PUSH-WAKE-WITH-CLAUDE-IN-CHROME.md](PUSH-WAKE-WITH-CLAUDE-IN-CHROME.md), production part.
 
 ## 6. GitHub
 
@@ -230,12 +247,17 @@ az staticwebapp hostname set -n stapp-figmark-prod -g rg-figmark-prod \
   --hostname figmark.in --validation-method dns-txt-token
 ```
 
-## 9. Development on its own address (optional)
+## 9. Development on its own address
 
-A custom domain attaches to an app's production environment only. The
-development site is today the `development` environment of
-`stapp-figuremarket-dev`, whose production slot served the old production
-until step 7. To give development `dev.figmark.in`:
+Done on 29 October 2026: development deploys to the production slot of
+`stapp-figuremarket-dev` (`icy-stone-0498a9900.6.azurestaticapps.net`), and the
+app's `development` environment was deleted. Its database was emptied, and
+the API no longer carries any demo data, so development starts empty like
+production. The steps, for reference:
+
+A custom domain attaches to an app's production environment only, which is
+why development moved there. Steps 1 and 2 are done; step 3 gives it
+`dev.figmark.in` whenever that is wanted:
 
 1. Copy every setting of the app's `development` environment onto its
    production slot (`az staticwebapp appsettings list ... --environment-name development`,

@@ -1,15 +1,14 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .streams {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
-  padding: 4px; border-radius: var(--r-pill);
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--s1);
+  padding: var(--s1); border-radius: var(--r-pill);
   background: var(--surface); border: 1px solid var(--border);
 }
 .streams__tab {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   min-height: 40px; border: 0; border-radius: var(--r-pill);
   background: transparent; color: var(--text-dim);
-  font-weight: var(--w-bold); font-size: var(--t-sm);
-  letter-spacing: 0.04em; text-transform: uppercase; font-style: italic;
+  font-weight: var(--w-semi); font-size: var(--t-sm);
   cursor: pointer;
   transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
@@ -20,16 +19,16 @@
   /* Runs to the very top and both edges of the screen: the status bar's colour
      is the hero's own top edge, so the two read as one surface. */
   margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 12px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
-  padding: calc(env(safe-area-inset-top, 0px) + 6px) max(var(--page-pad), env(safe-area-inset-right, 0px)) 12px max(var(--page-pad), env(safe-area-inset-left, 0px));
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) max(var(--page-pad), env(safe-area-inset-right, 0px)) var(--s3) max(var(--page-pad), env(safe-area-inset-left, 0px));
   border-radius: 0 0 22px 22px; color: #fff;
   background-color: rgb(var(--top-rgb));
   background-image:
     var(--top-band),
     linear-gradient(180deg, rgba(8, 11, 18, 0) 40%, rgba(8, 11, 18, 0.3) 100%),
-    linear-gradient(115deg, #7C3AED 0%, #C026D3 45%, #FF2E7E 100%);
+    linear-gradient(115deg, var(--violet) 0%, #C026D3 45%, #FF2E7E 100%);
   box-shadow: 0 10px 30px rgba(192, 38, 211, 0.28);
 }
-.forumhero__row { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+.forumhero__row { display: flex; align-items: center; gap: var(--s1); min-height: 44px; }
 .forumhero__back, .forumhero__icon {
   display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto;
   border: 0; border-radius: 50%; background: transparent; color: #fff; cursor: pointer;
@@ -45,11 +44,11 @@
   margin: 0; font-size: var(--t-sm); opacity: 0.95; max-width: 52ch;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.forumhero__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.forumhero__meta { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
 .forumhero__acts { display: flex; gap: 6px; flex-wrap: wrap; }
 .forumhero__join {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 12px; border: 0; border-radius: var(--r-pill);
+  padding: 6px var(--s3); border: 0; border-radius: var(--r-pill);
   background: #fff; color: var(--sx-ink); cursor: pointer;
   font-weight: 800; font-size: var(--t-2xs); letter-spacing: 0.04em; text-transform: uppercase; font-style: italic;
 }
@@ -64,7 +63,7 @@
  * where each class is used; see the note at the top of styles.css.
  */
 .streams__tab:hover { color: var(--text); }
-.streams__tab.is-on { background: var(--sx-grad); color: #fff; box-shadow: var(--sx-glow); }
+.streams__tab.is-on { background: var(--grad-blue); color: var(--accent-ink); box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4); }
 .forumroom { --page-max: 720px; }
 .forumhero__back { margin-left: -8px; }
 .forumhero__back:hover, .forumhero__icon:hover { background: rgba(255, 255, 255, 0.18); }
@@ -74,29 +73,29 @@
 /* The forum's hero is the top of the page; nothing sits above it. */
 .roombar--reveal + .page.forumroom { padding-top: 0; }
 .forumroom .forumsearch {
-  display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 6px 0 14px;
+  display: flex; align-items: center; gap: var(--s2); margin: 0 0 10px; padding: 0 6px 0 14px;
 }
 .forumhero__join.is-on { background: rgba(255, 255, 255, 0.14); color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5); }
 /* ── Forum moderation, follows, saves ─────────────────────────────────── */
 .forumrole {
-  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  display: inline-block; margin-left: 6px; padding: 1px var(--s2); border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: 700; letter-spacing: .02em; vertical-align: middle;
   background: var(--surface-2); color: var(--violet-text);
 }
 .forumrole--admin { background: var(--accent); color: #fff; }
 .forumrules {
-  margin: 0 0 12px; padding: 10px 14px; border-radius: 14px; background: var(--surface-2);
+  margin: 0 0 var(--s3); padding: 10px 14px; border-radius: var(--r-md); background: var(--surface-2);
 }
 .forumsearch {
-  width: 100%; margin: 0 0 10px; padding: 10px 14px; border-radius: 999px;
+  width: 100%; margin: 0 0 10px; padding: 10px 14px; border-radius: var(--r-pill);
   border: 1px solid var(--surface-hover); background: var(--surface); color: inherit; font: inherit;
 }
-.forummod { display: grid; gap: 12px; max-height: 70vh; overflow-y: auto; }
-.forummod__add { display: flex; gap: 8px; }
-.forummod__acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.forummod { display: grid; gap: var(--s3); max-height: 70vh; overflow-y: auto; }
+.forummod__add { display: flex; gap: var(--s2); }
+.forummod__acts { display: flex; gap: var(--s1); flex-wrap: wrap; }
 .forummod__acts .is-danger { color: var(--danger-text); }
 .forummod__settings { display: grid; gap: 10px; }
-.forummod__warnform { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.forummod__warnform { display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r-md); background: var(--surface-2); }
 .streams--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .streams--3 .streams__tab { gap: 5px; white-space: nowrap; }
 @media (display-mode: standalone) {

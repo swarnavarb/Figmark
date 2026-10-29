@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CommunityNotices } from '../components/CommunityAlerts';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ForumRow, type ForumsResponse, type PostCard } from '../api';
@@ -151,15 +151,20 @@ function FollowingFeed() {
   const [fresh, setFresh] = useState<{ count: number; names: string[] } | null>(null);
   const [saved, setSaved] = useState<PostCard[] | null>(null);
 
+  /** Which load is the latest: the voice settles after the first one has gone out, and only the newest answer counts. */
+  const loading = useRef(0);
   const load = useCallback(async () => {
+    const ticket = ++loading.current;
     setError(null);
     setFresh(null);
     try {
       const page = await api.socialHome(as, undefined, true);
+      if (ticket !== loading.current) return;
       setPosts(page.posts);
       setNext(page.next);
       setLastVisit((known) => known ?? page.lastVisit ?? null);
     } catch (err) {
+      if (ticket !== loading.current) return;
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your feed.');
     }
   }, [as]);

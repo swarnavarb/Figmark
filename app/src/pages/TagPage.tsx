@@ -35,14 +35,13 @@ export function TagPage() {
 
   return (
     <main className="page">
-      <BackLink to="/">‹ Back</BackLink>
+      <BackLink to="/" title={data ? <span className="tagpage__title"><span aria-hidden="true">#</span>{data.tag.label}</span> : 'Tag'} />
       {error && <ErrorNotice message={error} />}
       {!data && !error && <Loading />}
       {data && (
         <>
           <div className="page__head">
             <div>
-              <h1 className="tagpage__title"><span aria-hidden="true">#</span>{data.tag.label}</h1>
               <p className="muted">
                 {data.shops.length === 0
                   ? 'No shop carries this tag yet.'

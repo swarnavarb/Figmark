@@ -11,6 +11,7 @@ import { pushChanged } from '../live';
 import {
   CATEGORY_LABELS, NOTIFICATION_CATEGORIES, QUIET_FROM_HOUR, QUIET_UNTIL_HOUR, type NotificationCategory,
 } from '@shared/notifications';
+import { useDialog } from './ui';
 
 /**
  * Lock-screen notifications for this device: where it stands, the one thing
@@ -403,6 +404,8 @@ function Steps({ children }: { children: ReactNode }) {
 
 /** What to do on this device, from wherever it stands, ending in notifications on. */
 function PushGuide({ push, onClose }: { push: Push; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDialog(box, onClose);
   const platform = devicePlatform();
   const browser = deviceBrowser();
   const installed = isInstalled();
@@ -542,7 +545,7 @@ function PushGuide({ push, onClose }: { push: Push; onClose: () => void }) {
 
   return (
     <div className="pushguide" role="presentation" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="pushguide__sheet" role="dialog" aria-modal="true" aria-labelledby="pushguide-title">
+      <div ref={box} tabIndex={-1} className="pushguide__sheet" role="dialog" aria-modal="true" aria-labelledby="pushguide-title">
         <div className="pushguide__head">
           <h2 id="pushguide-title">{title}</h2>
           <button type="button" className="pushguide__close" aria-label="Close" onClick={onClose}>×</button>

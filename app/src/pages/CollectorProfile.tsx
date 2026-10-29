@@ -19,6 +19,7 @@ import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../com
 import { brandHueFor, formatDate, timeAgo, formatCount } from '../format';
 import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
 import { PhotoSales } from '../components/PhotoSales';
+import { Select } from '../components/Select';
 
 /**
  * A person's page, as a collector's.
@@ -495,10 +496,10 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
             </button>
             <label className="field">
               <span>Shelf</span>
-              <select value={item.groupId ?? ''} onChange={(event) => void onEdit({ groupId: event.target.value || null }, 'Moved')}>
+              <Select value={item.groupId ?? ''} onChange={(event) => void onEdit({ groupId: event.target.value || null }, 'Moved')}>
                 <option value="">Unsorted</option>
                 {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-              </select>
+              </Select>
             </label>
             {photo && index > 0 && (
               <div className="row">
@@ -567,7 +568,7 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
     <main className="storefront qprofile">
       <CollectorHeader person={person} page={profile} onReviews={() => setTab('reviews')}
         actions={<PageActions profile={profile} isMe={isMe} onFollow={onFollow}
-          edit={<Link to="/me?tab=settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
+          edit={<Link to="/me?tab=settings#settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
 
       <div className="storefront__body">
         <div className="tabs" style={{ marginTop: 16 }}>

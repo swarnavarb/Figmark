@@ -7,7 +7,7 @@
   color: var(--text-dim);
 }
 .band__count {
-  padding: 4px 10px;
+  padding: var(--s1) 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
   font-size: var(--t-xs);
@@ -22,12 +22,12 @@
 .cust__head { display: grid; gap: 3px; padding: 13px 15px; background: var(--surface-2); }
 .cust__name { font-weight: var(--w-bold); font-size: var(--t-md); }
 .cust__meta, .cust__track { font-size: var(--t-xs); color: var(--text-faint); }
-.orderrow { display: grid; gap: 8px; padding: 12px 15px; border-bottom: 1px solid var(--border); }
+.orderrow { display: grid; gap: var(--s2); padding: var(--s3) 15px; border-bottom: 1px solid var(--border); }
 .orderrow:last-child { border-bottom: none; }
-.orderrow__top { display: flex; gap: 8px; align-items: baseline; }
+.orderrow__top { display: flex; gap: var(--s2); align-items: baseline; }
 .orderrow__index { color: var(--text-faint); font-size: var(--t-xs); }
 .orderrow__item { font-weight: var(--w-semi); font-size: var(--t-sm); }
-.orderrow__meta { display: flex; align-items: center; gap: 8px; }
+.orderrow__meta { display: flex; align-items: center; gap: var(--s2); }
 .orderrow__ticks { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /*
@@ -35,7 +35,7 @@
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-.cust__ready { display: grid; gap: 2px; justify-items: start; width: 100%; margin: 8px 0; padding: 10px 14px; border: 2px solid var(--ok); border-radius: var(--r-md); background: transparent; color: var(--ok); font: inherit; font-weight: var(--w-bold); letter-spacing: 0.04em; text-align: left; cursor: pointer; }
+.cust__ready { display: grid; gap: 2px; justify-items: start; width: 100%; margin: var(--s2) 0; padding: 10px 14px; border: 2px solid var(--ok); border-radius: var(--r-md); background: transparent; color: var(--ok); font: inherit; font-weight: var(--w-bold); letter-spacing: 0.04em; text-align: left; cursor: pointer; }
 .cust__ready.is-on { background: var(--ok); color: var(--ok-ink); }
 .cust__ready.is-on span { color: var(--ok-ink); }
 .cust__ready .spinner { position: absolute; right: 14px; top: 50%; margin-top: -8px; }

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { Icon } from './Icon';
 
 /**
  * Where the page is scrolled to, per history entry.
@@ -19,34 +20,62 @@ const entries = new Map<number, string>();
 const indexNow = () => (window.history.state as { idx?: number } | null)?.idx ?? 0;
 
 /**
- * A back button for a screen with a known parent.
+ * Back to exactly where you came from - the page, and the spot on it - or to
+ * `fallback` when this page was opened directly, from a link or a bookmark.
  *
- * When that parent is the page you came from, this goes back in history - so
- * it lands where you were on it - rather than opening a fresh copy at the top.
- * Opened from anywhere else, it opens the parent.
- */
-export function useBack(parent: string) {
-  const navigate = useNavigate();
-  return () => {
-    const index = indexNow();
-    if (index > 0 && entries.get(index - 1) === parent) navigate(-1);
-    else navigate(parent);
-  };
-}
-
-/**
- * Back to exactly where you came from - the page, and the spot on it -
- * or to `fallback` when this page was opened directly.
+ * Every back control in the app does this. They used to differ: some went back
+ * in history, some opened their section's front page however you had arrived.
  */
 export function useGoBack(fallback: string) {
   const navigate = useNavigate();
-  return () => (indexNow() > 0 ? navigate(-1) : navigate(fallback));
+  return () => (canGoBack() ? navigate(-1) : navigate(fallback));
 }
 
-/** A "← Parent" link that goes back to the spot you left, when it can. */
-export function BackLink({ to, children }: { to: string; children: ReactNode }) {
-  const back = useBack(to);
-  return <button type="button" className="backlink" onClick={back}>{children}</button>;
+/** Whether there is a screen of this app's to go back to in this tab. */
+export function canGoBack(): boolean {
+  return indexNow() > 0;
+}
+
+/** The same thing under its older name. */
+export const useBack = useGoBack;
+
+/**
+ * The one back control: a "<" button, and beside it the screen's title or a
+ * word on where you are.
+ *
+ * `title` is the screen's own heading and is drawn as its h1, so a page with a
+ * back bar does not repeat its name underneath. `children` is a plain line
+ * instead, for a screen whose heading is further down (a hero, a card).
+ * `onBack` is for a view inside a page (a lot opened from the list, say),
+ * where back means the list rather than the previous address.
+ */
+export function BackBar({ onBack, title, children, actions, label = 'Back' }: {
+  onBack: () => void;
+  title?: ReactNode;
+  children?: ReactNode;
+  actions?: ReactNode;
+  label?: string;
+}) {
+  return (
+    <div className={`backbar${title ? ' backbar--title' : ''}`}>
+      <button type="button" className="backbar__btn" aria-label={label} onClick={onBack}>
+        <Icon name="back" size={20} />
+      </button>
+      {title ? <h1 className="backbar__title">{title}</h1> : children ? <span className="backbar__text">{children}</span> : null}
+      {actions && <span className="backbar__actions">{actions}</span>}
+    </div>
+  );
+}
+
+/** A back bar for a page: back where you came from, or `to` when opened directly. */
+export function BackLink({ to, title, children, actions }: {
+  to: string;
+  title?: ReactNode;
+  children?: ReactNode;
+  actions?: ReactNode;
+}) {
+  const back = useGoBack(to);
+  return <BackBar onBack={back} title={title} actions={actions}>{children}</BackBar>;
 }
 
 /**

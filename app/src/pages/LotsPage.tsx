@@ -1,6 +1,7 @@
 import { confirmSentence } from '../components/Ask';
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { BackBar } from '../components/ScrollManager';
 import {
   WAITING_FOR_LOT, itemLeaveIndex, laneOf, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
   type RouteStep, type TrackingRoute, lotNo,
@@ -32,6 +33,7 @@ import { ForwarderBooking } from '../components/ForwarderBooking';
 import { formatDate, formatMoney, formatWeight } from '../format';
 import { ConditionTag } from '../components/ConditionTag';
 import { Loading } from '../components/Feedback';
+import { Select } from '../components/Select';
 
 /**
  * Who moves this lot, and how to reach them.
@@ -462,20 +464,20 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
       <div className="row" style={{ gap: 10 }}>
         <label className="field" style={{ flex: 1 }}>
           <span>From</span>
-          <select value={details.originCountry ?? ''} required
+          <Select value={details.originCountry ?? ''} required
             onChange={(e) => setDetails({ ...details, originCountry: e.target.value })}>
             <option value="" disabled>Country</option>
             {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
-          </select>
+          </Select>
         </label>
         <span style={{ alignSelf: 'center', marginTop: 18 }}><Icon name="right" size={14} /></span>
         <label className="field" style={{ flex: 1 }}>
           <span>To</span>
-          <select value={details.destinationCountry ?? ''} required
+          <Select value={details.destinationCountry ?? ''} required
             onChange={(e) => setDetails({ ...details, destinationCountry: e.target.value })}>
             <option value="" disabled>Country</option>
             {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
 
@@ -674,7 +676,7 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
         {library && routes.length > 0 ? (
           <label className="field">
             <span>Route</span>
-            <select value={routeId} onChange={(event) => setRouteId(event.target.value)}>
+            <Select value={routeId} onChange={(event) => setRouteId(event.target.value)}>
               <option value="" disabled>Pick a route</option>
               {routes.map((row) => (
                 <option key={row.id} value={row.id}>
@@ -684,7 +686,7 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
                     : ''}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         ) : (
           <p className="field__hint">
@@ -874,7 +876,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
           {others.length > 0 && (
             <label className="field field--inline">
               <span>Move to another lot</span>
-              <select value="" disabled={busy}
+              <Select value="" disabled={busy}
                 onChange={(event) => event.target.value && onRelot(event.target.value)}>
                 <option value="">Stays in this lot</option>
                 {others.map((lot) => (
@@ -882,7 +884,7 @@ function LotItemRow({ item, lotId, lotStep, vars, steps, others, busy, onTick, o
                     {lotLabel(lot)}
                   </option>
                 ))}
-              </select>
+              </Select>
               <span className="field__hint">
                 It starts this lot's route where the lot is, and {item.buyerName} is told.
               </span>
@@ -1257,9 +1259,7 @@ export function LotDetail({ lotId, onBack, customers }: {
 
   return (
     <div className="lotdetail">
-      <button className="backlink" onClick={onBack}>
-        <Icon name="back" size={14} /> All lots
-      </button>
+      <BackBar onBack={onBack}>Lot</BackBar>
 
       {/* The lot, said once and properly: what it is called, which one it is,
           and what it is doing. Everything else is a section below. */}

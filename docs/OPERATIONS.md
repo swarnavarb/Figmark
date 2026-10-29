@@ -2,7 +2,7 @@
 
 What has to be true before real people use Figmark, and how to keep it that
 way. Resource names follow `docs/AZURE.md` (`rg-figuremarket-dev`,
-`cosmos-figuremarket-dev`, `stfiguremarketdev`, `stapp-figuremarket-dev`);
+`cosmos-figmark-dev`, `stfiguremarketdev`, `stapp-figuremarket-dev`);
 use the production ones in their place.
 
 ## 1. Production settings
@@ -14,7 +14,6 @@ Set these as Static Web App application settings
 |---|---|---|
 | `AUTH_SESSION_SECRET` | 64+ random characters (`openssl rand -hex 32`) | Signs sessions. Without it a deployment with no database refuses sign-in. |
 | `COSMOS_ENDPOINT`, `COSMOS_KEY`, `COSMOS_DATABASE` | from the Cosmos account | Durable data. |
-| `COSMOS_AUTOSEED` | **leave unset** (never `on`) | On Azure the demo fixtures, whose password is public, are written only when this is `on`. |
 | `STORAGE_ACCOUNT`, `STORAGE_KEY` | from the storage account | Photos. |
 | `ADMIN_EMAILS` | comma-separated operator emails | Nobody operates the site otherwise. Each must confirm that email on their account, and turn on two-factor sign-in, before the console opens. |
 | `STAFF_MFA` | leave unset (on by default in Azure) | Operators and community managers must use two-factor sign-in. |

@@ -10,6 +10,7 @@ import type { Listing } from '@shared/models';
 import { formatMoney, formatDateTime } from '../format';
 import type { PriceChange } from '../api';
 import { Lightbox } from './SocialPost';
+import { FIRST_IN_LINE } from './ui';
 
 /**
  * The listing, laid out in the Buy tab's colours: every fact in a block of
@@ -275,6 +276,7 @@ export function Gallery({ photos, title, fallback, children }: {
         onClick={(event) => setOpen((event.currentTarget.querySelector('.gallery__img') as HTMLElement).getBoundingClientRect())}>
         {photos.map((url, index) => (
           <img key={url + index} src={url} alt={index === at ? title : ''} loading={index === 0 ? 'eager' : 'lazy'}
+            {...(index === 0 ? FIRST_IN_LINE : {})}
             className={`gallery__img${index === at ? ' is-on' : ''}`} />
         ))}
         <span className="gallery__zoom" aria-hidden="true">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { BackLink } from '../components/ScrollManager';
 import { LOT_PHASE_HINTS } from '@shared/fulfilment';
 import { lotNo, renderStepText, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type ItemGroup, type OrderTracking } from '../api';
@@ -8,10 +9,10 @@ import { PayChip, PhaseTrack, factsOf, hueOfLot, laneFlags, type BuyerItem } fro
 import { Ladder } from '../components/Ladder';
 import { LotPhaseBadge } from '../components/LotName';
 import { buyerStatus, ShipmentChip } from '../components/OrderStatus';
-import { ErrorNotice, Icon, Thumb } from '../components/ui';
+import { ErrorNotice, Icon, Thumb, PageError } from '../components/ui';
 import { formatDate } from '../format';
 import { PayMore } from './PurchasesPage';
-import { Loading } from '../components/Feedback';
+import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/BuyerLotPage.css';
 
 /**
@@ -42,16 +43,16 @@ export function BuyerLotPage() {
   }, [lotId]);
   useEffect(() => { void load(); }, [load]);
 
-  if (error) return <main className="page"><ErrorNotice message={error} /></main>;
+  if (error) return <PageError message={error} />;
   if (missing) {
     return (
       <main className="page">
-        <Link to="/purchases" className="backlink"><Icon name="back" size={14} /> My Purchases</Link>
+        <BackLink to="/purchases" title="Lot" />
         <p className="muted">You have nothing in this lot.</p>
       </main>
     );
   }
-  if (!group || !group.lot) return <main className="page"><p className="muted">Opening the box…</p></main>;
+  if (!group || !group.lot) return <PageLoading label="Opening the box" />;
 
   const lot = group.lot;
   const vars = { origin: lot.originCountry, destination: lot.destinationCountry };
@@ -63,7 +64,7 @@ export function BuyerLotPage() {
 
   return (
     <main className="page blot">
-      <Link to="/purchases" className="backlink"><Icon name="back" size={14} /> My Purchases</Link>
+      <BackLink to="/purchases">Your lot</BackLink>
 
       {/* The box, open: the lid tipped back, and the lot's name on its front. */}
       <header className={`blot__hero lotbox--${hueOfLot(lot.id)}`}>

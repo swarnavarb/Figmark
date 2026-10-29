@@ -9,6 +9,7 @@
  * Run `npm run build:api` first.
  */
 import assert from 'node:assert/strict';
+import { fixtures, useFixtures } from './fixtures.mjs';
 import { createECDH, randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 
@@ -32,6 +33,7 @@ const { toggleFollowRoute: follow } = await import(new URL('catalog-routes.js', 
 const { writePageReviewRoute: writePageReview } = await import(new URL('profile-routes.js', fns));
 const { notify } = await import(new URL('notify.js', fns));
 const { setPushTransport } = await import(new URL('../push.js', fns));
+await useFixtures();
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
 const { actorName, toWhom, whose, andOthers, categoryOf, inQuietHours } =
   await import(new URL('../api/dist/shared/notifications.js', import.meta.url));

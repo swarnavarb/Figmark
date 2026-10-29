@@ -6,13 +6,8 @@
  * Set COSMOS_THROUGHPUT=serverless for a serverless account (see the comment
  * on the database below); unset, the database gets the free tier's 1000 RU/s.
  *
- * Pass --seed to also write the development fixtures: the seeded users with
- * their identifier reservations, plus lots, listings, orders, comments, likes
- * and follows. Development environments only - it creates an account whose
- * password is committed to this repository.
- *
- * The API also seeds a database it finds completely empty, so this is the
- * explicit path rather than the only one.
+ * It writes no data: a new database starts empty, and the first account is
+ * whoever signs up.
  *
  * Idempotent: every create is a create-if-not-exists, so re-running it after
  * adding a container definition provisions only the new one. Container schema
@@ -167,60 +162,6 @@ if (!settings.STORAGE_ACCOUNT && !settings.STORAGE_CONNECTION_STRING) {
       `  container ${name.padEnd(18)} ${result.succeeded ? 'created' : 'already existed'}  access=${access ?? 'private'}`,
     );
   }
-}
-
-/* Seed data ---------------------------------------------------------------- */
-
-if (process.argv.includes('--seed')) {
-  const seed = await import(new URL('../api/dist/api/src/data/seed.js', import.meta.url));
-
-  console.log('\nSeeding development fixtures');
-  console.log('  NOTE: these accounts share a password committed to this repository.');
-
-  // Email and phone are normalised the same way the repository normalises them
-  // at sign-in, so a reservation written here is one sign-in can resolve.
-  const normalise = (value) => {
-    const trimmed = value.trim().toLowerCase();
-    return trimmed.includes('@') ? trimmed : trimmed.replace(/[\s()-]/g, '');
-  };
-
-  const users = seed.seedUsers();
-  let reservations = 0;
-  for (const user of users) {
-    await database.container('users').items.upsert(user);
-    // The reservation records are what make an identifier globally unique, and
-    // what sign-in resolves through: without them no account can be signed in
-    // to, however correct the password is.
-    for (const value of [user.email, user.phone].filter(Boolean)) {
-      await database.container('identifiers').items.upsert({ id: normalise(value), userId: user.id });
-      reservations += 1;
-    }
-  }
-  console.log(`  users      ${users.length} written (${reservations} identifier reservations)`);
-
-  for (const [name, items] of [
-    ['lots', seed.seedLots()],
-    ['listings', seed.seedListings()],
-    ['orders', seed.seedOrders()],
-    ['comments', seed.seedComments()],
-  ]) {
-    for (const item of items) await database.container(name).items.upsert(item);
-    console.log(`  ${name.padEnd(10)} ${items.length} written`);
-  }
-
-  // Likes and follows are keyed by a composite id in Cosmos, since that is what
-  // toggling them reads back; the fixture ids would be unreachable rows.
-  const likes = seed.seedLikes();
-  for (const like of likes) {
-    await database.container('likes').items.upsert({ ...like, id: `${like.userId}__${like.listingId}` });
-  }
-  console.log(`  likes      ${likes.length} written`);
-
-  const follows = seed.seedFollows();
-  for (const follow of follows) {
-    await database.container('follows').items.upsert({ ...follow, id: `${follow.followerId}__${follow.sellerId}` });
-  }
-  console.log(`  follows    ${follows.length} written`);
 }
 
 console.log('\nDone. Run "npm run azure:check" to confirm.');

@@ -1,0 +1,10 @@
+{
+  "extends": "../api/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "dist",
+    "sourceMap": false,
+    "typeRoots": ["../api/node_modules/@types"]
+  },
+  "include": ["*.ts"]
+}

@@ -370,6 +370,8 @@ export interface Repository {
    * reach calls it: those use the narrower reads below.
    */
   listAllUsers(): Promise<User[]>;
+  /** When each account created since `since` was made: a projection, so the dashboard reads timestamps, not documents. */
+  listSignupTimes(since: string): Promise<string[]>;
   /** One page of accounts, newest first, optionally matching a search - the admin list. `total` is everyone. */
   pageUsers(options: { search?: string; limit: number; cursor?: string | null }): Promise<{ users: User[]; next: string | null; total: number }>;
   /** The account whose store of this kind lives at this directory slug, by index rather than by scan. */

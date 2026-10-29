@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { Link } from 'react-router-dom';
 import { AADHAAR_MOBILE_RULE, maskMobile, verifiedChecks } from '@shared/verification';
 import { ApiRequestError, api, type VerificationStatus } from '../api';
-import { ErrorNotice, Icon } from '../components/ui';
+import { ErrorNotice, Icon, PageError } from '../components/ui';
 import { useSession } from '../session';
-import { Preloader } from '../components/Preloader';
+import { PageLoading } from '../components/Feedback';
 
 /**
  * Verification: email, then WhatsApp, then Aadhaar.
@@ -39,8 +39,8 @@ export function VerifyPage() {
   }, [refresh]);
 
   if (!user) return null;
-  if (error && !status) return <main className="page"><ErrorNotice message={error} /></main>;
-  if (!status) return <main className="page pagewait" data-boot-pending><Preloader small /></main>;
+  if (error && !status) return <PageError message={error} />;
+  if (!status) return <PageLoading />;
 
   const { checks } = status;
   const done = checks.email && checks.phone && checks.aadhaar;

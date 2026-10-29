@@ -11,6 +11,7 @@ import { brandHueFor, gradientFor, initialsOf } from '../format';
  */
 export { Icon } from './Icon';
 import { Icon } from './Icon';
+import { BackLink } from './ScrollManager';
 import { ManagerMark } from './ManagerBadge';
 export type { IconName } from './Icon';
 
@@ -29,22 +30,35 @@ export type { IconName } from './Icon';
  * a photo has it everywhere and one without gets the same generated square it
  * always had rather than a broken image or a hole.
  */
-export function Thumb({ seed, label, photo, className = 'thumb', children }: {
+export function Thumb({ seed, label, photo, className = 'thumb', priority = false, children }: {
   seed: string;
   label: string;
   /** The listing's leading photo, when it has one. Its small copy is drawn when there is one. */
   photo?: { url?: string; thumbUrl?: string } | null;
   className?: string;
+  /**
+   * One of the first pictures on the screen: fetched at once and ahead of the
+   * rest. Lazy loading waits for layout before it asks, which is right for a
+   * card further down and only slows the ones already in view.
+   */
+  priority?: boolean;
   children?: ReactNode;
 }) {
   return (
     <div className={className} style={photo?.url ? undefined : { background: gradientFor(seed) }}>
-      {photo?.url ? <img className="thumb__img" src={photo.thumbUrl ?? photo.url} alt={label} loading="lazy" decoding="async" />
+      {photo?.url ? <img className="thumb__img" src={photo.thumbUrl ?? photo.url} alt={label}
+        loading={priority ? 'eager' : 'lazy'} decoding="async" {...(priority ? FIRST_IN_LINE : {})} />
         : <span>{initialsOf(label)}</span>}
       {children}
     </div>
   );
 }
+
+/**
+ * Asks the browser to fetch this image ahead of others. Written in lowercase
+ * because React 18 passes the attribute through only under its HTML name.
+ */
+export const FIRST_IN_LINE = { fetchpriority: 'high' } as Record<string, string>;
 
 /** The photo a listing leads with: the primary one, or simply the first. */
 export function leadPhoto<P extends { url?: string; thumbUrl?: string; isPrimary?: boolean }>(listing: { photos?: P[] }): P | null {
@@ -104,6 +118,25 @@ export function EmptyState({ icon, title, children }: {
 
 export function ErrorNotice({ message }: { message: string }) {
   return <p className="notice notice--error">{message}</p>;
+}
+
+/**
+ * A whole page that could not load: what went wrong, and two ways on.
+ *
+ * Used to be the message alone, a dead end short of reloading by hand. Trying
+ * again reloads the page, which starts every read it makes afresh; back goes
+ * where you came from, as every back does.
+ */
+export function PageError({ message, title = 'This page did not load' }: { message: string; title?: string }) {
+  return (
+    <main className="page pageerror">
+      <BackLink to="/">Back</BackLink>
+      <EmptyState icon={<Icon name="close" size={26} />} title={title}>{message}</EmptyState>
+      <div className="pageerror__acts">
+        <button type="button" className="btn" onClick={() => window.location.reload()}>Try again</button>
+      </div>
+    </main>
+  );
 }
 
 export type { StepState };

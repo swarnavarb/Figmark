@@ -10,6 +10,7 @@ import { Icon } from '../components/Icon';
 import { shrink } from '../components/PhotoManager';
 import { VoicePicker, useVoice } from '../components/SocialVoice';
 import { Loading } from '../components/Feedback';
+import { Select } from '../components/Select';
 
 /**
  * What people are looking for.
@@ -368,16 +369,16 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
       <div className="field-row">
         <label className="field">
           <span>Category</span>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
             {CATEGORIES.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field">
           <span>Condition</span>
-          <select value={condition} onChange={(e) => setCondition(e.target.value)}>
+          <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
             <option value="">Any</option>
             {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
 

@@ -4,6 +4,7 @@ import type { PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import {
   FULL_RULES, FULL_RULE_LABELS, MAX_CUTOFF_DAYS, MAX_THRESHOLD, SHORT_RULES, SHORT_RULE_LABELS,
 } from '@shared/preorder';
+import { Select } from './Select';
 
 /**
  * The pieces every listing form is built from - the sell page, a private
@@ -181,15 +182,15 @@ export function PreOrderRules({ whenShort, onWhenShort, whenFull, onWhenFull, di
     <>
       <label className="field">
         <span>If it is short when bookings close</span>
-        <select value={whenShort} disabled={disabled} onChange={(e) => onWhenShort(e.target.value as PreOrderShortRule)}>
+        <Select value={whenShort} disabled={disabled} onChange={(e) => onWhenShort(e.target.value as PreOrderShortRule)}>
           {SHORT_RULES.map((rule) => <option key={rule} value={rule}>{SHORT_RULE_LABELS[rule]}</option>)}
-        </select>
+        </Select>
       </label>
       <label className="field">
         <span>Once it fills, new people</span>
-        <select value={whenFull} disabled={disabled} onChange={(e) => onWhenFull(e.target.value as PreOrderFullRule)}>
+        <Select value={whenFull} disabled={disabled} onChange={(e) => onWhenFull(e.target.value as PreOrderFullRule)}>
           {FULL_RULES.map((rule) => <option key={rule} value={rule}>{FULL_RULE_LABELS[rule]}</option>)}
-        </select>
+        </Select>
       </label>
     </>
   );

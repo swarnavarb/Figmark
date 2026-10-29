@@ -1,6 +1,7 @@
-import { StrictMode, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { StrictMode, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AuthUser, HealthResponse } from '@shared/contracts';
+import type { OpsOverview, OverviewQueues } from '@shared/overview';
 import { ApiRequestError, admin } from './api';
 import { UsersView } from './UsersView';
 import { DisputesView } from './DisputesView';
@@ -15,7 +16,11 @@ import { DevicesView } from './DevicesView';
 import { PhotosView } from './PhotosView';
 import { RoutesView } from './RoutesView';
 import { ChallengeView } from './ChallengeView';
-import { BackButton, goOps, useOpsPath } from './nav';
+import { DashboardView } from './DashboardView';
+import { GROUPS, SECTIONS, isTab, type Tab } from './sections';
+import { backOps, goOps, useOpsPath } from './nav';
+import { BackBar } from '../components/ScrollManager';
+import { Icon } from '../components/Icon';
 import { Loading } from '../components/Feedback';
 import '../styles.css';
 import '../styles/admin.css';
@@ -40,30 +45,16 @@ import '../styles/admin.css';
  * one nobody has set up.
  */
 
-type Tab = 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports' | 'devices' | 'photos' | 'routes' | 'challenge' | 'settings' | 'learn' | 'audit';
-
-const TAB_LABELS: Record<Tab, string> = {
-  users: 'People and stores',
-  stores: 'Service stores',
-  disputes: 'Disputes',
-  approvals: 'Approvals',
-  payments: 'Payments',
-  reports: 'Reports',
-  devices: 'Installs & devices',
-  photos: 'Stored photos',
-  routes: 'Routes',
-  challenge: 'Weekly challenge',
-  settings: 'Settings',
-  learn: 'Learn page',
-  audit: 'Audit trail',
-};
-
 function Console() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const { path, depth } = useOpsPath();
-  const first = path.split('/')[0] as Tab;
-  const tab: Tab = first in TAB_LABELS ? first : 'users';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { path } = useOpsPath();
+  const first = path.split('/')[0] ?? '';
+  const tab: Tab = isTab(first) ? first : 'overview';
+  const nested = path.includes('/');
+  const ready = Boolean(user?.capabilities.isAdmin && !user.mfaRequired);
+  const overview = useOverview(ready, tab);
 
   const refresh = useCallback(async () => {
     try {
@@ -78,6 +69,19 @@ function Console() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // The phone's menu closes on the way to wherever it was used to go.
+  useEffect(() => setMenuOpen(false), [path]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && setMenuOpen(false);
+    window.addEventListener('keydown', onKey);
+    document.documentElement.classList.add('ops-locked');
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.documentElement.classList.remove('ops-locked');
+    };
+  }, [menuOpen]);
 
   if (loading) return <main className="ops__body"><Loading /></main>;
   if (!user) return <SignIn onSignedIn={refresh} />;
@@ -123,35 +127,67 @@ function Console() {
     );
   }
 
+  const queues = overview.data?.queues;
+
   return (
-    <>
-      <header className="ops__head">
-        <div className="ops__brand">
-          Figmark <span className="ops__tag">OPERATIONS</span>
+    <div className="opsx">
+      <header className="opsx__top">
+        <button type="button" className="opsx__menu" aria-label="Open the menu" aria-expanded={menuOpen}
+          aria-controls="ops-menu" onClick={() => setMenuOpen(true)}>
+          <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
+          {queues && waitingTotal(queues) > 0 && <i className="opsx__pip" aria-hidden="true" />}
+        </button>
+        <span className="opsx__where ops__brand">Figmark <span className="ops__tag">OPERATIONS</span></span>
+      </header>
+
+      <div className={`opsx__scrim${menuOpen ? ' is-open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden="true" />
+
+      <aside id="ops-menu" className={`opsx__side${menuOpen ? ' is-open' : ''}`} aria-label="Console">
+        <div className="opsx__brand">
+          <span className="ops__brand">Figmark <span className="ops__tag">OPERATIONS</span></span>
+          <button type="button" className="opsx__close" aria-label="Close the menu" onClick={() => setMenuOpen(false)}>
+            <Icon name="close" size={18} />
+          </button>
         </div>
-        <div className="row">
-          <span className="faint">{user.email}</span>
-          <button className="btn btn--quiet btn--sm" onClick={() => void admin.signOut().then(refresh)}>
+        <nav className="opsx__nav">
+          {GROUPS.map((group) => (
+            <div key={group.title ?? 'home'} className="opsx__group">
+              {group.title && <span className="opsx__heading">{group.title}</span>}
+              {group.sections.map((section) => {
+                const waiting = section.queue ? queues?.[section.queue] ?? 0 : 0;
+                const urgent = section.tab === 'disputes' && (queues?.disputesOverdue ?? 0) > 0;
+                return (
+                  <button key={section.tab} type="button"
+                    className={`opsx__item${tab === section.tab ? ' is-on' : ''}`}
+                    aria-current={tab === section.tab ? 'page' : undefined}
+                    onClick={() => (tab === section.tab && !nested ? setMenuOpen(false) : goOps(section.tab))}>
+                    <Icon name={section.icon} size={18} />
+                    <span className="opsx__label">{section.label}</span>
+                    {waiting > 0 && (
+                      <span className={`opsx__count${urgent ? ' opsx__count--urgent' : ''}`}
+                        aria-label={`${waiting} waiting`}>{waiting > 99 ? '99+' : waiting}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+        <div className="opsx__foot">
+          <span className="opsx__who" title={user.email}>{user.email}</span>
+          <button className="btn btn--ghost btn--sm" onClick={() => void admin.signOut().then(refresh)}>
             Sign out
           </button>
         </div>
-      </header>
+      </aside>
 
-      <main className="ops__body ops">
-        {/* Back on every tab; a screen inside one draws its own. */}
-        {!path.includes('/') && (depth > 0 || tab !== 'users') && <BackButton to="users" />}
-        {/* A screen opened inside a tab has the whole width; back returns to the tab. */}
-        {!path.includes('/') && (
-          <div className="tabs">
-          {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
-            <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => goOps(entry)}>
-              {TAB_LABELS[entry]}
-            </button>
-          ))}
-          </div>
-        )}
+      <main className="opsx__main ops">
+        {/* A screen opened inside a tab draws its own back control; a tab's is back to the overview. */}
+        {!nested && tab !== 'overview' && <BackBar onBack={() => backOps('overview')} title={SECTIONS[tab].label} />}
 
-        {tab === 'users' ? <UsersView />
+        {tab === 'overview' ? (
+          <DashboardView data={overview.data} error={overview.error} busy={overview.busy} onRefresh={overview.reload} />
+        ) : tab === 'users' ? <UsersView />
           : tab === 'stores' ? <StoresView />
           : tab === 'disputes' ? <DisputesView />
           : tab === 'approvals' ? <ApprovalsView />
@@ -167,8 +203,46 @@ function Console() {
 
         <BackendStatus />
       </main>
-    </>
+    </div>
   );
+}
+
+const waitingTotal = (queues: OverviewQueues) =>
+  (queues.disputesOpen ?? 0) + (queues.actionsPending ?? 0) + (queues.reportsOpen ?? 0) + (queues.storesPending ?? 0);
+
+/** How long the overview counts as fresh: opening another tab inside it does not ask again. */
+const OVERVIEW_FRESH_MS = 30_000;
+
+/**
+ * The overview, held by the console: the dashboard draws it and the menu's
+ * counts come from it, so the two never disagree. Asked for again on a tab
+ * change once it is older than half a minute - after an operator has worked a
+ * queue, its count is current by the time they look - and shown as it was
+ * while the new one is on its way, so nothing blanks.
+ */
+function useOverview(ready: boolean, tab: Tab) {
+  const [data, setData] = useState<OpsOverview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const asked = useRef(0);
+
+  const reload = useCallback(() => {
+    asked.current = Date.now();
+    setBusy(true);
+    admin.overview()
+      .then((next) => {
+        setData(next);
+        setError(null);
+      })
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the overview.'))
+      .finally(() => setBusy(false));
+  }, []);
+
+  useEffect(() => {
+    if (ready && Date.now() - asked.current > OVERVIEW_FRESH_MS) reload();
+  }, [ready, tab, reload]);
+
+  return { data, error, busy, reload };
 }
 
 /**

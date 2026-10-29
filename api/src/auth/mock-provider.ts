@@ -46,7 +46,7 @@ interface Resolution {
 }
 
 /**
- * Development-only auth provider: username + password against seeded users.
+ * The password provider: username + password against the accounts in the store.
  *
  * PLACEHOLDER. This exists so role-aware features can be built before a real
  * identity provider is chosen. It must not reach production with real users -
@@ -268,8 +268,8 @@ export class MockAuthProvider implements AuthService {
       }
       if (status.signInAccounts === 0) {
         throw AuthError.signInUnavailable(
-          'Sign-in is unavailable: this deployment is connected to a database that holds no accounts. ' +
-            `${status.detail} Seed it with "npm run build:api && npm run azure:provision -- --seed".`,
+          'Nobody has an account here yet: this deployment is connected to a database that holds none. ' +
+            `${status.detail} Sign up to create the first one.`,
         );
       }
     }
@@ -362,7 +362,10 @@ export class MockAuthProvider implements AuthService {
     if (!user) throw AuthError.accountMissing();
     // To the millisecond: tokens carry their issue time that finely (`iam`),
     // so signing in again a moment later, in the same second, is not undone.
-    user.sessionsValidAfter = new Date().toISOString();
+    // One past now, so a device that signed in this very millisecond - a fast
+    // host manages it - is signed out too; signing in again takes a password
+    // check, which is never that quick.
+    user.sessionsValidAfter = new Date(Date.now() + 1).toISOString();
     await this.repository.updateUser(user);
     await this.logout(request);
   }
@@ -841,6 +844,7 @@ export function toAuthUser(user: User): AuthUser {
     mfaEnabled: mfaOn(user),
     mfaRequired: config.staffMfa && !mfaOn(user) && (operator || Boolean(user.managerRights)),
     bio: user.bio ?? '',
+    photoUrl: user.photoUrl ?? null,
     coverUrl: user.coverUrl ?? null,
     tags: user.tags ?? [],
   };
