@@ -757,4 +757,22 @@ await check('opting out declines the fixtures, not the schema', async () => {
   }
 });
 
+await check('on Azure, the fixtures (the photo demo included) wait for COSMOS_AUTOSEED=on', async () => {
+  // data/index.ts asks the same question before uploading the photo demo. It
+  // once asked nothing, and a fresh production database gained the demo's
+  // listings and posts the first time the API started.
+  const { autoSeedEnabled } = await import(new URL('api/src/data/cosmos-repository.js', base));
+  const index = await import('node:fs').then((fs) => fs.readFileSync(new URL('../api/src/data/index.ts', import.meta.url), 'utf8'));
+  assert.match(index, /if \(!config\.cosmos \|\| autoSeedEnabled\(\)\) await topUpPhotoDemo\(repository\);/);
+  process.env.WEBSITE_INSTANCE_ID = 'smoke';
+  try {
+    assert.equal(autoSeedEnabled(), false);
+    process.env.COSMOS_AUTOSEED = 'on';
+    assert.equal(autoSeedEnabled(), true);
+  } finally {
+    delete process.env.WEBSITE_INSTANCE_ID;
+    delete process.env.COSMOS_AUTOSEED;
+  }
+});
+
 console.log(`\n${passed} checks passed`);

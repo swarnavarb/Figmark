@@ -18,6 +18,7 @@
     "azure:check": "node scripts/azure-check.mjs",
     "azure:live-check": "npm run build:api && node scripts/live-azure-check.mjs",
     "azure:provision": "node scripts/provision-cosmos.mjs",
+    "azure:remove-photo-demo": "node scripts/remove-photo-demo.mjs",
     "routes:reset": "node scripts/reset-lot-routes.mjs",
     "push:keys": "node scripts/push-keys.mjs"
   }

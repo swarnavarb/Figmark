@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { CosmosRepository } from './cosmos-repository.js';
+import { CosmosRepository, autoSeedEnabled } from './cosmos-repository.js';
 import { MemoryRepository } from './memory-repository.js';
 import { withLotView } from './lot-view.js';
 import { withTimedView } from './timed-view.js';
@@ -24,8 +24,10 @@ export function getRepository(): Promise<Repository> {
         ? new CosmosRepository(config.cosmos)
         : new MemoryRepository();
       await repository.init();
-      // The one fixture with photos in the store; see seed-photo-demo.ts.
-      await topUpPhotoDemo(repository);
+      // The one fixture with photos in the store; see seed-photo-demo.ts. Held
+      // to the same switch as the other fixtures: production must not gain
+      // demo listings by being started.
+      if (!config.cosmos || autoSeedEnabled()) await topUpPhotoDemo(repository);
       // Orders are read with their lot's news and position, and written back
       // as only their own - see lot-view.ts. Posts and listings written ahead
       // stay out of sight until their moment - see timed-view.ts.

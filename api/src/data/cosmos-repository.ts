@@ -86,7 +86,7 @@ const POLICY_RETRY_MS = 24 * 60 * 60 * 1000;
  * database is a demo. Off Azure (a laptop, the tests) they are on unless
  * COSMOS_AUTOSEED=off. A database left empty says so on /api/health.
  */
-function autoSeedEnabled(): boolean {
+export function autoSeedEnabled(): boolean {
   const declared = (process.env.COSMOS_AUTOSEED ?? '').trim().toLowerCase();
   if (declared === 'on') return true;
   if (declared === 'off') return false;
