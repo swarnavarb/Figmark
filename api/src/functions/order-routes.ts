@@ -18,10 +18,12 @@ import {
   disputeSubjects,
   isCancelledLike,
   isPlaced,
+  nothingAtStake,
   reviewRevealed,
   scoreFrom,
   sideOf,
 } from '../../../shared/orders.js';
+import { asBuyerSees } from '../../../shared/fulfilment.js';
 import { DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, currentRound } from '../../../shared/disputes.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
@@ -586,7 +588,9 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
 
   const found = await ownOrder(request, repository, user.id);
   if ('refusal' in found) return found.refusal;
-  const order = await settle(found.order, repository);
+  const settled = await settle(found.order, repository);
+  // A dispatch the seller can still take back has not happened yet for the buyer.
+  const order = settled.buyerId === user.id ? asBuyerSees(settled) : settled;
 
   // The other party, named. This screen reads the same for both sides, so
   // "from Arjun Collects" on Arjun's own sale is the kind of thing that only
@@ -711,6 +715,13 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
 
   // The claim itself tells the seller, so placing stays quiet.
   const refusal = await placeOrder(repository, order, terms.plan === 'advance' ? 'advance' : 'paid', user.id, { tellSeller: false });
+  // Somebody else got the last one while this buyer was paying the seller
+  // directly: they may already have sent money for nothing, and need to know
+  // what to do about it.
+  if (refusal?.code === 'unavailable') {
+    return error(409, refusal.code, `${refusal.message} No order was placed. If you already sent the money, `
+      + 'message the shop from this page and ask them to send it back.');
+  }
   if (refusal) return error(409, refusal.code, refusal.message);
   if (order.bookingOnly) await adjustHeldCredit(repository, order, user.id);
 
@@ -1551,6 +1562,9 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
 
   const body = await bodyOf<{ subject?: string; reason?: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
   if (!body || typeof body !== 'object') return error(400, 'invalid_body', 'Request body must be JSON.');
+  if (!body.subject && nothingAtStake(order)) {
+    return error(409, 'nothing_at_stake', 'Nothing has been paid or sent on this order yet, so there is nothing to dispute. Message the other side instead.');
+  }
 
   // While buyer protection still holds the money, every complaint about the
   // purchase goes through the protection claim: it is free, it freezes the
@@ -1864,6 +1878,11 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
   }
   note(order, order.bookingOnly ? 'Booking accepted by seller.' : 'Order accepted by seller.', user.id);
   await repository.updateOrder(order);
+  // A booking becomes a sale the moment it is accepted, and only then.
+  if (order.bookingOnly) {
+    const listing = await repository.getListing(order.listingId);
+    if (listing) await repository.updateListing({ ...listing, soldCount: (listing.soldCount ?? 0) + order.quantity });
+  }
 
   const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], order.bookingOnly

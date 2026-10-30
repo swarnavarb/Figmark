@@ -8804,6 +8804,27 @@ await check('the reversal dispute and the held-payment dispute are the same kind
   assert.equal(listed.id, raised.dispute.id, 'listed from the record itself');
 });
 
+await check('a settled reversal dispute hands the order back instead of leaving it disputed', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Settled Reversal Dispute', 10_000);
+  await saveReversalDetails(req({ headers: buyer.headers, body: { method: 'UPI', identifier: 's@upi', accountName: 'S' } }), ctx);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Gone.' } }), ctx);
+  await submitReversal(req({ headers: auth, params: { id: orderId }, body: { reference: 'RV2' } }), ctx);
+  await ackReversal(req({ headers: buyer.headers, params: { id: orderId }, body: { received: false } }), ctx);
+  const raised = (await raiseDispute(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  // The buyer's dispute is the one matter: the seller is not offered a second.
+  const sellerView = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.deepEqual(sellerView.disputable, [], 'nothing left for the seller to raise about the same reversal');
+
+  const offered = (await offerDispute(req({ headers: auth, params: { id: raised.dispute.id },
+    body: { terms: 'I will send it again today.' } }), ctx)).jsonBody.dispute;
+  const accepted = await acceptDispute(req({ headers: buyer.headers, params: { id: raised.dispute.id },
+    body: { offerId: offered.offer.id } }), ctx);
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.jsonBody));
+  const after = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.equal(after.order.status, 'cancelled_reversed', 'no longer stuck in dispute_raised');
+  assert.deepEqual(after.actions.filter((action) => action === 'raise_dispute' || action === 'ack_reversal'), []);
+});
+
 /* ── payment reversal details, asked for and answered from Refunds ───── */
 console.log('\nrefund details');
 

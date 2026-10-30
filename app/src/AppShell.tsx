@@ -138,7 +138,7 @@ export function AppShell() {
           {user ? (
             <ProfileMenu name={user.displayName} onSignOut={() => void signOut()} />
           ) : (
-            <button type="button" className="btn btn--sm navlogin" onClick={() => promptAuth()}>Log in</button>
+            <button type="button" className="btn btn--sm navlogin" onClick={() => promptAuth(undefined, 'signin')}>Log in</button>
           )}
         </nav>
       </header>
@@ -209,7 +209,7 @@ export function AppShell() {
 
       <TabBar />
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
-      {authPrompt && <Suspense fallback={null}><AuthModal reason={authPrompt.reason} onClose={closeAuth} /></Suspense>}
+      {authPrompt && <Suspense fallback={null}><AuthModal reason={authPrompt.reason} mode={authPrompt.mode} onClose={closeAuth} /></Suspense>}
       <VerifyPrompt />
     </div>
   );

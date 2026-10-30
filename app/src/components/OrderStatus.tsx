@@ -44,6 +44,10 @@ export interface StatusFacts {
   disputed?: boolean;
   /** The seller's own words for turning it down or calling it off. */
   reason?: string | null;
+  /** The buyer's answer to "did the reversed payment arrive?", once given. */
+  reversalAnswer?: 'received' | 'not_received' | null;
+  /** The buyer raised a dispute about the reversal. */
+  reversalDisputed?: boolean;
 }
 
 /** The facts, read off a whole order and what this viewer may do to it. */
@@ -64,6 +68,8 @@ export function factsFromOrder(order: Order, actions: readonly OrderAction[]): S
     inHand: order.lotId === 'direct',
     disputed: order.hold.state === 'disputed',
     reason: order.cancelReason ?? null,
+    reversalAnswer: order.reversal?.buyerResponse ?? null,
+    reversalDisputed: Boolean(order.reversal?.disputeRaisedAt),
   };
 }
 
@@ -87,7 +93,18 @@ function stopped(f: StatusFacts, side: 'buyer' | 'seller'): StatusLine | null {
         ? { tone: 'info', icon: '↩️', title: 'Cancelled — your money is on its way back' }
         : { tone: 'urgent', icon: '↩️', title: 'Cancelled — send the buyer their money back' };
     case 'cancelled_reversed':
-      return { tone: 'ok', icon: '↩️', title: 'Cancelled and refunded' };
+      // Refunded only once the buyer says it arrived: until then it is the
+      // seller's word that it was sent, and the two must not read as one.
+      if (f.reversalAnswer === 'received') return { tone: 'ok', icon: '↩️', title: 'Cancelled and refunded' };
+      if (f.reversalDisputed) return { tone: 'quiet', icon: '↩️', title: 'Cancelled — the refund dispute is closed', note: 'Open the dispute to read how it ended.' };
+      if (f.reversalAnswer === 'not_received') {
+        return side === 'buyer'
+          ? { tone: 'danger', icon: '⚠️', title: 'Cancelled — you said the refund has not arrived', note: 'The seller has been told. You can raise a dispute.' }
+          : { tone: 'danger', icon: '⚠️', title: 'Cancelled — the buyer says the refund has not arrived', note: 'Check the transfer with your bank.' };
+      }
+      return side === 'buyer'
+        ? { tone: 'urgent', icon: '↩️', title: 'Cancelled — the seller says your refund was sent', note: 'Tell them whether it arrived.' }
+        : { tone: 'wait', icon: '↩️', title: 'Cancelled — refund sent', note: 'Waiting for the buyer to confirm it arrived.' };
     case 'refunded':
       return { tone: 'quiet', icon: '↩️', title: 'Refunded' };
     case 'dispute_raised':
@@ -108,6 +125,9 @@ export function buyerStatus(f: StatusFacts): StatusLine {
   if (ended) return ended;
 
   if (f.status === 'delivered') {
+    if (f.receivedAt && f.paymentStatus !== 'paid' && f.outstandingMinor > 0) {
+      return { tone: 'urgent', icon: '💳', title: `Delivered — ${formatMoney(f.outstandingMinor, f.currency)} still to pay`, note: 'You have it. Pay the seller what is owed.' };
+    }
     return f.receivedAt
       ? { tone: 'ok', icon: '📬', title: 'Delivered — enjoy it!' }
       : { tone: 'ok', icon: '📬', title: 'Delivered', note: 'Tap to confirm you received it.' };
@@ -149,12 +169,23 @@ export function sellerStatus(f: StatusFacts & { claimOpen: boolean }): StatusLin
   if (ended) return ended;
 
   if (f.status === 'delivered') {
+    if (f.paymentStatus !== 'paid' && f.outstandingMinor > 0) {
+      return {
+        tone: 'urgent', icon: '💳', title: `Delivered — ${formatMoney(f.outstandingMinor, f.currency)} still unpaid`,
+        note: f.receivedAt ? 'The customer confirmed it arrived but has not paid in full.' : 'Waiting for the customer to confirm and pay.',
+      };
+    }
     return f.receivedAt
       ? { tone: 'ok', icon: '📬', title: 'Delivered — the customer confirmed it' }
       : { tone: 'ok', icon: '📬', title: 'Delivered', note: 'Waiting for the customer to confirm.' };
   }
   if (f.claimOpen || f.paymentStatus === 'claimed') {
     return { tone: 'urgent', icon: '💸', title: 'Customer says they paid', note: 'Check your account, then confirm.' };
+  }
+  // A payment the seller said never came is not a new order: it was claimed,
+  // answered, and now waits on the buyer to pay again or dispute it.
+  if (f.claimDenied && f.status === 'pending_payment') {
+    return { tone: 'wait', icon: '⏳', title: 'You said the payment did not arrive', note: 'Waiting for the customer to pay again or raise a dispute.' };
   }
   const fresh = f.status === 'pending_payment' && f.paymentStatus === 'unpaid' && !f.accepted;
   if (fresh) {

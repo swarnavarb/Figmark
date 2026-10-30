@@ -16,7 +16,7 @@ import { UNDO_EXPIRED, canUndo, undoTag, withoutUndo } from './undo.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
 import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped } from '../../../shared/orders.js';
 import {
-  AWAITING_LOT_ID, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, stagesFor,
+  AWAITING_LOT_ID, asBuyerSees, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, stagesFor,
 } from '../../../shared/fulfilment.js';
 import type { Lot, LotCrewSettings, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
@@ -860,11 +860,13 @@ async function orderTracking(request: HttpRequest, _context: InvocationContext) 
   if (!id) return error(400, 'invalid_request', 'An order id is required.');
 
   const repository = await getRepository();
-  const order = await repository.getOrder(id);
-  if (!order) return error(404, 'not_found', 'No such order.');
-  if (order.buyerId !== user.id && order.sellerId !== user.id) {
+  const stored = await repository.getOrder(id);
+  if (!stored) return error(404, 'not_found', 'No such order.');
+  if (stored.buyerId !== user.id && stored.sellerId !== user.id) {
     throw AuthError.forbidden('That order is not yours.');
   }
+  // A dispatch the seller can still take back has not happened yet for the buyer.
+  const order = stored.sellerId === user.id ? stored : asBuyerSees(stored);
 
   const lot = inLot(order) ? await repository.getLot(order.sellerId, order.lotId) : null;
   const sellers = await repository.listUsersByIds([order.sellerId]);
@@ -1342,6 +1344,11 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       tally: tally(siblings),
     });
   }
+  // What the buyer saw before this dispatch, shown to them until it can no
+  // longer be taken back.
+  const undoBefore = tag && checkpoint === 'dispatched' && on
+    ? { status: order.status, dispatchedAt: order.checkpoints?.dispatched ?? null, shipment: order.shipment ?? null }
+    : null;
   if (withShipment) order.shipment = { courier, awb, at: now };
   if (checkpoint === 'dispatched' && !on) order.shipment = null;
 
@@ -1389,6 +1396,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       note: on ? receivedNote ?? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
       recordedBy: user.id,
       ...tag,
+      ...(undoBefore ? { undoBefore } : {}),
     },
     // Its own line rather than folded into the tick's, which reading an order
     // matches word for word to tell a recorded tick from an unrecorded one.

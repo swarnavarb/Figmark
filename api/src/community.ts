@@ -490,6 +490,7 @@ export async function finalizeDecided(repository: Repo, dispute: Dispute): Promi
   // Claimed before anything is counted or carried out, so a result is only
   // ever made final once, however many readers arrive at the same moment.
   const saved = await commit(repository, dispute);
+  await releaseOrderFromDispute(repository, saved, order);
   await bump(repository, loserId, 'disputesLost', order);
   // A win counts on a profile only if the other side took part. Otherwise a
   // second account that never answers would be a way to buy a record of wins.
@@ -622,6 +623,29 @@ export async function bringReleaseUpToDate(repository: Repo, dispute: Dispute, n
     if (error instanceof Busy) return (await repository.getDisputeById(dispute.id)) ?? dispute;
     throw error;
   }
+}
+
+/**
+ * A closed dispute hands its order back. The order a buyer disputed because
+ * a reversal never arrived sat in `dispute_raised` while the dispute was
+ * worked; once it is settled, withdrawn or decided there is nothing left
+ * for that state to wait on, so the order goes back to the reversal it came
+ * from, already answered, with nobody left a button to press.
+ */
+export async function releaseOrderFromDispute(repository: Repo, dispute: Dispute, order: Order | null): Promise<Order | null> {
+  if (!order || order.status !== 'dispute_raised') return order;
+  if (!(order.disputeLinks ?? []).some((link) => link.id === dispute.id)) return order;
+  const fresh = (await repository.getOrder(order.id)) ?? order;
+  if (fresh.status !== 'dispute_raised') return fresh;
+  const now = new Date().toISOString();
+  fresh.status = 'cancelled_reversed';
+  fresh.updatedAt = now;
+  const how = dispute.status === 'withdrawn' ? 'withdrawn' : dispute.result?.how === 'decided' ? 'decided' : 'settled';
+  fresh.stageHistory = [
+    ...fresh.stageHistory,
+    { stage: fresh.stage, enteredAt: now, note: `Dispute ${how}. The order is closed.`, recordedBy: 'system' },
+  ];
+  return repository.updateOrder(fresh);
 }
 
 /** The settlement both parties agreed: nobody won, nobody lost, and both records say so. */

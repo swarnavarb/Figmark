@@ -10,7 +10,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BackBar, canGoBack } from '../components/ScrollManager';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex, renderStepText } from '@shared/routes';
-import { REVIEW_REVEAL_DAYS, isCancelledLike, type OrderSide } from '@shared/orders';
+import { REVIEW_REVEAL_DAYS, awaitingAcceptance, isCancelledLike, isStopped, nothingAtStake, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
 import type { BuyerReversalDetails, Order, SellerPaymentDetails } from '@shared/models';
@@ -172,11 +172,11 @@ export function OrderPage() {
           { label: 'Total', value: formatMoney(orderTotalMinor(order), order.currency), tone: 'accent' },
           { label: 'Qty', value: order.quantity },
           { label: 'Stock', value: isDirect(order) ? <><Svg name="home" size={13} /> In hand</> : <><Svg name="ship" size={13} /> Import</>, tone: isDirect(order) ? 'ok' : undefined },
-          { label: 'Status', value: placed ? order.status.replace(/_/g, ' ') : 'Not placed', tone: placed ? statusTone(order.status) : 'warn' },
+          { label: 'Status', value: !placed ? 'Not placed' : awaitingAcceptance(order) && order.paymentStatus === 'unpaid' ? 'booked' : order.status.replace(/_/g, ' '), tone: placed ? statusTone(order.status) : 'warn' },
         ]}>
         {!placed && (
           <p className="icard__note">
-            <b>Not placed yet.</b> Nothing is ordered until you choose how to buy below. The shop can see that you pressed Buy, and may message you about it.
+            <b>Not placed yet.</b> Nothing is ordered until you choose how to buy below. The shop cannot see it until you do.
           </p>
         )}
         {order.affiliate && (seller
@@ -843,7 +843,8 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
  */
 function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }) {
   const { order, listing } = data;
-  if (order.placedAt === null || !listing || isCancelledLike(order.status) || order.status === 'dispute_raised') return null;
+  // Nothing to celebrate on an order that was called off, whichever way.
+  if (order.placedAt === null || !listing || isStopped(order.status)) return null;
   const pre = listing.preOrder && listing.preOrder.threshold > 0 ? listing.preOrder : null;
   const left = pre ? Math.max(0, pre.threshold - pre.joined) : 0;
   const badge = shopBadge(data.sellerBadge ? {
@@ -993,7 +994,8 @@ function DisputePanel({ state }: { state: OrderState }) {
           claim above, heard by its assigned manager for free. */}
       {/* Not on a checkout: the seller cannot see it yet, so there is nobody
           to raise it with. */}
-      {order.placedAt !== null && (
+      {/* Nor before anything was paid or sent: there is nothing at stake yet. */}
+      {order.placedAt !== null && !nothingAtStake(order) && (
         <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
           onClick={() => setRaising({ label: order.itemName })}>
           {/* Beside a specific "Dispute this", say this one is for anything else. */}

@@ -1,7 +1,9 @@
 import {
   BUYER_DISPUTE_REASONS,
   SELLER_DISPUTE_REASONS,
+  DISPUTE_STATUS_LABELS,
   type DisputeReason,
+  type DisputeStatus,
 } from './enums.js';
 import type {
   Dispute, DisputeDecision, DisputeRound, ReleaseDuty, DisputeSanctionKind, DisputeSubjectType, DisputeTopic,
@@ -112,6 +114,19 @@ export function roundsOf(dispute: Pick<Dispute, 'rounds'>): DisputeRound[] {
 export function currentRound(dispute: Pick<Dispute, 'rounds'>): DisputeRound | null {
   const rounds = roundsOf(dispute);
   return rounds[rounds.length - 1] ?? null;
+}
+
+/**
+ * A dispute's status in the words of whoever is reading it. "Waiting on the
+ * other side" is only true for the one who raised it: the person it is
+ * against is the one being waited on, and has to be told it is their turn.
+ */
+export function disputeStatusLabel(status: DisputeStatus, role: 'raiser' | 'respondent' | string | null): string {
+  if (status === 'awaiting_response') {
+    if (role === 'respondent') return 'Your turn to answer';
+    if (role !== 'raiser') return 'Waiting on the respondent';
+  }
+  return DISPUTE_STATUS_LABELS[status];
 }
 
 export function isClosed(dispute: Pick<Dispute, 'status'>): boolean {

@@ -2672,7 +2672,7 @@ function OrderRow({
     bookingOnly: row.bookingOnly,
     accepted: row.accepted,
     canPay: false,
-    claimDenied: false,
+    claimDenied: row.claim?.decision === 'denied' && row.paymentStatus !== 'paid',
     outstandingMinor: row.outstandingMinor,
     currency: row.currency,
     dispatched: Boolean(row.dispatchedAt) || row.status === 'shipped',

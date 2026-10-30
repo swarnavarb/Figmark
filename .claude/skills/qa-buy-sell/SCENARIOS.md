@@ -27,7 +27,7 @@ J wants, deals & extras · K edge cases & abuse.
 - **B3 "Multiple" quantity.** → "Multiple available" / ∞, never a made-up number; buyer stepper allows up to 20.
 - **B4 Import, lot later.** Where is it? → Importing, Lot "Add to a lot later". → Listing reads as an import; buyer sees it is coming from abroad.
 - **B5 Import into a new lot.** Lot → "+ Open a new lot…", fill the modal, return. → Half-filled form intact, the new lot pre-selected; listing published inside it.
-- **B6 Pre-order.** More options → Take pre-orders, bookings needed 5, close in 7 days. → "Pre-order" sticker; buyer sees "Book a place" with max quantity 1.
+- **B6 Pre-order.** More options → Take pre-orders, bookings needed 5, close in 7 days. → "Pre-order" sticker; buyer sees "Buy a place now" with max quantity 1.
 - **B7 Advance.** Accept an advance, 25 %. → "Booking Amt · 25%" strip; listing says "Book with ₹X (25%) now"; X is rounded up correctly.
 - **B8 Limited-time deal.** Ends in 1 day. → Countdown shows; within 48 h it is flagged as closing soon.
 - **B9 Affiliate + link discount.** Commission per unit and a buyer discount. → Listing offers an affiliate link; a buyer arriving through it sees the struck-through price (ties to C14).
@@ -51,7 +51,7 @@ J wants, deals & extras · K edge cases & abuse.
 - **C8 Seller without payment details.** Buy from a seeded shop with no UPI (try several, e.g. Gadget Grid). → "Buy directly" disabled with the reason; Book still possible.
 - **C9 Book.** Choose Book. → Order placed as a booking, no payment asked yet; seller sees "✅ Accept booking" / "❌ Reject".
 - **C10 Book → accepted → pay.** Arjun accepts. → Meera notified, now gets "Pay ₹X"; completing C4 from here works.
-- **C11 Pre-order "Book a place".** On B6's listing. → Place booked, fill meter moves (1/5); a second booking by another buyer moves it again.
+- **C11 Pre-order "Buy a place now".** On B6's listing. → Place booked, fill meter moves (1/5); a second booking by another buyer moves it again.
 - **C12 Sold out / expired.** Buy the last unit (qty 1 item) as `meera`; as `arjun` buying from someone else's sold-out item, or reload Meera's listing page. → "Sold out", Buy disabled; expired items cannot be bought.
 - **C13 Last unit race.** `meera` and a desktop persona both open a qty-1 item and press Buy near-simultaneously; both try to place. → Only one order can be placed; the other gets a clear message, not a phantom order.
 - **C14 Affiliate link price.** Arjun copies the affiliate link (B9); `meera` opens it. → Discounted price on listing and in checkout totals; seller sees the correct amount.

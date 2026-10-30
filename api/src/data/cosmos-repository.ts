@@ -2076,7 +2076,8 @@ export class CosmosRepository implements Repository {
         preOrder: current.preOrder
           ? { ...current.preOrder, filledCount: current.preOrder.filledCount + order.quantity }
           : null,
-        soldCount: (current.soldCount ?? 0) + order.quantity,
+        // A booking holds the stock but is not a sale until the seller says yes.
+        soldCount: (current.soldCount ?? 0) + (order.bookingOnly ? 0 : order.quantity),
         updatedAt: new Date().toISOString(),
       };
     });

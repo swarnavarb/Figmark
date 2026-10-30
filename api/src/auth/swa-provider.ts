@@ -8,6 +8,7 @@ import type {
 } from '../../../shared/contracts.js';
 import type { Capability } from '../../../shared/enums.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
+import { verifiedChecks } from '../../../shared/verification.js';
 import type { Repository } from '../data/repository.js';
 import { config } from '../config.js';
 import { AuthError } from './errors.js';
@@ -78,7 +79,7 @@ export class StaticWebAppsAuthProvider implements AuthService {
   ): Promise<AuthUser> {
     const user = await this.requireAuth(request);
     if (!hasAnyCapability(user.capabilities, capabilities)) {
-      if (capabilities.includes('buy') || capabilities.includes('sell')) throw AuthError.verificationRequired(capabilities);
+      if (capabilities.includes('buy') || capabilities.includes('sell')) throw AuthError.verificationRequired(capabilities, verifiedChecks(user));
       throw AuthError.forbidden(
         `This action requires one of: ${capabilities.join(', ')}.`,
       );

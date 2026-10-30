@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { AWAITING_LOT_ID, DIRECT_LOT_ID, inLot, isDirect, lotIsDone, lotPhase } from '../../../shared/fulfilment.js';
+import { AWAITING_LOT_ID, DIRECT_LOT_ID, asBuyerSees, inLot, isDirect, lotIsDone, lotPhase } from '../../../shared/fulfilment.js';
 import type { Listing, Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import { repriceCheckout, unavailableReason } from './placement.js';
 import {
@@ -960,7 +960,9 @@ async function myItems(request: HttpRequest, _context: InvocationContext) {
 
   // Settled first, so an item whose protection window ran out reads as
   // delivered here too, and not only on its own page.
+  // A dispatch the seller can still take back has not happened yet here.
   const orders = (await settleAll(await repository.listOrdersForBuyer(user.id), repository))
+    .map((order) => asBuyerSees(order))
     .filter((order) => !isCancelledLike(order.status));
   // One read per lot rather than one per item: three items in one lot are
   // one journey, and asking three times would be three chances to disagree.

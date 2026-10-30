@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type DisputeRow, type MyDisputesResponse } from '../api';
-import { DISPUTE_STATUS_LABELS } from '@shared/enums';
+import { disputeStatusLabel } from '@shared/disputes';
 import { ManagerMark } from '../components/ManagerBadge';
 import { RaiseDisputeModal } from '../components/DisputeFlows';
 import { EmptyState, ErrorNotice, PageError } from '../components/ui';
@@ -125,7 +125,7 @@ function DisputeItem({ row }: { row: DisputeRow }) {
   const closed = row.status === 'resolved' || row.status === 'withdrawn';
   const outcome = row.result?.how === 'settled' ? 'Settled'
     : row.result?.how === 'decided' ? (row.result.winnerId && row.raisedByMe === (row.result.favour === 'raiser') ? 'Won' : 'Lost')
-    : DISPUTE_STATUS_LABELS[row.status];
+    : disputeStatusLabel(row.status, row.raisedByMe ? 'raiser' : 'respondent');
   return (
     <li className={`rfhist__row rfhist__row--${closed ? 'received' : 'not_received'}`}>
       <span className="rfhist__icon" aria-hidden="true">⚖️</span>

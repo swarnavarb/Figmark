@@ -185,6 +185,8 @@ export function ListingPage() {
             <InfoTip label="What Bump does"><BumpHelp /></InfoTip>
           </span>
         </div>
+      ) : listing.status === 'archived' ? (
+        <p className="notice notice--warn">The seller has taken this item down. It can no longer be bought.</p>
       ) : isExpired(listing) ? (
         <p className="notice notice--warn">This item has expired and can no longer be bought.</p>
       ) : (
@@ -202,7 +204,7 @@ export function ListingPage() {
           {/* No purchase on an expired item. The server refuses it too. */}
           <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
             disabled={busy || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
-            {busy ? <span className="buybox__opening">Opening checkout</span> : <>{lockMark}{listing.preOrder ? 'Book a place' : 'Buy now'}</>}
+            {busy ? <span className="buybox__opening">Opening checkout</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : 'Buy now'}</>}
           </button>
           <button className={`btn btn--ghost buybox__save${liked ? ' is-on' : ''}${lock}`} aria-label={liked ? 'Saved' : 'Save'}
             aria-pressed={liked} onClick={gate(() => void toggleLike(), 'Sign in to save items.')} disabled={busy}>
@@ -219,9 +221,13 @@ export function ListingPage() {
           <small>Ask a question or make an offer</small>
         </Link>
       )}
-      <p className="buybox__fine">
-        {!user && !data.isOwn ? '🔒 Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
-      </p>
+      {/* Buyer's words, for a buyer: not on the seller's own item, nor on one
+          that can no longer be bought. */}
+      {!data.isOwn && !isExpired(listing) && (
+        <p className="buybox__fine">
+          {!user ? '🔒 Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
+        </p>
+      )}
       {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy}
         offLabel={linkOff > 0 ? formatMoney(linkOff, listing.currency) : null} />}
     </div>
@@ -553,9 +559,9 @@ function PreOrderPanel({
           </>
         ) : (
           <>
-            The seller places the order at {view.fillThreshold}. Pledging costs nothing now and is
-            called in for payment — within a day — the moment it fills. Nobody pays for a lot that
-            does not happen.{view.whenShort === 'proceed' && ' If it is short at the close, the seller goes ahead anyway.'}
+            The seller places the order at {view.fillThreshold}. A pledge (“I&rsquo;m in”) costs nothing
+            now and is called in for payment — within a day — the moment it fills. Nobody pays a pledge
+            for a lot that does not happen. “Buy a place now” is an ordinary checkout instead.{view.whenShort === 'proceed' && ' If it is short at the close, the seller goes ahead anyway.'}
           </>
         )}
       </p>

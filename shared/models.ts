@@ -1240,6 +1240,12 @@ export interface StageEvent {
    */
   undoId?: string;
   undoUntil?: string;
+  /**
+   * What the buyer saw before a dispatch that can still be undone. While the
+   * window is open the buyer is shown this, not the dispatch, so taking it
+   * back really does leave them none the wiser.
+   */
+  undoBefore?: { status: OrderStatus; dispatchedAt: string | null; shipment: OrderShipment | null };
   note: string | null;
   /** User id that recorded the transition. */
   recordedBy: string;

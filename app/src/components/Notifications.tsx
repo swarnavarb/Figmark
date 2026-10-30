@@ -33,7 +33,7 @@ import { Spinner } from './Spinner';
  * One line per thing: a conversation, a post's likes, a lot's tracking. The
  * server folds each new event into that line and counts what is new since it
  * was last read; anything older that slipped through as a second line is
- * dropped here. Unread lines sit under "New", the rest under "Earlier".
+ * dropped here. Unread lines sit under "Unread", the rest under "Read" - by whether they were read, not by when they came.
  */
 /** Said on the window when the bell brings news of an order or a payment, so
     the Sell tab's counts read again then rather than on a clock of their own. */
@@ -308,9 +308,9 @@ export function Notifications() {
             </p>
           ) : (
             <div className="bell__list">
-              {fresh.length > 0 && earlier.length > 0 && <p className="bell__section">New</p>}
+              {fresh.length > 0 && earlier.length > 0 && <p className="bell__section">Unread</p>}
               {fresh.map(line)}
-              {fresh.length > 0 && earlier.length > 0 && <p className="bell__section">Earlier</p>}
+              {fresh.length > 0 && earlier.length > 0 && <p className="bell__section">Read</p>}
               {earlier.map(line)}
               {nextBefore && (
                 <button type="button" className="bell__more" onClick={() => void more()} disabled={loadingMore}>

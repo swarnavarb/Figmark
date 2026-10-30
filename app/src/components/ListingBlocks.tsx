@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
 import { factsOf, isInDemand } from '@shared/catalog';
 import { SOURCING_LABELS } from '@shared/enums';
-import { advanceMinor, isMultiple } from '@shared/payments';
+import { advanceMinor, isExpired, isMultiple } from '@shared/payments';
 import type { Listing } from '@shared/models';
 import { formatMoney, formatDateTime } from '../format';
 import type { PriceChange } from '../api';
@@ -220,7 +220,11 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
   });
   tiles.push({
     tone: 'sea', icon: 'box', label: 'Stock',
-    value: isMultiple(listing) ? 'Made to order' : listing.quantityAvailable > 0 ? `${listing.quantityAvailable} available` : 'Sold out',
+    // "Made to order" only for an item that is: a shelf of many in hand is
+    // simply in stock, and an expired or removed one is in stock for nobody.
+    value: isExpired(listing) || listing.status === 'archived' ? 'No longer for sale'
+      : isMultiple(listing) ? (sourcing === 'in_hand' ? 'Plenty available' : 'Made to order')
+      : listing.quantityAvailable > 0 ? `${listing.quantityAvailable} available` : 'Sold out',
     note: listing.soldCount ? `${listing.soldCount} sold so far` : undefined,
   });
   if (listing.advancePercent) {

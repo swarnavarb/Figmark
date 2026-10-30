@@ -417,6 +417,13 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    // Said out loud: the country pickers are drawn by the app, so a browser's
+    // own "fill this in" bubble has nothing to point at and the press used to
+    // do nothing at all.
+    if (!details.originCountry || !details.destinationCountry) {
+      setError(`Pick the country it ships ${!details.originCountry ? 'from' : 'to'}.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -446,7 +453,7 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
 
   return (
     <>
-    <form className={bare ? 'form' : 'card card--pad form'} onSubmit={submit} style={bare ? undefined : { marginBottom: 22 }}>
+    <form className={bare ? 'form' : 'card card--pad form'} onSubmit={submit} noValidate style={bare ? undefined : { marginBottom: 22 }}>
       {!bare && <h2>New lot</h2>}
       <p className="muted" style={{ marginTop: -6 }}>
         A lot is one shipment. Say where it goes and how it travels, then add orders to it.

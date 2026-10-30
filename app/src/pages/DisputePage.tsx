@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BackLink } from '../components/ScrollManager';
 import { ManagerMark } from '../components/ManagerBadge';
-import { DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
+import { DISPUTE_REASON_LABELS } from '@shared/enums';
 import {
-  DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY,
+  DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY, disputeStatusLabel,
 } from '@shared/disputes';
 import type { DisputeRound, DisputeSanction, DisputeSanctionKind } from '@shared/models';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumRow } from '../api';
@@ -73,7 +73,7 @@ export function DisputePage() {
           </h1>
         </div>
         <span className={`badge badge--${dispute.status === 'resolved' ? 'ok' : dispute.status === 'withdrawn' ? '' : 'warn'}`}>
-          {dispute.result?.how === 'settled' ? 'Settled' : DISPUTE_STATUS_LABELS[dispute.status]}
+          {dispute.result?.how === 'settled' ? 'Settled' : disputeStatusLabel(dispute.status, role)}
         </span>
       </div>
 

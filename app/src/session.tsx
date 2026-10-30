@@ -42,14 +42,15 @@ interface SessionValue {
    * that needs an account calls this instead of hiding itself; once they are
    * in, the popup closes and they are still on the same page.
    */
-  promptAuth: (reason?: string) => void;
+  /** `mode` picks the tab it opens on: a "Log in" button opens on Sign in. */
+  promptAuth: (reason?: string, mode?: 'signin' | 'signup') => void;
   /**
    * `fn` for somebody signed in; the sign-in popup for a guest. For wrapping
    * the handler of anything interactive.
    */
   gate: <A extends unknown[]>(fn: (...args: A) => unknown, reason?: string) => (...args: A) => void;
   /** Non-null while the sign-in popup is open: why it was asked for. */
-  authPrompt: { reason: string | null } | null;
+  authPrompt: { reason: string | null; mode?: 'signin' | 'signup' } | null;
   closeAuth: () => void;
   /** How the email code went out with a sign-up just made; null otherwise. */
   signupEmail: SignupResponse['emailCode'] | null;
@@ -72,7 +73,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [missingContainers, setMissingContainers] = useState<string[]>([]);
   const [dataPerWorker, setDataPerWorker] = useState(false);
   const [testEnvironment, setTestEnvironment] = useState<string | null>(null);
-  const [authPrompt, setAuthPrompt] = useState<{ reason: string | null } | null>(null);
+  const [authPrompt, setAuthPrompt] = useState<{ reason: string | null; mode?: 'signin' | 'signup' } | null>(null);
   const [signupEmail, setSignupEmail] = useState<SignupResponse['emailCode'] | null>(null);
   const [verifyPrompt, setVerifyPrompt] = useState<string | null>(null);
 
@@ -232,7 +233,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     window.scrollTo(0, 0);
   }, [user, authPrompt]);
 
-  const promptAuth = useCallback((reason?: string) => setAuthPrompt({ reason: reason ?? null }), []);
+  const promptAuth = useCallback((reason?: string, mode?: 'signin' | 'signup') => setAuthPrompt({ reason: reason ?? null, mode }), []);
   const closeAuth = useCallback(() => setAuthPrompt(null), []);
   const closeVerifyPrompt = useCallback(() => setVerifyPrompt(null), []);
   const gate = useCallback(<A extends unknown[]>(fn: (...args: A) => unknown, reason?: string) => (...args: A) => {

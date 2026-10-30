@@ -440,7 +440,8 @@ export class MemoryRepository implements Repository {
       // Pre-order fill is denormalised onto the listing, so it moves with the
       // order rather than being counted at read time.
       if (listing.preOrder) listing.preOrder.filledCount += order.quantity;
-      listing.soldCount = (listing.soldCount ?? 0) + order.quantity;
+      // A booking holds the stock but is not a sale until the seller says yes.
+      if (!order.bookingOnly) listing.soldCount = (listing.soldCount ?? 0) + order.quantity;
     }
     return true;
   }

@@ -314,6 +314,20 @@ export function travellingStatus(status: OrderStatus): OrderStatus {
   return status === 'confirmed' || status === 'in_fulfilment' ? 'in_fulfilment' : status;
 }
 
+/**
+ * Placed, but nothing has happened that two people could disagree about: no
+ * money paid or claimed, and nothing sent. A booking still waiting on the
+ * seller, or an order they declined before anyone paid, is one of these -
+ * raising a paid dispute over it would charge the fee for nothing.
+ */
+export function nothingAtStake(
+  order: Pick<Order, 'status' | 'paymentStatus'> & Partial<Pick<Order, 'payments' | 'paymentClaim' | 'checkpoints'>>,
+): boolean {
+  const early = order.status === 'pending_payment' || order.status === 'rejected' || order.status === 'cancelled';
+  return early && order.paymentStatus === 'unpaid' && (order.payments ?? []).length === 0
+    && !order.paymentClaim && !order.checkpoints?.dispatched;
+}
+
 /** One rejection the viewer could dispute, and what to call it. */
 export interface DisputeSubject {
   subject: string;
@@ -349,7 +363,14 @@ export function disputeSubjects(
     });
   }
   if (side === 'seller') {
+    // A reversal is mirrored onto the Refunds history as a refund entry, so
+    // the two are one matter: it is offered once, as the reversal. And once
+    // the buyer has disputed that reversal there is nothing left for the
+    // seller to raise - the dispute already open is the place to answer it.
+    const reversal = order.reversal;
+    const reversalDisputed = Boolean(reversal?.disputeRaisedAt);
     for (const credit of order.credits ?? []) {
+      if (credit.origin === 'cancelled' && reversal) continue;
       for (const entry of credit.refundLog ?? []) {
         if (entry.status !== 'not_received') continue;
         out.push({
@@ -358,8 +379,7 @@ export function disputeSubjects(
         });
       }
     }
-    const reversal = order.reversal;
-    if (reversal?.buyerResponse === 'not_received' && reversal.reversedAt) {
+    if (reversal?.buyerResponse === 'not_received' && reversal.reversedAt && !reversalDisputed) {
       out.push({
         subject: `reversal:${reversal.reversedAt}`, kind: 'reversal_rejected', amountMinor: reversal.amountMinor,
         label: `The buyer says the ${rupees(reversal.amountMinor)} reversal did not arrive`,
