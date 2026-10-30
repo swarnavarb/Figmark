@@ -6,7 +6,7 @@ import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset
 import { cardButtons, holdsLotBack, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, awaitingAcceptance, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
-import { creditIsLive, creditLeft, expiresSoon, isExpired, orderMoney } from '../../../shared/payments.js';
+import { creditIsLive, creditLeft, expiresSoon, isExpired, keptCreditMinor, orderMoney } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
@@ -520,6 +520,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       dispatchedAt: order.checkpoints?.dispatched ?? null,
       /** Closed by the seller while still owed money, and why. */
       closure: order.closure ? { reason: order.closure.reason, owedMinor: order.closure.owedMinor } : null,
+      /** A cancelled order's money kept as the buyer's credit. */
+      keptCreditMinor: keptCreditMinor(order),
       awaitingLot: awaitingLot(order),
       lotId: lot?.id ?? null,
       lotName: lot?.name ?? null,

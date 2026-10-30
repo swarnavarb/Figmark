@@ -1035,6 +1035,7 @@ function DisputePanel({ state }: { state: OrderState }) {
       {raising && (
         <RaiseDisputeModal onClose={() => setRaising(null)} orderSubject={raising.subject}
           side={state.side ?? undefined}
+          nothingPaid={orderMoney(order).paidMinor === 0}
           protectedOrder={Boolean(order.protection && (order.hold.state === 'held' || order.hold.state === 'disputed'))}
           target={{ type: 'order', id: order.id, againstId: counterpartyId, label: raising.label }} />
       )}

@@ -1519,14 +1519,24 @@ async function holdCredit(request: HttpRequest, _context: InvocationContext) {
   });
   if (total === 0) return error(404, 'not_found', 'No undecided extra payment on this order.');
 
-  note(order, `💰 Extra payment of ${rupees(total)} kept as credit for the buyer's future orders.`, user.id);
+  // A cancelled order's money kept as credit is not reversed: the order ends
+  // there, as it does when the money is moved onto another order.
+  const fromCancel = (order.credits ?? []).some((credit) => credit.origin === 'cancelled' && credit.status === 'held');
+  if (fromCancel && order.status === 'payment_reversal_pending') {
+    order.status = 'cancelled';
+    note(order, `Cancelled — ${rupees(total)} kept as credit for the buyer's future orders instead of being reversed.`, user.id);
+  } else {
+    note(order, `💰 Extra payment of ${rupees(total)} kept as credit for the buyer's future orders.`, user.id);
+  }
   order.updatedAt = new Date().toISOString();
   const saved = await repository.updateOrder(order);
 
   const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
     kind: 'credit_applied',
-    title: `${named.shop} kept your extra ${rupees(total)} as credit`,
+    title: fromCancel
+      ? `${named.shop} kept the ${rupees(total)} from your cancelled order as credit`
+      : `${named.shop} kept your extra ${rupees(total)} as credit`,
     body: `It goes towards your next order with them. (${order.itemName})`,
     link: `/order/${order.id}`,
   });

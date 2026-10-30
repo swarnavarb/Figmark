@@ -7,6 +7,7 @@ import {
   DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY, disputeStatusLabel,
 } from '@shared/disputes';
 import type { DisputeRound, DisputeSanction, DisputeSanctionKind } from '@shared/models';
+import { orderMoney } from '@shared/payments';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumRow } from '../api';
 import { ScreenshotPicker } from '../components/DisputeFlows';
 import { Avatar, ErrorNotice, useConfirm, PageError } from '../components/ui';
@@ -97,8 +98,10 @@ export function DisputePage() {
         )}
         {order && !data.holdsMoney && (
           <p className="faint" style={{ margin: 0 }}>
-            This purchase was paid without buyer protection, or its protection has ended, so Figmark is not holding
-            the money. A decision here can flag and warn, but cannot move it.
+            {orderMoney(order).paidMinor === 0
+              ? 'Nothing was paid on this order, so there is nothing to pay out. A decision here can flag and warn the seller.'
+              : 'This purchase was paid without buyer protection, or its protection has ended, so Figmark is not holding '
+                + 'the money. A decision here can flag and warn, but cannot move it.'}
           </p>
         )}
         {current && !dispute.resolvedAt && (

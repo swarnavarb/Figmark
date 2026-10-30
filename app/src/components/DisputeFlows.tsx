@@ -135,7 +135,7 @@ export function ReportModal({ targetType, targetId, parentId, kind, onClose, onS
  * and nothing to pay - its assigned manager hears it - but the reason is one of the
  * structured ones, because that decides what happens to the held money.
  */
-export function RaiseDisputeModal({ target, onClose, protectedOrder, side, orderSubject }: {
+export function RaiseDisputeModal({ target, onClose, protectedOrder, side, orderSubject, nothingPaid }: {
   target: DisputeTarget;
   onClose: () => void;
   /** On an order: the particular rejected payment or refund being disputed. */
@@ -144,6 +144,8 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
   protectedOrder?: boolean;
   /** For a purchase: which end of it the raiser is. */
   side?: 'buyer' | 'seller';
+  /** A purchase nothing was paid on: there is no money to get back. */
+  nothingPaid?: boolean;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -228,7 +230,7 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
           </label>
         )}
 
-        {directBuyer && <DirectDealNote />}
+        {directBuyer && <DirectDealNote nothingPaid={nothingPaid} />}
 
         <label className="field">
           <span>What happened</span>
@@ -298,7 +300,16 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
  * make them pay it back. Holding the money so it can be returned is what
  * Buyer Protection, chosen at checkout, is for.
  */
-export function DirectDealNote() {
+export function DirectDealNote({ nothingPaid = false }: { nothingPaid?: boolean }) {
+  if (nothingPaid) {
+    return (
+      <p className="notice notice--warn" style={{ margin: 0 }}>
+        <b>Nothing was paid on this order, so there is nothing to pay out.</b> A community manager hears both of you
+        and can act against the seller - a warning, a lower rating, a "dispute lost" flag, an alert on their page, lost
+        XP - but no money moves either way.
+      </p>
+    );
+  }
   return (
     <p className="notice notice--warn" style={{ margin: 0 }}>
       <b>You paid this seller directly.</b> A community manager hears both of you and can act against the seller -

@@ -2690,6 +2690,7 @@ function OrderRow({
     inHand: row.inHand,
     disputed: row.holdState === 'disputed',
     closure: row.closure,
+    keptCreditMinor: row.keptCreditMinor,
     claimOpen: awaitingClaim,
   });
   /* The badge already says "In dispute"; the banner would only say it again. */

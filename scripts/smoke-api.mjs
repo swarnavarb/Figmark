@@ -8543,6 +8543,21 @@ await check('Scenario B: cancel after payment reverses cleanly once the buyer ha
   assert.equal(acked.jsonBody.order.reversal.buyerResponse, 'received');
 });
 
+await check('keeping a cancelled order\'s money as credit ends its reversal and says so', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Kept As Credit', 30_000);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Paint chipped.' } }), ctx);
+  const held = await holdCredit(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(held.status, 200, JSON.stringify(held.jsonBody));
+  assert.equal(held.jsonBody.order.status, 'cancelled', 'no reversal left to send');
+  assert.equal(held.jsonBody.order.credits[0].status, 'held');
+  const seller = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!seller.actions.includes('submit_reversal'));
+  assert.ok(seller.actions.includes('refund_credit'), 'it can still be returned later');
+  const row = (await sales(req({ headers: auth, query: { ids: orderId } }), ctx)).jsonBody.orders.find((o) => o.id === orderId);
+  assert.equal(row.keptCreditMinor, 30_000);
+  assert.ok((await noticesFor(buyer.id)).some((n) => /from your cancelled order as credit/.test(n.title)));
+});
+
 // Scenario C - cancel after payment, buyer has no reversal details yet.
 await check('Scenario C: cancelling a paid order waits on the buyer to add reversal details', async () => {
   const { orderId, buyer } = await paidAcceptedOrder('Paid Order Without Details', 30_000);

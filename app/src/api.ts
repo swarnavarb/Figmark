@@ -742,6 +742,8 @@ export interface SaleRow {
   shipment: OrderShipment | null;
   /** Closed by the seller while still owed money, and why. */
   closure: { reason: string; owedMinor: number } | null;
+  /** A cancelled order's money kept as the buyer's credit. */
+  keptCreditMinor: number;
   /** When the seller ticked it dispatched. */
   dispatchedAt: string | null;
   awaitingLot: boolean;

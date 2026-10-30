@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Order, OrderShipment } from '@shared/models';
 import type { OrderAction } from '@shared/orders';
-import { orderMoney } from '@shared/payments';
+import { keptCreditMinor, orderMoney } from '@shared/payments';
 import { trackingSearchUrl } from '@shared/tracking-links';
 import { formatMoney } from '../format';
 import '../styles/OrderStatus.css';
@@ -50,6 +50,8 @@ export interface StatusFacts {
   reversalDisputed?: boolean;
   /** The seller closed it delivered but unpaid, and why. */
   closure?: { reason: string; owedMinor: number } | null;
+  /** Cancelled, and the seller is keeping the money as credit instead of reversing it. */
+  keptCreditMinor?: number;
 }
 
 /** The facts, read off a whole order and what this viewer may do to it. */
@@ -73,6 +75,7 @@ export function factsFromOrder(order: Order, actions: readonly OrderAction[]): S
     reversalAnswer: order.reversal?.buyerResponse ?? null,
     reversalDisputed: Boolean(order.reversal?.disputeRaisedAt),
     closure: order.closure ?? null,
+    keptCreditMinor: keptCreditMinor(order),
   };
 }
 
@@ -90,6 +93,12 @@ function stopped(f: StatusFacts, side: 'buyer' | 'seller'): StatusLine | null {
           note: f.reason ? `“${f.reason}” Nothing was charged.` : 'Nothing was charged.' }
         : { tone: 'danger', icon: '❌', title: 'You declined this order' };
     case 'cancelled':
+      if (f.keptCreditMinor) {
+        const kept = formatMoney(f.keptCreditMinor, f.currency);
+        return side === 'buyer'
+          ? { tone: 'info', icon: '💰', title: `Cancelled — ${kept} kept as credit for you`, note: 'The shop is keeping it towards your next order with them.' }
+          : { tone: 'info', icon: '💰', title: `Cancelled — ${kept} kept as the buyer's credit`, note: 'It goes towards their next order with you.' };
+      }
       return { tone: 'quiet', icon: '🚫', title: 'Order cancelled', note: f.reason ? `“${f.reason}”` : undefined };
     case 'payment_reversal_pending':
       return side === 'buyer'

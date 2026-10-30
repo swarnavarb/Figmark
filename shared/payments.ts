@@ -181,6 +181,13 @@ export function creditLeft(credit: Pick<CreditRecord, 'amountMinor' | 'refundedM
   return Math.max(0, credit.amountMinor - credit.refundedMinor - (credit.appliedMinor ?? 0));
 }
 
+/** A cancelled order's money the seller is keeping as credit, rather than reversing. */
+export function keptCreditMinor(order: { credits?: CreditRecord[] | null }): number {
+  return (order.credits ?? [])
+    .filter((credit) => credit.origin === 'cancelled' && credit.status === 'held')
+    .reduce((sum, credit) => sum + creditLeft(credit), 0);
+}
+
 /** Still the seller's to decide about: return it, move it, or keep holding it. */
 export function creditIsLive(credit: Pick<CreditRecord, 'status'>): boolean {
   return credit.status === 'open' || credit.status === 'held';
