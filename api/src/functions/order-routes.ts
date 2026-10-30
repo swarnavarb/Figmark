@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { REVIEW_DIRECTIONS } from '../../../shared/enums.js';
+import { REVIEW_DIRECTIONS, type DisputeReason } from '../../../shared/enums.js';
 import { threadIdFor } from '../../../shared/handles.js';
 import type {
   CreditRecord, Dispute, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
@@ -17,14 +17,16 @@ import {
   daysFrom,
   disputeSubjects,
   isCancelledLike,
+  isOpenUnpaid,
   isPlaced,
   nothingAtStake,
+  owedMinor,
   reviewRevealed,
   scoreFrom,
   sideOf,
 } from '../../../shared/orders.js';
 import { asBuyerSees } from '../../../shared/fulfilment.js';
-import { DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, currentRound } from '../../../shared/disputes.js';
+import { DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, currentRound, reasonsFor } from '../../../shared/disputes.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
@@ -435,6 +437,9 @@ async function review(request: HttpRequest, _context: InvocationContext) {
 
   if (!order.completedAt) {
     return error(409, 'not_reviewable', 'Reviews open once the order is complete.');
+  }
+  if (isOpenUnpaid(order)) {
+    return error(409, 'not_reviewable', 'Reviews open once the order is paid in full, or the seller closes it.');
   }
 
   const side = sideOf(order, user.id)!;
@@ -1560,8 +1565,11 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'not_placed', 'This order has not been placed yet, so there is nothing to dispute. Remove it from your cart instead.');
   }
 
-  const body = await bodyOf<{ subject?: string; reason?: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
+  const body = await bodyOf<{ subject?: string; reason?: string; reasonCode?: string; managerId?: string; evidence?: { url?: string; caption?: string }[] }>(request);
   if (!body || typeof body !== 'object') return error(400, 'invalid_body', 'Request body must be JSON.');
+  // What went wrong, picked from the raiser's side's list; anything else is "something else".
+  const reasonCode: DisputeReason = (reasonsFor(side) as readonly string[]).includes(body.reasonCode ?? '')
+    ? body.reasonCode as DisputeReason : 'other';
   if (!body.subject && nothingAtStake(order)) {
     return error(409, 'nothing_at_stake', 'Nothing has been paid or sent on this order yet, so there is nothing to dispute. Message the other side instead.');
   }
@@ -1601,7 +1609,7 @@ async function flagDispute(request: HttpRequest, _context: InvocationContext) {
   // system's, if they left it), and paid through the gateway - unless the
   // purchase is still protected, when its holder hears it for free.
   const dispute = await openDisputeRecord(repository, order, {
-    raisedBy: user.id, side, topic, subject, reasonCode: 'other', reason, amountMinor, evidence,
+    raisedBy: user.id, side, topic, subject, reasonCode, reason, amountMinor, evidence,
     managerId: body.managerId ?? null,
   });
   note(order, `⚖️ Dispute raised by the ${side} — ${DISPUTE_TOPIC_LABELS[topic]}${typed ? `: ${typed}` : ''}`, user.id);
@@ -1801,6 +1809,57 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   return json(200, { order });
 }
 
+/**
+ * POST /api/orders/{id}/close - the seller closes a delivered order that was
+ * never paid in full, saying why.
+ *
+ * Shipping on trust is allowed, so an order can be delivered and received
+ * with money still owed; it stays open until that is paid. A seller who has
+ * given up on being paid closes it here instead. Nothing is charged or
+ * refunded: it records that the seller stopped waiting, and why, and the
+ * buyer is told.
+ */
+async function closeOrder(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+
+  if (!actionsFor(order, user.id).includes('close')) {
+    return error(409, 'cannot_close', 'Only a delivered order that is still owed money can be closed here.');
+  }
+  let body: { reason?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  const reason = (body.reason ?? '').trim().slice(0, 300);
+  if (reason.length < 4) return error(400, 'no_reason', 'Say why you are closing it: the buyer is shown your reason.');
+
+  const now = new Date().toISOString();
+  const owed = owedMinor(order);
+  order.closure = { at: now, by: user.id, reason, owedMinor: owed };
+  order.completedAt = order.completedAt ?? now;
+  order.updatedAt = now;
+  note(order, `Closed by the seller with ${rupees(owed)} unpaid: ${reason}`, user.id);
+  await repository.updateOrder(order);
+
+  const named = await orderNames(repository, order);
+  await notify(repository, [order.buyerId], {
+    kind: 'order_closed',
+    title: `${named.shop} closed your order with ${rupees(owed)} unpaid`,
+    body: reason,
+    link: `/order/${order.id}`,
+  });
+
+  return json(200, { order });
+}
+
+export const closeOrderRoute = handler(closeOrder);
 export const settleClaimRoute = handler(settleClaim);
 export const rejectOrderRoute = handler(rejectOrder);
 export const confirmRoute = handler(confirm);
@@ -2397,6 +2456,7 @@ app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', ha
 app.http('order-claim-payment', { ...anon, methods: ['POST'], route: 'orders/{id}/claim-payment', handler: claimPaymentRoute });
 app.http('order-settle-claim', { ...anon, methods: ['POST'], route: 'orders/{id}/settle-claim', handler: settleClaimRoute });
 app.http('order-reject', { ...anon, methods: ['POST'], route: 'orders/{id}/reject', handler: rejectOrderRoute });
+app.http('order-close', { ...anon, methods: ['POST'], route: 'orders/{id}/close', handler: closeOrderRoute });
 app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/confirm', handler: confirmRoute });
 app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
 app.http('order-unboxing', { ...anon, methods: ['POST'], route: 'orders/{id}/unboxing', handler: unboxingRoute });

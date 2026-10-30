@@ -48,6 +48,8 @@ export interface StatusFacts {
   reversalAnswer?: 'received' | 'not_received' | null;
   /** The buyer raised a dispute about the reversal. */
   reversalDisputed?: boolean;
+  /** The seller closed it delivered but unpaid, and why. */
+  closure?: { reason: string; owedMinor: number } | null;
 }
 
 /** The facts, read off a whole order and what this viewer may do to it. */
@@ -70,6 +72,7 @@ export function factsFromOrder(order: Order, actions: readonly OrderAction[]): S
     reason: order.cancelReason ?? null,
     reversalAnswer: order.reversal?.buyerResponse ?? null,
     reversalDisputed: Boolean(order.reversal?.disputeRaisedAt),
+    closure: order.closure ?? null,
   };
 }
 
@@ -125,14 +128,31 @@ export function buyerStatus(f: StatusFacts): StatusLine {
   if (ended) return ended;
 
   if (f.status === 'delivered') {
-    if (f.receivedAt && f.paymentStatus !== 'paid' && f.outstandingMinor > 0) {
-      return { tone: 'urgent', icon: '💳', title: `Delivered — ${formatMoney(f.outstandingMinor, f.currency)} still to pay`, note: 'You have it. Pay the seller what is owed.' };
+    if (f.closure) {
+      return {
+        tone: 'quiet', icon: '🔒', title: `Closed by the seller — ${formatMoney(f.closure.owedMinor, f.currency)} was not paid`,
+        note: `“${f.closure.reason}”`,
+      };
+    }
+    if (f.paymentStatus !== 'paid' && f.outstandingMinor > 0) {
+      return {
+        tone: 'urgent', icon: '💳', title: `Delivered — ${formatMoney(f.outstandingMinor, f.currency)} still to pay`,
+        note: f.receivedAt ? 'The order stays open until you pay the seller what is owed.' : 'Confirm you received it, and pay the seller what is owed.',
+      };
     }
     return f.receivedAt
       ? { tone: 'ok', icon: '📬', title: 'Delivered — enjoy it!' }
       : { tone: 'ok', icon: '📬', title: 'Delivered', note: 'Tap to confirm you received it.' };
   }
   if (f.dispatched) {
+    // Sent before it was paid for: allowed, and said loudly, so nobody
+    // mistakes a parcel on its way for a purchase that is settled.
+    if (f.paymentStatus !== 'paid' && f.outstandingMinor > 0) {
+      return {
+        tone: 'urgent', icon: '🚚', title: `On its way — ${formatMoney(f.outstandingMinor, f.currency)} not paid yet`,
+        note: 'The seller sent it before payment. Pay them to complete the order.',
+      };
+    }
     return { tone: 'info', icon: '🚚', title: 'On its way to you', note: courierLine(f.shipment) };
   }
   if (f.paymentStatus === 'claimed') {
@@ -169,10 +189,18 @@ export function sellerStatus(f: StatusFacts & { claimOpen: boolean }): StatusLin
   if (ended) return ended;
 
   if (f.status === 'delivered') {
+    if (f.closure) {
+      return {
+        tone: 'quiet', icon: '🔒', title: `You closed it — ${formatMoney(f.closure.owedMinor, f.currency)} was not paid`,
+        note: `“${f.closure.reason}”`,
+      };
+    }
     if (f.paymentStatus !== 'paid' && f.outstandingMinor > 0) {
       return {
         tone: 'urgent', icon: '💳', title: `Delivered — ${formatMoney(f.outstandingMinor, f.currency)} still unpaid`,
-        note: f.receivedAt ? 'The customer confirmed it arrived but has not paid in full.' : 'Waiting for the customer to confirm and pay.',
+        note: f.receivedAt
+          ? 'The customer has it but has not paid in full. It stays open until they do, or you close it.'
+          : 'Waiting for the customer to confirm and pay.',
       };
     }
     return f.receivedAt
@@ -192,6 +220,12 @@ export function sellerStatus(f: StatusFacts & { claimOpen: boolean }): StatusLin
     return f.bookingOnly
       ? { tone: 'urgent', icon: '📘', title: 'New booking — accept or decline' }
       : { tone: 'urgent', icon: '🆕', title: 'New order — accept or decline' };
+  }
+  if (f.dispatched && f.paymentStatus !== 'paid' && f.outstandingMinor > 0) {
+    return {
+      tone: 'urgent', icon: '🚚', title: `Dispatched — ${formatMoney(f.outstandingMinor, f.currency)} not paid yet`,
+      note: 'You sent it before payment. The order stays open until the customer pays.',
+    };
   }
   if (f.accepted && f.paymentStatus === 'unpaid') {
     return { tone: 'wait', icon: '⏳', title: 'Accepted — waiting for the customer to pay' };

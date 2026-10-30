@@ -2614,7 +2614,7 @@ export const api = {
     detailsRequests: { orderId: string; itemName: string; sellerName: string; requestedAt: string }[];
   }>('/me/refunds'),
   myDisputes: () => request<MyDisputesResponse>('/me/disputes'),
-  flagDispute: (id: string, body: { subject?: string; reason?: string; managerId?: string; evidence?: EvidenceDraft[] }) =>
+  flagDispute: (id: string, body: { subject?: string; reason?: string; reasonCode?: string; managerId?: string; evidence?: EvidenceDraft[] }) =>
     post<{ order: Order; dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/flag-dispute`, body),
   holdCredit: (id: string, creditId?: string) =>
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
@@ -2880,6 +2880,9 @@ export const api = {
   /** The seller cannot serve an order. Puts the stock and the place back. */
   rejectOrder: (id: string, reason: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reject`, { reason }),
+  /** The seller closes a delivered order that is still owed money, saying why. */
+  closeOrder: (id: string, reason: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/close`, { reason }),
 
   /** The buyer chooses Book instead of paying now. */
   bookOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/book`, {}),

@@ -470,7 +470,11 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
         <form className="form" onSubmit={(event) => {
           event.preventDefault();
           const minor = view.holdsMoney ? Math.round(Number(refund) * 100) : 0;
-          void run('offer', () => api.disputeOffer(dispute.id, minor, terms.trim()));
+          // Nothing held: an amount is part of the terms, paid between the two
+          // of them directly, and written so both read the same number.
+          const paid = !view.holdsMoney && view.order ? Math.round(Number(refund) * 100) : 0;
+          const written = paid > 0 ? `${formatMoney(paid, view.currency)} to be paid directly. ${terms.trim()}`.trim() : terms.trim();
+          void run('offer', () => api.disputeOffer(dispute.id, minor, written));
         }}>
           {view.holdsMoney && view.heldMinor !== null && (
             <label className="field">
@@ -482,6 +486,15 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
               </span>
             </label>
           )}
+          {!view.holdsMoney && view.order && (
+            <label className="field">
+              <span>Amount to be paid (optional)</span>
+              <input value={refund} onChange={(e) => setRefund(e.target.value)} inputMode="decimal" placeholder="0" />
+              <span className="field__hint">
+                Figmark holds nothing on this order, so this is paid between you directly. It is written into the terms.
+              </span>
+            </label>
+          )}
           <label className="field">
             <span>Terms</span>
             <input value={terms} onChange={(e) => setTerms(e.target.value)}
@@ -489,7 +502,8 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
           </label>
           <div className="row">
             <button type="submit" className="btn"
-              disabled={busy !== null || (view.holdsMoney ? refund.trim() === '' : terms.trim().length < 4)}>
+              disabled={busy !== null || (view.holdsMoney ? refund.trim() === ''
+                : terms.trim().length < 4 && !(Number(refund) > 0))}>
               {busy === 'offer' ? 'Sending…' : 'Propose'}
             </button>
             <button type="button" className="btn btn--quiet" onClick={() => setOffering(false)}>Cancel</button>

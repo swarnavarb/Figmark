@@ -1,6 +1,6 @@
 import type { OrderStatus } from './enums.js';
 import type { DisputeTopic, Order, Review } from './models.js';
-import { rupees } from './payments.js';
+import { orderMoney, rupees } from './payments.js';
 import { orderTotalMinor } from './service-stores.js';
 
 /**
@@ -52,7 +52,9 @@ export type OrderAction =
   // The reversal of a paid, cancelled order, and the dispute at the end of it.
   | 'request_reversal_details' | 'submit_reversal' | 'confirm_reversal_details' | 'ack_reversal' | 'raise_dispute'
   // The buyer answering whether a returned extra payment reached them.
-  | 'ack_credit_refund';
+  | 'ack_credit_refund'
+  // The seller closing a delivered order that was never paid in full.
+  | 'close';
 
 /**
  * Buyer protection costs a flat amount Figmark sets, whatever the order is
@@ -104,7 +106,8 @@ export function actionsFor(
   order: Pick<
     Order,
     'buyerId' | 'sellerId' | 'status' | 'paymentStatus' | 'hold' | 'completedAt' | 'protection'
-  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck' | 'placedAt' | 'receivedAt'>>,
+  > & Partial<Pick<Order, 'credits' | 'accepted' | 'paymentClaim' | 'reversal' | 'bookingOnly' | 'payments' | 'detailsCheck' | 'placedAt' | 'receivedAt'
+    | 'unitPriceMinor' | 'quantity' | 'addOns' | 'closure'>>,
   viewerId: string,
   reviewed = false,
 ): OrderAction[] {
@@ -123,7 +126,9 @@ export function actionsFor(
   // can pay once it is on its way or has arrived, too.
   const payableStatus = order.status === 'pending_payment'
     || (order.placedAt != null && (order.status === 'shipped' || order.status === 'delivered'));
-  if (side === 'buyer' && mayPayNow && order.paymentStatus === 'unpaid' && payableStatus) {
+  // A seller who closed it unpaid has stopped asking for the money.
+  const closed = Boolean(order.closure);
+  if (side === 'buyer' && mayPayNow && !closed && order.paymentStatus === 'unpaid' && payableStatus) {
     actions.push('pay');
   }
 
@@ -136,7 +141,7 @@ export function actionsFor(
   // An advance leaves a balance, and the buyer pays it down in as many goes as
   // they like - always by the method they started with.
   const live = order.status !== 'cancelled' && order.status !== 'refunded' && order.status !== 'rejected';
-  if (side === 'buyer' && live && order.paymentStatus === 'partially_paid') actions.push('pay_more');
+  if (side === 'buyer' && live && !closed && order.paymentStatus === 'partially_paid') actions.push('pay_more');
 
   // Money paid over the balance is the buyer's, and only the seller holds it.
   if (side === 'seller' && order.credits?.some((credit) => credit.status === 'open' || credit.status === 'held')) {
@@ -226,10 +231,45 @@ export function actionsFor(
     : protectedAndHeld && (order.status === 'shipped' || order.status === 'delivered');
   if (disputable) actions.push('dispute');
 
-  // A review is earned by a completed transaction, never by an opinion.
-  if (order.completedAt && !reviewed) actions.push('review');
+  // A delivered order that is still owed money is not finished: the seller
+  // may close it, saying why, and until one or the other it stays open.
+  const open = isOpenUnpaid(order);
+  if (side === 'seller' && open) actions.push('close');
+
+  // A review is earned by a completed transaction, never by an opinion - and
+  // a transaction is not complete while it is still owed for.
+  if (order.completedAt && !open && !reviewed) actions.push('review');
 
   return actions;
+}
+
+/**
+ * Money still owed on this order, in paise. Zero once paid in full, and for
+ * any order whose figures were not read (nothing to say it is owed).
+ */
+export function owedMinor(
+  order: Pick<Order, 'paymentStatus'> & Partial<Pick<Order, 'unitPriceMinor' | 'quantity' | 'addOns' | 'payments' | 'credits'>>,
+): number {
+  if (order.paymentStatus === 'paid' || order.unitPriceMinor === undefined || order.quantity === undefined) return 0;
+  return orderMoney({
+    unitPriceMinor: order.unitPriceMinor, quantity: order.quantity, addOns: order.addOns,
+    paymentStatus: order.paymentStatus, payments: order.payments ?? [], credits: order.credits ?? [],
+  }).outstandingMinor;
+}
+
+/**
+ * Delivered (or received) but not yet paid in full, and not closed by the
+ * seller: the order is still open. Paying the rest closes it; so does the
+ * seller closing it with a reason.
+ */
+export function isOpenUnpaid(
+  order: Pick<Order, 'status' | 'paymentStatus'>
+    & Partial<Pick<Order, 'unitPriceMinor' | 'quantity' | 'addOns' | 'payments' | 'credits' | 'closure' | 'receivedAt'>>,
+): boolean {
+  if (order.closure) return false;
+  if (order.status !== 'delivered' && !order.receivedAt) return false;
+  if (isStopped(order.status)) return false;
+  return owedMinor(order) > 0;
 }
 
 /** A review is revealed once both sides have written, or the window has passed. */

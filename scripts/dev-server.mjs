@@ -75,7 +75,7 @@ const { inboxRoute, threadRoute, sendMessageRoute, publicProfileRoute, setUserna
   await import(new URL('message-routes.js', apiRoot));
 const {
   payRoute, confirmRoute, reviewRoute, unboxingRoute, orderStateRoute, checkoutRoute,
-  claimPaymentRoute, settleClaimRoute, rejectOrderRoute, payMoreRoute, refundCreditRoute,
+  claimPaymentRoute, settleClaimRoute, rejectOrderRoute, closeOrderRoute, payMoreRoute, refundCreditRoute,
   acceptOrderRoute, cancelOrderRoute, discardCheckoutRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
   submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
   ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, myRefundsRoute, flagDisputeRoute, myDisputesRoute,
@@ -317,6 +317,7 @@ const routes = [
   ['POST', '/api/orders/:id/claim-payment', claimPaymentRoute],
   ['POST', '/api/orders/:id/settle-claim', settleClaimRoute],
   ['POST', '/api/orders/:id/reject', rejectOrderRoute],
+  ['POST', '/api/orders/:id/close', closeOrderRoute],
   ['POST', '/api/orders/:id/confirm', confirmRoute],
   ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],

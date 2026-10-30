@@ -133,6 +133,7 @@ const {
   fillingLotsRoute: fillingLots, dropsRoute: dropsShelf, dropRoute: readDrop, remindRoute: remindDrop,
 } = await import(new URL('showcase-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
+const { closeOrderRoute: closeOrder } = await import(new URL('order-routes.js', fns));
 const { discardCheckoutRoute: discardCheckout } = await import(new URL('order-routes.js', fns));
 const {
   acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
@@ -8426,6 +8427,40 @@ async function paidAcceptedOrder(title, priceMinor, { details = false } = {}) {
   }
   return { orderId, buyer };
 }
+
+await check('a delivered order still owed money stays open until paid, or the seller closes it', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Sent On Trust', priceMinor: 50_000, quantityAvailable: 2 } }), ctx);
+  const buyer = await newBuyer('On Trust Buyer');
+  const orderId = (await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx)).jsonBody.order.id;
+  await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+  // Dispatching unpaid is allowed.
+  const sent = await setCheckpoint(req({ headers: auth, params: { id: orderId }, body: { checkpoint: 'dispatched', on: true } }), ctx);
+  assert.equal(sent.status, 200, JSON.stringify(sent.jsonBody));
+  const received = await confirmOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(received.status, 200, JSON.stringify(received.jsonBody));
+
+  let seller = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(seller.actions.includes('close'), 'the seller may close it');
+  assert.ok(!seller.actions.includes('review'), 'not finished while owed for');
+  const buyerSide = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(buyerSide.actions.includes('pay'), 'the buyer can still pay what is owed');
+  const early = await reviewOrder(req({ headers: buyer.headers, params: { id: orderId }, body: { rating: 5, body: 'Lovely.' } }), ctx);
+  assert.equal(early.status, 409);
+
+  assert.equal((await closeOrder(req({ headers: buyer.headers, params: { id: orderId }, body: { reason: 'Not mine to close' } }), ctx)).status, 409,
+    'only the seller closes it');
+  assert.equal((await closeOrder(req({ headers: auth, params: { id: orderId }, body: { reason: '' } }), ctx)).status, 400, 'a reason is needed');
+  const closed = await closeOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Settled in cash at pickup.' } }), ctx);
+  assert.equal(closed.status, 200, JSON.stringify(closed.jsonBody));
+  assert.equal(closed.jsonBody.order.closure.reason, 'Settled in cash at pickup.');
+  assert.equal(closed.jsonBody.order.closure.owedMinor, 50_000);
+  seller = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!seller.actions.includes('close'));
+  assert.ok(seller.actions.includes('review'), 'closed, so reviews open');
+  assert.ok((await noticesFor(buyer.id)).some((n) => n.kind === 'order_closed'), 'the buyer is told');
+  const buyerAfter = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!buyerAfter.actions.includes('pay'), 'closed: the seller is no longer asking for it');
+});
 
 // Scenario A - cancel without payment.
 await check('Scenario A: cancelling an accepted order with no payment goes straight to Cancelled', async () => {

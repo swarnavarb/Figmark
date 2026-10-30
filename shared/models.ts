@@ -1627,8 +1627,16 @@ export interface Order extends BaseDocument {
    * which is what the buyer's timeline shows above the join.
    */
   preLotRoute?: LotRoute | null;
-  /** Set once the order reaches `delivered`; unlocks reviews. */
+  /** Set once the order reaches `delivered`. Reviews also wait for it to be paid up or closed. */
   completedAt: string | null;
+  /**
+   * The seller closing a delivered order that was never paid in full.
+   *
+   * A delivered order stays open while money is owed on it; paying it up
+   * closes it on its own. A seller who will not be paid can close it
+   * instead, saying why, and that reason is shown to both sides.
+   */
+  closure?: { at: string; by: string; reason: string; owedMinor: number } | null;
   /**
    * When this order was counted toward both sides' completed trades.
    *
@@ -2859,6 +2867,7 @@ export type NotificationKind =
   | 'sale_item'
   | 'order_placed'
   | 'order_rejected'
+  | 'order_closed'
   | 'order_accepted'
   | 'booking_accepted'
   | 'order_cancelled'

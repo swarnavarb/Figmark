@@ -167,13 +167,21 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
     api.communityManagers(target.againstId)
       .then((body) => {
         setManagers(body.managers);
+        // One manager is no choice: picked already, so the button is not
+        // left waiting on a tap nobody would think to make.
+        if (body.managers.length === 1) setManagerId(body.managers[0]!.id);
         setFee({ feeMinor: body.feeMinor, currency: body.currency });
       })
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the community managers.'));
   }, [free, target.againstId]);
 
   const reasons = side === 'seller' ? SELLER_DISPUTE_REASONS : BUYER_DISPUTE_REASONS;
-  const ready = reason.trim().length >= REASON_MIN && (free ? (!claim || Boolean(reasonCode)) : Boolean(managerId));
+  // An order dispute that is not about a specific rejected payment says what
+  // went wrong from a list, the same as a protection claim does.
+  const picksReason = claim || (target.type === 'order' && !orderSubject);
+  const ready = reason.trim().length >= REASON_MIN && (!picksReason || Boolean(reasonCode)) && (free || Boolean(managerId));
+  /** A buyer who paid the seller directly, raising one about the purchase. */
+  const directBuyer = target.type === 'order' && side === 'buyer' && !free;
 
   async function submit() {
     setBusy(true);
@@ -184,7 +192,10 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
       if (target.type === 'order') {
         id = claim
           ? (await api.openDispute(target.id, { reasonCode, reason: reason.trim(), evidence })).dispute.id
-          : (await api.flagDispute(target.id, { subject: orderSubject, reason: reason.trim(), managerId: free ? undefined : managerId, evidence })).dispute.id;
+          : (await api.flagDispute(target.id, {
+            subject: orderSubject, reason: reason.trim(), reasonCode: reasonCode || undefined,
+            managerId: free ? undefined : managerId, evidence,
+          })).dispute.id;
       } else {
         id = (await api.raiseCommunityDispute({
           subject: { type: target.type, id: target.id, parentId: target.parentId },
@@ -206,15 +217,18 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
       <div className="stack">
         <p className="raise__about"><span className="faint">About</span> {target.label}</p>
 
-        {claim && (
+        {picksReason && (
           <label className="field">
             <span>What went wrong</span>
             <Select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
               <option value="">Pick one…</option>
               {reasons.map((code) => <option key={code} value={code}>{DISPUTE_REASON_LABELS[code]}</option>)}
+              {!claim && <option value="other">{DISPUTE_REASON_LABELS.other}</option>}
             </Select>
           </label>
         )}
+
+        {directBuyer && <DirectDealNote />}
 
         <label className="field">
           <span>What happened</span>
@@ -256,7 +270,8 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
               <div className="raise__pay">
                 <div className="kv"><dt>Dispute fee</dt><dd>{formatMoney(fee.feeMinor, fee.currency)}</dd></div>
                 <p className="faint" style={{ margin: 0 }}>
-                  Paid through the payment gateway, never to a person. It is not refunded, whatever the result. If you
+                  Collected by Figmark when you press the button below, never paid to a person. While no payment
+                  provider is connected it is recorded, not charged. It is not refunded, whatever the result. If you
                   are not happy with the decision you can escalate it twice, each time to another manager, for the
                   escalation fee.
                 </p>
@@ -272,6 +287,25 @@ export function RaiseDisputeModal({ target, onClose, protectedOrder, side, order
       </div>
     </Modal>,
     document.body,
+  );
+}
+
+/**
+ * What a dispute can and cannot do for a buyer who paid the seller directly.
+ *
+ * Said before they pay the fee: the money went straight to the seller, so a
+ * community manager can rule against the seller and act on it, but cannot
+ * make them pay it back. Holding the money so it can be returned is what
+ * Buyer Protection, chosen at checkout, is for.
+ */
+export function DirectDealNote() {
+  return (
+    <p className="notice notice--warn" style={{ margin: 0 }}>
+      <b>You paid this seller directly.</b> A community manager hears both of you and can act against the seller -
+      a warning, a lower rating, a "dispute lost" flag, an alert on their page, lost XP - but cannot make them pay you
+      back: Figmark never held the money. Buyer Protection, chosen at checkout, is the way to have it held and
+      returned.
+    </p>
   );
 }
 

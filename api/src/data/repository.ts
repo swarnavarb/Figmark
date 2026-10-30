@@ -90,6 +90,7 @@ export const ORDER_FIGURE_FIELDS = [
   'id', 'lotId', 'sellerId', 'buyerId', 'listingId', 'status', 'paymentStatus', 'hold', 'completedAt',
   'protection', 'credits', 'accepted', 'paymentClaim', 'reversal', 'bookingOnly', 'payments', 'detailsCheck',
   'placedAt', 'receivedAt', 'createdAt', 'updatedAt', 'quantity', 'unitPriceMinor', 'currency', 'checkpoints',
+  'closure',
 ] as const;
 export type OrderFigures = Pick<Order, (typeof ORDER_FIGURE_FIELDS)[number]>;
 

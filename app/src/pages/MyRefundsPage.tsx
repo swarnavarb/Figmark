@@ -6,7 +6,7 @@ import { BADGE_META, storeCreditLeft, type Badge, type StoreCredit } from '@shar
 import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../api';
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice, PageError } from '../components/ui';
-import { formatDateOrdinal, formatMoney } from '../format';
+import { formatDateOrdinal, formatMoney, formatTotals } from '../format';
 import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/MyRefundsPage.css';
 
@@ -129,7 +129,7 @@ export function MyRefundsPage() {
       <main className="page stack page--top">
         <div className="page__head"><h1>My wallet</h1></div>
         {tabs}
-        <CreditTab />
+        <CreditTab kept={(refunds ?? []).filter((refund) => refund.status === 'held' && refund.leftMinor > 0)} />
       </main>
     );
   }
@@ -343,11 +343,15 @@ function EarningsTab() {
 }
 
 /**
- * Store credit won in competitions, debates and polls, by shop: each one comes
+ * Credit a shop kept from an overpayment, then store credit won in
+ * competitions, debates and polls, by shop: each one comes
  * off the next order at that shop by itself, at checkout. And the badges
  * that came with it.
  */
-function CreditTab() {
+function CreditTab({ kept }: {
+  /** What a shop kept from a payment over what was owed, for this buyer's next order there. */
+  kept: MyRefund[];
+}) {
   const [rewards, setRewards] = useState<{ credits: StoreCredit[]; badges: Badge[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -361,7 +365,29 @@ function CreditTab() {
   }, []);
   if (error) return <ErrorNotice message={error} />;
   if (!rewards) return <Loading />;
+  const keptCard = kept.length > 0 && (
+    <section className="claimcard wallet-credit">
+      <div className="wallet-credit__head">
+        <strong>Kept for you by shops</strong>
+        <span className="wallet-credit__left">
+          {formatTotals(kept.map((refund) => ({ amountMinor: refund.leftMinor, currency: refund.currency })))}
+        </span>
+      </div>
+      <p className="faint" style={{ margin: 0 }}>
+        You paid more than was owed and the shop kept the rest for you. It goes towards your next order with them.
+      </p>
+      <ul className="wallet-credit__list">
+        {kept.map((refund) => (
+          <li key={refund.creditId}>
+            <Link to={`/order/${refund.orderId}`}>{refund.sellerName} · {refund.itemName}</Link>
+            <span className="faint">{formatMoney(refund.leftMinor, refund.currency)} · {formatDateOrdinal(refund.createdAt)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
   if (rewards.credits.length === 0 && rewards.badges.length === 0) {
+    if (keptCard) return <div className="wallet-credits">{keptCard}</div>;
     return (
       <EmptyState title="Nothing won yet">
         Shops give store credit for winning photo competitions, making the best argument in a debate, and voting for the winner.
@@ -378,6 +404,7 @@ function CreditTab() {
   }
   return (
     <>
+      {keptCard && <div className="wallet-credits">{keptCard}</div>}
       {byShop.size > 0 && (
         <div className="wallet-credits">
           {[...byShop.entries()].map(([storeId, shop]) => (
