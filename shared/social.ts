@@ -350,6 +350,27 @@ export interface ReactorRow {
  * Shared so an optimistic update in the app and the answer from the API are
  * computed the same way, and the count never jumps when the answer lands.
  */
+/**
+ * Whole percentages for a split that add up to exactly 100 (or are all 0 when
+ * nobody voted): each share is rounded down, and the points left over go to
+ * the largest remainders. Rounding each share alone can show 63% and 38%.
+ */
+export function percentages(counts: readonly number[]): number[] {
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (total <= 0) return counts.map(() => 0);
+  const exact = counts.map((count) => (count * 100) / total);
+  const shares = exact.map(Math.floor);
+  let left = 100 - shares.reduce((sum, share) => sum + share, 0);
+  const order = exact.map((value, index) => ({ index, rest: value - Math.floor(value) }))
+    .sort((a, b) => b.rest - a.rest || a.index - b.index);
+  for (const { index } of order) {
+    if (left <= 0) break;
+    shares[index]! += 1;
+    left -= 1;
+  }
+  return shares;
+}
+
 export function summarise(
   reactions: readonly StoredReaction[],
   viewerKey: string | null,
@@ -361,7 +382,9 @@ export function summarise(
     .map(([kind, count]) => ({ kind, count }))
     .sort((a, b) => b.count - a.count || REACTIONS.indexOf(a.kind) - REACTIONS.indexOf(b.kind));
   const newest = [...reactions].sort((a, b) => (a.at < b.at ? 1 : -1));
+  // Others only: the viewer's own reaction is said as "You", not by name too.
   const names = newest
+    .filter((reaction) => reactionActor(reaction) !== viewerKey)
     .map((reaction) => nameOf(reaction))
     .filter((name): name is string => Boolean(name))
     .slice(0, 2);

@@ -736,7 +736,9 @@ function tasksFor(context: MeasureContext): TaskView[] {
   const revealed = state.cards.some((card) => card.packId === `daily-${dayKey(now)}`);
   tasks.push({
     id: 'daily-reveal', kind: 'daily', title: 'Reveal today\'s loot', blurb: 'Flip the daily drop for a free card.',
-    xp: ACTION_XP, bumps: 0, progress: revealed ? 1 : 0, goal: 1, done: revealed, claimed: revealed, claimable: false, href: null, pack: false,
+    xp: ACTION_XP, bumps: 0, progress: revealed ? 1 : 0, goal: 1, done: revealed, claimed: revealed, claimable: false,
+    // The daily drop is flipped on the Shop page, at the top.
+    href: revealed ? null : '/', pack: false,
   });
   tasks.push(view(context, 'daily', SHARE_DAILY));
   for (const template of pick(DAILY_POOL, 2, `daily|${dayKey(now)}`)) tasks.push(view(context, 'daily', template));
@@ -1040,9 +1042,9 @@ export function questView(
 
   const breakdown = [
     ...recordXp(facts),
-    { label: 'Check-ins', xp: checkIn, detail: `${checkInDays.length} days, more for streaks` },
-    { label: 'Quests completed', xp: claimedXp + reveals * ACTION_XP, detail: `${standing.length} claimed + ${reveals} reveals × ${ACTION_XP}` },
-    { label: 'Cards collected', xp: cardXp, detail: `${owned.length} cards by rarity` },
+    { label: 'Check-ins', xp: checkIn, detail: `${checkInDays.length} day${checkInDays.length === 1 ? '' : 's'}, more for streaks` },
+    { label: 'Quests completed', xp: claimedXp + reveals * ACTION_XP, detail: `${standing.length} claimed + ${reveals} reveal${reveals === 1 ? '' : 's'} × ${ACTION_XP}` },
+    { label: 'Cards collected', xp: cardXp, detail: `${owned.length} card${owned.length === 1 ? '' : 's'} by rarity` },
     { label: 'Card sets completed', xp: setsDone * SET_BONUS_XP, detail: `${setsDone} × ${SET_BONUS_XP}` },
   ].filter((line) => line.xp !== 0);
 

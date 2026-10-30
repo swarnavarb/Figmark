@@ -25,7 +25,8 @@ const STORAGE_KEY = 'figmark.social.voice';
 const ME: SocialIdentity = { storeId: null, name: '', handle: null };
 const VoiceContext = createContext<VoiceValue>({ voice: ME, voices: [ME], choose: () => undefined });
 
-function remembered(): string | null {
+/** The shop this device last posted as, or null for yourself. */
+export function remembered(): string | null {
   try {
     return window.localStorage.getItem(STORAGE_KEY);
   } catch {

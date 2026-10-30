@@ -44,6 +44,11 @@ export function formatRupees(value: number): string {
 }
 
 /** A count as Indian readers group it: 1,25,000. */
+/** "1 post", "3 posts": a count with its noun, singular when it is one. */
+export function plural(count: number, one: string, many = `${one}s`): string {
+  return `${formatCount(count)} ${count === 1 ? one : many}`;
+}
+
 export function formatCount(value: number): string {
   return value.toLocaleString('en-IN');
 }

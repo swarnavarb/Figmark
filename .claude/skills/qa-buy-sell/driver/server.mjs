@@ -45,8 +45,16 @@ const browser = await chromium.launch({
   ...(process.env.QA_CHROMIUM ? { executablePath: process.env.QA_CHROMIUM } : {}),
 });
 
-const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
-const DESKTOP = { viewport: { width: 1280, height: 860 } };
+// An ordinary browser's user agent: the server counts a "HeadlessChrome" visitor
+// as a bot, so invite and share opens could never be tested otherwise.
+const PHONE = {
+  viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+  userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+};
+const DESKTOP = {
+  viewport: { width: 1280, height: 860 },
+  userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+};
 
 /** persona -> { context, page, log: [] } */
 const people = new Map();
@@ -61,6 +69,8 @@ async function person(name, device) {
     baseURL: BASE,
     locale: 'en-IN',
     timezoneId: 'Asia/Kolkata',
+    // A phone lets a tapped "Copy link" write to the clipboard; headless refuses unless told.
+    permissions: ['clipboard-read', 'clipboard-write'],
   });
   context.setDefaultTimeout(10000);
   const page = await context.newPage();
@@ -241,6 +251,16 @@ const commands = {
     const isFileInput = await el.evaluate((node) => node instanceof HTMLInputElement && node.type === 'file').catch(() => false);
     if (isFileInput) await el.setInputFiles(resolve(file));
     else {
+      // Tap the button as a person would and answer the chooser it opens: a
+      // page that shares one hidden input between several photo slots learns
+      // which slot from that tap.
+      const chooser = await Promise.all([p.waitForEvent('filechooser', { timeout: 3000 }), el.click()])
+        .then(([found]) => found).catch(() => null);
+      if (chooser) {
+        await chooser.setFiles(resolve(file));
+        await p.waitForTimeout(1200);
+        return look(p);
+      }
       // The button a person taps opens a hidden file input beside it; hand
       // the file to that input, which is what the chooser would do.
       const handle = await el.evaluateHandle((node) => {

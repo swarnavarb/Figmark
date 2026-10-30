@@ -162,7 +162,8 @@ function App() {
         <Route path="/social" element={members(<SocialPage />)} />
         <Route path="/social/c/:id" element={members(<ChannelPage />)} />
         <Route path="/social/f/:id" element={members(<ForumRoom />)} />
-        <Route path="/social/p/:channel/:id" element={members(<PostPage />)} />
+        {/* Open, as Discover is: guests land here from it and from shared links. */}
+        <Route path="/social/p/:channel/:id" element={<PostPage />} />
         <Route path="/messages/:handle" element={members(<ThreadPage />)} />
         <Route path="/order/:id" element={members(<OrderPage />)} />
         <Route path="/dispute/:id" element={members(<DisputePage />)} />

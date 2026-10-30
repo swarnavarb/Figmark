@@ -7,6 +7,9 @@ import type { Order, StageEvent } from '../../../shared/models.js';
 import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf, ticksOf } from '../../../shared/routes.js';
 import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
 import { getAuthService } from '../auth/index.js';
+import { AuthError } from '../auth/errors.js';
+import { hasAnyCapability } from '../../../shared/capabilities.js';
+import { verifiedChecks } from '../../../shared/verification.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
 import { compressPhotoAsync, PHOTO_MAX_BYTES, type CompressedPhoto } from '../storage/compress.js';
@@ -162,7 +165,12 @@ export const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
  */
 async function upload(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
-  const user = await auth.requireCapability(request, ['sell']);
+  const user = await auth.requireAuth(request);
+  // Photos go in listings, but also in posts, debates and competition entries,
+  // which a verified buyer may make: their email and WhatsApp are enough.
+  if (!hasAnyCapability(user.capabilities, ['buy', 'sell'])) {
+    throw AuthError.verificationRequired(['buy'], verifiedChecks(user), 'post photos');
+  }
   // Every photo is stored and paid for until somebody deletes it.
   const slow = await tooFast(user.id, 'upload');
   if (slow) return slow;

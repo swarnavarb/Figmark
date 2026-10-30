@@ -40,16 +40,16 @@ export function InvitePage() {
     const spec: ShareSpec = seller
       ? {
           kind: 'invite_seller',
-          moment: { title: 'Open your shop', detail: 'Pre-orders · tracking · Buyer Protection · affiliates', headline: 'Sell with me on Figmark' },
+          moment: { title: 'Open your shop', detail: 'Pre-orders · tracking · affiliates', headline: 'Sell with me on Figmark' },
           link: { to: 'invite', seller: true },
           caption: 'Selling imports? Open a shop on Figmark with my invite:',
           target: code,
         }
       : {
           kind: 'invite',
-          moment: { title: 'Join me on Figmark', detail: 'Pre-orders · Buyer Protection · card packs', headline: 'Come shop with me' },
+          moment: { title: 'Join me on Figmark', detail: 'Pre-orders · verified sellers · card packs', headline: 'Come shop with me' },
           link: { to: 'invite' },
-          caption: 'Join me on Figmark - pre-orders, Buyer Protection and card packs. Here is my invite:',
+          caption: 'Join me on Figmark - pre-orders from verified sellers, and card packs as you shop. Here is my invite:',
           target: code,
         };
     return (
@@ -75,8 +75,8 @@ export function InvitePage() {
         <h1>{seller ? `${name} invited you to sell on Figmark` : `${name} invited you to Figmark`}</h1>
         <p>
           {seller
-            ? 'Run your pre-orders here: order manifests, tracking your buyers can see, Buyer Protection, and people who share your items for a commission.'
-            : 'Pre-orders from import resellers, Buyer Protection on every payment, and reviews only real buyers can leave. You collect cards and level up as you shop.'}
+            ? 'Run your pre-orders here: order manifests, tracking your buyers can see, and people who share your items for a commission.'
+            : 'Pre-orders from verified import resellers, and reviews only real buyers can leave. You collect cards and level up as you shop.'}
         </p>
         <div className="invp__acts">
           {user ? (
@@ -105,7 +105,7 @@ export function InvitePage() {
 }
 
 const BUYER_REASONS = [
-  { icon: '🛡', title: 'Your money is held, not handed over', text: 'Buyer Protection pays the seller once your order arrives.' },
+  { icon: '🛡', title: 'Sellers who are who they say', text: 'Every shop verifies its email, WhatsApp and Aadhaar before it can sell.' },
   { icon: '📦', title: 'Every stage, visible', text: 'Track your item from the supplier to your door, in the seller\'s own words.' },
   { icon: '🃏', title: 'Shopping that levels you up', text: 'Daily quests, card packs and stickers for being a good buyer.' },
 ];

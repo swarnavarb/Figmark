@@ -113,6 +113,8 @@ export class AuthError extends Error {
   static verificationRequired(
     capabilities: readonly string[],
     done: { email: boolean; phone: boolean; aadhaar: boolean } = { email: false, phone: false, aadhaar: false },
+    /** What they were doing, when it is neither buying nor selling: "post photos". */
+    doing?: string,
   ): AuthError {
     const selling = capabilities.includes('sell') && !capabilities.includes('buy');
     // Only what is still missing: somebody who verified their email already
@@ -125,7 +127,7 @@ export class AuthError extends Error {
     const list = missing.length === 0 ? null
       : missing.length === 1 ? missing[0]
       : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
-    const what = selling ? 'sell' : 'buy';
+    const what = doing ?? (selling ? 'sell' : 'buy');
     return new AuthError(
       403,
       'verification_required',

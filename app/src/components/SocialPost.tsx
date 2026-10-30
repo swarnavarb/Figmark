@@ -5,7 +5,7 @@ import { RaiseDisputeModal, ReportModal } from './DisputeFlows';
 import { useSession } from '../session';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
 import {
   HOTSPOT_LABELS, REACTIONS, REACTION_META,
@@ -318,6 +318,7 @@ export function SocialPostCard({
   const [card, setCard] = useState(initial);
   const { voice } = useVoice();
   const as = voice.storeId;
+  const { pathname } = useLocation();
   const [following, setFollowing] = useState(initial.following);
   const [followBusy, setFollowBusy] = useState(false);
   const [showComments, setShowComments] = useState(openComments);
@@ -549,9 +550,11 @@ export function SocialPostCard({
                 <button type="button" role="menuitem" onClick={() => { setMenu(false); void copyLink(post).then((copied) => { if (copied) toast('Link copied'); }); }}>
                   <Icon name="link" size={15} /> Copy link
                 </button>
-                <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
-                  <Icon name="external" size={15} /> Open post
-                </Link>
+                {pathname !== postHref(post) && (
+                  <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
+                    <Icon name="external" size={15} /> Open post
+                  </Link>
+                )}
                 {user && (
                   <button type="button" role="menuitem" onClick={() => void toggleSave()}>
                     <Icon name="bookmark" size={15} /> {saved ? 'Unsave' : 'Save post'}
@@ -1285,6 +1288,7 @@ function Comments({ card, onCount }: {
   const [fresh, setFresh] = useState<string | null>(null);
   const input = useRef<HTMLTextAreaElement | null>(null);
   const { channelId, id } = card.post;
+  const { user, promptAuth } = useSession();
   const { voice } = useVoice();
   const as = voice.storeId;
 
@@ -1347,6 +1351,12 @@ function Comments({ card, onCount }: {
             </button>
           </div>
         )}
+        {!user ? (
+          // A guest reads the conversation; joining it needs an account.
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => promptAuth('Sign in to comment.')}>
+            Sign in to comment
+          </button>
+        ) : (
         <div className="cmts__row">
           <span className="cmts__as" title={`Commenting as ${voice.name}`}>
             <VoiceAvatar voice={voice} size={32} />
@@ -1372,6 +1382,7 @@ function Comments({ card, onCount }: {
             <Icon name="send" size={17} />
           </button>
         </div>
+        )}
       </div>
     </section>
   );

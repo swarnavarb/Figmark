@@ -6,7 +6,7 @@ import type { SocialIdentity } from '@shared/social';
 import type { StoreAccess } from '@shared/stores';
 import { api } from '../api';
 import { useSession } from '../session';
-import { VoiceScope } from './SocialVoice';
+import { VoiceScope, remembered } from './SocialVoice';
 import type { StudioMode } from './PostStudio';
 import { Loading } from './Feedback';
 
@@ -98,7 +98,18 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
     if (!user) return;
     let live = true;
     api.stores()
-      .then((result) => live && setStores(result.stores.filter((store) => store.permissions.includes('posts'))))
+      .then((result) => {
+        if (!live) return;
+        const mine = result.stores.filter((store) => store.permissions.includes('posts'));
+        setStores(mine);
+        // Opens as whoever you are posting as elsewhere: switched to the shop
+        // in a thread, you are still the shop here.
+        const at = mine.findIndex((store) => store.ownerId === remembered());
+        if (at >= 0) {
+          setStoreAt(at);
+          setSide('store');
+        }
+      })
       .catch(() => undefined);
     return () => {
       live = false;
@@ -114,6 +125,15 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [making, onClose]);
+
+  // The page behind stays put but cannot be tapped or tabbed to while the
+  // chooser is up; the studio that follows is a modal of its own.
+  useEffect(() => {
+    if (making) return;
+    const root = document.getElementById('root');
+    root?.setAttribute('inert', '');
+    return () => root?.removeAttribute('inert');
+  }, [making]);
 
   const store = stores[storeAt] ?? null;
 

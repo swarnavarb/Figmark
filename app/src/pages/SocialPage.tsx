@@ -16,6 +16,7 @@ import { VerifyNudge } from '../components/VerifyNudges';
 import { useToast } from '../components/Feedback';
 import { Spinner } from '../components/Spinner';
 import { FollowSuggestions } from '../components/FollowSuggestions';
+import { useSession } from '../session';
 import '../styles/SocialPage.css';
 
 /**
@@ -150,6 +151,14 @@ function FollowingFeed() {
   /** Followed posts that arrived since the newest one on screen. */
   const [fresh, setFresh] = useState<{ count: number; names: string[] } | null>(null);
   const [saved, setSaved] = useState<PostCard[] | null>(null);
+  /**
+   * Started from an empty feed: the suggestions stay on top once the first
+   * follow fills it, so following one shop does not take the other five away.
+   */
+  const [starting, setStarting] = useState(false);
+  useEffect(() => {
+    if (posts && posts.length === 0 && filter !== 'saved') setStarting(true);
+  }, [posts, filter]);
 
   /** Which load is the latest: the voice settles after the first one has gone out, and only the newest answer counts. */
   const loading = useRef(0);
@@ -284,10 +293,13 @@ function FollowingFeed() {
           </EmptyState>
         )
       ) : (
-        entries.map((entry, index) => (
-          <FeedItem key={entry.kind === 'post' ? `${as ?? 'me'}-${entry.card.post.id}` : `drops-${entry.cards[0]!.post.id}`}
-            entry={entry} caughtUp={index === caughtUpAt} onRemoved={remove} onReposted={repost} />
-        ))
+        <>
+          {starting && filter === 'all' && <FollowSuggestions title="Follow a few more" onFollowed={() => void load()} />}
+          {entries.map((entry, index) => (
+            <FeedItem key={entry.kind === 'post' ? `${as ?? 'me'}-${entry.card.post.id}` : `drops-${entry.cards[0]!.post.id}`}
+              entry={entry} caughtUp={index === caughtUpAt} onRemoved={remove} onReposted={repost} />
+          ))}
+        </>
       )}
 
       {posts && next && filter !== 'saved' && (
@@ -387,11 +399,13 @@ export function PostPage() {
 
 function PostPageBody() {
   const { channel, id } = useParams<{ channel: string; id: string }>();
+  const { user } = useSession();
   const { voice } = useVoice();
   const [card, setCard] = useState<PostCard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
-  const back = useGoBack('/social');
+  // A guest came from Discover or a shared link; Social is members-only.
+  const back = useGoBack(user ? '/social' : '/discover');
 
   useEffect(() => {
     if (!channel || !id) return;
@@ -411,7 +425,7 @@ function PostPageBody() {
         avatar={<span className="forumav" aria-hidden="true"><Icon name="spark" size={18} /></span>}
         title="Post"
         sub={who ? `by ${who}${card?.forum ? ` in ${card.forum.name}` : ''}` : undefined}
-        action={card?.forum ? undefined : <VoicePicker size={34} />} />
+        action={card?.forum || !user ? undefined : <VoicePicker size={34} />} />
       <main className="page feedpage social">
         {error && <ErrorNotice message={error} />}
         {gone && <EmptyState title="Post deleted">It is gone, along with its reactions and comments.</EmptyState>}
@@ -584,7 +598,7 @@ function ForumCard({ row, tone, fresh = false, onChange }: { row: ForumRow; tone
           <span className="forumav" aria-hidden="true"><Icon name="forum" size={20} /></span>
           {fresh && <span className="forumcard__new">New post</span>}
           <span className="forumcard__stats">
-            <strong>{row.memberCount}</strong> members · <strong>{row.postCount}</strong> posts
+            <strong>{row.memberCount}</strong> member{row.memberCount === 1 ? '' : 's'} · <strong>{row.postCount}</strong> post{row.postCount === 1 ? '' : 's'}
           </span>
         </span>
         <strong className="forumcard__name">{row.name}</strong>

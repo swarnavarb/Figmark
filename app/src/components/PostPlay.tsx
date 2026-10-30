@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type PostCard } from '../api';
-import { ratingOf, type PollView } from '@shared/social';
+import { percentages, ratingOf, type PollView } from '@shared/social';
 import {
   JUDGING_LABELS, PLACE_LABELS, PLACE_MEDALS, SHORTLIST_MAX, SHORTLIST_MIN, contestPhase,
   type ContestPhase, type PostContest,
@@ -45,7 +45,8 @@ function useLeft(iso: string | null): string | null {
   return `${Math.round(minutes / 1440)} days left`;
 }
 
-const share = (votes: number, total: number) => (total > 0 ? Math.round((votes / total) * 100) : 0);
+/** Each answer's share, in answer order, adding up to 100. */
+const sharesOf = (poll: PollView) => percentages(poll.options.map((option) => option.votes));
 
 type Vote = (optionId: string) => Promise<void>;
 
@@ -96,6 +97,7 @@ function TextPoll({ poll, disabled, vote }: { poll: PollView; disabled: boolean;
   const { busy, error, cast } = useVote(vote);
   const reveal = poll.myVote !== null || poll.closed || disabled;
   const leader = Math.max(...poll.options.map((option) => option.votes));
+  const shares = sharesOf(poll);
   return (
     <div className="poll">
       {poll.options.map((option, index) => {
@@ -107,12 +109,12 @@ function TextPoll({ poll, disabled, vote }: { poll: PollView; disabled: boolean;
             disabled={disabled || poll.closed || busy !== null} aria-pressed={mine}
             onClick={() => void cast(option.id)}>
             <span className="poll__fill" aria-hidden="true"
-              style={{ transform: `scaleX(${reveal ? share(option.votes, poll.total) / 100 : 0})`, transitionDelay: `${index * 40}ms` }} />
+              style={{ transform: `scaleX(${reveal ? shares[index]! / 100 : 0})`, transitionDelay: `${index * 40}ms` }} />
             <span className="poll__label">
               {mine && <Icon name="check" size={14} />}
               {option.label}
             </span>
-            {reveal && <span className="poll__share">{share(option.votes, poll.total)}%</span>}
+            {reveal && <span className="poll__share">{shares[index]!}%</span>}
           </button>
         );
       })}
@@ -128,6 +130,7 @@ function PhotoPoll({ poll, disabled, vote, label = 'Vote' }: { poll: PollView; d
   const { busy, error, cast } = useVote(vote);
   const reveal = poll.myVote !== null || poll.closed;
   const leader = Math.max(0, ...poll.options.map((option) => option.votes));
+  const shares = sharesOf(poll);
   return (
     <div className="pplay">
       <div className={`pgrid pgrid--${Math.min(poll.options.length, 4)}`}>
@@ -140,11 +143,11 @@ function PhotoPoll({ poll, disabled, vote, label = 'Vote' }: { poll: PollView; d
               <button type="button" className="pgrid__pick" disabled={disabled || poll.closed || busy !== null}
                 aria-pressed={mine} aria-label={`${label}: ${option.label}`} onClick={() => void cast(option.id)}>
                 {option.photoUrl ? <img src={option.photoUrl} alt="" loading="lazy" draggable={false} /> : <span className="pgrid__none" />}
-                {reveal && <span className="pgrid__pct">{share(option.votes, poll.total)}%</span>}
+                {reveal && <span className="pgrid__pct">{shares[index]!}%</span>}
                 {lead && <span className="pgrid__crown" aria-hidden="true">👑</span>}
                 <span className="pgrid__label">{mine && <Icon name="check" size={12} />} {option.label}</span>
                 <span className="pgrid__meter" aria-hidden="true">
-                  <span style={{ transform: `scaleX(${reveal ? share(option.votes, poll.total) / 100 : 0})` }} />
+                  <span style={{ transform: `scaleX(${reveal ? shares[index]! / 100 : 0})` }} />
                 </span>
               </button>
               {option.listingId && (
@@ -180,7 +183,7 @@ function Versus({ poll, photos, listingIds, disabled, vote }: {
   const { busy, error, cast } = useVote(vote);
   const sides = poll.options.slice(0, 2);
   const reveal = poll.myVote !== null || poll.closed;
-  const shares = sides.map((option) => (poll.total > 0 ? share(option.votes, poll.total) : 50));
+  const shares = poll.total > 0 ? percentages(sides.map((option) => option.votes)) : [50, 50];
   const leader = sides[0] && sides[1] && sides[1].votes > sides[0].votes ? sides[1] : sides[0];
   return (
     <div className="debate">
@@ -213,8 +216,10 @@ function Versus({ poll, photos, listingIds, disabled, vote }: {
       </div>
       <PollFoot poll={poll}>
         {!reveal && !disabled && <span className="faint">Tap a side to vote</span>}
-        {reveal && leader && (
-          <Link to={`/?q=${encodeURIComponent(leader.label)}`} className="debate__cta">
+        {/* Only a side that is an item on Figmark has somewhere to shop: a
+            search for the word "Boxed" is not one. */}
+        {reveal && leader && listingIds[sides.indexOf(leader)] && (
+          <Link to={`/listing/${encodeURIComponent(listingIds[sides.indexOf(leader)]!)}`} className="debate__cta">
             Shop {leader.label} <Icon name="right" size={12} />
           </Link>
         )}
@@ -386,7 +391,8 @@ function EnterSheet({ card, onClose, onEntered }: { card: PostCard; onClose: () 
   return (
     <Modal title={`Enter ${card.post.contest?.title ?? 'the competition'}`} onClose={onClose}>
       <div className="pcontest__enter">
-        <button type="button" className={`pcontest__drop${photo ? ' has-photo' : ''}`} disabled={busy} onClick={() => files.current?.click()}>
+        <button type="button" className={`pcontest__drop${photo ? ' has-photo' : ''}`} disabled={busy} onClick={() => files.current?.click()}
+          aria-label={photo ? 'Change your photo' : 'Choose your photo'}>
           {photo ? <img src={photo} alt="Your entry" /> : (
             <span><Icon name="camera" size={26} /><strong>{busy ? 'Uploading…' : 'Choose your photo'}</strong><span className="faint">Your own, one per person.</span></span>
           )}
@@ -556,6 +562,11 @@ export function ContestPlay({ card, disabled, vote, onCard }: {
           )}
           {mine ? (
             <p className="pcontest__in"><Icon name="check" size={14} /> You're in. Voting opens {timeAhead(contest.entriesCloseAt)}.</p>
+          ) : !host && !disabled && user && !user.capabilities.canBuy && !user.capabilities.canSell ? (
+            // Said before they choose a photo, not after the upload is refused.
+            <Link to="/verify" className="btn btn--quiet pcontest__go pcontest__cta">
+              <Icon name="check" size={16} /> Verify your email and WhatsApp to enter
+            </Link>
           ) : !host && !disabled && (
             <button type="button" className="btn pcontest__go pcontest__cta" onClick={() => setEntering(true)}>
               <Icon name="camera" size={16} /> Enter with a photo

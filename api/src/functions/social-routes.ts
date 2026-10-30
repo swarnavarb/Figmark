@@ -10,7 +10,7 @@ import {
   type PostSocial, type ReactorRow, type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
 import { can } from '../../../shared/stores.js';
-import { isExpired, isMultiple } from '../../../shared/payments.js';
+import { isExpired, isMultiple, rupees } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
 import { getAuthService } from '../auth/index.js';
@@ -37,6 +37,7 @@ import { verifiedChecks } from '../../../shared/verification.js';
 import { gameAudience, gameWhat, isDue, payContest, payDebate, settlePlay } from '../play.js';
 import { ownPhotoName } from '../storage/index.js';
 import { likeness, storedFingerprint } from '../image-hash.js';
+import { pictureMatches } from '../photo-search.js';
 
 /**
  * The social side: what the people you follow are saying, and the forums.
@@ -1262,9 +1263,11 @@ async function myPosts(request: HttpRequest, _context: InvocationContext) {
 /**
  * GET /api/users/{id}/posts - what one person has said in the open, newest first.
  *
- * For their collector page. Only forum posts, in their own voice: a shop's
- * channel is for its followers, so a person's messages there are not this
- * page's to repeat, and a post in a shop's name belongs on the shop's page.
+ * For their collector page: forum posts and the posts on their own feed -
+ * polls, debates, flexes - in their own voice. A shop's channel is for its
+ * followers, so a person's messages there are not this page's to repeat, a
+ * post kept to the channel stays there, and a post in a shop's name belongs on
+ * the shop's page.
  */
 async function personPosts(request: HttpRequest, _context: InvocationContext) {
   const id = request.params.id;
@@ -1273,7 +1276,8 @@ async function personPosts(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const viewer = await auth.getCurrentUser(request);
   const open = (await repository.listPostsByAuthor(id))
-    .filter((post) => post.channel === 'forum' || Boolean(post.wallOf))
+    .filter((post) => post.channel === 'forum' || Boolean(post.wallOf)
+      || (post.channel === 'seller' && post.channelId === id && (post.reach ?? 'feed') === 'feed'))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 30);
   const actor: Actor = viewer ? personActor(viewer) : { userId: '', storeId: null, key: '', name: '' };
@@ -1858,7 +1862,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     const amount = value === undefined || value === null || value === '' ? 0 : Number(value);
     return Number.isInteger(amount) && amount >= 0 && amount <= PRIZE_MAX_MINOR ? amount : null;
   };
-  const badCredit = () => error(400, 'invalid_prize', `A prize is store credit from ₹0 to ₹${PRIZE_MAX_MINOR / 100}.`);
+  const badCredit = () => error(400, 'invalid_prize', `A prize is store credit from ₹0 to ${rupees(PRIZE_MAX_MINOR)}.`);
 
   let debatePrize: DebatePrize | null = null;
   if (body.debate?.prize && shop) {
@@ -2160,12 +2164,24 @@ export async function mayRead(post: Post, userId: string, repository: Repo): Pro
   return (await repository.listFollowedSellerIds(userId)).includes(post.channelId);
 }
 
-/** GET /api/social/posts/{channel}/{id} - one post and everything said under it. */
+/**
+ * GET /api/social/posts/{channel}/{id} - one post and everything said under it.
+ *
+ * Open to guests, as Discover is: a post Discover shows them, or a friend
+ * shares with them, reads the same signed out. Acting on it still asks them
+ * to sign in.
+ */
 async function readPost(request: HttpRequest, _context: InvocationContext) {
-  const { user, repository, post, actor } = await target(request);
+  const auth = await getAuthService();
+  const user = await auth.getCurrentUser(request);
+  const repository = await getRepository();
+  const channelId = request.params.channel;
+  const postId = request.params.id;
+  const post = channelId && postId ? await repository.getPost(channelId, postId) : null;
+  const actor = user ? await actorFor(request, user, repository) : GUEST;
   if (!actor) return notYours();
   if (!post) return noPost();
-  if (!(await mayRead(post, user.id, repository))) return followFirst();
+  if (!(await mayRead(post, user?.id ?? GUEST.userId, repository))) return followFirst();
   // Opened after its time was up: settled now, so the page shows the result.
   const current = isDue(post, Date.now()) ? (await settleDebates([post], repository))[0]! : post;
   return json(200, {
@@ -3101,6 +3117,42 @@ async function runsGame(post: Post, userId: string, repository: Repo): Promise<b
 }
 
 /** The blob behind a photo address, for comparing two entries by their pixels. */
+/** Recent posts an entry is checked against for a copied photo. */
+const COPY_CHECK_POSTS = 300;
+/** Photos from those posts fingerprinted per entry, at most: bounds a cold start. */
+const COPY_CHECK_PHOTOS = 200;
+/** Listings whose photos an entry is checked against. */
+const COPY_CHECK_LISTINGS = 200;
+
+/** Every photo on a post: its own, its answers' and its competition entries', with who put each up. */
+function photosOn(post: Post): { url: string; by: string }[] {
+  const author = post.authorId;
+  return [
+    ...(post.photoUrls ?? (post.photoUrl ? [post.photoUrl] : [])).map((url) => ({ url, by: author })),
+    ...(post.poll?.options ?? []).flatMap((option) => (option.photoUrl ? [{ url: option.photoUrl, by: author }] : [])),
+    ...(post.contest?.entries ?? []).map((entry) => ({ url: entry.photoUrl, by: entry.userId })),
+  ];
+}
+
+/**
+ * Whether this photo is one somebody else already put up - in the competition's
+ * own post, a recent post, or a listing. Your own photos are yours to enter.
+ */
+async function postedBySomebodyElse(mine: string, userId: string, contestPost: Post, repository: Repo): Promise<boolean> {
+  const recent = await repository.listRecentPosts(COPY_CHECK_POSTS).catch(() => [] as Post[]);
+  const urls = [contestPost, ...recent]
+    .flatMap(photosOn)
+    .filter((photo) => photo.by !== userId)
+    .map((photo) => photo.url);
+  for (const url of [...new Set(urls)].slice(0, COPY_CHECK_PHOTOS)) {
+    const theirs = await fingerprintOfUrl(url);
+    if (theirs && likeness(mine, theirs)?.samePhoto) return true;
+  }
+  const listings = (await repository.listListings({ limit: COPY_CHECK_LISTINGS }).catch(() => [] as Listing[]))
+    .filter((listing) => listing.sellerId !== userId);
+  return [...(await pictureMatches(listings, mine)).values()].some((match) => match.same);
+}
+
 async function fingerprintOfUrl(url: string): Promise<string | null> {
   const name = await ownPhotoName(url);
   return name ? storedFingerprint(name).catch(() => null) : null;
@@ -3140,6 +3192,9 @@ async function enterContest(request: HttpRequest, _context: InvocationContext) {
     const theirs = await Promise.all(contest.entries.map((entry) => fingerprintOfUrl(entry.photoUrl)));
     if (theirs.some((hash) => hash && likeness(mine, hash)?.samePhoto)) {
       return error(409, 'same_photo', 'That photo is already in this competition.');
+    }
+    if (await postedBySomebodyElse(mine, user.id, post, repository)) {
+      return error(409, 'copied_photo', 'That photo is already on Figmark. Enter one you took yourself.');
     }
   }
 

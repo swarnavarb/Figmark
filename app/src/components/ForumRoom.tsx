@@ -12,6 +12,7 @@ import { useGoBack } from './ScrollManager';
 import { markSeen } from './Channels';
 import { ForumPeople, RoleChip } from './ForumMod';
 import '../styles/ForumRoom.css';
+import { plural } from '../format';
 
 /**
  * A forum, read as a feed with a subject.
@@ -118,7 +119,7 @@ function Forum() {
       <RoomBar tone="forum" onBack={back} reveal
         avatar={<span className="forumav" aria-hidden="true"><Icon name="forum" size={18} /></span>}
         title={channel?.name ?? <span className="skel" style={{ width: 120, height: 12 }} />}
-        sub={channel && <>{channel.memberCount ?? 0} members · {channel.postCount ?? posts.length} posts</>}
+        sub={channel && <>{plural(channel.memberCount ?? 0, 'member')} · {plural(channel.postCount ?? posts.length, 'post')}</>}
         action={channel && (
           <>
             <button type="button" className="roombar__icon" aria-label="Search this forum" onClick={openSearch}>

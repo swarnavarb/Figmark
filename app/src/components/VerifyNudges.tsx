@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { verifiedChecks } from '@shared/verification';
 import { Icon, useDialog } from './ui';
@@ -120,7 +121,8 @@ export function SetupChecklist({ hasStore, onOpenStore }: { hasStore: boolean; o
 export function VerifyPrompt() {
   const { verifyPrompt, closeVerifyPrompt } = useSession();
   if (!verifyPrompt) return null;
-  return <VerifyPromptBox message={verifyPrompt} onClose={closeVerifyPrompt} />;
+  // On the body, so it stays usable over a sheet that has made the page inert.
+  return createPortal(<VerifyPromptBox message={verifyPrompt} onClose={closeVerifyPrompt} />, document.body);
 }
 
 function VerifyPromptBox({ message: verifyPrompt, onClose: closeVerifyPrompt }: { message: string; onClose: () => void }) {
