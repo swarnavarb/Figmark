@@ -8460,6 +8460,13 @@ await check('a delivered order still owed money stays open until paid, or the se
   assert.ok((await noticesFor(buyer.id)).some((n) => n.kind === 'order_closed'), 'the buyer is told');
   const buyerAfter = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
   assert.ok(!buyerAfter.actions.includes('pay'), 'closed: the seller is no longer asking for it');
+  // The lists say so too, and stop counting the written-off money as due.
+  const row = (await sales(req({ headers: auth, query: { ids: orderId } }), ctx)).jsonBody.orders.find((o) => o.id === orderId);
+  assert.deepEqual(row.closure, { reason: 'Settled in cash at pickup.', owedMinor: 50_000 });
+  assert.equal(row.outstandingMinor, 0);
+  const item = (await myItems(req({ headers: buyer.headers }), ctx)).jsonBody.groups.flatMap((g) => g.items).find((i) => i.id === orderId);
+  assert.equal(item.closure.owedMinor, 50_000);
+  assert.equal(item.outstandingMinor, 0);
 });
 
 // Scenario A - cancel without payment.

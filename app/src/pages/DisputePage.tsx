@@ -49,7 +49,9 @@ export function DisputePage() {
   const current = rounds[rounds.length - 1] ?? null;
   const about = dispute.subjectRef
     ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type]
-    : data.holdsMoney ? DISPUTE_REASON_LABELS[dispute.reasonCode] : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'general'];
+    /* What went wrong, once it was picked; otherwise what it is about. */
+    : data.holdsMoney || dispute.reasonCode !== 'other'
+      ? DISPUTE_REASON_LABELS[dispute.reasonCode] : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'general'];
   const back = order
     ? { to: `/order/${order.id}`, label: order.itemName }
     : { to: '/disputes', label: 'My disputes' };

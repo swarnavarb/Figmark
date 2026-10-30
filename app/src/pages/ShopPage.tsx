@@ -2614,6 +2614,7 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
   if (row.status === 'rejected') return { tone: 'danger', label: 'Rejected' };
   if (row.status === 'cancelled') return { tone: 'quiet', label: 'Cancelled' };
   if (row.holdState === 'disputed') return { tone: 'danger', label: 'In dispute' };
+  if (row.closure) return { tone: 'quiet', label: 'Closed unpaid' };
   if (row.bookingOnly && !row.accepted) return { tone: 'warn', label: '📘 Book — awaiting acceptance' };
   if (needsAnswer) return { tone: 'warn', label: PAYMENT_WORDS[row.paymentStatus] ?? 'To answer' };
   if (row.paymentStatus === 'paid') return { tone: 'ok', label: 'Paid' };
@@ -2688,6 +2689,7 @@ function OrderRow({
     receivedAt: null,
     inHand: row.inHand,
     disputed: row.holdState === 'disputed',
+    closure: row.closure,
     claimOpen: awaitingClaim,
   });
   /* The badge already says "In dispute"; the banner would only say it again. */

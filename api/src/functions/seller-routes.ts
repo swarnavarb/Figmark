@@ -518,6 +518,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       /** The courier and AWB it went out with, once dispatched. */
       shipment: order.shipment ?? null,
       dispatchedAt: order.checkpoints?.dispatched ?? null,
+      /** Closed by the seller while still owed money, and why. */
+      closure: order.closure ? { reason: order.closure.reason, owedMinor: order.closure.owedMinor } : null,
       awaitingLot: awaitingLot(order),
       lotId: lot?.id ?? null,
       lotName: lot?.name ?? null,

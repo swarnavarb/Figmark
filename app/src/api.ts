@@ -740,6 +740,8 @@ export interface SaleRow {
   inHand: boolean;
   /** The courier and AWB it went out with, once the seller gave them. */
   shipment: OrderShipment | null;
+  /** Closed by the seller while still owed money, and why. */
+  closure: { reason: string; owedMinor: number } | null;
   /** When the seller ticked it dispatched. */
   dispatchedAt: string | null;
   awaitingLot: boolean;
@@ -2049,6 +2051,8 @@ export interface ItemGroup {
     shipment: OrderShipment | null;
     /** Held money under dispute. */
     disputed: boolean;
+    /** Closed by the seller while still owed money, and why. */
+    closure: { reason: string; owedMinor: number } | null;
     createdAt: string;
   })[];
 }

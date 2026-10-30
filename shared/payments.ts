@@ -77,14 +77,16 @@ export interface OrderMoney {
   refundedMinor: number;
 }
 
-type MoneyShape = Pick<Order, 'unitPriceMinor' | 'quantity' | 'paymentStatus' | 'payments' | 'credits'> & Partial<Pick<Order, 'addOns'>>;
+type MoneyShape = Pick<Order, 'unitPriceMinor' | 'quantity' | 'paymentStatus' | 'payments' | 'credits'> & Partial<Pick<Order, 'addOns' | 'closure'>>;
 
 /**
  * What an order is worth, what has come in and what is left.
  *
  * Summed from the individual dated payments rather than kept as a running
  * number, so the history and the balance can never disagree. Orders paid before
- * payment records existed are treated as paid in full when they say so.
+ * payment records existed are treated as paid in full when they say so. An
+ * order the seller closed unpaid owes nothing more: what was left is written
+ * off, and kept on the closure itself.
  */
 export function orderMoney(order: MoneyShape): OrderMoney {
   // Cover the buyer added is owed like the goods are, so it counts here.
@@ -99,7 +101,7 @@ export function orderMoney(order: MoneyShape): OrderMoney {
   return {
     totalMinor,
     paidMinor,
-    outstandingMinor: Math.max(0, totalMinor - paidMinor),
+    outstandingMinor: order.closure ? 0 : Math.max(0, totalMinor - paidMinor),
     creditMinor,
     refundedMinor,
   };

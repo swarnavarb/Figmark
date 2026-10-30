@@ -578,7 +578,9 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   ] as const;
   const returned = (order.credits ?? []).filter((credit) => credit.status === 'refund_pending' && credit.pendingRefund);
   const returnedMinor = returned.reduce((sum, credit) => sum + (credit.pendingRefund?.amountMinor ?? 0), 0);
-  const openCreditMinor = (order.credits ?? []).filter((credit) => credit.status === 'open')
+  // Paid over the price only: a cancelled order's money goes back through its reversal.
+  const openCreditMinor = (order.credits ?? [])
+    .filter((credit) => credit.status === 'open' && (credit.origin ?? 'overpaid') === 'overpaid')
     .reduce((sum, credit) => sum + creditLeft(credit), 0);
   const nothingToDo = !actions.some((action) =>
     (DRAWN_HERE as readonly string[]).includes(action));

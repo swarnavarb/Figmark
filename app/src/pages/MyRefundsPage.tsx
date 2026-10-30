@@ -374,7 +374,7 @@ function CreditTab({ kept }: {
         </span>
       </div>
       <p className="faint" style={{ margin: 0 }}>
-        You paid more than was owed and the shop kept the rest for you. It goes towards your next order with them.
+        Money a shop owes you back - an overpayment or a cancelled order - that they are keeping for you. It goes towards your next order with them.
       </p>
       <ul className="wallet-credit__list">
         {kept.map((refund) => (
