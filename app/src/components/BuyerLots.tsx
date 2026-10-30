@@ -46,6 +46,9 @@ export function PhaseTrack({ phase, size = 'sm' }: { phase: LotBuyerPhase; size?
 
 /** The money on one item, said in the fewest words: paid, booked, or what is due. */
 export function PayChip({ item }: { item: BuyerItem }) {
+  if (item.closure) {
+    return <span className="paychip paychip--info">🔒 Closed · {formatMoney(item.closure.owedMinor, item.currency)} unpaid</span>;
+  }
   if (item.outstandingMinor > 0 && item.paidMinor === 0 && item.bookingOnly) {
     return <span className="paychip paychip--info">🔖 Booked · {formatMoney(item.outstandingMinor, item.currency)} to pay</span>;
   }
@@ -73,6 +76,7 @@ export function factsOf(item: BuyerItem): StatusFacts {
     receivedAt: item.receivedAt,
     inHand: item.inHand,
     disputed: item.disputed,
+    closure: item.closure,
   };
 }
 

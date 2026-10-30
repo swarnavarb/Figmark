@@ -250,8 +250,18 @@ export const MIN_PRICE_MINOR = 100;
 /** A submitted price as paise, or null when it is not one an item may be listed at. */
 export function listablePrice(value: unknown): number | null {
   const paise = Math.round(Number(value));
-  return Number.isFinite(paise) && paise >= MIN_PRICE_MINOR ? paise : null;
+  return Number.isFinite(paise) && paise >= MIN_PRICE_MINOR && paise <= MAX_PRICE_MINOR ? paise : null;
 }
+
+/**
+ * The most an item may be listed at: ₹1 crore. Far above anything a
+ * collectable sells for here, and low enough that a slipped thumb adding four
+ * zeros is caught at publishing rather than at somebody's checkout.
+ */
+export const MAX_PRICE_MINOR = 1_00_00_000_00;
+
+/** The refusal for a price outside the two limits, in the seller's words. */
+export const PRICE_RANGE_MESSAGE = 'Enter a price between ₹1 and ₹1,00,00,000.';
 
 /** A price ceiling from a query string, or undefined for none: zero or less is no ceiling. */
 export function priceCeiling(value: string | null | undefined): number | undefined {

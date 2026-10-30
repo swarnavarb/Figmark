@@ -20,7 +20,7 @@ import { countCompleted, dropFromCollection } from '../delivery.js';
 import {
   Refusal, activeAlert, activeNotices, availableManagers, bringReleaseUpToDate, bringUpToDate, chargeFee, favouredName, finalizeDecided,
   commit, isManager, loadLedger, managerName, newRound, openCaseCount, orderOf, payoutRef, personName, pickManager,
-  pickManagerFor, recordSettled,
+  pickManagerFor, recordSettled, releaseOrderFromDispute,
 } from '../community.js';
 import { rupees } from '../../../shared/payments.js';
 import { marketSettings } from '../settings.js';
@@ -774,6 +774,7 @@ async function accept(request: HttpRequest, _context: InvocationContext) {
   dispute.updatedAt = now;
   const saved = await bringReleaseUpToDate(repository, await commit(repository, dispute));
   await recordSettled(repository, saved, order);
+  order = await releaseOrderFromDispute(repository, saved, order);
 
   if (order) await tellSettled(repository, order, dispute.id, 'settled', user.id);
   await notify(repository, [currentRound(dispute)?.managerId, dispute.raisedBy, dispute.againstUserId], {
@@ -821,6 +822,7 @@ async function withdraw(request: HttpRequest, _context: InvocationContext) {
     saved = dispute;
   } else {
     saved = await commit(repository, dispute);
+    order = await releaseOrderFromDispute(repository, saved, order);
   }
   if (order) await tellSettled(repository, order, dispute.id, 'withdrawn', user.id);
   await notify(repository, [currentRound(dispute)?.managerId, dispute.againstUserId], {

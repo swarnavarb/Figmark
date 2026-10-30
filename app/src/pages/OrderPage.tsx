@@ -1,6 +1,6 @@
 import { InfoTip } from '../components/InfoTip';
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
-import { RaiseDisputeModal } from '../components/DisputeFlows';
+import { DirectDealNote, RaiseDisputeModal } from '../components/DisputeFlows';
 import { RestockChoice } from '../components/RestockChoice';
 import { ManagerMark } from '../components/ManagerBadge';
 import { compressImage } from '../imageCompress';
@@ -10,7 +10,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BackBar, canGoBack } from '../components/ScrollManager';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex, renderStepText } from '@shared/routes';
-import { REVIEW_REVEAL_DAYS, isCancelledLike, type OrderSide } from '@shared/orders';
+import { REVIEW_REVEAL_DAYS, awaitingAcceptance, isCancelledLike, isOpenUnpaid, isStopped, nothingAtStake, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
 import type { BuyerReversalDetails, Order, SellerPaymentDetails } from '@shared/models';
@@ -23,7 +23,7 @@ import { Ladder } from '../components/Ladder';
 import { ReportButton } from '../components/ReportButton';
 import { ProofPicker } from '../components/ProofPicker';
 import { PaymentHistory } from '../components/Buy';
-import { orderMoney } from '@shared/payments';
+import { creditLeft, orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink, PageError } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
 import { DirectTrack, TrackHero, endedOf, boxesFor, withLastMile } from '../components/OrderTrack';
@@ -172,11 +172,11 @@ export function OrderPage() {
           { label: 'Total', value: formatMoney(orderTotalMinor(order), order.currency), tone: 'accent' },
           { label: 'Qty', value: order.quantity },
           { label: 'Stock', value: isDirect(order) ? <><Svg name="home" size={13} /> In hand</> : <><Svg name="ship" size={13} /> Import</>, tone: isDirect(order) ? 'ok' : undefined },
-          { label: 'Status', value: placed ? order.status.replace(/_/g, ' ') : 'Not placed', tone: placed ? statusTone(order.status) : 'warn' },
+          { label: 'Status', value: !placed ? 'Not placed' : awaitingAcceptance(order) && order.paymentStatus === 'unpaid' ? 'booked' : order.status.replace(/_/g, ' '), tone: placed ? statusTone(order.status) : 'warn' },
         ]}>
         {!placed && (
           <p className="icard__note">
-            <b>Not placed yet.</b> Nothing is ordered until you choose how to buy below. The shop can see that you pressed Buy, and may message you about it.
+            <b>Not placed yet.</b> Nothing is ordered until you choose how to buy below. The shop cannot see it until you do.
           </p>
         )}
         {order.affiliate && (seller
@@ -525,6 +525,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [cancelling, setCancelling] = useState(false);
   const [reversing, setReversing] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [closing, setClosing] = useState(false);
   // The fee for disputing a reversal, shown before it is paid - never taken on one tap.
   const [disputeFee, setDisputeFee] = useState<{ feeMinor: number; currency: string } | null>(null);
 
@@ -572,11 +573,15 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
    * action without a button can no longer produce an empty rounded rectangle.
    */
   const DRAWN_HERE = [
-    'pay', 'settle_claim', 'confirm', 'dispute', 'pay_more', 'accept', 'reject', 'cancel',
+    'pay', 'settle_claim', 'confirm', 'dispute', 'pay_more', 'accept', 'reject', 'cancel', 'close',
     'submit_reversal', 'confirm_reversal_details', 'ack_reversal', 'raise_dispute', 'ack_credit_refund',
   ] as const;
   const returned = (order.credits ?? []).filter((credit) => credit.status === 'refund_pending' && credit.pendingRefund);
   const returnedMinor = returned.reduce((sum, credit) => sum + (credit.pendingRefund?.amountMinor ?? 0), 0);
+  // Paid over the price only: a cancelled order's money goes back through its reversal.
+  const openCreditMinor = (order.credits ?? [])
+    .filter((credit) => credit.status === 'open' && (credit.origin ?? 'overpaid') === 'overpaid')
+    .reduce((sum, credit) => sum + creditLeft(credit), 0);
   const nothingToDo = !actions.some((action) =>
     (DRAWN_HERE as readonly string[]).includes(action));
   const onlyCancel = actions.includes('cancel')
@@ -653,6 +658,15 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
         </button>
       )}
 
+      {/* An overpayment waiting on the seller: said here, on the order it
+          came from, not only on the shop's Refunds screen. */}
+      {actions.includes('refund_credit') && openCreditMinor > 0 && (
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          💰 The buyer paid <b>{formatMoney(openCreditMinor, order.currency)}</b> more than was owed. Send it back, or
+          keep it as credit for their next order: <Link to="/shop?tab=refunds">open Refunds</Link>.
+        </p>
+      )}
+
       {!nothingToDo && !(onlyCancel && !cancelling) && (
         <div className="card card--pad stack">
           <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -695,6 +709,12 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
               <button type="button" className="btn btn--danger" disabled={busy !== null}
                 onClick={() => setRejecting(true)}>
                 ❌ Reject
+              </button>
+            )}
+            {actions.includes('close') && !closing && (
+              <button type="button" className="btn btn--quiet" disabled={busy !== null}
+                onClick={() => setClosing(true)}>
+                🔒 Close the order
               </button>
             )}
             {actions.includes('cancel') && !cancelling && !onlyCancel && (
@@ -756,6 +776,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
                   A community manager hears it with both of you. Raising it costs the dispute fee of{' '}
                   <b>{formatMoney(disputeFee.feeMinor, disputeFee.currency)}</b>.
                 </p>
+                <DirectDealNote />
                 <span className="row" style={{ flexWrap: 'wrap' }}>
                   <button className="btn btn--danger" disabled={busy !== null}
                     onClick={() => void run('dispute-reversal', () => api.raiseDispute(order.id))}>
@@ -773,6 +794,15 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
               busy={busy === 'reject'}
               onReject={(reason) => run('reject', () => api.rejectOrder(order.id, reason))}
               onClose={() => setRejecting(false)}
+            />
+          )}
+
+          {closing && (
+            <CloseOrder
+              order={order}
+              busy={busy === 'close'}
+              onCloseOrder={(reason) => run('close', () => api.closeOrder(order.id, reason))}
+              onClose={() => setClosing(false)}
             />
           )}
 
@@ -829,7 +859,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
         </div>
       )}
 
-      {order.completedAt && <ReviewPanel state={state} onDone={onDone} />}
+      {order.completedAt && !isOpenUnpaid(order) && <ReviewPanel state={state} onDone={onDone} />}
       {order.completedAt && state.side === 'buyer' && <UnboxingPanel order={order} onDone={onDone} />}
     </div>
   );
@@ -843,7 +873,8 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
  */
 function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }) {
   const { order, listing } = data;
-  if (order.placedAt === null || !listing || isCancelledLike(order.status) || order.status === 'dispute_raised') return null;
+  // Nothing to celebrate on an order that was called off, whichever way.
+  if (order.placedAt === null || !listing || isStopped(order.status)) return null;
   const pre = listing.preOrder && listing.preOrder.threshold > 0 ? listing.preOrder : null;
   const left = pre ? Math.max(0, pre.threshold - pre.joined) : 0;
   const badge = shopBadge(data.sellerBadge ? {
@@ -993,7 +1024,8 @@ function DisputePanel({ state }: { state: OrderState }) {
           claim above, heard by its assigned manager for free. */}
       {/* Not on a checkout: the seller cannot see it yet, so there is nobody
           to raise it with. */}
-      {order.placedAt !== null && (
+      {/* Nor before anything was paid or sent: there is nothing at stake yet. */}
+      {order.placedAt !== null && !nothingAtStake(order) && (
         <button type="button" className="btn btn--quiet btn--sm" style={{ justifySelf: 'start' }}
           onClick={() => setRaising({ label: order.itemName })}>
           {/* Beside a specific "Dispute this", say this one is for anything else. */}
@@ -1003,6 +1035,7 @@ function DisputePanel({ state }: { state: OrderState }) {
       {raising && (
         <RaiseDisputeModal onClose={() => setRaising(null)} orderSubject={raising.subject}
           side={state.side ?? undefined}
+          nothingPaid={orderMoney(order).paidMinor === 0}
           protectedOrder={Boolean(order.protection && (order.hold.state === 'held' || order.hold.state === 'disputed'))}
           target={{ type: 'order', id: order.id, againstId: counterpartyId, label: raising.label }} />
       )}
@@ -1136,7 +1169,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         <span className="buyway__title">Buy directly from the seller</span>
         <span className="buyway__note">
           {canPayDirect
-            ? <>Pay <PersonLink party={quote.seller} /> yourself, then show them it went through. Nothing is held, so anything that goes wrong is between the two of you.</>
+            ? <>Pay <PersonLink party={quote.seller} /> yourself, then show them it went through. Nothing is held: if something goes wrong, a community manager can act against the seller, but cannot get your money back. Only Buyer Protection can.</>
             : <><PersonLink party={quote.seller} /> has not added any payment details, so there is nowhere to send the money.</>}
         </span>
         <span className="buyway__price">{formatMoney(dueNow, quote.currency)}</span>
@@ -1345,11 +1378,16 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
   const money = orderMoney(order);
   const balanceAfter = Math.max(0, money.outstandingMinor - claimedMinor);
   const claimLabel = claim?.plan === 'additional' ? 'Additional payment'
-    : claim?.plan === 'advance' ? 'Advance payment' : 'Full payment';
+    : claim?.plan === 'advance' ? 'Advance payment'
+    : (order.payments ?? []).some((payment) => payment.kind === 'credit') ? 'The rest, after credit' : 'Full payment';
   // What actually left the buyer's account: one payment can cover other items
   // of theirs, or be more than was owed. The seller checks their bank for this.
   const excessMinor = claim?.excessMinor ?? 0;
   const sentMinor = Math.max(claim?.batchTotalMinor ?? 0, claimedMinor + excessMinor);
+  // Credit the seller kept from an earlier overpayment, spent on this order:
+  // why a "full payment" can be less than the price.
+  const creditMinor = (order.payments ?? []).filter((payment) => payment.kind === 'credit')
+    .reduce((sum, payment) => sum + payment.amountMinor, 0);
 
   return (
     <div className="stack">
@@ -1367,7 +1405,10 @@ function SettleClaim({ order, busy, onAnswer, onCancel }: {
         {sentMinor - claimedMinor - excessMinor > 0 && (
           <div className="kv"><dt>For their other items, in the same payment</dt><dd>{formatMoney(sentMinor - claimedMinor - excessMinor, order.currency)}</dd></div>
         )}
-        <div className="kv"><dt>Already paid before this</dt><dd>{formatMoney(money.paidMinor, order.currency)}</dd></div>
+        {creditMinor > 0 && (
+          <div className="kv"><dt>Paid from credit you kept for them</dt><dd>{formatMoney(creditMinor, order.currency)}</dd></div>
+        )}
+        <div className="kv"><dt>Already paid before this{creditMinor > 0 ? ', credit included' : ''}</dt><dd>{formatMoney(money.paidMinor, order.currency)}</dd></div>
         <div className="kv"><dt>Order total</dt><dd>{formatMoney(money.totalMinor, order.currency)}</dd></div>
         <div className="kv"><dt>Balance left if accepted</dt><dd>{formatMoney(balanceAfter, order.currency)}</dd></div>
         {claim?.reference && (
@@ -1453,6 +1494,47 @@ function RejectOrder({ order, busy, onReject, onClose }: {
         <button type="button" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}
           onClick={() => void onReject(reason.trim())}>
           {busy ? 'Sending…' : 'Turn it down'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Closing a delivered order that was never paid in full.
+ *
+ * It stays open while money is owed, so the balance is never quietly
+ * forgotten; the seller who has stopped waiting for it closes it here, and
+ * the buyer reads the reason.
+ */
+function CloseOrder({ order, busy, onCloseOrder, onClose }: {
+  order: Order;
+  busy: boolean;
+  onCloseOrder: (reason: string) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const owed = orderMoney(order).outstandingMinor;
+
+  return (
+    <Modal title="Close this order unpaid" onClose={onClose}>
+      <div className="form">
+        <p className="muted">
+          {order.itemName} — <b>{formatMoney(owed, order.currency)}</b> is still unpaid.
+        </p>
+        <label className="field">
+          <span>Why</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3}
+            placeholder="Settled in cash at pickup." />
+          <span className="field__hint">The buyer sees this word for word.</span>
+        </label>
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          The order is marked closed with the amount still owed, and reviews open. Nothing is charged
+          or refunded. This cannot be undone.
+        </p>
+        <button type="button" className="btn btn--danger btn--block" disabled={busy || reason.trim().length < 4}
+          onClick={() => void onCloseOrder(reason.trim())}>
+          {busy ? 'Closing…' : 'Close the order'}
         </button>
       </div>
     </Modal>

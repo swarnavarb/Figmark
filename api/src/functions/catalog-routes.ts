@@ -3,7 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { Sourcing } from '../../../shared/enums.js';
 import {
   authenticityValues, canonicalCategory, categoriesIn, cleanAttributes, conditionTagFor,
-  listablePrice, priceCeiling,
+  PRICE_RANGE_MESSAGE, listablePrice, priceCeiling,
 } from '../../../shared/catalog.js';
 import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefront.js';
 import { can } from '../../../shared/stores.js';
@@ -751,7 +751,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     return error(400, 'invalid_listing', (err as Error).message);
   }
   const priceMinor = listablePrice(body.priceMinor);
-  if (priceMinor === null) return error(400, 'invalid_listing', 'A price of at least ₹1 is required.');
+  if (priceMinor === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
 
   // A lot can be chosen while listing rather than only afterwards, so the
   // seller is not made to publish and then go and file it. It has to be one of
@@ -1609,7 +1609,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
 
   if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
   const newPrice = body.priceMinor === undefined ? undefined : listablePrice(body.priceMinor);
-  if (newPrice === null) return error(400, 'invalid_listing', 'A price of at least ₹1 is required.');
+  if (newPrice === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
   // Stock is a change, not a count. The form was drawn minutes ago; a sale
   // since then has already taken its unit, and writing the old number back
   // would hand that unit to a second buyer. So what the seller moved - from

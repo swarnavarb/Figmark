@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { DISPUTE_STATUS_LABELS } from '@shared/enums';
+import { DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS } from '@shared/disputes';
 import { ApiRequestError, admin, type AdminDisputeRow } from './api';
 import { formatDate, formatMoney, timeAgo } from '../format';
@@ -71,7 +71,9 @@ export function DisputesView() {
         <div className="card">
           {shown.map((row) => {
             const { dispute } = row;
-            const about = dispute.subjectRef ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type] : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'held_payment'];
+            const about = dispute.subjectRef ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type]
+              : dispute.reasonCode && dispute.reasonCode !== 'other' ? DISPUTE_REASON_LABELS[dispute.reasonCode]
+              : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'held_payment'];
             return (
               <div key={dispute.id} className="userrow" style={{ cursor: 'default' }}>
                 <div className="userrow__main">

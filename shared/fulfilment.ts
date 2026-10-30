@@ -77,6 +77,26 @@ export function isPendingUndo(event: Pick<StageEvent, 'undoUntil'>, now: number 
   return Boolean(event.undoUntil) && Date.parse(event.undoUntil!) > now;
 }
 
+/**
+ * An order as its buyer may see it: a dispatch still inside its undo window
+ * has not happened yet for them. The seller was promised "buyers see it in
+ * 3:00", so the status, the tick and the courier all wait with the timeline.
+ */
+export function asBuyerSees<T extends Pick<Order, 'status' | 'checkpoints' | 'shipment' | 'stageHistory'>>(
+  order: T,
+  now: number = Date.now(),
+): T {
+  const pending = order.stageHistory.find((event) => event.undoBefore && isPendingUndo(event, now));
+  if (!pending?.undoBefore) return order;
+  const before = pending.undoBefore;
+  return {
+    ...order,
+    status: before.status,
+    checkpoints: { ...(order.checkpoints ?? {}), dispatched: before.dispatchedAt },
+    shipment: before.shipment,
+  };
+}
+
 /** A history as a timeline shows it: everything except what can still be undone. */
 export function settledHistory<T extends Pick<StageEvent, 'undoUntil'>>(events: readonly T[], now: number = Date.now()): T[] {
   return events.filter((event) => !isPendingUndo(event, now));

@@ -110,15 +110,29 @@ export class AuthError extends Error {
    * Buying or selling before verification is done. Its own code, so the app
    * can open the verification steps instead of showing a bare refusal.
    */
-  static verificationRequired(capabilities: readonly string[]): AuthError {
+  static verificationRequired(
+    capabilities: readonly string[],
+    done: { email: boolean; phone: boolean; aadhaar: boolean } = { email: false, phone: false, aadhaar: false },
+  ): AuthError {
     const selling = capabilities.includes('sell') && !capabilities.includes('buy');
+    // Only what is still missing: somebody who verified their email already
+    // is not told to verify it again.
+    const missing = [
+      !done.email && 'your email',
+      !done.phone && 'your WhatsApp number',
+      selling && !done.aadhaar && 'your Aadhaar',
+    ].filter((entry): entry is string => Boolean(entry));
+    const list = missing.length === 0 ? null
+      : missing.length === 1 ? missing[0]
+      : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
+    const what = selling ? 'sell' : 'buy';
     return new AuthError(
       403,
       'verification_required',
-      selling
-        ? 'To sell on Figmark, verify your email, your WhatsApp number and your Aadhaar first ' +
-          '(Profile → Verification). Your Aadhaar-linked mobile must be the same number as your WhatsApp.'
-        : 'To buy on Figmark, verify your email and your WhatsApp number first (Profile → Verification).',
+      list
+        ? `To ${what} on Figmark, verify ${list} first (Profile → Verification).`
+          + (selling && !done.aadhaar ? ' Your Aadhaar-linked mobile must be the same number as your WhatsApp.' : '')
+        : `Your account cannot ${what} yet. Open Profile → Verification to see why.`,
     );
   }
 

@@ -133,6 +133,7 @@ const {
   fillingLotsRoute: fillingLots, dropsRoute: dropsShelf, dropRoute: readDrop, remindRoute: remindDrop,
 } = await import(new URL('showcase-routes.js', fns));
 const { rejectOrderRoute: rejectOrder } = await import(new URL('order-routes.js', fns));
+const { closeOrderRoute: closeOrder } = await import(new URL('order-routes.js', fns));
 const { discardCheckoutRoute: discardCheckout } = await import(new URL('order-routes.js', fns));
 const {
   acceptOrderRoute: acceptOrder, cancelOrderRoute: cancelOrder, bookOrderRoute: bookOrder,
@@ -8427,6 +8428,47 @@ async function paidAcceptedOrder(title, priceMinor, { details = false } = {}) {
   return { orderId, buyer };
 }
 
+await check('a delivered order still owed money stays open until paid, or the seller closes it', async () => {
+  const listed = await createListing(req({ headers: auth, body: { title: 'Sent On Trust', priceMinor: 50_000, quantityAvailable: 2 } }), ctx);
+  const buyer = await newBuyer('On Trust Buyer');
+  const orderId = (await createOrder(req({ headers: buyer.headers, body: { listingId: listed.jsonBody.listing.id } }), ctx)).jsonBody.order.id;
+  await acceptOrder(req({ headers: auth, params: { id: orderId } }), ctx);
+  // Dispatching unpaid is allowed.
+  const sent = await setCheckpoint(req({ headers: auth, params: { id: orderId }, body: { checkpoint: 'dispatched', on: true } }), ctx);
+  assert.equal(sent.status, 200, JSON.stringify(sent.jsonBody));
+  const received = await confirmOrder(req({ headers: buyer.headers, params: { id: orderId } }), ctx);
+  assert.equal(received.status, 200, JSON.stringify(received.jsonBody));
+
+  let seller = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(seller.actions.includes('close'), 'the seller may close it');
+  assert.ok(!seller.actions.includes('review'), 'not finished while owed for');
+  const buyerSide = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(buyerSide.actions.includes('pay'), 'the buyer can still pay what is owed');
+  const early = await reviewOrder(req({ headers: buyer.headers, params: { id: orderId }, body: { rating: 5, body: 'Lovely.' } }), ctx);
+  assert.equal(early.status, 409);
+
+  assert.equal((await closeOrder(req({ headers: buyer.headers, params: { id: orderId }, body: { reason: 'Not mine to close' } }), ctx)).status, 409,
+    'only the seller closes it');
+  assert.equal((await closeOrder(req({ headers: auth, params: { id: orderId }, body: { reason: '' } }), ctx)).status, 400, 'a reason is needed');
+  const closed = await closeOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Settled in cash at pickup.' } }), ctx);
+  assert.equal(closed.status, 200, JSON.stringify(closed.jsonBody));
+  assert.equal(closed.jsonBody.order.closure.reason, 'Settled in cash at pickup.');
+  assert.equal(closed.jsonBody.order.closure.owedMinor, 50_000);
+  seller = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!seller.actions.includes('close'));
+  assert.ok(seller.actions.includes('review'), 'closed, so reviews open');
+  assert.ok((await noticesFor(buyer.id)).some((n) => n.kind === 'order_closed'), 'the buyer is told');
+  const buyerAfter = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!buyerAfter.actions.includes('pay'), 'closed: the seller is no longer asking for it');
+  // The lists say so too, and stop counting the written-off money as due.
+  const row = (await sales(req({ headers: auth, query: { ids: orderId } }), ctx)).jsonBody.orders.find((o) => o.id === orderId);
+  assert.deepEqual(row.closure, { reason: 'Settled in cash at pickup.', owedMinor: 50_000 });
+  assert.equal(row.outstandingMinor, 0);
+  const item = (await myItems(req({ headers: buyer.headers }), ctx)).jsonBody.groups.flatMap((g) => g.items).find((i) => i.id === orderId);
+  assert.equal(item.closure.owedMinor, 50_000);
+  assert.equal(item.outstandingMinor, 0);
+});
+
 // Scenario A - cancel without payment.
 await check('Scenario A: cancelling an accepted order with no payment goes straight to Cancelled', async () => {
   const listed = await createListing(req({
@@ -8499,6 +8541,21 @@ await check('Scenario B: cancel after payment reverses cleanly once the buyer ha
   const acked = await ackReversal(req({ headers: buyer.headers, params: { id: orderId }, body: { received: true } }), ctx);
   assert.equal(acked.status, 200);
   assert.equal(acked.jsonBody.order.reversal.buyerResponse, 'received');
+});
+
+await check('keeping a cancelled order\'s money as credit ends its reversal and says so', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Kept As Credit', 30_000);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Paint chipped.' } }), ctx);
+  const held = await holdCredit(req({ headers: auth, params: { id: orderId }, body: {} }), ctx);
+  assert.equal(held.status, 200, JSON.stringify(held.jsonBody));
+  assert.equal(held.jsonBody.order.status, 'cancelled', 'no reversal left to send');
+  assert.equal(held.jsonBody.order.credits[0].status, 'held');
+  const seller = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.ok(!seller.actions.includes('submit_reversal'));
+  assert.ok(seller.actions.includes('refund_credit'), 'it can still be returned later');
+  const row = (await sales(req({ headers: auth, query: { ids: orderId } }), ctx)).jsonBody.orders.find((o) => o.id === orderId);
+  assert.equal(row.keptCreditMinor, 30_000);
+  assert.ok((await noticesFor(buyer.id)).some((n) => /from your cancelled order as credit/.test(n.title)));
 });
 
 // Scenario C - cancel after payment, buyer has no reversal details yet.
@@ -8802,6 +8859,27 @@ await check('the reversal dispute and the held-payment dispute are the same kind
   assert.equal(raised.dispute.topic, 'reversal_rejected');
   const listed = (await myDisputes(req({ headers: auth }), ctx)).jsonBody.asStore.find((d) => d.orderId === orderId);
   assert.equal(listed.id, raised.dispute.id, 'listed from the record itself');
+});
+
+await check('a settled reversal dispute hands the order back instead of leaving it disputed', async () => {
+  const { orderId, buyer } = await paidAcceptedOrder('Settled Reversal Dispute', 10_000);
+  await saveReversalDetails(req({ headers: buyer.headers, body: { method: 'UPI', identifier: 's@upi', accountName: 'S' } }), ctx);
+  await cancelOrder(req({ headers: auth, params: { id: orderId }, body: { reason: 'Gone.' } }), ctx);
+  await submitReversal(req({ headers: auth, params: { id: orderId }, body: { reference: 'RV2' } }), ctx);
+  await ackReversal(req({ headers: buyer.headers, params: { id: orderId }, body: { received: false } }), ctx);
+  const raised = (await raiseDispute(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  // The buyer's dispute is the one matter: the seller is not offered a second.
+  const sellerView = (await orderState(req({ headers: auth, params: { id: orderId } }), ctx)).jsonBody;
+  assert.deepEqual(sellerView.disputable, [], 'nothing left for the seller to raise about the same reversal');
+
+  const offered = (await offerDispute(req({ headers: auth, params: { id: raised.dispute.id },
+    body: { terms: 'I will send it again today.' } }), ctx)).jsonBody.dispute;
+  const accepted = await acceptDispute(req({ headers: buyer.headers, params: { id: raised.dispute.id },
+    body: { offerId: offered.offer.id } }), ctx);
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.jsonBody));
+  const after = (await orderState(req({ headers: buyer.headers, params: { id: orderId } }), ctx)).jsonBody;
+  assert.equal(after.order.status, 'cancelled_reversed', 'no longer stuck in dispute_raised');
+  assert.deepEqual(after.actions.filter((action) => action === 'raise_dispute' || action === 'ack_reversal'), []);
 });
 
 /* ── payment reversal details, asked for and answered from Refunds ───── */

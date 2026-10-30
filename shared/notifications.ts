@@ -85,6 +85,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   order_received: 'orders',
   order_placed: 'orders',
   order_rejected: 'orders',
+  order_closed: 'orders',
   order_accepted: 'orders',
   booking_accepted: 'orders',
   order_cancelled: 'orders',

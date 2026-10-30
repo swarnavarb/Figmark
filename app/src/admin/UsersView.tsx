@@ -402,6 +402,9 @@ function RightsPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
 
   const unchanged = buy === (user.tradeOverride?.buy ?? 'auto') && sell === (user.tradeOverride?.sell ?? 'auto')
     && reason === (user.tradeOverride?.reason ?? '');
+  // The server keeps a reason with every override; asked for here, before
+  // the press, rather than refused after it.
+  const needsReason = !(buy === 'auto' && sell === 'auto') && !reason.trim();
 
   async function save() {
     setBusy(true);
@@ -455,9 +458,10 @@ function RightsPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
       {error && <p className="notice notice--error">{error}</p>}
 
       <div className="row">
-        <button className="btn" disabled={busy || unchanged} onClick={() => void save()}>
+        <button className="btn" disabled={busy || unchanged || needsReason} onClick={() => void save()}>
           {busy ? 'Saving…' : 'Save'}
         </button>
+        {!unchanged && needsReason && <span className="faint">Say why first: it is kept with the decision.</span>}
       </div>
     </div>
   );

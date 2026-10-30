@@ -45,7 +45,7 @@ function AuthBrand() {
  * in (see session.tsx), and since the address never changed they are still
  * on the page they were reading, now able to do the thing they pressed.
  */
-export function AuthModal({ reason, onClose }: { reason: string | null; onClose: () => void }) {
+export function AuthModal({ reason, mode = 'signup', onClose }: { reason: string | null; mode?: Mode; onClose: () => void }) {
   // Escape, focus kept inside, the page still behind: what every dialog does.
   const box = useRef<HTMLDivElement>(null);
   useDialog(box, onClose);
@@ -57,7 +57,7 @@ export function AuthModal({ reason, onClose }: { reason: string | null; onClose:
         <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
         <AuthBrand />
         <p className="authpop__why">🔒 {reason ?? 'Sign in or create a free account to do that.'} You stay on this page.</p>
-        <AuthCard initialMode="signup" />
+        <AuthCard initialMode={mode} />
       </div>
     </div>
   );

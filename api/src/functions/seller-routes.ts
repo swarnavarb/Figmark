@@ -5,8 +5,8 @@ import { awaitingLot, inLot, isDirect, lotIsDone } from '../../../shared/fulfilm
 import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, type RouteStep, ticksOf } from '../../../shared/routes.js';
 import { cardButtons, holdsLotBack, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
-import { actionsFor, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
-import { creditIsLive, creditLeft, expiresSoon, isExpired, orderMoney } from '../../../shared/payments.js';
+import { actionsFor, awaitingAcceptance, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
+import { creditIsLive, creditLeft, expiresSoon, isExpired, keptCreditMinor, orderMoney } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
@@ -292,7 +292,8 @@ async function dashboard(request: HttpRequest, _context: InvocationContext) {
   ]);
 
   /* Analytics: the numbers a seller checks, and nothing they cannot act on. */
-  const orders = allOrders.filter((order) => !isCancelledLike(order.status));
+  // A booking the seller has not yet said yes to is a pledge, not a sale.
+  const orders = allOrders.filter((order) => !isCancelledLike(order.status) && !awaitingAcceptance(order));
 
   // Thirty days of orders, so the shape of the last month is visible rather
   // than just its total.
@@ -517,6 +518,10 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       /** The courier and AWB it went out with, once dispatched. */
       shipment: order.shipment ?? null,
       dispatchedAt: order.checkpoints?.dispatched ?? null,
+      /** Closed by the seller while still owed money, and why. */
+      closure: order.closure ? { reason: order.closure.reason, owedMinor: order.closure.owedMinor } : null,
+      /** A cancelled order's money kept as the buyer's credit. */
+      keptCreditMinor: keptCreditMinor(order),
       awaitingLot: awaitingLot(order),
       lotId: lot?.id ?? null,
       lotName: lot?.name ?? null,
@@ -801,7 +806,9 @@ async function sellDashboard(request: HttpRequest, _context: InvocationContext) 
   const monthAgo = new Date(now - 30 * dayMs).toISOString();
   const twoMonthsAgo = new Date(now - 60 * dayMs).toISOString();
   const placed = figures.filter((order) => isPlaced(order));
-  const sold = placed.filter((order) => !isCancelledLike(order.status) && order.status !== 'cancelled_reversed');
+  // A booking the seller has not yet said yes to is a pledge, not a sale.
+  const sold = placed.filter((order) => !isCancelledLike(order.status) && order.status !== 'cancelled_reversed'
+    && !awaitingAcceptance(order));
   const value = (order: (typeof figures)[number]) => order.quantity * order.unitPriceMinor;
   const recent = sold.filter((order) => order.createdAt >= monthAgo);
   const before = sold.filter((order) => order.createdAt >= twoMonthsAgo && order.createdAt < monthAgo);

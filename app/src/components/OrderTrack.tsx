@@ -202,7 +202,9 @@ export function DirectTrack({ order, actFor }: {
   // open step stays visibly unticked below.
   const furthest = steps.map((step) => step.done).lastIndexOf(true);
   const here = steps[Math.max(0, furthest)]!;
-  const next = steps.slice(furthest + 1).find((step) => !step.done) ?? (current === -1 ? null : steps[current]!);
+  // An order that ended has no next step, whatever was left unticked.
+  const next = endedOf(order) ? null
+    : steps.slice(furthest + 1).find((step) => !step.done) ?? (current === -1 ? null : steps[current]!);
   // What the seller said along the way, newest first, so nothing typed is lost.
   const notes = settledHistory(order.stageHistory)
     .filter((event) => event.note && !/^Courier:/.test(event.note))

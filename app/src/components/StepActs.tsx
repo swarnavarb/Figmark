@@ -4,10 +4,10 @@ import { inLot, isDirect } from '@shared/fulfilment';
 import { useNavigate } from 'react-router-dom';
 import { ReceivedDialog } from './ReceivedDialog';
 import type { OrderCheckpoint } from '@shared/enums';
-import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, isStopped } from '@shared/orders';
+import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, isStopped, owedMinor } from '@shared/orders';
 import { stepButtonLabel, stepTickKey, ticksOf, type RouteStep, type StepAssignee } from '@shared/routes';
 import { ApiRequestError, api, type OrderState } from '../api';
-import { formatDate } from '../format';
+import { formatDate, formatMoney } from '../format';
 import { ErrorNotice, Modal } from './ui';
 import { useUndo } from './Undo';
 
@@ -141,6 +141,8 @@ export function useStepActs(
   const order = state?.order;
   const offerUndo = useUndo();
   const live = Boolean(state && order && state.side === 'seller' && order.placedAt !== null && !isStopped(order.status));
+  /** Still owed on it: sending it anyway is allowed, and said out loud first. */
+  const unpaidMinor = order ? owedMinor(order) : 0;
 
   async function tick(checkpoint: string, on: boolean, shipment?: { courier?: string; awb?: string; label?: string }) {
     if (!order) return;
@@ -264,6 +266,12 @@ export function useStepActs(
             event.preventDefault();
             void tick('dispatched', true, { courier: courier.trim(), awb: awb.trim() });
           }}>
+            {!dispatched && unpaidMinor > 0 && (
+              <p className="notice notice--warn" style={{ margin: 0 }}>
+                ⚠️ <b>{formatMoney(unpaidMinor, order.currency)} is not paid yet.</b> You can still send it on
+                trust; the buyer is told it is unpaid, and the order stays open until they pay or you close it.
+              </p>
+            )}
             <p style={{ margin: 0 }}>
               {isDirect(order)
                 ? 'Add the courier and AWB so the buyer can track their parcel.'
@@ -302,6 +310,11 @@ export function useStepActs(
               reached them. They can then add it to their collection and review the order.
               {held && ' It does not release the held payment - the buyer confirms that, or it releases on its own if they raise no dispute.'}
             </p>
+            {unpaidMinor > 0 && (
+              <p className="notice notice--warn" style={{ margin: 0 }}>
+                ⚠️ <b>{formatMoney(unpaidMinor, order.currency)} is not paid yet.</b> The order stays open until it is.
+              </p>
+            )}
             <button type="button" className="btn btn--block" disabled={busy}
               onClick={() => void tick('delivered', true)}>
               {busy ? 'Marking…' : 'Mark delivered'}

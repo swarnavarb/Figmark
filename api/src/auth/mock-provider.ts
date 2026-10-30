@@ -204,7 +204,7 @@ export class MockAuthProvider implements AuthService {
     if (!hasAnyCapability(user.capabilities, capabilities)) {
       // Buying and selling are closed until verification is done, and the
       // person needs to be told what to do rather than that they may not.
-      if (capabilities.includes('buy') || capabilities.includes('sell')) throw AuthError.verificationRequired(capabilities);
+      if (capabilities.includes('buy') || capabilities.includes('sell')) throw AuthError.verificationRequired(capabilities, verifiedChecks(user));
       throw AuthError.forbidden(
         `This action requires one of: ${capabilities.join(', ')}.`,
       );

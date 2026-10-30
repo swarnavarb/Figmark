@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BackLink } from '../components/ScrollManager';
 import { ManagerMark } from '../components/ManagerBadge';
-import { DISPUTE_REASON_LABELS, DISPUTE_STATUS_LABELS } from '@shared/enums';
+import { DISPUTE_REASON_LABELS } from '@shared/enums';
 import {
-  DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY,
+  DISPUTE_SUBJECT_LABELS, DISPUTE_TOPIC_LABELS, MAX_ROUNDS, NEEDS_ADMIN, SANCTION_LABELS, XP_PENALTY, disputeStatusLabel,
 } from '@shared/disputes';
 import type { DisputeRound, DisputeSanction, DisputeSanctionKind } from '@shared/models';
+import { orderMoney } from '@shared/payments';
 import { ApiRequestError, api, type DisputeView, type EvidenceDraft, type ForumRow } from '../api';
 import { ScreenshotPicker } from '../components/DisputeFlows';
 import { Avatar, ErrorNotice, useConfirm, PageError } from '../components/ui';
@@ -49,7 +50,9 @@ export function DisputePage() {
   const current = rounds[rounds.length - 1] ?? null;
   const about = dispute.subjectRef
     ? DISPUTE_SUBJECT_LABELS[dispute.subjectRef.type]
-    : data.holdsMoney ? DISPUTE_REASON_LABELS[dispute.reasonCode] : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'general'];
+    /* What went wrong, once it was picked; otherwise what it is about. */
+    : data.holdsMoney || dispute.reasonCode !== 'other'
+      ? DISPUTE_REASON_LABELS[dispute.reasonCode] : DISPUTE_TOPIC_LABELS[dispute.topic ?? 'general'];
   const back = order
     ? { to: `/order/${order.id}`, label: order.itemName }
     : { to: '/disputes', label: 'My disputes' };
@@ -73,7 +76,7 @@ export function DisputePage() {
           </h1>
         </div>
         <span className={`badge badge--${dispute.status === 'resolved' ? 'ok' : dispute.status === 'withdrawn' ? '' : 'warn'}`}>
-          {dispute.result?.how === 'settled' ? 'Settled' : DISPUTE_STATUS_LABELS[dispute.status]}
+          {dispute.result?.how === 'settled' ? 'Settled' : disputeStatusLabel(dispute.status, role)}
         </span>
       </div>
 
@@ -95,8 +98,10 @@ export function DisputePage() {
         )}
         {order && !data.holdsMoney && (
           <p className="faint" style={{ margin: 0 }}>
-            This purchase was paid without buyer protection, or its protection has ended, so Figmark is not holding
-            the money. A decision here can flag and warn, but cannot move it.
+            {orderMoney(order).paidMinor === 0
+              ? 'Nothing was paid on this order, so there is nothing to pay out. A decision here can flag and warn the seller.'
+              : 'This purchase was paid without buyer protection, or its protection has ended, so Figmark is not holding '
+                + 'the money. A decision here can flag and warn, but cannot move it.'}
           </p>
         )}
         {current && !dispute.resolvedAt && (
@@ -470,7 +475,11 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
         <form className="form" onSubmit={(event) => {
           event.preventDefault();
           const minor = view.holdsMoney ? Math.round(Number(refund) * 100) : 0;
-          void run('offer', () => api.disputeOffer(dispute.id, minor, terms.trim()));
+          // Nothing held: an amount is part of the terms, paid between the two
+          // of them directly, and written so both read the same number.
+          const paid = !view.holdsMoney && view.order ? Math.round(Number(refund) * 100) : 0;
+          const written = paid > 0 ? `${formatMoney(paid, view.currency)} to be paid directly. ${terms.trim()}`.trim() : terms.trim();
+          void run('offer', () => api.disputeOffer(dispute.id, minor, written));
         }}>
           {view.holdsMoney && view.heldMinor !== null && (
             <label className="field">
@@ -482,6 +491,15 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
               </span>
             </label>
           )}
+          {!view.holdsMoney && view.order && (
+            <label className="field">
+              <span>Amount to be paid (optional)</span>
+              <input value={refund} onChange={(e) => setRefund(e.target.value)} inputMode="decimal" placeholder="0" />
+              <span className="field__hint">
+                Figmark holds nothing on this order, so this is paid between you directly. It is written into the terms.
+              </span>
+            </label>
+          )}
           <label className="field">
             <span>Terms</span>
             <input value={terms} onChange={(e) => setTerms(e.target.value)}
@@ -489,7 +507,8 @@ function DisputeActions({ view, onDone }: { view: DisputeView; onDone: () => Pro
           </label>
           <div className="row">
             <button type="submit" className="btn"
-              disabled={busy !== null || (view.holdsMoney ? refund.trim() === '' : terms.trim().length < 4)}>
+              disabled={busy !== null || (view.holdsMoney ? refund.trim() === ''
+                : terms.trim().length < 4 && !(Number(refund) > 0))}>
               {busy === 'offer' ? 'Sending…' : 'Propose'}
             </button>
             <button type="button" className="btn btn--quiet" onClick={() => setOffering(false)}>Cancel</button>

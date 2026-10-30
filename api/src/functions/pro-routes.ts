@@ -3,6 +3,7 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import type { Listing, Order, User } from '../../../shared/models.js';
 import type { OrderStatus } from '../../../shared/enums.js';
 import { isExpired, orderMoney } from '../../../shared/payments.js';
+import { awaitingAcceptance } from '../../../shared/orders.js';
 import {
   cleanCostSheet, sheetTotal,
   type CostStep, type ItemCostSheet,
@@ -527,7 +528,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
     const time = Date.parse(placedAt(order));
     return time >= start && time < end;
   };
-  const period = kept.filter((order) => inRange(order, from, now));
+  // A booking the seller has not yet said yes to is a pledge, not a sale.
+  const period = kept.filter((order) => inRange(order, from, now) && !awaitingAcceptance(order));
   const before = kept.filter((order) => inRange(order, from - days * DAY, from));
   const sum = (rows: Order[]) => ({
     orders: rows.length,

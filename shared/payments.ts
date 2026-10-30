@@ -77,14 +77,16 @@ export interface OrderMoney {
   refundedMinor: number;
 }
 
-type MoneyShape = Pick<Order, 'unitPriceMinor' | 'quantity' | 'paymentStatus' | 'payments' | 'credits'> & Partial<Pick<Order, 'addOns'>>;
+type MoneyShape = Pick<Order, 'unitPriceMinor' | 'quantity' | 'paymentStatus' | 'payments' | 'credits'> & Partial<Pick<Order, 'addOns' | 'closure'>>;
 
 /**
  * What an order is worth, what has come in and what is left.
  *
  * Summed from the individual dated payments rather than kept as a running
  * number, so the history and the balance can never disagree. Orders paid before
- * payment records existed are treated as paid in full when they say so.
+ * payment records existed are treated as paid in full when they say so. An
+ * order the seller closed unpaid owes nothing more: what was left is written
+ * off, and kept on the closure itself.
  */
 export function orderMoney(order: MoneyShape): OrderMoney {
   // Cover the buyer added is owed like the goods are, so it counts here.
@@ -99,7 +101,7 @@ export function orderMoney(order: MoneyShape): OrderMoney {
   return {
     totalMinor,
     paidMinor,
-    outstandingMinor: Math.max(0, totalMinor - paidMinor),
+    outstandingMinor: order.closure ? 0 : Math.max(0, totalMinor - paidMinor),
     creditMinor,
     refundedMinor,
   };
@@ -177,6 +179,13 @@ export const REFUND_ORIGIN_LABELS = {
 /** What is still the buyer's on one credit: neither returned nor moved onto another order. */
 export function creditLeft(credit: Pick<CreditRecord, 'amountMinor' | 'refundedMinor' | 'appliedMinor'>): number {
   return Math.max(0, credit.amountMinor - credit.refundedMinor - (credit.appliedMinor ?? 0));
+}
+
+/** A cancelled order's money the seller is keeping as credit, rather than reversing. */
+export function keptCreditMinor(order: { credits?: CreditRecord[] | null }): number {
+  return (order.credits ?? [])
+    .filter((credit) => credit.origin === 'cancelled' && credit.status === 'held')
+    .reduce((sum, credit) => sum + creditLeft(credit), 0);
 }
 
 /** Still the seller's to decide about: return it, move it, or keep holding it. */

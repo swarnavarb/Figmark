@@ -1,4 +1,4 @@
-import { confirmSentence } from '../components/Ask';
+import { confirmAsk, confirmSentence } from '../components/Ask';
 import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -1520,6 +1520,14 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       setReceiving({ row, button });
       return;
     }
+    /* Sending it unpaid is allowed, but never by a slip. */
+    if (on && (button.checkpoint === 'dispatched' || button.checkpoint === 'delivered')
+      && row.paymentStatus !== 'paid' && row.outstandingMinor > 0
+      && !await confirmAsk({
+        title: `${formatMoney(row.outstandingMinor, row.currency)} is not paid yet`,
+        body: `${row.itemName} is still owed for. You can send it on trust: the buyer is told it is unpaid, and the order stays open until they pay or you close it.`,
+        action: button.checkpoint === 'dispatched' ? 'Dispatch anyway' : 'Mark delivered anyway',
+      })) return;
     setBusy(row.id);
     setError(null);
     try {
@@ -2606,6 +2614,7 @@ function orderTone(row: SaleRow, needsAnswer: boolean): { tone: string; label: s
   if (row.status === 'rejected') return { tone: 'danger', label: 'Rejected' };
   if (row.status === 'cancelled') return { tone: 'quiet', label: 'Cancelled' };
   if (row.holdState === 'disputed') return { tone: 'danger', label: 'In dispute' };
+  if (row.closure) return { tone: 'quiet', label: 'Closed unpaid' };
   if (row.bookingOnly && !row.accepted) return { tone: 'warn', label: '📘 Book — awaiting acceptance' };
   if (needsAnswer) return { tone: 'warn', label: PAYMENT_WORDS[row.paymentStatus] ?? 'To answer' };
   if (row.paymentStatus === 'paid') return { tone: 'ok', label: 'Paid' };
@@ -2672,7 +2681,7 @@ function OrderRow({
     bookingOnly: row.bookingOnly,
     accepted: row.accepted,
     canPay: false,
-    claimDenied: false,
+    claimDenied: row.claim?.decision === 'denied' && row.paymentStatus !== 'paid',
     outstandingMinor: row.outstandingMinor,
     currency: row.currency,
     dispatched: Boolean(row.dispatchedAt) || row.status === 'shipped',
@@ -2680,6 +2689,8 @@ function OrderRow({
     receivedAt: null,
     inHand: row.inHand,
     disputed: row.holdState === 'disputed',
+    closure: row.closure,
+    keptCreditMinor: row.keptCreditMinor,
     claimOpen: awaitingClaim,
   });
   /* The badge already says "In dispute"; the banner would only say it again. */
@@ -2989,10 +3000,14 @@ function Refunds({ store }: { store: StoreAccess }) {
   if (error && !data) return <ErrorNotice message={error} />;
   if (!data) return <Loading />;
 
-  const deciding = data.credits.filter((credit) => credit.status !== 'refund_pending');
+  // Kept for the buyer's next order is decided: it is credit, not a refund
+  // still to make, so it is counted on its own.
+  const deciding = data.credits.filter((credit) => credit.status === 'open');
+  const kept = data.credits.filter((credit) => credit.status === 'held');
   const waiting = data.credits.filter((credit) => credit.status === 'refund_pending');
   // Per currency: a shop selling in two never sees them added together.
-  const owed = formatTotals(data.credits.map((credit) => ({ amountMinor: credit.leftMinor, currency: credit.currency })));
+  const owed = formatTotals(data.credits.filter((credit) => credit.status !== 'held')
+    .map((credit) => ({ amountMinor: credit.leftMinor, currency: credit.currency })));
   const sent = formatTotals(data.refundHistory
     .filter((entry) => entry.kind === 'refund' && entry.status === 'received')
     .map((entry) => ({ amountMinor: entry.amountMinor, currency: entry.currency })));
@@ -3006,7 +3021,7 @@ function Refunds({ store }: { store: StoreAccess }) {
           <small>Still to refund</small>
           <b>{owed}</b>
           <span>
-            {deciding.length} to decide · {waiting.length} waiting on the buyer · {sent} refunded so far
+            {deciding.length} to decide{kept.length > 0 ? ` · ${kept.length} kept as credit` : ''} · {waiting.length} waiting on the buyer · {sent} refunded so far
           </span>
         </div>
         <button type="button" className="rfhero__new" onClick={() => setStarting((open) => !open)}>

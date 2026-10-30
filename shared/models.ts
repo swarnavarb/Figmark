@@ -1240,6 +1240,12 @@ export interface StageEvent {
    */
   undoId?: string;
   undoUntil?: string;
+  /**
+   * What the buyer saw before a dispatch that can still be undone. While the
+   * window is open the buyer is shown this, not the dispatch, so taking it
+   * back really does leave them none the wiser.
+   */
+  undoBefore?: { status: OrderStatus; dispatchedAt: string | null; shipment: OrderShipment | null };
   note: string | null;
   /** User id that recorded the transition. */
   recordedBy: string;
@@ -1621,8 +1627,16 @@ export interface Order extends BaseDocument {
    * which is what the buyer's timeline shows above the join.
    */
   preLotRoute?: LotRoute | null;
-  /** Set once the order reaches `delivered`; unlocks reviews. */
+  /** Set once the order reaches `delivered`. Reviews also wait for it to be paid up or closed. */
   completedAt: string | null;
+  /**
+   * The seller closing a delivered order that was never paid in full.
+   *
+   * A delivered order stays open while money is owed on it; paying it up
+   * closes it on its own. A seller who will not be paid can close it
+   * instead, saying why, and that reason is shown to both sides.
+   */
+  closure?: { at: string; by: string; reason: string; owedMinor: number } | null;
   /**
    * When this order was counted toward both sides' completed trades.
    *
@@ -2853,6 +2867,7 @@ export type NotificationKind =
   | 'sale_item'
   | 'order_placed'
   | 'order_rejected'
+  | 'order_closed'
   | 'order_accepted'
   | 'booking_accepted'
   | 'order_cancelled'

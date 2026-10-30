@@ -740,6 +740,10 @@ export interface SaleRow {
   inHand: boolean;
   /** The courier and AWB it went out with, once the seller gave them. */
   shipment: OrderShipment | null;
+  /** Closed by the seller while still owed money, and why. */
+  closure: { reason: string; owedMinor: number } | null;
+  /** A cancelled order's money kept as the buyer's credit. */
+  keptCreditMinor: number;
   /** When the seller ticked it dispatched. */
   dispatchedAt: string | null;
   awaitingLot: boolean;
@@ -2049,6 +2053,8 @@ export interface ItemGroup {
     shipment: OrderShipment | null;
     /** Held money under dispute. */
     disputed: boolean;
+    /** Closed by the seller while still owed money, and why. */
+    closure: { reason: string; owedMinor: number } | null;
     createdAt: string;
   })[];
 }
@@ -2614,7 +2620,7 @@ export const api = {
     detailsRequests: { orderId: string; itemName: string; sellerName: string; requestedAt: string }[];
   }>('/me/refunds'),
   myDisputes: () => request<MyDisputesResponse>('/me/disputes'),
-  flagDispute: (id: string, body: { subject?: string; reason?: string; managerId?: string; evidence?: EvidenceDraft[] }) =>
+  flagDispute: (id: string, body: { subject?: string; reason?: string; reasonCode?: string; managerId?: string; evidence?: EvidenceDraft[] }) =>
     post<{ order: Order; dispute: Dispute }>(`/orders/${encodeURIComponent(id)}/flag-dispute`, body),
   holdCredit: (id: string, creditId?: string) =>
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
@@ -2880,6 +2886,9 @@ export const api = {
   /** The seller cannot serve an order. Puts the stock and the place back. */
   rejectOrder: (id: string, reason: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reject`, { reason }),
+  /** The seller closes a delivered order that is still owed money, saying why. */
+  closeOrder: (id: string, reason: string) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/close`, { reason }),
 
   /** The buyer chooses Book instead of paying now. */
   bookOrder: (id: string) => post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/book`, {}),

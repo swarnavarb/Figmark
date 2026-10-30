@@ -4,7 +4,7 @@ import { tagKey } from '@shared/shop-tags';
 import { SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
 import {
-  CATEGORIES, MIN_PRICE_MINOR, canonicalCategory, conditionTagFor, conditionValueForTag, factsOf,
+  CATEGORIES, MAX_PRICE_MINOR, MIN_PRICE_MINOR, canonicalCategory, conditionTagFor, conditionValueForTag, factsOf,
   missingFields, pruneAttributes, specFor, type Attributes,
 } from '@shared/catalog';
 import type { SavedCalc } from '@shared/profit';
@@ -434,10 +434,11 @@ export function SellPage() {
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
-  const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR;
+  const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR;
   // Said beside a button that will not press, so nobody is left guessing why.
   const publishBlocker = title.trim().length <= 2 ? 'Give it a title of at least 3 characters.'
     : priceMinor < MIN_PRICE_MINOR ? `Set a price of at least ${formatMoney(MIN_PRICE_MINOR)}.`
+      : priceMinor > MAX_PRICE_MINOR ? `Set a price of at most ${formatMoney(MAX_PRICE_MINOR)}.`
       : null;
   // The category's required questions are asked after the first press of
   // Publish, with the unanswered ones marked, rather than leaving a button
