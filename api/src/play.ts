@@ -5,6 +5,7 @@ import {
 } from '../../shared/play.js';
 import { actorName, possessive } from '../../shared/notifications.js';
 import { rupees } from '../../shared/payments.js';
+import { percentages } from '../../shared/social.js';
 import type { getRepository } from './data/index.js';
 import { notify, storeCrew } from './functions/notify.js';
 
@@ -245,7 +246,8 @@ async function settleDebate(repository: Repo, post: Post, nowIso: string): Promi
   if (total === 0) return;
   const ranked = [...options].sort((a, b) => b.voterIds.length - a.voterIds.length);
   const tie = ranked.length > 1 && ranked[0]!.voterIds.length === ranked[1]!.voterIds.length;
-  const split = options.map((option) => `${option.label} ${Math.round((100 * option.voterIds.length) / total)}%`).join(' · ');
+  const shares = percentages(options.map((option) => option.voterIds.length));
+  const split = options.map((option, index) => `${option.label} ${shares[index]}%`).join(' · ');
   const link = linkOf(marked);
   for (const option of options) {
     const won = !tie && option.id === ranked[0]!.id;

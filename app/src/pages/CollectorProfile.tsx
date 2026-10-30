@@ -171,7 +171,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
               aria-label="Open the showcase: every card and sticker">
               <span className="qpanel__head">
                 <span className="qshowcase__title"><Glyph name="card" size={15} /> Showcase</span>
-                <span className="faint">{uniqueCards}/{CARDS.length} cards · {earned.length} stickers ›</span>
+                <span className="faint">{uniqueCards}/{CARDS.length} cards · {earned.length} sticker{earned.length === 1 ? '' : 's'} ›</span>
               </span>
               {collector.cards.length === 0 && earned.length === 0 ? (
                 <span className="faint qshowcase__empty">Nothing yet. Cards and stickers are earned by checking in, completing quests and trading well.</span>
@@ -591,8 +591,8 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
           ) : posts.length === 0 ? (
             <EmptyState title="Nothing posted yet">
               {isMe
-                ? <>Posts you make in forums show up here. <Link to="/social">Start one</Link>.</>
-                : `When ${profile.displayName} posts in a forum, it shows up here.`}
+                ? <>Your posts, polls and debates show up here. <Link to="/social">Start one</Link>.</>
+                : `When ${profile.displayName} posts, it shows up here.`}
             </EmptyState>
           ) : (
             <div className="stack">

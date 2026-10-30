@@ -123,6 +123,8 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
     const waiting = badge(entry.id);
     return (
       <button key={entry.id} type="button" aria-pressed={view === entry.id}
+        // The small row shows icons only, so the name is said here.
+        aria-label={waiting > 0 ? `${entry.label}, ${waiting} new` : entry.label}
         className={`soctab${small ? ' soctab--sm' : ''}${view === entry.id ? ' is-on' : ''}`}
         onClick={() => pick(entry.id)}>
         <Icon name={entry.icon} size={small ? 14 : 16} />
@@ -352,7 +354,7 @@ export function SocialMatches({ result, open, onError }: {
                 <span className="forumav" aria-hidden="true"><Icon name="forum" size={20} /></span>
                 <span className="socsearch__who">
                   <strong>{forum.name}</strong>
-                  <span className="faint">{forum.memberCount} members{forum.member ? ' · joined' : ''}</span>
+                  <span className="faint">{forum.memberCount} member{forum.memberCount === 1 ? '' : 's'}{forum.member ? ' · joined' : ''}</span>
                 </span>
               </button>
             </div>

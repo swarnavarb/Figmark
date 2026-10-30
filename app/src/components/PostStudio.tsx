@@ -406,6 +406,9 @@ export function PostStudio({
       if (new Set(filled.map((entry) => entry.label.trim().toLowerCase())).size !== filled.length) return 'Two answers say the same thing';
       if (asShop && rewardOn && (!paise(reward) || !closes)) return closes ? 'Set the reward' : 'A rewarded poll needs an end';
       if (asShop && mode === 'debate' && prizeOn && !paise(prize)) return 'Set the prize';
+      if (asShop && ((rewardOn && (paise(reward) ?? 0) > PRIZE_MAX_MINOR) || (mode === 'debate' && prizeOn && (paise(prize) ?? 0) > PRIZE_MAX_MINOR))) {
+        return `A prize is up to ${formatMoney(PRIZE_MAX_MINOR, 'INR')}`;
+      }
       return null;
     }
     if (mode === 'guess') {
@@ -413,7 +416,9 @@ export function PostStudio({
       return (paise(answerPrice) ?? 0) < 100 ? 'Set the real price' : null;
     }
     if (!title.trim()) return 'Name the competition';
-    return words.length < 2 ? 'Say what to enter' : null;
+    if (words.length < 2) return 'Say what to enter';
+    return prizes.some((entry) => (paise(entry.amount) ?? 0) > PRIZE_MAX_MINOR)
+      ? `A prize is up to ${formatMoney(PRIZE_MAX_MINOR, 'INR')} a place` : null;
   }
 
   async function submit() {

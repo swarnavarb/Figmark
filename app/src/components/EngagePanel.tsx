@@ -9,6 +9,7 @@ import { isOpen, waitingOnShop } from '../engage';
 import type { StudioMode } from './PostStudio';
 import '../styles/EngagePanel.css';
 import { Loading } from './Feedback';
+import { plural } from '../format';
 
 const PostStudio = lazy(() => import('./PostStudio').then((module) => ({ default: module.PostStudio })));
 
@@ -121,8 +122,8 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
                   <span>{card.post.contest ? '🏆' : card.social.guess ? '🎯' : card.post.debate ? '⚔️' : '📊'}</span>
                   <span className="sengage__donetitle">{card.post.contest?.title ?? card.post.body}</span>
                   <span className="faint">
-                    {card.post.contest ? `${card.post.contest.entries.length} entries`
-                      : card.social.guess ? `${card.social.guess.count} guesses` : `${card.social.poll?.total ?? 0} votes`}
+                    {card.post.contest ? plural(card.post.contest.entries.length, 'entry', 'entries')
+                      : card.social.guess ? plural(card.social.guess.count, 'guess', 'guesses') : plural(card.social.poll?.total ?? 0, 'vote')}
                   </span>
                 </Link>
               </li>

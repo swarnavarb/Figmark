@@ -50,6 +50,32 @@ export function MessagesView() {
     return () => window.removeEventListener(MESSAGES_NEWS_EVENT, onMessages);
   }, []);
 
+  /** People and shops whose name or handle starts like what is typed, so nobody has to know a username by heart. */
+  const [found, setFound] = useState<{ handle: string; name: string; shop: boolean }[]>([]);
+  useEffect(() => {
+    const typed = to.trim().replace(/^@/, '');
+    if (!composing || typed.length < 2) {
+      setFound([]);
+      return;
+    }
+    let live = true;
+    const timer = window.setTimeout(() => {
+      api.socialSearch(typed)
+        .then((result) => {
+          if (!live) return;
+          setFound([
+            ...result.people.flatMap((person) => (person.handle ? [{ handle: person.handle, name: person.name, shop: false }] : [])),
+            ...result.shops.flatMap((shop) => (shop.handle && !shop.mine ? [{ handle: shop.handle, name: shop.name, shop: true }] : [])),
+          ].slice(0, 6));
+        })
+        .catch(() => live && setFound([]));
+    }, 250);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [to, composing]);
+
   if (error) return <ErrorNotice message={error} />;
   if (!data) return <SkeletonRows count={4} />;
 
@@ -66,12 +92,15 @@ export function MessagesView() {
   const voice = data.handles.find((party) => party.handle === box);
   const totalUnread = data.threads.reduce((sum, row) => sum + row.unread, 0);
 
+  const open = (handle: string) =>
+    // Opening from inside one inbox writes from that voice.
+    navigate(`/messages/${encodeURIComponent(handle)}${box ? `?as=${encodeURIComponent(box)}` : ''}`);
   const start = (event: FormEvent) => {
     event.preventDefault();
     const handle = to.trim().replace(/^@/, '').toLowerCase();
-    // Opening from inside one inbox writes from that voice.
-    if (handle) navigate(`/messages/${encodeURIComponent(handle)}${box ? `?as=${encodeURIComponent(box)}` : ''}`);
+    if (handle) open(handle);
   };
+
 
   return (
     <div className="chlist inbox">
@@ -111,6 +140,17 @@ export function MessagesView() {
             <Icon name="send" size={15} />
           </button>
         </form>
+      )}
+      {composing && found.length > 0 && (
+        <ul className="inbox__found" aria-label="People and shops">
+          {found.map((row) => (
+            <li key={`${row.shop ? 's' : 'p'}-${row.handle}`}>
+              <button type="button" onClick={() => open(row.handle)}>
+                <strong>{row.name}</strong> <span className="faint">@{row.handle}{row.shop ? ' · Shop' : ''}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
       {data.handles.length === 0 && (
         <p className="faint">Pick a username in <Link to="/me?tab=settings">your settings</Link> before messaging anyone.</p>

@@ -320,7 +320,7 @@ function InvitePanel({ level, title }: { level: number; title: string }) {
       headline: 'Come shop with me',
     },
     link: { to: 'invite' },
-    caption: 'Join me on Figmark - pre-orders from import resellers with Buyer Protection, and you collect cards as you shop. Here is my invite:',
+    caption: 'Join me on Figmark - pre-orders from verified import resellers, and you collect cards as you shop. Here is my invite:',
     target: summary?.code ?? null,
   };
   const seller: ShareSpec = {
@@ -339,9 +339,9 @@ function InvitePanel({ level, title }: { level: number; title: string }) {
       <InviteStrip
         title="Invite & earn"
         stats={summary ? [
-          { value: summary.opens, label: 'opens' },
+          { value: summary.opens, label: summary.opens === 1 ? 'open' : 'opens' },
           { value: summary.joined, label: 'joined' },
-          { value: summary.sellers, label: 'shops' },
+          { value: summary.sellers, label: summary.sellers === 1 ? 'shop' : 'shops' },
         ] : []}
         actions={(
           <>
@@ -385,7 +385,7 @@ function Leaderboard({ board }: { board: { top: LeaderRow[]; me: LeaderRow | nul
           <Avatar name={row.name} size={30} />
           <span className="qleaders__who">
             {row.handle ? <Link to={`/${row.handle}`}>{row.name}</Link> : row.name}
-            <small>Level {row.level} · {row.cards} cards</small>
+            <small>Level {row.level} · {row.cards} card{row.cards === 1 ? '' : 's'}</small>
           </span>
           <b className="qleaders__xp">{formatCount(row.xp)} XP</b>
         </li>

@@ -175,9 +175,9 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
       <InviteStrip
         title="Grow"
         stats={[
-          { value: view.week.sales, label: 'sales' },
-          { value: view.week.goodReviews, label: 'good reviews' },
-          { value: view.week.opens, label: 'link visits' },
+          { value: view.week.sales, label: view.week.sales === 1 ? 'sale' : 'sales' },
+          { value: view.week.goodReviews, label: view.week.goodReviews === 1 ? 'good review' : 'good reviews' },
+          { value: view.week.opens, label: view.week.opens === 1 ? 'link visit' : 'link visits' },
         ]}
         actions={(
           <>

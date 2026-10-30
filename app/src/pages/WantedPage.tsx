@@ -384,7 +384,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
 
       <label className="field">
         <span>Budget</span>
-        <input value={budget} onChange={(e) => setBudget(e.target.value)}
+        <input value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d.,]/g, ''))}
           inputMode="decimal" placeholder="Leave blank to hear offers" />
         <span className="field__hint">
           Optional. For something rare, "what will you take" is a real answer.
@@ -587,7 +587,7 @@ function WantDialog({ card, onClose, onChanged }: {
                     <p className="muted" style={{ margin: 0 }}>{offer.message}</p>
                     {offer.priceMinor !== null && (
                       <div className="kv">
-                        <dt>Their price</dt>
+                        <dt>{Object.values(data.yoursBy).some((mine) => mine?.id === offer.id) ? 'Your price' : 'Their price'}</dt>
                         <dd>{formatMoney(offer.priceMinor, card.currency)}</dd>
                       </div>
                     )}
@@ -653,7 +653,7 @@ function WantDialog({ card, onClose, onChanged }: {
               </label>
               <label className="field">
                 <span>Your price</span>
-                <input value={price} onChange={(e) => setPrice(e.target.value)}
+                <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.,]/g, ''))}
                   inputMode="decimal" placeholder="Optional" />
               </label>
               {error && <ErrorNotice message={error} />}

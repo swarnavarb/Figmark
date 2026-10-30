@@ -895,7 +895,7 @@ function WeeklyBest() {
                     {debate.question || 'Which one?'}
                     <span className="faint">{debate.leading ? ` · ${debate.leading} leads` : ' · level'}</span>
                   </span>
-                  <span className="discweek__count">{debate.votes} votes</span>
+                  <span className="discweek__count">{debate.votes} vote{debate.votes === 1 ? '' : 's'}</span>
                 </Link>
               </li>
             ))}
@@ -911,7 +911,7 @@ function WeeklyBest() {
                 <>
                   <span className="discweek__rank">{index + 1}</span>
                   <span className="discweek__name">
-                    {voice.name}<span className="faint"> · {voice.shop ? 'Shop' : 'Collector'} · {voice.posts} posts</span>
+                    {voice.name}<span className="faint"> · {voice.shop ? 'Shop' : 'Collector'} · {voice.posts} post{voice.posts === 1 ? '' : 's'}</span>
                   </span>
                   <span className="discweek__count">♥ {voice.reactions}</span>
                 </>

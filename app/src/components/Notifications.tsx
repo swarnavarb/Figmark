@@ -269,7 +269,7 @@ export function Notifications() {
   return (
     <div className="bell" ref={panel}>
       <button type="button" className="bell__button" aria-label={
-        unread > 0 ? `${unread} unread notifications` : 'Notifications'
+        unread > 0 ? `${unread} unread notification${unread === 1 ? '' : 's'}` : 'Notifications'
       } aria-expanded={open} onClick={() => setOpen(!open)}>
         {<Icon name="bell" size={18} />}
         {unread > 0 && <span className="bell__dot">{unread > 9 ? '9+' : unread}</span>}
