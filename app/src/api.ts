@@ -1320,6 +1320,7 @@ export interface DiscoverResponse {
   stream?: PostCard[];
   /** Pass to `discoverMore` for the next page of the stream, or null at the end. */
   nextCursor?: string | null;
+  lap?: number;
   /** The page after this one of the lists above, or null at the end. */
   next?: number | null;
 }
@@ -1328,6 +1329,12 @@ export interface DiscoverResponse {
 export interface DiscoverStreamPage {
   stream: PostCard[];
   nextCursor: string | null;
+  /**
+   * 0 while there is something new; 1, 2... once everything new has been shown
+   * and the stream is going round again with older posts that did well. A post
+   * can come back in a later lap, so the app keys cards by lap as well.
+   */
+  lap?: number;
 }
 
 /** One post read in full, with everything said under it. */
@@ -3167,6 +3174,17 @@ export const api = {
     const tail = query.toString();
     return request<DiscoverResponse>(`/social/discover${tail ? `?${tail}` : ''}`);
   },
+  /**
+   * The first page of the stream alone, without the lists and rails: it is
+   * read in one short wave, so the first posts show without waiting on them.
+   */
+  discoverStream: (options: { interests?: string[] } = {}) => {
+    const query = new URLSearchParams({ stream: '1' });
+    if (options.interests?.length) query.set('interests', options.interests.join(','));
+    return request<DiscoverStreamPage>(`/social/discover?${query.toString()}`);
+  },
+  /** The lists and rails alone - the tabs, the topics, the hunts - read beside the stream. */
+  discoverLists: () => request<DiscoverResponse>('/social/discover?lists=1'),
   /** The next page of the endless stream, from the cursor the last page gave. */
   discoverMore: (cursor: string) => request<DiscoverStreamPage>(`/social/discover?cursor=${encodeURIComponent(cursor)}`),
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),

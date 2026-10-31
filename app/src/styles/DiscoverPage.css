@@ -319,3 +319,5 @@ a.discweek__row:hover { border-color: var(--border-strong); }
   margin: var(--s4) 0 var(--s6); text-align: center;
   color: var(--text-dim); font-size: var(--t-sm);
 }
+/* Where the stream starts going round again with older favourites. */
+.discend--lap { margin: var(--s5) 0 var(--s3); font-weight: var(--w-semi); }

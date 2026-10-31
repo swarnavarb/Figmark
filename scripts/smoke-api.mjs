@@ -12528,13 +12528,19 @@ const streamOf = async (headers, query = {}) => {
   cards.push(...first.stream);
   let cursor = first.nextCursor;
   let pages = 1;
-  while (cursor && pages < 80) {
+  let replay = null;
+  // The fresh stream is read to its end; the first page of the next lap, where it goes round again, is kept apart.
+  while (cursor && pages < 400) {
     const more = (await discover(req({ headers, query: { ...query, cursor } }), ctx)).jsonBody;
+    pages += 1;
+    if (more.lap > 0) {
+      replay = more;
+      break;
+    }
     cards.push(...more.stream);
     cursor = more.nextCursor;
-    pages += 1;
   }
-  return { cards, first, pages, ended: cursor === null };
+  return { cards, first, pages, ended: cursor === null || replay !== null, replay };
 };
 
 await check('the stream has every public post, forum posts too, pages on to the end, and never repeats', async () => {
@@ -12552,9 +12558,9 @@ await check('the stream has every public post, forum posts too, pages on to the 
   const reader = await newBuyer('Stream Reader');
 
   const seen = await streamOf(reader.headers);
-  assert.ok(seen.ended, 'it reaches an end rather than looping');
+  assert.ok(seen.ended, 'the fresh part has an end, and then goes round again');
   assert.ok(seen.pages > 1, 'more than one page of it');
-  assert.ok(seen.first.stream.length <= 24, 'a page is a page');
+  assert.ok(seen.first.stream.length <= 12, 'a page is a page: small, so it is quick to read and to draw');
   assert.ok(seen.first.nextCursor, 'and there is more');
   const ids = seen.cards.map((card) => card.post.id);
   assert.equal(new Set(ids).size, ids.length, 'no post twice across pages');
@@ -12566,7 +12572,7 @@ await check('the stream has every public post, forum posts too, pages on to the 
   assert.ok(own.cards.every((card) => card.post.authorId !== writers[0].id), 'nobody is shown their own posts');
 
   const onlyStream = (await discover(req({ headers: reader.headers, query: { cursor: seen.first.nextCursor } }), ctx)).jsonBody;
-  assert.deepEqual(Object.keys(onlyStream).sort(), ['nextCursor', 'stream'], 'a cursor asks for the stream and nothing else');
+  assert.deepEqual(Object.keys(onlyStream).sort(), ['lap', 'nextCursor', 'stream'], 'a cursor asks for the stream and nothing else');
   assert.equal(onlyStream.topics, undefined);
 
   const guest = await discover(req(), ctx);
@@ -12577,6 +12583,60 @@ await check('the stream has every public post, forum posts too, pages on to the 
   assert.ok(fake.jsonBody.debates, 'as a first page, rails and all');
   const legacy = (await discover(req({ headers: reader.headers, query: { page: '1' } }), ctx)).jsonBody;
   assert.equal(legacy.stream, undefined, 'a tab paging through its own list is not sent the stream');
+});
+
+await check('when everything new has been shown the stream goes round again with older favourites, in a new order each lap', async () => {
+  resetRateLimits();
+  const reader = await newBuyer('Round Reader');
+  const walked = await streamOf(reader.headers);
+  assert.ok(walked.replay, 'it did not stop');
+  assert.equal(walked.replay.lap, 1);
+  assert.ok(walked.replay.stream.length > 0 && walked.replay.stream.length <= 12);
+  assert.ok(walked.replay.nextCursor, 'and there is more of it');
+  assert.ok(walked.replay.stream.every((card) => !card.social.mine), 'never their own posts');
+  assert.ok(walked.replay.stream.some((card) => card.why?.kind === 'popular'), JSON.stringify(walked.replay.stream.map((card) => card.why)));
+  const shownBefore = new Set(walked.cards.map((card) => card.post.id));
+  assert.ok(walked.replay.stream.some((card) => shownBefore.has(card.post.id)), 'older favourites come back');
+
+  // The lap after is the same posts in another order.
+  const lapOne = [walked.replay];
+  let cursor = walked.replay.nextCursor;
+  let lapTwo = null;
+  for (let pages = 0; cursor && pages < 400; pages += 1) {
+    const more = (await discover(req({ headers: reader.headers, query: { cursor } }), ctx)).jsonBody;
+    if (more.lap === 2) {
+      lapTwo = more;
+      break;
+    }
+    lapOne.push(more);
+    cursor = more.nextCursor;
+  }
+  assert.ok(lapTwo, 'and round again after that');
+  const idsOne = lapOne.flatMap((page) => page.stream.map((card) => card.post.id));
+  assert.equal(new Set(idsOne).size, idsOne.length, 'nothing twice within a lap');
+  assert.ok(idsOne.length >= 6);
+  assert.notDeepEqual(lapTwo.stream.map((card) => card.post.id), idsOne.slice(0, lapTwo.stream.length), 'a different order the next time round');
+
+  const stale = await discover(req({ headers: reader.headers, query: { cursor: walked.replay.nextCursor } }), ctx);
+  assert.equal(stale.status, 200);
+  assert.deepEqual((await discover(req({ headers: reader.headers, query: { cursor: walked.replay.nextCursor } }), ctx)).jsonBody.stream.map((card) => card.post.id),
+    stale.jsonBody.stream.map((card) => card.post.id), 'a page of a lap asked for twice is the same page');
+});
+
+await check('the stream and the lists can be read apart, so the first posts do not wait on the rails', async () => {
+  resetRateLimits();
+  const reader = await newBuyer('Parts Reader');
+  const posts = (await discover(req({ headers: reader.headers, query: { stream: '1' } }), ctx)).jsonBody;
+  assert.deepEqual(Object.keys(posts).sort(), ['lap', 'nextCursor', 'stream'], 'posts alone');
+  assert.ok(posts.stream.length > 0 && posts.stream.length <= 12);
+  const lists = (await discover(req({ headers: reader.headers, query: { lists: '1' } }), ctx)).jsonBody;
+  assert.equal(lists.stream, undefined, 'no stream among the lists');
+  assert.ok(Array.isArray(lists.debates) && Array.isArray(lists.topics) && Array.isArray(lists.wants) && Array.isArray(lists.spotted));
+  assert.ok(Array.isArray(lists.live) && Array.isArray(lists.contests));
+  const both = (await discover(req({ headers: reader.headers }), ctx)).jsonBody;
+  assert.ok(both.stream && both.debates && both.topics, 'with neither asked for, both, as before');
+  const guest = (await discover(req({ query: { stream: '1' } }), ctx)).jsonBody;
+  assert.ok(guest.stream.length > 0, 'a guest too');
 });
 
 await check('pages of one visit agree with each other even while the feed moves', async () => {

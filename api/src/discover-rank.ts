@@ -22,8 +22,12 @@ import { lessTopicLift, type FeedScreen } from './feed-prefs.js';
 export const DISCOVER_TUNING = {
   /** Recent posts the stream ranks from. */
   window: 800,
-  /** Posts in one page of the stream. */
-  pageSize: 24,
+  /**
+   * Posts in one page of the stream. Small on purpose: the first screen needs
+   * a handful, so a page is cheap to read and to draw, and the next one is
+   * fetched while the reader is still on this one.
+   */
+  pageSize: 12,
   /** A cursor older than this is treated as a fresh visit. */
   cursorMaxAgeMs: 30 * 60_000,
 
@@ -108,6 +112,25 @@ export const DISCOVER_TUNING = {
     targetRate: 0.05,
   },
 
+  /**
+   * When everything new has been shown, the stream goes round again with the
+   * older posts that did best - a lap - and then again, in a different order
+   * each time. It reaches further back than the fresh stream does, so the
+   * first lap is mostly posts the reader never saw.
+   */
+  replay: {
+    /** Posts a lap ranks from. */
+    window: 2000,
+    /** Fewer eligible posts than this and going round again would only repeat a few: the stream ends instead. */
+    minPool: 6,
+    /** How far a post's place within a lap moves from lap to lap, as a share of its score. */
+    shuffle: 0.5,
+    /** Laps a visit may go round: a long way past anybody's patience. */
+    maxLaps: 50,
+    /** Under every post's popularity, so one nobody touched can still be placed. */
+    floor: 0.05,
+  },
+
   /** Stable orderings kept so a visit's pages agree with each other. */
   snapshot: { ttlMs: 2 * 60_000, max: 300 },
 } as const;
@@ -165,6 +188,25 @@ export function excitement(post: Post, now: number, heat: number): number {
   const floor = X.baseline / Math.pow(hours / 24 + 1, 0.6);
   const rush = Math.log1p(Math.min(6, velocity(post, now)));
   return (heat + floor) * (1 + X.velocity * rush + X.contested * contestedness(post));
+}
+
+/**
+ * What a post earned over its whole life, with the discount for age taken off:
+ * `heat` divided by the same decay `heat` applied. A week-old post that
+ * people loved is as popular as it ever was; it only stopped being new.
+ */
+export function evergreen(post: Post, now: number, heat: number): number {
+  const hours = Math.max(0, (now - Date.parse(post.createdAt)) / 3_600_000);
+  return heat * Math.pow(hours / 24 + 1, 0.6);
+}
+
+/**
+ * Moves a post's place in a lap a little, differently each lap and each
+ * visit, so going round again is not the same list read twice. 1 +/- shuffle/2.
+ */
+export function shuffleBy(seed: string, lap: number, id: string): number {
+  const unit = hashOf(`${seed}:${lap}:${id}`) / 4_294_967_296;
+  return 1 - T.replay.shuffle / 2 + T.replay.shuffle * unit;
 }
 
 /* ── the rising bandit ───────────────────────────────────────────────────── */
@@ -397,21 +439,28 @@ export interface Cursor {
   offset: number;
   /** Chooses the exploration picks, so they hold still between pages. */
   seed: string;
+  /** 0 while there is something new to show; 1, 2... for each time round the older ones again. */
+  lap: number;
 }
 
 export function encodeCursor(cursor: Cursor): string {
-  return Buffer.from(JSON.stringify([cursor.at, cursor.offset, cursor.seed])).toString('base64url');
+  return Buffer.from(JSON.stringify([cursor.at, cursor.offset, cursor.seed, cursor.lap])).toString('base64url');
 }
 
 /** Read a cursor from a query, or null when it is missing, mangled, or from too long ago. */
 export function decodeCursor(raw: string | null | undefined, now: number): Cursor | null {
   if (!raw || raw.length > 200) return null;
   try {
-    const [at, offset, seed] = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as unknown[];
-    if (typeof at !== 'number' || typeof offset !== 'number' || typeof seed !== 'string') return null;
-    if (!Number.isFinite(at) || !Number.isFinite(offset) || seed.length > 64) return null;
+    const [at, offset, seed, lap = 0] = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as unknown[];
+    if (typeof at !== 'number' || typeof offset !== 'number' || typeof seed !== 'string' || typeof lap !== 'number') return null;
+    if (!Number.isFinite(at) || !Number.isFinite(offset) || !Number.isFinite(lap) || seed.length > 64) return null;
     if (at > now || now - at > T.cursorMaxAgeMs) return null;
-    return { at: Math.floor(at), offset: Math.max(0, Math.min(T.window, Math.floor(offset))), seed };
+    return {
+      at: Math.floor(at),
+      offset: Math.max(0, Math.min(T.replay.window, Math.floor(offset))),
+      seed,
+      lap: Math.max(0, Math.min(T.replay.maxLaps, Math.floor(lap))),
+    };
   } catch {
     return null;
   }
@@ -459,6 +508,8 @@ export interface WhyFacts {
   velocity: number;
   rising: boolean;
   explore: boolean;
+  /** It is from further back, shown again for how well it did. */
+  replay: boolean;
 }
 
 function span(ms: number): string {
@@ -479,6 +530,7 @@ export function whyOf(facts: WhyFacts): DiscoverWhy | null {
   if (facts.forumJoined) return { kind: 'forum', label: 'From a forum you joined' };
   if (facts.topic) return { kind: 'topic', label: `Because you like #${facts.topic.replace(/ /g, '')}` };
   if (facts.affinity) return { kind: 'affinity', label: 'From someone you engage with' };
+  if (facts.replay) return { kind: 'popular', label: 'Popular earlier' };
   if (facts.contested >= 0.5) return { kind: 'contested', label: 'Too close to call' };
   if (facts.velocity >= 1) return { kind: 'taking-off', label: 'Taking off right now' };
   if (facts.live) return { kind: 'live', label: 'Open to join' };

@@ -72,6 +72,38 @@ check('formats tell a debate from a flex from plain words', () => {
   assert.equal(rank.formatOf(post()), 'text');
 });
 
+console.log('\ngoing round again');
+
+check('what did best over its whole life outranks what did less, however old', () => {
+  const week = 7 * 86_400_000;
+  const loved = post({ createdAt: new Date(NOW - week).toISOString() });
+  const meh = post({ createdAt: hoursAgo(1) });
+  // Raw heat discounts the old post for its age; evergreen takes that off again.
+  const heatOf = (p, engagement) => engagement / Math.pow((NOW - Date.parse(p.createdAt)) / 86_400_000 + 1, 0.6);
+  assert.ok(heatOf(loved, 20) < 20, 'aged');
+  assert.ok(Math.abs(rank.evergreen(loved, NOW, heatOf(loved, 20)) - 20) < 1e-9, 'age taken off: it is as popular as ever');
+  assert.ok(rank.evergreen(loved, NOW, heatOf(loved, 20)) > rank.evergreen(meh, NOW, heatOf(meh, 5)));
+});
+
+check('each lap reorders within a post\'s popularity, the same way for the same visit', () => {
+  const same = (lap) => rank.shuffleBy('visit', lap, 'pst_1');
+  assert.equal(same(1), same(1));
+  assert.notEqual(same(1), same(2));
+  assert.notEqual(rank.shuffleBy('visit', 1, 'pst_1'), rank.shuffleBy('other', 1, 'pst_1'));
+  for (let i = 0; i < 500; i += 1) {
+    const by = rank.shuffleBy('v', 1 + (i % 5), `p${i}`);
+    assert.ok(by >= 1 - T.replay.shuffle / 2 && by <= 1 + T.replay.shuffle / 2, String(by));
+  }
+});
+
+check('a lap in a new order still starts with the popular and ends with the quiet', () => {
+  const pool = Array.from({ length: 40 }, (_, i) => cand(`p${i}`, (40 - i) * rank.shuffleBy('v', 1, `p${i}`)));
+  const order = rank.rankStream(pool, 40, 'v:1').map((entry) => Number(entry.id.slice(1)));
+  const top = order.slice(0, 10).reduce((sum, n) => sum + n, 0) / 10;
+  const bottom = order.slice(-10).reduce((sum, n) => sum + n, 0) / 10;
+  assert.ok(top < 20 && bottom > 20, `${top} / ${bottom}`);
+});
+
 console.log('\nthe rising audience');
 
 check('a new post starts at the seed share and stays there until it has been seen enough', () => {
@@ -204,8 +236,13 @@ check('only the first places are ranked, and never one twice', () => {
 console.log('\npages that agree with each other');
 
 check('a cursor survives the round trip, and bad ones are refused', () => {
-  const cursor = { at: NOW - 60_000, offset: 48, seed: 'usr_1:123:abcd1234' };
+  const cursor = { at: NOW - 60_000, offset: 48, seed: 'usr_1:123:abcd1234', lap: 0 };
   assert.deepEqual(rank.decodeCursor(rank.encodeCursor(cursor), NOW), cursor);
+  assert.equal(rank.decodeCursor(rank.encodeCursor({ ...cursor, lap: 3 }), NOW).lap, 3, 'which time round it is');
+  assert.equal(rank.decodeCursor(rank.encodeCursor({ ...cursor, lap: 10 ** 6 }), NOW).lap, T.replay.maxLaps, 'clamped');
+  assert.equal(rank.decodeCursor(rank.encodeCursor({ ...cursor, lap: -4 }), NOW).lap, 0, 'clamped');
+  const legacy = Buffer.from(JSON.stringify([cursor.at, 12, 'seed'])).toString('base64url');
+  assert.equal(rank.decodeCursor(legacy, NOW).lap, 0, 'a cursor from before laps is still read');
   assert.equal(rank.decodeCursor(null, NOW), null);
   assert.equal(rank.decodeCursor('', NOW), null);
   assert.equal(rank.decodeCursor('not a cursor', NOW), null);
@@ -213,7 +250,7 @@ check('a cursor survives the round trip, and bad ones are refused', () => {
   assert.equal(rank.decodeCursor(rank.encodeCursor({ ...cursor, at: NOW - T.cursorMaxAgeMs - 1 }), NOW), null, 'too old: a fresh visit');
   assert.equal(rank.decodeCursor(rank.encodeCursor({ ...cursor, seed: 'x'.repeat(100) }), NOW), null, 'oversized');
   assert.equal(rank.decodeCursor(rank.encodeCursor({ ...cursor, offset: -5 }), NOW).offset, 0, 'clamped');
-  assert.equal(rank.decodeCursor(rank.encodeCursor({ ...cursor, offset: 10 ** 9 }), NOW).offset, T.window, 'clamped');
+  assert.equal(rank.decodeCursor(rank.encodeCursor({ ...cursor, offset: 10 ** 9 }), NOW).offset, T.replay.window, 'clamped');
   assert.equal(rank.decodeCursor('x'.repeat(500), NOW), null);
 });
 
@@ -248,7 +285,7 @@ check('the engagement index is reused until something on a post changes', () => 
 console.log('\nsaying why');
 
 check('the strongest honest reason is the one given', () => {
-  const none = { endsInMs: null, live: false, followedActed: 0, forumJoined: false, topic: null, affinity: false, contested: 0, velocity: 0, rising: false, explore: false };
+  const none = { endsInMs: null, live: false, followedActed: 0, forumJoined: false, topic: null, affinity: false, contested: 0, velocity: 0, rising: false, explore: false, replay: false };
   assert.equal(rank.whyOf(none), null, 'nothing honest to say, nothing said');
   assert.equal(rank.whyOf({ ...none, endsInMs: 3 * 3_600_000 }).label, 'Closes in 3h');
   assert.equal(rank.whyOf({ ...none, endsInMs: 20 * 60_000 }).label, 'Closes in 20m');
@@ -259,6 +296,8 @@ check('the strongest honest reason is the one given', () => {
   assert.equal(rank.whyOf({ ...none, forumJoined: true, topic: 'resin' }).kind, 'forum');
   assert.equal(rank.whyOf({ ...none, topic: 'resin kit' }).label, 'Because you like #resinkit');
   assert.equal(rank.whyOf({ ...none, affinity: true, contested: 0.9 }).kind, 'affinity');
+  assert.equal(rank.whyOf({ ...none, replay: true, contested: 0.9 }).label, 'Popular earlier', 'older posts shown again say so');
+  assert.equal(rank.whyOf({ ...none, replay: true, endsInMs: 3_600_000 }).kind, 'ending', 'unless something stronger is true');
   assert.equal(rank.whyOf({ ...none, contested: 0.9, velocity: 5 }).kind, 'contested');
   assert.equal(rank.whyOf({ ...none, velocity: 2, rising: true }).kind, 'taking-off');
   assert.equal(rank.whyOf({ ...none, rising: true, explore: true }).kind, 'explore');

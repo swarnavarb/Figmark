@@ -98,7 +98,8 @@ function rankFinds(listings: FeedListing[], hobbies: ReadonlySet<string>, me: st
 }
 
 type Entry =
-  | { kind: 'post'; card: PostCard }
+  | { kind: 'post'; key: string; card: PostCard }
+  | { kind: 'divider'; key: string; text: string }
   | { kind: 'rail'; finds: Find[] }
   | { kind: 'people' }
   | { kind: 'hunts'; wants: WantRow[] }
@@ -118,22 +119,39 @@ const RAIL_EVERY = 8;
 /** Comments before a post reads as a hot thread. The server promotes on the same number. */
 const HOT_THREAD = 3;
 
+/** One card of the stream, and which time round it is: a post can come back in a later lap. */
+interface FlowItem {
+  key: string;
+  card: PostCard;
+  lap: number;
+}
+
+const flowItems = (cards: PostCard[], lap: number): FlowItem[] => cards.map((card) => ({
+  key: lap ? `${lap}:${card.post.id}` : card.post.id,
+  card,
+  lap,
+}));
+
+/** What the divider says where the stream starts going round again. */
+const lapNote = (lap: number) => (lap === 1 ? 'You are all caught up. Here are older favourites.' : 'Round again, in a new order.');
+
 /**
  * The one stream: the server's order, with a rail of finds after the first few
- * posts and every few after that, until the finds run out. The people, hunt and
- * spotted rails go in once each, a few entries down, so the first screen is
- * still posts.
+ * posts and every few after that, until the finds run out; a line where the
+ * stream starts going round again. The people, hunt and spotted rails go in
+ * once each, a few entries down, so the first screen is still posts.
  */
-function weaveFlow(cards: PostCard[], finds: Find[], extras: { people: boolean; wants: WantRow[]; spotted: SpottedItem[] }): Entry[] {
+function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; wants: WantRow[]; spotted: SpottedItem[] }): Entry[] {
   const queue = [...finds];
   const out: Entry[] = [];
-  cards.forEach((card, index) => {
-    out.push({ kind: 'post', card });
+  items.forEach((item, index) => {
+    if (item.lap > (items[index - 1]?.lap ?? 0)) out.push({ kind: 'divider', key: `lap${item.lap}`, text: lapNote(item.lap) });
+    out.push({ kind: 'post', key: item.key, card: item.card });
     const count = index + 1;
     if ((count === FIRST_RAIL_AT || count % RAIL_EVERY === 0) && queue.length) out.push({ kind: 'rail', finds: queue.splice(0, RAIL) });
   });
   // A quiet day: few posts, but the finds are still worth a look.
-  while (queue.length && cards.length < FIRST_RAIL_AT) out.push({ kind: 'rail', finds: queue.splice(0, RAIL) });
+  while (queue.length && items.length < FIRST_RAIL_AT) out.push({ kind: 'rail', finds: queue.splice(0, RAIL) });
   const inserts: [number, Entry | null][] = [
     [SPOTTED_AT, extras.spotted.length ? { kind: 'spotted', items: extras.spotted } : null],
     [HUNTS_AT, extras.wants.length ? { kind: 'hunts', wants: extras.wants } : null],
@@ -149,6 +167,15 @@ const SEEN_KEY = 'figmark.discover.seen';
 const SEEN_KEEP = 400;
 const INTERESTS_KEY = 'figmark.discover.interests';
 const INTERESTS_KEEP = 12;
+/**
+ * Cards drawn at first and added each time the reader nears the last one drawn.
+ * A page arrives whole, but only what is about to be looked at is put on the
+ * screen: the rest waits, so a long scroll never means a long list of live cards.
+ */
+const FIRST_SHOWN = 6;
+const REVEAL = 6;
+/** Cards still undrawn when the next page is fetched in the background. */
+const PREFETCH_AHEAD = 12;
 /** Share of a first page already scrolled past before the next page is read straight away. */
 const STALE_SHARE = 0.6;
 
@@ -172,8 +199,8 @@ function rememberSeen(ids: string[]) {
 }
 
 /** What is new to this device first, what it has scrolled past after - each in the server's order. */
-function newFirst(cards: PostCard[], seen: ReadonlySet<string>): PostCard[] {
-  return [...cards.filter((card) => !seen.has(card.post.id)), ...cards.filter((card) => seen.has(card.post.id))];
+function newFirst(items: FlowItem[], seen: ReadonlySet<string>): FlowItem[] {
+  return [...items.filter((item) => !seen.has(item.card.post.id)), ...items.filter((item) => seen.has(item.card.post.id))];
 }
 
 /** The topics a post is about, as the server keys them. */
@@ -237,7 +264,9 @@ function DiscoverBody() {
   }, [location.hash]);
   const [stream, setStream] = useState<Stream | null>(null);
   /** The endless stream, in the order the server gave it, and where to read on from. */
-  const [flow, setFlow] = useState<PostCard[]>([]);
+  const [flow, setFlow] = useState<FlowItem[]>([]);
+  const [flowReady, setFlowReady] = useState(false);
+  const [shown, setShown] = useState(FIRST_SHOWN);
   const [cursor, setCursor] = useState<string | null>(null);
   const [rails, setRails] = useState<{ topics: TopicChip[]; wants: WantRow[]; spotted: SpottedItem[] }>({ topics: [], wants: [], spotted: [] });
   const [next, setNext] = useState<number | null>(null);
@@ -252,28 +281,42 @@ function DiscoverBody() {
     setError(null);
     setGuestWall(false);
     // Each part lands as soon as it is read and stands on its own: one slow or
-    // failed read must not keep the others - or the page - waiting.
-    const community = api.discover(0, { interests: user ? [] : guestInterests() }).then(
+    // failed read must not keep the others - or the page - waiting. The posts
+    // are asked for apart from the lists and rails, which take longer, so they
+    // are on screen before the rails are even read.
+    const posts = api.discoverStream({ interests: user ? [] : guestInterests() }).then(
       async (page) => {
         // What this device already scrolled past goes behind what is new. If
         // most of a page is old news, the next one is read at once so the
         // first screen is not a repeat.
         const seen = readSeen();
-        let cards = page.stream ?? [];
+        let items = flowItems(page.stream, page.lap ?? 0);
         let more = page.nextCursor ?? null;
-        if (user && more && cards.length && cards.filter((card) => seen.has(card.post.id)).length / cards.length >= STALE_SHARE) {
+        if (user && more && items.length && items.filter((item) => seen.has(item.card.post.id)).length / items.length >= STALE_SHARE) {
           try {
             const again = await api.discoverMore(more);
-            const have = new Set(cards.map((card) => card.post.id));
-            cards = [...cards, ...again.stream.filter((card) => !have.has(card.post.id))];
+            const have = new Set(items.map((item) => item.key));
+            items = [...items, ...flowItems(again.stream, again.lap ?? 0).filter((item) => !have.has(item.key))];
             more = again.nextCursor;
           } catch {
             // The first page stands on its own.
           }
         }
-        setStream(merge(EMPTY, page));
-        setFlow(newFirst(cards, seen));
+        setFlow(newFirst(items, seen));
+        setShown(FIRST_SHOWN);
         setCursor(more);
+        setFlowReady(true);
+      },
+      () => {
+        setFlow([]);
+        setCursor(null);
+        setFlowReady(true);
+        setError('Could not load what is happening. Please try again.');
+      },
+    );
+    const lists = api.discoverLists().then(
+      (page) => {
+        setStream(merge(EMPTY, page));
         setRails({ topics: page.topics ?? [], wants: page.wants ?? [], spotted: page.spotted ?? [] });
         setLive(page.live ?? []);
         setContests(page.contests ?? []);
@@ -281,10 +324,7 @@ function DiscoverBody() {
       },
       () => {
         setStream(EMPTY);
-        setFlow([]);
-        setCursor(null);
         setNext(null);
-        setError('Could not load what is happening. Please try again.');
       },
     );
     const catalogue = api.feed({ sort: 'popular' }).then(
@@ -294,7 +334,7 @@ function DiscoverBody() {
     const saved = user
       ? api.saved().then((found) => setHobbies(new Set(found.listings.map((listing) => listing.category))), () => undefined)
       : Promise.resolve();
-    await Promise.all([community, catalogue, saved]);
+    await Promise.all([posts, lists, catalogue, saved]);
   }, [user]);
 
   useEffect(() => {
@@ -314,14 +354,14 @@ function DiscoverBody() {
       if (endless) {
         // Everything on screen so far has been scrolled to the end of: it goes
         // behind what is new the next time this device opens Discover.
-        rememberSeen(flow.map((card) => card.post.id));
+        rememberSeen(flow.map((item) => item.card.post.id));
         // A page that adds nothing new (all of it already shown) is not the end: read on.
         let from: string | null = cursor;
-        let fresh: PostCard[] = [];
-        const have = new Set(flow.map((card) => card.post.id));
+        let fresh: FlowItem[] = [];
+        const have = new Set(flow.map((item) => item.key));
         for (let tries = 0; from && !fresh.length && tries < 3; tries += 1) {
           const page = await api.discoverMore(from);
-          fresh = page.stream.filter((card) => !have.has(card.post.id));
+          fresh = flowItems(page.stream, page.lap ?? 0).filter((item) => !have.has(item.key));
           from = page.nextCursor;
         }
         setFlow((current) => [...current, ...fresh]);
@@ -344,27 +384,40 @@ function DiscoverBody() {
     () => rankFinds(listings ?? [], hobbies, user?.id ?? null),
     [listings, hobbies, user?.id],
   );
+  // Only the first few are drawn; the rest are added as the reader nears the end of them.
   const entries = useMemo(
-    () => (stream ? weaveFlow(flow, finds, { people: Boolean(user), wants: rails.wants, spotted: rails.spotted }) : []),
-    [stream, flow, finds, user, rails.wants, rails.spotted],
+    () => (flowReady ? weaveFlow(flow.slice(0, shown), finds, { people: Boolean(user), wants: rails.wants, spotted: rails.spotted }) : []),
+    [flowReady, flow, shown, finds, user, rails.wants, rails.spotted],
   );
-  // The finds are a bonus: the page is ready once the community stream is.
-  const loading = !stream;
-  const spots = useMemo(() => spotlight(live, contests, stream ?? EMPTY, finds), [live, contests, stream, finds]);
+  // The finds and the lists are a bonus: the stream is ready once its posts are.
+  const loading = lens === 'all' ? !flowReady : !stream;
+  const lists = stream ?? EMPTY;
+
+  /** The reader is near the last card drawn: draw more, and when all are drawn, read the next page. */
+  const reach = useCallback(() => {
+    if (lens === 'all' && shown < flow.length) setShown((count) => Math.min(flow.length, count + REVEAL));
+    else void loadMore();
+  }, [lens, shown, flow.length, loadMore]);
+
+  // Read the next page while the reader is still on the last few, so it is there when they arrive.
+  useEffect(() => {
+    if (lens === 'all' && user && flowReady && cursor !== null && !more && flow.length - shown <= PREFETCH_AHEAD) void loadMore();
+  }, [lens, user, flowReady, cursor, more, flow.length, shown, loadMore]);
+  const spots = useMemo(() => spotlight(live, contests, lists, finds), [live, contests, lists, finds]);
 
   const posts = (cards: PostCard[], promoted = false) => cards.map((card) => (
     <SocialPostCard key={card.post.id} card={card} promoted={promoted} />
   ));
   const openContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended').length;
   const paged = lens === 'all' || lens === 'rising' || lens === 'debates' || lens === 'threads' || lens === 'flexes';
-  const hasMore = lens === 'all' ? cursor !== null : next !== null;
+  const hasMore = lens === 'all' ? shown < flow.length || cursor !== null : next !== null;
 
   /** A guest has no history, so what they tap is what Discover learns from, kept on this device. */
   function noteTap(event: ReactMouseEvent) {
     if (user) return;
     const shell = (event.target as HTMLElement).closest('[data-post-id]');
-    const card = flow.find((entry) => entry.post.id === shell?.getAttribute('data-post-id'));
-    if (card) noteInterests(topicsOfCard(card));
+    const item = flow.find((entry) => entry.card.post.id === shell?.getAttribute('data-post-id'));
+    if (item) noteInterests(topicsOfCard(item.card));
   }
 
   async function share() {
@@ -467,8 +520,9 @@ function DiscoverBody() {
                 case 'people': return <FollowSuggestions key="people" title="People to follow" />;
                 case 'hunts': return <HuntRail key="hunts" wants={entry.wants} />;
                 case 'spotted': return <SpottedRail key="spotted" items={entry.items} />;
+                case 'divider': return <p key={entry.key} className="discend discend--lap">{entry.text}</p>;
                 default: return (
-                  <SocialPostCard key={entry.card.post.id} card={entry.card}
+                  <SocialPostCard key={entry.key} card={entry.card}
                     promoted={entry.card.social.commentCount >= HOT_THREAD && !entry.card.post.debate && !entry.card.post.flex} />
                 );
               }
@@ -497,16 +551,16 @@ function DiscoverBody() {
         ) : <div className="discover__stream" id="competitions">{posts(contests)}</div>
       ) : (
         <div className="discover__stream">
-          {lens === 'rising' && (stream.rising.length ? posts(stream.rising) : (
+          {lens === 'rising' && (lists.rising.length ? posts(lists.rising) : (
             <EmptyState title="Nothing rising yet">New posts that people are starting to notice show up here first.</EmptyState>
           ))}
-          {lens === 'debates' && (stream.debates.length ? posts(stream.debates) : (
+          {lens === 'debates' && (lists.debates.length ? posts(lists.debates) : (
             <EmptyState title="No debates yet">Put two pieces side by side with the + below and let people vote.</EmptyState>
           ))}
-          {lens === 'threads' && (stream.threads.length ? posts(stream.threads, true) : (
+          {lens === 'threads' && (lists.threads.length ? posts(lists.threads, true) : (
             <EmptyState title="No hot debates yet">When a conversation takes off anywhere on Figmark, it shows up here.</EmptyState>
           ))}
-          {lens === 'flexes' && (stream.flexes.length ? posts(stream.flexes) : (
+          {lens === 'flexes' && (lists.flexes.length ? posts(lists.flexes) : (
             <EmptyState title="No flexes yet">Share your shelf with its pieces tagged, from the + below.</EmptyState>
           ))}
         </div>
@@ -515,9 +569,9 @@ function DiscoverBody() {
       {!loading && paged && (guestWall ? (
         <DiscoverWall onJoin={() => promptAuth('Join to keep scrolling, vote and follow.')} />
       ) : hasMore ? (
-        <MoreSentinel busy={more} onReach={() => void loadMore()} />
+        <MoreSentinel busy={more} onReach={reach} />
       ) : lens === 'all' && flow.length > 0 && (
-        <p className="discend">You have seen the best of what is new. Check back soon, or start something with the + below.</p>
+        <p className="discend">That is everything for now. Check back soon, or start something with the + below.</p>
       ))}
     </main>
   );

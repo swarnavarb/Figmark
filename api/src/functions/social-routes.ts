@@ -25,8 +25,9 @@ import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/not
 import { levelOf } from './quest-routes.js';
 import { NO_SCREEN, lessFrom, lessFromLift, screenOf, screens, tasteAt, type FeedScreen } from '../feed-prefs.js';
 import {
-  DISCOVER_TUNING, contestedness, decodeCursor, encodeCursor, excitement, formatOf, indexOf, rankStream, readSnapshot,
-  risingSeedPercent, tasteLiftFor, velocity, whyOf, writeSnapshot, type Candidate, type EngagementIndex, type Engaged, type Placed,
+  DISCOVER_TUNING, contestedness, decodeCursor, encodeCursor, evergreen, excitement, formatOf, indexOf, rankStream, readSnapshot,
+  risingSeedPercent, shuffleBy, tasteLiftFor, velocity, whyOf, writeSnapshot,
+  type Candidate, type EngagementIndex, type Engaged, type Placed,
 } from '../discover-rank.js';
 import {
   hashtagsIn, mentionsIn, MENTIONS_MAX,
@@ -1042,7 +1043,18 @@ function spread(posts: readonly Post[]): Post[] {
  * outside their usual. Each card says why it is there. `nextCursor` pages on:
  * the cursor carries the moment the visit began and where it got to, and the
  * order is remembered for a couple of minutes, so a later page picks up exactly
- * where the last stopped even while the feed moves underneath.
+ * where the last stopped even while the feed moves underneath. Pages are small
+ * and drawn as they are needed, not all at once.
+ *
+ * When every fresh post has been shown the stream does not stop: the cursor
+ * carries on with the next `lap` - older posts, reaching further back, in order
+ * of how well they did over their whole life, in a different order each lap.
+ * The page says which kind it is (`lap`), so the app can show a post again
+ * without taking it for a repeat.
+ *
+ * `stream=1` asks for the first page of the stream alone and `lists=1` for the
+ * lists and rails alone: the app sends both at once and draws posts as soon as
+ * the stream answers, instead of after the slowest of the rails.
  *
  * The four lists - debates, threads, flexes, rising - are the same posts cut
  * by kind, for the tabs that show only one. They page with `page`.
@@ -1069,26 +1081,35 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
   const actor = user ? await actorFor(request, user, repository) : GUEST;
   if (!actor) return notYours();
 
+  const T = DISCOVER_TUNING;
   const wall = Date.now();
   const cursor = decodeCursor(request.query?.get('cursor'), wall);
   // Every page of a visit is ranked as of the moment it began.
   const now = cursor?.at ?? wall;
-  const streamOnly = cursor !== null;
-  const page = streamOnly ? 0 : Math.min(DISCOVER_PAGES - 1, Math.max(0, Math.floor(Number(request.query?.get('page')) || 0)));
+  const lap = cursor?.lap ?? 0;
   const offset = cursor?.offset ?? 0;
   const seed = cursor?.seed ?? `${user?.id ?? 'guest'}:${now}:${randomUUID().slice(0, 8)}`;
+  // The app reads the stream and the lists as two requests, so the first posts
+  // never wait on the rails: `stream=1` is the first page of the stream alone,
+  // `lists=1` is the lists and rails alone. With neither, both come at once.
+  const only = request.query?.get('stream') === '1' ? 'stream' : request.query?.get('lists') === '1' ? 'lists' : null;
+  const requested = Math.min(DISCOVER_PAGES - 1, Math.max(0, Math.floor(Number(request.query?.get('page')) || 0)));
+  const page = cursor || only === 'stream' ? 0 : requested;
+  const wantStream = cursor !== null || only === 'stream' || (only === null && page === 0);
+  const wantLists = cursor === null && only !== 'stream';
   const interests = user ? [] : (request.query?.get('interests') ?? '').split(',')
     .map((word) => tagKey(word.trim().slice(0, 40))).filter(Boolean).slice(0, 8);
 
   const [recentRead, me, watched, liked, moderated, forums] = await Promise.all([
-    repository.listRecentPosts(DISCOVER_TUNING.window),
+    // Going round again reaches back further than the fresh stream does.
+    repository.listRecentPosts(lap > 0 ? T.replay.window : T.window),
     user ? repository.getUserById(user.id) : Promise.resolve(null),
     user ? watchedBy(user.id, repository) : Promise.resolve(new Set<string>()),
     user ? repository.listLikedListingIds(user.id) : Promise.resolve([] as string[]),
     moderation(repository),
     user ? repository.listForums() : Promise.resolve([] as Forum[]),
   ]);
-  const recent = page === 0 && !streamOnly ? await settleDebates(recentRead, repository) : recentRead;
+  const recent = wantLists && page === 0 ? await settleDebates(recentRead, repository) : recentRead;
   const screen = user ? screenOf(me) : NO_SCREEN;
   const reader: Reader = {
     userId: user?.id ?? null,
@@ -1106,7 +1127,7 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
 
   const removed = (post: Post) => moderated.isRemoved(post.channel === 'forum' ? 'forum_post' : 'post', post.id);
   const reported = (post: Post) => moderated.mark(post.channel === 'forum' ? 'forum_post' : 'post', post.id, null).underReview;
-  const L = DISCOVER_TUNING.lift;
+  const L = T.lift;
   /** How much this reader's own signals move a post. */
   const lift = (post: Post) => {
     let by = 1;
@@ -1117,62 +1138,67 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
     if (reported(post)) by *= L.reported;
     return by;
   };
-  const heats = new Map(recent.map((post) => [post.id, heat(post, now)]));
-  const score = new Map(recent.map((post) => [post.id, heats.get(post.id)! * lift(post)]));
-  const ranked = (a: Post, b: Post) => score.get(b.id)! - score.get(a.id)! || b.createdAt.localeCompare(a.createdAt);
   // Public and first-hand: no room messages, no wall echoes, no reposts; and
   // nothing taken down, muted or hidden.
   const open = recent.filter((post) => !post.repostOf && !post.wallOf
     && (post.channel === 'forum' || (post.reach ?? 'feed') === 'feed')
     && !removed(post) && !screens(screen, post));
   const risingIds = risingFor(open, reader, now, affinity, actorsOf);
+  const heats = new Map(open.map((post) => [post.id, heat(post, now)]));
 
   // ── the stream ───────────────────────────────────────────────────────────
-  // Worked out for the first request of a visit and every request that carries
-  // a cursor; a tab paging on with `page` has no use for it.
-  const wantStream = streamOnly || page === 0;
   const taste = tasteAt(me?.feedPrefs?.taste, now);
   for (const word of interests) taste.topics[word] = 3;
-  const why = new Map<string, { topic: string | null }>();
+  const tasted = tasteLiftFor(taste, taken, screen);
+  const pool = open.filter((post) => post.authorId !== user?.id && post.channelId !== user?.id);
   let pageIds: Placed[] = [];
   let nextCursor: string | null = null;
   if (wantStream) {
-    const tasted = tasteLiftFor(taste, taken, screen);
-    const pool = open.filter((post) => post.authorId !== user?.id && post.channelId !== user?.id);
-    const candidates: Candidate[] = pool.map((post) => {
+    // Scoring every post is the work; a page of a visit already ranked skips it.
+    const build = (): Candidate[] => pool.map((post) => {
       const topics = index.topics.get(post.id) ?? [];
-      const liking = tasted(post, topics);
-      why.set(post.id, { topic: liking.topic });
-      let by = lift(post) * liking.lift;
+      let by = lift(post) * tasted(post, topics).lift;
       if (post.channel === 'forum' && reader.forums.has(post.channelId)) by *= L.forumMember;
       if (playedBy(post, user?.id ?? null)) by *= L.played;
+      const base = heats.get(post.id) ?? 0;
+      // Fresh: what is exciting now. A lap: what did best over its whole life, in a new order each time round.
+      const worth = lap > 0
+        ? (evergreen(post, now, base) + T.replay.floor) * shuffleBy(seed, lap, post.id)
+        : excitement(post, now, base);
       const known = affinity.has(post.channelId) || watched.has(post.channelId) || watched.has(post.authorId)
         || (taste.channels[post.channelId] ?? 0) >= 1;
       return {
         id: post.id,
-        score: Math.max(1e-9, excitement(post, now, heats.get(post.id) ?? 0) * by),
+        score: Math.max(1e-9, worth * by),
         channel: post.channelId,
         author: post.authorId,
         format: formatOf(post),
         topics,
-        explorer: !known && (post.views ?? 0) < DISCOVER_TUNING.explore.undiscoveredViews && !lessFrom(screen, post),
+        explorer: lap === 0 && !known && (post.views ?? 0) < T.explore.undiscoveredViews && !lessFrom(screen, post),
       };
     });
-    const placed = rankedStream(candidates, `${reader.userId ?? 'guest'}|${now}|${seed}`, offset, seed);
-    pageIds = placed.slice(offset, offset + DISCOVER_TUNING.pageSize);
-    nextCursor = placed.length > offset + DISCOVER_TUNING.pageSize
-      ? encodeCursor({ at: now, offset: offset + DISCOVER_TUNING.pageSize, seed })
-      : null;
+    const placed = rankedStream(build, new Set(pool.map((post) => post.id)), pool.length,
+      `${reader.userId ?? 'guest'}|${now}|${seed}|${lap}`, offset, `${seed}:${lap}`);
+    pageIds = placed.slice(offset, offset + T.pageSize);
+    if (offset + T.pageSize < pool.length) nextCursor = encodeCursor({ at: now, offset: offset + T.pageSize, seed, lap });
+    // Everything has been shown: go round again with what did best, unless there is too little to go round.
+    else if (pool.length >= T.replay.minPool && lap < T.replay.maxLaps) nextCursor = encodeCursor({ at: now, offset: 0, seed, lap: lap + 1 });
   }
   const exploring = new Set(pageIds.filter((entry) => entry.explore).map((entry) => entry.id));
   const streamPosts = pageIds.map((entry) => byId.get(entry.id)).filter((post): post is Post => Boolean(post));
+  const explain = {
+    now, reader, raw: byId, topicOf: (post: Post) => tasted(post, index.topics.get(post.id) ?? []).topic,
+    risingIds, exploring, affinity, replay: lap > 0,
+  };
 
-  if (streamOnly) {
+  if (!wantLists) {
     const cards = await decorate(streamPosts, repository, actor);
-    return json(200, { stream: explained(cards, { now, reader, raw: byId, why, risingIds, exploring, affinity }), nextCursor });
+    return json(200, { stream: explained(cards, explain), nextCursor, lap });
   }
 
   // ── the lists, for the tabs ──────────────────────────────────────────────
+  const score = new Map(open.map((post) => [post.id, heats.get(post.id)! * lift(post)]));
+  const ranked = (a: Post, b: Post) => score.get(b.id)! - score.get(a.id)! || b.createdAt.localeCompare(a.createdAt);
   const reactionsOf = (post: Post) => post.reactions?.length ?? post.likeCount;
   const commentsOf = (post: Post) => post.comments?.length ?? post.replyCount;
   const allDebates = spread(open.filter((post) => post.debate && post.poll).sort(ranked));
@@ -1200,19 +1226,19 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
   const contests = page === 0 ? contestsOf(open, now) : [];
   const listed = [...debates, ...threads, ...flexes, ...rising];
   const listedIds = new Set(listed.map((post) => post.id));
-  // The stream is the first page of the same posts: one decorate for both.
-  const streamFirst = page === 0 ? streamPosts : [];
+  // With both asked for at once, the stream's page shares the one decorate.
+  const streamFirst = wantStream ? streamPosts : [];
   const extra = [...new Map([...live, ...contests, ...streamFirst].filter((post) => !listedIds.has(post.id)).map((post) => [post.id, post])).values()];
   const cards = await decorate([...listed, ...extra], repository, actor);
   const byCard = new Map(cards.map((card) => [card.post.id, card]));
   const pick = (posts: Post[]) => posts.map((post) => byCard.get(post.id)).filter((card): card is PostCard => Boolean(card));
 
+  // The rails are three independent reads: together, not one after another.
   const rails = page === 0
-    ? {
-        topics: topicsOf(open, now),
-        wants: await wantsFor(user?.id ?? null, me, repository),
-        spotted: await spottedIn(open, user?.id ?? null, score, repository),
-      }
+    ? await Promise.all([
+        wantsFor(user?.id ?? null, me, repository),
+        spottedIn(open, user?.id ?? null, score, repository),
+      ]).then(([wants, spotted]) => ({ topics: topicsOf(open, now), wants, spotted }))
     : {};
   return json(200, {
     ...(page === 0 ? { live: pick(live), contests: pick(contests) } : {}),
@@ -1220,10 +1246,7 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
     threads: pick(threads),
     flexes: pick(flexes),
     rising: pick(rising).map((card) => ({ ...card, badges: ['rising'] as Boost[] })),
-    ...(page === 0 ? {
-      stream: explained(pick(streamFirst), { now, reader, raw: byId, why, risingIds, exploring, affinity }),
-      nextCursor,
-    } : {}),
+    ...(wantStream ? { stream: explained(pick(streamFirst), explain), nextCursor, lap } : {}),
     ...rails,
     next: more ? page + 1 : null,
   });
@@ -1233,19 +1256,27 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
  * Order the candidates for this visit, and remember the order.
  *
  * The first page ranks a little further ahead than it shows; a later page asks
- * for the same visit by key, finds that order and reads on from it. If the
- * remembered order has run out - or was never kept, on another instance - the
- * ranking is redone and carries on after the places already given, so what a
- * reader has seen is never moved, repeated or skipped.
+ * for the same visit by key, finds that order and reads on from it - without
+ * scoring a single post, which is why `build` is a function and only called
+ * when needed. If the remembered order has run out - or was never kept, on
+ * another instance - the ranking is redone and carries on after the places
+ * already given, so what a reader has seen is never moved, repeated or skipped.
+ * What they have not been given yet is dropped if it is no longer fit to show
+ * (hidden, taken down, muted) since the order was made.
  */
-function rankedStream(candidates: Candidate[], key: string, offset: number, seed: string): Placed[] {
-  const need = Math.min(candidates.length, offset + DISCOVER_TUNING.pageSize * 4);
+function rankedStream(
+  build: () => Candidate[],
+  fit: ReadonlySet<string>,
+  poolSize: number,
+  key: string,
+  offset: number,
+  seed: string,
+): Placed[] {
+  const need = Math.min(poolSize, offset + DISCOVER_TUNING.pageSize * 4);
+  const kept = (readSnapshot(key, Date.now()) ?? []).filter((entry, place) => place < offset || fit.has(entry.id));
+  if (kept.length >= need || kept.length >= poolSize) return kept;
+  const candidates = build();
   const byCandidate = new Map(candidates.map((candidate) => [candidate.id, candidate]));
-  // What the reader has been given stays, whatever has happened to it since;
-  // what they have not been given yet is dropped if it is no longer fit to show
-  // (hidden, taken down, muted) since the order was made.
-  const kept = (readSnapshot(key, Date.now()) ?? []).filter((entry, place) => place < offset || byCandidate.has(entry.id));
-  if (kept.length >= need || kept.length >= candidates.length) return kept;
   const given = kept.flatMap((entry) => (byCandidate.has(entry.id) ? [byCandidate.get(entry.id)!] : []));
   const more = rankStream(candidates, need - kept.length, seed, given);
   const out = [...kept, ...more];
@@ -1261,10 +1292,13 @@ function explained(
     reader: Reader;
     /** The posts as stored: a card's own copy has had its poll and reactions taken out. */
     raw: ReadonlyMap<string, Post>;
-    why: ReadonlyMap<string, { topic: string | null }>;
+    /** A topic they like that the post carries, if any. */
+    topicOf: (post: Post) => string | null;
     risingIds: ReadonlySet<string>;
     exploring: ReadonlySet<string>;
     affinity: ReadonlySet<string>;
+    /** The stream is going round again with older posts. */
+    replay: boolean;
   },
 ): PostCard[] {
   return cards.map((card) => {
@@ -1276,12 +1310,13 @@ function explained(
       live: until !== null,
       followedActed: card.followedActed?.count ?? 0,
       forumJoined: post.channel === 'forum' && context.reader.forums.has(post.channelId),
-      topic: context.why.get(post.id)?.topic ?? null,
+      topic: context.topicOf(post),
       affinity: context.affinity.has(post.channelId),
       contested: contestedness(post),
       velocity: velocity(post, context.now),
       rising,
       explore: context.exploring.has(post.id),
+      replay: context.replay,
     });
     return { ...card, ...(reason ? { why: reason } : {}), ...(rising ? { badges: ['rising'] as Boost[] } : {}) };
   });
