@@ -313,3 +313,9 @@ a.discweek__row:hover { border-color: var(--border-strong); }
 .discweek__photo { width: 40px; height: 40px; border-radius: var(--r-sm); flex: 0 0 auto; }
 .discweek__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
 .discweek__count { flex: 0 0 auto; color: var(--text-dim); font-size: var(--t-xs); font-family: var(--mono); }
+
+/* The bottom of the stream, when there really is nothing further. */
+.discend {
+  margin: var(--s4) 0 var(--s6); text-align: center;
+  color: var(--text-dim); font-size: var(--t-sm);
+}

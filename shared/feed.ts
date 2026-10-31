@@ -30,6 +30,44 @@ export interface FeedPrefs {
    * the feed, so the next visit can say where the new ones stop.
    */
   seenFeedAt?: string | null;
+  /**
+   * Topics the person asked to hear less about ("not interested" on the topic
+   * rather than the author), newest first. Lowered, never removed.
+   */
+  lessTopics?: string[];
+  /**
+   * What this person lingers on, learned from what was on screen and opened and
+   * from what they put away. Small and bounded for the same reason the lists
+   * above are: it lives on the account.
+   */
+  taste?: FeedTaste;
+}
+
+/**
+ * A decaying, signed tally of what holds this person's attention. Weights are
+ * as of `at`; reading ages them (see `tasteAt` in feed-prefs), so an interest
+ * that stops being fed fades rather than lingering for ever.
+ */
+export interface FeedTaste {
+  topics: Record<string, number>;
+  /** Post formats - debate, flex, thread, sale... - by what holds them. */
+  kinds: Record<string, number>;
+  /** Shops, people and forums whose posts they dwell on. */
+  channels: Record<string, number>;
+  at: string;
+}
+
+export const TASTE_TOPICS_MAX = 60;
+export const TASTE_CHANNELS_MAX = 60;
+export const TASTE_KINDS_MAX = 12;
+/** Days for a taste weight to halve when nothing renews it. */
+export const TASTE_HALF_LIFE_DAYS = 21;
+export const LESS_TOPICS_MAX = 100;
+
+/** Why a card is in somebody's Discover, in one line, and which kind of reason it is. */
+export interface DiscoverWhy {
+  kind: 'ending' | 'live' | 'followed' | 'forum' | 'topic' | 'affinity' | 'contested' | 'taking-off' | 'new' | 'explore';
+  label: string;
 }
 
 export interface SavedPostRef {

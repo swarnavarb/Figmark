@@ -12521,6 +12521,171 @@ await check('what was on screen is counted on the post, but not for its author',
   assert.equal(stored.dwellMs, 4000 + 60_000, 'a minute is all one view can add');
 });
 
+/** Every page of the endless stream for one reader, following its cursors to the end (bounded). */
+const streamOf = async (headers, query = {}) => {
+  const cards = [];
+  const first = (await discover(req({ headers, query }), ctx)).jsonBody;
+  cards.push(...first.stream);
+  let cursor = first.nextCursor;
+  let pages = 1;
+  while (cursor && pages < 80) {
+    const more = (await discover(req({ headers, query: { ...query, cursor } }), ctx)).jsonBody;
+    cards.push(...more.stream);
+    cursor = more.nextCursor;
+    pages += 1;
+  }
+  return { cards, first, pages, ended: cursor === null };
+};
+
+await check('the stream has every public post, forum posts too, pages on to the end, and never repeats', async () => {
+  resetRateLimits();
+  const writers = [await newBuyer('Stream Writer A'), await newBuyer('Stream Writer B')];
+  const made = [];
+  for (const [w, writer] of writers.entries()) {
+    for (let i = 0; i < 15; i += 1) {
+      made.push((await createPost(req({ headers: writer.headers, body: { body: `Plain words ${w}-${i} about my day` } }), ctx)).jsonBody.post);
+    }
+  }
+  const member = await newBuyer('Stream Forum Member');
+  await joinForum(req({ headers: member.headers, params: { id: 'frm_deals' } }), ctx);
+  const forumPost = (await createPost(req({ headers: member.headers, body: { body: 'A quiet question for the room', forumId: 'frm_deals' } }), ctx)).jsonBody.post;
+  const reader = await newBuyer('Stream Reader');
+
+  const seen = await streamOf(reader.headers);
+  assert.ok(seen.ended, 'it reaches an end rather than looping');
+  assert.ok(seen.pages > 1, 'more than one page of it');
+  assert.ok(seen.first.stream.length <= 24, 'a page is a page');
+  assert.ok(seen.first.nextCursor, 'and there is more');
+  const ids = seen.cards.map((card) => card.post.id);
+  assert.equal(new Set(ids).size, ids.length, 'no post twice across pages');
+  for (const post of made) assert.ok(ids.includes(post.id), 'plain posts, which were never on Discover before, are in the stream');
+  assert.ok(ids.includes(forumPost.id), 'and a quiet forum post');
+  assert.equal(seen.cards.find((card) => card.post.id === forumPost.id).forum.id, 'frm_deals', 'saying which forum');
+
+  const own = await streamOf(writers[0].headers);
+  assert.ok(own.cards.every((card) => card.post.authorId !== writers[0].id), 'nobody is shown their own posts');
+
+  const onlyStream = (await discover(req({ headers: reader.headers, query: { cursor: seen.first.nextCursor } }), ctx)).jsonBody;
+  assert.deepEqual(Object.keys(onlyStream).sort(), ['nextCursor', 'stream'], 'a cursor asks for the stream and nothing else');
+  assert.equal(onlyStream.topics, undefined);
+
+  const guest = await discover(req(), ctx);
+  assert.equal(guest.status, 200);
+  assert.ok(Array.isArray(guest.jsonBody.stream) && guest.jsonBody.stream.length > 0, 'a guest has a stream too');
+  const fake = await discover(req({ headers: reader.headers, query: { cursor: 'rubbish' } }), ctx);
+  assert.equal(fake.status, 200, 'a mangled cursor starts the visit again, it does not fail');
+  assert.ok(fake.jsonBody.debates, 'as a first page, rails and all');
+  const legacy = (await discover(req({ headers: reader.headers, query: { page: '1' } }), ctx)).jsonBody;
+  assert.equal(legacy.stream, undefined, 'a tab paging through its own list is not sent the stream');
+});
+
+await check('pages of one visit agree with each other even while the feed moves', async () => {
+  resetRateLimits();
+  const reader = await newBuyer('Moving Reader');
+  const writer = await newBuyer('Moving Writer');
+  const first = (await discover(req({ headers: reader.headers }), ctx)).jsonBody;
+  assert.ok(first.nextCursor);
+  const shown = first.stream.map((card) => card.post.id);
+  const newest = (await createPost(req({ headers: writer.headers, body: { body: 'Arrived mid-scroll, with a lot of fuss' } }), ctx)).jsonBody.post;
+  const second = (await discover(req({ headers: reader.headers, query: { cursor: first.nextCursor } }), ctx)).jsonBody;
+  const nextIds = second.stream.map((card) => card.post.id);
+  assert.ok(nextIds.every((id) => !shown.includes(id)), 'nothing from the first page comes back on the second');
+  assert.ok(nextIds.filter((id) => id === newest.id).length <= 1, 'a post that arrived mid-scroll may appear, but only once');
+  const again = (await discover(req({ headers: reader.headers, query: { cursor: first.nextCursor } }), ctx)).jsonBody;
+  assert.deepEqual(again.stream.map((card) => card.post.id), nextIds, 'asking for the same page twice gives the same page');
+});
+
+await check('what a reader lingers on is learned, and that topic is then said to be why', async () => {
+  resetRateLimits();
+  const writer = await newBuyer('Origami Writer');
+  const trained = await newBuyer('Origami Fan');
+  const control = await newBuyer('Origami Stranger');
+  const tagged = [];
+  for (let i = 0; i < 3; i += 1) {
+    tagged.push((await createPost(req({ headers: writer.headers, body: { body: `Folding whale number ${i} #OrigamiWhales` } }), ctx)).jsonBody.post);
+  }
+  const repository = await getRepository();
+  assert.equal((await repository.getUserById(trained.id)).feedPrefs, undefined, 'nothing learned before they did anything');
+
+  await seenR(req({ headers: trained.headers, body: { items: [
+    ...tagged.map((post) => ({ channelId: post.channelId, postId: post.id, ms: 12_000, opened: true })),
+    { channelId: tagged[0].channelId, postId: 'pst_gone', ms: 12_000 },
+  ] } }), ctx);
+  const taste = (await repository.getUserById(trained.id)).feedPrefs.taste;
+  const key = Object.keys(taste.topics).find((topic) => topic.startsWith('origami'));
+  assert.ok(key, JSON.stringify(taste));
+  assert.ok(taste.topics[key] > 1, 'lingering and opening is worth something');
+  assert.ok(taste.channels[tagged[0].channelId] > 1);
+
+  const mine = await streamOf(trained.headers);
+  const theirs = mine.cards.filter((card) => tagged.some((post) => post.id === card.post.id));
+  assert.equal(theirs.length, 3);
+  assert.ok(theirs.some((card) => card.why?.kind === 'topic' && card.why.label.toLowerCase().includes('origami')), JSON.stringify(theirs.map((card) => card.why)));
+  const others = await streamOf(control.headers);
+  assert.ok(others.cards.filter((card) => tagged.some((post) => post.id === card.post.id)).every((card) => card.why?.kind !== 'topic'), 'nobody else is told they like it');
+
+  const guest = await streamOf(undefined, { interests: key });
+  assert.ok(guest.cards.some((card) => card.why?.kind === 'topic' && tagged.some((post) => post.id === card.post.id)),
+    'a guest who opened such things on this device gets them too');
+  assert.ok((await streamOf(undefined)).cards.every((card) => card.why?.kind !== 'topic'), 'and one who has not does not');
+  const hostile = await discover(req({ query: { interests: 'x'.repeat(5000) + ',,,' + 'a,'.repeat(100) } }), ctx);
+  assert.equal(hostile.status, 200, 'and cannot break it with a long list');
+});
+
+await check('putting a post away teaches the feed, and "less like this" lowers a topic, not the author', async () => {
+  resetRateLimits();
+  const writer = await newBuyer('Topic Hider Writer');
+  const reader = await newBuyer('Topic Hider');
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Another #SneakerResale rant' } }), ctx)).jsonBody.post;
+  const repository = await getRepository();
+  await hidePostR(req({ headers: reader.headers, params: { channel: made.channelId, id: made.id }, body: { notInterested: true, scope: 'topic' } }), ctx);
+  let prefs = (await repository.getUserById(reader.id)).feedPrefs;
+  assert.ok(prefs.lessTopics.some((topic) => topic.startsWith('sneaker')), JSON.stringify(prefs));
+  assert.ok(!(prefs.lessFrom ?? []).includes(writer.id), 'the author is not marked down for the topic');
+  assert.ok(prefs.hidden.includes(made.id));
+  const key = prefs.lessTopics.find((topic) => topic.startsWith('sneaker'));
+  assert.ok(prefs.taste.topics[key] < 0, 'and the feed learned the dislike');
+  assert.ok(prefs.taste.channels[made.channelId] < 0);
+
+  const disliked = prefs.taste.topics[key];
+  await hidePostR(req({ headers: reader.headers, params: { channel: made.channelId, id: made.id }, body: { undo: true } }), ctx);
+  prefs = (await repository.getUserById(reader.id)).feedPrefs;
+  assert.ok(!(prefs.lessTopics ?? []).includes(key), 'undo gives the topic back');
+  assert.ok(!prefs.hidden.includes(made.id));
+  assert.ok((prefs.taste.topics[key] ?? 0) > disliked, 'and eases the dislike');
+});
+
+await check('a forum you joined is where its new posts are tried first, and the card says so', async () => {
+  resetRateLimits();
+  const poster = await newBuyer('Forum Poster');
+  const member = await newBuyer('Forum Regular');
+  const outsider = await newBuyer('Forum Passer-by');
+  for (const who of [poster, member]) await joinForum(req({ headers: who.headers, params: { id: 'frm_imports' } }), ctx);
+  const made = (await createPost(req({ headers: poster.headers, body: { body: 'Does anyone know a good freight forwarder?', forumId: 'frm_imports' } }), ctx)).jsonBody.post;
+
+  const mine = (await streamOf(member.headers)).cards.find((card) => card.post.id === made.id);
+  assert.ok(mine, 'in the member\'s stream');
+  assert.equal(mine.why?.kind, 'forum');
+  assert.equal(mine.why.label, 'From a forum you joined');
+  const theirs = (await streamOf(outsider.headers)).cards.find((card) => card.post.id === made.id);
+  assert.ok(theirs, 'and in everyone else\'s, as an ordinary post');
+  assert.notEqual(theirs.why?.kind, 'forum');
+  assert.ok(mine.badges?.includes('rising'), 'new in their forum, so tried on them whatever the odds');
+});
+
+await check('what is about to close says so', async () => {
+  resetRateLimits();
+  const writer = await newBuyer('Closing Writer');
+  const reader = await newBuyer('Closing Reader');
+  const made = (await createPost(req({ headers: writer.headers, body: {
+    body: 'Which one?', poll: { options: ['This', 'That'], closesInHours: 2 },
+  } }), ctx)).jsonBody.post;
+  const card = (await streamOf(reader.headers)).cards.find((entry) => entry.post.id === made.id);
+  assert.ok(card, 'in the stream');
+  assert.equal(card.why?.kind, 'ending');
+  assert.match(card.why.label, /^Closes in \d+[mh]$/);
+});
+
 await check('suggestions name people you engage with, never anybody followed or yourself', async () => {
   const reader = await newBuyer('Suggest Reader');
   const writer = await newBuyer('Suggested Writer');
