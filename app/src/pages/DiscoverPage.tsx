@@ -342,10 +342,16 @@ function DiscoverBody() {
       {loading ? (
         <DiscoverSkeleton />
       ) : lens === 'all' ? (
-        entries.length === 0 ? (
-          <EmptyState title="Quiet right now">
-            Nothing is trending yet. Start a debate or share your shelf with the + below, and be the first thing here.
-          </EmptyState>
+        // The people rail is always woven in for somebody signed in, and draws
+        // nothing when there is nobody to suggest: it is not content, so on
+        // its own it must not stand in for the empty state.
+        entries.every((entry) => entry.kind === 'people') ? (
+          <>
+            <EmptyState title="Quiet right now">
+              Nothing is trending yet. Start a debate or share your shelf with the + below, and be the first thing here.
+            </EmptyState>
+            {user && <FollowSuggestions title="People to follow" />}
+          </>
         ) : (
           <div className="discover__stream">
             {entries.map((entry, index) => {
