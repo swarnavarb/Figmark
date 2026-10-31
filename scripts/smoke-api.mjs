@@ -344,15 +344,15 @@ await check('a failure names its kind rather than saying nothing', async () => {
   const missing = toErrorResponse(Object.assign(new Error('Resource Not Found'), { code: 404 }), quiet);
   assert.equal(missing.status, 503);
   assert.equal(missing.jsonBody.error, 'store_incomplete');
-  assert.match(missing.jsonBody.message, /\/api\/health/);
+  assert.doesNotMatch(missing.jsonBody.message, /health|container|database/i);
 
   const throttled = toErrorResponse(Object.assign(new Error('Too many requests'), { code: 429 }), quiet);
   assert.equal(throttled.status, 500);
-  assert.match(throttled.jsonBody.message, /data store error 429/);
+  assert.doesNotMatch(throttled.jsonBody.message, /store|429/i);
 
   const bug = toErrorResponse(new TypeError('x is not a function'), quiet);
   assert.equal(bug.status, 500);
-  assert.match(bug.jsonBody.message, /TypeError/);
+  assert.doesNotMatch(bug.jsonBody.message, /TypeError/);
   // The detail stays in the log: no message text crosses the wire.
   assert.equal(bug.jsonBody.message.includes('x is not a function'), false);
 });

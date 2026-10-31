@@ -487,8 +487,8 @@ await check('the reason says what to do: sign up', async () => {
     ).login({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD });
     assert.fail('expected the sign-in to be refused');
   } catch (err) {
-    assert.match(err.message, /nobody has an account/i);
-    assert.match(err.message, /sign up/i);
+    assert.match(err.message, /temporarily unavailable/i);
+    assert.doesNotMatch(err.message, /database|account|connected/i);
     assert.equal(err.status, 503);
   }
 });
