@@ -350,7 +350,6 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
 function useInviteParam() {
   const [params] = useSearchParams();
   const { pathname, state } = useLocation();
-  const isStaff = Boolean(user?.capabilities?.isAdmin);
   const navigate = useNavigate();
   const code = params.get('i');
 
