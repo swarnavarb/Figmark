@@ -217,14 +217,26 @@ function request<T>(path: string, init?: RequestInit): Promise<T> {
   return promise;
 }
 
+/** Longest a request may take before it is given up on. Reads only: a write or an upload may legitimately take longer. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, {
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-      ...init,
-    });
+    // A request that never answers must end, so a screen waiting on it can say
+    // something instead of showing a spinner or nothing for ever.
+    const give = init?.signal || (init?.method ?? 'GET').toUpperCase() !== 'GET' ? null : new AbortController();
+    const timer = give ? setTimeout(() => give.abort(), REQUEST_TIMEOUT_MS) : null;
+    try {
+      response = await fetch(`/api${path}`, {
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+        ...(give ? { signal: give.signal } : {}),
+        ...init,
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   } catch {
     throw new ApiRequestError(0, 'network_error', 'Could not connect. Check your connection and try again.');
   }

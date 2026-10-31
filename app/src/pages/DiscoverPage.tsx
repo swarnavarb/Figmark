@@ -192,26 +192,30 @@ function DiscoverBody() {
   const load = useCallback(async () => {
     setError(null);
     setGuestWall(false);
-    const [community, catalogue, saved] = await Promise.allSettled([
-      api.discover(),
-      api.feed({ sort: 'popular' }),
-      user ? api.saved() : Promise.resolve({ listings: [] }),
-    ]);
-    // Each half stands on its own: the community failing still leaves the finds.
-    if (community.status === 'fulfilled') {
-      const page = community.value;
-      setStream(merge(EMPTY, page));
-      setRails({ topics: page.topics ?? [], wants: page.wants ?? [], spotted: page.spotted ?? [] });
-      setLive(page.live ?? []);
-      setContests(page.contests ?? []);
-      setNext(page.next ?? null);
-    } else {
-      setStream(EMPTY);
-      setNext(null);
-      setError(community.reason instanceof ApiRequestError ? community.reason.message : 'Could not load what is happening.');
-    }
-    setListings(catalogue.status === 'fulfilled' ? catalogue.value.listings : []);
-    if (saved.status === 'fulfilled') setHobbies(new Set(saved.value.listings.map((listing) => listing.category)));
+    // Each part lands as soon as it is read and stands on its own: one slow or
+    // failed read must not keep the others - or the page - waiting.
+    const community = api.discover().then(
+      (page) => {
+        setStream(merge(EMPTY, page));
+        setRails({ topics: page.topics ?? [], wants: page.wants ?? [], spotted: page.spotted ?? [] });
+        setLive(page.live ?? []);
+        setContests(page.contests ?? []);
+        setNext(page.next ?? null);
+      },
+      () => {
+        setStream(EMPTY);
+        setNext(null);
+        setError('Could not load what is happening. Please try again.');
+      },
+    );
+    const catalogue = api.feed({ sort: 'popular' }).then(
+      (found) => setListings(found.listings),
+      () => setListings([]),
+    );
+    const saved = user
+      ? api.saved().then((found) => setHobbies(new Set(found.listings.map((listing) => listing.category))), () => undefined)
+      : Promise.resolve();
+    await Promise.all([community, catalogue, saved]);
   }, [user]);
 
   useEffect(() => {
@@ -239,14 +243,15 @@ function DiscoverBody() {
   }, [next, more, user]);
 
   const finds = useMemo(
-    () => (listings ? rankFinds(listings, hobbies, user?.id ?? null) : []),
+    () => rankFinds(listings ?? [], hobbies, user?.id ?? null),
     [listings, hobbies, user?.id],
   );
   const entries = useMemo(
     () => (stream ? weave(stream, finds, { people: Boolean(user), wants: rails.wants, spotted: rails.spotted }) : []),
     [stream, finds, user, rails.wants, rails.spotted],
   );
-  const loading = !stream || !listings;
+  // The finds are a bonus: the page is ready once the community stream is.
+  const loading = !stream;
   const spots = useMemo(() => spotlight(live, contests, stream ?? EMPTY, finds), [live, contests, stream, finds]);
 
   const posts = (cards: PostCard[], promoted = false) => cards.map((card) => (
