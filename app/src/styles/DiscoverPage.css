@@ -6,7 +6,7 @@
 
 /* Discover: the public side, ranked. */
 
-.discpage { display: grid; gap: 14px; max-width: 680px; margin-inline: auto; }
+.discpage { display: grid; align-content: start; gap: 14px; max-width: 680px; margin-inline: auto; }
 
 /* The top: the brand's own gradient - the same violet, pink and coral the
    chosen lens and the + wear - with an aurora drifting slowly behind glass. */

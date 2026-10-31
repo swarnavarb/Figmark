@@ -226,7 +226,7 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
     });
   } catch {
-    throw new ApiRequestError(0, 'network_error', `Could not reach the API at /api${path}.`);
+    throw new ApiRequestError(0, 'network_error', 'Could not connect. Check your connection and try again.');
   }
 
   if (!response.ok) {

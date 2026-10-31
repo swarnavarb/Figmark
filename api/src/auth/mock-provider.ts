@@ -68,10 +68,10 @@ export class MockAuthProvider implements AuthService {
    */
   private requireSigningKey(): void {
     if (this.sessionSecret) return;
-    throw AuthError.signInUnavailable(
-      'Sign-in is switched off: this deployment has no session signing key. Set AUTH_SESSION_SECRET ' +
-        '(any long random string) in the app settings and restart.',
-    );
+    // The fix (set AUTH_SESSION_SECRET) is for an operator, and belongs in the
+    // server log: whoever is at the sign-in form is told nothing about setup.
+    console.error('Sign-in is off: no session signing key. Set AUTH_SESSION_SECRET and restart.');
+    throw AuthError.signInUnavailable('Sign-in is temporarily unavailable. Please try again later.');
   }
 
   /**
@@ -262,15 +262,12 @@ export class MockAuthProvider implements AuthService {
     if (!user) {
       const status = this.repository.status();
       if (!status.connected) {
-        throw AuthError.signInUnavailable(
-          `Sign-in is unavailable: the ${this.repository.backend} store is not reachable. ${status.detail}`,
-        );
+        console.error(`Sign-in unavailable: the ${this.repository.backend} store is not reachable. ${status.detail}`);
+        throw AuthError.signInUnavailable('Sign-in is temporarily unavailable. Please try again later.');
       }
       if (status.signInAccounts === 0) {
-        throw AuthError.signInUnavailable(
-          'Nobody has an account here yet: this deployment is connected to a database that holds none. ' +
-            `${status.detail} Sign up to create the first one.`,
-        );
+        console.error(`Sign-in unavailable: the store holds no accounts. ${status.detail}`);
+        throw AuthError.signInUnavailable('Sign-in is temporarily unavailable. Please try again later.');
       }
     }
 
