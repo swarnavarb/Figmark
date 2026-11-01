@@ -1220,7 +1220,7 @@ function MyItems({ store }: { store: StoreAccess }) {
           onClick={() => navigate(`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
           <span className="probadge door__flag">PRO</span>
           <span className="door__glyph" aria-hidden="true">{<Icon name="bolt" size={19} />}</span>
-          <span className="door__title">Start power selling</span>
+          <span className="door__title">Start a live drop</span>
           <span className="door__note">A whole sale, on a timer, in your channel.</span>
         </button>
       </div>
@@ -2409,7 +2409,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
             {template.description && <p className="tplcard__body">{template.description}</p>}
             <div className="tplcard__foot">
               {template.kind === 'power' ? (
-                <Link to={`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`} className="btn btn--quiet btn--sm">Use in a power sale</Link>
+                <Link to={`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`} className="btn btn--quiet btn--sm">Use in a live drop</Link>
               ) : (
                 <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(template)}>
                   Edit

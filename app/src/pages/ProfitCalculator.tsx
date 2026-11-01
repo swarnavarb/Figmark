@@ -345,7 +345,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
           <section className="card card--pad stack">
             <div>
               <h2>Saved to list later <span className="inscat__n">{calcs.length}</span></h2>
-              <span className="field__hint">Keep a worked-out item, then list it, add it to a power sale, or send it to the channel or the feed.</span>
+              <span className="field__hint">Keep a worked-out item, then list it, add it to a live drop, or send it to the channel or the feed.</span>
             </div>
             {!draft && active.id && (
               <div className="pc__keep">
