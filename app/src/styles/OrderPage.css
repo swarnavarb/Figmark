@@ -115,6 +115,8 @@
 .notice__tag { margin-left: var(--s2); vertical-align: middle; }
 .trk-photos__title { display: flex; align-items: center; gap: var(--s2); margin: 0; }
 
+/* The delivery promise, above the order's tabs. */
+.orderpromise { margin: 0 0 var(--s3); padding-block: 2px; }
 /* The item a review is about, and the nudge to write it. */
 .revitem {
   display: flex; justify-content: space-between; align-items: center; gap: var(--s2); min-width: 0;

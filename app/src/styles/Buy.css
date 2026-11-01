@@ -108,3 +108,8 @@
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--gold-ink); background: linear-gradient(90deg, var(--gold-text), var(--warn)); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
+
+/* Delivery time: two day boxes side by side, "to" between them. */
+.etafields { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: var(--s2); }
+.etafields .field { margin: 0; }
+.etafields__to { padding-bottom: 12px; color: var(--text-dim); font-size: var(--t-sm); }

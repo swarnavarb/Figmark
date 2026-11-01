@@ -16,18 +16,24 @@ import {
 import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
 import { seedTestListings } from './seed-test-catalog.js';
+import { seedDeliveredHistory, withDeliveryTimes, withViewHistory } from './seed-history.js';
 
 export * from './seed.js';
 export { renewShowcaseSales } from './seed-showcase.js';
 
 export function fixtureSet(): Fixtures {
+  // Every listing says how long it takes to arrive, and every order keeps the promise it was bought with.
+  const timed = withDeliveryTimes(
+    [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()],
+    [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders(), ...seedDeliveredHistory()],
+  );
   return {
     users: [...seedUsers(), ...seedLotBuyers()],
     routedLots: [...seedLots(), seedOpenLot(), seedShippedLot()],
     // The Buy tab's demo lots and drops, timed off the real clock.
     lots: seedShowcaseLots(),
-    listings: [...seedListings(), ...seedShowcaseListings(), ...seedTestListings()],
-    orders: [...seedOrders(), seedLiveSale(), ...seedLotOrders(), ...seedShowcaseOrders()],
+    listings: withViewHistory(timed.listings, new Set(['usr_demo'])),
+    orders: timed.orders,
     powerSales: seedShowcaseSales(),
     comments: seedComments(),
     likes: seedLikes(),

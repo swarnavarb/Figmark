@@ -192,7 +192,7 @@ const BUY: LearnTab = {
       body: 'Nothing is charged until you choose how to pay, and you always see the total first.',
       steps: [
         step('Open the listing', 'Check the photos, the condition, how many are left, whether it is **In hand** or an **Import**, and any end time. Read the questions other buyers asked.', '/learn/buy-listing.jpg', 'A listing, with the Buy button and the seller\'s record.'),
-        step('Check the seller', 'The seller card shows their trust score, on-time dispatch rate and followers. Tap their name to see reviews from earlier buyers.'),
+        step('Check the seller', 'The seller card shows their trust score, their on-time rate (orders that arrived within the days the listing promised), repeat buyers and followers. Tap their name to see reviews from earlier buyers.'),
         step('Tap Buy now', 'On a pre-order the button says **Book a place** instead. This opens checkout - it does not charge you.'),
         step('Full or advance', 'If the seller accepts an advance you can pay a percentage now and the rest later from **My Purchases**, with the same payment method.'),
         step('Choose how to pay', '- **Buy directly from the seller**: you pay them yourself (UPI, bank transfer - whatever they list). Nothing is held, so anything that goes wrong is between the two of you.\n- **Add Buyer Protection**: the payment is held by an approved Buyer Protection agent until you confirm the item arrived, and settled by Figmark if you disagree. A small fee is added.\n- **Book**: reserve it now and pay the moment the seller confirms it is available. Booking is not payment.', '/learn/buy-checkout.jpg', 'The three ways to pay, with the total for each.'),

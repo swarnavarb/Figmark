@@ -164,6 +164,9 @@ export async function placeOrder(
   // the second is refused here rather than taking the stock a second time.
   const now = new Date().toISOString();
   order.placedAt = now;
+  // The delivery time promised is the one on the item as it is placed: the
+  // on-time rate measures this order against it, from this moment.
+  order.deliveryEta = listing.deliveryEta ?? order.deliveryEta ?? null;
   await repository.updateOrder(order);
 
   // Stock comes off next, in one checked write: the check above can be beaten

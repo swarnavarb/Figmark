@@ -1,3 +1,4 @@
+import { daysAgainstPromise, dueBy, etaLabel, punctuality } from '@shared/delivery-eta';
 import { InfoTip } from '../components/InfoTip';
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
 import { DirectDealNote, RaiseDisputeModal } from '../components/DisputeFlows';
@@ -219,6 +220,9 @@ export function OrderPage() {
       {/* Cover from the forwarder flying it, and a commission with an artist:
           what can be added to this item, by the people who would do it. */}
       <OrderServices orderId={order.id} onChanged={load} />
+
+      {/* The first thing a buyer asks, answered above the tabs: the promise and where the order stands against it. */}
+      {placed && order.deliveryEta && <dl className="card card--pad orderpromise"><PromiseRow order={order} /></dl>}
 
       {placed && <div className="tabs">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
@@ -468,6 +472,30 @@ export function OrderPage() {
  * "moved to the next run" and "the airline bumped us" are one thing that
  * happened: a buyer reading two rows would wonder what the other one was.
  */
+/**
+ * The delivery time this order was bought with, the last day it covers, and
+ * how the order stands against it - the same reading the shop's on-time rate
+ * is made from, so both sides see the number's working.
+ */
+function PromiseRow({ order }: { order: Order }) {
+  const due = dueBy(order);
+  const state = punctuality(order);
+  const off = daysAgainstPromise(order);
+  const note = state === 'on_time' ? 'Arrived on time'
+    : state === 'late' ? `Arrived ${off} day${off === 1 ? '' : 's'} late`
+      : state === 'overdue' ? `${off} day${off === 1 ? '' : 's'} past the promise`
+        : state === 'pending' && off != null ? `${-off} day${off === -1 ? '' : 's'} left` : null;
+  return (
+    <div className="kv">
+      <dt>Promised delivery</dt>
+      <dd>
+        {etaLabel(order.deliveryEta)}{due ? ` · by ${formatDate(due)}` : ''}
+        {note && <span className={`badge ${state === 'on_time' || state === 'pending' ? 'badge--ok' : 'badge--warn'}`} style={{ marginLeft: 6 }}>{note}</span>}
+      </dd>
+    </div>
+  );
+}
+
 function ChangeLotDialog({ orderId, current, onClose, onDone }: {
   orderId: string;
   current: { id: string; name: string };

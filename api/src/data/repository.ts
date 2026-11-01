@@ -3,6 +3,7 @@ import type { TrackingRoute } from '../../../shared/routes.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
 import type { PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
+import type { ViewSource } from '../../../shared/seller-data.js';
 import type {
   ClientDevice,
   Dispute, Follow, Forum, SiteContent, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, StoreReview, User, Want, WantOffer, WantSeeker,
@@ -244,7 +245,8 @@ export interface Repository {
   /** Removes an order outright. Only for a cart item, which holds no stock. */
   deleteOrder(order: Order): Promise<void>;
   /** One more look at a listing's page. */
-  countView(listing: Listing): Promise<void>;
+  /** One more view, on the listing's total and on today's count for where it came from. */
+  countView(listing: Listing, source?: ViewSource): Promise<void>;
   /** A seller's checkouts nobody went ahead with - for insights, never for the order book. */
   listCheckoutDrafts(sellerId: string): Promise<Order[]>;
   /** Every save of any of these items. */

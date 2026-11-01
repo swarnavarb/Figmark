@@ -22,7 +22,7 @@ const { loginRoute: login, signupRoute: rawSignup, meRoute: me } = await import(
 const { verifiedSignup } = await import('./verified-signup.mjs');
 const signup = verifiedSignup(rawSignup);
 const {
-  createListingRoute: createListing, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,
+  createListingRoute: createListingRaw, affiliateLinkRoute: affiliateLink, openShortLinkRoute: openShortLink,
   createOrderRoute: createOrder, editListingRoute: editListing, bumpListingRoute: bump,
 } = await import(new URL('catalog-routes.js', fns));
 const {
@@ -105,6 +105,12 @@ await check('a seller you brought in is worth five friends', async () => {
   assert.equal(view.breakdown.find((line) => line.label === 'Shops you brought in').xp, 5 * XP.invite, 'five friends at the invite rate');
   assert.equal(view.tasks.find((task) => task.id.startsWith('ms-scouts-')).claimable, true);
 });
+
+/* Every listing says how long it takes to arrive; these are about sharing, so they all take a typical one. */
+const createListing = (request, ctx) => createListingRaw({
+  ...request, headers: request.headers, query: request.query, params: request.params,
+  json: async () => ({ deliveryEta: { minDays: 20, maxDays: 25 }, ...(await request.json()) }),
+}, ctx);
 
 /* ── Opens ─────────────────────────────────────────────────────────────── */
 console.log('\nopens');

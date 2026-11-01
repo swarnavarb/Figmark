@@ -18,6 +18,7 @@ import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/not
 import { notify, storeCrew } from './notify.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { dealEndsAt } from '../../../shared/deals.js';
+import { cleanEta, etaProblem, type DeliveryEta } from '../../../shared/delivery-eta.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
 import { BUMP_GUARD_MS, emptyQuestState, tidyQuestState } from '../../../shared/quest.js';
 import { emptyGrowth, tidyGrowth } from '../../../shared/store-growth.js';
@@ -50,10 +51,15 @@ import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellRest
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
+import { refreshIfStale } from '../seller-stats.js';
+import { isViewSource, searchTerm } from '../../../shared/seller-data.js';
+import { recordSearch } from '../search-log.js';
 import { alertWantsListed } from './want-routes.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
 function toSellerCard(user: SellerCardSource) {
+  // A day-old count is redone in the background: a parcel can go overdue with nobody pressing anything.
+  void getRepository().then((repository) => refreshIfStale(repository, user)).catch(() => null);
   return {
     id: user.id,
     displayName: user.displayName,
@@ -66,9 +72,11 @@ function toSellerCard(user: SellerCardSource) {
     dispatchRegion: user.sellerProfile?.dispatchRegion ?? null,
     followerCount: user.sellerProfile?.followerCount ?? 0,
     trustScore: user.sellerTrust.score,
-    // Rates are withheld until there are enough orders behind them to mean something.
-    onTimeDispatchRate: (user.sellerTrust.dispatchPromised ?? 0) >= 3 ? user.sellerTrust.onTimeDispatchRate : null,
-    repeatCustomerRate: user.sellerTrust.completedTransactions >= 5 ? user.sellerTrust.repeatCustomerRate : null,
+    // Worked out from the shop's orders against the delivery time each listing
+    // promised (api/src/seller-stats.ts); null until five orders are measured.
+    onTimeDispatchRate: user.sellerTrust.onTimeDispatchRate,
+    onTimeMeasured: user.sellerTrust.onTimeMeasured ?? 0,
+    repeatCustomerRate: user.sellerTrust.repeatCustomerRate,
     // Orders delivered and not lost in a dispute, counted as each one lands.
     completedSales: user.sellerTrust.completedTransactions,
     memberSince: user.createdAt,
@@ -153,6 +161,14 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   // The lot contributes exactly one buyer-visible fact: when it ships.
   const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
 
+  // A catalog search is counted, by term and whether anything came back: the
+  // shops' Data screens show what buyers look for, and what nobody stocks.
+  // First page only, so "Show more" is not a second search.
+  const searched = searchTerm(request.query.get('q'));
+  if (searched && !request.query.get('seller') && !request.query.get('limit')) {
+    void recordSearch(repository, searched, listings.length === 0).catch(() => undefined);
+  }
+
   return json(200, {
     listings: listings.map((listing) => ({
       ...cardListing(publicListing(listing)),
@@ -234,7 +250,9 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   // made it, and to nobody else - not even as "sold".
   if (!(await canSee(repository, listing, viewer?.id))) return error(404, 'not_found', 'No such listing.');
   // The shop's own visits are not interest in it.
-  if (viewer?.id !== listing.sellerId) void repository.countView(listing);
+  // Counted under where the viewer came from, which the app says; never who they are.
+  const from = request.query.get('from');
+  if (viewer?.id !== listing.sellerId) void repository.countView(listing, isViewSource(from) ? from : 'other');
   const [sellers, rawComments, likedIds, followed] = await Promise.all([
     repository.listUsersByIds([listing.sellerId]),
     repository.listComments(id),
@@ -798,6 +816,13 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   }
   const priceMinor = listablePrice(body.priceMinor);
   if (priceMinor === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
+
+  // How long it takes to reach the buyer is the first thing every buyer asks,
+  // so every item says it. A private deal made from one of the shop's items
+  // keeps that item's promise when the shop does not give a new one.
+  if (body.deliveryEta == null && dealSource?.deliveryEta) body.deliveryEta = dealSource.deliveryEta;
+  const etaIssue = etaProblem(body.deliveryEta);
+  if (etaIssue) return error(400, 'invalid_eta', etaIssue);
 
   // A lot can be chosen while listing rather than only afterwards, so the
   // seller is not made to publish and then go and file it. It has to be one of
@@ -1395,6 +1420,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     status: 'pending_payment',
     paymentStatus: 'unpaid',
     advancePercent: listing.advancePercent ?? null,
+    deliveryEta: listing.deliveryEta ?? null,
     payments: [],
     credits: [],
     stage: bornInLot || listing.lotId ? 'ordering' : 'preparing',
@@ -1552,12 +1578,18 @@ function listingTerms(body: {
   affiliateMinor?: number | null;
   /** What a buyer through a link saves per unit, in paise; null or 0 turns it off. */
   affiliateOffMinor?: number | null;
+  /** Days from order to delivery; checked by the caller with `etaProblem` before it gets here. */
+  deliveryEta?: DeliveryEta | null;
   /** Shipping per item inside India, in paise; 0 is free, null says nothing. */
   shippingMinor?: number | null;
   /** The shop's offers on the item; checked by `offerRefusal` before they get here. */
   offers?: unknown;
-}, priceMinor: number, previous?: Listing['affiliate']): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate' | 'shippingMinor' | 'offers'>> {
-  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate' | 'shippingMinor' | 'offers'>> = {};
+}, priceMinor: number, previous?: Listing['affiliate']): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate' | 'shippingMinor' | 'offers' | 'deliveryEta'>> {
+  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate' | 'shippingMinor' | 'offers' | 'deliveryEta'>> = {};
+  if (body.deliveryEta !== undefined) {
+    const eta = cleanEta(body.deliveryEta);
+    if (eta) terms.deliveryEta = eta;
+  }
   if (body.shippingMinor !== undefined) {
     terms.shippingMinor = body.shippingMinor === null ? null : Math.round(Number(body.shippingMinor));
   }
@@ -1678,6 +1710,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null; shippingMinor?: number | null; offers?: unknown;
     affiliateMinor?: number | null;
     affiliateOffMinor?: number | null;
+    deliveryEta?: DeliveryEta | null;
     photos?: { blobName?: string; url: string; isPrimary?: boolean }[];
   };
   try {
@@ -1687,6 +1720,11 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
+  // Once given, a delivery time can be changed but not taken away.
+  if (body.deliveryEta !== undefined) {
+    const etaIssue = etaProblem(body.deliveryEta);
+    if (etaIssue) return error(400, 'invalid_eta', etaIssue);
+  }
   const newPrice = body.priceMinor === undefined ? undefined : listablePrice(body.priceMinor);
   if (newPrice === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
   const offerProblem = offerRefusal(body, newPrice ?? listing.priceMinor);

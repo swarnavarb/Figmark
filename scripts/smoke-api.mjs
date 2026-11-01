@@ -23,7 +23,7 @@ const { verifiedSignup } = await import('./verified-signup.mjs');
 // Verified on the way out: this suite tests trading, smoke-verify.mjs tests verification.
 const signup = verifiedSignup(rawSignup);
 const {
-  feedRoute: feed, listingDetailRoute: listingDetail, createListingRoute: createListing,
+  feedRoute: feed, listingDetailRoute: listingDetail, createListingRoute: createListingRaw,
   toggleLikeRoute: toggleLike, bumpListingRoute: bump, addCommentRoute: addComment,
   toggleFollowRoute: toggleFollow, createOrderRoute: openCheckout,
   myActivityRoute: myActivity, forwardersRoute: forwarders,
@@ -233,7 +233,25 @@ const noticesFor = async (id) => (await getRepository()).listNotifications(id, 4
  * it dropping at once; unless one names its own lead time, this lets the
  * half hour pass, the way the minute timer would.
  */
+/**
+ * Every listing says how long it takes to arrive now, and a listing without
+ * one is refused. The fixtures below were written before that and are about
+ * other things, so a body that does not mention it gets a typical one; the
+ * checks about the delivery time itself send their own (or an explicit null).
+ */
+const DEFAULT_ETA = { minDays: 20, maxDays: 25 };
+const withEta = (request, add) => ({
+  ...request,
+  headers: request.headers, query: request.query, params: request.params, arrayBuffer: request.arrayBuffer,
+  json: async () => add(await request.json()),
+});
+const createListing = (request, ctx) => createListingRaw(withEta(request, (body) =>
+  body && typeof body === 'object' && !('deliveryEta' in body) ? { ...body, deliveryEta: DEFAULT_ETA } : body), ctx);
+const etaOnItems = (body) => body && Array.isArray(body.items)
+  ? { ...body, items: body.items.map((item) => item && typeof item === 'object' && !('deliveryEta' in item) ? { ...item, deliveryEta: DEFAULT_ETA } : item) }
+  : body;
 const schedulePowerSale = async (request, ctx) => {
+  request = withEta(request, etaOnItems);
   const made = await schedulePowerSaleRaw(request, ctx);
   const body = await request.json().catch(() => ({}));
   if (made.status !== 201 || body.leadMinutes !== undefined || made.jsonBody.sale.status !== 'running') return made;

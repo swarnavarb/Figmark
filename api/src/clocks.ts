@@ -21,6 +21,7 @@ import { tickPowerSales } from './functions/power-sale.js';
 import { closeDuePreOrders } from './functions/preorder.js';
 import { settleDueGames } from './play.js';
 import { sendHeldPushes } from './push.js';
+import { refreshAllSellerStats } from './seller-stats.js';
 
 /** Run one clock; a failure is logged and the rest still run. */
 async function run(
@@ -53,5 +54,10 @@ app.timer('clock', {
 
     /* Dispute deadlines and the release of money they hold: once an hour, on the first run of it. */
     if (new Date().getUTCMinutes() < 5) await disputeClock(timer, context);
+    /* Each shop's on-time and repeat-buyer numbers, once a day: a parcel goes overdue with nobody pressing anything. */
+    const at = new Date();
+    if (at.getUTCHours() === 20 && at.getUTCMinutes() < 5) {
+      await run(context, 'seller-stats-clock', () => refreshAllSellerStats(repository), (n) => `counted ${n} shop(s)`);
+    }
   },
 });

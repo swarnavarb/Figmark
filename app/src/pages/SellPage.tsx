@@ -17,7 +17,7 @@ import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
-import { AdvanceStrip, DealClock, TermsFields, termsBody, termsDraft, termsFromTemplate } from '../components/Buy';
+import { AdvanceStrip, DealClock, EtaFields, TermsFields, etaOf, termsBody, termsDraft, termsFromTemplate, termsProblem } from '../components/Buy';
 import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
   LBox, OptionTiles, PreOrderBox, ToggleRow, isoInDays, type Shape,
@@ -177,6 +177,27 @@ const WHERE_OPTIONS: { id: 'in_hand' | 'import'; icon: string; title: string; no
 const LOT_LATER = '';
 const LOT_NEW = '__new';
 
+
+const ETA_KEY = 'figmark:last-eta';
+
+/** The delivery time this browser last listed with, to start the next listing from. */
+function lastEta(): { minDays: number; maxDays: number } | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ETA_KEY) ?? 'null') as { minDays?: number; maxDays?: number } | null;
+    return raw && Number.isInteger(raw.minDays) && Number.isInteger(raw.maxDays) ? { minDays: raw.minDays!, maxDays: raw.maxDays! } : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberEta(eta: { minDays: number; maxDays: number }): void {
+  try {
+    localStorage.setItem(ETA_KEY, JSON.stringify(eta));
+  } catch {
+    /* Private window: the next form starts blank, which is still correct. */
+  }
+}
+
 /** Comma-typed tags as a list. */
 const splitTags = (text: string) => text.split(',').map((tag) => tag.trim()).filter(Boolean);
 
@@ -241,8 +262,16 @@ export function SellPage() {
   const [triedPublish, setTriedPublish] = useState(false);
   const [price, setPrice] = useState(() => restored?.price ?? (prefill?.priceMinor ? String(prefill.priceMinor / 100) : ''));
   const [costSheet, setCostSheet] = useState<CostSheetDraft | null>(restored ? restored.costSheet : prefill?.costSheet ?? null);
-  const [terms, setTerms] = useState(() => restored?.terms ? { ...termsDraft(), ...restored.terms }
-    : termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined));
+  const [terms, setTerms] = useState(() => {
+    const draft = restored?.terms ? { ...termsDraft(), ...restored.terms }
+      : termsDraft(prefill?.quantity ? { quantityAvailable: prefill.quantity } : undefined);
+    // A shop ships most things the same way: the last delivery time it gave is the likeliest answer.
+    if (!draft.etaMin && !draft.etaMax) {
+      const last = lastEta();
+      if (last) return { ...draft, etaMin: String(last.minDays), etaMax: String(last.maxDays) };
+    }
+    return draft;
+  });
   const [shareToChannel, setShareToChannel] = useState(restored?.shareToChannel ?? prefill?.share?.channel ?? true);
   const [shareToFeed, setShareToFeed] = useState(restored?.shareToFeed ?? prefill?.share?.feed ?? true);
   // The Create sheet's "Pre-order" opens this form already set to take them.
@@ -444,12 +473,13 @@ export function SellPage() {
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
-  const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR;
+  const etaIssue = termsProblem(terms);
+  const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR && !etaIssue;
   // Said beside a button that will not press, so nobody is left guessing why.
   const publishBlocker = title.trim().length <= 2 ? 'Give it a title of at least 3 characters.'
     : priceMinor < MIN_PRICE_MINOR ? `Set a price of at least ${formatMoney(MIN_PRICE_MINOR)}.`
       : priceMinor > MAX_PRICE_MINOR ? `Set a price of at most ${formatMoney(MAX_PRICE_MINOR)}.`
-      : null;
+      : etaIssue;
   // The category's required questions are asked after the first press of
   // Publish, with the unanswered ones marked, rather than leaving a button
   // that will not press.
@@ -567,6 +597,8 @@ export function SellPage() {
           : {}),
         ...(quickFill && chosenTemplate?.lotRouteId ? { lotRouteId: chosenTemplate.lotRouteId } : {}),
       })).listing.id;
+      const eta = etaOf(terms);
+      if (eta) rememberEta(eta);
       if (!createdListingId) {
         setCreatedListingId(listingId);
         // Remembered for the next item, which is the point of a template.
@@ -796,6 +828,9 @@ export function SellPage() {
             )}
           </LBox>
 
+          {/* Asked of every item, never folded away: it is what buyers ask first. */}
+          <EtaFields value={terms} onChange={setTerms} />
+
           {deal && <DealClock hours={dealHours} onChange={setDealHours} />}
 
           {/* Everything a first listing can do without: folded, with what is
@@ -817,7 +852,7 @@ export function SellPage() {
                   whenShort={whenShort} onWhenShort={setWhenShort} whenFull={whenFull} onWhenFull={setWhenFull} />
               )}
 
-              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} priceMinor={priceMinor} />
+              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} priceMinor={priceMinor} withEta={false} />
 
               {/* Telling people is part of listing, not a second job to remember
                   afterwards. Both on unless the seller says otherwise. */}

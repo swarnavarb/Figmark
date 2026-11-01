@@ -256,6 +256,16 @@ function PhoneSettings({ on }: { on: boolean }) {
         <input type="checkbox" role="switch" className="phoneprefs__switch"
           checked={prefs.quietHours} onChange={() => void save({ quietHours: !prefs.quietHours })} />
       </label>
+      <label className="phoneprefs__row">
+        <span>
+          Messages from shops
+          <span className="faint phoneprefs__hint">
+            Drops and offers a shop sends to its customers. Order and payment news always comes.
+          </span>
+        </span>
+        <input type="checkbox" role="switch" className="phoneprefs__switch"
+          checked={!prefs.shopMessagesOff} onChange={() => void save({ shopMessagesOff: !prefs.shopMessagesOff })} />
+      </label>
     </div>
   );
 }

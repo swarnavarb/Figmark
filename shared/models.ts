@@ -1,5 +1,7 @@
 import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
+import type { DeliveryEta } from './delivery-eta.js';
+import type { ViewLog } from './seller-data.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
@@ -161,17 +163,18 @@ export interface TrustSignals {
  * listing.
  */
 export interface SellerTrustSignals extends TrustSignals {
-  /** Public stat: fraction of lots dispatched by the promised date. */
+  /**
+   * Public stat: share of orders that reached the buyer within the delivery
+   * time the listing promised (see shared/delivery-eta.ts), over the last 90
+   * days. Worked out, never typed in; null below five measured orders.
+   */
   onTimeDispatchRate: number | null;
+  /** Orders behind `onTimeDispatchRate`: on time, late and overdue. Absent before the first count. */
+  onTimeMeasured?: number;
+  /** Every order ever delivered within its promised days - not only the last 90 - for the shop's XP. */
+  onTimeDelivered?: number;
   /** Fraction of buyers who ordered more than once. */
   repeatCustomerRate: number | null;
-  /**
-   * The counts behind `onTimeDispatchRate`: completed orders that had a
-   * promised dispatch date, and how many of those left by it. Kept as counts
-   * so one more order updates the rate without rereading history.
-   */
-  dispatchPromised?: number;
-  dispatchOnTime?: number;
 }
 
 /**
@@ -912,6 +915,12 @@ export interface Listing extends BaseDocument {
   /** Buyers may pay this percentage up front instead of the full amount. Null or absent: full only. */
   advancePercent?: number | null;
   /**
+   * Days from the order being placed to the buyer holding it - "45-50 days".
+   * Asked on every new listing; absent only on listings from before it was.
+   * Each order copies it, and the shop's on-time rate is measured against it.
+   */
+  deliveryEta?: DeliveryEta | null;
+  /**
    * Demand pooling, opt-in per listing.
    *
    * Lives here rather than on the lot because a shipment lot can carry five
@@ -1022,6 +1031,12 @@ export interface Listing extends BaseDocument {
    */
   soldCount?: number;
   viewCount: number;
+  /**
+   * Views per day, by where the viewer came from - counted, never named. The
+   * last 90 days are kept. Never sent to a browser: the shop reads it summed
+   * up on its Data screens.
+   */
+  viewLog?: ViewLog;
   /**
    * Last time the seller pushed this back up the feed. Rate-limited server-side
    * so bumping cannot be used to camp the top of the catalog.
@@ -1768,6 +1783,11 @@ export interface Order extends BaseDocument {
   paymentMethod?: PaymentMethod;
   /** Copied from the listing at purchase, so editing the listing cannot move it. */
   advancePercent?: number | null;
+  /**
+   * The delivery time promised when the checkout opened, copied so editing the
+   * listing cannot move it. The on-time rate measures the order against this.
+   */
+  deliveryEta?: DeliveryEta | null;
   /** Every payment as its own dated transaction; balances are summed from these. */
   payments?: PaymentRecord[];
   /** Money paid over the balance, held for the seller to refund. */
@@ -2827,6 +2847,8 @@ export interface NotificationPrefs {
   quietHours: boolean;
   /** Their IANA time zone, as their device reported it. */
   timeZone: string | null;
+  /** No group messages from shops - "new drop for our VIPs" and the like. Order news still comes. */
+  shopMessagesOff?: boolean;
 }
 
 export const CLIENT_PLATFORMS = ['ios', 'android', 'mac', 'windows', 'linux', 'other'] as const;
@@ -2958,6 +2980,8 @@ export type NotificationKind =
   | 'dispute_raised_reversal'
   /** A shop nudging a buyer: a balance to pay, a checkout left open, a saved item back. */
   | 'seller_nudge'
+  /** A shop's short message to a group of its customers - a drop, early access. Turned off with `shopMessagesOff`. */
+  | 'shop_message'
   | 'post_reacted'
   | 'post_commented'
   | 'comment_replied'
@@ -3089,6 +3113,7 @@ export interface PowerSaleItem {
   quantityMode?: 'fixed' | 'multiple';
   expiresAt?: string | null;
   advancePercent?: number | null;
+  deliveryEta?: DeliveryEta | null;
   /** The lot it travels in, when the shop picked one. */
   lotId?: string | null;
   /**

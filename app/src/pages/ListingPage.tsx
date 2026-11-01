@@ -1,3 +1,4 @@
+import { viewSourceFor } from '../cameFrom';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
@@ -11,6 +12,7 @@ import { Glyph, RarityRibbon } from '../components/Quest';
 import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
 import { factsOf } from '@shared/catalog';
+import { etaLabel } from '@shared/delivery-eta';
 import { FillBlock } from '../components/FillMeter';
 import { brandHueFor, daysUntil, formatDate, formatDateTime, formatMoney, timeAgo } from '../format';
 import { PreOrderRules, isoInDays } from '../components/ListingForm';
@@ -72,12 +74,13 @@ export function ListingPage() {
     setAction(null);
     setQuantity(1);
     void api
-      .listing(id, ref)
+      .listing(id, ref, viewSourceFor(params))
       .then((result) => !cancelled && setData(result))
       .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- where they came from is read once, as the item opens
   }, [id, ref]);
 
   const onSaved = useCallback((liked: boolean) => setData((prev) => (prev ? { ...prev, liked } : prev)), []);
@@ -167,6 +170,11 @@ export function ListingPage() {
           ? <StockChip listing={listing} />
           : <span className="badge badge--danger">Sold out</span>}
       </div>
+      {listing.deliveryEta ? (
+        <p className="buybox__adv">
+          <Svg name="ship" size={15} /> Arrives in <b>{etaLabel(listing.deliveryEta)}</b> from the order
+        </p>
+      ) : null}
       {/* Shipping is said beside the price and never added to it. */}
       <ShippingLine shippingMinor={listing.shippingMinor} offers={listing.offers} currency={listing.currency} />
       <WholesaleCallout offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency} onOpen={setOpenOffer} />
@@ -407,20 +415,20 @@ export function ListingPage() {
                   <dd>{seller.completedSales}</dd>
                   <dd className="sellercard__note">Delivered, no lost disputes</dd>
                 </div>
-                {seller.onTimeDispatchRate !== null && (
-                  <div className={`sellercard__stat sellercard__stat--${seller.onTimeDispatchRate >= 0.9 ? 'ok' : seller.onTimeDispatchRate >= 0.7 ? 'warn' : 'low'}`}>
-                    <dt><Svg name="calendar" size={13} /> On time</dt>
-                    <dd>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></dd>
-                    <dd className="sellercard__note">Dispatched by the promised date</dd>
-                  </div>
-                )}
-                {seller.repeatCustomerRate !== null && (
-                  <div className="sellercard__stat">
-                    <dt><Svg name="users" size={13} /> Repeat buyers</dt>
-                    <dd>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></dd>
-                    <dd className="sellercard__note">Ordered more than once</dd>
-                  </div>
-                )}
+                <div className={`sellercard__stat${seller.onTimeDispatchRate == null ? '' : seller.onTimeDispatchRate >= 0.9 ? ' sellercard__stat--ok' : seller.onTimeDispatchRate >= 0.7 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
+                  <dt><Svg name="clock" size={13} /> On time</dt>
+                  <dd>{seller.onTimeDispatchRate == null ? 'New' : <>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></>}</dd>
+                  <dd className="sellercard__note">
+                    {seller.onTimeDispatchRate == null
+                      ? 'Shown after 5 deliveries'
+                      : `Of ${seller.onTimeMeasured ?? 0} orders, within promised days`}
+                  </dd>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="reply" size={13} /> Repeat buyers</dt>
+                  <dd>{seller.repeatCustomerRate == null ? '—' : <>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></>}</dd>
+                  <dd className="sellercard__note">Bought here again</dd>
+                </div>
                 <div className="sellercard__stat">
                   <dt><Svg name="calendar" size={13} /> Here since</dt>
                   <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>
