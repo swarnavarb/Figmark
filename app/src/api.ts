@@ -17,7 +17,7 @@ import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, OrderStatus, Sour
 import type { DealState } from '@shared/deals';
 import type { Badge, ContestJudging, GuessView, StoreCredit } from '@shared/play';
 import type { LotTally } from '@shared/board';
-import type { FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
+import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
@@ -1266,6 +1266,8 @@ export interface PostCard {
   saved?: boolean;
   /** People the viewer follows who took part: up to three names, and how many in all. */
   followedActed?: { count: number; names: string[] } | null;
+  /** Discover only: the one line that says why this is in front of this reader. */
+  why?: DiscoverWhy | null;
 }
 
 export type PostBoost = 'trending' | 'rising' | 'result';
@@ -1310,8 +1312,29 @@ export interface DiscoverResponse {
   topics?: TopicChip[];
   wants?: WantRow[];
   spotted?: SpottedItem[];
-  /** The page after this one, or null at the end. */
+  /**
+   * The endless stream: every public post worth a look in one order made for
+   * this reader, each saying why. The first page rides with the lists above;
+   * the rest are read with `discoverMore`.
+   */
+  stream?: PostCard[];
+  /** Pass to `discoverMore` for the next page of the stream, or null at the end. */
+  nextCursor?: string | null;
+  lap?: number;
+  /** The page after this one of the lists above, or null at the end. */
   next?: number | null;
+}
+
+/** One further page of the stream, and nothing else. */
+export interface DiscoverStreamPage {
+  stream: PostCard[];
+  nextCursor: string | null;
+  /**
+   * 0 while there is something new; 1, 2... once everything new has been shown
+   * and the stream is going round again with older posts that did well. A post
+   * can come back in a later lap, so the app keys cards by lap as well.
+   */
+  lap?: number;
 }
 
 /** One post read in full, with everything said under it. */
@@ -3124,7 +3147,7 @@ export const api = {
   savePost: (channelId: string, postId: string) =>
     post<{ saved: boolean; count: number }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(postId)}/save`),
   savedPosts: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/saved${voice(as)}`),
-  hidePost: (channelId: string, postId: string, options: { notInterested?: boolean; undo?: boolean } = {}) =>
+  hidePost: (channelId: string, postId: string, options: { notInterested?: boolean; scope?: 'author' | 'topic'; undo?: boolean } = {}) =>
     post<{ hidden: boolean }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(postId)}/hide`, options),
   muteFeed: (id: string, on: boolean) => post<{ muted: boolean; count: number }>('/social/mute', { id, on }),
   feedMutes: () => request<{ muted: { id: string; name: string; handle: string | null; shop: boolean }[] }>('/social/mutes'),
@@ -3143,7 +3166,27 @@ export const api = {
     return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null; live?: PostCard[] }>(`/social/home${tail ? `?${tail}` : ''}`);
   },
   /** The public side, ranked: debates, conversations that took off, and collection flexes. */
-  discover: (page = 0) => request<DiscoverResponse>(`/social/discover${page ? `?page=${page}` : ''}`),
+  discover: (page = 0, options: { interests?: string[] } = {}) => {
+    const query = new URLSearchParams();
+    if (page) query.set('page', String(page));
+    // A guest has no history; what they opened on this device stands in for it.
+    if (options.interests?.length) query.set('interests', options.interests.join(','));
+    const tail = query.toString();
+    return request<DiscoverResponse>(`/social/discover${tail ? `?${tail}` : ''}`);
+  },
+  /**
+   * The first page of the stream alone, without the lists and rails: it is
+   * read in one short wave, so the first posts show without waiting on them.
+   */
+  discoverStream: (options: { interests?: string[] } = {}) => {
+    const query = new URLSearchParams({ stream: '1' });
+    if (options.interests?.length) query.set('interests', options.interests.join(','));
+    return request<DiscoverStreamPage>(`/social/discover?${query.toString()}`);
+  },
+  /** The lists and rails alone - the tabs, the topics, the hunts - read beside the stream. */
+  discoverLists: () => request<DiscoverResponse>('/social/discover?lists=1'),
+  /** The next page of the endless stream, from the cursor the last page gave. */
+  discoverMore: (cursor: string) => request<DiscoverStreamPage>(`/social/discover?cursor=${encodeURIComponent(cursor)}`),
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
   /** `light` is the refresh while a room is open: the posts only, without the shop's item list. */

@@ -333,7 +333,7 @@ export function SocialPostCard({
   const { confirm, dialog } = useConfirm();
   const [saved, setSaved] = useState(Boolean(initial.saved));
   /** Put out of sight by this reader, and how - kept as a stub that can be undone. */
-  const [away, setAway] = useState<'hidden' | 'less' | 'muted' | null>(null);
+  const [away, setAway] = useState<'hidden' | 'less' | 'topic' | 'muted' | null>(null);
   const shell = useRef<HTMLElement>(null);
   useSeen(shell, initial.post, Boolean(user) && !nested);
 
@@ -407,12 +407,12 @@ export function SocialPostCard({
     }
   }
 
-  async function putAway(how: 'hidden' | 'less' | 'muted') {
+  async function putAway(how: 'hidden' | 'less' | 'topic' | 'muted') {
     setMenu(false);
     setAway(how);
     try {
       if (how === 'muted') await api.muteFeed(voiceId, true);
-      else await api.hidePost(post.channelId, post.id, { notInterested: how === 'less' });
+      else await api.hidePost(post.channelId, post.id, how === 'hidden' ? { notInterested: false } : { notInterested: true, scope: how === 'topic' ? 'topic' : 'author' });
     } catch (err) {
       setAway(null);
       setError(err instanceof ApiRequestError ? err.message : 'Could not do that.');
@@ -439,7 +439,8 @@ export function SocialPostCard({
           <span>
             {away === 'muted' ? <>You will not see <strong>{post.authorName}</strong> in Discover or suggestions.</>
               : away === 'less' ? 'Hidden. You will see fewer posts like this.'
-                : 'Post hidden.'}
+                : away === 'topic' ? 'Hidden. You will see less about this topic.'
+                  : 'Post hidden.'}
           </span>
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => void bringBack()}>Undo</button>
         </p>
@@ -476,7 +477,7 @@ export function SocialPostCard({
   const type = nested ? null : contentTypeOf(card, promoted);
 
   return (
-    <article ref={shell} className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
+    <article ref={shell} data-post-id={nested ? undefined : post.id} className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {!nested && <span className="spost__glow" aria-hidden="true" />}
       {dialog}
       {type && <ContentBadge type={type} />}
@@ -484,6 +485,12 @@ export function SocialPostCard({
         <p className="spost__social">
           <Icon name="users" size={12} />
           <span>{actedLine(card.followedActed)}</span>
+        </p>
+      )}
+      {!nested && card.why && !(card.why.kind === 'followed' && card.followedActed && !following) && (
+        <p className={`spost__social spost__why spost__why--${card.why.kind}`}>
+          <span aria-hidden="true">{WHY_MARK[card.why.kind] ?? '✦'}</span>
+          <span>{card.why.label}</span>
         </p>
       )}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
@@ -565,6 +572,11 @@ export function SocialPostCard({
                     <button type="button" role="menuitem" onClick={() => void putAway('less')}>
                       <Icon name="down" size={15} /> Not interested
                     </button>
+                    {topicWords(post).length > 0 && (
+                      <button type="button" role="menuitem" onClick={() => void putAway('topic')}>
+                        <Icon name="down" size={15} /> Less like this
+                      </button>
+                    )}
                     <button type="button" role="menuitem" onClick={() => void putAway('hidden')}>
                       <Icon name="hide" size={15} /> Hide post
                     </button>
@@ -739,6 +751,21 @@ export function SocialPostCard({
 }
 
 /** "Sana reacted", "Sana and Ravi reacted", "Sana, Ravi and 3 others you follow joined in". */
+/** The small mark in front of a Discover reason, so the kind of reason reads before the words. */
+const WHY_MARK: Record<string, string> = {
+  ending: '⏳', scarce: '💎', followed: '👥', forum: '💬', prize: '🏆', popular: '⭐',
+  contested: '⚔️', 'taking-off': '🔥', filling: '📦', bought: '🛒', lively: '🗨️', shared: '🔁',
+  live: '🗳️', fresh: '✨', explore: '🧭', new: '🚀',
+};
+
+/** What a post is about, for "less like this": its #words and the labels on a shelf's pieces. */
+function topicWords(post: PostCard['post']): string[] {
+  return [
+    ...[...post.body.matchAll(HASHTAG)].map((match) => match[2]!),
+    ...(post.flex?.hotspots ?? []).map((spot) => spot.label),
+  ];
+}
+
 function actedLine(acted: NonNullable<PostCard['followedActed']>): string {
   const [first, second] = acted.names;
   if (acted.count === 1) return `${first} took part`;
