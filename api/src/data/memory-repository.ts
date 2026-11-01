@@ -16,6 +16,7 @@ import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../sh
 import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
 import { BUMP_COOLDOWN_MS, ORDER_FIGURE_FIELDS, sessionDigest } from './repository.js';
 import { photoNamesIn } from '../storage/unused.js';
+import { VIEW_LOG_DAYS, dayKey, type ViewSource } from '../../../shared/seller-data.js';
 
 /** What a test or the local server can start the in-memory store with: test-fixtures/ builds one. */
 export interface Fixtures {
@@ -446,9 +447,16 @@ export class MemoryRepository implements Repository {
     return true;
   }
 
-  async countView(listing: Listing): Promise<void> {
+  async countView(listing: Listing, source: ViewSource = 'other'): Promise<void> {
     const stored = this.listings.get(listing.id);
-    if (stored) stored.viewCount += 1;
+    if (!stored) return;
+    stored.viewCount += 1;
+    const day = dayKey();
+    const log = { ...(stored.viewLog ?? {}) };
+    log[day] = { ...(log[day] ?? {}), [source]: (log[day]?.[source] ?? 0) + 1 };
+    const oldest = dayKey(Date.now() - VIEW_LOG_DAYS * 86_400_000);
+    for (const key of Object.keys(log)) if (key < oldest) delete log[key];
+    stored.viewLog = log;
   }
 
   async deleteOrder(order: Order): Promise<void> {

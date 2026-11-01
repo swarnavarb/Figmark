@@ -1,3 +1,4 @@
+import { notePath } from './cameFrom';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FloatingCalc } from './components/FloatingCalcFab';
@@ -34,7 +35,9 @@ export function AppShell() {
   const [params] = useSearchParams();
   const query = params.get('q') ?? '';
   const [searching, setSearching] = useState(false);
-  const { pathname } = useLocation();
+  const { pathname, search: locationSearch } = useLocation();
+  // Noted after the screen has drawn, so the screen can still read where the reader came from.
+  useEffect(() => { notePath(pathname, locationSearch); }, [pathname, locationSearch]);
   const social = pathname.startsWith('/social') || pathname.startsWith('/messages/');
   // A room you write in: the tab bar steps aside for the bar you write from.
   const room = pathname.startsWith('/social/c/') || pathname.startsWith('/messages/');

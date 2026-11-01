@@ -79,6 +79,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   sale_opened: 'drops',
   sale_item: 'drops',
   seller_nudge: 'drops',
+  shop_message: 'drops',
 
   lot_moved: 'orders',
   order_delivered: 'orders',

@@ -21,6 +21,7 @@ import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
 import { mapLimit } from './lot-view.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
 import { photoNamesIn } from '../storage/unused.js';
+import { VIEW_LOG_DAYS, dayKey, type ViewSource } from '../../../shared/seller-data.js';
 import { ReadSnapshots, StaleWriteError, adopt, mergeChanges } from './concurrency.js';
 import {
   USER_PART_NAMES, fieldsOf, joinUser, mentions, partDoc, partId, rowOf,
@@ -2117,11 +2118,31 @@ export class CosmosRepository implements Repository {
     throw new StaleWriteError('That item is too busy to change right now. Try again.');
   }
 
-  async countView(listing: Listing): Promise<void> {
+  async countView(listing: Listing, source: ViewSource = 'other'): Promise<void> {
     // An increment rather than a read and a write: views never conflict, and
     // a count that misses one under load costs nothing.
-    await this.container('listings').item(listing.id, listing.sellerId)
-      .patch([{ op: 'incr', path: '/viewCount', value: 1 }, { op: 'incr', path: '/popularity', value: 1 }])
+    const item = this.container('listings').item(listing.id, listing.sellerId);
+    const totals = [{ op: 'incr', path: '/viewCount', value: 1 }, { op: 'incr', path: '/popularity', value: 1 }] as const;
+    const day = dayKey();
+    // Today's count for this source, when today and this source already have one.
+    const counted = await item
+      .patch([...totals, { op: 'incr', path: `/viewLog/${day}/${source}`, value: 1 }])
+      .then(() => true, () => false);
+    if (counted) return;
+    // First view of the day, or from this source today: the day is written whole
+    // (with what the listing held for it when read), and days past the window go.
+    const known = listing.viewLog ?? {};
+    const today = { ...(known[day] ?? {}), [source]: (known[day]?.[source] ?? 0) + 1 };
+    const oldest = dayKey(Date.now() - VIEW_LOG_DAYS * 86_400_000);
+    const stale = Object.keys(known).filter((key) => key < oldest).slice(0, 6)
+      .map((key) => ({ op: 'remove' as const, path: `/viewLog/${key}` }));
+    const added = await item
+      .patch([...totals, { op: 'add', path: `/viewLog/${day}`, value: today }, ...stale])
+      .then(() => true, () => false);
+    if (added) return;
+    // No log on the listing yet at all.
+    await item
+      .patch([...totals, { op: 'add', path: '/viewLog', value: { [day]: { [source]: 1 } } }])
       .catch(() => undefined);
   }
 

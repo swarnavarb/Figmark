@@ -231,7 +231,10 @@ async function markRead(request: HttpRequest, _context: InvocationContext) {
 }
 
 function prefsOf(prefs: NotificationPrefs | undefined): NotificationPrefs {
-  return { pushOff: prefs?.pushOff ?? [], quietHours: prefs?.quietHours ?? false, timeZone: prefs?.timeZone ?? null };
+  return {
+    pushOff: prefs?.pushOff ?? [], quietHours: prefs?.quietHours ?? false, timeZone: prefs?.timeZone ?? null,
+    shopMessagesOff: prefs?.shopMessagesOff ?? false,
+  };
 }
 
 function validTimeZone(value: unknown): string | null {
@@ -266,7 +269,7 @@ async function saveSettings(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  let body: { pushOff?: unknown; quietHours?: unknown; timeZone?: unknown };
+  let body: { pushOff?: unknown; quietHours?: unknown; timeZone?: unknown; shopMessagesOff?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -278,6 +281,9 @@ async function saveSettings(request: HttpRequest, _context: InvocationContext) {
   if (body.quietHours !== undefined && typeof body.quietHours !== 'boolean') {
     return error(400, 'invalid_settings', 'Quiet hours is on or off.');
   }
+  if (body.shopMessagesOff !== undefined && typeof body.shopMessagesOff !== 'boolean') {
+    return error(400, 'invalid_settings', 'Shop messages are on or off.');
+  }
 
   const me = await repository.getUserById(user.id);
   if (!me) return error(404, 'not_found', 'No such account.');
@@ -288,6 +294,7 @@ async function saveSettings(request: HttpRequest, _context: InvocationContext) {
       : current.pushOff,
     quietHours: typeof body.quietHours === 'boolean' ? body.quietHours : current.quietHours,
     timeZone: validTimeZone(body.timeZone) ?? current.timeZone,
+    shopMessagesOff: typeof body.shopMessagesOff === 'boolean' ? body.shopMessagesOff : current.shopMessagesOff,
   };
   await repository.updateUser({ ...me, notificationPrefs: next, updatedAt: new Date().toISOString() });
   return json(200, { prefs: next });

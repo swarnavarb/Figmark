@@ -49,6 +49,8 @@ import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
 import { refreshIfStale } from '../seller-stats.js';
+import { isViewSource, searchTerm } from '../../../shared/seller-data.js';
+import { recordSearch } from '../search-log.js';
 import { alertWantsListed } from './want-routes.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -156,6 +158,14 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   // The lot contributes exactly one buyer-visible fact: when it ships.
   const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
 
+  // A catalog search is counted, by term and whether anything came back: the
+  // shops' Data screens show what buyers look for, and what nobody stocks.
+  // First page only, so "Show more" is not a second search.
+  const searched = searchTerm(request.query.get('q'));
+  if (searched && !request.query.get('seller') && !request.query.get('limit')) {
+    void recordSearch(repository, searched, listings.length === 0).catch(() => undefined);
+  }
+
   return json(200, {
     listings: listings.map((listing) => ({
       ...cardListing(publicListing(listing)),
@@ -232,7 +242,9 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
   // made it, and to nobody else - not even as "sold".
   if (!(await canSee(repository, listing, viewer?.id))) return error(404, 'not_found', 'No such listing.');
   // The shop's own visits are not interest in it.
-  if (viewer?.id !== listing.sellerId) void repository.countView(listing);
+  // Counted under where the viewer came from, which the app says; never who they are.
+  const from = request.query.get('from');
+  if (viewer?.id !== listing.sellerId) void repository.countView(listing, isViewSource(from) ? from : 'other');
   const [sellers, rawComments, likedIds, followed] = await Promise.all([
     repository.listUsersByIds([listing.sellerId]),
     repository.listComments(id),

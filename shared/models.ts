@@ -1,6 +1,7 @@
 import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
 import type { DeliveryEta } from './delivery-eta.js';
+import type { ViewLog } from './seller-data.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
@@ -1005,6 +1006,12 @@ export interface Listing extends BaseDocument {
    */
   soldCount?: number;
   viewCount: number;
+  /**
+   * Views per day, by where the viewer came from - counted, never named. The
+   * last 90 days are kept. Never sent to a browser: the shop reads it summed
+   * up on its Data screens.
+   */
+  viewLog?: ViewLog;
   /**
    * Last time the seller pushed this back up the feed. Rate-limited server-side
    * so bumping cannot be used to camp the top of the catalog.
@@ -2771,6 +2778,8 @@ export interface NotificationPrefs {
   quietHours: boolean;
   /** Their IANA time zone, as their device reported it. */
   timeZone: string | null;
+  /** No group messages from shops - "new drop for our VIPs" and the like. Order news still comes. */
+  shopMessagesOff?: boolean;
 }
 
 export const CLIENT_PLATFORMS = ['ios', 'android', 'mac', 'windows', 'linux', 'other'] as const;
@@ -2897,6 +2906,8 @@ export type NotificationKind =
   | 'dispute_raised_reversal'
   /** A shop nudging a buyer: a balance to pay, a checkout left open, a saved item back. */
   | 'seller_nudge'
+  /** A shop's short message to a group of its customers - a drop, early access. Turned off with `shopMessagesOff`. */
+  | 'shop_message'
   | 'post_reacted'
   | 'post_commented'
   | 'comment_replied'

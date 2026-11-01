@@ -71,7 +71,7 @@ export const CONTAINERS = {
     partitionKeyPath: '/sellerId',
     rationale:
       'Storefront pages and seller dashboards read one seller at a time. The unified catalog is a cross-partition query, which is the accepted cost of keeping storefronts single-partition.',
-    excludedPaths: ['/description/?', '/photos/*'],
+    excludedPaths: ['/description/?', '/photos/*', '/viewLog/*'],
     compositeIndexes: [
       [
         { path: '/status', order: 'ascending' },

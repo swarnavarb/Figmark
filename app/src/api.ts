@@ -2557,8 +2557,14 @@ export const api = {
     return request<FeedResponse>(`/feed${suffix ? `?${suffix}` : ''}`);
   },
 
-  listing: (id: string, ref?: string | null) =>
-    request<ListingDetail>(`/listings/${encodeURIComponent(id)}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
+  /** `from` is where the reader came from, counted against the item's views (never who they are). */
+  listing: (id: string, ref?: string | null, from?: string | null) => {
+    const query = new URLSearchParams();
+    if (ref) query.set('ref', ref);
+    if (from) query.set('from', from);
+    const suffix = query.toString();
+    return request<ListingDetail>(`/listings/${encodeURIComponent(id)}${suffix ? `?${suffix}` : ''}`);
+  },
   /** Items like the one in the photo. The photo is read and dropped, never stored. */
   photoSearch: (dataUrl: string) => ask<PhotoSearchResponse>('/search/photo', { dataUrl }),
   /** Where the items in a photo already on Figmark are, or were, for sale. */

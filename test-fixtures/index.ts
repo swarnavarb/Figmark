@@ -16,7 +16,7 @@ import {
 import { seedFeedDemoPosts } from './seed-feed-demo.js';
 import { seedShowcaseListings, seedShowcaseLots, seedShowcaseOrders, seedShowcaseSales } from './seed-showcase.js';
 import { seedTestListings } from './seed-test-catalog.js';
-import { seedDeliveredHistory, withDeliveryTimes } from './seed-history.js';
+import { seedDeliveredHistory, withDeliveryTimes, withViewHistory } from './seed-history.js';
 
 export * from './seed.js';
 export { renewShowcaseSales } from './seed-showcase.js';
@@ -32,7 +32,7 @@ export function fixtureSet(): Fixtures {
     routedLots: [...seedLots(), seedOpenLot(), seedShippedLot()],
     // The Buy tab's demo lots and drops, timed off the real clock.
     lots: seedShowcaseLots(),
-    listings: timed.listings,
+    listings: withViewHistory(timed.listings, new Set(['usr_demo'])),
     orders: timed.orders,
     powerSales: seedShowcaseSales(),
     comments: seedComments(),

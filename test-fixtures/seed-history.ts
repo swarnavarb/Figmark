@@ -9,6 +9,7 @@
  */
 import type { Listing, Order } from '../shared/models.js';
 import { DIRECT_LOT_ID } from '../shared/fulfilment.js';
+import { dayKey, type ViewLog, type ViewSource } from '../shared/seller-data.js';
 
 const DAY = 86_400_000;
 const iso = (days: number) => new Date(Date.now() + days * DAY).toISOString();
@@ -16,21 +17,16 @@ const iso = (days: number) => new Date(Date.now() + days * DAY).toISOString();
 const IMPORT_ETA = { minDays: 40, maxDays: 50 };
 const IN_HAND_ETA = { minDays: 3, maxDays: 7 };
 
-/** A delivery time on every listing, and the same promise on every order bought from one. */
+/**
+ * A delivery time on every listing. Orders are left as they are: like orders
+ * placed before delivery times existed, they carry no promise and are not
+ * measured - only the history below, and orders placed from now, are.
+ */
 export function withDeliveryTimes(listings: Listing[], orders: Order[]): { listings: Listing[]; orders: Order[] } {
-  const byId = new Map<string, Listing>();
-  const out = listings.map((listing) => {
-    const next = listing.deliveryEta ? listing : { ...listing, deliveryEta: listing.sourcing === 'import' ? IMPORT_ETA : IN_HAND_ETA };
-    byId.set(next.id, next);
-    return next;
-  });
   return {
-    listings: out,
-    orders: orders.map((order) => order.deliveryEta !== undefined ? order : {
-      ...order,
-      deliveryEta: byId.get(order.listingId)?.deliveryEta
-        ?? (order.lotId && order.lotId !== DIRECT_LOT_ID ? IMPORT_ETA : IN_HAND_ETA),
-    }),
+    listings: listings.map((listing) => listing.deliveryEta ? listing
+      : { ...listing, deliveryEta: listing.sourcing === 'import' ? IMPORT_ETA : IN_HAND_ETA }),
+    orders,
   };
 }
 
@@ -87,5 +83,38 @@ export function seedDeliveredHistory(): Order[] {
       receivedAt: arrived,
       completedAt: arrived, createdAt: placed, updatedAt: arrived ?? iso(-placedAgo + 5),
     } as Order;
+  });
+}
+
+/** Where the demo views come from, roughly as a shop's do: mostly the feed and its own page. */
+const SOURCE_MIX: [ViewSource, number][] = [
+  ['feed', 34], ['shop', 18], ['search', 14], ['channel', 11], ['discover', 8], ['share', 6], ['similar', 5], ['saved', 4],
+];
+
+/**
+ * The last month of views behind each listing's total, spread over the days
+ * and the places they came from - so the shop's Data screens can draw views
+ * by day and by source for the demo account's shop.
+ */
+export function withViewHistory(listings: Listing[], sellerIds: ReadonlySet<string>): Listing[] {
+  return listings.map((listing, n) => {
+    if (!sellerIds.has(listing.sellerId) || listing.viewLog || listing.viewCount <= 0) return listing;
+    const log: ViewLog = {};
+    let left = listing.viewCount;
+    for (let day = 29; day >= 0 && left > 0; day -= 1) {
+      // A gentle rise toward today, with a wobble so no two items look alike.
+      const share = Math.max(1, Math.round((listing.viewCount / 30) * (0.6 + ((29 - day) / 29) * 0.8) * (0.8 + ((n * 7 + day * 3) % 5) / 10)));
+      const today = Math.min(left, share);
+      left -= today;
+      const key = dayKey(Date.now() - day * DAY);
+      const sources: Partial<Record<ViewSource, number>> = {};
+      let placed = 0;
+      SOURCE_MIX.forEach(([source, weight], k) => {
+        const count = k === SOURCE_MIX.length - 1 ? today - placed : Math.floor((today * weight) / 100);
+        if (count > 0) { sources[source] = count; placed += count; }
+      });
+      log[key] = sources;
+    }
+    return { ...listing, viewLog: log };
   });
 }

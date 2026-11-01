@@ -1,3 +1,4 @@
+import { viewSourceFor } from '../cameFrom';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
@@ -69,12 +70,13 @@ export function ListingPage() {
     setAction(null);
     setQuantity(1);
     void api
-      .listing(id, ref)
+      .listing(id, ref, viewSourceFor(params))
       .then((result) => !cancelled && setData(result))
       .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- where they came from is read once, as the item opens
   }, [id, ref]);
 
   const onSaved = useCallback((liked: boolean) => setData((prev) => (prev ? { ...prev, liked } : prev)), []);
