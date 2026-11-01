@@ -63,7 +63,9 @@ function toSellerCard(user: SellerCardSource) {
     dispatchRegion: user.sellerProfile?.dispatchRegion ?? null,
     followerCount: user.sellerProfile?.followerCount ?? 0,
     trustScore: user.sellerTrust.score,
-    onTimeDispatchRate: user.sellerTrust.onTimeDispatchRate,
+    // Rates are withheld until there are enough orders behind them to mean something.
+    onTimeDispatchRate: (user.sellerTrust.dispatchPromised ?? 0) >= 3 ? user.sellerTrust.onTimeDispatchRate : null,
+    repeatCustomerRate: user.sellerTrust.completedTransactions >= 5 ? user.sellerTrust.repeatCustomerRate : null,
     // Orders delivered and not lost in a dispute, counted as each one lands.
     completedSales: user.sellerTrust.completedTransactions,
     memberSince: user.createdAt,

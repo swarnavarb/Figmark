@@ -313,6 +313,8 @@ export interface SellerCard {
   followerCount: number;
   trustScore: number;
   onTimeDispatchRate: number | null;
+  /** Share of buyers who came back for a second order. Null until there is enough history. */
+  repeatCustomerRate: number | null;
   /** Orders delivered without being lost in a dispute. */
   completedSales: number;
   memberSince: string;
