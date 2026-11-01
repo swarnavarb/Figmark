@@ -9017,3 +9017,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   .debate__bar-a, .debate__bar-b, .debate__pick, .poll__fill { transition: none; }
   .debate__vs.is-knocked { animation: none; }
 }
+
+/* Offers and shipping: the two rules written outside the Offers chunk (the feed card and the order page). */
+.offr-chips { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.offr-warn { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--coral-soft); color: var(--coral); font-size: var(--t-sm); }

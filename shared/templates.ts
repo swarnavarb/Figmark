@@ -1,6 +1,7 @@
 import type { ConditionTag, Sourcing } from './enums.js';
 import type { BaseDocument } from './models.js';
 import type { LotRoute } from './routes.js';
+import type { ListingOffer } from './offers.js';
 
 /**
  * A Quick Fill template: everything a shop types the same way every time.
@@ -65,6 +66,15 @@ export interface TemplateTerms {
   /** A limited time deal's length in days; null when it is not one. */
   limitedDays: number | null;
   allowMultiple: boolean;
+  /**
+   * The rest of a listing's options, so a template can carry all of them:
+   * shipping per item (0 is free, null says nothing), the shop's offers, and
+   * the affiliate commission and link discount. Absent on older templates.
+   */
+  shippingMinor?: number | null;
+  offers?: ListingOffer[];
+  affiliateMinor?: number | null;
+  affiliateOffMinor?: number | null;
 }
 
 /**
@@ -110,6 +120,8 @@ export interface TemplateFill {
   description: string;
   sourcing: Sourcing;
   lotId: string | null;
+  /** Stock, advance, expiry, shipping, offers and commission, when the template set them. */
+  terms: TemplateTerms | null;
 }
 
 export function fillFrom(template: PostTemplate): TemplateFill {
@@ -120,5 +132,6 @@ export function fillFrom(template: PostTemplate): TemplateFill {
     description: template.description,
     sourcing: template.sourcing ?? 'in_hand',
     lotId: template.defaultLotId,
+    terms: template.terms ?? null,
   };
 }

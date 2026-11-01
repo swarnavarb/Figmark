@@ -6,6 +6,7 @@ import { isCancelledLike } from '../../../shared/orders.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
 import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf, ticksOf } from '../../../shared/routes.js';
 import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
+import { cleanOffers } from '../../../shared/offers.js';
 import { getAuthService } from '../auth/index.js';
 import { AuthError } from '../auth/errors.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
@@ -70,6 +71,12 @@ function readTerms(raw: Partial<TemplateTerms> | null | undefined): TemplateTerm
     advancePercent: raw.advancePercent == null ? null : whole(raw.advancePercent, 1, 99),
     limitedDays: raw.limitedDays == null ? null : whole(raw.limitedDays, 1, 365),
     allowMultiple: Boolean(raw.allowMultiple),
+    // Offers are checked as they are on a listing, without a price to compare
+    // against; the price is checked when an item is made from the template.
+    shippingMinor: raw.shippingMinor == null ? null : whole(raw.shippingMinor, 0, 10_000_000),
+    offers: cleanOffers(raw.offers).offers,
+    affiliateMinor: raw.affiliateMinor == null ? null : whole(raw.affiliateMinor, 100, 100_000_000),
+    affiliateOffMinor: raw.affiliateOffMinor == null ? null : whole(raw.affiliateOffMinor, 100, 100_000_000),
   };
 }
 
@@ -87,6 +94,10 @@ async function saveTemplate(request: HttpRequest, _context: InvocationContext) {
 
   const name = body.name?.trim();
   if (!name) return error(400, 'invalid_template', 'Give the template a name.');
+  if (body.terms && typeof body.terms === 'object' && body.terms.offers !== undefined) {
+    const problem = cleanOffers(body.terms.offers).error;
+    if (problem) return error(400, 'invalid_offer', problem);
+  }
 
   const repository = await getRepository();
   const existing = body.id ? await repository.getTemplate(user.id, body.id) : null;

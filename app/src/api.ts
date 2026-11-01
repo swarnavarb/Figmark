@@ -1,3 +1,4 @@
+import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
 import type { ButtonLibrary } from '@shared/route-buttons';
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
@@ -655,10 +656,20 @@ export interface PublicReview {
   /** What it was written about. Null only where the order has since gone. */
   item: {
     orderId: string; listingId: string; name: string; totalMinor: number; currency: string;
+    /** The item's photo, for the small card beside the review. */
+    photoUrl?: string | null;
   } | null;
   /** This viewer wrote it. */
   mine?: boolean;
   moderation?: ModerationMark;
+}
+
+/** What a person still owes a review on, and which deliveries they have yet to confirm arrived. */
+export interface PendingReviews {
+  pending: { orderId: string; itemName: string; photoUrl: string | null; side: 'buyer' | 'seller'; completedAt: string }[];
+  toConfirm: { orderId: string; itemName: string }[];
+  /** How many days after an order completes the app keeps asking. */
+  days: number;
 }
 
 /** An opinion left on somebody's page, which nothing had to be bought to write. */
@@ -709,7 +720,17 @@ export interface PriceChange {
 }
 
 export interface Checkout {
+  /** What is owed for everything on this order: the goods, plus shipping, less what offers took off. */
   itemMinor: number;
+  /** The seller's price for the goods alone. Shipping and offers are shown beside it, never inside it. */
+  goodsMinor?: number;
+  shippingMinor?: number;
+  offerDiscountMinor?: number;
+  appliedOffers?: AppliedOffer[];
+  /** The offers this order is under, with their terms. */
+  offerRules?: ListingOffer[];
+  /** What paying everything now, rather than an advance, would save: the shop's pay-in-full offer. */
+  prepaySavingMinor?: number;
   /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
   unavailable?: string | null;
   /** Set when the price moved since Buy was pressed; the checkout is already at the new one. */
@@ -1136,6 +1157,8 @@ export interface DisputeView {
 }
 
 export interface OrderState {
+  /** What cancelling this order would cost the rest of the buyer's basket in lost offers. */
+  offerImpact?: { extraMinor: number; lost: string[] } | null;
   order: Order;
   side: OrderSide | null;
   /** The other party, named from this viewer's side of the order. */
@@ -2654,6 +2677,8 @@ export const api = {
     inPerson?: boolean;
   }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
+  /** Reviews this person still owes on recent trades, and deliveries they have yet to confirm. */
+  pendingReviews: () => request<PendingReviews>('/me/pending-reviews'),
   myRefunds: () => request<{
     refunds: MyRefund[];
     hasDetails: boolean;

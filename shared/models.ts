@@ -2149,6 +2149,11 @@ export interface Review extends BaseDocument {
   /** Hidden until both sides submit or the reveal window expires. */
   revealed: boolean;
   revealAt: string;
+  /**
+   * What was bought, as it was when the review was written, so the small card
+   * beside the review stays true if the listing is later changed or taken down.
+   */
+  item?: { listingId: string; name: string; photoUrl: string | null };
 }
 
 /**
@@ -2887,8 +2892,7 @@ export type NotificationKind =
   | 'offer_applied'
   /** The price of an order went up: an offer no longer applies. */
   | 'offer_changed'
-  /** Reviews are waiting to be written. */
-  | 'review_reminder'
+
   /** One item reached its buyer - the step after a lot is unpacked. */
   | 'order_delivered'
   /** A held payment went to the seller: confirmed by the buyer, or on its own. */

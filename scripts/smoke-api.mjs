@@ -9681,15 +9681,41 @@ await check('levels climb on a widening curve and every level has a title', () =
     const step = quest.xpForLevel(level + 1) - quest.xpForLevel(level);
     assert.ok(step > quest.xpForLevel(level) - quest.xpForLevel(level - 1), `level ${level + 1} asks more than level ${level}`);
   }
-  assert.equal(quest.titleFor(1), 'Rookie');
-  assert.equal(quest.titleFor(14), 'Legend');
-  assert.equal(quest.titleFor(15), 'Mythic');
-  assert.equal(quest.titleFor(20), 'Icon');
-  assert.equal(quest.titleFor(40), 'Titan');
-  assert.equal(quest.titleFor(50), 'Immortal');
+  // A level reads as one of four trust tiers, with its own names for a buyer and a shop.
+  assert.equal(quest.titleFor(1), 'New Buyer');
+  assert.equal(quest.titleFor(2), 'New Buyer');
+  assert.equal(quest.titleFor(3), 'Verified Buyer');
+  assert.equal(quest.titleFor(6), 'Trusted Buyer');
+  assert.equal(quest.titleFor(9), 'Trusted Buyer');
+  assert.equal(quest.titleFor(10), 'Elite Buyer');
+  assert.equal(quest.titleFor(50), 'Elite Buyer');
+  assert.equal(quest.tierTitle(1, true), 'New Shop');
+  assert.equal(quest.tierTitle(3, true), 'Reliable Shop');
+  assert.equal(quest.tierTitle(6, true), 'Trusted Shop');
+  assert.equal(quest.tierTitle(10, true), 'Prime Shop');
 });
 
-await check('a shop levels only on quests it collected, upkeep paying a token amount', async () => {
+await check('a tier is evidence: XP alone cannot buy one without finished orders and a clean record', () => {
+  assert.equal(quest.trustCap(0, 0), 2, 'no finished order, no Verified tier');
+  assert.equal(quest.trustCap(1, 0), 5);
+  assert.equal(quest.trustCap(10, 0), 9);
+  assert.equal(quest.trustCap(40, 0), quest.MAX_LEVEL);
+  assert.equal(quest.trustCap(100, 2), 9, 'two lost disputes keep a person out of the top tier');
+  assert.equal(quest.trustCap(100, 4), 5, 'four keep them out of Trusted');
+  const lots = quest.xpForLevel(12);
+  assert.deepEqual(quest.levelWithRecord(lots, 0, 0).level, 2);
+  assert.match(quest.levelWithRecord(lots, 0, 0).heldBack, /Finish an order/);
+  assert.equal(quest.levelWithRecord(lots, 40, 0).level, 12);
+  assert.equal(quest.levelWithRecord(lots, 40, 0).heldBack, null);
+});
+
+await check('finishing and reviewing trades pays far more than anything social', () => {
+  assert.ok(quest.XP.orderDelivered >= 4 * quest.XP.post, 'a delivered order is worth many posts');
+  assert.ok(quest.XP.reviewWritten > quest.XP.like * 10);
+  assert.ok(quest.XP.orderDelivered + quest.XP.reviewWritten > quest.XP.follow * 50);
+});
+
+await check('a shop levels on finished orders and the quests it collected, upkeep paying a token amount', async () => {
   const shop = await import(new URL('../api/dist/shared/storefront.js', import.meta.url));
   const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
   const totals = {
@@ -9697,7 +9723,8 @@ await check('a shop levels only on quests it collected, upkeep paying a token am
     ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 5, soldOut: 0, trust: 0,
     preOrders: 0, disputesLost: 0, ageDays: 0,
   };
-  assert.equal(shop.storeLevel(totals, undefined).points, 0, 'what a shop did pays nothing until a quest collects it');
+  const finished = 10 * quest.XP.orderDelivered;
+  assert.equal(shop.storeLevel(totals, undefined).points, finished, 'finished orders pay on their own; nothing else does until a quest collects it');
   const facts = {
     shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
     listed: [], follows: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
@@ -9710,15 +9737,15 @@ await check('a shop levels only on quests it collected, upkeep paying a token am
   assert.equal(shelf.xp, Math.round(quest.TIER_XP[0] * growth.UPKEEP_SHARE), 'an upkeep milestone pays a token amount');
   assert.equal(shelf.bumps, 0);
   const level = shop.storeLevel(totals, state);
-  assert.equal(level.points, tasks.reduce((sum, task) => sum + task.xp, 0));
+  assert.equal(level.points, finished + tasks.reduce((sum, task) => sum + task.xp, 0));
   assert.equal(level.breakdown.find((line) => line.label === 'Sales quests').xp, quest.TIER_XP[0] + quest.TIER_XP[1]);
-  assert.equal(level.level, quest.levelFor(level.points), 'the buyer curve');
+  assert.equal(level.level, quest.levelWithRecord(level.points, 10, 0).level, 'the buyer curve, held to the shop\'s record');
 
   // A follower milestone pays only while the shop keeps the followers.
   const popular = { ...totals, followers: 12 };
   const claimed = growth.claimGrowth({ ...facts, totals: popular }, undefined, 'ms-fans-10');
-  assert.equal(shop.storeLevel(popular, claimed.state).points, quest.TIER_XP[0]);
-  assert.equal(shop.storeLevel({ ...popular, followers: 8 }, claimed.state).points, 0, 'unfollowed back below the step');
+  assert.equal(shop.storeLevel(popular, claimed.state).points, finished + quest.TIER_XP[0]);
+  assert.equal(shop.storeLevel({ ...popular, followers: 8 }, claimed.state).points, finished, 'unfollowed back below the step');
 
   const stickers = shop.storeStickers({ ...totals, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
   assert.deepEqual(stickers.slice(0, 2).map((s) => s.id), ['s-trust', 's-rated'], 'Trusted and Top rated lead once earned');
@@ -9804,7 +9831,7 @@ await check('the follower quests ask a bigger shop for more new followers', asyn
 
   // A shop that levelled up is asked for more too - by the quests it collected before this period.
   const old = '2020-01-06T00:00:00.000Z';
-  const claimed = Object.fromEntries(Array.from({ length: 90 }, (_, index) => [`weekly-sales3:old-${index}`, old]));
+  const claimed = Object.fromEntries(Array.from({ length: 270 }, (_, index) => [`weekly-sales3:old-${index}`, old]));
   assert.equal(goals(base, { claimed, spotlights: 0 }).week.goal, 5, 'level 5 asks for five');
   const fresh = Object.fromEntries(Object.keys(claimed).map((key) => [key, at]));
   assert.equal(goals(base, { claimed: fresh, spotlights: 0 }).week.goal, 3, 'quests collected this week wait for next week');
@@ -9824,7 +9851,7 @@ await check('the game needs a session, and a new account starts at level one', a
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(view.level, 1);
   assert.equal(view.xp, 0);
-  assert.equal(view.title, 'Rookie');
+  assert.equal(view.title, 'New Buyer');
   assert.equal(view.dailyRevealed, false);
   assert.ok(view.tasks.some((task) => task.kind === 'daily'));
   assert.ok(view.stickers.every((sticker) => !sticker.earned));
@@ -9833,7 +9860,7 @@ await check('the game needs a session, and a new account starts at level one', a
 await check('checking in pays once a day and starts a streak', async () => {
   const player = await newBuyer('Quest Checker');
   const first = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
-  assert.equal(first.gained, quest.ACTION_XP);
+  assert.equal(first.gained, quest.XP.checkIn);
   assert.equal(first.view.streak.current, 1);
   assert.ok(first.view.tasks.find((task) => task.id === 'daily-checkin').claimed);
   const again = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
@@ -9847,7 +9874,7 @@ await check('the daily reveal gives one card, the same one however often it is a
   assert.ok(first.card.id);
   assert.equal(first.view.dailyRevealed, true);
   assert.equal(first.view.cards.length, 1);
-  assert.equal(first.gained, quest.ACTION_XP + quest.CARD_XP[first.card.rarity]);
+  assert.equal(first.gained, quest.XP.card + quest.CARD_XP[first.card.rarity]);
   const again = (await questReveal(req({ headers: player.headers }), ctx)).jsonBody;
   assert.equal(again.card.id, first.card.id);
   assert.equal(again.gained, 0);
@@ -9905,7 +9932,7 @@ await check('an order earns XP, a milestone, and a pack that opens exactly once'
   const player = await newBuyer('Quest Buyer');
   await createOrder(req({ headers: player.headers, body: { listingId: 'lst_kbeauty', quantity: 1 } }), ctx);
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(view.xp, quest.ACTION_XP, 'an order placed is one action');
+  assert.equal(view.xp, quest.XP.orderPlaced, 'placing an order pays a little; finishing it pays far more');
   const haul = view.stickers.find((sticker) => sticker.id === 'haul');
   assert.equal(haul.tier, 1, 'bronze after one order');
   assert.equal(haul.next, 10);
@@ -9967,13 +9994,13 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
   const order = await deliveredOrderFor(player, 'lst_kbeauty');
   await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx);
   const repository = await getRepository();
-  // Twenty-two days checked in, so there is a level to lose.
-  const days = Array.from({ length: 22 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
+  // Enough days checked in that there is a level to lose.
+  const days = Array.from({ length: 140 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
   const seeded = await repository.getUserById(player.id);
   await repository.updateUser({ ...seeded, quest: { ...seeded.quest, checkIns: days } });
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   const unit = quest.ACTION_XP;
-  assert.equal(before.xp, unit + quest.TIER_XP[0] + 22 * unit, 'an order, its first milestone, twenty-two check-ins');
+  assert.equal(before.xp, quest.XP.orderPlaced + quest.XP.orderDelivered + quest.TIER_XP[0] + 140 * quest.XP.checkIn, 'an order placed and delivered, its first milestone, and the check-ins');
   assert.equal(before.level, 2);
 
   const now = new Date().toISOString();
@@ -10034,7 +10061,7 @@ await check('a delivered purchase can go in the collection, once, and be renamed
 
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(view.stickers.find((sticker) => sticker.id === 'curator').tier, 1);
-  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === quest.ACTION_XP));
+  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === quest.XP.collectionItem));
 
   const seen = (await publicCollection(req({ params: { id: player.id } }), ctx)).jsonBody;
   assert.equal(seen.items.length, 1);
@@ -10407,7 +10434,7 @@ await check('direct and protected buyers in one lot go through the same unpack-a
 });
 
 await check('a quest claimed on saves opens again, and pays nothing, once the saves are taken back', async () => {
-  const { questView, claimKey, TASK_XP, ACTION_XP } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
+  const { questView, claimKey, TASK_XP, XP } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
   const now = Date.now();
   const at = new Date(now).toISOString();
   const facts = (saves) => ({
@@ -10424,7 +10451,7 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
   const redone = questView('usr_x', facts(3), state, now);
   assert.equal(quests(met), TASK_XP.daily, 'three saves: the claimed reward counts');
   assert.equal(quests(undone), 0, 'one save taken back: the reward goes with it');
-  assert.equal(met.xp - undone.xp, TASK_XP.daily + ACTION_XP, 'the quest reward and the save itself both come off');
+  assert.equal(met.xp - undone.xp, TASK_XP.daily + XP.like, 'the quest reward and the save itself both come off');
   assert.equal(quests(redone), TASK_XP.daily, 'saving again brings the same claim back, not a second one');
   const task = undone.tasks.find((entry) => entry.id === 'daily-save3');
   if (task) {
@@ -13327,6 +13354,34 @@ await check('a shop changing its offers later cannot reprice an order already pl
   assert.equal((await repo.getOrder(first.id)).shipPerItemMinor, 5_000, 'the placed order keeps the fee it was bought at');
   assert.equal((await repo.getOrder(first.id)).offerRules.length, 1);
   assert.equal(second.shipPerItemMinor, 50_000);
+});
+
+await check('pending reviews: a recent completed order is asked for once, on both sides, and stops when reviewed', async () => {
+  const { pendingReviewsRoute: pendingReviews } = await import(new URL('order-routes.js', fns));
+  const buyer = await newBuyer('Review Prompt Buyer');
+  const listing = await offerListing('Review prompt figure');
+  const placed = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const repo = await getRepository();
+  const now = new Date().toISOString();
+  // Paid and delivered: an order still owing money cannot be reviewed yet, and is not asked about.
+  await repo.updateOrder({ ...placed, status: 'delivered', paymentStatus: 'paid', completedAt: now, updatedAt: now });
+
+  const buyerSees = (await pendingReviews(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.equal(buyerSees.pending.length, 1);
+  assert.equal(buyerSees.pending[0].itemName, 'Review prompt figure');
+  assert.equal(buyerSees.pending[0].side, 'buyer');
+  const sellerSees = (await pendingReviews(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(sellerSees.pending.some((row) => row.orderId === placed.id && row.side === 'seller'), 'the shop is asked to review the buyer too');
+
+  const reviewed = await reviewOrder(req({ headers: buyer.headers, params: { id: placed.id }, body: { rating: 5, body: 'Great.' } }), ctx);
+  assert.equal(reviewed.status, 201, JSON.stringify(reviewed.jsonBody));
+  assert.equal(reviewed.jsonBody.review.item.name, 'Review prompt figure', 'the review keeps the item it was about');
+  assert.equal((await pendingReviews(req({ headers: buyer.headers }), ctx)).jsonBody.pending.length, 0, 'asked no more once reviewed');
+
+  // A week on, the app lets go of it.
+  const old = new Date(Date.now() - 9 * 86_400_000).toISOString();
+  await repo.updateOrder({ ...(await repo.getOrder(placed.id)), completedAt: old });
+  assert.equal((await pendingReviews(req({ headers: auth }), ctx)).jsonBody.pending.some((row) => row.orderId === placed.id), false);
 });
 
 console.log(`\n${passed} checks passed`);

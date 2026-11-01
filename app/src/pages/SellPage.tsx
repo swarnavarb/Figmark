@@ -17,7 +17,7 @@ import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
-import { AdvanceStrip, DealClock, TermsFields, termsBody, termsDraft } from '../components/Buy';
+import { AdvanceStrip, DealClock, TermsFields, termsBody, termsDraft, termsFromTemplate } from '../components/Buy';
 import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
   LBox, OptionTiles, PreOrderBox, ToggleRow, isoInDays, type Shape,
@@ -418,6 +418,13 @@ export function SellPage() {
     }
     if (free('description', description, initial && Boolean(prefill?.description))) setDescription(next.description);
     applied.current = next;
+    // Advance, expiry, shipping, offers and commission, when the template set them.
+    // Stock is the item's own, so it is kept as the form has it.
+    if (fill.terms && !(initial && prefill)) {
+      setTerms((current) => termsFromTemplate(current, {
+        ...fill.terms!, quantityMode: current.quantityMode, quantity: Number(current.quantity) || 1,
+      }));
+    }
     setPreLot(template.preLotRoute?.steps ?? null);
     // A lot named by the template wins; otherwise the template's own answer
     // about what it lists, which is the thing a shop should not have to repeat

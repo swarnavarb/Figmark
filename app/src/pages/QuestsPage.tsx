@@ -2,7 +2,7 @@ import { formatCount } from '../format';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  ACTION_CAP, ACTION_XP, CARDS, CARD_SETS, MAX_LEVEL, SET_BONUS_XP, type CardDef, type StickerView, type TaskKind,
+  CARDS, CARD_SETS, MAX_LEVEL, SET_BONUS_XP, XP, type CardDef, type StickerView, type TaskKind,
 } from '@shared/quest';
 import type { StoreAccess } from '@shared/stores';
 import { api, type InviteSummary, type LeaderRow } from '../api';
@@ -109,13 +109,14 @@ export function QuestsPage() {
           xp={view.xp} toNext={view.level >= MAX_LEVEL ? null : view.nextLevelXp - view.xp} nextLevel={view.level + 1} bumps={view.bumps}
           info={(
             <>
-              <b>How you level</b>
-              <p>XP comes from what you do here: orders, reviews, sharing, check-ins, quests, cards and complete sets. Most counted actions pay {ACTION_XP} XP each, up to {ACTION_CAP} of a kind.</p>
-              <p>Every level opens a card pack{(view.level + 1) % 5 === 0 ? ' - the next one is epic or better' : ', and every fifth is epic or better'}.</p>
-              <p>Low ratings from sellers and lost disputes take XP away, so a level says how you trade.</p>
+              <b>How your trust tier works</b>
+              <p>Your level reads as a tier: New Buyer, Verified Buyer, Trusted Buyer, then Elite Buyer. Finishing an order pays {XP.orderDelivered} XP and writing a review pays {XP.reviewWritten}. Following, saving and posting pay only a few points each, so a tier is earned by trading well.</p>
+              <p>A tier needs a record: a first finished order for Verified, ten for Trusted and forty for Elite. Confirming delivery promptly and reviewing right after, as a buyer or a seller, is what moves you up.</p>
+              <p>Low ratings and lost disputes take XP away, and a few lost disputes hold your tier back.</p>
             </>
           )}
         />
+        {view.heldBack && <p className="notice notice--warn" role="status">{view.heldBack}</p>}
 
         <section className="qpanel qstreak">
           <span className="qstreak__flame"><Glyph name="flame" size={18} /><b>{view.streak.current}</b></span>
@@ -125,7 +126,7 @@ export function QuestsPage() {
               <span className="faint">best {view.streak.best}</span>
               <InfoTip label="About streaks">
                 <b>Streaks</b>
-                <p>Check in once a day, India time, for {ACTION_XP} XP. Days in a row climb the On Fire milestone: 7, 30 and 100 days.</p>
+                <p>Check in once a day, India time, for {XP.checkIn} XP. Days in a row climb the On Fire milestone: 7, 30 and 100 days.</p>
               </InfoTip>
             </span>
             <span className="qweek">
@@ -139,7 +140,7 @@ export function QuestsPage() {
           </span>
           {!view.streak.checkedInToday ? (
             <button type="button" className="btn btn--sm qbtn-gold" onClick={() => void act(api.questCheckIn)}>
-              Check in · +{ACTION_XP}
+              Check in · +{XP.checkIn}
             </button>
           ) : <span className="qok qstreak__done">✓ Today</span>}
         </section>
@@ -198,7 +199,7 @@ export function QuestsPage() {
           <span className="faint">{view.cards.length} pulled</span>
           <InfoTip label="About cards">
             <b>Cards</b>
-            <p>Cards come from the daily Reveal, every level and every milestone. Each card is worth {ACTION_XP} XP. Finish a set of six for {SET_BONUS_XP} XP and its Master sticker.</p>
+            <p>Cards come from the daily Reveal, every level and every milestone. Each card is worth {XP.card} XP. Finish a set of six for {SET_BONUS_XP} XP and its Master sticker.</p>
             <p>Tap a card to read it.</p>
           </InfoTip>
         </div>

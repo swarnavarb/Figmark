@@ -1,0 +1,75 @@
+/*
+ * Shipping tags and offers: the chips on a card, the shipping line and the
+ * sideways-scrolling offers row on an item, and the seller's offer editor.
+ */
+
+/* ── On a card ─────────────────────────────────────────────────────────── */
+.offr-chip {
+  display: inline-flex; align-items: center; padding: 2px var(--s2); border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: var(--w-semi); white-space: nowrap;
+  background: var(--surface-2); color: var(--text-dim); box-shadow: inset 0 0 0 1px var(--border);
+}
+.offr-chip--free { background: var(--ok-soft); color: var(--ok); box-shadow: inset 0 0 0 1px var(--ok); }
+.offr-chip--wholesale { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-line); }
+
+/* ── Shipping, under the price on the item ─────────────────────────────── */
+.offr-ship { display: grid; gap: 2px; font-size: var(--t-sm); }
+.offr-ship__fee { color: var(--text-dim); font-weight: var(--w-semi); }
+.offr-ship__fee.is-free { color: var(--ok); }
+.offr-ship__way { color: var(--ok); font-size: var(--t-xs); font-weight: var(--w-medium); }
+
+/* ── Wholesale, where the price is ─────────────────────────────────────── */
+.offr-wholesale {
+  display: grid; gap: 2px; text-align: left; width: 100%; cursor: pointer;
+  padding: var(--s2) var(--s3); border-radius: var(--r-md);
+  background: var(--accent-soft); color: var(--text); border: 1px solid var(--accent-line);
+}
+.offr-wholesale b { color: var(--accent-text); font-size: var(--t-sm); }
+.offr-wholesale span { font-size: var(--t-xs); color: var(--text-dim); }
+.offr-wholesale u { color: var(--accent-text); margin-left: var(--s1); }
+
+/* ── The offers row ────────────────────────────────────────────────────── */
+.offr-rail { display: grid; gap: var(--s2); min-width: 0; }
+.offr-rail__title { margin: 0; font-size: var(--t-sm); display: flex; align-items: baseline; gap: var(--s2); }
+.offr-rail__title small { color: var(--text-faint); font-weight: var(--w-medium); }
+.offr-rail__row {
+  display: flex; gap: var(--s2); overflow-x: auto; padding-bottom: var(--s1);
+  scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+}
+.offr-pill {
+  flex: 0 0 auto; display: grid; gap: 1px; text-align: left; cursor: pointer; scroll-snap-align: start;
+  padding: var(--s2) var(--s3); border-radius: var(--r-md); max-width: 220px;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+}
+.offr-pill:hover { border-color: var(--accent-line); }
+.offr-pill__label { font-size: var(--t-sm); font-weight: var(--w-semi); }
+.offr-pill__more { font-size: var(--t-2xs); color: var(--accent-text); }
+.offr-pill--wholesale { border-color: var(--accent-line); background: var(--accent-soft); }
+
+.offr-sheet { display: grid; gap: var(--s3); }
+.offr-sheet__summary { margin: 0; font-size: var(--t-md); }
+.offr-sheet__next { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--ok-soft); color: var(--ok); font-size: var(--t-sm); }
+.offr-sheet__h { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.offr-sheet__terms { margin: 0; padding-left: var(--s4); display: grid; gap: var(--s1); font-size: var(--t-sm); color: var(--text-dim); }
+.offr-sheet__acts { display: flex; justify-content: flex-end; }
+.offr-tiers { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.offr-tiers th, .offr-tiers td { text-align: left; padding: var(--s1) var(--s2); border-bottom: 1px solid var(--border); }
+.offr-tiers th { color: var(--text-faint); font-weight: var(--w-medium); }
+
+/* ── On the checkout and the order ─────────────────────────────────────── */
+.offr-note { display: grid; gap: var(--s2); font-size: var(--t-xs); color: var(--text-dim); min-width: 0; }
+.offr-note p { margin: 0; }
+.offr-sum { display: grid; gap: var(--s1); font-size: var(--t-sm); }
+.offr-sum__row { display: flex; justify-content: space-between; gap: var(--s3); }
+.offr-sum__row--off { color: var(--ok); }
+.offr-sum__row--total { font-weight: var(--w-bold); border-top: 1px solid var(--border); padding-top: var(--s1); }
+
+/* ── The seller's editor ───────────────────────────────────────────────── */
+.offr-edit { display: grid; gap: var(--s3); min-width: 0; }
+.offr-edit__card { display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); }
+.offr-edit__head { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); }
+.offr-edit__pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.offr-edit__tiers { display: grid; gap: var(--s2); }
+.offr-edit__tier { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: var(--s2); align-items: end; }
+.offr-edit__preview { margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.offr-edit__preview b { color: var(--text); font-weight: var(--w-medium); }

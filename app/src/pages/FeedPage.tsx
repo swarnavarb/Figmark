@@ -1,3 +1,5 @@
+import { ShippingChip, WholesaleChip } from '../components/Offers';
+import { wholesaleHint } from '@shared/offers';
 import { useNow } from '../clock';
 import {
   Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
@@ -673,6 +675,13 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
           </span>
           <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
         </span>
+        {/* Shipping is beside the price, never in it; wholesale is the one offer worth a flag. */}
+        {(listing.shippingMinor != null || wholesaleHint(listing.offers, listing.priceMinor)) && (
+          <span className="offr-chips">
+            <ShippingChip shippingMinor={listing.shippingMinor} />
+            <WholesaleChip offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency} />
+          </span>
+        )}
         <span className="qloot__meta">
           {rarity.hoursLeft !== null ? (
             <span className={`qtimer${rarity.hoursLeft <= 24 ? ' qhot' : ''}`}>

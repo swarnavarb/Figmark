@@ -19,6 +19,7 @@ import {
   daysFrom,
   disputeSubjects,
   isCancelledLike,
+  REVIEW_PROMPT_DAYS,
   isOpenUnpaid,
   isPlaced,
   isStopped,
@@ -328,6 +329,9 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     const listing = await repository.getListing(order.listingId);
     unavailable = unavailableReason(listing, order);
     if (listing) await repriceCheckout(repository, order, listing);
+    // Whether they pay in full is decided when they pay, not before: a checkout
+    // opened again starts from the price without the pay-in-full offer.
+    order.paidInFull = false;
     // And against what else is in their basket: an offer is earned by the group.
     await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
   }
@@ -476,6 +480,7 @@ async function review(request: HttpRequest, _context: InvocationContext) {
   }
 
   const now = new Date().toISOString();
+  const bought = await repository.getListing(order.listingId);
   const written: Review = {
     id: `rev_${randomUUID().slice(0, 12)}`,
     subjectId: side === 'buyer' ? order.sellerId : order.buyerId,
@@ -487,6 +492,12 @@ async function review(request: HttpRequest, _context: InvocationContext) {
     // The counterparty's review, if it exists, is what reveals both.
     revealed: existing.length > 0,
     revealAt: daysFrom(REVIEW_REVEAL_DAYS),
+    // The item, kept with the review so its small card stays true.
+    item: {
+      listingId: order.listingId,
+      name: order.itemName,
+      photoUrl: bought?.photos?.[0]?.thumbUrl ?? bought?.photos?.[0]?.url ?? null,
+    },
     createdAt: now,
     updatedAt: now,
   };
@@ -1755,6 +1766,50 @@ export const startRefundRoute = handler(startRefund);
 export const flagDisputeRoute = handler(flagDispute);
 export const myDisputesRoute = handler(myDisputes);
 export const myRefundsRoute = handler(myRefunds);
+/**
+ * GET /api/me/pending-reviews - what this person still owes a review on, and
+ * what they still have to confirm arrived.
+ *
+ * Only recent trades: a review is worth most while the trade is fresh, so the
+ * app asks for a week after an order completes and then lets go. Both sides
+ * are asked - a seller reviews their buyer too, and both climb for it.
+ */
+async function pendingReviews(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const since = Date.now() - REVIEW_PROMPT_DAYS * 86_400_000;
+  const [bought, sold] = await Promise.all([repository.listOrdersForBuyer(user.id), repository.listOrdersForSeller(user.id)]);
+  const mine = [...bought, ...sold.filter((order) => order.buyerId !== user.id)].filter((order) => order.placedAt !== null);
+
+  const recent = mine.filter((order) => order.completedAt && Date.parse(order.completedAt) >= since && !isStopped(order.status));
+  const awaiting = await Promise.all(recent.map(async (order) => ({
+    order, reviews: await repository.listReviewsForOrder(order.id),
+  })));
+  const owed = awaiting.filter(({ order, reviews }) => !isOpenUnpaid(order) && !reviews.some((entry) => entry.authorId === user.id));
+
+  // Delivered, but the buyer has not said it arrived: nothing can be reviewed until they do.
+  const toConfirm = bought.filter((order) => order.status === 'delivered' && !order.completedAt && !isStopped(order.status));
+
+  const listings = new Map<string, Awaited<ReturnType<typeof repository.getListing>>>();
+  for (const { order } of owed) {
+    if (!listings.has(order.listingId)) listings.set(order.listingId, await repository.getListing(order.listingId));
+  }
+  return json(200, {
+    pending: owed.map(({ order }) => ({
+      orderId: order.id,
+      itemName: order.itemName,
+      photoUrl: listings.get(order.listingId)?.photos?.[0]?.thumbUrl ?? listings.get(order.listingId)?.photos?.[0]?.url ?? null,
+      side: order.buyerId === user.id ? 'buyer' : 'seller',
+      completedAt: order.completedAt,
+    })),
+    toConfirm: toConfirm.map((order) => ({ orderId: order.id, itemName: order.itemName })),
+    days: REVIEW_PROMPT_DAYS,
+  });
+}
+export const pendingReviewsRoute = handler(pendingReviews);
+
 export const claimPaymentRoute = handler(claimPayment);
 /**
  * POST /api/orders/{id}/reject - the seller cannot serve this order.
@@ -2496,6 +2551,7 @@ app.http('order-credit-apply', { ...anon, methods: ['POST'], route: 'orders/{id}
 app.http('order-refund-new', { ...anon, methods: ['POST'], route: 'orders/{id}/refund-new', handler: startRefundRoute });
 app.http('order-flag-dispute', { ...anon, methods: ['POST'], route: 'orders/{id}/flag-dispute', handler: flagDisputeRoute });
 app.http('my-disputes', { ...anon, methods: ['GET'], route: 'me/disputes', handler: myDisputesRoute });
+app.http('me-pending-reviews', { ...anon, methods: ['GET'], route: 'me/pending-reviews', handler: pendingReviewsRoute });
 app.http('my-refunds', { ...anon, methods: ['GET'], route: 'me/refunds', handler: myRefundsRoute });
 app.http('order-credit-hold', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-hold', handler: holdCreditRoute });
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });

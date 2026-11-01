@@ -225,8 +225,8 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
       kind: 'order_delivered',
       title: `Your order from ${named.shop} was delivered`,
       body: held
-        ? `${order.itemName}. Tap "Yes, it arrived" once it is in your hands to release the payment, or open a dispute if something is wrong.`
-        : `${order.itemName}. Tap "I received it" once it is in your hands, then leave a review.`,
+        ? `${order.itemName}. Tap "Yes, it arrived" once it is in your hands to release the payment, or open a dispute if something is wrong. Confirming promptly and leaving a review raises your trust and reputation.`
+        : `${order.itemName}. Tap "I received it" once it is in your hands, then leave a review - it raises your trust and reputation.`,
       link: `/order/${encodeURIComponent(order.id)}`,
     },
     { except: by },
