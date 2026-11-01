@@ -148,7 +148,7 @@ export function reliabilityOf(orders: readonly Order[], now = Date.now()): Relia
 /** "Pays within a day" and its like: the record in a few words, for a list row. */
 export function reliabilityWord(record: Reliability): { word: string; tone: 'ok' | 'warn' | 'neutral' } {
   if (record.disputes > 0 || record.deniedClaims > 0 || record.neverPaid > 1) return { word: 'Check first', tone: 'warn' };
-  if (record.payHours === null) return { word: 'No payments yet', tone: 'neutral' };
+  if (record.payHours === null) return record.paidUp > 0 ? { word: 'Paid up', tone: 'ok' } : { word: 'No payments yet', tone: 'neutral' };
   if (record.payHours <= 24) return { word: 'Pays within a day', tone: 'ok' };
   if (record.payHours <= 72) return { word: 'Pays within 3 days', tone: 'ok' };
   return { word: 'Slow to pay', tone: 'warn' };

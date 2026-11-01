@@ -13,7 +13,8 @@ import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { listingRarity } from '@shared/quest';
 import { LotName, LotPhaseBadge, lotLabel } from '../components/LotName';
 import { useUndo } from '../components/Undo';
-import { InsightsPanel } from './InsightsPanel';
+import { INSIGHT_HOME, isInsightCategory } from './InsightsPanel';
+import { CustomersSection, DataOverviewSection, ItemsDataSection, MoneyProBlock, OperationsSection } from './DataSections';
 import { ProfitCalculator } from './ProfitCalculator';
 import { SalesPanel } from './SalesPanel';
 import { BackBar } from '../components/ScrollManager';
@@ -97,7 +98,8 @@ function Later({ children }: { children: ReactNode }) {
   return <Suspense fallback={<Loading />}>{children}</Suspense>;
 }
 
-type Section = 'items' | 'payments' | 'insights' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage';
+type Section = 'items' | 'payments' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage'
+  | 'overview' | 'customers' | 'itemdata' | 'operations';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -106,24 +108,37 @@ const SECTIONS: { id: Section; label: string }[] = [
   // to live. The id stays `payments` - it is the identity, and renaming it
   // would only be a way to break the rights that reference it.
   { id: 'payments', label: 'Orders' },
-  // Who saved what, who stopped at Buy, and how items convert - the Pro tab.
-  { id: 'insights', label: 'Insights' },
-  // Landed cost and margin on the seller's own rates - Pro, beside Insights.
+  /* The Data tab, by job. Insights used to be one Pro tab of eighteen views;
+     each view now sits in the section it helps with, beside the free figures
+     there, and an old `?tab=insights&view=…` link lands in the right one. */
+  { id: 'overview', label: 'Overview' },
+  { id: 'customers', label: 'Customers' },
+  { id: 'itemdata', label: 'Items' },
+  { id: 'operations', label: 'Operations' },
+  // The sales report and the profit book. The id stays `analytics`: links and rights name it.
+  { id: 'analytics', label: 'Money' },
+  // Landed cost and margin on the seller's own rates - Pro.
   { id: 'calculator', label: 'Calculator' },
   // Every amount owed back to a buyer - overpaid, cancelled, or a refund the
   // seller starts - in one place, set apart on the right of the same row.
   { id: 'refunds', label: 'Refunds' },
   { id: 'lots', label: 'Lots' },
   { id: 'routes', label: 'Routes' },
-  { id: 'analytics', label: 'Analytics' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
   // Polls, debates, competitions and guesses the shop runs for its buyers.
   { id: 'engage', label: 'Engage' },
 ];
 
-/** Sections that are Pro: they wear the gold chip and the PRO badge. */
-const PRO_SECTIONS: readonly Section[] = ['insights', 'calculator'];
+/**
+ * Sections that are wholly Pro: they wear the gold chip and the PRO badge.
+ * The other Data sections are free with Pro parts, marked where they sit. Pro
+ * is open to every shop until it is switched on with real payments.
+ */
+const PRO_SECTIONS: readonly Section[] = ['calculator'];
+
+/** Sections that read the shop's numbers, and so need its analytics right. */
+const DATA_SECTIONS: readonly Section[] = ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'];
 
 /**
  * Which sections belong to the same Sell-home card, so the chip bar under a
@@ -142,7 +157,7 @@ const SECTION_GROUPS: Record<Group, Section[]> = {
   orders: ['payments', 'refunds'],
   lots: ['lots', 'routes'],
   engage: ['engage'],
-  money: ['analytics', 'insights', 'calculator'],
+  money: ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'],
   settings: ['storefront', 'people'],
 };
 
@@ -259,6 +274,17 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
    * reads as the app having forgotten what you were doing.
    */
   const [params, setParams] = useSearchParams();
+  // The old Insights tab: its views now live in the Data sections. A link to
+  // one of them lands in the section that holds it, on the same view.
+  useEffect(() => {
+    if (params.get('tab') !== 'insights') return;
+    const view = params.get('view');
+    setParams((current) => {
+      const copy = new URLSearchParams(current);
+      copy.set('tab', isInsightCategory(view) ? INSIGHT_HOME[view] : 'overview');
+      return copy;
+    }, { replace: true });
+  }, [params, setParams]);
   const requested = params.get('tab');
   const setSection = (next: Section, extra: Record<string, string> = {}) =>
     setParams((current) => {
@@ -267,7 +293,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       // A sub-view belongs to the tab it was opened in, and so does an order
       // waiting to be filed into a lot about to be opened, an open lot, and
       // a list's filter.
-      for (const key of ['view', 'file', 'lot', 'show', 'state']) copy.delete(key);
+      for (const key of ['view', 'file', 'lot', 'show', 'state', 'customer']) copy.delete(key);
       for (const [key, value] of Object.entries(extra)) copy.set(key, value);
       return copy;
     }, { replace: true });
@@ -277,7 +303,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
   // worse than a tab that is not there.
   const visible = SECTIONS.filter((entry) => {
     if (entry.id === 'items') return store.permissions.includes('listings');
-    if (entry.id === 'analytics' || entry.id === 'insights' || entry.id === 'calculator') return store.permissions.includes('analytics');
+    if (DATA_SECTIONS.includes(entry.id)) return store.permissions.includes('analytics');
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     if (entry.id === 'engage') return store.permissions.includes('posts');
@@ -351,12 +377,15 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         <div className="tab-view" style={{ marginTop: chips.length > 1 ? 14 : 20 }} key={`${store.ownerId}:${active}`}>
           {active === 'items' && <MyItems store={store} />}
           {active === 'payments' && <Orders store={store} />}
-          {active === 'insights' && <InsightsPanel store={store} />}
+          {active === 'overview' && <DataOverviewSection store={store} onGo={(section) => setSection(section)} />}
+          {active === 'customers' && <CustomersSection store={store} />}
+          {active === 'itemdata' && <ItemsDataSection store={store} />}
+          {active === 'operations' && <OperationsSection store={store} />}
           {active === 'calculator' && <ProfitCalculator store={store} />}
           {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <Later><RoutesList spotlightNew={params.get('spotlight') === 'new'} /></Later>}
-          {active === 'analytics' && <Analytics store={store} />}
+          {active === 'analytics' && <><Analytics store={store} /><div style={{ marginTop: 20 }}><MoneyProBlock store={store} /></div></>}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
           {active === 'engage' && <Later><EngagePanel store={store} /></Later>}

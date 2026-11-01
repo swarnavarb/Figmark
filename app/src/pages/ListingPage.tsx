@@ -167,7 +167,7 @@ export function ListingPage() {
           : <span className="badge badge--danger">Sold out</span>}
       </div>
       {listing.deliveryEta ? (
-        <p className="buybox__adv buybox__eta">
+        <p className="buybox__adv">
           <Svg name="ship" size={15} /> Arrives in <b>{etaLabel(listing.deliveryEta)}</b> from the order
         </p>
       ) : null}

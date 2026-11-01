@@ -3113,6 +3113,19 @@ export const api = {
   nudge: (body: NudgeRequest, storeId?: string) =>
     post<{ sent: true }>(`/me/nudge${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, body),
 
+  /** Everybody who bought here, the shop's customer summary, and the deeper (Pro) readings. */
+  customers: (days: number, storeId?: string) =>
+    request<CustomersResponse>(`/me/customers?days=${days}${storeId ? `&store=${encodeURIComponent(storeId)}` : ''}`),
+  /** One customer: everything they did with this shop. */
+  customer: (buyerId: string, storeId?: string) =>
+    request<CustomerPage>(`/me/customers/${encodeURIComponent(buyerId)}${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  /** One short message to a chosen group of customers. */
+  messageCustomers: (body: { buyerIds: string[]; text: string; listingId?: string | null }, storeId?: string) =>
+    post<GroupMessageResult>(`/me/customers/message${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, body),
+  /** The Data tab's overview: this period against the last, on time, replies, views and searches. */
+  dataOverview: (days: number, storeId?: string) =>
+    request<DataOverview>(`/me/data/overview?days=${days}${storeId ? `&store=${encodeURIComponent(storeId)}` : ''}`),
+
   socialFeed: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/feed${voice(as)}`),
   trending: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/trending${voice(as)}`),
   /**
@@ -3269,3 +3282,128 @@ export const api = {
 };
 
 export type { AuthUser, DemoAccount, Listing, Lot, Order, ListingComment };
+
+/* ── The shop's customers and Data overview (customer-routes.ts) ─────────── */
+
+export type CustomerLabel = 'vip' | 'regular' | 'at_risk' | 'one_time' | 'new';
+export type CustomerSource = 'affiliate' | 'shared' | 'channel' | 'sale' | 'private' | 'preorder' | 'shop';
+type Named = { id: string; who: PartyRef };
+type ItemRef = { listingId: string; title: string; photo: string | null; priceMinor: number };
+
+export interface CustomerListRow extends Named {
+  orders: number;
+  spentMinor: number;
+  firstAt: string;
+  lastAt: string;
+  owedMinor: number;
+  label: CustomerLabel;
+  isNew: boolean;
+  firstSource: CustomerSource;
+  reliability: { word: string; tone: 'ok' | 'warn' | 'neutral' };
+  saves: number;
+  openCheckouts: number;
+  follows: boolean;
+  nextDueAt: string | null;
+  topics: string[];
+}
+
+export interface CustomersResponse {
+  summary: {
+    days: number; customers: number; activeInPeriod: number; newInPeriod: number; returningInPeriod: number;
+    repeatRate: number | null; averageOrderMinor: number; followers: number; followersInPeriod: number; owedMinor: number;
+    valueCounts: Record<CustomerLabel, number>;
+  };
+  customers: CustomerListRow[];
+  pro: {
+    sources: { source: CustomerSource; customers: number; spentMinor: number; averageMinor: number }[];
+    path: { step: 'saved' | 'checkout' | 'ordered' | 'paid' | 'delivered' | 'reviewed'; reached: number; stopped: number }[];
+    signals: {
+      saved: (Named & ItemRef & { at: string })[];
+      checkout: (Named & ItemRef & { at: string; orderId: string; clicks: number })[];
+      pledged: (Named & ItemRef & { at: string; units: number })[];
+      wants: (Named & { wantId: string; title: string; budgetMinor: number | null; at: string })[];
+    };
+    engagement: {
+      people: number; buyers: number; boughtAfter: number;
+      kinds: { kind: 'votes' | 'comments' | 'entries' | 'guesses' | 'reactions'; people: number; buyers: number; spentMinor: number }[];
+      top: (Named & { acts: number; orders: number; spentMinor: number })[];
+    };
+    matches: (ItemRef & { fits: (Named & { score: number })[] })[];
+    benchmark: {
+      shops: number;
+      onTime: { you: number | null; median: number | null };
+      repeat: { you: number | null; median: number | null };
+      completed: { you: number; median: number | null };
+      followers: { you: number; median: number | null };
+    };
+    vipCutMinor: number | null;
+    now: string;
+  };
+}
+
+export interface CustomerPage {
+  id: string;
+  who: PartyRef;
+  memberSince: string | null;
+  follows: boolean;
+  label: CustomerLabel | null;
+  orders: number;
+  spentMinor: number;
+  owedMinor: number;
+  firstAt: string | null;
+  lastAt: string | null;
+  nextDueAt: string | null;
+  firstSource: CustomerSource | null;
+  reliability: {
+    payHours: number | null; paidUp: number; cancelled: number; neverPaid: number; disputes: number; deniedClaims: number;
+    word: string; tone: 'ok' | 'warn' | 'neutral';
+  };
+  interest: { topics: { name: string; weight: number }[]; priceBand: { lowMinor: number; highMinor: number } | null };
+  history: {
+    orderId: string; itemName: string; photo: string | null; placedAt: string; status: string; paymentStatus: string;
+    totalMinor: number; owedMinor: number; punctuality: 'on_time' | 'late' | 'overdue' | 'pending' | 'none'; source: CustomerSource;
+  }[];
+  saves: (ItemRef & { at: string; bought: boolean; live: boolean })[];
+  checkouts: { orderId: string; listingId: string; itemName: string; at: string; clicks: number }[];
+  pledges: { listingId: string; title: string; units: number; at: string }[];
+  engagement: { votes: number; comments: number; entries: number; guesses: number; reactions: number; firstAt: string } | null;
+  reviews: {
+    aboutShop: { orderId: string; rating: number; body: string; at: string }[];
+    aboutThem: { orderId: string; rating: number; body: string; at: string }[];
+  };
+  suggestions: (ItemRef & { score: number })[];
+}
+
+export interface GroupMessageResult { sent: number; optedOut: number; recent: number; skipped: number; left: number }
+
+export interface DataPeriodFigures {
+  revenueMinor: number; orders: number; customers: number; newCustomers: number; views: number; saves: number;
+  conversion: number | null; averageOrderMinor: number;
+}
+
+export interface DataOrderRow {
+  orderId: string; itemName: string; buyerId: string; who: PartyRef; placedAt: string; dueBy: string | null;
+  days: number | null; eta: { minDays: number; maxDays: number } | null;
+}
+
+export interface DataOverview {
+  days: number;
+  today: string;
+  current: DataPeriodFigures;
+  previous: DataPeriodFigures;
+  onTime: {
+    rate: number | null; onTime: number; late: number; overdue: number; pending: number; measured: number;
+    lateOrders: (DataOrderRow & { state: 'late' | 'overdue' })[];
+    dueSoon: DataOrderRow[];
+    listingsWithoutEta: { listingId: string; title: string }[];
+  };
+  reply: { bookingHours: number | null; bookings: number; claimHours: number | null; claims: number; waitingOverDay: number };
+  cancellations: { orders: number; calledOff: number; rate: number | null; turnedDown: number; reasons: { reason: string; count: number }[] };
+  views: {
+    daily: { day: string; views: number }[];
+    bySource: { source: string; views: number }[];
+    items: { listingId: string; title: string; photo: string | null; views: number; saves: number; orders: number; conversion: number | null; topSource: string | null }[];
+  };
+  searches: { matching: { term: string; n: number; empty: number }[]; unmet: { term: string; n: number; empty: number }[] };
+  listingsLive: number;
+}

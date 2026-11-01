@@ -266,7 +266,10 @@ async function proReadings(
     const furthest = furthestStep(facts);
     if (!furthest) continue;
     stoppedAt[furthest] += 1;
-    for (const step of PATH_STEPS.slice(0, PATH_STEPS.indexOf(furthest) + 1)) reached[step] += 1;
+    // Saving is a step of its own, not one every buyer takes: it counts only
+    // when they saved. From pressing Buy on, each step implies the ones before.
+    if (facts.saved) reached.saved += 1;
+    for (const step of PATH_STEPS.slice(1, PATH_STEPS.indexOf(furthest) + 1)) reached[step] += 1;
   }
 
   /* People worth reaching: saved and not bought, stopped at Buy, pledged and not booked. */
@@ -661,7 +664,7 @@ async function overview(request: HttpRequest, _context: InvocationContext) {
     previous,
     onTime: {
       ...stats,
-      late: lateRows.map(({ order, state }) => ({ ...orderRow(order), state })),
+      lateOrders: lateRows.map(({ order, state }) => ({ ...orderRow(order), state })),
       dueSoon: pending.map(({ order }) => orderRow(order)),
       listingsWithoutEta: noEta,
     },

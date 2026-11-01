@@ -109,10 +109,12 @@ export function withViewHistory(listings: Listing[], sellerIds: ReadonlySet<stri
       const key = dayKey(Date.now() - day * DAY);
       const sources: Partial<Record<ViewSource, number>> = {};
       let placed = 0;
-      SOURCE_MIX.forEach(([source, weight], k) => {
-        const count = k === SOURCE_MIX.length - 1 ? today - placed : Math.floor((today * weight) / 100);
+      for (const [source, weight] of SOURCE_MIX) {
+        const count = Math.floor((today * weight) / 100);
         if (count > 0) { sources[source] = count; placed += count; }
-      });
+      }
+      // What rounding left over goes to the biggest source, the feed.
+      if (today > placed) sources.feed = (sources.feed ?? 0) + today - placed;
       log[key] = sources;
     }
     return { ...listing, viewLog: log };

@@ -210,6 +210,9 @@ export function OrderPage() {
           what can be added to this item, by the people who would do it. */}
       <OrderServices orderId={order.id} onChanged={load} />
 
+      {/* The first thing a buyer asks, answered above the tabs: the promise and where the order stands against it. */}
+      {placed && order.deliveryEta && <dl className="card card--pad orderpromise"><PromiseRow order={order} /></dl>}
+
       {placed && <div className="tabs">
         <button type="button" className={`tab${tab === 'tracking' ? ' is-on' : ''}`}
           onClick={() => setTab('tracking')}>
@@ -362,7 +365,6 @@ export function OrderPage() {
               {liveAddOns(order).map((addOn) => (
                 <div key={addOn.id} className="kv"><dt>🛡 {addOn.planName}</dt><dd>{formatMoney(addOn.premiumMinor, order.currency)}</dd></div>
               ))}
-              {order.deliveryEta && <PromiseRow order={order} />}
               {data.estimatedDispatchAt && (
                 <div className="kv"><dt>Est. dispatch</dt><dd>{formatDate(data.estimatedDispatchAt)}</dd></div>
               )}

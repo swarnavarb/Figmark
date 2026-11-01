@@ -26,7 +26,7 @@ import { Loading } from '../components/Feedback';
  * shop can act on interest instead of waiting for it.
  */
 
-type Category =
+export type Category =
   | 'saved' | 'checkout' | 'funnel' | 'trending' | 'market' | 'customers' | 'leads' | 'packing' | 'lots' | 'timing'
   | 'profit' | 'loyalty' | 'pricing' | 'forecast' | 'reminders' | 'bundles' | 'returns' | 'tags';
 
@@ -53,9 +53,32 @@ const CATEGORIES: { id: Category; icon: string; label: string; tone: string }[] 
 
 const DEEP_VIEWS: Category[] = ['loyalty', 'pricing', 'forecast', 'reminders', 'bundles', 'returns'];
 
+/**
+ * Which Data section each view now lives under. The Insights tab became five
+ * sections (Overview, Customers, Items, Operations, Money); every view it had
+ * is still here, filed under the job it helps with, and an old link to
+ * `?tab=insights&view=…` lands in the right one.
+ */
+export const INSIGHT_HOME: Record<Category, 'customers' | 'itemdata' | 'operations' | 'analytics'> = {
+  saved: 'customers', checkout: 'customers', customers: 'customers', leads: 'customers', loyalty: 'customers', reminders: 'customers',
+  trending: 'itemdata', market: 'itemdata', tags: 'itemdata', funnel: 'itemdata', pricing: 'itemdata', bundles: 'itemdata',
+  returns: 'itemdata', timing: 'itemdata',
+  packing: 'operations', lots: 'operations', forecast: 'operations',
+  profit: 'analytics',
+};
+
+export const isInsightCategory = (value: string | null): value is Category =>
+  value !== null && CATEGORIES.some((entry) => entry.id === value);
+
 const HOUR = (hour: number) => `${hour % 12 || 12}${hour < 12 ? 'am' : 'pm'}`;
 
-export function InsightsPanel({ store }: { store: StoreAccess }) {
+export function InsightsPanel({ store, only, title }: {
+  store: StoreAccess;
+  /** Show just these views - one Data section's share of them - as a block under that section. */
+  only?: Category[];
+  /** What the block is called when `only` is given. */
+  title?: string;
+}) {
   const [data, setData] = useState<InterestResponse | null>(null);
   const [lots, setLots] = useState<InsightsResponse | null>(null);
   const [deep, setDeep] = useState<DeepResponse | null>(null);
@@ -68,7 +91,7 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
   // The open category lives in the address, so the phone's back button
   // returns to the dashboard and a category can be linked to.
   const requested = params.get('view') as Category | null;
-  const view = CATEGORIES.some((entry) => entry.id === requested) ? requested : null;
+  const view = CATEGORIES.some((entry) => entry.id === requested && (!only || only.includes(entry.id))) ? requested : null;
   const open = (next: Category | null) => {
     setParams((current) => {
       const copy = new URLSearchParams(current);
@@ -138,7 +161,7 @@ export function InsightsPanel({ store }: { store: StoreAccess }) {
     );
   }
 
-  return <Dashboard data={data} lots={lots} deep={deep} costs={costs} open={open} />;
+  return <Dashboard data={data} lots={lots} deep={deep} costs={costs} open={open} only={only} title={title} />;
 }
 
 /** A week's change as an arrow and a percentage. */
@@ -168,9 +191,11 @@ function Spark({ values, tone = 'violet' }: { values: number[]; tone?: string })
  * category with the one thing worth knowing from it. Everything deeper is a
  * tap away rather than stacked on one long page.
  */
-function Dashboard({ data, lots, deep, costs, open }: {
+function Dashboard({ data, lots, deep, costs, open, only, title }: {
   data: InterestResponse; lots: InsightsResponse | null; deep: DeepResponse | null; costs: CostsResponse | null;
   open: (next: Category) => void;
+  only?: Category[];
+  title?: string;
 }) {
   const { summary, customers, week, daily } = data;
   const series = (key: 'saves' | 'buys' | 'orders') => daily.map((day) => day[key]);
@@ -246,6 +271,39 @@ function Dashboard({ data, lots, deep, costs, open }: {
   const atRisk = deep?.value.counts.at_risk ?? 0;
   if (atRisk > 0) todo.push({ key: 'risk', icon: '⚠️', go: 'loyalty', tone: 'warn',
     text: `${atRisk} regular${atRisk === 1 ? ' is' : 's are'} overdue for an order` });
+
+  // One section's share: what needs doing there, and a tile per view, under a Pro heading.
+  if (only) {
+    const mine = todo.filter((row) => only.includes(row.go));
+    return (
+      <section className="stack ins prozone">
+        <div className="datapro__head">
+          <h2>{title ?? 'More'} <span className="probadge">PRO</span></h2>
+          <small className="faint">Open to every shop for now.</small>
+        </div>
+        {mine.length > 0 && (
+          <div className="instodo">
+            {mine.map((row) => (
+              <button key={row.key} type="button" className={`instodo__row instodo__row--${row.tone}`} onClick={() => open(row.go)}>
+                <span aria-hidden="true">{row.icon}</span>
+                <span>{row.text}</span>
+                <span aria-hidden="true" className="instodo__go">›</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="insgrid">
+          {CATEGORIES.filter((entry) => only.includes(entry.id)).map((entry) => (
+            <button key={entry.id} type="button" className={`instile instile--${entry.tone}`} onClick={() => open(entry.id)}>
+              <span className="instile__head"><span aria-hidden="true">{entry.icon}</span> {entry.label}</span>
+              <b className="instile__big">{preview[entry.id].big}</b>
+              <small className="instile__line">{preview[entry.id].line}</small>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div className="stack ins prozone">

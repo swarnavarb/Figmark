@@ -315,7 +315,8 @@ await check('the overview compares the period with the one before, and lists lat
   assert.equal(body.views.daily.length, 30);
   assert.ok(body.current.views > 0, 'the demo shop has views this month');
   assert.ok(body.views.bySource.length > 0);
-  assert.ok(body.onTime.late.some((row) => row.state === 'overdue'), 'a parcel past its promise is on the list');
+  assert.ok(body.onTime.lateOrders.some((row) => row.state === 'overdue'), 'a parcel past its promise is on the list');
+  assert.equal(typeof body.onTime.late, 'number', 'the count of late orders stays a number');
   assert.ok(body.onTime.measured >= 5);
   assert.ok('bookingHours' in body.reply);
   assert.ok(body.searches.unmet.some((row) => row.term === 'zzqx unobtainium'));
