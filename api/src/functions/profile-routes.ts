@@ -294,8 +294,10 @@ async function tradeReviews(request: HttpRequest, _context: InvocationContext) {
         item: order
           ? {
               orderId: order.id,
-              listingId: order.listingId,
-              name: order.itemName,
+              listingId: entry.item?.listingId ?? order.listingId,
+              name: entry.item?.name ?? order.itemName,
+              // The small card beside a verified review: the photo it was written about.
+              photoUrl: entry.item?.photoUrl ?? null,
               totalMinor: order.unitPriceMinor * order.quantity,
               currency: order.currency,
             }

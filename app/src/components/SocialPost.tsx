@@ -8,10 +8,11 @@ import { createPortal } from 'react-dom';
 import { Link, useLocation } from 'react-router-dom';
 import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
 import {
-  HOTSPOT_LABELS, REACTIONS, REACTION_META,
-  type CommentThread, type CommentView, type PostHotspot, type ReactionKind, type ReactionSummary,
+  BLUR_LABELS, HOTSPOT_LABELS, POST_BLURS, REACTIONS, REACTION_META, VIBE_MAX_CHARS,
+  type CommentThread, type CommentView, type PostBlur, type PostHotspot, type ReactionKind, type ReactionSummary,
   type ReactorRow,
 } from '@shared/social';
+import { CompareSlider } from './CompareSlider';
 import { isAnnouncement } from '@shared/posts';
 import { formatMoney, timeAgo } from '../format';
 import { ManagerMark } from './ManagerBadge';
@@ -22,7 +23,7 @@ import { PostInFigmark } from './PostInFigmark';
 import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
 import { Loading, useToast } from './Feedback';
-import { PhotoSales } from './PhotoSales';
+import { PhotoSales, type PhotoPoster } from './PhotoSales';
 import { ContestPlay, GuessPlay, PollPlay, TeamChip } from './PostPlay';
 import { markOpened, useSeen } from '../seen';
 import { HASHTAG, MENTION } from '@shared/feed';
@@ -334,6 +335,10 @@ export function SocialPostCard({
   const [saved, setSaved] = useState(Boolean(initial.saved));
   /** Put out of sight by this reader, and how - kept as a stub that can be undone. */
   const [away, setAway] = useState<'hidden' | 'less' | 'topic' | 'muted' | null>(null);
+  /** Its words being changed by its author, in place. */
+  const [editing, setEditing] = useState<{ body: string; blur: PostBlur | null; busy: boolean } | null>(null);
+  /** A blurred post this reader chose to see. */
+  const [revealed, setRevealed] = useState(false);
   const shell = useRef<HTMLElement>(null);
   useSeen(shell, initial.post, Boolean(user) && !nested);
 
@@ -407,6 +412,21 @@ export function SocialPostCard({
     }
   }
 
+  async function saveEdit() {
+    if (!editing) return;
+    setEditing({ ...editing, busy: true });
+    setError(null);
+    try {
+      const { card: next } = await api.editPost(post.channelId, post.id, { body: editing.body, blur: editing.blur }, as);
+      setCard((current) => ({ ...current, post: next.post }));
+      setEditing(null);
+      toast('Post updated');
+    } catch (err) {
+      setEditing((current) => (current ? { ...current, busy: false } : current));
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
+    }
+  }
+
   async function putAway(how: 'hidden' | 'less' | 'topic' | 'muted') {
     setMenu(false);
     setAway(how);
@@ -459,6 +479,12 @@ export function SocialPostCard({
         : social.guess ? <span className="spost__kind spost__kind--poll">🎯 Guess the price</span>
           : social.poll && !post.debate && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> {social.poll.stock ? 'Stock poll' : 'Poll'}</span>}
       {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
+      {post.question && (post.question.acceptedId
+        ? <span className="spost__kind spost__kind--answered">✅ Answered</span>
+        : <span className="spost__kind spost__kind--question">❓ Question</span>)}
+      {post.compare && (
+        <span className="spost__kind spost__kind--poll">{post.compare.kind === 'unboxing' ? '📦 Unboxing' : '🎨 Before & after'}</span>
+      )}
       {post.answersWant && (
         <Link className="spost__kind spost__kind--poll"
           to={`/social?view=wanted&want=${encodeURIComponent(post.answersWant.id)}&buyer=${encodeURIComponent(post.answersWant.buyerId)}`}>
@@ -533,6 +559,7 @@ export function SocialPostCard({
           </span>
           <span className="spost__meta">
             <Link to={postHref(post)} className="spost__time">{timeAgo(post.createdAt)}</Link>
+            {post.editedAt && <span className="spost__edited" title={`Edited ${timeAgo(post.editedAt)}`}>· edited</span>}
             {badges.map((kind) => <BoostBadge key={kind} kind={kind} />)}
             {saved && !nested && <span className="spost__saved" title="Saved"><Icon name="bookmark" size={12} /></span>}
             {/* Only a message said in the room points back at the room. A post
@@ -561,6 +588,14 @@ export function SocialPostCard({
                   <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
                     <Icon name="external" size={15} /> Open post
                   </Link>
+                )}
+                {social.mine && !post.contest && !post.guess && !post.wallOf && (
+                  <button type="button" role="menuitem" onClick={() => {
+                    setMenu(false);
+                    setEditing({ body: post.body, blur: post.blur ?? null, busy: false });
+                  }}>
+                    <Icon name="compose" size={15} /> Edit post
+                  </button>
                 )}
                 {user && (
                   <button type="button" role="menuitem" onClick={() => void toggleSave()}>
@@ -633,7 +668,39 @@ export function SocialPostCard({
           }} />
       )}
 
-      {post.vibe ? (
+      {editing && (
+        <div className="spost__editor">
+          <textarea value={editing.body} rows={4} autoFocus aria-label="Edit your post"
+            maxLength={post.vibe ? VIBE_MAX_CHARS : 2000}
+            onChange={(event) => setEditing({ ...editing, body: event.target.value })} />
+          <div className="spost__editrow">
+            <label className="spost__blurpick">
+              <span>Blur</span>
+              <select value={editing.blur ?? ''} onChange={(event) => setEditing({ ...editing, blur: (event.target.value || null) as PostBlur | null })}>
+                <option value="">Not blurred</option>
+                {POST_BLURS.map((kind) => <option key={kind} value={kind}>{BLUR_LABELS[kind]}</option>)}
+              </select>
+            </label>
+            <span className="spost__editacts">
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(null)}>Cancel</button>
+              <button type="button" className="btn btn--sm" disabled={editing.busy} onClick={() => void saveEdit()}>
+                {editing.busy ? 'Saving…' : 'Save'}
+              </button>
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className={`spost__veil${post.blur && !revealed ? ' is-veiled' : ''}`}>
+      {post.blur && !revealed && (
+        <button type="button" className="spost__unveil" onClick={() => setRevealed(true)}>
+          <span className="spost__unveilmark" aria-hidden="true">{post.blur === 'spoiler' ? '🙈' : '⚠️'}</span>
+          <strong>{BLUR_LABELS[post.blur]}</strong>
+          <span>{post.blur === 'spoiler' ? 'Tap to see the spoiler' : 'Tap to see it'}</span>
+        </button>
+      )}
+      <div className="spost__veiled" aria-hidden={post.blur && !revealed ? true : undefined}>
+      {editing ? null : post.vibe ? (
         <div className={`vibe vibe--${post.vibe}`}><p>{post.body}</p></div>
       ) : (
         (linked ? linked.rest : post.body) && <Body text={linked ? linked.rest : post.body} long={!nested && photos.length === 0 && !linked} />
@@ -661,7 +728,10 @@ export function SocialPostCard({
         const versus = social.poll && (social.poll.style === 'versus' || (post.debate && !social.poll.style));
         return (
           <>
-            {photos.length > 0 && !versus && (post.flex ? (
+            {post.compare && photos.length >= 2 ? (
+              <CompareSlider photos={photos} compare={post.compare} alt={post.body || `Photos by ${post.authorName}`}
+                onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} />
+            ) : photos.length > 0 && !versus && (post.flex ? (
               <FlexShelf photos={photos} hotspots={post.flex.hotspots} alt={post.body || `Collection of ${post.authorName}`}
                 onOpen={(index) => { if (user) markOpened(post); setLightbox(index); }} />
             ) : (
@@ -670,7 +740,10 @@ export function SocialPostCard({
             ))}
             {/* Whether what is in the photo can be bought here, without opening it. */}
             {/* Not on a guess: matching shops would give the answer away. */}
-            {photos.length > 0 && !versus && !nested && !social.guess && <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline" />}
+            {photos.length > 0 && !versus && !nested && !social.guess && (
+              <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline"
+                poster={{ name: post.authorName, handle: author.handle, link: postHref(post) }} />
+            )}
             {social.poll && <PollPlay card={card} photos={photos} disabled={nested || !user} vote={vote} />}
             {social.guess && <GuessPlay card={card} disabled={nested || !user} onCard={setCard} />}
           </>
@@ -693,6 +766,8 @@ export function SocialPostCard({
           ? <div className="spost__quoted"><SocialPostCard card={card.original} nested /></div>
           : <p className="spost__gone">The original post has been taken down.</p>
       )}
+      </div>
+      </div>
 
       {!nested && (
         <>
@@ -730,7 +805,8 @@ export function SocialPostCard({
           {showComments && (
             <Comments card={card}
               onCount={(commentCount, preview) =>
-                setCard((current) => ({ ...current, social: { ...current.social, commentCount, preview } }))} />
+                setCard((current) => ({ ...current, social: { ...current.social, commentCount, preview } }))}
+              onPost={(next) => setCard((current) => ({ ...current, post: { ...current.post, question: next.question } }))} />
           )}
         </>
       )}
@@ -744,7 +820,8 @@ export function SocialPostCard({
       )}
 
       {lightbox !== null && (
-        <Lightbox photos={photos} start={lightbox} about={post.body} by={post.authorId} onClose={() => setLightbox(null)} />
+        <Lightbox photos={photos} start={lightbox} about={post.body} by={post.authorId}
+          poster={{ name: post.authorName, handle: author.handle, link: postHref(post) }} onClose={() => setLightbox(null)} />
       )}
     </article>
   );
@@ -983,7 +1060,7 @@ function Carousel({ photos, alt, burst, onOpen, onDoubleTap }: {
 }
 
 /** A photo filling the screen, with the rest a swipe or an arrow key away. */
-export function Lightbox({ photos, start, onClose, title, caption, about, by, origin, royal }: {
+export function Lightbox({ photos, start, onClose, title, caption, about, by, poster, origin, royal }: {
   photos: string[];
   start: number;
   onClose: () => void;
@@ -999,6 +1076,8 @@ export function Lightbox({ photos, start, onClose, title, caption, about, by, or
   about?: string;
   /** Who posted the photos, so their own listings rank first among probable matches. */
   by?: string;
+  /** Who posted them, to ask about a photo with nothing of theirs tagged on it. */
+  poster?: PhotoPoster | null;
 }) {
   const [index, setIndex] = useState(start);
   const touch = useRef<number | null>(null);
@@ -1081,7 +1160,7 @@ export function Lightbox({ photos, start, onClose, title, caption, about, by, or
       )}
       <img loading="lazy" decoding="async" ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
       {/* Following a link out of it leaves the photo behind, without the shrink back into the page. */}
-      <PhotoSales url={photos[index]} about={about ?? title} by={by} onLeave={onClose} />
+      <PhotoSales url={photos[index]} about={about ?? title} by={by} poster={poster} onLeave={onClose} />
       {photos.length > 1 && (
         <>
           <span className="lightbox__count">{index + 1} / {photos.length}</span>
@@ -1303,9 +1382,11 @@ function Reactors({ card, onClose }: { card: PostCard; onClose: () => void }) {
 
 /* ── Comments ──────────────────────────────────────────────────────────── */
 
-function Comments({ card, onCount }: {
+function Comments({ card, onCount, onPost }: {
   card: PostCard;
   onCount: (count: number, preview: CommentView[]) => void;
+  /** The post as it now stands, when something in the thread changed it: an answer marked. */
+  onPost?: (post: PostCard['post']) => void;
 }) {
   const [threads, setThreads] = useState<CommentThread[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1332,6 +1413,7 @@ function Comments({ card, onCount }: {
   const apply = (detail: { card: PostCard; comments: CommentThread[] }) => {
     setThreads(detail.comments);
     onCount(detail.card.social.commentCount, detail.card.social.preview);
+    onPost?.(detail.card.post);
   };
 
   async function send() {
@@ -1475,6 +1557,18 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   const canPick = !small && Boolean(card.social.host) && debate?.prize?.judge === 'store' && !debate.best
     && Boolean(card.social.poll?.closed) && !comment.mine;
   const [picking, setPicking] = useState(false);
+  // On a question, whoever asked marks the answer: a top-level comment, not their own.
+  const question = card.post.question;
+  const canAccept = !small && Boolean(question) && card.social.mine && !comment.mine;
+
+  async function accept() {
+    setPicking(true);
+    try {
+      onChanged(await api.acceptAnswer(channelId, id, comment.accepted ? null : comment.id, voice.storeId));
+    } finally {
+      setPicking(false);
+    }
+  }
 
   async function pickBest() {
     setPicking(true);
@@ -1510,7 +1604,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
   }
 
   return (
-    <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}${best ? ' is-best' : ''}`}>
+    <div className={`cmt${small ? ' cmt--small' : ''}${fresh ? ' is-fresh' : ''}${best ? ' is-best' : ''}${comment.accepted ? ' is-answer' : ''}`}>
       {dialog}
       <Avatar name={comment.authorName} size={small ? 26 : 32} />
       <div className="cmt__main">
@@ -1518,6 +1612,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
           <PersonLink party={comment.author} className="cmt__name">{comment.authorName}</PersonLink>
           {debate && comment.side && <TeamChip poll={card.social.poll} side={comment.side} />}
           {best && <span className="teamchip teamchip--best">🎤 Best argument</span>}
+          {comment.accepted && <span className="teamchip teamchip--answer">✅ Answer</span>}
           <p className="cmt__body">
             {comment.replyToName && <span className="cmt__to">@{comment.replyToName} </span>}
             <Tagged text={comment.body} />
@@ -1530,6 +1625,11 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
           </button>
           <button type="button" onClick={() => onReply(comment)}>Reply</button>
           {canPick && <button type="button" disabled={picking} onClick={() => void pickBest()}>🎤 Pick as best</button>}
+          {canAccept && (
+            <button type="button" disabled={picking} onClick={() => void accept()}>
+              {comment.accepted ? 'Unmark answer' : '✅ Mark as answer'}
+            </button>
+          )}
           {comment.canDelete && <button type="button" onClick={() => void remove()}>Delete</button>}
           {likes > 0 && <span className="cmt__likes">❤️ {likes}</span>}
           {/* Only in the full thread, where the comment carries its moderation state. */}

@@ -235,7 +235,12 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub: 
  * onto shelves and can take one off again. Everyone else sees the shelves.
  * Tapping a card opens every photo of the item full screen.
  */
-export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: boolean }) {
+export function PurchasedCollection({ userId, isMe, owner = null }: {
+  userId: string;
+  isMe: boolean;
+  /** Whose shelf it is, so a visitor can ask them about a piece. */
+  owner?: { name: string; handle: string | null } | null;
+}) {
   const toast = useToast();
   const [shelf, setShelf] = useState<CollectionShelf | null>(null);
   const [candidates, setCandidates] = useState<CollectionCandidate[]>([]);
@@ -366,7 +371,7 @@ export function PurchasedCollection({ userId, isMe }: { userId: string; isMe: bo
       ))}
 
       {open && (
-        <CardViewer item={open} isMe={isMe} groups={shelf.groups} onClose={() => setViewing(null)}
+        <CardViewer item={open} isMe={isMe} groups={shelf.groups} owner={owner} userId={userId} onClose={() => setViewing(null)}
           onEdit={(changes, done) => run(() => api.collectionEdit(open.orderId, changes), done)}
           onRemove={() => void remove(open)} />
       )}
@@ -429,7 +434,9 @@ function RoyalCard({ item, photo = item.photos[0], flipped = false, big = false 
  * A card opened: the same card, larger, on a turntable. Arrows walk its photos.
  * The owner can shelve it, choose the photo it leads with, and hide the rest.
  */
-function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
+function CardViewer({ item, isMe, groups, owner, userId, onClose, onEdit, onRemove }: {
+  owner: { name: string; handle: string | null } | null;
+  userId: string;
   item: CollectionItem;
   isMe: boolean;
   groups: CollectionShelf['groups'];
@@ -481,7 +488,8 @@ function CardViewer({ item, isMe, groups, onClose, onEdit, onRemove }: {
             {photos.map((url, i) => <i key={url} className={`${i === index ? 'is-on' : ''}${hidden.includes(url) ? ' is-hidden' : ''}`} />)}
           </div>
         )}
-        <PhotoSales url={photo} about={item.name} tone="light" onLeave={onClose} />
+        <PhotoSales url={photo} about={item.name} by={userId} tone="light" onLeave={onClose}
+          poster={owner && !isMe ? { name: owner.name, handle: owner.handle, link: owner.handle ? `/${owner.handle}` : undefined } : null} />
         <p className="faint" style={{ margin: 0 }}>
           Tap the card to turn it over · delivered {formatDate(item.deliveredAt)}
           {isHidden && ' · this photo is hidden from others'}
@@ -584,7 +592,7 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
         </div>
 
         {tab === 'collection' ? (
-          <PurchasedCollection userId={profile.sellerId} isMe={isMe} />
+          <PurchasedCollection userId={profile.sellerId} isMe={isMe} owner={{ name: profile.displayName, handle: profile.handle }} />
         ) : tab === 'feed' ? (
           posts === null ? (
             <SkeletonText lines={3} />

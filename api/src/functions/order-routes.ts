@@ -9,6 +9,8 @@ import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { cancellationImpact, prepaySavingMinor, repriceBasket } from '../offers.js';
+
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
   REVIEW_REVEAL_DAYS,
@@ -17,8 +19,10 @@ import {
   daysFrom,
   disputeSubjects,
   isCancelledLike,
+  REVIEW_PROMPT_DAYS,
   isOpenUnpaid,
   isPlaced,
+  isStopped,
   nothingAtStake,
   owedMinor,
   reviewRevealed,
@@ -41,6 +45,9 @@ import { callOffOrder } from './call-off.js';
 import { ownPhotos } from '../storage/index.js';
 import { claimPhotos } from '../storage/release.js';
 import { tooFast } from '../rate-limit.js';
+import { milestone } from '../play.js';
+import { tellRestocked } from './stock-alert-routes.js';
+import { SALE_MILESTONES } from '../../../shared/play.js';
 
 /**
  * What happens to an order after it is placed.
@@ -118,6 +125,19 @@ function statusFromMoney(order: Order): void {
 }
 
 /** How much the chosen plan asks for now, or the refusal. */
+/**
+ * Paying everything rather than an advance is what a pay-in-full offer
+ * rewards, so the choice is recorded and the price follows before the amount
+ * is worked out - the buyer is charged the figure the checkout showed.
+ */
+async function settlePayInFull(repository: Repo, order: Order, plan: unknown): Promise<void> {
+  if (!order.advancePercent) return;
+  const full = plan !== 'advance';
+  if ((order.paidInFull === true) === full) return;
+  order.paidInFull = full;
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
+}
+
 function planAmount(order: Order, plan: unknown): { plan: 'full' | 'advance'; amountMinor: number } | null {
   const totalMinor = orderTotalMinor(order);
   if (plan !== 'advance') return { plan: 'full', amountMinor: totalMinor };
@@ -199,6 +219,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'protection_unavailable', 'No community manager is available for Buyer Protection right now. Try again soon, or buy directly.');
   }
 
+  await settlePayInFull(repository, order, body.plan);
   const terms = planAmount(order, body.plan);
   if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
 
@@ -311,6 +332,11 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     const listing = await repository.getListing(order.listingId);
     unavailable = unavailableReason(listing, order);
     if (listing) await repriceCheckout(repository, order, listing);
+    // Whether they pay in full is decided when they pay, not before: a checkout
+    // opened again starts from the price without the pay-in-full offer.
+    order.paidInFull = false;
+    // And against what else is in their basket: an offer is earned by the group.
+    await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
   }
 
   const seller = await repository.getUserById(order.sellerId);
@@ -321,6 +347,14 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     itemMinor: totalMinor,
+    /** The seller's price for the goods, shipping and what offers took off - each shown on its own. */
+    goodsMinor: order.unitPriceMinor * order.quantity,
+    shippingMinor: order.shippingMinor ?? 0,
+    offerDiscountMinor: order.offerDiscountMinor ?? 0,
+    appliedOffers: order.appliedOffers ?? [],
+    offerRules: order.offerRules ?? [],
+    /** What paying in full instead of an advance would save, when the shop offers that. */
+    prepaySavingMinor: await prepaySavingMinor(repository, order),
     /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
     unavailable,
     /** The item's price, for this quantity, when Buy was pressed and now - when the two differ. */
@@ -449,6 +483,7 @@ async function review(request: HttpRequest, _context: InvocationContext) {
   }
 
   const now = new Date().toISOString();
+  const bought = await repository.getListing(order.listingId);
   const written: Review = {
     id: `rev_${randomUUID().slice(0, 12)}`,
     subjectId: side === 'buyer' ? order.sellerId : order.buyerId,
@@ -460,6 +495,12 @@ async function review(request: HttpRequest, _context: InvocationContext) {
     // The counterparty's review, if it exists, is what reveals both.
     revealed: existing.length > 0,
     revealAt: daysFrom(REVIEW_REVEAL_DAYS),
+    // The item, kept with the review so its small card stays true.
+    item: {
+      listingId: order.listingId,
+      name: order.itemName,
+      photoUrl: bought?.photos?.[0]?.thumbUrl ?? bought?.photos?.[0]?.url ?? null,
+    },
     createdAt: now,
     updatedAt: now,
   };
@@ -636,6 +677,10 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     buyerReversalDetails: side === 'seller' && order.status === 'payment_reversal_pending'
       ? other?.reversalDetails ?? null
       : null,
+    // What cancelling this item would cost the rest of the basket, said before it is done.
+    offerImpact: !isStopped(order.status) && (order.offerRules?.length ?? 0) + (order.appliedOffers?.length ?? 0) > 0
+      ? await cancellationImpact(repository, order)
+      : null,
     myReview: mine,
     // Only if it may be seen: an unrevealed review is exactly what this whole
     // mechanism exists to keep out of the counterparty's hands.
@@ -691,6 +736,7 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   } catch {
     body = {};
   }
+  await settlePayInFull(repository, order, body.plan);
   const terms = planAmount(order, body.plan);
   if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
 
@@ -1723,6 +1769,50 @@ export const startRefundRoute = handler(startRefund);
 export const flagDisputeRoute = handler(flagDispute);
 export const myDisputesRoute = handler(myDisputes);
 export const myRefundsRoute = handler(myRefunds);
+/**
+ * GET /api/me/pending-reviews - what this person still owes a review on, and
+ * what they still have to confirm arrived.
+ *
+ * Only recent trades: a review is worth most while the trade is fresh, so the
+ * app asks for a week after an order completes and then lets go. Both sides
+ * are asked - a seller reviews their buyer too, and both climb for it.
+ */
+async function pendingReviews(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const since = Date.now() - REVIEW_PROMPT_DAYS * 86_400_000;
+  const [bought, sold] = await Promise.all([repository.listOrdersForBuyer(user.id), repository.listOrdersForSeller(user.id)]);
+  const mine = [...bought, ...sold.filter((order) => order.buyerId !== user.id)].filter((order) => order.placedAt !== null);
+
+  const recent = mine.filter((order) => order.completedAt && Date.parse(order.completedAt) >= since && !isStopped(order.status));
+  const awaiting = await Promise.all(recent.map(async (order) => ({
+    order, reviews: await repository.listReviewsForOrder(order.id),
+  })));
+  const owed = awaiting.filter(({ order, reviews }) => !isOpenUnpaid(order) && !reviews.some((entry) => entry.authorId === user.id));
+
+  // Delivered, but the buyer has not said it arrived: nothing can be reviewed until they do.
+  const toConfirm = bought.filter((order) => order.status === 'delivered' && !order.completedAt && !isStopped(order.status));
+
+  const listings = new Map<string, Awaited<ReturnType<typeof repository.getListing>>>();
+  for (const { order } of owed) {
+    if (!listings.has(order.listingId)) listings.set(order.listingId, await repository.getListing(order.listingId));
+  }
+  return json(200, {
+    pending: owed.map(({ order }) => ({
+      orderId: order.id,
+      itemName: order.itemName,
+      photoUrl: listings.get(order.listingId)?.photos?.[0]?.thumbUrl ?? listings.get(order.listingId)?.photos?.[0]?.url ?? null,
+      side: order.buyerId === user.id ? 'buyer' : 'seller',
+      completedAt: order.completedAt,
+    })),
+    toConfirm: toConfirm.map((order) => ({ orderId: order.id, itemName: order.itemName })),
+    days: REVIEW_PROMPT_DAYS,
+  });
+}
+export const pendingReviewsRoute = handler(pendingReviews);
+
 export const claimPaymentRoute = handler(claimPayment);
 /**
  * POST /api/orders/{id}/reject - the seller cannot serve this order.
@@ -1742,10 +1832,26 @@ export const claimPaymentRoute = handler(claimPayment);
  * Put back what an order took. A called-off order that still holds a unit is
  * stock nobody can buy and a pre-order that can never fill.
  */
+/**
+ * A first sale and a hundredth earn the shop a badge for its page. Counted
+ * from the orders it has accepted, so a sale undone and made again is
+ * still one sale - and the badge, once given, stays.
+ */
+async function saleMilestones(repository: Repo, sellerId: string): Promise<void> {
+  try {
+    const accepted = (await repository.listOrdersForSeller(sellerId)).filter((entry) => entry.accepted).length;
+    for (const step of SALE_MILESTONES.filter((entry) => accepted >= entry.count)) {
+      await milestone(repository, sellerId, step, '/wallet');
+    }
+  } catch {
+    /* A badge is a nicety; the order is what matters. */
+  }
+}
+
 async function restock(repository: Repo, order: Order, now: string, units = true): Promise<void> {
   const listing = await repository.getListing(order.listingId);
   if (!listing) return;
-  await repository.updateListing({
+  const back = await repository.updateListing({
     ...listing,
     quantityAvailable: listing.quantityAvailable + (units ? order.quantity : 0),
     status: units && listing.status === 'sold_out' ? 'active' : listing.status,
@@ -1757,6 +1863,8 @@ async function restock(repository: Repo, order: Order, now: string, units = true
       : null,
     updatedAt: now,
   });
+  // Units handed back can put a sold-out item on sale again: whoever asked hears.
+  await tellRestocked(repository, listing, back);
 }
 
 async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
@@ -1805,6 +1913,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   order.updatedAt = now;
   note(order, `Seller could not serve this order: ${reason}`, user.id);
   await repository.updateOrder(order);
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });
 
   await restock(repository, order, now);
 
@@ -1947,6 +2056,7 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
   }
   note(order, order.bookingOnly ? 'Booking accepted by seller.' : 'Order accepted by seller.', user.id);
   await repository.updateOrder(order);
+  await saleMilestones(repository, order.sellerId);
   // A booking becomes a sale the moment it is accepted, and only then.
   if (order.bookingOnly) {
     const listing = await repository.getListing(order.listingId);
@@ -2010,6 +2120,7 @@ async function discardCheckout(request: HttpRequest, _context: InvocationContext
       || (await repository.toggleLike(user.id, order.listingId));
   }
   await repository.deleteOrder(order);
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });
   return json(200, { removed: order.id, saved });
 }
 
@@ -2045,6 +2156,8 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   const owed = callOffOrder(order, reason, user.id);
   await repository.updateOrder(order);
   await restock(repository, order, new Date().toISOString(), body.restock === true && !shippedOut);
+  // The rest of this buyer's basket loses whatever this item was earning it.
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });
 
   if (owed <= 0) {
     const named = await orderNames(repository, order);
@@ -2460,6 +2573,7 @@ app.http('order-credit-apply', { ...anon, methods: ['POST'], route: 'orders/{id}
 app.http('order-refund-new', { ...anon, methods: ['POST'], route: 'orders/{id}/refund-new', handler: startRefundRoute });
 app.http('order-flag-dispute', { ...anon, methods: ['POST'], route: 'orders/{id}/flag-dispute', handler: flagDisputeRoute });
 app.http('my-disputes', { ...anon, methods: ['GET'], route: 'me/disputes', handler: myDisputesRoute });
+app.http('me-pending-reviews', { ...anon, methods: ['GET'], route: 'me/pending-reviews', handler: pendingReviewsRoute });
 app.http('my-refunds', { ...anon, methods: ['GET'], route: 'me/refunds', handler: myRefundsRoute });
 app.http('order-credit-hold', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-hold', handler: holdCreditRoute });
 app.http('order-pay', { ...anon, methods: ['POST'], route: 'orders/{id}/pay', handler: payRoute });

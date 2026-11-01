@@ -14,6 +14,9 @@ import { Modal } from './LotFields';
 import { PhotoManager } from './PhotoManager';
 import { ErrorNotice } from './ui';
 import { LBox, OptionTiles, Switch, ToggleRow, daysUntil, isoInDays } from './ListingForm';
+import { OfferEditor } from './Offers';
+import type { ListingOffer } from '@shared/offers';
+import type { TemplateTerms } from '@shared/templates';
 import '../styles/Buy.css';
 
 /**
@@ -177,9 +180,15 @@ export interface TermsDraft {
   affiliateOff: boolean;
   /** In rupees, per unit. */
   affiliateOffAmount: string;
+  /** Shipping per item inside India: free, a fee, or nothing said. */
+  shipping: 'unset' | 'free' | 'paid';
+  /** In rupees, per item. */
+  shippingFee: string;
+  /** What the shop offers on the item, in the units the API takes. */
+  offers: ListingOffer[];
 }
 
-export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePercent' | 'affiliate' | 'priceMinor'>>): TermsDraft {
+export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePercent' | 'affiliate' | 'priceMinor' | 'shippingMinor' | 'offers'>>): TermsDraft {
   const commission = affiliateUnitMinor(listing?.affiliate, listing?.priceMinor ?? 0);
   const off = commission > 0 ? linkDiscountMinor(listing?.affiliate) : 0;
   return {
@@ -194,6 +203,54 @@ export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePerce
     affiliateAmount: commission > 0 ? String(commission / 100) : '50',
     affiliateOff: off > 0,
     affiliateOffAmount: off > 0 ? String(off / 100) : '50',
+    shipping: listing?.shippingMinor == null ? 'unset' : listing.shippingMinor === 0 ? 'free' : 'paid',
+    shippingFee: listing?.shippingMinor ? String(listing.shippingMinor / 100) : '',
+    offers: listing?.offers ?? [],
+  };
+}
+
+/** The shipping and offers of a draft, as the API takes them. */
+export function shippingMinorOf(draft: Pick<TermsDraft, 'shipping' | 'shippingFee'>): number | null {
+  if (draft.shipping === 'unset') return null;
+  if (draft.shipping === 'free') return 0;
+  return Math.max(0, Math.round((Number(draft.shippingFee) || 0) * 100));
+}
+
+/** Everything a template holds about terms, from the form as it stands. */
+export function termsToTemplate(draft: TermsDraft): TemplateTerms {
+  const body = termsBody(draft);
+  return {
+    quantityMode: draft.quantityMode,
+    quantity: Math.max(1, Number(draft.quantity) || 1),
+    advancePercent: body.advancePercent,
+    limitedDays: draft.limited ? Math.max(1, Number(draft.days) || 7) : null,
+    allowMultiple: false,
+    shippingMinor: shippingMinorOf(draft),
+    offers: draft.offers,
+    affiliateMinor: body.affiliateMinor,
+    affiliateOffMinor: body.affiliateOffMinor,
+  };
+}
+
+/** A form filled from a template's terms, leaving what the template does not say. */
+export function termsFromTemplate(draft: TermsDraft, terms: TemplateTerms | null | undefined): TermsDraft {
+  if (!terms) return draft;
+  return {
+    ...draft,
+    quantityMode: terms.quantityMode,
+    quantity: String(terms.quantity),
+    advance: terms.advancePercent != null,
+    advancePercent: String(terms.advancePercent ?? 20),
+    limited: terms.limitedDays != null,
+    days: String(terms.limitedDays ?? 7),
+    was: null,
+    shipping: terms.shippingMinor == null ? 'unset' : terms.shippingMinor === 0 ? 'free' : 'paid',
+    shippingFee: terms.shippingMinor ? String(terms.shippingMinor / 100) : '',
+    offers: terms.offers ?? [],
+    affiliate: terms.affiliateMinor != null,
+    affiliateAmount: terms.affiliateMinor != null ? String(terms.affiliateMinor / 100) : draft.affiliateAmount,
+    affiliateOff: terms.affiliateOffMinor != null,
+    affiliateOffAmount: terms.affiliateOffMinor != null ? String(terms.affiliateOffMinor / 100) : draft.affiliateOffAmount,
   };
 }
 
@@ -207,6 +264,8 @@ export function termsBody(draft: TermsDraft) {
     affiliateMinor: draft.affiliate ? Math.max(100, Math.round((Number(draft.affiliateAmount) || 0) * 100)) : null,
     affiliateOffMinor: draft.affiliate && draft.affiliateOff
       ? Math.max(100, Math.round((Number(draft.affiliateOffAmount) || 0) * 100)) : null,
+    shippingMinor: shippingMinorOf(draft),
+    offers: draft.offers,
   };
 }
 
@@ -217,7 +276,7 @@ export function termsBody(draft: TermsDraft) {
  * date is its expiry, so both questions step aside rather than being asked
  * twice.
  */
-export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor }: {
+export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor, forTemplate = false }: {
   value: TermsDraft;
   onChange: (next: TermsDraft) => void;
   preOrder?: boolean;
@@ -227,6 +286,8 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
   publicLater?: boolean;
   /** A private deal: no commission to offer, and its own clock in hours instead of days. */
   privateDeal?: boolean;
+  /** A template fills what is the same every time, so it never asks how many there are. */
+  forTemplate?: boolean;
 }) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
   // The most a link may take off: commission and discount together leave the
@@ -239,7 +300,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
   return (
     <>
       <LBox icon="📦" title="Stock & payment">
-        {!preOrder && (
+        {!preOrder && !forTemplate && (
           <>
             <OptionTiles label="Quantity" value={value.quantityMode} onChange={(quantityMode) => set({ quantityMode })}
               options={[
@@ -264,6 +325,25 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
               onChange={(e) => set({ advancePercent: e.target.value })} />
           </label>
         )}
+      </LBox>
+
+      <LBox icon="🚚" title="Shipping & offers"
+        hint={value.shipping === 'unset' ? 'Say what shipping costs, and add offers that win bigger orders.'
+          : value.shipping === 'free' ? 'Free shipping.' : `Shipping ₹${value.shippingFee || '—'} per item, shown beside the price - never added to it.`}>
+        <OptionTiles label="Shipping inside India" value={value.shipping} onChange={(shipping) => set({ shipping })}
+          options={[
+            { id: 'free', icon: '🎁', title: 'Free shipping' },
+            { id: 'paid', icon: '📮', title: 'Shipping extra', note: 'Per item' },
+            { id: 'unset', icon: '💬', title: 'Not said' },
+          ]} />
+        {value.shipping === 'paid' && (
+          <label className="field">
+            <span>Shipping per item (₹)</span>
+            <input type="number" min="1" step="1" value={value.shippingFee} onChange={(e) => set({ shippingFee: e.target.value })} />
+            <span className="field__hint">Charged on each item. Offers below can make it free when buyers take more.</span>
+          </label>
+        )}
+        <OfferEditor offers={value.offers} onChange={(offers) => set({ offers })} priceMinor={priceMinor ?? 0} />
       </LBox>
 
       {/* Not on a power sale: its items are made by the sale, which sets its own terms. */}

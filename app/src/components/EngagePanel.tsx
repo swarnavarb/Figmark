@@ -88,17 +88,31 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
               const poll = card.social.poll!;
               const most = Math.max(1, ...poll.options.map((option) => option.votes));
               return (
-                <Link key={card.post.id} to={postHref(card.post)} className="sengage__stockcard">
-                  <strong>{card.post.body}</strong>
-                  {[...poll.options].sort((a, b) => b.votes - a.votes).map((option) => (
-                    <span key={option.id} className="sengage__stockrow">
-                      <span>{option.label}</span>
-                      <span className="sengage__track"><span style={{ transform: `scaleX(${option.votes / most})` }} /></span>
-                      <span className="faint">{option.votes}</span>
-                    </span>
-                  ))}
-                  <span className="faint">{poll.total} vote{poll.total === 1 ? '' : 's'} · {poll.closed ? 'closed' : 'open'}</span>
-                </Link>
+                <div key={card.post.id} className="sengage__stockcard">
+                  <Link to={postHref(card.post)} className="sengage__stocktitle"><strong>{card.post.body}</strong></Link>
+                  {[...poll.options].sort((a, b) => b.votes - a.votes).map((option) => {
+                    const stocked = (poll.stocked ?? []).includes(option.id);
+                    return (
+                      <span key={option.id} className="sengage__stockrow">
+                        <span>{option.label}</span>
+                        <span className="sengage__track"><span style={{ transform: `scaleX(${option.votes / most})` }} /></span>
+                        <span className="faint">{option.votes}</span>
+                        {stocked ? <span className="sengage__stocked">✓ Listed</span> : (
+                          <Link className="btn btn--quiet btn--sm sengage__listit"
+                            to={`/sell?store=${encodeURIComponent(store.ownerId)}`}
+                            state={{
+                              title: option.label,
+                              fromPoll: { channelId: card.post.channelId, postId: card.post.id, optionId: option.id, label: option.label, voters: option.votes },
+                            }}
+                            title="List it - the people who voted for it get first dibs for 24 hours">
+                            List it
+                          </Link>
+                        )}
+                      </span>
+                    );
+                  })}
+                  <span className="faint">{poll.total} vote{poll.total === 1 ? '' : 's'} · {poll.closed ? 'closed' : 'open'} · voters get first dibs on what you list</span>
+                </div>
               );
             })}
           </div>

@@ -11,6 +11,7 @@ import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
+import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
 import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
 import { PageLoading } from './components/Feedback';
@@ -214,6 +215,7 @@ export function AppShell() {
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
       {authPrompt && <Suspense fallback={null}><AuthModal reason={authPrompt.reason} mode={authPrompt.mode} onClose={closeAuth} /></Suspense>}
       <VerifyPrompt />
+      {user && <PendingReviewsPrompt />}
     </div>
   );
 }

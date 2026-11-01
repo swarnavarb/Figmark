@@ -17,7 +17,7 @@ import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { EmptyState, ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
-import { AdvanceStrip, DealClock, TermsFields, termsBody, termsDraft } from '../components/Buy';
+import { AdvanceStrip, DealClock, TermsFields, termsBody, termsDraft, termsFromTemplate } from '../components/Buy';
 import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
   LBox, OptionTiles, PreOrderBox, ToggleRow, isoInDays, type Shape,
@@ -201,8 +201,11 @@ export function SellPage() {
     /** The shop's own item a private deal starts from - sold out and expired ones too. */
     fromItem?: { id: string; title: string; priceMinor: number; state: string };
     category?: string; condition?: string; tags?: string[]; photos?: PhotoDraft[];
+    /** Stocked because a stock poll asked: its voters get first dibs. */
+    fromPoll?: { channelId: string; postId: string; optionId: string | null; label: string; voters: number };
   } | null;
   const deal = prefill?.privateDeal ?? null;
+  const fromPoll = deal ? null : prefill?.fromPoll ?? null;
 
   // What was typed here, kept against this visit - so leaving for the
   // calculator and coming back finds the form exactly as it was left.
@@ -418,6 +421,13 @@ export function SellPage() {
     }
     if (free('description', description, initial && Boolean(prefill?.description))) setDescription(next.description);
     applied.current = next;
+    // Advance, expiry, shipping, offers and commission, when the template set them.
+    // Stock is the item's own, so it is kept as the form has it.
+    if (fill.terms && !(initial && prefill)) {
+      setTerms((current) => termsFromTemplate(current, {
+        ...fill.terms!, quantityMode: current.quantityMode, quantity: Number(current.quantity) || 1,
+      }));
+    }
     setPreLot(template.preLotRoute?.steps ?? null);
     // A lot named by the template wins; otherwise the template's own answer
     // about what it lists, which is the thing a shop should not have to repeat
@@ -545,6 +555,7 @@ export function SellPage() {
         sourcing: effectiveSourcing,
         lotId: shape === 'lot' && lotId ? lotId : null,
         ...(storeId ? { storeId } : {}),
+        ...(fromPoll ? { fromPoll: { channelId: fromPoll.channelId, postId: fromPoll.postId, optionId: fromPoll.optionId } } : {}),
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
         photos: photos.map((photo) => ({
           blobName: photo.blobName,
@@ -638,6 +649,13 @@ export function SellPage() {
         <p className="notice notice--info" style={{ marginBottom: 20 }}>
           You can fill this in now - it is kept as a draft in this browser. It goes live once your email, WhatsApp
           and Aadhaar are verified. <Link to="/verify">Verify now</Link>
+        </p>
+      )}
+
+      {fromPoll && (
+        <p className="notice notice--ok" style={{ marginBottom: 20 }}>
+          🗳️ Stocking <b>{fromPoll.label}</b> from your stock poll. The {fromPoll.voters === 1 ? 'person who' : `${fromPoll.voters} people who`} voted
+          for it get first dibs for 24 hours and are told the moment it is listed.
         </p>
       )}
 

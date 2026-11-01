@@ -430,3 +430,10 @@ export function disputeSubjects(
   const raised = new Set((order.disputeLinks ?? []).map((dispute) => dispute.subject));
   return out.filter((entry) => !raised.has(entry.subject));
 }
+
+/**
+ * How long after an order completes the app keeps asking both sides to review
+ * it. A review written while the trade is fresh is worth the most, and a
+ * reminder that never ends is a nag - so it asks for a week and then lets go.
+ */
+export const REVIEW_PROMPT_DAYS = 7;

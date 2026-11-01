@@ -3,10 +3,11 @@ import type { DealState } from './deals.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
+import type { AppliedOffer, ListingOffer } from './offers.js';
 import type { FeedPrefs } from './feed.js';
 import type { Badge, GameStage, PostContest, PostGuess, StoreCredit } from './play.js';
 import type {
-  PostDebate, PostFlex, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
+  PostBlur, PostCompare, PostDebate, PostFlex, PostQuestion, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
 } from './social.js';
 import type {
   ConditionTag,
@@ -164,6 +165,13 @@ export interface SellerTrustSignals extends TrustSignals {
   onTimeDispatchRate: number | null;
   /** Fraction of buyers who ordered more than once. */
   repeatCustomerRate: number | null;
+  /**
+   * The counts behind `onTimeDispatchRate`: completed orders that had a
+   * promised dispatch date, and how many of those left by it. Kept as counts
+   * so one more order updates the rate without rereading history.
+   */
+  dispatchPromised?: number;
+  dispatchOnTime?: number;
 }
 
 /**
@@ -344,6 +352,8 @@ export interface User extends BaseDocument {
   storeCredits?: StoreCredit[];
   /** What this person has won, for their page. In the `rewards` part too. */
   badges?: Badge[];
+  /** Answers of theirs that the asker marked as the answer, all told: for the helpful badges. */
+  helpfulAnswers?: number;
   /** This person's invite code, for `/i/<code>`: made the first time they invite anybody. */
   inviteCode?: string;
   /** Who brought this account to Figmark, if anybody did. Set once, at sign-up. */
@@ -889,6 +899,14 @@ export interface Listing extends BaseDocument {
    * buyable and `quantityAvailable` is not counted down. Absent means 'fixed'.
    */
   quantityMode?: 'fixed' | 'multiple';
+  /**
+   * What the shop charges to ship one of this item inside India, in minor
+   * units. 0 is free shipping. Absent on older listings, which say nothing
+   * about it. Shown beside the price, never added to it.
+   */
+  shippingMinor?: number | null;
+  /** What the shop offers on this item: see `shared/offers.ts`. */
+  offers?: ListingOffer[];
   /** When it stops being buyable. Read against the clock; null or absent never expires. */
   expiresAt?: string | null;
   /** Buyers may pay this percentage up front instead of the full amount. Null or absent: full only. */
@@ -954,6 +972,18 @@ export interface Listing extends BaseDocument {
   memberWindow?: { endsAt: string; publicPriceMinor: number; publicExpiresAt: string | null } | null;
   /** First dropped in the shop's channel by a power sale; public cards say so. */
   channelDrop?: boolean;
+  /**
+   * People to tell the moment it is back in stock - each asked on its page
+   * while it was sold out. Emptied as they are told, so a second restock
+   * tells only whoever asked since.
+   */
+  restockWatch?: string[];
+  /**
+   * Stocked because a stock poll asked for it: until `until`, only the
+   * people who voted for it may buy. Everybody else sees it and when they
+   * can.
+   */
+  firstDibs?: FirstDibs | null;
   /**
    * Sold as one assorted lot rather than as a single item.
    *
@@ -1647,6 +1677,34 @@ export interface Order extends BaseDocument {
    */
   trustCountedAt?: string | null;
   /**
+   * What shipping this order costs the buyer now, after any offer, and what
+   * the offers took off the goods. Both are worked out by `priceBasket` and
+   * rewritten whenever the group this order belongs to changes. Absent on
+   * orders from before shipping and offers, which owe neither.
+   */
+  shippingMinor?: number;
+  offerDiscountMinor?: number;
+  /** The offers that are working on this order right now. */
+  appliedOffers?: AppliedOffer[];
+  /**
+   * The shipping fee per item and the offers as they stood when the buyer
+   * ordered, kept so a shop changing its listing later cannot reprice an order
+   * already placed. A checkout that has not been placed follows the listing.
+   */
+  shipPerItemMinor?: number;
+  offerRules?: ListingOffer[];
+  /** The buyer chose to pay everything rather than an advance (see the pay-in-full offer). */
+  paidInFull?: boolean;
+  /** Offers earned by timing at the moment of ordering, and kept. */
+  lockedOfferIds?: string[];
+  /**
+   * When the price moved after money had already been paid: what the shop
+   * should send back, or what the buyer now owes. Informational - settling it
+   * goes through the normal refund and pay-more flows.
+   */
+  offerRefundDueMinor?: number;
+  offerBalanceDueMinor?: number;
+  /**
    * When the buyer confirmed the item is in their hands.
    *
    * The same last step for every order, however it was paid: the seller says
@@ -2105,6 +2163,11 @@ export interface Review extends BaseDocument {
   /** Hidden until both sides submit or the reveal window expires. */
   revealed: boolean;
   revealAt: string;
+  /**
+   * What was bought, as it was when the review was written, so the small card
+   * beside the review stays true if the listing is later changed or taken down.
+   */
+  item?: { listingId: string; name: string; photoUrl: string | null };
 }
 
 /**
@@ -2602,6 +2665,14 @@ export interface Post extends BaseDocument {
   dwellMs?: number;
   /** When the voters were told how a debate ended. Set once, so they are told once. */
   resultsSentAt?: string | null;
+  /** Set when its author last changed the words; the card says "edited". */
+  editedAt?: string | null;
+  /** Blurred until tapped. */
+  blur?: PostBlur | null;
+  /** Two photos read as one, before and after. */
+  compare?: PostCompare | null;
+  /** A question, answered in its comments. */
+  question?: PostQuestion | null;
 }
 
 /**
@@ -2839,6 +2910,11 @@ export type NotificationKind =
   | 'dispute_overdue'
   | 'dispute_action'
   | 'lot_moved'
+  /** The price of an order dropped: an offer was unlocked. */
+  | 'offer_applied'
+  /** The price of an order went up: an offer no longer applies. */
+  | 'offer_changed'
+
   /** One item reached its buyer - the step after a lot is unpacked. */
   | 'order_delivered'
   /** A held payment went to the seller: confirmed by the buyer, or on its own. */
@@ -2898,7 +2974,15 @@ export type NotificationKind =
   /** A service store's application was decided, or a lot was booked with one. */
   | 'service_store'
   /** An artist commission moved: quoted, paid, finished, shipped. */
-  | 'commission';
+  | 'commission'
+  /** The asker marked your comment as the answer to their question. */
+  | 'answer_accepted'
+  /** Something you asked to hear about is back in stock. */
+  | 'back_in_stock'
+  /** A shop stocked what you voted for, and you may buy it before anybody else. */
+  | 'first_dibs'
+  /** A live drop you set a reminder for starts within minutes. */
+  | 'drop_soon';
 
 /**
  * A run of channel posts that sells things, on a timer the shop sets.
@@ -2951,6 +3035,8 @@ export interface PowerSale extends BaseDocument {
   reminders?: string[];
   /** When they were told, so nobody is told twice. */
   remindedAt?: string | null;
+  /** When the "starts in 15 minutes" heads-up shows, once it has been written ahead. */
+  headsUpAt?: string | null;
   /** When the closing message shows, once it has been written ahead. */
   closingAt?: string | null;
 }
@@ -3017,6 +3103,26 @@ export interface PostOpening {
   startsAt: string;
   saleName: string;
   itemCount: number;
+}
+
+/** A stock poll's voters' head start on what it was asked for. */
+export interface FirstDibs {
+  until: string;
+  voterIds: string[];
+  /** The poll it answers. */
+  channelId: string;
+  postId: string;
+  /** The answer it is, or the poll's question when it answers the whole poll. */
+  label: string;
+}
+
+/** A first-dibs window as a reader sees it: never who voted. */
+export interface FirstDibsView {
+  until: string;
+  label: string;
+  /** Whether this reader voted, and so may buy now. */
+  mine: boolean;
+  open: boolean;
 }
 
 export interface PostDrop {

@@ -443,7 +443,7 @@ function RightsPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
           </Select>
         </label>
         <label className="field">
-          <span>Sell (listings, private deals, power sales)</span>
+          <span>Sell (listings, private deals, live drops)</span>
           <Select value={sell} onChange={(event) => setSell(event.target.value as TradeRight)}>
             {(Object.keys(RIGHT_LABELS) as TradeRight[]).map((right) => <option key={right} value={right}>{RIGHT_LABELS[right]}</option>)}
           </Select>

@@ -459,9 +459,14 @@ export function ReviewsTab({ profile, canWrite, onWritten }: {
                 {review.body && <p className="revcard__body">{review.body}</p>}
                 <div className="revcard__foot">
                   {review.item && (
-                    <Link to={`/listing/${review.item.listingId}`} className="revcard__item">
-                      <span>{review.item.name}</span>
-                      <b>{formatMoney(review.item.totalMinor, review.item.currency)}</b>
+                    <Link to={`/listing/${review.item.listingId}`} className="revcard__item revcard__item--card"
+                      aria-label={`Verified purchase: ${review.item.name}`}>
+                      <Thumb seed={review.item.listingId} label={review.item.name} className="revcard__thumb"
+                        photo={review.item.photoUrl ? { url: review.item.photoUrl, thumbUrl: review.item.photoUrl } : null} />
+                      <span className="revcard__itemtext">
+                        <span>{review.item.name}</span>
+                        <small>Verified purchase · {formatMoney(review.item.totalMinor, review.item.currency)}</small>
+                      </span>
                     </Link>
                   )}
                   <ReportButton targetType="review" targetId={review.id} parentId={profile.sellerId}

@@ -28,7 +28,8 @@ const {
   toggleFollowRoute: toggleFollow, createOrderRoute: openCheckout,
   myActivityRoute: myActivity, forwardersRoute: forwarders,
 } = await import(new URL('catalog-routes.js', fns));
-const { placeOrder } = await import(new URL('placement.js', fns));
+const { placeOrder, unavailableReason } = await import(new URL('placement.js', fns));
+const { restockAlertRoute: restockAlert } = await import(new URL('stock-alert-routes.js', fns));
 /**
  * Pressing Buy only opens a checkout now; the order reaches the seller when
  * the buyer pays, pays an advance or books. Every fixture below was written
@@ -86,6 +87,7 @@ const {
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
   removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, followingRoute: socialFollowing, shareableRoute: shareable, pinPostRoute: pinPost,
+  editPostRoute: editPost, acceptAnswerRoute: acceptAnswer,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
   forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
   discoverRoute: discover,
@@ -9681,15 +9683,41 @@ await check('levels climb on a widening curve and every level has a title', () =
     const step = quest.xpForLevel(level + 1) - quest.xpForLevel(level);
     assert.ok(step > quest.xpForLevel(level) - quest.xpForLevel(level - 1), `level ${level + 1} asks more than level ${level}`);
   }
-  assert.equal(quest.titleFor(1), 'Rookie');
-  assert.equal(quest.titleFor(14), 'Legend');
-  assert.equal(quest.titleFor(15), 'Mythic');
-  assert.equal(quest.titleFor(20), 'Icon');
-  assert.equal(quest.titleFor(40), 'Titan');
-  assert.equal(quest.titleFor(50), 'Immortal');
+  // A level reads as one of four trust tiers, with its own names for a buyer and a shop.
+  assert.equal(quest.titleFor(1), 'New Buyer');
+  assert.equal(quest.titleFor(2), 'New Buyer');
+  assert.equal(quest.titleFor(3), 'Verified Buyer');
+  assert.equal(quest.titleFor(6), 'Trusted Buyer');
+  assert.equal(quest.titleFor(9), 'Trusted Buyer');
+  assert.equal(quest.titleFor(10), 'Elite Buyer');
+  assert.equal(quest.titleFor(50), 'Elite Buyer');
+  assert.equal(quest.tierTitle(1, true), 'New Shop');
+  assert.equal(quest.tierTitle(3, true), 'Reliable Shop');
+  assert.equal(quest.tierTitle(6, true), 'Trusted Shop');
+  assert.equal(quest.tierTitle(10, true), 'Prime Shop');
 });
 
-await check('a shop levels only on quests it collected, upkeep paying a token amount', async () => {
+await check('a tier is evidence: XP alone cannot buy one without finished orders and a clean record', () => {
+  assert.equal(quest.trustCap(0, 0), 2, 'no finished order, no Verified tier');
+  assert.equal(quest.trustCap(1, 0), 5);
+  assert.equal(quest.trustCap(10, 0), 9);
+  assert.equal(quest.trustCap(40, 0), quest.MAX_LEVEL);
+  assert.equal(quest.trustCap(100, 2), 9, 'two lost disputes keep a person out of the top tier');
+  assert.equal(quest.trustCap(100, 4), 5, 'four keep them out of Trusted');
+  const lots = quest.xpForLevel(12);
+  assert.deepEqual(quest.levelWithRecord(lots, 0, 0).level, 2);
+  assert.match(quest.levelWithRecord(lots, 0, 0).heldBack, /Finish an order/);
+  assert.equal(quest.levelWithRecord(lots, 40, 0).level, 12);
+  assert.equal(quest.levelWithRecord(lots, 40, 0).heldBack, null);
+});
+
+await check('finishing and reviewing trades pays far more than anything social', () => {
+  assert.ok(quest.XP.orderDelivered >= 4 * quest.XP.post, 'a delivered order is worth many posts');
+  assert.ok(quest.XP.reviewWritten > quest.XP.like * 10);
+  assert.ok(quest.XP.orderDelivered + quest.XP.reviewWritten > quest.XP.follow * 50);
+});
+
+await check('a shop levels on finished orders and the quests it collected, upkeep paying a token amount', async () => {
   const shop = await import(new URL('../api/dist/shared/storefront.js', import.meta.url));
   const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
   const totals = {
@@ -9697,7 +9725,8 @@ await check('a shop levels only on quests it collected, upkeep paying a token am
     ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 5, soldOut: 0, trust: 0,
     preOrders: 0, disputesLost: 0, ageDays: 0,
   };
-  assert.equal(shop.storeLevel(totals, undefined).points, 0, 'what a shop did pays nothing until a quest collects it');
+  const finished = 10 * quest.XP.orderDelivered;
+  assert.equal(shop.storeLevel(totals, undefined).points, finished, 'finished orders pay on their own; nothing else does until a quest collects it');
   const facts = {
     shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
     listed: [], follows: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
@@ -9710,15 +9739,15 @@ await check('a shop levels only on quests it collected, upkeep paying a token am
   assert.equal(shelf.xp, Math.round(quest.TIER_XP[0] * growth.UPKEEP_SHARE), 'an upkeep milestone pays a token amount');
   assert.equal(shelf.bumps, 0);
   const level = shop.storeLevel(totals, state);
-  assert.equal(level.points, tasks.reduce((sum, task) => sum + task.xp, 0));
+  assert.equal(level.points, finished + tasks.reduce((sum, task) => sum + task.xp, 0));
   assert.equal(level.breakdown.find((line) => line.label === 'Sales quests').xp, quest.TIER_XP[0] + quest.TIER_XP[1]);
-  assert.equal(level.level, quest.levelFor(level.points), 'the buyer curve');
+  assert.equal(level.level, quest.levelWithRecord(level.points, 10, 0).level, 'the buyer curve, held to the shop\'s record');
 
   // A follower milestone pays only while the shop keeps the followers.
   const popular = { ...totals, followers: 12 };
   const claimed = growth.claimGrowth({ ...facts, totals: popular }, undefined, 'ms-fans-10');
-  assert.equal(shop.storeLevel(popular, claimed.state).points, quest.TIER_XP[0]);
-  assert.equal(shop.storeLevel({ ...popular, followers: 8 }, claimed.state).points, 0, 'unfollowed back below the step');
+  assert.equal(shop.storeLevel(popular, claimed.state).points, finished + quest.TIER_XP[0]);
+  assert.equal(shop.storeLevel({ ...popular, followers: 8 }, claimed.state).points, finished, 'unfollowed back below the step');
 
   const stickers = shop.storeStickers({ ...totals, trust: 90, ratingAverage: 95, ratingCount: 6, completedSales: 200 });
   assert.deepEqual(stickers.slice(0, 2).map((s) => s.id), ['s-trust', 's-rated'], 'Trusted and Top rated lead once earned');
@@ -9804,7 +9833,7 @@ await check('the follower quests ask a bigger shop for more new followers', asyn
 
   // A shop that levelled up is asked for more too - by the quests it collected before this period.
   const old = '2020-01-06T00:00:00.000Z';
-  const claimed = Object.fromEntries(Array.from({ length: 90 }, (_, index) => [`weekly-sales3:old-${index}`, old]));
+  const claimed = Object.fromEntries(Array.from({ length: 270 }, (_, index) => [`weekly-sales3:old-${index}`, old]));
   assert.equal(goals(base, { claimed, spotlights: 0 }).week.goal, 5, 'level 5 asks for five');
   const fresh = Object.fromEntries(Object.keys(claimed).map((key) => [key, at]));
   assert.equal(goals(base, { claimed: fresh, spotlights: 0 }).week.goal, 3, 'quests collected this week wait for next week');
@@ -9824,7 +9853,7 @@ await check('the game needs a session, and a new account starts at level one', a
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(view.level, 1);
   assert.equal(view.xp, 0);
-  assert.equal(view.title, 'Rookie');
+  assert.equal(view.title, 'New Buyer');
   assert.equal(view.dailyRevealed, false);
   assert.ok(view.tasks.some((task) => task.kind === 'daily'));
   assert.ok(view.stickers.every((sticker) => !sticker.earned));
@@ -9833,7 +9862,7 @@ await check('the game needs a session, and a new account starts at level one', a
 await check('checking in pays once a day and starts a streak', async () => {
   const player = await newBuyer('Quest Checker');
   const first = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
-  assert.equal(first.gained, quest.ACTION_XP);
+  assert.equal(first.gained, quest.XP.checkIn);
   assert.equal(first.view.streak.current, 1);
   assert.ok(first.view.tasks.find((task) => task.id === 'daily-checkin').claimed);
   const again = (await questCheckIn(req({ headers: player.headers }), ctx)).jsonBody;
@@ -9847,7 +9876,7 @@ await check('the daily reveal gives one card, the same one however often it is a
   assert.ok(first.card.id);
   assert.equal(first.view.dailyRevealed, true);
   assert.equal(first.view.cards.length, 1);
-  assert.equal(first.gained, quest.ACTION_XP + quest.CARD_XP[first.card.rarity]);
+  assert.equal(first.gained, quest.XP.card + quest.CARD_XP[first.card.rarity]);
   const again = (await questReveal(req({ headers: player.headers }), ctx)).jsonBody;
   assert.equal(again.card.id, first.card.id);
   assert.equal(again.gained, 0);
@@ -9905,7 +9934,7 @@ await check('an order earns XP, a milestone, and a pack that opens exactly once'
   const player = await newBuyer('Quest Buyer');
   await createOrder(req({ headers: player.headers, body: { listingId: 'lst_kbeauty', quantity: 1 } }), ctx);
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
-  assert.equal(view.xp, quest.ACTION_XP, 'an order placed is one action');
+  assert.equal(view.xp, quest.XP.orderPlaced, 'placing an order pays a little; finishing it pays far more');
   const haul = view.stickers.find((sticker) => sticker.id === 'haul');
   assert.equal(haul.tier, 1, 'bronze after one order');
   assert.equal(haul.next, 10);
@@ -9967,13 +9996,13 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
   const order = await deliveredOrderFor(player, 'lst_kbeauty');
   await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx);
   const repository = await getRepository();
-  // Twenty-two days checked in, so there is a level to lose.
-  const days = Array.from({ length: 22 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
+  // Enough days checked in that there is a level to lose.
+  const days = Array.from({ length: 140 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 2)).toISOString().slice(0, 10));
   const seeded = await repository.getUserById(player.id);
   await repository.updateUser({ ...seeded, quest: { ...seeded.quest, checkIns: days } });
   const before = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   const unit = quest.ACTION_XP;
-  assert.equal(before.xp, unit + quest.TIER_XP[0] + 22 * unit, 'an order, its first milestone, twenty-two check-ins');
+  assert.equal(before.xp, quest.XP.orderPlaced + quest.XP.orderDelivered + quest.TIER_XP[0] + 140 * quest.XP.checkIn, 'an order placed and delivered, its first milestone, and the check-ins');
   assert.equal(before.level, 2);
 
   const now = new Date().toISOString();
@@ -10034,7 +10063,7 @@ await check('a delivered purchase can go in the collection, once, and be renamed
 
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(view.stickers.find((sticker) => sticker.id === 'curator').tier, 1);
-  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === quest.ACTION_XP));
+  assert.ok(view.breakdown.some((line) => line.label === 'Collection items' && line.xp === quest.XP.collectionItem));
 
   const seen = (await publicCollection(req({ params: { id: player.id } }), ctx)).jsonBody;
   assert.equal(seen.items.length, 1);
@@ -10407,7 +10436,7 @@ await check('direct and protected buyers in one lot go through the same unpack-a
 });
 
 await check('a quest claimed on saves opens again, and pays nothing, once the saves are taken back', async () => {
-  const { questView, claimKey, TASK_XP, ACTION_XP } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
+  const { questView, claimKey, TASK_XP, XP } = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
   const now = Date.now();
   const at = new Date(now).toISOString();
   const facts = (saves) => ({
@@ -10424,7 +10453,7 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
   const redone = questView('usr_x', facts(3), state, now);
   assert.equal(quests(met), TASK_XP.daily, 'three saves: the claimed reward counts');
   assert.equal(quests(undone), 0, 'one save taken back: the reward goes with it');
-  assert.equal(met.xp - undone.xp, TASK_XP.daily + ACTION_XP, 'the quest reward and the save itself both come off');
+  assert.equal(met.xp - undone.xp, TASK_XP.daily + XP.like, 'the quest reward and the save itself both come off');
   assert.equal(quests(redone), TASK_XP.daily, 'saving again brings the same claim back, not a second one');
   const task = undone.tasks.find((entry) => entry.id === 'daily-save3');
   if (task) {
@@ -13185,6 +13214,128 @@ await check('a store game reaches its recent buyers too, and reminds who has not
   assert.match(title, /^2 hours left to vote/);
 });
 
+await check('an author edits their words, the card says edited, and a voted question stays as asked', async () => {
+  const writer = await newBuyer('Editor Writer');
+  const other = await newBuyer('Editor Other');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Frist shelf' } }), ctx)).jsonBody.post;
+  const edited = await editPost(req({ headers: writer.headers, params: on(made), body: { body: 'First shelf', blur: 'spoiler' } }), ctx);
+  assert.equal(edited.status, 200, JSON.stringify(edited.jsonBody));
+  assert.equal(edited.jsonBody.card.post.body, 'First shelf');
+  assert.equal(edited.jsonBody.card.post.blur, 'spoiler');
+  assert.ok(edited.jsonBody.card.post.editedAt, 'the card says it was edited');
+  assert.equal((await editPost(req({ headers: other.headers, params: on(made), body: { body: 'Hijacked' } }), ctx)).status, 403);
+  assert.equal((await editPost(req({ headers: writer.headers, params: on(made), body: { blur: 'gory' } }), ctx)).status, 400);
+  resetRateLimits();
+  const poll = (await createPost(req({ headers: writer.headers, body: { body: 'Which one?', poll: { options: ['A', 'B'] } } }), ctx)).jsonBody.post;
+  await vote(req({ headers: other.headers, params: on(poll), body: { optionId: poll.poll.options[0].id } }), ctx);
+  assert.equal((await editPost(req({ headers: writer.headers, params: on(poll), body: { body: 'Which one? (changed)' } }), ctx)).status, 409);
+});
+
+await check('blur, before-and-after and questions are checked when posted', async () => {
+  const writer = await newBuyer('Kinds Writer');
+  const post = (body) => { resetRateLimits(); return createPost(req({ headers: writer.headers, body }), ctx); };
+  const two = ['/api/photos/before.jpg', '/api/photos/after.jpg'];
+  const pair = await post({ body: 'Repaint', photoUrls: two, compare: { kind: 'before_after' } });
+  assert.equal(pair.status, 201, JSON.stringify(pair.jsonBody));
+  assert.deepEqual(pair.jsonBody.post.compare, { kind: 'before_after', labels: ['Before', 'After'] });
+  const boxed = await post({ body: 'Unboxed', photoUrls: two, compare: { kind: 'unboxing', labels: ['Sealed', ''] } });
+  assert.deepEqual(boxed.jsonBody.post.compare.labels, ['Sealed', 'Out of the box']);
+  assert.equal((await post({ body: 'One photo', photoUrls: two.slice(0, 1), compare: { kind: 'before_after' } })).status, 400);
+  assert.equal((await post({ body: 'Odd', photoUrls: two, compare: { kind: 'sideways' } })).status, 400);
+  assert.equal((await post({ body: 'Spoilers ahead', blur: 'spoiler' })).jsonBody.post.blur, 'spoiler');
+  assert.equal((await post({ body: 'x', blur: 'gory' })).status, 400);
+  const asked = await post({ body: 'Is this box legit?', question: true });
+  assert.deepEqual(asked.jsonBody.post.question, { acceptedId: null });
+  assert.equal((await post({ body: 'Eh?', question: true })).status, 400, 'a question needs a few words');
+});
+
+await check('the asker marks the answer: it reads first, its writer is told, credited once, and badged', async () => {
+  const asker = await newBuyer('Q Asker');
+  const helper = await newBuyer('Q Helper');
+  const other = await newBuyer('Q Other');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: asker.headers, body: { body: 'Who sells the Frieren nendo?', question: true } }), ctx)).jsonBody.post;
+  resetRateLimits();
+  await commentOn(req({ headers: other.headers, params: on(made), body: { body: 'No idea, sorry' } }), ctx);
+  resetRateLimits();
+  const answered = (await commentOn(req({ headers: helper.headers, params: on(made), body: { body: 'Kaiju Imports has it' } }), ctx)).jsonBody;
+  const answer = answered.comments.find((thread) => thread.body === 'Kaiju Imports has it');
+  assert.equal((await acceptAnswer(req({ headers: helper.headers, params: on(made), body: { commentId: answer.id } }), ctx)).status, 403,
+    'only whoever asked marks the answer');
+  const marked = await acceptAnswer(req({ headers: asker.headers, params: on(made), body: { commentId: answer.id } }), ctx);
+  assert.equal(marked.status, 200, JSON.stringify(marked.jsonBody));
+  assert.equal(marked.jsonBody.comments[0].id, answer.id, 'the answer reads first');
+  assert.equal(marked.jsonBody.comments[0].accepted, true);
+  assert.equal(marked.jsonBody.card.post.question.acceptedId, answer.id);
+  const told = (await notifications(req({ headers: helper.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.kind === 'answer_accepted'));
+  // Unmarking and marking again credits nobody twice.
+  await acceptAnswer(req({ headers: asker.headers, params: on(made), body: { commentId: null } }), ctx);
+  await acceptAnswer(req({ headers: asker.headers, params: on(made), body: { commentId: answer.id } }), ctx);
+  const account = await (await getRepository()).getUserById(helper.id);
+  assert.equal(account.helpfulAnswers, 1);
+  assert.ok(account.badges.some((badge) => badge.kind === 'helpful_answer'));
+  resetRateLimits();
+  const plain = (await createPost(req({ headers: asker.headers, body: { body: 'Not a question' } }), ctx)).jsonBody.post;
+  assert.equal((await acceptAnswer(req({ headers: asker.headers, params: on(plain), body: { commentId: null } }), ctx)).status, 400);
+});
+
+await check('"tell me when it is back" rings once the item is restocked, then empties', async () => {
+  const waiter = await newBuyer('Restock Waiter');
+  const item = (await createListing(req({ headers: auth, body: { title: 'Restockable figure', priceMinor: 2_000, quantityAvailable: 1 } }), ctx)).jsonBody.listing;
+  assert.equal((await restockAlert(req({ headers: waiter.headers, params: { id: item.id }, body: { on: true } }), ctx)).status, 409,
+    'nothing to wait for while it is on sale');
+  const repository = await getRepository();
+  await repository.updateListing({ ...(await repository.getListing(item.id)), status: 'sold_out', quantityAvailable: 0 });
+  const on1 = await restockAlert(req({ headers: waiter.headers, params: { id: item.id }, body: { on: true } }), ctx);
+  assert.deepEqual(on1.jsonBody, { on: true, count: 1 });
+  assert.equal((await restockAlert(req({ headers: auth, params: { id: item.id }, body: { on: true } }), ctx)).status, 400, 'not on your own item');
+  const detail = (await listingDetail(req({ headers: waiter.headers, params: { id: item.id } }), ctx)).jsonBody;
+  assert.deepEqual(detail.restockAlert, { on: true, count: 1 });
+  assert.equal(detail.listing.restockWatch, undefined, 'who is waiting is not public');
+  await editListing(req({ headers: auth, params: { id: item.id }, body: { quantityAvailable: 3, quantityWas: 0 } }), ctx);
+  const told = (await notifications(req({ headers: waiter.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.kind === 'back_in_stock' && row.link === `/listing/${item.id}`));
+  assert.deepEqual((await repository.getListing(item.id)).restockWatch, []);
+});
+
+await check('a shop stocking what its poll asked gives the voters first dibs, and tells them', async () => {
+  const voter = await newBuyer('Dibs Voter');
+  const late = await newBuyer('Dibs Late');
+  resetRateLimits();
+  const poll = (await createPost(req({ headers: auth, body: {
+    body: 'What should we stock next?', storeId: 'usr_demo', poll: { options: ['Frieren nendo', 'Fern nendo'], stock: true },
+  } }), ctx)).jsonBody.post;
+  await vote(req({ headers: voter.headers, params: on(poll), body: { optionId: poll.poll.options[0].id } }), ctx);
+  await vote(req({ headers: late.headers, params: on(poll), body: { optionId: poll.poll.options[1].id } }), ctx);
+  const made = await createListing(req({ headers: auth, body: {
+    title: 'Frieren nendo', priceMinor: 3_500, quantityAvailable: 5,
+    fromPoll: { channelId: poll.channelId, postId: poll.id, optionId: poll.poll.options[0].id },
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const listing = made.jsonBody.listing;
+  assert.deepEqual(listing.firstDibs.voterIds, [voter.id], 'only who voted for that answer');
+  const told = (await notifications(req({ headers: voter.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.kind === 'first_dibs'));
+  const order = (buyerId) => ({ buyerId, quantity: 1 });
+  assert.equal(unavailableReason(listing, order(voter.id)), null);
+  assert.match(unavailableReason(listing, order(late.id)), /first dibs/);
+  assert.equal(unavailableReason({ ...listing, firstDibs: { ...listing.firstDibs, until: ago(1) } }, order(late.id)), null, 'then anybody');
+  const seen = (await listingDetail(req({ headers: late.headers, params: { id: listing.id } }), ctx)).jsonBody;
+  assert.deepEqual(seen.listing.firstDibs.voterIds, [], 'who voted stays private');
+  assert.equal(seen.firstDibs.mine, false);
+  assert.equal(seen.firstDibs.open, true);
+  const card = (await readPost(req({ headers: auth, params: on(poll) }), ctx)).jsonBody.card;
+  assert.deepEqual(card.social.poll.stocked, [poll.poll.options[0].id], 'the console can say it was listed');
+  const notMine = await createListing(req({ headers: auth, body: {
+    title: 'Nope', priceMinor: 1_000, fromPoll: { channelId: 'usr_nobody', postId: 'pst_nope' },
+  } }), ctx);
+  assert.equal(notMine.status, 400);
+  const shop = await (await getRepository()).getUserById('usr_demo');
+  assert.ok(shop.badges.some((badge) => badge.kind === 'first_sale'), 'accepting orders earned the shop its first-sale badge');
+});
+
 await check('an account can delete itself with its password, but not while it holds money or a dispute', async () => {
   const made = await rawSignup(req({
     body: { acceptTerms: true, displayName: 'Leaving Soon', email: 'leaving@figmark.example', phone: '+919000077001', password: 'a-long-passphrase-1' },
@@ -13203,6 +13354,158 @@ await check('an account can delete itself with its password, but not while it ho
   const refused = await deleteMe(req({ headers: { authorization: `Bearer ${demo.jsonBody.token}` }, body: { password: DEMO_PASSWORD } }), ctx);
   assert.equal(refused.status, 409);
   assert.match(refused.jsonBody.message, /dispute|money/);
+});
+
+/* ── Shipping and offers ────────────────────────────────────────────────── */
+
+const offerListing = async (title, extra = {}) => {
+  const made = await createListing(req({
+    headers: auth,
+    body: { title, priceMinor: 100_000, quantityAvailable: 20, sourcing: 'import', category: 'Figures', shippingMinor: 8_000, ...extra },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  return made.jsonBody.listing;
+};
+const FREE_SHIP_2 = { kind: 'free_shipping', scope: 'lot', minItems: 2 };
+
+await check('a listing carries its shipping fee and offers, and refuses ones nobody could price', async () => {
+  const good = await offerListing('Offer figure', { offers: [FREE_SHIP_2] });
+  assert.equal(good.shippingMinor, 8_000);
+  assert.equal(good.offers.length, 1);
+  assert.equal(good.priceMinor, 100_000, 'the price is the shop\'s price, shipping never added to it');
+  const bad = await createListing(req({
+    headers: auth, body: { title: 'Bad offer', priceMinor: 100_000, offers: [{ kind: 'discount', minItems: 2 }] },
+  }), ctx);
+  assert.equal(bad.status, 400);
+  assert.equal(bad.jsonBody.error, 'invalid_offer');
+  const negative = await createListing(req({
+    headers: auth, body: { title: 'Negative fee', priceMinor: 100_000, shippingMinor: -5 },
+  }), ctx);
+  assert.equal(negative.status, 400);
+});
+
+await check('shipping is charged per item and shown apart from the price', async () => {
+  const listing = await offerListing('Plain shipping');
+  const buyer = await newBuyer('Shipping Buyer');
+  const made = await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id, quantity: 2 } }), ctx);
+  const order = made.jsonBody.order;
+  assert.equal(order.unitPriceMinor, 100_000);
+  assert.equal(order.shippingMinor, 16_000);
+  assert.equal(orderMoney(order).totalMinor, 216_000);
+});
+
+await check('free shipping on 2 in a lot: waits for the lot, then the price drops and both sides are told', async () => {
+  const listing = await offerListing('Lot offer figure', { offers: [FREE_SHIP_2] });
+  const buyer = await newBuyer('Lot Offer Buyer');
+  const one = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const two = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const repo = await getRepository();
+  assert.equal((await repo.getOrder(one.id)).shippingMinor, 8_000, 'two items but no lot yet: not earned');
+
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Offer lot' } }), ctx)).jsonBody.lot;
+  const added = await addItems(req({ headers: auth, params: { id: lot.id }, body: { orderIds: [one.id, two.id] } }), ctx);
+  assert.equal(added.status, 200, JSON.stringify(added.jsonBody));
+
+  const after = await repo.getOrder(one.id);
+  assert.equal(after.shippingMinor, 0, 'filed into the same lot: shipping is free');
+  assert.equal((await repo.getOrder(two.id)).shippingMinor, 0);
+  assert.equal(after.appliedOffers[0].kind, 'free_shipping');
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'offer_applied');
+  assert.ok(told.length >= 1, 'the buyer is told the price dropped');
+  assert.match(told[0].title, /cheaper/);
+  const sellerTold = (await noticesFor(session.jsonBody.user.id)).filter((row) => row.kind === 'offer_applied');
+  assert.ok(sellerTold.length >= 1, 'and so is the shop');
+
+  const before = orderMoney(await repo.getOrder(two.id)).totalMinor;
+  assert.equal(before, 100_000, 'the total is the price alone');
+});
+
+await check('calling one item off takes the offer away from the other, and says so', async () => {
+  const listing = await offerListing('Cancel impact figure', { offers: [FREE_SHIP_2] });
+  const buyer = await newBuyer('Impact Buyer');
+  const one = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const two = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Impact lot' } }), ctx)).jsonBody.lot;
+  await addItems(req({ headers: auth, params: { id: lot.id }, body: { orderIds: [one.id, two.id] } }), ctx);
+  const repo = await getRepository();
+  assert.equal((await repo.getOrder(one.id)).shippingMinor, 0);
+
+  const state = (await orderState(req({ headers: auth, params: { id: two.id } }), ctx)).jsonBody;
+  assert.equal(state.offerImpact.extraMinor, 8_000, 'the shop is shown what cancelling would cost the buyer first');
+  assert.ok(state.offerImpact.lost.some((label) => /Free shipping/.test(label)));
+
+  const cancelled = await cancelOrder(req({ headers: auth, params: { id: two.id }, body: { reason: 'Out of stock after all' } }), ctx);
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.jsonBody));
+  assert.equal((await repo.getOrder(one.id)).shippingMinor, 8_000, 'shipping is charged again on the one that is left');
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'offer_changed');
+  assert.ok(told.length >= 1, 'the buyer is told the price went up');
+  assert.match(told[0].title, /went up/);
+});
+
+await check('discounts, wholesale and early bird price the order the checkout shows', async () => {
+  const wholesale = await offerListing('Bulk figure', {
+    shippingMinor: 0,
+    offers: [{ kind: 'wholesale', tiers: [{ minQty: 5, type: 'percent', value: 10 }] }],
+  });
+  const early = await offerListing('Early figure', {
+    shippingMinor: 0,
+    offers: [{ kind: 'early_bird', limit: 1, discount: { type: 'fixed', value: 10_000 } }],
+  });
+  const buyer = await newBuyer('Bulk Buyer');
+  const bulk = (await createOrder(req({ headers: buyer.headers, body: { listingId: wholesale.id, quantity: 5 } }), ctx)).jsonBody.order;
+  assert.equal(bulk.offerDiscountMinor, 50_000);
+  const sheet = (await checkout(req({ headers: buyer.headers, params: { id: bulk.id } }), ctx)).jsonBody;
+  assert.equal(sheet.goodsMinor, 500_000);
+  assert.equal(sheet.offerDiscountMinor, 50_000);
+  assert.equal(sheet.itemMinor, 450_000);
+  assert.ok(sheet.appliedOffers.some((offer) => offer.kind === 'wholesale'));
+
+  const first = (await createOrder(req({ headers: buyer.headers, body: { listingId: early.id } }), ctx)).jsonBody.order;
+  assert.equal(first.offerDiscountMinor, 10_000, 'the first early buyer gets it');
+  const other = await newBuyer('Late Buyer');
+  const second = (await createOrder(req({ headers: other.headers, body: { listingId: early.id } }), ctx)).jsonBody.order;
+  assert.equal(second.offerDiscountMinor ?? 0, 0, 'the second does not');
+});
+
+await check('a shop changing its offers later cannot reprice an order already placed', async () => {
+  const listing = await offerListing('Terms stay', { shippingMinor: 5_000, offers: [{ kind: 'free_shipping', scope: 'shop', minItems: 2 }] });
+  const buyer = await newBuyer('Terms Buyer');
+  const first = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const edited = await editListing(req({ headers: auth, params: { id: listing.id }, body: { shippingMinor: 50_000, offers: [] } }), ctx);
+  assert.equal(edited.status, 200, JSON.stringify(edited.jsonBody));
+  const second = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const repo = await getRepository();
+  assert.equal((await repo.getOrder(first.id)).shipPerItemMinor, 5_000, 'the placed order keeps the fee it was bought at');
+  assert.equal((await repo.getOrder(first.id)).offerRules.length, 1);
+  assert.equal(second.shipPerItemMinor, 50_000);
+});
+
+await check('pending reviews: a recent completed order is asked for once, on both sides, and stops when reviewed', async () => {
+  const { pendingReviewsRoute: pendingReviews } = await import(new URL('order-routes.js', fns));
+  const buyer = await newBuyer('Review Prompt Buyer');
+  const listing = await offerListing('Review prompt figure');
+  const placed = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const repo = await getRepository();
+  const now = new Date().toISOString();
+  // Paid and delivered: an order still owing money cannot be reviewed yet, and is not asked about.
+  await repo.updateOrder({ ...placed, status: 'delivered', paymentStatus: 'paid', completedAt: now, updatedAt: now });
+
+  const buyerSees = (await pendingReviews(req({ headers: buyer.headers }), ctx)).jsonBody;
+  assert.equal(buyerSees.pending.length, 1);
+  assert.equal(buyerSees.pending[0].itemName, 'Review prompt figure');
+  assert.equal(buyerSees.pending[0].side, 'buyer');
+  const sellerSees = (await pendingReviews(req({ headers: auth }), ctx)).jsonBody;
+  assert.ok(sellerSees.pending.some((row) => row.orderId === placed.id && row.side === 'seller'), 'the shop is asked to review the buyer too');
+
+  const reviewed = await reviewOrder(req({ headers: buyer.headers, params: { id: placed.id }, body: { rating: 5, body: 'Great.' } }), ctx);
+  assert.equal(reviewed.status, 201, JSON.stringify(reviewed.jsonBody));
+  assert.equal(reviewed.jsonBody.review.item.name, 'Review prompt figure', 'the review keeps the item it was about');
+  assert.equal((await pendingReviews(req({ headers: buyer.headers }), ctx)).jsonBody.pending.length, 0, 'asked no more once reviewed');
+
+  // A week on, the app lets go of it.
+  const old = new Date(Date.now() - 9 * 86_400_000).toISOString();
+  await repo.updateOrder({ ...(await repo.getOrder(placed.id)), completedAt: old });
+  assert.equal((await pendingReviews(req({ headers: auth }), ctx)).jsonBody.pending.some((row) => row.orderId === placed.id), false);
 });
 
 console.log(`\n${passed} checks passed`);

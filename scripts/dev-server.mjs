@@ -45,6 +45,7 @@ const {
   editListingRoute, deleteListingRoute, similarListingsRoute, photoSearchRoute, photoSalesRoute, affiliateLinkRoute, openShortLinkRoute, mySavedRoute,
 } = await import(new URL('catalog-routes.js', apiRoot));
 const { myAffiliateRoute, markAffiliatePaidRoute } = await import(new URL('affiliate-routes.js', apiRoot));
+const { restockAlertRoute } = await import(new URL('stock-alert-routes.js', apiRoot));
 const {
   logShareRoute, myInviteRoute, openInviteRoute, growthRoute, growthClaimRoute,
 } = await import(new URL('share-routes.js', apiRoot));
@@ -62,7 +63,7 @@ const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
-  removePostRoute, trendingRoute, homeRoute, followingRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
+  removePostRoute, trendingRoute, homeRoute, followingRoute, shareableRoute, pinPostRoute, editPostRoute, acceptAnswerRoute, joinForumRoute, socialSearchRoute,
   forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute, discoverRoute, homeNewRoute,
   enterContestRoute, guessPriceRoute, judgeRoute, myRewardsRoute, shopGamesRoute,
 } = await import(new URL('social-routes.js', apiRoot));
@@ -78,7 +79,7 @@ const {
   claimPaymentRoute, settleClaimRoute, rejectOrderRoute, closeOrderRoute, payMoreRoute, refundCreditRoute,
   acceptOrderRoute, cancelOrderRoute, discardCheckoutRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
   submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
-  ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, myRefundsRoute, flagDisputeRoute, myDisputesRoute,
+  ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, myRefundsRoute, pendingReviewsRoute, flagDisputeRoute, myDisputesRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
@@ -201,6 +202,7 @@ const routes = [
   ['GET', '/api/listings/:id/similar', similarListingsRoute],
   ['POST', '/api/search/photo', photoSearchRoute],
   ['POST', '/api/search/photo/sales', photoSalesRoute],
+  ['POST', '/api/listings/:id/restock-alert', restockAlertRoute],
   ['POST', '/api/listings/:id/affiliate-link', affiliateLinkRoute],
   ['GET', '/api/r/:code', openShortLinkRoute],
   ['GET', '/api/me/affiliate', myAffiliateRoute],
@@ -290,6 +292,8 @@ const routes = [
   ['POST', '/api/social/posts/:channel/:id/judge', judgeRoute],
   ['POST', '/api/social/posts/:channel/:id/delete', removePostRoute],
   ['POST', '/api/social/posts/:channel/:id/pin', pinPostRoute],
+  ['POST', '/api/social/posts/:channel/:id/edit', editPostRoute],
+  ['POST', '/api/social/posts/:channel/:id/accept', acceptAnswerRoute],
   ['GET', '/api/messages', inboxRoute],
   ['GET', '/api/messages/:handle', threadRoute],
   ['POST', '/api/messages/:handle/send', sendMessageRoute],
@@ -312,6 +316,7 @@ const routes = [
   ['POST', '/api/orders/:id/credit-hold', holdCreditRoute],
   ['POST', '/api/orders/:id/refund-new', startRefundRoute],
   ['GET', '/api/me/refunds', myRefundsRoute],
+  ['GET', '/api/me/pending-reviews', pendingReviewsRoute],
   ['GET', '/api/me/disputes', myDisputesRoute],
   ['POST', '/api/orders/:id/flag-dispute', flagDisputeRoute],
   ['POST', '/api/me/purchases/pay', payMoreRoute],

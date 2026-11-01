@@ -182,8 +182,14 @@ export function goodsMinor(order: Pick<Order, 'unitPriceMinor' | 'quantity'>): n
  * has (advance, balance, refund) instead of starting a second ledger. The shop
  * settles it with the forwarder alongside the freight bill.
  */
-export function orderTotalMinor(order: Pick<Order, 'unitPriceMinor' | 'quantity' | 'addOns'>): number {
-  return goodsMinor(order) + liveAddOns(order).reduce((sum, addOn) => sum + addOn.premiumMinor, 0);
+export function orderTotalMinor(
+  order: Pick<Order, 'unitPriceMinor' | 'quantity' | 'addOns'> & Partial<Pick<Order, 'shippingMinor' | 'offerDiscountMinor'>>,
+): number {
+  return Math.max(
+    0,
+    goodsMinor(order) - (order.offerDiscountMinor ?? 0) + (order.shippingMinor ?? 0)
+      + liveAddOns(order).reduce((sum, addOn) => sum + addOn.premiumMinor, 0),
+  );
 }
 
 /**

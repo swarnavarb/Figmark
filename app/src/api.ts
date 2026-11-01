@@ -1,8 +1,9 @@
+import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
 import type { ButtonLibrary } from '@shared/route-buttons';
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type { NotificationCategory } from '@shared/notifications';
-import type { NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
+import type { FirstDibsView, NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
 import type { VerifiedChecks } from '@shared/verification';
 import type {
   ApiError,
@@ -33,7 +34,8 @@ import type { PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type {
-  CommentThread, PollView, PostHotspot, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe, PollStyle,
+  CommentThread, CompareKind, PollView, PostBlur, PostHotspot, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
+  PollStyle,
 } from '@shared/social';
 import type { CommunityAction } from '@shared/disputes';
 import type { MarketSettings } from '@shared/settings';
@@ -313,6 +315,8 @@ export interface SellerCard {
   followerCount: number;
   trustScore: number;
   onTimeDispatchRate: number | null;
+  /** Share of buyers who came back for a second order. Null until there is enough history. */
+  repeatCustomerRate: number | null;
   /** Orders delivered without being lost in a dispute. */
   completedSales: number;
   memberSince: string;
@@ -461,6 +465,10 @@ export interface ListingDetail {
   preOrder: PreOrderRoster | null;
   /** Null unless the shop pays a commission on this item. */
   affiliate: ListingAffiliate | null;
+  /** "Tell me when it's back": whether this reader asked, and how many have. */
+  restockAlert?: { on: boolean; count: number };
+  /** A stock poll's voters' head start, as this reader stands in it. */
+  firstDibs?: FirstDibsView | null;
 }
 
 export interface ListingAffiliate {
@@ -653,10 +661,20 @@ export interface PublicReview {
   /** What it was written about. Null only where the order has since gone. */
   item: {
     orderId: string; listingId: string; name: string; totalMinor: number; currency: string;
+    /** The item's photo, for the small card beside the review. */
+    photoUrl?: string | null;
   } | null;
   /** This viewer wrote it. */
   mine?: boolean;
   moderation?: ModerationMark;
+}
+
+/** What a person still owes a review on, and which deliveries they have yet to confirm arrived. */
+export interface PendingReviews {
+  pending: { orderId: string; itemName: string; photoUrl: string | null; side: 'buyer' | 'seller'; completedAt: string }[];
+  toConfirm: { orderId: string; itemName: string }[];
+  /** How many days after an order completes the app keeps asking. */
+  days: number;
 }
 
 /** An opinion left on somebody's page, which nothing had to be bought to write. */
@@ -707,7 +725,17 @@ export interface PriceChange {
 }
 
 export interface Checkout {
+  /** What is owed for everything on this order: the goods, plus shipping, less what offers took off. */
   itemMinor: number;
+  /** The seller's price for the goods alone. Shipping and offers are shown beside it, never inside it. */
+  goodsMinor?: number;
+  shippingMinor?: number;
+  offerDiscountMinor?: number;
+  appliedOffers?: AppliedOffer[];
+  /** The offers this order is under, with their terms. */
+  offerRules?: ListingOffer[];
+  /** What paying everything now, rather than an advance, would save: the shop's pay-in-full offer. */
+  prepaySavingMinor?: number;
   /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
   unavailable?: string | null;
   /** Set when the price moved since Buy was pressed; the checkout is already at the new one. */
@@ -1134,6 +1162,8 @@ export interface DisputeView {
 }
 
 export interface OrderState {
+  /** What cancelling this order would cost the rest of the buyer's basket in lost offers. */
+  offerImpact?: { extraMinor: number; lost: string[] } | null;
   order: Order;
   side: OrderSide | null;
   /** The other party, named from this viewer's side of the order. */
@@ -1180,6 +1210,8 @@ export interface NewListing {
   privateFor?: string | null;
   /** The shop's own item a private deal was made from. */
   dealFromId?: string | null;
+  /** Listed because a stock poll asked for it: its voters get first dibs. */
+  fromPoll?: { channelId: string; postId: string; optionId?: string | null } | null;
   title: string;
   description: string;
   category: string;
@@ -1297,6 +1329,12 @@ export interface NewPost {
     title: string; rules: string; entriesHours: number; votingHours: number; judging: ContestJudging;
     prizes: { amountMinor: number; note: string }[]; host?: 'store' | 'figmark';
   } | null;
+  /** Blurred until tapped. */
+  blur?: PostBlur | null;
+  /** Two photos, before and after. */
+  compare?: { kind: CompareKind; labels?: [string, string] } | null;
+  /** A question whose comments are its answers. */
+  question?: boolean;
 }
 
 /** What Discover is made of, each list already ranked. The rails come on the first page only. */
@@ -2137,6 +2175,11 @@ export interface PhotoSalesItem {
 }
 
 export interface PhotoSalesResponse {
+  /**
+   * The poster's own items on sale that the photo shows, or very likely
+   * shows: tagged on it without anybody placing them.
+   */
+  own?: (FeedListing & { onSale: boolean })[];
   items: PhotoSalesItem[];
   /** Shops that have sold the matching items, most sold first. */
   sellers: { seller: SellerCard; unitsSold: number; items: number }[];
@@ -2626,6 +2669,9 @@ export const api = {
   markAffiliatePaid: (orderId: string, reference?: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
+  /** Be told when a sold-out item is back, or stop. */
+  restockAlert: (id: string, on: boolean) =>
+    post<{ on: boolean; count: number }>(`/listings/${encodeURIComponent(id)}/restock-alert`, { on }),
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
   /** `quantityWas` is the stock the form showed: the server applies the difference, not the number. */
   editListing: (id: string, body: Partial<NewListing> & { quantityWas?: number }) =>
@@ -2652,6 +2698,8 @@ export const api = {
     inPerson?: boolean;
   }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
+  /** Reviews this person still owes on recent trades, and deliveries they have yet to confirm. */
+  pendingReviews: () => request<PendingReviews>('/me/pending-reviews'),
   myRefunds: () => request<{
     refunds: MyRefund[];
     hasDetails: boolean;
@@ -3220,6 +3268,12 @@ export const api = {
   },
   pinPost: (channelId: string, id: string) =>
     post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
+  /** Change the words of your own post, or how it is blurred. */
+  editPost: (channelId: string, id: string, changes: { body?: string; blur?: PostBlur | null }, as?: string | null) =>
+    post<{ card: PostCard }>(`${postPath(channelId, id)}/edit${voice(as)}`, changes),
+  /** Mark the comment that answered your question; null takes the mark off. */
+  acceptAnswer: (channelId: string, id: string, commentId: string | null, as?: string | null) =>
+    post<{ card: PostCard; comments: CommentThread[] }>(`${postPath(channelId, id)}/accept${voice(as)}`, { commentId }),
   createPost: (body: NewPost) => post<{ post: Post }>('/social/posts', body),
   /** Put a photo into a competition: one each, while entries are open. */
   enterContest: (channelId: string, id: string, photoUrl: string, caption: string) =>

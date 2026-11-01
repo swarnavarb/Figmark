@@ -17,6 +17,7 @@ import { AuthError, getAuthService } from '../auth/index.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { SALE_MILESTONES, type BadgeKind } from '../../../shared/play.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
@@ -506,6 +507,9 @@ export async function messageFromShop(
 }
 
 /** POST /api/messages/{handle}/send - say something, as one of your handles. */
+/** Badges a shop earns by selling: shown on its storefront, not on its owner's own page. */
+const SHOP_BADGES = new Set<BadgeKind>(SALE_MILESTONES.map((step) => step.kind));
+
 async function send(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -1019,7 +1023,11 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     // Which checks the account behind this page passed - a shop's are its owner's.
     verified: verifiedChecks(user),
     // What the person has won in competitions, debates and guesses: a person's page only.
-    gameBadges: isStore ? [] : [...(user.badges ?? [])].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
+    // A shop and its owner are one account: sale milestones are the shop's,
+    // everything else - wins, accepted answers - is the person's.
+    gameBadges: [...(user.badges ?? [])]
+      .filter((badge) => SHOP_BADGES.has(badge.kind) === isStore)
+      .sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
     /** What the tabs and chips count, so neither has to guess. */
     counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },
     // Active first, then sold out, then expired.
