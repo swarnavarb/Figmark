@@ -310,13 +310,11 @@ export interface Engaged {
  */
 export function tasteLiftFor(taste: FeedTaste, taken: Engaged, screen: FeedScreen) {
   const K = DISCOVER_TUNING.taste;
-  return (post: Post, topics: readonly string[]): { lift: number; topic: string | null } => {
+  return (post: Post, topics: readonly string[]): number => {
     let sum = 0;
-    let best: { topic: string; weight: number } | null = null;
     for (const topic of topics) {
       const weight = (taste.topics[topic] ?? 0) + (taken.topics.get(topic) ?? 0);
       sum += weight;
-      if (weight > (best?.weight ?? 0)) best = { topic, weight };
     }
     const topicSignal = topics.length ? sum / Math.sqrt(topics.length) : 0;
     const format = formatOf(post);
@@ -324,7 +322,7 @@ export function tasteLiftFor(taste: FeedTaste, taken: Engaged, screen: FeedScree
     const channelSignal = taste.channels[post.channelId] ?? 0;
     const raw = K.topic * Math.tanh(topicSignal / 3) + K.kind * Math.tanh(formatSignal / 3) + K.channel * Math.tanh(channelSignal / 3);
     const shown = Math.max(K.floor, Math.min(K.ceiling, 1 + raw)) * lessTopicLift(screen, topics);
-    return { lift: shown, topic: best && best.weight >= 1 ? best.topic : null };
+    return shown;
   };
 }
 
@@ -501,8 +499,6 @@ export interface WhyFacts {
   /** People they follow who took part. */
   followedActed: number;
   forumJoined: boolean;
-  /** A topic they like that the post carries. */
-  topic: string | null;
   affinity: boolean;
   contested: number;
   velocity: number;
@@ -519,7 +515,16 @@ function span(ms: number): string {
   return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
-/** The one line that says why a post is here, strongest reason first, or null when there is nothing honest to say. */
+/**
+ * The one line that says why a post is here, strongest reason first, or null
+ * when there is nothing honest to say.
+ *
+ * It never names what the reader has been learned to like. Their taste moves
+ * the ranking, but a line such as "Because you like #resin" would tell anybody
+ * looking over their shoulder what they linger on - so the reasons given are
+ * about the post (closing soon, too close to call, taking off) or about things
+ * the reader chose in the open (a forum they joined, people they follow).
+ */
 export function whyOf(facts: WhyFacts): DiscoverWhy | null {
   if (facts.endsInMs !== null && Number.isFinite(facts.endsInMs) && facts.endsInMs > 0 && facts.endsInMs < 24 * 3_600_000) {
     return { kind: 'ending', label: `Closes in ${span(facts.endsInMs)}` };
@@ -528,7 +533,6 @@ export function whyOf(facts: WhyFacts): DiscoverWhy | null {
     return { kind: 'followed', label: `${facts.followedActed} ${facts.followedActed === 1 ? 'person' : 'people'} you follow joined in` };
   }
   if (facts.forumJoined) return { kind: 'forum', label: 'From a forum you joined' };
-  if (facts.topic) return { kind: 'topic', label: `Because you like #${facts.topic.replace(/ /g, '')}` };
   if (facts.affinity) return { kind: 'affinity', label: 'From someone you engage with' };
   if (facts.replay) return { kind: 'popular', label: 'Popular earlier' };
   if (facts.contested >= 0.5) return { kind: 'contested', label: 'Too close to call' };

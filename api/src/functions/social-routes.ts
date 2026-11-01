@@ -1157,7 +1157,7 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
     // Scoring every post is the work; a page of a visit already ranked skips it.
     const build = (): Candidate[] => pool.map((post) => {
       const topics = index.topics.get(post.id) ?? [];
-      let by = lift(post) * tasted(post, topics).lift;
+      let by = lift(post) * tasted(post, topics);
       if (post.channel === 'forum' && reader.forums.has(post.channelId)) by *= L.forumMember;
       if (playedBy(post, user?.id ?? null)) by *= L.played;
       const base = heats.get(post.id) ?? 0;
@@ -1187,7 +1187,7 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
   const exploring = new Set(pageIds.filter((entry) => entry.explore).map((entry) => entry.id));
   const streamPosts = pageIds.map((entry) => byId.get(entry.id)).filter((post): post is Post => Boolean(post));
   const explain = {
-    now, reader, raw: byId, topicOf: (post: Post) => tasted(post, index.topics.get(post.id) ?? []).topic,
+    now, reader, raw: byId,
     risingIds, exploring, affinity, replay: lap > 0,
   };
 
@@ -1292,8 +1292,6 @@ function explained(
     reader: Reader;
     /** The posts as stored: a card's own copy has had its poll and reactions taken out. */
     raw: ReadonlyMap<string, Post>;
-    /** A topic they like that the post carries, if any. */
-    topicOf: (post: Post) => string | null;
     risingIds: ReadonlySet<string>;
     exploring: ReadonlySet<string>;
     affinity: ReadonlySet<string>;
@@ -1310,7 +1308,6 @@ function explained(
       live: until !== null,
       followedActed: card.followedActed?.count ?? 0,
       forumJoined: post.channel === 'forum' && context.reader.forums.has(post.channelId),
-      topic: context.topicOf(post),
       affinity: context.affinity.has(post.channelId),
       contested: contestedness(post),
       velocity: velocity(post, context.now),

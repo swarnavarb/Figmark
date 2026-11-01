@@ -130,25 +130,19 @@ const lifter = (taste = noTaste, engaged = noneEngaged, screen = prefs.NO_SCREEN
 
 check('a reader with no history sees every post at face value', () => {
   const lift = lifter();
-  assert.deepEqual(lift(post(), ['resin']), { lift: 1, topic: null });
-  assert.deepEqual(lift(post(), []), { lift: 1, topic: null });
+  assert.equal(lift(post(), ['resin']), 1);
+  assert.equal(lift(post(), []), 1);
 });
 
-check('a liked topic lifts a post and is named as the reason; a disliked one lowers it', () => {
+check('a liked topic lifts a post; a disliked one lowers it', () => {
   const liked = lifter({ ...noTaste, topics: { resin: 4, sneakers: -4 } });
-  const up = liked(post(), ['resin']);
-  assert.ok(up.lift > 1.5, String(up.lift));
-  assert.equal(up.topic, 'resin');
-  const down = liked(post(), ['sneakers']);
-  assert.ok(down.lift < 0.8, String(down.lift));
-  assert.equal(down.topic, null, 'a dislike is never offered as a reason');
-  assert.equal(liked(post(), ['resin', 'sneakers']).topic, 'resin');
+  assert.ok(liked(post(), ['resin']) > 1.5, String(liked(post(), ['resin'])));
+  assert.ok(liked(post(), ['sneakers']) < 0.8, String(liked(post(), ['sneakers'])));
 });
 
 check('a topic taken part in counts like one lingered on', () => {
   const taken = { ...noneEngaged, topics: new Map([['resin', 3]]) };
-  assert.ok(lifter(noTaste, taken)(post(), ['resin']).lift > 1.4);
-  assert.equal(lifter(noTaste, taken)(post(), ['resin']).topic, 'resin');
+  assert.ok(lifter(noTaste, taken)(post(), ['resin']) > 1.4);
 });
 
 check('a format and a channel they dwell on lift a post too, a little', () => {
@@ -156,22 +150,22 @@ check('a format and a channel they dwell on lift a post too, a little', () => {
   const both = fond(post({ channelId: 'shopA' }), []);
   const kindOnly = fond(post({ channelId: 'shopB' }), []);
   const neither = fond(post({ channelId: 'shopB', photoUrl: 'x' }), []);
-  assert.ok(both.lift > kindOnly.lift && kindOnly.lift > neither.lift, [both.lift, kindOnly.lift, neither.lift].join(' > '));
+  assert.ok(both > kindOnly && kindOnly > neither, [both, kindOnly, neither].join(' > '));
 });
 
 check('no taste, however strong, takes a post beyond its floor and ceiling', () => {
   const loves = lifter({ topics: { a: 8, b: 8, c: 8 }, kinds: { text: 8 }, channels: { c1: 8 }, at: noTaste.at });
   const hates = lifter({ topics: { a: -8, b: -8, c: -8 }, kinds: { text: -8 }, channels: { c1: -8 }, at: noTaste.at });
-  assert.ok(loves(post(), ['a', 'b', 'c']).lift <= T.taste.ceiling);
-  assert.ok(hates(post(), ['a', 'b', 'c']).lift >= T.taste.floor * 0.5 - 1e-9, 'floor, less a topic marked "less like this" at most');
-  assert.ok(hates(post(), ['a', 'b', 'c']).lift >= T.taste.floor);
+  assert.ok(loves(post(), ['a', 'b', 'c']) <= T.taste.ceiling);
+  assert.ok(hates(post(), ['a', 'b', 'c']) >= T.taste.floor * 0.5 - 1e-9, 'floor, less a topic marked "less like this" at most');
+  assert.ok(hates(post(), ['a', 'b', 'c']) >= T.taste.floor);
 });
 
 check('a topic marked "less like this" lowers a post whatever else is liked', () => {
   const screen = prefs.screenOf({ feedPrefs: { lessTopics: ['resin'] } });
   const liked = { ...noTaste, topics: { resin: 4 } };
-  const plain = lifter(liked)(post(), ['resin']).lift;
-  const lowered = lifter(liked, noneEngaged, screen)(post(), ['resin']).lift;
+  const plain = lifter(liked)(post(), ['resin']);
+  const lowered = lifter(liked, noneEngaged, screen)(post(), ['resin']);
   assert.ok(Math.abs(lowered - plain * prefs.LESS_TOPIC_LIFT) < 1e-9);
 });
 
@@ -285,7 +279,7 @@ check('the engagement index is reused until something on a post changes', () => 
 console.log('\nsaying why');
 
 check('the strongest honest reason is the one given', () => {
-  const none = { endsInMs: null, live: false, followedActed: 0, forumJoined: false, topic: null, affinity: false, contested: 0, velocity: 0, rising: false, explore: false, replay: false };
+  const none = { endsInMs: null, live: false, followedActed: 0, forumJoined: false, affinity: false, contested: 0, velocity: 0, rising: false, explore: false, replay: false };
   assert.equal(rank.whyOf(none), null, 'nothing honest to say, nothing said');
   assert.equal(rank.whyOf({ ...none, endsInMs: 3 * 3_600_000 }).label, 'Closes in 3h');
   assert.equal(rank.whyOf({ ...none, endsInMs: 20 * 60_000 }).label, 'Closes in 20m');
@@ -293,8 +287,8 @@ check('the strongest honest reason is the one given', () => {
   assert.equal(rank.whyOf({ ...none, endsInMs: Infinity, live: true }).kind, 'live');
   assert.equal(rank.whyOf({ ...none, followedActed: 1 }).label, '1 person you follow joined in');
   assert.equal(rank.whyOf({ ...none, followedActed: 3 }).label, '3 people you follow joined in');
-  assert.equal(rank.whyOf({ ...none, forumJoined: true, topic: 'resin' }).kind, 'forum');
-  assert.equal(rank.whyOf({ ...none, topic: 'resin kit' }).label, 'Because you like #resinkit');
+  assert.equal(rank.whyOf({ ...none, forumJoined: true, affinity: true }).kind, 'forum');
+  assert.equal(rank.whyOf({ ...none, topic: 'resin kit' }), null, 'a liked topic is never given as the reason');
   assert.equal(rank.whyOf({ ...none, affinity: true, contested: 0.9 }).kind, 'affinity');
   assert.equal(rank.whyOf({ ...none, replay: true, contested: 0.9 }).label, 'Popular earlier', 'older posts shown again say so');
   assert.equal(rank.whyOf({ ...none, replay: true, endsInMs: 3_600_000 }).kind, 'ending', 'unless something stronger is true');

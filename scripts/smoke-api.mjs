@@ -12655,7 +12655,7 @@ await check('pages of one visit agree with each other even while the feed moves'
   assert.deepEqual(again.stream.map((card) => card.post.id), nextIds, 'asking for the same page twice gives the same page');
 });
 
-await check('what a reader lingers on is learned, and that topic is then said to be why', async () => {
+await check('what a reader lingers on is learned, and never said back to them', async () => {
   resetRateLimits();
   const writer = await newBuyer('Origami Writer');
   const trained = await newBuyer('Origami Fan');
@@ -12677,17 +12677,18 @@ await check('what a reader lingers on is learned, and that topic is then said to
   assert.ok(taste.topics[key] > 1, 'lingering and opening is worth something');
   assert.ok(taste.channels[tagged[0].channelId] > 1);
 
+  // Taste moves the order; it is never named. No card tells anybody what this
+  // reader lingers on - not "because you like", not the topic itself.
+  const tellsTaste = (card) => card.why && (card.why.kind === 'topic' || /you like|origami/i.test(card.why.label));
   const mine = await streamOf(trained.headers);
   const theirs = mine.cards.filter((card) => tagged.some((post) => post.id === card.post.id));
-  assert.equal(theirs.length, 3);
-  assert.ok(theirs.some((card) => card.why?.kind === 'topic' && card.why.label.toLowerCase().includes('origami')), JSON.stringify(theirs.map((card) => card.why)));
-  const others = await streamOf(control.headers);
-  assert.ok(others.cards.filter((card) => tagged.some((post) => post.id === card.post.id)).every((card) => card.why?.kind !== 'topic'), 'nobody else is told they like it');
+  assert.equal(theirs.length, 3, 'still shown to them');
+  assert.ok(mine.cards.every((card) => !tellsTaste(card)), JSON.stringify(theirs.map((card) => card.why)));
+  assert.ok((await streamOf(control.headers)).cards.every((card) => !tellsTaste(card)));
 
   const guest = await streamOf(undefined, { interests: key });
-  assert.ok(guest.cards.some((card) => card.why?.kind === 'topic' && tagged.some((post) => post.id === card.post.id)),
-    'a guest who opened such things on this device gets them too');
-  assert.ok((await streamOf(undefined)).cards.every((card) => card.why?.kind !== 'topic'), 'and one who has not does not');
+  assert.ok(guest.cards.some((card) => tagged.some((post) => post.id === card.post.id)), 'a guest with such interests is shown them');
+  assert.ok(guest.cards.every((card) => !tellsTaste(card)), 'and is not told why either');
   const hostile = await discover(req({ query: { interests: 'x'.repeat(5000) + ',,,' + 'a,'.repeat(100) } }), ctx);
   assert.equal(hostile.status, 200, 'and cannot break it with a long list');
 });
