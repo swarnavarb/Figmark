@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { handleShapeProblem, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api, type FeedListing, type PostCard, type PublicProfile, type ShelfState } from '../api';
 import { listingRarity } from '@shared/quest';
+import { BADGE_META } from '@shared/play';
 import { LootCard } from './FeedPage';
 import { SocialPostCard } from '../components/SocialPost';
 import { SkeletonText } from '../components/Feedback';
@@ -177,6 +178,17 @@ function Storefront({ data, isMe, onFollow, reload }: {
           <div className="chips chips--tight">
             {data.earned.map((badge) => (
               <span key={badge.id} className="chip earnedtag">✓ {badge.label}</span>
+            ))}
+          </div>
+        )}
+
+        {/* Milestones the shop reached: a first sale, a hundredth. */}
+        {data.gameBadges && data.gameBadges.length > 0 && (
+          <div className="chips chips--tight" aria-label="Badges">
+            {data.gameBadges.map((badge) => (
+              <span key={badge.id} className="chip earnedtag" title={badge.detail}>
+                {BADGE_META[badge.kind].emoji} {BADGE_META[badge.kind].label}
+              </span>
             ))}
           </div>
         )}

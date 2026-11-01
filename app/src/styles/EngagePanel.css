@@ -32,7 +32,11 @@
   display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r-lg);
   border: 1px solid var(--lime-line); background: var(--surface); color: inherit; text-decoration: none;
 }
-.sengage__stockrow { display: grid; grid-template-columns: minmax(0, 1fr) 90px 28px; align-items: center; gap: var(--s2); font-size: var(--t-sm); }
+.sengage__stockrow { display: grid; grid-template-columns: minmax(0, 1fr) 70px 24px auto; align-items: center; gap: var(--s2); font-size: var(--t-sm); }
+.sengage__stocktitle { color: inherit; text-decoration: none; }
+.sengage__stocktitle:hover { text-decoration: underline; }
+.sengage__listit { min-height: 28px; padding: 0 10px; }
+.sengage__stocked { color: var(--lime); font-size: var(--t-xs); font-weight: var(--w-semi); white-space: nowrap; }
 .sengage__stockrow > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sengage__track { height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
 .sengage__track > span { display: block; height: 100%; background: var(--grad-play); transform-origin: left center; transition: transform 320ms var(--ease-out); }

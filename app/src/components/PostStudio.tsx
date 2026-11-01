@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import type { Post } from '@shared/models';
 import {
-  FLEX_MAX_HOTSPOTS, HOTSPOT_LABELS, HOTSPOT_LABEL_MAX_CHARS, HOTSPOT_STATUSES, POLL_MAX_OPTIONS, POLL_MIN_OPTIONS,
-  POLL_OPTION_MAX_CHARS,
-  type HotspotStatus, type PollStyle, type PostHotspot,
+  BLUR_LABELS, COMPARE_DEFAULTS, COMPARE_LABEL_MAX, FLEX_MAX_HOTSPOTS, HOTSPOT_LABELS, HOTSPOT_LABEL_MAX_CHARS,
+  HOTSPOT_STATUSES, POLL_MAX_OPTIONS, POLL_MIN_OPTIONS, POLL_OPTION_MAX_CHARS, POST_BLURS, SHELF_TOUR_MAX,
+  type CompareKind, type HotspotStatus, type PollStyle, type PostBlur, type PostHotspot,
 } from '@shared/social';
+import type { CollectionItem } from '@shared/models';
 import {
   CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, JUDGING_LABELS, PLACE_MEDALS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX,
   type ContestJudging,
@@ -29,10 +30,12 @@ import '../styles/PostStudio.css';
 
 type Posted = (post: Pick<Post, 'channelId' | 'id'>) => void;
 
-export type StudioMode = 'photo' | 'poll' | 'debate' | 'guess' | 'contest';
+export type StudioMode = 'photo' | 'compare' | 'question' | 'poll' | 'debate' | 'guess' | 'contest';
 
 const MODES: { id: StudioMode; emoji: string; label: string }[] = [
   { id: 'photo', emoji: '📸', label: 'Photo' },
+  { id: 'compare', emoji: '🎨', label: 'Before/after' },
+  { id: 'question', emoji: '❓', label: 'Question' },
   { id: 'poll', emoji: '📊', label: 'Poll' },
   { id: 'debate', emoji: '⚔️', label: 'Debate' },
   { id: 'guess', emoji: '🎯', label: 'Guess' },
@@ -306,6 +309,19 @@ export function PostStudio({
   const answerFiles = useRef<HTMLInputElement | null>(null);
   const [answerAt, setAnswerAt] = useState(0);
 
+  // Before and after
+  const [compareKind, setCompareKind] = useState<CompareKind>('before_after');
+  const [compareLabels, setCompareLabels] = useState<[string, string]>(['', '']);
+
+  // Any post: blurred until tapped
+  const [blur, setBlur] = useState<PostBlur | null>(null);
+
+  // A shelf tour from the collection: its photos are not uploads, so never thrown away
+  const [shelf, setShelf] = useState<CollectionItem[] | null>(null);
+  const [touring, setTouring] = useState(false);
+  const [tourPick, setTourPick] = useState<string[]>([]);
+  const fromShelf = useRef(new Set<string>());
+
   // Guess
   const [answerPrice, setAnswerPrice] = useState('');
   const [reveal, setReveal] = useState(72);
@@ -349,7 +365,7 @@ export function PostStudio({
   }
 
   function removePhoto(index: number) {
-    draft.discard(photos[index]!);
+    if (!fromShelf.current.has(photos[index]!)) draft.discard(photos[index]!);
     draft.setPhotos((all) => all.filter((_, i) => i !== index));
     setSpots((all) => all.filter((spot) => spot.photo !== index)
       .map((spot) => (spot.photo > index ? { ...spot, photo: spot.photo - 1 } : spot)));
@@ -393,10 +409,41 @@ export function PostStudio({
     setPending(null);
   }
 
+  async function openShelf() {
+    setTouring(true);
+    setError(null);
+    if (shelf) return;
+    try {
+      setShelf((await api.myCollection()).items.filter((item) => item.photos.length > 0));
+    } catch (err) {
+      setShelf([]);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your collection.');
+    }
+  }
+
+  /** The picked pieces become the post: a photo each, each tagged as in the collection. */
+  function useShelf() {
+    const picked = (shelf ?? []).filter((item) => tourPick.includes(item.orderId)).slice(0, SHELF_TOUR_MAX);
+    if (picked.length === 0) return;
+    for (const url of photos) if (!fromShelf.current.has(url)) draft.discard(url);
+    const urls = picked.map((item) => item.photos[0]!);
+    urls.forEach((url) => fromShelf.current.add(url));
+    draft.setPhotos(urls);
+    setSpots(picked.map((item, index) => ({
+      photo: index, x: 0.5, y: 0.5, label: item.name.slice(0, HOTSPOT_LABEL_MAX_CHARS), status: 'owned', listingId: item.listingId,
+    })));
+    setAt(0);
+    setPending(null);
+    if (!text.trim()) setText(`Shelf tour: ${picked.length} piece${picked.length === 1 ? '' : 's'} from my collection.`);
+    setTouring(false);
+  }
+
   /** What is still missing, in a few words, or null when it can go. */
   function missing(): string | null {
     const words = text.trim();
     if (mode === 'photo') return photos.length === 0 && words.length < 2 ? 'Add a photo or say something' : null;
+    if (mode === 'compare') return photos.length !== 2 ? 'Add both photos: before, then after' : null;
+    if (mode === 'question') return words.length < 5 ? 'Ask the question' : null;
     if (voting) {
       if (words.length < 2) return 'Ask the question';
       if (faceOf === 'rating') return photos.length === 0 ? 'Add the photo to rate' : null;
@@ -434,10 +481,19 @@ export function PostStudio({
       body: words,
       ...(storeId ? { storeId } : {}),
       ...(forumId ? { forumId } : {}),
+      ...(blur ? { blur } : {}),
     };
     let body: NewPost;
     if (mode === 'photo') {
       body = { ...base, photoUrls: photos, ...(spots.length ? { flex: { hotspots: spots } } : {}) };
+    } else if (mode === 'compare') {
+      const fallback = COMPARE_DEFAULTS[compareKind];
+      body = {
+        ...base, photoUrls: photos.slice(0, 2),
+        compare: { kind: compareKind, labels: [compareLabels[0].trim() || fallback[0], compareLabels[1].trim() || fallback[1]] },
+      };
+    } else if (mode === 'question') {
+      body = { ...base, photoUrls: photos, question: true };
     } else if (voting) {
       const options = faceOf === 'rating' ? ['1', '2', '3', '4', '5']
         : answers.map((entry) => ({ label: entry.label.trim(), photoUrl: entry.photo, listingId: entry.item?.id ?? null }));
@@ -483,8 +539,11 @@ export function PostStudio({
   }
 
   const here = spots.map((spot, index) => ({ spot, index })).filter(({ spot }) => spot.photo === at);
-  const maxPhotos = mode === 'photo' ? 4 : mode === 'guess' ? 4 : 1;
-  const needsPostPhotos = mode === 'photo' || mode === 'guess' || mode === 'contest' || (voting && faceOf === 'rating');
+  const fromCollection = photos.some((url) => fromShelf.current.has(url));
+  const maxPhotos = mode === 'photo' ? (fromCollection ? SHELF_TOUR_MAX : 4)
+    : mode === 'compare' ? 2 : mode === 'guess' || mode === 'question' ? 4 : 1;
+  const needsPostPhotos = mode === 'photo' || mode === 'compare' || mode === 'question' || mode === 'guess'
+    || mode === 'contest' || (voting && faceOf === 'rating');
   const modes = figmark ? MODES.filter((entry) => entry.id === 'contest')
     : MODES.filter((entry) => (entry.id !== 'contest' && entry.id !== 'guess') || asShop);
   const heading = figmark ? '🌟 Weekly theme challenge'
@@ -496,9 +555,14 @@ export function PostStudio({
       {photos.length === 0 ? (
         <button type="button" className="flexup" disabled={draft.uploading} onClick={() => files.current?.click()}>
           <Icon name="camera" size={26} />
-          <strong>{draft.uploading ? 'Uploading…' : mode === 'photo' ? 'Add photos' : mode === 'contest' ? 'Add a cover photo' : 'Add the photo'}</strong>
+          <strong>{draft.uploading ? 'Uploading…' : mode === 'photo' ? 'Add photos'
+            : mode === 'compare' ? `Add the ${COMPARE_DEFAULTS[compareKind][0].toLowerCase()} photo, then the ${COMPARE_DEFAULTS[compareKind][1].toLowerCase()}`
+              : mode === 'question' ? 'Add a photo (optional)'
+                : mode === 'contest' ? 'Add a cover photo' : 'Add the photo'}</strong>
           <span className="faint">
-            {mode === 'photo' ? 'Tap a piece in a photo to tag it — that makes it a collection flex.'
+            {mode === 'compare' ? 'Readers drag a line across to see one become the other.'
+              : mode === 'question' ? 'What is this? Is it legit? A photo helps people answer.'
+              : mode === 'photo' ? 'Tap a piece in a photo to tag it — that makes it a collection flex.'
               : mode === 'contest' ? 'Optional. A good example of what you want to see.'
                 : mode === 'guess' ? 'What people are pricing.' : 'Everybody rates this one.'}
           </span>
@@ -541,7 +605,46 @@ export function PostStudio({
           {mode === 'photo' && !pending && <p className="faint flexhint">Tap a piece in the photo to tag it.</p>}
         </>
       )}
+      {mode === 'photo' && !forumId && !asShop && (
+        <button type="button" className="btn btn--quiet btn--sm pstudio__shelfbtn" onClick={() => void openShelf()}>
+          🗂️ {fromCollection ? 'Pick again from my collection' : 'Shelf tour from my collection'}
+        </button>
+      )}
     </>
+  );
+
+  const shelfPicker = touring && (
+    <div className="shelfpick" role="group" aria-label="Pieces from your collection">
+      <p className="shelfpick__head">
+        <strong>Pick pieces for the tour</strong>
+        <span className="faint">{tourPick.length}/{SHELF_TOUR_MAX}</span>
+      </p>
+      {!shelf ? <p className="faint">Loading your collection…</p> : shelf.length === 0 ? (
+        <p className="faint">Nothing on your shelves yet. Pieces you buy here land in your collection once delivered.</p>
+      ) : (
+        <div className="shelfpick__grid">
+          {shelf.map((item) => {
+            const on = tourPick.includes(item.orderId);
+            return (
+              <button key={item.orderId} type="button" aria-pressed={on}
+                className={`shelfpick__item${on ? ' is-on' : ''}`}
+                disabled={!on && tourPick.length >= SHELF_TOUR_MAX}
+                onClick={() => setTourPick((all) => (on ? all.filter((id) => id !== item.orderId) : [...all, item.orderId]))}>
+                <img src={item.photos[0]} alt="" loading="lazy" decoding="async" />
+                <span>{item.name}</span>
+                {on && <span className="shelfpick__tick" aria-hidden="true"><Icon name="check" size={12} /></span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button type="button" className="btn btn--quiet btn--sm" onClick={() => setTouring(false)}>Cancel</button>
+        <button type="button" className="btn btn--sm" disabled={tourPick.length === 0} onClick={useShelf}>
+          Use {tourPick.length || ''} piece{tourPick.length === 1 ? '' : 's'}
+        </button>
+      </div>
+    </div>
   );
 
   return (
@@ -569,7 +672,7 @@ export function PostStudio({
 
           <label className="field">
             <span>
-              {voting ? 'The question' : mode === 'guess' ? 'What are people guessing?' : mode === 'contest' ? 'What to enter, and the rules' : 'Say something'}
+              {voting || mode === 'question' ? 'The question' : mode === 'guess' ? 'What are people guessing?' : mode === 'contest' ? 'What to enter, and the rules' : 'Say something'}
               {mode === 'photo' && <span className="faint"> (optional with a photo)</span>}
             </span>
             <textarea value={text} rows={mode === 'contest' ? 3 : 2}
@@ -578,7 +681,9 @@ export function PostStudio({
               placeholder={voting ? (mode === 'debate' ? 'Original or reissue: which is better?' : 'Which should I paint next?')
                 : mode === 'guess' ? 'What did this 1/7 scale sell for in 2019?'
                   : mode === 'contest' ? 'One photo of a figure you painted yourself. Judged on finish and creativity.'
-                    : 'The grail shelf is finally complete.'} />
+                    : mode === 'question' ? 'Is this box a bootleg? The seal looks off to me.'
+                      : mode === 'compare' ? 'Six hours of repaint later…'
+                        : 'The grail shelf is finally complete.'} />
           </label>
 
           {voting && mode === 'poll' && (
@@ -598,7 +703,24 @@ export function PostStudio({
             </div>
           )}
 
+          {mode === 'compare' && (
+            <>
+              <Choice label="What is it" value={compareKind} onChange={(kind) => setCompareKind(kind)}
+                options={[{ id: 'before_after', label: '🎨 Before & after' }, { id: 'unboxing', label: '📦 Unboxing' }]} />
+              <div className="pstudio__pair">
+                {[0, 1].map((side) => (
+                  <label key={side} className="field">
+                    <span>{side === 0 ? 'First photo is' : 'Second photo is'}</span>
+                    <input value={compareLabels[side]} maxLength={COMPARE_LABEL_MAX} placeholder={COMPARE_DEFAULTS[compareKind][side]}
+                      onChange={(event) => setCompareLabels((all) => (side === 0 ? [event.target.value, all[1]] : [all[0], event.target.value]))} />
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+
           {needsPostPhotos && photoStrip}
+          {shelfPicker}
           <input ref={files} type="file" accept="image/*" multiple={maxPhotos > 1} hidden
             onChange={(event) => { void addPhotos(event.target.files, maxPhotos); event.target.value = ''; }} />
 
@@ -796,6 +918,14 @@ export function PostStudio({
             </>
           )}
 
+          {mode !== 'contest' && (
+            <Choice label="Blur until tapped" value={blur ?? 'none'} onChange={(value) => setBlur(value === 'none' ? null : value as PostBlur)}
+              options={[{ id: 'none', label: 'No' }, ...POST_BLURS.map((kind) => ({ id: kind, label: BLUR_LABELS[kind] }))]} />
+          )}
+          {mode === 'question' && (
+            <p className="pstudio__note"><Icon name="check" size={14} /> Mark the comment that answers it. That answer shows first, and its writer is credited.</p>
+          )}
+
           {error && <ErrorNotice message={error} />}
         </div>
 
@@ -804,6 +934,7 @@ export function PostStudio({
           <button type="button" className="btn pstudio__go" disabled={busy || draft.uploading}
             title={blocked ?? undefined} onClick={() => void submit()}>
             {busy ? 'Posting…' : mode === 'photo' ? (spots.length ? `Post flex · ${spots.length} tagged` : 'Post')
+              : mode === 'compare' ? 'Post before & after' : mode === 'question' ? 'Ask'
               : mode === 'debate' ? 'Start the debate' : mode === 'poll' ? 'Start the poll'
                 : mode === 'guess' ? 'Start guessing' : 'Launch competition'}
           </button>

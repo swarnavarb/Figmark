@@ -54,6 +54,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   game_ending: 'social',
   contest_update: 'social',
   prize_won: 'social',
+  answer_accepted: 'social',
   post_commented: 'social',
   comment_replied: 'social',
   comment_liked: 'social',
@@ -79,6 +80,9 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   sale_opened: 'drops',
   sale_item: 'drops',
   seller_nudge: 'drops',
+  back_in_stock: 'drops',
+  first_dibs: 'drops',
+  drop_soon: 'drops',
 
   lot_moved: 'orders',
   offer_applied: 'orders',

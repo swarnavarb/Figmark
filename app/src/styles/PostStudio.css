@@ -247,3 +247,27 @@
   .pstudio__mode, .pstudio__style, .pstudio__judge { transition: background-color var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease; }
 }
 .pstudio__answers--photo .pstudio__answerphoto { aspect-ratio: 1; }
+
+/* A shelf tour: pieces picked from the collection, a photo each. */
+.pstudio__shelfbtn { justify-self: start; margin-top: var(--s2); }
+.shelfpick {
+  display: grid; gap: var(--s2); padding: var(--s3); margin-top: var(--s2);
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2);
+}
+.shelfpick__head { display: flex; justify-content: space-between; align-items: baseline; margin: 0; }
+.shelfpick__grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: var(--s2);
+  max-height: 300px; overflow-y: auto;
+}
+.shelfpick__item {
+  position: relative; display: grid; gap: 4px; padding: 4px; border: 2px solid transparent; border-radius: var(--r-md);
+  background: var(--surface); color: var(--text); font: inherit; font-size: var(--t-2xs); text-align: left; cursor: pointer;
+}
+.shelfpick__item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-sm); }
+.shelfpick__item span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.shelfpick__item.is-on { border-color: var(--accent); }
+.shelfpick__item:disabled { opacity: 0.45; cursor: not-allowed; }
+.shelfpick__tick {
+  position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 20px; height: 20px;
+  border-radius: var(--r-pill); background: var(--accent); color: #fff;
+}

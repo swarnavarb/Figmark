@@ -37,9 +37,24 @@ export function checkoutUnitPriceMinor(listing: Pick<Listing, 'priceMinor'>, ord
 }
 
 /** Why this checkout cannot become an order right now, or null when it can. */
+/**
+ * Where a buyer stands with a stock poll's first-dibs window: 'none' when there
+ * is no window or it has passed, 'voter' when they voted (or run the shop),
+ * 'waiting' when they must wait for it to close.
+ */
+export function firstDibsFor(listing: Listing, buyerId: string | null): 'none' | 'voter' | 'waiting' {
+  const dibs = listing.firstDibs;
+  if (!dibs || Date.parse(dibs.until) <= Date.now()) return 'none';
+  if (buyerId && (buyerId === listing.sellerId || dibs.voterIds.includes(buyerId))) return 'voter';
+  return 'waiting';
+}
+
 export function unavailableReason(listing: Listing | null, order: Order): string | null {
   if (!listing || listing.status !== 'active' || isExpired(listing)) return 'This item is no longer for sale.';
   if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
+  if (firstDibsFor(listing, order.buyerId) === 'waiting') {
+    return 'The people who voted for this get first dibs. It opens to everybody soon.';
+  }
   if (!isMultiple(listing) && order.quantity > listing.quantityAvailable) {
     return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
   }

@@ -45,6 +45,9 @@ import { callOffOrder } from './call-off.js';
 import { ownPhotos } from '../storage/index.js';
 import { claimPhotos } from '../storage/release.js';
 import { tooFast } from '../rate-limit.js';
+import { milestone } from '../play.js';
+import { tellRestocked } from './stock-alert-routes.js';
+import { SALE_MILESTONES } from '../../../shared/play.js';
 
 /**
  * What happens to an order after it is placed.
@@ -1829,10 +1832,26 @@ export const claimPaymentRoute = handler(claimPayment);
  * Put back what an order took. A called-off order that still holds a unit is
  * stock nobody can buy and a pre-order that can never fill.
  */
+/**
+ * A first sale and a hundredth earn the shop a badge for its page. Counted
+ * from the orders it has accepted, so a sale undone and made again is
+ * still one sale - and the badge, once given, stays.
+ */
+async function saleMilestones(repository: Repo, sellerId: string): Promise<void> {
+  try {
+    const accepted = (await repository.listOrdersForSeller(sellerId)).filter((entry) => entry.accepted).length;
+    for (const step of SALE_MILESTONES.filter((entry) => accepted >= entry.count)) {
+      await milestone(repository, sellerId, step, '/wallet');
+    }
+  } catch {
+    /* A badge is a nicety; the order is what matters. */
+  }
+}
+
 async function restock(repository: Repo, order: Order, now: string, units = true): Promise<void> {
   const listing = await repository.getListing(order.listingId);
   if (!listing) return;
-  await repository.updateListing({
+  const back = await repository.updateListing({
     ...listing,
     quantityAvailable: listing.quantityAvailable + (units ? order.quantity : 0),
     status: units && listing.status === 'sold_out' ? 'active' : listing.status,
@@ -1844,6 +1863,8 @@ async function restock(repository: Repo, order: Order, now: string, units = true
       : null,
     updatedAt: now,
   });
+  // Units handed back can put a sold-out item on sale again: whoever asked hears.
+  await tellRestocked(repository, listing, back);
 }
 
 async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
@@ -2035,6 +2056,7 @@ async function acceptOrder(request: HttpRequest, _context: InvocationContext) {
   }
   note(order, order.bookingOnly ? 'Booking accepted by seller.' : 'Order accepted by seller.', user.id);
   await repository.updateOrder(order);
+  await saleMilestones(repository, order.sellerId);
   // A booking becomes a sale the moment it is accepted, and only then.
   if (order.bookingOnly) {
     const listing = await repository.getListing(order.listingId);

@@ -37,12 +37,15 @@ import { tagKey, tidyLabel } from '../../../shared/shop-tags.js';
 import {
   CONTEST_CAPTION_MAX, CONTEST_MAX_ENTRIES, CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, GUESS_MAX_MINOR,
   PHASE_MAX_HOURS, PHASE_MIN_HOURS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX, SHORTLIST_MAX, SHORTLIST_MIN,
-  closestGuess, contestPhase, isJudging,
+  HELPFUL_MILESTONES, closestGuess, contestPhase, isJudging,
   type ContestPrize, type ContestWinner, type GuessView, type PostContest, type PostGuess,
 } from '../../../shared/play.js';
-import { RATING_LABELS, isPollStyle, type DebatePrize, type PollStyle, type VoterReward } from '../../../shared/social.js';
+import {
+  COMPARE_DEFAULTS, COMPARE_LABEL_MAX, RATING_LABELS, isBlur, isCompareKind, isPollStyle,
+  type DebatePrize, type PollStyle, type PostBlur, type PostCompare, type PostQuestion, type VoterReward,
+} from '../../../shared/social.js';
 import { verifiedChecks } from '../../../shared/verification.js';
-import { gameAudience, gameWhat, isDue, payContest, payDebate, settlePlay } from '../play.js';
+import { gameAudience, gameWhat, isDue, milestone, payContest, payDebate, settlePlay } from '../play.js';
 import { ownPhotoName } from '../storage/index.js';
 import { likeness, storedFingerprint } from '../image-hash.js';
 import { pictureMatches } from '../photo-search.js';
@@ -201,6 +204,7 @@ function pollView(poll: StoredPoll | null | undefined, viewerId: string): PollVi
     ...(poll.style ? { style: poll.style } : {}),
     ...(poll.switches ? { switches: poll.switches } : {}),
     ...(poll.stock ? { stock: true } : {}),
+    ...(poll.stocked?.length ? { stocked: poll.stocked.map((entry) => entry.optionId) } : {}),
     ...(poll.reward
       ? { reward: { amountMinor: poll.reward.amountMinor, maxVoters: poll.reward.maxVoters, storeName: poll.reward.storeName, paidCount: poll.reward.paidCount ?? null } }
       : {}),
@@ -225,6 +229,7 @@ function commentView(comment: StoredComment, post: Post, viewer: Actor, people: 
     canDelete: comment.authorId === viewer.userId || post.authorId === viewer.userId,
     createdAt: comment.createdAt,
     ...(comment.side ? { side: comment.side } : {}),
+    ...(post.question?.acceptedId === comment.id ? { accepted: true } : {}),
   };
 }
 
@@ -232,8 +237,11 @@ function commentView(comment: StoredComment, post: Post, viewer: Actor, people: 
 function threadsOf(post: Post, viewer: Actor, people: Map<string, User>): CommentThread[] {
   const comments = post.comments ?? [];
   const byTime = [...comments].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  // On a question, the answer its asker marked reads first.
+  const accepted = post.question?.acceptedId ?? null;
   return byTime
     .filter((comment) => comment.parentId === null)
+    .sort((a, b) => Number(b.id === accepted) - Number(a.id === accepted))
     .map((top) => ({
       ...commentView(top, post, viewer, people),
       replies: byTime
@@ -1971,6 +1979,12 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
       title?: unknown; rules?: unknown; entriesHours?: unknown; votingHours?: unknown; judging?: unknown;
       prizes?: unknown; host?: unknown;
     } | null;
+    /** Blurred until tapped: 'spoiler' or 'sensitive'. */
+    blur?: unknown;
+    /** Two photos read as one: before and after, or in the box and out of it. */
+    compare?: { kind?: unknown; labels?: unknown } | null;
+    /** A question, whose comments are its answers. */
+    question?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -2103,6 +2117,39 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     guess = { listingId, answerMinor: answer, revealAt: new Date(Date.now() + hours * 3_600_000).toISOString(), guesses: [] };
   }
 
+  let blur: PostBlur | null = null;
+  if (body.blur !== undefined && body.blur !== null) {
+    if (!isBlur(body.blur)) return error(400, 'invalid_post', 'Blur a post as a spoiler or as sensitive.');
+    blur = body.blur;
+  }
+
+  // Before and after: exactly two photos, and nothing else drawn over them.
+  let compare: PostCompare | null = null;
+  if (body.compare) {
+    if (!isCompareKind(body.compare.kind)) return error(400, 'invalid_compare', 'Say whether it is a before and after or an unboxing.');
+    if (photoUrls.length !== 2) return error(400, 'invalid_compare', 'A before and after is two photos.');
+    if (poll || hotspots || debateIds || guess || body.contest || body.listingId || vibe) {
+      return error(400, 'invalid_compare', 'A before and after is a post of its own.');
+    }
+    const raw = Array.isArray(body.compare.labels) ? body.compare.labels : [];
+    const label = (value: unknown, fallback: string) => {
+      const text = typeof value === 'string' ? value.trim() : '';
+      return text ? text.slice(0, COMPARE_LABEL_MAX) : fallback;
+    };
+    const fallback = COMPARE_DEFAULTS[body.compare.kind];
+    compare = { kind: body.compare.kind, labels: [label(raw[0], fallback[0]), label(raw[1], fallback[1])] };
+  }
+
+  // A question is words first: the comments are its answers.
+  let question: PostQuestion | null = null;
+  if (body.question === true) {
+    if (text.length < 5) return error(400, 'invalid_question', 'Ask the question in a few words.');
+    if (poll || guess || body.contest || debateIds || vibe || compare) {
+      return error(400, 'invalid_question', 'A question is a post of its own.');
+    }
+    question = { acceptedId: null };
+  }
+
   const repository = await getRepository();
 
   // Items named on a flex or a debate must be real, public items - anybody's,
@@ -2111,6 +2158,16 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   // people who voted find out which side won.
   if (debateIds && poll && !poll.closesAt) {
     poll = { ...poll, closesAt: new Date(Date.now() + DEBATE_DEFAULT_HOURS * 3_600_000).toISOString() };
+  }
+  // A tagged piece whose item has since sold out or ended keeps its tag and
+  // loses the link: a shelf tour shows what somebody owns, not what is on sale.
+  if (hotspots?.some((spot) => spot.listingId)) {
+    const ids = [...new Set(hotspots.flatMap((spot) => spot.listingId ?? []))];
+    const tagged = await Promise.all(ids.map((id) => repository.getListing(id)));
+    // An item that never was is a mistake, and refused below; one that was and has gone is history.
+    const gone = new Set(tagged.filter((listing): listing is Listing => Boolean(listing
+      && (listing.privateFor || listing.status !== 'active'))).map((listing) => listing.id));
+    hotspots = hotspots.map((spot) => (spot.listingId && gone.has(spot.listingId) ? { ...spot, listingId: null } : spot));
   }
   const linked = [
     ...(hotspots ?? []).map((spot) => spot.listingId), ...(debateIds ?? []),
@@ -2345,6 +2402,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     ...(debateIds ? { debate: { listingIds: debateIds, ...(debatePrize ? { prize: debatePrize } : {}) } } : {}),
     ...(guess ? { guess } : {}),
     ...(contest ? { contest } : {}),
+    ...(blur ? { blur } : {}),
+    ...(compare ? { compare } : {}),
+    ...(question ? { question } : {}),
     ...(shop && reach === 'feed' && (poll || guess || contest) ? { hostShopId: shop.id } : {}),
     createdAt: now,
     updatedAt: now,
@@ -3003,6 +3063,113 @@ async function pinPost(request: HttpRequest, _context: InvocationContext) {
   return json(200, { pinned: Boolean(saved.pinned) });
 }
 
+/**
+ * POST /api/social/posts/{channel}/{id}/edit - change the words of a post you
+ * wrote, or how it is blurred. The card says "edited" from then on.
+ *
+ * Only the words: photos, polls and items stay as people reacted to them. A
+ * poll's question is fixed once anybody has voted, and a competition's rules
+ * and a guess's clue once it is running, because changing them changes the
+ * game people already joined.
+ */
+async function editPost(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
+  if (!post) return noPost();
+  if (post.authorId !== user.id) return error(403, 'forbidden', 'Only whoever wrote it can edit it.');
+  if (post.wallOf) return error(400, 'invalid_edit', 'Edit the post in the forum; this is where it is shared.');
+  const body = await readJson<{ body?: unknown; blur?: unknown }>(request);
+  if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
+
+  const changes: Partial<Post> = {};
+  if (body.body !== undefined) {
+    if (typeof body.body !== 'string') return error(400, 'invalid_edit', 'Send the new words.');
+    const text = body.body.trim();
+    if (post.contest || post.guess) return error(409, 'locked', 'A game in progress keeps its words.');
+    const votes = (post.poll?.options ?? []).reduce((all, option) => all + option.voterIds.length, 0);
+    if (post.poll && votes > 0 && text !== post.body) return error(409, 'locked', 'People have voted on this question, so it stays as asked.');
+    const photos = post.photoUrls?.length ?? (post.photoUrl ? 1 : 0);
+    if (!text && photos === 0 && !post.listingId && !post.repostOf) return error(400, 'invalid_edit', 'Write something first.');
+    if (post.question && text.length < 5) return error(400, 'invalid_edit', 'Ask the question in a few words.');
+    if (text.length > (post.vibe ? VIBE_MAX_CHARS : 2000)) {
+      return error(400, 'invalid_edit', post.vibe ? `A colour post is under ${VIBE_MAX_CHARS} characters.` : 'Keep a post under 2000 characters.');
+    }
+    if (text !== post.body) changes.body = text;
+  }
+  if (body.blur !== undefined) {
+    if (body.blur !== null && !isBlur(body.blur)) return error(400, 'invalid_edit', 'Blur a post as a spoiler or as sensitive.');
+    if ((body.blur ?? null) !== (post.blur ?? null)) changes.blur = body.blur as PostBlur | null;
+  }
+  if (Object.keys(changes).length === 0) return json(200, { card: await cardFor(post, repository, actor) });
+
+  const now = new Date().toISOString();
+  const edit = (current: Post): Post => ({
+    ...current, ...changes, ...(changes.body !== undefined ? { editedAt: now } : {}), updatedAt: now,
+  });
+  const saved = await repository.mutatePost(post.channelId, post.id, edit);
+  if (!saved) return noPost();
+  // The same post shared into other forums says the same thing everywhere.
+  for (const copy of post.alsoIn ?? []) {
+    await repository.mutatePost(copy.forumId, copy.postId, edit).catch(() => null);
+  }
+  return json(200, { card: await cardFor(saved, repository, actor) });
+}
+
+/**
+ * POST /api/social/posts/{channel}/{id}/accept - mark the comment that
+ * answered your question, change your mind, or take the mark off.
+ *
+ * Its writer is told and credited once per question, however often the asker
+ * changes the pick: accepted answers earn the helpful badges.
+ */
+async function acceptAnswer(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
+  if (!post) return noPost();
+  if (!post.question) return error(400, 'invalid_accept', 'That post is not a question.');
+  if (post.authorId !== user.id) return error(403, 'forbidden', 'Only whoever asked can mark the answer.');
+  const body = await readJson<{ commentId?: unknown }>(request);
+  if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
+  const commentId = typeof body.commentId === 'string' && body.commentId ? body.commentId : null;
+  const comment = commentId ? (post.comments ?? []).find((entry) => entry.id === commentId) : null;
+  if (commentId && !comment) return error(404, 'not_found', 'That comment is not there any more.');
+  if (comment && comment.parentId !== null) return error(400, 'invalid_accept', 'Mark an answer, not a reply to one.');
+  if (comment && comment.authorId === user.id && !comment.asStore) return error(400, 'invalid_accept', 'Mark somebody else\'s answer.');
+
+  const credit = comment && !(post.question.credited ?? []).includes(comment.authorId) ? comment.authorId : null;
+  const now = new Date().toISOString();
+  const saved = await repository.mutatePost(post.channelId, post.id, (current) => ({
+    ...current,
+    question: {
+      acceptedId: commentId,
+      acceptedAt: commentId ? now : null,
+      credited: [...new Set([...(current.question?.credited ?? []), ...(credit ? [credit] : [])])],
+    },
+  }));
+  if (!saved) return noPost();
+
+  if (comment && credit) {
+    await notify(repository, [comment.authorId], {
+      kind: 'answer_accepted',
+      title: `${actorName(post.authorName)} marked your comment as the answer`,
+      body: gist(comment.body),
+      link: linkTo(post),
+    }, { except: user.id });
+    const writer = await repository.getUserById(comment.authorId);
+    if (writer) {
+      const count = (writer.helpfulAnswers ?? 0) + 1;
+      await repository.updateUser({ ...writer, helpfulAnswers: count });
+      for (const step of HELPFUL_MILESTONES.filter((entry) => entry.count === count)) {
+        await milestone(repository, writer.id, step, linkTo(post));
+      }
+    }
+  }
+  return json(200, {
+    card: await cardFor(saved, repository, actor),
+    comments: await commentsFor(saved, repository, actor),
+  });
+}
+
 /** POST /api/social/posts/{channel}/{id}/delete - take a post down. Its author only. */
 async function removePost(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, post, actor } = await target(request);
@@ -3476,6 +3643,8 @@ export const sharePostRoute = handler(sharePost);
 export const voteRoute = handler(vote);
 export const removePostRoute = handler(removePost);
 export const pinPostRoute = handler(pinPost);
+export const editPostRoute = handler(editPost);
+export const acceptAnswerRoute = handler(acceptAnswer);
 export const joinForumRoute = handler(joinForum);
 export const socialSearchRoute = handler(search);
 
@@ -3787,6 +3956,8 @@ app.http('social-home-new', { ...anon, methods: ['GET'], route: 'social/home/new
 app.http('social-discover', { ...anon, methods: ['GET'], route: 'social/discover', handler: discoverRoute });
 app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });
 app.http('social-post-pin', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/pin', handler: pinPostRoute });
+app.http('social-post-edit', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/edit', handler: editPostRoute });
+app.http('social-post-accept', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/accept', handler: acceptAnswerRoute });
 app.http('social-forum-join', { ...anon, methods: ['POST'], route: 'social/forums/{id}/join', handler: joinForumRoute });
 app.http('social-forum-members', { ...anon, methods: ['GET'], route: 'social/forums/{id}/members', handler: forumMembersRoute });
 app.http('social-forum-moderate', { ...anon, methods: ['POST'], route: 'social/forums/{id}/moderate', handler: moderateForumRoute });

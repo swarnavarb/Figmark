@@ -93,6 +93,47 @@ function RemindButton({ drop, onChange, compact = false }: {
   );
 }
 
+/** A calendar file for a drop: an hour blocked out from the first item, with a reminder 15 minutes before. */
+function calendarFile(drop: { id: string; name: string; startsAt: string; shop: { name: string }; channel: string; itemCount: number }): string {
+  const stamp = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const end = new Date(Date.parse(drop.startsAt) + 60 * 60_000).toISOString();
+  const text = (value: string) => value.replace(/[\\;,]/g, (match) => `\\${match}`).replace(/\n/g, '\\n');
+  const url = `${window.location.origin}${drop.channel}`;
+  return [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Figmark//Live drop//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${drop.id}@figmark`,
+    `DTSTAMP:${stamp(new Date().toISOString())}`,
+    `DTSTART:${stamp(drop.startsAt)}`,
+    `DTEND:${stamp(end)}`,
+    `SUMMARY:${text(`⚡ ${drop.name} - live drop at ${drop.shop.name}`)}`,
+    `DESCRIPTION:${text(`${drop.itemCount} item${drop.itemCount === 1 ? '' : 's'}, one at a time. Be in the channel: ${url}`)}`,
+    `URL:${url}`,
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT15M', `DESCRIPTION:${text(`${drop.name} starts in 15 minutes`)}`, 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR',
+  ].join('\r\n');
+}
+
+/** Save the drop to the phone's own calendar - the reminder that works with the app closed. */
+function CalendarButton({ drop, compact = false }: { drop: DropCardData; compact?: boolean }) {
+  return (
+    <button type="button" className={`remind remind--cal${compact ? ' remind--sm' : ''}`}
+      onClick={(event) => {
+        event.preventDefault();
+        const blob = new Blob([calendarFile(drop)], { type: 'text/calendar;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${drop.name.replace(/[^\w -]+/g, '').trim() || 'live-drop'}.ics`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }}>
+      <span aria-hidden="true">📅</span> {compact ? 'Calendar' : 'Add to calendar'}
+    </button>
+  );
+}
+
 /** Three flip tiles: hours, minutes, seconds. */
 function FlipClock({ until, now }: { until: string; now: number }) {
   const { h, m, s } = parts(until, now);
@@ -160,6 +201,7 @@ function DropTicket({ drop: initial, index }: { drop: DropCardData; index: numbe
           {live
             ? <Link to={drop.channel} className="ticket__go">Jump in →</Link>
             : <RemindButton drop={drop} onChange={setDrop} />}
+          {!live && <CalendarButton drop={drop} compact />}
           {!live && <Link to={drop.channel} className="ticket__chan">Channel</Link>}
         </span>
       </div>
@@ -236,7 +278,7 @@ export function OpeningCard({ sellerId, saleId, startsAt, saleName, itemCount }:
         <>
           <span className="opening__when">First drop in</span>
           <FlipClock until={startsAt} now={now} />
-          {drop && <span className="opening__acts"><RemindButton drop={drop} onChange={setDrop} compact /></span>}
+          {drop && <span className="opening__acts"><RemindButton drop={drop} onChange={setDrop} compact /><CalendarButton drop={drop} compact /></span>}
         </>
       ) : (
         <span className="opening__when"><span className="ticket__dot" /> It has started — drops land right here.</span>

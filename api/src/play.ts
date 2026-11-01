@@ -1,6 +1,6 @@
 import type { Post } from '../../shared/models.js';
 import {
-  LAST_CALL_MS, LEADER_POINTS, PLACE_LABELS, closestGuess, contestPhase,
+  BADGE_META, LAST_CALL_MS, LEADER_POINTS, PLACE_LABELS, closestGuess, contestPhase,
   type Badge, type BadgeKind, type ContestWinner, type GameStage, type PlayerRow, type StoreCredit,
 } from '../../shared/play.js';
 import { actorName, possessive } from '../../shared/notifications.js';
@@ -58,6 +58,28 @@ export async function reward(repository: Repo, userId: string, given: Reward): P
     ...(badge ? { badges: [...badges, { ...given.badge!, at: now } satisfies Badge] } : {}),
   });
   return { credit, badge };
+}
+
+/**
+ * A milestone badge - a first sale, ten accepted answers - put on somebody's
+ * page once, and they are told. Ids are fixed per kind, so reaching it again
+ * (a sale refunded and made again) awards nothing new.
+ */
+export async function milestone(
+  repository: Repo, userId: string, earned: { kind: BadgeKind; detail: string }, link: string,
+): Promise<boolean> {
+  const { badge } = await reward(repository, userId, {
+    badge: { id: `bdg_${earned.kind}`, kind: earned.kind, detail: earned.detail, link },
+  });
+  if (badge) {
+    await notify(repository, [userId], {
+      kind: 'prize_won',
+      title: `New badge: ${BADGE_META[earned.kind].emoji} ${BADGE_META[earned.kind].label}`,
+      body: `${earned.detail}. It is on your page now.`,
+      link,
+    });
+  }
+  return badge;
 }
 
 /** "₹500 store credit at Kaiju Imports and a badge" - what a winner is told they got. */

@@ -7,7 +7,7 @@ import type { AppliedOffer, ListingOffer } from './offers.js';
 import type { FeedPrefs } from './feed.js';
 import type { Badge, GameStage, PostContest, PostGuess, StoreCredit } from './play.js';
 import type {
-  PostDebate, PostFlex, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
+  PostBlur, PostCompare, PostDebate, PostFlex, PostQuestion, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
 } from './social.js';
 import type {
   ConditionTag,
@@ -352,6 +352,8 @@ export interface User extends BaseDocument {
   storeCredits?: StoreCredit[];
   /** What this person has won, for their page. In the `rewards` part too. */
   badges?: Badge[];
+  /** Answers of theirs that the asker marked as the answer, all told: for the helpful badges. */
+  helpfulAnswers?: number;
   /** This person's invite code, for `/i/<code>`: made the first time they invite anybody. */
   inviteCode?: string;
   /** Who brought this account to Figmark, if anybody did. Set once, at sign-up. */
@@ -970,6 +972,18 @@ export interface Listing extends BaseDocument {
   memberWindow?: { endsAt: string; publicPriceMinor: number; publicExpiresAt: string | null } | null;
   /** First dropped in the shop's channel by a power sale; public cards say so. */
   channelDrop?: boolean;
+  /**
+   * People to tell the moment it is back in stock - each asked on its page
+   * while it was sold out. Emptied as they are told, so a second restock
+   * tells only whoever asked since.
+   */
+  restockWatch?: string[];
+  /**
+   * Stocked because a stock poll asked for it: until `until`, only the
+   * people who voted for it may buy. Everybody else sees it and when they
+   * can.
+   */
+  firstDibs?: FirstDibs | null;
   /**
    * Sold as one assorted lot rather than as a single item.
    *
@@ -2651,6 +2665,14 @@ export interface Post extends BaseDocument {
   dwellMs?: number;
   /** When the voters were told how a debate ended. Set once, so they are told once. */
   resultsSentAt?: string | null;
+  /** Set when its author last changed the words; the card says "edited". */
+  editedAt?: string | null;
+  /** Blurred until tapped. */
+  blur?: PostBlur | null;
+  /** Two photos read as one, before and after. */
+  compare?: PostCompare | null;
+  /** A question, answered in its comments. */
+  question?: PostQuestion | null;
 }
 
 /**
@@ -2952,7 +2974,15 @@ export type NotificationKind =
   /** A service store's application was decided, or a lot was booked with one. */
   | 'service_store'
   /** An artist commission moved: quoted, paid, finished, shipped. */
-  | 'commission';
+  | 'commission'
+  /** The asker marked your comment as the answer to their question. */
+  | 'answer_accepted'
+  /** Something you asked to hear about is back in stock. */
+  | 'back_in_stock'
+  /** A shop stocked what you voted for, and you may buy it before anybody else. */
+  | 'first_dibs'
+  /** A live drop you set a reminder for starts within minutes. */
+  | 'drop_soon';
 
 /**
  * A run of channel posts that sells things, on a timer the shop sets.
@@ -3005,6 +3035,8 @@ export interface PowerSale extends BaseDocument {
   reminders?: string[];
   /** When they were told, so nobody is told twice. */
   remindedAt?: string | null;
+  /** When the "starts in 15 minutes" heads-up shows, once it has been written ahead. */
+  headsUpAt?: string | null;
   /** When the closing message shows, once it has been written ahead. */
   closingAt?: string | null;
 }
@@ -3071,6 +3103,26 @@ export interface PostOpening {
   startsAt: string;
   saleName: string;
   itemCount: number;
+}
+
+/** A stock poll's voters' head start on what it was asked for. */
+export interface FirstDibs {
+  until: string;
+  voterIds: string[];
+  /** The poll it answers. */
+  channelId: string;
+  postId: string;
+  /** The answer it is, or the poll's question when it answers the whole poll. */
+  label: string;
+}
+
+/** A first-dibs window as a reader sees it: never who voted. */
+export interface FirstDibsView {
+  until: string;
+  label: string;
+  /** Whether this reader voted, and so may buy now. */
+  mine: boolean;
+  open: boolean;
 }
 
 export interface PostDrop {

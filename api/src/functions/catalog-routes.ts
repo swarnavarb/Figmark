@@ -11,7 +11,7 @@ import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefr
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone } from '../../../shared/fulfilment.js';
 import { lotNo, lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
-import type { Listing, ListingComment, Order, PreOrderFullRule, PreOrderShortRule, StageEvent } from '../../../shared/models.js';
+import type { FirstDibs, Listing, ListingComment, Order, PreOrderFullRule, PreOrderShortRule, StageEvent } from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, REACTION_META, isReaction, type ReactionKind } from '../../../shared/social.js';
 import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
@@ -46,6 +46,7 @@ import { sniffImageType } from '../storage/sanitize.js';
 import { fingerprint, storedFingerprint } from '../image-hash.js';
 import { rankByPhoto, type LearnedHash } from '../photo-search.js';
 import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
+import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellRestocked } from './stock-alert-routes.js';
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
@@ -188,7 +189,12 @@ async function canSee(repository: Awaited<ReturnType<typeof getRepository>>, lis
  * is all that leaves; every other change of price stays the shop's.
  */
 function publicListing(listing: Listing): Listing {
-  const { costSheet: _cost, costSheetPrevious: _history, orderCosts: _orders, priceHistory, ...rest } = listing;
+  const {
+    costSheet: _cost, costSheetPrevious: _history, orderCosts: _orders, priceHistory, restockWatch: _watch, firstDibs,
+    ...rest
+  } = listing;
+  // Who voted is the voters' business: a reader sees only when it opens.
+  if (firstDibs) (rest as Listing).firstDibs = { ...firstDibs, voterIds: [] };
   const highest = Math.max(0, ...(priceHistory ?? []).map((entry) => entry.priceMinor));
   return highest > listing.priceMinor
     ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }
@@ -307,6 +313,10 @@ async function listingDetail(request: HttpRequest, _context: InvocationContext) 
     liked: likedIds.includes(id),
     following: followed.includes(listing.sellerId),
     isOwn: viewer?.id === listing.sellerId,
+    /** "Tell me when it's back": whether this reader asked, and how many have. */
+    restockAlert: restockView(listing, viewer?.id ?? null),
+    /** A stock poll's voters' head start, as this reader stands in it. */
+    firstDibs: firstDibsView(listing, viewer?.id ?? null),
   });
 }
 
@@ -520,6 +530,11 @@ async function photoAsk(entry: unknown): Promise<PhotoAsk | string> {
   };
 }
 
+/** A probable match of the poster's own at or over this is tagged on their photo. */
+const OWN_TAG_CHANCE = 0.35;
+/** The most of the poster's own items tagged on one photo. */
+const OWN_TAGS = 4;
+
 /**
  * Takes one photo (`url`, `about`, `by`) and answers it, or several
  * (`photos: [...]`, up to a screenful) and answers each in `answers`, in
@@ -581,7 +596,20 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
     estimatedDispatchAt: null,
     onSale: onSale(listing),
   });
-  const reply = (entry: PhotoSales | null) => (!entry ? { items: [], sellers: [], likely: [], probable: [], vision } : {
+  // The poster's own items on sale that the photo is, or very likely is: the
+  // tags the photo carries without anybody placing them.
+  const ownOf = (entry: PhotoSales, by: string | null) => {
+    if (!by) return [];
+    const sure = entry.items.flatMap((item) => item.listings);
+    const likely = entry.probable.filter((guess) => guess.chance >= OWN_TAG_CHANCE).map((guess) => guess.listing);
+    const seen = new Set<string>();
+    return [...sure, ...likely]
+      .filter((listing) => listing.sellerId === by && onSale(listing) && !seen.has(listing.id) && seen.add(listing.id))
+      .slice(0, OWN_TAGS)
+      .map(card);
+  };
+  const reply = (entry: PhotoSales | null, by: string | null) => (!entry ? { items: [], sellers: [], likely: [], probable: [], own: [], vision } : {
+    own: ownOf(entry, by),
     items: entry.items.map((item) => ({ label: item.label, listings: item.listings.map(card) })),
     probable: entry.probable.map((guess) => ({ ...card(guess.listing), chance: Math.round(guess.chance * 100) / 100 })),
     sellers: entry.sellers.flatMap((seller) => {
@@ -594,7 +622,9 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
     }),
     vision,
   });
-  return json(200, several ? { answers: found.map(reply) } : reply(found[0]!));
+  return json(200, several
+    ? { answers: found.map((entry, at) => reply(entry, asks[at]!.by)) }
+    : reply(found[0]!, asks[0]!.by));
 }
 
 /**
@@ -679,6 +709,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     preLotName?: string;
     /** A private deal made from one of the shop's items: which one. */
     dealFromId?: string | null;
+    /** Listed because a stock poll asked for it: its voters get first dibs. */
+    fromPoll?: { channelId?: unknown; postId?: unknown; optionId?: unknown } | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -713,6 +745,14 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
 
   const title = body.title?.trim();
   if (!title) return error(400, 'invalid_listing', 'A title is required.');
+
+  // Stocked because a poll asked: the voters get a head start.
+  let dibs: { dibs: FirstDibs; optionId: string | null } | null = null;
+  if (body.fromPoll && !body.privateFor) {
+    const started = await startFirstDibs(repository, sellerId, body.fromPoll);
+    if (typeof started === 'string') return error(400, 'invalid_poll', started);
+    dibs = started;
+  }
 
   // A pre-order is a promise to a group about a number and a date; one that
   // asks for a single booking, or closes yesterday, is a promise nobody can
@@ -862,12 +902,14 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     ...(privateFor
       ? { privateFor, unlisted: true, affiliate: null, expiresAt: dealEndsAt(body.expiresAt), dealFrom }
       : {}),
+    ...(dibs ? { firstDibs: dibs.dibs } : {}),
     createdAt: now,
     updatedAt: now,
   };
 
   const created = await repository.createListing(listing);
   await claimPhotos(created.photos.map((photo) => photo.blobName || photo.url), `listing:${created.id}`);
+  if (dibs) await announceFirstDibs(repository, created, dibs.optionId).catch(() => undefined);
   // What a shop lists is what it is about: its tags count toward its identity.
   if (!privateFor) await refreshIdentity(repository, created.sellerId);
   // Anybody hunting for this hears it is here. Never the reason a listing fails.
@@ -1713,6 +1755,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   const updated = await repository.changeListing(listing.id, listing.sellerId, change);
   if (refusal) return refusal;
   if (!updated) return error(404, 'not_found', 'No such listing.');
+  await tellRestocked(repository, listing, updated);
   await claimPhotos(updated.photos.map((photo) => photo.blobName || photo.url), `listing:${updated.id}`);
   if (Array.isArray(body.photos)) {
     // Photos taken off the listing leave the blob too, unless something else still names them.

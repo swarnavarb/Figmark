@@ -28,7 +28,8 @@ const {
   toggleFollowRoute: toggleFollow, createOrderRoute: openCheckout,
   myActivityRoute: myActivity, forwardersRoute: forwarders,
 } = await import(new URL('catalog-routes.js', fns));
-const { placeOrder } = await import(new URL('placement.js', fns));
+const { placeOrder, unavailableReason } = await import(new URL('placement.js', fns));
+const { restockAlertRoute: restockAlert } = await import(new URL('stock-alert-routes.js', fns));
 /**
  * Pressing Buy only opens a checkout now; the order reaches the seller when
  * the buyer pays, pays an advance or books. Every fixture below was written
@@ -86,6 +87,7 @@ const {
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
   removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, followingRoute: socialFollowing, shareableRoute: shareable, pinPostRoute: pinPost,
+  editPostRoute: editPost, acceptAnswerRoute: acceptAnswer,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
   forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
   discoverRoute: discover,
@@ -13210,6 +13212,128 @@ await check('a store game reaches its recent buyers too, and reminds who has not
   assert.equal(await heard(longAgo, 'game_ending'), 0);
   const title = (await noticesFor(lately.id)).find((row) => row.kind === 'game_ending').title;
   assert.match(title, /^2 hours left to vote/);
+});
+
+await check('an author edits their words, the card says edited, and a voted question stays as asked', async () => {
+  const writer = await newBuyer('Editor Writer');
+  const other = await newBuyer('Editor Other');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Frist shelf' } }), ctx)).jsonBody.post;
+  const edited = await editPost(req({ headers: writer.headers, params: on(made), body: { body: 'First shelf', blur: 'spoiler' } }), ctx);
+  assert.equal(edited.status, 200, JSON.stringify(edited.jsonBody));
+  assert.equal(edited.jsonBody.card.post.body, 'First shelf');
+  assert.equal(edited.jsonBody.card.post.blur, 'spoiler');
+  assert.ok(edited.jsonBody.card.post.editedAt, 'the card says it was edited');
+  assert.equal((await editPost(req({ headers: other.headers, params: on(made), body: { body: 'Hijacked' } }), ctx)).status, 403);
+  assert.equal((await editPost(req({ headers: writer.headers, params: on(made), body: { blur: 'gory' } }), ctx)).status, 400);
+  resetRateLimits();
+  const poll = (await createPost(req({ headers: writer.headers, body: { body: 'Which one?', poll: { options: ['A', 'B'] } } }), ctx)).jsonBody.post;
+  await vote(req({ headers: other.headers, params: on(poll), body: { optionId: poll.poll.options[0].id } }), ctx);
+  assert.equal((await editPost(req({ headers: writer.headers, params: on(poll), body: { body: 'Which one? (changed)' } }), ctx)).status, 409);
+});
+
+await check('blur, before-and-after and questions are checked when posted', async () => {
+  const writer = await newBuyer('Kinds Writer');
+  const post = (body) => { resetRateLimits(); return createPost(req({ headers: writer.headers, body }), ctx); };
+  const two = ['/api/photos/before.jpg', '/api/photos/after.jpg'];
+  const pair = await post({ body: 'Repaint', photoUrls: two, compare: { kind: 'before_after' } });
+  assert.equal(pair.status, 201, JSON.stringify(pair.jsonBody));
+  assert.deepEqual(pair.jsonBody.post.compare, { kind: 'before_after', labels: ['Before', 'After'] });
+  const boxed = await post({ body: 'Unboxed', photoUrls: two, compare: { kind: 'unboxing', labels: ['Sealed', ''] } });
+  assert.deepEqual(boxed.jsonBody.post.compare.labels, ['Sealed', 'Out of the box']);
+  assert.equal((await post({ body: 'One photo', photoUrls: two.slice(0, 1), compare: { kind: 'before_after' } })).status, 400);
+  assert.equal((await post({ body: 'Odd', photoUrls: two, compare: { kind: 'sideways' } })).status, 400);
+  assert.equal((await post({ body: 'Spoilers ahead', blur: 'spoiler' })).jsonBody.post.blur, 'spoiler');
+  assert.equal((await post({ body: 'x', blur: 'gory' })).status, 400);
+  const asked = await post({ body: 'Is this box legit?', question: true });
+  assert.deepEqual(asked.jsonBody.post.question, { acceptedId: null });
+  assert.equal((await post({ body: 'Eh?', question: true })).status, 400, 'a question needs a few words');
+});
+
+await check('the asker marks the answer: it reads first, its writer is told, credited once, and badged', async () => {
+  const asker = await newBuyer('Q Asker');
+  const helper = await newBuyer('Q Helper');
+  const other = await newBuyer('Q Other');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: asker.headers, body: { body: 'Who sells the Frieren nendo?', question: true } }), ctx)).jsonBody.post;
+  resetRateLimits();
+  await commentOn(req({ headers: other.headers, params: on(made), body: { body: 'No idea, sorry' } }), ctx);
+  resetRateLimits();
+  const answered = (await commentOn(req({ headers: helper.headers, params: on(made), body: { body: 'Kaiju Imports has it' } }), ctx)).jsonBody;
+  const answer = answered.comments.find((thread) => thread.body === 'Kaiju Imports has it');
+  assert.equal((await acceptAnswer(req({ headers: helper.headers, params: on(made), body: { commentId: answer.id } }), ctx)).status, 403,
+    'only whoever asked marks the answer');
+  const marked = await acceptAnswer(req({ headers: asker.headers, params: on(made), body: { commentId: answer.id } }), ctx);
+  assert.equal(marked.status, 200, JSON.stringify(marked.jsonBody));
+  assert.equal(marked.jsonBody.comments[0].id, answer.id, 'the answer reads first');
+  assert.equal(marked.jsonBody.comments[0].accepted, true);
+  assert.equal(marked.jsonBody.card.post.question.acceptedId, answer.id);
+  const told = (await notifications(req({ headers: helper.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.kind === 'answer_accepted'));
+  // Unmarking and marking again credits nobody twice.
+  await acceptAnswer(req({ headers: asker.headers, params: on(made), body: { commentId: null } }), ctx);
+  await acceptAnswer(req({ headers: asker.headers, params: on(made), body: { commentId: answer.id } }), ctx);
+  const account = await (await getRepository()).getUserById(helper.id);
+  assert.equal(account.helpfulAnswers, 1);
+  assert.ok(account.badges.some((badge) => badge.kind === 'helpful_answer'));
+  resetRateLimits();
+  const plain = (await createPost(req({ headers: asker.headers, body: { body: 'Not a question' } }), ctx)).jsonBody.post;
+  assert.equal((await acceptAnswer(req({ headers: asker.headers, params: on(plain), body: { commentId: null } }), ctx)).status, 400);
+});
+
+await check('"tell me when it is back" rings once the item is restocked, then empties', async () => {
+  const waiter = await newBuyer('Restock Waiter');
+  const item = (await createListing(req({ headers: auth, body: { title: 'Restockable figure', priceMinor: 2_000, quantityAvailable: 1 } }), ctx)).jsonBody.listing;
+  assert.equal((await restockAlert(req({ headers: waiter.headers, params: { id: item.id }, body: { on: true } }), ctx)).status, 409,
+    'nothing to wait for while it is on sale');
+  const repository = await getRepository();
+  await repository.updateListing({ ...(await repository.getListing(item.id)), status: 'sold_out', quantityAvailable: 0 });
+  const on1 = await restockAlert(req({ headers: waiter.headers, params: { id: item.id }, body: { on: true } }), ctx);
+  assert.deepEqual(on1.jsonBody, { on: true, count: 1 });
+  assert.equal((await restockAlert(req({ headers: auth, params: { id: item.id }, body: { on: true } }), ctx)).status, 400, 'not on your own item');
+  const detail = (await listingDetail(req({ headers: waiter.headers, params: { id: item.id } }), ctx)).jsonBody;
+  assert.deepEqual(detail.restockAlert, { on: true, count: 1 });
+  assert.equal(detail.listing.restockWatch, undefined, 'who is waiting is not public');
+  await editListing(req({ headers: auth, params: { id: item.id }, body: { quantityAvailable: 3, quantityWas: 0 } }), ctx);
+  const told = (await notifications(req({ headers: waiter.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.kind === 'back_in_stock' && row.link === `/listing/${item.id}`));
+  assert.deepEqual((await repository.getListing(item.id)).restockWatch, []);
+});
+
+await check('a shop stocking what its poll asked gives the voters first dibs, and tells them', async () => {
+  const voter = await newBuyer('Dibs Voter');
+  const late = await newBuyer('Dibs Late');
+  resetRateLimits();
+  const poll = (await createPost(req({ headers: auth, body: {
+    body: 'What should we stock next?', storeId: 'usr_demo', poll: { options: ['Frieren nendo', 'Fern nendo'], stock: true },
+  } }), ctx)).jsonBody.post;
+  await vote(req({ headers: voter.headers, params: on(poll), body: { optionId: poll.poll.options[0].id } }), ctx);
+  await vote(req({ headers: late.headers, params: on(poll), body: { optionId: poll.poll.options[1].id } }), ctx);
+  const made = await createListing(req({ headers: auth, body: {
+    title: 'Frieren nendo', priceMinor: 3_500, quantityAvailable: 5,
+    fromPoll: { channelId: poll.channelId, postId: poll.id, optionId: poll.poll.options[0].id },
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const listing = made.jsonBody.listing;
+  assert.deepEqual(listing.firstDibs.voterIds, [voter.id], 'only who voted for that answer');
+  const told = (await notifications(req({ headers: voter.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.kind === 'first_dibs'));
+  const order = (buyerId) => ({ buyerId, quantity: 1 });
+  assert.equal(unavailableReason(listing, order(voter.id)), null);
+  assert.match(unavailableReason(listing, order(late.id)), /first dibs/);
+  assert.equal(unavailableReason({ ...listing, firstDibs: { ...listing.firstDibs, until: ago(1) } }, order(late.id)), null, 'then anybody');
+  const seen = (await listingDetail(req({ headers: late.headers, params: { id: listing.id } }), ctx)).jsonBody;
+  assert.deepEqual(seen.listing.firstDibs.voterIds, [], 'who voted stays private');
+  assert.equal(seen.firstDibs.mine, false);
+  assert.equal(seen.firstDibs.open, true);
+  const card = (await readPost(req({ headers: auth, params: on(poll) }), ctx)).jsonBody.card;
+  assert.deepEqual(card.social.poll.stocked, [poll.poll.options[0].id], 'the console can say it was listed');
+  const notMine = await createListing(req({ headers: auth, body: {
+    title: 'Nope', priceMinor: 1_000, fromPoll: { channelId: 'usr_nobody', postId: 'pst_nope' },
+  } }), ctx);
+  assert.equal(notMine.status, 400);
+  const shop = await (await getRepository()).getUserById('usr_demo');
+  assert.ok(shop.badges.some((badge) => badge.kind === 'first_sale'), 'accepting orders earned the shop its first-sale badge');
 });
 
 await check('an account can delete itself with its password, but not while it holds money or a dispute', async () => {

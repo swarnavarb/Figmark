@@ -27,7 +27,7 @@ export const USER_PARTS = {
   devices: ['clientDevices'],
   profit: ['profitTemplates', 'savedCalcs'],
   feed: ['feedPrefs'],
-  rewards: ['storeCredits', 'badges'],
+  rewards: ['storeCredits', 'badges', 'helpfulAnswers'],
 } as const satisfies Record<string, readonly (keyof User)[]>;
 
 export type UserPartName = keyof typeof USER_PARTS;

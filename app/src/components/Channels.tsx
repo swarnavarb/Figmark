@@ -8,7 +8,7 @@ import { useSession } from '../session';
 import { Avatar, EmptyState, ErrorNotice, PersonLink, Thumb, useConfirm } from './ui';
 import { Icon } from './Icon';
 import { shrink } from './PhotoManager';
-import { DropCard, Lightbox, Linked, copyLink, withReaction } from './SocialPost';
+import { DropCard, Lightbox, Linked, copyLink, postHref, withReaction } from './SocialPost';
 import { PhotoSales } from './PhotoSales';
 import { figmarkLink, LinkCard } from './LinkCard';
 import { PersonVoice, useVoice } from './SocialVoice';
@@ -659,7 +659,10 @@ function Message({ card, startsRun, mine, isForum, canPin, onReply, onJump, onOp
               ))}
             </div>
           )}
-          {photos.length > 0 && <PhotoSales url={photos[0]} about={card.post.body} by={card.post.authorId} tone="inline" />}
+          {photos.length > 0 && (
+            <PhotoSales url={photos[0]} about={card.post.body} by={card.post.authorId} tone="inline"
+              poster={{ name: post.authorName, handle: author.handle, link: postHref(post) }} />
+          )}
           {(linked ? linked.rest : post.body) && !(listing && post.drop) && <p className="cmsg__body"><Linked text={linked ? linked.rest : post.body} /></p>}
           {linked && <LinkCard path={linked.path} compact />}
           {post.opening && (
