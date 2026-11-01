@@ -16,7 +16,7 @@ import { tooFast } from '../rate-limit.js';
 import { leaderboardOf } from '../play.js';
 import { error, handler, json } from './http.js';
 import {
-  GUEST, actorFor, decorate, engagedActors, isBroadcast, mayRead, notYours, readJson, topicKeysOf, type PostCard, type Repo,
+  ACTION_WEIGHT, GUEST, actorFor, decorate, tasteSignalOf, engagedActors, isBroadcast, mayRead, notYours, readJson, topicKeysOf, type PostCard, type Repo,
 } from './social-routes.js';
 
 /**
@@ -85,6 +85,9 @@ async function savePost(request: HttpRequest, _context: InvocationContext) {
       ? (current.saved ?? []).filter((entry) => entry.postId !== postId)
       : pushCapped(current.saved, { channelId, postId, savedAt: new Date().toISOString() }, SAVED_POSTS_MAX,
           (a, b) => a.postId === b.postId),
+    // Saving is the strongest thing a reader says about a post short of buying from it.
+    ...(!already && post && post.authorId !== viewer.id
+      ? { taste: learnTaste(current.taste, [tasteSignalOf(post, ACTION_WEIGHT.save)], Date.now()) } : {}),
   }));
   return json(200, { saved: !already, count: prefs.saved?.length ?? 0 });
 }

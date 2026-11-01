@@ -170,7 +170,13 @@
 }
 .feed__caught::before, .feed__caught::after { content: ''; flex: 1 1 auto; height: 1px; background: var(--border); }
 
-/* A run of one shop's drops, folded: the newest in full, then the rest as a strip. */
+/* After the last post from people followed: Discover carrying on. */
+.feed__after { display: grid; gap: var(--s3); }
+.feed__aftertitle { margin: 0; font-size: var(--t-sm); font-weight: var(--w-bold); color: var(--text); }
+.feed__afterload { display: flex; justify-content: center; padding: var(--s3); color: var(--text-dim); }
+.feed__afterend { display: flex; justify-content: center; margin: 0; padding: var(--s2) 0 var(--s4); }
+
+/* A run of one channel's posts, folded: the newest in full, then the rest as a strip. */
 .dropbatch { display: grid; gap: 6px; }
 .dropbatch__more {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: var(--s2) var(--s3);

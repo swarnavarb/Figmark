@@ -85,7 +85,7 @@ const {
   readPostRoute: readPost, reactRoute: reactTo, reactorsRoute: reactors,
   addPostCommentRoute: commentOn, likeCommentRoute: likeComment,
   deletePostCommentRoute: deleteComment, sharePostRoute: sharePost, voteRoute: vote,
-  removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, shareableRoute: shareable, pinPostRoute: pinPost,
+  removePostRoute: removePost, trendingRoute: trending, homeRoute: socialHome, followingRoute: socialFollowing, shareableRoute: shareable, pinPostRoute: pinPost,
   joinForumRoute: joinForum, socialSearchRoute: socialSearch,
   forumMembersRoute: forumMembers, moderateForumRoute: moderateForum, shopFeedRoute: shopFeed, followsRoute: follows,
   discoverRoute: discover,
@@ -12821,6 +12821,75 @@ await check('a card says which of the people you follow took part', async () => 
   assert.deepEqual(card.followedActed, { count: 1, names: ['Friend Reactor'] });
   const plain = (await readPost(req({ headers: stranger.headers, params: on(made) }), ctx)).jsonBody.card;
   assert.ok(!plain.followedActed);
+});
+
+await check('the Social tab carries the people you follow, not only shops, and the pill counts them', async () => {
+  const fan = await newBuyer('Person Fan');
+  const friend = await newBuyer('Person Followed');
+  await toggleFollow(req({ headers: fan.headers, params: { id: `person:${friend.id}` } }), ctx);
+  const before = (await socialFollowing(req({ headers: fan.headers }), ctx)).jsonBody;
+  const since = before.posts[0]?.post.createdAt ?? new Date(Date.now() - 60_000).toISOString();
+  resetRateLimits();
+  const made = (await createPost(req({ headers: friend.headers, body: { body: 'My shelf this week' } }), ctx)).jsonBody.post;
+  const page = (await socialFollowing(req({ headers: fan.headers }), ctx)).jsonBody;
+  const card = page.posts.find((entry) => entry.post.id === made.id);
+  assert.ok(card, 'a followed person\'s post is in the Social tab');
+  assert.equal(card.following, true);
+  const legacy = (await socialHome(req({ headers: fan.headers, query: { following: '1' } }), ctx)).jsonBody;
+  assert.ok(legacy.posts.some((entry) => entry.post.id === made.id), 'the older address answers the same');
+  const pill = (await homeNew(req({ headers: fan.headers, query: { since } }), ctx)).jsonBody;
+  assert.equal(pill.count, 1);
+  assert.deepEqual(pill.names, ['Person Followed']);
+});
+
+await check('the Social tab pages small, loses nothing at a page edge, and filters on the server', async () => {
+  const fan = await newBuyer('Pager Fan');
+  const poster = await newBuyer('Pager Poster');
+  await toggleFollow(req({ headers: fan.headers, params: { id: `person:${poster.id}` } }), ctx);
+  const repository = await getRepository();
+  // Nine posts, three of them written in the same millisecond, and one poll far back.
+  const template = (await createPost(req({ headers: poster.headers, body: { body: 'first' } }), ctx)).jsonBody.post;
+  const base = Date.now() - 3_600_000;
+  const at = (minutes) => new Date(base - minutes * 60_000).toISOString();
+  const made = [template.id];
+  for (let index = 0; index < 8; index += 1) {
+    const stored = await repository.getPost(template.channelId, template.id);
+    const copy = { ...structuredClone(stored), id: `pst_pager_${index}`, body: `post ${index}`,
+      createdAt: index < 3 ? at(10) : at(10 + index), updatedAt: at(10) };
+    if (index === 7) Object.assign(copy, { createdAt: at(600), poll: { options: [{ id: 'a', label: 'A', voterIds: [] }, { id: 'b', label: 'B', voterIds: [] }] } });
+    await repository.createPost(copy);
+    made.push(copy.id);
+  }
+  const seen = [];
+  let before = null;
+  for (let round = 0; round < 10; round += 1) {
+    const page = (await socialFollowing(req({ headers: fan.headers, query: { limit: '5', ...(before ? { before } : {}) } }), ctx)).jsonBody;
+    assert.ok(page.posts.length <= 5);
+    seen.push(...page.posts.map((card) => card.post.id));
+    before = page.next;
+    if (!before) break;
+  }
+  assert.deepEqual([...seen].sort(), [...made].sort(), 'every post once, ties and all');
+  assert.equal(new Set(seen).size, seen.length);
+  const polls = (await socialFollowing(req({ headers: fan.headers, query: { kind: 'polls', limit: '5' } }), ctx)).jsonBody;
+  assert.deepEqual(polls.posts.map((card) => card.post.id), ['pst_pager_7'], 'a filter reaches past the first page');
+  assert.equal((await socialFollowing(req({ headers: fan.headers, query: { kind: 'nonsense' } }), ctx)).status, 200);
+});
+
+await check('reacting and saving teach taste; your own posts teach nothing', async () => {
+  const reader = await newBuyer('Taste Reader');
+  const writer = await newBuyer('Taste Writer');
+  resetRateLimits();
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Look at this #kaiju figure' } }), ctx)).jsonBody.post;
+  const tasteOf = async (id) => (await getRepository()).getUserById(id).then((user) => user.feedPrefs?.taste);
+  await reactTo(req({ headers: reader.headers, params: on(made), body: { kind: 'love' } }), ctx);
+  const afterReact = await tasteOf(reader.id);
+  assert.ok(afterReact.channels[made.channelId] > 0, 'a reaction is learned');
+  assert.ok(afterReact.topics.kaiju > 0);
+  await savePostR(req({ headers: reader.headers, params: on(made) }), ctx);
+  assert.ok((await tasteOf(reader.id)).channels[made.channelId] > afterReact.channels[made.channelId], 'a save is learned');
+  await reactTo(req({ headers: writer.headers, params: on(made), body: { kind: 'love' } }), ctx);
+  assert.equal(await tasteOf(writer.id), undefined);
 });
 
 await check('a shop listing what somebody hunts for tells them, within their budget and never itself', async () => {
