@@ -62,7 +62,7 @@ const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
   listForumsRoute, createForumRoute, readPostRoute, reactRoute, reactorsRoute,
   addPostCommentRoute, likeCommentRoute, deletePostCommentRoute, sharePostRoute, voteRoute,
-  removePostRoute, trendingRoute, homeRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
+  removePostRoute, trendingRoute, homeRoute, followingRoute, shareableRoute, pinPostRoute, joinForumRoute, socialSearchRoute,
   forumMembersRoute, moderateForumRoute, shopFeedRoute, followsRoute, discoverRoute, homeNewRoute,
   enterContestRoute, guessPriceRoute, judgeRoute, myRewardsRoute, shopGamesRoute,
 } = await import(new URL('social-routes.js', apiRoot));
@@ -264,6 +264,7 @@ const routes = [
   ['GET', '/api/social/search', socialSearchRoute],
   ['GET', '/api/social/trending', trendingRoute],
   ['GET', '/api/social/home', homeRoute],
+  ['GET', '/api/social/following', followingRoute],
   ['GET', '/api/social/home/new', homeNewRoute],
   ['POST', '/api/social/posts/:channel/:id/save', savePostRoute],
   ['POST', '/api/social/posts/:channel/:id/hide', hidePostRoute],

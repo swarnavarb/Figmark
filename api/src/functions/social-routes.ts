@@ -23,7 +23,7 @@ import { error, handler, json } from './http.js';
 import { notify, storeCrew } from './notify.js';
 import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
 import { levelOf } from './quest-routes.js';
-import { NO_SCREEN, lessFrom, lessFromLift, screenOf, screens, tasteAt, type FeedScreen } from '../feed-prefs.js';
+import { NO_SCREEN, learnTaste, lessFrom, lessFromLift, screenOf, screens, tasteAt, type FeedScreen, type TasteSignal } from '../feed-prefs.js';
 import {
   DISCOVER_TUNING, contestedness, decodeCursor, encodeCursor, evergreen, excitement, formatOf, indexOf, rankStream, readSnapshot,
   risingSeedPercent, shuffleBy, tasteLiftFor, velocity, whyOf, writeSnapshot,
@@ -303,7 +303,13 @@ export async function decorate(
   posts: Post[],
   repository: Repo,
   viewer: Actor,
-  options: { nested?: boolean; followed?: ReadonlySet<string> } = {},
+  options: {
+    nested?: boolean;
+    followed?: ReadonlySet<string>;
+    /** The viewer's account and who they follow, when the caller has read them already. */
+    me?: User | null;
+    watched?: ReadonlySet<string>;
+  } = {},
 ): Promise<PostCard[]> {
   // A comment taken down after a dispute must not come back as a preview.
   const moderated = await moderation(repository);
@@ -339,17 +345,15 @@ export async function decorate(
   const originals = new Map<string, Post>();
   const guest = viewer.userId === GUEST.userId;
   const top = !guest && !options.nested;
-  const [followedIds, me, follows] = await Promise.all([
+  const [followedIds, me, watched] = await Promise.all([
     options.followed
       ? Promise.resolve(options.followed)
       : guest ? Promise.resolve(new Set<string>()) : repository.listFollowedSellerIds(viewer.userId).then((list) => new Set(list)),
-    top ? repository.getUserById(viewer.userId) : Promise.resolve(null),
-    top ? repository.listFollowsBy(viewer.userId) : Promise.resolve([]),
+    !top ? Promise.resolve(null) : options.me !== undefined ? Promise.resolve(options.me) : repository.getUserById(viewer.userId),
+    // Who the viewer follows - shops and people both - that took part, named:
+    // the line on a card costs a name or two per post, not a read of every reactor.
+    !top ? Promise.resolve(new Set<string>()) : options.watched ? Promise.resolve(options.watched) : watchedBy(viewer.userId, repository),
   ]);
-  // Who the viewer follows - shops and people both - that took part, named:
-  // the line on a card costs a name or two per post, not a read of every reactor.
-  const watched = new Set(follows.map((follow) => (isPersonFollow(follow.sellerId)
-    ? follow.sellerId.slice(PERSON_FOLLOW.length) : follow.sellerId)));
   const actedBy = new Map<string, string[]>();
   if (watched.size > 0) {
     for (const post of posts) {
@@ -818,6 +822,35 @@ async function watchedBy(userId: string, repository: Repo): Promise<Set<string>>
 }
 
 /**
+ * How much each thing a person does with a post says about their taste.
+ * Doing outweighs looking (see `attentionWeight`): a comment or a save is a
+ * choice, where time on screen may be a slow scroll.
+ */
+export const ACTION_WEIGHT = { react: 1.5, comment: 2, vote: 1.2, save: 2.5 } as const;
+
+/** The taste signal one post gives, at a weight. */
+export function tasteSignalOf(post: Post, weight: number): TasteSignal {
+  return { channelId: post.channelId, kind: formatOf(post), topics: topicKeysOf(post), weight };
+}
+
+/**
+ * Teach this person's taste from something they did with a post. Their own
+ * posts teach nothing. A bookmark, like the seen batch: a lost race or a
+ * failed write is not worth failing the reaction for.
+ */
+async function learnFrom(repository: Repo, userId: string, post: Post, weight: number): Promise<void> {
+  if (post.authorId === userId || post.channelId === userId) return;
+  try {
+    const me = await repository.getUserById(userId);
+    if (!me) return;
+    const taste = learnTaste(me.feedPrefs?.taste, [tasteSignalOf(post, weight)], Date.now());
+    await repository.updateUser({ ...me, feedPrefs: { ...me.feedPrefs, taste } });
+  } catch {
+    // Taste is a hint; the action itself has been saved.
+  }
+}
+
+/**
  * Settle the games among these posts that have come due - debates closed,
  * guesses to reveal, competitions to move on, voters to pay (see play.ts) -
  * and hand back the posts with the settled ones read again, so what is drawn
@@ -862,6 +895,15 @@ async function settleDebates(recent: Post[], repository: Repo): Promise<Post[]> 
  * can draw "You're all caught up" between the new and the already seen.
  */
 async function home(request: HttpRequest, _context: InvocationContext) {
+  return feedFor(request, false);
+}
+
+/** GET /api/social/following - the Social tab: the people and shops followed, newest first, and nobody else. */
+async function following(request: HttpRequest, _context: InvocationContext) {
+  return feedFor(request, true);
+}
+
+async function feedFor(request: HttpRequest, followingOnly: boolean) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
@@ -870,24 +912,34 @@ async function home(request: HttpRequest, _context: InvocationContext) {
 
   // `before` is the next page: older followed posts only. What is catching on
   // is chosen once, on the first page, so it is not offered twice.
-  const before = request.query?.get('before') || undefined;
-  // `following=1` is the Social tab: who you chose, in order, and nobody else.
-  // Finding new people is Discover's job.
-  const onlyFollowed = request.query?.get('following') === '1';
+  const before = parseFeedCursor(request.query?.get('before'));
+  // The Social tab (`/social/following`, or `following=1`): who you chose, in
+  // order, and nobody else. Finding new people is Discover's job.
+  const onlyFollowed = followingOnly || request.query?.get('following') === '1';
   const findNew = !before && !onlyFollowed;
-  const followed = await repository.listFollowedSellerIds(user.id);
-  const followedSet = new Set(followed);
-  const [ownFeed, recentRead, liked, me, watched] = await Promise.all([
-    repository.listPostsForChannels([...new Set([...followed, user.id])], HOME_PAGE, { before, feedOnly: true }),
-    before ? Promise.resolve([] as Post[]) : repository.listRecentPosts(200),
-    findNew ? repository.listLikedListingIds(user.id) : Promise.resolve([] as string[]),
-    repository.getUserById(user.id),
-    findNew ? watchedBy(user.id, repository) : Promise.resolve(followedSet),
-  ]);
+  const limit = pageSizeOf(request.query?.get('limit'));
+  const kind = feedKindOf(request.query?.get('kind'));
+  // One read of who they follow - shops and people both - serves the page,
+  // the ranking and the cards.
+  const [watched, me] = await Promise.all([watchedBy(user.id, repository), repository.getUserById(user.id)]);
   const screen = screenOf(me);
-  const recent = await settleDebates(recentRead, repository);
-  const reader: Reader = { userId: user.id, actorKey: actor.key, watched, wished: new Set(liked), screen, forums: new Set() };
+  const channelIds = [...watched, user.id];
+  // The first unfiltered page also carries the results of debates this person
+  // voted in. Those, and what is catching on, come from the recent window -
+  // one read every feed on this instance shares for a few seconds.
+  const wantResults = !before && !kind;
+  const [paged, recentRead, liked] = await Promise.all([
+    followedPage(repository, channelIds, limit, before, kind, screen),
+    wantResults ? repository.listRecentPosts(200) : Promise.resolve([] as Post[]),
+    findNew ? repository.listLikedListingIds(user.id) : Promise.resolve([] as string[]),
+  ]);
   const now = Date.now();
+  // Games that have come due are settled before they are drawn. The home feed
+  // ranks the whole window, so settles it all; the Social tab settles only what
+  // it is about to show.
+  const ownFeed = await settleDue(paged.posts, now, repository);
+  const recent = findNew ? await settleDebates(recentRead, repository) : recentRead;
+  const reader: Reader = { userId: user.id, actorKey: actor.key, watched, wished: new Set(liked), screen, forums: new Set() };
   const scores = new Map(recent.map((post) => [post.id, heat(post, now)]));
 
   const trendingIds = new Set<string>();
@@ -903,17 +955,15 @@ async function home(request: HttpRequest, _context: InvocationContext) {
 
   // Debates this viewer voted in, closed lately: the ending of an argument
   // they took part in is news, wherever it was had.
-  const results = before ? [] : recent.filter((post) => post.debate && post.poll?.closesAt
+  const voted = !wantResults ? [] : recent.filter((post) => post.debate && post.poll?.closesAt
     && post.poll.closesAt < new Date(now).toISOString()
     && now - Date.parse(post.poll.closesAt) < RESULT_WINDOW_MS
     && post.poll.options.some((option) => option.voterIds.includes(user.id))
     && !screen.hidden.has(post.id));
+  const results = findNew ? voted : await settleDue(voted, now, repository);
   const resultIds = new Set(results.map((post) => post.id));
 
-  // Room messages never reach the feed, whatever the read let through, and a
-  // post hidden is hidden here too.
-  const followedPosts = ownFeed.filter((post) => (post.channel !== 'seller' || (post.reach ?? 'feed') === 'feed')
-    && !screen.hidden.has(post.id) && !resultIds.has(post.id));
+  const followedPosts = ownFeed.filter((post) => !resultIds.has(post.id));
   const inFeed = new Set(followedPosts.map((post) => post.id));
   // Trending first, hottest first; then rising, proven before merely tried.
   // Somebody marked "not interested" sinks to the end of what is found.
@@ -933,26 +983,29 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   });
   merged.push(...found.slice(next));
 
-  // Where the reader got up to: read before it moves, moved on the first page only.
+  // Where the reader got up to: read before it moves, moved on the first
+  // unfiltered page only, and written only when it actually moves.
   const lastVisit = me?.feedPrefs?.seenFeedAt ?? null;
-  const newest = followedPosts[0]?.createdAt ?? null;
+  const newest = !before && !kind ? followedPosts.find((post) => post.authorId !== user.id)?.createdAt ?? null : null;
   // Only a bookmark: two loads of the feed at once both move it, and the one
   // that loses must still show its page rather than "someone else changed this".
-  if (!before && me && newest && (!lastVisit || newest > lastVisit)) {
+  if (me && newest && (!lastVisit || newest > lastVisit)) {
     await repository.updateUser({ ...me, feedPrefs: { ...me.feedPrefs, seenFeedAt: newest } }).catch(() => undefined);
   }
 
   // The Live strip rides on the first page: the same cards, one decorate.
   const live = findNew ? liveFor(recent.filter((post) => !screens(screen, post)), user.id, now, (post) => scores.get(post.id) ?? 0) : [];
   const shown = new Set(merged.map((post) => post.id));
-  const cards = await decorate([...merged, ...live.filter((post) => !shown.has(post.id))], repository, actor, { followed: followedSet });
+  const cards = await decorate([...merged, ...live.filter((post) => !shown.has(post.id))], repository, actor, {
+    followed: watched, watched, me,
+  });
   const cardById = new Map(cards.map((card) => [card.post.id, card]));
   return json(200, {
     live: live.map((post) => cardById.get(post.id)).filter((card): card is PostCard => Boolean(card)),
     /** Pass back as `before` for the next page; null when there is none. */
-    next: ownFeed.length === HOME_PAGE ? ownFeed.at(-1)!.createdAt : null,
+    next: paged.next,
     lastVisit: before ? null : lastVisit,
-    posts: cards.slice(0, merged.length).map((card) => {
+    posts: merged.map((post) => cardById.get(post.id)).filter((card): card is PostCard => Boolean(card)).map((card) => {
       const badges: Boost[] = [];
       if (resultIds.has(card.post.id)) badges.push('result');
       if (trendingIds.has(card.post.id)) badges.push('trending');
@@ -962,10 +1015,97 @@ async function home(request: HttpRequest, _context: InvocationContext) {
   });
 }
 
+/** Followed posts per page of the home feed, unless the app asks for fewer. */
+const HOME_PAGE_MIN = 5;
+/** Pages read looking for posts of one kind before handing back what was found so far. */
+const KIND_ROUNDS = 5;
+
+function pageSizeOf(raw: string | null | undefined): number {
+  const asked = Number(raw);
+  return Number.isFinite(asked) && asked > 0 ? Math.max(HOME_PAGE_MIN, Math.min(HOME_PAGE, Math.floor(asked))) : HOME_PAGE;
+}
+
+/** The kinds of post the feed can be cut to. */
+export type FeedKind = 'photos' | 'polls' | 'sale' | 'flexes';
+const FEED_KINDS: readonly FeedKind[] = ['photos', 'polls', 'sale', 'flexes'];
+
+function feedKindOf(raw: string | null | undefined): FeedKind | null {
+  return FEED_KINDS.includes(raw as FeedKind) ? (raw as FeedKind) : null;
+}
+
+/** Where a feed page stopped: the last post's time, and its id to break a tie. */
+export interface FeedCursor { at: string; id?: string }
+
+/** `<time>|<id>`; a bare time - what older apps send - still pages, without the tie-break. */
+export function feedCursorOf(post: Pick<Post, 'createdAt' | 'id'>): string {
+  return `${post.createdAt}|${post.id}`;
+}
+
+export function parseFeedCursor(raw: string | null | undefined): FeedCursor | null {
+  if (!raw) return null;
+  const [at, id] = raw.split('|');
+  if (!at || Number.isNaN(Date.parse(at))) return null;
+  return id ? { at, id } : { at };
+}
+
+/** Whether a post - or what it passes on - is of the kind asked for. */
+function ofKind(post: Post, kind: FeedKind): boolean {
+  switch (kind) {
+    case 'photos': return (post.photoUrls?.length ?? 0) > 0 || Boolean(post.photoUrl);
+    case 'polls': return Boolean(post.poll);
+    // A shop's drop, or a buyer showing what arrived: both are stock landing.
+    case 'sale': return post.kind === 'sale' || Boolean(post.drop || post.delivered);
+    case 'flexes': return Boolean(post.flex);
+  }
+}
+
+/**
+ * One page of the followed feed, newest first.
+ *
+ * Room messages never reach the feed, whatever the read let through, and a
+ * post hidden is hidden here too. Cut to one kind, it reads on through older
+ * pages until the page is full or a few pages have gone by, so a filter shows
+ * the older polls rather than "nothing like that" when the newest page had
+ * none; `next` then carries on from the last post looked at, not the last one shown.
+ */
+async function followedPage(
+  repository: Repo, channelIds: readonly string[], limit: number, start: FeedCursor | null, kind: FeedKind | null, screen: FeedScreen,
+): Promise<{ posts: Post[]; next: string | null }> {
+  const kept: Post[] = [];
+  let cursor = start;
+  for (let round = 0; round < (kind ? KIND_ROUNDS : 1); round += 1) {
+    const page = await repository.listPostsForChannels(channelIds, limit, {
+      before: cursor?.at, beforeId: cursor?.id, feedOnly: true,
+    });
+    const visible = page.filter((post) => (post.channel !== 'seller' || (post.reach ?? 'feed') === 'feed') && !screen.hidden.has(post.id));
+    if (kind) {
+      // A repost or a wall entry is what it passes on.
+      const inner = await Promise.all(visible.map((post) => (post.repostOf
+        ? repository.getPost(post.repostOf.channelId, post.repostOf.postId)
+        : post.wallOf ? repository.getPost(post.wallOf.forumId, post.wallOf.postId) : Promise.resolve(null))));
+      kept.push(...visible.filter((post, index) => ofKind(post, kind) || Boolean(inner[index] && ofKind(inner[index]!, kind))));
+    } else {
+      kept.push(...visible);
+    }
+    if (page.length < limit) return { posts: kept, next: null };
+    cursor = { at: page.at(-1)!.createdAt, id: page.at(-1)!.id };
+    if (kept.length >= limit) break;
+  }
+  return { posts: kept, next: cursor ? `${cursor.at}|${cursor.id}` : null };
+}
+
+/** Settle the games on a page that have come due, reading nothing more to find them. */
+async function settleDue(posts: Post[], now: number, repository: Repo): Promise<Post[]> {
+  const due = posts.filter((post) => isDue(post, now));
+  if (due.length === 0) return posts;
+  const settled = new Map((await settleDebates(due, repository)).map((post) => [post.id, post]));
+  return posts.map((post) => settled.get(post.id) ?? post);
+}
+
 /**
  * GET /api/social/home/new?since=<iso> - how many followed posts arrived after
  * the newest one on screen, and from whom: the "new posts" pill, without
- * reading a page of cards to draw it.
+ * reading a page of cards to draw it. Only what is newer than `since` is read.
  */
 async function homeNew(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -973,11 +1113,10 @@ async function homeNew(request: HttpRequest, _context: InvocationContext) {
   const since = request.query?.get('since') ?? '';
   if (!since || Number.isNaN(Date.parse(since))) return error(400, 'invalid_request', 'Say since when.');
   const repository = await getRepository();
-  const [followed, me] = await Promise.all([repository.listFollowedSellerIds(user.id), repository.getUserById(user.id)]);
+  const [watched, me] = await Promise.all([watchedBy(user.id, repository), repository.getUserById(user.id)]);
   const screen = screenOf(me);
-  const posts = await repository.listPostsForChannels(followed, HOME_PAGE, { feedOnly: true });
-  const fresh = posts.filter((post) => post.createdAt > since && post.authorId !== user.id
-    && (post.reach ?? 'feed') === 'feed' && !screen.hidden.has(post.id));
+  const posts = await repository.listPostsForChannels([...watched], HOME_PAGE, { after: since, feedOnly: true });
+  const fresh = posts.filter((post) => post.authorId !== user.id && !screen.hidden.has(post.id));
   return json(200, {
     count: fresh.length,
     names: [...new Set(fresh.map((post) => post.authorName))].slice(0, 3),
@@ -2451,6 +2590,7 @@ async function react(request: HttpRequest, _context: InvocationContext) {
     return { ...current, reactions: next, likeCount: next.length, updatedAt: current.updatedAt };
   });
   if (!saved) return noPost();
+  const learning = firstTime ? learnFrom(repository, user.id, saved, ACTION_WEIGHT.react) : Promise.resolve();
 
   // Only the first reaction is news. Changing a heart to a laugh is not a
   // second thing to tell anybody about.
@@ -2474,7 +2614,7 @@ async function react(request: HttpRequest, _context: InvocationContext) {
     }, { except: user.id });
   }
 
-  const card = await cardFor(saved, repository, actor);
+  const [card] = await Promise.all([cardFor(saved, repository, actor), learning]);
   return json(200, { reactions: card.social.reactions });
 }
 
@@ -2560,6 +2700,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   });
   if (!saved) return noPost();
   if (full) return error(409, 'comments_full', 'This conversation is full. Start a new post about it.');
+  const learning = learnFrom(repository, user.id, saved, ACTION_WEIGHT.comment);
 
   // The author hears about comments; whoever was answered hears about the
   // reply. Somebody who is both hears once.
@@ -2592,6 +2733,7 @@ async function addPostComment(request: HttpRequest, _context: InvocationContext)
   }, { except: user.id });
   await tellMentioned(text, saved, actor, 'comment', repository,
     new Set([...replied, ...listeners(owner, actor)]));
+  await learning;
 
   return json(201, {
     comment: comment.id,
@@ -2826,6 +2968,10 @@ async function vote(request: HttpRequest, _context: InvocationContext) {
     };
   });
   if (!saved) return noPost();
+  // A first vote says what they care about; changing sides says nothing new.
+  if (!post.poll.options.some((option) => option.voterIds.includes(user.id))) {
+    await learnFrom(repository, user.id, saved, ACTION_WEIGHT.vote);
+  }
   return json(200, { poll: pollView(saved.poll, user.id) });
 }
 
@@ -3319,6 +3465,7 @@ export const createForumRoute = handler(createForum);
 export const readPostRoute = handler(readPost);
 export const trendingRoute = handler(trending);
 export const homeRoute = handler(home);
+export const followingRoute = handler(following);
 export const shareableRoute = handler(shareable);
 export const reactRoute = handler(react);
 export const reactorsRoute = handler(reactors);
@@ -3635,6 +3782,7 @@ app.http('social-post-vote', { ...anon, methods: ['POST'], route: 'social/posts/
 app.http('social-post-delete', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/delete', handler: removePostRoute });
 app.http('social-trending', { ...anon, methods: ['GET'], route: 'social/trending', handler: trendingRoute });
 app.http('social-home', { ...anon, methods: ['GET'], route: 'social/home', handler: homeRoute });
+app.http('social-following', { ...anon, methods: ['GET'], route: 'social/following', handler: followingRoute });
 app.http('social-home-new', { ...anon, methods: ['GET'], route: 'social/home/new', handler: homeNewRoute });
 app.http('social-discover', { ...anon, methods: ['GET'], route: 'social/discover', handler: discoverRoute });
 app.http('social-shareable', { ...anon, methods: ['GET'], route: 'social/shareable', handler: shareableRoute });

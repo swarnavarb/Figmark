@@ -1326,6 +1326,9 @@ export interface DiscoverResponse {
 }
 
 /** One further page of the stream, and nothing else. */
+/** The kinds of post the Social tab can be cut to. */
+export type FollowingKind = 'photos' | 'polls' | 'sale' | 'flexes';
+
 export interface DiscoverStreamPage {
   stream: PostCard[];
   nextCursor: string | null;
@@ -3164,6 +3167,20 @@ export const api = {
     if (following) query.set('following', '1');
     const tail = query.toString();
     return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null; live?: PostCard[] }>(`/social/home${tail ? `?${tail}` : ''}`);
+  },
+  /**
+   * The Social tab: who you follow - shops and people - newest first, a small
+   * page at a time. `kind` cuts it to one kind of post on the server, so a
+   * filter finds older posts too, not only the ones already loaded.
+   */
+  socialFollowing: (options: { as?: string | null; before?: string | null; kind?: FollowingKind | null; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (options.as) query.set('as', options.as);
+    if (options.before) query.set('before', options.before);
+    if (options.kind) query.set('kind', options.kind);
+    if (options.limit) query.set('limit', String(options.limit));
+    const tail = query.toString();
+    return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null }>(`/social/following${tail ? `?${tail}` : ''}`);
   },
   /** The public side, ranked: debates, conversations that took off, and collection flexes. */
   discover: (page = 0, options: { interests?: string[] } = {}) => {
