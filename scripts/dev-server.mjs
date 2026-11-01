@@ -327,6 +327,7 @@ const routes = [
   ['POST', '/api/orders/:id/confirm', confirmRoute],
   ['POST', '/api/orders/:id/dispute', openDisputeRoute],
   ['POST', '/api/orders/:id/review', reviewRoute],
+  ['PUT', '/api/orders/:id/review', reviewRoute],
   ['POST', '/api/orders/:id/unboxing', unboxingRoute],
   ['POST', '/api/orders/:id/book', bookOrderRoute],
   ['POST', '/api/orders/:id/accept', acceptOrderRoute],

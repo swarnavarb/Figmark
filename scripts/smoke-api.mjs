@@ -254,7 +254,8 @@ const expireCampaign = async (id) => {
     preOrder: { ...listing.preOrder, cutoffAt: new Date(Date.now() - 1000).toISOString() },
   });
 };
-const req = ({ headers = {}, body, query = {}, params = {}, bytes } = {}) => ({
+const req = ({ headers = {}, body, query = {}, params = {}, bytes, method } = {}) => ({
+  method,
   headers: new Headers(headers),
   query: new URLSearchParams(query),
   params,
@@ -3120,15 +3121,14 @@ await check('a rating outside one to five is refused', async () => {
   }
 });
 
-await check("the other side's review stays hidden until yours is written", async () => {
-  // The seed has the seller's half of ord_1004 written and unrevealed.
+await check("the other side's review is readable before you write yours", async () => {
   const before = (await orderState(req({ headers: auth, params: { id: 'ord_1004' } }), ctx)).jsonBody;
-  assert.equal(before.theirReview, null, 'it must not be readable before you write yours');
-  assert.equal(before.theirReviewPending, true, 'but it should say one is waiting');
+  assert.ok(before.theirReview, 'no waiting on each other');
+  assert.equal(before.theirReviewPending, false);
   assert.ok(before.actions.includes('review'));
 });
 
-await check('writing yours reveals both at once', async () => {
+await check('a review is public the moment it is written', async () => {
   const written = await reviewOrder(req({
     headers: auth, params: { id: 'ord_1004' },
     body: { rating: 4, body: 'Long wait on customs, but kept me posted.' },
@@ -3147,6 +3147,21 @@ await check('reviewing twice is refused', async () => {
     headers: auth, params: { id: 'ord_1004' }, body: { rating: 1, body: 'Changed my mind.' },
   }), ctx);
   assert.equal(again.status, 409);
+});
+
+await check('your own review can be edited, and only by you', async () => {
+  const edited = await reviewOrder(req({ method: 'PUT',
+    headers: auth, params: { id: 'ord_1004' }, body: { rating: 5, body: 'Updated: it arrived perfectly.' },
+  }), ctx);
+  assert.equal(edited.status, 200);
+  assert.equal(edited.jsonBody.review.rating, 5);
+  assert.ok(edited.jsonBody.review.editedAt);
+  const after = (await orderState(req({ headers: auth, params: { id: 'ord_1004' } }), ctx)).jsonBody;
+  assert.equal(after.myReview.body, 'Updated: it arrived perfectly.');
+  const bad = await reviewOrder(req({ method: 'PUT', headers: auth, params: { id: 'ord_1004' }, body: { rating: 9 } }), ctx);
+  assert.equal(bad.status, 400);
+  const none = await reviewOrder(req({ method: 'PUT', headers: auth, params: { id: 'ord_nope' }, body: { rating: 3 } }), ctx);
+  assert.ok(none.status >= 400);
 });
 
 /** The mean of a set of one-to-five ratings, on the nought-to-hundred scale. */

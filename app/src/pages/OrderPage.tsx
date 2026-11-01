@@ -10,7 +10,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BackBar, canGoBack } from '../components/ScrollManager';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex, renderStepText } from '@shared/routes';
-import { REVIEW_REVEAL_DAYS, awaitingAcceptance, isCancelledLike, isOpenUnpaid, isStopped, nothingAtStake, type OrderSide } from '@shared/orders';
+import { awaitingAcceptance, isCancelledLike, isOpenUnpaid, isStopped, nothingAtStake, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
 import type { BuyerReversalDetails, Order, SellerPaymentDetails } from '@shared/models';
@@ -1831,19 +1831,24 @@ export function EvidenceFields({ evidence, onChange }: {
  * than looking like the counterparty said nothing.
  */
 function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promise<void> }) {
-  const [rating, setRating] = useState(5);
-  const [body, setBody] = useState('');
+  const mine = state.myReview;
+  const [editing, setEditing] = useState(false);
+  const [rating, setRating] = useState(mine?.rating ?? 5);
+  const [body, setBody] = useState(mine?.body ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const other = state.side === 'buyer' ? 'the seller' : 'the buyer';
+  const showForm = !mine || editing;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.reviewOrder(state.order.id, rating, body.trim());
+      if (mine) await api.editReview(state.order.id, rating, body.trim());
+      else await api.reviewOrder(state.order.id, rating, body.trim());
+      setEditing(false);
       await onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that review.');
@@ -1859,23 +1864,14 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
         <span className="revitem__name">{state.order.itemName}</span>
         <span className="revitem__tag">Verified purchase</span>
       </Link>
-      {!state.myReview && (
+      {!mine && (
         <p className="repnote">
-          ⭐ Review it now, while it is fresh. Every review you leave raises your trust and reputation, and the
-          tier that goes with it.
+          ⭐ Review it now, while it is fresh. Your review goes up as soon as you post it, and every review you
+          leave raises your trust and reputation, and the tier that goes with it.
         </p>
       )}
 
-      {state.myReview ? (
-        <>
-          <div className="row">
-            <Stars value={state.myReview.rating} />
-            <span className="faint">your rating of {other}</span>
-          </div>
-          {state.myReview.body && <p className="muted">{state.myReview.body}</p>}
-          <ReportButton targetType="review" targetId={state.myReview.id} parentId={state.myReview.subjectId} mine />
-        </>
-      ) : (
+      {showForm ? (
         <form className="form" onSubmit={submit}>
           <label className="field">
             <span>Rating</span>
@@ -1900,15 +1896,36 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
             <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3}
               placeholder={`How ${other} handled it. Optional.`} />
             <span className="field__hint">
-              Hidden until {other} writes theirs, or {REVIEW_REVEAL_DAYS} days pass — so neither of you can
-              answer the other's rating with one of your own.
+              Visible right away, and you can change the rating or the words whenever you like.
             </span>
           </label>
           {error && <ErrorNotice message={error} />}
-          <button type="submit" className="btn" style={{ justifySelf: 'start' }} disabled={busy}>
-            {busy ? 'Saving…' : 'Leave review'}
-          </button>
+          <div className="row">
+            <button type="submit" className="btn" disabled={busy}>
+              {busy ? 'Saving…' : mine ? 'Save changes' : 'Post review'}
+            </button>
+            {mine && (
+              <button type="button" className="btn btn--quiet" disabled={busy}
+                onClick={() => { setEditing(false); setRating(mine.rating); setBody(mine.body); }}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
+      ) : (
+        <>
+          <div className="row">
+            <Stars value={mine!.rating} />
+            <span className="faint">your rating of {other}{mine!.editedAt ? ' · edited' : ''}</span>
+          </div>
+          {mine!.body && <p className="muted">{mine!.body}</p>}
+          <div className="row">
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>
+              Edit review
+            </button>
+            <ReportButton targetType="review" targetId={mine!.id} parentId={mine!.subjectId} mine />
+          </div>
+        </>
       )}
 
       <div className="detail__section">
@@ -1920,12 +1937,8 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
             <ReportButton targetType="review" targetId={state.theirReview.id}
               parentId={state.theirReview.subjectId} mine={false} />
           </>
-        ) : state.theirReviewPending ? (
-          <p className="faint">
-            Written, and hidden until you write yours — that is what stops either of you rating in reply.
-          </p>
         ) : (
-          <p className="faint">Nothing yet.</p>
+          <p className="faint">Nothing yet. It shows here as soon as {other} posts it.</p>
         )}
       </div>
     </div>
