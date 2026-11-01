@@ -61,12 +61,11 @@ export class StaticWebAppsAuthProvider implements AuthService {
 
   async requireAuth(request: HttpRequest): Promise<AuthUser> {
     if (!this.trust) {
-      throw AuthError.signInUnavailable(
-        'Sign-in is switched off: AUTH_MODE=swa trusts the x-ms-client-principal header, and this deployment ' +
-          'has not said why that header cannot be forged. Set SWA_PRINCIPAL_TRUST=managed (the API is Static ' +
-          'Web Apps\' managed functions) or SWA_PRINCIPAL_TRUST=linked (a linked Functions app with App Service ' +
-          'Authentication restricted to the Static Web App). See docs/AUTH.md.',
+      console.error(
+        'Sign-in is off: AUTH_MODE=swa trusts the x-ms-client-principal header, and this deployment has not said ' +
+          'why it cannot be forged. Set SWA_PRINCIPAL_TRUST=managed or linked. See docs/AUTH.md.',
       );
+      throw AuthError.signInUnavailable('Sign-in is temporarily unavailable. Please try again later.');
     }
     const user = await this.getCurrentUser(request);
     if (!user) throw AuthError.unauthenticated();

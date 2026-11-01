@@ -55,6 +55,8 @@ export function storeFactsFrom({ user, all, sales, posts, rating, buyerReviews, 
     preOrders: all.filter((listing) => listing.preOrder).length,
     disputesLost: user.sellerTrust.disputesLost,
     penaltyXp: user.standing?.xpPenalty ?? 0,
+    // Delivered within the days the listing promised, worked out from the orders (api/src/seller-stats.ts).
+    dispatchOnTime: user.sellerTrust.onTimeDelivered ?? 0,
     ageDays: Math.floor((now - Date.parse(user.createdAt)) / 86_400_000),
   };
   facts.stickerSteps = storeStickers(facts).reduce((sum, sticker) => sum + sticker.reached, 0);

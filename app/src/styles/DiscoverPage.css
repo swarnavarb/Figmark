@@ -6,7 +6,7 @@
 
 /* Discover: the public side, ranked. */
 
-.discpage { display: grid; gap: 14px; max-width: 680px; margin-inline: auto; }
+.discpage { display: grid; align-content: start; gap: 14px; max-width: 680px; margin-inline: auto; }
 
 /* The top: the brand's own gradient - the same violet, pink and coral the
    chosen lens and the + wear - with an aurora drifting slowly behind glass. */
@@ -215,22 +215,14 @@
 
 @keyframes disc-in { from { opacity: 0; transform: translateY(10px); } }
 
-/* The stream rises into place as it scrolls into view, where the browser can
-   tie an animation to scrolling; elsewhere it simply is there. */
-@supports (animation-timeline: view()) {
-  .discover__stream > * {
-    animation: disc-rise linear both;
-    animation-timeline: view();
-    animation-range: entry 0% entry 28%;
-  }
-}
-@keyframes disc-rise { from { opacity: 0; transform: translateY(24px) scale(0.98); } }
+/* Items are simply there. They used to rise in on a scroll-driven timeline from
+   opacity 0, which left the whole stream - and its loading skeleton - invisible
+   wherever that timeline did not start. */
 
 @media (prefers-reduced-motion: reduce) {
   .dischero, .livecard, .contestcard { animation: fade-in 160ms ease both; }
   .livecard, .contestcard, .dislens__tab, .dischero__stat, .dislens, .spotcard, .spotdeck__dots span { transition: none; }
   .dischero__aurora span, .dischero__pulse::after { animation: none; }
-  .discover__stream > * { animation: none; }
 }
 .dischero__guest { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin: 6px 0 0; font-size: var(--t-sm); }
 
@@ -321,3 +313,11 @@ a.discweek__row:hover { border-color: var(--border-strong); }
 .discweek__photo { width: 40px; height: 40px; border-radius: var(--r-sm); flex: 0 0 auto; }
 .discweek__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
 .discweek__count { flex: 0 0 auto; color: var(--text-dim); font-size: var(--t-xs); font-family: var(--mono); }
+
+/* The bottom of the stream, when there really is nothing further. */
+.discend {
+  margin: var(--s4) 0 var(--s6); text-align: center;
+  color: var(--text-dim); font-size: var(--t-sm);
+}
+/* Where the stream starts going round again with older favourites. */
+.discend--lap { margin: var(--s5) 0 var(--s3); font-weight: var(--w-semi); }

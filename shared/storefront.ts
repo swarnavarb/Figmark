@@ -1,6 +1,6 @@
 import type { StoreGrowthState } from './models.js';
 import {
-  ACTION_XP, MAX_LEVEL, actionXp, levelFor, titleFor, titleIn, xpForLevel,
+  ACTION_XP, MAX_LEVEL, XP, actionXp, levelWithRecord, titleFor, tierTitle, xpForLevel,
   type StickerTier, type StickerView,
 } from './quest.js';
 import { growthAreas } from './store-growth.js';
@@ -51,6 +51,8 @@ export interface StoreFacts {
   disputesLost: number;
   /** XP community managers' approved decisions took away. */
   penaltyXp?: number;
+  /** Orders the shop dispatched by the date it promised. */
+  dispatchOnTime?: number;
   ageDays: number;
   /** Sticker steps the shop has earned, all told - filled in once the rest is known. */
   stickerSteps?: number;
@@ -67,17 +69,13 @@ export interface StoreLevel {
   progress: number;
   /** Where every point came from, so the level can be checked. */
   breakdown: XpLine[];
+  /** Why the level is lower than the points would give, when the record is holding it back. */
+  heldBack?: string | null;
 }
 
-const STORE_TITLES = [
-  'New stall', 'Corner shop', 'Local favourite', 'Busy counter', 'Known name',
-  'Trusted house', 'Flagship', 'Landmark', 'Emporium', 'Legend',
-];
-const STORE_HIGH_TITLES = ['Eternal', 'Empire', 'Dynasty', 'Heritage house'];
 export function storeTitleFor(level: number): string {
-  return titleIn(level, STORE_TITLES, STORE_HIGH_TITLES);
+  return tierTitle(level, true);
 }
-
 /** The level and title shown beside a name, for a buyer or for a shop. */
 export interface LevelTag { level: number; title: string; shop?: boolean }
 export const buyerTag = (level: number | undefined): LevelTag => ({ level: level ?? 1, title: titleFor(level ?? 1) });
@@ -93,6 +91,9 @@ export function storeLevel(facts: StoreFacts, growth: StoreGrowthState | undefin
   const two = facts.stars[3] ?? 0;
   const one = facts.stars[4] ?? 0;
   const breakdown: XpLine[] = [
+    // Finished orders and shipping when promised are what a shop is trusted for.
+    { label: 'Orders completed', xp: actionXp(facts.completedSales, XP.orderDelivered), detail: `${facts.completedSales} × ${XP.orderDelivered}, up to 100` },
+    { label: 'Dispatched on time', xp: actionXp(facts.dispatchOnTime ?? 0, XP.dispatchOnTime), detail: `${facts.dispatchOnTime ?? 0} × ${XP.dispatchOnTime}, up to 100` },
     ...growthAreas(growth, facts).map((area) => ({
       label: `${area.label} quests`, xp: area.xp, detail: `${area.collected} collected`,
     })),
@@ -101,7 +102,7 @@ export function storeLevel(facts: StoreFacts, growth: StoreGrowthState | undefin
     { label: 'Community manager decisions', xp: -(facts.penaltyXp ?? 0), detail: `${facts.penaltyXp ?? 0} XP taken by dispute decisions` },
   ].filter((entry) => entry.xp !== 0);
   const points = Math.max(0, breakdown.reduce((sum, entry) => sum + entry.xp, 0));
-  const level = levelFor(points);
+  const { level, heldBack } = levelWithRecord(points, facts.completedSales, facts.disputesLost);
   const floor = xpForLevel(level);
   const next = level >= MAX_LEVEL ? null : xpForLevel(level + 1);
   return {
@@ -110,8 +111,9 @@ export function storeLevel(facts: StoreFacts, growth: StoreGrowthState | undefin
     points,
     floor,
     next,
-    progress: next === null ? 1 : (points - floor) / (next - floor),
+    progress: next === null || heldBack ? 1 : (points - floor) / (next - floor),
     breakdown,
+    heldBack,
   };
 }
 

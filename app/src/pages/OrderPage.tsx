@@ -11,7 +11,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BackBar, canGoBack } from '../components/ScrollManager';
 import { isDirect, isLotEvent } from '@shared/fulfilment';
 import { WAITING_FOR_A_LOT, lotNo, WAITING_FOR_LOT, itemLeaveIndex, renderStepText } from '@shared/routes';
-import { REVIEW_REVEAL_DAYS, awaitingAcceptance, isCancelledLike, isOpenUnpaid, isStopped, nothingAtStake, type OrderSide } from '@shared/orders';
+import { awaitingAcceptance, isCancelledLike, isOpenUnpaid, isStopped, nothingAtStake, type OrderSide } from '@shared/orders';
 import { DISPUTE_TOPIC_LABELS, reasonsFor } from '@shared/disputes';
 import { DISPUTE_REASON_LABELS, type OrderCheckpoint } from '@shared/enums';
 import type { BuyerReversalDetails, Order, SellerPaymentDetails } from '@shared/models';
@@ -38,6 +38,7 @@ import { OrderPhotos } from '../components/OrderPhotos';
 import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/OrderPage.css';
 import { Select } from '../components/Select';
+import { PriceBreakdown } from '../components/Offers';
 
 /**
  * One order, as the buyer sees it.
@@ -63,6 +64,16 @@ function statusTone(status: Order['status']): string {
     case 'payment_reversal_pending': return 'accent';
     default: return 'warn';
   }
+}
+
+/** The checkout's price, line by line: goods, shipping and each offer, with the terms. */
+function OfferSummary({ quote, payingFull }: { quote: Checkout; payingFull: boolean }) {
+  return (
+    <PriceBreakdown goodsMinor={quote.goodsMinor ?? quote.itemMinor} shippingMinor={quote.shippingMinor}
+      discountMinor={quote.offerDiscountMinor} applied={quote.appliedOffers} rules={quote.offerRules}
+      totalMinor={quote.itemMinor} currency={quote.currency}
+      prepaySavingMinor={payingFull ? quote.prepaySavingMinor : 0} />
+  );
 }
 
 export function OrderPage() {
@@ -354,6 +365,32 @@ export function OrderPage() {
                 {formatMoney(orderTotalMinor(order), order.currency)}
               </span>
             </div>
+            {(order.shippingMinor !== undefined || (order.appliedOffers?.length ?? 0) > 0 || (order.offerRules?.length ?? 0) > 0) && (
+              <PriceBreakdown goodsMinor={order.unitPriceMinor * order.quantity} shippingMinor={order.shippingMinor}
+                discountMinor={order.offerDiscountMinor} applied={order.appliedOffers} rules={order.offerRules}
+                totalMinor={orderTotalMinor(order)} currency={order.currency} />
+            )}
+            {(order.offerRefundDueMinor ?? 0) > 0 && order.status !== 'cancelled' && (
+              <p className="offr-warn">
+                {state.side === 'seller'
+                  ? `An offer lowered this order's price after it was paid. Send ${formatMoney(order.offerRefundDueMinor!, order.currency)} back to the buyer.`
+                  : `An offer lowered the price after you paid. The shop will send back ${formatMoney(order.offerRefundDueMinor!, order.currency)}.`}
+              </p>
+            )}
+            {(order.offerBalanceDueMinor ?? 0) > 0 && (
+              <p className="offr-warn">
+                {state.side === 'seller'
+                  ? `An offer no longer applies, so this order now comes to ${formatMoney(order.offerBalanceDueMinor!, order.currency)} more than was paid.`
+                  : `An offer no longer applies, so ${formatMoney(order.offerBalanceDueMinor!, order.currency)} more is now due.`}
+              </p>
+            )}
+            {state.offerImpact && state.offerImpact.extraMinor > 0 && (
+              <p className="offr-warn">
+                Offer terms: this order is part of {state.offerImpact.lost.join(', ')}. If it is cancelled or called off,
+                {state.side === 'seller' ? ' the buyer pays' : ' you pay'} {formatMoney(state.offerImpact.extraMinor, order.currency)} more
+                on the other items, because the offer ends.
+              </p>
+            )}
             <dl style={{ margin: 0 }}>
               <div className="kv"><dt>Quantity</dt><dd>{order.quantity}</dd></div>
               <div className="kv"><dt>Condition</dt><dd>{order.condition}</dd></div>
@@ -714,6 +751,11 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
               </button>
             )}
             {actions.includes('confirm') && (
+              <p className="repnote">
+                ⭐ Confirm as soon as it arrives. Confirming promptly, then reviewing, raises your trust and reputation.
+              </p>
+            )}
+            {actions.includes('confirm') && (
               <button className="btn btn--lg" disabled={busy !== null}
                 onClick={() => void run('confirm', () => api.confirmOrder(order.id))}>
                 {/* One step for every order; only a protected one also moves money. */}
@@ -837,6 +879,7 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
           {cancelling && (
             <CancelOrder
               order={order}
+              impact={state.offerImpact ?? null}
               busy={busy}
               onCancel={(body) => run('cancel', () => api.cancelOrder(order.id, body))}
               onClose={() => setCancelling(false)}
@@ -1127,7 +1170,10 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
      an advance first, then the balance - so the price on every way to buy
      is what actually leaves their account. */
   const credit = quote.creditMinor ?? 0;
-  const planDue = plan === 'advance' && quote.advanceMinor != null ? quote.advanceMinor : quote.itemMinor;
+  // Paying everything rather than an advance earns the shop's pay-in-full offer, when it has one.
+  const prepaySaving = quote.prepaySavingMinor ?? 0;
+  const fullDue = Math.max(0, quote.itemMinor - (plan === 'advance' ? 0 : prepaySaving));
+  const planDue = plan === 'advance' && quote.advanceMinor != null ? quote.advanceMinor : fullDue;
   const dueNow = Math.max(0, planDue - credit);
   const coveredByCredit = credit > 0 && dueNow === 0;
 
@@ -1147,7 +1193,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   return (
     <div className="stack">
       {quote.priceChange && <PriceChangeNote change={quote.priceChange} currency={quote.currency} />}
-      <div className="kv"><dt>Item</dt><dd>{formatMoney(quote.itemMinor, quote.currency)}</dd></div>
+      <OfferSummary quote={quote} payingFull={plan !== 'advance'} />
       {credit > 0 && (
         <>
           <div className="kv kv--credit">
@@ -1175,7 +1221,8 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         <div className="seg seg--vivid" role="radiogroup" aria-label="How much to pay now">
           <button type="button" role="radio" aria-checked={plan === 'full'}
             className={plan === 'full' ? 'is-on' : ''} onClick={() => setPlan('full')}>
-            💯 Pay full · {formatMoney(Math.max(0, quote.itemMinor - credit), quote.currency)}
+            💯 Pay full · {formatMoney(Math.max(0, quote.itemMinor - prepaySaving - credit), quote.currency)}
+            {prepaySaving > 0 && ` (save ${formatMoney(prepaySaving, quote.currency)})`}
           </button>
           <button type="button" role="radio" aria-checked={plan === 'advance'}
             className={plan === 'advance' ? 'is-on' : ''} onClick={() => setPlan('advance')}>
@@ -1578,8 +1625,10 @@ function CloseOrder({ order, busy, onCloseOrder, onClose }: {
  * instead of finishing straight away — the money needs somewhere to go
  * first.
  */
-function CancelOrder({ order, busy, onCancel, onClose }: {
+function CancelOrder({ order, impact, busy, onCancel, onClose }: {
   order: Order;
+  /** What the buyer's other items lose if this one goes. */
+  impact: { extraMinor: number; lost: string[] } | null;
   busy: string | null;
   onCancel: (body: { reason: string; message?: string; restock?: boolean }) => void | Promise<void>;
   onClose: () => void;
@@ -1605,6 +1654,13 @@ function CancelOrder({ order, busy, onCancel, onClose }: {
       </label>
       {askStock && (
         <RestockChoice quantity={order.quantity} value={restock} onChange={setRestock} />
+      )}
+      {impact && impact.extraMinor > 0 && (
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          <strong>This changes the buyer's other prices.</strong> Cancelling ends {impact.lost.join(', ') || 'an offer'} on
+          the rest of their order, so they will pay {formatMoney(impact.extraMinor, order.currency)} more. They are told
+          straight away, and it is part of the offer terms they accepted.
+        </p>
       )}
       {paid && (
         <p className="notice notice--warn" style={{ margin: 0 }}>
@@ -1803,19 +1859,24 @@ export function EvidenceFields({ evidence, onChange }: {
  * than looking like the counterparty said nothing.
  */
 function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promise<void> }) {
-  const [rating, setRating] = useState(5);
-  const [body, setBody] = useState('');
+  const mine = state.myReview;
+  const [editing, setEditing] = useState(false);
+  const [rating, setRating] = useState(mine?.rating ?? 5);
+  const [body, setBody] = useState(mine?.body ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const other = state.side === 'buyer' ? 'the seller' : 'the buyer';
+  const showForm = !mine || editing;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.reviewOrder(state.order.id, rating, body.trim());
+      if (mine) await api.editReview(state.order.id, rating, body.trim());
+      else await api.reviewOrder(state.order.id, rating, body.trim());
+      setEditing(false);
       await onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that review.');
@@ -1827,17 +1888,18 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
   return (
     <div className="card card--pad stack">
       <h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>How did it go?</h2>
+      <Link to={`/listing/${state.order.listingId}`} className="revitem">
+        <span className="revitem__name">{state.order.itemName}</span>
+        <span className="revitem__tag">Verified purchase</span>
+      </Link>
+      {!mine && (
+        <p className="repnote">
+          ⭐ Review it now, while it is fresh. Your review goes up as soon as you post it, and every review you
+          leave raises your trust and reputation, and the tier that goes with it.
+        </p>
+      )}
 
-      {state.myReview ? (
-        <>
-          <div className="row">
-            <Stars value={state.myReview.rating} />
-            <span className="faint">your rating of {other}</span>
-          </div>
-          {state.myReview.body && <p className="muted">{state.myReview.body}</p>}
-          <ReportButton targetType="review" targetId={state.myReview.id} parentId={state.myReview.subjectId} mine />
-        </>
-      ) : (
+      {showForm ? (
         <form className="form" onSubmit={submit}>
           <label className="field">
             <span>Rating</span>
@@ -1862,15 +1924,36 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
             <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3}
               placeholder={`How ${other} handled it. Optional.`} />
             <span className="field__hint">
-              Hidden until {other} writes theirs, or {REVIEW_REVEAL_DAYS} days pass — so neither of you can
-              answer the other's rating with one of your own.
+              Visible right away, and you can change the rating or the words whenever you like.
             </span>
           </label>
           {error && <ErrorNotice message={error} />}
-          <button type="submit" className="btn" style={{ justifySelf: 'start' }} disabled={busy}>
-            {busy ? 'Saving…' : 'Leave review'}
-          </button>
+          <div className="row">
+            <button type="submit" className="btn" disabled={busy}>
+              {busy ? 'Saving…' : mine ? 'Save changes' : 'Post review'}
+            </button>
+            {mine && (
+              <button type="button" className="btn btn--quiet" disabled={busy}
+                onClick={() => { setEditing(false); setRating(mine.rating); setBody(mine.body); }}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
+      ) : (
+        <>
+          <div className="row">
+            <Stars value={mine!.rating} />
+            <span className="faint">your rating of {other}{mine!.editedAt ? ' · edited' : ''}</span>
+          </div>
+          {mine!.body && <p className="muted">{mine!.body}</p>}
+          <div className="row">
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>
+              Edit review
+            </button>
+            <ReportButton targetType="review" targetId={mine!.id} parentId={mine!.subjectId} mine />
+          </div>
+        </>
       )}
 
       <div className="detail__section">
@@ -1882,12 +1965,8 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
             <ReportButton targetType="review" targetId={state.theirReview.id}
               parentId={state.theirReview.subjectId} mine={false} />
           </>
-        ) : state.theirReviewPending ? (
-          <p className="faint">
-            Written, and hidden until you write yours — that is what stops either of you rating in reply.
-          </p>
         ) : (
-          <p className="faint">Nothing yet.</p>
+          <p className="faint">Nothing yet. It shows here as soon as {other} posts it.</p>
         )}
       </div>
     </div>

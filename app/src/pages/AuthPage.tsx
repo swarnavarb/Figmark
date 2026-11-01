@@ -106,27 +106,20 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
         // than letting an empty or unreachable database answer a correct
         // password with "that password is wrong".
         if (health.auth.sessionSecretSource === 'missing') {
-          setBlocked('Sign-in is switched off on this server: it has no session signing key. An operator needs to set AUTH_SESSION_SECRET.');
+          setBlocked('Sign-in is temporarily unavailable. Please try again later.');
         } else if (!health.data.connected) {
-          setBlocked(`The ${health.data.backend} store behind this deployment is not reachable. ${health.data.detail}`);
+          setBlocked('Sign-in is temporarily unavailable. Please try again later.');
         } else if (health.data.signInAccounts === 0) {
-          setBlocked(
-            `This deployment is connected to a database that holds no accounts, so nobody can sign in. ${health.data.detail}`,
-          );
+          setBlocked('Sign-in is temporarily unavailable. Please try again later.');
         } else {
           setBlocked(null);
         }
       })
-      .catch((err: unknown) => {
+      .catch(() => {
         // Swallowing this is how a deployment ends up showing neither the demo
-        // hint nor a reason: both are read from health, and a failed read left
-        // the page looking merely ordinary while nothing worked.
+        // hint nor a reason, so say something - but nothing about why.
         if (cancelled) return;
-        setBlocked(
-          `The API status check failed, so this page cannot tell you what is wrong: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
+        setBlocked('Something went wrong. Please try again in a moment.');
       });
     return () => {
       cancelled = true;

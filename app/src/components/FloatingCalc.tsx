@@ -31,7 +31,7 @@ export type CalcAction = 'list' | 'sale' | 'deal';
 
 const ACTIONS: { id: CalcAction; icon: string; label: string }[] = [
   { id: 'list', icon: '🏷️', label: 'List now' },
-  { id: 'sale', icon: '⚡', label: 'Power sale' },
+  { id: 'sale', icon: '⚡', label: 'Live drop' },
   { id: 'deal', icon: '🤝', label: 'Private deal' },
 ];
 

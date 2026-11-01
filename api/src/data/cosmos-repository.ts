@@ -16,8 +16,8 @@ import { handleKey } from '../../../shared/handles.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
 import { newestOrder, popularity, searchWords } from '../../../shared/catalog.js';
 import type { CosmosConfig } from '../config.js';
-import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
-import { BUMP_COOLDOWN_MS, sessionDigest } from './repository.js';
+import type { BackendStatus, CatalogQuery, OrderFigures, PostPageOptions, Repository, SellerCardSource } from './repository.js';
+import { BUMP_COOLDOWN_MS, feedOrder, inPage, sessionDigest } from './repository.js';
 import { mapLimit } from './lot-view.js';
 import { identifiersOf, normaliseIdentifier } from './memory-repository.js';
 import { photoNamesIn } from '../storage/unused.js';
@@ -42,6 +42,10 @@ const POLICY_RETRY_MS = 24 * 60 * 60 * 1000;
  */
 
 /** How long one instance reuses the newest-posts window and the forum list. */
+/** Channels a feed reads one partition at a time; more than this and one fanned-out query is cheaper. */
+const FEED_PARTITIONS_MAX = 40;
+/** Extra posts read past a page, so posts sharing a millisecond can be ordered by id before it is cut. */
+const FEED_TIE_SLACK = 5;
 const RECENT_TTL_MS = 15_000;
 const FORUM_TTL_MS = 60_000;
 /** Accounts holding a service store of one kind, or of either. */
@@ -1555,26 +1559,58 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
-  async listPostsForChannels(
-    channelIds: readonly string[], limit = 60, options: { before?: string; feedOnly?: boolean } = {},
-  ): Promise<Post[]> {
-    if (channelIds.length === 0) return [];
-    const { resources } = await this.container('posts')
-      .items.query<Post>({
-        query:
-          'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.channelId) AND c.createdAt < @before'
-          + " AND (@everything = true OR NOT IS_DEFINED(c.reach) OR c.reach = 'feed')"
-          + ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
-        parameters: [
-          { name: '@ids', value: [...channelIds] },
-          // No `before` reads from the newest: every ISO time sorts below '~'.
-          { name: '@before', value: options.before ?? '~' },
-          { name: '@everything', value: !options.feedOnly },
-          { name: '@limit', value: limit },
-        ],
-      })
-      .fetchAll();
-    return resources;
+  /**
+   * Newest first across several channels.
+   *
+   * Posts are partitioned by channel, so a query over a few channels is run
+   * once per channel, each inside its own partition, and the answers merged:
+   * a handful of small single-partition reads costs far less than one query
+   * fanned out over every partition there is, and does not grow with the size
+   * of the whole site. Past `FEED_PARTITIONS_MAX` channels the fan-out is the
+   * cheaper of the two again, and is used instead.
+   *
+   * A few more than asked are read so that posts written in the same
+   * millisecond can be put in id order (see `feedOrder`) before the page is cut.
+   */
+  async listPostsForChannels(channelIds: readonly string[], limit = 60, options: PostPageOptions = {}): Promise<Post[]> {
+    const ids = [...new Set(channelIds)];
+    if (ids.length === 0 || limit <= 0) return [];
+    // Every bound is always sent, wide open when not asked for, so the query
+    // text never changes. `<=` reads the posts at the edge too, and `inPage`
+    // keeps the ones the tie-break lets through.
+    const read = limit + FEED_TIE_SLACK;
+    // Every ISO time sorts below '~' and above ''.
+    const before = options.before ?? '~';
+    const after = options.after ?? '';
+    const everything = !options.feedOnly;
+    const posts = this.container('posts').items;
+    const one = async (partitionKey: string) => (await posts.query<Post>({
+      query: 'SELECT * FROM c WHERE c.createdAt <= @before AND c.createdAt > @after'
+        + " AND (@everything = true OR NOT IS_DEFINED(c.reach) OR c.reach = 'feed')"
+        + ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+      parameters: [
+        { name: '@before', value: before },
+        { name: '@after', value: after },
+        { name: '@everything', value: everything },
+        { name: '@limit', value: read },
+      ],
+    }, { partitionKey }).fetchAll()).resources;
+    const many = async () => (await posts.query<Post>({
+      query: 'SELECT * FROM c WHERE ARRAY_CONTAINS(@ids, c.channelId) AND c.createdAt <= @before AND c.createdAt > @after'
+        + " AND (@everything = true OR NOT IS_DEFINED(c.reach) OR c.reach = 'feed')"
+        + ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+      parameters: [
+        { name: '@ids', value: ids },
+        { name: '@before', value: before },
+        { name: '@after', value: after },
+        { name: '@everything', value: everything },
+        { name: '@limit', value: read },
+      ],
+    }).fetchAll()).resources;
+    const found = ids.length > FEED_PARTITIONS_MAX
+      ? await many()
+      : (await Promise.all(ids.map((id) => one(id)))).flat();
+    return found.filter((post) => inPage(post, options)).sort(feedOrder).slice(0, limit);
   }
 
   async createPost(post: Post): Promise<Post> {

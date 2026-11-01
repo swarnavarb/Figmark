@@ -1,7 +1,7 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Post, User } from '../../../shared/models.js';
 import {
-  HIDDEN_MAX, LESS_FROM_MAX, MUTED_MAX, SAVED_POSTS_MAX, SEEN_BATCH_MAX, SEEN_MS_MAX, hashtagsIn, pushCapped,
+  HIDDEN_MAX, LESS_FROM_MAX, LESS_TOPICS_MAX, MUTED_MAX, SAVED_POSTS_MAX, SEEN_BATCH_MAX, SEEN_MS_MAX, hashtagsIn, pushCapped,
   type FeedPrefs, type FollowSuggestion, type Leaderboard, type SeenEntry,
 } from '../../../shared/feed.js';
 import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
@@ -9,13 +9,14 @@ import { tagFromSlug, tagKey, tidyLabel } from '../../../shared/shop-tags.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { shopIndex } from '../shop-identity.js';
-import { screenOf, screens } from '../feed-prefs.js';
+import { attentionWeight, learnTaste, screenOf, screens, type TasteSignal } from '../feed-prefs.js';
+import { formatOf } from '../discover-rank.js';
 import { moderation } from '../moderation.js';
 import { tooFast } from '../rate-limit.js';
 import { leaderboardOf } from '../play.js';
 import { error, handler, json } from './http.js';
 import {
-  GUEST, actorFor, decorate, engagedActors, isBroadcast, mayRead, notYours, readJson, type PostCard, type Repo,
+  ACTION_WEIGHT, GUEST, actorFor, decorate, tasteSignalOf, engagedActors, isBroadcast, mayRead, notYours, readJson, topicKeysOf, type PostCard, type Repo,
 } from './social-routes.js';
 
 /**
@@ -84,6 +85,9 @@ async function savePost(request: HttpRequest, _context: InvocationContext) {
       ? (current.saved ?? []).filter((entry) => entry.postId !== postId)
       : pushCapped(current.saved, { channelId, postId, savedAt: new Date().toISOString() }, SAVED_POSTS_MAX,
           (a, b) => a.postId === b.postId),
+    // Saving is the strongest thing a reader says about a post short of buying from it.
+    ...(!already && post && post.authorId !== viewer.id
+      ? { taste: learnTaste(current.taste, [tasteSignalOf(post, ACTION_WEIGHT.save)], Date.now()) } : {}),
   }));
   return json(200, { saved: !already, count: prefs.saved?.length ?? 0 });
 }
@@ -106,15 +110,18 @@ async function savedPosts(request: HttpRequest, _context: InvocationContext) {
  * POST /api/social/posts/{channel}/{id}/hide - put a post out of sight.
  *
  * `{ notInterested: true }` also tells ranking to show less from whoever
- * wrote it - lower, not gone. `{ undo: true }` brings the post back and takes
- * the "less from" with it.
+ * wrote it - lower, not gone - and fades back in as newer ones are said.
+ * `{ notInterested: true, scope: 'topic' }` is "less like this" instead: the
+ * post's topics are lowered, and the author is left alone. `{ undo: true }`
+ * brings the post back and takes either with it. Whichever it is, the taste
+ * the feed has learned about this person moves the same way.
  */
 async function hidePost(request: HttpRequest, _context: InvocationContext) {
   const { viewer, repository, user } = await account(request);
   if (!user) return error(401, 'unauthorized', 'Sign in first.');
   const slow = await tooFast(viewer.id, 'feedpref');
   if (slow) return slow;
-  const body = (await readJson<{ notInterested?: unknown; undo?: unknown }>(request)) ?? {};
+  const body = (await readJson<{ notInterested?: unknown; undo?: unknown; scope?: unknown }>(request)) ?? {};
   const channelId = request.params.channel ?? '';
   const postId = request.params.id ?? '';
   const post = channelId && postId ? await repository.getPost(channelId, postId) : null;
@@ -123,13 +130,28 @@ async function hidePost(request: HttpRequest, _context: InvocationContext) {
   // Whose "less" it is: the shop whose channel it is in, or the person.
   const whose = post.channel === 'seller' ? post.channelId : post.authorId;
   const undo = body.undo === true;
-  await changePrefs(repository, user, (current) => ({
-    ...current,
-    hidden: undo ? (current.hidden ?? []).filter((id) => id !== post.id) : pushCapped(current.hidden, post.id, HIDDEN_MAX),
-    lessFrom: undo
-      ? (current.lessFrom ?? []).filter((id) => id !== whose)
-      : body.notInterested === true ? pushCapped(current.lessFrom, whose, LESS_FROM_MAX) : current.lessFrom,
-  }));
+  const less = body.notInterested === true;
+  const byTopic = less && body.scope === 'topic';
+  const topics = topicKeysOf(post);
+  // Putting a post away says something about what it was; bringing it back says the opposite, a little.
+  const told: TasteSignal = {
+    channelId: post.channelId, kind: formatOf(post), topics, weight: undo ? 1 : less ? -2 : -1,
+  };
+  await changePrefs(repository, user, (current) => {
+    const next: FeedPrefs = {
+      ...current,
+      hidden: undo ? (current.hidden ?? []).filter((id) => id !== post.id) : pushCapped(current.hidden, post.id, HIDDEN_MAX),
+      lessFrom: undo
+        ? (current.lessFrom ?? []).filter((id) => id !== whose)
+        : less && !byTopic ? pushCapped(current.lessFrom, whose, LESS_FROM_MAX) : current.lessFrom,
+      taste: learnTaste(current.taste, [told], Date.now()),
+    };
+    const lessTopics = undo
+      ? (current.lessTopics ?? []).filter((topic) => !topics.includes(topic))
+      : byTopic ? topics.reduce((list, topic) => pushCapped(list, topic, LESS_TOPICS_MAX), current.lessTopics) : current.lessTopics;
+    if (lessTopics) next.lessTopics = lessTopics;
+    return next;
+  });
   return json(200, { hidden: !undo });
 }
 
@@ -197,6 +219,7 @@ async function seen(request: HttpRequest, _context: InvocationContext) {
     && typeof (entry as SeenEntry).channelId === 'string' && typeof (entry as SeenEntry).postId === 'string');
   const repository = await getRepository();
   let counted = 0;
+  const learned: TasteSignal[] = [];
   await Promise.all(items.map(async (item) => {
     const ms = Math.max(0, Math.min(SEEN_MS_MAX, Math.round(Number(item.ms) || 0)));
     const changed = await repository.mutatePost(item.channelId, item.postId, (post) => (post.authorId === viewer.id ? null : {
@@ -206,7 +229,18 @@ async function seen(request: HttpRequest, _context: InvocationContext) {
       dwellMs: (post.dwellMs ?? 0) + ms,
     }));
     if (changed) counted += 1;
+    // What held their attention is what they like, for next time: where it was
+    // said, what format it was, and what it was about. Their own posts teach nothing.
+    if (changed && changed.authorId !== viewer.id) {
+      const weight = attentionWeight(ms, item.opened === true);
+      if (weight > 0) learned.push({ channelId: changed.channelId, kind: formatOf(changed), topics: topicKeysOf(changed), weight });
+    }
   }));
+  if (learned.length) {
+    // One write for the whole batch, and only a bookmark: if it loses a race with another change, the batch is not worth failing for.
+    const user = await repository.getUserById(viewer.id);
+    if (user) await changePrefs(repository, user, (current) => ({ ...current, taste: learnTaste(current.taste, learned, Date.now()) })).catch(() => undefined);
+  }
   return json(200, { counted });
 }
 

@@ -76,6 +76,7 @@ const ids = {
   /* Notice keys: one row per person per key (see notify). */
   opened: (sale: PowerSale) => `${sale.id}_open`,
   remind: (sale: PowerSale) => `${sale.id}_remind`,
+  soon: (sale: PowerSale) => `${sale.id}_soon`,
 };
 
 /** Write once: a second write of the same id is the first one already done. */
@@ -255,6 +256,21 @@ function reminderDraft(sale: PowerSale, shop: User) {
   };
 }
 
+/** How long before the first item the people who asked hear it is nearly time. */
+export const HEADS_UP_MS = minutes(15);
+/** Closer than this, the heads-up is skipped: the drop's own notice is about to go. */
+const MIN_HEADS_UP_MS = minutes(5);
+
+/** "Starts in 15 minutes", for the people who pressed "Remind me". */
+function headsUpDraft(sale: PowerSale, shop: User) {
+  return {
+    kind: 'drop_soon' as const,
+    title: `⏰ ${sale.name} starts in ${HEADS_UP_MS / 60_000} minutes`,
+    body: `At ${actorName(shop.sellerProfile!.storefrontName, shop.sellerProfile!.username)}. ${sale.items.length} item${sale.items.length === 1 ? '' : 's'}, one at a time - be in the channel when it opens.`,
+    link: `/social/c/${encodeURIComponent(sale.sellerId)}`,
+  };
+}
+
 /** Held until `at` when that is ahead; sent now when it is not. */
 const heldUntil = (at: number, now: number) => (at > now ? { notBefore: iso(at) } : {});
 
@@ -306,6 +322,20 @@ export async function advancePowerSale(
     }, { ...heldUntil(showAt, now), key: ids.opened(sale) });
   }
   const openedAt = Date.parse(sale.openedAt);
+
+  // 1b. The heads-up: whoever pressed "Remind me" hears a few minutes before
+  //     the first item, time to open the app, as well as when it drops. Not
+  //     when the drop is already that close - the drop's own notice is next.
+  const firstAt = Date.parse(firstDropAt(sale));
+  const soonAt = firstAt - HEADS_UP_MS;
+  if (sale.openedAt && !sale.headsUpAt && (sale.reminders ?? []).length > 0 && soonAt <= horizon
+    && firstAt - now > MIN_HEADS_UP_MS && !sale.items[0]?.postedAt) {
+    await notify(repository, sale.reminders ?? [], headsUpDraft(sale, shop), {
+      except: sale.sellerId, ...heldUntil(soonAt, now), key: ids.soon(sale),
+    });
+    sale.headsUpAt = iso(Math.max(soonAt, now));
+    changed = true;
+  }
 
   // 2. Items due within the lookahead, each written to show at its own time.
   //    Behind schedule, one per pass and shown now - see the note at the top.
@@ -456,6 +486,19 @@ async function dropItem(
  * Nothing to do before then: the item's own pass tells everyone on the list.
  */
 export async function remindOne(repository: Repo, sale: PowerSale, userId: string, on: boolean): Promise<void> {
+  // A heads-up already written ahead and not yet shown: theirs is written, or taken back, too.
+  if (later(sale.headsUpAt, Date.now()) && userId !== sale.sellerId) {
+    if (!on) {
+      await repository.deleteNotification(userId, `ntf_${ids.soon(sale)}_${userId}`).catch(() => undefined);
+    } else {
+      const owner = await repository.getUserById(sale.sellerId);
+      if (owner?.sellerProfile) {
+        await notify(repository, [userId], headsUpDraft(sale, owner), {
+          ...heldUntil(Date.parse(sale.headsUpAt!), Date.now()), key: ids.soon(sale),
+        });
+      }
+    }
+  }
   const showAt = sale.items[0]?.postedAt;
   if (!sale.remindedAt || !showAt || userId === sale.sellerId) return;
   if (!on) {
@@ -488,6 +531,10 @@ export async function callOffAhead(repository: Repo, sale: PowerSale, now = new 
   if (later(sale.remindedAt, t)) {
     await unsay(sale.reminders ?? [], ids.remind(sale));
     sale.remindedAt = null;
+  }
+  if (later(sale.headsUpAt, t)) {
+    await unsay(sale.reminders ?? [], ids.soon(sale));
+    sale.headsUpAt = null;
   }
   for (const [index, item] of sale.items.entries()) {
     if (later(item.postedAt, t)) {

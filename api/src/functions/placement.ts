@@ -3,6 +3,7 @@ import type { Listing, Order, Pledge } from '../../../shared/models.js';
 import { fullRuleOf, isGoingAhead } from '../../../shared/preorder.js';
 import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { repriceBasket } from '../offers.js';
 import { affiliateCommissionMinor } from '../../../shared/affiliate.js';
 import { affiliateFor, creditAffiliate } from '../affiliate.js';
 import type { getRepository } from '../data/index.js';
@@ -36,9 +37,24 @@ export function checkoutUnitPriceMinor(listing: Pick<Listing, 'priceMinor'>, ord
 }
 
 /** Why this checkout cannot become an order right now, or null when it can. */
+/**
+ * Where a buyer stands with a stock poll's first-dibs window: 'none' when there
+ * is no window or it has passed, 'voter' when they voted (or run the shop),
+ * 'waiting' when they must wait for it to close.
+ */
+export function firstDibsFor(listing: Listing, buyerId: string | null): 'none' | 'voter' | 'waiting' {
+  const dibs = listing.firstDibs;
+  if (!dibs || Date.parse(dibs.until) <= Date.now()) return 'none';
+  if (buyerId && (buyerId === listing.sellerId || dibs.voterIds.includes(buyerId))) return 'voter';
+  return 'waiting';
+}
+
 export function unavailableReason(listing: Listing | null, order: Order): string | null {
   if (!listing || listing.status !== 'active' || isExpired(listing)) return 'This item is no longer for sale.';
   if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
+  if (firstDibsFor(listing, order.buyerId) === 'waiting') {
+    return 'The people who voted for this get first dibs. It opens to everybody soon.';
+  }
   if (!isMultiple(listing) && order.quantity > listing.quantityAvailable) {
     return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
   }
@@ -131,10 +147,14 @@ export async function placeOrder(
   // pressed - and never at a price the buyer has not been shown. A change
   // since they opened the checkout sends them back to look at it again.
   const was = orderTotalMinor(order);
-  if (await repriceCheckout(repository, order, listing)) {
+  const unitMoved = await repriceCheckout(repository, order, listing);
+  // The basket may have moved the price too: an offer earned or lost since the
+  // buyer last looked is as much a change as the seller editing the price.
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'placed', { include: [order], quiet: true });
+  if (unitMoved || orderTotalMinor(order) !== was) {
     return {
       code: 'price_changed',
-      message: `The seller changed the price: ${rupees(was)} is now ${rupees(orderTotalMinor(order))}. `
+      message: `The price changed: ${rupees(was)} is now ${rupees(orderTotalMinor(order))}. `
         + 'Check the new total, then try again.',
     };
   }

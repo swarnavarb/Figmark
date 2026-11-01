@@ -42,7 +42,10 @@ import { SlideToConfirm } from '../components/SlideToConfirm';
 import { Spinner } from '../components/Spinner';
 import { EXPIRY_WARNING_HOURS, REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { isOpen, waitingOnShop } from '../engage';
-import { AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip } from '../components/Buy';
+import {
+  AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip, TermsFields, termsDraft, termsFromTemplate, termsToTemplate,
+  type TermsDraft,
+} from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
 import type { StoreAccess } from '@shared/stores';
 import type { SavedCalc } from '@shared/profit';
@@ -1246,7 +1249,7 @@ function MyItems({ store }: { store: StoreAccess }) {
           onClick={() => navigate(`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
           <span className="probadge door__flag">PRO</span>
           <span className="door__glyph" aria-hidden="true">{<Icon name="bolt" size={19} />}</span>
-          <span className="door__title">Start power selling</span>
+          <span className="door__title">Start a live drop</span>
           <span className="door__note">A whole sale, on a timer, in your channel.</span>
         </button>
       </div>
@@ -2435,7 +2438,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
             {template.description && <p className="tplcard__body">{template.description}</p>}
             <div className="tplcard__foot">
               {template.kind === 'power' ? (
-                <Link to={`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`} className="btn btn--quiet btn--sm">Use in a power sale</Link>
+                <Link to={`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`} className="btn btn--quiet btn--sm">Use in a live drop</Link>
               ) : (
                 <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(template)}>
                   Edit
@@ -2467,6 +2470,8 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
   const [sourcing, setSourcing] = useState<Sourcing>(template?.sourcing ?? 'in_hand');
   const [description, setDescription] = useState(template?.description ?? '');
   const [defaultLotId, setDefaultLotId] = useState(template?.defaultLotId ?? '');
+  /** Every other option a listing has - advance, expiry, shipping, offers, commission - so a template can carry them too. */
+  const [terms, setTerms] = useState<TermsDraft>(() => termsFromTemplate(termsDraft(), template?.terms));
   const [lotRouteId, setLotRouteId] = useState(template?.lotRouteId ?? '');
   const [lots, setLots] = useState<LotSummary[]>([]);
   const [routes, setRoutes] = useState<RoutesResponse | null>(null);
@@ -2504,6 +2509,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
         description: description.trim(),
         defaultLotId: defaultLotId || null,
         lotRouteId: lotRouteId || null,
+        terms: termsToTemplate(terms),
         /* The first half of the route this item is expected to travel, stored
            on the template so an order sold before any lot exists still has a
            ladder to read. Derived rather than written a second time: two
@@ -2580,6 +2586,8 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
           </Select>
         </label>
       </LBox>
+
+      <TermsFields value={terms} onChange={setTerms} forTemplate />
 
       {/* One route, not two ladders. The route already says where the item
           stops travelling alone, so both halves come from the same list and

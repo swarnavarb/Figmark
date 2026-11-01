@@ -13,8 +13,8 @@ import type {
 import { handleKey } from '../../../shared/handles.js';
 import { STORE_KINDS, storeOf, type StoreKind } from '../../../shared/service-stores.js';
 import { matchesKind, matchesSearch, newestOrder, popularity } from '../../../shared/catalog.js';
-import type { BackendStatus, CatalogQuery, OrderFigures, Repository, SellerCardSource } from './repository.js';
-import { BUMP_COOLDOWN_MS, ORDER_FIGURE_FIELDS, sessionDigest } from './repository.js';
+import type { BackendStatus, CatalogQuery, OrderFigures, PostPageOptions, Repository, SellerCardSource } from './repository.js';
+import { BUMP_COOLDOWN_MS, ORDER_FIGURE_FIELDS, feedOrder, inPage, sessionDigest } from './repository.js';
 import { photoNamesIn } from '../storage/unused.js';
 import { VIEW_LOG_DAYS, dayKey, type ViewSource } from '../../../shared/seller-data.js';
 
@@ -1087,15 +1087,11 @@ export class MemoryRepository implements Repository {
       .slice(0, limit);
   }
 
-  async listPostsForChannels(
-    channelIds: readonly string[], limit = 60, options: { before?: string; feedOnly?: boolean } = {},
-  ): Promise<Post[]> {
+  async listPostsForChannels(channelIds: readonly string[], limit = 60, options: PostPageOptions = {}): Promise<Post[]> {
     const wanted = new Set(channelIds);
     return [...this.posts.values()]
-      .filter((post) => wanted.has(post.channelId)
-        && (!options.before || post.createdAt < options.before)
-        && (!options.feedOnly || (post.reach ?? 'feed') === 'feed'))
-      .sort(newestFirst)
+      .filter((post) => wanted.has(post.channelId) && inPage(post, options))
+      .sort(feedOrder)
       .slice(0, limit);
   }
 

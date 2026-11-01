@@ -31,7 +31,7 @@ const {
 } = await import(new URL('share-routes.js', fns));
 const { ogRoute: og, ogCardRoute: ogCard, linkPreviewRoute: linkPreview, injectMeta, trustedOrigin } = await import(new URL('og-routes.js', fns));
 const { questMeRoute: questMe, questClaimRoute: questClaim } = await import(new URL('quest-routes.js', fns));
-const { questView, emptyQuestState } = await import(new URL('quest.js', shared));
+const { questView, emptyQuestState, XP } = await import(new URL('quest.js', shared));
 const { growthView, claimGrowth: claimRule } = await import(new URL('store-growth.js', shared));
 await useFixtures();
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
@@ -102,7 +102,7 @@ await check('making a link earns nothing; somebody opening it does', async () =>
 
 await check('a seller you brought in is worth five friends', async () => {
   const view = questView('u1', facts({ invitedSellers: 1 }), emptyQuestState());
-  assert.equal(view.breakdown.find((line) => line.label === 'Shops you brought in').xp, 100);
+  assert.equal(view.breakdown.find((line) => line.label === 'Shops you brought in').xp, 5 * XP.invite, 'five friends at the invite rate');
   assert.equal(view.tasks.find((task) => task.id.startsWith('ms-scouts-')).claimable, true);
 });
 

@@ -14,13 +14,15 @@ import { listingRarity } from '@shared/quest';
 import { factsOf } from '@shared/catalog';
 import { etaLabel } from '@shared/delivery-eta';
 import { FillBlock } from '../components/FillMeter';
-import { brandHueFor, daysUntil, formatDate, formatMoney, timeAgo } from '../format';
+import { brandHueFor, daysUntil, formatDate, formatDateTime, formatMoney, timeAgo } from '../format';
 import { PreOrderRules, isoInDays } from '../components/ListingForm';
 import { FULL_RULE_LABELS, SHORT_RULE_LABELS, isTakingBookings } from '@shared/preorder';
 import { useSession } from '../session';
 import { advanceMinor, isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
 import { AffiliateCard, ReferredBy, SimilarItems } from '../components/Affiliate';
+import { OffersRail, ShippingLine, WholesaleCallout } from '../components/Offers';
+import type { ListingOffer } from '@shared/offers';
 import { AFFILIATE_PARAM } from '@shared/affiliate';
 import { shopBadge, useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { themeOf } from '../components/momentCard';
@@ -60,6 +62,8 @@ export function ListingPage() {
   /** What the last press said, and whether it went through. */
   const [action, setAction] = useState<{ text: string; ok: boolean } | null>(null);
   const [quantity, setQuantity] = useState(1);
+  /** The offer whose details and terms are open, from the row or the wholesale callout. */
+  const [openOffer, setOpenOffer] = useState<ListingOffer | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
 
@@ -171,6 +175,9 @@ export function ListingPage() {
           <Svg name="ship" size={15} /> Arrives in <b>{etaLabel(listing.deliveryEta)}</b> from the order
         </p>
       ) : null}
+      {/* Shipping is said beside the price and never added to it. */}
+      <ShippingLine shippingMinor={listing.shippingMinor} offers={listing.offers} currency={listing.currency} />
+      <WholesaleCallout offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency} onOpen={setOpenOffer} />
       {listing.advancePercent ? (
         <p className="buybox__adv">
           <Svg name="coin" size={15} /> Book with{' '}
@@ -178,6 +185,9 @@ export function ListingPage() {
           ({listing.advancePercent}%) now, the rest later
         </p>
       ) : null}
+
+      <OffersRail offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency}
+        quantity={quantity} openOffer={openOffer} onOpen={setOpenOffer} />
 
       {action && <p className={`notice ${action.ok ? 'notice--ok' : 'notice--error'}`}>{action.text}</p>}
 
@@ -219,6 +229,17 @@ export function ListingPage() {
             <Icon name="heart" size={18} />
           </button>
         </div>
+      )}
+      {data.firstDibs?.open && !data.isOwn && (
+        <p className={`notice ${data.firstDibs.mine ? 'notice--ok' : 'notice--warn'} buybox__dibs`}>
+          🗳️ {data.firstDibs.mine
+            ? <>You voted for this, so it is yours first until <b>{formatDateTime(data.firstDibs.until)}</b>.</>
+            : <>Stocked from a poll: the people who voted get first dibs until <b>{formatDateTime(data.firstDibs.until)}</b>. Then anybody can buy.</>}
+        </p>
+      )}
+      {/* Sold out: be told the moment it is back, instead of checking. */}
+      {!data.isOwn && listing.status === 'sold_out' && !isExpired(listing) && (
+        <RestockButton listingId={listing.id} initial={data.restockAlert ?? { on: false, count: 0 }} lock={lock} />
       )}
       {/* A question, a bargain, "is it still there" - asked with the item
           attached, so the shop knows exactly which one. */}
@@ -951,4 +972,46 @@ function ListingShare({ spec, onOpen }: { spec: ShareSpec; onOpen: () => void })
 function spotsLeft(spec: ShareSpec): string {
   const left = spec.moment.fill ? spec.moment.fill.threshold - spec.moment.fill.joined : 0;
   return `${left} spot${left === 1 ? '' : 's'}`;
+}
+
+/**
+ * "Tell me when it's back" on a sold-out item: one tap, and the next time the
+ * shop puts stock back the bell rings. How many are waiting is shown, which
+ * is also something the shop reads.
+ */
+function RestockButton({ listingId, initial, lock }: {
+  listingId: string;
+  initial: { on: boolean; count: number };
+  lock: string;
+}) {
+  const { gate } = useSession();
+  const [state, setState] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setState(initial), [initial]);
+
+  async function toggle() {
+    setBusy(true);
+    setError(null);
+    try {
+      setState(await api.restockAlert(listingId, !state.on));
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not set that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="buybox__restock">
+      <button type="button" className={`btn btn--block ${state.on ? 'btn--quiet' : 'btn--ghost'}${lock}`} aria-pressed={state.on}
+        disabled={busy} onClick={gate(() => void toggle(), 'Sign in to be told when it is back.')}>
+        🔔 {state.on ? 'We will tell you when it is back' : 'Tell me when it is back'}
+      </button>
+      {state.count > 0 && (
+        <small className="faint">{state.count === 1 ? '1 person is' : `${state.count} people are`} waiting for it</small>
+      )}
+      {error && <small className="notice notice--error">{error}</small>}
+    </div>
+  );
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CommunityNotices } from '../components/CommunityAlerts';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ApiRequestError, api, type ForumRow, type ForumsResponse, type PostCard } from '../api';
+import { ApiRequestError, api, type FollowingKind, type ForumRow, type ForumsResponse, type PostCard } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SocialPostCard } from '../components/SocialPost';
 import { PersonVoice, VoicePicker, VoiceProvider, useVoice } from '../components/SocialVoice';
@@ -62,7 +62,7 @@ export function SocialPage() {
 
 /* ── Feed ───────────────────────────────────────────────────────────────── */
 
-type FeedFilter = 'all' | 'photos' | 'polls' | 'sale' | 'flexes' | 'saved';
+type FeedFilter = 'all' | FollowingKind | 'saved';
 
 const FILTERS: { id: FeedFilter; label: string }[] = [
   { id: 'all', label: 'Everything' },
@@ -75,50 +75,40 @@ const FILTERS: { id: FeedFilter; label: string }[] = [
 
 /** How often the feed asks whether anything new has been posted, while it is open and on screen. */
 const NEW_POSTS_EVERY_MS = 60_000;
-/** Drops from one shop this close together are one batch. */
-const DROP_BATCH_MS = 6 * 3_600_000;
+/** Posts per page: enough to fill a phone twice, small enough to arrive at once. */
+const FEED_PAGE = 12;
+/** How far ahead of the bottom the next page is asked for, so scrolling never meets the end. */
+const AHEAD = '900px 0px';
+/** Posts from one channel this close together are one run. */
+const RUN_MS = 6 * 3_600_000;
 /** Fewer than this in a row are shown one by one. */
-const DROP_BATCH_MIN = 3;
-
-/** One entry in the feed: a post, or a run of one shop's drops folded together. */
-type FeedEntry = { kind: 'post'; card: PostCard } | { kind: 'drops'; cards: PostCard[] };
-
-const isDrop = (card: PostCard) => !card.badges?.length && !card.post.repostOf
-  && (card.post.kind === 'sale' || Boolean(card.post.drop)) && Boolean(card.listing);
+const RUN_MIN = 3;
 
 /**
- * Fold runs of one shop's drops - several items posted one after another -
- * into a single entry, so a shop listing twenty things does not push
- * everybody else off the screen.
+ * One entry in the feed: a post, or a run of one channel's posts folded
+ * together - a shop listing twenty things, or a friend posting six photos in
+ * an hour - so nobody pushes everybody else off the screen.
  */
-function batchDrops(cards: PostCard[]): FeedEntry[] {
+type FeedEntry = { kind: 'post'; card: PostCard } | { kind: 'run'; cards: PostCard[]; drops: boolean };
+
+const isDrop = (card: PostCard) => (card.post.kind === 'sale' || Boolean(card.post.drop)) && Boolean(card.listing);
+const foldable = (card: PostCard) => !card.badges?.length && !card.post.repostOf;
+
+function foldRuns(cards: PostCard[]): FeedEntry[] {
   const out: FeedEntry[] = [];
   for (let index = 0; index < cards.length;) {
     const first = cards[index]!;
     let end = index + 1;
-    if (isDrop(first)) {
-      while (end < cards.length && isDrop(cards[end]!) && cards[end]!.post.channelId === first.post.channelId
-        && Date.parse(first.post.createdAt) - Date.parse(cards[end]!.post.createdAt) < DROP_BATCH_MS) end += 1;
+    if (foldable(first)) {
+      while (end < cards.length && foldable(cards[end]!) && cards[end]!.post.channelId === first.post.channelId
+        && Date.parse(first.post.createdAt) - Date.parse(cards[end]!.post.createdAt) < RUN_MS) end += 1;
     }
-    if (end - index >= DROP_BATCH_MIN) out.push({ kind: 'drops', cards: cards.slice(index, end) });
-    else for (const card of cards.slice(index, end)) out.push({ kind: 'post', card });
+    const run = cards.slice(index, end);
+    if (run.length >= RUN_MIN) out.push({ kind: 'run', cards: run, drops: run.every(isDrop) });
+    else for (const card of run) out.push({ kind: 'post', card });
     index = end;
   }
   return out;
-}
-
-function matches(card: PostCard, filter: FeedFilter): boolean {
-  const { post, social } = card;
-  const inner = card.original ?? null;
-  const hasPhotos = (entry: PostCard) => (entry.post.photoUrls?.length ?? 0) > 0 || Boolean(entry.post.photoUrl);
-  switch (filter) {
-    case 'photos': return hasPhotos(card) || Boolean(inner && hasPhotos(inner));
-    case 'polls': return Boolean(social.poll || inner?.social.poll);
-    // A shop's drop, or a buyer showing what arrived: both are stock landing.
-    case 'sale': return post.kind === 'sale' || inner?.post.kind === 'sale' || Boolean(post.drop || post.delivered);
-    case 'flexes': return Boolean(post.flex || inner?.post.flex);
-    default: return true;
-  }
 }
 
 /** A message that stays in a shop's channel or a forum, as opposed to a broadcast. */
@@ -126,14 +116,35 @@ function inRoomOnly(card: PostCard): boolean {
   return card.post.channel === 'seller' && card.post.reach === 'channel';
 }
 
+/** Calls `onReach` whenever the element it is given comes near the screen. */
+function useNearScreen(onReach: (() => void) | null) {
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!node || !onReach) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      onReach();
+      return;
+    }
+    // Made again after every page, and a new watcher reports at once when the
+    // end is still in sight - so a short page carries straight on to the next.
+    const watch = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) onReach();
+    }, { rootMargin: AHEAD });
+    watch.observe(node);
+    return () => watch.disconnect();
+  }, [node, onReach]);
+  return setNode;
+}
+
 /**
- * The feed: who you follow, newest first, and nobody else.
+ * The feed: who you follow - shops and people - newest first, and nobody else.
  *
  * The shops' drops and unboxings, your people's flexes and polls, the forum
  * posts they put on their walls - in the order they were said, so "what did
- * my people post" is a question this always answers the same way. Finding
- * people you do not follow yet is Discover's job, not this one's, which is
- * what keeps a stranger from turning up between two friends.
+ * my people post" is a question this always answers the same way. It arrives a
+ * small page at a time as it is scrolled; a filter is asked of the server, so
+ * it reaches back past what is loaded. Once everything from the people
+ * followed has been read, Discover carries on underneath, marked as such.
  *
  * Read in whichever voice is chosen, because "did I react to this" depends on
  * who is asking; switching voice reads it again.
@@ -157,9 +168,10 @@ function FollowingFeed() {
    */
   const [starting, setStarting] = useState(false);
   useEffect(() => {
-    if (posts && posts.length === 0 && filter !== 'saved') setStarting(true);
-  }, [posts, filter]);
+    if (posts && posts.length === 0 && filter === 'all' && !next) setStarting(true);
+  }, [posts, filter, next]);
 
+  const kind = filter === 'all' || filter === 'saved' ? null : filter;
   /** Which load is the latest: the voice settles after the first one has gone out, and only the newest answer counts. */
   const loading = useRef(0);
   const load = useCallback(async () => {
@@ -167,39 +179,46 @@ function FollowingFeed() {
     setError(null);
     setFresh(null);
     try {
-      const page = await api.socialHome(as, undefined, true);
+      const page = await api.socialFollowing({ as, kind, limit: FEED_PAGE });
       if (ticket !== loading.current) return;
       setPosts(page.posts);
       setNext(page.next);
-      setLastVisit((known) => known ?? page.lastVisit ?? null);
+      if (!kind) setLastVisit((known) => known ?? page.lastVisit ?? null);
     } catch (err) {
       if (ticket !== loading.current) return;
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your feed.');
     }
-  }, [as]);
+  }, [as, kind]);
 
   /** The next page of followed posts, under what is already here. */
-  async function loadMore() {
-    if (!next) return;
+  const loadingMore = useRef(false);
+  const loadMore = useCallback(async () => {
+    if (!next || loadingMore.current) return;
+    loadingMore.current = true;
+    const ticket = loading.current;
     setMore(true);
     try {
-      const page = await api.socialHome(as, next, true);
+      const page = await api.socialFollowing({ as, kind, before: next, limit: FEED_PAGE });
+      if (ticket !== loading.current) return;
       setPosts((current) => {
         const known = new Set((current ?? []).map((card) => card.post.id));
         return [...(current ?? []), ...page.posts.filter((card) => !known.has(card.post.id))];
       });
       setNext(page.next);
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load more.');
+      if (ticket === loading.current) setError(err instanceof ApiRequestError ? err.message : 'Could not load more.');
     } finally {
+      loadingMore.current = false;
       setMore(false);
     }
-  }
+  }, [as, kind, next]);
 
   useEffect(() => {
+    if (filter === 'saved') return;
     setPosts(null);
+    setNext(null);
     void load();
-  }, [load]);
+  }, [load, filter]);
 
   // Saved is its own list: posts saved from anywhere, not only from this feed.
   useEffect(() => {
@@ -215,25 +234,54 @@ function FollowingFeed() {
   }, [filter, as]);
 
   // Anything new from the people followed? Asked now and then while the feed
-  // is on screen, and answered with a pill rather than by moving what is
-  // being read.
-  const newest = posts?.find((card) => !card.badges?.length)?.post.createdAt ?? null;
+  // is on screen - never while the app is in the background - and answered
+  // with a pill rather than by moving what is being read.
+  const newest = filter === 'all' ? posts?.[0]?.post.createdAt ?? null : null;
   useEffect(() => {
     if (!newest) return;
+    let timer: number | undefined;
     const ask = () => {
-      if (document.visibilityState !== 'visible') return;
       api.socialHomeNew(newest).then((found) => setFresh(found.count > 0 ? found : null)).catch(() => undefined);
     };
-    const timer = window.setInterval(ask, NEW_POSTS_EVERY_MS);
-    return () => window.clearInterval(timer);
+    const pace = () => {
+      window.clearInterval(timer);
+      timer = undefined;
+      if (document.visibilityState !== 'visible') return;
+      timer = window.setInterval(ask, NEW_POSTS_EVERY_MS);
+    };
+    // Coming back to the app is when news is most likely: ask straight away.
+    const onVisible = () => {
+      pace();
+      if (document.visibilityState === 'visible') ask();
+    };
+    pace();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [newest]);
+
+  // What was just posted goes on top as it is, without reading the feed again.
+  const posted = useCallback(async (made?: { channelId: string; id: string }) => {
+    if (!made || filter !== 'all') {
+      await load();
+      return;
+    }
+    try {
+      const { card } = await api.socialPost(made.channelId, made.id, as);
+      setPosts((current) => [card, ...(current ?? []).filter((entry) => entry.post.id !== card.post.id)]);
+    } catch {
+      await load();
+    }
+  }, [as, filter, load]);
+
+  const reachEnd = useNearScreen(filter !== 'saved' && next && !error ? loadMore : null);
 
   // A channel message is said to the room, never to the feed - whatever the
   // server sends, a room message is not drawn here.
-  const shown = filter === 'saved'
-    ? saved ?? []
-    : (posts ?? []).filter((card) => !inRoomOnly(card) && matches(card, filter));
-  const entries = batchDrops(shown);
+  const shown = filter === 'saved' ? saved ?? [] : (posts ?? []).filter((card) => !inRoomOnly(card));
+  const entries = foldRuns(shown);
   // The line goes above the first post already seen, when something above it is new.
   const caughtUpAt = filter === 'all' && lastVisit
     ? entries.findIndex((entry, index) => index > 0 && entry.kind === 'post' && !entry.card.badges?.length
@@ -241,10 +289,11 @@ function FollowingFeed() {
     : -1;
   const remove = (id: string) => setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null);
   const repost = (card: PostCard) => setPosts((all) => [card, ...(all ?? [])]);
+  const done = filter === 'all' && posts !== null && posts.length > 0 && !next;
 
   return (
     <div className="feed">
-      <Composer onPosted={load} />
+      <Composer onPosted={posted} />
 
       {fresh && filter !== 'saved' && (
         <button type="button" className="feed__fresh" onClick={() => {
@@ -266,11 +315,11 @@ function FollowingFeed() {
         ))}
       </div>
 
-      {error ? (
+      {error && !posts ? (
         <ErrorNotice message={error} />
-      ) : !posts || (filter === 'saved' && !saved) ? (
+      ) : (filter === 'saved' ? !saved : !posts) ? (
         <FeedSkeleton />
-      ) : posts.length === 0 && filter !== 'saved' ? (
+      ) : filter === 'all' && shown.length === 0 && !next ? (
         <>
           <EmptyState title="Your feed is quiet">
             This is where the shops, collectors and groups you follow post their drops, unboxings and flexes.
@@ -287,27 +336,82 @@ function FollowingFeed() {
           <EmptyState title="Nothing saved yet">
             Press ··· on any post and Save it to read again later. Saved posts wait here.
           </EmptyState>
+        ) : next ? (
+          <EmptyState title="Nothing like that lately">
+            None of the recent posts from people you follow are like that.
+            <span className="feed__empty-go">
+              <button type="button" className="btn btn--sm" disabled={more} onClick={() => void loadMore()}>Look further back</button>
+            </span>
+          </EmptyState>
         ) : (
           <EmptyState title="Nothing like that yet">
-            Nothing matches that filter. Try another, or be the first.
+            Nobody you follow has posted one of those. Try another, or be the first.
           </EmptyState>
         )
       ) : (
         <>
           {starting && filter === 'all' && <FollowSuggestions title="Follow a few more" onFollowed={() => void load()} />}
           {entries.map((entry, index) => (
-            <FeedItem key={entry.kind === 'post' ? `${as ?? 'me'}-${entry.card.post.id}` : `drops-${entry.cards[0]!.post.id}`}
+            <FeedItem key={entry.kind === 'post' ? `${as ?? 'me'}-${entry.card.post.id}` : `run-${entry.cards[0]!.post.id}`}
               entry={entry} caughtUp={index === caughtUpAt} onRemoved={remove} onReposted={repost} />
           ))}
         </>
       )}
 
-      {posts && next && filter !== 'saved' && (
-        <button type="button" className="chmore" disabled={more} onClick={() => void loadMore()}>
-          {more ? <><Spinner size={14} label="Loading" /> Show older posts</> : 'Show older posts'}
+      {error && posts && <ErrorNotice message={error} />}
+      {filter !== 'saved' && posts && next && shown.length > 0 && (
+        <button ref={reachEnd} type="button" className="chmore" disabled={more} onClick={() => void loadMore()}>
+          {more ? <><Spinner size={14} label="Loading" /> Loading older posts</> : 'Show older posts'}
         </button>
       )}
+      {done && <AfterFollowing exclude={posts} />}
     </div>
+  );
+}
+
+/**
+ * Under the last post from the people followed: Discover, carrying on.
+ *
+ * Only what is new to Discover is shown here - when Discover starts going
+ * round again with older favourites, this stops and points there instead.
+ */
+function AfterFollowing({ exclude }: { exclude: readonly PostCard[] }) {
+  const [cards, setCards] = useState<PostCard[]>([]);
+  /** Undefined before the first page; null when there is nothing more. */
+  const [cursor, setCursor] = useState<string | null | undefined>(undefined);
+  const busy = useRef(false);
+  const known = useRef(new Set<string>());
+  known.current = new Set([...exclude.map((card) => card.post.id), ...cards.map((card) => card.post.id)]);
+  const pull = useCallback(async () => {
+    if (busy.current || cursor === null) return;
+    busy.current = true;
+    try {
+      const page = cursor === undefined ? await api.discoverStream() : await api.discoverMore(cursor);
+      const fresh = (page.lap ?? 0) > 0 ? [] : page.stream.filter((card) => !known.current.has(card.post.id));
+      setCards((current) => [...current, ...fresh]);
+      setCursor((page.lap ?? 0) > 0 ? null : page.nextCursor);
+    } catch {
+      setCursor(null);
+    } finally {
+      busy.current = false;
+    }
+  }, [cursor]);
+  const reach = useNearScreen(cursor === null ? null : pull);
+  return (
+    <section className="feed__after" aria-label="More from across Figmark">
+      <div className="feed__caught" role="separator">
+        <Icon name="check" size={14} /> <span>You've seen everything from people you follow</span>
+      </div>
+      {cards.length > 0 && <h2 className="feed__aftertitle">More from across Figmark</h2>}
+      {cards.map((card) => <SocialPostCard key={`after-${card.post.id}`} card={card} />)}
+      {cursor !== null ? (
+        <div ref={reach} className="feed__afterload"><Spinner size={14} label="Loading" /></div>
+      ) : (
+        <p className="feed__afterend">
+          <Link to="/discover" className="btn btn--quiet btn--sm">Keep going in Discover</Link>
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -327,17 +431,20 @@ function FeedItem({ entry, caughtUp, onRemoved, onReposted }: {
       )}
       {entry.kind === 'post'
         ? <SocialPostCard card={entry.card} onRemoved={onRemoved} onReposted={onReposted} />
-        : <DropBatch cards={entry.cards} onRemoved={onRemoved} onReposted={onReposted} />}
+        : <PostRun cards={entry.cards} drops={entry.drops} onRemoved={onRemoved} onReposted={onReposted} />}
     </>
   );
 }
 
+const thumbOf = (card: PostCard) => card.listing?.photoUrl ?? card.post.photoUrls?.[0] ?? card.post.photoUrl ?? null;
+
 /**
- * A run of one shop's drops: the newest in full, the rest as a strip of
+ * A run of one channel's posts: the newest in full, the rest as a strip of
  * thumbnails that opens into the posts.
  */
-function DropBatch({ cards, onRemoved, onReposted }: {
+function PostRun({ cards, drops, onRemoved, onReposted }: {
   cards: PostCard[];
+  drops: boolean;
   onRemoved: (id: string) => void;
   onReposted: (card: PostCard) => void;
 }) {
@@ -346,17 +453,21 @@ function DropBatch({ cards, onRemoved, onReposted }: {
   if (open) {
     return <>{cards.map((card) => <SocialPostCard key={card.post.id} card={card} onRemoved={onRemoved} onReposted={onReposted} />)}</>;
   }
+  const noun = drops ? (rest.length === 1 ? 'item' : 'items') : (rest.length === 1 ? 'post' : 'posts');
   return (
     <div className="dropbatch">
       <SocialPostCard card={first!} onRemoved={onRemoved} onReposted={onReposted} />
       <button type="button" className="dropbatch__more" onClick={() => setOpen(true)}>
         <span className="dropbatch__thumbs" aria-hidden="true">
-          {rest.slice(0, 4).map((card) => (card.listing?.photoUrl
-            ? <img key={card.post.id} src={card.listing.photoUrl} alt="" loading="lazy" />
-            : <span key={card.post.id} className="dropbatch__blank" />))}
+          {rest.slice(0, 4).map((card) => {
+            const photo = thumbOf(card);
+            return photo
+              ? <img key={card.post.id} src={photo} alt="" loading="lazy" />
+              : <span key={card.post.id} className="dropbatch__blank" />;
+          })}
         </span>
         <span>
-          <strong>{first!.post.authorName}</strong> posted {rest.length} more {rest.length === 1 ? 'item' : 'items'}
+          <strong>{first!.author.name}</strong> posted {rest.length} more {noun}
         </span>
         <Icon name="chevron" size={14} />
       </button>

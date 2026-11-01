@@ -118,17 +118,11 @@ export function toErrorResponse(err: unknown, context: InvocationContext): HttpR
     return error(
       503,
       'store_incomplete',
-      'This feature\'s data container does not exist in the database yet. ' +
-        'Open /api/health: it names which containers are missing and how to create them.',
+      'This feature is temporarily unavailable. Please try again later.',
     );
   }
 
-  const kind = status !== null
-    ? `data store error ${status}`
-    : err instanceof Error
-      ? err.constructor.name
-      : typeof err;
-  return error(500, 'internal_error', `Something went wrong handling this request (${kind}).`);
+  return error(500, 'internal_error', 'Something went wrong. Please try again.');
 }
 
 /**

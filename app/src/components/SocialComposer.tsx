@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiRequestError, api, type ForumRow, type ShareableListing } from '../api';
+import type { Post } from '@shared/models';
 import { Thumb } from './ui';
 import { Icon } from './Icon';
 import { Confetti } from './Confetti';
@@ -36,7 +37,8 @@ interface DraftPhoto {
  * the choice only appears when there is one to make.
  */
 export function Composer({ onPosted, forum = null }: {
-  onPosted: () => void | Promise<void>;
+  /** Handed what was just posted, so a feed can put it on top without reading itself again. */
+  onPosted: (post?: Pick<Post, 'channelId' | 'id'>) => void | Promise<void>;
   /** Writing inside a forum: always as yourself, and optionally onto your feed too. */
   forum?: { id: string; name: string } | null;
 }) {
@@ -158,7 +160,7 @@ export function Composer({ onPosted, forum = null }: {
     setBusy(true);
     setError(null);
     try {
-      await api.createPost({
+      const made = await api.createPost({
         body: body.trim() || (item ? `Now available: ${item.title}` : ''),
         ...(voice.storeId ? { storeId: voice.storeId } : {}),
         ...(forum ? { forumId: forum.id, toWall } : {}),
@@ -171,7 +173,7 @@ export function Composer({ onPosted, forum = null }: {
       });
       reset();
       setParty((count) => count + 1);
-      await onPosted();
+      await onPosted(made.post);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not post that.');
     } finally {
@@ -229,10 +231,10 @@ export function Composer({ onPosted, forum = null }: {
     <Suspense fallback={null}>
       <PostStudio mode="poll" storeId={forum ? null : voice.storeId} storeName={forum ? null : voice.name}
         forumId={forum?.id ?? null} onClose={() => setPolling(false)}
-        onPosted={() => {
+        onPosted={(post) => {
           setPolling(false);
           setParty((count) => count + 1);
-          void onPosted();
+          void onPosted(post);
         }} />
     </Suspense>
   );

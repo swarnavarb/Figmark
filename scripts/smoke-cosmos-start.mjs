@@ -250,7 +250,8 @@ await check('says nobody has an account yet, rather than "wrong password"', asyn
   } catch (err) {
     assert.ok(err instanceof AuthError);
     assert.equal(err.code, 'sign_in_unavailable');
-    assert.match(err.message, /sign up/i);
+    assert.match(err.message, /temporarily unavailable/i);
+    assert.doesNotMatch(err.message, /database|cosmos|azure|provision/i);
   }
 });
 
@@ -420,7 +421,8 @@ await check('refuses sign-in with the reason, not "wrong password"', async () =>
   } catch (err) {
     assert.ok(err instanceof AuthError);
     assert.equal(err.code, 'sign_in_unavailable');
-    assert.match(err.message, /not reachable/);
+    assert.match(err.message, /temporarily unavailable/i);
+    assert.doesNotMatch(err.message, /cosmos|azure|endpoint/i);
   }
 });
 

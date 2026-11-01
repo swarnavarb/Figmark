@@ -12,6 +12,7 @@ import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { useSession } from './session';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
+import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
 import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
 import { PageLoading } from './components/Feedback';
@@ -31,6 +32,7 @@ const FORUM_STATUS = '#C627CB';
 
 export function AppShell() {
   const { user, warning, sessionsInsecure, missingContainers, dataPerWorker, testEnvironment, signOut, authPrompt, closeAuth, promptAuth } = useSession();
+  const isStaff = Boolean(user?.capabilities?.isAdmin);
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const query = params.get('q') ?? '';
@@ -150,7 +152,7 @@ export function AppShell() {
           sits under the social header instead (see SocialPage). */}
       {!social && <VerifyNudge />}
 
-      {sessionsInsecure && (
+      {isStaff && sessionsInsecure && (
         <div className="page page--notice">
           <p className="notice notice--error notice--standing">
             Sessions are signed with the development key published in this repository, so they can be
@@ -159,13 +161,15 @@ export function AppShell() {
         </div>
       )}
 
+      {/* Setup problems are for the people running the site: a visitor is told
+          nothing about how it is built or what is missing. */}
       {/* Staff act on other people's money: until two-factor is on, say so on every screen. */}
       {user?.mfaRequired && <StaffMfaNotice />}
 
       {/* A feature whose container does not exist fails on its own screen and
           nowhere else, which makes it look like a bug in that screen. Name it
           where every screen can see it. */}
-      {missingContainers.length > 0 && (
+      {isStaff && missingContainers.length > 0 && (
         <div className="page page--notice">
           <p className="notice notice--error notice--standing">
             The database is missing {missingContainers.length === 1 ? 'a container' : 'containers'}:{' '}
@@ -187,7 +191,7 @@ export function AppShell() {
 
       {/* Each worker has its own memory, so a tester's new account or item is
           there on one page load and gone on the next. Say so before it reads as a bug. */}
-      {dataPerWorker && (
+      {isStaff && dataPerWorker && (
         <div className="page page--notice">
           <p className="notice notice--warn notice--standing">
             This test server keeps its data in memory on each of its workers, so something you create can be
@@ -214,6 +218,7 @@ export function AppShell() {
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
       {authPrompt && <Suspense fallback={null}><AuthModal reason={authPrompt.reason} mode={authPrompt.mode} onClose={closeAuth} /></Suspense>}
       <VerifyPrompt />
+      {user && <PendingReviewsPrompt />}
     </div>
   );
 }

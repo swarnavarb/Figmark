@@ -95,6 +95,37 @@ export const ORDER_FIGURE_FIELDS = [
 ] as const;
 export type OrderFigures = Pick<Order, (typeof ORDER_FIGURE_FIELDS)[number]>;
 
+/**
+ * Which slice of a feed to read. Posts sort newest first, ties by id
+ * highest first, so a page edge between two posts written in the same
+ * millisecond loses neither (see `postsBefore`).
+ */
+export interface PostPageOptions {
+  /** Older than this time - or, with `beforeId`, at this time with a lower id. */
+  before?: string;
+  beforeId?: string;
+  /** Newer than this time only: what arrived since. */
+  after?: string;
+  /** Leave out messages that stay in their room, so they cannot crowd a feed page out. */
+  feedOnly?: boolean;
+}
+
+/** Newest first, then by id highest first: the one order every feed page agrees on. */
+export function feedOrder(a: Pick<Post, 'createdAt' | 'id'>, b: Pick<Post, 'createdAt' | 'id'>): number {
+  return b.createdAt.localeCompare(a.createdAt) || (b.id < a.id ? -1 : b.id > a.id ? 1 : 0);
+}
+
+/** Whether a post falls inside the page `options` describe. */
+export function inPage(post: Post, options: PostPageOptions): boolean {
+  if (options.feedOnly && (post.reach ?? 'feed') !== 'feed') return false;
+  if (options.after && !(post.createdAt > options.after)) return false;
+  if (options.before) {
+    if (post.createdAt > options.before) return false;
+    if (post.createdAt === options.before && (!options.beforeId || post.id >= options.beforeId)) return false;
+  }
+  return true;
+}
+
 export interface Repository {
   readonly backend: BackendKind;
 
@@ -525,9 +556,7 @@ export interface Repository {
    * leaves out messages that stay in their room, so they cannot crowd a feed
    * page out.
    */
-  listPostsForChannels(
-    channelIds: readonly string[], limit?: number, options?: { before?: string; feedOnly?: boolean },
-  ): Promise<Post[]>;
+  listPostsForChannels(channelIds: readonly string[], limit?: number, options?: PostPageOptions): Promise<Post[]>;
   createPost(post: Post): Promise<Post>;
   getPost(channelId: string, id: string): Promise<Post | null>;
   /**

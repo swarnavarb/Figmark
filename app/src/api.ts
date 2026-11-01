@@ -1,8 +1,9 @@
+import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
 import type { ButtonLibrary } from '@shared/route-buttons';
 import type { ContentReport, ModerationMark, ReportTarget } from '@shared/moderation';
 import type { NotificationCategory } from '@shared/notifications';
-import type { NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
+import type { FirstDibsView, NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
 import type { VerifiedChecks } from '@shared/verification';
 import type {
   ApiError,
@@ -17,7 +18,7 @@ import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, OrderStatus, Sour
 import type { DealState } from '@shared/deals';
 import type { Badge, ContestJudging, GuessView, StoreCredit } from '@shared/play';
 import type { LotTally } from '@shared/board';
-import type { FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
+import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
@@ -33,7 +34,8 @@ import type { PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import type { StoreAccess } from '@shared/stores';
 import type { DisputeSubject, OrderAction, OrderSide } from '@shared/orders';
 import type {
-  CommentThread, PollView, PostHotspot, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe, PollStyle,
+  CommentThread, CompareKind, PollView, PostBlur, PostHotspot, PostSocial, ReactionKind, ReactionSummary, ReactorRow, Vibe,
+  PollStyle,
 } from '@shared/social';
 import type { CommunityAction } from '@shared/disputes';
 import type { MarketSettings } from '@shared/settings';
@@ -217,16 +219,28 @@ function request<T>(path: string, init?: RequestInit): Promise<T> {
   return promise;
 }
 
+/** Longest a request may take before it is given up on. Reads only: a write or an upload may legitimately take longer. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, {
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-      ...init,
-    });
+    // A request that never answers must end, so a screen waiting on it can say
+    // something instead of showing a spinner or nothing for ever.
+    const give = init?.signal || (init?.method ?? 'GET').toUpperCase() !== 'GET' ? null : new AbortController();
+    const timer = give ? setTimeout(() => give.abort(), REQUEST_TIMEOUT_MS) : null;
+    try {
+      response = await fetch(`/api${path}`, {
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+        ...(give ? { signal: give.signal } : {}),
+        ...init,
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   } catch {
-    throw new ApiRequestError(0, 'network_error', `Could not reach the API at /api${path}.`);
+    throw new ApiRequestError(0, 'network_error', 'Could not connect. Check your connection and try again.');
   }
 
   if (!response.ok) {
@@ -260,6 +274,9 @@ const visitorKnown = () => request<unknown>('/auth/me').catch(() => undefined);
 
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+
+const put = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) });
 
 /** A data URL's bytes, as the Blob it describes. */
 function blobOf(dataUrl: string): Blob {
@@ -304,7 +321,7 @@ export interface SellerCard {
   /** Orders behind the on-time rate. */
   onTimeMeasured?: number;
   /** Share of buyers who ordered more than once; null with too few buyers. */
-  repeatCustomerRate?: number | null;
+  repeatCustomerRate: number | null;
   /** Orders delivered without being lost in a dispute. */
   completedSales: number;
   memberSince: string;
@@ -453,6 +470,10 @@ export interface ListingDetail {
   preOrder: PreOrderRoster | null;
   /** Null unless the shop pays a commission on this item. */
   affiliate: ListingAffiliate | null;
+  /** "Tell me when it's back": whether this reader asked, and how many have. */
+  restockAlert?: { on: boolean; count: number };
+  /** A stock poll's voters' head start, as this reader stands in it. */
+  firstDibs?: FirstDibsView | null;
 }
 
 export interface ListingAffiliate {
@@ -645,10 +666,20 @@ export interface PublicReview {
   /** What it was written about. Null only where the order has since gone. */
   item: {
     orderId: string; listingId: string; name: string; totalMinor: number; currency: string;
+    /** The item's photo, for the small card beside the review. */
+    photoUrl?: string | null;
   } | null;
   /** This viewer wrote it. */
   mine?: boolean;
   moderation?: ModerationMark;
+}
+
+/** What a person still owes a review on, and which deliveries they have yet to confirm arrived. */
+export interface PendingReviews {
+  pending: { orderId: string; itemName: string; photoUrl: string | null; side: 'buyer' | 'seller'; completedAt: string }[];
+  toConfirm: { orderId: string; itemName: string }[];
+  /** How many days after an order completes the app keeps asking. */
+  days: number;
 }
 
 /** An opinion left on somebody's page, which nothing had to be bought to write. */
@@ -699,7 +730,17 @@ export interface PriceChange {
 }
 
 export interface Checkout {
+  /** What is owed for everything on this order: the goods, plus shipping, less what offers took off. */
   itemMinor: number;
+  /** The seller's price for the goods alone. Shipping and offers are shown beside it, never inside it. */
+  goodsMinor?: number;
+  shippingMinor?: number;
+  offerDiscountMinor?: number;
+  appliedOffers?: AppliedOffer[];
+  /** The offers this order is under, with their terms. */
+  offerRules?: ListingOffer[];
+  /** What paying everything now, rather than an advance, would save: the shop's pay-in-full offer. */
+  prepaySavingMinor?: number;
   /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
   unavailable?: string | null;
   /** Set when the price moved since Buy was pressed; the checkout is already at the new one. */
@@ -1127,6 +1168,8 @@ export interface DisputeView {
 }
 
 export interface OrderState {
+  /** What cancelling this order would cost the rest of the buyer's basket in lost offers. */
+  offerImpact?: { extraMinor: number; lost: string[] } | null;
   order: Order;
   side: OrderSide | null;
   /** The other party, named from this viewer's side of the order. */
@@ -1173,6 +1216,8 @@ export interface NewListing {
   privateFor?: string | null;
   /** The shop's own item a private deal was made from. */
   dealFromId?: string | null;
+  /** Listed because a stock poll asked for it: its voters get first dibs. */
+  fromPoll?: { channelId: string; postId: string; optionId?: string | null } | null;
   title: string;
   description: string;
   category: string;
@@ -1261,6 +1306,8 @@ export interface PostCard {
   saved?: boolean;
   /** People the viewer follows who took part: up to three names, and how many in all. */
   followedActed?: { count: number; names: string[] } | null;
+  /** Discover only: the one line that says why this is in front of this reader. */
+  why?: DiscoverWhy | null;
 }
 
 export type PostBoost = 'trending' | 'rising' | 'result';
@@ -1290,6 +1337,12 @@ export interface NewPost {
     title: string; rules: string; entriesHours: number; votingHours: number; judging: ContestJudging;
     prizes: { amountMinor: number; note: string }[]; host?: 'store' | 'figmark';
   } | null;
+  /** Blurred until tapped. */
+  blur?: PostBlur | null;
+  /** Two photos, before and after. */
+  compare?: { kind: CompareKind; labels?: [string, string] } | null;
+  /** A question whose comments are its answers. */
+  question?: boolean;
 }
 
 /** What Discover is made of, each list already ranked. The rails come on the first page only. */
@@ -1305,8 +1358,32 @@ export interface DiscoverResponse {
   topics?: TopicChip[];
   wants?: WantRow[];
   spotted?: SpottedItem[];
-  /** The page after this one, or null at the end. */
+  /**
+   * The endless stream: every public post worth a look in one order made for
+   * this reader, each saying why. The first page rides with the lists above;
+   * the rest are read with `discoverMore`.
+   */
+  stream?: PostCard[];
+  /** Pass to `discoverMore` for the next page of the stream, or null at the end. */
+  nextCursor?: string | null;
+  lap?: number;
+  /** The page after this one of the lists above, or null at the end. */
   next?: number | null;
+}
+
+/** One further page of the stream, and nothing else. */
+/** The kinds of post the Social tab can be cut to. */
+export type FollowingKind = 'photos' | 'polls' | 'sale' | 'flexes';
+
+export interface DiscoverStreamPage {
+  stream: PostCard[];
+  nextCursor: string | null;
+  /**
+   * 0 while there is something new; 1, 2... once everything new has been shown
+   * and the stream is going round again with older posts that did well. A post
+   * can come back in a later lap, so the app keys cards by lap as well.
+   */
+  lap?: number;
 }
 
 /** One post read in full, with everything said under it. */
@@ -2106,6 +2183,11 @@ export interface PhotoSalesItem {
 }
 
 export interface PhotoSalesResponse {
+  /**
+   * The poster's own items on sale that the photo shows, or very likely
+   * shows: tagged on it without anybody placing them.
+   */
+  own?: (FeedListing & { onSale: boolean })[];
   items: PhotoSalesItem[];
   /** Shops that have sold the matching items, most sold first. */
   sellers: { seller: SellerCard; unitsSold: number; items: number }[];
@@ -2601,6 +2683,9 @@ export const api = {
   markAffiliatePaid: (orderId: string, reference?: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(orderId)}/affiliate-paid`, { reference }),
   createListing: (body: NewListing) => post<{ listing: Listing }>('/listings', body),
+  /** Be told when a sold-out item is back, or stop. */
+  restockAlert: (id: string, on: boolean) =>
+    post<{ on: boolean; count: number }>(`/listings/${encodeURIComponent(id)}/restock-alert`, { on }),
   like: (id: string) => post<{ liked: boolean }>(`/listings/${encodeURIComponent(id)}/like`),
   /** `quantityWas` is the stock the form showed: the server applies the difference, not the number. */
   editListing: (id: string, body: Partial<NewListing> & { quantityWas?: number }) =>
@@ -2627,6 +2712,8 @@ export const api = {
     inPerson?: boolean;
   }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
+  /** Reviews this person still owes on recent trades, and deliveries they have yet to confirm. */
+  pendingReviews: () => request<PendingReviews>('/me/pending-reviews'),
   myRefunds: () => request<{
     refunds: MyRefund[];
     hasDetails: boolean;
@@ -2974,6 +3061,8 @@ export const api = {
   marketSettings: () => request<PublicSettings>('/settings'),
   reviewOrder: (id: string, rating: number, body: string) =>
     post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
+  editReview: (id: string, rating: number, body: string) =>
+    put<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
   /** The buyer's photo of what arrived, posted to the shop's channel. */
   shareUnboxing: (id: string, body: string, photoUrls: string[]) =>
     post<{ post: Post }>(`/orders/${encodeURIComponent(id)}/unboxing`, { body, photoUrls }),
@@ -3138,7 +3227,7 @@ export const api = {
   savePost: (channelId: string, postId: string) =>
     post<{ saved: boolean; count: number }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(postId)}/save`),
   savedPosts: (as?: string | null) => request<{ posts: PostCard[] }>(`/social/saved${voice(as)}`),
-  hidePost: (channelId: string, postId: string, options: { notInterested?: boolean; undo?: boolean } = {}) =>
+  hidePost: (channelId: string, postId: string, options: { notInterested?: boolean; scope?: 'author' | 'topic'; undo?: boolean } = {}) =>
     post<{ hidden: boolean }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(postId)}/hide`, options),
   muteFeed: (id: string, on: boolean) => post<{ muted: boolean; count: number }>('/social/mute', { id, on }),
   feedMutes: () => request<{ muted: { id: string; name: string; handle: string | null; shop: boolean }[] }>('/social/mutes'),
@@ -3156,8 +3245,42 @@ export const api = {
     const tail = query.toString();
     return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null; live?: PostCard[] }>(`/social/home${tail ? `?${tail}` : ''}`);
   },
+  /**
+   * The Social tab: who you follow - shops and people - newest first, a small
+   * page at a time. `kind` cuts it to one kind of post on the server, so a
+   * filter finds older posts too, not only the ones already loaded.
+   */
+  socialFollowing: (options: { as?: string | null; before?: string | null; kind?: FollowingKind | null; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (options.as) query.set('as', options.as);
+    if (options.before) query.set('before', options.before);
+    if (options.kind) query.set('kind', options.kind);
+    if (options.limit) query.set('limit', String(options.limit));
+    const tail = query.toString();
+    return request<{ posts: PostCard[]; next: string | null; lastVisit?: string | null }>(`/social/following${tail ? `?${tail}` : ''}`);
+  },
   /** The public side, ranked: debates, conversations that took off, and collection flexes. */
-  discover: (page = 0) => request<DiscoverResponse>(`/social/discover${page ? `?page=${page}` : ''}`),
+  discover: (page = 0, options: { interests?: string[] } = {}) => {
+    const query = new URLSearchParams();
+    if (page) query.set('page', String(page));
+    // A guest has no history; what they opened on this device stands in for it.
+    if (options.interests?.length) query.set('interests', options.interests.join(','));
+    const tail = query.toString();
+    return request<DiscoverResponse>(`/social/discover${tail ? `?${tail}` : ''}`);
+  },
+  /**
+   * The first page of the stream alone, without the lists and rails: it is
+   * read in one short wave, so the first posts show without waiting on them.
+   */
+  discoverStream: (options: { interests?: string[] } = {}) => {
+    const query = new URLSearchParams({ stream: '1' });
+    if (options.interests?.length) query.set('interests', options.interests.join(','));
+    return request<DiscoverStreamPage>(`/social/discover?${query.toString()}`);
+  },
+  /** The lists and rails alone - the tabs, the topics, the hunts - read beside the stream. */
+  discoverLists: () => request<DiscoverResponse>('/social/discover?lists=1'),
+  /** The next page of the endless stream, from the cursor the last page gave. */
+  discoverMore: (cursor: string) => request<DiscoverStreamPage>(`/social/discover?cursor=${encodeURIComponent(cursor)}`),
   shareable: (as: string) => request<{ listings: ShareableListing[] }>(`/social/shareable${voice(as)}`),
   channels: () => request<{ channels: ChannelRow[]; discover: ChannelRow[] }>('/social/channels'),
   /** `light` is the refresh while a room is open: the posts only, without the shop's item list. */
@@ -3174,6 +3297,12 @@ export const api = {
   },
   pinPost: (channelId: string, id: string) =>
     post<{ pinned: boolean }>(`${postPath(channelId, id)}/pin`),
+  /** Change the words of your own post, or how it is blurred. */
+  editPost: (channelId: string, id: string, changes: { body?: string; blur?: PostBlur | null }, as?: string | null) =>
+    post<{ card: PostCard }>(`${postPath(channelId, id)}/edit${voice(as)}`, changes),
+  /** Mark the comment that answered your question; null takes the mark off. */
+  acceptAnswer: (channelId: string, id: string, commentId: string | null, as?: string | null) =>
+    post<{ card: PostCard; comments: CommentThread[] }>(`${postPath(channelId, id)}/accept${voice(as)}`, { commentId }),
   createPost: (body: NewPost) => post<{ post: Post }>('/social/posts', body),
   /** Put a photo into a competition: one each, while entries are open. */
   enterContest: (channelId: string, id: string, photoUrl: string, caption: string) =>

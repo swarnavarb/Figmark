@@ -312,7 +312,7 @@ interface ItemDraft {
   optsOpen: boolean;
 }
 
-const DEFAULT_FILL_NAME = 'Quick fill for Power selling';
+const DEFAULT_FILL_NAME = 'Quick fill for Live drops';
 
 const blankFill = (): QuickFill => ({
   category: CATEGORIES[0]!, condition: CONDITION_TAGS[0], tags: '', shape: 'single', lotId: '',
@@ -601,7 +601,7 @@ export function PowerSaleBuilderPage() {
 
   return (
     <main className="page">
-      <BackLink to={back} title="Power selling" />
+      <BackLink to={back} title="Live drops" />
       <form className="sellform psform" onSubmit={submit}>
         <LBox icon="📝" title="The sale" hint="The name is only for you; the channel sees the message.">
           <label className="field">

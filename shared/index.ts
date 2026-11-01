@@ -15,3 +15,4 @@ export * from './payments.js';
 export * from './quest.js';
 export * from './verification.js';
 export * from './delivery-eta.js';
+export * from './offers.js';

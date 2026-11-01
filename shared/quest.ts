@@ -163,11 +163,6 @@ function priceDrop(listing: RarityInput): number | null {
 /* Levels                                                                     */
 /* -------------------------------------------------------------------------- */
 
-const TITLES = [
-  'Rookie', 'Scout', 'Seeker', 'Hunter', 'Collector',
-  'Curator', 'Connoisseur', 'Vault Keeper', 'Grandmaster', 'Legend',
-];
-
 export const MAX_LEVEL = 50;
 
 /**
@@ -187,8 +182,33 @@ export function xpForLevel(level: number): number {
  * kind; a task pays by how long it runs; a milestone step pays by which step.
  */
 export const ACTION_XP = 20;
+/**
+ * What each thing earns. Finishing a trade and reviewing it pay far more than
+ * anything social, because a level is a statement about how somebody trades.
+ * Liking, following and posting pay a few points each (and are capped) so
+ * they can colour a level but never carry one.
+ */
+export const XP = {
+  orderPlaced: 10,
+  orderDelivered: 90,
+  dispatchOnTime: 30,
+  preOrderJoined: 10,
+  reviewWritten: 50,
+  goodRatingReceived: 40,
+  referredSale: 40,
+  collectionItem: 10,
+  post: 4,
+  want: 4,
+  follow: 2,
+  like: 2,
+  shareOpen: 3,
+  invite: 10,
+  invitedSeller: 50,
+  checkIn: 3,
+  card: 5,
+} as const;
 export const ACTION_CAP = 100;
-export const TASK_XP = { daily: 20, weekly: 60, monthly: 180 } as const;
+export const TASK_XP = { daily: 5, weekly: 20, monthly: 60 } as const;
 export const TIER_XP = [60, 150, 300, 500, 800, 1200] as const;
 
 /*
@@ -213,18 +233,62 @@ export function levelFor(xp: number): number {
   return level;
 }
 
-/** Past level 10 a new title lands at 15, 20, 30 and 50. */
-const HIGH_LEVELS = [50, 30, 20, 15];
-const HIGH_TITLES = ['Immortal', 'Titan', 'Icon', 'Mythic'];
+/*
+ * Trust tiers: what a level means.
+ *
+ * A level is a tier name, and a tier is earned by trading well - not by being
+ * busy. The first two are open to everybody; the last two need a record of
+ * finished orders and no pile of lost disputes, whatever else a person has
+ * done (see `trustCap`). Buyers and shops climb the same four steps with their
+ * own names.
+ */
+export const TIER_FLOORS = [1, 3, 6, 10] as const;
+export const BUYER_TIERS = ['New Buyer', 'Verified Buyer', 'Trusted Buyer', 'Elite Buyer'] as const;
+export const SHOP_TIERS = ['New Shop', 'Reliable Shop', 'Trusted Shop', 'Prime Shop'] as const;
 
-/** The title for a level: one per level up to ten, then one per band. */
-export function titleIn(level: number, low: readonly string[], high: readonly string[]): string {
-  const band = HIGH_LEVELS.findIndex((floor) => level >= floor);
-  return (band >= 0 ? high[band] : low[Math.min(Math.max(level, 1), low.length) - 1]) ?? 'Legend';
+/** 0 to 3: which tier a level sits in. */
+export function tierOfLevel(level: number): number {
+  let tier = 0;
+  for (const [index, floor] of TIER_FLOORS.entries()) if (level >= floor) tier = index;
+  return tier;
+}
+
+/** The tier a level reads as, for a buyer or for a shop. */
+export function tierTitle(level: number, shop: boolean): string {
+  return (shop ? SHOP_TIERS : BUYER_TIERS)[tierOfLevel(level)]!;
 }
 
 export function titleFor(level: number): string {
-  return titleIn(level, TITLES, HIGH_TITLES);
+  return tierTitle(level, false);
+}
+
+/**
+ * The highest level a record allows, however much XP is piled up.
+ *
+ * Finished orders are what a tier is evidence of: nobody is Verified without
+ * one, Trusted without ten, or Elite without forty. Lost disputes hold the top
+ * back - two keep a person out of Elite, four out of Trusted.
+ */
+export function trustCap(completed: number, disputesLost: number): number {
+  let cap = MAX_LEVEL;
+  if (completed < 1) cap = 2;
+  else if (completed < 10) cap = 5;
+  else if (completed < 40) cap = 9;
+  if (disputesLost >= 4) cap = Math.min(cap, 5);
+  else if (disputesLost >= 2) cap = Math.min(cap, 9);
+  return cap;
+}
+
+/** The level XP earns, held to what the record allows - and why, when it is held. */
+export function levelWithRecord(xp: number, completed: number, disputesLost: number): { level: number; heldBack: string | null } {
+  const earned = levelFor(xp);
+  const cap = trustCap(completed, disputesLost);
+  if (earned <= cap) return { level: earned, heldBack: null };
+  const lost = disputesLost >= 2;
+  const heldBack = completed < 40 && cap < 10
+    ? `Your XP is ahead of your record. Finish ${completed < 1 ? 'an order' : completed < 10 ? `${10 - completed} more orders` : `${40 - completed} more orders`} with no dispute to rank up.`
+    : lost ? 'Lost disputes are holding your tier back. Clean trades lift it again.' : null;
+  return { level: cap, heldBack };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -290,7 +354,7 @@ export const CARDS: readonly CardDef[] = [
 export const CARD_BY_ID = new Map(CARDS.map((card) => [card.id, card]));
 
 /** XP a pulled card is worth, so a lucky pull is a small boost and not a free level. */
-export const CARD_XP: Record<CardRarity, number> = { common: ACTION_XP, rare: ACTION_XP, epic: ACTION_XP, legendary: ACTION_XP };
+export const CARD_XP: Record<CardRarity, number> = { common: XP.card, rare: XP.card, epic: XP.card, legendary: XP.card };
 
 const CARD_WEIGHTS: Record<CardRarity, number> = { common: 55, rare: 28, epic: 13, legendary: 4 };
 
@@ -965,6 +1029,8 @@ export interface QuestView {
   penalty: number;
   /** Bump points saved up to spend on the person's own listings. */
   bumps: number;
+  /** Why the level is lower than the XP would give, when the record is holding it back. */
+  heldBack?: string | null;
 }
 
 /**
@@ -979,22 +1045,24 @@ function recordXp(facts: QuestFacts): XpLine[] {
   const preOrders = facts.orders.filter((order) => order.preOrder).length;
   const stars = (value: number) => facts.ratingsReceived.filter((rating) => rating === value).length;
   const pageStars = (value: number) => facts.pageRatings.filter((rating) => rating === value).length;
-  const line = (label: string, count: number) => ({ label, xp: actionXp(count), detail: `${count} × ${ACTION_XP}, up to ${ACTION_CAP}` });
+  const line = (label: string, count: number, each: number) => ({ label, xp: actionXp(count, each), detail: `${count} × ${each}, up to ${ACTION_CAP}` });
+  const delivered = facts.orders.filter((order) => order.status === 'delivered').length;
 
   return [
-    line('People who opened your links', facts.shareOpens.length),
-    line('Sales through your links', facts.referredSales),
-    line('Friends who joined with your invite', facts.invites.length),
-    { label: 'Shops you brought in', xp: actionXp(facts.invitedSellers, ACTION_XP * 5), detail: `${facts.invitedSellers} × ${ACTION_XP * 5}, up to ${ACTION_CAP}` },
-    line('Orders placed', facts.orders.length),
-    line('Pre-orders joined', preOrders),
-    line('Reviews written', facts.reviewsWritten.length),
-    line('Good ratings from sellers', stars(5) + stars(4)),
-    line('Collection items', facts.collection.length),
-    line('Social posts', facts.posts.length),
-    line('Wanted posts', facts.wants.length),
-    line('Shops followed', facts.follows.length),
-    line('Items saved', facts.likes.length),
+    line('Orders completed', delivered, XP.orderDelivered),
+    line('Orders placed', facts.orders.length, XP.orderPlaced),
+    line('Pre-orders joined', preOrders, XP.preOrderJoined),
+    line('Reviews written after an order', facts.reviewsWritten.length, XP.reviewWritten),
+    line('Good ratings from sellers', stars(5) + stars(4), XP.goodRatingReceived),
+    line('Sales through your links', facts.referredSales, XP.referredSale),
+    line('Collection items', facts.collection.length, XP.collectionItem),
+    line('Friends who joined with your invite', facts.invites.length, XP.invite),
+    { label: 'Shops you brought in', xp: actionXp(facts.invitedSellers, XP.invitedSeller), detail: `${facts.invitedSellers} × ${XP.invitedSeller}, up to ${ACTION_CAP}` },
+    line('People who opened your links', facts.shareOpens.length, XP.shareOpen),
+    line('Social posts', facts.posts.length, XP.post),
+    line('Wanted posts', facts.wants.length, XP.want),
+    line('Shops followed', facts.follows.length, XP.follow),
+    line('Items saved', facts.likes.length, XP.like),
     { label: 'Low ratings from sellers', xp: -(actionXp(stars(2)) + actionXp(stars(1), ACTION_XP * 2)), detail: `${stars(2)} two-star × −${ACTION_XP}, ${stars(1)} one-star × −${ACTION_XP * 2}` },
     { label: 'Low page reviews', xp: -Math.min(5 * ACTION_XP, actionXp(pageStars(2), ACTION_XP / 2) + actionXp(pageStars(1))), detail: `${pageStars(2)} two-star × −${ACTION_XP / 2}, ${pageStars(1)} one-star × −${ACTION_XP}, at most −${5 * ACTION_XP}` },
     { label: 'Disputes lost', xp: -actionXp(facts.disputesLost, ACTION_XP * 4), detail: `${facts.disputesLost} × −${ACTION_XP * 4}` },
@@ -1017,7 +1085,7 @@ export function questView(
 
   // Every day checked in is one action; keeping a streak pays through On Fire.
   const checkInDays = [...new Set(state.checkIns)];
-  const checkIn = checkInDays.length * ACTION_XP;
+  const checkIn = checkInDays.length * XP.checkIn;
 
   // A claim whose quest has since been undone (the saves taken back) pays nothing.
   const standing = Object.keys(state.claimed).filter((key) => claimStands(key, context));
@@ -1043,7 +1111,7 @@ export function questView(
   const breakdown = [
     ...recordXp(facts),
     { label: 'Check-ins', xp: checkIn, detail: `${checkInDays.length} day${checkInDays.length === 1 ? '' : 's'}, more for streaks` },
-    { label: 'Quests completed', xp: claimedXp + reveals * ACTION_XP, detail: `${standing.length} claimed + ${reveals} reveal${reveals === 1 ? '' : 's'} × ${ACTION_XP}` },
+    { label: 'Quests completed', xp: claimedXp + reveals * XP.card, detail: `${standing.length} claimed + ${reveals} reveal${reveals === 1 ? '' : 's'} × ${XP.card}` },
     { label: 'Cards collected', xp: cardXp, detail: `${owned.length} card${owned.length === 1 ? '' : 's'} by rarity` },
     { label: 'Card sets completed', xp: setsDone * SET_BONUS_XP, detail: `${setsDone} × ${SET_BONUS_XP}` },
   ].filter((line) => line.xp !== 0);
@@ -1052,10 +1120,11 @@ export function questView(
   // Losses can take a person down levels, but never below zero.
   const xp = Math.max(0, breakdown.reduce((sum, line) => sum + line.xp, 0));
 
-  const level = levelFor(xp);
+  const completed = facts.orders.filter((order) => order.status === 'delivered').length;
+  const { level, heldBack } = levelWithRecord(xp, completed, facts.disputesLost);
   const levelFloor = xpForLevel(level);
   const nextLevelXp = xpForLevel(level + 1);
-  const progress = level >= MAX_LEVEL ? 1 : (xp - levelFloor) / (nextLevelXp - levelFloor);
+  const progress = level >= MAX_LEVEL || heldBack ? 1 : (xp - levelFloor) / (nextLevelXp - levelFloor);
 
   const stickerContext: StickerContext = { ...context, owned };
 
@@ -1076,6 +1145,7 @@ export function questView(
     breakdown,
     penalty,
     bumps: state.bumps ?? 0,
+    heldBack,
   };
 }
 

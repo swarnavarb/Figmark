@@ -216,3 +216,7 @@
   flex: 0 0 auto; padding: 7px 14px; border-radius: var(--r-pill); font-weight: 700; font-size: var(--t-sm);
   color: #fff; background: linear-gradient(135deg, var(--lshare-from), var(--lshare-to));
 }
+
+/* Sold out: ask to be told when it is back. */
+.buybox__restock { display: grid; gap: 4px; justify-items: center; margin-top: var(--s2); text-align: center; }
+.buybox__dibs { margin: var(--s2) 0 0; font-size: var(--t-sm); }

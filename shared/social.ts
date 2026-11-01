@@ -164,6 +164,8 @@ export interface StoredPoll {
   switches?: number;
   /** A shop asking its buyers what it should stock next; its results feed the shop's console. */
   stock?: boolean;
+  /** What the shop listed from it, answer by answer: the voters had first dibs. */
+  stocked?: { optionId: string | null; listingId: string; at: string }[];
   reward?: VoterReward | null;
 }
 
@@ -242,6 +244,48 @@ export interface PostDebate {
   best?: DebateBest | null;
 }
 
+/**
+ * Asked to be blurred until tapped: a spoiler for a show or a set people have
+ * not opened yet, or something some readers would rather not see in passing.
+ */
+export const POST_BLURS = ['spoiler', 'sensitive'] as const;
+export type PostBlur = (typeof POST_BLURS)[number];
+export const BLUR_LABELS: Record<PostBlur, string> = { spoiler: 'Spoiler', sensitive: 'Sensitive' };
+export const isBlur = (value: unknown): value is PostBlur => POST_BLURS.includes(value as PostBlur);
+
+/**
+ * Two photos read as one: drag the line to see before against after - a
+ * repaint, a custom, a figure out of its box.
+ */
+export const COMPARE_KINDS = ['before_after', 'unboxing'] as const;
+export type CompareKind = (typeof COMPARE_KINDS)[number];
+export const COMPARE_DEFAULTS: Record<CompareKind, [string, string]> = {
+  before_after: ['Before', 'After'],
+  unboxing: ['In the box', 'Out of the box'],
+};
+export const COMPARE_LABEL_MAX = 24;
+export const isCompareKind = (value: unknown): value is CompareKind => COMPARE_KINDS.includes(value as CompareKind);
+
+export interface PostCompare {
+  kind: CompareKind;
+  /** What the first and the second photo are. */
+  labels: [string, string];
+}
+
+/**
+ * A question: the comments are its answers, and whoever asked marks the one
+ * that answered it. That answer reads first, and its writer is credited.
+ */
+export interface PostQuestion {
+  acceptedId: string | null;
+  acceptedAt?: string | null;
+  /** People already credited for an answer here, so changing the pick never counts twice. */
+  credited?: string[];
+}
+
+/** Most photos on a shelf tour picked from a collection. */
+export const SHELF_TOUR_MAX = 10;
+
 /** A post that is somebody else's post, passed on. */
 export interface RepostRef {
   postId: string;
@@ -283,6 +327,8 @@ export interface PollView {
   style?: PollStyle;
   switches?: number;
   stock?: boolean;
+  /** On a stock poll: the answers the shop has listed (null: one listed for the whole poll). */
+  stocked?: (string | null)[];
   reward?: { amountMinor: number; maxVoters: number; storeName: string; paidCount?: number | null } | null;
 }
 
@@ -311,6 +357,8 @@ export interface CommentView {
   side?: string | null;
   /** Disputed, validated, or waiting on an operator (shared/moderation.ts). */
   moderation?: ModerationMark;
+  /** On a question: the answer its asker marked. */
+  accepted?: boolean;
 }
 
 /** A top-level comment and its replies, oldest reply first. */

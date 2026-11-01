@@ -226,7 +226,7 @@ const BUY: LearnTab = {
     {
       id: 'reviews-disputes',
       title: 'Reviews, refunds and disputes',
-      body: 'Reviews are two-sided and blind: you rate the seller, the seller rates you, and neither sees the other\'s until both are written (or the window closes). Your rating as a buyer shows on your profile, so paying on time and being easy to deal with matters.',
+      body: 'Reviews are two-sided: you rate the seller, the seller rates you, and each shows the moment it is posted, with no waiting on the other side. You can edit your own rating and words later. Your rating as a buyer shows on your profile, so paying on time and being easy to deal with matters.',
       steps: [
         step('Review the seller', 'After the order completes, the order page asks for a rating and a few words. Mention how the item compared with the listing, the packing and the speed.'),
         step('Refunds', 'If an order is cancelled after you paid, the seller refunds you and asks for your refund details once. Keep them current in **My wallet** → details.'),

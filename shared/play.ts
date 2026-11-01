@@ -218,7 +218,10 @@ export interface StoreCredit {
 export const storeCreditLeft = (credit: Pick<StoreCredit, 'amountMinor' | 'spentMinor'>) =>
   Math.max(0, credit.amountMinor - credit.spentMinor);
 
-export const BADGE_KINDS = ['contest_winner', 'challenge_winner', 'debate_winner', 'guess_winner'] as const;
+export const BADGE_KINDS = [
+  'contest_winner', 'challenge_winner', 'debate_winner', 'guess_winner',
+  'first_sale', 'hundred_sales', 'helpful_answer', 'helpful_10', 'helpful_50',
+] as const;
 export type BadgeKind = (typeof BADGE_KINDS)[number];
 
 export const BADGE_META: Record<BadgeKind, { emoji: string; label: string }> = {
@@ -226,7 +229,25 @@ export const BADGE_META: Record<BadgeKind, { emoji: string; label: string }> = {
   challenge_winner: { emoji: '🌟', label: 'Weekly challenge winner' },
   debate_winner: { emoji: '🎤', label: 'Debate winner' },
   guess_winner: { emoji: '🎯', label: 'Sharpest guess' },
+  first_sale: { emoji: '🛍️', label: 'First sale' },
+  hundred_sales: { emoji: '💯', label: '100 sales' },
+  helpful_answer: { emoji: '💡', label: 'First accepted answer' },
+  helpful_10: { emoji: '🧠', label: '10 accepted answers' },
+  helpful_50: { emoji: '🎓', label: '50 accepted answers' },
 };
+
+/** Sales that earn a milestone badge, and the badge. */
+export const SALE_MILESTONES: { count: number; kind: BadgeKind; detail: string }[] = [
+  { count: 1, kind: 'first_sale', detail: 'Made a first sale on Figmark' },
+  { count: 100, kind: 'hundred_sales', detail: '100 orders accepted on Figmark' },
+];
+
+/** Accepted answers that earn a badge, and the badge. */
+export const HELPFUL_MILESTONES: { count: number; kind: BadgeKind; detail: string }[] = [
+  { count: 1, kind: 'helpful_answer', detail: 'An answer marked as the answer' },
+  { count: 10, kind: 'helpful_10', detail: '10 answers marked as the answer' },
+  { count: 50, kind: 'helpful_50', detail: '50 answers marked as the answer' },
+];
 
 export interface Badge {
   /** Made from what it was won for, so awarding twice is a no-op. */

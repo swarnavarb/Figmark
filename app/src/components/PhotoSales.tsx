@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { api, type PhotoSalesResponse } from '../api';
+import { ApiRequestError, api, type PhotoSalesResponse } from '../api';
+import { useSession } from '../session';
 import { formatMoney } from '../format';
 import { Icon } from './Icon';
 import { Avatar, Thumb, leadPhoto } from './ui';
@@ -133,8 +134,29 @@ function summary(found: PhotoSalesResponse): string {
   return parts.filter(Boolean).join(' · ');
 }
 
-export function PhotoSales({ url, about = '', by = '', onLeave, tone = 'dark' }: {
+/** Who posted a photo, for "ask them about it". */
+export interface PhotoPoster {
+  name: string;
+  handle: string | null;
+  /** Where the photo is, so the question can point at it. */
+  link?: string;
+}
+
+/** The questions a viewer most often has about somebody's photo, one tap each. */
+const QUICK_ASKS = [
+  'Can you bring it for me?',
+  'Do you know who sells it?',
+  'Where did you get it?',
+  'Would you sell it?',
+];
+
+export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, tone = 'dark' }: {
   url: string | undefined;
+  /**
+   * Who posted it. With nothing of theirs tagged on it, the sheet offers a
+   * quick message to ask them - before it lists anybody else's.
+   */
+  poster?: PhotoPoster | null;
   /** The words shown with the photo - a caption, a title - searched alongside it. */
   about?: string;
   /** Who posted it: their own listings are the likelier guesses. */
@@ -176,20 +198,26 @@ export function PhotoSales({ url, about = '', by = '', onLeave, tone = 'dark' }:
 
   const sales = found && found.url === url ? found.sales : null;
   const loading = Boolean(url) && found?.url !== url;
-  const any = Boolean(sales && (sales.items.length > 0 || sales.likely.length > 0 || sales.probable.length > 0));
+  const { user } = useSession();
+  const own = sales?.own ?? [];
+  // Somebody else's photo with nothing of theirs on it: they can be asked.
+  const askable = Boolean(poster?.handle && by && user?.id !== by && own.length === 0);
+  const any = Boolean(sales && (own.length > 0 || sales.items.length > 0 || sales.likely.length > 0 || sales.probable.length > 0));
+  // With nothing of theirs on it, asking them comes first; whatever else is for sale follows.
+  const line = sales ? (askable ? [`Ask ${poster!.name.split(' ')[0]} about this`, any ? summary(sales) : ''].filter(Boolean).join(' · ') : barLine(sales, poster)) : '';
 
   if (inline) {
     return (
       <div ref={slot} className="psales-slot">
-        {!loading && sales && any && (
+        {!loading && sales && (any || askable) && (
           <>
-            <button type="button" className="psales psales--inline" aria-haspopup="dialog"
+            <button type="button" className={`psales psales--inline${own.length > 0 ? ' psales--tagged' : ''}`} aria-haspopup="dialog"
               onClick={(event) => { event.stopPropagation(); setOpen(true); }}>
-              <Icon name="tag" size={15} />
-              <span className="psales__text">{summary(sales)}</span>
+              <Icon name={own.length > 0 || (any && !askable) ? 'tag' : 'message'} size={15} />
+              <span className="psales__text">{line || `Ask ${poster?.name ?? 'them'} about this`}</span>
               <Icon name="right" size={14} />
             </button>
-            {open && <SalesSheet sales={sales} onClose={() => setOpen(false)} onLeave={onLeave} />}
+            {open && <SalesSheet sales={sales} poster={askable ? poster : null} by={by} onClose={() => setOpen(false)} onLeave={onLeave} />}
           </>
         )}
       </div>
@@ -203,22 +231,93 @@ export function PhotoSales({ url, about = '', by = '', onLeave, tone = 'dark' }:
       </div>
     );
   }
-  if (!sales || !any) return null;
+  if (!sales || !(any || askable)) return null;
 
   return (
     <>
       <button type="button" className={`psales psales--${tone}`} onClick={() => setOpen(true)} aria-haspopup="dialog">
-        <Icon name="tag" size={15} />
-        <span className="psales__text">{summary(sales)}</span>
+        <Icon name={any && !askable ? 'tag' : 'message'} size={15} />
+        <span className="psales__text">{line || `Ask ${poster?.name ?? 'them'} about this`}</span>
         <Icon name="chevron" size={14} />
       </button>
-      {open && <SalesSheet sales={sales} onClose={() => setOpen(false)} onLeave={onLeave} />}
+      {open && <SalesSheet sales={sales} poster={askable ? poster : null} by={by} onClose={() => setOpen(false)} onLeave={onLeave} />}
     </>
   );
 }
 
-function SalesSheet({ sales, onClose, onLeave }: {
+/**
+ * The bar's words: the poster's own item when it is tagged - that is the
+ * photo's answer - and otherwise what can be bought from anybody.
+ */
+function barLine(sales: PhotoSalesResponse, poster: PhotoPoster | null): string {
+  const own = sales.own ?? [];
+  if (own.length > 0) {
+    const first = own[0]!;
+    const more = own.length > 1 ? ` +${own.length - 1} more` : '';
+    return `${first.title} · ${formatMoney(first.priceMinor, first.currency)}${more}${poster ? ` · from ${poster.name}` : ''}`;
+  }
+  return summary(sales);
+}
+
+/** A few words to the poster about their photo, sent as a message with the photo's link. */
+function AskPoster({ poster, onLeave }: { poster: PhotoPoster; onLeave: () => void }) {
+  const { user, promptAuth } = useSession();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(words: string) {
+    const body = words.trim();
+    if (!body || busy || !poster.handle) return;
+    if (!user) { promptAuth(`Sign in to ask ${poster.name}.`); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const where = poster.link ? `\n\nAbout your photo: ${window.location.origin}${poster.link}` : '';
+      await api.sendMessage(poster.handle, `${body}${where}`);
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <p className="psheet__asked" role="status">
+        ✓ Sent to {poster.name}.{' '}
+        <Link to={`/messages/${encodeURIComponent(poster.handle!)}`} onClick={onLeave}>Open the chat</Link>
+      </p>
+    );
+  }
+  return (
+    <div className="psheet__ask">
+      <div className="psheet__chips">
+        {QUICK_ASKS.map((ask) => (
+          <button key={ask} type="button" className="psheet__chip psheet__chip--ask" disabled={busy} onClick={() => void send(ask)}>
+            {ask}
+          </button>
+        ))}
+      </div>
+      <form className="psheet__askrow" onSubmit={(event) => { event.preventDefault(); void send(text); }}>
+        <input value={text} maxLength={500} onChange={(event) => setText(event.target.value)}
+          placeholder={`Ask ${poster.name.split(' ')[0]} something else…`} aria-label={`Message ${poster.name}`} />
+        <button type="submit" className="btn btn--sm" disabled={busy || !text.trim()}>
+          <Icon name="send" size={14} /> Send
+        </button>
+      </form>
+      {error && <p className="psheet__note" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function SalesSheet({ sales, poster, by, onClose, onLeave }: {
   sales: PhotoSalesResponse;
+  /** Set when nothing of the poster's is tagged and they can be asked. */
+  poster: PhotoPoster | null;
+  by: string;
   onClose: () => void;
   onLeave?: () => void;
 }) {
@@ -235,6 +334,14 @@ function SalesSheet({ sales, onClose, onLeave }: {
 
   const leave = () => { onClose(); onLeave?.(); };
   const several = sales.items.length > 1;
+  const own = sales.own ?? [];
+  const ownIds = new Set(own.map((listing) => listing.id));
+  // Everybody else's items on sale now, from whatever matched: the next place to look.
+  const othersNow = [
+    ...sales.items.flatMap((item) => item.listings),
+    ...sales.probable,
+  ].filter((listing, at, all) => listing.onSale && listing.sellerId !== by && !ownIds.has(listing.id)
+    && all.findIndex((other) => other.id === listing.id) === at).slice(0, 8);
 
   // Portalled above the viewer. React still bubbles its events through the
   // viewer, whose swipe would turn the photo, so they stop here.
@@ -251,9 +358,33 @@ function SalesSheet({ sales, onClose, onLeave }: {
           </button>
         </div>
 
-        {sales.items.map((item, at) => {
-          const live = item.listings.filter((listing) => listing.onSale);
-          const past = item.listings.filter((listing) => !listing.onSale);
+        {own.length > 0 && (
+          <section className="psheet__item psheet__item--own">
+            <h3 className="psheet__label">🏷️ Tagged in this photo</h3>
+            <p className="psheet__note">Matched to what {own[0]!.seller?.storefrontName ?? 'the poster'} sells.</p>
+            {own.map((listing) => <SaleRow key={listing.id} listing={listing} onLeave={leave} />)}
+          </section>
+        )}
+
+        {poster && (
+          <section className="psheet__item psheet__item--ask">
+            <h3 className="psheet__label">💬 Ask {poster.name}</h3>
+            <p className="psheet__note">Nothing of theirs is tagged here. Ask them in a tap - it goes as a message with this photo.</p>
+            <AskPoster poster={poster} onLeave={leave} />
+          </section>
+        )}
+
+        {poster && othersNow.length > 0 && (
+          <section className="psheet__item">
+            <h3 className="psheet__label">Others selling it now</h3>
+            {othersNow.map((listing) => <SaleRow key={listing.id} listing={listing} onLeave={leave} />)}
+          </section>
+        )}
+
+        {!poster && sales.items.map((item, at) => {
+          const live = item.listings.filter((listing) => listing.onSale && !ownIds.has(listing.id));
+          const past = item.listings.filter((listing) => !listing.onSale && !ownIds.has(listing.id));
+          if (live.length === 0 && past.length === 0) return null;
           return (
             <section key={`${item.label ?? 'photo'}-${at}`} className="psheet__item">
               <h3 className="psheet__label">
@@ -299,7 +430,7 @@ function SalesSheet({ sales, onClose, onLeave }: {
           </section>
         )}
 
-        {sales.probable.length > 0 && (
+        {!poster && sales.probable.length > 0 && (
           <section className="psheet__item">
             <h3 className="psheet__label">{count(sales.probable.length, 'probable listing')}</h3>
             <p className="psheet__note">A guess from the photo's colours, the words with it and who posted it.</p>

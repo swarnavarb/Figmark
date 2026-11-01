@@ -1,0 +1,17 @@
+/* The "you have pending reviews" popup. */
+.pendrev { display: grid; gap: var(--s3); }
+.pendrev__lead { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+.pendrev__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.pendrev__item {
+  display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); min-width: 0;
+  border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text); text-decoration: none;
+}
+.pendrev__item:hover { border-color: var(--accent-line); }
+.pendrev__thumb { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--r-sm); overflow: hidden; }
+.pendrev__text { display: grid; min-width: 0; flex: 1 1 auto; }
+.pendrev__text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+.pendrev__text small { color: var(--text-faint); font-size: var(--t-xs); }
+.pendrev__go { flex: 0 0 auto; color: var(--accent-text); font-size: var(--t-xs); font-weight: var(--w-semi); }
+.pendrev__more { margin: 0; color: var(--text-faint); font-size: var(--t-xs); }
+.pendrev__acts { display: flex; justify-content: flex-end; gap: var(--s2); }

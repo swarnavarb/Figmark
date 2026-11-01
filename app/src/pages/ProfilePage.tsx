@@ -174,7 +174,7 @@ export function ProfilePage() {
                 {user.capabilities.canSell
                   ? 'An operator has opened trading for you; verifying still adds the ticks to your page.'
                   : user.capabilities.canBuy
-                    ? 'You can buy. Selling - including private deals and power sales - opens once your Aadhaar is verified too.'
+                    ? 'You can buy. Selling - including private deals and live drops - opens once your Aadhaar is verified too.'
                     : 'Buying opens once your email and WhatsApp are verified; selling needs your Aadhaar as well.'}
               </p>
               <Link to="/verify" className="btn" style={{ justifySelf: 'start' }}>Verify now</Link>

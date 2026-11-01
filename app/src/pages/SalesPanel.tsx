@@ -21,7 +21,7 @@ const RANGES = [
 
 const SOURCES = {
   shared: { icon: '🔗', label: 'Shared links' },
-  sale: { icon: '⚡', label: 'Power sales' },
+  sale: { icon: '⚡', label: 'Live drops' },
   preorder: { icon: '🎯', label: 'Pre-orders' },
   shop: { icon: '🏪', label: 'Your shop and the feed' },
 } as const;
