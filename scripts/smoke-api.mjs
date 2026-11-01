@@ -12679,7 +12679,7 @@ await check('what a reader lingers on is learned, and never said back to them', 
 
   // Taste moves the order; it is never named. No card tells anybody what this
   // reader lingers on - not "because you like", not the topic itself.
-  const tellsTaste = (card) => card.why && (card.why.kind === 'topic' || /you like|origami/i.test(card.why.label));
+  const tellsTaste = (card) => card.why && (['topic', 'affinity'].includes(card.why.kind) || /you like|engage|origami/i.test(card.why.label));
   const mine = await streamOf(trained.headers);
   const theirs = mine.cards.filter((card) => tagged.some((post) => post.id === card.post.id));
   assert.equal(theirs.length, 3, 'still shown to them');
@@ -12732,6 +12732,25 @@ await check('a forum you joined is where its new posts are tried first, and the 
   assert.ok(theirs, 'and in everyone else\'s, as an ordinary post');
   assert.notEqual(theirs.why?.kind, 'forum');
   assert.ok(mine.badges?.includes('rising'), 'new in their forum, so tried on them whatever the odds');
+});
+
+await check('a new post says it is new, and every reason given is about the post or a choice made in the open', async () => {
+  resetRateLimits();
+  const writer = await newBuyer('Fresh Writer');
+  const reader = await newBuyer('Fresh Reader');
+  const made = (await createPost(req({ headers: writer.headers, body: { body: 'Unboxing day, nothing else to say' } }), ctx)).jsonBody.post;
+  const { cards } = await streamOf(reader.headers);
+  const card = cards.find((entry) => entry.post.id === made.id);
+  assert.ok(card, 'in the stream');
+  assert.ok(['fresh', 'explore', 'new'].includes(card.why?.kind), JSON.stringify(card.why));
+  const allowed = new Set(['ending', 'scarce', 'followed', 'forum', 'prize', 'popular', 'contested', 'taking-off',
+    'filling', 'bought', 'lively', 'shared', 'live', 'fresh', 'explore', 'new']);
+  for (const entry of cards) {
+    if (!entry.why) continue;
+    assert.ok(allowed.has(entry.why.kind), entry.why.kind);
+    assert.doesNotMatch(entry.why.label, /you like|engage/i);
+  }
+  assert.ok(cards.some((entry) => entry.why?.kind === 'fresh' && entry.why.label === 'Just posted'), 'something just posted says so');
 });
 
 await check('what is about to close says so', async () => {

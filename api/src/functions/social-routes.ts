@@ -1188,7 +1188,7 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
   const streamPosts = pageIds.map((entry) => byId.get(entry.id)).filter((post): post is Post => Boolean(post));
   const explain = {
     now, reader, raw: byId,
-    risingIds, exploring, affinity, replay: lap > 0,
+    risingIds, exploring, replay: lap > 0,
   };
 
   if (!wantLists) {
@@ -1294,7 +1294,6 @@ function explained(
     raw: ReadonlyMap<string, Post>;
     risingIds: ReadonlySet<string>;
     exploring: ReadonlySet<string>;
-    affinity: ReadonlySet<string>;
     /** The stream is going round again with older posts. */
     replay: boolean;
   },
@@ -1302,18 +1301,27 @@ function explained(
   return cards.map((card) => {
     const post = context.raw.get(card.post.id) ?? card.post;
     const until = liveUntil(post, context.now);
+    const live = until !== null;
     const rising = context.risingIds.has(post.id);
+    const fill = card.listing?.fill;
     const reason = whyOf({
       endsInMs: until !== null && Number.isFinite(until) ? until - context.now : null,
-      live: until !== null,
+      live,
+      play: !live ? null : post.contest ? 'contest' : post.guess ? 'guess' : 'poll',
       followedActed: card.followedActed?.count ?? 0,
       forumJoined: post.channel === 'forum' && context.reader.forums.has(post.channelId),
-      affinity: context.affinity.has(post.channelId),
       contested: contestedness(post),
       velocity: velocity(post, context.now),
       rising,
       explore: context.exploring.has(post.id),
       replay: context.replay,
+      left: card.listing && card.listing.buyable !== false ? card.listing.left ?? null : null,
+      fill: fill ? { joined: fill.joined, total: fill.total } : null,
+      prize: post.contest?.prizes.length ? 'contest' : post.debate?.prize ? 'debate' : post.poll?.reward ? 'reward' : null,
+      bought: post.buyCount ?? 0,
+      shared: post.shareCount ?? 0,
+      comments: post.comments?.length ?? post.replyCount,
+      ageMs: context.now - Date.parse(post.createdAt),
     });
     return { ...card, ...(reason ? { why: reason } : {}), ...(rising ? { badges: ['rising'] as Boost[] } : {}) };
   });

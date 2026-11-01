@@ -491,22 +491,53 @@ export function resetDiscoverCaches() {
 
 /* ── saying why ──────────────────────────────────────────────────────────── */
 
-/** What is known about why a post suits this reader. */
+/**
+ * What is known about a post, and the few things the reader chose in the open
+ * (a forum they joined, people they follow), from which its one line is made.
+ * Nothing here is what the reader has been learned to like or engage with.
+ */
 export interface WhyFacts {
   /** Milliseconds until whatever is open on it closes, or null. */
   endsInMs: number | null;
   live: boolean;
+  /** What is open on it, when something is: a competition, a guess, or a poll. */
+  play: 'contest' | 'guess' | 'poll' | null;
   /** People they follow who took part. */
   followedActed: number;
   forumJoined: boolean;
-  affinity: boolean;
   contested: number;
   velocity: number;
   rising: boolean;
   explore: boolean;
   /** It is from further back, shown again for how well it did. */
   replay: boolean;
+  /** How many are left of the item it sells, when few enough to say. */
+  left: number | null;
+  /** A group pre-order's fill. */
+  fill: { joined: number; total: number } | null;
+  /** What can be won by taking part while it is open. */
+  prize: 'contest' | 'debate' | 'reward' | null;
+  /** Times the item was bought from this post. */
+  bought: number;
+  /** Times it was passed on. */
+  shared: number;
+  comments: number;
+  /** How long ago it was posted. */
+  ageMs: number;
 }
+
+/** The numbers at which a plain fact about a post is worth a line. */
+export const WHY_AT = {
+  /** The last few of an item. */
+  scarce: 3,
+  /** A pre-order this full, and not yet full. */
+  filling: 0.5,
+  bought: 3,
+  shared: 3,
+  comments: 8,
+  /** Posted this recently. */
+  freshMs: 60 * 60_000,
+} as const;
 
 function span(ms: number): string {
   const minutes = Math.max(1, Math.round(ms / 60_000));
@@ -522,22 +553,38 @@ function span(ms: number): string {
  * It never names what the reader has been learned to like. Their taste moves
  * the ranking, but a line such as "Because you like #resin" would tell anybody
  * looking over their shoulder what they linger on - so the reasons given are
- * about the post (closing soon, too close to call, taking off) or about things
- * the reader chose in the open (a forum they joined, people they follow).
+ * about the post (closing soon, the last few left, a prize to win, too close to
+ * call, taking off, bought or shared or talked about) or about things the
+ * reader chose in the open (a forum they joined, people they follow). The same
+ * goes for what they engage with: "from someone you engage with" is not said.
  */
 export function whyOf(facts: WhyFacts): DiscoverWhy | null {
+  const W = WHY_AT;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
   if (facts.endsInMs !== null && Number.isFinite(facts.endsInMs) && facts.endsInMs > 0 && facts.endsInMs < 24 * 3_600_000) {
     return { kind: 'ending', label: `Closes in ${span(facts.endsInMs)}` };
   }
+  if (facts.left !== null && facts.left > 0 && facts.left <= W.scarce) return { kind: 'scarce', label: `Only ${facts.left} left` };
   if (facts.followedActed > 0) {
-    return { kind: 'followed', label: `${facts.followedActed} ${facts.followedActed === 1 ? 'person' : 'people'} you follow joined in` };
+    return { kind: 'followed', label: `${plural(facts.followedActed, 'person', 'people')} you follow joined in` };
   }
   if (facts.forumJoined) return { kind: 'forum', label: 'From a forum you joined' };
-  if (facts.affinity) return { kind: 'affinity', label: 'From someone you engage with' };
+  if (facts.live && facts.prize === 'contest') return { kind: 'prize', label: 'Prizes to win' };
+  if (facts.live && facts.prize === 'debate') return { kind: 'prize', label: 'Prize for the best argument' };
+  if (facts.live && facts.prize === 'reward') return { kind: 'prize', label: 'Voters can win store credit' };
   if (facts.replay) return { kind: 'popular', label: 'Popular earlier' };
   if (facts.contested >= 0.5) return { kind: 'contested', label: 'Too close to call' };
   if (facts.velocity >= 1) return { kind: 'taking-off', label: 'Taking off right now' };
-  if (facts.live) return { kind: 'live', label: 'Open to join' };
+  if (facts.fill && facts.fill.total > 0 && facts.fill.joined < facts.fill.total && facts.fill.joined / facts.fill.total >= W.filling) {
+    return { kind: 'filling', label: `Pre-order ${facts.fill.joined}/${facts.fill.total} filled` };
+  }
+  if (facts.bought >= W.bought) return { kind: 'bought', label: `Bought ${facts.bought} times from this post` };
+  if (facts.comments >= W.comments) return { kind: 'lively', label: `${facts.comments} comments and counting` };
+  if (facts.shared >= W.shared) return { kind: 'shared', label: `Shared ${facts.shared} times` };
+  if (facts.live) {
+    return { kind: 'live', label: facts.play === 'contest' ? 'Competition open' : facts.play === 'guess' ? 'Guess the price' : 'Open to vote' };
+  }
+  if (facts.ageMs >= 0 && facts.ageMs < W.freshMs) return { kind: 'fresh', label: 'Just posted' };
   if (facts.explore) return { kind: 'explore', label: 'Something different' };
   if (facts.rising) return { kind: 'new', label: 'A new voice worth a look' };
   return null;

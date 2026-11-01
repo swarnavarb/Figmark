@@ -753,8 +753,9 @@ export function SocialPostCard({
 /** "Sana reacted", "Sana and Ravi reacted", "Sana, Ravi and 3 others you follow joined in". */
 /** The small mark in front of a Discover reason, so the kind of reason reads before the words. */
 const WHY_MARK: Record<string, string> = {
-  ending: '⏳', live: '🗳️', followed: '👥', forum: '💬', affinity: '♥', popular: '⭐',
-  contested: '⚔️', 'taking-off': '🔥', new: '🚀', explore: '🧭',
+  ending: '⏳', scarce: '💎', followed: '👥', forum: '💬', prize: '🏆', popular: '⭐',
+  contested: '⚔️', 'taking-off': '🔥', filling: '📦', bought: '🛒', lively: '🗨️', shared: '🔁',
+  live: '🗳️', fresh: '✨', explore: '🧭', new: '🚀',
 };
 
 /** What a post is about, for "less like this": its #words and the labels on a shelf's pieces. */

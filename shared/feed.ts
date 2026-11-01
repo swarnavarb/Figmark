@@ -66,7 +66,9 @@ export const LESS_TOPICS_MAX = 100;
 
 /** Why a card is in somebody's Discover, in one line, and which kind of reason it is. */
 export interface DiscoverWhy {
-  kind: 'ending' | 'live' | 'followed' | 'forum' | 'affinity' | 'popular' | 'contested' | 'taking-off' | 'new' | 'explore';
+  kind:
+    | 'ending' | 'scarce' | 'followed' | 'forum' | 'prize' | 'popular' | 'contested' | 'taking-off'
+    | 'filling' | 'bought' | 'lively' | 'shared' | 'live' | 'fresh' | 'explore' | 'new';
   label: string;
 }
 

@@ -279,23 +279,73 @@ check('the engagement index is reused until something on a post changes', () => 
 console.log('\nsaying why');
 
 check('the strongest honest reason is the one given', () => {
-  const none = { endsInMs: null, live: false, followedActed: 0, forumJoined: false, affinity: false, contested: 0, velocity: 0, rising: false, explore: false, replay: false };
+  // An old post with nothing special about it: a day old, no comments, nothing open.
+  const none = {
+    endsInMs: null, live: false, play: null, followedActed: 0, forumJoined: false, contested: 0, velocity: 0, rising: false,
+    explore: false, replay: false, left: null, fill: null, prize: null, bought: 0, shared: 0, comments: 0, ageMs: 86_400_000,
+  };
   assert.equal(rank.whyOf(none), null, 'nothing honest to say, nothing said');
   assert.equal(rank.whyOf({ ...none, endsInMs: 3 * 3_600_000 }).label, 'Closes in 3h');
   assert.equal(rank.whyOf({ ...none, endsInMs: 20 * 60_000 }).label, 'Closes in 20m');
   assert.equal(rank.whyOf({ ...none, endsInMs: 3 * 86_400_000 }), null, 'days away is not news');
-  assert.equal(rank.whyOf({ ...none, endsInMs: Infinity, live: true }).kind, 'live');
   assert.equal(rank.whyOf({ ...none, followedActed: 1 }).label, '1 person you follow joined in');
   assert.equal(rank.whyOf({ ...none, followedActed: 3 }).label, '3 people you follow joined in');
-  assert.equal(rank.whyOf({ ...none, forumJoined: true, affinity: true }).kind, 'forum');
-  assert.equal(rank.whyOf({ ...none, topic: 'resin kit' }), null, 'a liked topic is never given as the reason');
-  assert.equal(rank.whyOf({ ...none, affinity: true, contested: 0.9 }).kind, 'affinity');
+  assert.equal(rank.whyOf({ ...none, forumJoined: true, contested: 0.9 }).kind, 'forum');
   assert.equal(rank.whyOf({ ...none, replay: true, contested: 0.9 }).label, 'Popular earlier', 'older posts shown again say so');
   assert.equal(rank.whyOf({ ...none, replay: true, endsInMs: 3_600_000 }).kind, 'ending', 'unless something stronger is true');
   assert.equal(rank.whyOf({ ...none, contested: 0.9, velocity: 5 }).kind, 'contested');
   assert.equal(rank.whyOf({ ...none, velocity: 2, rising: true }).kind, 'taking-off');
   assert.equal(rank.whyOf({ ...none, rising: true, explore: true }).kind, 'explore');
   assert.equal(rank.whyOf({ ...none, rising: true }).kind, 'new');
+});
+
+check('what the post is - its stock, its prize, its sales, its talk - is said plainly', () => {
+  const none = {
+    endsInMs: null, live: false, play: null, followedActed: 0, forumJoined: false, contested: 0, velocity: 0, rising: false,
+    explore: false, replay: false, left: null, fill: null, prize: null, bought: 0, shared: 0, comments: 0, ageMs: 86_400_000,
+  };
+  const say = (facts) => rank.whyOf({ ...none, ...facts })?.label ?? null;
+  assert.equal(say({ left: 1 }), 'Only 1 left');
+  assert.equal(say({ left: 3 }), 'Only 3 left');
+  assert.equal(say({ left: 4 }), null, 'plenty left is not news');
+  assert.equal(say({ left: 0 }), null, 'sold out is not a reason to look');
+  assert.equal(say({ left: 2, followedActed: 5 }), 'Only 2 left', 'the last few beat who joined in');
+  assert.equal(say({ live: true, play: 'contest', prize: 'contest' }), 'Prizes to win');
+  assert.equal(say({ live: true, play: 'poll', prize: 'debate' }), 'Prize for the best argument');
+  assert.equal(say({ live: true, play: 'poll', prize: 'reward' }), 'Voters can win store credit');
+  assert.equal(say({ prize: 'contest' }), null, 'a prize already given out is not one to win');
+  assert.equal(say({ fill: { joined: 8, total: 10 } }), 'Pre-order 8/10 filled');
+  assert.equal(say({ fill: { joined: 2, total: 10 } }), null, 'barely started');
+  assert.equal(say({ fill: { joined: 10, total: 10 } }), null, 'already full');
+  assert.equal(say({ bought: 5 }), 'Bought 5 times from this post');
+  assert.equal(say({ bought: 2 }), null);
+  assert.equal(say({ comments: 12 }), '12 comments and counting');
+  assert.equal(say({ comments: 3 }), null);
+  assert.equal(say({ shared: 4 }), 'Shared 4 times');
+  assert.equal(say({ live: true, play: 'contest' }), 'Competition open');
+  assert.equal(say({ live: true, play: 'guess' }), 'Guess the price');
+  assert.equal(say({ live: true, play: 'poll' }), 'Open to vote');
+  assert.equal(say({ ageMs: 10 * 60_000 }), 'Just posted');
+  assert.equal(say({ ageMs: 10 * 60_000, bought: 4 }), 'Bought 4 times from this post', 'a fact beats being new');
+});
+
+check('no reason ever speaks of what the reader likes or engages with', () => {
+  const none = {
+    endsInMs: null, live: false, play: null, followedActed: 0, forumJoined: false, contested: 0, velocity: 0, rising: false,
+    explore: false, replay: false, left: null, fill: null, prize: null, bought: 0, shared: 0, comments: 0, ageMs: 86_400_000,
+  };
+  // Facts that a reader's behaviour would once have produced are not even read.
+  assert.equal(rank.whyOf({ ...none, topic: 'resin kit', affinity: true }), null);
+  const flags = [
+    { endsInMs: 3_600_000 }, { left: 1 }, { followedActed: 2 }, { forumJoined: true }, { live: true, play: 'poll', prize: 'reward' },
+    { replay: true }, { contested: 1 }, { velocity: 3 }, { fill: { joined: 6, total: 10 } }, { bought: 9 }, { comments: 20 },
+    { shared: 9 }, { live: true, play: 'guess' }, { ageMs: 1000 }, { explore: true }, { rising: true },
+  ];
+  for (const facts of flags) {
+    const reason = rank.whyOf({ ...none, ...facts });
+    assert.ok(reason, JSON.stringify(facts));
+    assert.doesNotMatch(reason.label, /you like|engage|because you|your taste|you linger/i, reason.label);
+  }
 });
 
 console.log('\nwhat a reader tells the feed');
