@@ -1,3 +1,4 @@
+import { repriceBasket } from '../offers.js';
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, asBuyerSees, inLot, isDirect, lotIsDone, lotPhase } from '../../../shared/fulfilment.js';
@@ -310,6 +311,10 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
       title: `${shop} put ${items} in ${lot.name}`,
       body: `It travels with the lot now: ${route.name}.`,
     }), { except: lot.sellerId, track: lot.id });
+    // Offers that count items in the same lot may have just been earned.
+    for (const buyerId of new Set(added.map((order) => order.buyerId))) {
+      await repriceBasket(repository, lot.sellerId, buyerId, 'lot');
+    }
   }
 
   return json(200, { added: added.length, orderIds: added.map((order) => order.id) });

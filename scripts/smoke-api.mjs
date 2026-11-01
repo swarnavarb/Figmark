@@ -13205,4 +13205,128 @@ await check('an account can delete itself with its password, but not while it ho
   assert.match(refused.jsonBody.message, /dispute|money/);
 });
 
+/* ── Shipping and offers ────────────────────────────────────────────────── */
+
+const offerListing = async (title, extra = {}) => {
+  const made = await createListing(req({
+    headers: auth,
+    body: { title, priceMinor: 100_000, quantityAvailable: 20, sourcing: 'import', category: 'Figures', shippingMinor: 8_000, ...extra },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  return made.jsonBody.listing;
+};
+const FREE_SHIP_2 = { kind: 'free_shipping', scope: 'lot', minItems: 2 };
+
+await check('a listing carries its shipping fee and offers, and refuses ones nobody could price', async () => {
+  const good = await offerListing('Offer figure', { offers: [FREE_SHIP_2] });
+  assert.equal(good.shippingMinor, 8_000);
+  assert.equal(good.offers.length, 1);
+  assert.equal(good.priceMinor, 100_000, 'the price is the shop\'s price, shipping never added to it');
+  const bad = await createListing(req({
+    headers: auth, body: { title: 'Bad offer', priceMinor: 100_000, offers: [{ kind: 'discount', minItems: 2 }] },
+  }), ctx);
+  assert.equal(bad.status, 400);
+  assert.equal(bad.jsonBody.error, 'invalid_offer');
+  const negative = await createListing(req({
+    headers: auth, body: { title: 'Negative fee', priceMinor: 100_000, shippingMinor: -5 },
+  }), ctx);
+  assert.equal(negative.status, 400);
+});
+
+await check('shipping is charged per item and shown apart from the price', async () => {
+  const listing = await offerListing('Plain shipping');
+  const buyer = await newBuyer('Shipping Buyer');
+  const made = await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id, quantity: 2 } }), ctx);
+  const order = made.jsonBody.order;
+  assert.equal(order.unitPriceMinor, 100_000);
+  assert.equal(order.shippingMinor, 16_000);
+  assert.equal(orderMoney(order).totalMinor, 216_000);
+});
+
+await check('free shipping on 2 in a lot: waits for the lot, then the price drops and both sides are told', async () => {
+  const listing = await offerListing('Lot offer figure', { offers: [FREE_SHIP_2] });
+  const buyer = await newBuyer('Lot Offer Buyer');
+  const one = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const two = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const repo = await getRepository();
+  assert.equal((await repo.getOrder(one.id)).shippingMinor, 8_000, 'two items but no lot yet: not earned');
+
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Offer lot' } }), ctx)).jsonBody.lot;
+  const added = await addItems(req({ headers: auth, params: { id: lot.id }, body: { orderIds: [one.id, two.id] } }), ctx);
+  assert.equal(added.status, 200, JSON.stringify(added.jsonBody));
+
+  const after = await repo.getOrder(one.id);
+  assert.equal(after.shippingMinor, 0, 'filed into the same lot: shipping is free');
+  assert.equal((await repo.getOrder(two.id)).shippingMinor, 0);
+  assert.equal(after.appliedOffers[0].kind, 'free_shipping');
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'offer_applied');
+  assert.ok(told.length >= 1, 'the buyer is told the price dropped');
+  assert.match(told[0].title, /cheaper/);
+  const sellerTold = (await noticesFor(session.jsonBody.user.id)).filter((row) => row.kind === 'offer_applied');
+  assert.ok(sellerTold.length >= 1, 'and so is the shop');
+
+  const before = orderMoney(await repo.getOrder(two.id)).totalMinor;
+  assert.equal(before, 100_000, 'the total is the price alone');
+});
+
+await check('calling one item off takes the offer away from the other, and says so', async () => {
+  const listing = await offerListing('Cancel impact figure', { offers: [FREE_SHIP_2] });
+  const buyer = await newBuyer('Impact Buyer');
+  const one = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const two = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Impact lot' } }), ctx)).jsonBody.lot;
+  await addItems(req({ headers: auth, params: { id: lot.id }, body: { orderIds: [one.id, two.id] } }), ctx);
+  const repo = await getRepository();
+  assert.equal((await repo.getOrder(one.id)).shippingMinor, 0);
+
+  const state = (await orderState(req({ headers: auth, params: { id: two.id } }), ctx)).jsonBody;
+  assert.equal(state.offerImpact.extraMinor, 8_000, 'the shop is shown what cancelling would cost the buyer first');
+  assert.ok(state.offerImpact.lost.some((label) => /Free shipping/.test(label)));
+
+  const cancelled = await cancelOrder(req({ headers: auth, params: { id: two.id }, body: { reason: 'Out of stock after all' } }), ctx);
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.jsonBody));
+  assert.equal((await repo.getOrder(one.id)).shippingMinor, 8_000, 'shipping is charged again on the one that is left');
+  const told = (await noticesFor(buyer.id)).filter((row) => row.kind === 'offer_changed');
+  assert.ok(told.length >= 1, 'the buyer is told the price went up');
+  assert.match(told[0].title, /went up/);
+});
+
+await check('discounts, wholesale and early bird price the order the checkout shows', async () => {
+  const wholesale = await offerListing('Bulk figure', {
+    shippingMinor: 0,
+    offers: [{ kind: 'wholesale', tiers: [{ minQty: 5, type: 'percent', value: 10 }] }],
+  });
+  const early = await offerListing('Early figure', {
+    shippingMinor: 0,
+    offers: [{ kind: 'early_bird', limit: 1, discount: { type: 'fixed', value: 10_000 } }],
+  });
+  const buyer = await newBuyer('Bulk Buyer');
+  const bulk = (await createOrder(req({ headers: buyer.headers, body: { listingId: wholesale.id, quantity: 5 } }), ctx)).jsonBody.order;
+  assert.equal(bulk.offerDiscountMinor, 50_000);
+  const sheet = (await checkout(req({ headers: buyer.headers, params: { id: bulk.id } }), ctx)).jsonBody;
+  assert.equal(sheet.goodsMinor, 500_000);
+  assert.equal(sheet.offerDiscountMinor, 50_000);
+  assert.equal(sheet.itemMinor, 450_000);
+  assert.ok(sheet.appliedOffers.some((offer) => offer.kind === 'wholesale'));
+
+  const first = (await createOrder(req({ headers: buyer.headers, body: { listingId: early.id } }), ctx)).jsonBody.order;
+  assert.equal(first.offerDiscountMinor, 10_000, 'the first early buyer gets it');
+  const other = await newBuyer('Late Buyer');
+  const second = (await createOrder(req({ headers: other.headers, body: { listingId: early.id } }), ctx)).jsonBody.order;
+  assert.equal(second.offerDiscountMinor ?? 0, 0, 'the second does not');
+});
+
+await check('a shop changing its offers later cannot reprice an order already placed', async () => {
+  const listing = await offerListing('Terms stay', { shippingMinor: 5_000, offers: [{ kind: 'free_shipping', scope: 'shop', minItems: 2 }] });
+  const buyer = await newBuyer('Terms Buyer');
+  const first = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const edited = await editListing(req({ headers: auth, params: { id: listing.id }, body: { shippingMinor: 50_000, offers: [] } }), ctx);
+  assert.equal(edited.status, 200, JSON.stringify(edited.jsonBody));
+  const second = (await createOrder(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
+  const repo = await getRepository();
+  assert.equal((await repo.getOrder(first.id)).shipPerItemMinor, 5_000, 'the placed order keeps the fee it was bought at');
+  assert.equal((await repo.getOrder(first.id)).offerRules.length, 1);
+  assert.equal(second.shipPerItemMinor, 50_000);
+});
+
 console.log(`\n${passed} checks passed`);

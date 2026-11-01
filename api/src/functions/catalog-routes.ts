@@ -1,3 +1,5 @@
+import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
+import { cleanOffers } from '../../../shared/offers.js';
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
@@ -664,6 +666,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     quantityMode?: 'fixed' | 'multiple';
     expiresAt?: string | null;
     advancePercent?: number | null;
+    shippingMinor?: number | null;
+    offers?: unknown;
     affiliateMinor?: number | null;
     affiliateOffMinor?: number | null;
     /** Announce it in the shop's channel, to its followers. */
@@ -800,6 +804,9 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     if (cleaned.error) return error(400, 'invalid_listing', cleaned.error);
     attributes = cleaned.attributes;
   }
+
+  const offerProblem = offerRefusal(body, priceMinor);
+  if (offerProblem) return offerProblem;
 
   const now = new Date().toISOString();
   const listing: Listing = {
@@ -1389,7 +1396,12 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     buyClicks: 1,
   };
 
+  // The shop's shipping fee and offers as they stand now, and the offers this
+  // order earns by being early; then priced with the rest of the basket.
+  snapshotFromListing(order, listing);
+  await lockTimedOffers(repository, order, listing);
   const placed = await repository.createOrder(order);
+  await repriceBasket(repository, placed.sellerId, placed.buyerId, 'ordered', { include: [placed], quiet: true, actorId: user.id });
 
   // Book straight from the item page: the choice is made, so it is an order.
   if (body.plan === 'book') {
@@ -1469,6 +1481,21 @@ async function myListings(request: HttpRequest, _context: InvocationContext) {
   return json(200, { listings });
 }
 
+/** Why this shipping fee or these offers cannot be saved, or null when they can. */
+function offerRefusal(body: { shippingMinor?: number | null; offers?: unknown }, priceMinor: number): ReturnType<typeof error> | null {
+  if (body.shippingMinor !== undefined && body.shippingMinor !== null) {
+    const fee = Number(body.shippingMinor);
+    if (!Number.isFinite(fee) || fee < 0 || fee > 10_000_000) {
+      return error(400, 'invalid_listing', 'Shipping has to be between free and \u20b9100,000 per item.');
+    }
+  }
+  if (body.offers !== undefined) {
+    const { error: problem } = cleanOffers(body.offers, priceMinor);
+    if (problem) return error(400, 'invalid_offer', problem);
+  }
+  return null;
+}
+
 /**
  * The seller-set terms shared by create and edit: stock mode, expiry, advance.
  *
@@ -1483,8 +1510,16 @@ function listingTerms(body: {
   affiliateMinor?: number | null;
   /** What a buyer through a link saves per unit, in paise; null or 0 turns it off. */
   affiliateOffMinor?: number | null;
-}, priceMinor: number, previous?: Listing['affiliate']): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> {
-  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> = {};
+  /** Shipping per item inside India, in paise; 0 is free, null says nothing. */
+  shippingMinor?: number | null;
+  /** The shop's offers on the item; checked by `offerRefusal` before they get here. */
+  offers?: unknown;
+}, priceMinor: number, previous?: Listing['affiliate']): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate' | 'shippingMinor' | 'offers'>> {
+  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate' | 'shippingMinor' | 'offers'>> = {};
+  if (body.shippingMinor !== undefined) {
+    terms.shippingMinor = body.shippingMinor === null ? null : Math.round(Number(body.shippingMinor));
+  }
+  if (body.offers !== undefined) terms.offers = cleanOffers(body.offers, priceMinor).offers;
   if (body.affiliateMinor !== undefined || body.affiliateOffMinor !== undefined) {
     const amountMinor = body.affiliateMinor !== undefined
       ? cleanAffiliateMinor(body.affiliateMinor, priceMinor)
@@ -1598,7 +1633,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     title?: string; description?: string; priceMinor?: number; quantityAvailable?: number;
     /** The stock the seller's form showed, so the new number is read as a change from it. */
     quantityWas?: number;
-    quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
+    quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null; shippingMinor?: number | null; offers?: unknown;
     affiliateMinor?: number | null;
     affiliateOffMinor?: number | null;
     photos?: { blobName?: string; url: string; isPrimary?: boolean }[];
@@ -1612,6 +1647,8 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
   const newPrice = body.priceMinor === undefined ? undefined : listablePrice(body.priceMinor);
   if (newPrice === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
+  const offerProblem = offerRefusal(body, newPrice ?? listing.priceMinor);
+  if (offerProblem) return offerProblem;
   // Stock is a change, not a count. The form was drawn minutes ago; a sale
   // since then has already taken its unit, and writing the old number back
   // would hand that unit to a second buyer. So what the seller moved - from

@@ -1,3 +1,4 @@
+import { repriceBasket } from '../offers.js';
 import type { Listing, Order, Pledge, PreOrder, PreOrderFullRule, PreOrderShortRule } from '../../../shared/models.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import { personRef, type PartyRef } from '../../../shared/parties.js';
@@ -228,6 +229,11 @@ async function closeCampaign(work: Working, how: 'short' | 'called_off' | 'undec
         link: `/order/${order.id}`,
       });
     }
+  }
+
+  // Whatever those bookings were earning the same buyers elsewhere is gone too.
+  for (const buyerId of new Set(work.orders.map((order) => order.buyerId))) {
+    await repriceBasket(repository, work.listing.sellerId, buyerId, 'cancelled');
   }
 
   const short = Math.max(0, next.fillThreshold - committed);

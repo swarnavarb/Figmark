@@ -9,6 +9,8 @@ import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { cancellationImpact, prepaySavingMinor, repriceBasket } from '../offers.js';
+
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
   REVIEW_REVEAL_DAYS,
@@ -19,6 +21,7 @@ import {
   isCancelledLike,
   isOpenUnpaid,
   isPlaced,
+  isStopped,
   nothingAtStake,
   owedMinor,
   reviewRevealed,
@@ -118,6 +121,19 @@ function statusFromMoney(order: Order): void {
 }
 
 /** How much the chosen plan asks for now, or the refusal. */
+/**
+ * Paying everything rather than an advance is what a pay-in-full offer
+ * rewards, so the choice is recorded and the price follows before the amount
+ * is worked out - the buyer is charged the figure the checkout showed.
+ */
+async function settlePayInFull(repository: Repo, order: Order, plan: unknown): Promise<void> {
+  if (!order.advancePercent) return;
+  const full = plan !== 'advance';
+  if ((order.paidInFull === true) === full) return;
+  order.paidInFull = full;
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
+}
+
 function planAmount(order: Order, plan: unknown): { plan: 'full' | 'advance'; amountMinor: number } | null {
   const totalMinor = orderTotalMinor(order);
   if (plan !== 'advance') return { plan: 'full', amountMinor: totalMinor };
@@ -199,6 +215,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
     return error(409, 'protection_unavailable', 'No community manager is available for Buyer Protection right now. Try again soon, or buy directly.');
   }
 
+  await settlePayInFull(repository, order, body.plan);
   const terms = planAmount(order, body.plan);
   if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
 
@@ -311,6 +328,8 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     const listing = await repository.getListing(order.listingId);
     unavailable = unavailableReason(listing, order);
     if (listing) await repriceCheckout(repository, order, listing);
+    // And against what else is in their basket: an offer is earned by the group.
+    await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
   }
 
   const seller = await repository.getUserById(order.sellerId);
@@ -321,6 +340,14 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
 
   return json(200, {
     itemMinor: totalMinor,
+    /** The seller's price for the goods, shipping and what offers took off - each shown on its own. */
+    goodsMinor: order.unitPriceMinor * order.quantity,
+    shippingMinor: order.shippingMinor ?? 0,
+    offerDiscountMinor: order.offerDiscountMinor ?? 0,
+    appliedOffers: order.appliedOffers ?? [],
+    offerRules: order.offerRules ?? [],
+    /** What paying in full instead of an advance would save, when the shop offers that. */
+    prepaySavingMinor: await prepaySavingMinor(repository, order),
     /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
     unavailable,
     /** The item's price, for this quantity, when Buy was pressed and now - when the two differ. */
@@ -636,6 +663,10 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     buyerReversalDetails: side === 'seller' && order.status === 'payment_reversal_pending'
       ? other?.reversalDetails ?? null
       : null,
+    // What cancelling this item would cost the rest of the basket, said before it is done.
+    offerImpact: !isStopped(order.status) && (order.offerRules?.length ?? 0) + (order.appliedOffers?.length ?? 0) > 0
+      ? await cancellationImpact(repository, order)
+      : null,
     myReview: mine,
     // Only if it may be seen: an unrevealed review is exactly what this whole
     // mechanism exists to keep out of the counterparty's hands.
@@ -691,6 +722,7 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   } catch {
     body = {};
   }
+  await settlePayInFull(repository, order, body.plan);
   const terms = planAmount(order, body.plan);
   if (!terms) return error(400, 'no_advance', 'This item does not take an advance.');
 
@@ -1805,6 +1837,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   order.updatedAt = now;
   note(order, `Seller could not serve this order: ${reason}`, user.id);
   await repository.updateOrder(order);
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });
 
   await restock(repository, order, now);
 
@@ -2010,6 +2043,7 @@ async function discardCheckout(request: HttpRequest, _context: InvocationContext
       || (await repository.toggleLike(user.id, order.listingId));
   }
   await repository.deleteOrder(order);
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });
   return json(200, { removed: order.id, saved });
 }
 
@@ -2045,6 +2079,8 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   const owed = callOffOrder(order, reason, user.id);
   await repository.updateOrder(order);
   await restock(repository, order, new Date().toISOString(), body.restock === true && !shippedOut);
+  // The rest of this buyer's basket loses whatever this item was earning it.
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });
 
   if (owed <= 0) {
     const named = await orderNames(repository, order);

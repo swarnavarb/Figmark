@@ -3,6 +3,7 @@ import type { DealState } from './deals.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
+import type { AppliedOffer, ListingOffer } from './offers.js';
 import type { FeedPrefs } from './feed.js';
 import type { Badge, GameStage, PostContest, PostGuess, StoreCredit } from './play.js';
 import type {
@@ -896,6 +897,14 @@ export interface Listing extends BaseDocument {
    * buyable and `quantityAvailable` is not counted down. Absent means 'fixed'.
    */
   quantityMode?: 'fixed' | 'multiple';
+  /**
+   * What the shop charges to ship one of this item inside India, in minor
+   * units. 0 is free shipping. Absent on older listings, which say nothing
+   * about it. Shown beside the price, never added to it.
+   */
+  shippingMinor?: number | null;
+  /** What the shop offers on this item: see `shared/offers.ts`. */
+  offers?: ListingOffer[];
   /** When it stops being buyable. Read against the clock; null or absent never expires. */
   expiresAt?: string | null;
   /** Buyers may pay this percentage up front instead of the full amount. Null or absent: full only. */
@@ -1653,6 +1662,34 @@ export interface Order extends BaseDocument {
    * were counted when their payment released.
    */
   trustCountedAt?: string | null;
+  /**
+   * What shipping this order costs the buyer now, after any offer, and what
+   * the offers took off the goods. Both are worked out by `priceBasket` and
+   * rewritten whenever the group this order belongs to changes. Absent on
+   * orders from before shipping and offers, which owe neither.
+   */
+  shippingMinor?: number;
+  offerDiscountMinor?: number;
+  /** The offers that are working on this order right now. */
+  appliedOffers?: AppliedOffer[];
+  /**
+   * The shipping fee per item and the offers as they stood when the buyer
+   * ordered, kept so a shop changing its listing later cannot reprice an order
+   * already placed. A checkout that has not been placed follows the listing.
+   */
+  shipPerItemMinor?: number;
+  offerRules?: ListingOffer[];
+  /** The buyer chose to pay everything rather than an advance (see the pay-in-full offer). */
+  paidInFull?: boolean;
+  /** Offers earned by timing at the moment of ordering, and kept. */
+  lockedOfferIds?: string[];
+  /**
+   * When the price moved after money had already been paid: what the shop
+   * should send back, or what the buyer now owes. Informational - settling it
+   * goes through the normal refund and pay-more flows.
+   */
+  offerRefundDueMinor?: number;
+  offerBalanceDueMinor?: number;
   /**
    * When the buyer confirmed the item is in their hands.
    *
@@ -2846,6 +2883,12 @@ export type NotificationKind =
   | 'dispute_overdue'
   | 'dispute_action'
   | 'lot_moved'
+  /** The price of an order dropped: an offer was unlocked. */
+  | 'offer_applied'
+  /** The price of an order went up: an offer no longer applies. */
+  | 'offer_changed'
+  /** Reviews are waiting to be written. */
+  | 'review_reminder'
   /** One item reached its buyer - the step after a lot is unpacked. */
   | 'order_delivered'
   /** A held payment went to the seller: confirmed by the buyer, or on its own. */

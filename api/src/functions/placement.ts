@@ -3,6 +3,7 @@ import type { Listing, Order, Pledge } from '../../../shared/models.js';
 import { fullRuleOf, isGoingAhead } from '../../../shared/preorder.js';
 import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { repriceBasket } from '../offers.js';
 import { affiliateCommissionMinor } from '../../../shared/affiliate.js';
 import { affiliateFor, creditAffiliate } from '../affiliate.js';
 import type { getRepository } from '../data/index.js';
@@ -131,10 +132,14 @@ export async function placeOrder(
   // pressed - and never at a price the buyer has not been shown. A change
   // since they opened the checkout sends them back to look at it again.
   const was = orderTotalMinor(order);
-  if (await repriceCheckout(repository, order, listing)) {
+  const unitMoved = await repriceCheckout(repository, order, listing);
+  // The basket may have moved the price too: an offer earned or lost since the
+  // buyer last looked is as much a change as the seller editing the price.
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'placed', { include: [order], quiet: true });
+  if (unitMoved || orderTotalMinor(order) !== was) {
     return {
       code: 'price_changed',
-      message: `The seller changed the price: ${rupees(was)} is now ${rupees(orderTotalMinor(order))}. `
+      message: `The price changed: ${rupees(was)} is now ${rupees(orderTotalMinor(order))}. `
         + 'Check the new total, then try again.',
     };
   }
