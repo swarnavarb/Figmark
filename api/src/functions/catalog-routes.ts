@@ -16,6 +16,7 @@ import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/not
 import { notify, storeCrew } from './notify.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
 import { dealEndsAt } from '../../../shared/deals.js';
+import { cleanEta, etaProblem, type DeliveryEta } from '../../../shared/delivery-eta.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
 import { BUMP_GUARD_MS, emptyQuestState, tidyQuestState } from '../../../shared/quest.js';
 import { emptyGrowth, tidyGrowth } from '../../../shared/store-growth.js';
@@ -47,10 +48,13 @@ import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
+import { refreshIfStale } from '../seller-stats.js';
 import { alertWantsListed } from './want-routes.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
 function toSellerCard(user: SellerCardSource) {
+  // A day-old count is redone in the background: a parcel can go overdue with nobody pressing anything.
+  void getRepository().then((repository) => refreshIfStale(repository, user)).catch(() => null);
   return {
     id: user.id,
     displayName: user.displayName,
@@ -63,7 +67,11 @@ function toSellerCard(user: SellerCardSource) {
     dispatchRegion: user.sellerProfile?.dispatchRegion ?? null,
     followerCount: user.sellerProfile?.followerCount ?? 0,
     trustScore: user.sellerTrust.score,
+    // Worked out from the shop's orders against the delivery time each listing
+    // promised (api/src/seller-stats.ts); null until five orders are measured.
     onTimeDispatchRate: user.sellerTrust.onTimeDispatchRate,
+    onTimeMeasured: user.sellerTrust.onTimeMeasured ?? 0,
+    repeatCustomerRate: user.sellerTrust.repeatCustomerRate,
     // Orders delivered and not lost in a dispute, counted as each one lands.
     completedSales: user.sellerTrust.completedTransactions,
     memberSince: user.createdAt,
@@ -753,6 +761,13 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   const priceMinor = listablePrice(body.priceMinor);
   if (priceMinor === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
 
+  // How long it takes to reach the buyer is the first thing every buyer asks,
+  // so every item says it. A private deal made from one of the shop's items
+  // keeps that item's promise when the shop does not give a new one.
+  if (body.deliveryEta == null && dealSource?.deliveryEta) body.deliveryEta = dealSource.deliveryEta;
+  const etaIssue = etaProblem(body.deliveryEta);
+  if (etaIssue) return error(400, 'invalid_eta', etaIssue);
+
   // A lot can be chosen while listing rather than only afterwards, so the
   // seller is not made to publish and then go and file it. It has to be one of
   // theirs: the lookup is scoped to their partition, so another seller's lot
@@ -1344,6 +1359,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     status: 'pending_payment',
     paymentStatus: 'unpaid',
     advancePercent: listing.advancePercent ?? null,
+    deliveryEta: listing.deliveryEta ?? null,
     payments: [],
     credits: [],
     stage: bornInLot || listing.lotId ? 'ordering' : 'preparing',
@@ -1481,8 +1497,14 @@ function listingTerms(body: {
   affiliateMinor?: number | null;
   /** What a buyer through a link saves per unit, in paise; null or 0 turns it off. */
   affiliateOffMinor?: number | null;
-}, priceMinor: number, previous?: Listing['affiliate']): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> {
-  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate'>> = {};
+  /** Days from order to delivery; checked by the caller with `etaProblem` before it gets here. */
+  deliveryEta?: DeliveryEta | null;
+}, priceMinor: number, previous?: Listing['affiliate']): Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate' | 'deliveryEta'>> {
+  const terms: Partial<Pick<Listing, 'quantityMode' | 'expiresAt' | 'advancePercent' | 'affiliate' | 'deliveryEta'>> = {};
+  if (body.deliveryEta !== undefined) {
+    const eta = cleanEta(body.deliveryEta);
+    if (eta) terms.deliveryEta = eta;
+  }
   if (body.affiliateMinor !== undefined || body.affiliateOffMinor !== undefined) {
     const amountMinor = body.affiliateMinor !== undefined
       ? cleanAffiliateMinor(body.affiliateMinor, priceMinor)
@@ -1599,6 +1621,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     quantityMode?: 'fixed' | 'multiple'; expiresAt?: string | null; advancePercent?: number | null;
     affiliateMinor?: number | null;
     affiliateOffMinor?: number | null;
+    deliveryEta?: DeliveryEta | null;
     photos?: { blobName?: string; url: string; isPrimary?: boolean }[];
   };
   try {
@@ -1608,6 +1631,11 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
+  // Once given, a delivery time can be changed but not taken away.
+  if (body.deliveryEta !== undefined) {
+    const etaIssue = etaProblem(body.deliveryEta);
+    if (etaIssue) return error(400, 'invalid_eta', etaIssue);
+  }
   const newPrice = body.priceMinor === undefined ? undefined : listablePrice(body.priceMinor);
   if (newPrice === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
   // Stock is a change, not a count. The form was drawn minutes ago; a sale

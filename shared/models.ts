@@ -1,5 +1,6 @@
 import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
+import type { DeliveryEta } from './delivery-eta.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
@@ -160,8 +161,14 @@ export interface TrustSignals {
  * listing.
  */
 export interface SellerTrustSignals extends TrustSignals {
-  /** Public stat: fraction of lots dispatched by the promised date. */
+  /**
+   * Public stat: share of orders that reached the buyer within the delivery
+   * time the listing promised (see shared/delivery-eta.ts), over the last 90
+   * days. Worked out, never typed in; null below five measured orders.
+   */
   onTimeDispatchRate: number | null;
+  /** Orders behind `onTimeDispatchRate`: on time, late and overdue. Absent before the first count. */
+  onTimeMeasured?: number;
   /** Fraction of buyers who ordered more than once. */
   repeatCustomerRate: number | null;
 }
@@ -893,6 +900,12 @@ export interface Listing extends BaseDocument {
   expiresAt?: string | null;
   /** Buyers may pay this percentage up front instead of the full amount. Null or absent: full only. */
   advancePercent?: number | null;
+  /**
+   * Days from the order being placed to the buyer holding it - "45-50 days".
+   * Asked on every new listing; absent only on listings from before it was.
+   * Each order copies it, and the shop's on-time rate is measured against it.
+   */
+  deliveryEta?: DeliveryEta | null;
   /**
    * Demand pooling, opt-in per listing.
    *
@@ -1710,6 +1723,11 @@ export interface Order extends BaseDocument {
   paymentMethod?: PaymentMethod;
   /** Copied from the listing at purchase, so editing the listing cannot move it. */
   advancePercent?: number | null;
+  /**
+   * The delivery time promised when the checkout opened, copied so editing the
+   * listing cannot move it. The on-time rate measures the order against this.
+   */
+  deliveryEta?: DeliveryEta | null;
   /** Every payment as its own dated transaction; balances are summed from these. */
   payments?: PaymentRecord[];
   /** Money paid over the balance, held for the seller to refund. */
@@ -3000,6 +3018,7 @@ export interface PowerSaleItem {
   quantityMode?: 'fixed' | 'multiple';
   expiresAt?: string | null;
   advancePercent?: number | null;
+  deliveryEta?: DeliveryEta | null;
   /** The lot it travels in, when the shop picked one. */
   lotId?: string | null;
   /**

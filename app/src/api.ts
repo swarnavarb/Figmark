@@ -301,6 +301,10 @@ export interface SellerCard {
   followerCount: number;
   trustScore: number;
   onTimeDispatchRate: number | null;
+  /** Orders behind the on-time rate. */
+  onTimeMeasured?: number;
+  /** Share of buyers who ordered more than once; null with too few buyers. */
+  repeatCustomerRate?: number | null;
   /** Orders delivered without being lost in a dispute. */
   completedSales: number;
   memberSince: string;
@@ -1092,6 +1096,7 @@ export interface PowerSaleDraft {
     quantityMode?: 'fixed' | 'multiple';
     expiresAt?: string | null;
     advancePercent?: number | null;
+    deliveryEta?: { minDays: number; maxDays: number } | null;
     lotId?: string | null;
     limitedDays?: number | null;
   }[];
@@ -1183,6 +1188,8 @@ export interface NewListing {
   affiliateMinor?: number | null;
   /** What a buyer through a link saves per unit, in paise; null turns it off. */
   affiliateOffMinor?: number | null;
+  /** Days from order to delivery. Required on a new listing. */
+  deliveryEta?: { minDays: number; maxDays: number } | null;
   preOrder: { fillThreshold: number; cutoffAt: string; whenShort?: PreOrderShortRule; whenFull?: PreOrderFullRule } | null;
   /** Omitted when the item goes into a lot, which settles it. */
   sourcing?: Sourcing;

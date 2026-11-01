@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
+import { cleanEta } from '../../../shared/delivery-eta.js';
 import { inLot, isDirect, lotIsDone } from '../../../shared/fulfilment.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import type { Order, StageEvent } from '../../../shared/models.js';
@@ -70,6 +71,7 @@ function readTerms(raw: Partial<TemplateTerms> | null | undefined): TemplateTerm
     advancePercent: raw.advancePercent == null ? null : whole(raw.advancePercent, 1, 99),
     limitedDays: raw.limitedDays == null ? null : whole(raw.limitedDays, 1, 365),
     allowMultiple: Boolean(raw.allowMultiple),
+    deliveryEta: cleanEta(raw.deliveryEta),
   };
 }
 

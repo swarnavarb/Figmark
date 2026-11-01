@@ -64,6 +64,8 @@ export interface TemplateTerms {
   advancePercent: number | null;
   /** A limited time deal's length in days; null when it is not one. */
   limitedDays: number | null;
+  /** Days from order to delivery the filled items promise; absent on older quick fills. */
+  deliveryEta?: { minDays: number; maxDays: number } | null;
   allowMultiple: boolean;
 }
 

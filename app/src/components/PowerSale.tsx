@@ -9,7 +9,7 @@ import { CATEGORIES } from '@shared/catalog';
 import {
   ApiRequestError, api, type LotSummary, type PhotoDraft, type PowerSaleDraft, type PowerSaleView,
 } from '../api';
-import { TermsFields, termsBody, termsDraft, type TermsDraft } from './Buy';
+import { TermsFields, termsBody, termsDraft, termsProblem, type TermsDraft } from './Buy';
 import { LBox, OptionTiles, SHAPE_OPTIONS, Switch, ToggleRow, type Shape } from './ListingForm';
 import { PhotoManager } from './PhotoManager';
 import { EmptyState, ErrorNotice, Icon } from './ui';
@@ -343,6 +343,8 @@ function fillFromTemplate(template: PostTemplate): { fill: QuickFill; descriptio
         advancePercent: String(terms?.advancePercent ?? 20),
         limited: Boolean(terms?.limitedDays),
         days: String(terms?.limitedDays ?? 2),
+        etaMin: terms?.deliveryEta ? String(terms.deliveryEta.minDays) : '',
+        etaMax: terms?.deliveryEta ? String(terms.deliveryEta.maxDays) : '',
       },
       allowMultiple: Boolean(terms?.allowMultiple),
     },
@@ -369,7 +371,8 @@ const START_LINES = 5;
 const publicPrice = (item: ItemDraft) => Number(item.listPrice) || Number(item.price);
 
 const itemReady = (item: ItemDraft) =>
-  item.title.trim().length > 0 && Number(item.price) > 0 && publicPrice(item) >= Number(item.price);
+  item.title.trim().length > 0 && Number(item.price) > 0 && publicPrice(item) >= Number(item.price)
+  && !termsProblem(item.fill.terms);
 
 const WEEKDAY = new Intl.DateTimeFormat('en-IN', { weekday: 'long' });
 
@@ -532,6 +535,7 @@ export function PowerSaleBuilderPage() {
           advancePercent: terms.advancePercent,
           limitedDays: fill.terms.limited ? Number(fill.terms.days) || 2 : null,
           allowMultiple: fill.allowMultiple,
+          deliveryEta: terms.deliveryEta,
         },
       });
       setFills((rows) => [template, ...rows.filter((row) => row.id !== template.id)]);
@@ -582,6 +586,7 @@ export function PowerSaleBuilderPage() {
             expiresAt: null,
             limitedDays: own.terms.limited ? Math.max(1, Number(own.terms.days) || 2) : null,
             advancePercent: terms.advancePercent,
+            deliveryEta: terms.deliveryEta,
           };
         }),
       };

@@ -189,15 +189,26 @@ carrier API pull yet.
 
 ## Trust, reviews and held payments
 
-- **`VerificationState`** carries a status per artefact — phone, email,
-  government ID, address, payment method, bank/UPI-to-ID match, business
-  registration — plus who last reviewed it. Sellers need ID and bank match to
-  reach `verified`; business registration is the additional Pro-tier evidence.
+- **`VerificationState`** carries a status per artefact, plus who last
+  reviewed it. What it opens is in `shared/verification.ts`: buying needs a
+  confirmed email and a WhatsApp-verified phone (`buyerVerified`); selling also
+  needs an Aadhaar check whose mobile matches that phone (`fullyVerified`).
+  No bank or UPI match is asked. An operator can open or close either side
+  for one account (`tradeOverride`).
 - **`TrustSignals`** keeps the published score alongside its components
-  (completed transactions, disputes lost, on-time dispatch rate, repeat-customer
-  rate) so the weighting can be tuned without recomputing from scratch, and so
-  fraud checks can flag sudden drops or clustered new-account reviews. Nothing
-  computes it yet.
+  (completed transactions, disputes lost, on-time rate, repeat-customer rate)
+  so the weighting can be tuned without recomputing from scratch, and so
+  fraud checks can flag sudden drops or clustered new-account reviews.
+- **Delivery time and the on-time rate.** Every listing carries `deliveryEta`
+  (days from order to delivery, "45-50 days"), required when it is listed.
+  Each order copies it when placed. `sellerTrust.onTimeDispatchRate` is worked
+  out, never typed: the share of the shop's orders over the last 90 days that
+  reached the buyer by the longest promised day plus one day's grace, with an
+  undelivered order past that day counting as late. Null below five measured
+  orders. `repeatCustomerRate` is the share of buyers with more than one
+  order. Both are recounted on delivery, on the shop's own Data screens, once a
+  day by the clock, and on a seller-card read once a day old
+  (`api/src/seller-stats.ts`, `shared/delivery-eta.ts`).
 - **`Review`** is written against a completed order — `orderId` is required, and
   a unique key on `(orderId, direction)` enforces at most one review per side
   per order. `revealed`/`revealAt` implement the blind simultaneous reveal that

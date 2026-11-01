@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import type { CreditRecord, Listing, Order } from '@shared/models';
 import { affiliateUnitMinor, linkDiscountMinor } from '@shared/affiliate';
 import { DEAL_DEFAULT_HOURS, DEAL_HOUR_CHOICES, DEAL_MAX_HOURS } from '@shared/deals';
+import { ETA_MAX_DAYS, etaLabel, etaProblem, type DeliveryEta } from '@shared/delivery-eta';
 import {
   PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, REFUND_ORIGIN_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
   isMultiple, methodOf, orderMoney, timeLeft,
@@ -177,9 +178,12 @@ export interface TermsDraft {
   affiliateOff: boolean;
   /** In rupees, per unit. */
   affiliateOffAmount: string;
+  /** Days from order to delivery, as typed: the quickest and the longest. */
+  etaMin: string;
+  etaMax: string;
 }
 
-export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePercent' | 'affiliate' | 'priceMinor'>>): TermsDraft {
+export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePercent' | 'affiliate' | 'priceMinor' | 'deliveryEta'>>): TermsDraft {
   const commission = affiliateUnitMinor(listing?.affiliate, listing?.priceMinor ?? 0);
   const off = commission > 0 ? linkDiscountMinor(listing?.affiliate) : 0;
   return {
@@ -194,7 +198,20 @@ export function termsDraft(listing?: Partial<Terms & Pick<Listing, 'advancePerce
     affiliateAmount: commission > 0 ? String(commission / 100) : '50',
     affiliateOff: off > 0,
     affiliateOffAmount: off > 0 ? String(off / 100) : '50',
+    etaMin: listing?.deliveryEta ? String(listing.deliveryEta.minDays) : '',
+    etaMax: listing?.deliveryEta ? String(listing.deliveryEta.maxDays) : '',
   };
+}
+
+/** The delivery time as typed, as the API takes it; null when either box is empty. */
+export function etaOf(draft: Pick<TermsDraft, 'etaMin' | 'etaMax'>): DeliveryEta | null {
+  if (!draft.etaMin.trim() || !draft.etaMax.trim()) return null;
+  return { minDays: Number(draft.etaMin), maxDays: Number(draft.etaMax) };
+}
+
+/** What stops these terms being saved, said to the seller; null when nothing does. */
+export function termsProblem(draft: TermsDraft): string | null {
+  return etaProblem(etaOf(draft));
 }
 
 /** The draft as the API takes it. */
@@ -207,6 +224,7 @@ export function termsBody(draft: TermsDraft) {
     affiliateMinor: draft.affiliate ? Math.max(100, Math.round((Number(draft.affiliateAmount) || 0) * 100)) : null,
     affiliateOffMinor: draft.affiliate && draft.affiliateOff
       ? Math.max(100, Math.round((Number(draft.affiliateOffAmount) || 0) * 100)) : null,
+    deliveryEta: etaOf(draft),
   };
 }
 
@@ -217,8 +235,10 @@ export function termsBody(draft: TermsDraft) {
  * date is its expiry, so both questions step aside rather than being asked
  * twice.
  */
-export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor }: {
+export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor, withEta = true }: {
   value: TermsDraft;
+  /** Ask the delivery time here too; off where the form asks it on its own, outside a fold. */
+  withEta?: boolean;
   onChange: (next: TermsDraft) => void;
   preOrder?: boolean;
   /** The price as typed, so the link discount can say what the shop is left with. */
@@ -238,6 +258,8 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
   const keptRupees = priceMinor && priceMinor > 0 ? Math.floor(priceMinor / 100) - commissionRupees - offRupees : null;
   return (
     <>
+      {withEta && <EtaFields value={value} onChange={onChange} />}
+
       <LBox icon="📦" title="Stock & payment">
         {!preOrder && (
           <>
@@ -333,6 +355,41 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
 }
 
 /**
+ * Days from order to delivery - asked on every listing, never folded away:
+ * it is the first thing a buyer asks, and the shop's on-time rate is
+ * measured against it.
+ */
+export function EtaFields({ value, onChange }: { value: TermsDraft; onChange: (next: TermsDraft) => void }) {
+  const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
+  const etaIssue = value.etaMin || value.etaMax ? etaProblem(etaOf(value)) : null;
+  return (
+    <LBox icon="🚚" title="Delivery time" hint={etaOf(value) && !etaIssue
+      ? `Buyers see "Arrives in ${etaLabel(etaOf(value))}". Your on-time rate is worked out from it.`
+      : 'Required. Days from the order being placed to the buyer holding it.'}>
+      <div className="etafields">
+        <label className="field">
+          <span>Quickest (days)</span>
+          <input type="number" inputMode="numeric" min="1" max={ETA_MAX_DAYS} step="1" placeholder="45"
+            value={value.etaMin} required aria-required="true"
+            onChange={(e) => set({ etaMin: e.target.value, ...(value.etaMax === '' || Number(value.etaMax) < Number(e.target.value) ? { etaMax: e.target.value } : {}) })} />
+        </label>
+        <span className="etafields__to" aria-hidden="true">to</span>
+        <label className="field">
+          <span>Longest (days)</span>
+          <input type="number" inputMode="numeric" min={value.etaMin || 1} max={ETA_MAX_DAYS} step="1" placeholder="50"
+            value={value.etaMax} required aria-required="true"
+            onChange={(e) => set({ etaMax: e.target.value })} />
+        </label>
+      </div>
+      {etaIssue && <span className="notice notice--error">{etaIssue}</span>}
+      <span className="field__hint">
+        Orders that reach the buyer after the longest day count as late on your shop's on-time rate.
+      </span>
+    </LBox>
+  );
+}
+
+/**
  * How long a private deal stays open: a row of hour choices, two hours unless
  * the shop picks another, never more than a day.
  *
@@ -409,6 +466,8 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
 
   function save(event: FormEvent) {
     event.preventDefault();
+    const problem = termsProblem(terms);
+    if (problem) { setError(problem); return; }
     void run(async () => (await api.editListing(listing.id, {
       title: title.trim(), priceMinor: Math.round(Number(price) * 100), photos, ...termsBody(terms),
       // Sales made while this was open have already taken their units; only the change here is applied.

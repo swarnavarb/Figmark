@@ -167,6 +167,7 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, index: number, showAt:
     quantityMode: item.quantityMode ?? 'fixed',
     expiresAt: item.expiresAt ?? null,
     advancePercent: item.advancePercent ?? null,
+    deliveryEta: item.deliveryEta ?? null,
     preOrder: null,
     lotId: item.lotId ?? null,
     sourcing: item.lotId ? 'import' : item.sourcing ?? 'in_hand',

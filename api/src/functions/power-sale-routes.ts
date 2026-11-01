@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
+import { cleanEta, etaProblem } from '../../../shared/delivery-eta.js';
 import { canonicalCategory, listablePrice } from '../../../shared/catalog.js';
 import type { PowerSale, PowerSaleItem } from '../../../shared/models.js';
 import { can } from '../../../shared/stores.js';
@@ -224,6 +225,7 @@ function listingOptions(entry: Record<string, unknown>): Partial<PowerSaleItem> 
     quantityMode: entry.quantityMode === 'multiple' ? 'multiple' : 'fixed',
     expiresAt: expires && !Number.isNaN(expires.getTime()) ? expires.toISOString() : null,
     advancePercent: advance > 0 && advance < 100 ? advance : null,
+    deliveryEta: cleanEta(entry.deliveryEta),
     lotId: typeof entry.lotId === 'string' && entry.lotId ? entry.lotId : null,
     limitedDays: Math.min(365, Math.max(0, Math.round(Number(entry.limitedDays) || 0))) || null,
   };
@@ -258,6 +260,9 @@ async function create(request: HttpRequest, _context: InvocationContext) {
   for (const raw of rawItems) {
     const read = readItem(raw);
     if ('why' in read) return error(400, 'invalid_sale', read.why);
+    // Every item says how long it takes to arrive, however it is listed.
+    const etaIssue = etaProblem((raw as { deliveryEta?: unknown })?.deliveryEta as never);
+    if (etaIssue) return error(400, 'invalid_eta', `${read.item.title}: ${etaIssue}`);
     // A lot has to be one of the shop's own; another shop's id does not resolve.
     if (read.item.lotId && !(await repository.getLot(shop.sellerId, read.item.lotId))) {
       return error(404, 'not_found', `${read.item.title}: no such lot of yours.`);

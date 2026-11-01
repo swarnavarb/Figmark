@@ -5,6 +5,7 @@ import { coarseStage, lotEndIndex, routeOf } from '../../shared/routes.js';
 import type { getRepository } from './data/index.js';
 import { possessive } from '../../shared/notifications.js';
 import { capital, notify, orderNames } from './functions/notify.js';
+import { refreshSellerStats } from './seller-stats.js';
 
 /**
  * The one way an item reaches its buyer, and the one way its money is let go.
@@ -117,6 +118,7 @@ export async function confirmReceived(order: Order, by: string, repository: Repo
     return releaseHeld(order, 'Delivery confirmed by the buyer.', by, repository);
   }
   const saved = await releaseHeld(order, 'The buyer confirmed they received it.', by, repository);
+  await refreshSellerStats(repository, order.sellerId).catch(() => null);
   const named = await orderNames(repository, order);
   await notify(
     repository,
@@ -176,6 +178,8 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
     await countCompleted(order, repository);
     saved = await repository.updateOrder(order);
   }
+  // The shop's on-time and repeat numbers move with every arrival.
+  await refreshSellerStats(repository, order.sellerId).catch(() => null);
   const held = order.hold.state === 'held';
   const named = await orderNames(repository, order);
   await notify(

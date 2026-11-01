@@ -11,6 +11,7 @@ import { Glyph, RarityRibbon } from '../components/Quest';
 import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
 import { factsOf } from '@shared/catalog';
+import { etaLabel } from '@shared/delivery-eta';
 import { FillBlock } from '../components/FillMeter';
 import { brandHueFor, daysUntil, formatDate, formatMoney, timeAgo } from '../format';
 import { PreOrderRules, isoInDays } from '../components/ListingForm';
@@ -163,6 +164,11 @@ export function ListingPage() {
           ? <StockChip listing={listing} />
           : <span className="badge badge--danger">Sold out</span>}
       </div>
+      {listing.deliveryEta ? (
+        <p className="buybox__adv buybox__eta">
+          <Svg name="ship" size={15} /> Arrives in <b>{etaLabel(listing.deliveryEta)}</b> from the order
+        </p>
+      ) : null}
       {listing.advancePercent ? (
         <p className="buybox__adv">
           <Svg name="coin" size={15} /> Book with{' '}
@@ -385,6 +391,20 @@ export function ListingPage() {
                   <dt><Svg name="box" size={13} /> Sales</dt>
                   <dd>{seller.completedSales}</dd>
                   <dd className="sellercard__note">Delivered, no lost disputes</dd>
+                </div>
+                <div className={`sellercard__stat${seller.onTimeDispatchRate == null ? '' : seller.onTimeDispatchRate >= 0.9 ? ' sellercard__stat--ok' : seller.onTimeDispatchRate >= 0.7 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
+                  <dt><Svg name="clock" size={13} /> On time</dt>
+                  <dd>{seller.onTimeDispatchRate == null ? 'New' : <>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></>}</dd>
+                  <dd className="sellercard__note">
+                    {seller.onTimeDispatchRate == null
+                      ? 'Shown after 5 deliveries'
+                      : `Of ${seller.onTimeMeasured ?? 0} orders, within promised days`}
+                  </dd>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="reply" size={13} /> Repeat buyers</dt>
+                  <dd>{seller.repeatCustomerRate == null ? '—' : <>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></>}</dd>
+                  <dd className="sellercard__note">Bought here again</dd>
                 </div>
                 <div className="sellercard__stat">
                   <dt><Svg name="calendar" size={13} /> Here since</dt>
