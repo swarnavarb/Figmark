@@ -30,6 +30,8 @@ const {
 } = await import(new URL('customer-routes.js', fns));
 const { notificationSettingsSaveRoute: saveNotificationSettings, notificationsRoute: notifications } =
   await import(new URL('notification-routes.js', fns));
+const { publicProfileRoute: publicProfile } = await import(new URL('message-routes.js', fns));
+const { creditRoute: credit } = await import(new URL('profile-routes.js', fns));
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
 const { refreshSellerStats } = await import(new URL('api/src/seller-stats.js', dist));
 const eta = await import(new URL('shared/delivery-eta.js', dist));
@@ -193,6 +195,34 @@ await check('an order arriving after its promise brings the rate down, without a
   await refreshSellerStats(repository, shop.id);
   const after = (await repository.getUserById(shop.id)).sellerTrust.onTimeDispatchRate;
   assert.ok(after < before, `${after} < ${before}`);
+});
+
+await check("a shop's sales total is never on its public card; its confirm time is, once there are three answers", async () => {
+  const card = (await listingDetail(req({ params: { id: listing.id } }), ctx)).jsonBody.seller;
+  assert.equal(card.completedSales, undefined, 'how many a shop has sold stays private');
+  assert.ok(card.confirmHours === null || typeof card.confirmHours === 'number');
+  const at = (hoursAfter) => new Date(Date.parse(ago(5)) + hoursAfter * 3_600_000).toISOString();
+  const answered = (h) => ({ placedAt: ago(5), createdAt: ago(5), status: 'accepted', bookingOnly: true, acceptedAt: at(h) });
+  assert.equal(cust.confirmHours([answered(2), answered(4)]), null, 'two answers are not a record');
+  assert.equal(cust.confirmHours([answered(2), answered(4), answered(30)]), 4, 'the middle answer, not the average');
+  assert.equal(cust.confirmLabel(0.4), 'Under 1h');
+  assert.equal(cust.confirmLabel(5.2), '5h');
+  assert.equal(cust.confirmLabel(72), '3 days');
+});
+
+await check("a visitor to the shop's page sees no order count in its level, stickers, badges or record; the shop still does", async () => {
+  const visitor = (await publicProfile(req({ params: { handle: 'arjun_collects' } }), ctx)).jsonBody;
+  const lines = visitor.level.breakdown.map((line) => line.label);
+  assert.ok(!lines.includes('Orders completed') && !lines.includes('Dispatched on time'), lines.join(', '));
+  assert.equal(visitor.level.heldBack, null);
+  assert.ok(!visitor.stickers.some((sticker) => sticker.id === 's-sales'));
+  assert.ok(!visitor.earned.some((tag) => /orders delivered/.test(tag.label)));
+  assert.ok(!visitor.gameBadges.some((badge) => badge.kind === 'hundred_sales'));
+  const owner = (await publicProfile(req({ headers: shop.headers, params: { handle: 'arjun_collects' } }), ctx)).jsonBody;
+  assert.ok(owner.stickers.some((sticker) => sticker.id === 's-sales'), 'the shop sees its own');
+  assert.ok(owner.level.breakdown.some((line) => line.label === 'Orders completed'));
+  const record = (await credit(req({ params: { id: shop.id }, query: { side: 'store' } }), ctx)).jsonBody.asSeller;
+  assert.deepEqual(Object.keys(record).sort(), ['deliveredRate', 'disputes', 'goodRate']);
 });
 
 /* ── Views and searches ────────────────────────────────────────────────── */

@@ -231,11 +231,13 @@ export function RatingSheet({ profile, rating, onClose, onReviews, record: given
   }, [profile.sellerId, side]);
 
   const score = stars(rating.average);
+  // A shop's record is shares, never counts: buyers are not told how much a shop has sold.
+  const pct = (value: number | null) => (value === null ? '—' : `${value}%`);
   const record = credit && (profile.isStore
-    ? [['Sold', credit.asSeller.sold], ['Delivered', credit.asSeller.completed],
-      ['Rated 4★+', credit.asSeller.praised], ['Disputes lost', credit.asSeller.disputes]]
+    ? [['Delivered', pct(credit.asSeller.deliveredRate)], ['Rated 4★+', pct(credit.asSeller.goodRate)],
+      ['Disputes lost', credit.asSeller.disputes]]
     : [['Bought', credit.asBuyer.bought], ['Received', credit.asBuyer.completed],
-      ['Rated 4★+', credit.asBuyer.praised], ['Disputes lost', credit.asBuyer.disputes]]) as [string, number][] | null;
+      ['Rated 4★+', credit.asBuyer.praised], ['Disputes lost', credit.asBuyer.disputes]]) as [string, number | string][] | null;
 
   return (
     <Modal title={profile.isStore ? 'Seller rating' : 'Buyer rating'} onClose={onClose}>
@@ -278,8 +280,8 @@ export function RatingSheet({ profile, rating, onClose, onReviews, record: given
           {error && <ErrorNotice message={error} />}
           {given ?? (
             <div className="rsheet__record">
-              {(record ?? [['', 0], ['', 0], ['', 0], ['', 0]] as [string, number][]).map(([label, value], i) => (
-                <span key={i} className={`rsheet__stat${record ? '' : ' is-loading'}${label === 'Disputes lost' && value > 0 ? ' is-bad' : ''}`}>
+              {(record ?? [['', 0], ['', 0], ['', 0], ['', 0]] as [string, number | string][]).map(([label, value], i) => (
+                <span key={i} className={`rsheet__stat${record ? '' : ' is-loading'}${label === 'Disputes lost' && Number(value) > 0 ? ' is-bad' : ''}`}>
                   <b>{record ? value : ' '}</b><small>{label || ' '}</small>
                 </span>
               ))}

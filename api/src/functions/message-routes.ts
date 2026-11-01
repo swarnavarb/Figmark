@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
+import type { StickerView } from '../../../shared/quest.js';
 import type { Listing, Message, MessageDeal, MessageItem, MessageLink, MessageParty, User } from '../../../shared/models.js';
 import type { DealState } from '../../../shared/deals.js';
 import { isExpired, isMultiple } from '../../../shared/payments.js';
@@ -510,6 +511,25 @@ export async function messageFromShop(
 /** Badges a shop earns by selling: shown on its storefront, not on its owner's own page. */
 const SHOP_BADGES = new Set<BadgeKind>(SALE_MILESTONES.map((step) => step.kind));
 
+/*
+ * How many a shop has sold is the shop's own business: a visitor's copy of
+ * the page leaves out every order count behind its level, stickers and badges.
+ */
+/** Level lines that are an order count times a number. */
+const SALES_LINES: ReadonlySet<string> = new Set(['Orders completed', 'Dispatched on time']);
+/** Stickers that are nothing but a sales count. */
+const SALES_STICKERS: ReadonlySet<string> = new Set(['s-sales']);
+/** Badges that name a sales count. */
+const SALES_BADGES: ReadonlySet<BadgeKind> = new Set<BadgeKind>(['hundred_sales']);
+
+/** A sticker as a visitor sees it: the tier earned, never the count behind it. */
+function publicSticker<T extends StickerView>(sticker: T): T[] {
+  if (SALES_STICKERS.has(sticker.id)) return [];
+  if (sticker.id !== 's-clean') return [sticker];
+  // "Ten orders, no dispute lost" says it was earned, not how far past ten it went.
+  return [{ ...sticker, have: sticker.earned ? sticker.tiers[0]! : 0, next: null }];
+}
+
 async function send(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -989,6 +1009,9 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     await repository.updateUser(user);
   }
 
+  // How many a shop has sold is for the shop alone: a visitor's copy leaves
+  // out the order counts behind its level and stickers.
+  const own = viewer?.id === user.id;
   return json(200, {
     handle: handle.toLowerCase(),
     isStore,
@@ -1014,8 +1037,9 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     sellerId: user.id,
     // The same Trust a listing's "Posted by" card shows, so the two never disagree.
     trustScore: isStore ? user.sellerTrust.score : null,
-    level,
-    stickers: isStore ? storeStickers(facts) : [],
+    // "Finish 7 more orders" is a sales count too: the visitor sees the level, not why it waits.
+    level: level && !own ? { ...level, heldBack: null, breakdown: level.breakdown.filter((line) => !SALES_LINES.has(line.label)) } : level,
+    stickers: isStore ? storeStickers(facts).flatMap((sticker) => (own ? [sticker] : publicSticker(sticker))) : [],
     // The level and title shown beside the name: a shop's own, or the buyer's.
     levelTag: isStore ? storeTag(level?.level) : buyerTag(user.quest?.levelCache),
     memberSince: user.createdAt,
@@ -1026,7 +1050,7 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     // A shop and its owner are one account: sale milestones are the shop's,
     // everything else - wins, accepted answers - is the person's.
     gameBadges: [...(user.badges ?? [])]
-      .filter((badge) => SHOP_BADGES.has(badge.kind) === isStore)
+      .filter((badge) => SHOP_BADGES.has(badge.kind) === isStore && (own || !SALES_BADGES.has(badge.kind)))
       .sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
     /** What the tabs and chips count, so neither has to guess. */
     counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },

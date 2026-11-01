@@ -154,7 +154,7 @@
 .rsheet__parthead { display: flex; align-items: center; gap: 6px; font-size: var(--t-xs); font-weight: var(--w-bold); color: var(--text-dim); }
 .rsheet__part > b small { margin-left: 2px; font-size: var(--t-sm); color: var(--warn); }
 .rsheet__block { display: grid; gap: var(--s2); }
-.rsheet__record { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); }
+.rsheet__record { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--s2); }
 .rsheet__trust { margin: 0; font-size: var(--t-sm); }
 .rsheet__checks { display: flex; flex-wrap: wrap; gap: 6px; }
 .rsheet__check {
