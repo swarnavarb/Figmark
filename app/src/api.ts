@@ -275,6 +275,9 @@ const visitorKnown = () => request<unknown>('/auth/me').catch(() => undefined);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
+const put = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) });
+
 /** A data URL's bytes, as the Blob it describes. */
 function blobOf(dataUrl: string): Blob {
   const match = /^data:([^;,]+);base64,(.*)$/.exec(dataUrl);
@@ -3047,6 +3050,8 @@ export const api = {
   marketSettings: () => request<PublicSettings>('/settings'),
   reviewOrder: (id: string, rating: number, body: string) =>
     post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
+  editReview: (id: string, rating: number, body: string) =>
+    put<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
   /** The buyer's photo of what arrived, posted to the shop's channel. */
   shareUnboxing: (id: string, body: string, photoUrls: string[]) =>
     post<{ post: Post }>(`/orders/${encodeURIComponent(id)}/unboxing`, { body, photoUrls }),

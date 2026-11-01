@@ -2147,9 +2147,10 @@ export interface PaymentHold {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Two-sided and blind. A review is written against a completed order and stays
- * hidden until the counterparty submits theirs or `revealAt` passes, which is
- * what stops retaliatory rating.
+ * Two-sided. A review is written against a completed order and is public the
+ * moment it is written; neither side waits on the other, and its author can edit
+ * it later. (`revealed`/`revealAt` remain for reviews written under the old
+ * blind rule.)
  */
 export interface Review extends BaseDocument {
   /** Partition key: the user being reviewed. */
@@ -2168,6 +2169,8 @@ export interface Review extends BaseDocument {
    * beside the review stays true if the listing is later changed or taken down.
    */
   item?: { listingId: string; name: string; photoUrl: string | null };
+  /** When its author last changed it; absent if never edited. */
+  editedAt?: string;
 }
 
 /**

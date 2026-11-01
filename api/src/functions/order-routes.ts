@@ -13,7 +13,6 @@ import { cancellationImpact, prepaySavingMinor, repriceBasket } from '../offers.
 
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
-  REVIEW_REVEAL_DAYS,
   actionsFor,
   protectionFeeMinor,
   daysFrom,
@@ -25,7 +24,6 @@ import {
   isStopped,
   nothingAtStake,
   owedMinor,
-  reviewRevealed,
   scoreFrom,
   sideOf,
 } from '../../../shared/orders.js';
@@ -435,7 +433,7 @@ async function announceReview(order: Order, written: Review, repository: Awaited
     ? {
       kind: 'review_received',
       title: `${who} reviewed ${whom} ${stars(written.rating)}`,
-      body: written.body ? `${item}: ${gistOf(written.body, '', 70)}` : `${item} · both reviews are now visible`,
+      body: written.body ? `${item}: ${gistOf(written.body, '', 70)}` : item,
       link: `/order/${encodeURIComponent(order.id)}`,
     }
     : {
@@ -492,9 +490,9 @@ async function review(request: HttpRequest, _context: InvocationContext) {
     direction: side === 'buyer' ? REVIEW_DIRECTIONS[0] : REVIEW_DIRECTIONS[1],
     rating,
     body: text,
-    // The counterparty's review, if it exists, is what reveals both.
-    revealed: existing.length > 0,
-    revealAt: daysFrom(REVIEW_REVEAL_DAYS),
+    // Public the moment it is written: neither side waits on the other.
+    revealed: true,
+    revealAt: now,
     // The item, kept with the review so its small card stays true.
     item: {
       listingId: order.listingId,
@@ -506,18 +504,49 @@ async function review(request: HttpRequest, _context: InvocationContext) {
   };
   await repository.createReview(written);
 
-  // Writing the second one opens the first, which is the whole mechanism.
-  for (const other of existing) {
-    if (other.revealed) continue;
-    other.revealed = true;
-    other.updatedAt = now;
-    await repository.updateReview(other);
-    await rescore(other.subjectId, repository);
-  }
-  if (written.revealed) await rescore(written.subjectId, repository);
+  await rescore(written.subjectId, repository);
   await announceReview(order, written, repository);
 
   return json(201, { review: written });
+}
+
+/**
+ * PUT /api/orders/{id}/review - change your own review.
+ *
+ * Rating and words can be edited at any time; the score is recomputed so the
+ * shop's or buyer's standing follows what the review now says.
+ */
+async function editReview(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+
+  let body: { rating?: number; body?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const rating = Number(body.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return error(400, 'invalid_review', 'A rating is a whole number from 1 to 5.');
+  }
+  const text = (body.body ?? '').trim();
+  if (text.length > 2000) return error(400, 'invalid_review', 'Keep a review under 2000 characters.');
+
+  const mine = (await repository.listReviewsForOrder(found.order.id)).find((entry) => entry.authorId === user.id);
+  if (!mine) return error(404, 'not_found', 'You have not reviewed this order yet.');
+
+  mine.rating = rating;
+  mine.body = text;
+  mine.revealed = true;
+  mine.editedAt = new Date().toISOString();
+  mine.updatedAt = mine.editedAt;
+  await repository.updateReview(mine);
+  await rescore(mine.subjectId, repository);
+  return json(200, { review: mine });
 }
 
 /**
@@ -684,8 +713,8 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     myReview: mine,
     // Only if it may be seen: an unrevealed review is exactly what this whole
     // mechanism exists to keep out of the counterparty's hands.
-    theirReview: theirs && reviewRevealed(theirs, mine !== null) ? theirs : null,
-    theirReviewPending: theirs !== null && !(theirs && reviewRevealed(theirs, mine !== null)),
+    theirReview: theirs,
+    theirReviewPending: false,
     dispute,
     /** The protection window as operators have it set today, for the words on screen. */
     autoReleaseDays: releaseDays,
@@ -1983,7 +2012,8 @@ export const settleClaimRoute = handler(settleClaim);
 export const rejectOrderRoute = handler(rejectOrder);
 export const confirmRoute = handler(confirm);
 export const unboxingRoute = handler(unboxing);
-export const reviewRoute = handler(review);
+// One route, two verbs: POST writes your review, PUT changes it.
+export const reviewRoute = handler((request: HttpRequest, context: InvocationContext) => (request.method === 'PUT' ? editReview(request, context) : review(request, context)));
 export const orderStateRoute = handler(orderState);
 export const checkoutRoute = handler(checkout);
 
@@ -2582,7 +2612,7 @@ app.http('order-settle-claim', { ...anon, methods: ['POST'], route: 'orders/{id}
 app.http('order-reject', { ...anon, methods: ['POST'], route: 'orders/{id}/reject', handler: rejectOrderRoute });
 app.http('order-close', { ...anon, methods: ['POST'], route: 'orders/{id}/close', handler: closeOrderRoute });
 app.http('order-confirm', { ...anon, methods: ['POST'], route: 'orders/{id}/confirm', handler: confirmRoute });
-app.http('order-review', { ...anon, methods: ['POST'], route: 'orders/{id}/review', handler: reviewRoute });
+app.http('order-review', { ...anon, methods: ['POST', 'PUT'], route: 'orders/{id}/review', handler: reviewRoute });
 app.http('order-unboxing', { ...anon, methods: ['POST'], route: 'orders/{id}/unboxing', handler: unboxingRoute });
 app.http('order-state', { ...anon, methods: ['GET'], route: 'orders/{id}/state', handler: orderStateRoute });
 app.http('order-checkout', { ...anon, methods: ['GET'], route: 'orders/{id}/checkout', handler: checkoutRoute });
