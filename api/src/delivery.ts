@@ -1,5 +1,5 @@
 import { inLot } from '../../shared/fulfilment.js';
-import type { Order, StageEvent } from '../../shared/models.js';
+import type { Order, SellerTrustSignals, StageEvent } from '../../shared/models.js';
 import { autoReleaseDue, awaitingAcceptance, daysFrom, isStopped } from '../../shared/orders.js';
 import { coarseStage, lotEndIndex, routeOf } from '../../shared/routes.js';
 import type { getRepository } from './data/index.js';
@@ -143,6 +143,45 @@ function appendEvent(order: Order, event: { note: string; by: string; now: strin
   order.stageHistory = [...order.stageHistory, entry];
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The stage an order enters when it leaves the seller for the buyer. */
+const LEAVES_SELLER = new Set(['local_dispatch', 'dispatched']);
+
+/**
+ * Keeps the seller's public on-time and repeat-buyer rates current.
+ *
+ * On time: the order left for the buyer on or before the lot's promised
+ * dispatch date. Orders with no promise (in-hand items, lots with no date)
+ * are not counted, so a shop is never marked late against a date it never
+ * gave. Repeat: of the buyers with a completed order, the share who have
+ * more than one. Called once per order from `countCompleted`.
+ */
+async function recordSellerRates(order: Order, trust: SellerTrustSignals, repository: Repo): Promise<void> {
+  const lot = order.lotId ? await repository.getLot(order.sellerId, order.lotId) : null;
+  const promised = lot?.estimatedDispatchAt ? Date.parse(lot.estimatedDispatchAt) : NaN;
+  const left = order.stageHistory
+    .filter((event) => LEAVES_SELLER.has(event.stage))
+    .map((event) => Date.parse(event.enteredAt))
+    .sort((a, b) => a - b)[0];
+  if (Number.isFinite(promised) && left !== undefined) {
+    trust.dispatchPromised = (trust.dispatchPromised ?? 0) + 1;
+    // Dates are promised as days, not minutes: leaving any time that day is on time.
+    if (left <= promised + DAY_MS) trust.dispatchOnTime = (trust.dispatchOnTime ?? 0) + 1;
+    trust.onTimeDispatchRate = trust.dispatchOnTime! / trust.dispatchPromised;
+  }
+
+  const perBuyer = new Map<string, number>();
+  for (const sale of await repository.listOrdersForSeller(order.sellerId)) {
+    if (sale.id !== order.id && !sale.trustCountedAt) continue;
+    perBuyer.set(sale.buyerId, (perBuyer.get(sale.buyerId) ?? 0) + 1);
+  }
+  perBuyer.set(order.buyerId, perBuyer.get(order.buyerId) ?? 1);
+  trust.repeatCustomerRate = perBuyer.size === 0
+    ? null
+    : [...perBuyer.values()].filter((count) => count > 1).length / perBuyer.size;
+}
+
 /**
  * Counts a finished trade toward both people's record, exactly once.
  *
@@ -159,6 +198,7 @@ export async function countCompleted(order: Order, repository: Repo): Promise<vo
     if (!person) continue;
     const signals = id === order.buyerId ? person.buyerTrust : person.sellerTrust;
     signals.completedTransactions += 1;
+    if (id === order.sellerId) await recordSellerRates(order, person.sellerTrust, repository);
     person.updatedAt = now;
     await repository.updateUser(person);
   }

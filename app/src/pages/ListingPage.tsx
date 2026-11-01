@@ -386,6 +386,20 @@ export function ListingPage() {
                   <dd>{seller.completedSales}</dd>
                   <dd className="sellercard__note">Delivered, no lost disputes</dd>
                 </div>
+                {seller.onTimeDispatchRate !== null && (
+                  <div className={`sellercard__stat sellercard__stat--${seller.onTimeDispatchRate >= 0.9 ? 'ok' : seller.onTimeDispatchRate >= 0.7 ? 'warn' : 'low'}`}>
+                    <dt><Svg name="calendar" size={13} /> On time</dt>
+                    <dd>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></dd>
+                    <dd className="sellercard__note">Dispatched by the promised date</dd>
+                  </div>
+                )}
+                {seller.repeatCustomerRate !== null && (
+                  <div className="sellercard__stat">
+                    <dt><Svg name="users" size={13} /> Repeat buyers</dt>
+                    <dd>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></dd>
+                    <dd className="sellercard__note">Ordered more than once</dd>
+                  </div>
+                )}
                 <div className="sellercard__stat">
                   <dt><Svg name="calendar" size={13} /> Here since</dt>
                   <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>

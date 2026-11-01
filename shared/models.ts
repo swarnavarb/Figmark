@@ -164,6 +164,13 @@ export interface SellerTrustSignals extends TrustSignals {
   onTimeDispatchRate: number | null;
   /** Fraction of buyers who ordered more than once. */
   repeatCustomerRate: number | null;
+  /**
+   * The counts behind `onTimeDispatchRate`: completed orders that had a
+   * promised dispatch date, and how many of those left by it. Kept as counts
+   * so one more order updates the rate without rereading history.
+   */
+  dispatchPromised?: number;
+  dispatchOnTime?: number;
 }
 
 /**
