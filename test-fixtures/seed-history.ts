@@ -77,6 +77,11 @@ export function seedDeliveredHistory(): Order[] {
         ...(arrived ? { delivered: arrived } : {}),
       },
       accepted: true, acceptedAt: placed,
+      // The buyer's UPI claim, answered a few hours on: the shop's confirm time.
+      paymentClaim: {
+        claimedAt: iso(-placedAgo + 0.5), reference: `UPI${100200 + n}`, screenshot: null,
+        decision: 'accepted', decidedAt: iso(-placedAgo + 0.5 + ((n % 4) + 2) / 24), decidedReason: null,
+      },
       deliveryEta: eta,
       hold: { state: 'none', amountMinor: price, heldAt: null, releasedAt: null, autoReleaseAt: null, disputeId: null },
       placedAt: placed,

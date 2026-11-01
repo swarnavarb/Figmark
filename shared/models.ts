@@ -175,6 +175,11 @@ export interface SellerTrustSignals extends TrustSignals {
   onTimeDelivered?: number;
   /** Fraction of buyers who ordered more than once. */
   repeatCustomerRate: number | null;
+  /**
+   * Public stat: median hours the shop takes to answer a booking or confirm a
+   * payment, from its last 90 days. Null below three answers.
+   */
+  confirmHours?: number | null;
 }
 
 /**
@@ -915,7 +920,7 @@ export interface Listing extends BaseDocument {
   /** Buyers may pay this percentage up front instead of the full amount. Null or absent: full only. */
   advancePercent?: number | null;
   /**
-   * Days from the order being placed to the buyer holding it - "45-50 days".
+   * Days from the order being placed to the buyer receiving it in hand - "45-50 days".
    * Asked on every new listing; absent only on listings from before it was.
    * Each order copies it, and the shop's on-time rate is measured against it.
    */

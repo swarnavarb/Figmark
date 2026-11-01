@@ -203,8 +203,6 @@ export function earnedTags(orders: readonly {
     if (median <= 2) out.push({ id: 'fast_dispatch', label: 'Ships within 2 days' });
     else if (median <= 4) out.push({ id: 'fast_dispatch', label: 'Ships within 4 days' });
   }
-  const delivered = orders.filter((order) => order.status === 'delivered').length;
-  const step = [500, 100, 50, 10].find((at) => delivered >= at);
-  if (step) out.push({ id: 'delivered', label: `${step}+ orders delivered` });
+  // No "100+ orders delivered": how much a shop has sold is never shown to buyers.
   return out;
 }

@@ -3474,9 +3474,11 @@ await check('a review of a trade carries what it was written about', async () =>
 await check("the credit record counts rows rather than reporting a stored grade", async () => {
   const body = (await credit(req({ params: { id: 'usr_kaiju' } }), ctx)).jsonBody;
   assert.ok(body.memberSince, 'how long they have been here');
-  assert.ok(body.asSeller.sold >= 0 && body.asBuyer.bought >= 0);
-  // Praised can never exceed rated: that would mean counting reviews twice.
-  assert.ok(body.asSeller.praised <= body.asSeller.rated);
+  assert.ok(body.asBuyer.bought >= 0);
+  // A shop's record is shares: how much it has sold is never public.
+  assert.equal(body.asSeller.sold, undefined);
+  assert.equal(body.asSeller.completed, undefined);
+  assert.ok(body.asSeller.deliveredRate === null || (body.asSeller.deliveredRate >= 0 && body.asSeller.deliveredRate <= 100));
   assert.ok(body.asBuyer.praised <= body.asBuyer.rated);
 });
 
@@ -12115,7 +12117,8 @@ console.log('\nshop tags');
       status: 'delivered', createdAt: at(0), placedAt: at(0), checkpoints: { dispatched: at(1) },
     }));
     const labels = tagsLib.earnedTags(fast).map((tag) => tag.label);
-    assert.deepEqual(labels, ['Ships within 2 days', '10+ orders delivered']);
+    // How many a shop has delivered is never a badge: buyers are not told a shop's sales.
+    assert.deepEqual(labels, ['Ships within 2 days']);
     assert.deepEqual(tagsLib.earnedTags(fast.slice(0, 3)), [], 'too few to say');
   });
 

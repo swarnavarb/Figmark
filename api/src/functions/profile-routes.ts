@@ -11,6 +11,7 @@ import { moderation } from '../moderation.js';
 import { error, handler, json } from './http.js';
 import { confirmDetailsOn } from './order-routes.js';
 import { reviewSide } from '../../../shared/storefront.js';
+import { GONE_STATUSES } from '../../../shared/customers.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { ownPhotoName } from '../storage/index.js';
 
@@ -43,6 +44,9 @@ function summarise(reviews: readonly Review[], direction: string) {
   return { average: scoreFrom(ratings), count: ratings.length };
 }
 
+/** Orders that have ended one way or the other. */
+const FINISHED: ReadonlySet<string> = new Set(['delivered', ...GONE_STATUSES]);
+
 /**
  * How an account reads to somebody deciding whether to deal with it.
  *
@@ -58,12 +62,11 @@ function creditFrom(orders: { asSeller: Order[]; asBuyer: Order[] }, reviews: re
   const rate = (good: number, total: number) => (total === 0 ? null : Math.round((good / total) * 100));
 
   return {
+    // A shop's side is shares, never counts: nobody is told how much a shop
+    // has sold, so "delivered" is the share of its finished orders that arrived.
     asSeller: {
-      sold: orders.asSeller.length,
-      completed: done(orders.asSeller),
-      praised: praised('buyer_to_seller'),
-      rated: rated('buyer_to_seller'),
       goodRate: rate(praised('buyer_to_seller'), rated('buyer_to_seller')),
+      deliveredRate: rate(done(orders.asSeller), orders.asSeller.filter((order) => FINISHED.has(order.status)).length),
       disputes: disputesLost,
     },
     asBuyer: {
@@ -81,7 +84,7 @@ function creditFrom(orders: { asSeller: Order[]; asBuyer: Order[] }, reviews: re
  * GET /api/users/{id}/credit - the whole record behind the two words on the page.
  *
  * "Excellent" on a card means nothing without what is behind it, so tapping it
- * opens this: how much they have sold and bought, how much of it was praised,
+ * opens this: how much they have bought (a shop's sales stay private), how much of it was praised,
  * how many arguments they lost, how long they have been here, and what has
  * actually been verified about them. Nothing here is a grade we invented - each
  * number names the rows it counted.

@@ -221,6 +221,38 @@ export function replyTimes(orders: readonly Order[], now = Date.now()): ReplyTim
   };
 }
 
+/** Answers a shop needs before its confirm time is shown. */
+export const CONFIRM_MIN_ANSWERS = 3;
+
+/**
+ * The shop's public confirm time: median hours from a booking or a payment
+ * claim to the shop answering it, over the last `days`. Null below
+ * CONFIRM_MIN_ANSWERS, so one quick reply is not a promise.
+ */
+export function confirmHours(orders: readonly Order[], now = Date.now(), days = 90): number | null {
+  const since = now - days * DAY;
+  const recent = orders.filter((order) => order.placedAt !== null && Date.parse(placedOf(order)) >= since);
+  const answers: number[] = [];
+  for (const order of recent) {
+    if (order.bookingOnly) {
+      const answered = order.acceptedAt ?? (order.status === 'rejected' ? order.updatedAt : null);
+      if (answered) answers.push(Math.max(0, (Date.parse(answered) - Date.parse(placedOf(order))) / 3_600_000));
+    }
+    const asked = order.paymentClaim;
+    if (asked?.decidedAt) answers.push(Math.max(0, (Date.parse(asked.decidedAt) - Date.parse(asked.claimedAt)) / 3_600_000));
+  }
+  if (answers.length < CONFIRM_MIN_ANSWERS) return null;
+  const value = median(answers);
+  return value === null ? null : Math.round(value * 10) / 10;
+}
+
+/** "Under 1h", "5h", "2 days": a confirm time as a buyer reads it. */
+export function confirmLabel(hours: number): string {
+  if (hours < 1) return 'Under 1h';
+  if (hours < 48) return `${Math.round(hours)}h`;
+  return `${Math.round(hours / 24)} days`;
+}
+
 /* ── Interests ─────────────────────────────────────────────────────────── */
 
 export interface Interest {

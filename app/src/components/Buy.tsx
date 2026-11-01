@@ -448,7 +448,7 @@ export function EtaFields({ value, onChange }: { value: TermsDraft; onChange: (n
   return (
     <LBox icon="🚚" title="Delivery time" hint={etaOf(value) && !etaIssue
       ? `Buyers see "Arrives in ${etaLabel(etaOf(value))}". Your on-time rate is worked out from it.`
-      : 'Required. Days from the order being placed to the buyer holding it.'}>
+      : 'Required. Days from the order being placed to the buyer receiving it in hand.'}>
       <div className="etafields">
         <label className="field">
           <span>Quickest (days)</span>

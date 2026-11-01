@@ -322,8 +322,8 @@ export interface SellerCard {
   onTimeMeasured?: number;
   /** Share of buyers who ordered more than once; null with too few buyers. */
   repeatCustomerRate: number | null;
-  /** Orders delivered without being lost in a dispute. */
-  completedSales: number;
+  /** Median hours to answer a booking or confirm a payment; null with too few answers. */
+  confirmHours: number | null;
   memberSince: string;
   photoUrl?: string | null;
   coverUrl?: string | null;
@@ -713,7 +713,8 @@ export interface CreditSide {
 
 export interface Credit {
   memberSince: string;
-  asSeller: CreditSide & { sold: number };
+  /** A shop's record is shares, never counts: buyers are not told how much a shop has sold. */
+  asSeller: { goodRate: number | null; deliveredRate: number | null; disputes: number };
   asBuyer: CreditSide & { bought: number };
   seller: RatingSummary;
   buyer: RatingSummary;

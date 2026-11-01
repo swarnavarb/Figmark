@@ -13,6 +13,7 @@ import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
 import { factsOf } from '@shared/catalog';
 import { etaLabel } from '@shared/delivery-eta';
+import { confirmLabel } from '@shared/customers';
 import { FillBlock } from '../components/FillMeter';
 import { brandHueFor, daysUntil, formatDate, formatDateTime, formatMoney, timeAgo } from '../format';
 import { PreOrderRules, isoInDays } from '../components/ListingForm';
@@ -399,43 +400,7 @@ export function ListingPage() {
               </div>
               </div>
 
-              <dl className="sellercard__stats">
-                <div className={`sellercard__stat sellercard__stat--${seller.trustScore >= 80 ? 'ok' : seller.trustScore >= 50 ? 'warn' : 'low'}`}>
-                  <dt><Svg name="star" size={13} /> Trust</dt>
-                  <dd>{seller.trustScore}<small>/100</small></dd>
-                  <dd className="sellercard__note">From buyer reviews</dd>
-                </div>
-                <div className="sellercard__stat">
-                  <dt><Svg name="users" size={13} /> Followers</dt>
-                  <dd>{seller.followerCount}</dd>
-                  <dd className="sellercard__note">Get their new drops</dd>
-                </div>
-                <div className="sellercard__stat">
-                  <dt><Svg name="box" size={13} /> Sales</dt>
-                  <dd>{seller.completedSales}</dd>
-                  <dd className="sellercard__note">Delivered, no lost disputes</dd>
-                </div>
-                <div className={`sellercard__stat${seller.onTimeDispatchRate == null ? '' : seller.onTimeDispatchRate >= 0.9 ? ' sellercard__stat--ok' : seller.onTimeDispatchRate >= 0.7 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
-                  <dt><Svg name="clock" size={13} /> On time</dt>
-                  <dd>{seller.onTimeDispatchRate == null ? 'New' : <>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></>}</dd>
-                  <dd className="sellercard__note">
-                    {seller.onTimeDispatchRate == null
-                      ? 'Shown after 5 deliveries'
-                      : `Of ${seller.onTimeMeasured ?? 0} orders, within promised days`}
-                  </dd>
-                </div>
-                <div className="sellercard__stat">
-                  <dt><Svg name="reply" size={13} /> Repeat buyers</dt>
-                  <dd>{seller.repeatCustomerRate == null ? '—' : <>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></>}</dd>
-                  <dd className="sellercard__note">Bought here again</dd>
-                </div>
-                <div className="sellercard__stat">
-                  <dt><Svg name="calendar" size={13} /> Here since</dt>
-                  <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>
-                  <dd className="sellercard__note">On Figmark</dd>
-                </div>
-              </dl>
-
+              {/* Follow and Message first: what a buyer came to the card to do. */}
               {!data.isOwn && (
                 <div className="sellercard__acts">
                   <button className={`btn btn--sm ${data.following ? 'btn--ghost' : ''}${lock}`}
@@ -452,6 +417,42 @@ export function ListingPage() {
                   )}
                 </div>
               )}
+              <dl className="sellercard__stats">
+                <div className={`sellercard__stat sellercard__stat--${seller.trustScore >= 80 ? 'ok' : seller.trustScore >= 50 ? 'warn' : 'low'}`}>
+                  <dt><Svg name="star" size={13} /> Trust</dt>
+                  <dd>{seller.trustScore}<small>/100</small></dd>
+                  <dd className="sellercard__note">From buyer reviews</dd>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="users" size={13} /> Followers</dt>
+                  <dd>{seller.followerCount}</dd>
+                  <dd className="sellercard__note">Get their new drops</dd>
+                </div>
+                {/* How many a shop has sold is never shown: how fast it answers is. */}
+                <div className={`sellercard__stat${seller.confirmHours == null ? '' : seller.confirmHours <= 12 ? ' sellercard__stat--ok' : seller.confirmHours <= 48 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
+                  <dt><Svg name="bolt" size={13} /> Confirms in</dt>
+                  <dd>{seller.confirmHours == null ? 'New' : confirmLabel(seller.confirmHours)}</dd>
+                  <dd className="sellercard__note">Typical time to accept an order or payment</dd>
+                </div>
+                <div className={`sellercard__stat${seller.onTimeDispatchRate == null ? '' : seller.onTimeDispatchRate >= 0.9 ? ' sellercard__stat--ok' : seller.onTimeDispatchRate >= 0.7 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
+                  <dt><Svg name="clock" size={13} /> On time</dt>
+                  <dd>{seller.onTimeDispatchRate == null ? 'New' : <>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></>}</dd>
+                  <dd className="sellercard__note">
+                    {seller.onTimeDispatchRate == null ? 'Shown once enough orders arrive' : 'Arrived within the promised days'}
+                  </dd>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="reply" size={13} /> Repeat buyers</dt>
+                  <dd>{seller.repeatCustomerRate == null ? '—' : <>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></>}</dd>
+                  <dd className="sellercard__note">Bought here again</dd>
+                </div>
+                <div className="sellercard__stat">
+                  <dt><Svg name="calendar" size={13} /> Here since</dt>
+                  <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>
+                  <dd className="sellercard__note">On Figmark</dd>
+                </div>
+              </dl>
+
             </div>
           )}
         </aside>

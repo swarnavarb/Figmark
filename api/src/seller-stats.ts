@@ -13,6 +13,7 @@
  * anything, and the number has to notice.
  */
 import { onTimeStats, punctuality, repeatCustomerRate, type OnTimeStats } from '../../shared/delivery-eta.js';
+import { confirmHours } from '../../shared/customers.js';
 import type { User } from '../../shared/models.js';
 import type { getRepository } from './data/index.js';
 
@@ -36,6 +37,7 @@ export function refreshSellerStats(repository: Repo, sellerId: string, now = new
     const stats = onTimeStats(orders, now);
     const repeat = repeatCustomerRate(orders);
     const delivered = orders.filter((order) => punctuality(order, now) === 'on_time').length;
+    const confirm = confirmHours(orders, now.getTime());
     const owner = await repository.getUserById(sellerId);
     if (!owner?.sellerProfile) return null;
     const trust = owner.sellerTrust;
@@ -43,6 +45,7 @@ export function refreshSellerStats(repository: Repo, sellerId: string, now = new
       && trust.onTimeMeasured === stats.measured
       && trust.repeatCustomerRate === repeat
       && trust.onTimeDelivered === delivered
+      && (trust.confirmHours ?? null) === confirm
       && trust.computedAt && now.getTime() - Date.parse(trust.computedAt) < STALE_MS / 2;
     if (!unchanged) {
       owner.sellerTrust = {
@@ -51,6 +54,7 @@ export function refreshSellerStats(repository: Repo, sellerId: string, now = new
         onTimeMeasured: stats.measured,
         repeatCustomerRate: repeat,
         onTimeDelivered: delivered,
+        confirmHours: confirm,
         computedAt: now.toISOString(),
       };
       // A count is never the reason a request fails: a write that loses a race

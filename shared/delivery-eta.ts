@@ -11,7 +11,7 @@
 import type { Order } from './models.js';
 import { isStopped } from './orders.js';
 
-/** Days from placing the order to the buyer holding it. */
+/** Days from the order being placed to the buyer receiving it in hand. */
 export interface DeliveryEta {
   minDays: number;
   maxDays: number;

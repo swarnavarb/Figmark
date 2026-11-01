@@ -77,8 +77,9 @@ function toSellerCard(user: SellerCardSource) {
     onTimeDispatchRate: user.sellerTrust.onTimeDispatchRate,
     onTimeMeasured: user.sellerTrust.onTimeMeasured ?? 0,
     repeatCustomerRate: user.sellerTrust.repeatCustomerRate,
-    // Orders delivered and not lost in a dispute, counted as each one lands.
-    completedSales: user.sellerTrust.completedTransactions,
+    // How fast the shop answers a booking or a payment. A shop's sales total
+    // is never shown to buyers, here or anywhere else.
+    confirmHours: user.sellerTrust.confirmHours ?? null,
     memberSince: user.createdAt,
     // The shop's own picture and banner, so its card looks like its page.
     photoUrl: user.sellerProfile?.photoUrl ?? null,
