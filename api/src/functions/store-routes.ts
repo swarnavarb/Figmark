@@ -32,6 +32,8 @@ import { gistOf } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { error, handler, json } from './http.js';
 import { audited } from '../audit.js';
+import { config } from '../config.js';
+import { createDemoStores } from '../demo-stores.js';
 import { ownPhotoName, ownPhotos } from '../storage/index.js';
 
 /**
@@ -1432,6 +1434,23 @@ export const crewLotRoute = handler(crewLot);
 export const opsStoresRoute = handler(opsStores);
 export const opsReviewRoute = audited('store.review', handler(opsReview));
 
+/**
+ * POST /api/ops/demo-stores - a demo forwarder and a demo artist, with the
+ * operator on both teams. For trying the services on a test site; refused on
+ * production, where a store nobody runs would sit in the real directory.
+ */
+async function opsDemoStores(request: HttpRequest, _context: InvocationContext) {
+  const user = await operator(request);
+  if (config.siteEnvironment === 'production') return error(403, 'not_here', 'Demo stores are for the development site only.');
+  const repository = await getRepository();
+  const account = await repository.getUserById(user.id);
+  if (!account) return error(404, 'not_found', 'No such account.');
+  const stores = await createDemoStores(repository, account);
+  for (const store of stores) forgetPageStats(store.kind, store.ownerId);
+  return json(200, { stores });
+}
+export const opsDemoStoresRoute = audited('store.demo', handler(opsDemoStores));
+
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('my-services', { ...anon, methods: ['GET'], route: 'me/services', handler: myServicesRoute });
@@ -1451,4 +1470,5 @@ app.http('order-insurance', { ...anon, methods: ['POST'], route: 'orders/{id}/in
 app.http('order-commission', { ...anon, methods: ['POST'], route: 'orders/{id}/commission', handler: commissionRoute });
 app.http('order-commission-act', { ...anon, methods: ['POST'], route: 'orders/{id}/commission/act', handler: commissionActRoute });
 app.http('ops-stores', { ...anon, methods: ['GET'], route: 'ops/stores', handler: opsStoresRoute });
+app.http('ops-demo-stores', { ...anon, methods: ['POST'], route: 'ops/demo-stores', handler: opsDemoStoresRoute });
 app.http('ops-store-review', { ...anon, methods: ['POST'], route: 'ops/stores/{kind}/{ownerId}/review', handler: opsReviewRoute });
