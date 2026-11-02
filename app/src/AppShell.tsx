@@ -10,6 +10,7 @@ import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon, Modal } from './components/ui';
 import { api, type ServiceStoreRole } from './api';
+import { useVoice } from './components/SocialVoice';
 import { useSession } from './session';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
 import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
@@ -291,14 +292,18 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
     if (!open || services) return;
     void api.myServiceStores().then((result) => setServices(result.stores)).catch(() => setServices([]));
   }, [open, services]);
+  // Switching is who you are, not just where you go: the same choice as the
+  // picker on Social, so likes, comments, votes and posts there come from the
+  // profile switched to. `voice` is the id Social speaks as (null for you).
+  const { voice: acting, choose } = useVoice();
   const roles = [
-    { id: 'buy', emoji: '🛍️', label: 'Buying', to: '/', on: !pathname.startsWith('/shop') && !pathname.startsWith('/services/store/') },
-    ...(user?.sellerProfile ? [{ id: 'shop', emoji: '🏪', label: user.sellerProfile.storefrontName || 'My store', to: '/shop', on: pathname.startsWith('/shop') }] : []),
-    ...(services ?? []).map((row) => {
-      const to = `/services/store/${row.kind}/${row.ownerId}`;
-      return { id: `${row.kind}:${row.ownerId}`, emoji: row.kind === 'forwarder' ? '✈️' : '🎨', label: row.name, to, on: pathname.startsWith(to) };
-    }),
-  ];
+    { id: 'buy', voice: null as string | null, emoji: '🛍️', label: 'Buying', to: '/' },
+    ...(user?.sellerProfile ? [{ id: 'shop', voice: user.id, emoji: '🏪', label: user.sellerProfile.storefrontName || 'My store', to: '/shop' }] : []),
+    ...(services ?? []).map((row) => ({
+      id: `${row.kind}:${row.ownerId}`, voice: `${row.kind}:${row.ownerId}`, emoji: row.kind === 'forwarder' ? '✈️' : '🎨',
+      label: row.name, to: `/services/store/${row.kind}/${row.ownerId}`,
+    })),
+  ].map((role) => ({ ...role, on: role.voice === acting.storeId }));
 
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -330,7 +335,8 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
               <Link to="/open" className="pmenu__open" aria-label="Open another business"><Icon name="plus" size={12} /> Open</Link>
             </span>
             {roles.map((role) => (
-              <Link key={role.id} role="menuitemradio" aria-checked={role.on} to={role.to} className={`pmenu__item pmenu__role${role.on ? ' is-on' : ''}`}>
+              <Link key={role.id} role="menuitemradio" aria-checked={role.on} to={role.to} className={`pmenu__item pmenu__role${role.on ? ' is-on' : ''}`}
+                onClick={() => choose(role.voice)}>
                 {role.emoji} <span>{role.label}</span>{role.on && <Icon name="check" size={14} />}
               </Link>
             ))}

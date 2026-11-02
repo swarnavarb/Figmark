@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { SessionProvider, useSession } from './session';
+import { VoiceProvider } from './components/SocialVoice';
 import { PageLoading, ToastHost } from './components/Feedback';
 import { UndoHost } from './components/Undo';
 import { QuestProvider } from './components/Quest';
@@ -225,7 +226,10 @@ createRoot(container).render(
         <ToastHost>
           <UndoHost>
             <ErrorBoundary>
-              <App />
+              {/* Who you are acting as - you, your shop, a service store - for the whole app. */}
+              <VoiceProvider>
+                <App />
+              </VoiceProvider>
             </ErrorBoundary>
           </UndoHost>
         </ToastHost>

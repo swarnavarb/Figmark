@@ -1728,7 +1728,8 @@ function PostShareSheet({ card, onClose, onShared }: {
   const [elsewhere, setElsewhere] = useState(false);
   // Share the original when this is a repost: that is what the link should open.
   const target = card.original?.post ?? card.post;
-  const canRepost = (target.reach ?? 'feed') === 'feed';
+  // A freight or art store has no wall to repost onto: it shares the link.
+  const canRepost = (target.reach ?? 'feed') === 'feed' && !voice.storeId?.includes(':');
   const canNative = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
   async function count(mode: 'repost' | 'link', body?: string) {

@@ -141,6 +141,16 @@ export interface Actor {
 export async function actorFor(request: HttpRequest, user: Viewer, repository: Repo): Promise<Actor | null> {
   const asked = request.query?.get('as')?.trim() || null;
   if (!asked) return { userId: user.id, storeId: null, key: user.id, name: user.displayName };
+  // A freight forwarder or an artist, as `kind:ownerId`: whoever has the
+  // store's voice reacts, comments and votes as the company, the way they post.
+  const service = parseStoreKey(asked);
+  if (service) {
+    const owner = await repository.getUserById(service.ownerId);
+    const store = owner ? storeOf(owner, service.kind) : null;
+    if (!owner || !store || !storeIsLive(store) || owner.suspended || !rightsIn(owner, service.kind, user.id).includes('voice')) return null;
+    const id = storeKey(service.kind, owner.id);
+    return { userId: user.id, storeId: id, key: actorKey(user.id, id), name: store.companyName };
+  }
   const owner = asked === user.id ? await repository.getUserById(user.id) : await repository.getUserById(asked);
   if (!owner?.sellerProfile || !can(owner, user.id, 'posts')) return null;
   return {
@@ -213,9 +223,26 @@ function pollView(poll: StoredPoll | null | undefined, viewerId: string): PollVi
   };
 }
 
+/**
+ * The account to read for a voice: the shop's own id, or for a freight or art
+ * store (`kind:ownerId`) the account that owns it.
+ */
+export const voiceAccount = (asStore: string): string => parseStoreKey(asStore)?.ownerId ?? asStore;
+
+/** A freight or art store's name and page, from its owner's account. */
+function serviceRef(asStore: string, people: Map<string, User>, fallback?: string): PartyRef | null {
+  const key = parseStoreKey(asStore);
+  if (!key) return null;
+  const owner = people.get(key.ownerId);
+  const store = owner ? storeOf(owner, key.kind) : null;
+  if (!store) return { name: fallback ?? 'A store', handle: null };
+  return { name: store.companyName, handle: null, href: `/services/${key.kind}/${store.directorySlug}` };
+}
+
 /** A name and an address for a reaction or a comment: the shop it was given as, or the person. */
 function partyOf(userId: string, asStore: string | null | undefined, people: Map<string, User>, fallback?: string): PartyRef {
-  return asStore ? sellerRef(people.get(asStore), fallback) : personRef(people.get(userId), fallback);
+  if (!asStore) return personRef(people.get(userId), fallback);
+  return serviceRef(asStore, people, fallback) ?? sellerRef(people.get(asStore), fallback);
 }
 
 function commentView(comment: StoredComment, post: Post, viewer: Actor, people: Map<string, User>): CommentView {
@@ -276,8 +303,8 @@ async function peopleFor(posts: readonly Post[], repository: Repo, extra: readon
     // Whose channel it is decides whether the name opens a shop.
     if (post.channel === 'seller') ids.add(post.channelId);
     // Only the names the summary line uses, not every reactor on a busy post.
-    for (const reaction of newestReactions(post)) ids.add(reaction.asStore ?? reaction.userId);
-    for (const comment of previewOf(post)) ids.add(comment.asStore ?? comment.authorId);
+    for (const reaction of newestReactions(post)) ids.add(reaction.asStore ? voiceAccount(reaction.asStore) : reaction.userId);
+    for (const comment of previewOf(post)) ids.add(comment.asStore ? voiceAccount(comment.asStore) : comment.authorId);
   }
   const users = await repository.listUsersByIds([...ids]);
   return new Map(users.map((user) => [user.id, user]));
@@ -437,6 +464,7 @@ export async function decorate(
         : null,
       social: {
         reactions: summarise(post.reactions ?? [], viewer.key, (reaction) => {
+          if (reaction.asStore && parseStoreKey(reaction.asStore)) return serviceRef(reaction.asStore, people)?.name ?? null;
           const who = people.get(reaction.asStore ?? reaction.userId);
           return reaction.asStore ? who?.sellerProfile?.storefrontName ?? null : who?.displayName ?? null;
         }),
@@ -506,6 +534,14 @@ const listeners = (owner: Owner, actor: Actor) =>
   (owner.storeId && owner.storeId === actor.storeId ? [] : owner.audience);
 
 async function storeOwner(storeId: string, repository: Repo): Promise<Owner | null> {
+  const service = parseStoreKey(storeId);
+  if (service) {
+    const owner = await repository.getUserById(service.ownerId);
+    const store = owner ? storeOf(owner, service.kind) : null;
+    if (!owner || !store) return null;
+    const voices = (store.team ?? []).filter((member) => rightsIn(owner, service.kind, member.userId).includes('voice'));
+    return { audience: [owner.id, ...voices.map((member) => member.userId)], store: store.companyName, storeId: storeKey(service.kind, owner.id) };
+  }
   const owner = await repository.getUserById(storeId);
   if (!owner?.sellerProfile) return null;
   return { audience: storeCrew(owner, 'posts'), store: owner.sellerProfile.storefrontName, storeId: owner.id };
@@ -518,7 +554,7 @@ async function postOwner(post: Post, repository: Repo): Promise<Owner> {
     const store = owner ? storeOf(owner, post.service.kind) : null;
     if (owner && store) {
       const voices = (store.team ?? []).filter((member) => rightsIn(owner, post.service!.kind, member.userId).includes('voice'));
-      return { audience: [owner.id, ...voices.map((member) => member.userId)], store: store.companyName, storeId: null };
+      return { audience: [owner.id, ...voices.map((member) => member.userId)], store: store.companyName, storeId: storeKey(post.service.kind, owner.id) };
     }
   }
   // Said in a shop's own voice, under the shop's name. A person's post on
@@ -1630,7 +1666,7 @@ async function shareable(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const actor = await actorFor(request, user, repository);
   if (!actor) return notYours();
-  if (!actor.storeId) return json(200, { listings: [] });
+  if (!actor.storeId || parseStoreKey(actor.storeId)) return json(200, { listings: [] });
   const listings = await repository.listListings({ sellerId: actor.storeId, limit: 40 });
   return json(200, {
     listings: listings.map((listing) => ({
@@ -2649,7 +2685,7 @@ async function cardFor(post: Post, repository: Repo, viewer: Actor): Promise<Pos
 
 /** The whole conversation, with every commenter's address resolved. */
 async function commentsFor(post: Post, repository: Repo, viewer: Actor): Promise<CommentThread[]> {
-  const ids = [...new Set((post.comments ?? []).map((comment) => comment.asStore ?? comment.authorId))];
+  const ids = [...new Set((post.comments ?? []).map((comment) => (comment.asStore ? voiceAccount(comment.asStore) : comment.authorId)))];
   const people = new Map((await repository.listUsersByIds(ids)).map((user) => [user.id, user]));
   // Comments an operator took down after a dispute are gone for everybody;
   // the rest carry what the report button under them needs to say.
@@ -2780,7 +2816,7 @@ async function reactors(request: HttpRequest, _context: InvocationContext) {
   if (!(await mayRead(post, user.id, repository))) return followFirst();
   const reactions = [...(post.reactions ?? [])].sort((a, b) => (a.at < b.at ? 1 : -1));
   const people = new Map(
-    (await repository.listUsersByIds(reactions.map((reaction) => reaction.asStore ?? reaction.userId)))
+    (await repository.listUsersByIds(reactions.map((reaction) => (reaction.asStore ? voiceAccount(reaction.asStore) : reaction.userId))))
       .map((user) => [user.id, user]),
   );
   const rows: ReactorRow[] = reactions.map((reaction) => ({
@@ -3003,6 +3039,10 @@ async function sharePost(request: HttpRequest, _context: InvocationContext) {
 
   let repost: Post | null = null;
   if (body.mode === 'repost') {
+    // A freight or art store has no wall of its own to pass things on to.
+    if (actor.storeId && parseStoreKey(actor.storeId)) {
+      return error(400, 'invalid_share', 'A service store shares the link. Switch to your profile to repost.');
+    }
     const text = typeof body.body === 'string' ? body.body.trim() : '';
     if (text.length > 2000) return error(400, 'invalid_post', 'Keep a post under 2000 characters.');
     // Posts that stay in a room were said to that room, not to the world.
