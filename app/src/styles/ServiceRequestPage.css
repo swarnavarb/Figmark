@@ -1,0 +1,34 @@
+/* Styles only pages/ServiceRequestPage.tsx writes: one request, as its customer follows it. */
+.srq-page { max-width: 1000px; }
+.srq-sent { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 12px 14px; border-radius: var(--r-md); background: var(--ok-soft); color: var(--ok); font-size: var(--t-sm); }
+.srq-head { display: grid; gap: 12px; margin-bottom: 20px; padding: 20px; border: 1px solid var(--border); border-radius: var(--r-xl);
+  background: linear-gradient(150deg, var(--sk-soft), transparent 55%), var(--surface); }
+.srq-head h1 { margin: 0; font-size: clamp(1.4rem, 3.6vw, 2rem); letter-spacing: -0.02em; }
+.srq-head__store { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+.srq-head__store > span { display: grid; gap: 2px; }
+.srq-head__status { display: grid; gap: 8px; max-width: 420px; }
+.srq-head__status .badge { justify-self: start; }
+.srq-money { display: flex; flex-wrap: wrap; gap: 1px; border-radius: var(--r-md); overflow: hidden; background: var(--border); border: 1px solid var(--border); }
+.srq-money > span { flex: 1 1 120px; display: grid; gap: 2px; padding: 10px 14px; background: var(--surface); }
+.srq-money .faint { font-size: var(--t-xs); }
+.srq-money b { font-size: var(--t-lg); }
+.srq-layout { display: grid; gap: 20px; }
+@media (min-width: 880px) { .srq-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; } }
+.srq-next { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--sk-line); border-radius: var(--r-lg); background: var(--surface); }
+.srq-next h2 { margin: 0; font-size: var(--t-lg); }
+.srq-next p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+.srq-next blockquote { margin: 0; padding: 10px 14px; border-left: 3px solid var(--sk); background: var(--surface-2); border-radius: 0 var(--r-md) var(--r-md) 0; font-size: var(--t-sm); }
+.srq-next--warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.srq-next--ok { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.srq-pay { display: grid; gap: 1px; margin: 0; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--border); background: var(--border); }
+.srq-pay > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; padding: 9px 12px; background: var(--surface-2); }
+.srq-pay dt { color: var(--text-faint); font-size: var(--t-xs); }
+.srq-pay dd { margin: 0; font-size: var(--t-sm); overflow-wrap: anywhere; }
+.srq-address { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--r-md); background: var(--sk-soft); }
+.srq-address p { margin: 0; color: var(--text); white-space: pre-line; }
+.srq-track { display: flex; align-items: center; gap: 6px; }
+.srq-rated { display: flex; align-items: center; gap: 8px; }
+.srq-sec { display: grid; gap: 10px; }
+.srq-sec h2 { margin: 0; font-size: var(--t-md); }
+.srq-sec .faint { margin: 0; font-size: var(--t-xs); }
+.srq-text { margin: 0; white-space: pre-line; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.6; }

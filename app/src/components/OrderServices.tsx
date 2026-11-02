@@ -166,7 +166,7 @@ function CommissionCard({ orderId, view, onChanged, onError }: {
         <span className="os-card__icon os-card__icon--art" aria-hidden="true"><Icon name="spark" size={20} /></span>
         <span>
           <span className="os-card__title">Customise it with an artist</span>
-          <span className="faint">Repaint, custom head, a diorama base, a repair — by a studio Figmark approved.</span>
+          <span className="faint">Repaint, custom head, a diorama base, a repair — by an artist studio, rated by the people it worked for.</span>
         </span>
       </div>
       <div className="os-artists">

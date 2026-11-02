@@ -29,6 +29,7 @@ import './functions/pro-routes.js';
 import './functions/customer-routes.js';
 import './functions/service-routes.js';
 import './functions/store-routes.js';
+import './functions/service-work-routes.js';
 import './functions/tracking-routes.js';
 import './functions/template-routes.js';
 import './functions/admin-routes.js';

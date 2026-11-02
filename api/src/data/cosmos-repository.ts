@@ -1,4 +1,5 @@
 import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
+import type { ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
@@ -1199,6 +1200,57 @@ export class CosmosRepository implements Repository {
       parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
     }).fetchAll();
     return resources;
+  }
+
+  async listServiceWork<T extends ServiceWorkDoc>(storeId: string, type: T['type'], limit = 500): Promise<T[]> {
+    const { resources } = await this.container('serviceWork')
+      .items.query<T>({
+        query: 'SELECT TOP @limit * FROM c WHERE c.type = @type ORDER BY c.createdAt DESC',
+        parameters: [{ name: '@type', value: type }, { name: '@limit', value: limit }],
+      }, { partitionKey: storeId })
+      .fetchAll();
+    return resources;
+  }
+
+  async getServiceWork<T extends ServiceWorkDoc>(storeId: string, id: string): Promise<T | null> {
+    try {
+      const { resource } = await this.container('serviceWork').item(id, storeId).read<T>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async saveServiceWork<T extends ServiceWorkDoc>(doc: T): Promise<T> {
+    const { resource } = await this.container('serviceWork').items.upsert<T>(doc);
+    return (resource as T | undefined) ?? doc;
+  }
+
+  async deleteServiceWork(storeId: string, id: string): Promise<void> {
+    try {
+      await this.container('serviceWork').item(id, storeId).delete();
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+    }
+  }
+
+  async listServiceRequestsBy(customerId: string): Promise<ServiceRequest[]> {
+    // Cross-partition, and bounded by how much one person has asked for.
+    const { resources } = await this.container('serviceWork')
+      .items.query<ServiceRequest>({
+        query: "SELECT * FROM c WHERE c.customerId = @id AND c.type = 'request' ORDER BY c.createdAt DESC",
+        parameters: [{ name: '@id', value: customerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async countServiceFollowers(storeId: string): Promise<number> {
+    const { resources } = await this.container('serviceWork')
+      .items.query<number>({ query: "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'follow'" }, { partitionKey: storeId })
+      .fetchAll();
+    return resources[0] ?? 0;
   }
 
   async listPledges(listingId: string): Promise<Pledge[]> {

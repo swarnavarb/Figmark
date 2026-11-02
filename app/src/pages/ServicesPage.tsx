@@ -8,6 +8,7 @@ import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, type StoreKind } from '@shared/
 import {
   ApiRequestError,
   api,
+  type RequestRow,
   type ConsignmentRow,
   type DistributionLot,
   type DistributionRow,
@@ -20,6 +21,7 @@ import { formatMoney } from '../format';
 import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName, PageError } from '../components/ui';
 import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
+import { RequestRowCard } from '../components/ServiceWorkKit';
 import { BackBar, BackLink } from '../components/ScrollManager';
 import { ConditionTag } from '../components/ConditionTag';
 import { Loading, PageLoading } from '../components/Feedback';
@@ -455,11 +457,15 @@ export function ServiceDirectoryPage() {
 export function MyServicesPage() {
   const { user } = useSession();
   const [mine, setMine] = useState<MyServicesView | null>(null);
+  const [asked, setAsked] = useState<RequestRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setMine(await api.myServices());
+      // What you asked stores for, beside the stores you run: one wait, not two.
+      const [services, requests] = await Promise.all([api.myServices(), api.myServiceRequests().catch(() => ({ requests: [] }))]);
+      setAsked(requests.requests);
+      setMine(services);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your services.');
     }
@@ -491,9 +497,19 @@ export function MyServicesPage() {
 
       {error && <ErrorNotice message={error} />}
 
+      {asked.length > 0 && (
+        <section className="stack" style={{ marginBottom: 22 }}>
+          <h2 className="ms-section"><Icon name="send" size={15} /> Your requests</h2>
+          {asked.map((row) => (
+            <RequestRowCard key={row.request.id} request={row.request} due={row.due} side="customer" actions={row.actions}
+              to={`/services/requests/${row.request.kind}/${row.request.ownerId}/${row.request.id}`} />
+          ))}
+        </section>
+      )}
+
       {mine === null ? (
         !error && <Loading />
-      ) : !enrolled(mine) ? (
+      ) : !enrolled(mine) ? (asked.length > 0 ? null :
         <EmptyState icon={<Icon name="users" size={26} />} title="You’re not enrolled in any services">
           When a shop names you on a lot — as its supplier or handler — the lot appears here. To run
           a forwarding company or an artist studio, apply from the ⋯ menu on{' '}

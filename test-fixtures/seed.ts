@@ -430,6 +430,8 @@ const LOTUS_STORE: Partial<ForwarderProfile> = {
   ],
   team: [],
   autoAccept: false,
+  payment: { upiId: 'lotusfreight@hdfc', accountName: 'Lotus Freight India Pvt Ltd', accountNumber: null, ifsc: null, instructions: 'Quote your FR- request number' },
+  terms: 'Quotes are valid for 7 days. Weights are taken at our Guangzhou warehouse and are final. Claims under a cover plan follow that plan’s terms.',
   warehouse: {
     address: 'Unit 12, Baiyun Logistics Park, Taihe Town, Baiyun District, Guangzhou 510540',
     contact: 'Mr. Chen · +86 138 0000 0101 · WeChat lotus_gz',
@@ -438,7 +440,21 @@ const LOTUS_STORE: Partial<ForwarderProfile> = {
   lanes: [
     { id: 'lane_gz_blr', originCity: 'Guangzhou', originCountry: 'China', destinationCity: 'Bengaluru', destinationCountry: 'India',
       mode: 'air', ratePerKgMinor: 48_000, minChargeKg: 5, transitDaysMin: 9, transitDaysMax: 12, customsIncluded: true,
-      note: 'Weekly consolidation, flies Saturday.', active: true },
+      note: 'Weekly consolidation, flies Saturday.', active: true,
+      products: [
+        { id: 'prod_boxed', name: 'Boxed figures & model kits', basis: 'kg', priceMinor: 45_000, note: 'Retail boxes, repacked flat where possible' },
+        { id: 'prod_statue', name: 'Resin statues', basis: 'kg', priceMinor: 56_000, note: 'Foam-crated, fragile handling' },
+        { id: 'prod_battery', name: 'Items with batteries', basis: 'kg', priceMinor: 62_000, note: 'LED bases, power banks — declared' },
+        { id: 'prod_cards', name: 'Sealed card boxes', basis: 'piece', priceMinor: 18_000, note: 'Per booster box' },
+      ],
+      volumetric: { divisor: 6000, mode: 'greater', note: 'Statue boxes are re-measured at our warehouse; we repack to cut volume at no charge.' },
+      orderInfo: 'Write your request number (FR-…) on every box. Cut-off Thursday 15:00 for the Saturday flight. Free storage for 14 days while you consolidate.',
+      terms: 'Liquids, powders, replica weapons and counterfeit goods are refused at the warehouse. Liability without cover is limited to ₹2,000 per parcel.',
+      extras: [
+        { label: 'Repacking', value: 'Free — original boxes kept if you ask' },
+        { label: 'Photos', value: 'Two photos of every parcel on arrival' },
+      ],
+      batteryAllowed: true },
     { id: 'lane_gz_bom_x', originCity: 'Guangzhou', originCountry: 'China', destinationCity: 'Mumbai', destinationCountry: 'India',
       mode: 'express', ratePerKgMinor: 72_000, minChargeKg: 1, transitDaysMin: 4, transitDaysMax: 6, customsIncluded: true,
       note: 'Door to door, any weekday.', active: true },

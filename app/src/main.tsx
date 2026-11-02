@@ -58,6 +58,8 @@ const ServiceDirectoryPage = page(loaders.services, 'ServiceDirectoryPage');
 const StoreApplyPage = page(loaders.storeApply, 'StoreApplyPage');
 const StoreConsolePage = page(loaders.storeConsole, 'StoreConsolePage');
 const StorePage = page(loaders.store, 'StorePage');
+const ServiceDetailPage = page(loaders.serviceDetail, 'ServiceDetailPage');
+const ServiceRequestPage = page(loaders.serviceRequest, 'ServiceRequestPage');
 const CrewLotPage = page(loaders.crewLot, 'CrewLotPage');
 const SocialPage = page(loaders.social, 'SocialPage');
 const ChannelPage = page(loaders.social, 'ChannelPage');
@@ -159,6 +161,8 @@ function App() {
         {/* Last of the four, so the static paths above win the match. */}
         <Route path="/services/:kind" element={<ServiceDirectoryPage />} />
         <Route path="/services/:kind/:slug" element={<StorePage />} />
+        <Route path="/services/:kind/:slug/:section/:subjectId" element={<ServiceDetailPage />} />
+        <Route path="/services/requests/:kind/:ownerId/:id" element={members(<ServiceRequestPage />)} />
         <Route path="/social" element={members(<SocialPage />)} />
         <Route path="/social/c/:id" element={members(<ChannelPage />)} />
         <Route path="/social/f/:id" element={members(<ForumRoom />)} />

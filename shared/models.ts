@@ -662,7 +662,7 @@ export interface StoreLink {
 }
 
 /** What a team member may do in a service store, besides the owner. */
-export type StoreRight = 'work' | 'store' | 'team';
+export type StoreRight = 'work' | 'store' | 'team' | 'voice';
 
 export interface StoreMember {
   userId: string;
@@ -670,6 +670,11 @@ export interface StoreMember {
   rights: StoreRight[];
   addedAt: string;
   addedBy: string;
+  /**
+   * A label the owner gives them - "Admin", "Ops lead", "Painter" - shown
+   * beside their name when they talk in the company channel as themselves.
+   */
+  tag?: string;
 }
 
 /**
@@ -705,8 +710,76 @@ export interface StoreCore {
   since?: number | null;
   links?: StoreLink[];
   team?: StoreMember[];
-  /** Where a buyer pays this store directly. Artists use it; a forwarder is paid through the shop. */
+  /** Where a customer pays this store directly, for a request or a payment link. */
   payment?: SellerPaymentDetails | null;
+  /**
+   * The form a customer fills in to use the store, as the store arranged it.
+   * Absent means the default form for its kind (see `defaultForm`).
+   */
+  requestForm?: ServiceFormField[] | null;
+  /** Terms that apply to every route or service, shown under each one's own. */
+  terms?: string;
+}
+
+/* ── What a store prices, beyond the headline rate ──────────────────── */
+
+/** How a price option is charged. */
+export type PriceBasis = 'kg' | 'piece' | 'flat';
+
+/**
+ * One product-specific price on a route or a service: "Boxed figures ₹780/kg",
+ * "Battery items ₹950/kg", "1/6 scale ₹4,500 flat". The headline rate is the
+ * "from" price; these are what a customer actually picks.
+ */
+export interface PriceOption {
+  id: string;
+  name: string;
+  basis: PriceBasis;
+  priceMinor: number;
+  note: string;
+}
+
+/**
+ * When a parcel is charged by its size rather than its weight.
+ *
+ * Volumetric kg = L × W × H (cm) ÷ divisor. `greater` charges whichever of the
+ * actual and volumetric weight is more - the airline rule - and `over` only
+ * switches to volumetric past a size the forwarder names.
+ */
+export interface VolumetricRule {
+  divisor: number;
+  mode: 'greater' | 'over';
+  /** For `over`: volumetric applies once it exceeds the actual weight by this factor. */
+  overFactor?: number;
+  note: string;
+}
+
+/** A labelled line of whatever else a store wants a customer to know. */
+export interface InfoRow {
+  label: string;
+  value: string;
+}
+
+/** A field on a store's request form. */
+export type ServiceFieldType =
+  | 'text' | 'longtext' | 'number' | 'choice' | 'yesno' | 'date'
+  | 'items' | 'address' | 'dimensions';
+
+/** The fields the app understands, so it can price and route a request. */
+export type ServiceFieldKey =
+  | 'awb' | 'origin_courier' | 'weight' | 'dimensions' | 'items' | 'battery' | 'declared_value' | 'delivery' | 'notes'
+  | 'piece' | 'brief' | 'refs' | 'deadline' | 'return_delivery';
+
+export interface ServiceFormField {
+  id: string;
+  label: string;
+  type: ServiceFieldType;
+  required: boolean;
+  help?: string;
+  /** For `choice`. */
+  options?: string[];
+  /** Set on the fields the app reads; absent on a store's own custom fields. */
+  key?: ServiceFieldKey;
 }
 
 /** One lane a forwarder runs, priced. */
@@ -728,6 +801,20 @@ export interface FreightLane {
   /** Cut-off day, consolidation window, anything a shop plans around. */
   note: string;
   active: boolean;
+  /** Product-specific prices on this route. The lane rate stays the "from" price. */
+  products?: PriceOption[];
+  /** When size, not weight, sets the charge. Null means weight only. */
+  volumetric?: VolumetricRule | null;
+  /** Where customers send parcels for this route, when it is not the store's main warehouse. */
+  warehouse?: StoreWarehouse | null;
+  /** How to send and label a parcel, cut-offs, consolidation - what the customer does next. */
+  orderInfo?: string;
+  /** This route's own terms. */
+  terms?: string;
+  /** Anything else, as label and value. */
+  extras?: InfoRow[];
+  /** Whether items with batteries travel on this route. */
+  batteryAllowed?: boolean;
 }
 
 /** Transit cover a forwarder sells, which a buyer can add to their item. */
@@ -761,6 +848,14 @@ export interface ArtistOffering {
   priceFromMinor: number;
   turnaroundDays: number;
   active: boolean;
+  /** Prices by piece - "1/6 scale", "1/12 scale", "Bust" - when one price does not fit all. */
+  products?: PriceOption[];
+  /** What is and is not included. */
+  includes?: string;
+  /** How to send the piece, what to put in the box. */
+  orderInfo?: string;
+  terms?: string;
+  extras?: InfoRow[];
 }
 
 export interface PortfolioPiece {

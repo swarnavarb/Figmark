@@ -92,3 +92,21 @@
 .sa-timeline__body { display: grid; gap: var(--s1); justify-items: start; font-size: var(--t-sm); }
 .sa-step__title { line-height: 1; }
 .sa-mini { --sk-notch: var(--bg); }
+
+/* Prices, details and the request form, in the store editors. */
+.sf-subcard { padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
+.sf-options { display: grid; gap: 8px; }
+.sf-option { display: grid; grid-template-columns: minmax(0, 1.4fr) 120px 110px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.sf-option--info { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; }
+@media (max-width: 640px) {
+  .sf-option { grid-template-columns: 1fr 1fr; }
+  .sf-option__note { grid-column: 1 / -1; }
+  .sf-option--info { grid-template-columns: 1fr auto; }
+  .sf-option--info input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+}
+.sf-more { border-top: 1px dashed var(--border); padding-top: 8px; }
+.sf-more summary { cursor: pointer; color: var(--text-dim); font-size: var(--t-sm); margin-bottom: 8px; }
+.sf-fieldrow { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.sf-fieldrow__move { display: grid; gap: 4px; align-content: start; }
+.sf-fieldrow__body { display: grid; gap: 10px; }
+.sf-lock { color: var(--text-dim); }

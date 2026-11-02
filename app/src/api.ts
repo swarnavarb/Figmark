@@ -22,6 +22,7 @@ import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
+import type { ChannelMessage, RequestAction, ServiceRequest, Standing } from '@shared/service-work';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CardButton, SerialButton } from '@shared/buttons';
 import type { LevelTag, MergedRating, StoreLevel } from '@shared/storefront';
@@ -72,7 +73,7 @@ import type {
   MessageDeal, MessageParty, Order, OrderShipment, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
   StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
   ArtistJob, ArtistOffering, ArtistProfile, FreightLane, InsurancePlan, OrderAddOn, PortfolioPiece, StoreCore, StoreLink,
-  StoreMember, StoreRight, StoreStatus, StoreWarehouse,
+  StoreMember, StoreRight, StoreStatus, StoreWarehouse, ServiceFormField,
 } from '@shared/models';
 
 /**
@@ -2513,6 +2514,34 @@ export interface StoreWork {
   jobs: ArtistJobRow[];
 }
 
+export interface StorePageView {
+  store: PublicStore;
+  stats: {
+    lotsCarried: number; commissions: number; followers: number; standing: Standing;
+    reviews: { stars: number; text: string; at: string; by: string; subject: string | null }[];
+  };
+  viewer: { following: boolean; rights: StoreRight[] } | null;
+}
+
+export interface TeamRow { userId: string; name: string; tag: string | null }
+
+export interface RequestRow {
+  request: ServiceRequest;
+  actions: RequestAction[];
+  due: number;
+}
+
+export interface RequestView extends RequestRow {
+  side: 'store' | 'customer';
+  payTo: SellerPaymentDetails | null;
+  sendTo: StoreWarehouse | null;
+}
+
+export interface ChannelView {
+  messages: ChannelMessage[];
+  me: { canSpeakAsCompany: boolean; isMember: boolean; moderates: boolean; tag: string | null } | null;
+}
+
 /** A store's public page. */
 export interface PublicStore {
   kind: StoreKind;
@@ -2544,6 +2573,9 @@ export interface PublicStore {
   portfolio: PortfolioPiece[];
   specialties: string[];
   acceptingWork: boolean;
+  form: ServiceFormField[];
+  terms: string;
+  takesDirect: boolean;
 }
 
 export interface OrderServicesView {
@@ -2812,7 +2844,7 @@ export const api = {
     request<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}`),
   saveStore: (kind: StoreKind, ownerId: string, draft: StoreDraft) =>
     post<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/save`, draft),
-  storeTeam: (kind: StoreKind, ownerId: string, body: { identifier?: string; rights?: StoreRight[]; remove?: string }) =>
+  storeTeam: (kind: StoreKind, ownerId: string, body: { identifier?: string; rights?: StoreRight[]; remove?: string; member?: string; tag?: string }) =>
     post<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/team`, body),
   storeWork: (kind: StoreKind, ownerId: string) =>
     request<StoreWork>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/work`),
@@ -2821,7 +2853,29 @@ export const api = {
   artistAct: (ownerId: string, orderId: string, body: { action: ArtistJobAction; quoteMinor?: number; days?: number; note?: string; photos?: string[]; courier?: string; awb?: string }) =>
     post<ArtistJobRow>(`/service-stores/artist/${encodeURIComponent(ownerId)}/jobs/${encodeURIComponent(orderId)}`, body),
   storePage: (kind: StoreKind, slug: string) =>
-    request<{ store: PublicStore; stats: { lotsCarried: number; commissions: number } }>(`/service-store/${kind}/${encodeURIComponent(slug)}`),
+    request<StorePageView>(`/service-store/${kind}/${encodeURIComponent(slug)}`),
+  submitServiceRequest: (kind: StoreKind, ownerId: string, body: { subjectId: string; optionId: string | null; planId: string | null; answers: Record<string, unknown> }) =>
+    post<RequestView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/requests`, body),
+  myServiceRequests: () => request<{ requests: RequestRow[] }>('/me/service-requests'),
+  serviceRequest: (kind: StoreKind, ownerId: string, id: string) =>
+    send<RequestView & { store: { name: string; slug: string; accent: string | null; logoUrl: string | null }; team: TeamRow[] }>(
+      `/service-requests/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}`),
+  actOnServiceRequest: (kind: StoreKind, ownerId: string, id: string, body: {
+    action: RequestAction; quoteMinor?: number; days?: number; note?: string; reference?: string; amountMinor?: number;
+    courier?: string; awb?: string; stars?: number; text?: string; assigneeId?: string | null;
+  }) => post<RequestView & { team: TeamRow[] }>(`/service-requests/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}/act`, body),
+  storeRequests: (kind: StoreKind, ownerId: string) =>
+    send<{ requests: RequestRow[]; team: TeamRow[] }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/requests`),
+  createPaymentLink: (kind: StoreKind, ownerId: string, body: { title: string; description: string; amountMinor: number; days?: number; subjectId?: string }) =>
+    post<{ request: ServiceRequest; link: string }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/links`, body),
+  storeChannel: (kind: StoreKind, ownerId: string) =>
+    send<ChannelView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel`),
+  postStoreChannel: (kind: StoreKind, ownerId: string, body: { body: string; asCompany: boolean; announcement: boolean }) =>
+    post<{ message: ChannelMessage }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel`, body),
+  deleteStoreChannel: (kind: StoreKind, ownerId: string, id: string) =>
+    post<{ ok: true }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel/${encodeURIComponent(id)}/delete`),
+  followStore: (kind: StoreKind, ownerId: string, follow: boolean) =>
+    post<{ following: boolean; followers: number }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/follow`, { follow }),
   crewLot: (sellerId: string, lotId: string, role?: string) =>
     request<CrewLotView>(`/me/crew/${encodeURIComponent(sellerId)}/${encodeURIComponent(lotId)}${role ? `?role=${role}` : ''}`),
   /** Move a lot as the forwarder booked on it. */

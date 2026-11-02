@@ -1,4 +1,5 @@
 import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
+import type { ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { ROUTE_TEMPLATES, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
@@ -732,6 +733,42 @@ export class MemoryRepository implements Repository {
       (pre.cutoffAt <= nowIso && !pre.filledAt && !pre.proceededShortAt && !pre.decisionDueAt)
       || (Boolean(pre.decisionDueAt) && pre.decisionDueAt! <= nowIso)
     )).slice(0, limit);
+  }
+
+  private readonly serviceWork = new Map<string, ServiceWorkDoc>();
+  private serviceKey = (storeId: string, id: string) => `${storeId}|${id}`;
+
+  async listServiceWork<T extends ServiceWorkDoc>(storeId: string, type: T['type'], limit = 500): Promise<T[]> {
+    return [...this.serviceWork.values()]
+      .filter((doc) => doc.storeId === storeId && doc.type === type)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit)
+      .map((doc) => structuredClone(doc) as T);
+  }
+
+  async getServiceWork<T extends ServiceWorkDoc>(storeId: string, id: string): Promise<T | null> {
+    const doc = this.serviceWork.get(this.serviceKey(storeId, id));
+    return doc ? (structuredClone(doc) as T) : null;
+  }
+
+  async saveServiceWork<T extends ServiceWorkDoc>(doc: T): Promise<T> {
+    this.serviceWork.set(this.serviceKey(doc.storeId, doc.id), structuredClone(doc));
+    return doc;
+  }
+
+  async deleteServiceWork(storeId: string, id: string): Promise<void> {
+    this.serviceWork.delete(this.serviceKey(storeId, id));
+  }
+
+  async listServiceRequestsBy(customerId: string): Promise<ServiceRequest[]> {
+    return [...this.serviceWork.values()]
+      .filter((doc): doc is ServiceRequest => doc.type === 'request' && doc.customerId === customerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((doc) => structuredClone(doc));
+  }
+
+  async countServiceFollowers(storeId: string): Promise<number> {
+    return [...this.serviceWork.values()].filter((doc) => doc.storeId === storeId && doc.type === 'follow').length;
   }
 
   async listPledges(listingId: string): Promise<Pledge[]> {

@@ -52,3 +52,23 @@
 .sp-about { font-size: var(--t-sm); line-height: 1.6; color: var(--text-dim); white-space: pre-line; }
 .sp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .sp-steps { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: var(--t-sm); color: var(--text-dim); }
+
+/* Tabs, and each route or service opening its own page. */
+.sp-tabs { margin-bottom: 18px; }
+.sp-tabs__count { margin-left: 6px; padding: 0 7px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--t-2xs); }
+.sp-offer-link { display: grid; gap: 0; color: inherit; text-decoration: none; border-radius: var(--r-lg); transition: transform 0.15s; }
+.sp-offer-link:hover { transform: translateY(-1px); }
+.sp-offer-link:hover .sk-ticket, .sp-offer-link:hover .sk-offer { border-color: var(--sk-line); }
+.sp-offer-link__more {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 8px 14px 0;
+  font-size: var(--t-xs); color: var(--text-dim);
+}
+.sp-offer-link__more b { color: var(--text); }
+.sp-offer-link__go { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--sk-text); font-weight: var(--w-semi); }
+.sp-offer-link--card .sp-offer-link__more { padding: 8px 4px 0; }
+.sp-rating { display: inline-flex; align-items: center; gap: 6px; }
+.sp-review { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.sp-review__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-sm); }
+.sp-review p { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.55; }
+.sp-level { display: block; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.sp-level span { display: block; height: 100%; background: var(--sk); border-radius: 3px; }

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
 import type { PostTemplate } from '../../../shared/templates.js';
@@ -297,6 +298,18 @@ export interface Repository {
    * moment it fills - all three want the whole set, which is one partition.
    */
   listPledges(listingId: string): Promise<Pledge[]>;
+  /**
+   * A forwarder or artist store's work of one type - requests, channel
+   * messages, followers - newest first. One partition: the store's.
+   */
+  listServiceWork<T extends ServiceWorkDoc>(storeId: string, type: T['type'], limit?: number): Promise<T[]>;
+  getServiceWork<T extends ServiceWorkDoc>(storeId: string, id: string): Promise<T | null>;
+  saveServiceWork<T extends ServiceWorkDoc>(doc: T): Promise<T>;
+  deleteServiceWork(storeId: string, id: string): Promise<void>;
+  /** Every request one customer has made, across stores. */
+  listServiceRequestsBy(customerId: string): Promise<ServiceRequest[]>;
+  /** Followers of one store, counted rather than read. */
+  countServiceFollowers(storeId: string): Promise<number>;
   /**
    * Pre-orders with a deadline behind them that nobody has acted on yet: the
    * cutoff passed before it went ahead, or the seller's time to decide ran out.

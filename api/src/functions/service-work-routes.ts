@@ -1,0 +1,569 @@
+import { randomUUID } from 'node:crypto';
+import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
+import type { ArtistProfile, ForwarderProfile, StoreCore, User } from '../../../shared/models.js';
+import { STORE_KINDS, isLive, liveLanes, liveOfferings, livePlans, rightsIn, storeOf, insuranceQuote, type StoreKind } from '../../../shared/service-stores.js';
+import {
+  CHANNEL_MAX_CHARS, REQUEST_LABELS, REQUEST_MOVES, answerFor, checkAnswers, estimate, followId, formOf,
+  requestActions, requestDueMinor, requestNumber, storeKey,
+  type ChannelMessage, type Dimensions, type ItemRow, type RequestAction, type ServiceRequest, type StoreFollow,
+} from '../../../shared/service-work.js';
+import { getAuthService } from '../auth/index.js';
+import { getRepository } from '../data/index.js';
+import { limited } from '../rate-limit.js';
+import { notify } from './notify.js';
+import { error, handler, json } from './http.js';
+import { forgetPageStats } from './store-routes.js';
+
+/**
+ * Customers working with a forwarder or an artist directly.
+ *
+ * - A customer picks a route or a service on the store's page and sends the
+ *   store's form; every member who works the jobs is told at once.
+ * - The team quotes, the customer accepts and pays direct, the team moves it
+ *   along to delivered, and the customer rates it - which is what the store's
+ *   level and rating are made of.
+ * - A store can also write a request itself, with a price, and send the link:
+ *   the customer opens it, accepts and pays. That is a payment link.
+ * - Each store has a channel: the company speaks in it (whoever the owner lets),
+ *   members speak as themselves under the tag the owner gave them, and anyone
+ *   signed in can ask a question.
+ */
+
+type Repo = Awaited<ReturnType<typeof getRepository>>;
+const anon = { authLevel: 'anonymous' } as const;
+const KINDS = new Set<string>(STORE_KINDS);
+const isKind = (value: unknown): value is StoreKind => typeof value === 'string' && KINDS.has(value);
+
+async function body<T>(request: HttpRequest): Promise<T | null> {
+  try {
+    return (await request.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+const text = (value: unknown, max: number): string => (typeof value === 'string' ? value.trim().slice(0, max) : '');
+const money = (value: unknown): number => {
+  const amount = Math.round(Number(value));
+  return Number.isFinite(amount) && amount > 0 ? Math.min(amount, 1_000_000_000) : 0;
+};
+
+/** The store behind a URL, whoever is asking. */
+async function storeAt(repository: Repo, kindRaw: unknown, ownerId: unknown) {
+  if (!isKind(kindRaw) || typeof ownerId !== 'string' || !ownerId) return null;
+  const owner = await repository.getUserById(ownerId);
+  const store = owner ? storeOf(owner, kindRaw) : null;
+  if (!owner || !store) return null;
+  return { kind: kindRaw, owner, store, key: storeKey(kindRaw, owner.id) };
+}
+
+/** Everyone who should hear about a request: the owner and members who work the jobs. */
+function crewIds(owner: User, kind: StoreKind): string[] {
+  const store = storeOf(owner, kind);
+  return [owner.id, ...(store?.team ?? []).filter((member) => rightsIn(owner, kind, member.userId).includes('work')).map((m) => m.userId)];
+}
+
+function teamOf(owner: User, kind: StoreKind) {
+  const store = storeOf(owner, kind)!;
+  return [
+    { userId: owner.id, name: owner.displayName, tag: 'Owner' },
+    ...(store.team ?? []).map((member) => ({ userId: member.userId, name: member.displayName, tag: member.tag ?? null })),
+  ];
+}
+
+const consoleLink = (request: Pick<ServiceRequest, 'kind' | 'ownerId' | 'id'>) =>
+  `/services/store/${request.kind}/${request.ownerId}?tab=requests&r=${request.id}`;
+const customerLink = (request: Pick<ServiceRequest, 'kind' | 'ownerId' | 'id'>) =>
+  `/services/requests/${request.kind}/${request.ownerId}/${request.id}`;
+
+/** A request as one side sees it. */
+function requestView(request: ServiceRequest, side: 'store' | 'customer', store: StoreCore, kind: StoreKind) {
+  const paidOrLater = ['accepted', 'paid', 'received', 'in_progress', 'shipped', 'delivered'].includes(request.status);
+  const forwarder = kind === 'forwarder' ? (store as ForwarderProfile) : null;
+  const lane = forwarder?.lanes?.find((row) => row.id === request.subject?.id);
+  return {
+    request,
+    side,
+    actions: requestActions(request, side),
+    due: requestDueMinor(request),
+    /** Where to pay, once there is something to pay for. */
+    payTo: side === 'customer' && paidOrLater ? (store.payment ?? null) : null,
+    /** Where the goods go: a forwarder's warehouse is public; an artist's studio only once paid. */
+    sendTo: kind === 'forwarder'
+      ? (lane?.warehouse ?? forwarder?.warehouse ?? null)
+      : (['paid', 'received', 'in_progress'].includes(request.status) ? { address: (store as ArtistProfile).studioAddress, contact: '', hours: '' } : null),
+  };
+}
+
+/* ── A customer asks ─────────────────────────────────────────────────── */
+
+/** POST /api/service-store/{kind}/{ownerId}/requests - send the store's form. */
+async function submitRequest(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const wait = await limited(user.id, 'offer');
+  if (wait) return error(429, 'slow_down', `Too many requests. Try again ${wait}.`);
+  const repository = await getRepository();
+  const found = await storeAt(repository, request.params.kind, request.params.ownerId);
+  if (!found || !isLive(found.store) || found.owner.suspended) return error(404, 'not_found', 'No such store.');
+  const { kind, owner, store, key } = found;
+  if (owner.id === user.id) return error(400, 'own_store', 'This is your own store.');
+  const input = await body<{ subjectId?: string; optionId?: string | null; planId?: string | null; answers?: Record<string, unknown> }>(request);
+  if (!input) return error(400, 'invalid_body', 'Request body must be JSON.');
+
+  let subject: { id: string; label: string } | null = null;
+  let option = null;
+  let estimated;
+  let plan: ServiceRequest['plan'] = null;
+  let chargeableKg: number | null = null;
+  const form = formOf(kind, store.requestForm);
+  const { answers, gaps } = checkAnswers(form, input.answers);
+  if (gaps.length > 0) return error(400, 'incomplete', `Still needed: ${gaps.join(', ')}.`);
+
+  if (kind === 'forwarder') {
+    const profile = store as ForwarderProfile;
+    const lane = liveLanes(profile).find((row) => row.id === input.subjectId);
+    if (!lane) return error(400, 'no_route', 'Pick one of the routes this forwarder runs.');
+    subject = { id: lane.id, label: `${lane.originCity} → ${lane.destinationCity}` };
+    option = (lane.products ?? []).find((row) => row.id === input.optionId) ?? null;
+    const items = answerFor<ItemRow[]>(form, answers, 'items') ?? [];
+    if (answerFor<boolean>(form, answers, 'battery') === true && lane.batteryAllowed === false) {
+      return error(400, 'no_battery', 'This route does not carry items with batteries.');
+    }
+    const declared = (answerFor<number>(form, answers, 'declared_value') ?? 0) * 100
+      || items.reduce((sum, row) => sum + row.qty * row.valueMinor, 0);
+    const pickedPlan = livePlans(profile).find((row) => row.id === input.planId) ?? null;
+    estimated = estimate({
+      kind, lane, option,
+      weightKg: answerFor<number>(form, answers, 'weight') ?? 0,
+      box: answerFor<Dimensions>(form, answers, 'dimensions'),
+      pieces: items.reduce((sum, row) => sum + row.qty, 0),
+      plan: pickedPlan, declaredMinor: declared,
+    });
+    chargeableKg = estimated.chargeable?.kg ?? null;
+    if (pickedPlan && declared > 0) {
+      plan = { id: pickedPlan.id, name: pickedPlan.name, premiumMinor: estimated.premiumMinor, coverMinor: insuranceQuote(pickedPlan, declared).coverMinor };
+    }
+  } else {
+    const profile = store as ArtistProfile;
+    if (profile.acceptingWork === false) return error(409, 'closed', 'This studio is not taking new work right now.');
+    const offering = liveOfferings(profile).find((row) => row.id === input.subjectId);
+    if (!offering) return error(400, 'no_service', 'Pick one of the services on the menu.');
+    subject = { id: offering.id, label: offering.name };
+    option = (offering.products ?? []).find((row) => row.id === input.optionId) ?? null;
+    estimated = estimate({ kind, offering, option });
+  }
+
+  const now = new Date().toISOString();
+  const account = await repository.getUserById(user.id);
+  const doc: ServiceRequest = {
+    id: `req_${randomUUID()}`,
+    type: 'request',
+    storeId: key,
+    kind,
+    ownerId: owner.id,
+    storeName: store.companyName,
+    storeSlug: store.directorySlug,
+    number: requestNumber(kind),
+    origin: 'form',
+    subject,
+    option,
+    customerId: user.id,
+    customerName: account?.displayName ?? user.displayName,
+    customerHandle: account?.username ?? null,
+    fields: form,
+    answers,
+    title: subject?.label ?? '',
+    description: '',
+    plan,
+    estimateMinor: estimated.totalMinor,
+    chargeableKg,
+    quoteMinor: null,
+    quoteNote: '',
+    turnaroundDays: null,
+    status: 'submitted',
+    assigneeId: null,
+    assigneeName: null,
+    payment: null,
+    tracking: null,
+    review: null,
+    history: [{ at: now, by: user.id, byName: account?.displayName ?? user.displayName, note: 'Request sent.' }],
+    createdAt: now,
+    updatedAt: now,
+  };
+  await repository.saveServiceWork(doc);
+  await notify(repository, crewIds(owner, kind), {
+    kind: 'service_store',
+    title: `New request ${doc.number} · ${subject?.label ?? store.companyName}`,
+    body: `${doc.customerName} sent the form${chargeableKg ? ` · about ${chargeableKg} kg` : ''}.`,
+    link: consoleLink(doc),
+  }, { except: user.id });
+  return json(201, requestView(doc, 'customer', store, kind));
+}
+
+/** GET /api/me/service-requests - everything this person has asked stores for. */
+async function myRequests(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const rows = await repository.listServiceRequestsBy(user.id);
+  return json(200, {
+    requests: rows.map((row) => ({
+      request: row,
+      actions: requestActions(row, 'customer'),
+      due: requestDueMinor(row),
+    })),
+  });
+}
+
+/** Who is looking at a request, and from which side. */
+async function requestFor(request: HttpRequest) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const found = await storeAt(repository, request.params.kind, request.params.ownerId);
+  if (!found) return { refusal: error(404, 'not_found', 'No such request.') } as const;
+  const doc = await repository.getServiceWork<ServiceRequest>(found.key, request.params.id ?? '');
+  if (!doc || doc.type !== 'request') return { refusal: error(404, 'not_found', 'No such request.') } as const;
+  const rights = rightsIn(found.owner, found.kind, user.id);
+  const isCustomer = doc.customerId === user.id;
+  // A payment link nobody has taken yet may be opened by whoever has it.
+  const openLink = doc.origin === 'link' && !doc.customerId && rights.length === 0;
+  const side: 'store' | 'customer' | null = rights.includes('work') ? 'store' : (isCustomer || openLink) ? 'customer' : null;
+  if (!side) return { refusal: error(404, 'not_found', 'No such request.') } as const;
+  return { refusal: null, user, repository, doc, side, ...found } as const;
+}
+
+/** GET /api/service-requests/{kind}/{ownerId}/{id} */
+async function getRequest(request: HttpRequest, _context: InvocationContext) {
+  const found = await requestFor(request);
+  if (found.refusal) return found.refusal;
+  return json(200, {
+    ...requestView(found.doc, found.side, found.store, found.kind),
+    store: { name: found.store.companyName, slug: found.store.directorySlug, accent: found.store.accent ?? null, logoUrl: found.store.logoUrl ?? null },
+    team: found.side === 'store' ? teamOf(found.owner, found.kind) : [],
+  });
+}
+
+/**
+ * POST /api/service-requests/{kind}/{ownerId}/{id}/act - one move.
+ *
+ * Who may make it is `REQUEST_MOVES`, the same table the screens draw their
+ * buttons from, so a button never appears for a move the server refuses.
+ */
+async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
+  const found = await requestFor(request);
+  if (found.refusal) return found.refusal;
+  const { doc, side, user, repository, owner, kind, store } = found;
+  const input = await body<{
+    action?: RequestAction; quoteMinor?: number; days?: number; note?: string; reference?: string; amountMinor?: number;
+    courier?: string; awb?: string; stars?: number; text?: string; assigneeId?: string | null;
+  }>(request);
+  if (!input?.action || !(input.action in REQUEST_MOVES)) return error(400, 'invalid_action', 'Unknown move.');
+  const action = input.action;
+  if (!requestActions(doc, side).includes(action)) return error(409, 'not_now', 'That cannot be done on this request right now.');
+  const actor = await repository.getUserById(user.id);
+  const byName = actor?.displayName ?? user.displayName;
+  const now = new Date().toISOString();
+  const note = text(input.note, 500);
+  let told: { to: 'customer' | 'store'; title: string; body: string } | null = null;
+  const label = (status: ServiceRequest['status']) => REQUEST_LABELS[kind][status].label;
+
+  switch (action) {
+    case 'quote': {
+      const quote = money(input.quoteMinor);
+      if (!quote) return error(400, 'no_price', 'Give the price you are quoting.');
+      doc.quoteMinor = quote;
+      doc.quoteNote = note;
+      doc.turnaroundDays = Math.max(0, Math.min(365, Math.round(Number(input.days) || 0))) || null;
+      doc.status = 'quoted';
+      told = { to: 'customer', title: `${store.companyName} quoted ${doc.number}`, body: `₹${(quote / 100).toLocaleString('en-IN')}${note ? ` · ${note}` : ''}` };
+      break;
+    }
+    case 'decline':
+      doc.status = 'declined';
+      told = { to: 'customer', title: `${store.companyName} declined ${doc.number}`, body: note || 'They cannot take this one.' };
+      break;
+    case 'accept':
+      if (!doc.customerId) {
+        doc.customerId = user.id;
+        doc.customerName = byName;
+        doc.customerHandle = actor?.username ?? null;
+      }
+      doc.status = 'accepted';
+      told = { to: 'store', title: `${doc.customerName} accepted ${doc.number}`, body: 'They will pay next.' };
+      break;
+    case 'pay': {
+      const amount = money(input.amountMinor) || requestDueMinor(doc);
+      doc.payment = { amountMinor: amount, reference: text(input.reference, 80) || null, claimedAt: now, confirmedAt: null, confirmedBy: null };
+      told = { to: 'store', title: `${doc.customerName} says they paid ${doc.number}`, body: `₹${(amount / 100).toLocaleString('en-IN')}${doc.payment.reference ? ` · ref ${doc.payment.reference}` : ''} — check and confirm.` };
+      break;
+    }
+    case 'confirm_payment':
+      doc.payment = { ...doc.payment!, confirmedAt: now, confirmedBy: user.id };
+      doc.status = 'paid';
+      told = { to: 'customer', title: `Payment confirmed · ${doc.number}`, body: kind === 'forwarder' ? 'Send your parcel to the warehouse.' : 'Send your piece to the studio.' };
+      break;
+    case 'receive':
+    case 'start':
+      doc.status = action === 'receive' ? 'received' : 'in_progress';
+      told = { to: 'customer', title: `${doc.number}: ${label(doc.status)}`, body: note || store.companyName };
+      break;
+    case 'ship': {
+      const awb = text(input.awb, 60);
+      if (!awb) return error(400, 'no_awb', 'Give the tracking number.');
+      doc.tracking = { courier: text(input.courier, 60), awb, at: now };
+      doc.status = 'shipped';
+      told = { to: 'customer', title: `${doc.number}: ${label('shipped')}`, body: `${doc.tracking.courier ? `${doc.tracking.courier} ` : ''}${awb}` };
+      break;
+    }
+    case 'deliver':
+    case 'complete':
+      doc.status = 'delivered';
+      forgetPageStats(kind, owner.id);
+      told = action === 'deliver'
+        ? { to: 'customer', title: `${doc.number}: ${label('delivered')}`, body: 'Tell others how it went — rate it.' }
+        : { to: 'store', title: `${doc.customerName} got ${doc.number}`, body: 'Marked as received.' };
+      break;
+    case 'cancel':
+      doc.status = 'cancelled';
+      told = { to: 'store', title: `${doc.customerName} cancelled ${doc.number}`, body: note || 'Nothing more to do.' };
+      break;
+    case 'review': {
+      const stars = Math.round(Number(input.stars));
+      if (!(stars >= 1 && stars <= 5)) return error(400, 'no_stars', 'Pick one to five stars.');
+      doc.review = { stars, text: text(input.text, 1000), at: now };
+      forgetPageStats(kind, owner.id);
+      told = { to: 'store', title: `${stars}★ for ${doc.number}`, body: doc.review.text || `${doc.customerName} rated it.` };
+      break;
+    }
+    case 'assign': {
+      const team = teamOf(owner, kind);
+      const who = input.assigneeId ? team.find((row) => row.userId === input.assigneeId) : null;
+      if (input.assigneeId && !who) return error(400, 'not_on_team', 'Assign it to somebody on the team.');
+      doc.assigneeId = who?.userId ?? null;
+      doc.assigneeName = who?.name ?? null;
+      if (who && who.userId !== user.id) {
+        await notify(repository, [who.userId], { kind: 'service_store', title: `${doc.number} is yours`, body: `${byName} assigned it to you.`, link: consoleLink(doc) });
+      }
+      break;
+    }
+  }
+
+  const done: Partial<Record<RequestAction, string>> = {
+    quote: `Quoted ₹${((doc.quoteMinor ?? 0) / 100).toLocaleString('en-IN')}`,
+    decline: 'Declined', accept: 'Accepted the quote', cancel: 'Cancelled',
+    pay: `Paid ₹${((doc.payment?.amountMinor ?? 0) / 100).toLocaleString('en-IN')}${doc.payment?.reference ? ` (ref ${doc.payment.reference})` : ''}`,
+    confirm_payment: 'Confirmed the payment arrived',
+    complete: 'Confirmed it arrived', review: `Rated it ${doc.review?.stars ?? ''}★`,
+    ship: `Shipped${doc.tracking ? ` · ${[doc.tracking.courier, doc.tracking.awb].filter(Boolean).join(' ')}` : ''}`,
+  };
+  const words = action === 'assign'
+    ? (doc.assigneeName ? `Assigned to ${doc.assigneeName}.` : 'Unassigned.')
+    : `${done[action] ?? REQUEST_LABELS[kind][doc.status].label}${note && action !== 'quote' ? ` — ${note}` : ''}.`;
+  doc.history = [...doc.history, { at: now, by: user.id, byName, note: words }].slice(-80);
+  doc.updatedAt = now;
+  await repository.saveServiceWork(doc);
+
+  if (told) {
+    const audience = told.to === 'customer' ? [doc.customerId] : crewIds(owner, kind);
+    await notify(repository, audience, {
+      kind: 'service_store', title: told.title, body: told.body,
+      link: told.to === 'customer' ? customerLink(doc) : consoleLink(doc),
+    }, { except: user.id });
+  }
+  return json(200, { ...requestView(doc, side, store, kind), team: side === 'store' ? teamOf(owner, kind) : [] });
+}
+
+/* ── The team's side ─────────────────────────────────────────────────── */
+
+async function crewStore(request: HttpRequest) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const found = await storeAt(repository, request.params.kind, request.params.ownerId);
+  if (!found) return { refusal: error(404, 'not_found', 'No such store.') } as const;
+  if (!rightsIn(found.owner, found.kind, user.id).includes('work')) {
+    return { refusal: error(403, 'forbidden', 'That needs the "work" right in this store.') } as const;
+  }
+  return { refusal: null, user, repository, ...found } as const;
+}
+
+/** GET /api/service-stores/{kind}/{ownerId}/requests - every request, for the dashboard. */
+async function storeRequests(request: HttpRequest, _context: InvocationContext) {
+  const found = await crewStore(request);
+  if (found.refusal) return found.refusal;
+  const rows = await found.repository.listServiceWork<ServiceRequest>(found.key, 'request');
+  return json(200, {
+    requests: rows.map((row) => ({ request: row, actions: requestActions(row, 'store'), due: requestDueMinor(row) })),
+    team: teamOf(found.owner, found.kind),
+  });
+}
+
+/**
+ * POST /api/service-stores/{kind}/{ownerId}/links - a payment link.
+ *
+ * The store writes the request itself - what the work is, what it costs - and
+ * sends the link. Whoever opens it first and accepts becomes its customer.
+ */
+async function createLink(request: HttpRequest, _context: InvocationContext) {
+  const found = await crewStore(request);
+  if (found.refusal) return found.refusal;
+  const { owner, kind, store, key, repository, user } = found;
+  if (!isLive(store)) return error(409, 'not_live', 'Your store needs to be live to take payments.');
+  const input = await body<{ title?: string; description?: string; amountMinor?: number; days?: number; subjectId?: string; customer?: string }>(request);
+  const title = text(input?.title, 120);
+  const amount = money(input?.amountMinor);
+  if (!title || !amount) return error(400, 'incomplete', 'Give the link a title and a price.');
+  const subjects = kind === 'forwarder'
+    ? liveLanes(store as ForwarderProfile).map((lane) => ({ id: lane.id, label: `${lane.originCity} → ${lane.destinationCity}` }))
+    : liveOfferings(store as ArtistProfile).map((offering) => ({ id: offering.id, label: offering.name }));
+  const actor = await repository.getUserById(user.id);
+  const now = new Date().toISOString();
+  const doc: ServiceRequest = {
+    id: `req_${randomUUID()}`, type: 'request', storeId: key, kind, ownerId: owner.id,
+    storeName: store.companyName, storeSlug: store.directorySlug, number: requestNumber(kind), origin: 'link',
+    subject: subjects.find((row) => row.id === input?.subjectId) ?? null, option: null,
+    customerId: null, customerName: 'Whoever opens the link', customerHandle: null,
+    fields: [], answers: {}, title, description: text(input?.description, 2000), plan: null,
+    estimateMinor: amount, chargeableKg: null, quoteMinor: amount, quoteNote: '',
+    turnaroundDays: Math.max(0, Math.min(365, Math.round(Number(input?.days) || 0))) || null,
+    status: 'quoted', assigneeId: user.id, assigneeName: actor?.displayName ?? user.displayName,
+    payment: null, tracking: null, review: null,
+    history: [{ at: now, by: user.id, byName: actor?.displayName ?? user.displayName, note: 'Payment link created.' }],
+    createdAt: now, updatedAt: now,
+  };
+  await repository.saveServiceWork(doc);
+  return json(201, { request: doc, link: customerLink(doc) });
+}
+
+/* ── The channel ─────────────────────────────────────────────────────── */
+
+/** GET /api/service-store/{kind}/{ownerId}/channel */
+async function readChannel(request: HttpRequest, _context: InvocationContext) {
+  const repository = await getRepository();
+  const auth = await getAuthService();
+  const [found, viewer] = await Promise.all([
+    storeAt(repository, request.params.kind, request.params.ownerId),
+    auth.getCurrentUser(request),
+  ]);
+  if (!found) return error(404, 'not_found', 'No such store.');
+  const rights = viewer ? rightsIn(found.owner, found.kind, viewer.id) : [];
+  if ((!isLive(found.store) || found.owner.suspended) && rights.length === 0) return error(404, 'not_found', 'No such store.');
+  const messages = await repository.listServiceWork<ChannelMessage>(found.key, 'chat', 150);
+  return json(200, {
+    messages: messages.reverse(),
+    me: viewer ? {
+      canSpeakAsCompany: rights.includes('voice'),
+      isMember: rights.length > 0,
+      moderates: rights.includes('team'),
+      tag: viewer.id === found.owner.id ? 'Owner' : (found.store.team ?? []).find((m) => m.userId === viewer.id)?.tag ?? null,
+    } : null,
+  });
+}
+
+/** POST /api/service-store/{kind}/{ownerId}/channel - say something. */
+async function postChannel(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const wait = await limited(user.id, 'comment');
+  if (wait) return error(429, 'slow_down', `You are writing quickly. Try again ${wait}.`);
+  const repository = await getRepository();
+  const found = await storeAt(repository, request.params.kind, request.params.ownerId);
+  if (!found) return error(404, 'not_found', 'No such store.');
+  const { owner, kind, store, key } = found;
+  const rights = rightsIn(owner, kind, user.id);
+  if ((!isLive(store) || owner.suspended) && rights.length === 0) return error(404, 'not_found', 'No such store.');
+  const input = await body<{ body?: string; asCompany?: boolean; announcement?: boolean }>(request);
+  const words = text(input?.body, CHANNEL_MAX_CHARS);
+  if (!words) return error(400, 'empty', 'Write something first.');
+  if (input?.asCompany && !rights.includes('voice')) return error(403, 'no_voice', 'The owner has not let you speak as the company.');
+  const account = await repository.getUserById(user.id);
+  const asCompany = input?.asCompany === true;
+  const now = new Date().toISOString();
+  const message: ChannelMessage = {
+    id: `msg_${randomUUID()}`, type: 'chat', storeId: key,
+    authorId: user.id,
+    authorName: asCompany ? store.companyName : (account?.displayName ?? user.displayName),
+    authorHandle: asCompany ? null : (account?.username ?? null),
+    voice: asCompany ? 'company' : rights.length > 0 ? 'member' : 'visitor',
+    tag: asCompany ? null : rights.length > 0 ? (owner.id === user.id ? 'Owner' : (store.team ?? []).find((m) => m.userId === user.id)?.tag ?? 'Team') : null,
+    body: words,
+    announcement: asCompany && input?.announcement === true,
+    createdAt: now, updatedAt: now,
+  };
+  await repository.saveServiceWork(message);
+  if (message.announcement) {
+    const followers = await repository.listServiceWork<StoreFollow>(key, 'follow', 500);
+    await notify(repository, followers.map((row) => row.userId), {
+      kind: 'service_store', title: store.companyName, body: words.slice(0, 140),
+      link: `/services/${kind}/${store.directorySlug}?tab=channel`,
+    }, { except: user.id, pushLater: true });
+  } else if (message.voice === 'visitor') {
+    // A customer asking in the channel is a question for the team.
+    await notify(repository, crewIds(owner, kind), {
+      kind: 'service_store', title: `${message.authorName} in ${store.companyName}’s channel`, body: words.slice(0, 140),
+      link: `/services/store/${kind}/${owner.id}?tab=channel`,
+    }, { except: user.id, pushLater: true });
+  }
+  return json(201, { message });
+}
+
+/** POST /api/service-store/{kind}/{ownerId}/channel/{id}/delete */
+async function deleteChannel(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const found = await storeAt(repository, request.params.kind, request.params.ownerId);
+  if (!found) return error(404, 'not_found', 'No such store.');
+  const message = await repository.getServiceWork<ChannelMessage>(found.key, request.params.id ?? '');
+  if (!message || message.type !== 'chat') return error(404, 'not_found', 'No such message.');
+  const moderates = rightsIn(found.owner, found.kind, user.id).includes('team');
+  if (message.authorId !== user.id && !moderates) return error(403, 'forbidden', 'Only its author or the store’s managers can remove it.');
+  await repository.deleteServiceWork(found.key, message.id);
+  return json(200, { ok: true });
+}
+
+/** POST /api/service-store/{kind}/{ownerId}/follow - {follow: boolean} */
+async function follow(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const found = await storeAt(repository, request.params.kind, request.params.ownerId);
+  if (!found || !isLive(found.store)) return error(404, 'not_found', 'No such store.');
+  const input = await body<{ follow?: boolean }>(request);
+  const id = followId(user.id);
+  if (input?.follow === false) {
+    await repository.deleteServiceWork(found.key, id);
+  } else {
+    const now = new Date().toISOString();
+    await repository.saveServiceWork<StoreFollow>({ id, type: 'follow', storeId: found.key, userId: user.id, createdAt: now, updatedAt: now });
+  }
+  forgetPageStats(found.kind, found.owner.id);
+  return json(200, { following: input?.follow !== false, followers: await repository.countServiceFollowers(found.key) });
+}
+
+export const submitRequestRoute = handler(submitRequest);
+export const channelRoute = handler(readChannel);
+export const channelPostRoute = handler(postChannel);
+export const channelDeleteRoute = handler(deleteChannel);
+export const followStoreRoute = handler(follow);
+export const myRequestsRoute = handler(myRequests);
+export const requestRoute = handler(getRequest);
+export const requestActRoute = handler(actOnRequest);
+export const storeRequestsRoute = handler(storeRequests);
+export const paymentLinkRoute = handler(createLink);
+
+app.http('svc-request-submit', { ...anon, methods: ['POST'], route: 'service-store/{kind}/{ownerId}/requests', handler: submitRequestRoute });
+// One template, two methods: the Functions host refuses the same route registered twice.
+app.http('svc-channel', {
+  ...anon, methods: ['GET', 'POST'], route: 'service-store/{kind}/{ownerId}/channel',
+  handler: (request, context) => (request.method === 'POST' ? channelPostRoute(request, context) : channelRoute(request, context)),
+});
+app.http('svc-channel-delete', { ...anon, methods: ['POST'], route: 'service-store/{kind}/{ownerId}/channel/{id}/delete', handler: channelDeleteRoute });
+app.http('svc-follow', { ...anon, methods: ['POST'], route: 'service-store/{kind}/{ownerId}/follow', handler: followStoreRoute });
+app.http('svc-my-requests', { ...anon, methods: ['GET'], route: 'me/service-requests', handler: myRequestsRoute });
+app.http('svc-request', { ...anon, methods: ['GET'], route: 'service-requests/{kind}/{ownerId}/{id}', handler: requestRoute });
+app.http('svc-request-act', { ...anon, methods: ['POST'], route: 'service-requests/{kind}/{ownerId}/{id}/act', handler: requestActRoute });
+app.http('svc-store-requests', { ...anon, methods: ['GET'], route: 'service-stores/{kind}/{ownerId}/requests', handler: storeRequestsRoute });
+app.http('svc-store-links', { ...anon, methods: ['POST'], route: 'service-stores/{kind}/{ownerId}/links', handler: paymentLinkRoute });

@@ -9,6 +9,11 @@ import {
   hasRight, insuranceQuote, isLive, jobActionsFor, jobIsLive, laneLabel, liveAddOns, liveLanes, liveOfferings,
   livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, type ArtistJobAction, type StoreKind,
 } from '../../../shared/service-stores.js';
+import {
+  followId, formOf, readForm, readInfoRows, readOptions, readVolumetric, readWarehouse, standingOf, storeKey,
+  type ServiceRequest, type Standing,
+} from '../../../shared/service-work.js';
+import type { ServiceFormField } from '../../../shared/models.js';
 import { crewButtons, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import {
   currentStepOf, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, stepTickKey, ticksOf,
@@ -95,6 +100,8 @@ interface StoreBody {
   contactEmail?: string; contactPhone?: string; links?: StoreLink[];
   listedInDirectory?: boolean;
   payment?: SellerPaymentDetails | null;
+  requestForm?: Partial<ServiceFormField>[] | null;
+  terms?: string;
   // Forwarder
   lanes?: Partial<FreightLane>[]; insurance?: Partial<InsurancePlan>[];
   warehouse?: { address?: string; contact?: string; hours?: string } | null;
@@ -120,6 +127,13 @@ function readLanes(input: unknown, previous: FreightLane[] = []): FreightLane[] 
     customsIncluded: raw.customsIncluded === true,
     note: text(raw.note, 200),
     active: raw.active !== false,
+    products: readOptions(raw.products, 'prod'),
+    volumetric: readVolumetric(raw.volumetric),
+    warehouse: readWarehouse(raw.warehouse),
+    orderInfo: text(raw.orderInfo, 2000),
+    terms: text(raw.terms, 4000),
+    extras: readInfoRows(raw.extras),
+    batteryAllowed: raw.batteryAllowed !== false,
   })).filter((lane) => lane.originCity || lane.destinationCity);
 }
 
@@ -146,6 +160,11 @@ function readOfferings(input: unknown, previous: ArtistOffering[] = []): ArtistO
     priceFromMinor: money(raw.priceFromMinor),
     turnaroundDays: count(raw.turnaroundDays, 365),
     active: raw.active !== false,
+    products: readOptions(raw.products, 'var'),
+    includes: text(raw.includes, 2000),
+    orderInfo: text(raw.orderInfo, 2000),
+    terms: text(raw.terms, 4000),
+    extras: readInfoRows(raw.extras),
   })).filter((offering) => offering.name);
 }
 
@@ -226,6 +245,9 @@ function mergeStore(kind: StoreKind, account: User, input: StoreBody): Forwarder
     links: readLinks(input.links, existing?.links ?? []),
     team: existing?.team ?? [],
     payment: readPayment(input.payment, existing?.payment),
+    requestForm: input.requestForm === undefined ? (existing?.requestForm ?? null)
+      : input.requestForm === null ? null : readForm(kind, input.requestForm),
+    terms: input.terms === undefined ? (existing?.terms ?? '') : text(input.terms, 4000),
   };
 
   if (kind === 'forwarder') {
@@ -391,7 +413,7 @@ async function saveStore(request: HttpRequest, _context: InvocationContext) {
 async function storeTeam(request: HttpRequest, _context: InvocationContext) {
   const found = await storeFor(request, 'team');
   if (found.refusal) return found.refusal;
-  const input = await body<{ identifier?: string; rights?: StoreRight[]; remove?: string }>(request);
+  const input = await body<{ identifier?: string; rights?: StoreRight[]; remove?: string; member?: string; tag?: string }>(request);
   if (!input) return error(400, 'invalid_body', 'Request body must be JSON.');
   const { owner, kind, repository, user } = found;
   const store = storeOf(owner, kind)!;
@@ -399,6 +421,15 @@ async function storeTeam(request: HttpRequest, _context: InvocationContext) {
 
   if (input.remove) {
     store.team = team.filter((member) => member.userId !== input.remove);
+  } else if (input.member) {
+    // Changing somebody already on the team: their rights, their tag, or both.
+    const existing = team.find((row) => row.userId === input.member);
+    if (!existing) return error(404, 'no_such_member', 'They are not on this team.');
+    const rights = input.rights === undefined ? existing.rights
+      : input.rights.filter((right) => (STORE_RIGHTS as readonly string[]).includes(right));
+    if (rights.length === 0) return error(400, 'no_rights', 'Pick at least one thing they may do.');
+    const tag = input.tag === undefined ? existing.tag : text(input.tag, 24);
+    store.team = team.map((row) => (row.userId === existing.userId ? { ...row, rights, ...(tag ? { tag } : { tag: undefined }) } : row));
   } else {
     const identifier = text(input.identifier, 120).replace(/^@/, '');
     if (!identifier) return error(400, 'invalid_member', 'Name the person by @handle, email or phone.');
@@ -409,7 +440,7 @@ async function storeTeam(request: HttpRequest, _context: InvocationContext) {
     if (member.id === owner.id) return error(400, 'is_owner', 'The owner already holds every right.');
     const rights = (input.rights ?? []).filter((right) => (STORE_RIGHTS as readonly string[]).includes(right));
     if (rights.length === 0) return error(400, 'no_rights', 'Pick at least one thing they may do.');
-    const entry = memberEntry(member.id, member.displayName, rights, user.id);
+    const entry = { ...memberEntry(member.id, member.displayName, rights, user.id), ...(text(input.tag, 24) ? { tag: text(input.tag, 24) } : {}) };
     const existing = team.find((row) => row.userId === member.id);
     store.team = existing
       ? team.map((row) => (row.userId === member.id ? { ...entry, addedAt: row.addedAt, addedBy: row.addedBy } : row))
@@ -637,6 +668,10 @@ function publicStore(owner: User, kind: StoreKind) {
     trust: store.trust,
     teamSize: 1 + (store.team?.length ?? 0),
     status: statusOf(store),
+    form: formOf(kind, store.requestForm),
+    terms: store.terms ?? '',
+    /** Payment details are shown on a request once it is accepted, never on the page. */
+    takesDirect: Boolean(store.payment),
   };
   if (kind === 'forwarder') {
     const profile = owner.forwarderProfile!;
@@ -666,26 +701,81 @@ function publicStore(owner: User, kind: StoreKind) {
   };
 }
 
+/**
+ * What a store's page counts - lots carried, finished work, its standing,
+ * followers - kept for a minute per instance.
+ *
+ * The lot count is a query across every shop's lots, and a store page is
+ * opened far more often than any of those numbers move. A minute late on a
+ * follower count is invisible; a page that waits on that query every time is not.
+ */
+const PAGE_STATS_MS = 60_000;
+const pageStats = new Map<string, { at: number; value: Promise<PageStats> }>();
+interface PageStats {
+  lotsCarried: number;
+  commissions: number;
+  followers: number;
+  standing: Standing;
+  reviews: { stars: number; text: string; at: string; by: string; subject: string | null }[];
+}
+
+export function forgetPageStats(kind: StoreKind, ownerId: string): void {
+  pageStats.delete(storeKey(kind, ownerId));
+}
+
+async function statsFor(repository: Repo, owner: User, kind: StoreKind): Promise<PageStats> {
+  const key = storeKey(kind, owner.id);
+  const cached = pageStats.get(key);
+  if (cached && Date.now() - cached.at < PAGE_STATS_MS) return cached.value;
+  const value = (async (): Promise<PageStats> => {
+    const [lotsCarried, commissions, requests, followers] = await Promise.all([
+      kind === 'forwarder' ? lotsBooking(repository, owner.id).then((rows) => rows.filter(({ lot }) => forwarderTookLot(lot)).length) : Promise.resolve(0),
+      kind === 'artist' ? repository.listOrdersCommissionedFrom(owner.id).then((rows) => rows.filter((o) => o.artistJob?.status === 'completed').length) : Promise.resolve(0),
+      repository.listServiceWork<ServiceRequest>(key, 'request'),
+      repository.countServiceFollowers(key),
+    ]);
+    return {
+      lotsCarried,
+      commissions,
+      followers,
+      // Work carried for shops counts towards the level as much as work for customers.
+      standing: standingOf(requests, lotsCarried + commissions),
+      reviews: requests.filter((row) => row.review).slice(0, 20).map((row) => ({
+        stars: row.review!.stars, text: row.review!.text, at: row.review!.at,
+        by: row.customerName.split(' ')[0] || 'A customer', subject: row.subject?.label ?? null,
+      })),
+    };
+  })();
+  pageStats.set(key, { at: Date.now(), value });
+  value.catch(() => pageStats.delete(key));
+  return value;
+}
+
 /** GET /api/service-store/{kind}/{slug} - the store's own page. */
 async function storePage(request: HttpRequest, _context: InvocationContext) {
   const kind = request.params.kind;
   const slug = request.params.slug;
   if (!isKind(kind) || !slug) return error(404, 'not_found', 'No such store.');
   const repository = await getRepository();
-  const owner = await repository.findStoreBySlug(kind, slug);
+  const auth = await getAuthService();
+  const [owner, viewer] = await Promise.all([repository.findStoreBySlug(kind, slug), auth.getCurrentUser(request)]);
   if (!owner) return error(404, 'not_found', 'No such store.');
 
   // Not live yet: only its own team (previewing) and operators may look.
   if (!isLive(storeOf(owner, kind)) || owner.suspended) {
-    const auth = await getAuthService();
-    const viewer = await auth.getCurrentUser(request);
     if (!viewer || (rightsIn(owner, kind, viewer.id).length === 0 && !viewer.capabilities.isAdmin)) {
       return error(404, 'not_found', 'No such store.');
     }
   }
-  const lotsCarried = kind === 'forwarder' ? (await lotsBooking(repository, owner.id)).filter(({ lot }) => forwarderTookLot(lot)).length : 0;
-  const commissions = kind === 'artist' ? (await repository.listOrdersCommissionedFrom(owner.id)).filter((o) => o.artistJob?.status === 'completed').length : 0;
-  return json(200, { store: publicStore(owner, kind), stats: { lotsCarried, commissions } });
+  const [stats, following] = await Promise.all([
+    statsFor(repository, owner, kind),
+    viewer ? repository.getServiceWork(storeKey(kind, owner.id), followId(viewer.id)).then(Boolean) : Promise.resolve(false),
+  ]);
+  return json(200, {
+    store: publicStore(owner, kind),
+    stats,
+    viewer: viewer ? { following, rights: rightsIn(owner, kind, viewer.id) } : null,
+  });
 }
 
 /** Every live store of one kind, for the directory. */
@@ -1117,6 +1207,12 @@ async function myServices(request: HttpRequest, _context: InvocationContext) {
           waiting = jobs.filter((job) => jobActionsFor(job, 'artist').length > 0).length;
           active = jobs.filter((job) => jobIsLive(job)).length;
         }
+      }
+      if (rights.includes('work')) {
+        // Direct requests from customers: new ones, and payments waiting to be confirmed.
+        const requests = await repository.listServiceWork<ServiceRequest>(storeKey(kind, owner.id), 'request');
+        waiting += requests.filter((row) => row.status === 'submitted' || (row.payment && !row.payment.confirmedAt && row.status === 'accepted')).length;
+        active += requests.filter((row) => ['accepted', 'paid', 'received', 'in_progress', 'shipped'].includes(row.status)).length;
       }
       return {
         kind, ownerId: owner.id, isOwner: owner.id === user.id, rights,

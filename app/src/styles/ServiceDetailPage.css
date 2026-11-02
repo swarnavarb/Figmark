@@ -1,0 +1,71 @@
+/*
+ * Styles only pages/ServiceDetailPage.tsx writes: one route or service, and
+ * the form that floats over it.
+ */
+.sd-page { max-width: 1080px; padding-bottom: 110px; }
+.sd-head { display: grid; gap: 8px; margin: 6px 0 22px; padding: 20px; border: 1px solid var(--border); border-radius: var(--r-xl);
+  background: linear-gradient(150deg, var(--sk-soft), transparent 55%), var(--surface); }
+.sd-head h1 { margin: 6px 0 0; font-size: clamp(1.6rem, 4vw, 2.3rem); letter-spacing: -0.02em; }
+.sd-head p { margin: 0; }
+.sd-head__store { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+.sd-head__store > span { display: grid; gap: 4px; }
+.sd-head__chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.sd-head__from { font-size: var(--t-md); color: var(--text-dim); }
+.sd-head__from b { font-size: var(--t-xl); color: var(--sk-text); }
+.sd-layout { display: grid; gap: 22px; }
+@media (min-width: 900px) {
+  .sd-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+  .sd-side { position: sticky; top: calc(var(--nav-h) + 16px); }
+}
+.sd-main { gap: 22px; }
+.sd-sec { display: grid; gap: 10px; }
+.sd-sec h2 { margin: 0; font-size: var(--t-lg); }
+.sd-sec > .faint { margin: 0; font-size: var(--t-xs); }
+.sd-text { margin: 0; font-size: var(--t-sm); line-height: 1.6; color: var(--text-dim); white-space: pre-line; }
+.sd-terms { padding: 12px 14px; border-left: 3px solid var(--sk-line); background: var(--surface); border-radius: 0 var(--r-md) var(--r-md) 0; }
+.sd-callout { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: var(--r-md);
+  background: var(--sk-soft); color: var(--text); font-size: var(--t-sm); }
+.sd-plans { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+.sd-noplan { padding: 14px; border: 1px dashed var(--border); border-radius: var(--r-lg); background: none; color: var(--text-dim); font: inherit; cursor: pointer; }
+.sd-noplan.is-on { border-style: solid; border-color: var(--sk); color: var(--text); background: var(--sk-soft); }
+.sd-asks { margin: 0; padding-left: 18px; columns: 2 220px; font-size: var(--t-sm); color: var(--text-dim); }
+.sd-asks li { margin-bottom: 4px; break-inside: avoid; }
+.sd-box { display: grid; gap: var(--s2); padding: var(--s4); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.sd-box h3 { display: flex; align-items: center; gap: 6px; margin: 0; }
+.sd-box p { margin: 0; }
+.sd-steps { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: var(--t-sm); color: var(--text-dim); }
+.sd-steps li::marker { color: var(--sk-text); font-weight: var(--w-bold); }
+
+/* The button that is always there. */
+.sd-fab {
+  position: fixed; left: 50%; bottom: calc(var(--tabbar-h, 64px) + 14px + env(safe-area-inset-bottom, 0px)); z-index: 40;
+  transform: translateX(-50%); width: min(calc(100% - 32px), 460px);
+}
+@media (min-width: 900px) {
+  .sd-fab { bottom: 24px; }
+}
+.sd-fab__btn {
+  width: 100%; justify-content: center; gap: 8px; min-height: 52px; font-size: var(--t-md);
+  background: var(--sk); color: #0b1020; border-color: transparent;
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--sk) 40%, transparent), 0 2px 0 rgba(255, 255, 255, 0.25) inset;
+  animation: sd-rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.sd-fab__btn:hover { filter: brightness(1.06); }
+.sd-fab__from { margin-left: 6px; padding: 2px 8px; border-radius: var(--r-pill); background: rgba(11, 16, 32, 0.16); font-size: var(--t-xs); font-weight: var(--w-semi); }
+@keyframes sd-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sd-fab__btn { animation: none; } }
+
+/* The form, over the page. */
+.sd-sheet { position: fixed; inset: 0; z-index: 80; display: grid; align-items: end; justify-items: center; }
+@media (min-width: 720px) { .sd-sheet { align-items: center; } }
+.sd-sheet__scrim { position: absolute; inset: 0; border: 0; background: rgba(4, 7, 14, 0.66); backdrop-filter: blur(4px); cursor: pointer; }
+.sd-sheet__panel {
+  position: relative; display: grid; grid-template-rows: auto 1fr auto; width: min(100%, 760px); max-height: min(92vh, 900px);
+  border: 1px solid var(--border); border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--bg, #0b1020); box-shadow: var(--shadow);
+  animation: sd-rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@media (min-width: 720px) { .sd-sheet__panel { border-radius: var(--r-xl); } }
+.sd-sheet__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 16px 18px 10px; border-bottom: 1px solid var(--border); }
+.sd-sheet__head h2 { margin: 2px 0 0; font-size: var(--t-lg); }
+.sd-sheet__body { overflow-y: auto; padding: 16px 18px; gap: 16px; }
+.sd-sheet__foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); }

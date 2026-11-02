@@ -125,6 +125,10 @@ const {
   orderServicesRoute, setInsuranceRoute, commissionRoute, commissionActRoute, crewLotRoute, opsStoresRoute, opsReviewRoute,
 } = await import(new URL('store-routes.js', apiRoot));
 const {
+  submitRequestRoute, channelRoute, channelPostRoute, channelDeleteRoute, followStoreRoute, myRequestsRoute,
+  requestRoute, requestActRoute, storeRequestsRoute, paymentLinkRoute,
+} = await import(new URL('service-work-routes.js', apiRoot));
+const {
   creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute,
   saveReversalDetailsRoute, reversalDetailsRoute, saveProfileRoute,
 } = await import(new URL('profile-routes.js', apiRoot));
@@ -465,6 +469,16 @@ const routes = [
   ['POST', '/api/service-stores/:kind/:ownerId/team', storeTeamRoute],
   ['GET', '/api/service-stores/:kind/:ownerId/work', storeWorkRoute],
   ['GET', '/api/service-store/:kind/:slug', storePageRoute],
+  ['POST', '/api/service-store/:kind/:ownerId/requests', submitRequestRoute],
+  ['GET', '/api/service-store/:kind/:ownerId/channel', channelRoute],
+  ['POST', '/api/service-store/:kind/:ownerId/channel', channelPostRoute],
+  ['POST', '/api/service-store/:kind/:ownerId/channel/:id/delete', channelDeleteRoute],
+  ['POST', '/api/service-store/:kind/:ownerId/follow', followStoreRoute],
+  ['GET', '/api/me/service-requests', myRequestsRoute],
+  ['GET', '/api/service-requests/:kind/:ownerId/:id', requestRoute],
+  ['POST', '/api/service-requests/:kind/:ownerId/:id/act', requestActRoute],
+  ['GET', '/api/service-stores/:kind/:ownerId/requests', storeRequestsRoute],
+  ['POST', '/api/service-stores/:kind/:ownerId/links', paymentLinkRoute],
   ['GET', '/api/lots/:id/forwarders', lotForwarderOptionsRoute],
   ['POST', '/api/lots/:id/forwarder-store', bookForwarderRoute],
   ['GET', '/api/orders/:id/services', orderServicesRoute],
