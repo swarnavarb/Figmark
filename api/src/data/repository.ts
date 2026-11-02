@@ -310,6 +310,8 @@ export interface Repository {
   listServiceRequestsBy(customerId: string): Promise<ServiceRequest[]>;
   /** Followers of one store, counted rather than read. */
   countServiceFollowers(storeId: string): Promise<number>;
+  /** The service stores (`kind:ownerId`) one person follows. */
+  listServiceStoresFollowedBy(userId: string): Promise<string[]>;
   /**
    * Pre-orders with a deadline behind them that nobody has acted on yet: the
    * cutoff passed before it went ahead, or the seller's time to decide ran out.

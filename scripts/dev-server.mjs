@@ -121,7 +121,7 @@ const {
 } = await import(new URL('service-routes.js', apiRoot));
 const {
   myServicesRoute, applyStoreRoute, storeConsoleRoute, saveStoreRoute, storeTeamRoute, storeWorkRoute,
-  respondLotRoute, artistActRoute, storePageRoute, opsDemoStoresRoute, lotForwarderOptionsRoute, bookForwarderRoute,
+  respondLotRoute, artistActRoute, storePageRoute, opsDemoStoresRoute, devDemoStoreRoute, lotForwarderOptionsRoute, bookForwarderRoute,
   orderServicesRoute, setInsuranceRoute, commissionRoute, commissionActRoute, crewLotRoute, opsStoresRoute, opsReviewRoute,
 } = await import(new URL('store-routes.js', apiRoot));
 const {
@@ -469,6 +469,7 @@ const routes = [
   ['POST', '/api/service-stores/:kind/:ownerId/team', storeTeamRoute],
   ['GET', '/api/service-stores/:kind/:ownerId/work', storeWorkRoute],
   ['POST', '/api/ops/demo-stores', opsDemoStoresRoute],
+  ['POST', '/api/dev/demo-store', devDemoStoreRoute],
   ['GET', '/api/service-store/:kind/:slug', storePageRoute],
   ['POST', '/api/service-store/:kind/:ownerId/requests', submitRequestRoute],
   ['GET', '/api/service-store/:kind/:ownerId/channel', channelRoute],

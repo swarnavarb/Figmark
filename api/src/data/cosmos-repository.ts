@@ -1246,6 +1246,17 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listServiceStoresFollowedBy(userId: string): Promise<string[]> {
+    // Cross-partition, but one small value per store followed.
+    const { resources } = await this.container('serviceWork')
+      .items.query<string>({
+        query: "SELECT VALUE c.storeId FROM c WHERE c.type = 'follow' AND c.userId = @id",
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async countServiceFollowers(storeId: string): Promise<number> {
     const { resources } = await this.container('serviceWork')
       .items.query<number>({ query: "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'follow'" }, { partitionKey: storeId })

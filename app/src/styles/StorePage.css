@@ -1,6 +1,5 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .sp-hero__text { display: grid; gap: var(--s1); min-width: 0; }
-.sp-steps li::marker { color: var(--sk-text); font-weight: var(--w-bold); }
 
 /*
  * Styles only pages/StorePage.tsx and what it brings in can draw, loaded with that
@@ -34,11 +33,6 @@
 }
 .sp-chip { display: inline-flex; align-items: center; gap: 5px; padding: var(--s1) 10px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-dim); font-size: var(--t-xs); }
 .sp-chip--ok { background: var(--ok-soft); color: var(--ok); }
-.sp-proof { display: flex; gap: 1px; margin: 14px var(--s3) 0; border-radius: var(--r-lg); overflow: hidden; background: var(--border); border: 1px solid var(--border); }
-@media (min-width: 720px) {
-  .sp-proof { margin: 14px var(--s5) 0; }
-}
-.sp-proof__cell { flex: 1; display: grid; gap: 0; padding: var(--s3) 14px; background: var(--surface); }
 .sp-layout { display: grid; gap: 22px; }
 @media (min-width: 900px) {
   .sp-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
@@ -47,28 +41,24 @@
 .sp-main { gap: 26px; }
 .sp-sechead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
 .sp-filter { display: flex; flex-wrap: wrap; gap: 6px; }
-.sp-plans, .sp-menu { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
 .sp-box { display: grid; gap: var(--s2); padding: var(--s4); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
 .sp-about { font-size: var(--t-sm); line-height: 1.6; color: var(--text-dim); white-space: pre-line; }
 .sp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.sp-steps { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: var(--t-sm); color: var(--text-dim); }
 
 /* Tabs, and each route or service opening its own page. */
 .sp-tabs { margin-bottom: 18px; }
 .sp-tabs__count { margin-left: 6px; padding: 0 7px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--t-2xs); }
-.sp-offer-link { display: grid; gap: 0; color: inherit; text-decoration: none; border-radius: var(--r-lg); transition: transform 0.15s; }
-.sp-offer-link:hover { transform: translateY(-1px); }
-.sp-offer-link:hover .sk-ticket, .sp-offer-link:hover .sk-offer { border-color: var(--sk-line); }
-.sp-offer-link__more {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 8px 14px 0;
-  font-size: var(--t-xs); color: var(--text-dim);
-}
-.sp-offer-link__more b { color: var(--text); }
-.sp-offer-link__go { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--sk-text); font-weight: var(--w-semi); }
-.sp-offer-link--card .sp-offer-link__more { padding: 8px 4px 0; }
 .sp-rating { display: inline-flex; align-items: center; gap: 6px; }
 .sp-review { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
 .sp-review__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-sm); }
 .sp-review p { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.55; }
-.sp-level { display: block; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
-.sp-level span { display: block; height: 100%; background: var(--sk); border-radius: 3px; }
+/* Routes and services as short rows: where, how long, from what. */
+.sp-rows { display: grid; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+.sp-row { display: flex; align-items: center; gap: 12px; padding: 14px 16px; color: inherit; text-decoration: none; border-bottom: 1px solid var(--border); }
+.sp-row:last-child { border-bottom: 0; }
+.sp-row:hover { background: var(--sk-soft); }
+.sp-row__glyph { font-size: var(--t-lg); }
+.sp-row__body { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.sp-row__body .faint { font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-row__price { font-size: var(--t-sm); color: var(--text-dim); white-space: nowrap; }
+.sp-row__price b { color: var(--sk-text); }

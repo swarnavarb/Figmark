@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { InfoRow, PriceOption, ServiceFormField } from '@shared/models';
+import type { InfoRow, PriceOption, ServiceFormField, StoreWarehouse } from '@shared/models';
 import type { StoreKind } from '@shared/service-stores';
 import {
   ACTION_LABELS, BASIS_LABELS, CHANNEL_MAX_CHARS, REQUEST_FLOW, REQUEST_LABELS, answerText, emptyAddress,
@@ -12,6 +12,7 @@ import { useSession } from '../session';
 import { formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, Icon } from './ui';
 import { MoneyInput } from './StoreKit';
+import { markSeen } from './channelSeen';
 import '../styles/ServiceWorkKit.css';
 
 /**
@@ -85,6 +86,53 @@ export function PriceOptions({ options, picked, onPick, baseLabel, baseMinor, ba
   );
 }
 
+/**
+ * Where a customer sends their goods - every address, set apart from the rest
+ * of the page, each with a button to copy it whole.
+ */
+export function WarehouseCards({ warehouses, reference }: { warehouses: readonly StoreWarehouse[]; reference?: string | null }) {
+  const [copied, setCopied] = useState<number | null>(null);
+  if (warehouses.length === 0) return null;
+  async function copy(index: number, row: StoreWarehouse) {
+    const text = [reference ? `${reference}` : '', row.address, row.contact].filter(Boolean).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(index);
+      window.setTimeout(() => setCopied((current) => (current === index ? null : current)), 1800);
+    } catch { /* nothing to copy to */ }
+  }
+  return (
+    <div className="svk-wh">
+      {warehouses.map((row, index) => (
+        <div key={`${row.address}-${index}`} className="svk-wh__card">
+          <span className="svk-wh__head">
+            <Icon name="home" size={14} />
+            <b>{row.name || (warehouses.length > 1 ? `Warehouse ${index + 1}` : 'Warehouse')}</b>
+            <button type="button" className="btn btn--ghost btn--sm svk-wh__copy" onClick={() => void copy(index, row)}>
+              {copied === index ? <><Icon name="check" size={12} /> Copied</> : 'Copy'}
+            </button>
+          </span>
+          {reference && <span className="svk-wh__ref">Mark it <b>{reference}</b></span>}
+          <p>{row.address}</p>
+          {(row.contact || row.hours) && <span className="faint">{[row.contact, row.hours].filter(Boolean).join(' · ')}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Short rows of name and price - cover plans, extras - with "Free" where it is. */
+export function PriceRows({ rows }: { rows: readonly { id: string; name: string; price: string; note?: string }[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <ul className="svk-rows">
+      {rows.map((row) => (
+        <li key={row.id}><span>{row.name}{row.note && <small>{row.note}</small>}</span><b>{row.price}</b></li>
+      ))}
+    </ul>
+  );
+}
+
 export function InfoRows({ rows }: { rows: readonly InfoRow[] | undefined }) {
   if (!rows || rows.length === 0) return null;
   return (
@@ -100,7 +148,7 @@ export function EstimateBox({ estimate, note }: { estimate: Estimate; note?: Rea
   return (
     <div className="svk-estimate" aria-live="polite">
       {estimate.lines.map((line) => (
-        <span key={line.label} className="svk-estimate__line"><span>{line.label}</span><b>{formatMoney(line.minor)}</b></span>
+        <span key={line.label} className="svk-estimate__line"><span>{line.label}</span><b>{line.minor === 0 ? 'Free' : formatMoney(line.minor)}</b></span>
       ))}
       <span className="svk-estimate__total"><span>Estimate</span><b>{formatMoney(estimate.totalMinor)}</b></span>
       {note && <span className="faint svk-estimate__note">{note}</span>}
@@ -410,13 +458,15 @@ export function StoreChannel({ kind, ownerId, storeName, accentLogo }: { kind: S
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [asCompany, setAsCompany] = useState(false);
-  const [announce, setAnnounce] = useState(false);
+  const [share, setShare] = useState(false);
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     try {
       setView(await api.storeChannel(kind, ownerId));
+      // The Social channel list counts what is new here since this moment.
+      markSeen(`${kind}:${ownerId}`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load the channel.');
     }
@@ -432,10 +482,10 @@ export function StoreChannel({ kind, ownerId, storeName, accentLogo }: { kind: S
     setBusy(true);
     setError(null);
     try {
-      const { message } = await api.postStoreChannel(kind, ownerId, { body: draft, asCompany, announcement: asCompany && announce });
+      const { message } = await api.postStoreChannel(kind, ownerId, { body: draft, asCompany, announcement: asCompany && share, toSocial: asCompany && share });
       setView((current) => current ? { ...current, messages: [...current.messages, message] } : current);
       setDraft('');
-      setAnnounce(false);
+      setShare(false);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
     } finally {
@@ -470,7 +520,11 @@ export function StoreChannel({ kind, ownerId, storeName, accentLogo }: { kind: S
               <b>{message.authorName}</b>
               {message.voice === 'company' && <span className="svk-tag svk-tag--company">Company</span>}
               {message.tag && <span className="svk-tag">{message.tag}</span>}
-              {message.announcement && <span className="svk-tag svk-tag--announce"><Icon name="megaphone" size={11} /> Announcement</span>}
+              {message.postId ? (
+                <Link to={`/social/p/${encodeURIComponent(message.storeId)}/${encodeURIComponent(message.postId)}`} className="svk-tag svk-tag--announce">
+                  <Icon name="megaphone" size={11} /> On Social
+                </Link>
+              ) : message.announcement && <span className="svk-tag svk-tag--announce"><Icon name="megaphone" size={11} /> Announcement</span>}
               <span className="faint">{timeAgo(message.createdAt)}</span>
               {(message.authorId === user?.id || me?.moderates) && (
                 <button type="button" className="svk-msg__del" aria-label="Remove message" onClick={() => void remove(message)}><Icon name="trash" size={12} /></button>
@@ -491,7 +545,7 @@ export function StoreChannel({ kind, ownerId, storeName, accentLogo }: { kind: S
               </button>
               {asCompany && (
                 <label className="svk-channel__announce">
-                  <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} /> Announce to followers
+                  <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} /> Also post to Social
                 </label>
               )}
             </div>

@@ -37,6 +37,10 @@ function forwarderStore(now: string, team: StoreMember[]): ForwarderProfile {
         { id: 'demo_p_cards', name: 'Sealed card boxes', basis: 'piece', priceMinor: 18_000, note: 'Per booster box' },
       ],
       volumetric: { divisor: 6000, mode: 'greater', note: 'Statue boxes are re-measured at our warehouse; we repack to cut volume at no charge.' },
+      warehouses: [
+        { name: 'Guangzhou · Baiyun (main)', address: 'Unit 12, Baiyun Logistics Park, Taihe Town, Baiyun District, Guangzhou 510540', contact: 'Mr. Chen · +86 138 0000 0101', hours: 'Mon–Sat 9:00–18:00' },
+        { name: 'Guangzhou · Panyu', address: 'Bay 7, Shiqiao Industrial Road 88, Panyu District, Guangzhou 511400', contact: 'Ms. Li · +86 137 0000 0303', hours: 'Mon–Fri 10:00–17:00' },
+      ],
       orderInfo: 'Write your request number (FR-…) on every box. Cut-off Thursday 15:00 for the Saturday flight. Free storage for 14 days while you consolidate.',
       terms: 'Liquids, powders, replica weapons and counterfeit goods are refused at the warehouse. Liability without cover is limited to ₹2,000 per parcel.',
       extras: [
@@ -86,6 +90,12 @@ function forwarderStore(now: string, team: StoreMember[]): ForwarderProfile {
     payment: { upiId: 'demo-lotus@upi', accountName: 'Lotus Freight Demo', accountNumber: null, ifsc: null, instructions: 'Demo only — do not send real money. Quote your FR- number.' },
     requestForm: null,
     terms: 'Quotes are valid for 7 days. Weights are taken at our warehouse and are final. Claims under a cover plan follow that plan’s terms.',
+    serviceOptions: [
+      { id: 'demo_opt_door', name: 'Door-to-door delivery', priceMinor: 150_00, note: 'Delivered to your address in India' },
+      { id: 'demo_opt_hub', name: 'Pick up from our India hub', priceMinor: 0, note: 'Free' },
+      { id: 'demo_opt_photos', name: 'Unboxing photos & repack', priceMinor: 99_00, note: '' },
+    ],
+    formUrl: null,
     lanes,
     routes: lanes.map((lane) => ({
       originCity: lane.originCity, destinationCity: lane.destinationCity,
@@ -93,6 +103,8 @@ function forwarderStore(now: string, team: StoreMember[]): ForwarderProfile {
     })),
     claimedMonthlyCapacityKg: 8_000,
     insurance: [
+      { id: 'demo_plan_free', name: 'Basic cover', coverPercent: 100, premiumBasisPoints: 0, minPremiumMinor: 0, maxCoverMinor: 2_000_00, active: true,
+        terms: 'Included on every parcel at no charge: loss in our care, up to ₹2,000.' },
       { id: 'demo_plan_std', name: 'Transit Shield', coverPercent: 80, premiumBasisPoints: 150, minPremiumMinor: 4_900, maxCoverMinor: 50_00_000, active: true,
         terms: 'Covers loss and visible transit damage from our China warehouse to landing in India. Claims within 72 hours of delivery with unboxing photos.' },
       { id: 'demo_plan_full', name: 'Transit Shield Plus', coverPercent: 100, premiumBasisPoints: 300, minPremiumMinor: 9_900, maxCoverMinor: 2_00_00_000, active: true,
@@ -129,6 +141,12 @@ function artistStore(now: string, team: StoreMember[]): ArtistProfile {
     payment: { upiId: 'demo-inkwell@upi', accountName: 'Inkwell Studio Demo', accountNumber: null, ifsc: null, instructions: 'Demo only — do not send real money. Quote your AR- number.' },
     requestForm: null,
     terms: 'Half the price is non-refundable once work starts. Two rounds of changes are included; more are quoted separately.',
+    serviceOptions: [
+      { id: 'demo_opt_rush', name: 'Rush — jump the queue', priceMinor: 1_500_00, note: 'Starts within 3 days' },
+      { id: 'demo_opt_return', name: 'Insured return shipping', priceMinor: 250_00, note: '' },
+      { id: 'demo_opt_wip', name: 'Work-in-progress video', priceMinor: 0, note: 'Free' },
+    ],
+    formUrl: null,
     specialties: ['Repaint', 'Custom sculpt', 'Restoration', 'Weathering'],
     offerings: [
       {
@@ -214,6 +232,11 @@ async function ensure(repository: Repo, kind: StoreKind, member: User): Promise<
     } as User);
   }
   return { kind, slug: store.directorySlug, ownerId: id, name: store.companyName };
+}
+
+/** One demo store, with this person on its team. */
+export async function createDemoStore(repository: Repo, kind: StoreKind, member: User) {
+  return ensure(repository, kind, member);
 }
 
 export async function createDemoStores(repository: Repo, member: User) {

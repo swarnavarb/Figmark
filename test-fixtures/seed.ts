@@ -432,6 +432,10 @@ const LOTUS_STORE: Partial<ForwarderProfile> = {
   autoAccept: false,
   payment: { upiId: 'lotusfreight@hdfc', accountName: 'Lotus Freight India Pvt Ltd', accountNumber: null, ifsc: null, instructions: 'Quote your FR- request number' },
   terms: 'Quotes are valid for 7 days. Weights are taken at our Guangzhou warehouse and are final. Claims under a cover plan follow that plan’s terms.',
+  serviceOptions: [
+    { id: 'opt_door', name: 'Door-to-door delivery', priceMinor: 150_00, note: 'Delivered to your address in India' },
+    { id: 'opt_hub', name: 'Pick up from our India hub', priceMinor: 0, note: '' },
+  ],
   warehouse: {
     address: 'Unit 12, Baiyun Logistics Park, Taihe Town, Baiyun District, Guangzhou 510540',
     contact: 'Mr. Chen · +86 138 0000 0101 · WeChat lotus_gz',
@@ -448,6 +452,10 @@ const LOTUS_STORE: Partial<ForwarderProfile> = {
         { id: 'prod_cards', name: 'Sealed card boxes', basis: 'piece', priceMinor: 18_000, note: 'Per booster box' },
       ],
       volumetric: { divisor: 6000, mode: 'greater', note: 'Statue boxes are re-measured at our warehouse; we repack to cut volume at no charge.' },
+      warehouses: [
+        { name: 'Baiyun (main)', address: 'Unit 12, Baiyun Logistics Park, Taihe Town, Baiyun District, Guangzhou 510540', contact: 'Mr. Chen · +86 138 0000 0101', hours: 'Mon–Sat 9:00–18:00' },
+        { name: 'Panyu', address: 'Bay 7, Shiqiao Industrial Road 88, Panyu District, Guangzhou 511400', contact: 'Ms. Li · +86 137 0000 0303', hours: 'Mon–Fri 10:00–17:00' },
+      ],
       orderInfo: 'Write your request number (FR-…) on every box. Cut-off Thursday 15:00 for the Saturday flight. Free storage for 14 days while you consolidate.',
       terms: 'Liquids, powders, replica weapons and counterfeit goods are refused at the warehouse. Liability without cover is limited to ₹2,000 per parcel.',
       extras: [
@@ -466,6 +474,8 @@ const LOTUS_STORE: Partial<ForwarderProfile> = {
       note: 'Duty billed at actuals on landing.', active: true },
   ],
   insurance: [
+    { id: 'plan_lotus_free', name: 'Basic cover', coverPercent: 100, premiumBasisPoints: 0, minPremiumMinor: 0,
+      maxCoverMinor: 2_000_00, active: true, terms: 'Included on every parcel: loss in our care, up to ₹2,000.' },
     { id: 'plan_lotus_std', name: 'Transit Shield', coverPercent: 80, premiumBasisPoints: 150, minPremiumMinor: 4_900,
       maxCoverMinor: 50_00_000, active: true,
       terms: 'Covers loss and visible transit damage from our China warehouse to landing in India. Claims within 72 hours of delivery with unboxing photos.' },

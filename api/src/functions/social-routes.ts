@@ -10,6 +10,8 @@ import {
   type PostSocial, type ReactorRow, type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
 import { can } from '../../../shared/stores.js';
+import { rightsIn, storeOf } from '../../../shared/service-stores.js';
+import type { ChannelMessage } from '../../../shared/service-work.js';
 import { isExpired, isMultiple, rupees } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
@@ -419,7 +421,9 @@ export async function decorate(
       && channelOwner?.sellerProfile?.storefrontName === post.authorName;
     const card: PostCard = {
       post: publicPost(post),
-      author: spokenAsShop ? sellerRef(channelOwner) : personRef(author),
+      author: post.service
+        ? { name: post.service.name, handle: null, href: `/services/${post.service.kind}/${post.service.slug}` }
+        : spokenAsShop ? sellerRef(channelOwner) : personRef(author),
       listing: listing
         ? {
             id: listing.id,
@@ -446,7 +450,7 @@ export async function decorate(
           || (post.channel === 'seller' && channelOwner?.sellerProfile && can(channelOwner, viewer.userId, 'posts')))
           ? { host: true } : {}),
       },
-      following: followedIds.has(post.channelId) || post.channelId === viewer.userId,
+      following: followedIds.has(post.channelId) || post.channelId === viewer.userId || Boolean(post.service),
       shop: spokenAsShop,
     };
     if (savedIds.has(post.id)) card.saved = true;
@@ -508,6 +512,15 @@ async function storeOwner(storeId: string, repository: Repo): Promise<Owner | nu
 }
 
 async function postOwner(post: Post, repository: Repo): Promise<Owner> {
+  // A forwarder's or artist's post: whoever may speak for the company hears.
+  if (post.channel === 'service' && post.service) {
+    const owner = await repository.getUserById(post.service.ownerId);
+    const store = owner ? storeOf(owner, post.service.kind) : null;
+    if (owner && store) {
+      const voices = (store.team ?? []).filter((member) => rightsIn(owner, post.service!.kind, member.userId).includes('voice'));
+      return { audience: [owner.id, ...voices.map((member) => member.userId)], store: store.companyName, storeId: null };
+    }
+  }
   // Said in a shop's own voice, under the shop's name. A person's post on
   // their own wall shares the channel, so the name is what tells them apart -
   // as `withoutShops` reads it.
@@ -824,9 +837,16 @@ function risingFor(
 
 /** Shops and people this person follows, by id: who their "people you follow" are. */
 async function watchedBy(userId: string, repository: Repo): Promise<Set<string>> {
-  const follows = await repository.listFollowsBy(userId);
-  return new Set(follows.map((follow) => (isPersonFollow(follow.sellerId)
-    ? follow.sellerId.slice(PERSON_FOLLOW.length) : follow.sellerId)));
+  // Shops and people, and the freight forwarders and artists followed - whose
+  // posts live in channel `kind:ownerId`, so the feed reads them the same way.
+  const [follows, services] = await Promise.all([
+    repository.listFollowsBy(userId),
+    repository.listServiceStoresFollowedBy(userId).catch(() => [] as string[]),
+  ]);
+  return new Set([
+    ...follows.map((follow) => (isPersonFollow(follow.sellerId) ? follow.sellerId.slice(PERSON_FOLLOW.length) : follow.sellerId)),
+    ...services,
+  ]);
 }
 
 /**
@@ -1737,7 +1757,51 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
     .sort((a, b) => b.recent.length - a.recent.length || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''))
     .slice(0, 8);
 
-  return json(200, { channels: rows, discover });
+  return json(200, { channels: [...rows, ...await serviceChannels(user.id, repository)], discover });
+}
+
+/**
+ * The company channels of the freight forwarders and artists this person
+ * follows or works for, as rows of the same list. Each opens on the store's
+ * own page, where its channel lives.
+ */
+async function serviceChannels(userId: string, repository: Repo) {
+  const [followed, owners] = await Promise.all([
+    repository.listServiceStoresFollowedBy(userId).catch(() => [] as string[]),
+    repository.listServiceStoreOwners(),
+  ]);
+  const follows = new Set(followed);
+  const picked = owners.flatMap((owner) => (['forwarder', 'artist'] as const).flatMap((kind) => {
+    const store = storeOf(owner, kind);
+    if (!store) return [];
+    const key = `${kind}:${owner.id}`;
+    const rights = rightsIn(owner, kind, userId);
+    return follows.has(key) || rights.length > 0 ? [{ owner, kind, store, key, mine: rights.includes('voice') }] : [];
+  }));
+  const rows = await Promise.all(picked.slice(0, 40).map(async ({ kind, store, key, mine }) => {
+    const latest = (await repository.listServiceWork<ChannelMessage>(key, 'chat', 20));
+    const last = latest[0] ?? null;
+    return {
+      sellerId: key,
+      href: `/services/${kind}/${store.directorySlug}?tab=channel`,
+      service: kind,
+      name: store.companyName,
+      handle: null,
+      photoUrl: store.logoUrl ?? null,
+      tier: null,
+      bio: store.tagline ?? '',
+      followerCount: 0,
+      following: follows.has(key),
+      mine,
+      lastPost: last?.body ?? null,
+      lastPostAt: last?.createdAt ?? null,
+      lastPostKind: null,
+      lastPostBy: last?.authorName ?? null,
+      pinned: false,
+      recent: latest.filter((row) => row.authorId !== userId).map((row) => row.createdAt),
+    };
+  }));
+  return rows.sort((a, b) => (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''));
 }
 
 /** GET /api/social/channels/{id} - one channel or forum, newest first. */

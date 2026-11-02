@@ -719,6 +719,27 @@ export interface StoreCore {
   requestForm?: ServiceFormField[] | null;
   /** Terms that apply to every route or service, shown under each one's own. */
   terms?: string;
+  /**
+   * Extras a customer can tick when they order - door-to-door delivery,
+   * repacking, rush work - each with its price. Store-wide, so a company
+   * writes them once.
+   */
+  serviceOptions?: ServiceAddon[];
+  /**
+   * The company's own order form - a Google Form, say - when they would
+   * rather collect details there. The customer still tells the store here
+   * that they filled it in, so the request is tracked all the same.
+   */
+  formUrl?: string | null;
+}
+
+/** An extra a customer can add to an order: "Door-to-door delivery ₹150". */
+export interface ServiceAddon {
+  id: string;
+  name: string;
+  /** Zero means free. */
+  priceMinor: number;
+  note: string;
 }
 
 /* ── What a store prices, beyond the headline rate ──────────────────── */
@@ -807,6 +828,11 @@ export interface FreightLane {
   volumetric?: VolumetricRule | null;
   /** Where customers send parcels for this route, when it is not the store's main warehouse. */
   warehouse?: StoreWarehouse | null;
+  /**
+   * Every origin address a customer may send to on this route. Read through
+   * `warehousesOf`, which falls back to `warehouse` and then the store's own.
+   */
+  warehouses?: StoreWarehouse[];
   /** How to send and label a parcel, cut-offs, consolidation - what the customer does next. */
   orderInfo?: string;
   /** This route's own terms. */
@@ -835,6 +861,8 @@ export interface InsurancePlan {
 
 /** Where goods go to be consolidated. */
 export interface StoreWarehouse {
+  /** "Guangzhou - Baiyun", when a store has more than one. */
+  name?: string;
   address: string;
   contact: string;
   hours: string;
@@ -2609,7 +2637,18 @@ export interface CommunityStanding {
  * container holds both: the reads are identical in shape, and the difference is
  * only who may write.
  */
-export type PostChannel = 'seller' | 'forum';
+export type PostChannel = 'seller' | 'forum' | 'service';
+
+/**
+ * The service store a post was made by, snapshotted on the post so a feed can
+ * name and link it without reading the store. `channelId` is `kind:ownerId`.
+ */
+export interface PostService {
+  kind: 'forwarder' | 'artist';
+  ownerId: string;
+  name: string;
+  slug: string;
+}
 
 /** What a post is, which decides how it renders rather than where it lives. */
 export type PostKind = 'update' | 'sale' | 'thread';
@@ -2695,6 +2734,8 @@ export interface Post extends BaseDocument {
   opening?: PostOpening | null;
   /** Written by a power sale run - its drops and its messages - and tagged as such. */
   powerSale?: boolean;
+  /** Set on a post a freight forwarder or artist made as their company (channel 'service'). */
+  service?: PostService;
   /**
    * Who reacted, and how. One per person.
    *

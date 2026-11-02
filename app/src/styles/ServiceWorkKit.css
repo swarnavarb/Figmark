@@ -111,3 +111,18 @@
 .svk-itemlist__qty { text-align: center; }
 .svk-info--answers > div { background: var(--surface-2); }
 .svk-acts { gap: 12px; }
+/* Where to send the goods: set apart, in the store's own colour. */
+.svk-wh { display: grid; gap: 10px; }
+.svk-wh__card { display: grid; gap: 6px; padding: 14px 16px; border-radius: var(--r-lg); border: 1.5px solid var(--sk-line, var(--border)); background: var(--sk-soft, var(--surface-2)); }
+.svk-wh__head { display: flex; align-items: center; gap: 8px; color: var(--sk, var(--text)); }
+.svk-wh__head b { color: var(--text); }
+.svk-wh__copy { margin-left: auto; }
+.svk-wh__ref { font-size: var(--t-xs); color: var(--text-dim); }
+.svk-wh__card p { margin: 0; font-size: var(--t-md); line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+.svk-wh__card .faint { font-size: var(--t-xs); }
+.svk-rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.svk-rows li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: var(--t-sm); }
+.svk-rows li:last-child { border-bottom: 0; }
+.svk-rows li > span { display: grid; gap: 1px; }
+.svk-rows small { color: var(--text-faint); font-size: var(--t-xs); }
+.svk-rows b { white-space: nowrap; }

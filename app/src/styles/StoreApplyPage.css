@@ -98,6 +98,9 @@
 .sf-options { display: grid; gap: 8px; }
 .sf-option { display: grid; grid-template-columns: minmax(0, 1.4fr) 120px 110px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
 .sf-option--info { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; }
+.sf-option--extra { grid-template-columns: minmax(0, 1.4fr) 120px minmax(0, 1fr) auto; }
+.sf-whrow { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.sf-whrow .field-row { align-items: center; }
 @media (max-width: 640px) {
   .sf-option { grid-template-columns: 1fr 1fr; }
   .sf-option__note { grid-column: 1 / -1; }

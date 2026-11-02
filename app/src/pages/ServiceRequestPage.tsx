@@ -7,7 +7,7 @@ import { BackLink } from '../components/ScrollManager';
 import { EmptyState, Icon } from '../components/ui';
 import { formatMoney } from '../format';
 import { StoreMark, accentStyle } from '../components/StoreKit';
-import { AnswerList, RequestActions, RequestBadge, RequestLog, RequestProgress, Stars } from '../components/ServiceWorkKit';
+import { AnswerList, PriceRows, RequestActions, RequestBadge, RequestLog, RequestProgress, Stars, WarehouseCards } from '../components/ServiceWorkKit';
 import { PageLoading } from '../components/Feedback';
 import '../styles/ServiceRequestPage.css';
 
@@ -80,9 +80,11 @@ export function ServiceRequestPage() {
                 <div><dt>Amount</dt><dd><b>{formatMoney(view.due)}</b> · quote {request.number}</dd></div>
               </dl>
             )}
-            {view.sendTo?.address && ['paid', 'received'].includes(request.status) && (
-              <div className="srq-address"><span className="faint">{request.kind === 'forwarder' ? 'Warehouse' : 'Studio'}</span><p>{view.sendTo.address}</p>
-                {view.sendTo.contact && <span className="faint">{view.sendTo.contact}</span>}</div>
+            {view.sendTo.length > 0 && (request.kind === 'forwarder' ? ['submitted', 'quoted', 'accepted', 'paid'] : ['paid']).includes(request.status) && (
+              <div className="srq-sendto">
+                <span className="faint">{request.kind === 'forwarder' ? `Send your parcel to${view.sendTo.length > 1 ? ' one of these' : ''}` : 'Send your piece to'}</span>
+                <WarehouseCards warehouses={view.sendTo} reference={request.number} />
+              </div>
             )}
             {request.tracking && <p className="srq-track"><Icon name="truck" size={15} /> {request.tracking.courier} <b>{request.tracking.awb}</b></p>}
             <RequestActions view={view} onChanged={(changed) => setView({ ...view, ...changed })} />
@@ -90,11 +92,15 @@ export function ServiceRequestPage() {
           </section>
 
           {isLink && request.description && <section className="srq-sec"><h2>What it is for</h2><p className="srq-text">{request.description}</p></section>}
-          {request.fields.length > 0 && (
+          {(request.fields.length > 0 || request.external || (request.addons?.length ?? 0) > 0) && (
             <section className="srq-sec">
               <h2>What you sent</h2>
               {request.option && <p className="faint">Price picked: {request.option.name}</p>}
+              {request.external && <p className="faint">Details went in on {store.name}’s own form.</p>}
               <AnswerList fields={request.fields} answers={request.answers} />
+              {(request.addons?.length ?? 0) > 0 && (
+                <PriceRows rows={request.addons!.map((row) => ({ id: row.id, name: row.name, price: row.priceMinor ? formatMoney(row.priceMinor) : 'Free' }))} />
+              )}
             </section>
           )}
         </div>

@@ -24,8 +24,8 @@
 .srq-pay > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; padding: 9px 12px; background: var(--surface-2); }
 .srq-pay dt { color: var(--text-faint); font-size: var(--t-xs); }
 .srq-pay dd { margin: 0; font-size: var(--t-sm); overflow-wrap: anywhere; }
-.srq-address { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--r-md); background: var(--sk-soft); }
-.srq-address p { margin: 0; color: var(--text); white-space: pre-line; }
+.srq-sendto { display: grid; gap: 8px; }
+.srq-sendto > .faint { font-size: var(--t-xs); }
 .srq-track { display: flex; align-items: center; gap: 6px; }
 .srq-rated { display: flex; align-items: center; gap: 8px; }
 .srq-sec { display: grid; gap: 10px; }

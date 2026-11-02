@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, type FreightMode, type StoreKind } from '@shared/service-stores';
+import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
 import { fromPriceMinor, laneFromMinor } from '@shared/service-work';
 import { ApiRequestError, api, type StorePageView } from '../api';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
-import {
-  LaneTicket, OfferingCard, PlanCard, PortfolioGrid, StatusPill, StoreCover, StoreMark, accentStyle,
-} from '../components/StoreKit';
+import { PortfolioGrid, StatusPill, StoreCover, StoreMark, accentStyle } from '../components/StoreKit';
 import { StandingChips, Stars, StoreChannel } from '../components/ServiceWorkKit';
 import { PageLoading } from '../components/Feedback';
 import { loaders } from '../pageLoaders';
@@ -58,19 +56,6 @@ export function StorePage() {
   const go = (next: Tab) => setParams((current) => { const copy = new URLSearchParams(current); copy.set('tab', next); return copy; }, { replace: true });
   const modes = [...new Set(store.lanes.map((lane) => lane.mode))];
   const lanes = store.lanes.filter((lane) => mode === 'all' || lane.mode === mode);
-  const proof = store.kind === 'forwarder'
-    ? [
-      { value: stats.standing.completed, label: 'shipments delivered' },
-      { value: store.lanes.length, label: store.lanes.length === 1 ? 'route' : 'routes' },
-      store.capacityKg ? { value: `${(store.capacityKg / 1000).toFixed(store.capacityKg % 1000 ? 1 : 0)}t`, label: 'a month' } : null,
-      store.since ? { value: new Date().getFullYear() - store.since, label: 'years trading' } : null,
-    ]
-    : [
-      { value: stats.standing.completed + store.trust.completedTransactions, label: 'pieces finished' },
-      { value: store.offerings.length, label: 'services' },
-      store.since ? { value: new Date().getFullYear() - store.since, label: 'years painting' } : null,
-    ];
-
   async function toggleFollow() {
     if (!data) return;
     const next = !following;
@@ -127,11 +112,6 @@ export function StorePage() {
             ))}
           </div>
         </div>
-        <div className="sp-proof">
-          {proof.filter(Boolean).map((item) => (
-            <span key={item!.label} className="sp-proof__cell"><b>{item!.value}</b><span>{item!.label}</span></span>
-          ))}
-        </div>
       </section>
 
       <div className="tabs sp-tabs" role="tablist">
@@ -161,31 +141,27 @@ export function StorePage() {
                     </div>
                   )}
                 </div>
-                {lanes.length === 0 ? <p className="muted">No routes listed yet.</p> : lanes.map((lane) => {
-                  const from = laneFromMinor(lane);
-                  return (
-                    <Link key={lane.id} to={`/services/forwarder/${store.slug}/route/${lane.id}`} className="sp-offer-link"
-                      onPointerEnter={warmDetail} onTouchStart={warmDetail} onFocus={warmDetail}>
-                      <LaneTicket lane={lane} accent={store.accent} />
-                      <span className="sp-offer-link__more">
-                        {from > 0 && <span>From <b>{formatMoney(from)}</b>/kg</span>}
-                        {(lane.products?.length ?? 0) > 0 && <span>{lane.products!.length} product prices</span>}
-                        {lane.volumetric && <span>Volumetric ÷{lane.volumetric.divisor}</span>}
-                        {lane.batteryAllowed === false && <span>No batteries</span>}
-                        <span className="sp-offer-link__go">Details & ship <Icon name="right" size={13} /></span>
-                      </span>
-                    </Link>
-                  );
-                })}
-                <p className="faint">Rates and transit times are the forwarder’s own. Open a route for every price, its warehouse and the form to ship with them.</p>
+                {lanes.length === 0 ? <p className="muted">No routes listed yet.</p> : (
+                  <div className="sp-rows">
+                    {lanes.map((lane) => {
+                      const from = laneFromMinor(lane);
+                      const how = FREIGHT_MODE_LABELS[lane.mode as FreightMode];
+                      return (
+                        <Link key={lane.id} to={`/services/forwarder/${store.slug}/route/${lane.id}`} className="sp-row"
+                          onPointerEnter={warmDetail} onTouchStart={warmDetail} onFocus={warmDetail}>
+                          <span className="sp-row__glyph" aria-hidden="true">{how?.glyph}</span>
+                          <span className="sp-row__body">
+                            <b>{lane.originCity} → {lane.destinationCity}</b>
+                            <span className="faint">{how?.label} · {transitLabel(lane)}</span>
+                          </span>
+                          {from > 0 && <span className="sp-row__price">from <b>{formatMoney(from)}</b>/kg</span>}
+                          <Icon name="right" size={14} />
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
-              {store.insurance.length > 0 && (
-                <section className="stack">
-                  <h2>Transit cover</h2>
-                  <p className="muted">Add one when you ship — priced on what your parcel is worth.</p>
-                  <div className="sp-plans">{store.insurance.map((plan) => <PlanCard key={plan.id} plan={plan} />)}</div>
-                </section>
-              )}
             </>
           ) : (
             <>
@@ -202,17 +178,21 @@ export function StorePage() {
                     {store.acceptingWork ? 'Taking commissions' : 'Queue full'}
                   </span>
                 </div>
-                <div className="sp-menu">
-                  {store.offerings.map((offering) => (
-                    <Link key={offering.id} to={`/services/artist/${store.slug}/service/${offering.id}`} className="sp-offer-link sp-offer-link--card"
-                      onPointerEnter={warmDetail} onTouchStart={warmDetail} onFocus={warmDetail}>
-                      <OfferingCard offering={{ ...offering, priceFromMinor: fromPriceMinor(offering.priceFromMinor, offering.products) }} />
-                      <span className="sp-offer-link__more">
-                        {(offering.products?.length ?? 0) > 0 && <span>{offering.products!.length} prices</span>}
-                        <span className="sp-offer-link__go">Details & request <Icon name="right" size={13} /></span>
-                      </span>
-                    </Link>
-                  ))}
+                <div className="sp-rows">
+                  {store.offerings.map((offering) => {
+                    const from = fromPriceMinor(offering.priceFromMinor, offering.products);
+                    return (
+                      <Link key={offering.id} to={`/services/artist/${store.slug}/service/${offering.id}`} className="sp-row"
+                        onPointerEnter={warmDetail} onTouchStart={warmDetail} onFocus={warmDetail}>
+                        <span className="sp-row__body">
+                          <b>{offering.name}</b>
+                          <span className="faint">{offering.turnaroundDays ? `About ${offering.turnaroundDays} days` : offering.description}</span>
+                        </span>
+                        {from > 0 && <span className="sp-row__price">from <b>{formatMoney(from)}</b></span>}
+                        <Icon name="right" size={14} />
+                      </Link>
+                    );
+                  })}
                 </div>
               </section>
             </>
@@ -255,49 +235,13 @@ export function StorePage() {
               <div className="sp-tags">{store.specialties.map((tag) => <span key={tag} className="sp-chip">{tag}</span>)}</div>
             )}
           </section>
-          <section className="sp-box">
-            <h3>Level {stats.standing.level} · {stats.standing.title}</h3>
-            <span className="sp-level"><span style={{ width: `${stats.standing.next ? Math.min(100, (stats.standing.points / stats.standing.next) * 100) : 100}%` }} /></span>
-            <p className="faint">
-              {stats.standing.next ? `${stats.standing.points} of ${stats.standing.next} points to the next level.` : 'The top level.'} Points come only from
-              work finished here and the ratings customers left.
-            </p>
-          </section>
-          {store.kind === 'forwarder' && store.warehouse && (
+          {(store.contactEmail || store.contactPhone) && (
             <section className="sp-box">
-              <h3>Origin warehouse</h3>
-              <p className="sp-about">{store.warehouse.address}</p>
-              {store.warehouse.hours && <p className="faint">{store.warehouse.hours}</p>}
-              {store.warehouse.contact && <p className="faint">{store.warehouse.contact}</p>}
+              <h3>Contact</h3>
+              {store.contactEmail && <p className="faint">{store.contactEmail}</p>}
+              {store.contactPhone && <p className="faint">{store.contactPhone}</p>}
             </section>
           )}
-          <section className="sp-box">
-            <h3>{store.kind === 'forwarder' ? 'How shipping works' : 'How a commission works'}</h3>
-            {store.kind === 'forwarder' ? (
-              <ul className="sp-steps">
-                <li>Pick a route and send the form — tracking ID, weight, what is inside.</li>
-                <li>The team quotes; accept and pay them direct.</li>
-                <li>Send the parcel to their warehouse. Follow it to your door.</li>
-                <li>Rate the shipment when it lands.</li>
-              </ul>
-            ) : (
-              <ul className="sp-steps">
-                <li>Pick a service and send a brief with references.</li>
-                <li>The artist quotes a price and a time.</li>
-                <li>Pay direct, send the piece, follow it in the studio.</li>
-                <li>It ships back to you — rate the work.</li>
-              </ul>
-            )}
-          </section>
-          <section className="sp-box">
-            <h3>Contact</h3>
-            {store.contactEmail && <p className="faint">{store.contactEmail}</p>}
-            {store.contactPhone && <p className="faint">{store.contactPhone}</p>}
-            <p className="faint">{store.teamSize} {store.teamSize === 1 ? 'person' : 'people'} on the team</p>
-            {store.kind === 'artist' && store.offerings.length > 0 && (
-              <p className="faint">From {formatMoney(Math.min(...store.offerings.map((row) => fromPriceMinor(row.priceFromMinor, row.products) || Infinity)))}</p>
-            )}
-          </section>
         </aside>
       </div>
     </main>

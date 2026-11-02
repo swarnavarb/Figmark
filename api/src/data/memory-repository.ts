@@ -767,6 +767,12 @@ export class MemoryRepository implements Repository {
       .map((doc) => structuredClone(doc));
   }
 
+  async listServiceStoresFollowedBy(userId: string): Promise<string[]> {
+    return [...this.serviceWork.values()]
+      .filter((doc) => doc.type === 'follow' && (doc as { userId?: string }).userId === userId)
+      .map((doc) => doc.storeId);
+  }
+
   async countServiceFollowers(storeId: string): Promise<number> {
     return [...this.serviceWork.values()].filter((doc) => doc.storeId === storeId && doc.type === 'follow').length;
   }

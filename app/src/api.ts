@@ -1396,6 +1396,9 @@ export interface PostDetail {
 
 export interface ChannelRow {
   sellerId: string;
+  /** Set on a freight forwarder's or artist's channel, which opens on its store page. */
+  href?: string;
+  service?: 'forwarder' | 'artist';
   name: string;
   handle: string | null;
   photoUrl: string | null;
@@ -2534,7 +2537,8 @@ export interface RequestRow {
 export interface RequestView extends RequestRow {
   side: 'store' | 'customer';
   payTo: SellerPaymentDetails | null;
-  sendTo: StoreWarehouse | null;
+  /** Where to send the goods: every origin warehouse on the route, or the studio once paid. */
+  sendTo: StoreWarehouse[];
 }
 
 export interface ChannelView {
@@ -2575,6 +2579,9 @@ export interface PublicStore {
   acceptingWork: boolean;
   form: ServiceFormField[];
   terms: string;
+  serviceOptions: { id: string; name: string; priceMinor: number; note: string }[];
+  /** The company's own form (a Google Form, say), when it collects details there. */
+  formUrl: string | null;
   takesDirect: boolean;
 }
 
@@ -2854,7 +2861,10 @@ export const api = {
     post<ArtistJobRow>(`/service-stores/artist/${encodeURIComponent(ownerId)}/jobs/${encodeURIComponent(orderId)}`, body),
   storePage: (kind: StoreKind, slug: string) =>
     request<StorePageView>(`/service-store/${kind}/${encodeURIComponent(slug)}`),
-  submitServiceRequest: (kind: StoreKind, ownerId: string, body: { subjectId: string; optionId: string | null; planId: string | null; answers: Record<string, unknown> }) =>
+  submitServiceRequest: (kind: StoreKind, ownerId: string, body: {
+    subjectId: string; optionId: string | null; planId: string | null; answers: Record<string, unknown>;
+    addonIds?: string[]; external?: boolean;
+  }) =>
     post<RequestView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/requests`, body),
   myServiceRequests: () => request<{ requests: RequestRow[] }>('/me/service-requests'),
   serviceRequest: (kind: StoreKind, ownerId: string, id: string) =>
@@ -2870,8 +2880,8 @@ export const api = {
     post<{ request: ServiceRequest; link: string }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/links`, body),
   storeChannel: (kind: StoreKind, ownerId: string) =>
     send<ChannelView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel`),
-  postStoreChannel: (kind: StoreKind, ownerId: string, body: { body: string; asCompany: boolean; announcement: boolean }) =>
-    post<{ message: ChannelMessage }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel`, body),
+  postStoreChannel: (kind: StoreKind, ownerId: string, body: { body: string; asCompany: boolean; announcement: boolean; toSocial?: boolean; photoUrls?: string[] }) =>
+    post<{ message: ChannelMessage; post: { channelId: string; id: string } | null }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel`, body),
   deleteStoreChannel: (kind: StoreKind, ownerId: string, id: string) =>
     post<{ ok: true }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel/${encodeURIComponent(id)}/delete`),
   followStore: (kind: StoreKind, ownerId: string, follow: boolean) =>

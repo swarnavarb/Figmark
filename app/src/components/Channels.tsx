@@ -75,13 +75,13 @@ export function ChannelList() {
       </label>
 
       {mine.map((row) => (
-        <Link key={row.sellerId} to={`/social/c/${row.sellerId}`} className="chmine">
+        <Link key={row.sellerId} to={row.href ?? `/social/c/${row.sellerId}`} className="chmine">
           <Avatar name={row.name} size={52} />
           <span className="chmine__body">
-            <span className="chmine__kicker">Your channel</span>
+            <span className="chmine__kicker">{row.service ? `Your ${row.service === 'forwarder' ? 'freight' : 'studio'} channel` : 'Your channel'}</span>
             <strong className="chmine__name">{row.name}</strong>
             <span className="chmine__stats">
-              {row.followerCount ?? 0} followers
+              {row.service ? 'Company channel' : `${row.followerCount ?? 0} followers`}
               {row.lastPostAt && <> · last post {timeAgo(row.lastPostAt)}</>}
             </span>
           </span>
@@ -119,7 +119,7 @@ export function ChannelList() {
 
 function ChannelRowView({ row, unread }: { row: ChannelRow; unread: number }) {
   return (
-    <Link to={`/social/c/${row.sellerId}`} className={`chrow${unread > 0 ? ' is-unread' : ''}`}>
+    <Link to={row.href ?? `/social/c/${row.sellerId}`} className={`chrow${unread > 0 ? ' is-unread' : ''}`}>
       <span className={`chrow__ring${unread > 0 ? ' is-lit' : ''}`}>
         {row.photoUrl ? <img loading="lazy" decoding="async" className="chrow__photo" src={row.photoUrl} alt="" /> : <Avatar name={row.name} size={48} />}
       </span>
@@ -128,6 +128,7 @@ function ChannelRowView({ row, unread }: { row: ChannelRow; unread: number }) {
           <span className="chrow__name">
             {row.name}
             {row.tier === 'pro' && <span className="chrow__tier">PRO</span>}
+            {row.service && <span className="chrow__tier">{row.service === 'forwarder' ? 'FREIGHT' : 'ARTIST'}</span>}
             {row.pinned && <Icon name="star" size={11} />}
           </span>
           <span className="chrow__time">{row.lastPostAt ? timeAgo(row.lastPostAt) : ''}</span>

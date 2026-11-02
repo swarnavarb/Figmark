@@ -171,7 +171,9 @@ export function PlanCard({ plan, premiumMinor, coverMinor, selected, onSelect, f
         </span>
       </span>
       <span className="sk-plan__price">
-        {premiumMinor !== undefined ? (
+        {!plan.premiumBasisPoints && !plan.minPremiumMinor ? (
+          <><b>Free</b><small>included</small></>
+        ) : premiumMinor !== undefined ? (
           <><b>{formatMoney(premiumMinor)}</b>{coverMinor !== undefined && <small>covers {formatMoney(coverMinor)}</small>}</>
         ) : (
           <><b>{(plan.premiumBasisPoints / 100).toFixed(plan.premiumBasisPoints % 100 ? 1 : 0)}%</b>

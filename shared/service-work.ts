@@ -1,5 +1,5 @@
 import type {
-  ArtistOffering, FreightLane, InfoRow, InsurancePlan, PriceBasis, PriceOption, ServiceFieldKey, ServiceFormField,
+  ArtistOffering, FreightLane, InfoRow, InsurancePlan, PriceBasis, PriceOption, ServiceAddon, ServiceFieldKey, ServiceFormField,
   StoreWarehouse, VolumetricRule,
 } from './models.js';
 import type { StoreKind } from './service-stores.js';
@@ -294,6 +294,8 @@ export function chargeableKg(
 export interface Estimate {
   /** Freight or the service, before cover. */
   baseMinor: number;
+  /** The extras ticked - door-to-door delivery and the like. */
+  addonsMinor: number;
   premiumMinor: number;
   totalMinor: number;
   /** For a forwarder: what was billed by. */
@@ -319,6 +321,7 @@ export function estimate(input: {
   pieces?: number;
   plan?: Pick<InsurancePlan, 'premiumBasisPoints' | 'minPremiumMinor'> | null;
   declaredMinor?: number;
+  addons?: readonly Pick<ServiceAddon, 'name' | 'priceMinor'>[];
 }): Estimate {
   const lines: Estimate['lines'] = [];
   let baseMinor = 0;
@@ -343,12 +346,64 @@ export function estimate(input: {
     lines.push({ label: option ? option.name : 'From', minor: baseMinor });
   }
 
+  let addonsMinor = 0;
+  for (const addon of input.addons ?? []) {
+    addonsMinor += addon.priceMinor;
+    lines.push({ label: addon.name, minor: addon.priceMinor });
+  }
+
   let premiumMinor = 0;
-  if (input.plan && (input.declaredMinor ?? 0) > 0) {
+  if (input.plan && planIsFree(input.plan)) {
+    lines.push({ label: 'Transit cover', minor: 0 });
+  } else if (input.plan && (input.declaredMinor ?? 0) > 0) {
     premiumMinor = Math.max(input.plan.minPremiumMinor || 0, Math.round(((input.declaredMinor ?? 0) * input.plan.premiumBasisPoints) / 10_000));
     lines.push({ label: 'Transit cover', minor: premiumMinor });
   }
-  return { baseMinor, premiumMinor, totalMinor: baseMinor + premiumMinor, chargeable, lines };
+  return { baseMinor, addonsMinor, premiumMinor, totalMinor: baseMinor + addonsMinor + premiumMinor, chargeable, lines };
+}
+
+/** Cover the forwarder includes at no charge. */
+export function planIsFree(plan: Pick<InsurancePlan, 'premiumBasisPoints' | 'minPremiumMinor'>): boolean {
+  return !plan.premiumBasisPoints && !plan.minPremiumMinor;
+}
+
+/** Read a store's extras from a form. Free ones are kept. */
+export function readAddons(input: unknown): ServiceAddon[] {
+  if (!Array.isArray(input)) return [];
+  return input.slice(0, 12).map((raw: Partial<ServiceAddon>) => ({
+    id: str(raw.id, 40) || `add_${Math.random().toString(36).slice(2, 9)}`,
+    name: str(raw.name, 80),
+    priceMinor: Math.max(0, Math.round(num(raw.priceMinor, 100_000_000))),
+    note: str(raw.note, 160),
+  })).filter((row) => row.name);
+}
+
+/** Every origin address a customer may send to on a route, falling back to the store's main one. */
+export function warehousesOf(
+  lane: Pick<FreightLane, 'warehouse' | 'warehouses'> | null | undefined,
+  storeWarehouse: StoreWarehouse | null | undefined,
+): StoreWarehouse[] {
+  if (lane?.warehouses?.length) return lane.warehouses;
+  if (lane?.warehouse) return [lane.warehouse];
+  return storeWarehouse ? [storeWarehouse] : [];
+}
+
+/** Read a list of warehouses from a form. */
+export function readWarehouses(input: unknown): StoreWarehouse[] {
+  if (!Array.isArray(input)) return [];
+  return input.slice(0, 8).map(readWarehouse).filter((row): row is StoreWarehouse => row !== null);
+}
+
+/** A form link a store may send customers to: https only. */
+export function readFormUrl(input: unknown): string | null {
+  const raw = str(input, 500);
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Read price options from a form. */
@@ -386,7 +441,8 @@ export function readWarehouse(input: unknown): StoreWarehouse | null {
   if (!input || typeof input !== 'object') return null;
   const raw = input as Partial<StoreWarehouse>;
   const address = str(raw.address, 400);
-  return address ? { address, contact: str(raw.contact, 120), hours: str(raw.hours, 120) } : null;
+  const name = str(raw.name, 80);
+  return address ? { ...(name ? { name } : {}), address, contact: str(raw.contact, 120), hours: str(raw.hours, 120) } : null;
 }
 
 /** A plain-words line for a volumetric rule. */
@@ -524,6 +580,10 @@ export interface ServiceRequest {
   title: string;
   description: string;
   plan: { id: string; name: string; premiumMinor: number; coverMinor: number } | null;
+  /** The extras ticked, as priced when they were. */
+  addons?: { id: string; name: string; priceMinor: number }[];
+  /** Details went in on the store's own form (`formUrl`), not here. */
+  external?: boolean;
   estimateMinor: number;
   chargeableKg: number | null;
   quoteMinor: number | null;
@@ -644,6 +704,8 @@ export interface ChannelMessage {
   body: string;
   /** Company posts marked for every follower, which also rings their bell. */
   announcement: boolean;
+  /** Shared to Social as well: the post there, as `channelId/id`'s id. */
+  postId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

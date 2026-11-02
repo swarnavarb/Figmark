@@ -18,7 +18,7 @@ import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatDate, formatMoney, formatWeight, timeAgo } from '../format';
 import { MoneyInput, Picture, StatTile, StatusPill, StoreCover, StoreMark, accentStyle } from '../components/StoreKit';
 import {
-  BasicsSection, BusinessSection, CoverSection, LanesSection, MenuSection, PaymentTermsSection, PortfolioSection,
+  BasicsSection, BusinessSection, CoverSection, ExtrasSection, LanesSection, MenuSection, PaymentTermsSection, PortfolioSection,
   RequestFormSection, WarehouseSection, type SectionProps,
 } from '../components/StoreForm';
 import { Timeline } from './StoreApplyPage';
@@ -337,7 +337,9 @@ function RequestDetail({ kind, row, team, onChanged }: { kind: StoreKind; row: R
       {request.description && <p className="sc-req__desc">{request.description}</p>}
       {request.customerHandle && <Link to={`/messages/${request.customerHandle}`} className="btn btn--ghost btn--sm sc-req__msg"><Icon name="message" size={13} /> Message {request.customerName}</Link>}
       {request.option && <p className="faint">Price picked: {request.option.name}</p>}
-      {request.plan && <p className="faint">Cover: {request.plan.name} · premium {formatMoney(request.plan.premiumMinor)} · covers {formatMoney(request.plan.coverMinor)}</p>}
+      {request.plan && <p className="faint">Cover: {request.plan.name} · {request.plan.premiumMinor ? `premium ${formatMoney(request.plan.premiumMinor)}` : 'free'}{request.plan.coverMinor ? ` · covers ${formatMoney(request.plan.coverMinor)}` : ''}</p>}
+      {(request.addons?.length ?? 0) > 0 && <p className="faint">Extras: {request.addons!.map((row) => `${row.name} (${row.priceMinor ? formatMoney(row.priceMinor) : 'free'})`).join(', ')}</p>}
+      {request.external && <p className="faint">They filled in your own form — check it there.</p>}
       <AnswerList fields={request.fields} answers={request.answers} />
       {request.payment && (
         <p className={`sc-req__pay${request.payment.confirmedAt ? ' is-ok' : ''}`}>
@@ -345,7 +347,7 @@ function RequestDetail({ kind, row, team, onChanged }: { kind: StoreKind; row: R
           {request.payment.reference ? ` · ref ${request.payment.reference}` : ''}
         </p>
       )}
-      <RequestActions view={{ ...row, side: 'store', payTo: null, sendTo: null }} team={team}
+      <RequestActions view={{ ...row, side: 'store', payTo: null, sendTo: [] }} team={team}
         onChanged={(next) => onChanged({ request: next.request, actions: next.actions, due: next.due })} />
       <RequestLog request={request} />
     </div>
@@ -623,6 +625,7 @@ const SECTIONS: Record<StoreKind, { id: string; label: string; render: (props: S
   forwarder: [
     { id: 'lanes', label: 'Routes & prices', render: (p) => <LanesSection {...p} /> },
     { id: 'cover', label: 'Transit cover', render: (p) => <CoverSection {...p} /> },
+    { id: 'extras', label: 'Extras', render: (p) => <ExtrasSection {...p} /> },
     { id: 'warehouse', label: 'Warehouse & bookings', render: (p) => <WarehouseSection {...p} /> },
     { id: 'form', label: 'Shipping form', render: (p) => <RequestFormSection {...p} /> },
     { id: 'terms', label: 'Payments & terms', render: (p) => <PaymentTermsSection {...p} /> },
@@ -632,6 +635,7 @@ const SECTIONS: Record<StoreKind, { id: string; label: string; render: (props: S
   artist: [
     { id: 'menu', label: 'Menu', render: (p) => <MenuSection {...p} /> },
     { id: 'portfolio', label: 'Portfolio & studio', render: (p) => <PortfolioSection {...p} /> },
+    { id: 'extras', label: 'Extras', render: (p) => <ExtrasSection {...p} /> },
     { id: 'form', label: 'Request form', render: (p) => <RequestFormSection {...p} /> },
     { id: 'terms', label: 'Payments & terms', render: (p) => <PaymentTermsSection {...p} /> },
     { id: 'basics', label: 'Look & about', render: (p) => <BasicsSection {...p} /> },

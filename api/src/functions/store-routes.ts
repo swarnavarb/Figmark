@@ -10,10 +10,10 @@ import {
   livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, type ArtistJobAction, type StoreKind,
 } from '../../../shared/service-stores.js';
 import {
-  followId, formOf, readForm, readInfoRows, readOptions, readVolumetric, readWarehouse, standingOf, storeKey,
+  followId, formOf, readAddons, readForm, readFormUrl, readInfoRows, readOptions, readVolumetric, readWarehouse, readWarehouses, standingOf, storeKey,
   type ServiceRequest, type Standing,
 } from '../../../shared/service-work.js';
-import type { ServiceFormField } from '../../../shared/models.js';
+import type { ServiceFormField, StoreWarehouse } from '../../../shared/models.js';
 import { crewButtons, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import {
   currentStepOf, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, stepTickKey, ticksOf,
@@ -33,7 +33,7 @@ import { notify, orderNames } from './notify.js';
 import { error, handler, json } from './http.js';
 import { audited } from '../audit.js';
 import { config } from '../config.js';
-import { createDemoStores } from '../demo-stores.js';
+import { createDemoStore, createDemoStores } from '../demo-stores.js';
 import { ownPhotoName, ownPhotos } from '../storage/index.js';
 
 /**
@@ -104,9 +104,11 @@ interface StoreBody {
   payment?: SellerPaymentDetails | null;
   requestForm?: Partial<ServiceFormField>[] | null;
   terms?: string;
+  serviceOptions?: unknown;
+  formUrl?: string | null;
   // Forwarder
   lanes?: Partial<FreightLane>[]; insurance?: Partial<InsurancePlan>[];
-  warehouse?: { address?: string; contact?: string; hours?: string } | null;
+  warehouse?: Partial<StoreWarehouse> | null;
   autoAccept?: boolean; claimedMonthlyCapacityKg?: number | null;
   // Artist
   specialties?: string[]; offerings?: Partial<ArtistOffering>[]; portfolio?: Partial<PortfolioPiece>[];
@@ -132,6 +134,7 @@ function readLanes(input: unknown, previous: FreightLane[] = []): FreightLane[] 
     products: readOptions(raw.products, 'prod'),
     volumetric: readVolumetric(raw.volumetric),
     warehouse: readWarehouse(raw.warehouse),
+    warehouses: readWarehouses(raw.warehouses),
     orderInfo: text(raw.orderInfo, 2000),
     terms: text(raw.terms, 4000),
     extras: readInfoRows(raw.extras),
@@ -145,7 +148,9 @@ function readPlans(input: unknown, previous: InsurancePlan[] = []): InsurancePla
     id: text(raw.id, 40) || partId('plan'),
     name: text(raw.name, 60) || 'Transit cover',
     coverPercent: Math.max(1, Math.min(100, Math.round(Number(raw.coverPercent) || 100))),
-    premiumBasisPoints: Math.max(1, Math.min(3_000, Math.round(Number(raw.premiumBasisPoints) || 150))),
+    // Zero is free cover, which a forwarder may include on every parcel.
+    premiumBasisPoints: raw.premiumBasisPoints === undefined || raw.premiumBasisPoints === null || !Number.isFinite(Number(raw.premiumBasisPoints))
+      ? 150 : Math.max(0, Math.min(3_000, Math.round(Number(raw.premiumBasisPoints)))),
     minPremiumMinor: money(raw.minPremiumMinor),
     maxCoverMinor: money(raw.maxCoverMinor) || null,
     terms: text(raw.terms, 1200),
@@ -250,6 +255,8 @@ function mergeStore(kind: StoreKind, account: User, input: StoreBody): Forwarder
     requestForm: input.requestForm === undefined ? (existing?.requestForm ?? null)
       : input.requestForm === null ? null : readForm(kind, input.requestForm),
     terms: input.terms === undefined ? (existing?.terms ?? '') : text(input.terms, 4000),
+    serviceOptions: input.serviceOptions === undefined ? (existing?.serviceOptions ?? []) : readAddons(input.serviceOptions),
+    formUrl: input.formUrl === undefined ? (existing?.formUrl ?? null) : readFormUrl(input.formUrl),
   };
 
   if (kind === 'forwarder') {
@@ -272,10 +279,7 @@ function mergeStore(kind: StoreKind, account: User, input: StoreBody): Forwarder
         ? (previous?.claimedMonthlyCapacityKg ?? null)
         : count(input.claimedMonthlyCapacityKg, 10_000_000) || null,
       insurance: readPlans(input.insurance, previous?.insurance ?? []),
-      warehouse: input.warehouse === undefined ? (previous?.warehouse ?? null)
-        : input.warehouse && text(input.warehouse.address, 400)
-          ? { address: text(input.warehouse.address, 400), contact: text(input.warehouse.contact, 120), hours: text(input.warehouse.hours, 120) }
-          : null,
+      warehouse: input.warehouse === undefined ? (previous?.warehouse ?? null) : readWarehouse(input.warehouse),
       autoAccept: pick(input.autoAccept, previous?.autoAccept ?? true) === true,
     };
   }
@@ -672,6 +676,8 @@ function publicStore(owner: User, kind: StoreKind) {
     status: statusOf(store),
     form: formOf(kind, store.requestForm),
     terms: store.terms ?? '',
+    serviceOptions: store.serviceOptions ?? [],
+    formUrl: store.formUrl ?? null,
     /** Payment details are shown on a request once it is accepted, never on the page. */
     takesDirect: Boolean(store.payment),
   };
@@ -1451,6 +1457,29 @@ async function opsDemoStores(request: HttpRequest, _context: InvocationContext) 
 }
 export const opsDemoStoresRoute = audited('store.demo', handler(opsDemoStores));
 
+/**
+ * POST /api/dev/demo-store - {kind}: put yourself on a demo store's team.
+ *
+ * The development site only, and nowhere else - not production, not a site
+ * whose environment is unset. Lets anyone testing there run the demo
+ * forwarder or artist from their own account without an operator.
+ */
+async function devDemoStore(request: HttpRequest, _context: InvocationContext) {
+  if (config.siteEnvironment !== 'development') return error(404, 'not_found', 'Not here.');
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const input = await body<{ kind?: string }>(request);
+  const kind = input?.kind === 'artist' ? 'artist' : input?.kind === 'forwarder' ? 'forwarder' : null;
+  if (!kind) return error(400, 'invalid_kind', 'Say forwarder or artist.');
+  const repository = await getRepository();
+  const account = await repository.getUserById(user.id);
+  if (!account) return error(404, 'not_found', 'No such account.');
+  const store = await createDemoStore(repository, kind, account);
+  forgetPageStats(store.kind, store.ownerId);
+  return json(200, { store });
+}
+export const devDemoStoreRoute = handler(devDemoStore);
+
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('my-services', { ...anon, methods: ['GET'], route: 'me/services', handler: myServicesRoute });
@@ -1470,5 +1499,6 @@ app.http('order-insurance', { ...anon, methods: ['POST'], route: 'orders/{id}/in
 app.http('order-commission', { ...anon, methods: ['POST'], route: 'orders/{id}/commission', handler: commissionRoute });
 app.http('order-commission-act', { ...anon, methods: ['POST'], route: 'orders/{id}/commission/act', handler: commissionActRoute });
 app.http('ops-stores', { ...anon, methods: ['GET'], route: 'ops/stores', handler: opsStoresRoute });
+app.http('dev-demo-store', { ...anon, methods: ['POST'], route: 'dev/demo-store', handler: devDemoStoreRoute });
 app.http('ops-demo-stores', { ...anon, methods: ['POST'], route: 'ops/demo-stores', handler: opsDemoStoresRoute });
 app.http('ops-store-review', { ...anon, methods: ['POST'], route: 'ops/stores/{kind}/{ownerId}/review', handler: opsReviewRoute });

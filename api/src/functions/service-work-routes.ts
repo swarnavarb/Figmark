@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { ArtistProfile, ForwarderProfile, StoreCore, User } from '../../../shared/models.js';
+import type { ArtistProfile, ForwarderProfile, Post, StoreCore, User } from '../../../shared/models.js';
 import { STORE_KINDS, isLive, liveLanes, liveOfferings, livePlans, rightsIn, storeOf, insuranceQuote, type StoreKind } from '../../../shared/service-stores.js';
 import {
   CHANNEL_MAX_CHARS, REQUEST_LABELS, REQUEST_MOVES, answerFor, checkAnswers, estimate, followId, formOf,
-  requestActions, requestDueMinor, requestNumber, storeKey,
+  planIsFree, requestActions, requestDueMinor, requestNumber, storeKey, warehousesOf,
   type ChannelMessage, type Dimensions, type ItemRow, type RequestAction, type ServiceRequest, type StoreFollow,
 } from '../../../shared/service-work.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
-import { limited } from '../rate-limit.js';
+import { limited, tooFast } from '../rate-limit.js';
+import { ownPhotos } from '../storage/index.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
 import { forgetPageStats } from './store-routes.js';
@@ -88,10 +89,11 @@ function requestView(request: ServiceRequest, side: 'store' | 'customer', store:
     due: requestDueMinor(request),
     /** Where to pay, once there is something to pay for. */
     payTo: side === 'customer' && paidOrLater ? (store.payment ?? null) : null,
-    /** Where the goods go: a forwarder's warehouse is public; an artist's studio only once paid. */
+    /** Where the goods go: a forwarder's warehouses are public; an artist's studio only once paid. */
     sendTo: kind === 'forwarder'
-      ? (lane?.warehouse ?? forwarder?.warehouse ?? null)
-      : (['paid', 'received', 'in_progress'].includes(request.status) ? { address: (store as ArtistProfile).studioAddress, contact: '', hours: '' } : null),
+      ? warehousesOf(lane, forwarder?.warehouse)
+      : (['paid', 'received', 'in_progress'].includes(request.status) && (store as ArtistProfile).studioAddress
+        ? [{ name: 'Studio', address: (store as ArtistProfile).studioAddress, contact: '', hours: '' }] : []),
   };
 }
 
@@ -108,15 +110,24 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
   if (!found || !isLive(found.store) || found.owner.suspended) return error(404, 'not_found', 'No such store.');
   const { kind, owner, store, key } = found;
   if (owner.id === user.id) return error(400, 'own_store', 'This is your own store.');
-  const input = await body<{ subjectId?: string; optionId?: string | null; planId?: string | null; answers?: Record<string, unknown> }>(request);
+  const input = await body<{
+    subjectId?: string; optionId?: string | null; planId?: string | null; answers?: Record<string, unknown>;
+    addonIds?: string[]; external?: boolean;
+  }>(request);
   if (!input) return error(400, 'invalid_body', 'Request body must be JSON.');
+  // A store that collects details on its own form (a Google Form, say) gets
+  // a request with no answers here - just the route, the extras and the cover.
+  const external = Boolean(store.formUrl) && input.external === true;
+  const picked = new Set(Array.isArray(input.addonIds) ? input.addonIds.filter((id) => typeof id === 'string') : []);
+  const addons = (store.serviceOptions ?? []).filter((row) => picked.has(row.id))
+    .map((row) => ({ id: row.id, name: row.name, priceMinor: row.priceMinor }));
 
   let subject: { id: string; label: string } | null = null;
   let option = null;
   let estimated;
   let plan: ServiceRequest['plan'] = null;
   let chargeableKg: number | null = null;
-  const form = formOf(kind, store.requestForm);
+  const form = external ? [] : formOf(kind, store.requestForm);
   const { answers, gaps } = checkAnswers(form, input.answers);
   if (gaps.length > 0) return error(400, 'incomplete', `Still needed: ${gaps.join(', ')}.`);
 
@@ -138,10 +149,10 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
       weightKg: answerFor<number>(form, answers, 'weight') ?? 0,
       box: answerFor<Dimensions>(form, answers, 'dimensions'),
       pieces: items.reduce((sum, row) => sum + row.qty, 0),
-      plan: pickedPlan, declaredMinor: declared,
+      plan: pickedPlan, declaredMinor: declared, addons,
     });
     chargeableKg = estimated.chargeable?.kg ?? null;
-    if (pickedPlan && declared > 0) {
+    if (pickedPlan && (planIsFree(pickedPlan) || declared > 0)) {
       plan = { id: pickedPlan.id, name: pickedPlan.name, premiumMinor: estimated.premiumMinor, coverMinor: insuranceQuote(pickedPlan, declared).coverMinor };
     }
   } else {
@@ -151,7 +162,7 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
     if (!offering) return error(400, 'no_service', 'Pick one of the services on the menu.');
     subject = { id: offering.id, label: offering.name };
     option = (offering.products ?? []).find((row) => row.id === input.optionId) ?? null;
-    estimated = estimate({ kind, offering, option });
+    estimated = estimate({ kind, offering, option, addons });
   }
 
   const now = new Date().toISOString();
@@ -176,6 +187,8 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
     title: subject?.label ?? '',
     description: '',
     plan,
+    addons,
+    external,
     estimateMinor: estimated.totalMinor,
     chargeableKg,
     quoteMinor: null,
@@ -187,7 +200,7 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
     payment: null,
     tracking: null,
     review: null,
-    history: [{ at: now, by: user.id, byName: account?.displayName ?? user.displayName, note: 'Request sent.' }],
+    history: [{ at: now, by: user.id, byName: account?.displayName ?? user.displayName, note: external ? 'Filled in the store’s own form.' : 'Request sent.' }],
     createdAt: now,
     updatedAt: now,
   };
@@ -195,7 +208,9 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
   await notify(repository, crewIds(owner, kind), {
     kind: 'service_store',
     title: `New request ${doc.number} · ${subject?.label ?? store.companyName}`,
-    body: `${doc.customerName} sent the form${chargeableKg ? ` · about ${chargeableKg} kg` : ''}.`,
+    body: external
+      ? `${doc.customerName} says they filled in your form.`
+      : `${doc.customerName} sent the form${chargeableKg ? ` · about ${chargeableKg} kg` : ''}.`,
     link: consoleLink(doc),
   }, { except: user.id });
   return json(201, requestView(doc, 'customer', store, kind));
@@ -474,13 +489,33 @@ async function postChannel(request: HttpRequest, _context: InvocationContext) {
   const { owner, kind, store, key } = found;
   const rights = rightsIn(owner, kind, user.id);
   if ((!isLive(store) || owner.suspended) && rights.length === 0) return error(404, 'not_found', 'No such store.');
-  const input = await body<{ body?: string; asCompany?: boolean; announcement?: boolean }>(request);
+  const input = await body<{ body?: string; asCompany?: boolean; announcement?: boolean; toSocial?: boolean; photoUrls?: unknown }>(request);
   const words = text(input?.body, CHANNEL_MAX_CHARS);
   if (!words) return error(400, 'empty', 'Write something first.');
   if (input?.asCompany && !rights.includes('voice')) return error(403, 'no_voice', 'The owner has not let you speak as the company.');
   const account = await repository.getUserById(user.id);
   const asCompany = input?.asCompany === true;
   const now = new Date().toISOString();
+
+  // Said as the company and shared: a post on Social too, in the store's own
+  // name, which reaches its followers' feeds and Discover like any post.
+  let post: Post | null = null;
+  if (asCompany && input?.toSocial === true && isLive(store) && !owner.suspended) {
+    const slow = await tooFast(user.id, 'post');
+    if (slow) return slow;
+    const photoUrls = await ownPhotos(input.photoUrls ?? [], 4);
+    if (photoUrls === null) return error(400, 'invalid_post', 'Up to 4 photos, uploaded here first.');
+    post = await repository.createPost({
+      id: `pst_${randomUUID().slice(0, 12)}`,
+      channelId: key, channel: 'service', kind: 'update',
+      authorId: user.id, authorName: store.companyName,
+      body: words, listingId: null, photoUrl: photoUrls[0] ?? null, photoUrls,
+      likeCount: 0, replyCount: 0, voice: 'store', reach: 'feed', announcement: true,
+      reactions: [], comments: [], shareCount: 0,
+      service: { kind, ownerId: owner.id, name: store.companyName, slug: store.directorySlug },
+      createdAt: now, updatedAt: now,
+    });
+  }
   const message: ChannelMessage = {
     id: `msg_${randomUUID()}`, type: 'chat', storeId: key,
     authorId: user.id,
@@ -489,7 +524,8 @@ async function postChannel(request: HttpRequest, _context: InvocationContext) {
     voice: asCompany ? 'company' : rights.length > 0 ? 'member' : 'visitor',
     tag: asCompany ? null : rights.length > 0 ? (owner.id === user.id ? 'Owner' : (store.team ?? []).find((m) => m.userId === user.id)?.tag ?? 'Team') : null,
     body: words,
-    announcement: asCompany && input?.announcement === true,
+    announcement: asCompany && (input?.announcement === true || post !== null),
+    postId: post?.id ?? null,
     createdAt: now, updatedAt: now,
   };
   await repository.saveServiceWork(message);
@@ -506,7 +542,7 @@ async function postChannel(request: HttpRequest, _context: InvocationContext) {
       link: `/services/store/${kind}/${owner.id}?tab=channel`,
     }, { except: user.id, pushLater: true });
   }
-  return json(201, { message });
+  return json(201, { message, post: post ? { channelId: post.channelId, id: post.id } : null });
 }
 
 /** POST /api/service-store/{kind}/{ownerId}/channel/{id}/delete */

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ArtistOffering, FreightLane, InfoRow, InsurancePlan, PortfolioPiece, PriceOption, ServiceFormField, StoreLink, StoreWarehouse } from '@shared/models';
+import type { ArtistOffering, FreightLane, InfoRow, InsurancePlan, PortfolioPiece, PriceOption, ServiceAddon, ServiceFormField, StoreLink, StoreWarehouse } from '@shared/models';
 import { BASIS_LABELS, CUSTOM_FIELD_TYPES, FIELD_TYPE_LABELS, LOCKED_FIELDS, formOf, volumetricLabel } from '@shared/service-work';
 import {
   FREIGHT_MODES, FREIGHT_MODE_LABELS, STORE_ACCENTS, insuranceQuote, partId, type StoreKind,
@@ -262,6 +262,11 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
       <OptionsEditor title="Product prices" hint="Different prices by what is sent — boxed figures, statues, battery items. The rate above stays the “from” price."
         options={lane.products ?? []} onChange={(products) => onChange({ products })} defaultBasis="kg" placeholder="Boxed figures" />
 
+      <WarehousesEditor value={lane.warehouses?.length ? lane.warehouses : lane.warehouse ? [lane.warehouse] : []}
+        onChange={(warehouses) => onChange({ warehouses, warehouse: null })} />
+
+      <details className="sf-more">
+        <summary>Volumetric weight, batteries, terms and more</summary>
       <div className="sf-subcard stack">
         <label className="tick">
           <input type="checkbox" checked={Boolean(lane.volumetric)}
@@ -297,9 +302,6 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
         <span>Carries items with batteries</span>
       </label>
 
-      <WarehouseFields title="Warehouse for this route" hint="Leave empty to use your main warehouse."
-        value={lane.warehouse ?? null} onChange={(warehouse) => onChange({ warehouse })} />
-
       <label className="field"><span>How to send a parcel</span>
         <textarea rows={3} value={lane.orderInfo ?? ''} onChange={(e) => onChange({ orderInfo: e.target.value })}
           placeholder="Write your request number on the box. Cut-off Thursday 3pm for Saturday's flight. We repack for free." /></label>
@@ -307,6 +309,36 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
         <textarea rows={3} value={lane.terms ?? ''} onChange={(e) => onChange({ terms: e.target.value })}
           placeholder="Liquids, powders and counterfeit goods are refused. Storage free for 14 days." /></label>
       <InfoRowsEditor rows={lane.extras ?? []} onChange={(extras) => onChange({ extras })} />
+      </details>
+    </div>
+  );
+}
+
+/** Every origin address customers may send to on a route - more than one is fine. */
+function WarehousesEditor({ value, onChange }: { value: StoreWarehouse[]; onChange: (next: StoreWarehouse[]) => void }) {
+  const update = (index: number, patch: Partial<StoreWarehouse>) => onChange(value.map((row, at) => (at === index ? { ...row, ...patch } : row)));
+  return (
+    <div className="field">
+      <span>Origin warehouses</span>
+      <span className="field__hint">Where customers send parcels for this route. Leave empty to use your main warehouse.</span>
+      <div className="sf-options">
+        {value.map((row, index) => (
+          <div key={index} className="sf-whrow">
+            <div className="field-row">
+              <input value={row.name ?? ''} onChange={(e) => update(index, { name: e.target.value })} placeholder="Name, e.g. Guangzhou · Baiyun" aria-label="Warehouse name" />
+              <button type="button" className="btn btn--quiet btn--sm" aria-label="Remove warehouse" onClick={() => onChange(value.filter((_, at) => at !== index))}><Icon name="trash" size={13} /></button>
+            </div>
+            <textarea rows={2} value={row.address} onChange={(e) => update(index, { address: e.target.value })} placeholder="Full address customers write on the parcel" aria-label="Warehouse address" />
+            <div className="field-row">
+              <input value={row.contact} onChange={(e) => update(index, { contact: e.target.value })} placeholder="Contact name & phone" aria-label="Warehouse contact" />
+              <input value={row.hours} onChange={(e) => update(index, { hours: e.target.value })} placeholder="Mon–Sat 9–6" aria-label="Warehouse hours" />
+            </div>
+          </div>
+        ))}
+        <button type="button" className="btn btn--ghost btn--sm sf-add" onClick={() => onChange([...value, { name: '', address: '', contact: '', hours: '' }])}>
+          <Icon name="plus" size={13} /> Add a warehouse
+        </button>
+      </div>
     </div>
   );
 }
@@ -363,22 +395,6 @@ function InfoRowsEditor({ rows, onChange }: { rows: InfoRow[]; onChange: (next: 
   );
 }
 
-function WarehouseFields({ title, hint, value, onChange }: { title: string; hint: string; value: StoreWarehouse | null; onChange: (next: StoreWarehouse | null) => void }) {
-  const w = value ?? { address: '', contact: '', hours: '' };
-  const set = (patch: Partial<StoreWarehouse>) => { const next = { ...w, ...patch }; onChange(next.address || next.contact || next.hours ? next : null); };
-  return (
-    <div className="field">
-      <span>{title}</span>
-      <span className="field__hint">{hint}</span>
-      <textarea rows={2} value={w.address} onChange={(e) => set({ address: e.target.value })} placeholder="Unit 3, 18 Huangpu Rd, Baiyun, Guangzhou 510000" aria-label="Warehouse address" />
-      <div className="field-row">
-        <input value={w.contact} onChange={(e) => set({ contact: e.target.value })} placeholder="Contact name & phone" aria-label="Warehouse contact" />
-        <input value={w.hours} onChange={(e) => set({ hours: e.target.value })} placeholder="Mon–Sat 9–6" aria-label="Warehouse hours" />
-      </div>
-    </div>
-  );
-}
-
 /* ── Forwarder: transit cover ────────────────────────────────────────── */
 
 const EXAMPLE_VALUE = 10_000_00;
@@ -407,6 +423,12 @@ export function CoverSection({ draft, set }: SectionProps) {
                 <label className="field"><span>Pays out (% of value)</span>
                   <input inputMode="numeric" value={plan.coverPercent || ''} onChange={(e) => update(plan.id, { coverPercent: Number(e.target.value) || 0 })} /></label>
               </div>
+              <label className="tick">
+                <input type="checkbox" checked={!plan.premiumBasisPoints && !plan.minPremiumMinor}
+                  onChange={(e) => update(plan.id, e.target.checked ? { premiumBasisPoints: 0, minPremiumMinor: 0 } : { premiumBasisPoints: 150, minPremiumMinor: 4_900 })} />
+                <span>Free — included on every parcel</span>
+              </label>
+              {(plan.premiumBasisPoints > 0 || plan.minPremiumMinor > 0) && (
               <div className="sf-cols3">
                 <label className="field"><span>Premium (% of value)</span>
                   <input inputMode="decimal" value={plan.premiumBasisPoints ? plan.premiumBasisPoints / 100 : ''}
@@ -417,6 +439,7 @@ export function CoverSection({ draft, set }: SectionProps) {
                   <MoneyInput label="Most it pays" value={plan.maxCoverMinor ?? 0} placeholder="No cap"
                     onChange={(value) => update(plan.id, { maxCoverMinor: value || null })} /></label>
               </div>
+              )}
               <label className="field"><span>What it covers, and how to claim</span>
                 <textarea rows={3} value={plan.terms} onChange={(e) => update(plan.id, { terms: e.target.value })}
                   placeholder="Loss and visible transit damage from our warehouse to landing. Claims within 72 hours with unboxing photos." /></label>
@@ -434,14 +457,26 @@ export function CoverSection({ draft, set }: SectionProps) {
         );
       })}
       {plans.length < 8 && (
-        <button type="button" className="btn btn--ghost sf-add" onClick={() => set({
-          insurance: [...plans, {
-            id: partId('plan'), name: plans.length ? 'Full cover' : 'Transit cover', coverPercent: 100,
-            premiumBasisPoints: 150, minPremiumMinor: 4_900, maxCoverMinor: null, terms: '', active: true,
-          }],
-        })}>
-          <Icon name="plus" size={14} /> Add a cover plan
-        </button>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <button type="button" className="btn btn--ghost sf-add" onClick={() => set({
+            insurance: [...plans, {
+              id: partId('plan'), name: plans.length ? 'Full cover' : 'Transit cover', coverPercent: 100,
+              premiumBasisPoints: 150, minPremiumMinor: 4_900, maxCoverMinor: null, terms: '', active: true,
+            }],
+          })}>
+            <Icon name="plus" size={14} /> Add a cover plan
+          </button>
+          {!plans.some((plan) => !plan.premiumBasisPoints && !plan.minPremiumMinor) && (
+            <button type="button" className="btn btn--ghost sf-add" onClick={() => set({
+              insurance: [{
+                id: partId('plan'), name: 'Basic cover', coverPercent: 100,
+                premiumBasisPoints: 0, minPremiumMinor: 0, maxCoverMinor: 2_000_00, terms: 'Included on every parcel.', active: true,
+              }, ...plans],
+            })}>
+              <Icon name="plus" size={14} /> Add free cover
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -646,6 +681,10 @@ export function RequestFormSection({ kind, draft, set }: SectionProps) {
   };
   return (
     <div className="stack">
+      <label className="field"><span>Use your own form instead</span>
+        <span className="field__hint">A Google Form or similar. Customers open it from the order sheet, then send you the request here so it is tracked. Leave empty to use the form below.</span>
+        <input type="url" value={draft.formUrl ?? ''} onChange={(e) => set({ formUrl: e.target.value.trim() || null })} placeholder="https://forms.gle/…" /></label>
+      {draft.formUrl ? <p className="faint">Your form link is on. The questions below are kept for when you switch back.</p> : null}
       <p className="faint">This is what a customer fills in when they {kind === 'forwarder' ? 'ship with you' : 'request a service'}. Fields marked
         <span className="sf-lock"> <Icon name="lock" size={11} /> </span> are needed to price and deliver it and stay on the form.</p>
       {form.map((field, index) => {
@@ -693,6 +732,32 @@ export function RequestFormSection({ kind, draft, set }: SectionProps) {
           <Icon name="plus" size={14} /> Add a question
         </button>
         <button type="button" className="btn btn--quiet btn--sm" onClick={() => set({ requestForm: null })}>Back to the default form</button>
+      </div>
+    </div>
+  );
+}
+
+/** Extras a customer can tick on any order - door-to-door delivery, rush work - each with a price, or free. */
+export function ExtrasSection({ kind, draft, set }: SectionProps) {
+  const rows = draft.serviceOptions ?? [];
+  const update = (id: string, patch: Partial<ServiceAddon>) => set({ serviceOptions: rows.map((row) => (row.id === id ? { ...row, ...patch } : row)) });
+  return (
+    <div className="stack">
+      <p className="faint">Customers tick these on the order form{kind === 'forwarder' ? ', on any route' : ''}. Leave the price empty for free.</p>
+      <div className="sf-options">
+        {rows.map((row) => (
+          <div key={row.id} className="sf-option sf-option--extra">
+            <input value={row.name} placeholder={kind === 'forwarder' ? 'Door-to-door delivery' : 'Rush — jump the queue'} aria-label="Extra" onChange={(e) => update(row.id, { name: e.target.value })} />
+            <MoneyInput label="Price" value={row.priceMinor} placeholder="Free" onChange={(priceMinor) => update(row.id, { priceMinor })} />
+            <input className="sf-option__note" value={row.note} placeholder="Note (optional)" aria-label="Note" onChange={(e) => update(row.id, { note: e.target.value })} />
+            <button type="button" className="btn btn--quiet btn--sm" aria-label="Remove extra" onClick={() => set({ serviceOptions: rows.filter((other) => other.id !== row.id) })}>
+              <Icon name="trash" size={13} />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="btn btn--ghost btn--sm sf-add" onClick={() => set({ serviceOptions: [...rows, { id: partId('add'), name: '', priceMinor: 0, note: '' }] })}>
+          <Icon name="plus" size={13} /> Add an extra
+        </button>
       </div>
     </div>
   );
