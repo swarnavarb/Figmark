@@ -1,23 +1,63 @@
 /* Styles only components/OpenBusiness.tsx writes: the three businesses to open. */
-.obz { display: grid; gap: 10px; }
+.obz-head { display: grid; gap: 6px; margin: 4px 0 18px; }
+.obz-head__kicker {
+  margin: 0; color: var(--accent); font-size: var(--t-2xs); font-weight: var(--w-bold);
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.obz-head__title { margin: 0; font-size: var(--t-2xl); font-weight: var(--w-bold); letter-spacing: -0.03em; line-height: 1.05; }
+.obz-head__line { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.5; max-width: 40ch; }
+
+.obz { display: grid; gap: 12px; }
 .obz-card {
-  display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; padding: 16px;
-  border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); color: inherit; text-decoration: none;
+  position: relative; display: grid; gap: 14px; width: 100%; padding: 16px 16px 0; overflow: hidden;
+  border-radius: var(--r-xl); border: 1px solid var(--border); color: inherit; text-decoration: none;
+  /* Each business carries its own hue, as a glow from the corner its icon sits in. */
+  background:
+    radial-gradient(90% 120% at 0% 0%, color-mix(in srgb, var(--obz-hue) 14%, transparent), transparent 60%),
+    var(--surface);
   transition: border-color var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }
-.obz-card:hover { transform: translateY(-1px); border-color: var(--obz-hue); }
-.obz-card--store { --obz-hue: var(--blue); }
-.obz-card--forwarder { --obz-hue: var(--aqua); }
-.obz-card--artist { --obz-hue: var(--pink); }
+.obz-card:hover { border-color: color-mix(in srgb, var(--obz-hue) 60%, var(--border)); }
+.obz-card:active { transform: scale(0.99); }
+.obz-card:focus-visible { outline: 2px solid var(--obz-hue); outline-offset: 2px; }
+.obz-card--store { --obz-hue: var(--blue); --obz-ink: var(--blue-ink); }
+.obz-card--forwarder { --obz-hue: var(--aqua); --obz-ink: var(--aqua-ink); }
+.obz-card--artist { --obz-hue: var(--pink); --obz-ink: var(--pink-ink); }
+.obz-card--button { font: inherit; text-align: left; cursor: pointer; }
+
+.obz-card__top { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; }
 .obz-card__emoji {
-  grid-row: span 2; display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--obz-hue) 18%, transparent); font-size: var(--t-xl);
+  display: grid; place-items: center; width: 46px; height: 46px; border-radius: var(--r-md); font-size: var(--t-lg);
+  background: color-mix(in srgb, var(--obz-hue) 20%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--obz-hue) 35%, transparent);
 }
-.obz-card__body { display: grid; gap: 2px; }
-.obz-card__title { display: flex; align-items: center; gap: 8px; font-weight: var(--w-semi); font-size: var(--t-md); }
-.obz-card__state { padding: 1px 8px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-dim); font-size: var(--t-2xs); font-weight: var(--w-semi); }
-.obz-card__line { color: var(--text-dim); font-size: var(--t-sm); }
-.obz-card__cta { display: inline-flex; align-items: center; gap: 4px; color: var(--obz-hue); font-size: var(--t-sm); font-weight: var(--w-semi); }
-.obz__note { margin: 4px 0 0; font-size: var(--t-xs); }
-@media (prefers-reduced-motion: reduce) { .obz-card { transition: none; } }
-.obz-card--button { width: 100%; font: inherit; text-align: left; cursor: pointer; }
+.obz-card__name { display: grid; gap: 3px; min-width: 0; }
+.obz-card__title { font-size: var(--t-md); font-weight: var(--w-bold); letter-spacing: -0.01em; }
+.obz-card__line { color: var(--text-dim); font-size: var(--t-sm); line-height: 1.45; }
+.obz-card__state {
+  padding: 3px 9px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-dim);
+  font-size: var(--t-2xs); font-weight: var(--w-semi); white-space: nowrap;
+}
+.obz-card__state.is-live { background: var(--lime-soft); color: var(--lime); }
+
+.obz-card__points { display: flex; flex-wrap: wrap; gap: 6px; }
+.obz-card__point {
+  display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--obz-hue) 9%, var(--surface-2)); color: var(--text);
+  font-size: var(--t-xs); font-weight: var(--w-medium);
+}
+.obz-card__point svg { color: var(--obz-hue); flex: 0 0 auto; }
+
+.obz-card__cta {
+  display: flex; align-items: center; justify-content: space-between; margin: 0 -16px; padding: 12px 16px;
+  border-top: 1px solid var(--border); color: var(--obz-hue); font-size: var(--t-sm); font-weight: var(--w-semi);
+}
+.obz-card__go {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--obz-hue); color: var(--obz-ink);
+  transition: transform var(--dur-2) var(--ease);
+}
+.obz-card:hover .obz-card__go { transform: translateX(3px); }
+
+.obz__note { display: flex; align-items: center; gap: 6px; margin: 4px 2px 0; color: var(--text-faint); font-size: var(--t-xs); }
+@media (prefers-reduced-motion: reduce) { .obz-card, .obz-card__go { transition: none; } }

@@ -29,7 +29,7 @@ import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { SetupChecklist } from '../components/VerifyNudges';
-import { OpenBusinessChooser } from '../components/OpenBusiness';
+import { OpenBusinessChooser, OpenBusinessHead } from '../components/OpenBusiness';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
@@ -239,17 +239,9 @@ export function ShopPage() {
 function ShopStart({ onOpen }: { onOpen: () => void }) {
   return (
     <main className="page tab-view">
+      <OpenBusinessHead />
       <SetupChecklist hasStore={false} onOpenStore={onOpen} />
-      <div className="gate">
-        <span className="gate__mark" aria-hidden="true">{<Icon name="bank" size={19} />}</span>
-        <h1 className="gate__title">Open a business</h1>
-        <p className="gate__note">
-          Pick what you do. A store sells figures and collectibles; a freight forwarder ships parcels
-          between countries; an artist takes repaints and custom work. One account can run all three.
-        </p>
-      </div>
       <OpenBusinessChooser onOpenStore={onOpen} />
-
     </main>
   );
 }

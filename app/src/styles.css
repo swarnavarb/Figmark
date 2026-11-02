@@ -1838,28 +1838,6 @@ summary::-webkit-details-marker { display: none; }
  * themselves, because picking between "sell one thing" and "open a shop" is a
  * decision, not a menu item.
  */
-/* ── The gate: the sell tab before there is a shop ─────────────────────────
-   One thing to do, said once, centred. Everything sold here is sold from a
-   shop, so a second door would only lead to a refusal one screen later. */
-
-.gate {
-  display: grid;
-  justify-items: center;
-  text-align: center;
-  gap: var(--s3);
-  max-width: 420px;
-  margin: 8vh auto 0;
-  padding: 34px var(--s5) var(--s6);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl);
-  /* A shallow wash rather than a flat panel: this is the one screen a new
-     seller sees, and it should look like somewhere worth walking through. */
-  background:
-    radial-gradient(120% 90% at 50% -10%, var(--accent-soft), transparent 62%),
-    var(--surface);
-  box-shadow: var(--shadow);
-}
-
 /* Pro, everywhere it appears: the Insights gold. A warm glow, a gold
    hairline and the PRO badge, so every Pro feature reads as one family. */
 .door.door--pro {

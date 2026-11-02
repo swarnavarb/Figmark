@@ -44,6 +44,13 @@ export function StoresView() {
     void load();
   }, [load]);
 
+  // Demo stores belong to the development site only: production never shows
+  // the button, and the server refuses it there too.
+  const [testSite, setTestSite] = useState(false);
+  useEffect(() => {
+    void admin.health().then((health) => setTestSite(health.environment === 'development')).catch(() => setTestSite(false));
+  }, []);
+
   if (!rows) return error ? <p className="notice notice--error">{error}</p> : <Loading />;
 
   const waiting = rows.filter((row) => row.status === 'pending');
@@ -68,7 +75,7 @@ export function StoresView() {
         </div>
       </div>
       {error && <p className="notice notice--error">{error}</p>}
-      <DemoStores onMade={load} />
+      {testSite && <DemoStores onMade={load} />}
       {shown.length === 0 && <p className="muted">Nothing here. {filter === 'waiting' ? 'The queue is empty.' : ''}</p>}
       {shown.map((row) => {
         const key = `${row.kind}-${row.owner.id}`;
@@ -185,7 +192,8 @@ function StoreReview({ row, open, onToggle, onDecided }: { row: OpsStoreRow; ope
 
 /**
  * Makes a demo forwarder and a demo artist with the operator on both teams,
- * for trying the services end to end. The server refuses it on production.
+ * for trying the services end to end. Shown, and allowed, on the development
+ * site only.
  */
 function DemoStores({ onMade }: { onMade: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);

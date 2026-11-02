@@ -20,9 +20,6 @@
 .stat__note { font-size: var(--t-xs); color: var(--text-faint); margin-top: 2px; }
 .spark__bar { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: 0.85; }
 .spark__bar--empty { background: var(--border); opacity: 1; }
-.gate__mark { font-size: calc(40px * var(--text-scale)); line-height: 1; }
-.gate__title { font-size: var(--t-xl); font-weight: var(--w-bold); letter-spacing: -0.02em; }
-.gate__note { color: var(--text-dim); font-size: var(--t-sm); line-height: 1.6; max-width: 34ch; }
 .doors { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .door__flag { position: absolute; top: 12px; right: 12px; }
 .door__glyph { font-size: var(--t-xl); line-height: 1; }

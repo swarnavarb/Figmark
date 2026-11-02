@@ -1613,12 +1613,13 @@ export const opsReviewRoute = audited('store.review', handler(opsReview));
 
 /**
  * POST /api/ops/demo-stores - a demo forwarder and a demo artist, with the
- * operator on both teams. For trying the services on a test site; refused on
- * production, where a store nobody runs would sit in the real directory.
+ * operator on both teams. For trying the services on the development site;
+ * refused everywhere else, production included, where a store nobody runs
+ * would sit in the real directory.
  */
 async function opsDemoStores(request: HttpRequest, _context: InvocationContext) {
   const user = await operator(request);
-  if (config.siteEnvironment === 'production') return error(403, 'not_here', 'Demo stores are for the development site only.');
+  if (config.siteEnvironment !== 'development') return error(403, 'not_here', 'Demo stores are for the development site only.');
   const repository = await getRepository();
   const account = await repository.getUserById(user.id);
   if (!account) return error(404, 'not_found', 'No such account.');
