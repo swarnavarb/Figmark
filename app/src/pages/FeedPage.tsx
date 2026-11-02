@@ -13,7 +13,7 @@ import {
   type CatalogKind,
 } from '@shared/catalog';
 import { isTakingBookings, preOrderView } from '@shared/preorder';
-import { RARITY_LABELS, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
+import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
 import { ShopStrip } from '../components/ShopCards';
 import { CategoryIcon } from '../components/CategoryIcon';
@@ -24,7 +24,7 @@ import {
 } from '../components/FeedRails';
 import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
-import { CardFace, CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
+import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
 import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
 import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
@@ -477,7 +477,7 @@ function useProgressive(total: number, resetKey: string) {
 
 function QuestBar() {
   const { view } = useQuest();
-  const waiting = view ? view.tasks.filter((task) => task.claimable).length + view.packs.length : 0;
+  const waiting = view ? view.tasks.filter((task) => task.claimable).length : 0;
   return (
     <div className="qbar qbar--buy">
       {/* You and your shop as one pill; the shop half only when you run one. */}
@@ -498,12 +498,12 @@ function QuestBar() {
 /* ── Loot of the day ───────────────────────────────────────────────────── */
 
 /**
- * One listing a day, face down until you flip it - and a free card with it.
+ * One listing a day, face down until you flip it.
  *
  * Chosen from the rarest things in the catalogue by the date, so it is the
  * same pick for everybody all day and a new one tomorrow. Flipping it is the
- * daily reveal: the card is drawn on the server, once, however many times the
- * button is pressed.
+ * daily reveal: the server records the day once, however many times the
+ * button is pressed, and pays its XP once.
  */
 function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
   const { view, act } = useQuest();
@@ -519,7 +519,6 @@ function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
 
   if (!pick) return null;
   const revealed = Boolean(view?.dailyRevealed);
-  const todaysCard = view?.cards.find((card) => card.packId === `daily-${dayKey(now)}`) ?? null;
 
   async function reveal() {
     setBusy(true);
@@ -533,7 +532,9 @@ function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
         <div className="qflip__inner">
           <div className="qflip__back" aria-hidden="true"><span>?</span></div>
           <div className="qflip__front">
-            {todaysCard ? <CardFace card={todaysCard} size="sm" /> : <span className="qdrop__blank" />}
+            {revealed && pick.rarity.tier
+              ? <span className="qdrop__face"><Glyph name="star" size={28} /><RarityRibbon tier={pick.rarity.tier} /></span>
+              : <span className="qdrop__blank" />}
           </div>
         </div>
       </div>
@@ -554,7 +555,7 @@ function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
         ) : (
           <>
             <h3>Something rare is waiting</h3>
-            <p className="qdrop__meta">Flip it for today&rsquo;s pick and a free collectible card.</p>
+            <p className="qdrop__meta">Flip it for today&rsquo;s pick and +{XP.reveal} XP.</p>
             <button type="button" className="btn btn--sm qbtn-gold" disabled={busy || !view} onClick={() => void reveal()}>
               {busy ? 'Revealing…' : 'Reveal now'}
             </button>

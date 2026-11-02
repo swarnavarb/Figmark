@@ -433,7 +433,7 @@ async function inviteCard(origin: string, inviter: User, seller: boolean): Promi
     headline: seller ? 'Sell with me on Figmark' : 'Come shop with me',
     hero: { kind: 'brand' },
     title: seller ? 'Open your shop' : 'Join me on Figmark',
-    detail: seller ? 'Pre-orders · tracking · Buyer Protection · affiliates' : 'Pre-orders · Buyer Protection · card packs',
+    detail: seller ? 'Pre-orders · tracking · Buyer Protection · affiliates' : 'Pre-orders · Buyer Protection · hobby leaderboards',
     badge: {
       name: shop?.storefrontName ?? inviter.displayName,
       level,

@@ -138,8 +138,6 @@ export const THEMES: Record<ShareKind, Theme> = {
   filled: { stamp: 'FILLED', from: '#FBBF24', to: '#FF5A5F', ink: '#2B1D00', glyph: '🏁' },
   item: { stamp: 'FOUND IT', from: '#7C3AED', to: '#EC4899', ink: '#FFFFFF', glyph: '✨' },
   level: { stamp: 'LEVEL UP', from: '#FBBF24', to: '#7C3AED', ink: '#2B1D00', glyph: '⭐' },
-  card: { stamp: 'PULLED', from: '#7C3AED', to: '#06D6E7', ink: '#FFFFFF', glyph: '🃏' },
-  set: { stamp: 'SET COMPLETE', from: '#A3E635', to: '#7C3AED', ink: '#16250A', glyph: '🏆' },
   shop: { stamp: 'SHOP', from: '#3B82F6', to: '#7C3AED', ink: '#FFFFFF', glyph: '🏪' },
   profile: { stamp: 'COLLECTOR', from: '#EC4899', to: '#7C3AED', ink: '#FFFFFF', glyph: '💎' },
   invite: { stamp: "YOU'RE INVITED", from: '#7C3AED', to: '#FF5A5F', ink: '#FFFFFF', glyph: '💌' },
@@ -162,7 +160,6 @@ export type CardHero =
   /** A shop or a person, ringed in their level's colours. */
   | { kind: 'avatar'; name: string; photo?: string | null; level?: number | null }
   | { kind: 'level'; level: number }
-  | { kind: 'card'; name: string; rarity: string; from: string; to: string; glyph: string }
   /** Figmark's own mark: for invites. */
   | { kind: 'brand'; glyph?: string | null };
 
@@ -404,29 +401,6 @@ function hero(spec: CardSpec, measure: Measure, x: number, y: number, size: numb
       text(cx, cy + r * 0.42, String(h.level), r * 0.95, TEXT, true, 'middle'),
     );
     edge();
-    return ops;
-  }
-
-  if (h.kind === 'card') {
-    // Portrait, the shape of a card, centred in the square.
-    const w = Math.round(size * 0.72);
-    const cx = x + (size - w) / 2;
-    const face = rect(cx, y, w, size, 36);
-    const inner = rect(cx + 22, y + 22, w - 44, size - 44, 26);
-    ops.push(
-      { op: 'fill', shape: rect(cx, y + 18, w, size, 36), paint: '#000000', opacity: 0.35 },
-      { op: 'fill', shape: face, paint: linear(cx, y, cx + w, y + size, h.from, h.to) },
-      { op: 'fill', shape: inner, paint: SURFACE },
-      { op: 'clip', shape: inner, ops: [{ op: 'fill', shape: rect(cx, y, w, size), paint: { radial: [cx + w / 2, y + size * 0.4, w * 0.6], stops: [[0, h.from, 0.55], [1, SURFACE, 0]] } }] },
-      { op: 'text', x: cx + w / 2, y: y + size * 0.5, text: h.glyph, size: w * 0.36, bold: false, paint: '#FFFFFF', anchor: 'middle', emoji: true },
-    );
-    const name = fitBlock(measure, h.name, Math.round(w * 0.1), 22, true, w - 80, 2);
-    let ny = y + size * 0.7;
-    for (const line of name.lines) {
-      ops.push(text(cx + w / 2, ny, line, name.size, TEXT, true, 'middle'));
-      ny += name.size * 1.1;
-    }
-    ops.push(text(cx + w / 2, y + size - 56, h.rarity.toUpperCase(), 22, h.to, true, 'middle'));
     return ops;
   }
 

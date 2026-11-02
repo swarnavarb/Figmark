@@ -15,7 +15,7 @@ const spec = {
   headline: 'Import drops, bought together.',
   hero: { kind: 'brand' },
   title: 'Figmark',
-  detail: 'Pre-orders from import resellers · live tracking · card packs',
+  detail: 'Pre-orders from import resellers · live tracking · hobby leaderboards',
   badge: null,
   protection: true,
 };

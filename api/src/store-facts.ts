@@ -38,6 +38,10 @@ const counts = (order: Order) => isPlaced(order) && !isCancelledLike(order.statu
 
 export function storeFactsFrom({ user, all, sales, posts, rating, buyerReviews, now = Date.now() }: ShopRecord): StoreFacts {
   const shelf = shelfOf(all);
+  const ordersPerBuyer = new Map<string, number>();
+  for (const order of sales) {
+    if (counts(order)) ordersPerBuyer.set(order.buyerId, (ordersPerBuyer.get(order.buyerId) ?? 0) + 1);
+  }
   const facts: StoreFacts = {
     completedSales: user.sellerTrust.completedTransactions,
     affiliateSales: sales.filter((order) => order.affiliate && counts(order)).length,
@@ -58,6 +62,10 @@ export function storeFactsFrom({ user, all, sales, posts, rating, buyerReviews, 
     // Delivered within the days the listing promised, worked out from the orders (api/src/seller-stats.ts).
     dispatchOnTime: user.sellerTrust.onTimeDelivered ?? 0,
     ageDays: Math.floor((now - Date.parse(user.createdAt)) / 86_400_000),
+    fiveStarReviews: buyerReviews.filter((review) => review.rating === 5).length,
+    gamesRun: posts.filter((post) => post.contest || post.guess).length,
+    repeatBuyers: [...ordersPerBuyer.values()].filter((count) => count >= 2).length,
+    buyers: ordersPerBuyer.size,
   };
   facts.stickerSteps = storeStickers(facts).reduce((sum, sticker) => sum + sticker.reached, 0);
   return facts;
@@ -84,6 +92,19 @@ export async function shopRatings(repository: Repo, owner: User) {
     ? { ...merged, average: Math.max(0, merged.average - penalty) }
     : merged;
   return { buyerReviews, rating };
+}
+
+/** Orders placed by a buyer who had already ordered from the shop, oldest first. */
+function repeatSalesOf(placed: readonly Order[]): { at: string }[] {
+  const seen = new Set<string>();
+  const repeat: { at: string }[] = [];
+  const stamped = placed.map((order) => ({ order, at: order.placedAt ?? order.createdAt }))
+    .sort((a, b) => a.at.localeCompare(b.at));
+  for (const { order, at } of stamped) {
+    if (seen.has(order.buyerId)) repeat.push({ at });
+    seen.add(order.buyerId);
+  }
+  return repeat;
 }
 
 /** Everything the shop's quest board counts, with when each thing happened. */
@@ -125,6 +146,16 @@ export async function shopQuestFacts(repository: Repo, owner: User): Promise<{ f
       affiliateItems: totals.affiliateItems,
       bestFill: Math.min(1, Math.max(0, ...fills)),
       totals,
+      games: posts.filter((post) => post.contest || post.guess).map((post) => ({ at: post.createdAt })),
+      bumps: (growth?.spotlightLog ?? []).map((entry) => ({ at: entry.at })),
+      timedDrops: all.filter((listing) => listing.status !== 'draft' && listing.expiresAt).map((listing) => ({ at: listing.createdAt })),
+      repeatSales: repeatSalesOf(placed),
+      setup: {
+        logo: Boolean(owner.sellerProfile?.photoUrl),
+        cover: Boolean(owner.sellerProfile?.coverUrl),
+        bio: Boolean(owner.sellerProfile?.bio?.trim()),
+        payment: Boolean(owner.sellerProfile?.payment),
+      },
     },
   };
 }

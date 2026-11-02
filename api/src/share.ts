@@ -151,7 +151,7 @@ export async function recordOpen(
 
 const KINDS: readonly ShareKind[] = [
   'item', 'fill', 'booked', 'purchased', 'delivered', 'sold', 'filled',
-  'level', 'card', 'set', 'shop', 'invite', 'invite_seller', 'profile',
+  'level', 'shop', 'invite', 'invite_seller', 'profile',
 ];
 const VIAS: readonly ShareEvent['via'][] = ['whatsapp', 'native', 'download', 'copy', 'post'];
 

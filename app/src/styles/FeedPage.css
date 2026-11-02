@@ -56,6 +56,7 @@
 .qdrop__meta { margin: 0 0 var(--s1); font-size: var(--t-xs); color: var(--text-dim); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .qdrop__flip { width: 86px; height: 118px; flex: none; transform: rotate(-5deg); }
 .qdrop__blank { display: block; width: 100%; height: 100%; border-radius: var(--r-md); background: var(--surface-2); }
+.qdrop__face { display: grid; place-items: center; gap: 6px; width: 100%; height: 100%; border-radius: var(--r-md); background: linear-gradient(140deg, var(--violet), var(--pink)); color: #fff; }
 .qzones { display: flex; gap: var(--s3); overflow-x: auto; padding: 2px 2px var(--s1); scrollbar-width: none; }
 .qzones::-webkit-scrollbar { display: none; }
 .qzone {

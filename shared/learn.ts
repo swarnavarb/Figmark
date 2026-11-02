@@ -182,7 +182,7 @@ const BUY: LearnTab = {
       body: 'Two small habits that pay off.',
       steps: [
         step('Save with the heart', 'Tap the heart on any card or **Save** on a listing. Saved items are easy to find again, sellers see the interest, and each save earns a little XP.'),
-        step('Reveal the Loot of the day', 'At the top of the Buy tab is a face-down card. Tap **Reveal now** once a day: it turns over to show one of the rarest items in the catalogue, and gives you a free collectible card.', '/learn/buy-reveal.jpg', 'A revealed card. The same card however many times you tap.'),
+        step('Reveal the Loot of the day', 'At the top of the Buy tab is a face-down tile. Tap **Reveal now** once a day: it turns over to show one of the rarest items in the catalogue, and pays a little XP.', '/learn/buy-reveal.jpg', 'The daily reveal. The same pick for everybody all day.'),
         step('Do today\'s quests', 'Under the Loot is a short list of today\'s quests - check in, reveal, and two more that change daily. Finished ones can be claimed for XP. See **Quests, XP and levels** below.'),
       ],
     },
@@ -249,7 +249,7 @@ const BUY: LearnTab = {
     {
       id: 'quests',
       title: 'Quests, XP and levels',
-      body: 'Figmark rewards being a good member of the market. You earn XP for orders, received items, reviews, pre-orders, saves, check-ins and quests; low ratings from sellers and lost disputes take XP away. XP raises your level, each level gives a card pack, and stickers (bronze, silver, gold) show on your profile.\n\n- **Daily** quests change every day, **weekly** every Monday, **monthly** on the 1st.\n- **Milestones** repeat with bigger goals: 1 order, then 5, 10, 25...\n- Everything is on the [Quests page](/quests), including exactly where your XP came from.',
+      body: 'Figmark rewards being a good member of the market. You earn XP for orders, received items, reviews, pre-orders, saves, check-ins and quests; low ratings from sellers and lost disputes take XP away. XP raises your level, your level reads as a rank (Newcomer, Rising Collector, Trusted Collector, Elite Collector and up to Icon), and honours (Bronze, Silver, Gold, Platinum, Diamond) show on your profile.\n\n- **Start** holds one-time Getting started steps; **daily** quests change every day, **weekly** every Monday, **monthly** on the 1st.\n- **Milestones** repeat with bigger goals: 1 order, then 5, 10, 25...\n- **Hobby leaderboards**: join up to three - a category or any hobby - and compete each month. The top three go into the Hall of Fame.\n- Everything is on the [Quests page](/quests), including exactly where your XP came from.',
       steps: [
         step('Open Quests', 'Tap the level chip at the top of the Buy tab, or profile icon → **Quests & rewards**.', '/learn/buy-quests.jpg', 'Your level, streak, packs and quests.'),
       ],

@@ -145,9 +145,11 @@ const {
   adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute, adminAuditRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
-  questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questOpenRoute,
-  questLeaderboardRoute, collectorRoute,
+  questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, collectorRoute,
 } = await import(new URL('quest-routes.js', apiRoot));
+const {
+  boardsListRoute, boardJoinRoute, boardLeaveRoute, boardReadRoute,
+} = await import(new URL('board-routes.js', apiRoot));
 const {
   publicCollectionRoute, myCollectionRoute, collectionAddRoute, collectionEditRoute,
   collectionRemoveRoute, collectionGroupsRoute,
@@ -366,8 +368,10 @@ const routes = [
   ['POST', '/api/quest/checkin', questCheckInRoute],
   ['POST', '/api/quest/claim', questClaimRoute],
   ['POST', '/api/quest/reveal', questRevealRoute],
-  ['POST', '/api/quest/open', questOpenRoute],
-  ['GET', '/api/quest/leaderboard', questLeaderboardRoute],
+  ['GET', '/api/boards', boardsListRoute],
+  ['POST', '/api/boards/join', boardJoinRoute],
+  ['POST', '/api/boards/leave', boardLeaveRoute],
+  ['GET', '/api/boards/board/:id', boardReadRoute],
   ['GET', '/api/users/:id/collector', collectorRoute],
   ['GET', '/api/users/:id/collection', publicCollectionRoute],
   ['GET', '/api/learn', learnRoute],

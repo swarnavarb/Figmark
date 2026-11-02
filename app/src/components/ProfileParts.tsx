@@ -336,7 +336,7 @@ function RatingPart({ icon, title, sub, part }: {
   );
 }
 
-/* ── A shop's level and stickers ───────────────────────────────────────── */
+/* ── A shop's level and honours ────────────────────────────────────────── */
 
 export function StoreLevelCard({ level, stickers }: { level: StoreLevel; stickers: StickerView[] }) {
   const [open, setOpen] = useState<StickerView | null>(null);
@@ -354,7 +354,7 @@ export function StoreLevelCard({ level, stickers }: { level: StoreLevel; sticker
           </small>
           <XpBar progress={level.progress} tone="gold" />
         </span>
-        <span className="slevel__count"><b>{earned}</b><small>of {stickers.length}<br />stickers</small></span>
+        <span className="slevel__count"><b>{earned}</b><small>of {stickers.length}<br />honours</small></span>
       </div>
       <div className="qstickers qstickers--row slevel__stickers">
         {sorted.map((sticker) => <Sticker key={sticker.id} sticker={sticker} onOpen={() => setOpen(sticker)} />)}

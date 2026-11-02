@@ -46,7 +46,7 @@ export const CONTAINERS = {
       '/messageBlocks/*', '/mutedThreads/*', '/invitedBy/*',
       '/collection/*', '/collectionGroups/*', '/shareOpens/*', '/shareLog/*', '/invitees/*',
       '/referrals/*', '/affiliateOrderIds/*', '/affiliateLinks/*', '/clientDevices/*',
-      '/pushEndpoints/*', '/profitTemplates/*', '/savedCalcs/*',
+      '/pushEndpoints/*', '/profitTemplates/*', '/savedCalcs/*', '/podiums/*',
     ],
   },
   userParts: {

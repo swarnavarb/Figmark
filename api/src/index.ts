@@ -35,6 +35,7 @@ import './functions/template-routes.js';
 import './functions/admin-routes.js';
 import './functions/overview-routes.js';
 import './functions/quest-routes.js';
+import './functions/board-routes.js';
 import './functions/collection-routes.js';
 import './functions/learn-routes.js';
 import './functions/settings-routes.js';

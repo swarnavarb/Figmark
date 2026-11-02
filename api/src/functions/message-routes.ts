@@ -522,12 +522,12 @@ const SALES_STICKERS: ReadonlySet<string> = new Set(['s-sales']);
 /** Badges that name a sales count. */
 const SALES_BADGES: ReadonlySet<BadgeKind> = new Set<BadgeKind>(['hundred_sales']);
 
-/** A sticker as a visitor sees it: the tier earned, never the count behind it. */
+/** An honour (sticker) as a visitor sees it: the tier earned, never the count behind it. */
 function publicSticker<T extends StickerView>(sticker: T): T[] {
   if (SALES_STICKERS.has(sticker.id)) return [];
   if (sticker.id !== 's-clean') return [sticker];
-  // "Ten orders, no dispute lost" says it was earned, not how far past ten it went.
-  return [{ ...sticker, have: sticker.earned ? sticker.tiers[0]! : 0, next: null }];
+  // "Fifty orders, no dispute lost" says which tier was earned, not how far past it it went.
+  return [{ ...sticker, have: sticker.earned ? sticker.tiers[Math.max(0, sticker.tier - 1)] ?? sticker.tiers[0]! : 0, next: null }];
 }
 
 async function send(request: HttpRequest, _context: InvocationContext) {

@@ -47,9 +47,9 @@ export function InvitePage() {
         }
       : {
           kind: 'invite',
-          moment: { title: 'Join me on Figmark', detail: 'Pre-orders · verified sellers · card packs', headline: 'Come shop with me' },
+          moment: { title: 'Join me on Figmark', detail: 'Pre-orders · verified sellers · hobby leaderboards', headline: 'Come shop with me' },
           link: { to: 'invite' },
-          caption: 'Join me on Figmark - pre-orders from verified sellers, and card packs as you shop. Here is my invite:',
+          caption: 'Join me on Figmark - pre-orders from verified sellers, quests and leaderboards for what you collect. Here is my invite:',
           target: code,
         };
     return (
@@ -107,7 +107,7 @@ export function InvitePage() {
 const BUYER_REASONS = [
   { icon: '🛡', title: 'Sellers who are who they say', text: 'Every shop verifies its email, WhatsApp and Aadhaar before it can sell.' },
   { icon: '📦', title: 'Every stage, visible', text: 'Track your item from the supplier to your door, in the seller\'s own words.' },
-  { icon: '🃏', title: 'Shopping that levels you up', text: 'Daily quests, card packs and stickers for being a good buyer.' },
+  { icon: '🏆', title: 'Shopping that levels you up', text: 'Daily quests, honours and hobby leaderboards for being a good buyer.' },
 ];
 
 const SELLER_REASONS = [

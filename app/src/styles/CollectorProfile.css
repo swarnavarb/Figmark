@@ -32,7 +32,6 @@
   appearance: none;
   padding: 14px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); margin-bottom: 6px;
 }
-.qshowcase__cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s2); margin-top: 10px; }
 .qprofile__penalty { margin: -6px 0 10px; font-size: var(--t-xs); color: var(--coral); }
 .qshowcase { display: grid; gap: 0; width: 100%; text-align: left; }
 .qshowcase__title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
