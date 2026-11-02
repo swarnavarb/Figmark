@@ -539,6 +539,8 @@ export interface RequestEvent {
   by: string;
   byName: string;
   note: string;
+  /** The status it moved to, when it moved: what the insights time things by. */
+  status?: RequestStatus;
 }
 
 export interface RequestReview {

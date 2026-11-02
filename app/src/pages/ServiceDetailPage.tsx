@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { InsurancePlan } from '@shared/models';
-import { FREIGHT_MODE_LABELS, insuranceQuote, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
+import { FREIGHT_MODE_LABELS, insuranceQuote, laneLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
 import {
   BASIS_LABELS, answerFor, checkAnswers, estimate, fromPriceMinor, laneFromMinor, planIsFree, volumetricLabel, warehousesOf,
   type AnswerValue, type Answers, type Dimensions, type ItemRow,
@@ -57,7 +57,7 @@ export function ServiceDetailPage() {
   const terms = [lane?.terms ?? offering?.terms, store.terms].filter(Boolean) as string[];
   const warehouses = lane ? warehousesOf(lane, store.warehouse) : [];
   const closed = store.kind === 'artist' && !store.acceptingWork;
-  const title = lane ? `${lane.originCity} → ${lane.destinationCity}` : offering!.name;
+  const title = lane ? laneLabel(lane) : offering!.name;
   const mode = lane ? FREIGHT_MODE_LABELS[lane.mode as FreightMode] : null;
   const details = [
     ...(lane ? [
@@ -226,7 +226,7 @@ function RequestSheet({ data, laneId, offeringId, onClose }: {
         <div className="sd-sheet__head">
           <span>
             <span className="faint">{store.name}</span>
-            <h2>{lane ? `${lane.originCity} → ${lane.destinationCity}` : offering?.name}</h2>
+            <h2>{lane ? laneLabel(lane) : offering?.name}</h2>
           </span>
           <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button>
         </div>

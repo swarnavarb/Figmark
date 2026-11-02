@@ -1246,6 +1246,17 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listServiceRequestsAssignedTo(userId: string): Promise<ServiceRequest[]> {
+    // Cross-partition, bounded by what one person is given.
+    const { resources } = await this.container('serviceWork')
+      .items.query<ServiceRequest>({
+        query: "SELECT TOP 100 * FROM c WHERE c.type = 'request' AND c.assigneeId = @id ORDER BY c.updatedAt DESC",
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   async listServiceStoresFollowedBy(userId: string): Promise<string[]> {
     // Cross-partition, but one small value per store followed.
     const { resources } = await this.container('serviceWork')

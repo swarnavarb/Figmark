@@ -1,0 +1,22 @@
+/* Styles only components/OpenBusiness.tsx writes: the three businesses to open. */
+.obz { display: grid; gap: 10px; }
+.obz-card {
+  display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; padding: 16px;
+  border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); color: inherit; text-decoration: none;
+  transition: border-color var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+}
+.obz-card:hover { transform: translateY(-1px); border-color: var(--obz-hue); }
+.obz-card--store { --obz-hue: var(--blue); }
+.obz-card--forwarder { --obz-hue: var(--aqua); }
+.obz-card--artist { --obz-hue: var(--pink); }
+.obz-card__emoji {
+  grid-row: span 2; display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--obz-hue) 18%, transparent); font-size: var(--t-xl);
+}
+.obz-card__body { display: grid; gap: 2px; }
+.obz-card__title { display: flex; align-items: center; gap: 8px; font-weight: var(--w-semi); font-size: var(--t-md); }
+.obz-card__state { padding: 1px 8px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-dim); font-size: var(--t-2xs); font-weight: var(--w-semi); }
+.obz-card__line { color: var(--text-dim); font-size: var(--t-sm); }
+.obz-card__cta { display: inline-flex; align-items: center; gap: 4px; color: var(--obz-hue); font-size: var(--t-sm); font-weight: var(--w-semi); }
+.obz__note { margin: 4px 0 0; font-size: var(--t-xs); }
+@media (prefers-reduced-motion: reduce) { .obz-card { transition: none; } }

@@ -1871,7 +1871,7 @@ export function seedShippedLot(): Lot {
     forwarder: {
       forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight',
       contact: 'ops@lotusfreight.example', trackingReference: 'LF-2026-09-8841',
-      laneId: 'lane_gz_bom_x', laneLabel: 'Guangzhou → Mumbai · express', acceptance: 'accepted',
+      laneId: 'lane_gz_bom_x', laneLabel: '🇨🇳 China → 🇮🇳 India · express', acceptance: 'accepted',
       insurancePlanIds: ['plan_lotus_std'],
     },
     handler: {
@@ -1902,7 +1902,7 @@ export function seedOpenLot(): Lot {
     // Booked, and waiting on Lotus to take it: the request their console opens on.
     forwarder: {
       forwarderUserId: 'usr_fwd_lotus', name: 'Lotus Freight', contact: 'ops@lotusfreight.example', trackingReference: null,
-      laneId: 'lane_gz_bom_x', laneLabel: 'Guangzhou → Mumbai · express', acceptance: 'pending',
+      laneId: 'lane_gz_bom_x', laneLabel: '🇨🇳 China → 🇮🇳 India · express', acceptance: 'pending',
       insurancePlanIds: ['plan_lotus_std', 'plan_lotus_full'],
     },
     handler: {

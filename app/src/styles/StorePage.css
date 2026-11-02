@@ -11,7 +11,7 @@
    A store's public page.
    ========================================================================== */
 .sp-hero { display: grid; gap: 0; margin-bottom: 20px; }
-.sp-hero .sk-cover { height: 160px; }
+.sp-hero .sk-cover { height: 110px; }
 @media (min-width: 720px) {
   .sp-hero .sk-cover { height: 230px; }
 }
@@ -25,7 +25,7 @@
   .sp-hero__card { grid-template-columns: auto 1fr auto; align-items: center; margin: -64px var(--s5) 0; padding: 22px; }
 }
 .sp-hero__kind { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.12em; color: var(--sk-text); font-weight: var(--w-semi); }
-.sp-hero__tag { margin: 0; color: var(--text-dim); font-size: var(--t-md); }
+.sp-hero__tag { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
 .sp-hero__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .sp-hero__cta { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
 @media (min-width: 720px) {
@@ -62,3 +62,7 @@
 .sp-row__body .faint { font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-row__price { font-size: var(--t-sm); color: var(--text-dim); white-space: nowrap; }
 .sp-row__price b { color: var(--sk-text); }
+.sp-row__tags { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 2px; color: var(--text-dim); font-size: var(--t-xs); }
+@media (max-width: 719px) {
+  .sp-hero__link span { display: none; }
+}

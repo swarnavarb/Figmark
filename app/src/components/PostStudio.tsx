@@ -278,7 +278,10 @@ export function PostStudio({
   onClose: () => void;
   onPosted: Posted;
 }) {
-  const asShop = Boolean(storeId) && !forumId;
+  // A freight forwarder or artist (`kind:ownerId`) posts as its company, but
+  // runs none of a shop's games: no prizes, no guesses, no competitions.
+  const asService = Boolean(storeId?.includes(':'));
+  const asShop = Boolean(storeId) && !forumId && !asService;
   const [mode, setMode] = useState<StudioMode>(figmark ? 'contest' : (start === 'contest' || start === 'guess') && !asShop ? 'photo' : start);
   const draft = useDraftPhotos();
   const { photos } = draft;
@@ -545,9 +548,9 @@ export function PostStudio({
   const needsPostPhotos = mode === 'photo' || mode === 'compare' || mode === 'question' || mode === 'guess'
     || mode === 'contest' || (voting && faceOf === 'rating');
   const modes = figmark ? MODES.filter((entry) => entry.id === 'contest')
-    : MODES.filter((entry) => (entry.id !== 'contest' && entry.id !== 'guess') || asShop);
+    : MODES.filter((entry) => ((entry.id !== 'contest' && entry.id !== 'guess') || asShop) && !(asService && entry.id === 'debate'));
   const heading = figmark ? '🌟 Weekly theme challenge'
-    : asShop ? `Post as ${storeName ?? 'your store'}` : 'Create a post';
+    : asShop || asService ? `Post as ${storeName ?? 'your store'}` : 'Create a post';
   const blocked = missing();
 
   const photoStrip = (
@@ -605,7 +608,7 @@ export function PostStudio({
           {mode === 'photo' && !pending && <p className="faint flexhint">Tap a piece in the photo to tag it.</p>}
         </>
       )}
-      {mode === 'photo' && !forumId && !asShop && (
+      {mode === 'photo' && !forumId && !asShop && !asService && (
         <button type="button" className="btn btn--quiet btn--sm pstudio__shelfbtn" onClick={() => void openShelf()}>
           🗂️ {fromCollection ? 'Pick again from my collection' : 'Shelf tour from my collection'}
         </button>

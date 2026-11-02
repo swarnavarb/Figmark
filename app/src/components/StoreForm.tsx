@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { COUNTRIES, countryFlag } from '@shared/countries';
 import type { ArtistOffering, FreightLane, InfoRow, InsurancePlan, PortfolioPiece, PriceOption, ServiceAddon, ServiceFormField, StoreLink, StoreWarehouse } from '@shared/models';
 import { BASIS_LABELS, CUSTOM_FIELD_TYPES, FIELD_TYPE_LABELS, LOCKED_FIELDS, formOf, volumetricLabel } from '@shared/service-work';
 import {
@@ -217,16 +218,10 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
   return (
     <div className="sf-editor stack">
       <div className="field-row">
-        <label className="field"><span>From city</span>
-          <input value={lane.originCity} onChange={(e) => onChange({ originCity: e.target.value })} placeholder="Guangzhou" /></label>
-        <label className="field"><span>Country</span>
-          <input value={lane.originCountry} onChange={(e) => onChange({ originCountry: e.target.value })} /></label>
-      </div>
-      <div className="field-row">
-        <label className="field"><span>To city</span>
-          <input value={lane.destinationCity} onChange={(e) => onChange({ destinationCity: e.target.value })} placeholder="Mumbai" /></label>
-        <label className="field"><span>Country</span>
-          <input value={lane.destinationCountry} onChange={(e) => onChange({ destinationCountry: e.target.value })} /></label>
+        <label className="field"><span>From</span>
+          <CountrySelect value={lane.originCountry} onChange={(originCountry) => onChange({ originCountry })} /></label>
+        <label className="field"><span>To</span>
+          <CountrySelect value={lane.destinationCountry} onChange={(destinationCountry) => onChange({ destinationCountry })} /></label>
       </div>
       <div className="field">
         <span>How it travels</span>
@@ -311,6 +306,17 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
       <InfoRowsEditor rows={lane.extras ?? []} onChange={(extras) => onChange({ extras })} />
       </details>
     </div>
+  );
+}
+
+/** A country, with its flag, from the full list - plus whatever an older lane had typed. */
+function CountrySelect({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const known = COUNTRIES.includes(value);
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      {!known && value && <option value={value}>{value}</option>}
+      {COUNTRIES.map((country) => <option key={country} value={country}>{countryFlag(country)} {country}</option>)}
+    </select>
   );
 }
 

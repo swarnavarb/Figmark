@@ -1,3 +1,4 @@
+import { countryFlag } from '@shared/countries';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { ArtistOffering, FreightLane, InsurancePlan, PortfolioPiece, StoreStatus } from '@shared/models';
 import {
@@ -104,9 +105,6 @@ export function StoreCover({ kind, coverUrl, accent, children }: {
   );
 }
 
-/** The first three letters of a city, the way a ticket prints it. */
-const code = (city: string) => (city.replace(/[^A-Za-z]/g, '').slice(0, 3) || '···').toUpperCase();
-
 /**
  * One lane, as a boarding pass: where from and to in big letters, how long and
  * how much on the stub. With a weight it also prices this lot on the lane.
@@ -121,13 +119,13 @@ export function LaneTicket({ lane, weightGrams, selected, onSelect, accent }: {
         <span className="sk-ticket__mode">{mode.glyph} {mode.label}</span>
         <span className="sk-ticket__cities">
           <span className="sk-ticket__end">
-            <b>{code(lane.originCity)}</b>
-            <span>{lane.originCity}</span>
+            <b>{countryFlag(lane.originCountry)}</b>
+            <span>{lane.originCountry}</span>
           </span>
           <span className="sk-ticket__path" aria-hidden="true"><span /></span>
           <span className="sk-ticket__end sk-ticket__end--to">
-            <b>{code(lane.destinationCity)}</b>
-            <span>{lane.destinationCity}</span>
+            <b>{countryFlag(lane.destinationCountry)}</b>
+            <span>{lane.destinationCountry}</span>
           </span>
         </span>
         {lane.note && <span className="sk-ticket__note">{lane.note}</span>}
@@ -222,12 +220,12 @@ export function Picture({ url, label, className }: { url: string; label: string;
   return <span className={className}><img src={url} alt={label} loading="lazy" /></span>;
 }
 
-export function PortfolioGrid({ pieces }: { pieces: PortfolioPiece[] }) {
+export function PortfolioGrid({ pieces, strip = false }: { pieces: PortfolioPiece[]; strip?: boolean }) {
   if (pieces.length === 0) return null;
   return (
-    <div className="sk-folio">
+    <div className={`sk-folio${strip ? ' sk-folio--strip' : ''}`}>
       {pieces.map((piece, index) => (
-        <figure key={piece.id} className={`sk-folio__cell${index === 0 ? ' sk-folio__cell--hero' : ''}`}>
+        <figure key={piece.id} className={`sk-folio__cell${index === 0 && !strip ? ' sk-folio__cell--hero' : ''}`}>
           <Picture url={piece.url} label={piece.caption || 'Work'} className="sk-pic" />
           {piece.caption && <figcaption>{piece.caption}</figcaption>}
         </figure>

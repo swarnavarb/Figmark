@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { ArtistProfile, ForwarderProfile, Post, StoreCore, User } from '../../../shared/models.js';
-import { STORE_KINDS, isLive, liveLanes, liveOfferings, livePlans, rightsIn, storeOf, insuranceQuote, type StoreKind } from '../../../shared/service-stores.js';
+import { STORE_KINDS, isLive, laneLabel, liveOfferings, livePlans, rightsIn, storeOf, insuranceQuote, type StoreKind } from '../../../shared/service-stores.js';
 import {
   CHANNEL_MAX_CHARS, REQUEST_LABELS, REQUEST_MOVES, answerFor, checkAnswers, estimate, followId, formOf,
   planIsFree, requestActions, requestDueMinor, requestNumber, storeKey, warehousesOf,
@@ -13,7 +13,7 @@ import { limited, tooFast } from '../rate-limit.js';
 import { ownPhotos } from '../storage/index.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
-import { forgetPageStats } from './store-routes.js';
+import { forgetPageStats, lanesOf } from './store-routes.js';
 
 /**
  * Customers working with a forwarder or an artist directly.
@@ -81,7 +81,7 @@ const customerLink = (request: Pick<ServiceRequest, 'kind' | 'ownerId' | 'id'>) 
 function requestView(request: ServiceRequest, side: 'store' | 'customer', store: StoreCore, kind: StoreKind) {
   const paidOrLater = ['accepted', 'paid', 'received', 'in_progress', 'shipped', 'delivered'].includes(request.status);
   const forwarder = kind === 'forwarder' ? (store as ForwarderProfile) : null;
-  const lane = forwarder?.lanes?.find((row) => row.id === request.subject?.id);
+  const lane = forwarder ? lanesOf(forwarder).find((row) => row.id === request.subject?.id) : undefined;
   return {
     request,
     side,
@@ -133,9 +133,9 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
 
   if (kind === 'forwarder') {
     const profile = store as ForwarderProfile;
-    const lane = liveLanes(profile).find((row) => row.id === input.subjectId);
+    const lane = lanesOf(profile).find((row) => row.id === input.subjectId);
     if (!lane) return error(400, 'no_route', 'Pick one of the routes this forwarder runs.');
-    subject = { id: lane.id, label: `${lane.originCity} → ${lane.destinationCity}` };
+    subject = { id: lane.id, label: `${laneLabel(lane)} · ${lane.mode}` };
     option = (lane.products ?? []).find((row) => row.id === input.optionId) ?? null;
     const items = answerFor<ItemRow[]>(form, answers, 'items') ?? [];
     if (answerFor<boolean>(form, answers, 'battery') === true && lane.batteryAllowed === false) {
@@ -215,6 +215,29 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
   }, { except: user.id });
   return json(201, requestView(doc, 'customer', store, kind));
 }
+
+/**
+ * GET /api/me/assigned-requests - the requests a team lead gave this person,
+ * across every store they are on. Only stores they are still on: somebody
+ * removed from a team stops seeing its work.
+ */
+async function assignedRequests(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const rows = await repository.listServiceRequestsAssignedTo(user.id);
+  const owners = new Map<string, User | null>();
+  const visible: ServiceRequest[] = [];
+  for (const row of rows) {
+    if (!owners.has(row.ownerId)) owners.set(row.ownerId, await repository.getUserById(row.ownerId));
+    const owner = owners.get(row.ownerId);
+    if (owner && rightsIn(owner, row.kind, user.id).includes('work')) visible.push(row);
+  }
+  return json(200, {
+    requests: visible.map((row) => ({ request: row, due: requestDueMinor(row), actions: requestActions(row, 'store') })),
+  });
+}
+export const assignedRequestsRoute = handler(assignedRequests);
 
 /** GET /api/me/service-requests - everything this person has asked stores for. */
 async function myRequests(request: HttpRequest, _context: InvocationContext) {
@@ -376,7 +399,7 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
   const words = action === 'assign'
     ? (doc.assigneeName ? `Assigned to ${doc.assigneeName}.` : 'Unassigned.')
     : `${done[action] ?? REQUEST_LABELS[kind][doc.status].label}${note && action !== 'quote' ? ` — ${note}` : ''}.`;
-  doc.history = [...doc.history, { at: now, by: user.id, byName, note: words }].slice(-80);
+  doc.history = [...doc.history, { at: now, by: user.id, byName, note: words, status: doc.status }].slice(-80);
   doc.updatedAt = now;
   await repository.saveServiceWork(doc);
 
@@ -431,7 +454,7 @@ async function createLink(request: HttpRequest, _context: InvocationContext) {
   const amount = money(input?.amountMinor);
   if (!title || !amount) return error(400, 'incomplete', 'Give the link a title and a price.');
   const subjects = kind === 'forwarder'
-    ? liveLanes(store as ForwarderProfile).map((lane) => ({ id: lane.id, label: `${lane.originCity} → ${lane.destinationCity}` }))
+    ? lanesOf(store as ForwarderProfile).map((lane) => ({ id: lane.id, label: `${laneLabel(lane)} · ${lane.mode}` }))
     : liveOfferings(store as ArtistProfile).map((offering) => ({ id: offering.id, label: offering.name }));
   const actor = await repository.getUserById(user.id);
   const now = new Date().toISOString();
@@ -599,6 +622,7 @@ app.http('svc-channel', {
 app.http('svc-channel-delete', { ...anon, methods: ['POST'], route: 'service-store/{kind}/{ownerId}/channel/{id}/delete', handler: channelDeleteRoute });
 app.http('svc-follow', { ...anon, methods: ['POST'], route: 'service-store/{kind}/{ownerId}/follow', handler: followStoreRoute });
 app.http('svc-my-requests', { ...anon, methods: ['GET'], route: 'me/service-requests', handler: myRequestsRoute });
+app.http('svc-assigned-requests', { ...anon, methods: ['GET'], route: 'me/assigned-requests', handler: assignedRequestsRoute });
 app.http('svc-request', { ...anon, methods: ['GET'], route: 'service-requests/{kind}/{ownerId}/{id}', handler: requestRoute });
 app.http('svc-request-act', { ...anon, methods: ['POST'], route: 'service-requests/{kind}/{ownerId}/{id}/act', handler: requestActRoute });
 app.http('svc-store-requests', { ...anon, methods: ['GET'], route: 'service-stores/{kind}/{ownerId}/requests', handler: storeRequestsRoute });

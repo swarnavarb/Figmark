@@ -1,3 +1,4 @@
+import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
 import type { ButtonLibrary } from '@shared/route-buttons';
@@ -2397,6 +2398,51 @@ export interface PublicProfile {
 /* ── Service stores ──────────────────────────────────────────────────── */
 
 /** A store as the person running it sees it in My services. */
+export interface StoreInsightsView {
+  insights: StoreInsights;
+  audience: {
+    followers: number; posts: number; reactions: number; comments: number;
+    best: { id: string; channelId: string; body: string; reactions: number; comments: number; at: string }[];
+  };
+}
+
+/** A store as a search result names it: level and rating, earned here. */
+export interface SearchStore {
+  ownerId: string; name: string; slug: string; logoUrl: string | null; accent: string;
+  level: number; title: string; rating: number | null; reviews: number; completed: number;
+}
+export interface RouteMatch {
+  store: SearchStore;
+  lane: {
+    id: string; label: string; originCountry: string; destinationCountry: string; mode: FreightLane['mode'];
+    days: string; fromMinor: number; batteryAllowed: boolean; customsIncluded: boolean; note: string;
+  };
+  freeCover: boolean;
+  door: boolean;
+}
+export interface StudioMatch {
+  store: SearchStore;
+  services: { id: string; name: string; days: number }[];
+  fromMinor: number;
+  specialties: string[];
+  portfolio: string[];
+  acceptingWork: boolean;
+}
+
+/** A freight or art store this person can act for: the role switcher and the Create sheet. */
+export interface ServiceStoreRole {
+  kind: StoreKind;
+  ownerId: string;
+  isOwner: boolean;
+  rights: StoreRight[];
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  accent: string;
+  status: StoreStatus | null;
+  live: boolean;
+}
+
 export interface MyStoreRow {
   kind: StoreKind;
   ownerId: string;
@@ -2866,6 +2912,22 @@ export const api = {
     addonIds?: string[]; external?: boolean;
   }) =>
     post<RequestView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/requests`, body),
+  storeInsights: (kind: StoreKind, ownerId: string) =>
+    request<StoreInsightsView>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/insights`),
+  searchRoutes: (filters: { from?: string; to?: string; mode?: string; battery?: boolean; freeCover?: boolean; door?: boolean }) => {
+    const query = new URLSearchParams();
+    if (filters.from) query.set('from', filters.from);
+    if (filters.to) query.set('to', filters.to);
+    if (filters.mode) query.set('mode', filters.mode);
+    if (filters.battery) query.set('battery', '1');
+    if (filters.freeCover) query.set('freeCover', '1');
+    if (filters.door) query.set('door', '1');
+    return request<{ routes: RouteMatch[]; countries: { from: string[]; to: string[] } }>(`/service-search/forwarder?${query}`);
+  },
+  searchStudios: (q: string) =>
+    request<{ studios: StudioMatch[]; specialties: string[] }>(`/service-search/artist${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  assignedRequests: () => request<{ requests: RequestRow[] }>('/me/assigned-requests'),
+  myServiceStores: () => request<{ stores: ServiceStoreRole[] }>('/me/service-stores'),
   myServiceRequests: () => request<{ requests: RequestRow[] }>('/me/service-requests'),
   serviceRequest: (kind: StoreKind, ownerId: string, id: string) =>
     send<RequestView & { store: { name: string; slug: string; accent: string | null; logoUrl: string | null }; team: TeamRow[] }>(

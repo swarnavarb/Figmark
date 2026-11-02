@@ -11597,7 +11597,7 @@ await check('booking a store on a lot is instant, or a request the forwarder ans
   assert.equal(options.stores.some((row) => row.status !== 'approved'), false);
   const booked = await bookForwarder(req({ headers: auth, params: { id: lot.id }, body: { storeOwnerId: pearl.ownerId, laneId: pearl.lanes[0].id, insurancePlanIds: [pearl.insurance[0].id] } }), ctx);
   assert.equal(booked.jsonBody.lot.forwarder.acceptance, 'accepted', 'auto-accept takes it at once');
-  assert.match(booked.jsonBody.lot.forwarder.laneLabel, /Guangzhou → Mumbai/);
+  assert.match(booked.jsonBody.lot.forwarder.laneLabel, /China → .* India · air/);
 
   // Lotus asks first: Lot 24 waits on them, and they cannot work it yet.
   const work = (await storeWork(req({ headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).jsonBody.lots;
@@ -12080,6 +12080,90 @@ await check('a buyer shows off what arrived in the shop\'s channel, without a ra
 });
 
 /* ── shops by what they are about ──────────────────────────────────────── */
+const {
+  submitRequestRoute: submitServiceRequest, requestActRoute: actOnServiceRequest, assignedRequestsRoute: assignedRequests,
+} = await import(new URL('service-work-routes.js', fns));
+const {
+  serviceSearchRoute: serviceSearch, storeInsightsRoute: storeInsights, myServiceStoresRoute: myServiceStores,
+} = await import(new URL('store-routes.js', fns));
+
+/** Answers for Lotus's default shipping form, by what each field is for. */
+const lotusAnswers = (form) => Object.fromEntries(form.flatMap((field) => {
+  const value = {
+    weight: 6, items: [{ name: 'Resin statue', qty: 1, valueMinor: 900000 }], battery: false,
+    dimensions: { l: 50, w: 40, h: 30 },
+    delivery: { name: 'Route Tester', phone: '9876543210', line: '12 MG Road', city: 'bengaluru', state: 'Karnataka', pincode: '560001' },
+  }[field.key ?? ''];
+  return value === undefined ? [] : [[field.id, value]];
+}));
+
+await check('a shipping request carries extras and free cover, and is counted in the store insights', async () => {
+  resetRateLimits();
+  const buyer = await newMember('Route Tester', 'route.tester@figmark.example', '+919000078931');
+  const page = (await storePage(req({ params: { kind: 'forwarder', slug: 'lotus-freight' } }), ctx)).jsonBody.store;
+  const sent = await submitServiceRequest(req({
+    headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' },
+    body: { subjectId: 'lane_gz_blr', optionId: 'prod_statue', planId: 'plan_lotus_free', addonIds: ['opt_door', 'nope'], answers: lotusAnswers(page.form) },
+  }), ctx);
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  const made = sent.jsonBody.request;
+  assert.deepEqual(made.addons.map((row) => row.id), ['opt_door'], 'only the store\'s own extras count');
+  assert.equal(made.plan.premiumMinor, 0, 'free cover costs nothing');
+  assert.equal(made.estimateMinor, 10 * 56000 + 15000, '10 kg volumetric at the statue rate, plus door-to-door');
+  assert.equal(sent.jsonBody.sendTo.length, 2, 'both origin warehouses are given');
+  assert.match(made.subject.label, /China → .* India/);
+
+  // Assigned to somebody on the team, it is in their own list.
+  const assigned = await actOnServiceRequest(req({
+    headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus', id: made.id }, body: { action: 'assign', assigneeId: 'usr_fwd_lotus' },
+  }), ctx);
+  assert.equal(assigned.status, 200);
+  const mine = (await assignedRequests(req({ headers: lotusTeam }), ctx)).jsonBody.requests;
+  assert.ok(mine.some((row) => row.request.id === made.id));
+  assert.equal((await assignedRequests(req({ headers: buyer.headers }), ctx)).jsonBody.requests.length, 0);
+
+  // Quoting records the move, and the insights read it back.
+  await actOnServiceRequest(req({
+    headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus', id: made.id }, body: { action: 'quote', quoteMinor: 560000 },
+  }), ctx);
+  const numbers = await storeInsights(req({ headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx);
+  assert.equal(numbers.status, 200);
+  const { insights } = numbers.jsonBody;
+  assert.ok(insights.totals.requests >= 1 && insights.totals.quoted >= 1);
+  assert.ok(insights.extras.some((row) => row.label === 'Door-to-door delivery'));
+  assert.ok(insights.places.some((row) => row.label === 'Bengaluru'), 'cities are read from the delivery address');
+  assert.ok(insights.speed.quoteHours !== null);
+  assert.equal((await storeInsights(req({ headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).status, 403);
+});
+
+await check('routes are found by country, and filters narrow them', async () => {
+  const all = (await serviceSearch(req({ params: { kind: 'forwarder' }, query: { from: 'China', to: 'India' } }), ctx)).jsonBody;
+  assert.ok(all.routes.length > 1);
+  assert.ok(all.routes.every((row) => row.lane.originCountry === 'China' && row.lane.destinationCountry === 'India'));
+  assert.ok(all.countries.from.includes('China'));
+  const sea = (await serviceSearch(req({ params: { kind: 'forwarder' }, query: { mode: 'sea' } }), ctx)).jsonBody.routes;
+  assert.ok(sea.length > 0 && sea.every((row) => row.lane.mode === 'sea'));
+  const covered = (await serviceSearch(req({ params: { kind: 'forwarder' }, query: { freeCover: '1' } }), ctx)).jsonBody.routes;
+  assert.ok(covered.length > 0 && covered.every((row) => row.freeCover));
+  const studios = (await serviceSearch(req({ params: { kind: 'artist' }, query: { q: 'repaint' } }), ctx)).jsonBody.studios;
+  assert.ok(studios.length > 0);
+  assert.equal((await serviceSearch(req({ params: { kind: 'artist' }, query: { q: 'zzzz-no-such' } }), ctx)).jsonBody.studios.length, 0);
+});
+
+await check('a forwarder posts on Social as its company, and only those it lets speak can', async () => {
+  const roles = (await myServiceStores(req({ headers: lotusTeam }), ctx)).jsonBody.stores;
+  assert.ok(roles.some((row) => row.kind === 'forwarder' && row.ownerId === 'usr_fwd_lotus' && row.isOwner));
+  const made = await createPost(req({ headers: lotusTeam, body: { body: 'Saturday flight is open.', storeId: 'forwarder:usr_fwd_lotus' } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  assert.equal(made.jsonBody.post.channel, 'service');
+  assert.equal(made.jsonBody.post.service.name, 'Lotus Freight');
+  resetRateLimits();
+  const stranger = await newMember('Not Lotus', 'not.lotus@figmark.example', '+919000078932');
+  assert.equal((await createPost(req({ headers: stranger.headers, body: { body: 'Pretending.', storeId: 'forwarder:usr_fwd_lotus' } }), ctx)).status, 403);
+  const prize = await createPost(req({ headers: lotusTeam, body: { body: 'Win!', storeId: 'forwarder:usr_fwd_lotus', guess: { answerMinor: 50000, revealInHours: 24 } } }), ctx);
+  assert.equal(prize.status, 400, 'games with prizes stay a shop\'s');
+});
+
 console.log('\nshop tags');
 {
   const tagsLib = await import(new URL('../api/dist/shared/shop-tags.js', import.meta.url));

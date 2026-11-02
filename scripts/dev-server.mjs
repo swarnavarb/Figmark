@@ -120,12 +120,12 @@ const {
   consignmentsRoute, distributionRoute, distributionDetailRoute,
 } = await import(new URL('service-routes.js', apiRoot));
 const {
-  myServicesRoute, applyStoreRoute, storeConsoleRoute, saveStoreRoute, storeTeamRoute, storeWorkRoute,
+  myServicesRoute, myServiceStoresRoute, storeInsightsRoute, serviceSearchRoute, applyStoreRoute, storeConsoleRoute, saveStoreRoute, storeTeamRoute, storeWorkRoute,
   respondLotRoute, artistActRoute, storePageRoute, opsDemoStoresRoute, devDemoStoreRoute, lotForwarderOptionsRoute, bookForwarderRoute,
   orderServicesRoute, setInsuranceRoute, commissionRoute, commissionActRoute, crewLotRoute, opsStoresRoute, opsReviewRoute,
 } = await import(new URL('store-routes.js', apiRoot));
 const {
-  submitRequestRoute, channelRoute, channelPostRoute, channelDeleteRoute, followStoreRoute, myRequestsRoute,
+  submitRequestRoute, channelRoute, channelPostRoute, channelDeleteRoute, followStoreRoute, myRequestsRoute, assignedRequestsRoute,
   requestRoute, requestActRoute, storeRequestsRoute, paymentLinkRoute,
 } = await import(new URL('service-work-routes.js', apiRoot));
 const {
@@ -460,6 +460,9 @@ const routes = [
   ['POST', '/api/orders/:id/lot', assignOrderToLotRoute],
   ['GET', '/api/services', servicesHubRoute],
   ['GET', '/api/me/services', myServicesRoute],
+  ['GET', '/api/me/service-stores', myServiceStoresRoute],
+  ['GET', '/api/service-stores/:kind/:ownerId/insights', storeInsightsRoute],
+  ['GET', '/api/service-search/:kind', serviceSearchRoute],
   ['POST', '/api/me/services/apply', applyStoreRoute],
   ['GET', '/api/me/crew/:sellerId/:lotId', crewLotRoute],
   ['POST', '/api/service-stores/forwarder/:ownerId/respond', respondLotRoute],
@@ -477,6 +480,7 @@ const routes = [
   ['POST', '/api/service-store/:kind/:ownerId/channel/:id/delete', channelDeleteRoute],
   ['POST', '/api/service-store/:kind/:ownerId/follow', followStoreRoute],
   ['GET', '/api/me/service-requests', myRequestsRoute],
+  ['GET', '/api/me/assigned-requests', assignedRequestsRoute],
   ['GET', '/api/service-requests/:kind/:ownerId/:id', requestRoute],
   ['POST', '/api/service-requests/:kind/:ownerId/:id/act', requestActRoute],
   ['GET', '/api/service-stores/:kind/:ownerId/requests', storeRequestsRoute],

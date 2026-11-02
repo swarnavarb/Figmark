@@ -7,10 +7,10 @@ import type {
 import {
   ARTIST_JOB_MOVES, FREIGHT_MODES, STORE_KINDS, STORE_RIGHTS, STORE_ACCENTS, applicationGaps, coverIsOpen, goodsMinor,
   hasRight, insuranceQuote, isLive, jobActionsFor, jobIsLive, laneLabel, liveAddOns, liveLanes, liveOfferings,
-  livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, type ArtistJobAction, type StoreKind,
+  livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, transitLabel, type ArtistJobAction, type StoreKind,
 } from '../../../shared/service-stores.js';
 import {
-  followId, formOf, readAddons, readForm, readFormUrl, readInfoRows, readOptions, readVolumetric, readWarehouse, readWarehouses, standingOf, storeKey,
+  followId, formOf, laneFromMinor, readAddons, readForm, readFormUrl, readInfoRows, readOptions, readVolumetric, readWarehouse, readWarehouses, standingOf, storeKey,
   type ServiceRequest, type Standing,
 } from '../../../shared/service-work.js';
 import type { ServiceFormField, StoreWarehouse } from '../../../shared/models.js';
@@ -34,6 +34,7 @@ import { error, handler, json } from './http.js';
 import { audited } from '../audit.js';
 import { config } from '../config.js';
 import { createDemoStore, createDemoStores } from '../demo-stores.js';
+import { insightsOf } from '../../../shared/service-insights.js';
 import { ownPhotoName, ownPhotos } from '../storage/index.js';
 
 /**
@@ -139,7 +140,7 @@ function readLanes(input: unknown, previous: FreightLane[] = []): FreightLane[] 
     terms: text(raw.terms, 4000),
     extras: readInfoRows(raw.extras),
     batteryAllowed: raw.batteryAllowed !== false,
-  })).filter((lane) => lane.originCity || lane.destinationCity);
+  })).filter((lane) => lane.originCountry && lane.destinationCountry);
 }
 
 function readPlans(input: unknown, previous: InsurancePlan[] = []): InsurancePlan[] {
@@ -651,6 +652,20 @@ async function artistAct(request: HttpRequest, _context: InvocationContext) {
 
 /* ── The public page ─────────────────────────────────────────────────── */
 
+/**
+ * The routes a forwarder sells: its priced lanes, or - for a store from before
+ * lanes - its old route list, read as China to India by air, which is what
+ * every one of those was.
+ */
+export function lanesOf(profile: ForwarderProfile): FreightLane[] {
+  return profile.lanes ? liveLanes(profile) : profile.routes.map((route, index): FreightLane => ({
+    id: `route_${index}`, originCity: route.originCity, originCountry: 'China', destinationCity: route.destinationCity,
+    destinationCountry: 'India', mode: 'air', ratePerKgMinor: route.ratePerKgMinor, minChargeKg: 0,
+    transitDaysMin: route.claimedTurnaroundDays, transitDaysMax: route.claimedTurnaroundDays, customsIncluded: false,
+    note: '', active: true,
+  }));
+}
+
 function publicStore(owner: User, kind: StoreKind) {
   const store = storeOf(owner, kind)!;
   const base = {
@@ -685,12 +700,7 @@ function publicStore(owner: User, kind: StoreKind) {
     const profile = owner.forwarderProfile!;
     return {
       ...base,
-      lanes: profile.lanes ? liveLanes(profile) : profile.routes.map((route, index): FreightLane => ({
-        id: `route_${index}`, originCity: route.originCity, originCountry: 'China', destinationCity: route.destinationCity,
-        destinationCountry: 'India', mode: 'air', ratePerKgMinor: route.ratePerKgMinor, minChargeKg: 0,
-        transitDaysMin: route.claimedTurnaroundDays, transitDaysMax: route.claimedTurnaroundDays, customsIncluded: false,
-        note: '', active: true,
-      })),
+      lanes: lanesOf(profile),
       insurance: livePlans(profile),
       warehouse: profile.warehouse ?? null,
       autoAccept: profile.autoAccept ?? true,
@@ -794,6 +804,105 @@ export async function liveStores(repository: Repo, kind: StoreKind): Promise<Use
     return store && store.listedInDirectory && isLive(store) && !user.suspended;
   });
 }
+
+/* ── Finding the right one ────────────────────────────────────────────── */
+
+/** A store's level and rating, as a search result shows it. */
+async function standingCard(repository: Repo, owner: User, kind: StoreKind) {
+  const store = storeOf(owner, kind)!;
+  const { standing } = await statsFor(repository, owner, kind);
+  return {
+    ownerId: owner.id, name: store.companyName, slug: store.directorySlug,
+    logoUrl: store.logoUrl ?? null, accent: store.accent ?? (kind === 'artist' ? 'pink' : 'aqua'),
+    level: standing.level, title: standing.title, rating: standing.rating, reviews: standing.reviews, completed: standing.completed,
+  };
+}
+
+/** How good a match is: rated and levelled stores first, then the cheaper of the rest. */
+function matchScore(card: { rating: number | null; level: number }, priceMinor: number, cheapest: number): number {
+  const rating = (card.rating ?? 3.5) / 5;
+  const level = Math.min(card.level, 5) / 5;
+  const price = priceMinor > 0 && cheapest > 0 ? cheapest / priceMinor : 0.5;
+  return rating * 0.4 + level * 0.3 + price * 0.3;
+}
+
+/**
+ * GET /api/service-search/forwarder?from=China&to=India&mode=air&battery=1&freeCover=1
+ * GET /api/service-search/artist?q=repaint
+ *
+ * Forwarders as routes: every live route that goes where the customer is
+ * sending, across every store, best match first. Artists as studios whose
+ * menu or specialties match what the customer wants done.
+ */
+async function serviceSearch(request: HttpRequest, _context: InvocationContext) {
+  const kind = request.params.kind;
+  if (!isKind(kind)) return error(404, 'not_found', 'No such service.');
+  const repository = await getRepository();
+  const owners = await liveStores(repository, kind);
+  const q = (request.query.get('q') ?? '').trim().toLowerCase();
+
+  if (kind === 'forwarder') {
+    const from = request.query.get('from')?.trim() || null;
+    const to = request.query.get('to')?.trim() || null;
+    const mode = request.query.get('mode')?.trim() || null;
+    const battery = request.query.get('battery') === '1';
+    const freeCover = request.query.get('freeCover') === '1';
+    const door = request.query.get('door') === '1';
+    const origins = new Set<string>();
+    const destinations = new Set<string>();
+    const found = await Promise.all(owners.map(async (owner) => {
+      const profile = owner.forwarderProfile!;
+      const lanes = lanesOf(profile);
+      for (const lane of lanes) { origins.add(lane.originCountry); destinations.add(lane.destinationCountry); }
+      const hasFreeCover = livePlans(profile).some((plan) => !plan.premiumBasisPoints && !plan.minPremiumMinor);
+      const hasDoor = (profile.serviceOptions ?? []).some((row) => /door/i.test(row.name));
+      if ((freeCover && !hasFreeCover) || (door && !hasDoor)) return [];
+      const matching = lanes.filter((lane) => (!from || lane.originCountry === from) && (!to || lane.destinationCountry === to)
+        && (!mode || lane.mode === mode) && (!battery || lane.batteryAllowed !== false));
+      if (matching.length === 0) return [];
+      const card = await standingCard(repository, owner, kind);
+      return matching.map((lane) => ({
+        store: card,
+        lane: {
+          id: lane.id, label: laneLabel(lane), originCountry: lane.originCountry, destinationCountry: lane.destinationCountry,
+          mode: lane.mode, days: transitLabel(lane), fromMinor: laneFromMinor(lane),
+          batteryAllowed: lane.batteryAllowed !== false, customsIncluded: lane.customsIncluded, note: lane.note,
+        },
+        freeCover: hasFreeCover, door: hasDoor,
+      }));
+    }));
+    const rows = found.flat();
+    const cheapest = Math.min(...rows.map((row) => row.lane.fromMinor || Infinity));
+    rows.sort((a, b) => matchScore(b.store, b.lane.fromMinor, cheapest) - matchScore(a.store, a.lane.fromMinor, cheapest));
+    return json(200, { routes: rows.slice(0, 60), countries: { from: [...origins].sort(), to: [...destinations].sort() } });
+  }
+
+  const tags = new Set<string>();
+  const found = await Promise.all(owners.map(async (owner) => {
+    const profile = owner.artistProfile!;
+    for (const tag of profile.specialties ?? []) tags.add(tag);
+    const offerings = liveOfferings(profile);
+    const words = (text: string) => !q || text.toLowerCase().includes(q);
+    const matching = offerings.filter((row) => words(`${row.name} ${row.description}`));
+    if (q && matching.length === 0 && !(profile.specialties ?? []).some(words)) return [];
+    const shown = matching.length ? matching : offerings;
+    const prices = shown.flatMap((row) => [row.priceFromMinor, ...(row.products ?? []).map((p) => p.priceMinor)]).filter((n) => n > 0);
+    return [{
+      store: await standingCard(repository, owner, kind),
+      services: shown.slice(0, 3).map((row) => ({ id: row.id, name: row.name, days: row.turnaroundDays })),
+      fromMinor: prices.length ? Math.min(...prices) : 0,
+      specialties: profile.specialties ?? [],
+      portfolio: (profile.portfolio ?? []).slice(0, 4).map((piece) => piece.url),
+      acceptingWork: profile.acceptingWork !== false,
+    }];
+  }));
+  const rows = found.flat();
+  const cheapest = Math.min(...rows.map((row) => row.fromMinor || Infinity));
+  rows.sort((a, b) => Number(b.acceptingWork) - Number(a.acceptingWork)
+    || matchScore(b.store, b.fromMinor, cheapest) - matchScore(a.store, a.fromMinor, cheapest));
+  return json(200, { studios: rows.slice(0, 40), specialties: [...tags].sort().slice(0, 16) });
+}
+export const serviceSearchRoute = handler(serviceSearch);
 
 /* ── A shop booking a forwarder ──────────────────────────────────────── */
 
@@ -1191,6 +1300,60 @@ function movesFor(lot: Lot, role: CrewRole) {
       ? [{ index, name: renderStepText(step.name, placesOf(lot)), forward: Boolean(step.forward) }] : []);
 }
 
+/**
+ * GET /api/service-stores/{kind}/{ownerId}/insights - the store's numbers:
+ * requests and how far they get, money confirmed, speed, routes, customers,
+ * week by week; and how its posts and followers are doing.
+ */
+async function storeInsights(request: HttpRequest, _context: InvocationContext) {
+  const found = await storeFor(request, null);
+  if (found.refusal) return found.refusal;
+  const { owner, kind, repository } = found;
+  const key = storeKey(kind, owner.id);
+  const [rows, followers, posts] = await Promise.all([
+    repository.listServiceWork<ServiceRequest>(key, 'request'),
+    repository.countServiceFollowers(key),
+    repository.listPosts(key, 30).catch(() => []),
+  ]);
+  return json(200, {
+    insights: insightsOf(rows),
+    audience: {
+      followers,
+      posts: posts.length,
+      reactions: posts.reduce((sum, post) => sum + (post.likeCount ?? 0), 0),
+      comments: posts.reduce((sum, post) => sum + (post.replyCount ?? 0), 0),
+      best: [...posts].sort((a, b) => (b.likeCount + b.replyCount) - (a.likeCount + a.replyCount)).slice(0, 3)
+        .map((post) => ({ id: post.id, channelId: post.channelId, body: post.body.slice(0, 120), reactions: post.likeCount, comments: post.replyCount, at: post.createdAt })),
+    },
+  });
+}
+export const storeInsightsRoute = handler(storeInsights);
+
+/**
+ * GET /api/me/service-stores - the freight and art stores this person owns or
+ * is on the team of, with their rights: what the role switcher and the Create
+ * sheet list. No counts, so it costs one read.
+ */
+async function myServiceStores(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const owners = await repository.listServiceStoreOwners();
+  const stores = owners.flatMap((owner) => STORE_KINDS.flatMap((kind) => {
+    const store = storeOf(owner, kind);
+    const rights = store ? rightsIn(owner, kind, user.id) : [];
+    if (!store || rights.length === 0) return [];
+    return [{
+      kind, ownerId: owner.id, isOwner: owner.id === user.id, rights,
+      name: store.companyName, slug: store.directorySlug,
+      logoUrl: store.logoUrl ?? null, accent: store.accent ?? (kind === 'artist' ? 'pink' : 'aqua'),
+      status: statusOf(store), live: isLive(store) && !owner.suspended,
+    }];
+  }));
+  return json(200, { stores });
+}
+export const myServiceStoresRoute = handler(myServiceStores);
+
 /** GET /api/me/services - everything this person does for other people's lots and orders. */
 async function myServices(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -1482,6 +1645,9 @@ export const devDemoStoreRoute = handler(devDemoStore);
 
 const anon = { authLevel: 'anonymous' } as const;
 
+app.http('svc-store-insights', { ...anon, methods: ['GET'], route: 'service-stores/{kind}/{ownerId}/insights', handler: storeInsightsRoute });
+app.http('service-search', { ...anon, methods: ['GET'], route: 'service-search/{kind}', handler: serviceSearchRoute });
+app.http('my-service-stores', { ...anon, methods: ['GET'], route: 'me/service-stores', handler: myServiceStoresRoute });
 app.http('my-services', { ...anon, methods: ['GET'], route: 'me/services', handler: myServicesRoute });
 app.http('services-apply', { ...anon, methods: ['POST'], route: 'me/services/apply', handler: applyStoreRoute });
 app.http('crew-lot', { ...anon, methods: ['GET'], route: 'me/crew/{sellerId}/{lotId}', handler: crewLotRoute });

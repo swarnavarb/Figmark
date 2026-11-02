@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { CHECKPOINT_COUNT_LABELS, type OrderCheckpoint } from '@shared/enums';
 import { countOf } from '@shared/board';
-import { CREW_CHECKPOINTS, SERVICES, type CrewRole } from '@shared/services';
+import { CREW_CHECKPOINTS, type CrewRole } from '@shared/services';
 import type { StoreStatus } from '@shared/models';
 import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, type StoreKind } from '@shared/service-stores';
 import {
@@ -16,10 +16,15 @@ import {
   type MyServicesView,
   type MyStoreRow,
   type ProviderCard,
+  type RouteMatch,
+  type SearchStore,
+  type StudioMatch,
 } from '../api';
+import { countryFlag } from '@shared/countries';
 import { formatMoney } from '../format';
-import { EmptyState, ErrorNotice, Icon, TrustBadge, type IconName, PageError } from '../components/ui';
-import { StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
+import { requestIsOpen } from '@shared/service-work';
+import { EmptyState, ErrorNotice, Icon, type IconName, PageError } from '../components/ui';
+import { Picture, StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
 import { RequestRowCard } from '../components/ServiceWorkKit';
 import { BackBar, BackLink } from '../components/ScrollManager';
@@ -201,9 +206,6 @@ function ServiceTile({ kind, mine }: { kind: StoreKind; mine: MyServicesView | n
  */
 function ServiceSection({ kind, mine }: { kind: StoreKind; mine: MyServicesView | null }) {
   const theme = THEME[kind];
-  const [query, setQuery] = useState('');
-  const { providers, error } = useProviders(kind, query);
-
   return (
     <section className={`svx svx--${kind} svx--page`} aria-label={theme.title}>
       <header className="svx__hero">
@@ -212,44 +214,178 @@ function ServiceSection({ kind, mine }: { kind: StoreKind; mine: MyServicesView 
         <div className="svx__text">
           <span className="svx__eyebrow">{theme.eyebrow}</span>
           <h1 className="svx__title">{theme.title}</h1>
-          <p className="svx__line">{theme.line}</p>
-          <span className="svx__count">
-            {providers === null ? '…' : `${providers.length} ${query ? 'matching' : 'on Figmark'}`}
-          </span>
+          <p className="svx__line">{kind === 'forwarder' ? 'Pick where it ships from and to. The best match comes first.' : 'Say what you want done. The best studios come first.'}</p>
         </div>
         <ApplyMenu kind={kind} mine={mine} />
       </header>
-
       <div className="svx__body">
-        <div className="search svx__search">
-          <span className="search__icon"><Icon name="search" /></span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)}
-            placeholder={kind === 'forwarder' ? 'Filter by route — Guangzhou, Mumbai…' : 'Filter by style — repaint, sculpt…'}
-            aria-label={`Filter ${theme.title}`} />
-        </div>
-
-        {error && <ErrorNotice message={error} />}
-
-        {providers === null ? (
-          <div className="svx__list" aria-hidden="true">
-            {[0, 1].map((key) => <div key={key} className="svx-card svx-card--ghost skel" />)}
-          </div>
-        ) : providers.length === 0 ? (
-          <p className="svx__empty">
-            {query ? 'Nobody matches that. Try another city or style.' : `No ${theme.title.toLowerCase()} yet — be the first: apply from the ⋯ menu.`}
-          </p>
-        ) : (
-          <div className="svx__list">
-            {providers.map((provider, index) => (
-              // Each card rises in a beat after the one before it.
-              <div key={provider.userId} className="svx__item" style={{ '--i': Math.min(index, 8) } as CSSProperties}>
-                {kind === 'forwarder' ? <ForwarderCard provider={provider} /> : <ArtistCard provider={provider} />}
-              </div>
-            ))}
-          </div>
-        )}
+        {kind === 'forwarder' ? <RouteSearch /> : <StudioSearch />}
       </div>
     </section>
+  );
+}
+
+/** The level and rating line under a store's name in a result. */
+function StandingLine({ store }: { store: SearchStore }) {
+  return (
+    <span className="svs-standing">
+      <span className="svs-level">Lv {store.level} · {store.title}</span>
+      {store.rating !== null ? <span>★ {store.rating.toFixed(1)} <span className="faint">({store.reviews})</span></span> : <span className="faint">No ratings yet</span>}
+      {store.completed > 0 && <span className="faint">{store.completed} done</span>}
+    </span>
+  );
+}
+
+/**
+ * Forwarders as the routes they run: from one country to another, every
+ * store's matching route in one list, best match first - rated and levelled
+ * stores, then the cheaper.
+ */
+function RouteSearch() {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [mode, setMode] = useState('');
+  const [battery, setBattery] = useState(false);
+  const [freeCover, setFreeCover] = useState(false);
+  const [door, setDoor] = useState(false);
+  const [result, setResult] = useState<{ routes: RouteMatch[]; countries: { from: string[]; to: string[] } } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [countries, setCountries] = useState<{ from: string[]; to: string[] }>({ from: [], to: [] });
+
+  useEffect(() => {
+    let live = true;
+    void api.searchRoutes({ from, to, mode, battery, freeCover, door })
+      .then((next) => {
+        if (!live) return;
+        setResult(next);
+        // The lists come from every route on Figmark, so they are kept from the first, unfiltered answer.
+        setCountries((current) => (current.from.length ? current : next.countries));
+      })
+      .catch((err: unknown) => live && setError(err instanceof ApiRequestError ? err.message : 'Could not search routes.'));
+    return () => { live = false; };
+  }, [from, to, mode, battery, freeCover, door]);
+
+  return (
+    <div className="stack svs">
+      <div className="svs-where">
+        <label className="field"><span>From</span>
+          <select value={from} onChange={(e) => setFrom(e.target.value)}>
+            <option value="">Anywhere</option>
+            {countries.from.map((country) => <option key={country} value={country}>{countryFlag(country)} {country}</option>)}
+          </select></label>
+        <span className="svs-where__arrow" aria-hidden="true">→</span>
+        <label className="field"><span>To</span>
+          <select value={to} onChange={(e) => setTo(e.target.value)}>
+            <option value="">Anywhere</option>
+            {countries.to.map((country) => <option key={country} value={country}>{countryFlag(country)} {country}</option>)}
+          </select></label>
+      </div>
+      <div className="chips chips--tight" role="group" aria-label="Filters">
+        {(['', 'air', 'express', 'sea'] as const).map((value) => (
+          <button key={value || 'all'} type="button" className={`chip${mode === value ? ' is-on' : ''}`} aria-pressed={mode === value} onClick={() => setMode(value)}>
+            {value ? `${FREIGHT_MODE_LABELS[value].glyph} ${FREIGHT_MODE_LABELS[value].label}` : 'Any mode'}
+          </button>
+        ))}
+        <button type="button" className={`chip${battery ? ' is-on' : ''}`} aria-pressed={battery} onClick={() => setBattery(!battery)}>🔋 Batteries</button>
+        <button type="button" className={`chip${freeCover ? ' is-on' : ''}`} aria-pressed={freeCover} onClick={() => setFreeCover(!freeCover)}>🛡️ Free cover</button>
+        <button type="button" className={`chip${door ? ' is-on' : ''}`} aria-pressed={door} onClick={() => setDoor(!door)}>🚚 Door-to-door</button>
+      </div>
+      {error && <ErrorNotice message={error} />}
+      {result === null ? <Loading /> : result.routes.length === 0 ? (
+        <p className="svx__empty">No forwarder runs that yet. Try another country or fewer filters.</p>
+      ) : (
+        <div className="svs-list">
+          {result.routes.map((row, index) => (
+            <Link key={`${row.store.ownerId}-${row.lane.id}`} to={`/services/forwarder/${row.store.slug}/route/${row.lane.id}`}
+              className="svs-route" style={accentStyle(row.store.accent)}>
+              {index === 0 && <span className="svs-best">Best match</span>}
+              <span className="svs-route__top">
+                <StoreMark name={row.store.name} logoUrl={row.store.logoUrl} accent={row.store.accent} size={36} />
+                <span className="svs-route__who"><b>{row.store.name}</b><StandingLine store={row.store} /></span>
+                {row.lane.fromMinor > 0 && <span className="svs-route__price">from <b>{formatMoney(row.lane.fromMinor, 'INR')}</b>/kg</span>}
+              </span>
+              <span className="svs-route__lane">
+                <b>{row.lane.label}</b>
+                <span className="faint">{FREIGHT_MODE_LABELS[row.lane.mode].glyph} {FREIGHT_MODE_LABELS[row.lane.mode].label} · {row.lane.days}</span>
+              </span>
+              <span className="svs-tags">
+                {row.lane.batteryAllowed && <span>🔋 Batteries OK</span>}
+                {row.lane.customsIncluded && <span>✓ Customs cleared</span>}
+                {row.freeCover && <span>🛡️ Free cover</span>}
+                {row.door && <span>🚚 Door-to-door</span>}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Artists by what you want done: a repaint, a sculpt, a repair. */
+function StudioSearch() {
+  const [query, setQuery] = useState('');
+  const [result, setResult] = useState<{ studios: StudioMatch[]; specialties: string[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(() => {
+      void api.searchStudios(query.trim())
+        .then((next) => {
+          if (!live) return;
+          setResult(next);
+          setTags((current) => (current.length ? current : next.specialties));
+        })
+        .catch((err: unknown) => live && setError(err instanceof ApiRequestError ? err.message : 'Could not search studios.'));
+    }, query ? 200 : 0);
+    return () => { live = false; clearTimeout(timer); };
+  }, [query]);
+
+  return (
+    <div className="stack svs">
+      <div className="search svx__search">
+        <span className="search__icon"><Icon name="search" /></span>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Repaint, head sculpt, repair…" aria-label="What do you want done?" />
+      </div>
+      {tags.length > 0 && (
+        <div className="chips chips--tight" role="group" aria-label="Kind of work">
+          {tags.map((tag) => (
+            <button key={tag} type="button" className={`chip${query.toLowerCase() === tag.toLowerCase() ? ' is-on' : ''}`}
+              onClick={() => setQuery(query.toLowerCase() === tag.toLowerCase() ? '' : tag)}>{tag}</button>
+          ))}
+        </div>
+      )}
+      {error && <ErrorNotice message={error} />}
+      {result === null ? <Loading /> : result.studios.length === 0 ? (
+        <p className="svx__empty">No studio offers that yet. Try another word.</p>
+      ) : (
+        <div className="svs-list">
+          {result.studios.map((row, index) => (
+            <Link key={row.store.ownerId} to={`/services/artist/${row.store.slug}`} className="svs-route" style={accentStyle(row.store.accent)}>
+              {index === 0 && row.acceptingWork && <span className="svs-best">Best match</span>}
+              <span className="svs-route__top">
+                <StoreMark name={row.store.name} logoUrl={row.store.logoUrl} accent={row.store.accent} size={36} />
+                <span className="svs-route__who"><b>{row.store.name}</b><StandingLine store={row.store} /></span>
+                {row.fromMinor > 0 && <span className="svs-route__price">from <b>{formatMoney(row.fromMinor, 'INR')}</b></span>}
+              </span>
+              {row.portfolio.length > 0 && (
+                <span className="svx-gallery">
+                  {row.portfolio.map((url) => (
+                    <span key={url} className="svx-gallery__pic"><Picture url={url} label="Work" className="sk-pic" /></span>
+                  ))}
+                </span>
+              )}
+              <span className="svs-tags">
+                {row.services.map((service) => <span key={service.id}>{service.name}{service.days ? ` · ${service.days} days` : ''}</span>)}
+                {!row.acceptingWork && <span className="svs-tags__off">Not taking work</span>}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -292,94 +428,6 @@ function ApplyMenu({ kind, mine }: { kind: StoreKind; mine: MyServicesView | nul
         </div>
       )}
     </div>
-  );
-}
-
-/** The store's own name and mark, linking to its page. */
-function CardHead({ provider, kind }: { provider: ProviderCard; kind: StoreKind }) {
-  return (
-    <div className="svx-card__head">
-      <StoreMark name={provider.name} logoUrl={provider.logoUrl ?? null} accent={provider.accent ?? undefined} size={44} />
-      <span className="svx-card__who">
-        <span className="svx-card__name">{provider.name}</span>
-        <span className="svx-card__sub">
-          {[provider.tagline, provider.place].filter(Boolean).join(' · ') || SERVICES[kind].label}
-        </span>
-      </span>
-      {provider.trustScore !== null && (provider.completed ?? 0) > 0 ? (
-        <span className="svx-card__trust"><TrustBadge score={provider.trustScore} /><span>{provider.completed} done</span></span>
-      ) : (
-        <span className="svx-card__new">New</span>
-      )}
-    </div>
-  );
-}
-
-/** A forwarder as a shop chooses one: the lanes, how long, how much a kilo. */
-function ForwarderCard({ provider }: { provider: ProviderCard }) {
-  const lanes = provider.lanes ?? [];
-  const extra = lanes.length - 3;
-  const href = provider.slug ? `/services/forwarder/${provider.slug}` : null;
-  return (
-    <article className="svx-card" style={accentStyle(provider.accent ?? 'aqua')}>
-      <CardHead provider={provider} kind="forwarder" />
-      {lanes.length === 0 ? (
-        <span className="svx-card__note">Routes on request</span>
-      ) : (
-        <ul className="svx-lanes" aria-label="Routes">
-          {lanes.slice(0, 3).map((lane, index) => (
-            <li key={`${lane.from}-${lane.to}-${index}`} className="svx-lane">
-              <span className="svx-lane__ends">
-                <b>{lane.from || '?'}</b>
-                <span className="svx-lane__path" aria-hidden="true">
-                  <span>{lane.mode ? FREIGHT_MODE_LABELS[lane.mode].glyph : '✈'}</span>
-                </span>
-                <b>{lane.to || '?'}</b>
-              </span>
-              <span className="svx-lane__facts">
-                {lane.mode && <span>{FREIGHT_MODE_LABELS[lane.mode].label}</span>}
-                <span>{lane.days}</span>
-                {lane.ratePerKgMinor > 0 && <span className="svx-lane__rate">{formatMoney(lane.ratePerKgMinor, 'INR')}/kg</span>}
-              </span>
-            </li>
-          ))}
-          {extra > 0 && <li className="svx-lanes__more">+{extra} more {extra === 1 ? 'route' : 'routes'}</li>}
-        </ul>
-      )}
-      <div className="svx-card__foot">
-        {provider.handle && <Link to={`/messages/${provider.handle}`} className="btn btn--quiet btn--sm">Message</Link>}
-        {href && <Link to={href} className="btn btn--sm svx-card__more">More <Icon name="right" size={13} /></Link>}
-      </div>
-    </article>
-  );
-}
-
-/** An artist as a buyer chooses one: what they do, a few pieces, where prices start. */
-function ArtistCard({ provider }: { provider: ProviderCard }) {
-  const pieces = provider.portfolio ?? [];
-  const href = provider.slug ? `/services/artist/${provider.slug}` : null;
-  return (
-    <article className="svx-card" style={accentStyle(provider.accent ?? 'pink')}>
-      <CardHead provider={provider} kind="artist" />
-      {pieces.length > 0 && (
-        <div className="svx-gallery">
-          {pieces.slice(0, 4).map((url) => (
-            <span key={url} className="svx-gallery__pic">
-              {/* A piece that will not load leaves an empty frame, not a broken picture. */}
-              <img src={url} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.visibility = 'hidden'; }} />
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="svx-tags">
-        {(provider.specialties ?? []).slice(0, 4).map((tag) => <span key={tag} className="svx-tag">{tag}</span>)}
-        {provider.acceptingWork === false && <span className="svx-tag svx-tag--off">Not taking work</span>}
-      </div>
-      <div className="svx-card__foot">
-        {provider.fromMinor ? <span className="svx-card__from">from <b>{formatMoney(provider.fromMinor, 'INR')}</b></span> : <span />}
-        {href && <Link to={href} className="btn btn--sm svx-card__more">More <Icon name="right" size={13} /></Link>}
-      </div>
-    </article>
   );
 }
 
@@ -458,13 +506,19 @@ export function MyServicesPage() {
   const { user } = useSession();
   const [mine, setMine] = useState<MyServicesView | null>(null);
   const [asked, setAsked] = useState<RequestRow[]>([]);
+  const [assigned, setAssigned] = useState<RequestRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      // What you asked stores for, beside the stores you run: one wait, not two.
-      const [services, requests] = await Promise.all([api.myServices(), api.myServiceRequests().catch(() => ({ requests: [] }))]);
+      // Work handed to you, the lots and teams you are on, and what you asked for: one wait, not three.
+      const [services, requests, given] = await Promise.all([
+        api.myServices(),
+        api.myServiceRequests().catch(() => ({ requests: [] })),
+        api.assignedRequests().catch(() => ({ requests: [] })),
+      ]);
       setAsked(requests.requests);
+      setAssigned(given.requests);
       setMine(services);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your services.');
@@ -491,39 +545,31 @@ export function MyServicesPage() {
       <BackLink to="/services" title="My services" />
       <div className="page__head">
         <div>
-          <p className="muted">The stores you run, and the lots shops have named you on.</p>
+          <p className="muted">Work handed to you: requests assigned to you, lots shops named you on, and the teams you are on.</p>
         </div>
       </div>
 
       {error && <ErrorNotice message={error} />}
 
-      {asked.length > 0 && (
+      {assigned.some((row) => requestIsOpen(row.request)) && (
         <section className="stack" style={{ marginBottom: 22 }}>
-          <h2 className="ms-section"><Icon name="send" size={15} /> Your requests</h2>
-          {asked.map((row) => (
-            <RequestRowCard key={row.request.id} request={row.request} due={row.due} side="customer" actions={row.actions}
-              to={`/services/requests/${row.request.kind}/${row.request.ownerId}/${row.request.id}`} />
+          <h2 className="ms-section"><Icon name="check" size={15} /> Assigned to you</h2>
+          {assigned.filter((row) => requestIsOpen(row.request)).map((row) => (
+            <RequestRowCard key={row.request.id} request={row.request} due={row.due} side="store" actions={row.actions}
+              to={`/services/store/${row.request.kind}/${row.request.ownerId}?tab=requests&r=${row.request.id}`} />
           ))}
         </section>
       )}
 
       {mine === null ? (
         !error && <Loading />
-      ) : !enrolled(mine) ? (asked.length > 0 ? null :
-        <EmptyState icon={<Icon name="users" size={26} />} title="You’re not enrolled in any services">
-          When a shop names you on a lot — as its supplier or handler — the lot appears here. To run
-          a forwarding company or an artist studio, apply from the ⋯ menu on{' '}
-          <Link to="/services/forwarder">Freight forwarders</Link> or <Link to="/services/artist">Artists</Link>.
+      ) : !enrolled(mine) && assigned.length === 0 ? (asked.length > 0 ? null :
+        <EmptyState icon={<Icon name="users" size={26} />} title="Nothing handed to you yet">
+          When a team adds you, or a shop names you on a lot as its supplier or handler, the work shows up here.
+          To run your own business, <Link to="/open">open one</Link>.
         </EmptyState>
       ) : (
         <div className="stack ms-page">
-          {mine.stores.length > 0 && (
-            <section className="stack">
-              <h2 className="ms-section">Your stores</h2>
-              {mine.stores.map((row) => <StoreRowCard key={`${row.kind}-${row.ownerId}`} row={row} />)}
-            </section>
-          )}
-
           {groupCrew(mine.crew).map(({ role, rows }) => (
             <section key={role} className="stack ms-crew-group">
               <h2 className="ms-section">
@@ -532,6 +578,22 @@ export function MyServicesPage() {
               {rows.map((row) => <CrewCard key={`${row.role}-${row.lot.id}`} row={row} />)}
             </section>
           ))}
+
+          {mine.stores.some((row) => !row.isOwner) && (
+            <section className="stack">
+              <h2 className="ms-section">Teams you’re on</h2>
+              {mine.stores.filter((row) => !row.isOwner).map((row) => <StoreRowCard key={`${row.kind}-${row.ownerId}`} row={row} />)}
+            </section>
+          )}
+
+          {mine.stores.some((row) => row.isOwner) && (
+            <p className="faint svx-ownline">
+              Your own {mine.stores.filter((row) => row.isOwner).length === 1 ? 'business is' : 'businesses are'} in the switcher under your profile picture:{' '}
+              {mine.stores.filter((row) => row.isOwner).map((row, index) => (
+                <span key={`${row.kind}-${row.ownerId}`}>{index > 0 && ' · '}<Link to={`/services/store/${row.kind}/${row.ownerId}`}>{row.name}</Link></span>
+              ))}
+            </p>
+          )}
 
           {/* Only for the people Figmark has appointed community managers. */}
           {mine.communityManager && (
@@ -547,6 +609,16 @@ export function MyServicesPage() {
             </section>
           )}
         </div>
+      )}
+
+      {asked.length > 0 && (
+        <section className="stack" style={{ marginTop: 22 }}>
+          <h2 className="ms-section"><Icon name="send" size={15} /> Requests you sent</h2>
+          {asked.map((row) => (
+            <RequestRowCard key={row.request.id} request={row.request} due={row.due} side="customer" actions={row.actions}
+              to={`/services/requests/${row.request.kind}/${row.request.ownerId}/${row.request.id}`} />
+          ))}
+        </section>
       )}
     </main>
   );

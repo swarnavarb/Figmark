@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
+import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, laneLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
 import { fromPriceMinor, laneFromMinor } from '@shared/service-work';
 import { ApiRequestError, api, type StorePageView } from '../api';
 import { useSession } from '../session';
@@ -56,6 +56,8 @@ export function StorePage() {
   const go = (next: Tab) => setParams((current) => { const copy = new URLSearchParams(current); copy.set('tab', next); return copy; }, { replace: true });
   const modes = [...new Set(store.lanes.map((lane) => lane.mode))];
   const lanes = store.lanes.filter((lane) => mode === 'all' || lane.mode === mode);
+  const freeCover = store.insurance.some((plan) => !plan.premiumBasisPoints && !plan.minPremiumMinor);
+  const door = store.serviceOptions.some((row) => /door/i.test(row.name));
   async function toggleFollow() {
     if (!data) return;
     const next = !following;
@@ -85,7 +87,7 @@ export function StorePage() {
       <section className="sp-hero">
         <StoreCover kind={store.kind} coverUrl={store.coverUrl} accent={store.accent} />
         <div className="sp-hero__card">
-          <StoreMark name={store.name} logoUrl={store.logoUrl} accent={store.accent} size={84} />
+          <StoreMark name={store.name} logoUrl={store.logoUrl} accent={store.accent} size={64} />
           <div className="sp-hero__text">
             <span className="sp-hero__kind">{STORE_KIND_LABELS[store.kind].store}</span>
             <h1>{store.name}</h1>
@@ -94,6 +96,8 @@ export function StorePage() {
               <StandingChips standing={stats.standing} followers={followers} />
               {(store.city || store.country) && <span className="sp-chip">📍 {[store.city, store.country].filter(Boolean).join(', ')}</span>}
               {store.registered && <span className="sp-chip sp-chip--ok"><Icon name="check" size={12} /> Registered business</span>}
+              {freeCover && <span className="sp-chip sp-chip--ok">🛡️ Free cover</span>}
+              {door && <span className="sp-chip">🚚 Door-to-door</span>}
               {store.status && store.status !== 'approved' && <StatusPill status={store.status} />}
             </div>
           </div>
@@ -105,10 +109,11 @@ export function StorePage() {
                 {following ? <><Icon name="check" size={14} /> Following</> : <><Icon name="plus" size={14} /> Follow</>}
               </button>
             ) : null}
-            <button type="button" className="btn btn--ghost" onClick={() => go('channel')}><Icon name="forum" size={14} /> Channel</button>
-            {store.handle && !isTeam && <Link to={`/messages/${store.handle}`} className="btn btn--ghost btn--sm"><Icon name="message" size={14} /> Message</Link>}
+            {store.handle && !isTeam && <Link to={`/messages/${store.handle}`} className="btn btn--ghost"><Icon name="message" size={14} /> Message</Link>}
             {store.links.map((link) => (
-              <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="btn btn--ghost btn--sm"><Icon name="external" size={13} /> {link.label}</a>
+              <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="btn btn--ghost btn--sm sp-hero__link" title={link.label} aria-label={link.label}>
+                <Icon name="external" size={14} /> <span>{link.label}</span>
+              </a>
             ))}
           </div>
         </div>
@@ -128,19 +133,16 @@ export function StorePage() {
           {tab === 'offer' && (store.kind === 'forwarder' ? (
             <>
               <section className="stack">
-                <div className="sp-sechead">
-                  <h2>Routes & rates</h2>
-                  {modes.length > 1 && (
-                    <div className="sp-filter" role="radiogroup" aria-label="Filter by mode">
-                      <button type="button" className={mode === 'all' ? 'is-on' : ''} onClick={() => setMode('all')}>All</button>
-                      {modes.map((value) => (
-                        <button key={value} type="button" className={mode === value ? 'is-on' : ''} onClick={() => setMode(value)}>
-                          {FREIGHT_MODE_LABELS[value as FreightMode]?.glyph} {FREIGHT_MODE_LABELS[value as FreightMode]?.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {modes.length > 1 && (
+                  <div className="sp-filter" role="radiogroup" aria-label="Filter by mode">
+                    <button type="button" className={mode === 'all' ? 'is-on' : ''} onClick={() => setMode('all')}>All</button>
+                    {modes.map((value) => (
+                      <button key={value} type="button" className={mode === value ? 'is-on' : ''} onClick={() => setMode(value)}>
+                        {FREIGHT_MODE_LABELS[value as FreightMode]?.glyph} {FREIGHT_MODE_LABELS[value as FreightMode]?.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {lanes.length === 0 ? <p className="muted">No routes listed yet.</p> : (
                   <div className="sp-rows">
                     {lanes.map((lane) => {
@@ -151,8 +153,14 @@ export function StorePage() {
                           onPointerEnter={warmDetail} onTouchStart={warmDetail} onFocus={warmDetail}>
                           <span className="sp-row__glyph" aria-hidden="true">{how?.glyph}</span>
                           <span className="sp-row__body">
-                            <b>{lane.originCity} → {lane.destinationCity}</b>
-                            <span className="faint">{how?.label} · {transitLabel(lane)}</span>
+                            <b>{laneLabel(lane)}</b>
+                            <span className="faint">{how?.label} · {transitLabel(lane)}{lane.note ? ` · ${lane.note}` : ''}</span>
+                            {(lane.batteryAllowed === false || !lane.customsIncluded) && (
+                              <span className="sp-row__tags">
+                                {lane.batteryAllowed === false && <span>No batteries</span>}
+                                {!lane.customsIncluded && <span>Duty at actuals</span>}
+                              </span>
+                            )}
                           </span>
                           {from > 0 && <span className="sp-row__price">from <b>{formatMoney(from)}</b>/kg</span>}
                           <Icon name="right" size={14} />
@@ -165,19 +173,9 @@ export function StorePage() {
             </>
           ) : (
             <>
-              {store.portfolio.length > 0 && (
-                <section className="stack">
-                  <h2>Work</h2>
-                  <PortfolioGrid pieces={store.portfolio} />
-                </section>
-              )}
+              {store.portfolio.length > 0 && <PortfolioGrid pieces={store.portfolio} strip />}
               <section className="stack">
-                <div className="sp-sechead">
-                  <h2>Menu</h2>
-                  <span className={`badge ${store.acceptingWork ? 'badge--ok' : 'badge--warn'}`}>
-                    {store.acceptingWork ? 'Taking commissions' : 'Queue full'}
-                  </span>
-                </div>
+                {!store.acceptingWork && <span className="badge badge--warn">Queue full — not taking new work</span>}
                 <div className="sp-rows">
                   {store.offerings.map((offering) => {
                     const from = fromPriceMinor(offering.priceFromMinor, offering.products);
@@ -235,13 +233,6 @@ export function StorePage() {
               <div className="sp-tags">{store.specialties.map((tag) => <span key={tag} className="sp-chip">{tag}</span>)}</div>
             )}
           </section>
-          {(store.contactEmail || store.contactPhone) && (
-            <section className="sp-box">
-              <h3>Contact</h3>
-              {store.contactEmail && <p className="faint">{store.contactEmail}</p>}
-              {store.contactPhone && <p className="faint">{store.contactPhone}</p>}
-            </section>
-          )}
         </aside>
       </div>
     </main>

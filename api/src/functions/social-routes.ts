@@ -10,8 +10,8 @@ import {
   type PostSocial, type ReactorRow, type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
 import { can } from '../../../shared/stores.js';
-import { rightsIn, storeOf } from '../../../shared/service-stores.js';
-import type { ChannelMessage } from '../../../shared/service-work.js';
+import { isLive as storeIsLive, rightsIn, storeOf } from '../../../shared/service-stores.js';
+import { parseStoreKey, storeKey, type ChannelMessage } from '../../../shared/service-work.js';
 import { isExpired, isMultiple, rupees } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
@@ -2215,6 +2215,36 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   }
 
   const repository = await getRepository();
+
+  // A freight forwarder or an artist speaking as its company: `storeId` is
+  // `kind:ownerId`. Updates, photos, polls and questions - the games with
+  // prizes and anything tied to items for sale are a shop's.
+  const service = typeof body.storeId === 'string' ? parseStoreKey(body.storeId) : null;
+  if (service) {
+    if (prizeAsked || guess || debateIds || hotspots?.some((spot) => spot.listingId) || body.listingId || body.forumId || body.channelId
+      || poll?.options.some((option) => option.listingId)) {
+      return error(400, 'invalid_post', 'A service store posts updates, photos, polls and questions.');
+    }
+    const owner = await repository.getUserById(service.ownerId);
+    const store = owner ? storeOf(owner, service.kind) : null;
+    if (!owner || !store || !storeIsLive(store) || owner.suspended || !rightsIn(owner, service.kind, user.id).includes('voice')) {
+      return error(403, 'forbidden', 'You cannot post for that store.');
+    }
+    const at = new Date().toISOString();
+    const made = await repository.createPost({
+      id: `pst_${randomUUID().slice(0, 12)}`,
+      channelId: storeKey(service.kind, owner.id), channel: 'service', kind: 'update',
+      authorId: user.id, authorName: store.companyName,
+      body: text, listingId: null, photoUrl: photoUrls[0] ?? null, photoUrls,
+      likeCount: 0, replyCount: 0, voice: 'store', reach: 'feed', announcement: true,
+      reactions: [], comments: [], shareCount: 0, poll, vibe,
+      ...(hotspots?.length ? { flex: { hotspots } } : {}),
+      ...(blur ? { blur } : {}), ...(compare ? { compare } : {}), ...(question ? { question } : {}),
+      service: { kind: service.kind, ownerId: owner.id, name: store.companyName, slug: store.directorySlug },
+      createdAt: at, updatedAt: at,
+    });
+    return json(201, { post: made });
+  }
 
   // Items named on a flex or a debate must be real, public items - anybody's,
   // since a debate is usually about two things neither side sells.

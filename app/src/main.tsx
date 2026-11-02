@@ -56,6 +56,7 @@ const ConsignmentsPage = page(loaders.services, 'ConsignmentsPage');
 const DistributionPage = page(loaders.services, 'DistributionPage');
 const ServiceDirectoryPage = page(loaders.services, 'ServiceDirectoryPage');
 const StoreApplyPage = page(loaders.storeApply, 'StoreApplyPage');
+const OpenPage = page(loaders.open, 'OpenPage');
 const StoreConsolePage = page(loaders.storeConsole, 'StoreConsolePage');
 const StorePage = page(loaders.store, 'StorePage');
 const ServiceDetailPage = page(loaders.serviceDetail, 'ServiceDetailPage');
@@ -155,6 +156,7 @@ function App() {
         <Route path="/services/mine/forwarder" element={members(<ConsignmentsPage />)} />
         <Route path="/services/mine/handler" element={members(<DistributionPage />)} />
         <Route path="/services/apply/:kind" element={members(<StoreApplyPage />)} />
+        <Route path="/open" element={members(<OpenPage />)} />
         <Route path="/services/store/:kind" element={members(<StoreConsolePage />)} />
         <Route path="/services/store/:kind/:ownerId" element={members(<StoreConsolePage />)} />
         <Route path="/services/crew/:sellerId/:lotId" element={members(<CrewLotPage />)} />

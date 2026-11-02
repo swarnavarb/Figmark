@@ -203,7 +203,7 @@ export function Composer({ onPosted, forum = null }: {
         }}>
         <Icon name="spark" size={18} /> <span>Colour</span>
       </button>
-      {voice.storeId && (
+      {voice.storeId && !voice.storeId.includes(':') && (
         <button type="button" className={`writer__tool writer__tool--item${item || picking ? ' is-on' : ''}`}
           onClick={() => {
             if (!open) expand();
@@ -274,7 +274,8 @@ export function Composer({ onPosted, forum = null }: {
               ? (toWall ? 'In the forum, and on your feed' : 'To everyone in this forum')
               : target
                 ? `In ${targets.length === 1 ? 'the forum' : `${targets.length} forums`}, and on your feed`
-                : voice.storeId ? 'Posting as your storefront · tap the photo to switch' : 'To everyone following you'}
+                : voice.storeId?.includes(':') ? 'To followers, on Social and Discover'
+                  : voice.storeId ? 'Posting as your storefront · tap the photo to switch' : 'To everyone following you'}
           </span>
         </div>
         <button type="button" className="iconbtn" aria-label="Close" onClick={reset}>

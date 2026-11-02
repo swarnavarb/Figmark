@@ -1,3 +1,4 @@
+import { countryFlag } from './countries.js';
 import type {
   ArtistJob, ArtistJobStatus, ArtistProfile, ForwarderProfile, FreightLane, InsurancePlan, Order, OrderAddOn,
   StoreCore, StoreMember, StoreRight, StoreStatus, User,
@@ -122,8 +123,12 @@ export const FREIGHT_MODE_LABELS: Record<FreightMode, { label: string; glyph: st
   road: { label: 'Road', glyph: '🚚' },
 };
 
-export function laneLabel(lane: Pick<FreightLane, 'originCity' | 'destinationCity'>): string {
-  return `${lane.originCity || '?'} → ${lane.destinationCity || '?'}`;
+/**
+ * A route as customers read it: country to country, with flags. Cities stay
+ * on older lanes but are not shown - the warehouse addresses say where.
+ */
+export function laneLabel(lane: Pick<FreightLane, 'originCountry' | 'destinationCountry'>): string {
+  return `${countryFlag(lane.originCountry)} ${lane.originCountry || '?'} → ${countryFlag(lane.destinationCountry)} ${lane.destinationCountry || '?'}`;
 }
 
 export function transitLabel(lane: Pick<FreightLane, 'transitDaysMin' | 'transitDaysMax'>): string {

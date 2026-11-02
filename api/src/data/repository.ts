@@ -312,6 +312,8 @@ export interface Repository {
   countServiceFollowers(storeId: string): Promise<number>;
   /** The service stores (`kind:ownerId`) one person follows. */
   listServiceStoresFollowedBy(userId: string): Promise<string[]>;
+  /** Open and finished requests assigned to one team member, across every store. */
+  listServiceRequestsAssignedTo(userId: string): Promise<ServiceRequest[]>;
   /**
    * Pre-orders with a deadline behind them that nobody has acted on yet: the
    * cutoff passed before it went ahead, or the seller's time to decide ran out.

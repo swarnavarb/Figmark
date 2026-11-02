@@ -6,9 +6,10 @@ import {
   applicationGaps, jobDueMinor, liveLanes, livePlans, type StoreKind,
 } from '@shared/service-stores';
 import {
-  ApiRequestError, api, type ArtistJobRow, type ForwarderLotRow, type RequestRow, type StoreConsole, type StoreDraft, type StoreWork, type TeamRow,
+  ApiRequestError, api, type ArtistJobRow, type ForwarderLotRow, type RequestRow, type StoreConsole, type StoreDraft, type StoreInsightsView, type StoreWork, type TeamRow,
 } from '../api';
 import { requestIsOpen, type ServiceRequest } from '@shared/service-work';
+import type { InsightRow, StoreInsights } from '@shared/service-insights';
 import {
   AnswerList, RequestActions, RequestLog, RequestRowCard, StoreChannel,
 } from '../components/ServiceWorkKit';
@@ -34,7 +35,7 @@ import '../styles/StoreConsolePage.css';
  * staring at a rate card they cannot change.
  */
 
-type Tab = 'overview' | 'requests' | 'work' | 'channel' | 'store' | 'team';
+type Tab = 'overview' | 'requests' | 'work' | 'insights' | 'channel' | 'store' | 'team';
 
 export function StoreConsolePage() {
   const { kind: rawKind, ownerId: rawOwner } = useParams<{ kind: string; ownerId?: string }>();
@@ -91,6 +92,7 @@ export function StoreConsolePage() {
     { id: 'requests', label: 'Requests', show: live && console.rights.includes('work'), count: needsYou },
     { id: 'work', label: kind === 'forwarder' ? 'Shop lots' : 'Order commissions', show: live && console.rights.includes('work'),
       count: kind === 'forwarder' ? work?.lots.filter((row) => row.acceptance === 'pending').length : work?.jobs.filter((row) => row.actions.length > 0).length },
+    { id: 'insights', label: 'Insights', show: live },
     { id: 'channel', label: 'Channel', show: live },
     { id: 'store', label: 'Store', show: console.rights.includes('store') },
     { id: 'team', label: 'Team', show: true },
@@ -133,13 +135,14 @@ export function StoreConsolePage() {
 
       {tab === 'overview' && <Overview kind={kind} console={console} work={work} requests={requests?.requests ?? []} onGo={go} />}
       {tab === 'requests' && requests && (
-        <RequestsBoard kind={kind} ownerId={ownerId} rows={requests.requests} team={requests.team} focus={params.get('r')}
+        <RequestsBoard kind={kind} ownerId={ownerId} rows={requests.requests} team={requests.team} focus={params.get('r')} startLinking={params.get('link') === '1'}
           onChanged={(next) => setRequests((current) => current ? {
             ...current, requests: current.requests.some((row) => row.request.id === next.request.id)
               ? current.requests.map((row) => (row.request.id === next.request.id ? next : row))
               : [next, ...current.requests],
           } : current)} />
       )}
+      {tab === 'insights' && <InsightsPanel kind={kind} ownerId={ownerId} />}
       {tab === 'channel' && (
         <StoreChannel kind={kind} ownerId={ownerId} storeName={store.companyName}
           accentLogo={<StoreMark name={store.companyName} logoUrl={store.logoUrl} accent={store.accent} size={22} />} />
@@ -150,6 +153,158 @@ export function StoreConsolePage() {
       {tab === 'store' && <StoreEditor kind={kind} console={console} onSaved={setConsole} />}
       {tab === 'team' && <TeamPanel kind={kind} console={console} onSaved={setConsole} />}
     </main>
+  );
+}
+
+/* ── Insights ────────────────────────────────────────────────────────── */
+
+/** "+12%" against last month, or nothing when there is nothing to compare. */
+function change(now: number, before: number): string | null {
+  if (!before) return null;
+  const by = Math.round(((now - before) / before) * 100);
+  return `${by >= 0 ? '+' : ''}${by}% on last month`;
+}
+
+const weekLabel = (start: string) => new Date(`${start}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+/** Twelve weeks of one measure, one bar each, the value on hover and focus. */
+function WeekBars({ title, weeks, value, format }: {
+  title: string; weeks: StoreInsights['weeks']; value: (week: StoreInsights['weeks'][number]) => number; format: (n: number) => string;
+}) {
+  const most = Math.max(1, ...weeks.map(value));
+  const total = weeks.reduce((sum, week) => sum + value(week), 0);
+  return (
+    <figure className="sc-chart">
+      <figcaption><span>{title}</span><b>{format(total)}</b></figcaption>
+      <div className="sc-chart__bars" role="list">
+        {weeks.map((week) => {
+          const n = value(week);
+          return (
+            <span key={week.start} role="listitem" tabIndex={0} className="sc-chart__bar" aria-label={`Week of ${weekLabel(week.start)}: ${format(n)}`}>
+              <span className="sc-chart__fill" style={{ height: `${n ? Math.max(4, (n / most) * 100) : 0}%` }} />
+              <span className="sc-chart__tip">{weekLabel(week.start)} · {format(n)}</span>
+            </span>
+          );
+        })}
+      </div>
+      <div className="sc-chart__axis"><span>{weekLabel(weeks[0]!.start)}</span><span>This week</span></div>
+    </figure>
+  );
+}
+
+function RankList({ title, rows, money = true, empty }: { title: string; rows: InsightRow[]; money?: boolean; empty: string }) {
+  const most = Math.max(1, ...rows.map((row) => row.count));
+  return (
+    <section className="sc-rank">
+      <h3>{title}</h3>
+      {rows.length === 0 ? <p className="faint">{empty}</p> : (
+        <ol>
+          {rows.map((row) => (
+            <li key={row.label}>
+              <span className="sc-rank__line"><span>{row.label}</span><b>{row.count}{money && row.minor ? ` · ${formatMoney(row.minor)}` : ''}</b></span>
+              <span className="sc-rank__bar"><span style={{ width: `${(row.count / most) * 100}%` }} /></span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+/** The store's numbers, from its own requests: what customers ask for, what it earns, how fast it answers. */
+function InsightsPanel({ kind, ownerId }: { kind: StoreKind; ownerId: string }) {
+  const [data, setData] = useState<StoreInsightsView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void api.storeInsights(kind, ownerId).then(setData)
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the numbers.'));
+  }, [kind, ownerId]);
+  if (error) return <ErrorNotice message={error} />;
+  if (!data) return <PageLoading />;
+  const { insights: x, audience } = data;
+  const t = x.totals;
+  const funnel = [
+    { label: 'Asked', n: t.requests + t.links },
+    { label: 'Quoted', n: t.quoted },
+    { label: 'Accepted', n: t.accepted },
+    { label: 'Paid', n: t.paid },
+    { label: kind === 'forwarder' ? 'Delivered' : 'Finished', n: t.delivered },
+  ];
+  const top = Math.max(1, funnel[0]!.n);
+  const tiles = [
+    { label: 'Confirmed this month', value: formatMoney(x.money.thisMonthMinor), note: change(x.money.thisMonthMinor, x.money.lastMonthMinor) ?? `${formatMoney(x.money.confirmedMinor)} in all` },
+    { label: 'Requests', value: String(t.requests + t.links), note: t.links ? `${t.links} from payment links` : 'all time' },
+    { label: 'Go ahead', value: funnel[0]!.n ? `${Math.round((t.paid / funnel[0]!.n) * 100)}%` : '—', note: 'asked → paid' },
+    { label: 'Average order', value: x.money.averageOrderMinor ? formatMoney(x.money.averageOrderMinor) : '—', note: 'of those paid' },
+    { label: 'First quote', value: x.speed.quoteHours === null ? '—' : x.speed.quoteHours < 1 ? '< 1 h' : `${Math.round(x.speed.quoteHours)} h`, note: 'on average' },
+    { label: 'Rating', value: x.ratings.average === null ? '—' : `★ ${x.ratings.average}`, note: `${x.ratings.count} ${x.ratings.count === 1 ? 'review' : 'reviews'}` },
+  ];
+  return (
+    <div className="stack sc-insights">
+      <div className="sc-tiles">
+        {tiles.map((tile) => (
+          <div key={tile.label} className="sc-tile"><span className="faint">{tile.label}</span><b>{tile.value}</b><small>{tile.note}</small></div>
+        ))}
+      </div>
+
+      <div className="sc-charts">
+        <WeekBars title="Requests a week" weeks={x.weeks} value={(week) => week.requests} format={(n) => String(n)} />
+        <WeekBars title="Money confirmed a week" weeks={x.weeks} value={(week) => week.minor} format={(n) => formatMoney(n)} />
+      </div>
+
+      <section className="sc-funnel" aria-label="How far requests get">
+        <h3>How far requests get</h3>
+        {funnel.map((step) => (
+          <div key={step.label} className="sc-funnel__row">
+            <span>{step.label}</span>
+            <span className="sc-funnel__bar"><span style={{ width: `${(step.n / top) * 100}%` }} /></span>
+            <b>{step.n}</b>
+          </div>
+        ))}
+        {(t.declined > 0 || t.cancelled > 0) && <p className="faint">{t.declined} declined · {t.cancelled} cancelled</p>}
+        {kind === 'forwarder' && x.kgBilled > 0 && <p className="faint">{x.kgBilled} kg billed on accepted requests{x.speed.deliveryDays !== null ? ` · ${x.speed.deliveryDays} days to deliver on average` : ''}</p>}
+      </section>
+
+      <div className="sc-ranks">
+        <RankList title={kind === 'forwarder' ? 'Top routes' : 'Top services'} rows={x.subjects} empty="No requests yet." />
+        <RankList title={kind === 'forwarder' ? 'What they send' : 'Which size'} rows={x.products} empty="Nobody picked a product price yet." />
+        <RankList title="Extras ticked" rows={x.extras} empty="No extras ticked yet." />
+        <RankList title="Where customers are" rows={x.places} money={false} empty="No delivery addresses yet." />
+      </div>
+
+      <section className="sc-rank">
+        <h3>Customers <span className="faint">· {x.customers.total} in all · {x.customers.repeat} came back · {x.customers.newThisMonth} new this month</span></h3>
+        {x.customers.top.length === 0 ? <p className="faint">Nobody yet.</p> : (
+          <ol>
+            {x.customers.top.map((person) => (
+              <li key={`${person.name}-${person.handle}`}>
+                <span className="sc-rank__line">
+                  <span>{person.handle ? <Link to={`/${person.handle}`}>{person.name}</Link> : person.name}</span>
+                  <b>{person.count} {person.count === 1 ? 'order' : 'orders'}{person.minor ? ` · ${formatMoney(person.minor)}` : ''}</b>
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <section className="sc-rank">
+        <h3>On Social <span className="faint">· {audience.followers} followers · {audience.posts} posts · {audience.reactions} reactions · {audience.comments} comments</span></h3>
+        {audience.best.length === 0 ? <p className="faint">Post from the + button to reach your followers and Discover.</p> : (
+          <ol>
+            {audience.best.map((post) => (
+              <li key={post.id}>
+                <span className="sc-rank__line">
+                  <Link to={`/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`}>{post.body || 'Photo post'}</Link>
+                  <b>{post.reactions} ♥ · {post.comments} 💬</b>
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+      <p className="faint">Money counts only payments your team confirmed. Customers pay you directly, so that is the figure you can stand behind.</p>
+    </div>
   );
 }
 
@@ -273,12 +428,12 @@ function Glance({ title, value, onClick }: { title: string; value: ReactNode; on
  * board the whole team works from. Grouped by who has to move next, so the
  * top of the list is always the work.
  */
-function RequestsBoard({ kind, ownerId, rows, team, focus, onChanged }: {
-  kind: StoreKind; ownerId: string; rows: RequestRow[]; team: TeamRow[]; focus: string | null; onChanged: (row: RequestRow) => void;
+function RequestsBoard({ kind, ownerId, rows, team, focus, startLinking, onChanged }: {
+  kind: StoreKind; ownerId: string; rows: RequestRow[]; team: TeamRow[]; focus: string | null; startLinking: boolean; onChanged: (row: RequestRow) => void;
 }) {
   const [open, setOpen] = useState<string | null>(focus);
   const [filter, setFilter] = useState<'all' | 'mine'>('all');
-  const [linking, setLinking] = useState(false);
+  const [linking, setLinking] = useState(startLinking);
   const { user } = useSession();
   const visible = rows.filter((row) => filter === 'all' || row.request.assigneeId === user?.id);
   const groups: { title: string; rows: RequestRow[] }[] = [
