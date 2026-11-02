@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import type { SocialIdentity } from '@shared/social';
@@ -146,13 +147,16 @@ export function VoiceAvatar({ voice, size = 40 }: { voice: SocialIdentity; size?
  * Only a button when there is a choice to make: somebody with no shop sees a
  * plain avatar, not a menu with one entry in it.
  */
-export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, react and comment as' }: {
+export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, react and comment as', adding = true }: {
   size?: number;
+  /** An Add beside the title, for opening another business. Off where the voices are a conversation's. */
+  adding?: boolean;
   /** Just the small switch, for a bar that already shows your photo elsewhere. */
   switchOnly?: boolean;
   title?: string;
 }) {
   const { voice, voices, choose } = useVoice();
+  const { user } = useSession();
   const [open, setOpen] = useState(false);
   // Which way the menu opens: towards whichever side of the screen has room.
   // A switcher in a bar pinned to the bottom opening downwards opened off the
@@ -185,7 +189,10 @@ export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, reac
     };
   }, [open]);
 
-  if (voices.length < 2) return switchOnly ? null : <VoiceAvatar voice={voice} size={size} />;
+  // The green switch stays for anyone signed in, since its menu is also where
+  // another business is opened; the photo in a composer is only a menu with a choice in it.
+  if (!switchOnly && voices.length < 2) return <VoiceAvatar voice={voice} size={size} />;
+  if (switchOnly && !user) return null;
 
   return (
     <div className="voicepick" ref={box}>
@@ -203,7 +210,12 @@ export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, reac
       {open && (
         <div className={`voicepick__menu${place.up ? ' voicepick__menu--up' : ''}${place.right ? ' voicepick__menu--right' : ''}`}
           role="menu" aria-label={title}>
-          <p className="voicepick__title">{title}</p>
+          <div className="voicepick__head">
+            <p className="voicepick__title">{title}</p>
+            {adding && <Link to="/open" className="voicepick__open" aria-label="Open another business" onClick={() => setOpen(false)}>
+              <Icon name="plus" size={12} /> Add
+            </Link>}
+          </div>
           {voices.map((entry) => {
             const on = entry.storeId === voice.storeId;
             return (

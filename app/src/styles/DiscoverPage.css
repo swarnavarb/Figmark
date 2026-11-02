@@ -10,8 +10,10 @@
 
 /* The top: the brand's own gradient - the same violet, pink and coral the
    chosen lens and the + wear - with an aurora drifting slowly behind glass. */
+/* Not clipped itself, so the switch's menu can open below it; the aurora
+   clips its own glow to the rounded card instead. */
 .dischero {
-  position: relative; overflow: hidden; isolation: isolate;
+  position: relative; z-index: 2; isolation: isolate;
   display: grid; gap: var(--s2);
   padding: 18px;
   border-radius: var(--r-xl); border: 1px solid rgba(255, 255, 255, 0.1);
@@ -21,7 +23,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 44px rgba(124, 58, 237, 0.22);
   animation: disc-in 380ms var(--ease-out) both;
 }
-.dischero__aurora { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.dischero__aurora { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; border-radius: inherit; }
 .dischero__aurora span { position: absolute; border-radius: 50%; filter: blur(42px); opacity: 0.75; will-change: transform; }
 .dischero__aurora span:nth-child(1) { width: 240px; height: 240px; top: -110px; right: -70px; background: var(--pink); animation: aurora-a 14s ease-in-out infinite alternate; }
 .dischero__aurora span:nth-child(2) { width: 200px; height: 200px; bottom: -120px; left: -50px; background: var(--violet); animation: aurora-b 17s ease-in-out infinite alternate; }
@@ -275,6 +277,10 @@
 
 /* The title, with a way to pass Discover on beside it. */
 .dischero__top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.dischero__tools { display: flex; align-items: center; gap: var(--s2); }
+.dischero__voice { display: grid; position: relative; z-index: 2; }
+.dischero__voice .voicepick__switch { width: 36px; height: 36px; }
+.dischero__voice .voicepick__menu { color: var(--text); text-align: left; }
 
 /* What people are posting about: one sideways line of #topics. */
 .distopics {
