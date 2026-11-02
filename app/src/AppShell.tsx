@@ -10,6 +10,7 @@ import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
+import { VoicePicker } from './components/SocialVoice';
 import { useSession } from './session';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
 import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
@@ -126,8 +127,11 @@ export function AppShell() {
             <Icon name="search" size={18} />
           </button>
           {/* The cart: every Buy not yet paid or booked. Forwarders, which
-              used to sit here, are under Services now. */}
-          {user && <CartButton />}
+              used to sit here, are under Services now. Discover is the
+              community side, so it carries Social's green switch instead. */}
+          {user && (pathname === '/discover'
+            ? <span className="nav__voice"><VoicePicker size={34} switchOnly /></span>
+            : <CartButton />)}
           {/* Before the avatar, because it is about you rather than about the
               app, and because that is where a thumb already goes. */}
           {user && <Notifications />}

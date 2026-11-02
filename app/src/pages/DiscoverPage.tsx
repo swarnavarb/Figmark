@@ -6,7 +6,7 @@ import { hashtagsIn, type Leaderboard, type SpottedItem, type TopicChip, type Wa
 import { tagKey, tagSlug } from '@shared/shop-tags';
 import { ApiRequestError, api, type DiscoverResponse, type FeedListing, type PostCard } from '../api';
 import { ContentBadge, SocialPostCard, postHref } from '../components/SocialPost';
-import { VoicePicker, VoiceProvider } from '../components/SocialVoice';
+import { VoiceProvider } from '../components/SocialVoice';
 import { FollowSuggestions } from '../components/FollowSuggestions';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/Spinner';
@@ -439,13 +439,9 @@ function DiscoverBody() {
         <span className="dischero__aurora" aria-hidden="true"><span /><span /><span /></span>
         <div className="dischero__top">
           <span className="dischero__kicker"><span aria-hidden="true">✦</span> Across Figmark</span>
-          <span className="dischero__tools">
-            {/* The same green switch as Social: who you vote, react and comment as here. */}
-            {user && <span className="dischero__voice"><VoicePicker size={36} switchOnly /></span>}
-            <button type="button" className="iconbtn dischero__share" aria-label="Share Discover" onClick={() => void share()}>
-              <Icon name="share" size={18} />
-            </button>
-          </span>
+          <button type="button" className="iconbtn dischero__share" aria-label="Share Discover" onClick={() => void share()}>
+            <Icon name="share" size={18} />
+          </button>
         </div>
         <h1 className="dischero__title">Discover</h1>
         <p className="dischero__sub">
