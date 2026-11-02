@@ -140,7 +140,7 @@ function nextStep(view: RequestView): { title: string; body?: string } {
       case 'in_progress': return { title: 'In transit', body: 'They weigh it when it lands and send you the bill with a photo of the scale.' };
       case 'billed': return request.payment && !request.payment.confirmedAt
         ? { title: 'Payment sent — waiting for them to confirm', body: `You said you paid ${formatMoney(request.payment.amountMinor)}${request.payment.reference ? ` (ref ${request.payment.reference})` : ''}.` }
-        : { title: `Arrived — pay ${formatMoney(view.due)} to get it delivered`, body: 'Check the weight and photo below. Questions? Ask in their channel before paying.' };
+        : { title: `Arrived — pay ${formatMoney(view.due)} to get it delivered`, body: 'Check the weight, the photo and where it is delivered below — change the address now if it needs to go somewhere else. Questions? Ask in their channel before paying.' };
       case 'paid': return { title: 'Paid — delivering soon', body: 'They hand it to a courier next and send you the tracking number.' };
       default: break;
     }

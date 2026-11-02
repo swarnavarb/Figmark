@@ -23,7 +23,7 @@ import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
-import type { ChannelMessage, CustomQuote, Dimensions, RequestAction, ServiceRequest, Standing } from '@shared/service-work';
+import type { AddressValue, ChannelMessage, CustomQuote, Dimensions, RequestAction, ServiceRequest, Standing } from '@shared/service-work';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CardButton, SerialButton } from '@shared/buttons';
 import type { LevelTag, MergedRating, StoreLevel } from '@shared/storefront';
@@ -2411,7 +2411,7 @@ export interface RouteMatch {
   store: SearchStore;
   lane: {
     id: string; label: string; originCountry: string; destinationCountry: string; mode: FreightLane['mode'];
-    days: string; fromMinor: number; batteries: 'all' | 'in_device' | 'none'; customsIncluded: boolean; note: string;
+    days: string; fromMinor: number; minChargeKg: number; batteries: 'all' | 'in_device' | 'none'; customsIncluded: boolean; note: string;
   };
   freeCover: boolean;
   door: boolean;
@@ -2963,6 +2963,7 @@ export const api = {
     action: RequestAction; quoteMinor?: number; days?: number; note?: string; reference?: string; amountMinor?: number;
     courier?: string; awb?: string; stars?: number; text?: string; assigneeId?: string | null;
     weightKg?: number; box?: Dimensions | null; photoUrls?: string[]; added?: { label: string; minor: number }[];
+    address?: AddressValue | null;
   }) => post<RequestView & { team: TeamRow[] }>(`/service-requests/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}/act`, body),
   storeRequests: (kind: StoreKind, ownerId: string) =>
     send<{ requests: RequestRow[]; team: TeamRow[] }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/requests`),

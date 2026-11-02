@@ -11662,6 +11662,13 @@ await check('a store opens only when an operator approves it, and says why when 
   assert.equal(thin.status, 400);
   assert.equal(thin.jsonBody.error, 'incomplete');
 
+  // Every route says the least weight it bills.
+  const noMinimum = forwarderApplication('Pearl River Freight');
+  noMinimum.lanes = noMinimum.lanes.map((lane) => ({ ...lane, minChargeKg: 0 }));
+  const unpriced = await applyStore(req({ headers: applicant.headers, body: noMinimum }), ctx);
+  assert.equal(unpriced.status, 400);
+  assert.match(unpriced.jsonBody.error?.message ?? JSON.stringify(unpriced.jsonBody), /minimum kg on every route/);
+
   const sent = await applyStore(req({ headers: applicant.headers, body: forwarderApplication('Pearl River Freight') }), ctx);
   assert.equal(sent.status, 200);
   assert.equal(sent.jsonBody.store.status, 'pending');
@@ -12324,7 +12331,7 @@ await check('pay on arrival: booked, sent in, weighed with a photo, billed, paid
   assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
   const id = sent.jsonBody.request.id;
   assert.ok(sent.jsonBody.coverDue > 0);
-  assert.deepEqual(sent.jsonBody.actions.sort(), ['cancel', 'pay_cover', 'send_in']);
+  assert.deepEqual(sent.jsonBody.actions.sort(), ['address', 'cancel', 'pay_cover', 'send_in']);
   const act = (headers, body) => actOnServiceRequest(req({ headers, params: at(id), body }), ctx);
   assert.equal((await act(buyer.headers, { action: 'quote', quoteMinor: 1 })).status, 409, 'nothing to quote');
   assert.equal((await act(buyer.headers, { action: 'pay_cover', reference: 'UPI-COVER' })).status, 200);
@@ -12357,6 +12364,60 @@ await check('pay on arrival: booked, sent in, weighed with a photo, billed, paid
   await act(lotusTeam, { action: 'ship', courier: 'Delhivery', awb: 'DL1' });
   assert.equal((await act(buyer.headers, { action: 'complete' })).jsonBody.request.status, 'delivered');
   await repository.updateUser({ ...(await repository.getUserById('usr_fwd_lotus')), forwarderProfile: { ...lotus.forwarderProfile } });
+});
+
+await check('the delivery address can wait: added or changed from My Purchases until the bill is paid, and asked for on paying', async () => {
+  resetRateLimits();
+  const buyer = await newMember('Address Tester', 'address.tester@figmark.example', '+919000078935');
+  const page = (await storePage(req({ params: { kind: 'forwarder', slug: 'lotus-freight' } }), ctx)).jsonBody.store;
+  const deliveryField = page.form.find((field) => field.key === 'delivery');
+  assert.equal(deliveryField.required, false, 'not needed to book');
+  const answers = { ...lotusAnswers(page.form) };
+  delete answers[deliveryField.id];
+  const sent = await submitServiceRequest(req({
+    headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { subjectId: 'lane_gz_blr', answers },
+  }), ctx);
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  const id = sent.jsonBody.request.id;
+  const act = (headers, body) => actOnServiceRequest(req({ headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus', id }, body }), ctx);
+  assert.ok(sent.jsonBody.actions.includes('address'));
+  assert.equal((await act(lotusTeam, { action: 'address', address: { name: 'X' } })).status, 409, 'only the buyer sets it');
+  assert.equal((await act(buyer.headers, { action: 'address', address: { name: 'Half' } })).status, 400, 'a half address is refused');
+
+  await act(buyer.headers, { action: 'send_in' });
+  await act(lotusTeam, { action: 'receive' });
+  await act(lotusTeam, { action: 'start' });
+  const home = { name: 'Address Tester', phone: '9876500000', line: '4 Park Street', city: 'Kolkata', state: 'West Bengal', pincode: '700016' };
+  const changed = await act(buyer.headers, { action: 'address', address: home });
+  assert.equal(changed.status, 200, JSON.stringify(changed.jsonBody));
+  const stored = changed.jsonBody.request;
+  assert.equal(stored.answers[stored.fields.find((field) => field.key === 'delivery').id].city, 'Kolkata');
+
+  // The bill carries the address and asks the buyer to change it if need be.
+  await act(lotusTeam, { action: 'bill', weightKg: 3, photoUrls: ['/api/photos/scale.jpg'] });
+  const notice = (await noticesFor(buyer.id)).find((row) => row.title?.includes(stored.number) && /to pay/.test(row.title));
+  assert.ok(notice, 'the buyer is sent the bill');
+  assert.match(notice.body, /Kolkata/);
+  assert.match(notice.body, /Change it before you pay/);
+  const work = { ...home, line: '9 Salt Lake', pincode: '700091' };
+  assert.equal((await act(buyer.headers, { action: 'address', address: work })).status, 200, 'still changeable once billed');
+
+  await act(buyer.headers, { action: 'pay', reference: 'UPI-ADDR' });
+  assert.equal((await act(buyer.headers, { action: 'address', address: home })).status, 409, 'fixed once paid');
+
+  // No address at all: paying asks for it.
+  const bare = await submitServiceRequest(req({
+    headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { subjectId: 'lane_gz_blr', answers },
+  }), ctx);
+  const actBare = (headers, body) => actOnServiceRequest(req({ headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus', id: bare.jsonBody.request.id }, body }), ctx);
+  await actBare(lotusTeam, { action: 'receive' });
+  await actBare(lotusTeam, { action: 'bill', weightKg: 3, photoUrls: ['/api/photos/scale.jpg'] });
+  const asked = (await noticesFor(buyer.id)).find((row) => row.title?.includes(bare.jsonBody.request.number) && /to pay/.test(row.title));
+  assert.match(asked.body, /add it when you pay/);
+  assert.equal((await actBare(buyer.headers, { action: 'pay', reference: 'UPI-1' })).status, 400, 'no address, no payment');
+  const paid = await actBare(buyer.headers, { action: 'pay', reference: 'UPI-1', address: home });
+  assert.equal(paid.status, 200, JSON.stringify(paid.jsonBody));
+  assert.ok(paid.jsonBody.request.payment);
 });
 
 await check('custom quotes: asked, priced with an expiry of at most three months, shipped on, and deleted once expired', async () => {

@@ -2,7 +2,7 @@ import { countryFlag } from '@shared/countries';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { ArtistOffering, FreightLane, InsurancePlan, PortfolioPiece, StoreStatus } from '@shared/models';
 import {
-  FREIGHT_MODE_LABELS, STORE_STATUS_LABELS, laneQuoteMinor, transitLabel, type FreightMode,
+  FREIGHT_MODE_LABELS, STORE_STATUS_LABELS, laneQuoteMinor, minKgLabel, transitLabel, type FreightMode,
 } from '@shared/service-stores';
 import { formatMoney, fromMinor, gradientFor, initialsOf, toMinor } from '../format';
 import '../styles/StoreKit.css';
@@ -133,7 +133,7 @@ export function LaneTicket({ lane, weightGrams, selected, onSelect, accent }: {
       <span className="sk-ticket__stub">
         <span className="sk-ticket__rate">{formatMoney(lane.ratePerKgMinor)}<small>/kg</small></span>
         <span>{transitLabel(lane)}</span>
-        {lane.minChargeKg > 0 && <span>min {lane.minChargeKg} kg</span>}
+        <span className={lane.minChargeKg > 0 ? '' : 'sk-ticket__warn'}>{minKgLabel(lane)}</span>
         <span className={lane.customsIncluded ? 'sk-ticket__ok' : ''}>{lane.customsIncluded ? '✓ Customs cleared' : 'Duty at actuals'}</span>
         {weightGrams !== undefined && weightGrams > 0 && (
           <span className="sk-ticket__quote">≈ {formatMoney(laneQuoteMinor(lane, weightGrams))} for this lot</span>

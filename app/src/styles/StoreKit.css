@@ -138,3 +138,4 @@ button.sk-plan__pick { cursor: pointer; }
 .sk-stat--warn .sk-stat__value { color: var(--warn); }
 .sk-stat--ok .sk-stat__value { color: var(--ok); }
 .sk-stat--accent .sk-stat__value { color: var(--sk-text, var(--accent-text)); }
+.sk-ticket__warn { color: var(--warn); }

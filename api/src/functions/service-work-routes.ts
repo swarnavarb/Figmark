@@ -5,7 +5,7 @@ import { STORE_KINDS, isLive, laneLabel, liveOfferings, livePlans, rightsIn, sto
 import {
   ARRIVAL_MOVES, CHANNEL_MAX_CHARS, REQUEST_MOVES, answerFor, batteryContentOf, batteryFits, batteryRuleOf,
   billFor, checkAnswers, coverOwedMinor, estimate, followId, formOf, latestExpiry, planIsFree, quoteIsExpired, quoteIsUsable,
-  quoteNumber, readWarehouses, requestActions, requestDueMinor, requestNumber, statusLabel, storeKey, warehousesOf,
+  quoteNumber, readWarehouses, requestActions, addressLine, deliveryOf, needsDelivery, withDelivery, requestDueMinor, requestNumber, statusLabel, storeKey, warehousesOf,
   type ChannelMessage, type CustomQuote, type Dimensions, type ItemRow, type RequestAction, type ServiceRequest, type StoreFollow,
 } from '../../../shared/service-work.js';
 import { getAuthService } from '../auth/index.js';
@@ -344,6 +344,7 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
     action?: RequestAction; quoteMinor?: number; days?: number; note?: string; reference?: string; amountMinor?: number;
     courier?: string; awb?: string; stars?: number; text?: string; assigneeId?: string | null;
     weightKg?: number; box?: Partial<Dimensions> | null; photoUrls?: unknown; added?: { label?: string; minor?: number }[];
+    address?: unknown;
   }>(request);
   if (!input?.action || !(input.action in REQUEST_MOVES || input.action in ARRIVAL_MOVES)) return error(400, 'invalid_action', 'Unknown move.');
   const action = input.action;
@@ -380,7 +381,24 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
       doc.status = 'accepted';
       told = { to: 'store', title: `${doc.customerName} accepted ${doc.number}`, body: 'They will pay next.' };
       break;
+    case 'address': {
+      const next = withDelivery(doc, input.address);
+      if (!next.ok) return error(400, 'no_address', 'Give the full delivery address: name, phone, street, city and PIN code.');
+      doc.fields = next.fields;
+      doc.answers = next.answers;
+      const where = deliveryOf(doc);
+      told = { to: 'store', title: `${doc.customerName} changed the delivery address on ${doc.number}`, body: where ? addressLine(where) : '' };
+      break;
+    }
     case 'pay': {
+      // A parcel billed on arrival goes out for delivery once paid, so it has to know where to.
+      if (input.address !== undefined && input.address !== null) {
+        const next = withDelivery(doc, input.address);
+        if (!next.ok) return error(400, 'no_address', 'Give the full delivery address: name, phone, street, city and PIN code.');
+        doc.fields = next.fields;
+        doc.answers = next.answers;
+      }
+      if (needsDelivery(doc)) return error(400, 'no_address', 'Add where it should be delivered before you pay.');
       const amount = money(input.amountMinor) || requestDueMinor(doc);
       doc.payment = { amountMinor: amount, reference: text(input.reference, 80) || null, claimedAt: now, confirmedAt: null, confirmedBy: null };
       told = { to: 'store', title: `${doc.customerName} says they paid ${doc.number}`, body: `₹${(amount / 100).toLocaleString('en-IN')}${doc.payment.reference ? ` · ref ${doc.payment.reference}` : ''} — check and confirm.` };
@@ -418,7 +436,14 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
       doc.bill = { weightKg, box, ...priced, photoUrls, note, at: now, byName };
       doc.chargeableKg = priced.chargeableKg;
       doc.status = 'billed';
-      told = { to: 'customer', title: `${doc.number} arrived · ${rupees(priced.totalMinor)} to pay`, body: `Weighed ${weightKg} kg${priced.by !== 'actual' ? ` (billed ${priced.chargeableKg} kg ${priced.by})` : ''}. Pay to get it delivered.` };
+      const where = deliveryOf(doc);
+      told = {
+        to: 'customer', title: `${doc.number} arrived · ${rupees(priced.totalMinor)} to pay`,
+        body: `Weighed ${weightKg} kg${priced.by !== 'actual' ? ` (billed ${priced.chargeableKg} kg ${priced.by})` : ''}. `
+          + (where
+            ? `Delivering to: ${addressLine(where)}. Need it somewhere else? Change it before you pay.`
+            : 'No delivery address yet - add it when you pay.'),
+      };
       break;
     }
     case 'pay_cover': {
@@ -486,6 +511,7 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
     bill: `Weighed ${doc.bill?.weightKg ?? ''} kg · bill ${rupees(doc.bill?.totalMinor ?? 0)}`,
     pay_cover: `Paid the cover ${rupees(doc.coverPayment?.amountMinor ?? 0)}${doc.coverPayment?.reference ? ` (ref ${doc.coverPayment.reference})` : ''}`,
     confirm_cover: 'Confirmed the cover payment arrived',
+    address: 'Changed the delivery address',
     complete: 'Confirmed it arrived', review: `Rated it ${doc.review?.stars ?? ''}★`,
     ship: `Shipped${doc.tracking ? ` · ${[doc.tracking.courier, doc.tracking.awb].filter(Boolean).join(' ')}` : ''}`,
   };
@@ -886,6 +912,8 @@ async function actOnQuote(request: HttpRequest, _context: InvocationContext) {
   } else if (input?.action === 'offer') {
     const ratePerKgMinor = money(input.ratePerKgMinor);
     if (!ratePerKgMinor) return error(400, 'no_price', 'Give the rate per kg.');
+    const minChargeKg = Math.max(0, Math.min(10_000, Number(input.minChargeKg) || 0));
+    if (!minChargeKg) return error(400, 'no_min_kg', 'Give the minimum kg billed on this quote.');
     const expires = Date.parse(String(input.expiresAt ?? ''));
     if (!Number.isFinite(expires) || expires <= Date.now()) return error(400, 'no_expiry', 'Pick the date the quote expires.');
     // Never more than three months out: past that the block is deleted anyway.
@@ -893,7 +921,7 @@ async function actOnQuote(request: HttpRequest, _context: InvocationContext) {
     const low = Math.max(0, Math.min(180, Math.round(Number(input.transitDaysMin) || 0)));
     quote.offer = {
       ratePerKgMinor,
-      minChargeKg: Math.max(0, Math.min(10_000, Number(input.minChargeKg) || 0)),
+      minChargeKg,
       transitDaysMin: low,
       transitDaysMax: Math.max(low, Math.min(180, Math.round(Number(input.transitDaysMax) || 0))),
       batteries: input.batteries === 'all' || input.batteries === 'in_device' ? input.batteries : 'none',
