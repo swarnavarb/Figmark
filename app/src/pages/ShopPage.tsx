@@ -29,6 +29,7 @@ import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { SetupChecklist } from '../components/VerifyNudges';
+import { OpenBusinessChooser } from '../components/OpenBusiness';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
@@ -231,11 +232,9 @@ export function ShopPage() {
 }
 
 /**
- * The sell tab before there is a shop.
- *
- * One door. Everything sold here is sold from a storefront, so the shop is not
- * an upgrade you take later — it is the first step, and the screen says so
- * rather than offering a shortcut that ends in an error.
+ * The sell tab before there is a shop: the three businesses one account can
+ * open. The store opens its setup right here; a forwarder or an artist goes
+ * to its application.
  */
 function ShopStart({ onOpen }: { onOpen: () => void }) {
   return (
@@ -243,16 +242,13 @@ function ShopStart({ onOpen }: { onOpen: () => void }) {
       <SetupChecklist hasStore={false} onOpenStore={onOpen} />
       <div className="gate">
         <span className="gate__mark" aria-hidden="true">{<Icon name="bank" size={19} />}</span>
-        <h1 className="gate__title">Open your storefront</h1>
+        <h1 className="gate__title">Open a business</h1>
         <p className="gate__note">
-          Everything on Figmark is sold from a shop — a name buyers follow, a handle they can find
-          you at, and a channel to sell in. It takes about a minute, and you can change all of it
-          afterwards.
+          Pick what you do. A store sells figures and collectibles; a freight forwarder ships parcels
+          between countries; an artist takes repaints and custom work. One account can run all three.
         </p>
-        <button type="button" className="btn btn--lg gate__go" onClick={onOpen}>
-          Open your storefront
-        </button>
       </div>
+      <OpenBusinessChooser onOpenStore={onOpen} />
 
     </main>
   );

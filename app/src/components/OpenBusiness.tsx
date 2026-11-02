@@ -11,7 +11,7 @@ import '../styles/OpenBusiness.css';
  * forwarding company, an artist studio. Each card says where it stands -
  * not started, waiting on review, or live - and goes there.
  */
-export function OpenBusinessChooser() {
+export function OpenBusinessChooser({ onOpenStore }: { onOpenStore?: () => void } = {}) {
   const { user } = useSession();
   const [own, setOwn] = useState<ServiceStoreRole[] | null>(null);
 
@@ -46,16 +46,22 @@ export function OpenBusinessChooser() {
 
   return (
     <div className="obz">
-      {cards.map((card) => (
-        <Link key={card.id} to={card.to} className={`obz-card obz-card--${card.id}`}>
-          <span className="obz-card__emoji" aria-hidden="true">{card.emoji}</span>
-          <span className="obz-card__body">
-            <span className="obz-card__title">{card.title}{card.state && <span className="obz-card__state">{card.state}</span>}</span>
-            <span className="obz-card__line">{card.line}</span>
-          </span>
-          <span className="obz-card__cta">{card.cta} <Icon name="right" size={14} /></span>
-        </Link>
-      ))}
+      {cards.map((card) => {
+        const inner = (
+          <>
+            <span className="obz-card__emoji" aria-hidden="true">{card.emoji}</span>
+            <span className="obz-card__body">
+              <span className="obz-card__title">{card.title}{card.state && <span className="obz-card__state">{card.state}</span>}</span>
+              <span className="obz-card__line">{card.line}</span>
+            </span>
+            <span className="obz-card__cta">{card.cta} <Icon name="right" size={14} /></span>
+          </>
+        );
+        // On the Sell tab itself the store card opens the setup right there.
+        return card.id === 'store' && onOpenStore && !hasShop
+          ? <button key={card.id} type="button" className={`obz-card obz-card--button obz-card--${card.id}`} onClick={onOpenStore}>{inner}</button>
+          : <Link key={card.id} to={card.to} className={`obz-card obz-card--${card.id}`}>{inner}</Link>;
+      })}
       <p className="faint obz__note">One account can run all three. Switch between them from your profile picture.</p>
     </div>
   );

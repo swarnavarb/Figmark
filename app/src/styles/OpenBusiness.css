@@ -20,3 +20,4 @@
 .obz-card__cta { display: inline-flex; align-items: center; gap: 4px; color: var(--obz-hue); font-size: var(--t-sm); font-weight: var(--w-semi); }
 .obz__note { margin: 4px 0 0; font-size: var(--t-xs); }
 @media (prefers-reduced-motion: reduce) { .obz-card { transition: none; } }
+.obz-card--button { width: 100%; font: inherit; text-align: left; cursor: pointer; }

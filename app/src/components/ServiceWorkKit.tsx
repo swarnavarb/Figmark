@@ -319,6 +319,14 @@ export function RequestProgress({ request }: { request: StatusOf }) {
   );
 }
 
+/** The tracking number a parcel is matched by: from "I've sent it", or the form. */
+export function awbOf(request: Pick<ServiceRequest, 'inbound' | 'fields' | 'answers'>): string {
+  if (request.inbound?.awb) return request.inbound.awb;
+  const field = request.fields.find((row) => row.key === 'awb');
+  const value = field ? request.answers[field.id] : null;
+  return typeof value === 'string' ? value : '';
+}
+
 /** What the money line says: the bill once weighed, the quote once given, the estimate before either. */
 export function priceWord(request: Pick<ServiceRequest, 'billing' | 'bill' | 'quoteMinor'>): string {
   if (request.billing === 'arrival') return request.bill ? 'Bill' : 'Estimate';
@@ -505,6 +513,7 @@ export function RequestRowCard({ request, due, to, side, actions }: {
       <span className="svk-row__facts">
         <span>{priceWord(request)} <b>{formatMoney(due)}</b></span>
         {request.chargeableKg ? <span><b>{request.chargeableKg}</b> kg</span> : null}
+        {request.billing === 'arrival' && awbOf(request) && <span>AWB <b>{awbOf(request)}</b></span>}
         {side === 'store' && request.payment && !request.payment.confirmedAt && <span className="svk-row__ping">Payment to confirm</span>}
         {side === 'store' && request.coverPayment && !request.coverPayment.confirmedAt && <span className="svk-row__ping">Cover to confirm</span>}
         {side === 'store' && actions.includes('bill') && request.status !== 'billed' && <span className="svk-row__ping">Weigh & bill</span>}
@@ -534,8 +543,14 @@ export function RequestActions({ view, team, onChanged }: {
   const [days, setDays] = useState(String(request.turnaroundDays ?? ''));
   const [note, setNote] = useState('');
   const [reference, setReference] = useState('');
-  const [courier, setCourier] = useState('');
-  const [awb, setAwb] = useState('');
+  // "I've sent it" starts from the tracking number given on the form.
+  const given = (key: 'awb' | 'origin_courier') => {
+    const field = request.fields.find((row) => row.key === key);
+    const value = field ? request.answers[field.id] : null;
+    return request.status === 'booked' && typeof value === 'string' ? value : '';
+  };
+  const [courier, setCourier] = useState(given('origin_courier'));
+  const [awb, setAwb] = useState(given('awb'));
   const [stars, setStars] = useState(0);
   const [review, setReview] = useState('');
   const [busy, setBusy] = useState(false);
@@ -582,8 +597,8 @@ export function RequestActions({ view, team, onChanged }: {
       {actions.includes('send_in') && (
         <form className="svk-acts__form" onSubmit={submit('send_in', { courier, awb })}>
           <label className="field"><span>Courier to the warehouse</span><input value={courier} onChange={(e) => setCourier(e.target.value)} placeholder="SF Express" /></label>
-          <label className="field"><span>Tracking number</span><input value={awb} onChange={(e) => setAwb(e.target.value)} placeholder="Optional" /></label>
-          <button type="submit" className="btn svk-acts__wide" disabled={busy}>{words.send_in}</button>
+          <label className="field"><span>Tracking number / AWB *</span><input value={awb} onChange={(e) => setAwb(e.target.value)} placeholder="On the box" required /></label>
+          <button type="submit" className="btn svk-acts__wide" disabled={busy || !awb.trim()}>{words.send_in}</button>
         </form>
       )}
       {actions.includes('pay_cover') && (

@@ -14,7 +14,7 @@ import {
 import type { BatteryRule } from '@shared/models';
 import type { InsightRow, StoreInsights } from '@shared/service-insights';
 import {
-  AnswerList, BillCard, QuoteRowCard, RequestActions, RequestLog, RequestRowCard, StoreChannel, expiresIn,
+  AnswerList, BillCard, QuoteRowCard, awbOf, RequestActions, RequestLog, RequestRowCard, StoreChannel, expiresIn,
 } from '../components/ServiceWorkKit';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
@@ -444,7 +444,11 @@ function RequestsBoard({ kind, ownerId, rows, team, focus, startLinking, onChang
   const [filter, setFilter] = useState<'all' | 'mine'>('all');
   const [linking, setLinking] = useState(startLinking);
   const { user } = useSession();
-  const visible = rows.filter((row) => filter === 'all' || row.request.assigneeId === user?.id);
+  // A box at the warehouse is found by the tracking number on it, or the request number.
+  const [find, setFind] = useState('');
+  const needle = find.trim().toLowerCase().replace(/\s+/g, '');
+  const visible = rows.filter((row) => (filter === 'all' || row.request.assigneeId === user?.id)
+    && (!needle || awbOf(row.request).toLowerCase().replace(/\s+/g, '').includes(needle) || row.request.number.toLowerCase().includes(needle)));
   const groups: { title: string; rows: RequestRow[] }[] = [
     { title: 'Needs you', rows: visible.filter((row) => row.actions.some((action) => action !== 'assign')) },
     { title: 'Waiting on the customer', rows: visible.filter((row) => requestIsOpen(row.request) && !row.actions.some((action) => action !== 'assign')) },
@@ -460,6 +464,11 @@ function RequestsBoard({ kind, ownerId, rows, team, focus, startLinking, onChang
         </div>
         <button type="button" className="btn btn--sm" onClick={() => setLinking(!linking)}><Icon name="link" size={14} /> {linking ? 'Close' : 'New payment link'}</button>
       </div>
+      {kind === 'forwarder' && rows.length > 0 && (
+        <label className="field sc-find"><span>A box arrived? Find it by its tracking number</span>
+          <input type="search" value={find} onChange={(e) => setFind(e.target.value)} placeholder="AWB or FR- number" /></label>
+      )}
+      {needle && visible.length === 0 && <p className="faint">Nothing with that tracking number. Check the label, or message the customer.</p>}
       {linking && <PaymentLinkForm kind={kind} ownerId={ownerId} onMade={(row) => { onChanged(row); setLinking(false); setOpen(row.request.id); }} />}
       {rows.length === 0 && !linking && (
         <EmptyState icon={<Icon name={kind === 'forwarder' ? 'plane' : 'spark'} size={26} />} title="No requests yet">

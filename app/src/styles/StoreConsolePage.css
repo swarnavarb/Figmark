@@ -158,3 +158,4 @@
 .sc-qask dd { margin: 0; overflow-wrap: anywhere; }
 .sc-qform { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
 .sc-qform__wide { grid-column: 1 / -1; }
+.sc-find { max-width: 420px; }

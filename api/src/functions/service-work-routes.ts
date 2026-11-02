@@ -137,7 +137,10 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
   let sendTo: StoreWarehouse[] | undefined;
   let coverDue: ServiceRequest['coverDue'] = null;
   let quote: CustomQuote | null = null;
-  const form = external ? [] : formOf(kind, store.requestForm);
+  // Even on the store's own form, a forwarder still needs the tracking number here: it is how the box is matched.
+  const form = external
+    ? (kind === 'forwarder' ? formOf(kind, store.requestForm).filter((row) => row.key === 'awb') : [])
+    : formOf(kind, store.requestForm);
   const { answers, gaps } = checkAnswers(form, input.answers);
   if (gaps.length > 0) return error(400, 'incomplete', `Still needed: ${gaps.join(', ')}.`);
 
@@ -392,7 +395,10 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
       };
       break;
     case 'send_in': {
-      doc.inbound = { courier: text(input.courier, 60), awb: text(input.awb, 60), at: now };
+      // The tracking number is how the warehouse matches the box to this customer.
+      const awb = text(input.awb, 60) || text(answerFor<string>(doc.fields, doc.answers, 'awb'), 60);
+      if (!awb) return error(400, 'no_awb', 'Give the tracking number on the box - the warehouse matches your parcel by it.');
+      doc.inbound = { courier: text(input.courier, 60) || text(answerFor<string>(doc.fields, doc.answers, 'origin_courier'), 60), awb, at: now };
       doc.status = 'sent_in';
       told = { to: 'store', title: `${doc.customerName} sent ${doc.number} to your warehouse`, body: [doc.inbound.courier, doc.inbound.awb].filter(Boolean).join(' ') || 'No tracking number given.' };
       break;

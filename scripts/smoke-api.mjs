@@ -12092,7 +12092,7 @@ const {
 /** Answers for Lotus's default shipping form, by what each field is for. */
 const lotusAnswers = (form) => Object.fromEntries(form.flatMap((field) => {
   const value = {
-    weight: 6, items: [{ name: 'Resin statue', qty: 1, valueMinor: 900000 }], battery: 'No battery',
+    awb: 'SF1234567890', weight: 6, items: [{ name: 'Resin statue', qty: 1, valueMinor: 900000 }], battery: 'No battery',
     dimensions: { l: 50, w: 40, h: 30 },
     delivery: { name: 'Route Tester', phone: '9876543210', line: '12 MG Road', city: 'bengaluru', state: 'Karnataka', pincode: '560001' },
   }[field.key ?? ''];
@@ -12146,6 +12146,14 @@ await check('pay on arrival: booked, sent in, weighed with a photo, billed, paid
   const at = (id) => ({ kind: 'forwarder', ownerId: 'usr_fwd_lotus', id });
   const ask = (body) => submitServiceRequest(req({ headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body }), ctx);
 
+  // The tracking number is required: it is how the warehouse matches the box.
+  const awbField = page.form.find((field) => field.key === 'awb');
+  assert.equal(awbField.required, true);
+  const noAwb = { ...lotusAnswers(page.form), [awbField.id]: '' };
+  const refused = await ask({ subjectId: 'lane_gz_blr', answers: noAwb });
+  assert.equal(refused.status, 400);
+  assert.match(refused.jsonBody.error?.message ?? JSON.stringify(refused.jsonBody), /Tracking number/);
+
   // Batteries: an express route that carries only batteries inside an item refuses a power bank.
   const loose = { ...lotusAnswers(page.form) };
   const batteryField = page.form.find((field) => field.key === 'battery');
@@ -12165,7 +12173,9 @@ await check('pay on arrival: booked, sent in, weighed with a photo, billed, paid
   assert.equal((await act(buyer.headers, { action: 'quote', quoteMinor: 1 })).status, 409, 'nothing to quote');
   assert.equal((await act(buyer.headers, { action: 'pay_cover', reference: 'UPI-COVER' })).status, 200);
   assert.equal((await act(lotusTeam, { action: 'confirm_cover' })).status, 200);
-  assert.equal((await act(buyer.headers, { action: 'send_in', courier: 'SF Express', awb: 'SF123' })).jsonBody.request.status, 'sent_in');
+  const sentIn = await act(buyer.headers, { action: 'send_in', courier: 'SF Express' });
+  assert.equal(sentIn.jsonBody.request.status, 'sent_in');
+  assert.equal(sentIn.jsonBody.request.inbound.awb, 'SF1234567890', 'the tracking number from the form carries over');
   await act(lotusTeam, { action: 'receive' });
   await act(lotusTeam, { action: 'start' });
 

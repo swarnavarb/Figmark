@@ -194,7 +194,8 @@ function RequestSheet({ data, laneId, offeringId, quote, onClose }: {
   const option = products.find((row) => row.id === optionId) ?? null;
   const plan = store.insurance.find((row) => row.id === planId) ?? null;
   const warehouses = quote ? quote.sendTo : listed ? warehousesOf(listed, store.warehouse) : [];
-  const form = external ? [] : store.form;
+  // A forwarder's own form still leaves the tracking number here: the warehouse matches the box by it.
+  const form = external ? (forwarder ? store.form.filter((row) => row.key === 'awb') : []) : store.form;
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
@@ -276,6 +277,7 @@ function RequestSheet({ data, laneId, offeringId, quote, onClose }: {
               <div className="sd-extform">
                 <p>{store.name} collects {lane ? "shipment" : "order"} details on their own form. Fill it in, then send this so the request is tracked here.</p>
                 <a href={store.formUrl!} target="_blank" rel="noreferrer" className="btn btn--ghost"><Icon name="external" size={14} /> Open their form</a>
+                {form.length > 0 && <FormFields fields={form} answers={answers} onChange={set} />}
               </div>
             ) : <FormFields fields={form} answers={answers} onChange={set} />}
           </section>

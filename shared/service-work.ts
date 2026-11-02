@@ -56,7 +56,7 @@ export const CUSTOM_FIELD_TYPES = ['text', 'longtext', 'number', 'choice', 'yesn
  * delivered without them. They can be relabelled and given help text.
  */
 export const LOCKED_FIELDS: Record<StoreKind, readonly ServiceFieldKey[]> = {
-  forwarder: ['weight', 'items', 'battery', 'delivery'],
+  forwarder: ['awb', 'weight', 'items', 'battery', 'delivery'],
   artist: ['brief', 'return_delivery'],
 };
 
@@ -68,7 +68,7 @@ const field = (key: ServiceFieldKey, label: string, type: ServiceFormField['type
 export function defaultForm(kind: StoreKind): ServiceFormField[] {
   if (kind === 'forwarder') {
     return [
-      field('awb', 'Tracking ID / AWB', 'text', false, 'The number on the parcel coming to our warehouse. Add it later if it has not shipped yet.'),
+      field('awb', 'Tracking number / AWB', 'text', true, 'The tracking number on the box coming to our warehouse. We match your parcel to you by it.'),
       field('origin_courier', 'Courier to our warehouse', 'text', false, 'SF Express, YTO, ZTO…'),
       field('items', 'What is in the parcel', 'items', true, 'One line per item, with how many and what each is worth.'),
       field('weight', 'Approximate weight (kg)', 'number', true),
@@ -132,7 +132,9 @@ export function formOf(kind: StoreKind, form: ServiceFormField[] | null | undefi
   const upgraded = form.map((row) => (row.key === 'battery' && batteryField && row.type !== 'choice'
     ? { ...batteryField, ...(row.help ? { help: row.help } : {}), label: row.label === 'Anything with a battery?' ? batteryField.label : row.label }
     : row));
-  return [...upgraded, ...missing];
+  // Locked fields are always required, whatever an older save said - the tracking number most of all.
+  const locked = upgraded.map((row) => (row.key && LOCKED_FIELDS[kind].includes(row.key) && !row.required ? { ...row, required: true } : row));
+  return [...locked, ...missing];
 }
 
 /** One line of the items list. */
