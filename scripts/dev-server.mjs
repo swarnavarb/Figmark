@@ -127,6 +127,7 @@ const {
 const {
   submitRequestRoute, channelRoute, channelPostRoute, channelDeleteRoute, followStoreRoute, myRequestsRoute, assignedRequestsRoute,
   requestRoute, requestActRoute, storeRequestsRoute, paymentLinkRoute,
+  askQuoteRoute, myQuotesRoute, storeQuotesRoute, quoteRoute, quoteActRoute,
 } = await import(new URL('service-work-routes.js', apiRoot));
 const {
   creditRoute, pageReviewsRoute, writePageReviewRoute, tradeReviewsRoute,
@@ -484,6 +485,11 @@ const routes = [
   ['GET', '/api/service-requests/:kind/:ownerId/:id', requestRoute],
   ['POST', '/api/service-requests/:kind/:ownerId/:id/act', requestActRoute],
   ['GET', '/api/service-stores/:kind/:ownerId/requests', storeRequestsRoute],
+  ['POST', '/api/service-store/:kind/:ownerId/quotes', askQuoteRoute],
+  ['GET', '/api/me/service-quotes', myQuotesRoute],
+  ['GET', '/api/service-stores/:kind/:ownerId/quotes', storeQuotesRoute],
+  ['GET', '/api/service-quotes/:kind/:ownerId/:id', quoteRoute],
+  ['POST', '/api/service-quotes/:kind/:ownerId/:id/act', quoteActRoute],
   ['POST', '/api/service-stores/:kind/:ownerId/links', paymentLinkRoute],
   ['GET', '/api/lots/:id/forwarders', lotForwarderOptionsRoute],
   ['POST', '/api/lots/:id/forwarder-store', bookForwarderRoute],

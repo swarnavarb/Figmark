@@ -12082,6 +12082,8 @@ await check('a buyer shows off what arrived in the shop\'s channel, without a ra
 /* ── shops by what they are about ──────────────────────────────────────── */
 const {
   submitRequestRoute: submitServiceRequest, requestActRoute: actOnServiceRequest, assignedRequestsRoute: assignedRequests,
+  askQuoteRoute: askQuote, quoteActRoute: actOnQuote, myQuotesRoute: myQuotes, storeQuotesRoute: storeQuotes, sweepExpiredQuotes,
+  myRequestsRoute: myServiceRequests,
 } = await import(new URL('service-work-routes.js', fns));
 const {
   serviceSearchRoute: serviceSearch, storeInsightsRoute: storeInsights, myServiceStoresRoute: myServiceStores,
@@ -12090,7 +12092,7 @@ const {
 /** Answers for Lotus's default shipping form, by what each field is for. */
 const lotusAnswers = (form) => Object.fromEntries(form.flatMap((field) => {
   const value = {
-    weight: 6, items: [{ name: 'Resin statue', qty: 1, valueMinor: 900000 }], battery: false,
+    weight: 6, items: [{ name: 'Resin statue', qty: 1, valueMinor: 900000 }], battery: 'No battery',
     dimensions: { l: 50, w: 40, h: 30 },
     delivery: { name: 'Route Tester', phone: '9876543210', line: '12 MG Road', city: 'bengaluru', state: 'Karnataka', pincode: '560001' },
   }[field.key ?? ''];
@@ -12122,18 +12124,118 @@ await check('a shipping request carries extras and free cover, and is counted in
   assert.ok(mine.some((row) => row.request.id === made.id));
   assert.equal((await assignedRequests(req({ headers: buyer.headers }), ctx)).jsonBody.requests.length, 0);
 
-  // Quoting records the move, and the insights read it back.
-  await actOnServiceRequest(req({
-    headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus', id: made.id }, body: { action: 'quote', quoteMinor: 560000 },
-  }), ctx);
+  // A listed route needs no quote: it is booked straight away, and the insights read it back.
+  assert.equal(made.status, 'booked');
+  assert.equal(made.billing, 'arrival');
   const numbers = await storeInsights(req({ headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx);
   assert.equal(numbers.status, 200);
   const { insights } = numbers.jsonBody;
   assert.ok(insights.totals.requests >= 1 && insights.totals.quoted >= 1);
   assert.ok(insights.extras.some((row) => row.label === 'Door-to-door delivery'));
   assert.ok(insights.places.some((row) => row.label === 'Bengaluru'), 'cities are read from the delivery address');
-  assert.ok(insights.speed.quoteHours !== null);
   assert.equal((await storeInsights(req({ headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).status, 403);
+});
+
+await check('pay on arrival: booked, sent in, weighed with a photo, billed, paid, delivered - and tracked by the buyer', async () => {
+  resetRateLimits();
+  const buyer = await newMember('Arrival Tester', 'arrival.tester@figmark.example', '+919000078933');
+  const repository = await getRepository();
+  const lotus = await repository.getUserById('usr_fwd_lotus');
+  await repository.updateUser({ ...lotus, forwarderProfile: { ...lotus.forwarderProfile, coverPayment: 'upfront' } });
+  const page = (await storePage(req({ params: { kind: 'forwarder', slug: 'lotus-freight' } }), ctx)).jsonBody.store;
+  const at = (id) => ({ kind: 'forwarder', ownerId: 'usr_fwd_lotus', id });
+  const ask = (body) => submitServiceRequest(req({ headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body }), ctx);
+
+  // Batteries: an express route that carries only batteries inside an item refuses a power bank.
+  const loose = { ...lotusAnswers(page.form) };
+  const batteryField = page.form.find((field) => field.key === 'battery');
+  assert.equal(batteryField.type, 'choice');
+  loose[batteryField.id] = 'Loose battery or power bank';
+  assert.equal((await ask({ subjectId: 'lane_gz_bom_x', answers: loose })).status, 400);
+  loose[batteryField.id] = 'Battery inside an item';
+  assert.equal((await ask({ subjectId: 'lane_gz_bom_x', answers: loose })).status, 201, 'a battery fitted in a figure is fine');
+
+  // Paid cover, upfront: owed before the parcel is sent.
+  const sent = await ask({ subjectId: 'lane_gz_blr', planId: 'plan_lotus_std', answers: lotusAnswers(page.form) });
+  assert.equal(sent.status, 201, JSON.stringify(sent.jsonBody));
+  const id = sent.jsonBody.request.id;
+  assert.ok(sent.jsonBody.coverDue > 0);
+  assert.deepEqual(sent.jsonBody.actions.sort(), ['cancel', 'pay_cover', 'send_in']);
+  const act = (headers, body) => actOnServiceRequest(req({ headers, params: at(id), body }), ctx);
+  assert.equal((await act(buyer.headers, { action: 'quote', quoteMinor: 1 })).status, 409, 'nothing to quote');
+  assert.equal((await act(buyer.headers, { action: 'pay_cover', reference: 'UPI-COVER' })).status, 200);
+  assert.equal((await act(lotusTeam, { action: 'confirm_cover' })).status, 200);
+  assert.equal((await act(buyer.headers, { action: 'send_in', courier: 'SF Express', awb: 'SF123' })).jsonBody.request.status, 'sent_in');
+  await act(lotusTeam, { action: 'receive' });
+  await act(lotusTeam, { action: 'start' });
+
+  // The bill needs the weight and a photo of the scale.
+  assert.equal((await act(lotusTeam, { action: 'bill', weightKg: 7 })).status, 400, 'no photo, no bill');
+  const billed = await act(lotusTeam, { action: 'bill', weightKg: 7, photoUrls: ['/api/photos/scale.jpg'], added: [{ label: 'Duty', minor: 50000 }] });
+  assert.equal(billed.status, 200, JSON.stringify(billed.jsonBody));
+  const bill = billed.jsonBody.request.bill;
+  assert.equal(bill.photoUrls.length, 1);
+  assert.ok(!bill.lines.some((row) => row.label.startsWith('Cover')), 'cover paid upfront is not billed again');
+  assert.equal(bill.totalMinor, bill.lines.reduce((sum, row) => sum + row.minor, 0));
+  assert.ok(bill.lines.some((row) => row.label === 'Duty' && row.minor === 50000));
+  assert.equal(billed.jsonBody.due, bill.totalMinor);
+
+  // The buyer follows it from their purchases.
+  const mine = (await myServiceRequests(req({ headers: buyer.headers }), ctx)).jsonBody.requests;
+  const row = mine.find((entry) => entry.request.id === id);
+  assert.equal(row.request.status, 'billed');
+  assert.ok(row.actions.includes('pay'));
+
+  await act(buyer.headers, { action: 'pay', reference: 'UPI-BILL' });
+  assert.equal((await act(lotusTeam, { action: 'confirm_payment' })).jsonBody.request.status, 'paid');
+  await act(lotusTeam, { action: 'ship', courier: 'Delhivery', awb: 'DL1' });
+  assert.equal((await act(buyer.headers, { action: 'complete' })).jsonBody.request.status, 'delivered');
+  await repository.updateUser({ ...(await repository.getUserById('usr_fwd_lotus')), forwarderProfile: { ...lotus.forwarderProfile } });
+});
+
+await check('custom quotes: asked, priced with an expiry of at most three months, shipped on, and deleted once expired', async () => {
+  resetRateLimits();
+  const buyer = await newMember('Quote Tester', 'quote.tester@figmark.example', '+919000078934');
+  const page = (await storePage(req({ params: { kind: 'forwarder', slug: 'lotus-freight' } }), ctx)).jsonBody.store;
+  const asked = await askQuote(req({
+    headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' },
+    body: { originCountry: 'Japan', destinationCountry: 'India', mode: 'air', what: 'Gunpla, 20 kg a month', weightKg: 20, battery: 'none' },
+  }), ctx);
+  assert.equal(asked.status, 201, JSON.stringify(asked.jsonBody));
+  const quote = asked.jsonBody.quote;
+  const at = { kind: 'forwarder', ownerId: 'usr_fwd_lotus', id: quote.id };
+  assert.equal((await actOnQuote(req({ headers: buyer.headers, params: at, body: { action: 'offer', ratePerKgMinor: 1 } }), ctx)).status, 403);
+  const farOut = new Date(Date.now() + 200 * 86_400_000).toISOString();
+  const priced = await actOnQuote(req({
+    headers: lotusTeam, params: at,
+    body: { action: 'offer', ratePerKgMinor: 40000, minChargeKg: 2, transitDaysMin: 6, transitDaysMax: 9, batteries: 'none', expiresAt: farOut,
+      warehouses: [{ name: 'Osaka', address: '1-2 Namba, Osaka', contact: '', hours: '' }] },
+  }), ctx);
+  assert.equal(priced.status, 200, JSON.stringify(priced.jsonBody));
+  assert.ok(Date.parse(priced.jsonBody.quote.expiresAt) <= Date.now() + 90 * 86_400_000 + 60_000, 'capped at three months');
+  assert.equal(priced.jsonBody.usable, true);
+  assert.ok((await storeQuotes(req({ headers: lotusTeam, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).jsonBody.quotes.some((row) => row.quote.id === quote.id));
+
+  const booked = await submitServiceRequest(req({
+    headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' },
+    body: { quoteId: quote.id, answers: lotusAnswers(page.form) },
+  }), ctx);
+  assert.equal(booked.status, 201, JSON.stringify(booked.jsonBody));
+  assert.equal(booked.jsonBody.request.rate.ratePerKgMinor, 40000, 'the quote sets the rate');
+  assert.equal(booked.jsonBody.sendTo[0].name, 'Osaka');
+  assert.match(booked.jsonBody.request.subject.label, /Japan/);
+
+  // Expired: gone from both lists and refused.
+  const repository = await getRepository();
+  const stored = await repository.getServiceWork('forwarder:usr_fwd_lotus', quote.id);
+  await repository.saveServiceWork({ ...stored, expiresAt: new Date(Date.now() - 1000).toISOString() });
+  assert.ok(await sweepExpiredQuotes(repository) >= 1);
+  assert.equal((await myQuotes(req({ headers: buyer.headers }), ctx)).jsonBody.quotes.length, 0);
+  assert.equal((await submitServiceRequest(req({
+    headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' }, body: { quoteId: quote.id, answers: lotusAnswers(page.form) },
+  }), ctx)).status, 404);
+  const parcel = await repository.getServiceWork('forwarder:usr_fwd_lotus', booked.jsonBody.request.id);
+  assert.ok(parcel, 'a parcel already booked on it stays');
 });
 
 await check('routes are found by country, and filters narrow them', async () => {
@@ -12143,6 +12245,10 @@ await check('routes are found by country, and filters narrow them', async () => 
   assert.ok(all.countries.from.includes('China'));
   const sea = (await serviceSearch(req({ params: { kind: 'forwarder' }, query: { mode: 'sea' } }), ctx)).jsonBody.routes;
   assert.ok(sea.length > 0 && sea.every((row) => row.lane.mode === 'sea'));
+  const loose = (await serviceSearch(req({ params: { kind: 'forwarder' }, query: { battery: 'loose' } }), ctx)).jsonBody.routes;
+  assert.ok(loose.every((row) => row.lane.batteries === 'all'));
+  const fitted = (await serviceSearch(req({ params: { kind: 'forwarder' }, query: { battery: 'in_device' } }), ctx)).jsonBody.routes;
+  assert.ok(fitted.length > loose.length && fitted.every((row) => row.lane.batteries !== 'none'));
   const covered = (await serviceSearch(req({ params: { kind: 'forwarder' }, query: { freeCover: '1' } }), ctx)).jsonBody.routes;
   assert.ok(covered.length > 0 && covered.every((row) => row.freeCover));
   const studios = (await serviceSearch(req({ params: { kind: 'artist' }, query: { q: 'repaint' } }), ctx)).jsonBody.studios;

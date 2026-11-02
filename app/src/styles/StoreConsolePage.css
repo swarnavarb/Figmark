@@ -150,3 +150,11 @@
 .sc-rank__line b { white-space: nowrap; }
 .sc-rank > p { margin: 0; font-size: var(--t-sm); }
 .sc-insights > p.faint { margin: 0; font-size: var(--t-xs); }
+
+/* A custom quote: what was asked, and the form that prices it. */
+.sc-qask { display: grid; gap: 4px; margin: 0; font-size: var(--t-sm); }
+.sc-qask > div { display: grid; grid-template-columns: minmax(80px, 30%) minmax(0, 1fr); gap: 10px; }
+.sc-qask dt { color: var(--text-faint); }
+.sc-qask dd { margin: 0; overflow-wrap: anywhere; }
+.sc-qform { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.sc-qform__wide { grid-column: 1 / -1; }

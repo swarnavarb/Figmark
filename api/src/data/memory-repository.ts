@@ -1,5 +1,5 @@
 import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
-import type { ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
+import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { ROUTE_TEMPLATES, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
@@ -772,6 +772,20 @@ export class MemoryRepository implements Repository {
       .filter((doc): doc is ServiceRequest => doc.type === 'request' && doc.assigneeId === userId)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 100)
+      .map((doc) => structuredClone(doc));
+  }
+
+  async listServiceQuotesFor(customerId: string): Promise<CustomQuote[]> {
+    return [...this.serviceWork.values()]
+      .filter((doc): doc is CustomQuote => doc.type === 'quote' && doc.customerId === customerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((doc) => structuredClone(doc));
+  }
+
+  async listExpiredServiceQuotes(nowIso: string, limit: number): Promise<CustomQuote[]> {
+    return [...this.serviceWork.values()]
+      .filter((doc): doc is CustomQuote => doc.type === 'quote' && doc.expiresAt <= nowIso)
+      .slice(0, limit)
       .map((doc) => structuredClone(doc));
   }
 

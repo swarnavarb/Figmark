@@ -6,12 +6,15 @@ import {
   applicationGaps, jobDueMinor, liveLanes, livePlans, type StoreKind,
 } from '@shared/service-stores';
 import {
-  ApiRequestError, api, type ArtistJobRow, type ForwarderLotRow, type RequestRow, type StoreConsole, type StoreDraft, type StoreInsightsView, type StoreWork, type TeamRow,
+  ApiRequestError, api, type ArtistJobRow, type ForwarderLotRow, type QuoteRow, type RequestRow, type StoreConsole, type StoreDraft, type StoreInsightsView, type StoreWork, type TeamRow,
 } from '../api';
-import { requestIsOpen, type ServiceRequest } from '@shared/service-work';
+import {
+  BATTERY_RULE_LABELS, QUOTE_MAX_DAYS, coverOwedMinor, requestIsOpen, type ServiceRequest,
+} from '@shared/service-work';
+import type { BatteryRule } from '@shared/models';
 import type { InsightRow, StoreInsights } from '@shared/service-insights';
 import {
-  AnswerList, RequestActions, RequestLog, RequestRowCard, StoreChannel,
+  AnswerList, BillCard, QuoteRowCard, RequestActions, RequestLog, RequestRowCard, StoreChannel, expiresIn,
 } from '../components/ServiceWorkKit';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
@@ -35,7 +38,7 @@ import '../styles/StoreConsolePage.css';
  * staring at a rate card they cannot change.
  */
 
-type Tab = 'overview' | 'requests' | 'work' | 'insights' | 'channel' | 'store' | 'team';
+type Tab = 'overview' | 'requests' | 'quotes' | 'work' | 'insights' | 'channel' | 'store' | 'team';
 
 export function StoreConsolePage() {
   const { kind: rawKind, ownerId: rawOwner } = useParams<{ kind: string; ownerId?: string }>();
@@ -89,7 +92,8 @@ export function StoreConsolePage() {
   const needsYou = (requests?.requests ?? []).filter((row) => row.actions.some((action) => action !== 'assign')).length;
   const tabs: { id: Tab; label: string; show: boolean; count?: number }[] = [
     { id: 'overview', label: 'Overview', show: true },
-    { id: 'requests', label: 'Requests', show: live && console.rights.includes('work'), count: needsYou },
+    { id: 'requests', label: kind === 'forwarder' ? 'Parcels' : 'Requests', show: live && console.rights.includes('work'), count: needsYou },
+    { id: 'quotes', label: 'Quotes', show: kind === 'forwarder' && live && console.rights.includes('work') },
     { id: 'work', label: kind === 'forwarder' ? 'Shop lots' : 'Order commissions', show: live && console.rights.includes('work'),
       count: kind === 'forwarder' ? work?.lots.filter((row) => row.acceptance === 'pending').length : work?.jobs.filter((row) => row.actions.length > 0).length },
     { id: 'insights', label: 'Insights', show: live },
@@ -142,6 +146,7 @@ export function StoreConsolePage() {
               : [next, ...current.requests],
           } : current)} />
       )}
+      {tab === 'quotes' && <QuotesBoard kind={kind} ownerId={ownerId} focus={params.get('q')} />}
       {tab === 'insights' && <InsightsPanel kind={kind} ownerId={ownerId} />}
       {tab === 'channel' && (
         <StoreChannel kind={kind} ownerId={ownerId} storeName={store.companyName}
@@ -157,6 +162,8 @@ export function StoreConsolePage() {
 }
 
 /* ── Insights ────────────────────────────────────────────────────────── */
+
+const hours = (value: number | null) => (value === null ? '—' : value < 1 ? '< 1 h' : `${Math.round(value)} h`);
 
 /** "+12%" against last month, or nothing when there is nothing to compare. */
 function change(now: number, before: number): string | null {
@@ -225,8 +232,8 @@ function InsightsPanel({ kind, ownerId }: { kind: StoreKind; ownerId: string }) 
   const t = x.totals;
   const funnel = [
     { label: 'Asked', n: t.requests + t.links },
-    { label: 'Quoted', n: t.quoted },
-    { label: 'Accepted', n: t.accepted },
+    { label: kind === 'forwarder' ? 'Priced' : 'Quoted', n: t.quoted },
+    { label: kind === 'forwarder' ? 'Booked' : 'Accepted', n: t.accepted },
     { label: 'Paid', n: t.paid },
     { label: kind === 'forwarder' ? 'Delivered' : 'Finished', n: t.delivered },
   ];
@@ -236,7 +243,9 @@ function InsightsPanel({ kind, ownerId }: { kind: StoreKind; ownerId: string }) 
     { label: 'Requests', value: String(t.requests + t.links), note: t.links ? `${t.links} from payment links` : 'all time' },
     { label: 'Go ahead', value: funnel[0]!.n ? `${Math.round((t.paid / funnel[0]!.n) * 100)}%` : '—', note: 'asked → paid' },
     { label: 'Average order', value: x.money.averageOrderMinor ? formatMoney(x.money.averageOrderMinor) : '—', note: 'of those paid' },
-    { label: 'First quote', value: x.speed.quoteHours === null ? '—' : x.speed.quoteHours < 1 ? '< 1 h' : `${Math.round(x.speed.quoteHours)} h`, note: 'on average' },
+    kind === 'forwarder'
+      ? { label: 'Bill to payment', value: hours(x.speed.payHours), note: 'on average' }
+      : { label: 'First quote', value: hours(x.speed.quoteHours), note: 'on average' },
     { label: 'Rating', value: x.ratings.average === null ? '—' : `★ ${x.ratings.average}`, note: `${x.ratings.count} ${x.ratings.count === 1 ? 'review' : 'reviews'}` },
   ];
   return (
@@ -335,7 +344,7 @@ function Overview({ kind, console, work, requests, onGo }: { kind: StoreKind; co
     );
   }
 
-  const fresh = requests.filter((row) => row.request.status === 'submitted').length;
+  const fresh = requests.filter((row) => row.request.status === 'submitted' || row.request.status === 'booked').length;
   const toConfirm = requests.filter((row) => row.actions.includes('confirm_payment')).length;
   const direct = (
     <>
@@ -348,7 +357,7 @@ function Overview({ kind, console, work, requests, onGo }: { kind: StoreKind; co
         </button>
       )}
       <div className="sc-stats">
-        <StatTile value={requests.filter((row) => requestIsOpen(row.request) && row.request.status !== 'submitted').length} label="Requests on" tone="accent" />
+        <StatTile value={requests.filter((row) => requestIsOpen(row.request) && !['submitted', 'booked'].includes(row.request.status)).length} label="Requests on" tone="accent" />
         <StatTile value={requests.filter((row) => row.request.status === 'delivered').length} label="Delivered" tone="ok" />
         <StatTile value={formatMoney(requests.filter((row) => row.request.payment?.confirmedAt).reduce((sum, row) => sum + row.request.payment!.amountMinor, 0))} label="Taken direct" />
         <StatTile value={(() => {
@@ -496,15 +505,144 @@ function RequestDetail({ kind, row, team, onChanged }: { kind: StoreKind; row: R
       {(request.addons?.length ?? 0) > 0 && <p className="faint">Extras: {request.addons!.map((row) => `${row.name} (${row.priceMinor ? formatMoney(row.priceMinor) : 'free'})`).join(', ')}</p>}
       {request.external && <p className="faint">They filled in your own form — check it there.</p>}
       <AnswerList fields={request.fields} answers={request.answers} />
+      {request.inbound && <p className="faint">To your warehouse: {[request.inbound.courier, request.inbound.awb].filter(Boolean).join(' ') || 'no tracking given'}</p>}
+      {request.coverPayment && (
+        <p className={`sc-req__pay${request.coverPayment.confirmedAt ? ' is-ok' : ''}`}>
+          {request.coverPayment.confirmedAt ? '✓ Cover payment confirmed' : 'Customer says they paid the cover'} {formatMoney(request.coverPayment.amountMinor)}
+          {request.coverPayment.reference ? ` · ref ${request.coverPayment.reference}` : ''}
+        </p>
+      )}
+      {request.bill && <BillCard bill={request.bill} />}
       {request.payment && (
         <p className={`sc-req__pay${request.payment.confirmedAt ? ' is-ok' : ''}`}>
           {request.payment.confirmedAt ? '✓ Payment confirmed' : 'Customer says they paid'} {formatMoney(request.payment.amountMinor)}
           {request.payment.reference ? ` · ref ${request.payment.reference}` : ''}
         </p>
       )}
-      <RequestActions view={{ ...row, side: 'store', payTo: null, sendTo: [] }} team={team}
+      <RequestActions view={{ ...row, side: 'store', payTo: null, sendTo: [], coverDue: coverOwedMinor(request) }} team={team}
         onChanged={(next) => onChanged({ request: next.request, actions: next.actions, due: next.due })} />
       <RequestLog request={request} />
+    </div>
+  );
+}
+
+/* ── Custom quotes ───────────────────────────────────────────────────── */
+
+/**
+ * The quotes customers asked for. The team prices one - a rate per kg, the
+ * batteries it takes, where to send - and sets when it expires, no more than
+ * three months out. Expired quotes are deleted, so this list only holds live ones.
+ */
+function QuotesBoard({ kind, ownerId, focus }: { kind: StoreKind; ownerId: string; focus: string | null }) {
+  const [rows, setRows] = useState<QuoteRow[] | null>(null);
+  const [open, setOpen] = useState<string | null>(focus);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void api.storeQuotes(kind, ownerId).then((view) => setRows(view.quotes))
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load quotes.'));
+  }, [kind, ownerId]);
+  if (error) return <ErrorNotice message={error} />;
+  if (!rows) return <p className="faint">Loading…</p>;
+  if (rows.length === 0) {
+    return (
+      <EmptyState icon={<Icon name="plane" size={26} />} title="No quotes asked for">
+        Customers ask from your page when a route is not listed, or they ship a lot. Each quote you send expires on a date you pick — up to {QUOTE_MAX_DAYS / 30} months.
+      </EmptyState>
+    );
+  }
+  const groups = [
+    { title: 'Needs a price', rows: rows.filter((row) => row.quote.status === 'asked') },
+    { title: 'Live', rows: rows.filter((row) => row.usable) },
+    { title: 'Declined', rows: rows.filter((row) => row.quote.status === 'declined') },
+  ];
+  return (
+    <div className="stack">
+      {groups.filter((group) => group.rows.length > 0).map((group) => (
+        <section key={group.title} className="stack">
+          <h3 className="sc-sub">{group.title} <span className="faint">{group.rows.length}</span></h3>
+          {group.rows.map((row) => (
+            <div key={row.quote.id} className={`sc-req${open === row.quote.id ? ' is-open' : ''}`}>
+              <button type="button" className="sc-req__toggle" onClick={() => setOpen(open === row.quote.id ? null : row.quote.id)} aria-expanded={open === row.quote.id}>
+                <QuoteRowCard quote={row.quote} usable={row.usable} side="store" />
+              </button>
+              {open === row.quote.id && (
+                <QuoteDetail kind={kind} ownerId={ownerId} row={row}
+                  onChanged={(next) => setRows((current) => current && current.map((entry) => (entry.quote.id === next.quote.id ? next : entry)))} />
+              )}
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+const isoDay = (at: number) => new Date(at).toISOString().slice(0, 10);
+
+function QuoteDetail({ kind, ownerId, row, onChanged }: { kind: StoreKind; ownerId: string; row: QuoteRow; onChanged: (row: QuoteRow) => void }) {
+  const { quote } = row;
+  const offer = quote.offer;
+  const [rate, setRate] = useState(offer?.ratePerKgMinor ?? 0);
+  const [minKg, setMinKg] = useState(String(offer?.minChargeKg ?? ''));
+  const [daysMin, setDaysMin] = useState(String(offer?.transitDaysMin ?? ''));
+  const [daysMax, setDaysMax] = useState(String(offer?.transitDaysMax ?? ''));
+  const [batteries, setBatteries] = useState<BatteryRule>(offer?.batteries ?? (quote.ask.battery === 'loose' ? 'all' : quote.ask.battery === 'in_device' ? 'in_device' : 'none'));
+  const [expires, setExpires] = useState(offer ? quote.expiresAt.slice(0, 10) : isoDay(Date.now() + 30 * 86_400_000));
+  const [note, setNote] = useState(offer?.note ?? '');
+  const [address, setAddress] = useState(offer?.warehouses[0]?.address ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const latest = isoDay(Date.now() + QUOTE_MAX_DAYS * 86_400_000);
+
+  async function act(action: 'offer' | 'decline') {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await api.actOnQuote(kind, ownerId, quote.id, action === 'decline' ? { action, note } : {
+        action, ratePerKgMinor: rate, minChargeKg: Number(minKg) || 0, transitDaysMin: Number(daysMin) || 0, transitDaysMax: Number(daysMax) || 0,
+        batteries, note, expiresAt: new Date(`${expires}T23:59:00`).toISOString(),
+        warehouses: address.trim() ? [{ name: 'For this quote', address: address.trim(), contact: '', hours: '' }] : [],
+      });
+      onChanged({ quote: next.quote, usable: next.usable });
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="sc-req__body stack">
+      <dl className="sc-qask">
+        <div><dt>Sending</dt><dd>{quote.ask.what}</dd></div>
+        {quote.ask.weightKg && <div><dt>About</dt><dd>{quote.ask.weightKg} kg</dd></div>}
+        <div><dt>Batteries</dt><dd>{quote.ask.battery === 'none' ? 'None' : quote.ask.battery === 'in_device' ? 'Inside an item' : 'Loose / power bank'}</dd></div>
+        <div><dt>Mode</dt><dd>{quote.route.mode}{quote.route.laneId ? ' · one of your routes' : ' · not a listed route'}</dd></div>
+        {quote.ask.notes && <div><dt>Notes</dt><dd>{quote.ask.notes}</dd></div>}
+      </dl>
+      {quote.customerHandle && <Link to={`/messages/${quote.customerHandle}`} className="btn btn--ghost btn--sm sc-req__msg"><Icon name="message" size={13} /> Message {quote.customerName}</Link>}
+      <form className="sc-qform" onSubmit={(event) => { event.preventDefault(); void act('offer'); }}>
+        <label className="field"><span>Rate per kg</span><MoneyInput label="Rate per kg" value={rate} onChange={setRate} /></label>
+        <label className="field"><span>Minimum kg</span><input inputMode="decimal" value={minKg} onChange={(e) => setMinKg(e.target.value)} placeholder="0" /></label>
+        <label className="field"><span>Days, from</span><input inputMode="numeric" value={daysMin} onChange={(e) => setDaysMin(e.target.value)} placeholder="7" /></label>
+        <label className="field"><span>to</span><input inputMode="numeric" value={daysMax} onChange={(e) => setDaysMax(e.target.value)} placeholder="10" /></label>
+        <label className="field"><span>Batteries</span>
+          <select value={batteries} onChange={(e) => setBatteries(e.target.value as BatteryRule)}>
+            {(Object.keys(BATTERY_RULE_LABELS) as BatteryRule[]).map((value) => <option key={value} value={value}>{BATTERY_RULE_LABELS[value]}</option>)}
+          </select></label>
+        <label className="field"><span>Expires on <small className="faint">· up to 3 months</small></span>
+          <input type="date" value={expires} min={isoDay(Date.now() + 86_400_000)} max={latest} onChange={(e) => setExpires(e.target.value)} required /></label>
+        <label className="field sc-qform__wide"><span>Send parcels to <small className="faint">· leave empty for your usual warehouse</small></span>
+          <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Warehouse address for this route" /></label>
+        <label className="field sc-qform__wide"><span>Note to the customer</span>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Weekly flight, duty included." /></label>
+        <div className="row sc-qform__wide">
+          <button type="submit" className="btn" disabled={busy || !rate || !expires}>{offer ? 'Update quote' : 'Send quote'}</button>
+          {quote.status !== 'declined' && <button type="button" className="btn btn--danger" disabled={busy} onClick={() => void act('decline')}>Decline</button>}
+        </div>
+      </form>
+      {offer && <p className="faint">Sent by {offer.sentByName} · {expiresIn(quote)} · then it is deleted.</p>}
+      {error && <ErrorNotice message={error} />}
     </div>
   );
 }

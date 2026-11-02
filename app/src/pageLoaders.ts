@@ -67,6 +67,7 @@ const BY_PATH: [(path: string) => boolean, LoaderName][] = [
   [(path) => path.startsWith('/services/store'), 'storeConsole'],
   [(path) => path.startsWith('/services/crew'), 'crewLot'],
   [(path) => path.startsWith('/services/requests/'), 'serviceRequest'],
+  [(path) => path.startsWith('/services/quotes/'), 'serviceDetail'],
   [(path) => path === '/open', 'open'],
   [(path) => /^\/services\/(forwarder|artist)\/[^/]+\/(route|service)\//.test(path), 'serviceDetail'],
   [(path) => /^\/services\/(forwarder|artist)\/[^/]+$/.test(path), 'store'],

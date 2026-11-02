@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
+import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
 import type { PostTemplate } from '../../../shared/templates.js';
@@ -314,6 +314,10 @@ export interface Repository {
   listServiceStoresFollowedBy(userId: string): Promise<string[]>;
   /** Open and finished requests assigned to one team member, across every store. */
   listServiceRequestsAssignedTo(userId: string): Promise<ServiceRequest[]>;
+  /** Every custom quote one customer asked for, across stores. */
+  listServiceQuotesFor(customerId: string): Promise<CustomQuote[]>;
+  /** Custom quotes past their expiry, for the clock to delete. */
+  listExpiredServiceQuotes(nowIso: string, limit: number): Promise<CustomQuote[]>;
   /**
    * Pre-orders with a deadline behind them that nobody has acted on yet: the
    * cutoff passed before it went ahead, or the seller's time to decide ran out.

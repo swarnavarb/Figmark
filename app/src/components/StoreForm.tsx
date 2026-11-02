@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { COUNTRIES, countryFlag } from '@shared/countries';
-import type { ArtistOffering, FreightLane, InfoRow, InsurancePlan, PortfolioPiece, PriceOption, ServiceAddon, ServiceFormField, StoreLink, StoreWarehouse } from '@shared/models';
-import { BASIS_LABELS, CUSTOM_FIELD_TYPES, FIELD_TYPE_LABELS, LOCKED_FIELDS, formOf, volumetricLabel } from '@shared/service-work';
+import type { ArtistOffering, BatteryRule, FreightLane, InfoRow, InsurancePlan, PortfolioPiece, PriceOption, ServiceAddon, ServiceFormField, StoreLink, StoreWarehouse } from '@shared/models';
+import { BASIS_LABELS, BATTERY_RULE_LABELS, CUSTOM_FIELD_TYPES, FIELD_TYPE_LABELS, LOCKED_FIELDS, batteryRuleOf, formOf, volumetricLabel } from '@shared/service-work';
 import {
   FREIGHT_MODES, FREIGHT_MODE_LABELS, STORE_ACCENTS, insuranceQuote, partId, type StoreKind,
 } from '@shared/service-stores';
@@ -292,9 +292,11 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
         )}
       </div>
 
-      <label className="tick">
-        <input type="checkbox" checked={lane.batteryAllowed !== false} onChange={(e) => onChange({ batteryAllowed: e.target.checked })} />
-        <span>Carries items with batteries</span>
+      <label className="field"><span>Batteries on this route</span>
+        <select value={batteryRuleOf(lane)} onChange={(e) => onChange({ batteries: e.target.value as BatteryRule })}>
+          {(Object.keys(BATTERY_RULE_LABELS) as BatteryRule[]).map((value) => <option key={value} value={value}>{BATTERY_RULE_LABELS[value]}</option>)}
+        </select>
+        <small className="faint">“In devices” means fitted inside an item — an LED base, a light-up figure. Not loose cells or power banks.</small>
       </label>
 
       <label className="field"><span>How to send a parcel</span>
@@ -412,10 +414,20 @@ export function CoverSection({ draft, set }: SectionProps) {
   return (
     <div className="stack">
       <p className="sf-lede">
-        Plans buyers can add to their own item when a shop books you and turns cover on. The premium is
-        paid with the order — held by Buyer Protection or sent direct, same as the goods — and the shop settles
-        it with you alongside the freight.
+        Plans customers pick when they book a parcel, or add to an item when a shop books you. Free cover is
+        picked for them by default.
       </p>
+      <div className="field"><span>When customers pay for paid cover</span>
+        <div className="sf-choice" role="radiogroup" aria-label="When cover is paid">
+          {([['with_bill', 'On the bill', 'Added to the bill when the parcel is weighed at the destination.'],
+            ['upfront', 'Upfront', 'Paid before the parcel is sent to your warehouse.']] as const).map(([value, label, note]) => (
+            <label key={value} className={`tick sf-choice__row${(draft.coverPayment ?? 'with_bill') === value ? ' is-on' : ''}`}>
+              <input type="radio" name="cover-payment" checked={(draft.coverPayment ?? 'with_bill') === value} onChange={() => set({ coverPayment: value })} />
+              <span><b>{label}</b> <span className="faint">— {note}</span></span>
+            </label>
+          ))}
+        </div>
+      </div>
       {plans.map((plan) => {
         const quote = insuranceQuote(plan, EXAMPLE_VALUE);
         return (

@@ -29,7 +29,7 @@ function forwarderStore(now: string, team: StoreMember[]): ForwarderProfile {
     {
       id: 'demo_lane_gz_blr', originCity: 'Guangzhou', originCountry: 'China', destinationCity: 'Bengaluru', destinationCountry: 'India',
       mode: 'air', ratePerKgMinor: 48_000, minChargeKg: 5, transitDaysMin: 9, transitDaysMax: 12, customsIncluded: true,
-      note: 'Weekly consolidation, flies Saturday.', active: true, batteryAllowed: true,
+      note: 'Weekly consolidation, flies Saturday.', active: true, batteries: 'all',
       products: [
         { id: 'demo_p_boxed', name: 'Boxed figures & model kits', basis: 'kg', priceMinor: 45_000, note: 'Retail boxes, repacked flat where possible' },
         { id: 'demo_p_statue', name: 'Resin statues', basis: 'kg', priceMinor: 56_000, note: 'Foam-crated, fragile handling' },
@@ -51,7 +51,7 @@ function forwarderStore(now: string, team: StoreMember[]): ForwarderProfile {
     {
       id: 'demo_lane_gz_bom_x', originCity: 'Guangzhou', originCountry: 'China', destinationCity: 'Mumbai', destinationCountry: 'India',
       mode: 'express', ratePerKgMinor: 72_000, minChargeKg: 1, transitDaysMin: 4, transitDaysMax: 6, customsIncluded: true,
-      note: 'Door to door, any weekday.', active: true, batteryAllowed: false,
+      note: 'Door to door, any weekday.', active: true, batteries: 'none',
       products: [{ id: 'demo_p_docs', name: 'Small parcel up to 1 kg', basis: 'flat', priceMinor: 85_000, note: 'One box, any contents we carry' }],
       volumetric: { divisor: 5000, mode: 'greater', note: '' },
       orderInfo: 'Hand it to us by 14:00 China time for same-day pickup.',
@@ -61,7 +61,7 @@ function forwarderStore(now: string, team: StoreMember[]): ForwarderProfile {
     {
       id: 'demo_lane_yw_bom', originCity: 'Yiwu', originCountry: 'China', destinationCity: 'Mumbai', destinationCountry: 'India',
       mode: 'sea', ratePerKgMinor: 21_000, minChargeKg: 50, transitDaysMin: 24, transitDaysMax: 30, customsIncluded: true,
-      note: 'LCL, fortnightly sailings from Ningbo.', active: true, batteryAllowed: true,
+      note: 'LCL, fortnightly sailings from Ningbo.', active: true, batteries: 'in_device',
       products: [{ id: 'demo_p_bulk', name: 'Bulk stock over 200 kg', basis: 'kg', priceMinor: 17_500, note: 'For shops restocking' }],
       volumetric: { divisor: 1000, mode: 'over', overFactor: 1.5, note: 'Sea freight is billed by volume once a shipment is very light for its size.' },
       warehouse: { address: 'Gate 4, Futian Market Logistics Hub, Yiwu, Zhejiang 322000', contact: 'Ms. Wang · +86 139 0000 0202', hours: 'Mon–Fri 9:00–17:00' },

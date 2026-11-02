@@ -839,9 +839,21 @@ export interface FreightLane {
   terms?: string;
   /** Anything else, as label and value. */
   extras?: InfoRow[];
-  /** Whether items with batteries travel on this route. */
+  /** Older routes: whether items with batteries travel. Read through `batteryRuleOf`. */
   batteryAllowed?: boolean;
+  /** Which batteries travel on this route. */
+  batteries?: BatteryRule;
 }
+
+/**
+ * Which batteries a route carries. `all` - loose batteries and power banks
+ * too; `in_device` - only batteries fitted inside an item (an LED base, a
+ * figure that lights up); `none` - nothing with a battery at all.
+ */
+export type BatteryRule = 'all' | 'in_device' | 'none';
+
+/** What a customer's parcel holds, battery-wise. */
+export type BatteryContent = 'none' | 'in_device' | 'loose';
 
 /** Transit cover a forwarder sells, which a buyer can add to their item. */
 export interface InsurancePlan {
@@ -942,6 +954,12 @@ export interface ForwarderProfile extends StoreCore {
    * request the team accepts or declines before it can work it.
    */
   autoAccept?: boolean;
+  /**
+   * When paid-for cover is paid: `upfront`, before the parcel is sent, or
+   * `with_bill`, added to the bill when it lands at the destination warehouse.
+   * Absent reads as `with_bill`.
+   */
+  coverPayment?: 'upfront' | 'with_bill';
 }
 
 /**

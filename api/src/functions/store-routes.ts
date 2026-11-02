@@ -10,10 +10,10 @@ import {
   livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, transitLabel, type ArtistJobAction, type StoreKind,
 } from '../../../shared/service-stores.js';
 import {
-  followId, formOf, laneFromMinor, readAddons, readForm, readFormUrl, readInfoRows, readOptions, readVolumetric, readWarehouse, readWarehouses, standingOf, storeKey,
+  batteryFits, batteryRuleOf, followId, formOf, laneFromMinor, readAddons, readForm, readFormUrl, readInfoRows, readOptions, readVolumetric, readWarehouse, readWarehouses, standingOf, storeKey,
   type ServiceRequest, type Standing,
 } from '../../../shared/service-work.js';
-import type { ServiceFormField, StoreWarehouse } from '../../../shared/models.js';
+import type { BatteryContent, BatteryRule, ServiceFormField, StoreWarehouse } from '../../../shared/models.js';
 import { crewButtons, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import {
   currentStepOf, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, stepTickKey, ticksOf,
@@ -111,6 +111,7 @@ interface StoreBody {
   lanes?: Partial<FreightLane>[]; insurance?: Partial<InsurancePlan>[];
   warehouse?: Partial<StoreWarehouse> | null;
   autoAccept?: boolean; claimedMonthlyCapacityKg?: number | null;
+  coverPayment?: 'upfront' | 'with_bill';
   // Artist
   specialties?: string[]; offerings?: Partial<ArtistOffering>[]; portfolio?: Partial<PortfolioPiece>[];
   acceptingWork?: boolean; studioAddress?: string;
@@ -139,7 +140,9 @@ function readLanes(input: unknown, previous: FreightLane[] = []): FreightLane[] 
     orderInfo: text(raw.orderInfo, 2000),
     terms: text(raw.terms, 4000),
     extras: readInfoRows(raw.extras),
-    batteryAllowed: raw.batteryAllowed !== false,
+    batteries: (['all', 'in_device', 'none'] as const).includes(raw.batteries as BatteryRule)
+      ? raw.batteries as BatteryRule
+      : batteryRuleOf({ batteryAllowed: raw.batteryAllowed }),
   })).filter((lane) => lane.originCountry && lane.destinationCountry);
 }
 
@@ -282,6 +285,8 @@ function mergeStore(kind: StoreKind, account: User, input: StoreBody): Forwarder
       insurance: readPlans(input.insurance, previous?.insurance ?? []),
       warehouse: input.warehouse === undefined ? (previous?.warehouse ?? null) : readWarehouse(input.warehouse),
       autoAccept: pick(input.autoAccept, previous?.autoAccept ?? true) === true,
+      coverPayment: input.coverPayment === 'upfront' || input.coverPayment === 'with_bill'
+        ? input.coverPayment : (previous?.coverPayment ?? 'with_bill'),
     };
   }
 
@@ -658,11 +663,11 @@ async function artistAct(request: HttpRequest, _context: InvocationContext) {
  * every one of those was.
  */
 export function lanesOf(profile: ForwarderProfile): FreightLane[] {
-  return profile.lanes ? liveLanes(profile) : profile.routes.map((route, index): FreightLane => ({
+  return profile.lanes ? liveLanes(profile).map((lane) => ({ ...lane, batteries: batteryRuleOf(lane) })) : profile.routes.map((route, index): FreightLane => ({
     id: `route_${index}`, originCity: route.originCity, originCountry: 'China', destinationCity: route.destinationCity,
     destinationCountry: 'India', mode: 'air', ratePerKgMinor: route.ratePerKgMinor, minChargeKg: 0,
     transitDaysMin: route.claimedTurnaroundDays, transitDaysMax: route.claimedTurnaroundDays, customsIncluded: false,
-    note: '', active: true,
+    note: '', active: true, batteries: 'all',
   }));
 }
 
@@ -704,6 +709,7 @@ function publicStore(owner: User, kind: StoreKind) {
       insurance: livePlans(profile),
       warehouse: profile.warehouse ?? null,
       autoAccept: profile.autoAccept ?? true,
+      coverPayment: profile.coverPayment ?? 'with_bill',
       capacityKg: profile.claimedMonthlyCapacityKg,
       offerings: [], portfolio: [], specialties: [], acceptingWork: false,
     };
@@ -711,7 +717,7 @@ function publicStore(owner: User, kind: StoreKind) {
   const profile = owner.artistProfile!;
   return {
     ...base,
-    lanes: [], insurance: [], warehouse: null, autoAccept: false, capacityKg: null,
+    lanes: [], insurance: [], warehouse: null, autoAccept: false, coverPayment: 'with_bill' as const, capacityKg: null,
     offerings: liveOfferings(profile),
     portfolio: profile.portfolio ?? [],
     specialties: profile.specialties ?? [],
@@ -845,7 +851,9 @@ async function serviceSearch(request: HttpRequest, _context: InvocationContext) 
     const from = request.query.get('from')?.trim() || null;
     const to = request.query.get('to')?.trim() || null;
     const mode = request.query.get('mode')?.trim() || null;
-    const battery = request.query.get('battery') === '1';
+    // What the parcel holds: `in_device` or `loose`. Routes that would refuse it drop out.
+    const batteryRaw = request.query.get('battery');
+    const battery: BatteryContent = batteryRaw === 'loose' || batteryRaw === '1' ? 'loose' : batteryRaw === 'in_device' ? 'in_device' : 'none';
     const freeCover = request.query.get('freeCover') === '1';
     const door = request.query.get('door') === '1';
     const origins = new Set<string>();
@@ -858,7 +866,7 @@ async function serviceSearch(request: HttpRequest, _context: InvocationContext) 
       const hasDoor = (profile.serviceOptions ?? []).some((row) => /door/i.test(row.name));
       if ((freeCover && !hasFreeCover) || (door && !hasDoor)) return [];
       const matching = lanes.filter((lane) => (!from || lane.originCountry === from) && (!to || lane.destinationCountry === to)
-        && (!mode || lane.mode === mode) && (!battery || lane.batteryAllowed !== false));
+        && (!mode || lane.mode === mode) && batteryFits(batteryRuleOf(lane), battery));
       if (matching.length === 0) return [];
       const card = await standingCard(repository, owner, kind);
       return matching.map((lane) => ({
@@ -866,7 +874,7 @@ async function serviceSearch(request: HttpRequest, _context: InvocationContext) 
         lane: {
           id: lane.id, label: laneLabel(lane), originCountry: lane.originCountry, destinationCountry: lane.destinationCountry,
           mode: lane.mode, days: transitLabel(lane), fromMinor: laneFromMinor(lane),
-          batteryAllowed: lane.batteryAllowed !== false, customsIncluded: lane.customsIncluded, note: lane.note,
+          batteries: batteryRuleOf(lane), customsIncluded: lane.customsIncluded, note: lane.note,
         },
         freeCover: hasFreeCover, door: hasDoor,
       }));

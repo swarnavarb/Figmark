@@ -113,3 +113,8 @@
 .sf-fieldrow__move { display: grid; gap: 4px; align-content: start; }
 .sf-fieldrow__body { display: grid; gap: 10px; }
 .sf-lock { color: var(--text-dim); }
+
+/* Two ways to do one thing, each with a line on what it means. */
+.sf-choice { display: grid; gap: 6px; }
+.sf-choice__row { align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); font-size: var(--t-sm); }
+.sf-choice__row.is-on { border-color: var(--sk, var(--accent)); }

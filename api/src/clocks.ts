@@ -21,6 +21,7 @@ import { tickPowerSales } from './functions/power-sale.js';
 import { closeDuePreOrders } from './functions/preorder.js';
 import { settleDueGames } from './play.js';
 import { sendHeldPushes } from './push.js';
+import { sweepExpiredQuotes } from './functions/service-work-routes.js';
 import { refreshAllSellerStats } from './seller-stats.js';
 
 /** Run one clock; a failure is logged and the rest still run. */
@@ -51,6 +52,9 @@ app.timer('clock', {
     await run(context, 'preorder-clock', () => closeDuePreOrders(repository), (n) => `settled ${n} pre-order(s)`);
     /* Debates, polls, guesses and competitions: results, payouts and "ending soon" reminders. */
     await run(context, 'games-clock', () => settleDueGames(repository), (n) => `settled ${n} game(s)`);
+
+    /* Forwarders' custom quotes past the date they set are deleted. */
+    await run(context, 'quote-clock', () => sweepExpiredQuotes(repository), (n) => `deleted ${n} expired quote(s)`);
 
     /* Dispute deadlines and the release of money they hold: once an hour, on the first run of it. */
     if (new Date().getUTCMinutes() < 5) await disputeClock(timer, context);

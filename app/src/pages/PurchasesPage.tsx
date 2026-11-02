@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PAYMENT_METHOD_LABELS, allocatePayment } from '@shared/payments';
-import { ApiRequestError, api, type ItemGroup } from '../api';
+import { ApiRequestError, api, type ItemGroup, type QuoteRow, type RequestRow } from '../api';
+import { requestIsOpen } from '@shared/service-work';
+import { QuoteRowCard, RequestRowCard } from '../components/ServiceWorkKit';
 import { BuyerLotBox, ItemRow, LotPeek, ShelfTrack } from '../components/BuyerLots';
 import { Modal } from '../components/LotFields';
 import { EmptyState, ErrorNotice, Thumb } from '../components/ui';
@@ -48,6 +50,7 @@ export function PurchasesPage() {
   const [paying, setPaying] = useState<ItemGroup | null>(null);
   const [peeking, setPeeking] = useState<ItemGroup | null>(null);
   const [cartCount, setCartCount] = useState(0);
+  const [services, setServices] = useState<{ requests: RequestRow[]; quotes: QuoteRow[] } | null>(null);
   // `?pay=<order>` - the order page's "Pay more" lands here with its dialog open.
   const [params, setParams] = useSearchParams();
   const payFor = params.get('pay');
@@ -62,6 +65,12 @@ export function PurchasesPage() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // Parcels sent with a forwarder and work asked of an artist: tracked here with everything else bought.
+  useEffect(() => {
+    void Promise.all([api.myServiceRequests(), api.myServiceQuotes()])
+      .then(([requests, quotes]) => setServices({ requests: requests.requests, quotes: quotes.quotes }))
+      .catch(() => setServices({ requests: [], quotes: [] }));
+  }, []);
   useEffect(() => {
     if (!payFor || !groups) return;
     const group = groups.find((entry) => entry.items.some((item) => item.id === payFor && item.canPayMore));
@@ -84,6 +93,36 @@ export function PurchasesPage() {
   const waiting = all.filter((group) => group.kind === 'awaiting').flatMap((group) => group.items).filter((item) => !arrived(item));
   const landed = items.filter(arrived).sort((a, b) => (b.deliveredAt ?? '').localeCompare(a.deliveredAt ?? ''));
   const uncollected = landed.some((item) => !item.inCollection);
+  const openWork = (services?.requests ?? []).filter((row) => requestIsOpen(row.request));
+  const doneWork = (services?.requests ?? []).filter((row) => !requestIsOpen(row.request)).slice(0, 5);
+  const quotes = services?.quotes ?? [];
+  const hasServices = openWork.length + doneWork.length + quotes.length > 0;
+  const serviceSection = hasServices && (
+    <section className="purch__section">
+      <h2 className="purch__h">✈️ Shipping & services <span className="faint">parcels with forwarders, work with artists</span></h2>
+      <div className="stack" style={{ gap: 10 }}>
+        {openWork.map((row) => (
+          <RequestRowCard key={row.request.id} request={row.request} due={row.due} side="customer" actions={row.actions}
+            to={`/services/requests/${row.request.kind}/${row.request.ownerId}/${row.request.id}`} />
+        ))}
+        {quotes.map((row) => (
+          <QuoteRowCard key={row.quote.id} quote={row.quote} usable={row.usable} side="customer"
+            to={`/services/quotes/${row.quote.kind}/${row.quote.ownerId}/${row.quote.id}`} />
+        ))}
+        {doneWork.length > 0 && (
+          <details>
+            <summary className="faint">Finished · {doneWork.length}</summary>
+            <div className="stack" style={{ gap: 10, marginTop: 10 }}>
+              {doneWork.map((row) => (
+                <RequestRowCard key={row.request.id} request={row.request} due={row.due} side="customer" actions={row.actions}
+                  to={`/services/requests/${row.request.kind}/${row.request.ownerId}/${row.request.id}`} />
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+    </section>
+  );
 
   return (
     <main className="page">
@@ -112,6 +151,8 @@ export function PurchasesPage() {
       {error && <ErrorNotice message={error} />}
       {!groups ? (
         <Loading />
+      ) : groups.length === 0 && hasServices ? (
+        <div className="stack purch">{serviceSection}</div>
       ) : groups.length === 0 ? (
         <EmptyState icon="🛍️" title="No purchases yet">
           Orders you pay for or book show up here.{' '}
@@ -162,6 +203,8 @@ export function PurchasesPage() {
               </>
             )}
           </section>
+
+          {serviceSection}
 
           {boxes.length > 0 && (
             <section className="purch__section">

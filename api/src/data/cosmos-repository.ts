@@ -1,5 +1,5 @@
 import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
-import type { ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
+import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
@@ -1252,6 +1252,27 @@ export class CosmosRepository implements Repository {
       .items.query<ServiceRequest>({
         query: "SELECT TOP 100 * FROM c WHERE c.type = 'request' AND c.assigneeId = @id ORDER BY c.updatedAt DESC",
         parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listServiceQuotesFor(customerId: string): Promise<CustomQuote[]> {
+    // Cross-partition, bounded by what one person asks for: each expires within three months.
+    const { resources } = await this.container('serviceWork')
+      .items.query<CustomQuote>({
+        query: "SELECT * FROM c WHERE c.type = 'quote' AND c.customerId = @id ORDER BY c.createdAt DESC",
+        parameters: [{ name: '@id', value: customerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listExpiredServiceQuotes(nowIso: string, limit: number): Promise<CustomQuote[]> {
+    const { resources } = await this.container('serviceWork')
+      .items.query<CustomQuote>({
+        query: "SELECT TOP @limit * FROM c WHERE c.type = 'quote' AND c.expiresAt <= @now",
+        parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
       })
       .fetchAll();
     return resources;

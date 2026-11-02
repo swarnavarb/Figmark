@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { InsurancePlan } from '@shared/models';
 import { FREIGHT_MODE_LABELS, insuranceQuote, laneLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
 import {
-  BASIS_LABELS, answerFor, checkAnswers, estimate, fromPriceMinor, laneFromMinor, planIsFree, volumetricLabel, warehousesOf,
+  BASIS_LABELS, BATTERY_RULE_LABELS, answerFor, batteryRuleOf, checkAnswers, estimate, fromPriceMinor, laneFromMinor, planIsFree,
+  volumetricLabel, warehousesOf,
   type AnswerValue, type Answers, type Dimensions, type ItemRow,
 } from '@shared/service-work';
-import { ApiRequestError, api, type StorePageView } from '../api';
+import { ApiRequestError, api, type QuoteView, type StorePageView } from '../api';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatMoney } from '../format';
 import { StoreMark, accentStyle } from '../components/StoreKit';
-import { EstimateBox, FormFields, InfoRows, PriceOptions, PriceRows, StandingChips, WarehouseCards } from '../components/ServiceWorkKit';
+import { EstimateBox, FormFields, InfoRows, PriceOptions, PriceRows, QuoteAskSheet, StandingChips, WarehouseCards, expiresIn } from '../components/ServiceWorkKit';
 import { PageLoading } from '../components/Feedback';
 import { loaders } from '../pageLoaders';
 import '../styles/ServiceDetailPage.css';
@@ -30,6 +31,7 @@ export function ServiceDetailPage() {
   const [data, setData] = useState<StorePageView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     if (kind !== 'forwarder' && kind !== 'artist') return;
@@ -63,7 +65,7 @@ export function ServiceDetailPage() {
     ...(lane ? [
       ...(lane.volumetric ? [{ label: 'Volumetric', value: `${volumetricLabel(lane.volumetric)}${lane.volumetric.note ? `\n${lane.volumetric.note}` : ''}` }] : []),
       ...(lane.minChargeKg > 0 ? [{ label: 'Minimum', value: `${lane.minChargeKg} kg billed` }] : []),
-      { label: 'Batteries', value: lane.batteryAllowed === false ? 'Not carried' : 'Carried — declare them' },
+      { label: 'Batteries', value: BATTERY_RULE_LABELS[batteryRuleOf(lane)] },
       { label: 'Customs', value: lane.customsIncluded ? 'Cleared by the forwarder' : 'Duty paid at actuals' },
     ] : []),
     ...(offering?.includes ? [{ label: 'Included', value: offering.includes }] : []),
@@ -87,6 +89,9 @@ export function ServiceDetailPage() {
             : <>{offering!.description}{offering!.turnaroundDays ? ` · about ${offering!.turnaroundDays} days` : ''}</>}
           {from > 0 && <> · <span className="sd-head__from">from <b>{formatMoney(from)}</b>{lane ? '/kg' : ''}</span></>}
         </p>
+        {lane && (
+          <p className="sd-arrival"><span aria-hidden="true">⚖️</span> <span><b>No quote needed — pay on arrival.</b> Book, send your parcel, and pay once it is weighed in {lane.destinationCountry}. The bill comes with a photo of the scale.</span></p>
+        )}
       </header>
 
       <div className="sd-main">
@@ -108,6 +113,7 @@ export function ServiceDetailPage() {
           <section className="sd-sec">
             <h2>Cover</h2>
             <PriceRows rows={store.insurance.map((plan) => ({ id: plan.id, name: plan.name, note: coverLine(plan), price: planPrice(plan) }))} />
+            {store.insurance.some((plan) => !planIsFree(plan)) && <p className="faint sd-note">{coverTiming(store.coverPayment)}</p>}
           </section>
         )}
 
@@ -134,13 +140,17 @@ export function ServiceDetailPage() {
         ) : closed ? (
           <span className="btn btn--ghost sd-fab__btn" aria-disabled="true">Not taking new work right now</span>
         ) : (
-          <button type="button" className="btn sd-fab__btn" onClick={() => setOpen(true)}>
-            <Icon name={lane ? 'plane' : 'spark'} size={15} /> {lane ? `Ship with ${store.name}` : 'Request this service'}
-          </button>
+          <span className="sd-fab__pair">
+            <button type="button" className="btn sd-fab__btn" onClick={() => setOpen(true)}>
+              <Icon name={lane ? 'plane' : 'spark'} size={15} /> {lane ? `Ship with ${store.name}` : 'Request this service'}
+            </button>
+            {lane && <button type="button" className="btn btn--ghost sd-fab__alt" onClick={() => setAsking(true)}>Custom quote</button>}
+          </span>
         )}
       </div>
 
       {open && <RequestSheet data={data} laneId={lane?.id ?? null} offeringId={offering?.id ?? null} onClose={() => setOpen(false)} />}
+      {asking && <QuoteAskSheet store={store} lane={lane ?? null} onClose={() => setAsking(false)} />}
     </main>
   );
 }
@@ -151,17 +161,27 @@ function planPrice(plan: InsurancePlan): string {
   return plan.minPremiumMinor ? `${percent}, min ${formatMoney(plan.minPremiumMinor)}` : percent;
 }
 
+function coverTiming(when: 'upfront' | 'with_bill'): string {
+  return when === 'upfront' ? 'Paid cover is paid upfront, before you send the parcel.' : 'Paid cover is added to your bill on arrival.';
+}
+
 function coverLine(plan: InsurancePlan): string {
   return `Covers ${plan.coverPercent}%${plan.maxCoverMinor ? `, up to ${formatMoney(plan.maxCoverMinor)}` : ''}`;
 }
 
 /** The order form, over the page: where to send it, the store's questions, extras and cover, and the estimate. */
-function RequestSheet({ data, laneId, offeringId, onClose }: {
-  data: StorePageView; laneId: string | null; offeringId: string | null; onClose: () => void;
+function RequestSheet({ data, laneId, offeringId, quote, onClose }: {
+  data: StorePageView; laneId: string | null; offeringId: string | null; quote?: QuoteView | null; onClose: () => void;
 }) {
   const navigate = useNavigate();
   const { store } = data;
-  const lane = store.lanes.find((row) => row.id === laneId) ?? null;
+  const listed = store.lanes.find((row) => row.id === laneId) ?? null;
+  // On a custom quote, the quote's rate stands in for the route's.
+  const offer = quote?.quote.offer ?? null;
+  const lane = offer
+    ? { ...(listed ?? {}), ratePerKgMinor: offer.ratePerKgMinor, minChargeKg: offer.minChargeKg, volumetric: listed?.volumetric ?? null, products: [] }
+    : listed;
+  const forwarder = store.kind === 'forwarder';
   const offering = store.offerings.find((row) => row.id === offeringId) ?? null;
   const [answers, setAnswers] = useState<Answers>({});
   const [optionId, setOptionId] = useState<string | null>(null);
@@ -170,10 +190,10 @@ function RequestSheet({ data, laneId, offeringId, onClose }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const external = Boolean(store.formUrl);
-  const products = (lane?.products ?? offering?.products) ?? [];
+  const products = (offer ? [] : (listed?.products ?? offering?.products)) ?? [];
   const option = products.find((row) => row.id === optionId) ?? null;
   const plan = store.insurance.find((row) => row.id === planId) ?? null;
-  const warehouses = lane ? warehousesOf(lane, store.warehouse) : [];
+  const warehouses = quote ? quote.sendTo : listed ? warehousesOf(listed, store.warehouse) : [];
   const form = external ? [] : store.form;
 
   useEffect(() => {
@@ -202,7 +222,7 @@ function RequestSheet({ data, laneId, offeringId, onClose }: {
     setError(null);
     try {
       const view = await api.submitServiceRequest(store.kind, store.ownerId, {
-        subjectId: (laneId ?? offeringId)!, optionId, planId, answers, addonIds, external,
+        subjectId: (laneId ?? offeringId ?? '')!, optionId, planId, answers, addonIds, external, quoteId: quote?.quote.id ?? null,
       });
       navigate(`/services/requests/${store.kind}/${store.ownerId}/${view.request.id}?sent=1`);
     } catch (err) {
@@ -213,10 +233,13 @@ function RequestSheet({ data, laneId, offeringId, onClose }: {
 
   const set = (id: string, value: AnswerValue) => setAnswers((current) => ({ ...current, [id]: value }));
   const toggle = (id: string) => setAddonIds((current) => (current.includes(id) ? current.filter((row) => row !== id) : [...current, id]));
-  const note = figures.chargeable?.by === 'volumetric'
-    ? `Billed on volumetric weight: ${figures.chargeable.volumetricKg} kg.`
-    : figures.chargeable?.by === 'minimum' ? `Billed at the route minimum of ${lane?.minChargeKg} kg.`
-      : 'The team confirms the final price in their quote.';
+  const paidCover = Boolean(plan && !planIsFree(plan) && figures.premiumMinor > 0);
+  const note = [
+    figures.chargeable?.by === 'volumetric' ? `Billed on volumetric weight: ${figures.chargeable.volumetricKg} kg.`
+      : figures.chargeable?.by === 'minimum' ? `Billed at the minimum of ${lane?.minChargeKg} kg.` : '',
+    forwarder ? 'Nothing to pay now: the bill comes once it is weighed at the destination.' : 'The team confirms the final price in their quote.',
+    forwarder && paidCover ? (store.coverPayment === 'upfront' ? `Cover (${formatMoney(figures.premiumMinor)}) is paid upfront, before you send it.` : 'Cover is added to that bill.') : '',
+  ].filter(Boolean).join(' ');
   let step = 0;
 
   return (
@@ -226,7 +249,7 @@ function RequestSheet({ data, laneId, offeringId, onClose }: {
         <div className="sd-sheet__head">
           <span>
             <span className="faint">{store.name}</span>
-            <h2>{lane ? laneLabel(lane) : offering?.name}</h2>
+            <h2>{quote ? `${laneLabel(quote.quote.route)} · your quote` : listed ? laneLabel(listed) : offering?.name}</h2>
           </span>
           <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button>
         </div>
@@ -292,14 +315,117 @@ function RequestSheet({ data, laneId, offeringId, onClose }: {
             </section>
           )}
 
-          {!external && <EstimateBox estimate={figures} note={note} />}
+          {!external && <EstimateBox estimate={figures} note={note} totalLabel={forwarder ? 'About' : 'Estimate'} />}
           {error && <ErrorNotice message={error} />}
         </div>
         <div className="sd-sheet__foot">
           <span className="faint">{gaps.length > 0 ? `${gaps.length} required ${gaps.length === 1 ? 'answer' : 'answers'} to go` : external ? 'Filled in their form?' : 'Ready to send'}</span>
-          <button type="submit" className="btn" disabled={busy}>{busy ? 'Sending…' : external ? 'Done — send request' : 'Send request'}</button>
+          <button type="submit" className="btn" disabled={busy}>{busy ? 'Sending…' : forwarder ? 'Book this parcel' : external ? 'Done — send request' : 'Send request'}</button>
         </div>
       </form>
     </div>
+  );
+}
+
+/**
+ * A custom quote, as the customer who asked for it sees it: waiting for a
+ * price, or the rate they can ship on until it expires - and the button to
+ * book a parcel on it. Expired quotes are deleted, so the page says so.
+ */
+export function ServiceQuotePage() {
+  const { kind, ownerId, id } = useParams<{ kind: string; ownerId: string; id: string }>();
+  const [params] = useSearchParams();
+  const [view, setView] = useState<QuoteView | null>(null);
+  const [page, setPage] = useState<StorePageView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
+
+  const load = useCallback(async () => {
+    try {
+      const next = await api.serviceQuote(kind as StoreKind, ownerId ?? '', id ?? '');
+      setView(next);
+      setPage(await api.storePage(next.quote.kind, next.quote.storeSlug));
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load that quote.');
+    }
+  }, [kind, ownerId, id]);
+  useEffect(() => { void load(); }, [load]);
+
+  if (error && !view) return <main className="page"><BackLink to="/purchases" title="Purchases" /><EmptyState icon="◌" title="Not here">{error}</EmptyState></main>;
+  if (!view) return <PageLoading />;
+  const { quote, store } = view;
+  const offer = quote.offer;
+  async function withdraw() {
+    setBusy(true);
+    try {
+      await api.actOnQuote(quote.kind, quote.ownerId, quote.id, { action: 'withdraw' });
+      navigate('/purchases');
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not go through.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="page sd-page" style={accentStyle(store.accent ?? 'aqua')}>
+      <BackLink to="/purchases">Purchases</BackLink>
+      {params.get('sent') && <p className="sd-arrival"><Icon name="check" size={15} /> <span>Sent to everyone on {store.name}’s team. You will be told when they price it.</span></p>}
+      <header className="sd-head">
+        <Link to={`/services/${quote.kind}/${store.slug}`} className="sd-head__store">
+          <StoreMark name={store.name} logoUrl={store.logoUrl} accent={store.accent ?? 'aqua'} size={32} />
+          <b>{store.name}</b>
+        </Link>
+        <h1>{laneLabel(quote.route)}</h1>
+        <p className="sd-head__line">
+          {FREIGHT_MODE_LABELS[quote.route.mode as FreightMode]?.glyph} {FREIGHT_MODE_LABELS[quote.route.mode as FreightMode]?.label} · Custom quote {quote.number} · {expiresIn(quote)}
+        </p>
+      </header>
+
+      <div className="sd-main">
+        <section className="sd-sec">
+          <h2>{offer ? 'Your rate' : quote.status === 'declined' ? 'They declined this one' : 'Waiting for a price'}</h2>
+          {offer ? (
+            <>
+              <PriceRows rows={[
+                { id: 'rate', name: 'Freight', note: offer.minChargeKg ? `Minimum ${offer.minChargeKg} kg billed` : '', price: `${formatMoney(offer.ratePerKgMinor)}/kg` },
+                { id: 'days', name: 'Transit', note: '', price: offer.transitDaysMax ? `${offer.transitDaysMin}–${offer.transitDaysMax} days` : '—' },
+                { id: 'bat', name: 'Batteries', note: '', price: BATTERY_RULE_LABELS[offer.batteries] },
+                { id: 'exp', name: 'Valid until', note: 'Then it is deleted', price: new Date(quote.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) },
+              ]} />
+              {offer.note && <p className="sd-note">“{offer.note}” — {offer.sentByName}</p>}
+            </>
+          ) : quote.status === 'asked' ? (
+            <p className="faint">The team prices it and sets how long the price stands — up to three months. You are told the moment they reply.</p>
+          ) : null}
+        </section>
+        {view.usable && view.sendTo.length > 0 && (
+          <section className="sd-sec">
+            <h2><Icon name="home" size={16} /> Ship to</h2>
+            <WarehouseCards warehouses={view.sendTo} />
+          </section>
+        )}
+        <section className="sd-sec">
+          <h2>What you asked</h2>
+          <InfoRows rows={[
+            { label: 'Sending', value: quote.ask.what },
+            ...(quote.ask.weightKg ? [{ label: 'About', value: `${quote.ask.weightKg} kg` }] : []),
+            { label: 'Batteries', value: quote.ask.battery === 'none' ? 'None' : quote.ask.battery === 'in_device' ? 'Inside an item' : 'Loose / power bank' },
+            ...(quote.ask.notes ? [{ label: 'Notes', value: quote.ask.notes }] : []),
+          ]} />
+          <button type="button" className="btn btn--quiet btn--sm" disabled={busy} onClick={() => void withdraw()}>Delete this quote</button>
+        </section>
+      </div>
+
+      {view.usable && page && (
+        <div className="sd-fab">
+          <button type="button" className="btn sd-fab__btn" onClick={() => setOpen(true)}>
+            <Icon name="plane" size={15} /> Ship a parcel on this quote
+          </button>
+        </div>
+      )}
+      {open && page && <RequestSheet data={page} laneId={quote.route.laneId} offeringId={null} quote={view} onClose={() => setOpen(false)} />}
+    </main>
   );
 }

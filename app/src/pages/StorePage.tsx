@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, laneLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
-import { fromPriceMinor, laneFromMinor } from '@shared/service-work';
+import { batteryRuleOf, fromPriceMinor, laneFromMinor } from '@shared/service-work';
 import { ApiRequestError, api, type StorePageView } from '../api';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
 import { PortfolioGrid, StatusPill, StoreCover, StoreMark, accentStyle } from '../components/StoreKit';
-import { StandingChips, Stars, StoreChannel } from '../components/ServiceWorkKit';
+import { QuoteAskSheet, StandingChips, Stars, StoreChannel } from '../components/ServiceWorkKit';
 import { PageLoading } from '../components/Feedback';
 import { loaders } from '../pageLoaders';
 import '../styles/StorePage.css';
@@ -36,6 +36,7 @@ export function StorePage() {
   const [data, setData] = useState<StorePageView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<string>('all');
+  const [asking, setAsking] = useState(false);
   const [following, setFollowing] = useState(false);
   const [followers, setFollowers] = useState(0);
 
@@ -98,6 +99,7 @@ export function StorePage() {
               {store.registered && <span className="sp-chip sp-chip--ok"><Icon name="check" size={12} /> Registered business</span>}
               {freeCover && <span className="sp-chip sp-chip--ok">🛡️ Free cover</span>}
               {door && <span className="sp-chip">🚚 Door-to-door</span>}
+              {store.kind === 'forwarder' && <span className="sp-chip">⚖️ Pay on arrival</span>}
               {store.status && store.status !== 'approved' && <StatusPill status={store.status} />}
             </div>
           </div>
@@ -155,9 +157,10 @@ export function StorePage() {
                           <span className="sp-row__body">
                             <b>{laneLabel(lane)}</b>
                             <span className="faint">{how?.label} · {transitLabel(lane)}{lane.note ? ` · ${lane.note}` : ''}</span>
-                            {(lane.batteryAllowed === false || !lane.customsIncluded) && (
+                            {(batteryRuleOf(lane) !== 'all' || !lane.customsIncluded) && (
                               <span className="sp-row__tags">
-                                {lane.batteryAllowed === false && <span>No batteries</span>}
+                                {batteryRuleOf(lane) === 'none' && <span>No batteries</span>}
+                                {batteryRuleOf(lane) === 'in_device' && <span>Batteries in items only</span>}
                                 {!lane.customsIncluded && <span>Duty at actuals</span>}
                               </span>
                             )}
@@ -169,7 +172,16 @@ export function StorePage() {
                     })}
                   </div>
                 )}
+                {!isTeam && (
+                  <div className="sp-askq">
+                    <span><b>Route not listed, or shipping a lot?</b><span className="faint">Get your own rate — no quote is needed for the routes above.</span></span>
+                    {user
+                      ? <button type="button" className="btn btn--ghost btn--sm" onClick={() => setAsking(true)}>Ask for a custom quote</button>
+                      : <Link to="/" className="btn btn--ghost btn--sm">Sign in to ask</Link>}
+                  </div>
+                )}
               </section>
+              {asking && <QuoteAskSheet store={store} lane={null} onClose={() => setAsking(false)} />}
             </>
           ) : (
             <>

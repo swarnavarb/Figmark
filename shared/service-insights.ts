@@ -16,7 +16,8 @@ export interface InsightRow { label: string; count: number; minor: number }
 export interface StoreInsights {
   totals: { requests: number; quoted: number; accepted: number; paid: number; delivered: number; declined: number; cancelled: number; links: number };
   money: { confirmedMinor: number; thisMonthMinor: number; lastMonthMinor: number; averageOrderMinor: number };
-  speed: { quoteHours: number | null; deliveryDays: number | null };
+  /** Quote: request to first quote. Pay on arrival: bill sent to payment confirmed. */
+  speed: { quoteHours: number | null; payHours: number | null; deliveryDays: number | null };
   weeks: { start: string; requests: number; minor: number }[];
   subjects: InsightRow[];
   products: InsightRow[];
@@ -30,8 +31,9 @@ export interface StoreInsights {
 const DAY = 86_400_000;
 const WEEKS = 12;
 
-const reachedQuote = (row: ServiceRequest) => row.quoteMinor !== null || row.origin === 'link';
-const reachedAccept = (row: ServiceRequest) => ['accepted', 'paid', 'received', 'in_progress', 'shipped', 'delivered'].includes(row.status);
+// A parcel booked on a listed route has its price already: it counts as quoted.
+const reachedQuote = (row: ServiceRequest) => row.quoteMinor !== null || row.origin === 'link' || row.billing === 'arrival';
+const reachedAccept = (row: ServiceRequest) => ['accepted', 'booked', 'sent_in', 'paid', 'received', 'in_progress', 'billed', 'shipped', 'delivered'].includes(row.status);
 const paidMinor = (row: ServiceRequest) => (row.payment?.confirmedAt ? (row.payment.amountMinor || requestDueMinor(row)) : 0);
 
 /** Monday of the week a moment falls in, as a date. */
@@ -68,6 +70,7 @@ export function insightsOf(rows: readonly ServiceRequest[], now = Date.now()): S
   const people = new Map<string, { name: string; handle: string | null; count: number; minor: number; first: number }>();
   const stars: [number, number, number, number, number] = [0, 0, 0, 0, 0];
   const quoteHours: number[] = [];
+  const payHours: number[] = [];
   const deliveryDays: number[] = [];
   let confirmed = 0; let thisMonth = 0; let lastMonth = 0; let paidCount = 0; let kg = 0;
 
@@ -110,7 +113,9 @@ export function insightsOf(rows: readonly ServiceRequest[], now = Date.now()): S
     }
 
     // How long the team took to quote, and to finish.
-    if (row.origin === 'form') {
+    if (row.billing === 'arrival') {
+      if (row.bill && row.payment?.confirmedAt) payHours.push((Date.parse(row.payment.confirmedAt) - Date.parse(row.bill.at)) / 3_600_000);
+    } else if (row.origin === 'form') {
       const quoted = row.history.find((event) => event.status === 'quoted' || event.note.startsWith('Quoted'));
       if (quoted) quoteHours.push((Date.parse(quoted.at) - created) / 3_600_000);
     }
@@ -135,7 +140,7 @@ export function insightsOf(rows: readonly ServiceRequest[], now = Date.now()): S
       cancelled: rows.filter((row) => row.status === 'cancelled').length,
     },
     money: { confirmedMinor: confirmed, thisMonthMinor: thisMonth, lastMonthMinor: lastMonth, averageOrderMinor: paidCount ? Math.round(confirmed / paidCount) : 0 },
-    speed: { quoteHours: round(mean(quoteHours)), deliveryDays: round(mean(deliveryDays)) },
+    speed: { quoteHours: round(mean(quoteHours)), payHours: round(mean(payHours)), deliveryDays: round(mean(deliveryDays)) },
     weeks,
     subjects: top(subjects, 6),
     products: top(products, 6),

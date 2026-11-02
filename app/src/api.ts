@@ -23,7 +23,7 @@ import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
-import type { ChannelMessage, RequestAction, ServiceRequest, Standing } from '@shared/service-work';
+import type { ChannelMessage, CustomQuote, Dimensions, RequestAction, ServiceRequest, Standing } from '@shared/service-work';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CardButton, SerialButton } from '@shared/buttons';
 import type { LevelTag, MergedRating, StoreLevel } from '@shared/storefront';
@@ -2415,7 +2415,7 @@ export interface RouteMatch {
   store: SearchStore;
   lane: {
     id: string; label: string; originCountry: string; destinationCountry: string; mode: FreightLane['mode'];
-    days: string; fromMinor: number; batteryAllowed: boolean; customsIncluded: boolean; note: string;
+    days: string; fromMinor: number; batteries: 'all' | 'in_device' | 'none'; customsIncluded: boolean; note: string;
   };
   freeCover: boolean;
   door: boolean;
@@ -2521,7 +2521,7 @@ export interface CrewLotView {
 }
 
 /** Everything a store form edits. */
-export type StoreDraft = Partial<StoreCore> & Partial<Pick<ForwarderProfile, 'lanes' | 'insurance' | 'warehouse' | 'autoAccept' | 'claimedMonthlyCapacityKg'>>
+export type StoreDraft = Partial<StoreCore> & Partial<Pick<ForwarderProfile, 'lanes' | 'insurance' | 'warehouse' | 'autoAccept' | 'claimedMonthlyCapacityKg' | 'coverPayment'>>
   & Partial<Pick<ArtistProfile, 'specialties' | 'offerings' | 'portfolio' | 'acceptingWork' | 'studioAddress'>>;
 
 export interface StoreConsole {
@@ -2580,9 +2580,22 @@ export interface RequestRow {
   due: number;
 }
 
+export interface QuoteRow {
+  quote: CustomQuote;
+  usable: boolean;
+}
+
+export interface QuoteView extends QuoteRow {
+  side: 'store' | 'customer';
+  sendTo: StoreWarehouse[];
+  store: { name: string; slug: string; accent: string | null; logoUrl: string | null };
+}
+
 export interface RequestView extends RequestRow {
   side: 'store' | 'customer';
   payTo: SellerPaymentDetails | null;
+  /** Paid cover owed before the parcel is sent, when the store asks for it upfront. */
+  coverDue: number;
   /** Where to send the goods: every origin warehouse on the route, or the studio once paid. */
   sendTo: StoreWarehouse[];
 }
@@ -2618,6 +2631,8 @@ export interface PublicStore {
   insurance: InsurancePlan[];
   warehouse: StoreWarehouse | null;
   autoAccept: boolean;
+  /** When paid cover is paid: before the parcel is sent, or on the bill. */
+  coverPayment: 'upfront' | 'with_bill';
   capacityKg: number | null;
   offerings: ArtistOffering[];
   portfolio: PortfolioPiece[];
@@ -2909,17 +2924,17 @@ export const api = {
     request<StorePageView>(`/service-store/${kind}/${encodeURIComponent(slug)}`),
   submitServiceRequest: (kind: StoreKind, ownerId: string, body: {
     subjectId: string; optionId: string | null; planId: string | null; answers: Record<string, unknown>;
-    addonIds?: string[]; external?: boolean;
+    addonIds?: string[]; external?: boolean; quoteId?: string | null;
   }) =>
     post<RequestView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/requests`, body),
   storeInsights: (kind: StoreKind, ownerId: string) =>
     request<StoreInsightsView>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/insights`),
-  searchRoutes: (filters: { from?: string; to?: string; mode?: string; battery?: boolean; freeCover?: boolean; door?: boolean }) => {
+  searchRoutes: (filters: { from?: string; to?: string; mode?: string; battery?: 'in_device' | 'loose' | null; freeCover?: boolean; door?: boolean }) => {
     const query = new URLSearchParams();
     if (filters.from) query.set('from', filters.from);
     if (filters.to) query.set('to', filters.to);
     if (filters.mode) query.set('mode', filters.mode);
-    if (filters.battery) query.set('battery', '1');
+    if (filters.battery) query.set('battery', filters.battery);
     if (filters.freeCover) query.set('freeCover', '1');
     if (filters.door) query.set('door', '1');
     return request<{ routes: RouteMatch[]; countries: { from: string[]; to: string[] } }>(`/service-search/forwarder?${query}`);
@@ -2929,12 +2944,26 @@ export const api = {
   assignedRequests: () => request<{ requests: RequestRow[] }>('/me/assigned-requests'),
   myServiceStores: () => request<{ stores: ServiceStoreRole[] }>('/me/service-stores'),
   myServiceRequests: () => request<{ requests: RequestRow[] }>('/me/service-requests'),
+  myServiceQuotes: () => request<{ quotes: QuoteRow[] }>('/me/service-quotes'),
+  storeQuotes: (kind: StoreKind, ownerId: string) =>
+    send<{ quotes: QuoteRow[] }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/quotes`),
+  askQuote: (kind: StoreKind, ownerId: string, body: {
+    laneId?: string | null; originCountry?: string; destinationCountry?: string; mode?: string;
+    what: string; weightKg?: number | null; battery: 'none' | 'in_device' | 'loose'; notes?: string;
+  }) => post<QuoteView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/quotes`, body),
+  serviceQuote: (kind: StoreKind, ownerId: string, id: string) =>
+    send<QuoteView>(`/service-quotes/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}`),
+  actOnQuote: (kind: StoreKind, ownerId: string, id: string, body: {
+    action: 'offer' | 'decline' | 'withdraw'; ratePerKgMinor?: number; minChargeKg?: number; transitDaysMin?: number; transitDaysMax?: number;
+    batteries?: 'all' | 'in_device' | 'none'; note?: string; expiresAt?: string; warehouses?: StoreWarehouse[];
+  }) => post<QuoteView & { deleted?: boolean }>(`/service-quotes/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}/act`, body),
   serviceRequest: (kind: StoreKind, ownerId: string, id: string) =>
     send<RequestView & { store: { name: string; slug: string; accent: string | null; logoUrl: string | null }; team: TeamRow[] }>(
       `/service-requests/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}`),
   actOnServiceRequest: (kind: StoreKind, ownerId: string, id: string, body: {
     action: RequestAction; quoteMinor?: number; days?: number; note?: string; reference?: string; amountMinor?: number;
     courier?: string; awb?: string; stars?: number; text?: string; assigneeId?: string | null;
+    weightKg?: number; box?: Dimensions | null; photoUrls?: string[]; added?: { label: string; minor: number }[];
   }) => post<RequestView & { team: TeamRow[] }>(`/service-requests/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}/act`, body),
   storeRequests: (kind: StoreKind, ownerId: string) =>
     send<{ requests: RequestRow[]; team: TeamRow[] }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/requests`),

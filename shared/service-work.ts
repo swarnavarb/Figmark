@@ -1,6 +1,6 @@
 import type {
-  ArtistOffering, FreightLane, InfoRow, InsurancePlan, PriceBasis, PriceOption, ServiceAddon, ServiceFieldKey, ServiceFormField,
-  StoreWarehouse, VolumetricRule,
+  ArtistOffering, BatteryContent, BatteryRule, FreightLane, InfoRow, InsurancePlan, PriceBasis, PriceOption, ServiceAddon,
+  ServiceFieldKey, ServiceFormField, StoreWarehouse, VolumetricRule,
 } from './models.js';
 import type { StoreKind } from './service-stores.js';
 
@@ -73,7 +73,7 @@ export function defaultForm(kind: StoreKind): ServiceFormField[] {
       field('items', 'What is in the parcel', 'items', true, 'One line per item, with how many and what each is worth.'),
       field('weight', 'Approximate weight (kg)', 'number', true),
       field('dimensions', 'Box size', 'dimensions', false, 'Length × width × height in cm. Used when a parcel is charged by size.'),
-      field('battery', 'Anything with a battery?', 'yesno', true, 'Light-up bases, figures with LEDs, power banks.'),
+      { ...field('battery', 'Batteries', 'choice', true, 'Light-up bases and figures with LEDs have one inside. Power banks and spare cells are loose.'), options: [...BATTERY_CHOICES] },
       field('declared_value', 'Declared value (₹)', 'number', false, 'What the contents are worth, for customs and cover.'),
       field('delivery', 'Deliver to', 'address', true),
       field('notes', 'Anything else', 'longtext', false),
@@ -89,13 +89,50 @@ export function defaultForm(kind: StoreKind): ServiceFormField[] {
   ];
 }
 
+/* ── Batteries ───────────────────────────────────────────────────────── */
+
+/** The answers on the form's battery question, in `BatteryContent` order. */
+export const BATTERY_CHOICES = ['No battery', 'Battery inside an item', 'Loose battery or power bank'] as const;
+
+export const BATTERY_RULE_LABELS: Record<BatteryRule, string> = {
+  all: 'All batteries',
+  in_device: 'Only batteries in devices',
+  none: 'No batteries',
+};
+
+/** A route's battery rule, reading routes saved before there were categories. */
+export function batteryRuleOf(lane: Pick<FreightLane, 'batteries' | 'batteryAllowed'>): BatteryRule {
+  if (lane.batteries === 'all' || lane.batteries === 'in_device' || lane.batteries === 'none') return lane.batteries;
+  return lane.batteryAllowed === false ? 'none' : 'all';
+}
+
+/** What the form's battery answer means. A yes from an older yes/no form is read as loose, the strict case. */
+export function batteryContentOf(answer: unknown): BatteryContent {
+  if (answer === true) return 'loose';
+  if (answer === BATTERY_CHOICES[1]) return 'in_device';
+  if (answer === BATTERY_CHOICES[2]) return 'loose';
+  return 'none';
+}
+
+/** Whether a route takes a parcel holding this. */
+export function batteryFits(rule: BatteryRule, content: BatteryContent): boolean {
+  if (content === 'none') return true;
+  if (rule === 'none') return false;
+  return rule === 'all' || content === 'in_device';
+}
+
 /** The store's form, or the default when it has never changed it. */
 export function formOf(kind: StoreKind, form: ServiceFormField[] | null | undefined): ServiceFormField[] {
   if (!form || form.length === 0) return defaultForm(kind);
   // A locked field taken out by an older client is put back where the default has it.
   const present = new Set(form.map((row) => row.key).filter(Boolean));
   const missing = defaultForm(kind).filter((row) => row.key && LOCKED_FIELDS[kind].includes(row.key) && !present.has(row.key));
-  return [...form, ...missing];
+  // The battery question became three choices; a form saved as yes / no asks the new way.
+  const batteryField = defaultForm(kind).find((row) => row.key === 'battery');
+  const upgraded = form.map((row) => (row.key === 'battery' && batteryField && row.type !== 'choice'
+    ? { ...batteryField, ...(row.help ? { help: row.help } : {}), label: row.label === 'Anything with a battery?' ? batteryField.label : row.label }
+    : row));
+  return [...upgraded, ...missing];
 }
 
 /** One line of the items list. */
@@ -232,7 +269,7 @@ export function readForm(kind: StoreKind, input: unknown): ServiceFormField[] | 
     if (seen.has(id)) continue;
     seen.add(id);
     const type = base ? base.type : ((CUSTOM_FIELD_TYPES as readonly string[]).includes(raw.type as string) ? raw.type! : 'text');
-    const options = type === 'choice'
+    const options = base?.options ? [...base.options] : type === 'choice'
       ? [...new Set((Array.isArray(raw.options) ? raw.options : []).map((option) => str(option, 60)).filter(Boolean))].slice(0, 12)
       : undefined;
     const locked = key ? LOCKED_FIELDS[kind].includes(key) : false;
@@ -456,12 +493,30 @@ export function volumetricLabel(rule: VolumetricRule): string {
 /* ── A request, start to finish ──────────────────────────────────────── */
 
 export const REQUEST_STATUSES = [
-  'submitted', 'quoted', 'accepted', 'paid', 'received', 'in_progress', 'shipped', 'delivered', 'declined', 'cancelled',
+  'submitted', 'quoted', 'accepted', 'booked', 'sent_in', 'paid', 'received', 'in_progress', 'billed', 'shipped', 'delivered', 'declined', 'cancelled',
 ] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
+/**
+ * How a request is paid for.
+ *
+ * `quote` - the store prices it first and the customer pays before the work:
+ * every artist commission and payment link, and forwarder requests sent before
+ * pay-on-arrival existed.
+ *
+ * `arrival` - a forwarder's listed (or custom-quoted) route: no quote, the
+ * customer sends the parcel to the origin warehouse, the team weighs it when it
+ * lands at the destination, sends the bill with a photo of the scale, and
+ * delivers once paid.
+ */
+export type RequestBilling = 'quote' | 'arrival';
+
 /** The steps a request moves through, for the progress strip. */
 export const REQUEST_FLOW: readonly RequestStatus[] = ['submitted', 'quoted', 'accepted', 'paid', 'received', 'in_progress', 'shipped', 'delivered'];
+export const ARRIVAL_FLOW: readonly RequestStatus[] = ['booked', 'sent_in', 'received', 'in_progress', 'billed', 'paid', 'shipped', 'delivered'];
+
+export const flowOf = (request: Pick<ServiceRequest, 'billing'>): readonly RequestStatus[] =>
+  request.billing === 'arrival' ? ARRIVAL_FLOW : REQUEST_FLOW;
 
 type Tone = 'ok' | 'warn' | 'quiet' | 'accent' | 'danger';
 
@@ -470,9 +525,12 @@ export const REQUEST_LABELS: Record<StoreKind, Record<RequestStatus, { label: st
     submitted: { label: 'New request', tone: 'warn' },
     quoted: { label: 'Quote sent', tone: 'accent' },
     accepted: { label: 'Waiting for payment', tone: 'warn' },
+    booked: { label: 'Waiting for the parcel', tone: 'warn' },
+    sent_in: { label: 'On its way to the warehouse', tone: 'accent' },
     paid: { label: 'Paid — send the parcel', tone: 'accent' },
     received: { label: 'At the warehouse', tone: 'accent' },
     in_progress: { label: 'In transit', tone: 'accent' },
+    billed: { label: 'Arrived — bill sent', tone: 'warn' },
     shipped: { label: 'Out for delivery', tone: 'ok' },
     delivered: { label: 'Delivered', tone: 'ok' },
     declined: { label: 'Declined', tone: 'danger' },
@@ -482,9 +540,12 @@ export const REQUEST_LABELS: Record<StoreKind, Record<RequestStatus, { label: st
     submitted: { label: 'New request', tone: 'warn' },
     quoted: { label: 'Quote sent', tone: 'accent' },
     accepted: { label: 'Waiting for payment', tone: 'warn' },
+    booked: { label: 'Booked', tone: 'warn' },
+    sent_in: { label: 'On its way to the studio', tone: 'accent' },
     paid: { label: 'Paid — send the piece', tone: 'accent' },
     received: { label: 'Piece received', tone: 'accent' },
     in_progress: { label: 'In the studio', tone: 'accent' },
+    billed: { label: 'Bill sent', tone: 'warn' },
     shipped: { label: 'Shipped back', tone: 'ok' },
     delivered: { label: 'Complete', tone: 'ok' },
     declined: { label: 'Declined', tone: 'danger' },
@@ -492,11 +553,44 @@ export const REQUEST_LABELS: Record<StoreKind, Record<RequestStatus, { label: st
   },
 };
 
+/** A request's label, with the pay-on-arrival words where they differ. */
+export function statusLabel(request: Pick<ServiceRequest, 'kind' | 'status' | 'billing'>): { label: string; tone: Tone } {
+  if (request.billing === 'arrival') {
+    if (request.status === 'paid') return { label: 'Paid — delivering soon', tone: 'accent' };
+    if (request.status === 'received') return { label: 'At the origin warehouse', tone: 'accent' };
+  }
+  return REQUEST_LABELS[request.kind][request.status];
+}
+
 export type RequestAction =
   | 'quote' | 'decline' | 'confirm_payment' | 'receive' | 'start' | 'ship' | 'deliver' | 'assign'
-  | 'accept' | 'pay' | 'cancel' | 'complete' | 'review';
+  | 'accept' | 'pay' | 'cancel' | 'complete' | 'review'
+  | 'send_in' | 'bill' | 'pay_cover' | 'confirm_cover';
 
-export const REQUEST_MOVES: Record<RequestAction, { by: 'store' | 'customer'; from: readonly RequestStatus[] }> = {
+type Moves = Partial<Record<RequestAction, { by: 'store' | 'customer'; from: readonly RequestStatus[] }>>;
+
+const OPEN_ARRIVAL: readonly RequestStatus[] = ['booked', 'sent_in', 'received', 'in_progress', 'billed', 'paid', 'shipped'];
+
+/** Pay on arrival: no quote, the bill comes once the parcel is weighed at the destination. */
+export const ARRIVAL_MOVES: Moves = {
+  send_in: { by: 'customer', from: ['booked'] },
+  receive: { by: 'store', from: ['booked', 'sent_in'] },
+  start: { by: 'store', from: ['received'] },
+  bill: { by: 'store', from: ['received', 'in_progress', 'billed'] },
+  pay: { by: 'customer', from: ['billed'] },
+  confirm_payment: { by: 'store', from: ['billed'] },
+  ship: { by: 'store', from: ['paid'] },
+  deliver: { by: 'store', from: ['shipped'] },
+  complete: { by: 'customer', from: ['shipped'] },
+  review: { by: 'customer', from: ['delivered'] },
+  cancel: { by: 'customer', from: ['booked', 'sent_in'] },
+  decline: { by: 'store', from: ['booked', 'sent_in'] },
+  assign: { by: 'store', from: OPEN_ARRIVAL },
+  pay_cover: { by: 'customer', from: ['booked', 'sent_in', 'received', 'in_progress'] },
+  confirm_cover: { by: 'store', from: ['booked', 'sent_in', 'received', 'in_progress', 'billed'] },
+};
+
+export const REQUEST_MOVES: Moves = {
   quote: { by: 'store', from: ['submitted', 'quoted'] },
   decline: { by: 'store', from: ['submitted', 'quoted'] },
   confirm_payment: { by: 'store', from: ['accepted'] },
@@ -518,6 +612,7 @@ export const ACTION_LABELS: Record<StoreKind, Partial<Record<RequestAction, stri
     quote: 'Send quote', decline: 'Decline', confirm_payment: 'The money arrived', receive: 'Parcel reached the warehouse',
     start: 'Shipped out — in transit', ship: 'Handed to domestic courier', deliver: 'Mark delivered',
     accept: 'Accept quote', pay: 'I have paid', cancel: 'Cancel request', complete: 'I got it', review: 'Rate this',
+    send_in: 'I’ve sent it to the warehouse', bill: 'Send the bill', pay_cover: 'I paid for the cover', confirm_cover: 'Cover payment arrived',
   },
   artist: {
     quote: 'Send quote', decline: 'Decline', confirm_payment: 'The money arrived', receive: 'The piece is here',
@@ -541,6 +636,19 @@ export interface RequestEvent {
   note: string;
   /** The status it moved to, when it moved: what the insights time things by. */
   status?: RequestStatus;
+}
+
+export interface RequestBill {
+  weightKg: number;
+  box: Dimensions | null;
+  chargeableKg: number;
+  by: 'actual' | 'volumetric' | 'minimum';
+  photoUrls: string[];
+  lines: { label: string; minor: number }[];
+  totalMinor: number;
+  note: string;
+  at: string;
+  byName: string;
 }
 
 export interface RequestReview {
@@ -586,6 +694,21 @@ export interface ServiceRequest {
   addons?: { id: string; name: string; priceMinor: number }[];
   /** Details went in on the store's own form (`formUrl`), not here. */
   external?: boolean;
+  /** Absent on requests from before pay-on-arrival: those are `quote`. */
+  billing?: RequestBilling;
+  /** The custom quote it was booked on, if any. */
+  quoteId?: string | null;
+  /** The rate it was booked at, kept so a later price change cannot move the bill. */
+  rate?: { ratePerKgMinor: number; minChargeKg: number; volumetric: VolumetricRule | null } | null;
+  /** Where the parcel goes, as it was when booked. */
+  sendTo?: StoreWarehouse[];
+  /** For paid cover on a pay-on-arrival request: paid before sending, or on the bill. */
+  coverDue?: 'upfront' | 'with_bill' | null;
+  coverPayment?: RequestPayment | null;
+  /** The customer's parcel on its way to the origin warehouse. */
+  inbound?: { courier: string; awb: string; at: string } | null;
+  /** Weighed at the destination: what is owed, and the photo of the scale. */
+  bill?: RequestBill | null;
   estimateMinor: number;
   chargeableKg: number | null;
   quoteMinor: number | null;
@@ -602,22 +725,69 @@ export interface ServiceRequest {
   updatedAt: string;
 }
 
+type ActionInput = Pick<ServiceRequest, 'status' | 'payment' | 'review' | 'customerId' | 'billing' | 'coverDue' | 'coverPayment' | 'plan'>;
+
+/** Paid cover the customer pays before sending the parcel, and has not yet. */
+export function coverOwedMinor(request: Pick<ServiceRequest, 'billing' | 'coverDue' | 'coverPayment' | 'plan'>): number {
+  if (request.billing !== 'arrival' || request.coverDue !== 'upfront' || request.coverPayment) return 0;
+  return request.plan?.premiumMinor ?? 0;
+}
+
 /** The moves one side may make now. */
-export function requestActions(request: Pick<ServiceRequest, 'status' | 'payment' | 'review' | 'customerId'>, side: 'store' | 'customer'): RequestAction[] {
-  return (Object.keys(REQUEST_MOVES) as RequestAction[]).filter((action) => {
-    const move = REQUEST_MOVES[action];
+export function requestActions(request: ActionInput, side: 'store' | 'customer'): RequestAction[] {
+  const table = request.billing === 'arrival' ? ARRIVAL_MOVES : REQUEST_MOVES;
+  return (Object.keys(table) as RequestAction[]).filter((action) => {
+    const move = table[action]!;
     if (move.by !== side || !move.from.includes(request.status)) return false;
     const claimed = Boolean(request.payment && !request.payment.confirmedAt);
     if (action === 'pay') return !claimed;
     if (action === 'confirm_payment') return claimed;
     if (action === 'review') return !request.review;
+    if (action === 'pay_cover') return coverOwedMinor(request) > 0;
+    if (action === 'confirm_cover') return Boolean(request.coverPayment && !request.coverPayment.confirmedAt);
+    if (action === 'bill') return !claimed;
     return true;
   });
 }
 
-/** What the customer owes once they accept: the quote, or the estimate if no quote was needed. */
-export function requestDueMinor(request: Pick<ServiceRequest, 'quoteMinor' | 'estimateMinor' | 'plan'>): number {
+/**
+ * What the customer owes. On a quote: the quote (with any cover), or the
+ * estimate if none was needed. Pay on arrival: the bill once weighed, and the
+ * estimate until then - a guide, never charged.
+ */
+export function requestDueMinor(request: Pick<ServiceRequest, 'quoteMinor' | 'estimateMinor' | 'plan' | 'billing' | 'bill'>): number {
+  if (request.billing === 'arrival') return request.bill?.totalMinor ?? request.estimateMinor;
   return (request.quoteMinor ?? request.estimateMinor) + (request.quoteMinor === null ? 0 : (request.plan?.premiumMinor ?? 0));
+}
+
+/**
+ * The bill for a parcel weighed at the destination: the booked rate on the
+ * weight the scale shows (or its box, by the route's volumetric rule), the
+ * extras ticked, cover unless it was paid upfront, and whatever the team adds
+ * by hand - duty at actuals, say.
+ */
+export function billFor(
+  request: Pick<ServiceRequest, 'rate' | 'option' | 'answers' | 'fields' | 'addons' | 'plan' | 'coverDue' | 'coverPayment'>,
+  weightKg: number,
+  box: Dimensions | null,
+  added: readonly { label: string; minor: number }[],
+): Pick<RequestBill, 'chargeableKg' | 'by' | 'lines' | 'totalMinor'> {
+  const rate = request.rate ?? { ratePerKgMinor: 0, minChargeKg: 0, volumetric: null };
+  const items = answerFor<ItemRow[]>(request.fields, request.answers, 'items') ?? [];
+  const priced = estimate({
+    kind: 'forwarder', lane: rate, option: request.option, weightKg, box,
+    pieces: items.reduce((sum, row) => sum + row.qty, 0), addons: request.addons ?? [],
+  });
+  const lines = [...priced.lines];
+  const coverPaid = request.coverDue === 'upfront' && request.coverPayment;
+  if (request.plan && !coverPaid) lines.push({ label: `Cover · ${request.plan.name}`, minor: request.plan.premiumMinor });
+  for (const row of added) lines.push(row);
+  return {
+    chargeableKg: priced.chargeable?.kg ?? weightKg,
+    by: priced.chargeable?.by ?? 'actual',
+    lines,
+    totalMinor: Math.max(0, lines.reduce((sum, row) => sum + row.minor, 0)),
+  };
 }
 
 export function requestIsOpen(request: Pick<ServiceRequest, 'status'>): boolean {
@@ -721,7 +891,77 @@ export interface StoreFollow {
   updatedAt: string;
 }
 
-export type ServiceWorkDoc = ServiceRequest | ChannelMessage | StoreFollow;
+/* ── Custom quotes ───────────────────────────────────────────────────── */
+
+/** The longest a custom quote may stand. After it, the quote is deleted. */
+export const QUOTE_MAX_DAYS = 90;
+
+/**
+ * A customer asking a forwarder for their own price - a route the store does
+ * not list, a regular volume, odd goods - and the forwarder's answer.
+ *
+ * Once quoted it is a price block the customer can ship on, a parcel at a
+ * time, until it expires. Every block expires: the forwarder sets the date, no
+ * more than `QUOTE_MAX_DAYS` out, and an expired block is deleted. Parcels
+ * already booked on it keep the rate they were booked at.
+ */
+export interface CustomQuote {
+  id: string;
+  type: 'quote';
+  storeId: string;
+  kind: StoreKind;
+  ownerId: string;
+  storeName: string;
+  storeSlug: string;
+  number: string;
+  customerId: string;
+  customerName: string;
+  customerHandle: string | null;
+  route: { laneId: string | null; originCountry: string; destinationCountry: string; mode: FreightLane['mode'] };
+  ask: { what: string; weightKg: number | null; battery: BatteryContent; notes: string };
+  status: 'asked' | 'quoted' | 'declined';
+  offer: QuoteOffer | null;
+  /** Unanswered asks expire too, `QUOTE_MAX_DAYS` after they were sent. */
+  expiresAt: string;
+  /** Parcels booked on it. */
+  used: number;
+  history: RequestEvent[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuoteOffer {
+  ratePerKgMinor: number;
+  minChargeKg: number;
+  transitDaysMin: number;
+  transitDaysMax: number;
+  batteries: BatteryRule;
+  note: string;
+  /** Where to send parcels on it. Empty means the route's, or the store's main warehouse. */
+  warehouses: StoreWarehouse[];
+  sentAt: string;
+  sentByName: string;
+}
+
+export function quoteIsExpired(quote: Pick<CustomQuote, 'expiresAt'>, now = Date.now()): boolean {
+  return Date.parse(quote.expiresAt) <= now;
+}
+
+/** Whether a customer can book a parcel on it now. */
+export function quoteIsUsable(quote: Pick<CustomQuote, 'status' | 'expiresAt' | 'offer'>, now = Date.now()): boolean {
+  return quote.status === 'quoted' && Boolean(quote.offer) && !quoteIsExpired(quote, now);
+}
+
+/** The latest expiry a forwarder may set, from now. */
+export function latestExpiry(now = Date.now()): string {
+  return new Date(now + QUOTE_MAX_DAYS * 86_400_000).toISOString();
+}
+
+export function quoteNumber(): string {
+  return requestNumber('forwarder').replace(/^FR-/, 'QT-');
+}
+
+export type ServiceWorkDoc = ServiceRequest | ChannelMessage | StoreFollow | CustomQuote;
 
 export const CHANNEL_MAX_CHARS = 1000;
 export const followId = (userId: string) => `follow:${userId}`;

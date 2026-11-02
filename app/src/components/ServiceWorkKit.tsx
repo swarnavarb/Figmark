@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import type { InfoRow, PriceOption, ServiceFormField, StoreWarehouse } from '@shared/models';
+import { Link, useNavigate } from 'react-router-dom';
+import type { BatteryContent, FreightLane, InfoRow, PriceOption, ServiceFormField, StoreWarehouse } from '@shared/models';
+import { COUNTRIES, countryFlag } from '@shared/countries';
 import type { StoreKind } from '@shared/service-stores';
 import {
-  ACTION_LABELS, BASIS_LABELS, CHANNEL_MAX_CHARS, REQUEST_FLOW, REQUEST_LABELS, answerText, emptyAddress,
+  ACTION_LABELS, BASIS_LABELS, CHANNEL_MAX_CHARS, answerText, billFor, emptyAddress, flowOf, statusLabel,
   type AddressValue, type AnswerValue, type Answers, type ChannelMessage, type Dimensions, type Estimate, type ItemRow,
-  type RequestAction, type RequestStatus, type ServiceRequest, type Standing,
+  type CustomQuote, type RequestAction, type RequestBill, type ServiceRequest, type Standing,
 } from '@shared/service-work';
+import { FREIGHT_MODE_LABELS, laneLabel, type FreightMode } from '@shared/service-stores';
 import { ApiRequestError, api, type ChannelView, type RequestView, type TeamRow } from '../api';
 import { useSession } from '../session';
 import { formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, Icon } from './ui';
 import { MoneyInput } from './StoreKit';
 import { markSeen } from './channelSeen';
+import { shrink } from './PhotoManager';
 import '../styles/ServiceWorkKit.css';
 
 /**
@@ -144,13 +147,13 @@ export function InfoRows({ rows }: { rows: readonly InfoRow[] | undefined }) {
   );
 }
 
-export function EstimateBox({ estimate, note }: { estimate: Estimate; note?: ReactNode }) {
+export function EstimateBox({ estimate, note, totalLabel = 'Estimate' }: { estimate: Estimate; note?: ReactNode; totalLabel?: string }) {
   return (
     <div className="svk-estimate" aria-live="polite">
       {estimate.lines.map((line) => (
         <span key={line.label} className="svk-estimate__line"><span>{line.label}</span><b>{line.minor === 0 ? 'Free' : formatMoney(line.minor)}</b></span>
       ))}
-      <span className="svk-estimate__total"><span>Estimate</span><b>{formatMoney(estimate.totalMinor)}</b></span>
+      <span className="svk-estimate__total"><span>{totalLabel}</span><b>{formatMoney(estimate.totalMinor)}</b></span>
       {note && <span className="faint svk-estimate__note">{note}</span>}
     </div>
   );
@@ -250,7 +253,7 @@ export function FieldInput({ field, value, onChange }: { field: ServiceFormField
     case 'longtext':
       return <label className="field">{label}{hint}<textarea rows={3} value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} /></label>;
     case 'number':
-      return <label className="field">{label}{hint}<input inputMode="decimal" value={(value as number) || ''} onChange={(e) => onChange(Number(e.target.value) || null)} /></label>;
+      return <label className="field">{label}{hint}<DecimalInput value={value as number | null} onChange={onChange} /></label>;
     case 'date':
       return <label className="field">{label}{hint}<input type="date" value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} /></label>;
     default:
@@ -270,6 +273,21 @@ export function FormFields({ fields, answers, onChange }: { fields: ServiceFormF
   );
 }
 
+/**
+ * A number field that keeps what is typed - "3." on the way to "3.2" - and
+ * reports the number. Reading it straight back from the number drops the point.
+ */
+function DecimalInput({ value, onChange }: { value: number | null; onChange: (next: number | null) => void }) {
+  const [text, setText] = useState(value ? String(value) : '');
+  return (
+    <input inputMode="decimal" value={text} onChange={(e) => {
+      const next = e.target.value.replace(',', '.').replace(/[^0-9.]/g, '');
+      setText(next);
+      onChange(Number(next) || null);
+    }} />
+  );
+}
+
 /** What a customer said, read back. */
 export function AnswerList({ fields, answers }: { fields: ServiceFormField[]; answers: Answers }) {
   if (fields.length === 0) return null;
@@ -284,17 +302,186 @@ export function AnswerList({ fields, answers }: { fields: ServiceFormField[]; an
 
 /* ── A request ───────────────────────────────────────────────────────── */
 
-export function RequestBadge({ kind, status }: { kind: StoreKind; status: RequestStatus }) {
-  const label = REQUEST_LABELS[kind][status];
+type StatusOf = Pick<ServiceRequest, 'kind' | 'status' | 'billing'>;
+
+export function RequestBadge({ request }: { request: StatusOf }) {
+  const label = statusLabel(request);
   return <span className={`badge badge--${label.tone === 'quiet' ? 'quiet' : label.tone}`}>{label.label}</span>;
 }
 
-export function RequestProgress({ status }: { status: RequestStatus }) {
-  const at = REQUEST_FLOW.indexOf(status);
+export function RequestProgress({ request }: { request: StatusOf }) {
+  const flow = flowOf(request);
+  const at = flow.indexOf(request.status);
   return (
     <span className={`svk-flow${at < 0 ? ' is-off' : ''}`} aria-hidden="true">
-      {REQUEST_FLOW.map((step, index) => <span key={step} className={index <= at ? 'is-on' : ''} />)}
+      {flow.map((step, index) => <span key={step} className={index <= at ? 'is-on' : ''} />)}
     </span>
+  );
+}
+
+/** What the money line says: the bill once weighed, the quote once given, the estimate before either. */
+export function priceWord(request: Pick<ServiceRequest, 'billing' | 'bill' | 'quoteMinor'>): string {
+  if (request.billing === 'arrival') return request.bill ? 'Bill' : 'Estimate';
+  return request.quoteMinor !== null ? 'Quote' : 'Estimate';
+}
+
+/**
+ * Asking a forwarder for a custom quote: on one of their routes, or a pair of
+ * countries they do not list, with what is being sent. The forwarder replies
+ * with a rate the customer can ship on until the date they set.
+ */
+export function QuoteAskSheet({ store, lane, onClose }: {
+  store: { kind: StoreKind; ownerId: string; name: string; accent: string; lanes: FreightLane[] };
+  lane: FreightLane | null;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const [laneId, setLaneId] = useState<string>(lane?.id ?? '');
+  const [from, setFrom] = useState(lane?.originCountry ?? 'China');
+  const [to, setTo] = useState(lane?.destinationCountry ?? 'India');
+  const [mode, setMode] = useState<FreightMode>((lane?.mode as FreightMode) ?? 'air');
+  const [what, setWhat] = useState('');
+  const [weight, setWeight] = useState('');
+  const [battery, setBattery] = useState<BatteryContent>('none');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const picked = store.lanes.find((row) => row.id === laneId) ?? null;
+
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', close);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', close); document.body.style.overflow = ''; };
+  }, [onClose]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!what.trim()) { setError('Say what you are sending.'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const view = await api.askQuote(store.kind, store.ownerId, {
+        laneId: picked?.id ?? null, originCountry: from, destinationCountry: to, mode,
+        what, weightKg: Number(weight) || null, battery, notes,
+      });
+      navigate(`/services/quotes/${store.kind}/${store.ownerId}/${view.quote.id}?sent=1`);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
+      setBusy(false);
+    }
+  }
+
+  const countrySelect = (value: string, onChange: (next: string) => void, label: string) => (
+    <label className="field"><span>{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {COUNTRIES.map((country) => <option key={country} value={country}>{countryFlag(country)} {country}</option>)}
+      </select></label>
+  );
+
+  return (
+    <div className="svk-sheet" role="dialog" aria-modal="true" aria-label={`Ask ${store.name} for a quote`}>
+      <button type="button" className="svk-sheet__scrim" aria-label="Close" onClick={onClose} />
+      <form className="svk-sheet__panel" onSubmit={(event) => void submit(event)}>
+        <div className="svk-sheet__head">
+          <span><span className="faint">{store.name}</span><h2>Ask for a custom quote</h2></span>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button>
+        </div>
+        <div className="svk-sheet__body stack">
+          <p className="faint">For a route they do not list, a regular volume, or goods that need a word first. They reply with a rate you can ship on until the date they set — up to three months.</p>
+          <label className="field"><span>Route</span>
+            <select value={laneId} onChange={(e) => setLaneId(e.target.value)}>
+              <option value="">Another route…</option>
+              {store.lanes.map((row) => <option key={row.id} value={row.id}>{laneLabel(row)} · {FREIGHT_MODE_LABELS[row.mode as FreightMode]?.label}</option>)}
+            </select></label>
+          {!picked && (
+            <div className="svk-sheet__pair">
+              {countrySelect(from, setFrom, 'From')}
+              {countrySelect(to, setTo, 'To')}
+              <label className="field"><span>Mode</span>
+                <select value={mode} onChange={(e) => setMode(e.target.value as FreightMode)}>
+                  {(Object.keys(FREIGHT_MODE_LABELS) as FreightMode[]).map((value) => <option key={value} value={value}>{FREIGHT_MODE_LABELS[value].glyph} {FREIGHT_MODE_LABELS[value].label}</option>)}
+                </select></label>
+            </div>
+          )}
+          <label className="field"><span>What are you sending?</span>
+            <textarea rows={3} value={what} onChange={(e) => setWhat(e.target.value)} placeholder="Boxed figures and model kits, about 20 kg every month." /></label>
+          <label className="field"><span>About how much (kg)</span>
+            <input inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="Optional" /></label>
+          <div className="field"><span>Batteries</span>
+            <div className="svk-sheet__radios" role="radiogroup" aria-label="Batteries">
+              {([['none', 'No battery'], ['in_device', 'Inside an item'], ['loose', 'Loose / power bank']] as const).map(([value, label]) => (
+                <button key={value} type="button" role="radio" aria-checked={battery === value} className={`chip${battery === value ? ' is-on' : ''}`} onClick={() => setBattery(value)}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <label className="field"><span>Anything else</span>
+            <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+          {error && <ErrorNotice message={error} />}
+        </div>
+        <div className="svk-sheet__foot">
+          <span className="faint">The whole team is told at once.</span>
+          <button type="submit" className="btn" disabled={busy}>{busy ? 'Sending…' : 'Ask for a quote'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/** Days left on a quote, in words. */
+export function expiresIn(quote: Pick<CustomQuote, 'expiresAt'>): string {
+  const days = Math.ceil((Date.parse(quote.expiresAt) - Date.now()) / 86_400_000);
+  return days <= 1 ? 'expires today' : `${days} days left`;
+}
+
+/** A custom quote as a row: the route, the rate once given, and how long it stands. */
+export function QuoteRowCard({ quote, usable, side, to }: { quote: CustomQuote; usable: boolean; side: 'store' | 'customer'; to?: string }) {
+  const tone = quote.status === 'declined' ? 'danger' : usable ? 'ok' : 'warn';
+  const word = quote.status === 'declined' ? 'Declined' : usable ? 'Ready to ship on' : 'Waiting for a price';
+  const body = (
+    <>
+      <span className="svk-row__top">
+        <span className="svk-row__title">
+          <b>{laneLabel(quote.route)}</b>
+          <span className="faint">{quote.number} · {side === 'store' ? quote.customerName : quote.storeName} · {timeAgo(quote.updatedAt)}</span>
+        </span>
+        <span className={`badge badge--${tone}`}>{word}</span>
+      </span>
+      <span className="svk-row__facts">
+        {quote.offer ? <span><b>{formatMoney(quote.offer.ratePerKgMinor)}</b>/kg{quote.offer.minChargeKg ? ` · min ${quote.offer.minChargeKg} kg` : ''}</span>
+          : <span className="faint">{quote.ask.what.slice(0, 80)}</span>}
+        <span className="faint">{expiresIn(quote)}</span>
+        {quote.used > 0 && <span className="faint">{quote.used} {quote.used === 1 ? 'parcel' : 'parcels'} on it</span>}
+        {side === 'store' && quote.status === 'asked' && <span className="svk-row__ping">Needs a price</span>}
+      </span>
+    </>
+  );
+  return to ? <Link to={to} className="svk-row svk-row--tap">{body}</Link> : <div className="svk-row">{body}</div>;
+}
+
+/** The bill for a weighed parcel: the scale photo, the weight, and every line. */
+export function BillCard({ bill }: { bill: RequestBill }) {
+  return (
+    <div className="svk-bill">
+      <div className="svk-bill__photos">
+        {bill.photoUrls.map((url) => (
+          <a key={url} href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt="The parcel on the scale" loading="lazy" decoding="async" /></a>
+        ))}
+      </div>
+      <div className="svk-bill__body">
+        <span className="svk-bill__kg"><b>{bill.weightKg} kg</b> on the scale
+          {bill.by !== 'actual' && <span className="faint"> · billed {bill.chargeableKg} kg {bill.by === 'volumetric' ? 'by size' : 'minimum'}</span>}
+          {bill.box && <span className="faint"> · {bill.box.l}×{bill.box.w}×{bill.box.h} cm</span>}
+        </span>
+        <div className="svk-estimate">
+          {bill.lines.map((line, index) => (
+            <span key={`${line.label}-${index}`} className="svk-estimate__line"><span>{line.label}</span><b>{line.minor === 0 ? 'Free' : formatMoney(line.minor)}</b></span>
+          ))}
+          <span className="svk-estimate__total"><span>To pay</span><b>{formatMoney(bill.totalMinor)}</b></span>
+          {bill.note && <span className="faint svk-estimate__note">“{bill.note}” — {bill.byName}</span>}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -312,13 +499,17 @@ export function RequestRowCard({ request, due, to, side, actions }: {
             {side === 'store' && request.assigneeName ? ` · ${request.assigneeName}` : ''}
           </span>
         </span>
-        <RequestBadge kind={request.kind} status={request.status} />
+        <RequestBadge request={request} />
       </span>
-      <RequestProgress status={request.status} />
+      <RequestProgress request={request} />
       <span className="svk-row__facts">
-        <span>{request.quoteMinor !== null ? 'Quote' : 'Estimate'} <b>{formatMoney(due)}</b></span>
+        <span>{priceWord(request)} <b>{formatMoney(due)}</b></span>
         {request.chargeableKg ? <span><b>{request.chargeableKg}</b> kg</span> : null}
-        {request.payment && !request.payment.confirmedAt && <span className="svk-row__ping">Payment to confirm</span>}
+        {side === 'store' && request.payment && !request.payment.confirmedAt && <span className="svk-row__ping">Payment to confirm</span>}
+        {side === 'store' && request.coverPayment && !request.coverPayment.confirmedAt && <span className="svk-row__ping">Cover to confirm</span>}
+        {side === 'store' && actions.includes('bill') && request.status !== 'billed' && <span className="svk-row__ping">Weigh & bill</span>}
+        {side === 'customer' && (actions.includes('pay') || actions.includes('pay_cover')) && <span className="svk-row__ping">Pay now</span>}
+        {side === 'customer' && actions.includes('send_in') && <span className="svk-row__ping">Send your parcel</span>}
         {actions.length > 0 && side === 'store' && !request.payment?.confirmedAt && request.status === 'submitted' && <span className="svk-row__ping">Needs a quote</span>}
         {request.review && <Stars value={request.review.stars} size={12} />}
       </span>
@@ -369,7 +560,7 @@ export function RequestActions({ view, team, onChanged }: {
     void act(action, extra);
   };
 
-  const simple = (['receive', 'start', 'deliver', 'complete', 'accept', 'confirm_payment'] as const).filter((action) => actions.includes(action));
+  const simple = (['receive', 'start', 'deliver', 'complete', 'accept', 'confirm_payment', 'confirm_cover'] as const).filter((action) => actions.includes(action));
 
   return (
     <div className="svk-acts stack">
@@ -388,6 +579,21 @@ export function RequestActions({ view, team, onChanged }: {
           </div>
         </form>
       )}
+      {actions.includes('send_in') && (
+        <form className="svk-acts__form" onSubmit={submit('send_in', { courier, awb })}>
+          <label className="field"><span>Courier to the warehouse</span><input value={courier} onChange={(e) => setCourier(e.target.value)} placeholder="SF Express" /></label>
+          <label className="field"><span>Tracking number</span><input value={awb} onChange={(e) => setAwb(e.target.value)} placeholder="Optional" /></label>
+          <button type="submit" className="btn svk-acts__wide" disabled={busy}>{words.send_in}</button>
+        </form>
+      )}
+      {actions.includes('pay_cover') && (
+        <form className="svk-acts__form" onSubmit={submit('pay_cover', { reference })}>
+          <label className="field svk-acts__wide"><span>Payment reference for the cover</span>
+            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UPI ref / UTR" /></label>
+          <button type="submit" className="btn svk-acts__wide" disabled={busy}>{words.pay_cover} · {formatMoney(view.coverDue)}</button>
+        </form>
+      )}
+      {actions.includes('bill') && <BillForm request={request} busy={busy} onSend={(extra) => void act('bill', extra)} />}
       {actions.includes('pay') && (
         <form className="svk-acts__form" onSubmit={submit('pay', { reference })}>
           <label className="field svk-acts__wide"><span>Payment reference</span>
@@ -432,6 +638,94 @@ export function RequestActions({ view, team, onChanged }: {
       )}
       {error && <ErrorNotice message={error} />}
     </div>
+  );
+}
+
+/**
+ * Weighing a parcel at the destination: the scale's weight and a photo of it
+ * (no photo, no bill), the box if it is charged by size, and anything added by
+ * hand. The bill is worked out as they type, from the rate it was booked at.
+ */
+function BillForm({ request, busy, onSend }: {
+  request: ServiceRequest; busy: boolean; onSend: (extra: Record<string, unknown>) => void;
+}) {
+  const [weight, setWeight] = useState(request.bill ? String(request.bill.weightKg) : '');
+  const [box, setBox] = useState<Dimensions>(request.bill?.box ?? { l: 0, w: 0, h: 0 });
+  const [photos, setPhotos] = useState<string[]>(request.bill?.photoUrls ?? []);
+  const [extraLabel, setExtraLabel] = useState('');
+  const [extraMinor, setExtraMinor] = useState(0);
+  const [note, setNote] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const kg = Number(weight) || 0;
+  const hasBox = box.l > 0 && box.w > 0 && box.h > 0;
+  const added = extraLabel.trim() && extraMinor ? [{ label: extraLabel.trim(), minor: extraMinor }] : [];
+  const preview = kg > 0 ? billFor(request, kg, hasBox ? box : null, added) : null;
+
+  async function pick(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const urls: string[] = [];
+      for (const file of [...files].slice(0, 4 - photos.length)) urls.push((await api.uploadPhoto(await shrink(file))).url);
+      setPhotos((now) => [...now, ...urls].slice(0, 4));
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <form className="svk-acts__form svk-billform" onSubmit={(event) => {
+      event.preventDefault();
+      onSend({ weightKg: kg, box: hasBox ? box : null, photoUrls: photos, added, note });
+    }}>
+      <h3 className="svk-acts__wide">{request.bill ? 'Change the bill' : 'Arrived? Weigh it and send the bill'}</h3>
+      <label className="field"><span>Weight on the scale (kg)</span>
+        <input inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="6.4" required /></label>
+      <div className="field"><span>Box (cm) · if charged by size</span>
+        <span className="svk-billform__box">
+          {(['l', 'w', 'h'] as const).map((side) => (
+            <input key={side} inputMode="numeric" aria-label={side === 'l' ? 'Length' : side === 'w' ? 'Width' : 'Height'} placeholder={side.toUpperCase()}
+              value={box[side] || ''} onChange={(e) => setBox({ ...box, [side]: Number(e.target.value) || 0 })} />
+          ))}
+        </span>
+      </div>
+      <div className="field svk-acts__wide"><span>Photo of the parcel on the scale <b>· required</b></span>
+        <div className="svk-billform__photos">
+          {photos.map((url) => (
+            <span key={url} className="svk-billform__photo">
+              <img src={url} alt="" />
+              <button type="button" aria-label="Remove photo" onClick={() => setPhotos(photos.filter((row) => row !== url))}><Icon name="close" size={12} /></button>
+            </span>
+          ))}
+          {photos.length < 4 && (
+            <label className={`svk-billform__add${uploading ? ' is-busy' : ''}`}>
+              <input type="file" accept="image/*" capture="environment" multiple disabled={uploading} onChange={(e) => void pick(e.target.files)} />
+              <Icon name="camera" size={18} /><span>{uploading ? 'Uploading…' : 'Add photo'}</span>
+            </label>
+          )}
+        </div>
+      </div>
+      <label className="field"><span>Anything added</span><input value={extraLabel} onChange={(e) => setExtraLabel(e.target.value)} placeholder="Duty at actuals" /></label>
+      <label className="field"><span>Amount</span><MoneyInput label="Amount added" value={extraMinor} onChange={setExtraMinor} /></label>
+      <label className="field svk-acts__wide"><span>Note to the customer</span>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Repacked to cut the size." /></label>
+      {preview && (
+        <div className="svk-estimate svk-acts__wide">
+          {preview.lines.map((line, index) => (
+            <span key={`${line.label}-${index}`} className="svk-estimate__line"><span>{line.label}</span><b>{line.minor === 0 ? 'Free' : formatMoney(line.minor)}</b></span>
+          ))}
+          <span className="svk-estimate__total"><span>Bill</span><b>{formatMoney(preview.totalMinor)}</b></span>
+        </div>
+      )}
+      {error && <span className="svk-acts__wide"><ErrorNotice message={error} /></span>}
+      <button type="submit" className="btn svk-acts__wide" disabled={busy || uploading || !kg || photos.length === 0}>
+        {photos.length === 0 ? 'Add the scale photo to send' : `Send the bill${preview ? ` · ${formatMoney(preview.totalMinor)}` : ''}`}
+      </button>
+    </form>
   );
 }
 

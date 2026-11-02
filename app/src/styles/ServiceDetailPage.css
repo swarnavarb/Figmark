@@ -64,3 +64,9 @@
 .sd-sheet__head h2 { margin: 2px 0 0; font-size: var(--t-lg); }
 .sd-sheet__body { overflow-y: auto; padding: 16px 18px; gap: 16px; }
 .sd-sheet__foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); }
+
+/* Pay on arrival, said once under the title. */
+.sd-arrival { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--sk-soft); font-size: var(--t-sm); }
+.sd-note { margin: 8px 0 0; font-size: var(--t-sm); }
+.sd-fab__pair { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.sd-fab__alt { min-height: 52px; background: var(--surface); box-shadow: var(--shadow); }

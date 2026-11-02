@@ -22,7 +22,7 @@ import {
 } from '../api';
 import { countryFlag } from '@shared/countries';
 import { formatMoney } from '../format';
-import { requestIsOpen } from '@shared/service-work';
+import { BATTERY_RULE_LABELS, requestIsOpen } from '@shared/service-work';
 import { EmptyState, ErrorNotice, Icon, type IconName, PageError } from '../components/ui';
 import { Picture, StatusPill, StoreMark, accentStyle } from '../components/StoreKit';
 import { useSession } from '../session';
@@ -245,7 +245,8 @@ function RouteSearch() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [mode, setMode] = useState('');
-  const [battery, setBattery] = useState(false);
+  // What the parcel holds: routes that would refuse it drop out.
+  const [battery, setBattery] = useState<'in_device' | 'loose' | null>(null);
   const [freeCover, setFreeCover] = useState(false);
   const [door, setDoor] = useState(false);
   const [result, setResult] = useState<{ routes: RouteMatch[]; countries: { from: string[]; to: string[] } } | null>(null);
@@ -286,7 +287,10 @@ function RouteSearch() {
             {value ? `${FREIGHT_MODE_LABELS[value].glyph} ${FREIGHT_MODE_LABELS[value].label}` : 'Any mode'}
           </button>
         ))}
-        <button type="button" className={`chip${battery ? ' is-on' : ''}`} aria-pressed={battery} onClick={() => setBattery(!battery)}>🔋 Batteries</button>
+        <button type="button" className={`chip${battery === 'in_device' ? ' is-on' : ''}`} aria-pressed={battery === 'in_device'}
+          onClick={() => setBattery(battery === 'in_device' ? null : 'in_device')}>🔋 Battery in an item</button>
+        <button type="button" className={`chip${battery === 'loose' ? ' is-on' : ''}`} aria-pressed={battery === 'loose'}
+          onClick={() => setBattery(battery === 'loose' ? null : 'loose')}>🔋 Loose / power bank</button>
         <button type="button" className={`chip${freeCover ? ' is-on' : ''}`} aria-pressed={freeCover} onClick={() => setFreeCover(!freeCover)}>🛡️ Free cover</button>
         <button type="button" className={`chip${door ? ' is-on' : ''}`} aria-pressed={door} onClick={() => setDoor(!door)}>🚚 Door-to-door</button>
       </div>
@@ -309,7 +313,7 @@ function RouteSearch() {
                 <span className="faint">{FREIGHT_MODE_LABELS[row.lane.mode].glyph} {FREIGHT_MODE_LABELS[row.lane.mode].label} · {row.lane.days}</span>
               </span>
               <span className="svs-tags">
-                {row.lane.batteryAllowed && <span>🔋 Batteries OK</span>}
+                <span>🔋 {BATTERY_RULE_LABELS[row.lane.batteries]}</span>
                 {row.lane.customsIncluded && <span>✓ Customs cleared</span>}
                 {row.freeCover && <span>🛡️ Free cover</span>}
                 {row.door && <span>🚚 Door-to-door</span>}
