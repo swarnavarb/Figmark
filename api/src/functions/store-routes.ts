@@ -873,7 +873,7 @@ async function serviceSearch(request: HttpRequest, _context: InvocationContext) 
         store: card,
         lane: {
           id: lane.id, label: laneLabel(lane), originCountry: lane.originCountry, destinationCountry: lane.destinationCountry,
-          mode: lane.mode, days: transitLabel(lane), fromMinor: laneFromMinor(lane),
+          mode: lane.mode, days: transitLabel(lane), fromMinor: laneFromMinor(lane), minChargeKg: lane.minChargeKg,
           batteries: batteryRuleOf(lane), customsIncluded: lane.customsIncluded, note: lane.note,
         },
         freeCover: hasFreeCover, door: hasDoor,

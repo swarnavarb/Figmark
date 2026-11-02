@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { InsurancePlan } from '@shared/models';
-import { FREIGHT_MODE_LABELS, insuranceQuote, laneLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
+import { FREIGHT_MODE_LABELS, insuranceQuote, laneLabel, minKgLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
 import {
   BASIS_LABELS, BATTERY_RULE_LABELS, answerFor, batteryRuleOf, checkAnswers, estimate, fromPriceMinor, laneFromMinor, planIsFree,
   volumetricLabel, warehousesOf,
@@ -21,9 +21,10 @@ import '../styles/ServiceDetailPage.css';
 /**
  * One route a forwarder runs, or one service an artist offers.
  *
- * Kept short: where to send it, what it costs, the cover and extras on offer.
- * The rest - volumetric rules, batteries, how to pack, terms - folds away
- * under one heading. The button to use it floats over the page.
+ * Where to send it, what it costs (the minimum kg always beside the rate),
+ * the cover and extras on offer, then the details and terms - shown open, not
+ * folded away. The button to use it floats over the page, and the page leaves
+ * room under its last line so the button never sits on top of it.
  */
 export function ServiceDetailPage() {
   const { kind, slug, section, subjectId } = useParams<{ kind: string; slug: string; section: string; subjectId: string }>();
@@ -64,7 +65,7 @@ export function ServiceDetailPage() {
   const details = [
     ...(lane ? [
       ...(lane.volumetric ? [{ label: 'Volumetric', value: `${volumetricLabel(lane.volumetric)}${lane.volumetric.note ? `\n${lane.volumetric.note}` : ''}` }] : []),
-      ...(lane.minChargeKg > 0 ? [{ label: 'Minimum', value: `${lane.minChargeKg} kg billed` }] : []),
+      { label: 'Minimum', value: lane.minChargeKg > 0 ? `${lane.minChargeKg} kg — lighter parcels are billed as ${lane.minChargeKg} kg` : 'Not set — ask the forwarder' },
       { label: 'Batteries', value: BATTERY_RULE_LABELS[batteryRuleOf(lane)] },
       { label: 'Customs', value: lane.customsIncluded ? 'Cleared by the forwarder' : 'Duty paid at actuals' },
     ] : []),
@@ -85,7 +86,7 @@ export function ServiceDetailPage() {
         </Link>
         <h1>{title}</h1>
         <p className="sd-head__line">
-          {lane ? <>{mode?.glyph} {mode?.label} · {transitLabel(lane)}{lane.customsIncluded ? ' · customs cleared' : ''}</>
+          {lane ? <>{mode?.glyph} {mode?.label} · {transitLabel(lane)} · <b>{minKgLabel(lane)}</b>{lane.customsIncluded ? ' · customs cleared' : ''}</>
             : <>{offering!.description}{offering!.turnaroundDays ? ` · about ${offering!.turnaroundDays} days` : ''}</>}
           {from > 0 && <> · <span className="sd-head__from">from <b>{formatMoney(from)}</b>{lane ? '/kg' : ''}</span></>}
         </p>
@@ -125,10 +126,10 @@ export function ServiceDetailPage() {
         )}
 
         {(details.length > 0 || terms.length > 0) && (
-          <details className="sd-more">
-            <summary>Details & terms</summary>
+          <section className="sd-sec">
+            <h2>Details & terms</h2>
             <InfoRows rows={[...details, ...terms.map((value, index) => ({ label: index === 0 && terms.length > 1 ? 'Route terms' : 'Terms', value }))]} />
-          </details>
+          </section>
         )}
       </div>
 

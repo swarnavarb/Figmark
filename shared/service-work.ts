@@ -64,6 +64,21 @@ const field = (key: ServiceFieldKey, label: string, type: ServiceFormField['type
   id: key, key, label, type, required, ...(help ? { help } : {}),
 });
 
+/**
+ * Locked fields a customer may still leave blank when they book.
+ *
+ * A forwarder's delivery address is not needed until the parcel goes out for
+ * delivery: the buyer can add or change it from My Purchases until they pay
+ * the bill, and paying asks for it if it is still missing (see
+ * `requestActions`, `address`).
+ */
+export const OPTIONAL_LOCKED: Record<StoreKind, readonly ServiceFieldKey[]> = {
+  forwarder: ['delivery'],
+  artist: [],
+};
+
+const DELIVERY_HELP = 'Leave it for now if you like - you can add or change it from My Purchases until you pay the bill.';
+
 /** The form every store opens with, before it changes anything. */
 export function defaultForm(kind: StoreKind): ServiceFormField[] {
   if (kind === 'forwarder') {
@@ -75,7 +90,7 @@ export function defaultForm(kind: StoreKind): ServiceFormField[] {
       field('dimensions', 'Box size', 'dimensions', false, 'Length × width × height in cm. Used when a parcel is charged by size.'),
       { ...field('battery', 'Batteries', 'choice', true, 'Light-up bases and figures with LEDs have one inside. Power banks and spare cells are loose.'), options: [...BATTERY_CHOICES] },
       field('declared_value', 'Declared value (₹)', 'number', false, 'What the contents are worth, for customs and cover.'),
-      field('delivery', 'Deliver to', 'address', true),
+      field('delivery', 'Deliver to', 'address', false, DELIVERY_HELP),
       field('notes', 'Anything else', 'longtext', false),
     ];
   }
@@ -133,7 +148,12 @@ export function formOf(kind: StoreKind, form: ServiceFormField[] | null | undefi
     ? { ...batteryField, ...(row.help ? { help: row.help } : {}), label: row.label === 'Anything with a battery?' ? batteryField.label : row.label }
     : row));
   // Locked fields are always required, whatever an older save said - the tracking number most of all.
-  const locked = upgraded.map((row) => (row.key && LOCKED_FIELDS[kind].includes(row.key) && !row.required ? { ...row, required: true } : row));
+  // The few a customer may fill in later (a forwarder's delivery address) are never required.
+  const locked = upgraded.map((row) => {
+    if (!row.key || !LOCKED_FIELDS[kind].includes(row.key)) return row;
+    const required = !OPTIONAL_LOCKED[kind].includes(row.key);
+    return row.required === required ? row : { ...row, required };
+  });
   return [...locked, ...missing];
 }
 
@@ -171,16 +191,18 @@ const num = (value: unknown, max: number) => {
 
 export const emptyAddress = (): AddressValue => ({ name: '', phone: '', line: '', city: '', state: '', pincode: '' });
 
+/** Whether an address has everything a courier needs. */
+export function addressComplete(a: AddressValue | null | undefined): a is AddressValue {
+  return Boolean(a && a.name && a.phone && a.line && a.city && a.pincode);
+}
+
 /** Whether an answer is there at all, for a required field. */
 function isGiven(fieldDef: ServiceFormField, value: AnswerValue): boolean {
   switch (fieldDef.type) {
     case 'yesno': return typeof value === 'boolean';
     case 'number': return typeof value === 'number' && value > 0;
     case 'items': return Array.isArray(value) && value.some((row) => (row as ItemRow).name);
-    case 'address': {
-      const a = value as AddressValue | null;
-      return Boolean(a && a.name && a.phone && a.line && a.city && a.pincode);
-    }
+    case 'address': return addressComplete(value as AddressValue | null);
     case 'dimensions': {
       const d = value as Dimensions | null;
       return Boolean(d && d.l > 0 && d.w > 0 && d.h > 0);
@@ -280,7 +302,7 @@ export function readForm(kind: StoreKind, input: unknown): ServiceFormField[] | 
       ...(key ? { key } : {}),
       label: str(raw.label, 80) || base?.label || 'Question',
       type,
-      required: locked ? true : raw.required === true,
+      required: locked ? !OPTIONAL_LOCKED[kind].includes(key!) : raw.required === true,
       ...(str(raw.help, 200) ? { help: str(raw.help, 200) } : {}),
       ...(options ? { options } : {}),
     });
@@ -567,7 +589,7 @@ export function statusLabel(request: Pick<ServiceRequest, 'kind' | 'status' | 'b
 export type RequestAction =
   | 'quote' | 'decline' | 'confirm_payment' | 'receive' | 'start' | 'ship' | 'deliver' | 'assign'
   | 'accept' | 'pay' | 'cancel' | 'complete' | 'review'
-  | 'send_in' | 'bill' | 'pay_cover' | 'confirm_cover';
+  | 'send_in' | 'bill' | 'pay_cover' | 'confirm_cover' | 'address';
 
 type Moves = Partial<Record<RequestAction, { by: 'store' | 'customer'; from: readonly RequestStatus[] }>>;
 
@@ -589,6 +611,8 @@ export const ARRIVAL_MOVES: Moves = {
   decline: { by: 'store', from: ['booked', 'sent_in'] },
   assign: { by: 'store', from: OPEN_ARRIVAL },
   pay_cover: { by: 'customer', from: ['booked', 'sent_in', 'received', 'in_progress'] },
+  // Where it is delivered can change until the bill is paid: the bill itself asks the buyer to check it.
+  address: { by: 'customer', from: ['booked', 'sent_in', 'received', 'in_progress', 'billed'] },
   confirm_cover: { by: 'store', from: ['booked', 'sent_in', 'received', 'in_progress', 'billed'] },
 };
 
@@ -615,6 +639,7 @@ export const ACTION_LABELS: Record<StoreKind, Partial<Record<RequestAction, stri
     start: 'Shipped out — in transit', ship: 'Handed to domestic courier', deliver: 'Mark delivered',
     accept: 'Accept quote', pay: 'I have paid', cancel: 'Cancel request', complete: 'I got it', review: 'Rate this',
     send_in: 'I’ve sent it to the warehouse', bill: 'Send the bill', pay_cover: 'I paid for the cover', confirm_cover: 'Cover payment arrived',
+    address: 'Save delivery address',
   },
   artist: {
     quote: 'Send quote', decline: 'Decline', confirm_payment: 'The money arrived', receive: 'The piece is here',
@@ -748,6 +773,7 @@ export function requestActions(request: ActionInput, side: 'store' | 'customer')
     if (action === 'pay_cover') return coverOwedMinor(request) > 0;
     if (action === 'confirm_cover') return Boolean(request.coverPayment && !request.coverPayment.confirmedAt);
     if (action === 'bill') return !claimed;
+    if (action === 'address') return !claimed;
     return true;
   });
 }
@@ -789,6 +815,43 @@ export function billFor(
     by: priced.chargeable?.by ?? 'actual',
     lines,
     totalMinor: Math.max(0, lines.reduce((sum, row) => sum + row.minor, 0)),
+  };
+}
+
+/** An address on one line, for a notification or a list. */
+export function addressLine(a: AddressValue): string {
+  return [a.name, a.phone, a.line, a.city, a.state, a.pincode].filter(Boolean).join(', ');
+}
+
+/** The delivery address on a request, when one has been given in full. */
+export function deliveryOf(request: Pick<ServiceRequest, 'fields' | 'answers'>): AddressValue | null {
+  const address = answerFor<AddressValue>(request.fields, request.answers, 'delivery');
+  return addressComplete(address) ? address : null;
+}
+
+/**
+ * Whether paying needs a delivery address first: a forwarder's parcel billed
+ * on arrival goes out for delivery once paid, so it must know where to.
+ */
+export function needsDelivery(request: Pick<ServiceRequest, 'kind' | 'billing' | 'fields' | 'answers'>): boolean {
+  return request.kind === 'forwarder' && request.billing === 'arrival' && !deliveryOf(request);
+}
+
+/**
+ * The request with this delivery address on it. A request booked on the
+ * store's own form has no delivery field yet, so it gains one.
+ */
+export function withDelivery<T extends Pick<ServiceRequest, 'kind' | 'fields' | 'answers'>>(request: T, raw: unknown): { ok: true; fields: ServiceFormField[]; answers: Answers } | { ok: false } {
+  const base = defaultForm(request.kind).find((row) => row.key === 'delivery');
+  const existing = request.fields.find((row) => row.key === 'delivery');
+  const fieldDef = existing ?? base;
+  if (!fieldDef) return { ok: false };
+  const { answers } = checkAnswers([fieldDef], { [fieldDef.id]: raw });
+  if (!addressComplete(answers[fieldDef.id] as AddressValue | null)) return { ok: false };
+  return {
+    ok: true,
+    fields: existing ? request.fields : [...request.fields, fieldDef],
+    answers: { ...request.answers, [fieldDef.id]: answers[fieldDef.id] ?? null },
   };
 }
 

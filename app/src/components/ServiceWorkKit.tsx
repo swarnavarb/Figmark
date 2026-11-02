@@ -4,7 +4,8 @@ import type { BatteryContent, FreightLane, InfoRow, PriceOption, ServiceFormFiel
 import { COUNTRIES, countryFlag } from '@shared/countries';
 import type { StoreKind } from '@shared/service-stores';
 import {
-  ACTION_LABELS, BASIS_LABELS, CHANNEL_MAX_CHARS, answerText, billFor, emptyAddress, flowOf, statusLabel,
+  ACTION_LABELS, BASIS_LABELS, CHANNEL_MAX_CHARS, addressComplete, addressLine, answerText, billFor, deliveryOf, emptyAddress, flowOf,
+  needsDelivery, statusLabel,
   type AddressValue, type AnswerValue, type Answers, type ChannelMessage, type Dimensions, type Estimate, type ItemRow,
   type CustomQuote, type RequestAction, type RequestBill, type ServiceRequest, type Standing,
 } from '@shared/service-work';
@@ -186,7 +187,7 @@ function ItemsInput({ value, onChange }: { value: ItemRow[]; onChange: (rows: It
   );
 }
 
-function AddressInput({ value, onChange }: { value: AddressValue | null; onChange: (next: AddressValue) => void }) {
+export function AddressInput({ value, onChange }: { value: AddressValue | null; onChange: (next: AddressValue) => void }) {
   const a = value ?? emptyAddress();
   const set = (patch: Partial<AddressValue>) => onChange({ ...a, ...patch });
   return (
@@ -519,6 +520,8 @@ export function RequestRowCard({ request, due, to, side, actions }: {
         {side === 'store' && actions.includes('bill') && request.status !== 'billed' && <span className="svk-row__ping">Weigh & bill</span>}
         {side === 'customer' && (actions.includes('pay') || actions.includes('pay_cover')) && <span className="svk-row__ping">Pay now</span>}
         {side === 'customer' && actions.includes('send_in') && <span className="svk-row__ping">Send your parcel</span>}
+        {side === 'customer' && actions.includes('address') && needsDelivery(request) && <span className="svk-row__ping">Add delivery address</span>}
+        {side === 'store' && request.billing === 'arrival' && request.kind === 'forwarder' && needsDelivery(request) && <span className="faint">No delivery address yet</span>}
         {actions.length > 0 && side === 'store' && !request.payment?.confirmedAt && request.status === 'submitted' && <span className="svk-row__ping">Needs a quote</span>}
         {request.review && <Stars value={request.review.stars} size={12} />}
       </span>
@@ -553,6 +556,11 @@ export function RequestActions({ view, team, onChanged }: {
   const [awb, setAwb] = useState(given('awb'));
   const [stars, setStars] = useState(0);
   const [review, setReview] = useState('');
+  // Where it is delivered: the buyer may add or change it until they pay, and paying asks for it if missing.
+  const delivery = request.kind === 'forwarder' && request.billing === 'arrival' ? deliveryOf(request) : null;
+  const missingAddress = side === 'customer' && needsDelivery(request);
+  const [address, setAddress] = useState<AddressValue | null>(() => delivery);
+  const [editingAddress, setEditingAddress] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const words = ACTION_LABELS[kind];
@@ -563,6 +571,7 @@ export function RequestActions({ view, team, onChanged }: {
     try {
       const next = await api.actOnServiceRequest(kind, request.ownerId, request.id, { action, ...extra });
       setNote('');
+      if (action === 'address') setEditingAddress(false);
       onChanged(next);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
@@ -609,11 +618,43 @@ export function RequestActions({ view, team, onChanged }: {
         </form>
       )}
       {actions.includes('bill') && <BillForm request={request} busy={busy} onSend={(extra) => void act('bill', extra)} />}
+      {actions.includes('address') && !(missingAddress && actions.includes('pay')) && (
+        <div className="svk-deliver">
+          <div className="svk-deliver__head">
+            <span><span className="faint">Deliver to</span>
+              <b>{delivery ? addressLine(delivery) : 'No address yet'}</b></span>
+            {!editingAddress && (
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => { setAddress(delivery); setEditingAddress(true); }}>
+                {delivery ? 'Change' : 'Add address'}
+              </button>
+            )}
+          </div>
+          {!editingAddress && (
+            <p className="faint">
+              {request.status === 'billed' ? 'Check it before you pay — it goes out to this address once paid.' : 'You can change it here until you pay the bill.'}
+            </p>
+          )}
+          {editingAddress && (
+            <form className="stack" onSubmit={submit('address', { address })}>
+              <AddressInput value={address} onChange={setAddress} />
+              <div className="row">
+                <button type="submit" className="btn btn--sm" disabled={busy || !addressComplete(address)}>{words.address ?? 'Save address'}</button>
+                <button type="button" className="btn btn--quiet btn--sm" disabled={busy} onClick={() => setEditingAddress(false)}>Cancel</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
       {actions.includes('pay') && (
-        <form className="svk-acts__form" onSubmit={submit('pay', { reference })}>
+        <form className="svk-acts__form" onSubmit={submit('pay', missingAddress ? { reference, address } : { reference })}>
+          {missingAddress && (
+            <div className="field svk-acts__wide"><span>Deliver to *</span>
+              <AddressInput value={address} onChange={setAddress} />
+              <span className="field__hint">Where it goes once you have paid.</span></div>
+          )}
           <label className="field svk-acts__wide"><span>Payment reference</span>
             <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="UPI ref / UTR" /></label>
-          <button type="submit" className="btn svk-acts__wide" disabled={busy}>{words.pay} · {formatMoney(view.due)}</button>
+          <button type="submit" className="btn svk-acts__wide" disabled={busy || (missingAddress && !addressComplete(address))}>{words.pay} · {formatMoney(view.due)}</button>
         </form>
       )}
       {actions.includes('ship') && (

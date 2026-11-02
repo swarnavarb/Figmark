@@ -161,3 +161,10 @@
 @media (max-width: 520px) { .svk-sheet__pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .svk-sheet__radios { display: flex; flex-wrap: wrap; gap: 6px; }
 .svk-sheet__foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); }
+
+/* Where a parcel is delivered, changeable until the bill is paid. */
+.svk-deliver { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.svk-deliver__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.svk-deliver__head > span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.svk-deliver__head .faint { font-size: var(--t-xs); }
+.svk-deliver > p { margin: 0; font-size: var(--t-xs); }

@@ -138,6 +138,11 @@ export function transitLabel(lane: Pick<FreightLane, 'transitDaysMin' | 'transit
   return low === high || !high ? `${low || high} days` : `${low}–${high} days`;
 }
 
+/** The least weight a route bills, in words: "Min 5 kg". */
+export function minKgLabel(lane: Pick<FreightLane, 'minChargeKg'>): string {
+  return lane.minChargeKg > 0 ? `Min ${lane.minChargeKg} kg` : 'Min kg not set';
+}
+
 /** What a lot of this weight would cost on this lane, before customs. */
 export function laneQuoteMinor(lane: Pick<FreightLane, 'ratePerKgMinor' | 'minChargeKg'>, weightGrams: number): number {
   const kg = Math.max(weightGrams / 1000, lane.minChargeKg || 0);
@@ -289,6 +294,11 @@ export function applicationGaps(kind: StoreKind, draft: Partial<StoreCore> & Par
   if (!draft.city?.trim()) gaps.push('Where you are based');
   if (kind === 'forwarder' && (draft.lanes ?? []).filter((lane) => lane.originCity && lane.destinationCity && lane.ratePerKgMinor > 0).length === 0) {
     gaps.push('At least one lane with a rate');
+  }
+  if (kind === 'forwarder') {
+    // Every route says the least weight it bills, so a customer knows before they book.
+    const unset = (draft.lanes ?? []).filter((lane) => !(lane.minChargeKg > 0));
+    if (unset.length > 0) gaps.push(`A minimum kg on every route (${unset.map(laneLabel).join(', ')})`);
   }
   if (kind === 'artist' && (draft.offerings ?? []).filter((offering) => offering.name.trim()).length === 0) {
     gaps.push('At least one service on your menu');

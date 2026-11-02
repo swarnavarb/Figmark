@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, laneLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
+import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, laneLabel, minKgLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
 import { batteryRuleOf, fromPriceMinor, laneFromMinor } from '@shared/service-work';
 import { ApiRequestError, api, type StorePageView } from '../api';
 import { useSession } from '../session';
@@ -156,7 +156,7 @@ export function StorePage() {
                           <span className="sp-row__glyph" aria-hidden="true">{how?.glyph}</span>
                           <span className="sp-row__body">
                             <b>{laneLabel(lane)}</b>
-                            <span className="faint">{how?.label} · {transitLabel(lane)}{lane.note ? ` · ${lane.note}` : ''}</span>
+                            <span className="faint">{how?.label} · {transitLabel(lane)} · {minKgLabel(lane)}{lane.note ? ` · ${lane.note}` : ''}</span>
                             {(batteryRuleOf(lane) !== 'all' || !lane.customsIncluded) && (
                               <span className="sp-row__tags">
                                 {batteryRuleOf(lane) === 'none' && <span>No batteries</span>}

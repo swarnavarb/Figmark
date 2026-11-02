@@ -632,7 +632,7 @@ function QuoteDetail({ kind, ownerId, row, onChanged }: { kind: StoreKind; owner
       {quote.customerHandle && <Link to={`/messages/${quote.customerHandle}`} className="btn btn--ghost btn--sm sc-req__msg"><Icon name="message" size={13} /> Message {quote.customerName}</Link>}
       <form className="sc-qform" onSubmit={(event) => { event.preventDefault(); void act('offer'); }}>
         <label className="field"><span>Rate per kg</span><MoneyInput label="Rate per kg" value={rate} onChange={setRate} /></label>
-        <label className="field"><span>Minimum kg</span><input inputMode="decimal" value={minKg} onChange={(e) => setMinKg(e.target.value)} placeholder="0" /></label>
+        <label className="field"><span>Minimum kg *</span><input inputMode="decimal" required value={minKg} onChange={(e) => setMinKg(e.target.value)} placeholder="5" /></label>
         <label className="field"><span>Days, from</span><input inputMode="numeric" value={daysMin} onChange={(e) => setDaysMin(e.target.value)} placeholder="7" /></label>
         <label className="field"><span>to</span><input inputMode="numeric" value={daysMax} onChange={(e) => setDaysMax(e.target.value)} placeholder="10" /></label>
         <label className="field"><span>Batteries</span>

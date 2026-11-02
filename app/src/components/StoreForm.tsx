@@ -237,8 +237,10 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
       <div className="sf-cols3">
         <label className="field"><span>Rate per kg</span>
           <MoneyInput label="Rate per kilogram" value={lane.ratePerKgMinor} onChange={(ratePerKgMinor) => onChange({ ratePerKgMinor })} /></label>
-        <label className="field"><span>Minimum kg</span>
-          <input inputMode="decimal" value={lane.minChargeKg || ''} onChange={(e) => onChange({ minChargeKg: Number(e.target.value) || 0 })} /></label>
+        <label className="field"><span>Minimum kg *</span>
+          <input inputMode="decimal" required aria-invalid={!(lane.minChargeKg > 0)} value={lane.minChargeKg || ''} placeholder="5"
+            onChange={(e) => onChange({ minChargeKg: Number(e.target.value) || 0 })} />
+          <span className="field__hint">{lane.minChargeKg > 0 ? `Parcels under ${lane.minChargeKg} kg are billed as ${lane.minChargeKg} kg.` : 'Required — the least weight you bill on this route.'}</span></label>
         <label className="field"><span>Days (min–max)</span>
           <span className="sf-pair">
             <input inputMode="numeric" aria-label="Fewest days" value={lane.transitDaysMin || ''} onChange={(e) => onChange({ transitDaysMin: Number(e.target.value) || 0 })} />

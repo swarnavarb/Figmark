@@ -2,7 +2,17 @@
  * Styles only pages/ServiceDetailPage.tsx writes: one route or service, and
  * the form that floats over it.
  */
-.sd-page { max-width: 720px; padding-bottom: 110px; }
+/*
+ * Room under the last section for the floating button (and the tab bar under
+ * it on a phone), so it never covers the details and terms. Written against
+ * `.shell--tabbed .page`, whose 96px would otherwise win.
+ */
+.sd-page,
+.shell--tabbed .page.sd-page { max-width: 720px; padding-bottom: calc(var(--tabbar-h, 64px) + 14px + 52px + 32px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 900px) {
+  .sd-page,
+  .shell--tabbed .page.sd-page { padding-bottom: calc(24px + 52px + 40px); }
+}
 .sd-head { display: grid; gap: 6px; margin: 6px 0 20px; }
 .sd-head h1 { margin: 4px 0 0; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: -0.02em; }
 .sd-head__line { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
@@ -12,10 +22,6 @@
 .sd-main { display: grid; gap: 22px; }
 .sd-sec { display: grid; gap: 10px; }
 .sd-sec h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-md); }
-.sd-more { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
-.sd-more summary { padding: 12px 14px; cursor: pointer; font-weight: var(--w-semi); }
-.sd-more[open] summary { border-bottom: 1px solid var(--border); }
-.sd-more .svk-info { border: 0; border-radius: 0 0 var(--r-lg) var(--r-lg); }
 
 /* Steps in the order form. */
 .sd-step { display: grid; gap: 10px; }

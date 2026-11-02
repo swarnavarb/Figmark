@@ -4,7 +4,7 @@ import { CHECKPOINT_COUNT_LABELS, type OrderCheckpoint } from '@shared/enums';
 import { countOf } from '@shared/board';
 import { CREW_CHECKPOINTS, type CrewRole } from '@shared/services';
 import type { StoreStatus } from '@shared/models';
-import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, type StoreKind } from '@shared/service-stores';
+import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, minKgLabel, type StoreKind } from '@shared/service-stores';
 import {
   ApiRequestError,
   api,
@@ -310,7 +310,7 @@ function RouteSearch() {
               </span>
               <span className="svs-route__lane">
                 <b>{row.lane.label}</b>
-                <span className="faint">{FREIGHT_MODE_LABELS[row.lane.mode].glyph} {FREIGHT_MODE_LABELS[row.lane.mode].label} · {row.lane.days}</span>
+                <span className="faint">{FREIGHT_MODE_LABELS[row.lane.mode].glyph} {FREIGHT_MODE_LABELS[row.lane.mode].label} · {row.lane.days} · {minKgLabel(row.lane)}</span>
               </span>
               <span className="svs-tags">
                 <span>🔋 {BATTERY_RULE_LABELS[row.lane.batteries]}</span>
