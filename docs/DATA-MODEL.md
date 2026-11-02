@@ -20,9 +20,9 @@ shipment, `User` covers both sides of the trade, and `Order` is one manifest lin
 | `orders` | `/lotId` | **Generating a lot manifest is the hot path** and becomes a single-partition read. |
 | `reviews` | `/subjectId` | Reviews are read as "everything about this user" — exactly one partition. |
 | `disputes` | `/orderId` | A dispute belongs to one order and is always fetched with it. |
-| `sessions` | `/id` | Mock-auth revocation list. TTL-expiring, so it stays tiny. |
 | `notifications` | `/userId` | "Everything waiting for me". Expires 90 days after its last write. |
-| `siteContent` | `/id` | Operator-written pages, settings, and the logs kept as lists (fee ledger, audit trail). TTL enabled per document. |
+| `siteContent` | `/id` | Operator-written pages, settings, and the logs kept as lists (fee ledger, audit trail). Also sign-out revocations (`revoked:<digest>`) and shared rate-limit counters (`rl:…`), which had a `sessions` container until it was folded in here to free a slot. TTL enabled per document. |
+| `serviceWork` | `/storeId` | A forwarder or artist store's growing work: shipping requests, payment links and the jobs they become. One partition per store (`forwarder:<ownerId>` / `artist:<ownerId>`); a customer's own requests are indexed by `customerId`. |
 
 Throughput is provisioned on the *database* (1000 RU/s shared) rather than per
 container, which fits the Cosmos free tier exactly.
