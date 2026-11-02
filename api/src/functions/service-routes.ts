@@ -14,7 +14,7 @@ import { getRepository } from '../data/index.js';
 import { withOwners } from '../data/lot-owners.js';
 import { error, handler, json } from './http.js';
 import { liveStores } from './store-routes.js';
-import { liveLanes, liveOfferings, transitLabel } from '../../../shared/service-stores.js';
+import { laneLabel, liveLanes, liveOfferings, transitLabel } from '../../../shared/service-stores.js';
 
 /**
  * The trades around the trade: who offers them, and the screens for doing them.
@@ -75,14 +75,14 @@ const placeOf = (store: { city?: string; country?: string }) =>
 
 function forwarderCard(user: User): ProviderCard {
   const profile = user.forwarderProfile!;
-  const routes = profile.routes
-    .map((route) => `${route.originCity} → ${route.destinationCity}`)
-    .slice(0, 3);
   // Priced lanes where the store has them; the older route list otherwise.
   const priced = liveLanes(profile);
+  const routes = (priced.length > 0
+    ? [...new Set(priced.map((lane) => laneLabel(lane)))]
+    : profile.routes.map((route) => `${route.originCity} → ${route.destinationCity}`)).slice(0, 3);
   const lanes: ProviderLane[] = priced.length > 0
     ? priced.map((lane) => ({
-        from: lane.originCity, to: lane.destinationCity, mode: lane.mode,
+        from: lane.originCountry, to: lane.destinationCountry, mode: lane.mode,
         days: transitLabel(lane), ratePerKgMinor: lane.ratePerKgMinor,
       }))
     : profile.routes.map((route) => ({

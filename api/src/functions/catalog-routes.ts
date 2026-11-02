@@ -1842,9 +1842,8 @@ async function forwarders(request: HttpRequest, _context: InvocationContext) {
     .filter((entry) =>
       !route
         ? true
-        : entry.routes.some((r) =>
-            `${r.originCity} ${r.destinationCity}`.toLowerCase().includes(route),
-          ),
+        : entry.routes.some((r) => `${r.originCity} ${r.destinationCity}`.toLowerCase().includes(route))
+          || (entry.lanes ?? []).some((lane) => `${lane.originCountry} ${lane.destinationCountry}`.toLowerCase().includes(route)),
     )
     .sort((a, b) => b.trust.score - a.trust.score);
 

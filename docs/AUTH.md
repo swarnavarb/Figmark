@@ -78,7 +78,8 @@ routes need both. `lot-routes.ts` shows the pattern.
   sign-ins a minute, 300 an hour; 20 sign-ups an hour, 100 a day) - generous,
   because a mobile carrier puts many people behind one address. These counters,
   like every rate limit in `api/src/rate-limit.ts`, are shared by all instances
-  through the `sessions` container, so they hold across scale-out and restarts.
+  through the `siteContent` container (ids `rl:…`), so they hold across scale-out and
+  restarts. Sign-outs are kept there too, as `revoked:<digest>`.
 
 It signs its own tokens and stores its own password hashes, which a real
 provider will not do. Everything about it is expected to be deleted.

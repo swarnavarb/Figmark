@@ -9,7 +9,7 @@ import { TabBar, tabFor, type TabId } from './components/TabBar';
 import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon, Modal } from './components/ui';
-import { api } from './api';
+import { api, type ServiceStoreRole } from './api';
 import { useSession } from './session';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
 import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
@@ -282,9 +282,23 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const { pathname } = useLocation();
-  const { signOutEverywhere } = useSession();
+  const { signOutEverywhere, user } = useSession();
   // One Sign Out, and then the question of where: just here, or everywhere.
   const [choosing, setChoosing] = useState(false);
+  // The freight and art stores this account runs or works for, asked the first time the menu opens.
+  const [services, setServices] = useState<ServiceStoreRole[] | null>(null);
+  useEffect(() => {
+    if (!open || services) return;
+    void api.myServiceStores().then((result) => setServices(result.stores)).catch(() => setServices([]));
+  }, [open, services]);
+  const roles = [
+    { id: 'buy', emoji: '🛍️', label: 'Buying', to: '/', on: !pathname.startsWith('/shop') && !pathname.startsWith('/services/store/') },
+    ...(user?.sellerProfile ? [{ id: 'shop', emoji: '🏪', label: user.sellerProfile.storefrontName || 'My store', to: '/shop', on: pathname.startsWith('/shop') }] : []),
+    ...(services ?? []).map((row) => {
+      const to = `/services/store/${row.kind}/${row.ownerId}`;
+      return { id: `${row.kind}:${row.ownerId}`, emoji: row.kind === 'forwarder' ? '✈️' : '🎨', label: row.name, to, on: pathname.startsWith(to) };
+    }),
+  ];
 
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -310,9 +324,19 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
       {open && (
         <div className="pmenu__panel" role="menu">
           <span className="pmenu__who">{name}</span>
+          <div className="pmenu__roles" role="group" aria-label="Switch to">
+            <span className="pmenu__rolehead">
+              <span>Switch to</span>
+              <Link to="/open" className="pmenu__open" aria-label="Open another business"><Icon name="plus" size={12} /> Open</Link>
+            </span>
+            {roles.map((role) => (
+              <Link key={role.id} role="menuitemradio" aria-checked={role.on} to={role.to} className={`pmenu__item pmenu__role${role.on ? ' is-on' : ''}`}>
+                {role.emoji} <span>{role.label}</span>{role.on && <Icon name="check" size={14} />}
+              </Link>
+            ))}
+          </div>
           <Link role="menuitem" to="/me" className="pmenu__item">🙂 My Profile</Link>
           <Link role="menuitem" to="/quests" className="pmenu__item">🏆 Quests &amp; rewards</Link>
-          <Link role="menuitem" to="/shop" className="pmenu__item">🏪 My Storefront</Link>
           <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>
           <Link role="menuitem" to="/cart" className="pmenu__item">🛒 My Cart</Link>
           <Link role="menuitem" to="/wallet" className="pmenu__item">👛 My wallet</Link>

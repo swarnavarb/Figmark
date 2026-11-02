@@ -237,25 +237,59 @@ export const CONTAINERS = {
       'A conversation is one partition, and the thread id is derived from the two handles rather than allocated, so either side addresses the same partition without a handshake. The inbox is a cross-partition query over the handles a person speaks as, which is a small set.',
     excludedPaths: ['/body/?'],
   },
-  sessions: {
-    name: 'sessions',
-    partitionKeyPath: '/id',
-    rationale:
-      'Mock-auth session revocation list. Tokens are self-describing and stateless; this container only records explicit logouts, so it stays tiny and expires itself.',
-    defaultTtlSeconds: -1,
-  },
   siteContent: {
     name: 'siteContent',
     partitionKeyPath: '/id',
     rationale:
-      'Pages the operators write rather than the code - the Learn guide first - and the logs and queues kept as lists: the fee ledger by month, the audit trail by day. Each document is its own partition and is read whole by id, or as a range of ids for a log. TTL is enabled without a default, so a log document can set its own expiry.',
+      'Pages the operators write rather than the code - the Learn guide first - and the logs and queues kept as lists: the fee ledger by month, the audit trail by day. Each document is its own partition and is read whole by id, or as a range of ids for a log. TTL is enabled without a default, so a document can set its own expiry. It also holds the short-lived rows that used to have a `sessions` container to themselves - sign-out revocations (`revoked:<digest>`) and shared rate-limit counters (`rl:...`) - which are point reads by id with their own TTL, exactly this container\'s shape. Their prefixes sort apart from the `audit-` and `fee-ledger-` ranges, so a log read never sees them. Folding them in freed a slot under the 25-container ceiling for `serviceWork`.',
     // Read whole, never searched: only the id needs an index.
     excludedPaths: ['/data/*'],
     defaultTtlSeconds: -1,
   },
+  serviceWork: {
+    name: 'serviceWork',
+    partitionKeyPath: '/storeId',
+    rationale:
+      'Everything a forwarder or artist store does that grows without bound - shipping requests customers send a forwarder, payment links an artist issues for custom work, and the jobs those become - one partition per store (`forwarder:<ownerId>` or `artist:<ownerId>`), so a store console, worked by every member of its team, is one single-partition query. The store itself stays on the owner\'s `users` row; its work does not, because that row has a 2 MB ceiling a busy store would reach. "My requests" for a customer is cross-partition by `customerId`, which the composite index below keeps cheap, and is bounded by how much one person orders.',
+    // Briefs, addresses, parcel lists, photos and timelines are read with the
+    // document and never searched by.
+    excludedPaths: ['/details/*', '/brief/?', '/photos/*', '/history/*', '/payments/*'],
+    compositeIndexes: [
+      [
+        { path: '/customerId', order: 'ascending' },
+        { path: '/createdAt', order: 'descending' },
+      ],
+      [
+        { path: '/type', order: 'ascending' },
+        { path: '/createdAt', order: 'descending' },
+      ],
+    ],
+  },
 } as const satisfies Record<string, ContainerDefinition>;
 
 export const CONTAINER_LIST: ContainerDefinition[] = Object.values(CONTAINERS);
+
+/**
+ * Containers the schema no longer defines, which still count towards the
+ * 25-container ceiling until they are deleted from the database.
+ *
+ * `npm run azure:provision` copies whatever is still live out of each one and
+ * then deletes it, before it creates anything new - so the slot is free by the
+ * time the container that replaces it is created.
+ */
+export const RETIRED_CONTAINERS = [
+  {
+    name: 'sessions',
+    /** Where its rows went. */
+    movedTo: 'siteContent',
+    /**
+     * Revocations are copied under `revoked:<digest>` with what is left of
+     * their TTL. Rate-limit counters are not copied: each is a window of at
+     * most a day that simply starts again.
+     */
+    revocationPrefix: 'revoked:',
+  },
+] as const;
 
 /** Blob container holding listing and condition photos. */
 export const PHOTO_CONTAINER_NAME = 'listing-photos';

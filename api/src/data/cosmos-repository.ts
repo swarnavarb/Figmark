@@ -1,4 +1,5 @@
 import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
+import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
@@ -7,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { CosmosClient, type Container, type ContainerRequest, type Database, type IndexingPolicy } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
-import { CONTAINER_LIST, CONTAINERS, containerBody } from '../../../shared/containers.js';
+import { CONTAINER_LIST, CONTAINERS, RETIRED_CONTAINERS, containerBody } from '../../../shared/containers.js';
 import type {
   ClientDevice,
   Dispute, Follow, Forum, Like, Listing, ListingComment, Lot, Message, Order, Pledge, Post, Notification, PowerSale, Review, SiteContent, StoreReview, User, Want, WantOffer, WantSeeker,
@@ -32,6 +33,16 @@ import {
 const CONTAINER_POLICY_MARKER = 'migration:container-policies';
 /** How long a refused policy update waits before it is tried again. */
 const POLICY_RETRY_MS = 24 * 60 * 60 * 1000;
+
+/** The container sign-outs were kept in before they moved to siteContent. */
+const LEGACY_SESSIONS = RETIRED_CONTAINERS[0].name;
+/** How often an instance re-asks whether that container is still there. */
+const LEGACY_CHECK_MS = 10 * 60 * 1000;
+
+/** The siteContent id a revoked token is recorded under. */
+function revocationId(token: string): string {
+  return `${RETIRED_CONTAINERS[0].revocationPrefix}${sessionDigest(token)}`;
+}
 
 /**
  * Cosmos DB (Core/SQL) implementation.
@@ -217,6 +228,12 @@ export class CosmosRepository implements Repository {
         missing.push(definition.name);
         failure ??= `Creating them was refused: ${describeError(error)}.`;
       }
+    }
+    // A retired container still holds its slot under the ceiling, which is the
+    // likeliest reason a new one was refused: provisioning deletes it.
+    const lingering = RETIRED_CONTAINERS.map((retired) => retired.name).filter((name) => present.has(name));
+    if (missing.length > 0 && lingering.length > 0) {
+      failure = `${failure ?? ''} Retired container(s) still in the database: ${lingering.join(', ')}.`.trim();
     }
     return { created, missing, failure };
   }
@@ -1185,6 +1202,100 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listServiceWork<T extends ServiceWorkDoc>(storeId: string, type: T['type'], limit = 500): Promise<T[]> {
+    const { resources } = await this.container('serviceWork')
+      .items.query<T>({
+        query: 'SELECT TOP @limit * FROM c WHERE c.type = @type ORDER BY c.createdAt DESC',
+        parameters: [{ name: '@type', value: type }, { name: '@limit', value: limit }],
+      }, { partitionKey: storeId })
+      .fetchAll();
+    return resources;
+  }
+
+  async getServiceWork<T extends ServiceWorkDoc>(storeId: string, id: string): Promise<T | null> {
+    try {
+      const { resource } = await this.container('serviceWork').item(id, storeId).read<T>();
+      return resource ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async saveServiceWork<T extends ServiceWorkDoc>(doc: T): Promise<T> {
+    const { resource } = await this.container('serviceWork').items.upsert<T>(doc);
+    return (resource as T | undefined) ?? doc;
+  }
+
+  async deleteServiceWork(storeId: string, id: string): Promise<void> {
+    try {
+      await this.container('serviceWork').item(id, storeId).delete();
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+    }
+  }
+
+  async listServiceRequestsBy(customerId: string): Promise<ServiceRequest[]> {
+    // Cross-partition, and bounded by how much one person has asked for.
+    const { resources } = await this.container('serviceWork')
+      .items.query<ServiceRequest>({
+        query: "SELECT * FROM c WHERE c.customerId = @id AND c.type = 'request' ORDER BY c.createdAt DESC",
+        parameters: [{ name: '@id', value: customerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listServiceRequestsAssignedTo(userId: string): Promise<ServiceRequest[]> {
+    // Cross-partition, bounded by what one person is given.
+    const { resources } = await this.container('serviceWork')
+      .items.query<ServiceRequest>({
+        query: "SELECT TOP 100 * FROM c WHERE c.type = 'request' AND c.assigneeId = @id ORDER BY c.updatedAt DESC",
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listServiceQuotesFor(customerId: string): Promise<CustomQuote[]> {
+    // Cross-partition, bounded by what one person asks for: each expires within three months.
+    const { resources } = await this.container('serviceWork')
+      .items.query<CustomQuote>({
+        query: "SELECT * FROM c WHERE c.type = 'quote' AND c.customerId = @id ORDER BY c.createdAt DESC",
+        parameters: [{ name: '@id', value: customerId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listExpiredServiceQuotes(nowIso: string, limit: number): Promise<CustomQuote[]> {
+    const { resources } = await this.container('serviceWork')
+      .items.query<CustomQuote>({
+        query: "SELECT TOP @limit * FROM c WHERE c.type = 'quote' AND c.expiresAt <= @now",
+        parameters: [{ name: '@now', value: nowIso }, { name: '@limit', value: limit }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async listServiceStoresFollowedBy(userId: string): Promise<string[]> {
+    // Cross-partition, but one small value per store followed.
+    const { resources } = await this.container('serviceWork')
+      .items.query<string>({
+        query: "SELECT VALUE c.storeId FROM c WHERE c.type = 'follow' AND c.userId = @id",
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async countServiceFollowers(storeId: string): Promise<number> {
+    const { resources } = await this.container('serviceWork')
+      .items.query<number>({ query: "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'follow'" }, { partitionKey: storeId })
+      .fetchAll();
+    return resources[0] ?? 0;
+  }
+
   async listPledges(listingId: string): Promise<Pledge[]> {
     const { resources } = await this.container('pledges')
       .items.query<Pledge>({ query: 'SELECT * FROM c ORDER BY c.createdAt ASC' }, { partitionKey: listingId })
@@ -1767,11 +1878,11 @@ export class CosmosRepository implements Repository {
   }
 
   async revokeSession(token: string, expiresAt: Date): Promise<void> {
-    const id = sessionDigest(token);
+    const id = revocationId(token);
     const ttlSeconds = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 1000));
     // The record only needs to outlive the token it revokes, so Cosmos expires
     // it for us rather than us sweeping the container.
-    await this.container('sessions').items.upsert({
+    await this.container('siteContent').items.upsert({
       id,
       revokedAt: new Date().toISOString(),
       ttl: ttlSeconds,
@@ -1779,10 +1890,9 @@ export class CosmosRepository implements Repository {
   }
 
   async bumpCounter(id: string, by: number, ttlSeconds: number): Promise<number | null> {
-    // Kept in the sessions container: it already expires its rows, and a
-    // container of its own would be the 25th - the most a shared-throughput
-    // database allows.
-    const item = this.container('sessions').item(id, id);
+    // Kept in siteContent: rows there can carry their own expiry, and a
+    // container of its own would cost a slot under the 25-container ceiling.
+    const item = this.container('siteContent').item(id, id);
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         if (by === 0) {
@@ -1796,7 +1906,7 @@ export class CosmosRepository implements Repository {
       }
       if (by <= 0) return 0;
       try {
-        await this.container('sessions').items.create({ id, count: by, ttl: ttlSeconds });
+        await this.container('siteContent').items.create({ id, count: by, ttl: ttlSeconds });
         return by;
       } catch (error) {
         // Created by another instance in between: count on top of theirs.
@@ -1807,11 +1917,41 @@ export class CosmosRepository implements Repository {
   }
 
   async isSessionRevoked(token: string): Promise<boolean> {
-    const id = sessionDigest(token);
+    const id = revocationId(token);
     try {
-      const { resource } = await this.container('sessions').item(id, id).read();
+      const { resource } = await this.container('siteContent').item(id, id).read();
+      if (resource !== undefined) return true;
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+    }
+    return this.revokedInLegacySessions(token);
+  }
+
+  /** Whether the retired `sessions` container is still in the database, re-asked every few minutes. */
+  private legacySessions: { at: number; present: Promise<boolean> } | null = null;
+
+  /**
+   * A sign-out recorded before revocations moved to siteContent.
+   *
+   * Between this code going out and `azure:provision` copying the old rows
+   * across, a token somebody signed out of would otherwise work again. Once
+   * the old container is deleted this costs nothing: the check that it exists
+   * is remembered, and answers no.
+   */
+  private async revokedInLegacySessions(token: string): Promise<boolean> {
+    const now = Date.now();
+    if (!this.legacySessions || now - this.legacySessions.at > LEGACY_CHECK_MS) {
+      const present = this.database.container(LEGACY_SESSIONS).read().then(() => true, () => false);
+      this.legacySessions = { at: now, present };
+    }
+    if (!(await this.legacySessions.present)) return false;
+    const digest = sessionDigest(token);
+    try {
+      const { resource } = await this.database.container(LEGACY_SESSIONS).item(digest, digest).read();
       return resource !== undefined;
     } catch (error) {
+      // Never revoked there, or the container went between the check and the
+      // read. Anything else - a throttle - must not wave a signed-out token through.
       if (isNotFound(error)) return false;
       throw error;
     }

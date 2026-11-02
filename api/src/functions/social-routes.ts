@@ -10,6 +10,8 @@ import {
   type PostSocial, type ReactorRow, type StoredComment, type StoredPoll, type StoredReaction,
 } from '../../../shared/social.js';
 import { can } from '../../../shared/stores.js';
+import { isLive as storeIsLive, rightsIn, storeOf } from '../../../shared/service-stores.js';
+import { parseStoreKey, storeKey, type ChannelMessage } from '../../../shared/service-work.js';
 import { isExpired, isMultiple, rupees } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
 import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
@@ -419,7 +421,9 @@ export async function decorate(
       && channelOwner?.sellerProfile?.storefrontName === post.authorName;
     const card: PostCard = {
       post: publicPost(post),
-      author: spokenAsShop ? sellerRef(channelOwner) : personRef(author),
+      author: post.service
+        ? { name: post.service.name, handle: null, href: `/services/${post.service.kind}/${post.service.slug}` }
+        : spokenAsShop ? sellerRef(channelOwner) : personRef(author),
       listing: listing
         ? {
             id: listing.id,
@@ -446,7 +450,7 @@ export async function decorate(
           || (post.channel === 'seller' && channelOwner?.sellerProfile && can(channelOwner, viewer.userId, 'posts')))
           ? { host: true } : {}),
       },
-      following: followedIds.has(post.channelId) || post.channelId === viewer.userId,
+      following: followedIds.has(post.channelId) || post.channelId === viewer.userId || Boolean(post.service),
       shop: spokenAsShop,
     };
     if (savedIds.has(post.id)) card.saved = true;
@@ -508,6 +512,15 @@ async function storeOwner(storeId: string, repository: Repo): Promise<Owner | nu
 }
 
 async function postOwner(post: Post, repository: Repo): Promise<Owner> {
+  // A forwarder's or artist's post: whoever may speak for the company hears.
+  if (post.channel === 'service' && post.service) {
+    const owner = await repository.getUserById(post.service.ownerId);
+    const store = owner ? storeOf(owner, post.service.kind) : null;
+    if (owner && store) {
+      const voices = (store.team ?? []).filter((member) => rightsIn(owner, post.service!.kind, member.userId).includes('voice'));
+      return { audience: [owner.id, ...voices.map((member) => member.userId)], store: store.companyName, storeId: null };
+    }
+  }
   // Said in a shop's own voice, under the shop's name. A person's post on
   // their own wall shares the channel, so the name is what tells them apart -
   // as `withoutShops` reads it.
@@ -824,9 +837,16 @@ function risingFor(
 
 /** Shops and people this person follows, by id: who their "people you follow" are. */
 async function watchedBy(userId: string, repository: Repo): Promise<Set<string>> {
-  const follows = await repository.listFollowsBy(userId);
-  return new Set(follows.map((follow) => (isPersonFollow(follow.sellerId)
-    ? follow.sellerId.slice(PERSON_FOLLOW.length) : follow.sellerId)));
+  // Shops and people, and the freight forwarders and artists followed - whose
+  // posts live in channel `kind:ownerId`, so the feed reads them the same way.
+  const [follows, services] = await Promise.all([
+    repository.listFollowsBy(userId),
+    repository.listServiceStoresFollowedBy(userId).catch(() => [] as string[]),
+  ]);
+  return new Set([
+    ...follows.map((follow) => (isPersonFollow(follow.sellerId) ? follow.sellerId.slice(PERSON_FOLLOW.length) : follow.sellerId)),
+    ...services,
+  ]);
 }
 
 /**
@@ -1737,7 +1757,51 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
     .sort((a, b) => b.recent.length - a.recent.length || (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''))
     .slice(0, 8);
 
-  return json(200, { channels: rows, discover });
+  return json(200, { channels: [...rows, ...await serviceChannels(user.id, repository)], discover });
+}
+
+/**
+ * The company channels of the freight forwarders and artists this person
+ * follows or works for, as rows of the same list. Each opens on the store's
+ * own page, where its channel lives.
+ */
+async function serviceChannels(userId: string, repository: Repo) {
+  const [followed, owners] = await Promise.all([
+    repository.listServiceStoresFollowedBy(userId).catch(() => [] as string[]),
+    repository.listServiceStoreOwners(),
+  ]);
+  const follows = new Set(followed);
+  const picked = owners.flatMap((owner) => (['forwarder', 'artist'] as const).flatMap((kind) => {
+    const store = storeOf(owner, kind);
+    if (!store) return [];
+    const key = `${kind}:${owner.id}`;
+    const rights = rightsIn(owner, kind, userId);
+    return follows.has(key) || rights.length > 0 ? [{ owner, kind, store, key, mine: rights.includes('voice') }] : [];
+  }));
+  const rows = await Promise.all(picked.slice(0, 40).map(async ({ kind, store, key, mine }) => {
+    const latest = (await repository.listServiceWork<ChannelMessage>(key, 'chat', 20));
+    const last = latest[0] ?? null;
+    return {
+      sellerId: key,
+      href: `/services/${kind}/${store.directorySlug}?tab=channel`,
+      service: kind,
+      name: store.companyName,
+      handle: null,
+      photoUrl: store.logoUrl ?? null,
+      tier: null,
+      bio: store.tagline ?? '',
+      followerCount: 0,
+      following: follows.has(key),
+      mine,
+      lastPost: last?.body ?? null,
+      lastPostAt: last?.createdAt ?? null,
+      lastPostKind: null,
+      lastPostBy: last?.authorName ?? null,
+      pinned: false,
+      recent: latest.filter((row) => row.authorId !== userId).map((row) => row.createdAt),
+    };
+  }));
+  return rows.sort((a, b) => (b.lastPostAt ?? '').localeCompare(a.lastPostAt ?? ''));
 }
 
 /** GET /api/social/channels/{id} - one channel or forum, newest first. */
@@ -2151,6 +2215,36 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   }
 
   const repository = await getRepository();
+
+  // A freight forwarder or an artist speaking as its company: `storeId` is
+  // `kind:ownerId`. Updates, photos, polls and questions - the games with
+  // prizes and anything tied to items for sale are a shop's.
+  const service = typeof body.storeId === 'string' ? parseStoreKey(body.storeId) : null;
+  if (service) {
+    if (prizeAsked || guess || debateIds || hotspots?.some((spot) => spot.listingId) || body.listingId || body.forumId || body.channelId
+      || poll?.options.some((option) => option.listingId)) {
+      return error(400, 'invalid_post', 'A service store posts updates, photos, polls and questions.');
+    }
+    const owner = await repository.getUserById(service.ownerId);
+    const store = owner ? storeOf(owner, service.kind) : null;
+    if (!owner || !store || !storeIsLive(store) || owner.suspended || !rightsIn(owner, service.kind, user.id).includes('voice')) {
+      return error(403, 'forbidden', 'You cannot post for that store.');
+    }
+    const at = new Date().toISOString();
+    const made = await repository.createPost({
+      id: `pst_${randomUUID().slice(0, 12)}`,
+      channelId: storeKey(service.kind, owner.id), channel: 'service', kind: 'update',
+      authorId: user.id, authorName: store.companyName,
+      body: text, listingId: null, photoUrl: photoUrls[0] ?? null, photoUrls,
+      likeCount: 0, replyCount: 0, voice: 'store', reach: 'feed', announcement: true,
+      reactions: [], comments: [], shareCount: 0, poll, vibe,
+      ...(hotspots?.length ? { flex: { hotspots } } : {}),
+      ...(blur ? { blur } : {}), ...(compare ? { compare } : {}), ...(question ? { question } : {}),
+      service: { kind: service.kind, ownerId: owner.id, name: store.companyName, slug: store.directorySlug },
+      createdAt: at, updatedAt: at,
+    });
+    return json(201, { post: made });
+  }
 
   // Items named on a flex or a debate must be real, public items - anybody's,
   // since a debate is usually about two things neither side sells.

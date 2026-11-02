@@ -44,6 +44,13 @@ export function StoresView() {
     void load();
   }, [load]);
 
+  // Demo stores belong to the development site only: production never shows
+  // the button, and the server refuses it there too.
+  const [testSite, setTestSite] = useState(false);
+  useEffect(() => {
+    void admin.health().then((health) => setTestSite(health.environment === 'development')).catch(() => setTestSite(false));
+  }, []);
+
   if (!rows) return error ? <p className="notice notice--error">{error}</p> : <Loading />;
 
   const waiting = rows.filter((row) => row.status === 'pending');
@@ -68,6 +75,7 @@ export function StoresView() {
         </div>
       </div>
       {error && <p className="notice notice--error">{error}</p>}
+      {testSite && <DemoStores onMade={load} />}
       {shown.length === 0 && <p className="muted">Nothing here. {filter === 'waiting' ? 'The queue is empty.' : ''}</p>}
       {shown.map((row) => {
         const key = `${row.kind}-${row.owner.id}`;
@@ -179,5 +187,47 @@ function StoreReview({ row, open, onToggle, onDecided }: { row: OpsStoreRow; ope
         </div>
       )}
     </article>
+  );
+}
+
+/**
+ * Makes a demo forwarder and a demo artist with the operator on both teams,
+ * for trying the services end to end. Shown, and allowed, on the development
+ * site only.
+ */
+function DemoStores({ onMade }: { onMade: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [made, setMade] = useState<{ kind: StoreKind; slug: string; ownerId: string; name: string }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function make() {
+    setBusy(true);
+    setError(null);
+    try {
+      setMade((await admin.demoStores()).stores);
+      await onMade();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not make the demo stores.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="notice">
+      <div className="row" style={{ flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 }}>
+        <span>Test site: make a demo freight forwarder and a demo artist, with you on both teams.</span>
+        <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void make()}>{busy ? 'Making…' : made ? 'Reset demo stores' : 'Create demo stores'}</button>
+      </div>
+      {made && (
+        <p style={{ margin: '8px 0 0' }}>
+          {made.map((row, index) => (
+            <span key={row.slug}>
+              {index > 0 && ' · '}
+              {row.name}: <a href={`/services/${row.kind}/${row.slug}`}>public page</a>, <a href={`/services/store/${row.kind}/${row.ownerId}`}>dashboard</a>
+            </span>
+          ))}
+        </p>
+      )}
+      {error && <p className="notice notice--error">{error}</p>}
+    </div>
   );
 }

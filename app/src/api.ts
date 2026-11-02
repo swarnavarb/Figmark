@@ -1,3 +1,4 @@
+import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
 import type { ButtonLibrary } from '@shared/route-buttons';
@@ -22,6 +23,7 @@ import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
+import type { ChannelMessage, CustomQuote, Dimensions, RequestAction, ServiceRequest, Standing } from '@shared/service-work';
 import type { RouteStep, StageIcon, StepAssignee, StepSide, StepTrigger, TrackingRoute } from '@shared/routes';
 import type { CardButton, SerialButton } from '@shared/buttons';
 import type { LevelTag, MergedRating, StoreLevel } from '@shared/storefront';
@@ -72,7 +74,7 @@ import type {
   MessageDeal, MessageParty, Order, OrderShipment, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
   StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
   ArtistJob, ArtistOffering, ArtistProfile, FreightLane, InsurancePlan, OrderAddOn, PortfolioPiece, StoreCore, StoreLink,
-  StoreMember, StoreRight, StoreStatus, StoreWarehouse,
+  StoreMember, StoreRight, StoreStatus, StoreWarehouse, ServiceFormField,
 } from '@shared/models';
 
 /**
@@ -1395,6 +1397,9 @@ export interface PostDetail {
 
 export interface ChannelRow {
   sellerId: string;
+  /** Set on a freight forwarder's or artist's channel, which opens on its store page. */
+  href?: string;
+  service?: 'forwarder' | 'artist';
   name: string;
   handle: string | null;
   photoUrl: string | null;
@@ -2393,6 +2398,51 @@ export interface PublicProfile {
 /* ── Service stores ──────────────────────────────────────────────────── */
 
 /** A store as the person running it sees it in My services. */
+export interface StoreInsightsView {
+  insights: StoreInsights;
+  audience: {
+    followers: number; posts: number; reactions: number; comments: number;
+    best: { id: string; channelId: string; body: string; reactions: number; comments: number; at: string }[];
+  };
+}
+
+/** A store as a search result names it: level and rating, earned here. */
+export interface SearchStore {
+  ownerId: string; name: string; slug: string; logoUrl: string | null; accent: string;
+  level: number; title: string; rating: number | null; reviews: number; completed: number;
+}
+export interface RouteMatch {
+  store: SearchStore;
+  lane: {
+    id: string; label: string; originCountry: string; destinationCountry: string; mode: FreightLane['mode'];
+    days: string; fromMinor: number; batteries: 'all' | 'in_device' | 'none'; customsIncluded: boolean; note: string;
+  };
+  freeCover: boolean;
+  door: boolean;
+}
+export interface StudioMatch {
+  store: SearchStore;
+  services: { id: string; name: string; days: number }[];
+  fromMinor: number;
+  specialties: string[];
+  portfolio: string[];
+  acceptingWork: boolean;
+}
+
+/** A freight or art store this person can act for: the role switcher and the Create sheet. */
+export interface ServiceStoreRole {
+  kind: StoreKind;
+  ownerId: string;
+  isOwner: boolean;
+  rights: StoreRight[];
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  accent: string;
+  status: StoreStatus | null;
+  live: boolean;
+}
+
 export interface MyStoreRow {
   kind: StoreKind;
   ownerId: string;
@@ -2471,7 +2521,7 @@ export interface CrewLotView {
 }
 
 /** Everything a store form edits. */
-export type StoreDraft = Partial<StoreCore> & Partial<Pick<ForwarderProfile, 'lanes' | 'insurance' | 'warehouse' | 'autoAccept' | 'claimedMonthlyCapacityKg'>>
+export type StoreDraft = Partial<StoreCore> & Partial<Pick<ForwarderProfile, 'lanes' | 'insurance' | 'warehouse' | 'autoAccept' | 'claimedMonthlyCapacityKg' | 'coverPayment'>>
   & Partial<Pick<ArtistProfile, 'specialties' | 'offerings' | 'portfolio' | 'acceptingWork' | 'studioAddress'>>;
 
 export interface StoreConsole {
@@ -2513,6 +2563,48 @@ export interface StoreWork {
   jobs: ArtistJobRow[];
 }
 
+export interface StorePageView {
+  store: PublicStore;
+  stats: {
+    lotsCarried: number; commissions: number; followers: number; standing: Standing;
+    reviews: { stars: number; text: string; at: string; by: string; subject: string | null }[];
+  };
+  viewer: { following: boolean; rights: StoreRight[] } | null;
+}
+
+export interface TeamRow { userId: string; name: string; tag: string | null }
+
+export interface RequestRow {
+  request: ServiceRequest;
+  actions: RequestAction[];
+  due: number;
+}
+
+export interface QuoteRow {
+  quote: CustomQuote;
+  usable: boolean;
+}
+
+export interface QuoteView extends QuoteRow {
+  side: 'store' | 'customer';
+  sendTo: StoreWarehouse[];
+  store: { name: string; slug: string; accent: string | null; logoUrl: string | null };
+}
+
+export interface RequestView extends RequestRow {
+  side: 'store' | 'customer';
+  payTo: SellerPaymentDetails | null;
+  /** Paid cover owed before the parcel is sent, when the store asks for it upfront. */
+  coverDue: number;
+  /** Where to send the goods: every origin warehouse on the route, or the studio once paid. */
+  sendTo: StoreWarehouse[];
+}
+
+export interface ChannelView {
+  messages: ChannelMessage[];
+  me: { canSpeakAsCompany: boolean; isMember: boolean; moderates: boolean; tag: string | null } | null;
+}
+
 /** A store's public page. */
 export interface PublicStore {
   kind: StoreKind;
@@ -2539,11 +2631,19 @@ export interface PublicStore {
   insurance: InsurancePlan[];
   warehouse: StoreWarehouse | null;
   autoAccept: boolean;
+  /** When paid cover is paid: before the parcel is sent, or on the bill. */
+  coverPayment: 'upfront' | 'with_bill';
   capacityKg: number | null;
   offerings: ArtistOffering[];
   portfolio: PortfolioPiece[];
   specialties: string[];
   acceptingWork: boolean;
+  form: ServiceFormField[];
+  terms: string;
+  serviceOptions: { id: string; name: string; priceMinor: number; note: string }[];
+  /** The company's own form (a Google Form, say), when it collects details there. */
+  formUrl: string | null;
+  takesDirect: boolean;
 }
 
 export interface OrderServicesView {
@@ -2812,7 +2912,7 @@ export const api = {
     request<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}`),
   saveStore: (kind: StoreKind, ownerId: string, draft: StoreDraft) =>
     post<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/save`, draft),
-  storeTeam: (kind: StoreKind, ownerId: string, body: { identifier?: string; rights?: StoreRight[]; remove?: string }) =>
+  storeTeam: (kind: StoreKind, ownerId: string, body: { identifier?: string; rights?: StoreRight[]; remove?: string; member?: string; tag?: string }) =>
     post<StoreConsole>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/team`, body),
   storeWork: (kind: StoreKind, ownerId: string) =>
     request<StoreWork>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/work`),
@@ -2821,7 +2921,62 @@ export const api = {
   artistAct: (ownerId: string, orderId: string, body: { action: ArtistJobAction; quoteMinor?: number; days?: number; note?: string; photos?: string[]; courier?: string; awb?: string }) =>
     post<ArtistJobRow>(`/service-stores/artist/${encodeURIComponent(ownerId)}/jobs/${encodeURIComponent(orderId)}`, body),
   storePage: (kind: StoreKind, slug: string) =>
-    request<{ store: PublicStore; stats: { lotsCarried: number; commissions: number } }>(`/service-store/${kind}/${encodeURIComponent(slug)}`),
+    request<StorePageView>(`/service-store/${kind}/${encodeURIComponent(slug)}`),
+  submitServiceRequest: (kind: StoreKind, ownerId: string, body: {
+    subjectId: string; optionId: string | null; planId: string | null; answers: Record<string, unknown>;
+    addonIds?: string[]; external?: boolean; quoteId?: string | null;
+  }) =>
+    post<RequestView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/requests`, body),
+  storeInsights: (kind: StoreKind, ownerId: string) =>
+    request<StoreInsightsView>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/insights`),
+  searchRoutes: (filters: { from?: string; to?: string; mode?: string; battery?: 'in_device' | 'loose' | null; freeCover?: boolean; door?: boolean }) => {
+    const query = new URLSearchParams();
+    if (filters.from) query.set('from', filters.from);
+    if (filters.to) query.set('to', filters.to);
+    if (filters.mode) query.set('mode', filters.mode);
+    if (filters.battery) query.set('battery', filters.battery);
+    if (filters.freeCover) query.set('freeCover', '1');
+    if (filters.door) query.set('door', '1');
+    return request<{ routes: RouteMatch[]; countries: { from: string[]; to: string[] } }>(`/service-search/forwarder?${query}`);
+  },
+  searchStudios: (q: string) =>
+    request<{ studios: StudioMatch[]; specialties: string[] }>(`/service-search/artist${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  assignedRequests: () => request<{ requests: RequestRow[] }>('/me/assigned-requests'),
+  myServiceStores: () => request<{ stores: ServiceStoreRole[] }>('/me/service-stores'),
+  myServiceRequests: () => request<{ requests: RequestRow[] }>('/me/service-requests'),
+  myServiceQuotes: () => request<{ quotes: QuoteRow[] }>('/me/service-quotes'),
+  storeQuotes: (kind: StoreKind, ownerId: string) =>
+    send<{ quotes: QuoteRow[] }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/quotes`),
+  askQuote: (kind: StoreKind, ownerId: string, body: {
+    laneId?: string | null; originCountry?: string; destinationCountry?: string; mode?: string;
+    what: string; weightKg?: number | null; battery: 'none' | 'in_device' | 'loose'; notes?: string;
+  }) => post<QuoteView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/quotes`, body),
+  serviceQuote: (kind: StoreKind, ownerId: string, id: string) =>
+    send<QuoteView>(`/service-quotes/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}`),
+  actOnQuote: (kind: StoreKind, ownerId: string, id: string, body: {
+    action: 'offer' | 'decline' | 'withdraw'; ratePerKgMinor?: number; minChargeKg?: number; transitDaysMin?: number; transitDaysMax?: number;
+    batteries?: 'all' | 'in_device' | 'none'; note?: string; expiresAt?: string; warehouses?: StoreWarehouse[];
+  }) => post<QuoteView & { deleted?: boolean }>(`/service-quotes/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}/act`, body),
+  serviceRequest: (kind: StoreKind, ownerId: string, id: string) =>
+    send<RequestView & { store: { name: string; slug: string; accent: string | null; logoUrl: string | null }; team: TeamRow[] }>(
+      `/service-requests/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}`),
+  actOnServiceRequest: (kind: StoreKind, ownerId: string, id: string, body: {
+    action: RequestAction; quoteMinor?: number; days?: number; note?: string; reference?: string; amountMinor?: number;
+    courier?: string; awb?: string; stars?: number; text?: string; assigneeId?: string | null;
+    weightKg?: number; box?: Dimensions | null; photoUrls?: string[]; added?: { label: string; minor: number }[];
+  }) => post<RequestView & { team: TeamRow[] }>(`/service-requests/${kind}/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}/act`, body),
+  storeRequests: (kind: StoreKind, ownerId: string) =>
+    send<{ requests: RequestRow[]; team: TeamRow[] }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/requests`),
+  createPaymentLink: (kind: StoreKind, ownerId: string, body: { title: string; description: string; amountMinor: number; days?: number; subjectId?: string }) =>
+    post<{ request: ServiceRequest; link: string }>(`/service-stores/${kind}/${encodeURIComponent(ownerId)}/links`, body),
+  storeChannel: (kind: StoreKind, ownerId: string) =>
+    send<ChannelView>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel`),
+  postStoreChannel: (kind: StoreKind, ownerId: string, body: { body: string; asCompany: boolean; announcement: boolean; toSocial?: boolean; photoUrls?: string[] }) =>
+    post<{ message: ChannelMessage; post: { channelId: string; id: string } | null }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel`, body),
+  deleteStoreChannel: (kind: StoreKind, ownerId: string, id: string) =>
+    post<{ ok: true }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/channel/${encodeURIComponent(id)}/delete`),
+  followStore: (kind: StoreKind, ownerId: string, follow: boolean) =>
+    post<{ following: boolean; followers: number }>(`/service-store/${kind}/${encodeURIComponent(ownerId)}/follow`, { follow }),
   crewLot: (sellerId: string, lotId: string, role?: string) =>
     request<CrewLotView>(`/me/crew/${encodeURIComponent(sellerId)}/${encodeURIComponent(lotId)}${role ? `?role=${role}` : ''}`),
   /** Move a lot as the forwarder booked on it. */

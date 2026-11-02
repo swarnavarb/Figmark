@@ -13,7 +13,7 @@
  */
 import assert from 'node:assert/strict';
 
-const { CONTAINER_LIST, CONTAINERS, containerBody, SHARED_THROUGHPUT_RU } = await import(
+const { CONTAINER_LIST, CONTAINERS, RETIRED_CONTAINERS, containerBody, SHARED_THROUGHPUT_RU } = await import(
   new URL('../api/dist/shared/containers.js', import.meta.url)
 );
 
@@ -120,6 +120,14 @@ check('the shared-throughput container ceiling is not exceeded', () => {
     `${CONTAINER_LIST.length} containers, and a shared-throughput database allows 25`,
   );
   assert.equal(SHARED_THROUGHPUT_RU, 1000, 'the free tier grants 1000 RU/s');
+});
+
+check('a retired container is not defined again, and its rows have somewhere to go', () => {
+  // Defining it again would put it back under the ceiling the retirement freed.
+  for (const retired of RETIRED_CONTAINERS) {
+    assert.ok(!(retired.name in CONTAINERS), `${retired.name} is retired but still defined`);
+    assert.ok(retired.movedTo in CONTAINERS, `${retired.name} moves to ${retired.movedTo}, which is not defined`);
+  }
 });
 
 check('every container is defined once and named after its key', () => {

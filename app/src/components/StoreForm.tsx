@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { ArtistOffering, FreightLane, InsurancePlan, PortfolioPiece, StoreLink } from '@shared/models';
+import { COUNTRIES, countryFlag } from '@shared/countries';
+import type { ArtistOffering, BatteryRule, FreightLane, InfoRow, InsurancePlan, PortfolioPiece, PriceOption, ServiceAddon, ServiceFormField, StoreLink, StoreWarehouse } from '@shared/models';
+import { BASIS_LABELS, BATTERY_RULE_LABELS, CUSTOM_FIELD_TYPES, FIELD_TYPE_LABELS, LOCKED_FIELDS, batteryRuleOf, formOf, volumetricLabel } from '@shared/service-work';
 import {
   FREIGHT_MODES, FREIGHT_MODE_LABELS, STORE_ACCENTS, insuranceQuote, partId, type StoreKind,
 } from '@shared/service-stores';
@@ -216,16 +218,10 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
   return (
     <div className="sf-editor stack">
       <div className="field-row">
-        <label className="field"><span>From city</span>
-          <input value={lane.originCity} onChange={(e) => onChange({ originCity: e.target.value })} placeholder="Guangzhou" /></label>
-        <label className="field"><span>Country</span>
-          <input value={lane.originCountry} onChange={(e) => onChange({ originCountry: e.target.value })} /></label>
-      </div>
-      <div className="field-row">
-        <label className="field"><span>To city</span>
-          <input value={lane.destinationCity} onChange={(e) => onChange({ destinationCity: e.target.value })} placeholder="Mumbai" /></label>
-        <label className="field"><span>Country</span>
-          <input value={lane.destinationCountry} onChange={(e) => onChange({ destinationCountry: e.target.value })} /></label>
+        <label className="field"><span>From</span>
+          <CountrySelect value={lane.originCountry} onChange={(originCountry) => onChange({ originCountry })} /></label>
+        <label className="field"><span>To</span>
+          <CountrySelect value={lane.destinationCountry} onChange={(destinationCountry) => onChange({ destinationCountry })} /></label>
       </div>
       <div className="field">
         <span>How it travels</span>
@@ -257,6 +253,152 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
       </label>
       <label className="field"><span>Note for shops</span>
         <input value={lane.note} maxLength={200} onChange={(e) => onChange({ note: e.target.value })} placeholder="Flies Saturday, cut-off Thursday 3pm" /></label>
+
+      <OptionsEditor title="Product prices" hint="Different prices by what is sent — boxed figures, statues, battery items. The rate above stays the “from” price."
+        options={lane.products ?? []} onChange={(products) => onChange({ products })} defaultBasis="kg" placeholder="Boxed figures" />
+
+      <WarehousesEditor value={lane.warehouses?.length ? lane.warehouses : lane.warehouse ? [lane.warehouse] : []}
+        onChange={(warehouses) => onChange({ warehouses, warehouse: null })} />
+
+      <details className="sf-more">
+        <summary>Volumetric weight, batteries, terms and more</summary>
+      <div className="sf-subcard stack">
+        <label className="tick">
+          <input type="checkbox" checked={Boolean(lane.volumetric)}
+            onChange={(e) => onChange({ volumetric: e.target.checked ? { divisor: 6000, mode: 'greater', note: '' } : null })} />
+          <span>Charge by volumetric weight when it is more <span className="faint">— L × W × H ÷ divisor</span></span>
+        </label>
+        {lane.volumetric && (
+          <>
+            <div className="sf-cols3">
+              <label className="field"><span>Divisor</span>
+                <input inputMode="numeric" value={lane.volumetric.divisor || ''} onChange={(e) => onChange({ volumetric: { ...lane.volumetric!, divisor: Number(e.target.value) || 0 } })} />
+                <span className="field__hint">5000 or 6000 for air, 1000 for sea</span></label>
+              <label className="field"><span>Switches</span>
+                <select value={lane.volumetric.mode} onChange={(e) => onChange({ volumetric: { ...lane.volumetric!, mode: e.target.value as 'greater' | 'over' } })}>
+                  <option value="greater">Whenever it is more</option>
+                  <option value="over">Only past a factor</option>
+                </select></label>
+              {lane.volumetric.mode === 'over' && (
+                <label className="field"><span>Factor</span>
+                  <input inputMode="decimal" value={lane.volumetric.overFactor ?? 1.5} onChange={(e) => onChange({ volumetric: { ...lane.volumetric!, overFactor: Number(e.target.value) || 1 } })} /></label>
+              )}
+            </div>
+            <label className="field"><span>Anything else about size</span>
+              <input value={lane.volumetric.note} onChange={(e) => onChange({ volumetric: { ...lane.volumetric!, note: e.target.value } })}
+                placeholder="Statue boxes are re-packed to cut volume, free." /></label>
+            <p className="faint">{volumetricLabel(lane.volumetric)}</p>
+          </>
+        )}
+      </div>
+
+      <label className="field"><span>Batteries on this route</span>
+        <select value={batteryRuleOf(lane)} onChange={(e) => onChange({ batteries: e.target.value as BatteryRule })}>
+          {(Object.keys(BATTERY_RULE_LABELS) as BatteryRule[]).map((value) => <option key={value} value={value}>{BATTERY_RULE_LABELS[value]}</option>)}
+        </select>
+        <small className="faint">“In devices” means fitted inside an item — an LED base, a light-up figure. Not loose cells or power banks.</small>
+      </label>
+
+      <label className="field"><span>How to send a parcel</span>
+        <textarea rows={3} value={lane.orderInfo ?? ''} onChange={(e) => onChange({ orderInfo: e.target.value })}
+          placeholder="Write your request number on the box. Cut-off Thursday 3pm for Saturday's flight. We repack for free." /></label>
+      <label className="field"><span>Terms for this route</span>
+        <textarea rows={3} value={lane.terms ?? ''} onChange={(e) => onChange({ terms: e.target.value })}
+          placeholder="Liquids, powders and counterfeit goods are refused. Storage free for 14 days." /></label>
+      <InfoRowsEditor rows={lane.extras ?? []} onChange={(extras) => onChange({ extras })} />
+      </details>
+    </div>
+  );
+}
+
+/** A country, with its flag, from the full list - plus whatever an older lane had typed. */
+function CountrySelect({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const known = COUNTRIES.includes(value);
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      {!known && value && <option value={value}>{value}</option>}
+      {COUNTRIES.map((country) => <option key={country} value={country}>{countryFlag(country)} {country}</option>)}
+    </select>
+  );
+}
+
+/** Every origin address customers may send to on a route - more than one is fine. */
+function WarehousesEditor({ value, onChange }: { value: StoreWarehouse[]; onChange: (next: StoreWarehouse[]) => void }) {
+  const update = (index: number, patch: Partial<StoreWarehouse>) => onChange(value.map((row, at) => (at === index ? { ...row, ...patch } : row)));
+  return (
+    <div className="field">
+      <span>Origin warehouses</span>
+      <span className="field__hint">Where customers send parcels for this route. Leave empty to use your main warehouse.</span>
+      <div className="sf-options">
+        {value.map((row, index) => (
+          <div key={index} className="sf-whrow">
+            <div className="field-row">
+              <input value={row.name ?? ''} onChange={(e) => update(index, { name: e.target.value })} placeholder="Name, e.g. Guangzhou · Baiyun" aria-label="Warehouse name" />
+              <button type="button" className="btn btn--quiet btn--sm" aria-label="Remove warehouse" onClick={() => onChange(value.filter((_, at) => at !== index))}><Icon name="trash" size={13} /></button>
+            </div>
+            <textarea rows={2} value={row.address} onChange={(e) => update(index, { address: e.target.value })} placeholder="Full address customers write on the parcel" aria-label="Warehouse address" />
+            <div className="field-row">
+              <input value={row.contact} onChange={(e) => update(index, { contact: e.target.value })} placeholder="Contact name & phone" aria-label="Warehouse contact" />
+              <input value={row.hours} onChange={(e) => update(index, { hours: e.target.value })} placeholder="Mon–Sat 9–6" aria-label="Warehouse hours" />
+            </div>
+          </div>
+        ))}
+        <button type="button" className="btn btn--ghost btn--sm sf-add" onClick={() => onChange([...value, { name: '', address: '', contact: '', hours: '' }])}>
+          <Icon name="plus" size={13} /> Add a warehouse
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Pieces the editors share ────────────────────────────────────────── */
+
+function OptionsEditor({ title, hint, options, onChange, defaultBasis, placeholder }: {
+  title: string; hint: string; options: PriceOption[]; onChange: (next: PriceOption[]) => void; defaultBasis: PriceOption['basis']; placeholder: string;
+}) {
+  const update = (id: string, patch: Partial<PriceOption>) => onChange(options.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  return (
+    <div className="field">
+      <span>{title}</span>
+      <span className="field__hint">{hint}</span>
+      <div className="sf-options">
+        {options.map((row) => (
+          <div key={row.id} className="sf-option">
+            <input value={row.name} placeholder={placeholder} aria-label="Product" onChange={(e) => update(row.id, { name: e.target.value })} />
+            <MoneyInput label="Price" value={row.priceMinor} onChange={(priceMinor) => update(row.id, { priceMinor })} />
+            <select value={row.basis} aria-label="Charged" onChange={(e) => update(row.id, { basis: e.target.value as PriceOption['basis'] })}>
+              {(['kg', 'piece', 'flat'] as const).map((basis) => <option key={basis} value={basis}>{BASIS_LABELS[basis]}</option>)}
+            </select>
+            <input className="sf-option__note" value={row.note} placeholder="Note (optional)" aria-label="Note" onChange={(e) => update(row.id, { note: e.target.value })} />
+            <button type="button" className="btn btn--quiet btn--sm" aria-label="Remove price" onClick={() => onChange(options.filter((other) => other.id !== row.id))}>
+              <Icon name="trash" size={13} />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="btn btn--ghost btn--sm sf-add" onClick={() => onChange([...options, { id: partId('opt'), name: '', basis: defaultBasis, priceMinor: 0, note: '' }])}>
+          <Icon name="plus" size={13} /> Add a price
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InfoRowsEditor({ rows, onChange }: { rows: InfoRow[]; onChange: (next: InfoRow[]) => void }) {
+  const update = (index: number, patch: Partial<InfoRow>) => onChange(rows.map((row, at) => (at === index ? { ...row, ...patch } : row)));
+  return (
+    <div className="field">
+      <span>More details</span>
+      <span className="field__hint">Anything else customers ask about — packaging, storage days, prohibited items.</span>
+      <div className="sf-options">
+        {rows.map((row, index) => (
+          <div key={index} className="sf-option sf-option--info">
+            <input value={row.label} placeholder="Label" aria-label="Label" onChange={(e) => update(index, { label: e.target.value })} />
+            <input value={row.value} placeholder="Value" aria-label="Value" onChange={(e) => update(index, { value: e.target.value })} />
+            <button type="button" className="btn btn--quiet btn--sm" aria-label="Remove" onClick={() => onChange(rows.filter((_, at) => at !== index))}><Icon name="trash" size={13} /></button>
+          </div>
+        ))}
+        <button type="button" className="btn btn--ghost btn--sm sf-add" onClick={() => onChange([...rows, { label: '', value: '' }])}><Icon name="plus" size={13} /> Add a detail</button>
+      </div>
     </div>
   );
 }
@@ -272,10 +414,20 @@ export function CoverSection({ draft, set }: SectionProps) {
   return (
     <div className="stack">
       <p className="sf-lede">
-        Plans buyers can add to their own item when a shop books you and turns cover on. The premium is
-        paid with the order — held by Buyer Protection or sent direct, same as the goods — and the shop settles
-        it with you alongside the freight.
+        Plans customers pick when they book a parcel, or add to an item when a shop books you. Free cover is
+        picked for them by default.
       </p>
+      <div className="field"><span>When customers pay for paid cover</span>
+        <div className="sf-choice" role="radiogroup" aria-label="When cover is paid">
+          {([['with_bill', 'On the bill', 'Added to the bill when the parcel is weighed at the destination.'],
+            ['upfront', 'Upfront', 'Paid before the parcel is sent to your warehouse.']] as const).map(([value, label, note]) => (
+            <label key={value} className={`tick sf-choice__row${(draft.coverPayment ?? 'with_bill') === value ? ' is-on' : ''}`}>
+              <input type="radio" name="cover-payment" checked={(draft.coverPayment ?? 'with_bill') === value} onChange={() => set({ coverPayment: value })} />
+              <span><b>{label}</b> <span className="faint">— {note}</span></span>
+            </label>
+          ))}
+        </div>
+      </div>
       {plans.map((plan) => {
         const quote = insuranceQuote(plan, EXAMPLE_VALUE);
         return (
@@ -289,6 +441,12 @@ export function CoverSection({ draft, set }: SectionProps) {
                 <label className="field"><span>Pays out (% of value)</span>
                   <input inputMode="numeric" value={plan.coverPercent || ''} onChange={(e) => update(plan.id, { coverPercent: Number(e.target.value) || 0 })} /></label>
               </div>
+              <label className="tick">
+                <input type="checkbox" checked={!plan.premiumBasisPoints && !plan.minPremiumMinor}
+                  onChange={(e) => update(plan.id, e.target.checked ? { premiumBasisPoints: 0, minPremiumMinor: 0 } : { premiumBasisPoints: 150, minPremiumMinor: 4_900 })} />
+                <span>Free — included on every parcel</span>
+              </label>
+              {(plan.premiumBasisPoints > 0 || plan.minPremiumMinor > 0) && (
               <div className="sf-cols3">
                 <label className="field"><span>Premium (% of value)</span>
                   <input inputMode="decimal" value={plan.premiumBasisPoints ? plan.premiumBasisPoints / 100 : ''}
@@ -299,6 +457,7 @@ export function CoverSection({ draft, set }: SectionProps) {
                   <MoneyInput label="Most it pays" value={plan.maxCoverMinor ?? 0} placeholder="No cap"
                     onChange={(value) => update(plan.id, { maxCoverMinor: value || null })} /></label>
               </div>
+              )}
               <label className="field"><span>What it covers, and how to claim</span>
                 <textarea rows={3} value={plan.terms} onChange={(e) => update(plan.id, { terms: e.target.value })}
                   placeholder="Loss and visible transit damage from our warehouse to landing. Claims within 72 hours with unboxing photos." /></label>
@@ -316,14 +475,26 @@ export function CoverSection({ draft, set }: SectionProps) {
         );
       })}
       {plans.length < 8 && (
-        <button type="button" className="btn btn--ghost sf-add" onClick={() => set({
-          insurance: [...plans, {
-            id: partId('plan'), name: plans.length ? 'Full cover' : 'Transit cover', coverPercent: 100,
-            premiumBasisPoints: 150, minPremiumMinor: 4_900, maxCoverMinor: null, terms: '', active: true,
-          }],
-        })}>
-          <Icon name="plus" size={14} /> Add a cover plan
-        </button>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <button type="button" className="btn btn--ghost sf-add" onClick={() => set({
+            insurance: [...plans, {
+              id: partId('plan'), name: plans.length ? 'Full cover' : 'Transit cover', coverPercent: 100,
+              premiumBasisPoints: 150, minPremiumMinor: 4_900, maxCoverMinor: null, terms: '', active: true,
+            }],
+          })}>
+            <Icon name="plus" size={14} /> Add a cover plan
+          </button>
+          {!plans.some((plan) => !plan.premiumBasisPoints && !plan.minPremiumMinor) && (
+            <button type="button" className="btn btn--ghost sf-add" onClick={() => set({
+              insurance: [{
+                id: partId('plan'), name: 'Basic cover', coverPercent: 100,
+                premiumBasisPoints: 0, minPremiumMinor: 0, maxCoverMinor: 2_000_00, terms: 'Included on every parcel.', active: true,
+              }, ...plans],
+            })}>
+              <Icon name="plus" size={14} /> Add free cover
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -405,6 +576,23 @@ export function MenuSection({ draft, set }: SectionProps) {
           <label className="field"><span>What they get</span>
             <input value={offering.description} onChange={(e) => update(offering.id, { description: e.target.value })}
               placeholder="Strip, prime and airbrush to your reference, sealed." /></label>
+          <details className="sf-more">
+            <summary>Prices by piece, what is included, terms</summary>
+            <div className="stack">
+              <OptionsEditor title="Prices by piece" hint="When one price does not fit all — by scale, by size, by how much work."
+                options={offering.products ?? []} onChange={(products) => update(offering.id, { products })} defaultBasis="flat" placeholder="1/6 scale" />
+              <label className="field"><span>What is included</span>
+                <textarea rows={2} value={offering.includes ?? ''} onChange={(e) => update(offering.id, { includes: e.target.value })}
+                  placeholder="Stripping, priming, airbrushed base and two rounds of changes." /></label>
+              <label className="field"><span>How to send the piece</span>
+                <textarea rows={2} value={offering.orderInfo ?? ''} onChange={(e) => update(offering.id, { orderInfo: e.target.value })}
+                  placeholder="Double box it, request number inside. Accessories in a separate bag." /></label>
+              <label className="field"><span>Terms</span>
+                <textarea rows={2} value={offering.terms ?? ''} onChange={(e) => update(offering.id, { terms: e.target.value })}
+                  placeholder="50% is non-refundable once work starts." /></label>
+              <InfoRowsEditor rows={offering.extras ?? []} onChange={(extras) => update(offering.id, { extras })} />
+            </div>
+          </details>
           <div className="row">
             <label className="sf-toggle">
               <input type="checkbox" checked={offering.active} onChange={(e) => update(offering.id, { active: e.target.checked })} />
@@ -484,6 +672,139 @@ export function PortfolioSection({ draft, set }: SectionProps) {
         </div>
         <input value={payment.instructions ?? ''} onChange={(e) => pay({ instructions: e.target.value })} placeholder="Anything to quote when paying" aria-label="Payment instructions" />
       </div>
+    </div>
+  );
+}
+
+/* ── The request form ────────────────────────────────────────────────── */
+
+/**
+ * The form customers fill in, as the store arranges it.
+ *
+ * It opens with the default for the kind of store. The fields the request
+ * cannot be priced or delivered without are locked in place - they can be
+ * relabelled, not removed - and anything else can be added: a question, a
+ * choice, a date.
+ */
+export function RequestFormSection({ kind, draft, set }: SectionProps) {
+  const form = formOf(kind, draft.requestForm);
+  const locked = LOCKED_FIELDS[kind];
+  const put = (next: ServiceFormField[]) => set({ requestForm: next });
+  const update = (id: string, patch: Partial<ServiceFormField>) => put(form.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  const move = (index: number, by: number) => {
+    const next = [...form];
+    const [row] = next.splice(index, 1);
+    next.splice(Math.max(0, Math.min(next.length, index + by)), 0, row!);
+    put(next);
+  };
+  return (
+    <div className="stack">
+      <label className="field"><span>Use your own form instead</span>
+        <span className="field__hint">A Google Form or similar. Customers open it from the order sheet, then send you the request here so it is tracked. Leave empty to use the form below.</span>
+        <input type="url" value={draft.formUrl ?? ''} onChange={(e) => set({ formUrl: e.target.value.trim() || null })} placeholder="https://forms.gle/…" /></label>
+      {draft.formUrl ? <p className="faint">Your form link is on. The questions below are kept for when you switch back.</p> : null}
+      <p className="faint">This is what a customer fills in when they {kind === 'forwarder' ? 'ship with you' : 'request a service'}. Fields marked
+        <span className="sf-lock"> <Icon name="lock" size={11} /> </span> are needed to price and deliver it and stay on the form.</p>
+      {form.map((field, index) => {
+        const isLocked = Boolean(field.key && locked.includes(field.key));
+        return (
+          <div key={field.id} className="sf-fieldrow">
+            <div className="sf-fieldrow__move">
+              <button type="button" className="btn btn--quiet btn--sm" aria-label="Move up" disabled={index === 0} onClick={() => move(index, -1)}><Icon name="up" size={13} /></button>
+              <button type="button" className="btn btn--quiet btn--sm" aria-label="Move down" disabled={index === form.length - 1} onClick={() => move(index, 1)}><Icon name="down" size={13} /></button>
+            </div>
+            <div className="sf-fieldrow__body">
+              <div className="field-row">
+                <label className="field"><span>Question {isLocked && <Icon name="lock" size={11} />}</span>
+                  <input value={field.label} onChange={(e) => update(field.id, { label: e.target.value })} /></label>
+                <label className="field"><span>Type</span>
+                  {field.key ? <input value={FIELD_TYPE_LABELS[field.type]} disabled /> : (
+                    <select value={field.type} onChange={(e) => update(field.id, { type: e.target.value as ServiceFormField['type'] })}>
+                      {CUSTOM_FIELD_TYPES.map((type) => <option key={type} value={type}>{FIELD_TYPE_LABELS[type]}</option>)}
+                    </select>
+                  )}</label>
+              </div>
+              <label className="field"><span>Help text</span>
+                <input value={field.help ?? ''} onChange={(e) => update(field.id, { help: e.target.value })} placeholder="Shown under the question" /></label>
+              {field.type === 'choice' && (
+                <label className="field"><span>Choices, one per line</span>
+                  <textarea rows={3} value={(field.options ?? []).join('\n')} onChange={(e) => update(field.id, { options: e.target.value.split('\n') })} /></label>
+              )}
+              <div className="row">
+                <label className="sf-toggle">
+                  <input type="checkbox" checked={field.required} disabled={isLocked} onChange={(e) => update(field.id, { required: e.target.checked })} />
+                  <span>{field.required ? 'Required' : 'Optional'}</span>
+                </label>
+                {!isLocked && (
+                  <button type="button" className="btn btn--quiet btn--sm" onClick={() => put(form.filter((row) => row.id !== field.id))}>
+                    <Icon name="trash" size={13} /> Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <button type="button" className="btn btn--ghost sf-add" onClick={() => put([...form, { id: partId('f'), label: '', type: 'text', required: false }])}>
+          <Icon name="plus" size={14} /> Add a question
+        </button>
+        <button type="button" className="btn btn--quiet btn--sm" onClick={() => set({ requestForm: null })}>Back to the default form</button>
+      </div>
+    </div>
+  );
+}
+
+/** Extras a customer can tick on any order - door-to-door delivery, rush work - each with a price, or free. */
+export function ExtrasSection({ kind, draft, set }: SectionProps) {
+  const rows = draft.serviceOptions ?? [];
+  const update = (id: string, patch: Partial<ServiceAddon>) => set({ serviceOptions: rows.map((row) => (row.id === id ? { ...row, ...patch } : row)) });
+  return (
+    <div className="stack">
+      <p className="faint">Customers tick these on the order form{kind === 'forwarder' ? ', on any route' : ''}. Leave the price empty for free.</p>
+      <div className="sf-options">
+        {rows.map((row) => (
+          <div key={row.id} className="sf-option sf-option--extra">
+            <input value={row.name} placeholder={kind === 'forwarder' ? 'Door-to-door delivery' : 'Rush — jump the queue'} aria-label="Extra" onChange={(e) => update(row.id, { name: e.target.value })} />
+            <MoneyInput label="Price" value={row.priceMinor} placeholder="Free" onChange={(priceMinor) => update(row.id, { priceMinor })} />
+            <input className="sf-option__note" value={row.note} placeholder="Note (optional)" aria-label="Note" onChange={(e) => update(row.id, { note: e.target.value })} />
+            <button type="button" className="btn btn--quiet btn--sm" aria-label="Remove extra" onClick={() => set({ serviceOptions: rows.filter((other) => other.id !== row.id) })}>
+              <Icon name="trash" size={13} />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="btn btn--ghost btn--sm sf-add" onClick={() => set({ serviceOptions: [...rows, { id: partId('add'), name: '', priceMinor: 0, note: '' }] })}>
+          <Icon name="plus" size={13} /> Add an extra
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** How customers pay this store directly, and the terms on every route or service. */
+export function PaymentTermsSection({ kind, draft, set }: SectionProps) {
+  const payment = draft.payment ?? {};
+  const pay = (patch: Record<string, string>) => set({ payment: { ...payment, ...patch } });
+  return (
+    <div className="stack">
+      <div className="field">
+        <span>Where customers pay you</span>
+        <span className="field__hint">Shown to a customer once they accept your quote or open your payment link — never on your page.</span>
+        <div className="field-row">
+          <input value={payment.upiId ?? ''} onChange={(e) => pay({ upiId: e.target.value })} placeholder="UPI ID" aria-label="UPI ID" />
+          <input value={payment.accountName ?? ''} onChange={(e) => pay({ accountName: e.target.value })} placeholder="Account name" aria-label="Account name" />
+        </div>
+        <div className="field-row">
+          <input value={payment.accountNumber ?? ''} onChange={(e) => pay({ accountNumber: e.target.value })} placeholder="Account number" aria-label="Account number" />
+          <input value={payment.ifsc ?? ''} onChange={(e) => pay({ ifsc: e.target.value })} placeholder="IFSC" aria-label="IFSC" />
+        </div>
+        <input value={payment.instructions ?? ''} onChange={(e) => pay({ instructions: e.target.value })} placeholder="Anything to quote when paying" aria-label="Payment instructions" />
+      </div>
+      <label className="field"><span>Terms for everything you {kind === 'forwarder' ? 'ship' : 'make'}</span>
+        <textarea rows={6} value={draft.terms ?? ''} onChange={(e) => set({ terms: e.target.value })}
+          placeholder={kind === 'forwarder'
+            ? 'Shown under each route’s own terms. Liability, storage, prohibited goods, claims.'
+            : 'Shown under each service’s own terms. Deposits, changes, what happens if a piece arrives damaged.'} /></label>
     </div>
   );
 }

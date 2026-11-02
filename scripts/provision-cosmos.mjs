@@ -35,6 +35,7 @@ try {
 
 const {
   CONTAINER_LIST,
+  RETIRED_CONTAINERS,
   containerBody,
   DATABASE_NAME,
   SHARED_THROUGHPUT_RU,
@@ -100,6 +101,37 @@ const { database, statusCode } = await client.databases.createIfNotExists(
 console.log(
   `  database  ${databaseName} ${statusCode === 201 ? 'created' : 'already existed'} (${throughput === null ? 'serverless' : `${throughput} RU/s shared`})`,
 );
+
+/* Retired containers ------------------------------------------------------- */
+
+// A shared-throughput database allows 25 containers, and a container the
+// schema dropped still counts until it is deleted. So anything retired is
+// emptied into its new home and deleted first, before a new definition asks
+// for the slot it frees.
+const existing = new Set((await database.containers.readAll().fetchAll()).resources.map((container) => container.id));
+for (const retired of RETIRED_CONTAINERS) {
+  if (!existing.has(retired.name)) {
+    console.log(`  retired   ${retired.name.padEnd(10)} already gone`);
+    continue;
+  }
+  const from = database.container(retired.name);
+  const to = database.container(retired.movedTo);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  // Only sign-outs are worth keeping: a token somebody signed out of must stay
+  // signed out. Rate-limit counters are windows that simply start again.
+  const { resources } = await from.items
+    .query('SELECT c.id, c.revokedAt, c.ttl, c._ts FROM c WHERE IS_DEFINED(c.revokedAt)')
+    .fetchAll();
+  let copied = 0;
+  for (const row of resources) {
+    const left = (row._ts ?? nowSeconds) + (row.ttl ?? 0) - nowSeconds;
+    if (left <= 0) continue;
+    await to.items.upsert({ id: `${retired.revocationPrefix}${row.id}`, revokedAt: row.revokedAt, ttl: left });
+    copied += 1;
+  }
+  await from.delete();
+  console.log(`  retired   ${retired.name.padEnd(10)} deleted after copying ${copied} live sign-out${copied === 1 ? '' : 's'} to ${retired.movedTo}`);
+}
 
 for (const definition of CONTAINER_LIST) {
   // The same body the API builds when it finds a container missing, so running

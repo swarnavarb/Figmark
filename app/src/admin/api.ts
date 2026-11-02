@@ -222,6 +222,8 @@ export const admin = {
   stores: () => request<{ stores: OpsStoreRow[] }>('/ops/stores'),
   reviewStore: (kind: StoreKind, ownerId: string, body: { decision: StoreStatus; note: string }) =>
     post<{ ok: true; status: StoreStatus }>(`/ops/stores/${kind}/${encodeURIComponent(ownerId)}/review`, body),
+  /** A demo forwarder and artist with the operator on both teams. Development only. */
+  demoStores: () => post<{ stores: { kind: StoreKind; slug: string; ownerId: string; name: string }[] }>('/ops/demo-stores', {}),
 
   /** The first screen: people, activity, queues and money, counted in one request. */
   overview: () => request<OpsOverview>('/ops/overview'),

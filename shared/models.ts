@@ -662,7 +662,7 @@ export interface StoreLink {
 }
 
 /** What a team member may do in a service store, besides the owner. */
-export type StoreRight = 'work' | 'store' | 'team';
+export type StoreRight = 'work' | 'store' | 'team' | 'voice';
 
 export interface StoreMember {
   userId: string;
@@ -670,6 +670,11 @@ export interface StoreMember {
   rights: StoreRight[];
   addedAt: string;
   addedBy: string;
+  /**
+   * A label the owner gives them - "Admin", "Ops lead", "Painter" - shown
+   * beside their name when they talk in the company channel as themselves.
+   */
+  tag?: string;
 }
 
 /**
@@ -705,8 +710,97 @@ export interface StoreCore {
   since?: number | null;
   links?: StoreLink[];
   team?: StoreMember[];
-  /** Where a buyer pays this store directly. Artists use it; a forwarder is paid through the shop. */
+  /** Where a customer pays this store directly, for a request or a payment link. */
   payment?: SellerPaymentDetails | null;
+  /**
+   * The form a customer fills in to use the store, as the store arranged it.
+   * Absent means the default form for its kind (see `defaultForm`).
+   */
+  requestForm?: ServiceFormField[] | null;
+  /** Terms that apply to every route or service, shown under each one's own. */
+  terms?: string;
+  /**
+   * Extras a customer can tick when they order - door-to-door delivery,
+   * repacking, rush work - each with its price. Store-wide, so a company
+   * writes them once.
+   */
+  serviceOptions?: ServiceAddon[];
+  /**
+   * The company's own order form - a Google Form, say - when they would
+   * rather collect details there. The customer still tells the store here
+   * that they filled it in, so the request is tracked all the same.
+   */
+  formUrl?: string | null;
+}
+
+/** An extra a customer can add to an order: "Door-to-door delivery ₹150". */
+export interface ServiceAddon {
+  id: string;
+  name: string;
+  /** Zero means free. */
+  priceMinor: number;
+  note: string;
+}
+
+/* ── What a store prices, beyond the headline rate ──────────────────── */
+
+/** How a price option is charged. */
+export type PriceBasis = 'kg' | 'piece' | 'flat';
+
+/**
+ * One product-specific price on a route or a service: "Boxed figures ₹780/kg",
+ * "Battery items ₹950/kg", "1/6 scale ₹4,500 flat". The headline rate is the
+ * "from" price; these are what a customer actually picks.
+ */
+export interface PriceOption {
+  id: string;
+  name: string;
+  basis: PriceBasis;
+  priceMinor: number;
+  note: string;
+}
+
+/**
+ * When a parcel is charged by its size rather than its weight.
+ *
+ * Volumetric kg = L × W × H (cm) ÷ divisor. `greater` charges whichever of the
+ * actual and volumetric weight is more - the airline rule - and `over` only
+ * switches to volumetric past a size the forwarder names.
+ */
+export interface VolumetricRule {
+  divisor: number;
+  mode: 'greater' | 'over';
+  /** For `over`: volumetric applies once it exceeds the actual weight by this factor. */
+  overFactor?: number;
+  note: string;
+}
+
+/** A labelled line of whatever else a store wants a customer to know. */
+export interface InfoRow {
+  label: string;
+  value: string;
+}
+
+/** A field on a store's request form. */
+export type ServiceFieldType =
+  | 'text' | 'longtext' | 'number' | 'choice' | 'yesno' | 'date'
+  | 'items' | 'address' | 'dimensions';
+
+/** The fields the app understands, so it can price and route a request. */
+export type ServiceFieldKey =
+  | 'awb' | 'origin_courier' | 'weight' | 'dimensions' | 'items' | 'battery' | 'declared_value' | 'delivery' | 'notes'
+  | 'piece' | 'brief' | 'refs' | 'deadline' | 'return_delivery';
+
+export interface ServiceFormField {
+  id: string;
+  label: string;
+  type: ServiceFieldType;
+  required: boolean;
+  help?: string;
+  /** For `choice`. */
+  options?: string[];
+  /** Set on the fields the app reads; absent on a store's own custom fields. */
+  key?: ServiceFieldKey;
 }
 
 /** One lane a forwarder runs, priced. */
@@ -728,7 +822,38 @@ export interface FreightLane {
   /** Cut-off day, consolidation window, anything a shop plans around. */
   note: string;
   active: boolean;
+  /** Product-specific prices on this route. The lane rate stays the "from" price. */
+  products?: PriceOption[];
+  /** When size, not weight, sets the charge. Null means weight only. */
+  volumetric?: VolumetricRule | null;
+  /** Where customers send parcels for this route, when it is not the store's main warehouse. */
+  warehouse?: StoreWarehouse | null;
+  /**
+   * Every origin address a customer may send to on this route. Read through
+   * `warehousesOf`, which falls back to `warehouse` and then the store's own.
+   */
+  warehouses?: StoreWarehouse[];
+  /** How to send and label a parcel, cut-offs, consolidation - what the customer does next. */
+  orderInfo?: string;
+  /** This route's own terms. */
+  terms?: string;
+  /** Anything else, as label and value. */
+  extras?: InfoRow[];
+  /** Older routes: whether items with batteries travel. Read through `batteryRuleOf`. */
+  batteryAllowed?: boolean;
+  /** Which batteries travel on this route. */
+  batteries?: BatteryRule;
 }
+
+/**
+ * Which batteries a route carries. `all` - loose batteries and power banks
+ * too; `in_device` - only batteries fitted inside an item (an LED base, a
+ * figure that lights up); `none` - nothing with a battery at all.
+ */
+export type BatteryRule = 'all' | 'in_device' | 'none';
+
+/** What a customer's parcel holds, battery-wise. */
+export type BatteryContent = 'none' | 'in_device' | 'loose';
 
 /** Transit cover a forwarder sells, which a buyer can add to their item. */
 export interface InsurancePlan {
@@ -748,6 +873,8 @@ export interface InsurancePlan {
 
 /** Where goods go to be consolidated. */
 export interface StoreWarehouse {
+  /** "Guangzhou - Baiyun", when a store has more than one. */
+  name?: string;
   address: string;
   contact: string;
   hours: string;
@@ -761,6 +888,14 @@ export interface ArtistOffering {
   priceFromMinor: number;
   turnaroundDays: number;
   active: boolean;
+  /** Prices by piece - "1/6 scale", "1/12 scale", "Bust" - when one price does not fit all. */
+  products?: PriceOption[];
+  /** What is and is not included. */
+  includes?: string;
+  /** How to send the piece, what to put in the box. */
+  orderInfo?: string;
+  terms?: string;
+  extras?: InfoRow[];
 }
 
 export interface PortfolioPiece {
@@ -819,6 +954,12 @@ export interface ForwarderProfile extends StoreCore {
    * request the team accepts or declines before it can work it.
    */
   autoAccept?: boolean;
+  /**
+   * When paid-for cover is paid: `upfront`, before the parcel is sent, or
+   * `with_bill`, added to the bill when it lands at the destination warehouse.
+   * Absent reads as `with_bill`.
+   */
+  coverPayment?: 'upfront' | 'with_bill';
 }
 
 /**
@@ -2514,7 +2655,18 @@ export interface CommunityStanding {
  * container holds both: the reads are identical in shape, and the difference is
  * only who may write.
  */
-export type PostChannel = 'seller' | 'forum';
+export type PostChannel = 'seller' | 'forum' | 'service';
+
+/**
+ * The service store a post was made by, snapshotted on the post so a feed can
+ * name and link it without reading the store. `channelId` is `kind:ownerId`.
+ */
+export interface PostService {
+  kind: 'forwarder' | 'artist';
+  ownerId: string;
+  name: string;
+  slug: string;
+}
 
 /** What a post is, which decides how it renders rather than where it lives. */
 export type PostKind = 'update' | 'sale' | 'thread';
@@ -2600,6 +2752,8 @@ export interface Post extends BaseDocument {
   opening?: PostOpening | null;
   /** Written by a power sale run - its drops and its messages - and tagged as such. */
   powerSale?: boolean;
+  /** Set on a post a freight forwarder or artist made as their company (channel 'service'). */
+  service?: PostService;
   /**
    * Who reacted, and how. One per person.
    *

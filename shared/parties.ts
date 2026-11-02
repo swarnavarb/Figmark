@@ -21,6 +21,8 @@ export interface PartyRef {
   handle: string | null;
   /** Their level and its title - a shop's own, or the person's as a buyer. */
   level?: LevelTag;
+  /** Where the name opens, when that is not `/<handle>`: a service store's page. */
+  href?: string;
 }
 
 /** How they are named and addressed as a seller: the shop, not the person. */

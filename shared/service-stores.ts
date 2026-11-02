@@ -1,3 +1,4 @@
+import { countryFlag } from './countries.js';
 import type {
   ArtistJob, ArtistJobStatus, ArtistProfile, ForwarderProfile, FreightLane, InsurancePlan, Order, OrderAddOn,
   StoreCore, StoreMember, StoreRight, StoreStatus, User,
@@ -63,12 +64,13 @@ export function storeOf(user: Pick<User, 'forwarderProfile' | 'artistProfile'>, 
 
 /* ── The team ────────────────────────────────────────────────────────── */
 
-export const STORE_RIGHTS = ['work', 'store', 'team'] as const satisfies readonly StoreRight[];
+export const STORE_RIGHTS = ['work', 'store', 'voice', 'team'] as const satisfies readonly StoreRight[];
 
 export const STORE_RIGHT_LABELS: Record<StoreRight, { label: string; hint: string }> = {
-  work: { label: 'Work the jobs', hint: 'Press the buttons on lots, accept consignments, run commissions.' },
-  store: { label: 'Edit the store', hint: 'Rates, insurance, menu, photos and links.' },
-  team: { label: 'Manage people', hint: 'Add and remove members. Implies the other two.' },
+  work: { label: 'Work the jobs', hint: 'See every request, quote, update and message customers about them.' },
+  store: { label: 'Edit the store', hint: 'Routes, prices, insurance, menu, the request form and links.' },
+  voice: { label: 'Speak as the company', hint: 'Post in the company channel under the store’s name.' },
+  team: { label: 'Manage people', hint: 'Add and remove members, give them tags. Implies everything else.' },
 };
 
 /**
@@ -121,8 +123,12 @@ export const FREIGHT_MODE_LABELS: Record<FreightMode, { label: string; glyph: st
   road: { label: 'Road', glyph: '🚚' },
 };
 
-export function laneLabel(lane: Pick<FreightLane, 'originCity' | 'destinationCity'>): string {
-  return `${lane.originCity || '?'} → ${lane.destinationCity || '?'}`;
+/**
+ * A route as customers read it: country to country, with flags. Cities stay
+ * on older lanes but are not shown - the warehouse addresses say where.
+ */
+export function laneLabel(lane: Pick<FreightLane, 'originCountry' | 'destinationCountry'>): string {
+  return `${countryFlag(lane.originCountry)} ${lane.originCountry || '?'} → ${countryFlag(lane.destinationCountry)} ${lane.destinationCountry || '?'}`;
 }
 
 export function transitLabel(lane: Pick<FreightLane, 'transitDaysMin' | 'transitDaysMax'>): string {

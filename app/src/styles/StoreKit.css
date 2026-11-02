@@ -126,6 +126,10 @@ button.sk-plan__pick { cursor: pointer; }
 .sk-offer__days { font-size: var(--t-2xs); color: var(--text-faint); }
 .sk-folio__cell { position: relative; margin: 0; }
 .sk-folio__cell--hero { grid-column: span 2; grid-row: span 2; }
+/* A row to swipe through, on a store page: the work first, then the menu. */
+.sk-folio--strip { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.sk-folio--strip::-webkit-scrollbar { display: none; }
+.sk-folio--strip .sk-folio__cell { flex: 0 0 min(62%, 240px); scroll-snap-align: start; }
 .sk-money:focus-within { border-color: var(--accent-line); }
 .sk-money__sym { padding: 0 2px 0 11px; color: var(--text-faint); }
 .sk-stat__value { font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold); line-height: 1.05; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

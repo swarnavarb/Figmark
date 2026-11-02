@@ -56,8 +56,12 @@ const ConsignmentsPage = page(loaders.services, 'ConsignmentsPage');
 const DistributionPage = page(loaders.services, 'DistributionPage');
 const ServiceDirectoryPage = page(loaders.services, 'ServiceDirectoryPage');
 const StoreApplyPage = page(loaders.storeApply, 'StoreApplyPage');
+const OpenPage = page(loaders.open, 'OpenPage');
 const StoreConsolePage = page(loaders.storeConsole, 'StoreConsolePage');
 const StorePage = page(loaders.store, 'StorePage');
+const ServiceDetailPage = page(loaders.serviceDetail, 'ServiceDetailPage');
+const ServiceRequestPage = page(loaders.serviceRequest, 'ServiceRequestPage');
+const ServiceQuotePage = page(loaders.serviceDetail, 'ServiceQuotePage');
 const CrewLotPage = page(loaders.crewLot, 'CrewLotPage');
 const SocialPage = page(loaders.social, 'SocialPage');
 const ChannelPage = page(loaders.social, 'ChannelPage');
@@ -153,12 +157,16 @@ function App() {
         <Route path="/services/mine/forwarder" element={members(<ConsignmentsPage />)} />
         <Route path="/services/mine/handler" element={members(<DistributionPage />)} />
         <Route path="/services/apply/:kind" element={members(<StoreApplyPage />)} />
+        <Route path="/open" element={members(<OpenPage />)} />
         <Route path="/services/store/:kind" element={members(<StoreConsolePage />)} />
         <Route path="/services/store/:kind/:ownerId" element={members(<StoreConsolePage />)} />
         <Route path="/services/crew/:sellerId/:lotId" element={members(<CrewLotPage />)} />
         {/* Last of the four, so the static paths above win the match. */}
         <Route path="/services/:kind" element={<ServiceDirectoryPage />} />
         <Route path="/services/:kind/:slug" element={<StorePage />} />
+        <Route path="/services/:kind/:slug/:section/:subjectId" element={<ServiceDetailPage />} />
+        <Route path="/services/requests/:kind/:ownerId/:id" element={members(<ServiceRequestPage />)} />
+        <Route path="/services/quotes/:kind/:ownerId/:id" element={members(<ServiceQuotePage />)} />
         <Route path="/social" element={members(<SocialPage />)} />
         <Route path="/social/c/:id" element={members(<ChannelPage />)} />
         <Route path="/social/f/:id" element={members(<ForumRoom />)} />

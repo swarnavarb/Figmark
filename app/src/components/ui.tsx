@@ -382,7 +382,7 @@ export function useConfirm() {
 type Tag = { level: number; title: string; shop?: boolean };
 
 export function PersonLink({ party, className, children, bare }: {
-  party: { name: string; handle: string | null; level?: Tag; id?: string | null } | null | undefined;
+  party: { name: string; handle: string | null; level?: Tag; id?: string | null; href?: string } | null | undefined;
   className?: string;
   children?: ReactNode;
   /** Leave the level tagline off, where the name sits inside something that already shows it. */
@@ -390,7 +390,9 @@ export function PersonLink({ party, className, children, bare }: {
 }) {
   if (!party) return null;
   const label = children ?? party.name;
-  const name = party.handle
+  const name = party.href
+    ? <Link to={party.href} className={className ? `${className} personlink` : 'personlink'}>{label}</Link>
+    : party.handle
     ? <Link to={`/${party.handle}`} className={className ? `${className} personlink` : 'personlink'}>{label}</Link>
     : <span className={className}>{label}</span>;
   // A community manager's shield goes wherever their name does - a person's

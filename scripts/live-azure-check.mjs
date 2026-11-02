@@ -9,7 +9,8 @@
  *   npm run build:api && node scripts/live-azure-check.mjs --write    # + write tests
  *
  * 1. Containers: every container the schema declares exists in the database,
- *    `sessions` (which now holds the shared rate-limit counters) with TTL on.
+ *    `siteContent` (which holds sign-outs and the shared rate-limit counters)
+ *    with TTL on, and the retired `sessions` container gone.
  * 2. With --write: the repository's own checked writes, against real Cosmos
  *    etags. A scratch order and listing are created under a partition of
  *    their own (`livecheck-…`), exercised, and deleted again whatever happens;
@@ -62,7 +63,7 @@ if (!settings.COSMOS_ENDPOINT) {
 } else {
   const { CosmosRepository } = await import(new URL('api/src/data/cosmos-repository.js', base));
   const { StaleWriteError } = await import(new URL('api/src/data/concurrency.js', base));
-  const { CONTAINER_LIST } = await import(new URL('shared/containers.js', base));
+  const { CONTAINER_LIST, RETIRED_CONTAINERS } = await import(new URL('shared/containers.js', base));
   const databaseName = settings.COSMOS_DATABASE ?? 'figmark';
   const repository = new CosmosRepository({ endpoint: settings.COSMOS_ENDPOINT, key: settings.COSMOS_KEY ?? null, database: databaseName });
   // What init() would do first, without the migrations that follow it.
@@ -78,9 +79,16 @@ if (!settings.COSMOS_ENDPOINT) {
     assert.deepEqual(missing, [], `missing: ${missing.join(', ')} - run "npm run azure:provision"`);
   });
 
-  await check('sessions expires its rows (TTL on), so counters clean themselves up', async () => {
-    const { resource } = await repository.database.container('sessions').read();
-    assert.notEqual(resource.defaultTtl, undefined, 'defaultTtl is not set on sessions');
+  await check('siteContent expires its rows (TTL on), so counters and sign-outs clean themselves up', async () => {
+    const { resource } = await repository.database.container('siteContent').read();
+    assert.notEqual(resource.defaultTtl, undefined, 'defaultTtl is not set on siteContent');
+  });
+
+  await check('retired containers are gone, so their slots are free', async () => {
+    const { resources } = await repository.database.containers.readAll().fetchAll();
+    const present = new Set(resources.map((container) => container.id));
+    const lingering = RETIRED_CONTAINERS.map((retired) => retired.name).filter((name) => present.has(name));
+    assert.deepEqual(lingering, [], `still in the database: ${lingering.join(', ')} - run "npm run azure:provision"`);
   });
 
   await check('each container has the partition key the code queries by', async () => {
@@ -165,7 +173,7 @@ if (!settings.COSMOS_ENDPOINT) {
         assert.equal((await repository.getListing(listingId)).quantityAvailable, 4);
       });
 
-      await check('shared counters count, read and take back (sessions container)', async () => {
+      await check('shared counters count, read and take back (siteContent container)', async () => {
         const id = `rl:${tag}`;
         assert.equal(await repository.bumpCounter(id, 0, 120), 0);
         assert.equal(await repository.bumpCounter(id, 1, 120), 1);

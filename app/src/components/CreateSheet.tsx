@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Post } from '@shared/models';
 import type { SocialIdentity } from '@shared/social';
 import type { StoreAccess } from '@shared/stores';
-import { api } from '../api';
+import { api, type ServiceStoreRole } from '../api';
 import { useSession } from '../session';
 import { VoiceScope, remembered } from './SocialVoice';
 import type { StudioMode } from './PostStudio';
@@ -41,6 +41,31 @@ const YOU: Action[] = [
   { id: 'debate', emoji: '⚔️', title: 'Debate', line: 'Two sides. Arguments land on yours.', studio: 'debate', hue: 'pink' },
   { id: 'iso', emoji: '🔎', title: 'Post an ISO request', line: 'Say what you hunt. Sellers who stock it hear.', to: () => '/social?view=wanted&ask=1', hue: 'coral' },
 ];
+
+/** What a freight forwarder or artist can put up: posts here, the rest from its dashboard. */
+function serviceActions(store: ServiceStoreRole): { label: string; actions: Action[] }[] {
+  const desk = `/services/store/${store.kind}/${store.ownerId}`;
+  const forwarder = store.kind === 'forwarder';
+  return [
+    {
+      label: 'Post',
+      actions: [
+        { id: 'vphoto', emoji: '📸', title: 'Photo post', line: forwarder ? 'A shipment landing, a full warehouse, a new route.' : 'A finished piece, work in progress.', studio: 'photo', hue: 'violet' },
+        { id: 'vcompare', emoji: '🎨', title: 'Before & after', line: 'Two photos, side by side.', studio: 'compare', hue: 'pink' },
+        { id: 'vpoll', emoji: '📊', title: 'Poll', line: forwarder ? 'Which route should we open next?' : 'Which piece should we paint next?', studio: 'poll', hue: 'aqua' },
+        { id: 'vannounce', emoji: '📣', title: 'Message your channel', line: 'Cut-offs, delays, news for followers.', to: () => `/services/${store.kind}/${store.slug}?tab=channel`, hue: 'coral' },
+      ],
+    },
+    {
+      label: 'Work',
+      actions: [
+        { id: 'vlink', emoji: '🔗', title: 'Payment link', line: 'A price for a custom job, sent as a link.', to: () => `${desk}?tab=requests&link=1`, hue: 'lime' },
+        { id: 'vedit', emoji: forwarder ? '🗺️' : '🖌️', title: forwarder ? 'Routes & prices' : 'Menu & prices', line: 'Change what you offer and charge.', to: () => `${desk}?tab=store`, hue: 'blue' },
+        { id: 'vinsights', emoji: '📈', title: 'Insights', line: 'Customers, routes and trends.', to: () => `${desk}?tab=insights`, hue: 'gold' },
+      ],
+    },
+  ];
+}
 
 const storeQuery = (store: StoreAccess | null) => (store && !store.isOwner ? `?store=${encodeURIComponent(store.ownerId)}` : '');
 
@@ -88,8 +113,9 @@ const STAGGER_MS = 35;
 export function CreateSheet({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const { user } = useSession();
-  const [making, setMaking] = useState<{ action: Action; store: StoreAccess | null } | null>(null);
-  const [stores, setStores] = useState<StoreAccess[]>([]);
+  const [making, setMaking] = useState<{ action: Action; storeId: string | null; storeName: string | null } | null>(null);
+  const [shops, setShops] = useState<StoreAccess[]>([]);
+  const [services, setServices] = useState<ServiceStoreRole[]>([]);
   const [storeAt, setStoreAt] = useState(0);
   const [side, setSide] = useState<'you' | 'store'>('you');
   const first = useRef<HTMLButtonElement | null>(null);
@@ -97,20 +123,22 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!user) return;
     let live = true;
-    api.stores()
-      .then((result) => {
-        if (!live) return;
-        const mine = result.stores.filter((store) => store.permissions.includes('posts'));
-        setStores(mine);
-        // Opens as whoever you are posting as elsewhere: switched to the shop
-        // in a thread, you are still the shop here.
-        const at = mine.findIndex((store) => store.ownerId === remembered());
-        if (at >= 0) {
-          setStoreAt(at);
-          setSide('store');
-        }
-      })
-      .catch(() => undefined);
+    void Promise.all([
+      api.stores().then((result) => result.stores.filter((store) => store.permissions.includes('posts'))).catch(() => [] as StoreAccess[]),
+      api.myServiceStores().then((result) => result.stores.filter((row) => row.live && row.rights.includes('voice'))).catch(() => [] as ServiceStoreRole[]),
+    ]).then(([mine, theirs]) => {
+      if (!live) return;
+      setShops(mine);
+      setServices(theirs);
+      // Opens as whoever you are posting as elsewhere: switched to the shop
+      // in a thread, you are still the shop here.
+      const ids = [...mine.map((store) => store.ownerId), ...theirs.map((row) => `${row.kind}:${row.ownerId}`)];
+      const at = ids.indexOf(remembered() ?? '');
+      if (at >= 0) {
+        setStoreAt(at);
+        setSide('store');
+      }
+    });
     return () => {
       live = false;
     };
@@ -135,11 +163,18 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
     return () => root?.removeAttribute('inert');
   }, [making]);
 
-  const store = stores[storeAt] ?? null;
+  // Shops first, then the freight and art stores: every voice that can post.
+  const seats = [
+    ...shops.map((shop) => ({ id: shop.ownerId, name: shop.name, handle: shop.handle ?? null, shop, service: null })),
+    ...services.map((row) => ({ id: `${row.kind}:${row.ownerId}`, name: row.name, handle: null, shop: null, service: row })),
+  ];
+  const stores = seats;
+  const seat = seats[storeAt] ?? null;
+  const store = seat?.shop ?? null;
 
   function pick(action: Action, as: StoreAccess | null) {
     if (action.studio) {
-      setMaking({ action, store: as });
+      setMaking({ action, storeId: side === 'store' ? seat?.id ?? null : null, storeName: side === 'store' ? seat?.name ?? null : null });
       return;
     }
     // Closed here as well as by the move: from the page it goes to, there is no move.
@@ -155,16 +190,17 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
   if (making) {
     return (
       <Suspense fallback={createPortal(<div className="csheet"><Loading /></div>, document.body)}>
-        <PostStudio mode={making.action.studio!} storeId={making.store?.ownerId ?? null} storeName={making.store?.name ?? null}
+        <PostStudio mode={making.action.studio!} storeId={making.storeId} storeName={making.storeName}
           presets={making.action.presets} onClose={onClose} onPosted={posted} />
       </Suspense>
     );
   }
 
-  const groups = side === 'store' && store ? STORE : [{ label: '', actions: YOU }];
+  const groups = side === 'store' && seat?.service ? serviceActions(seat.service)
+    : side === 'store' && store ? STORE : [{ label: '', actions: YOU }];
   // Whoever the side is, the quick post speaks as it: you, or the store picked.
-  const voice: SocialIdentity = side === 'store' && store
-    ? { storeId: store.ownerId, name: store.name, handle: store.handle ?? null }
+  const voice: SocialIdentity = side === 'store' && seat
+    ? { storeId: seat.id, name: seat.name, handle: seat.handle }
     : { storeId: null, name: user?.displayName ?? 'Me', handle: user?.username ?? null };
   const quickPosted = () => {
     onClose();
@@ -186,7 +222,7 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
             </button>
             <button type="button" role="tab" aria-selected={side === 'store'} className={`csheet__side${side === 'store' ? ' is-on' : ''}`}
               onClick={() => setSide('store')}>
-              {stores.length === 1 ? store?.name : 'Your store'}
+              {stores.length === 1 ? seat?.name : 'Your store'}
             </button>
             <span className={`csheet__thumb csheet__thumb--${side}`} aria-hidden="true" />
           </div>
@@ -195,9 +231,9 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
         {side === 'store' && stores.length > 1 && (
           <div className="chips chips--tight csheet__stores" role="radiogroup" aria-label="Which store">
             {stores.map((entry, index) => (
-              <button key={entry.ownerId} type="button" role="radio" aria-checked={index === storeAt}
+              <button key={entry.id} type="button" role="radio" aria-checked={index === storeAt}
                 className={`chip${index === storeAt ? ' is-on' : ''}`} onClick={() => setStoreAt(index)}>
-                {entry.name}
+                {entry.service ? (entry.service.kind === 'forwarder' ? '✈️ ' : '🎨 ') : ''}{entry.name}
               </button>
             ))}
           </div>

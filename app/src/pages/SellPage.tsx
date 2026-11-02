@@ -14,7 +14,7 @@ import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
 import { CategoryFields } from '../components/CategoryFields';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
-import { EmptyState, ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
+import { ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
 import { AdvanceStrip, DealClock, EtaFields, TermsFields, etaOf, termsBody, termsDraft, termsFromTemplate, termsProblem } from '../components/Buy';
@@ -27,7 +27,7 @@ import { CostSheetField, type CostSheetDraft } from '../components/CostSheetFiel
 import { BackBar, useGoBack } from '../components/ScrollManager';
 import { lotLabel } from '../components/LotName';
 import { NewLotForm } from './LotsPage';
-import { SetupChecklist } from '../components/VerifyNudges';
+import { OpenBusinessChooser } from '../components/OpenBusiness';
 import '../styles/SellPage.css';
 import { Select } from '../components/Select';
 
@@ -639,18 +639,11 @@ export function SellPage() {
       <main className="page tab-view">
         <div className="page__head">
           <div>
-            <h1>Sell something</h1>
-            <p className="muted">Every item is listed from a storefront.</p>
+            <h1>Open a business</h1>
+            <p className="muted">Sell items from a store, ship parcels as a freight forwarder, or take commissions as an artist.</p>
           </div>
         </div>
-        <SetupChecklist hasStore={false} onOpenStore={() => navigate('/shop')} />
-        <EmptyState title="You need a storefront first">
-          It takes a minute: a username, a name buyers follow, and a line about what you sell. Everything
-          you list afterwards goes out under it.
-        </EmptyState>
-        <Link to="/shop" className="btn btn--lg" style={{ justifySelf: 'start', marginTop: 16 }}>
-          Open a storefront
-        </Link>
+        <OpenBusinessChooser />
       </main>
     );
   }

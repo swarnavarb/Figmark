@@ -7,8 +7,13 @@ import type {
 import {
   ARTIST_JOB_MOVES, FREIGHT_MODES, STORE_KINDS, STORE_RIGHTS, STORE_ACCENTS, applicationGaps, coverIsOpen, goodsMinor,
   hasRight, insuranceQuote, isLive, jobActionsFor, jobIsLive, laneLabel, liveAddOns, liveLanes, liveOfferings,
-  livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, type ArtistJobAction, type StoreKind,
+  livePlans, memberEntry, partId, rightsIn, statusOf, storeOf, storeSlug, transitLabel, type ArtistJobAction, type StoreKind,
 } from '../../../shared/service-stores.js';
+import {
+  batteryFits, batteryRuleOf, followId, formOf, laneFromMinor, readAddons, readForm, readFormUrl, readInfoRows, readOptions, readVolumetric, readWarehouse, readWarehouses, standingOf, storeKey,
+  type ServiceRequest, type Standing,
+} from '../../../shared/service-work.js';
+import type { BatteryContent, BatteryRule, ServiceFormField, StoreWarehouse } from '../../../shared/models.js';
 import { crewButtons, photosFor, readyGated, supplierIdOf, type CrewRole } from '../../../shared/services.js';
 import {
   currentStepOf, lotEndIndex, lotNo, lotNumberFrom, lotOffset, renderStepText, routeOf, stepTickKey, ticksOf,
@@ -27,6 +32,9 @@ import { gistOf } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { error, handler, json } from './http.js';
 import { audited } from '../audit.js';
+import { config } from '../config.js';
+import { createDemoStore, createDemoStores } from '../demo-stores.js';
+import { insightsOf } from '../../../shared/service-insights.js';
 import { ownPhotoName, ownPhotos } from '../storage/index.js';
 
 /**
@@ -95,10 +103,15 @@ interface StoreBody {
   contactEmail?: string; contactPhone?: string; links?: StoreLink[];
   listedInDirectory?: boolean;
   payment?: SellerPaymentDetails | null;
+  requestForm?: Partial<ServiceFormField>[] | null;
+  terms?: string;
+  serviceOptions?: unknown;
+  formUrl?: string | null;
   // Forwarder
   lanes?: Partial<FreightLane>[]; insurance?: Partial<InsurancePlan>[];
-  warehouse?: { address?: string; contact?: string; hours?: string } | null;
+  warehouse?: Partial<StoreWarehouse> | null;
   autoAccept?: boolean; claimedMonthlyCapacityKg?: number | null;
+  coverPayment?: 'upfront' | 'with_bill';
   // Artist
   specialties?: string[]; offerings?: Partial<ArtistOffering>[]; portfolio?: Partial<PortfolioPiece>[];
   acceptingWork?: boolean; studioAddress?: string;
@@ -120,7 +133,17 @@ function readLanes(input: unknown, previous: FreightLane[] = []): FreightLane[] 
     customsIncluded: raw.customsIncluded === true,
     note: text(raw.note, 200),
     active: raw.active !== false,
-  })).filter((lane) => lane.originCity || lane.destinationCity);
+    products: readOptions(raw.products, 'prod'),
+    volumetric: readVolumetric(raw.volumetric),
+    warehouse: readWarehouse(raw.warehouse),
+    warehouses: readWarehouses(raw.warehouses),
+    orderInfo: text(raw.orderInfo, 2000),
+    terms: text(raw.terms, 4000),
+    extras: readInfoRows(raw.extras),
+    batteries: (['all', 'in_device', 'none'] as const).includes(raw.batteries as BatteryRule)
+      ? raw.batteries as BatteryRule
+      : batteryRuleOf({ batteryAllowed: raw.batteryAllowed }),
+  })).filter((lane) => lane.originCountry && lane.destinationCountry);
 }
 
 function readPlans(input: unknown, previous: InsurancePlan[] = []): InsurancePlan[] {
@@ -129,7 +152,9 @@ function readPlans(input: unknown, previous: InsurancePlan[] = []): InsurancePla
     id: text(raw.id, 40) || partId('plan'),
     name: text(raw.name, 60) || 'Transit cover',
     coverPercent: Math.max(1, Math.min(100, Math.round(Number(raw.coverPercent) || 100))),
-    premiumBasisPoints: Math.max(1, Math.min(3_000, Math.round(Number(raw.premiumBasisPoints) || 150))),
+    // Zero is free cover, which a forwarder may include on every parcel.
+    premiumBasisPoints: raw.premiumBasisPoints === undefined || raw.premiumBasisPoints === null || !Number.isFinite(Number(raw.premiumBasisPoints))
+      ? 150 : Math.max(0, Math.min(3_000, Math.round(Number(raw.premiumBasisPoints)))),
     minPremiumMinor: money(raw.minPremiumMinor),
     maxCoverMinor: money(raw.maxCoverMinor) || null,
     terms: text(raw.terms, 1200),
@@ -146,6 +171,11 @@ function readOfferings(input: unknown, previous: ArtistOffering[] = []): ArtistO
     priceFromMinor: money(raw.priceFromMinor),
     turnaroundDays: count(raw.turnaroundDays, 365),
     active: raw.active !== false,
+    products: readOptions(raw.products, 'var'),
+    includes: text(raw.includes, 2000),
+    orderInfo: text(raw.orderInfo, 2000),
+    terms: text(raw.terms, 4000),
+    extras: readInfoRows(raw.extras),
   })).filter((offering) => offering.name);
 }
 
@@ -226,6 +256,11 @@ function mergeStore(kind: StoreKind, account: User, input: StoreBody): Forwarder
     links: readLinks(input.links, existing?.links ?? []),
     team: existing?.team ?? [],
     payment: readPayment(input.payment, existing?.payment),
+    requestForm: input.requestForm === undefined ? (existing?.requestForm ?? null)
+      : input.requestForm === null ? null : readForm(kind, input.requestForm),
+    terms: input.terms === undefined ? (existing?.terms ?? '') : text(input.terms, 4000),
+    serviceOptions: input.serviceOptions === undefined ? (existing?.serviceOptions ?? []) : readAddons(input.serviceOptions),
+    formUrl: input.formUrl === undefined ? (existing?.formUrl ?? null) : readFormUrl(input.formUrl),
   };
 
   if (kind === 'forwarder') {
@@ -248,11 +283,10 @@ function mergeStore(kind: StoreKind, account: User, input: StoreBody): Forwarder
         ? (previous?.claimedMonthlyCapacityKg ?? null)
         : count(input.claimedMonthlyCapacityKg, 10_000_000) || null,
       insurance: readPlans(input.insurance, previous?.insurance ?? []),
-      warehouse: input.warehouse === undefined ? (previous?.warehouse ?? null)
-        : input.warehouse && text(input.warehouse.address, 400)
-          ? { address: text(input.warehouse.address, 400), contact: text(input.warehouse.contact, 120), hours: text(input.warehouse.hours, 120) }
-          : null,
+      warehouse: input.warehouse === undefined ? (previous?.warehouse ?? null) : readWarehouse(input.warehouse),
       autoAccept: pick(input.autoAccept, previous?.autoAccept ?? true) === true,
+      coverPayment: input.coverPayment === 'upfront' || input.coverPayment === 'with_bill'
+        ? input.coverPayment : (previous?.coverPayment ?? 'with_bill'),
     };
   }
 
@@ -391,7 +425,7 @@ async function saveStore(request: HttpRequest, _context: InvocationContext) {
 async function storeTeam(request: HttpRequest, _context: InvocationContext) {
   const found = await storeFor(request, 'team');
   if (found.refusal) return found.refusal;
-  const input = await body<{ identifier?: string; rights?: StoreRight[]; remove?: string }>(request);
+  const input = await body<{ identifier?: string; rights?: StoreRight[]; remove?: string; member?: string; tag?: string }>(request);
   if (!input) return error(400, 'invalid_body', 'Request body must be JSON.');
   const { owner, kind, repository, user } = found;
   const store = storeOf(owner, kind)!;
@@ -399,6 +433,15 @@ async function storeTeam(request: HttpRequest, _context: InvocationContext) {
 
   if (input.remove) {
     store.team = team.filter((member) => member.userId !== input.remove);
+  } else if (input.member) {
+    // Changing somebody already on the team: their rights, their tag, or both.
+    const existing = team.find((row) => row.userId === input.member);
+    if (!existing) return error(404, 'no_such_member', 'They are not on this team.');
+    const rights = input.rights === undefined ? existing.rights
+      : input.rights.filter((right) => (STORE_RIGHTS as readonly string[]).includes(right));
+    if (rights.length === 0) return error(400, 'no_rights', 'Pick at least one thing they may do.');
+    const tag = input.tag === undefined ? existing.tag : text(input.tag, 24);
+    store.team = team.map((row) => (row.userId === existing.userId ? { ...row, rights, ...(tag ? { tag } : { tag: undefined }) } : row));
   } else {
     const identifier = text(input.identifier, 120).replace(/^@/, '');
     if (!identifier) return error(400, 'invalid_member', 'Name the person by @handle, email or phone.');
@@ -409,7 +452,7 @@ async function storeTeam(request: HttpRequest, _context: InvocationContext) {
     if (member.id === owner.id) return error(400, 'is_owner', 'The owner already holds every right.');
     const rights = (input.rights ?? []).filter((right) => (STORE_RIGHTS as readonly string[]).includes(right));
     if (rights.length === 0) return error(400, 'no_rights', 'Pick at least one thing they may do.');
-    const entry = memberEntry(member.id, member.displayName, rights, user.id);
+    const entry = { ...memberEntry(member.id, member.displayName, rights, user.id), ...(text(input.tag, 24) ? { tag: text(input.tag, 24) } : {}) };
     const existing = team.find((row) => row.userId === member.id);
     store.team = existing
       ? team.map((row) => (row.userId === member.id ? { ...entry, addedAt: row.addedAt, addedBy: row.addedBy } : row))
@@ -614,6 +657,20 @@ async function artistAct(request: HttpRequest, _context: InvocationContext) {
 
 /* ── The public page ─────────────────────────────────────────────────── */
 
+/**
+ * The routes a forwarder sells: its priced lanes, or - for a store from before
+ * lanes - its old route list, read as China to India by air, which is what
+ * every one of those was.
+ */
+export function lanesOf(profile: ForwarderProfile): FreightLane[] {
+  return profile.lanes ? liveLanes(profile).map((lane) => ({ ...lane, batteries: batteryRuleOf(lane) })) : profile.routes.map((route, index): FreightLane => ({
+    id: `route_${index}`, originCity: route.originCity, originCountry: 'China', destinationCity: route.destinationCity,
+    destinationCountry: 'India', mode: 'air', ratePerKgMinor: route.ratePerKgMinor, minChargeKg: 0,
+    transitDaysMin: route.claimedTurnaroundDays, transitDaysMax: route.claimedTurnaroundDays, customsIncluded: false,
+    note: '', active: true, batteries: 'all',
+  }));
+}
+
 function publicStore(owner: User, kind: StoreKind) {
   const store = storeOf(owner, kind)!;
   const base = {
@@ -637,20 +694,22 @@ function publicStore(owner: User, kind: StoreKind) {
     trust: store.trust,
     teamSize: 1 + (store.team?.length ?? 0),
     status: statusOf(store),
+    form: formOf(kind, store.requestForm),
+    terms: store.terms ?? '',
+    serviceOptions: store.serviceOptions ?? [],
+    formUrl: store.formUrl ?? null,
+    /** Payment details are shown on a request once it is accepted, never on the page. */
+    takesDirect: Boolean(store.payment),
   };
   if (kind === 'forwarder') {
     const profile = owner.forwarderProfile!;
     return {
       ...base,
-      lanes: profile.lanes ? liveLanes(profile) : profile.routes.map((route, index): FreightLane => ({
-        id: `route_${index}`, originCity: route.originCity, originCountry: 'China', destinationCity: route.destinationCity,
-        destinationCountry: 'India', mode: 'air', ratePerKgMinor: route.ratePerKgMinor, minChargeKg: 0,
-        transitDaysMin: route.claimedTurnaroundDays, transitDaysMax: route.claimedTurnaroundDays, customsIncluded: false,
-        note: '', active: true,
-      })),
+      lanes: lanesOf(profile),
       insurance: livePlans(profile),
       warehouse: profile.warehouse ?? null,
       autoAccept: profile.autoAccept ?? true,
+      coverPayment: profile.coverPayment ?? 'with_bill',
       capacityKg: profile.claimedMonthlyCapacityKg,
       offerings: [], portfolio: [], specialties: [], acceptingWork: false,
     };
@@ -658,12 +717,62 @@ function publicStore(owner: User, kind: StoreKind) {
   const profile = owner.artistProfile!;
   return {
     ...base,
-    lanes: [], insurance: [], warehouse: null, autoAccept: false, capacityKg: null,
+    lanes: [], insurance: [], warehouse: null, autoAccept: false, coverPayment: 'with_bill' as const, capacityKg: null,
     offerings: liveOfferings(profile),
     portfolio: profile.portfolio ?? [],
     specialties: profile.specialties ?? [],
     acceptingWork: profile.acceptingWork !== false,
   };
+}
+
+/**
+ * What a store's page counts - lots carried, finished work, its standing,
+ * followers - kept for a minute per instance.
+ *
+ * The lot count is a query across every shop's lots, and a store page is
+ * opened far more often than any of those numbers move. A minute late on a
+ * follower count is invisible; a page that waits on that query every time is not.
+ */
+const PAGE_STATS_MS = 60_000;
+const pageStats = new Map<string, { at: number; value: Promise<PageStats> }>();
+interface PageStats {
+  lotsCarried: number;
+  commissions: number;
+  followers: number;
+  standing: Standing;
+  reviews: { stars: number; text: string; at: string; by: string; subject: string | null }[];
+}
+
+export function forgetPageStats(kind: StoreKind, ownerId: string): void {
+  pageStats.delete(storeKey(kind, ownerId));
+}
+
+async function statsFor(repository: Repo, owner: User, kind: StoreKind): Promise<PageStats> {
+  const key = storeKey(kind, owner.id);
+  const cached = pageStats.get(key);
+  if (cached && Date.now() - cached.at < PAGE_STATS_MS) return cached.value;
+  const value = (async (): Promise<PageStats> => {
+    const [lotsCarried, commissions, requests, followers] = await Promise.all([
+      kind === 'forwarder' ? lotsBooking(repository, owner.id).then((rows) => rows.filter(({ lot }) => forwarderTookLot(lot)).length) : Promise.resolve(0),
+      kind === 'artist' ? repository.listOrdersCommissionedFrom(owner.id).then((rows) => rows.filter((o) => o.artistJob?.status === 'completed').length) : Promise.resolve(0),
+      repository.listServiceWork<ServiceRequest>(key, 'request'),
+      repository.countServiceFollowers(key),
+    ]);
+    return {
+      lotsCarried,
+      commissions,
+      followers,
+      // Work carried for shops counts towards the level as much as work for customers.
+      standing: standingOf(requests, lotsCarried + commissions),
+      reviews: requests.filter((row) => row.review).slice(0, 20).map((row) => ({
+        stars: row.review!.stars, text: row.review!.text, at: row.review!.at,
+        by: row.customerName.split(' ')[0] || 'A customer', subject: row.subject?.label ?? null,
+      })),
+    };
+  })();
+  pageStats.set(key, { at: Date.now(), value });
+  value.catch(() => pageStats.delete(key));
+  return value;
 }
 
 /** GET /api/service-store/{kind}/{slug} - the store's own page. */
@@ -672,20 +781,25 @@ async function storePage(request: HttpRequest, _context: InvocationContext) {
   const slug = request.params.slug;
   if (!isKind(kind) || !slug) return error(404, 'not_found', 'No such store.');
   const repository = await getRepository();
-  const owner = await repository.findStoreBySlug(kind, slug);
+  const auth = await getAuthService();
+  const [owner, viewer] = await Promise.all([repository.findStoreBySlug(kind, slug), auth.getCurrentUser(request)]);
   if (!owner) return error(404, 'not_found', 'No such store.');
 
   // Not live yet: only its own team (previewing) and operators may look.
   if (!isLive(storeOf(owner, kind)) || owner.suspended) {
-    const auth = await getAuthService();
-    const viewer = await auth.getCurrentUser(request);
     if (!viewer || (rightsIn(owner, kind, viewer.id).length === 0 && !viewer.capabilities.isAdmin)) {
       return error(404, 'not_found', 'No such store.');
     }
   }
-  const lotsCarried = kind === 'forwarder' ? (await lotsBooking(repository, owner.id)).filter(({ lot }) => forwarderTookLot(lot)).length : 0;
-  const commissions = kind === 'artist' ? (await repository.listOrdersCommissionedFrom(owner.id)).filter((o) => o.artistJob?.status === 'completed').length : 0;
-  return json(200, { store: publicStore(owner, kind), stats: { lotsCarried, commissions } });
+  const [stats, following] = await Promise.all([
+    statsFor(repository, owner, kind),
+    viewer ? repository.getServiceWork(storeKey(kind, owner.id), followId(viewer.id)).then(Boolean) : Promise.resolve(false),
+  ]);
+  return json(200, {
+    store: publicStore(owner, kind),
+    stats,
+    viewer: viewer ? { following, rights: rightsIn(owner, kind, viewer.id) } : null,
+  });
 }
 
 /** Every live store of one kind, for the directory. */
@@ -696,6 +810,107 @@ export async function liveStores(repository: Repo, kind: StoreKind): Promise<Use
     return store && store.listedInDirectory && isLive(store) && !user.suspended;
   });
 }
+
+/* ── Finding the right one ────────────────────────────────────────────── */
+
+/** A store's level and rating, as a search result shows it. */
+async function standingCard(repository: Repo, owner: User, kind: StoreKind) {
+  const store = storeOf(owner, kind)!;
+  const { standing } = await statsFor(repository, owner, kind);
+  return {
+    ownerId: owner.id, name: store.companyName, slug: store.directorySlug,
+    logoUrl: store.logoUrl ?? null, accent: store.accent ?? (kind === 'artist' ? 'pink' : 'aqua'),
+    level: standing.level, title: standing.title, rating: standing.rating, reviews: standing.reviews, completed: standing.completed,
+  };
+}
+
+/** How good a match is: rated and levelled stores first, then the cheaper of the rest. */
+function matchScore(card: { rating: number | null; level: number }, priceMinor: number, cheapest: number): number {
+  const rating = (card.rating ?? 3.5) / 5;
+  const level = Math.min(card.level, 5) / 5;
+  const price = priceMinor > 0 && cheapest > 0 ? cheapest / priceMinor : 0.5;
+  return rating * 0.4 + level * 0.3 + price * 0.3;
+}
+
+/**
+ * GET /api/service-search/forwarder?from=China&to=India&mode=air&battery=1&freeCover=1
+ * GET /api/service-search/artist?q=repaint
+ *
+ * Forwarders as routes: every live route that goes where the customer is
+ * sending, across every store, best match first. Artists as studios whose
+ * menu or specialties match what the customer wants done.
+ */
+async function serviceSearch(request: HttpRequest, _context: InvocationContext) {
+  const kind = request.params.kind;
+  if (!isKind(kind)) return error(404, 'not_found', 'No such service.');
+  const repository = await getRepository();
+  const owners = await liveStores(repository, kind);
+  const q = (request.query.get('q') ?? '').trim().toLowerCase();
+
+  if (kind === 'forwarder') {
+    const from = request.query.get('from')?.trim() || null;
+    const to = request.query.get('to')?.trim() || null;
+    const mode = request.query.get('mode')?.trim() || null;
+    // What the parcel holds: `in_device` or `loose`. Routes that would refuse it drop out.
+    const batteryRaw = request.query.get('battery');
+    const battery: BatteryContent = batteryRaw === 'loose' || batteryRaw === '1' ? 'loose' : batteryRaw === 'in_device' ? 'in_device' : 'none';
+    const freeCover = request.query.get('freeCover') === '1';
+    const door = request.query.get('door') === '1';
+    const origins = new Set<string>();
+    const destinations = new Set<string>();
+    const found = await Promise.all(owners.map(async (owner) => {
+      const profile = owner.forwarderProfile!;
+      const lanes = lanesOf(profile);
+      for (const lane of lanes) { origins.add(lane.originCountry); destinations.add(lane.destinationCountry); }
+      const hasFreeCover = livePlans(profile).some((plan) => !plan.premiumBasisPoints && !plan.minPremiumMinor);
+      const hasDoor = (profile.serviceOptions ?? []).some((row) => /door/i.test(row.name));
+      if ((freeCover && !hasFreeCover) || (door && !hasDoor)) return [];
+      const matching = lanes.filter((lane) => (!from || lane.originCountry === from) && (!to || lane.destinationCountry === to)
+        && (!mode || lane.mode === mode) && batteryFits(batteryRuleOf(lane), battery));
+      if (matching.length === 0) return [];
+      const card = await standingCard(repository, owner, kind);
+      return matching.map((lane) => ({
+        store: card,
+        lane: {
+          id: lane.id, label: laneLabel(lane), originCountry: lane.originCountry, destinationCountry: lane.destinationCountry,
+          mode: lane.mode, days: transitLabel(lane), fromMinor: laneFromMinor(lane),
+          batteries: batteryRuleOf(lane), customsIncluded: lane.customsIncluded, note: lane.note,
+        },
+        freeCover: hasFreeCover, door: hasDoor,
+      }));
+    }));
+    const rows = found.flat();
+    const cheapest = Math.min(...rows.map((row) => row.lane.fromMinor || Infinity));
+    rows.sort((a, b) => matchScore(b.store, b.lane.fromMinor, cheapest) - matchScore(a.store, a.lane.fromMinor, cheapest));
+    return json(200, { routes: rows.slice(0, 60), countries: { from: [...origins].sort(), to: [...destinations].sort() } });
+  }
+
+  const tags = new Set<string>();
+  const found = await Promise.all(owners.map(async (owner) => {
+    const profile = owner.artistProfile!;
+    for (const tag of profile.specialties ?? []) tags.add(tag);
+    const offerings = liveOfferings(profile);
+    const words = (text: string) => !q || text.toLowerCase().includes(q);
+    const matching = offerings.filter((row) => words(`${row.name} ${row.description}`));
+    if (q && matching.length === 0 && !(profile.specialties ?? []).some(words)) return [];
+    const shown = matching.length ? matching : offerings;
+    const prices = shown.flatMap((row) => [row.priceFromMinor, ...(row.products ?? []).map((p) => p.priceMinor)]).filter((n) => n > 0);
+    return [{
+      store: await standingCard(repository, owner, kind),
+      services: shown.slice(0, 3).map((row) => ({ id: row.id, name: row.name, days: row.turnaroundDays })),
+      fromMinor: prices.length ? Math.min(...prices) : 0,
+      specialties: profile.specialties ?? [],
+      portfolio: (profile.portfolio ?? []).slice(0, 4).map((piece) => piece.url),
+      acceptingWork: profile.acceptingWork !== false,
+    }];
+  }));
+  const rows = found.flat();
+  const cheapest = Math.min(...rows.map((row) => row.fromMinor || Infinity));
+  rows.sort((a, b) => Number(b.acceptingWork) - Number(a.acceptingWork)
+    || matchScore(b.store, b.fromMinor, cheapest) - matchScore(a.store, a.fromMinor, cheapest));
+  return json(200, { studios: rows.slice(0, 40), specialties: [...tags].sort().slice(0, 16) });
+}
+export const serviceSearchRoute = handler(serviceSearch);
 
 /* ── A shop booking a forwarder ──────────────────────────────────────── */
 
@@ -1093,6 +1308,60 @@ function movesFor(lot: Lot, role: CrewRole) {
       ? [{ index, name: renderStepText(step.name, placesOf(lot)), forward: Boolean(step.forward) }] : []);
 }
 
+/**
+ * GET /api/service-stores/{kind}/{ownerId}/insights - the store's numbers:
+ * requests and how far they get, money confirmed, speed, routes, customers,
+ * week by week; and how its posts and followers are doing.
+ */
+async function storeInsights(request: HttpRequest, _context: InvocationContext) {
+  const found = await storeFor(request, null);
+  if (found.refusal) return found.refusal;
+  const { owner, kind, repository } = found;
+  const key = storeKey(kind, owner.id);
+  const [rows, followers, posts] = await Promise.all([
+    repository.listServiceWork<ServiceRequest>(key, 'request'),
+    repository.countServiceFollowers(key),
+    repository.listPosts(key, 30).catch(() => []),
+  ]);
+  return json(200, {
+    insights: insightsOf(rows),
+    audience: {
+      followers,
+      posts: posts.length,
+      reactions: posts.reduce((sum, post) => sum + (post.likeCount ?? 0), 0),
+      comments: posts.reduce((sum, post) => sum + (post.replyCount ?? 0), 0),
+      best: [...posts].sort((a, b) => (b.likeCount + b.replyCount) - (a.likeCount + a.replyCount)).slice(0, 3)
+        .map((post) => ({ id: post.id, channelId: post.channelId, body: post.body.slice(0, 120), reactions: post.likeCount, comments: post.replyCount, at: post.createdAt })),
+    },
+  });
+}
+export const storeInsightsRoute = handler(storeInsights);
+
+/**
+ * GET /api/me/service-stores - the freight and art stores this person owns or
+ * is on the team of, with their rights: what the role switcher and the Create
+ * sheet list. No counts, so it costs one read.
+ */
+async function myServiceStores(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const owners = await repository.listServiceStoreOwners();
+  const stores = owners.flatMap((owner) => STORE_KINDS.flatMap((kind) => {
+    const store = storeOf(owner, kind);
+    const rights = store ? rightsIn(owner, kind, user.id) : [];
+    if (!store || rights.length === 0) return [];
+    return [{
+      kind, ownerId: owner.id, isOwner: owner.id === user.id, rights,
+      name: store.companyName, slug: store.directorySlug,
+      logoUrl: store.logoUrl ?? null, accent: store.accent ?? (kind === 'artist' ? 'pink' : 'aqua'),
+      status: statusOf(store), live: isLive(store) && !owner.suspended,
+    }];
+  }));
+  return json(200, { stores });
+}
+export const myServiceStoresRoute = handler(myServiceStores);
+
 /** GET /api/me/services - everything this person does for other people's lots and orders. */
 async function myServices(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -1117,6 +1386,12 @@ async function myServices(request: HttpRequest, _context: InvocationContext) {
           waiting = jobs.filter((job) => jobActionsFor(job, 'artist').length > 0).length;
           active = jobs.filter((job) => jobIsLive(job)).length;
         }
+      }
+      if (rights.includes('work')) {
+        // Direct requests from customers: new ones, and payments waiting to be confirmed.
+        const requests = await repository.listServiceWork<ServiceRequest>(storeKey(kind, owner.id), 'request');
+        waiting += requests.filter((row) => row.status === 'submitted' || (row.payment && !row.payment.confirmedAt && row.status === 'accepted')).length;
+        active += requests.filter((row) => ['accepted', 'paid', 'received', 'in_progress', 'shipped'].includes(row.status)).length;
       }
       return {
         kind, ownerId: owner.id, isOwner: owner.id === user.id, rights,
@@ -1336,8 +1611,52 @@ export const crewLotRoute = handler(crewLot);
 export const opsStoresRoute = handler(opsStores);
 export const opsReviewRoute = audited('store.review', handler(opsReview));
 
+/**
+ * POST /api/ops/demo-stores - a demo forwarder and a demo artist, with the
+ * operator on both teams. For trying the services on the development site;
+ * refused everywhere else, production included, where a store nobody runs
+ * would sit in the real directory.
+ */
+async function opsDemoStores(request: HttpRequest, _context: InvocationContext) {
+  const user = await operator(request);
+  if (config.siteEnvironment !== 'development') return error(403, 'not_here', 'Demo stores are for the development site only.');
+  const repository = await getRepository();
+  const account = await repository.getUserById(user.id);
+  if (!account) return error(404, 'not_found', 'No such account.');
+  const stores = await createDemoStores(repository, account);
+  for (const store of stores) forgetPageStats(store.kind, store.ownerId);
+  return json(200, { stores });
+}
+export const opsDemoStoresRoute = audited('store.demo', handler(opsDemoStores));
+
+/**
+ * POST /api/dev/demo-store - {kind}: put yourself on a demo store's team.
+ *
+ * The development site only, and nowhere else - not production, not a site
+ * whose environment is unset. Lets anyone testing there run the demo
+ * forwarder or artist from their own account without an operator.
+ */
+async function devDemoStore(request: HttpRequest, _context: InvocationContext) {
+  if (config.siteEnvironment !== 'development') return error(404, 'not_found', 'Not here.');
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const input = await body<{ kind?: string }>(request);
+  const kind = input?.kind === 'artist' ? 'artist' : input?.kind === 'forwarder' ? 'forwarder' : null;
+  if (!kind) return error(400, 'invalid_kind', 'Say forwarder or artist.');
+  const repository = await getRepository();
+  const account = await repository.getUserById(user.id);
+  if (!account) return error(404, 'not_found', 'No such account.');
+  const store = await createDemoStore(repository, kind, account);
+  forgetPageStats(store.kind, store.ownerId);
+  return json(200, { store });
+}
+export const devDemoStoreRoute = handler(devDemoStore);
+
 const anon = { authLevel: 'anonymous' } as const;
 
+app.http('svc-store-insights', { ...anon, methods: ['GET'], route: 'service-stores/{kind}/{ownerId}/insights', handler: storeInsightsRoute });
+app.http('service-search', { ...anon, methods: ['GET'], route: 'service-search/{kind}', handler: serviceSearchRoute });
+app.http('my-service-stores', { ...anon, methods: ['GET'], route: 'me/service-stores', handler: myServiceStoresRoute });
 app.http('my-services', { ...anon, methods: ['GET'], route: 'me/services', handler: myServicesRoute });
 app.http('services-apply', { ...anon, methods: ['POST'], route: 'me/services/apply', handler: applyStoreRoute });
 app.http('crew-lot', { ...anon, methods: ['GET'], route: 'me/crew/{sellerId}/{lotId}', handler: crewLotRoute });
@@ -1355,4 +1674,6 @@ app.http('order-insurance', { ...anon, methods: ['POST'], route: 'orders/{id}/in
 app.http('order-commission', { ...anon, methods: ['POST'], route: 'orders/{id}/commission', handler: commissionRoute });
 app.http('order-commission-act', { ...anon, methods: ['POST'], route: 'orders/{id}/commission/act', handler: commissionActRoute });
 app.http('ops-stores', { ...anon, methods: ['GET'], route: 'ops/stores', handler: opsStoresRoute });
+app.http('dev-demo-store', { ...anon, methods: ['POST'], route: 'dev/demo-store', handler: devDemoStoreRoute });
+app.http('ops-demo-stores', { ...anon, methods: ['POST'], route: 'ops/demo-stores', handler: opsDemoStoresRoute });
 app.http('ops-store-review', { ...anon, methods: ['POST'], route: 'ops/stores/{kind}/{ownerId}/review', handler: opsReviewRoute });

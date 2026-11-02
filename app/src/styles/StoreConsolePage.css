@@ -87,3 +87,75 @@
 .sc-job__body { gap: var(--s3); }
 .sc-hero__id { align-items: flex-start; }
 .sc-hero__text { padding-top: 42px; }
+
+/* Direct requests and member tags. */
+.sc-reqbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.sc-req { display: grid; gap: 0; border-radius: var(--r-lg); }
+.sc-req.is-open { border: 1px solid var(--sk-line); background: var(--surface); }
+.sc-req.is-open .svk-row { border-color: transparent; }
+.sc-req__toggle { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.sc-req__body { padding: 0 14px 14px; gap: 12px; }
+.sc-req__link { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); background: var(--sk-soft); }
+.sc-req__url { flex: 1 1 200px; font-family: var(--mono, monospace); font-size: var(--t-xs); overflow-wrap: anywhere; }
+.sc-req__desc { margin: 0; color: var(--text-dim); font-size: var(--t-sm); white-space: pre-line; }
+.sc-req__msg { justify-self: start; }
+.sc-req__pay { margin: 0; padding: 8px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn); font-size: var(--t-sm); }
+.sc-req__pay.is-ok { background: var(--ok-soft); color: var(--ok); }
+.sc-person__tag { background: var(--sk-soft); color: var(--sk-text); }
+.sc-person__edit { justify-self: start; }
+.sc-person__editor { display: grid; gap: 8px; margin-top: 6px; }
+.sc-person__ticks { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-xs); }
+.sc-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.sc-filter button { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); color: var(--text-dim); font: inherit; font-size: var(--t-xs); cursor: pointer; }
+.sc-filter button.is-on { border-color: var(--sk); background: var(--sk-soft); color: var(--text); }
+
+/* Insights: headline tiles, two weekly charts, the funnel, ranked lists. One hue - the store's own. */
+.sc-insights { gap: 18px; min-width: 0; }
+.sc-tiles { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); }
+.sc-tile { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.sc-tile .faint { font-size: var(--t-xs); }
+.sc-tile b { font-size: var(--t-xl); letter-spacing: -0.01em; }
+.sc-tile small { color: var(--text-faint); font-size: var(--t-xs); }
+.sc-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@media (min-width: 760px) { .sc-charts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.sc-chart { display: grid; gap: 8px; margin: 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.sc-chart figcaption { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--t-sm); color: var(--text-dim); }
+.sc-chart figcaption b { color: var(--text); font-size: var(--t-md); }
+.sc-chart__bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; align-items: end; height: 120px; border-bottom: 1px solid var(--border); }
+.sc-chart__bar { position: relative; display: flex; align-items: flex-end; height: 100%; outline: none; cursor: default; }
+.sc-chart__fill { width: 100%; border-radius: 4px 4px 0 0; background: var(--sk); opacity: 0.85; transition: opacity 0.15s; }
+.sc-chart__bar:hover .sc-chart__fill, .sc-chart__bar:focus-visible .sc-chart__fill { opacity: 1; }
+.sc-chart__tip {
+  position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); z-index: 2; display: none;
+  padding: 4px 8px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  font-size: var(--t-xs); white-space: nowrap; pointer-events: none;
+}
+.sc-chart__bar:hover .sc-chart__tip, .sc-chart__bar:focus-visible .sc-chart__tip { display: block; }
+.sc-chart__axis { display: flex; justify-content: space-between; color: var(--text-faint); font-size: var(--t-xs); }
+.sc-funnel { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.sc-funnel h3, .sc-rank h3 { margin: 0; font-size: var(--t-md); }
+.sc-funnel p { margin: 0; font-size: var(--t-xs); }
+.sc-funnel__row { display: grid; grid-template-columns: 80px 1fr 40px; align-items: center; gap: 10px; font-size: var(--t-sm); }
+.sc-funnel__row b { text-align: right; }
+.sc-funnel__bar, .sc-rank__bar { display: block; height: 10px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.sc-funnel__bar > span, .sc-rank__bar > span { display: block; height: 100%; border-radius: 4px; background: var(--sk); }
+.sc-ranks { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@media (min-width: 760px) { .sc-ranks { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.sc-rank { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.sc-rank h3 .faint { font-size: var(--t-xs); font-weight: var(--w-regular, 400); }
+.sc-rank ol { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.sc-rank li { display: grid; gap: 4px; min-width: 0; }
+.sc-rank__line { display: flex; justify-content: space-between; gap: 10px; font-size: var(--t-sm); }
+.sc-rank__line > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-rank__line b { white-space: nowrap; }
+.sc-rank > p { margin: 0; font-size: var(--t-sm); }
+.sc-insights > p.faint { margin: 0; font-size: var(--t-xs); }
+
+/* A custom quote: what was asked, and the form that prices it. */
+.sc-qask { display: grid; gap: 4px; margin: 0; font-size: var(--t-sm); }
+.sc-qask > div { display: grid; grid-template-columns: minmax(80px, 30%) minmax(0, 1fr); gap: 10px; }
+.sc-qask dt { color: var(--text-faint); }
+.sc-qask dd { margin: 0; overflow-wrap: anywhere; }
+.sc-qform { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.sc-qform__wide { grid-column: 1 / -1; }
+.sc-find { max-width: 420px; }

@@ -234,7 +234,7 @@ export function StoreApplyPage() {
 /** The store, compressed: hero, a few lanes or offerings, the cover. */
 function MiniStore({ kind, draft }: { kind: StoreKind; draft: StoreDraft }) {
   const name = draft.companyName?.trim() || 'Your store';
-  const lanes = liveLanes({ lanes: draft.lanes ?? [] }).filter((lane) => lane.originCity && lane.destinationCity);
+  const lanes = liveLanes({ lanes: draft.lanes ?? [] }).filter((lane) => lane.originCountry && lane.destinationCountry);
   const plans = livePlans({ insurance: draft.insurance ?? [] });
   const offerings = liveOfferings({ offerings: draft.offerings ?? [] }).filter((row) => row.name);
   return (

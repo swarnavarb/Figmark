@@ -123,7 +123,7 @@ const listings = new Map();
 const users = new Map();
 const userParts = new Map();
 const cosmos = cosmosOn(new Map([
-  ['orders', orders], ['listings', listings], ['users', users], ['userParts', userParts], ['sessions', new Map()],
+  ['orders', orders], ['listings', listings], ['users', users], ['userParts', userParts], ['siteContent', new Map()],
 ]));
 await cosmos.container('orders').items.create({
   id: 'ord_1', lotId: 'lot_1', listingId: 'lst_1', quantity: 1, status: 'pending', note: '', payments: [], updatedAt: '',
@@ -209,6 +209,50 @@ await check('a shared counter counts across calls, reads without creating, and t
 });
 
 /* ── Sign-in throttling ────────────────────────────────────────────────── */
+await check('a sign-out is kept in siteContent, and one from before the move still counts', async () => {
+  const siteContent = new Map();
+  const legacy = new Map();
+  const repository = cosmosOn(new Map([['siteContent', siteContent]]));
+  // The retired `sessions` container, reached by name rather than through the schema.
+  let legacyExists = true;
+  let legacyThrottled = false;
+  const legacyFake = etagContainer(legacy);
+  repository.database = {
+    container: () => ({
+      ...legacyFake,
+      async read() { if (!legacyExists) throw { code: 404 }; return { resource: { id: 'sessions' } }; },
+      item: (id) => ({
+        async read() {
+          if (legacyThrottled) throw { code: 429 };
+          return legacyFake.item(id).read();
+        },
+      }),
+    }),
+  };
+
+  await repository.revokeSession('token-new', new Date(Date.now() + 60_000));
+  assert.ok([...siteContent.keys()].every((id) => id.startsWith('revoked:')), 'recorded under the revoked: prefix');
+  assert.equal(await repository.isSessionRevoked('token-new'), true);
+  assert.equal(await repository.isSessionRevoked('token-live'), false);
+
+  // Signed out before the move: only the old container knows.
+  const { createHash } = await import('node:crypto');
+  const digest = createHash('sha256').update('token-old').digest('hex');
+  legacy.set(digest, { id: digest, revokedAt: new Date().toISOString() });
+  assert.equal(await repository.isSessionRevoked('token-old'), true, 'a sign-out from before the move holds');
+
+  // A throttle on the old container must not wave a signed-out token through.
+  legacyThrottled = true;
+  await assert.rejects(repository.isSessionRevoked('token-old'));
+  legacyThrottled = false;
+
+  // Once provisioning deletes it, the old container is asked about no more.
+  legacyExists = false;
+  repository.legacySessions = null;
+  assert.equal(await repository.isSessionRevoked('token-old'), false);
+  assert.equal(await repository.isSessionRevoked('token-new'), true);
+});
+
 console.log('\nan account and its parts');
 
 const card = (orderId) => ({ orderId, listingId: 'lst_1', name: 'Card', itemName: 'Card', photos: [], groupId: null, deliveredAt: '', addedAt: '' });
