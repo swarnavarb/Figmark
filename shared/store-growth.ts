@@ -18,8 +18,9 @@ import type { StoreFacts } from './storefront.js';
  * wrote - only from rows the server recorded.
  */
 
-export type GrowthKind = 'daily' | 'weekly' | 'monthly' | 'milestone';
-type Periodic = Exclude<GrowthKind, 'milestone'>;
+/** `starter` is Getting started: one-time steps that set a new shop up. */
+export type GrowthKind = 'daily' | 'weekly' | 'monthly' | 'milestone' | 'starter';
+type Periodic = Exclude<GrowthKind, 'milestone' | 'starter'>;
 
 export type GrowthArea = 'reviews' | 'popularity' | 'sales' | 'marketing' | 'upkeep';
 export const GROWTH_AREAS: readonly GrowthArea[] = ['reviews', 'popularity', 'sales', 'marketing', 'upkeep'];
@@ -62,9 +63,19 @@ export interface GrowthFacts {
   bestFill: number;
   /** How the shop stands overall, for the milestone ladders. */
   totals: StoreFacts;
+  /** Competitions and guess-the-price games the shop posted. */
+  games?: Stamp[];
+  /** Bumps spent on the shop's items. */
+  bumps?: Stamp[];
+  /** Items put up with an end time - a timed drop. */
+  timedDrops?: Stamp[];
+  /** Orders from buyers who had ordered from the shop before. */
+  repeatSales?: Stamp[];
+  /** What the shop's page has set up, for Getting started. */
+  setup?: { logo: boolean; cover: boolean; bio: boolean; payment: boolean };
 }
 
-export type GrowthAction = 'share_shop' | 'share_item' | 'post' | 'affiliate' | 'preorder' | 'list' | 'orders' | null;
+export type GrowthAction = 'share_shop' | 'share_item' | 'post' | 'affiliate' | 'preorder' | 'list' | 'orders' | 'settings' | null;
 
 export interface GrowthTask {
   id: string;
@@ -198,6 +209,61 @@ const DEFS: readonly Def[] = [
   { key: 'preorder1', kind: 'monthly', area: 'upkeep', title: 'Open a pre-order',
     blurb: 'Run at least one pre-order this month.',
     goal: 1, action: 'preorder', measure: (f, inPeriod) => within(f.preOrdersRun, inPeriod) },
+
+  // Marketing and selling, added alongside the quests above.
+  { key: 'bump1', kind: 'weekly', area: 'marketing', title: 'Bump an item',
+    blurb: 'Spend a bump point to put one of your items back at the top of the feed.',
+    goal: 1, action: 'share_item', measure: (f, inPeriod) => within(f.bumps ?? [], inPeriod) },
+  { key: 'timed1', kind: 'weekly', area: 'sales', title: 'Run a timed drop',
+    blurb: 'List an item with an end time. A clock running down gives buyers a reason to decide today.',
+    goal: 1, action: 'list', measure: (f, inPeriod) => within(f.timedDrops ?? [], inPeriod) },
+  { key: 'game1', kind: 'monthly', area: 'marketing', title: 'Run a competition or a guessing game',
+    blurb: 'A photo competition or a guess-the-price brings people to the shop and gets it talked about.',
+    goal: 1, action: 'post', measure: (f, inPeriod) => within(f.games ?? [], inPeriod) },
+  { key: 'repeat2', kind: 'monthly', area: 'sales', title: 'Two repeat buyers',
+    blurb: 'Two orders this month from buyers who have ordered from you before.',
+    goal: 2, action: 'orders', measure: (f, inPeriod) => within(f.repeatSales ?? [], inPeriod) },
+];
+
+/*
+ * Getting started: one-time steps that set a new shop up to sell. Each pays
+ * the starter reward once, whatever its area, and no bump points.
+ */
+interface Starter {
+  key: string;
+  area: GrowthArea;
+  title: string;
+  blurb: string;
+  goal: number;
+  action: GrowthAction;
+  have: (facts: GrowthFacts) => number;
+}
+
+const STARTERS: readonly Starter[] = [
+  { key: 'logo', area: 'upkeep', title: 'Add a shop logo', blurb: 'The picture beside every item and message.',
+    goal: 1, action: 'settings', have: (f) => Number(Boolean(f.setup?.logo)) },
+  { key: 'cover', area: 'upkeep', title: 'Add a cover photo', blurb: 'The banner across the top of your shop page.',
+    goal: 1, action: 'settings', have: (f) => Number(Boolean(f.setup?.cover)) },
+  { key: 'bio', area: 'upkeep', title: 'Write your shop bio', blurb: 'What you sell, where you ship from, how long you have been at it.',
+    goal: 1, action: 'settings', have: (f) => Number(Boolean(f.setup?.bio)) },
+  { key: 'payment', area: 'upkeep', title: 'Add your payment details', blurb: 'UPI or bank details, so buyers can pay you.',
+    goal: 1, action: 'settings', have: (f) => Number(Boolean(f.setup?.payment)) },
+  { key: 'list3', area: 'upkeep', title: 'List three items', blurb: 'A shelf with a few things on it gets followed.',
+    goal: 3, action: 'list', have: (f) => f.totals.listings },
+  { key: 'post1', area: 'marketing', title: 'Post in your channel', blurb: 'Say hello, show what is coming, ask what people want.',
+    goal: 1, action: 'post', have: (f) => f.totals.posts },
+  { key: 'share1', area: 'marketing', title: 'Share your shop', blurb: 'Send it to your WhatsApp groups and story.',
+    goal: 1, action: 'share_shop', have: (f) => f.shares.length },
+  { key: 'affiliate1', area: 'marketing', title: 'Offer a commission', blurb: 'Pay sharers on one item, so buyers earn by spreading it.',
+    goal: 1, action: 'affiliate', have: (f) => f.totals.affiliateItems },
+  { key: 'preorder1', area: 'sales', title: 'Open your first pre-order', blurb: 'Collect commitments before you import.',
+    goal: 1, action: 'preorder', have: (f) => f.totals.preOrders },
+  { key: 'sale1', area: 'sales', title: 'Make your first sale', blurb: 'Any order placed with the shop.',
+    goal: 1, action: 'share_item', have: (f) => f.sales.length },
+  { key: 'deliver1', area: 'sales', title: 'Deliver your first order', blurb: 'All the way to the buyer confirming it arrived.',
+    goal: 1, action: 'orders', have: (f) => f.totals.completedSales },
+  { key: 'review1', area: 'reviews', title: 'Get your first good review', blurb: 'Four or five stars from a buyer who ordered.',
+    goal: 1, action: 'orders', have: (f) => f.totals.tradeGoodReviews },
 ];
 
 interface Ladder {
@@ -250,9 +316,24 @@ const LADDERS: readonly Ladder[] = [
   { key: 'voice', name: 'Broadcaster', area: 'marketing', steps: [1, 20, 100],
     blurb: (n) => (n === 1 ? 'Post in your shop\'s channel.' : `Post ${n} times in your shop's channel.`),
     action: 'post', have: (t) => t.posts },
-  { key: 'stickers', name: 'Sticker book', area: 'popularity', steps: [3, 10, 20, 30], undoable: true,
-    blurb: (n) => `Earn ${n} sticker steps on your shop's page. Each sticker has its own milestone quest.`,
+  { key: 'stickers', name: 'Honour roll', area: 'popularity', steps: [3, 10, 20, 30], undoable: true,
+    blurb: (n) => `Earn ${n} honour tiers on your shop's page. Each honour climbs Bronze to Diamond.`,
     action: null, have: (t) => t.stickerSteps ?? 0 },
+  { key: 'five', name: 'Five-star', area: 'reviews', steps: [5, 25, 100, 250],
+    blurb: (n) => `${n} five-star reviews from buyers who ordered.`,
+    action: 'orders', have: (t) => t.fiveStarReviews ?? 0 },
+  { key: 'dispatch', name: 'Lightning dispatch', area: 'sales', steps: [5, 25, 100, 250],
+    blurb: (n) => `Dispatch ${n} orders by the date you promised.`,
+    action: 'orders', have: (t) => t.dispatchOnTime ?? 0 },
+  { key: 'repeat', name: 'Repeat favourite', area: 'sales', steps: [1, 10, 50, 150],
+    blurb: (n) => (n === 1 ? 'A buyer comes back for a second order.' : `${n} buyers come back for another order.`),
+    action: 'orders', have: (t) => t.repeatBuyers ?? 0 },
+  { key: 'reach', name: 'Wide reach', area: 'popularity', steps: [5, 25, 100, 500],
+    blurb: (n) => `${n} different buyers have ordered from you.`,
+    action: 'share_shop', have: (t) => t.buyers ?? 0 },
+  { key: 'host', name: 'Community host', area: 'marketing', steps: [1, 5, 15, 40],
+    blurb: (n) => (n === 1 ? 'Run a competition or a guess-the-price.' : `Run ${n} competitions or guessing games.`),
+    action: 'post', have: (t) => t.gamesRun ?? 0 },
   { key: 'shelf', name: 'Full shelf', area: 'upkeep', steps: [5, 25, 75],
     blurb: (n) => `List ${n} items.`, action: 'list', have: (t) => t.listings },
   { key: 'launch', name: 'Launcher', area: 'upkeep', steps: [1, 5, 15],
@@ -265,6 +346,7 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 
 
 function xpOf(kind: GrowthKind, area: GrowthArea, stepIndex = 0): number {
+  if (kind === 'starter') return TASK_XP.starter;
   const base = kind === 'milestone' ? TIER_XP[stepIndex] ?? 0 : TASK_XP[kind];
   return isFocus(area) ? base : Math.round(base * UPKEEP_SHARE);
 }
@@ -293,6 +375,8 @@ function claimInfo(key: string): { area: GrowthArea; xp: number; ladder?: Ladder
   const id = key.split(':')[0] ?? '';
   const def = DEFS.find((entry) => `${entry.kind}-${entry.key}` === id);
   if (def) return { area: def.area, xp: xpOf(def.kind, def.area) };
+  const starter = STARTERS.find((entry) => `starter-${entry.key}` === id);
+  if (starter) return { area: starter.area, xp: xpOf('starter', starter.area) };
   for (const ladder of LADDERS) {
     if (!id.startsWith(`ms-${ladder.key}-`)) continue;
     const goal = Number(id.slice(`ms-${ladder.key}-`.length));
@@ -392,6 +476,19 @@ function ladderTask(ladder: Ladder, facts: GrowthFacts, state: StoreGrowthState)
   };
 }
 
+/** A Getting started step, collected once. */
+function starterTask(starter: Starter, facts: GrowthFacts, state: StoreGrowthState): GrowthTask {
+  const id = `starter-${starter.key}`;
+  const progress = Math.min(starter.goal, starter.have(facts));
+  const done = progress >= starter.goal;
+  const claimed = Boolean(state.claimed[`${id}:once`]);
+  return {
+    id, kind: 'starter', area: starter.area, focus: isFocus(starter.area), title: starter.title, blurb: starter.blurb,
+    progress, goal: starter.goal, done, claimed, claimable: done && !claimed,
+    bumps: 0, xp: xpOf('starter', starter.area), action: starter.action,
+  };
+}
+
 /** Focus areas first within each kind, in the order the areas are listed. */
 const byArea = (a: GrowthTask, b: GrowthTask) => GROWTH_AREAS.indexOf(a.area) - GROWTH_AREAS.indexOf(b.area);
 
@@ -400,9 +497,11 @@ export function growthView(facts: GrowthFacts, stored: StoreGrowthState | undefi
   const tasks = [
     ...DEFS.map((def) => periodicTask(def, facts, state, now)),
     ...LADDERS.map((ladder) => ladderTask(ladder, facts, state)),
+    ...STARTERS.map((starter) => starterTask(starter, facts, state)),
   ];
-  const kinds: GrowthKind[] = ['daily', 'weekly', 'monthly', 'milestone'];
-  tasks.sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind) || byArea(a, b));
+  const kinds: GrowthKind[] = ['starter', 'daily', 'weekly', 'monthly', 'milestone'];
+  // Getting started keeps its own order: it is the order the steps are worth doing in.
+  tasks.sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind) || (a.kind === 'starter' ? 0 : byArea(a, b)));
   const areas = growthAreas(state, facts.totals);
   const thisWeek = inPeriodOf('weekly', now);
   return {

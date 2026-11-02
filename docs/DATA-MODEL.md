@@ -271,8 +271,10 @@ queries carry no parts, and saving one leaves the parts alone.
 
 Rows written before the split carried these fields inline; a one-off pass on
 start-up saves each such account once, which moves them into their parts. The
-game state (`quest`) stays on the row: it is capped, and the leaderboard sorts
-on it.
+game state (`quest`) stays on the row: it is small and capped. So do `boards`
+(the hobby leaderboards a person joined, at most three, queried with
+`ARRAY_CONTAINS` to list a board's members) and `podiums` (top-three finishes
+in seasons that have ended, written once each, not indexed).
 
 ## What the feed counts
 

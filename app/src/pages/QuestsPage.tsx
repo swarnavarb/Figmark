@@ -2,16 +2,15 @@ import { formatCount } from '../format';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  CARDS, CARD_SETS, MAX_LEVEL, SET_BONUS_XP, XP, type CardDef, type StickerView, type TaskKind,
+  MAX_LEVEL, TASK_XP, XP, rankLadder, type StickerView, type TaskKind,
 } from '@shared/quest';
 import type { StoreAccess } from '@shared/stores';
-import { api, type InviteSummary, type LeaderRow } from '../api';
+import { api, type InviteSummary } from '../api';
 import type { PlayerRow } from '@shared/play';
 import { useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { SkeletonText } from '../components/Feedback';
-import {
-  CardFace, CardSheet, CardSlot, Glyph, Sticker, StickerSheet, useQuest,
-} from '../components/Quest';
+import { Glyph, Sticker, StickerSheet, useQuest } from '../components/Quest';
+import { HobbyBoards } from '../components/HobbyBoards';
 import { BoardHead, InfoTip, InviteStrip, NoBumpsNotice, QuestHero, QuestRow, QuestTabs } from '../components/QuestKit';
 import { Avatar } from '../components/ui';
 import { QuestShooter } from '../components/QuestShooter';
@@ -23,8 +22,8 @@ import '../styles/QuestsPage.css';
  * Quests: where the collector game is played rather than glimpsed.
  *
  * Top to bottom in the order somebody acts on it - who you are in the game,
- * whether you have kept your streak, anything waiting to be opened or
- * collected, what to do next, what you have collected, and how you compare.
+ * whether you have kept your streak, what to do next, the honours earned, and
+ * how you compare on the hobby leaderboards.
  * The XP breakdown at the foot is there so the number can be checked: every
  * point of it names the thing that earned it.
  *
@@ -37,18 +36,16 @@ import '../styles/QuestsPage.css';
 export function QuestsPage() {
   const { user } = useSession();
   const { view, act, refresh } = useQuest();
-  const [tab, setTab] = useState<TaskKind>('daily');
+  /** Null until picked: Getting started while it has steps left, otherwise Daily. */
+  const [picked, setTab] = useState<TaskKind | null>(null);
   /** Quests cleared on this visit: each one fires a burst in the arcade. */
   const [cleared, setCleared] = useState(0);
-  const [openCard, setOpenCard] = useState<CardDef | null>(null);
   const [openSticker, setOpenSticker] = useState<StickerView | null>(null);
-  const [board, setBoard] = useState<{ top: LeaderRow[]; me: LeaderRow | null; total: number } | null>(null);
   const [stores, setStores] = useState<StoreAccess[]>([]);
   const [params, setParams] = useSearchParams();
 
   useEffect(() => {
     void refresh();
-    void api.leaderboard().then(setBoard).catch(() => setBoard(null));
     void api.stores().then(({ stores: mine }) => setStores(mine)).catch(() => setStores([]));
   }, [refresh]);
 
@@ -95,6 +92,8 @@ export function QuestsPage() {
     return <main className="page qpage">{bar}<SkeletonText lines={6} /></main>;
   }
 
+  const starterLeft = view.tasks.some((task) => task.kind === 'starter' && !task.claimed);
+  const tab: TaskKind = picked ?? (starterLeft ? 'starter' : 'daily');
   const tasks = view.tasks.filter((task) => task.kind === tab);
   const ready = (kind: TaskKind) => view.tasks.filter((task) => task.kind === kind && task.claimable).length;
 
@@ -109,10 +108,11 @@ export function QuestsPage() {
           xp={view.xp} toNext={view.level >= MAX_LEVEL ? null : view.nextLevelXp - view.xp} nextLevel={view.level + 1} bumps={view.bumps}
           info={(
             <>
-              <b>How your trust tier works</b>
-              <p>Your level reads as a tier: New Buyer, Verified Buyer, Trusted Buyer, then Elite Buyer. Finishing an order pays {XP.orderDelivered} XP and writing a review pays {XP.reviewWritten}. Following, saving and posting pay only a few points each, so a tier is earned by trading well.</p>
-              <p>A tier needs a record: a first finished order for Verified, ten for Trusted and forty for Elite. Confirming delivery promptly and reviewing right after, as a buyer or a seller, is what moves you up.</p>
-              <p>Low ratings and lost disputes take XP away, and a few lost disputes hold your tier back.</p>
+              <b>How your rank works</b>
+              <p>Your level reads as a rank: {rankLadder(false).map((rank) => rank.title).join(', ')}. Finishing an order pays {XP.orderDelivered} XP and writing a review pays {XP.reviewWritten}. Following, saving and posting pay only a few points each, so a rank is earned by trading well.</p>
+              <p>A rank needs a record: a first finished order for Rising Collector, ten for Trusted and forty for Elite and above. Confirming delivery promptly and reviewing right after, as a buyer or a seller, is what moves you up.</p>
+              <p>Low ratings and lost disputes take XP away, and a few lost disputes hold your rank back.</p>
+              <RankLadder current={view.level} />
             </>
           )}
         />
@@ -145,24 +145,6 @@ export function QuestsPage() {
           ) : <span className="qok qstreak__done">✓ Today</span>}
         </section>
 
-        {view.packs.length > 0 && (
-          <section className="qpanel qpanel--gold">
-            <div className="qpanel__head">
-              <h3><Glyph name="gift" size={15} /> Packs to open · {view.packs.length}</h3>
-            </div>
-            <div className="qpacks">
-              {view.packs.map((pack) => (
-                <button key={pack.id} type="button" className={`qpack qpack--${pack.min}`}
-                  onClick={() => void act(() => api.questOpen(pack.id), pack.label)}>
-                  <span className="qpack__foil"><Glyph name="star" size={22} /></span>
-                  <b>{pack.label}</b>
-                  <small>{pack.min} or better · tap to open</small>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
         <InvitePanel level={view.level} title={view.title} />
 
         {/* The quest board as an arcade cabinet: the tasks are the HUD, and a
@@ -172,17 +154,18 @@ export function QuestsPage() {
           <BoardHead info={(
             <>
               <b>Your quests</b>
+              <p>Start: Getting started steps that set your account up, {TASK_XP.starter} XP each, once.</p>
               <p>Daily: Check in, Reveal and Share a find every day, plus two that change daily. They reset at midnight, India time.</p>
-              <p>Weekly: five check-ins and two people opening your links, plus three that change each Monday. Monthly: bring a friend, plus three bigger goals that change on the 1st.</p>
-              <p>Each weekly quest pays 1 bump point and each monthly one pays 2. Milestones pay once a step and come with a card pack.</p>
+              <p>Weekly: five check-ins and two people opening your links, plus three that change each Monday and one Grow quest about sharing. Monthly: bring a friend, plus three bigger goals that change on the 1st and one Grow quest.</p>
+              <p>Each weekly quest pays 1 bump point and each monthly one pays 2. Milestones pay once a step, then a bigger step appears.</p>
             </>
           )} />
-          <QuestTabs tab={tab} onTab={setTab} ready={ready} />
+          <QuestTabs tab={tab} onTab={setTab} ready={ready} starter={starterLeft || tab === 'starter'} />
           <ul className="qtasks">
             {tasks.map((task) => (
               <QuestRow key={task.id}
                 title={task.title} blurb={task.blurb} step={task.step}
-                progress={task.progress} goal={task.goal} xp={task.xp} bumps={task.bumps} pack={task.pack}
+                progress={task.progress} goal={task.goal} xp={task.xp} bumps={task.bumps} marketing={task.marketing}
                 claimed={task.claimed} claimable={task.claimable}
                 onClaim={() => {
                   setCleared((n) => n + 1);
@@ -195,44 +178,10 @@ export function QuestsPage() {
 
       <section className="qpanel">
         <div className="qpanel__head">
-          <h3><Glyph name="card" size={15} /> Cards · {new Set(view.cards.map((card) => card.id)).size}/{CARDS.length}</h3>
-          <span className="faint">{view.cards.length} pulled</span>
-          <InfoTip label="About cards">
-            <b>Cards</b>
-            <p>Cards come from the daily Reveal, every level and every milestone. Each card is worth {XP.card} XP. Finish a set of six for {SET_BONUS_XP} XP and its Master sticker.</p>
-            <p>Tap a card to read it.</p>
-          </InfoTip>
-        </div>
-        {CARD_SETS.map((set) => {
-          const inSet = CARDS.filter((card) => card.set === set.id);
-          const owned = view.sets.find((entry) => entry.id === set.id);
-          return (
-            <div key={set.id} className="qset">
-              <div className="qset__head">
-                <b>{set.name}</b>
-                <span className={owned && owned.owned === owned.total ? 'qok' : 'faint'}>
-                  {owned?.owned ?? 0}/{inSet.length}{owned && owned.owned === owned.total ? ' · complete' : ''}
-                </span>
-              </div>
-              <div className="qset__cards">
-                {inSet.map((card) => (
-                  view.cards.some((mine) => mine.id === card.id)
-                    ? <CardFace key={card.id} card={card} size="sm" copies={view.cards.filter((mine) => mine.id === card.id).length}
-                        onOpen={() => setOpenCard(card)} />
-                    : <CardSlot key={card.id} />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </section>
-
-      <section className="qpanel">
-        <div className="qpanel__head">
-          <h3><Glyph name="shield" size={15} /> Stickers · {view.stickers.filter((sticker) => sticker.earned).length}/{view.stickers.length}</h3>
-          <InfoTip label="About stickers">
-            <b>Stickers</b>
-            <p>Badges for your page, from Bronze to Gold. Tap one to see what it takes to earn or upgrade it.</p>
+          <h3><Glyph name="shield" size={15} /> Honours · {view.stickers.filter((sticker) => sticker.earned).length}/{view.stickers.length}</h3>
+          <InfoTip label="About honours">
+            <b>Honours</b>
+            <p>Badges for your page, each climbing Bronze, Silver, Gold, Platinum and Diamond. Tap one to see what it takes to earn or upgrade it.</p>
           </InfoTip>
         </div>
         <div className="qstickers">
@@ -242,17 +191,7 @@ export function QuestsPage() {
         </div>
       </section>
 
-      <section className="qpanel">
-        <div className="qpanel__head">
-          <h3><Glyph name="crown" size={15} /> Top collectors</h3>
-          {board && <span className="faint">{board.total} playing</span>}
-          <InfoTip label="About the leaderboard">
-            <b>Top collectors</b>
-            <p>Everybody playing, ranked by XP. You always see your own place, even outside the top.</p>
-          </InfoTip>
-        </div>
-        {!board ? <SkeletonText lines={3} /> : <Leaderboard board={board} />}
-      </section>
+      <HobbyBoards />
 
       <GamePlayers />
 
@@ -292,10 +231,6 @@ export function QuestsPage() {
           </span>
         </section>
       </div>
-      {openCard && (
-        <CardSheet card={openCard} copies={view.cards.filter((mine) => mine.id === openCard.id).length}
-          setOwned={view.sets.find((set) => set.id === openCard.set)?.owned ?? 0} onClose={() => setOpenCard(null)} />
-      )}
       {openSticker && <StickerSheet sticker={openSticker} whose="mine" onClose={() => setOpenSticker(null)} />}
     </main>
   );
@@ -317,11 +252,11 @@ function InvitePanel({ level, title }: { level: number; title: string }) {
   const friend: ShareSpec = {
     kind: 'invite',
     moment: {
-      level: { level, title }, title: 'Join me on Figmark', detail: 'Pre-orders · Buyer Protection · card packs',
+      level: { level, title }, title: 'Join me on Figmark', detail: 'Pre-orders · Buyer Protection · hobby leaderboards',
       headline: 'Come shop with me',
     },
     link: { to: 'invite' },
-    caption: 'Join me on Figmark - pre-orders from verified import resellers, and you collect cards as you shop. Here is my invite:',
+    caption: 'Join me on Figmark - pre-orders from verified import resellers, quests and leaderboards for what you collect. Here is my invite:',
     target: summary?.code ?? null,
   };
   const seller: ShareSpec = {
@@ -372,23 +307,14 @@ const RARITY_HELP = [
   { tier: 'new', label: 'New', text: 'Listed or back in stock in the last three days.' },
 ] as const;
 
-function Leaderboard({ board }: { board: { top: LeaderRow[]; me: LeaderRow | null } }) {
-  const { user } = useSession();
-  const rows = board.me && !board.top.some((row) => row.userId === board.me!.userId)
-    ? [...board.top, board.me]
-    : board.top;
-  if (rows.length === 0) return <p className="faint" style={{ margin: 0 }}>Nobody has scored yet. Be first.</p>;
+/** Every rank with the levels it covers, the current one marked. */
+function RankLadder({ current }: { current: number }) {
   return (
-    <ol className="qleaders">
-      {rows.map((row) => (
-        <li key={row.userId} className={row.userId === user?.id ? 'is-me' : ''}>
-          <span className={`qleaders__rank qboard__rank--${Math.min(row.rank, 4)}`}>#{row.rank}</span>
-          <Avatar name={row.name} size={30} />
-          <span className="qleaders__who">
-            {row.handle ? <Link to={`/${row.handle}`}>{row.name}</Link> : row.name}
-            <small>Level {row.level} · {row.cards} card{row.cards === 1 ? '' : 's'}</small>
-          </span>
-          <b className="qleaders__xp">{formatCount(row.xp)} XP</b>
+    <ol className="qranks">
+      {rankLadder(false).map((rank) => (
+        <li key={rank.title} className={current >= rank.from && (rank.to === null || current <= rank.to) ? 'is-me' : ''}>
+          <b>{rank.title}</b>
+          <small>{rank.to === null ? `Level ${rank.from}+` : rank.from === rank.to ? `Level ${rank.from}` : `Levels ${rank.from}–${rank.to}`}</small>
         </li>
       ))}
     </ol>

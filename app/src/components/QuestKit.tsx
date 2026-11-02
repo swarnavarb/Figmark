@@ -76,13 +76,25 @@ export function QuestHero({ who, eyebrow, title, level, progress, xp, toNext, ne
   );
 }
 
-export type BoardKind = 'daily' | 'weekly' | 'monthly' | 'milestone';
-const KIND_LABELS: Record<BoardKind, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', milestone: 'Milestones' };
+export type QuestTabKind = 'starter' | 'daily' | 'weekly' | 'monthly' | 'milestone';
+const KIND_LABELS: Record<QuestTabKind, string> = {
+  starter: 'Start', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', milestone: 'Milestones',
+};
 
-export function QuestTabs({ tab, onTab, ready }: { tab: BoardKind; onTab: (kind: BoardKind) => void; ready: (kind: BoardKind) => number }) {
+/**
+ * The tabs along the top of a quest board. Getting started shows first, and
+ * only while it has steps left to collect (`starter`).
+ */
+export function QuestTabs({ tab, onTab, ready, starter = false }: {
+  tab: QuestTabKind;
+  onTab: (kind: QuestTabKind) => void;
+  ready: (kind: QuestTabKind) => number;
+  starter?: boolean;
+}) {
+  const kinds: QuestTabKind[] = [...(starter ? ['starter' as const] : []), 'daily', 'weekly', 'monthly', 'milestone'];
   return (
     <div className="tabs qtabs" role="tablist">
-      {(['daily', 'weekly', 'monthly', 'milestone'] as const).map((kind) => (
+      {kinds.map((kind) => (
         <button key={kind} type="button" role="tab" aria-selected={tab === kind} className={`tab${tab === kind ? ' is-on' : ''}`} onClick={() => onTab(kind)}>
           {KIND_LABELS[kind]}
           {ready(kind) > 0 && <span className="qdot">{ready(kind)}</span>}
@@ -93,7 +105,7 @@ export function QuestTabs({ tab, onTab, ready }: { tab: BoardKind; onTab: (kind:
 }
 
 /** One quest, the same shape on either board. */
-export function QuestRow({ title, blurb, tag, step, progress, goal, count, xp, bumps, pack, claimed, claimable, busy, onClaim, action }: {
+export function QuestRow({ title, blurb, tag, step, progress, goal, count, xp, bumps, marketing, claimed, claimable, busy, onClaim, action }: {
   title: string;
   blurb: string;
   /** The area a shop quest belongs to. */
@@ -105,7 +117,8 @@ export function QuestRow({ title, blurb, tag, step, progress, goal, count, xp, b
   count?: string;
   xp: number;
   bumps: number;
-  pack?: boolean;
+  /** A quest about bringing people in. */
+  marketing?: boolean;
   claimed: boolean;
   claimable: boolean;
   busy?: boolean;
@@ -120,6 +133,7 @@ export function QuestRow({ title, blurb, tag, step, progress, goal, count, xp, b
           <b>{title}</b>
           {step && step.of > 1 && <span className="qtask__step">{step.index}/{step.of}</span>}
           {tag && <span className={`qtag qtag--${tag.area}`}>{tag.label}</span>}
+          {marketing && !tag && <span className="qtag qtag--marketing">Grow</span>}
           <InfoTip label={`About ${title}`}>{blurb}</InfoTip>
         </span>
         <span className="qtask__progress">
@@ -129,7 +143,6 @@ export function QuestRow({ title, blurb, tag, step, progress, goal, count, xp, b
         <span className="qtask__pay">
           <span className="qpay">+{xp} XP</span>
           {bumps > 0 && <span className="qpay qpay--bump"><Glyph name="bolt" size={11} />+{bumps}</span>}
-          {pack && <span className="qpay qpay--pack"><Glyph name="gift" size={11} />pack</span>}
         </span>
       </span>
       <span className="qtask__act">

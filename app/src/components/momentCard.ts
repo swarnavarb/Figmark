@@ -1,5 +1,4 @@
 import type { ShareKind } from '@shared/models';
-import type { CardDef } from '@shared/quest';
 import {
   CARD_FONT, CARD_SIZE, THEMES, layoutCard, type CardHero, type CardSpec, type Measure, type Op, type Paint, type Shape, type Theme,
 } from '@shared/shareCard';
@@ -38,14 +37,12 @@ export interface Moment {
   photo?: string | null;
   /** Item name, shop name, card name. */
   title: string;
-  /** One line under the title: the shop it is from, the set a card belongs to. */
+  /** One line under the title: the shop it is from, the rank a level reads as. */
   detail?: string | null;
   price?: string | null;
   fill?: { joined: number; threshold: number } | null;
   /** A level-up draws its ring. */
   level?: { level: number; title: string } | null;
-  /** A card pull draws the card. */
-  card?: CardDef | null;
   /** What a friend saves through the sharer's link, formatted: "₹200". Drawn as a ticket. */
   discount?: string | null;
   /** What that friend pays, with the discount taken off. */
@@ -61,17 +58,6 @@ export function themeOf(kind: ShareKind): Theme {
   return THEMES[kind];
 }
 
-
-const RARITY_HUES: Record<CardDef['rarity'], [string, string]> = {
-  common: ['#6B7C96', '#9FB0C9'],
-  rare: ['#3B82F6', '#06D6E7'],
-  epic: ['#7C3AED', '#EC4899'],
-  legendary: ['#FBBF24', '#FF5A5F'],
-};
-
-const CARD_GLYPHS: Record<CardDef['glyph'], string> = {
-  mech: '🤖', beast: '🐉', card: '🎴', shoe: '👟', box: '📦', star: '⭐',
-};
 
 /** The kinds that are about something bought and sold, and so carry Buyer Protection. */
 const PROTECTED: ReadonlySet<ShareKind> = new Set(['item', 'fill', 'booked', 'purchased', 'delivered', 'sold', 'filled', 'shop']);
@@ -141,14 +127,12 @@ function fillLine(fill: { joined: number; threshold: number }): string {
 
 /** The card for a moment, given which of its pictures actually loaded. */
 export function cardFor(m: Moment, loaded: { photo: boolean; avatar: boolean }): CardSpec {
-  const theme = m.card ? { ...THEMES.card, from: RARITY_HUES[m.card.rarity][0], to: RARITY_HUES[m.card.rarity][1] } : THEMES[m.kind];
+  const theme = THEMES[m.kind];
   const photo = loaded.photo ? m.photo ?? null : null;
   const badgePhoto = loaded.avatar ? m.badge?.photo ?? null : null;
 
   let hero: CardHero;
-  if (m.card) {
-    hero = { kind: 'card', name: m.card.name, rarity: m.card.rarity, from: theme.from, to: theme.to, glyph: CARD_GLYPHS[m.card.glyph] };
-  } else if (m.level) {
+  if (m.level) {
     hero = { kind: 'level', level: m.level.level };
   } else if (m.kind === 'shop' || m.kind === 'profile') {
     hero = { kind: 'avatar', name: m.title, photo, level: m.badge?.level ?? null };

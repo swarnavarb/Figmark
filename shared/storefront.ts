@@ -1,7 +1,7 @@
 import type { StoreGrowthState } from './models.js';
 import {
-  ACTION_XP, MAX_LEVEL, XP, actionXp, levelWithRecord, titleFor, tierTitle, xpForLevel,
-  type StickerTier, type StickerView,
+  ACTION_XP, MAX_LEVEL, XP, actionXp, honourHow, honourTier, levelWithRecord, titleFor, tierTitle, xpForLevel,
+  type StickerView,
 } from './quest.js';
 import { growthAreas } from './store-growth.js';
 
@@ -54,8 +54,16 @@ export interface StoreFacts {
   /** Orders the shop dispatched by the date it promised. */
   dispatchOnTime?: number;
   ageDays: number;
-  /** Sticker steps the shop has earned, all told - filled in once the rest is known. */
+  /** Honour (sticker) steps the shop has earned, all told - filled in once the rest is known. */
   stickerSteps?: number;
+  /** Five-star reviews from buyers who ordered. */
+  fiveStarReviews?: number;
+  /** Competitions and guess-the-price games the shop has run. */
+  gamesRun?: number;
+  /** Buyers who came back for a second order or more. */
+  repeatBuyers?: number;
+  /** Different buyers who have ordered. */
+  buyers?: number;
 }
 
 export interface XpLine { label: string; xp: number; detail: string }
@@ -121,47 +129,71 @@ type Def = Omit<StickerView, 'tier' | 'have' | 'next' | 'earned'> & { have: (fac
 
 const goodAverage = (f: StoreFacts) => f.ratingAverage !== null && f.ratingAverage >= 90;
 
-/** Marketing first, then selling, then standing. Trusted and Top rated lead once earned. */
+/**
+ * A shop's honours. Marketing first, then selling, then standing; Trusted and
+ * Top rated lead once earned. Each climbs Bronze to Diamond; `how` is the
+ * action, and the tiers are added to it.
+ */
 const STORE_STICKERS: Def[] = [
   { id: 's-trust', name: 'Trusted', glyph: 'shield', hue: 'aqua', tiers: [80],
     meaning: 'A trust score of 80 or more from completed, undisputed orders.', how: 'Reach a trust score of 80.',
     have: (f) => f.trust },
-  { id: 's-rated', name: 'Top rated', glyph: 'star', hue: 'violet', tiers: [5, 20, 60],
+  { id: 's-rated', name: 'Top rated', glyph: 'star', hue: 'violet', tiers: [5, 20, 60, 150, 400],
     meaning: 'Rated 4.5 or better, by enough people for it to mean something.',
-    how: 'Keep a 4.5★ rating across 5, 20 and 60 ratings.',
+    how: 'Ratings kept at 4.5★ or better',
     have: (f) => (goodAverage(f) ? f.ratingCount : 0) },
-  { id: 's-mouth', name: 'Word of mouth', glyph: 'chat', hue: 'pink', tiers: [1, 10, 50],
-    meaning: 'Sales that came in through people sharing the shop\'s items.', how: 'Make 1, 10 and 50 sales through affiliate links.',
+  { id: 's-five', name: 'Five-Star Shop', glyph: 'crest', hue: 'gold', tiers: [5, 25, 100, 250, 500],
+    meaning: 'Buyers who ordered gave it five stars.',
+    how: 'Five-star reviews from buyers',
+    have: (f) => f.fiveStarReviews ?? 0 },
+  { id: 's-mouth', name: 'Word of mouth', glyph: 'chat', hue: 'pink', tiers: [1, 10, 50, 150, 500],
+    meaning: 'Sales that came in through people sharing the shop\'s items.', how: 'Sales through affiliate links',
     have: (f) => f.affiliateSales },
-  { id: 's-partner', name: 'Affiliate partner', glyph: 'card', hue: 'lime', tiers: [1, 10, 30],
-    meaning: 'Items that pay a commission to whoever shares them.', how: 'Offer a commission on 1, 10 and 30 items.',
+  { id: 's-partner', name: 'Affiliate partner', glyph: 'gift', hue: 'lime', tiers: [1, 10, 30, 75, 150],
+    meaning: 'Items that pay a commission to whoever shares them.', how: 'Live items offering a commission',
     have: (f) => f.affiliateItems },
-  { id: 's-fans', name: 'Following', glyph: 'heart', hue: 'pink', tiers: [10, 50, 250],
-    meaning: 'People who follow the shop for its new items.', how: 'Reach 10, 50 and 250 followers.',
+  { id: 's-host', name: 'Community Host', glyph: 'crown', hue: 'violet', tiers: [1, 5, 15, 40, 100],
+    meaning: 'Runs competitions and guess-the-price games that bring the community together.',
+    how: 'Competitions and guessing games run',
+    have: (f) => f.gamesRun ?? 0 },
+  { id: 's-fans', name: 'Following', glyph: 'heart', hue: 'pink', tiers: [10, 50, 250, 1000, 5000],
+    meaning: 'People who follow the shop for its new items.', how: 'Followers',
     have: (f) => f.followers },
-  { id: 's-voice', name: 'Broadcaster', glyph: 'chat', hue: 'blue', tiers: [1, 20, 100],
-    meaning: 'Posts the shop put in front of its followers.', how: 'Post 1, 20 and 100 times in the shop\'s channel.',
+  { id: 's-voice', name: 'Broadcaster', glyph: 'chat', hue: 'blue', tiers: [1, 20, 100, 250, 500],
+    meaning: 'Posts the shop put in front of its followers.', how: 'Posts in the shop\'s channel',
     have: (f) => f.posts },
-  { id: 's-hearts', name: 'Crowd favourite', glyph: 'heart', hue: 'coral', tiers: [10, 100, 500],
-    meaning: 'Hearts people put on the shop\'s items.', how: 'Collect 10, 100 and 500 hearts across your items.',
+  { id: 's-hearts', name: 'Crowd favourite', glyph: 'heart', hue: 'coral', tiers: [10, 100, 500, 2000, 10000],
+    meaning: 'Hearts people put on the shop\'s items.', how: 'Hearts across your items',
     have: (f) => f.likes },
-  { id: 's-launch', name: 'Launcher', glyph: 'bolt', hue: 'blue', tiers: [1, 5, 15],
-    meaning: 'Pre-orders this shop has run.', how: 'Run 1, 5 and 15 pre-orders.',
+  { id: 's-launch', name: 'Launcher', glyph: 'bolt', hue: 'blue', tiers: [1, 5, 15, 40, 100],
+    meaning: 'Pre-orders this shop has run.', how: 'Pre-orders run',
     have: (f) => f.preOrders },
-  { id: 's-sales', name: 'Sales', glyph: 'bag', hue: 'gold', tiers: [1, 25, 100],
-    meaning: 'Orders this shop has delivered to the end.', how: 'Complete orders: 1, 25 and 100 delivered.',
+  { id: 's-sales', name: 'Sales', glyph: 'bag', hue: 'gold', tiers: [1, 25, 100, 500, 2000],
+    meaning: 'Orders this shop has delivered to the end.', how: 'Orders delivered',
     have: (f) => f.completedSales },
-  { id: 's-soldout', name: 'Sell-out', glyph: 'flame', hue: 'coral', tiers: [1, 5, 20],
-    meaning: 'Items that sold every unit.', how: 'Sell out 1, 5 and 20 items.',
+  { id: 's-dispatch', name: 'Lightning Dispatch', glyph: 'clock', hue: 'aqua', tiers: [5, 25, 100, 250, 1000],
+    meaning: 'Ships by the date it promised, order after order.',
+    how: 'Orders dispatched on time',
+    have: (f) => f.dispatchOnTime ?? 0 },
+  { id: 's-repeat', name: 'Repeat Favourite', glyph: 'heart', hue: 'lime', tiers: [1, 10, 50, 150, 500],
+    meaning: 'Buyers come back for more - the surest sign a shop does it right.',
+    how: 'Buyers who ordered again',
+    have: (f) => f.repeatBuyers ?? 0 },
+  { id: 's-reach', name: 'Wide Reach', glyph: 'bolt', hue: 'violet', tiers: [5, 25, 100, 500, 2000],
+    meaning: 'How many different collectors have bought from this shop.',
+    how: 'Different buyers',
+    have: (f) => f.buyers ?? 0 },
+  { id: 's-soldout', name: 'Sell-out', glyph: 'flame', hue: 'coral', tiers: [1, 5, 20, 50, 150],
+    meaning: 'Items that sold every unit.', how: 'Items sold out',
     have: (f) => f.soldOut },
-  { id: 's-shelf', name: 'Full shelf', glyph: 'chest', hue: 'lime', tiers: [5, 25, 75],
-    meaning: 'How much the shop has put up for sale.', how: 'List 5, 25 and 75 items.',
+  { id: 's-shelf', name: 'Full shelf', glyph: 'chest', hue: 'lime', tiers: [5, 25, 75, 200, 500],
+    meaning: 'How much the shop has put up for sale.', how: 'Items listed',
     have: (f) => f.listings },
-  { id: 's-clean', name: 'Flawless', glyph: 'shield', hue: 'violet', tiers: [10],
-    meaning: 'Ten or more orders delivered and not one dispute lost.', how: 'Deliver 10 orders without losing a dispute.',
+  { id: 's-clean', name: 'Flawless', glyph: 'shield', hue: 'violet', tiers: [10, 50, 100, 250, 500],
+    meaning: 'Orders delivered without a single dispute lost.', how: 'Orders delivered with no dispute lost (losing one resets it)',
     have: (f) => (f.disputesLost === 0 ? f.completedSales : 0) },
-  { id: 's-year', name: 'Veteran', glyph: 'crest', hue: 'gold', tiers: [90, 365, 1095],
-    meaning: 'How long the shop has been open.', how: 'Stay open 3 months, 1 year and 3 years.',
+  { id: 's-year', name: 'Veteran', glyph: 'crest', hue: 'gold', tiers: [90, 365, 730, 1095, 1825],
+    meaning: 'How long the shop has been open.', how: 'Days open (3 months, 1, 2, 3 and 5 years)',
     have: (f) => f.ageDays },
 ];
 
@@ -169,12 +201,10 @@ const PINNED = ['s-trust', 's-rated'];
 
 /** Earned first - Trusted and Top rated ahead of the rest - then by tier; locked last. */
 export function storeStickers(facts: StoreFacts): (StickerView & { reached: number })[] {
-  return STORE_STICKERS.map(({ have: measure, ...def }) => {
+  return STORE_STICKERS.map(({ have: measure, how, ...def }) => {
     const have = measure(facts);
-    const reached = def.tiers.filter((threshold) => have >= threshold).length;
-    const tier = (def.tiers.length === 1 ? (reached ? 3 : 0) : reached) as StickerTier;
-    const next = def.tiers.find((threshold) => have < threshold) ?? null;
-    return { ...def, tier, have, next, earned: tier > 0, reached };
+    const { tier, reached, next } = honourTier(have, def.tiers);
+    return { ...def, how: honourHow(how, def.tiers), tier, have, next, earned: tier > 0, reached };
   }).sort((a, b) => {
     const pin = (s: { id: string; earned: boolean }) => (s.earned && PINNED.includes(s.id) ? 0 : 1);
     return Number(b.earned) - Number(a.earned) || pin(a) - pin(b) || b.tier - a.tier;

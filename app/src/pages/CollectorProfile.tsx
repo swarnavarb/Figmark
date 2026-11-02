@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { CARDS } from '@shared/quest';
 import { BADGE_META } from '@shared/play';
 import type { CollectionItem } from '@shared/models';
 import {
@@ -9,7 +8,7 @@ import {
 } from '../api';
 import { SkeletonText, useToast } from '../components/Feedback';
 import {
-  CardFace, Glyph, LevelRing, ShowcaseModal, Sticker, XpBar,
+  Glyph, LevelRing, ShowcaseModal, Sticker, XpBar,
 } from '../components/Quest';
 import { SocialPostCard } from '../components/SocialPost';
 import { shrink } from '../components/PhotoManager';
@@ -64,7 +63,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
   const [collector, setCollector] = useState<CollectorPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ratingOpen, setRatingOpen] = useState(false);
-  const [showcase, setShowcase] = useState<'cards' | 'stickers' | null>(null);
+  const [showcase, setShowcase] = useState(false);
 
   useEffect(() => {
     setCollector(null);
@@ -75,7 +74,6 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
 
   const stats = collector?.stats;
   const earned = collector?.stickers.filter((entry) => entry.earned) ?? [];
-  const uniqueCards = collector?.cards.length ?? 0;
 
   return (
     <>
@@ -121,8 +119,8 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
         {page && (
           <div className="pstats">
             <FollowCounts userId={page.sellerId} followerCount={page.followerCount} isStore={false} />
-            <span className="pstat"><b>{collector ? uniqueCards : '—'}</b><small>cards</small></span>
-            <span className="pstat"><b>{collector ? earned.length : '—'}</b><small>stickers</small></span>
+            <span className="pstat"><b>{collector ? earned.length : '—'}</b><small>honours</small></span>
+            <span className="pstat"><b>{collector ? collector.podiums.length : '—'}</b><small>top-3 finishes</small></span>
           </div>
         )}
 
@@ -167,27 +165,18 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           <SkeletonText lines={3} />
         ) : (
           <>
-            <button type="button" className="qshowcase" onClick={() => setShowcase('cards')}
-              aria-label="Open the showcase: every card and sticker">
+            <button type="button" className="qshowcase" onClick={() => setShowcase(true)}
+              aria-label="Open the showcase: every honour">
               <span className="qpanel__head">
-                <span className="qshowcase__title"><Glyph name="card" size={15} /> Showcase</span>
-                <span className="faint">{uniqueCards}/{CARDS.length} cards · {earned.length} sticker{earned.length === 1 ? '' : 's'} ›</span>
+                <span className="qshowcase__title"><Glyph name="crown" size={15} /> Honours</span>
+                <span className="faint">{earned.length}/{collector.stickers.length} earned{collector.podiums.length > 0 ? ` · ${collector.podiums.length} top-3 finish${collector.podiums.length === 1 ? '' : 'es'}` : ''} ›</span>
               </span>
-              {collector.cards.length === 0 && earned.length === 0 ? (
-                <span className="faint qshowcase__empty">Nothing yet. Cards and stickers are earned by checking in, completing quests and trading well.</span>
+              {earned.length === 0 ? (
+                <span className="faint qshowcase__empty">Nothing yet. Honours are earned by buying, reviewing, backing pre-orders, winning and trading well.</span>
               ) : (
-                <>
-                  {collector.cards.length > 0 && (
-                    <span className="qshowcase__cards">
-                      {collector.cards.slice(0, 5).map((card) => <CardFace key={card.id} card={card} size="sm" copies={card.copies} />)}
-                    </span>
-                  )}
-                  {earned.length > 0 && (
-                    <span className="qstickers qstickers--row" role="group" aria-label="Stickers" tabIndex={0}>
-                      {earned.slice(0, 8).map((entry) => <Sticker key={entry.id} sticker={entry} />)}
-                    </span>
-                  )}
-                </>
+                <span className="qstickers qstickers--row" role="group" aria-label="Honours" tabIndex={0}>
+                  {[...earned].sort((a, b) => b.tier - a.tier).slice(0, 8).map((entry) => <Sticker key={entry.id} sticker={entry} />)}
+                </span>
               )}
             </button>
           </>
@@ -209,8 +198,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           ) : <SkeletonText lines={2} />} />
       )}
       {showcase && collector && (
-        <ShowcaseModal cards={collector.cards} stickers={collector.stickers} whose="theirs" start={showcase}
-          onClose={() => setShowcase(null)} />
+        <ShowcaseModal stickers={collector.stickers} whose="theirs" onClose={() => setShowcase(false)} />
       )}
     </>
   );

@@ -336,6 +336,13 @@ export interface User extends BaseDocument {
    */
   quest?: QuestState;
   /**
+   * Hobby leaderboards this person competes on (at most BOARD_LIMIT), as board
+   * ids: `cat:<category group>` or `tag:<hobby>`. See shared/boards.ts.
+   */
+  boards?: string[];
+  /** Top-three finishes in hobby leaderboard seasons that have ended, recorded once each. */
+  podiums?: { board: string; season: string; place: 1 | 2 | 3 }[];
+  /**
    * Delivered purchases the person chose to show off, as cards on their page.
    * Stored in the account's `collection` part, since it grows by a card per
    * delivered order: read whole, by the person or by whoever opens their page.
@@ -401,7 +408,7 @@ export interface ShareEvent {
 
 export type ShareKind =
   | 'item' | 'fill' | 'booked' | 'purchased' | 'delivered' | 'sold' | 'filled'
-  | 'level' | 'card' | 'set' | 'shop' | 'invite' | 'invite_seller' | 'profile';
+  | 'level' | 'shop' | 'invite' | 'invite_seller' | 'profile';
 
 /**
  * A shop's growth quests: which it collected, and the bump points they paid.
@@ -478,8 +485,8 @@ export interface QuestState {
   checkIns: string[];
   /** `taskId:period` -> when it was claimed. */
   claimed: Record<string, string>;
-  /** Every card pulled, one per opened pack. */
-  cards: OwnedCard[];
+  /** Day keys (India time) the daily reveal was flipped on. */
+  reveals?: string[];
   /**
    * Bump points earned from weekly and monthly quests and not yet spent. Bump
    * on a shop's item spends the shop's points first, then these.
@@ -487,17 +494,10 @@ export interface QuestState {
   bumps?: number;
   /** Bumps spent, newest last. */
   bumpLog?: { listingId: string; at: string }[];
-  /** The last XP and level worked out, so a leaderboard is a scan, not a recount. */
+  /** The last XP and level worked out, so a name can wear its level without a recount. */
   xpCache?: number;
   levelCache?: number;
   computedAt?: string | null;
-}
-
-export interface OwnedCard {
-  cardId: string;
-  /** The pack it came out of - one card per pack, so this is also the pack's "opened" mark. */
-  packId: string;
-  at: string;
 }
 
 export interface SellerProfile {

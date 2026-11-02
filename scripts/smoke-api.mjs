@@ -9683,9 +9683,12 @@ console.log('collector game');
 
 const {
   questMeRoute: questMe, questCheckInRoute: questCheckIn, questClaimRoute: questClaim,
-  questRevealRoute: questReveal, questOpenRoute: questOpen, questLeaderboardRoute: questLeaderboard,
-  collectorRoute: collectorOf,
+  questRevealRoute: questReveal, collectorRoute: collectorOf,
 } = await import(new URL('quest-routes.js', fns));
+const {
+  boardsListRoute: boardsList, boardJoinRoute: boardJoin, boardLeaveRoute: boardLeave, boardReadRoute: boardRead,
+} = await import(new URL('board-routes.js', fns));
+const boardsRules = await import(new URL('../api/dist/shared/boards.js', import.meta.url));
 const { personPostsRoute: personPosts } = await import(new URL('social-routes.js', fns));
 const quest = await import(new URL('../api/dist/shared/quest.js', import.meta.url));
 
@@ -9718,18 +9721,30 @@ await check('levels climb on a widening curve and every level has a title', () =
     const step = quest.xpForLevel(level + 1) - quest.xpForLevel(level);
     assert.ok(step > quest.xpForLevel(level) - quest.xpForLevel(level - 1), `level ${level + 1} asks more than level ${level}`);
   }
-  // A level reads as one of four trust tiers, with its own names for a buyer and a shop.
-  assert.equal(quest.titleFor(1), 'New Buyer');
-  assert.equal(quest.titleFor(2), 'New Buyer');
-  assert.equal(quest.titleFor(3), 'Verified Buyer');
-  assert.equal(quest.titleFor(6), 'Trusted Buyer');
-  assert.equal(quest.titleFor(9), 'Trusted Buyer');
-  assert.equal(quest.titleFor(10), 'Elite Buyer');
-  assert.equal(quest.titleFor(50), 'Elite Buyer');
+  // A level reads as one of nine ranks, with its own names for a buyer and a shop.
+  assert.equal(quest.titleFor(1), 'Newcomer');
+  assert.equal(quest.titleFor(2), 'Newcomer');
+  assert.equal(quest.titleFor(3), 'Rising Collector');
+  assert.equal(quest.titleFor(6), 'Trusted Collector');
+  assert.equal(quest.titleFor(9), 'Trusted Collector');
+  assert.equal(quest.titleFor(10), 'Elite Collector');
+  assert.equal(quest.titleFor(13), 'Master Collector');
+  assert.equal(quest.titleFor(16), 'Grand Collector');
+  assert.equal(quest.titleFor(20), 'Paragon');
+  assert.equal(quest.titleFor(25), 'Legend');
+  assert.equal(quest.titleFor(30), 'Icon');
+  assert.equal(quest.titleFor(50), 'Icon');
   assert.equal(quest.tierTitle(1, true), 'New Shop');
-  assert.equal(quest.tierTitle(3, true), 'Reliable Shop');
+  assert.equal(quest.tierTitle(3, true), 'Rising Shop');
   assert.equal(quest.tierTitle(6, true), 'Trusted Shop');
   assert.equal(quest.tierTitle(10, true), 'Prime Shop');
+  assert.equal(quest.tierTitle(30, true), 'Icon Store');
+  assert.equal(quest.BUYER_TIERS.length, quest.TIER_FLOORS.length);
+  assert.equal(quest.SHOP_TIERS.length, quest.TIER_FLOORS.length);
+  // "Verified" is for the phone, email and ID checks, never a level.
+  for (const name of [...quest.BUYER_TIERS, ...quest.SHOP_TIERS]) assert.doesNotMatch(name, /verified/i);
+  assert.deepEqual(quest.rankLadder(false)[0], { title: 'Newcomer', from: 1, to: 2 });
+  assert.equal(quest.rankLadder(false).at(-1).to, null);
 });
 
 await check('a tier is evidence: XP alone cannot buy one without finished orders and a clean record', () => {
@@ -9775,7 +9790,8 @@ await check('a shop levels on finished orders and the quests it collected, upkee
   assert.equal(shelf.bumps, 0);
   const level = shop.storeLevel(totals, state);
   assert.equal(level.points, finished + tasks.reduce((sum, task) => sum + task.xp, 0));
-  assert.equal(level.breakdown.find((line) => line.label === 'Sales quests').xp, quest.TIER_XP[0] + quest.TIER_XP[1]);
+  assert.ok(tasks.some((task) => task.id === 'starter-deliver1'), 'collecting all takes the Getting started steps already done too');
+  assert.equal(level.breakdown.find((line) => line.label === 'Sales quests').xp, quest.TIER_XP[0] + quest.TIER_XP[1] + quest.TASK_XP.starter);
   assert.equal(level.level, quest.levelWithRecord(level.points, 10, 0).level, 'the buyer curve, held to the shop\'s record');
 
   // A follower milestone pays only while the shop keeps the followers.
@@ -9808,7 +9824,8 @@ await check('every sticker, follower, sale and review count has a quest that pay
   const ladderFor = {
     's-trust': 'ms-trusted', 's-rated': 'ms-rated', 's-mouth': 'ms-mouth', 's-partner': 'ms-partner', 's-fans': 'ms-fans',
     's-voice': 'ms-voice', 's-hearts': 'ms-hearts', 's-launch': 'ms-launch', 's-sales': 'ms-sales', 's-soldout': 'ms-soldout',
-    's-shelf': 'ms-shelf', 's-clean': 'ms-flawless', 's-year': 'ms-year',
+    's-shelf': 'ms-shelf', 's-clean': 'ms-flawless', 's-year': 'ms-year', 's-five': 'ms-five', 's-host': 'ms-host',
+    's-dispatch': 'ms-dispatch', 's-repeat': 'ms-repeat', 's-reach': 'ms-reach',
   };
   for (const sticker of shop.storeStickers(totals)) {
     assert.ok(ladderFor[sticker.id], `${sticker.id} is mapped to a quest`);
@@ -9874,12 +9891,46 @@ await check('the follower quests ask a bigger shop for more new followers', asyn
   assert.equal(goals(base, { claimed: fresh, spotlights: 0 }).week.goal, 3, 'quests collected this week wait for next week');
 });
 
-await check('a pack always holds the same card, never below its floor', () => {
-  const first = quest.drawCard('usr_x', 'level-2', 'rare');
-  assert.deepEqual(quest.drawCard('usr_x', 'level-2', 'rare'), first);
-  for (let index = 0; index < 50; index += 1) {
-    assert.notEqual(quest.drawCard(`usr_${index}`, 'task-first-order', 'rare').rarity, 'common');
+await check('a shop has Getting started steps and the new marketing quests', async () => {
+  const growth = await import(new URL('../api/dist/shared/store-growth.js', import.meta.url));
+  const totals = {
+    completedSales: 0, affiliateSales: 0, affiliateItems: 0, posts: 0, followers: 0, likes: 0,
+    ratingAverage: null, ratingCount: 0, stars: [0, 0, 0, 0, 0], tradeGoodReviews: 0, listings: 3, soldOut: 0, trust: 0,
+    preOrders: 0, disputesLost: 0, ageDays: 0,
+  };
+  const at = new Date().toISOString();
+  const facts = {
+    shares: [], opens: [], posts: [], affiliateSales: [], sales: [], delivered: [], goodReviews: [], hearts: [],
+    listed: [], follows: [], preOrdersRun: [], affiliateItems: 0, bestFill: 0, totals,
+    games: [{ at }], bumps: [], timedDrops: [], repeatSales: [],
+    setup: { logo: true, cover: false, bio: false, payment: false },
+  };
+  const view = growth.growthView(facts, undefined);
+  const starters = view.tasks.filter((task) => task.kind === 'starter');
+  assert.ok(starters.length >= 10, 'a dozen one-time steps');
+  assert.equal(view.tasks[0].kind, 'starter', 'Getting started comes first');
+  assert.equal(starters.find((task) => task.id === 'starter-logo').claimable, true);
+  assert.equal(starters.find((task) => task.id === 'starter-list3').claimable, true);
+  assert.equal(starters.find((task) => task.id === 'starter-cover').claimable, false);
+  const claimed = growth.claimGrowth(facts, undefined, 'starter-logo');
+  assert.equal(claimed.task.xp, quest.TASK_XP.starter);
+  assert.ok('refusal' in growth.claimGrowth(facts, claimed.state, 'starter-logo'), 'once only');
+  assert.equal(growth.growthAreas(claimed.state).find((area) => area.area === 'upkeep').xp, quest.TASK_XP.starter,
+    'a starter step pays in full whatever its area');
+  for (const id of ['weekly-bump1', 'weekly-timed1', 'monthly-game1', 'monthly-repeat2']) {
+    assert.ok(view.tasks.some((task) => task.id === id), `${id} is offered`);
   }
+  assert.equal(view.tasks.find((task) => task.id === 'monthly-game1').claimable, true, 'a competition run this month counts');
+});
+
+await check('honours climb five tiers, Bronze to Diamond, and one-off honours wear the top rim', () => {
+  assert.deepEqual([...quest.STICKER_TIER_NAMES], ['Locked', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond']);
+  assert.deepEqual(quest.honourTier(0, [1, 10, 50, 150, 500]), { tier: 0, reached: 0, next: 1 });
+  assert.deepEqual(quest.honourTier(150, [1, 10, 50, 150, 500]), { tier: 4, reached: 4, next: 500 });
+  assert.equal(quest.honourTier(9000, [1, 10, 50, 150, 500]).tier, 5);
+  assert.equal(quest.honourTier(1, [1]).tier, quest.SINGLE_STEP_TIER);
+  assert.equal(quest.honourHow('Place orders', [1, 10, 50, 150, 500]),
+    'Place orders: Bronze 1 · Silver 10 · Gold 50 · Platinum 150 · Diamond 500.');
 });
 
 await check('the game needs a session, and a new account starts at level one', async () => {
@@ -9888,10 +9939,13 @@ await check('the game needs a session, and a new account starts at level one', a
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(view.level, 1);
   assert.equal(view.xp, 0);
-  assert.equal(view.title, 'New Buyer');
+  assert.equal(view.title, 'Newcomer');
   assert.equal(view.dailyRevealed, false);
+  assert.equal(view.cards, undefined, 'there are no cards');
+  assert.equal(view.packs, undefined, 'and no packs');
   assert.ok(view.tasks.some((task) => task.kind === 'daily'));
-  assert.ok(view.stickers.every((sticker) => !sticker.earned));
+  assert.deepEqual(view.stickers.filter((sticker) => sticker.earned).map((sticker) => sticker.id), ['founding-member'],
+    'nothing earned yet but having joined in the founding season');
 });
 
 await check('checking in pays once a day and starts a streak', async () => {
@@ -9905,17 +9959,16 @@ await check('checking in pays once a day and starts a streak', async () => {
   assert.equal(again.already, true);
 });
 
-await check('the daily reveal gives one card, the same one however often it is asked', async () => {
+await check('the daily reveal pays once a day, however often it is asked', async () => {
   const player = await newBuyer('Quest Revealer');
   const first = (await questReveal(req({ headers: player.headers }), ctx)).jsonBody;
-  assert.ok(first.card.id);
   assert.equal(first.view.dailyRevealed, true);
-  assert.equal(first.view.cards.length, 1);
-  assert.equal(first.gained, quest.XP.card + quest.CARD_XP[first.card.rarity]);
+  assert.equal(first.gained, quest.XP.reveal);
+  assert.equal(first.card, undefined, 'no card comes with it');
+  assert.ok(first.view.tasks.find((task) => task.id === 'daily-reveal').claimed);
   const again = (await questReveal(req({ headers: player.headers }), ctx)).jsonBody;
-  assert.equal(again.card.id, first.card.id);
   assert.equal(again.gained, 0);
-  assert.equal(again.view.cards.length, 1);
+  assert.equal(again.already, true);
 });
 
 await check('a task pays only once it is done, and only once', async () => {
@@ -9946,8 +9999,10 @@ await check('there are daily, weekly, monthly and milestone quests, and the week
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   const kinds = (kind) => view.tasks.filter((task) => task.kind === kind).length;
   assert.equal(kinds('daily'), 5, 'check in, reveal, share a find and two from the pool');
-  assert.equal(kinds('weekly'), 5, 'five check-ins, two opens and three from the pool');
-  assert.equal(kinds('monthly'), 4, 'bring a friend and three from the pool');
+  assert.equal(kinds('weekly'), 6, 'five check-ins, two opens, three from the pool and one marketing quest');
+  assert.equal(kinds('monthly'), 5, 'bring a friend, three from the pool and one marketing quest');
+  assert.ok(kinds('starter') >= 10, 'Getting started');
+  assert.equal(view.tasks.filter((task) => task.kind === 'weekly' && task.id.startsWith('weekly-mk-')).length, 1);
   assert.ok(kinds('milestone') >= 8);
   assert.equal(view.streak.week.length, 7);
   const monday = new Date(`${view.streak.week[0].day}T12:00:00Z`).getUTCDay();
@@ -9955,17 +10010,34 @@ await check('there are daily, weekly, monthly and milestone quests, and the week
   assert.equal(view.streak.week.filter((day) => day.today).length, 1);
 });
 
-await check('stickers have tiers and say what they mean', async () => {
+await check('honours have five tiers and say what they mean', async () => {
   const player = await newBuyer('Quest Stickers');
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  assert.ok(view.stickers.length >= 20, 'more honours than there were stickers');
   for (const sticker of view.stickers) {
     assert.ok(sticker.meaning.length > 10 && sticker.how.length > 10, `${sticker.id} explains itself`);
-    assert.equal(sticker.tier, 0);
+    assert.ok(sticker.tiers.length === 1 || sticker.tiers.length === 5, `${sticker.id} has one step or five`);
+    if (sticker.id !== 'founding-member') assert.equal(sticker.tier, 0);
   }
-  assert.deepEqual(view.stickers.find((sticker) => sticker.id === 'haul').tiers, [1, 10, 50]);
+  assert.deepEqual(view.stickers.find((sticker) => sticker.id === 'haul').tiers, [1, 10, 50, 150, 500]);
+  assert.match(view.stickers.find((sticker) => sticker.id === 'haul').how, /Diamond 500/);
+  assert.equal(view.stickers.find((sticker) => sticker.id === 'founding-member').earned, true, 'a new account now is a founding member');
 });
 
-await check('an order earns XP, a milestone, and a pack that opens exactly once', async () => {
+await check('Getting started steps pay once each, when done', async () => {
+  const player = await newBuyer('Quest Newcomer');
+  const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
+  const hobbies = view.tasks.find((task) => task.id === 'starter-hobbies');
+  assert.equal(hobbies.goal, 3);
+  assert.equal(hobbies.claimable, false);
+  assert.equal((await questClaim(req({ headers: player.headers, body: { taskId: 'starter-board' } }), ctx)).jsonBody.error, 'not_done');
+  await boardJoin(req({ headers: player.headers, body: { board: 'cat:figures' } }), ctx);
+  const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'starter-board' } }), ctx)).jsonBody;
+  assert.equal(claimed.gained, quest.TASK_XP.starter, 'joining a board finishes its step');
+  assert.equal((await questClaim(req({ headers: player.headers, body: { taskId: 'starter-board' } }), ctx)).jsonBody.error, 'already_claimed');
+});
+
+await check('an order earns XP and a milestone, and no pack', async () => {
   const player = await newBuyer('Quest Buyer');
   await createOrder(req({ headers: player.headers, body: { listingId: 'lst_kbeauty', quantity: 1 } }), ctx);
   const view = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
@@ -9977,17 +10049,10 @@ await check('an order earns XP, a milestone, and a pack that opens exactly once'
 
   const claimed = (await questClaim(req({ headers: player.headers, body: { taskId: 'ms-orders-1' } }), ctx)).jsonBody;
   assert.equal(claimed.levelAfter, 1, 'one order and its milestone are not a level yet');
-  const packIds = claimed.view.packs.map((pack) => pack.id).sort();
-  assert.deepEqual(packIds, ['task-ms-orders-1']);
-
-  const opened = await questOpen(req({ headers: player.headers, body: { packId: 'task-ms-orders-1' } }), ctx);
-  assert.equal(opened.status, 200);
-  assert.notEqual(opened.jsonBody.card.rarity, 'common');
-  assert.ok(opened.jsonBody.card.lore, 'every card has a line of its own');
-  assert.equal(opened.jsonBody.view.packs.length, 0, 'the one pack is open; no level pack yet');
-  assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'task-ms-orders-1' } }), ctx)).status, 404);
-  assert.equal((await questOpen(req({ headers: player.headers, body: { packId: 'level-9' } }), ctx)).status, 404,
-    'a pack for a level not reached is not there to open');
+  assert.equal(claimed.gained, quest.TIER_XP[0]);
+  assert.equal(claimed.view.packs, undefined);
+  const explorer = claimed.view.stickers.find((sticker) => sticker.id === 'explorer');
+  assert.equal(explorer.have, 1, 'one shop bought from');
 });
 
 await check('a sale moves the sold count a rarity label reads', async () => {
@@ -10057,7 +10122,6 @@ await check('bad ratings and lost disputes take XP away, and can take a level wi
   const lower = (await questMe(req({ headers: player.headers }), ctx)).jsonBody.view;
   assert.equal(lower.xp, after.xp - 4 * unit, 'a lost dispute costs four');
   assert.equal(lower.level, 1, 'ranked back down');
-  assert.equal(lower.packs.some((pack) => pack.id === 'level-2'), false, 'and the unopened level pack goes with it');
   assert.equal(lower.stickers.find((sticker) => sticker.id === 'clean-record').tier, 0);
 
   const page = (await collectorOf(req({ params: { id: player.id } }), ctx)).jsonBody;
@@ -10112,13 +10176,76 @@ await check('a delivered purchase can go in the collection, once, and be renamed
   assert.equal(removed.jsonBody.items.length, 0);
 });
 
-await check('the leaderboard ranks collectors by XP', async () => {
-  const board = (await questLeaderboard(req({ headers: auth }), ctx)).jsonBody;
-  assert.ok(board.top.length > 0);
-  for (let index = 1; index < board.top.length; index += 1) {
-    assert.ok(board.top[index - 1].xp >= board.top[index].xp, 'highest first');
-  }
-  assert.equal(board.top[0].rank, 1);
+await check('hobby boards are generic: any category heading or any hobby typed is a board', () => {
+  assert.equal(boardsRules.boardInfo('cat:figures').label, 'Figures');
+  assert.equal(boardsRules.boardInfo('cat:nope'), null);
+  assert.equal(boardsRules.tagBoardId('#Gunpla'), boardsRules.tagBoardId('gunpla'), 'case and hashes fold');
+  assert.equal(boardsRules.tagBoardId('Resin Kits'), boardsRules.tagBoardId('resin kit'), 'plurals fold');
+  assert.equal(boardsRules.tagBoardId('x'), null, 'one letter is not a hobby');
+  assert.equal(boardsRules.boardInfo(boardsRules.tagBoardId('resin kits')).kind, 'tag');
+  assert.equal(boardsRules.categoryBoards().length > 0, true);
+  const kit = { category: 'Model kits', title: 'RG Gunpla Strike Freedom', tags: [] };
+  assert.equal(boardsRules.listingOnBoard('cat:models', kit), true);
+  assert.equal(boardsRules.listingOnBoard('cat:figures', kit), false);
+  assert.equal(boardsRules.listingOnBoard(boardsRules.tagBoardId('gunpla'), kit), true, 'a tag board reads the title');
+  assert.equal(boardsRules.postOnBoard(boardsRules.tagBoardId('gunpla'), { body: 'New build #gunpla' }, null), true);
+});
+
+await check('a board season counts only that month, and posts are capped', () => {
+  const season = '2026-11';
+  const inside = '2026-11-10T10:00:00+05:30';
+  const before = '2026-10-31T10:00:00+05:30';
+  const score = boardsRules.boardScore({
+    delivered: [inside, before], collected: [inside], reviews: [inside], posts: Array(40).fill(inside),
+  }, season);
+  assert.equal(score.delivered, 1);
+  assert.equal(score.posts, boardsRules.BOARD_POST_CAP);
+  assert.equal(score.points, boardsRules.BOARD_POINTS.delivered + boardsRules.BOARD_POINTS.collected
+    + boardsRules.BOARD_POINTS.review + boardsRules.BOARD_POST_CAP * boardsRules.BOARD_POINTS.post);
+  assert.deepEqual(boardsRules.seasonsBack(Date.parse(inside), 3), ['2026-11', '2026-10', '2026-09']);
+  assert.deepEqual(boardsRules.seasonsBack(Date.parse('2026-01-05T10:00:00+05:30'), 2), ['2026-01', '2025-12']);
+  assert.equal(boardsRules.seasonEndsAt('2026-12'), new Date(Date.parse('2027-01-01T00:00:00+05:30')).toISOString());
+});
+
+await check('joining boards: up to three, any hobby, and leaving makes room', async () => {
+  const player = await newBuyer('Board Joiner');
+  assert.equal((await boardJoin(req({ body: { board: 'cat:figures' } }), ctx)).status, 401);
+  assert.equal((await boardJoin(req({ headers: player.headers, body: { board: 'cat:nope' } }), ctx)).status, 400);
+  assert.equal((await boardJoin(req({ headers: player.headers, body: { board: 'cat:figures' } }), ctx)).status, 200);
+  assert.equal((await boardJoin(req({ headers: player.headers, body: { board: 'cat:figures' } }), ctx)).status, 200, 'twice is fine');
+  const tag = (await boardJoin(req({ headers: player.headers, body: { tag: '#Gunpla' } }), ctx)).jsonBody;
+  assert.equal(tag.joined.kind, 'tag');
+  await boardJoin(req({ headers: player.headers, body: { tag: 'Pokemon cards' } }), ctx);
+  const full = await boardJoin(req({ headers: player.headers, body: { board: 'cat:cards' } }), ctx);
+  assert.equal(full.status, 409);
+  assert.equal(full.jsonBody.error, 'board_limit');
+  await boardLeave(req({ headers: player.headers, body: { board: 'cat:figures' } }), ctx);
+  assert.equal((await boardJoin(req({ headers: player.headers, body: { board: 'cat:cards' } }), ctx)).status, 200);
+
+  const list = (await boardsList(req({ headers: player.headers }), ctx)).jsonBody;
+  assert.equal(list.mine.length, 3);
+  assert.ok(list.boards.some((board) => board.id === tag.joined.id && board.members >= 1), 'a typed hobby is listed once someone joins');
+  assert.ok(list.boards.filter((board) => board.kind === 'category').length >= 5, 'every category heading is a board');
+});
+
+await check('a board ranks this month by activity in the hobby, and the viewer sees whether they are on it', async () => {
+  const repository = await getRepository();
+  const listing = await repository.getListing('lst_kbeauty');
+  const group = (await import(new URL('../api/dist/shared/catalog.js', import.meta.url))).CATEGORY_GROUPS
+    .find((entry) => entry.members.includes(listing.category));
+  const boardId = `cat:${group.id}`;
+  const player = await newBuyer('Board Climber');
+  await boardJoin(req({ headers: player.headers, body: { board: boardId } }), ctx);
+  await deliveredOrderFor(player, 'lst_kbeauty');
+  const view = (await boardRead(req({ headers: player.headers, params: { id: boardId } }), ctx)).jsonBody;
+  assert.equal(view.board.id, boardId);
+  assert.equal(view.joined, true);
+  assert.equal(view.hall.length, boardsRules.HALL_SEASONS);
+  const row = view.rows.find((entry) => entry.userId === player.id);
+  assert.ok(row, 'the climber is on this month\'s board');
+  assert.equal(row.delivered, 1);
+  assert.equal(row.points, boardsRules.BOARD_POINTS.delivered);
+  assert.equal((await boardRead(req({ params: { id: 'cat:nope' } }), ctx)).status, 404);
 });
 
 

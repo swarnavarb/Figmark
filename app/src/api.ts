@@ -42,7 +42,8 @@ import type {
 import type { CommunityAction } from '@shared/disputes';
 import type { MarketSettings } from '@shared/settings';
 import type { Allocation, OrderMoney } from '@shared/payments';
-import type { CardDef, QuestView, StickerView } from '@shared/quest';
+import type { QuestView, StickerView } from '@shared/quest';
+import type { BoardInfo, BoardView } from '@shared/boards';
 import type { CollectionGroup, CollectionItem, ShareEvent, ShareKind } from '@shared/models';
 import type { LearnDoc } from '@shared/learn';
 import type { AffiliateEarningStatus } from '@shared/affiliate';
@@ -357,18 +358,14 @@ export interface QuestResult {
   levelBefore: number;
   levelAfter: number;
   already?: boolean;
-  card?: CardDef;
-  cardXp?: number;
 }
 
-export interface LeaderRow {
-  rank: number;
-  userId: string;
-  name: string;
-  handle: string | null;
-  xp: number;
-  level: number;
-  cards: number;
+/** The hobby boards there are, yours, and the hobbies on your page you could join one for. */
+export interface BoardList {
+  boards: (BoardInfo & { members: number })[];
+  mine: string[];
+  suggestions: (BoardInfo & { members: number })[];
+  limit: number;
 }
 
 /** An average out of 100 (null when unrated), how many, and a count per star from five down to one. */
@@ -402,11 +399,10 @@ export interface CollectorPage {
   nextLevelXp: number;
   progress: number;
   streak: { current: number; best: number };
+  /** Honours (sent as stickers). */
   stickers: StickerView[];
-  /** One of each card owned, with how many copies. */
-  cards: (QuestView['cards'][number] & { copies: number })[];
-  cardCount: number;
-  sets: QuestView['sets'];
+  /** Top-three finishes in hobby leaderboard seasons. */
+  podiums: { board: string; season: string; place: 1 | 2 | 3 }[];
   /** XP lost to low ratings and lost disputes, as a positive number. */
   penalty: number;
   ratings: { buyer: RatingSummary; seller: RatingSummary; page: RatingSummary };
@@ -2831,8 +2827,11 @@ export const api = {
   questCheckIn: () => post<QuestResult>('/quest/checkin'),
   questClaim: (taskId: string) => post<QuestResult>('/quest/claim', { taskId }),
   questReveal: () => post<QuestResult>('/quest/reveal'),
-  questOpen: (packId: string) => post<QuestResult>('/quest/open', { packId }),
-  leaderboard: () => request<{ top: LeaderRow[]; me: LeaderRow | null; total: number }>('/quest/leaderboard'),
+  boards: () => request<BoardList>('/boards'),
+  board: (id: string, season?: string) =>
+    request<BoardView>(`/boards/board/${encodeURIComponent(id)}${season ? `?season=${encodeURIComponent(season)}` : ''}`),
+  boardJoin: (target: { board: string } | { tag: string }) => post<{ boards: string[]; joined: BoardInfo }>('/boards/join', target),
+  boardLeave: (board: string) => post<{ boards: string[] }>('/boards/leave', { board }),
   collector: (userId: string) => request<CollectorPage>(`/users/${encodeURIComponent(userId)}/collector`),
   learn: () => request<LearnDoc & { customised: boolean }>('/learn'),
   collection: (userId: string) => request<CollectionShelf>(`/users/${encodeURIComponent(userId)}/collection`),

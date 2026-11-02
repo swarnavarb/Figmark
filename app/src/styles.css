@@ -5783,7 +5783,6 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 .qflip__back span { font-family: var(--display); font-weight: var(--w-bold); font-size: calc(38px * var(--text-scale)); color: var(--q-gold); }
 .qflip__front { transform: rotateY(180deg); }
-.qflip__front .qcardface { width: 100%; height: 100%; }
 
 /* ── Today's quests: a compact quest board over a night-sky shooter ───── */
 
@@ -6041,68 +6040,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
   .qfeed .filters .picker.is-on, .qloot__drop svg, .qloot__drop::after { animation: none; }
 }
 
-/* ── Collectible cards ─────────────────────────────────────────────────── */
-
-.qcardface {
-  --qc: #56637A; --qc-glow: transparent;
-  position: relative; display: grid; grid-template-rows: auto 1fr auto auto; justify-items: center; gap: var(--s1);
-  text-align: center; overflow: hidden; border-radius: var(--r-md); padding: 10px var(--s2);
-  border: 2px solid var(--qc);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), 0 0 18px -2px var(--qc-glow), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  background:
-    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--qh, var(--violet)) 34%, transparent), transparent 62%),
-    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px),
-    linear-gradient(170deg, #1C2440, #0B1020);
-  color: var(--text);
-}
-/* An inner rule, like the printed border on a real trading card. */
-.qcardface::before {
-  content: ''; position: absolute; inset: 4px; border-radius: var(--r-sm); pointer-events: none;
-  border: 1px solid color-mix(in srgb, var(--qc) 55%, transparent);
-}
-.qcardface--md { width: 170px; aspect-ratio: 5 / 7; }
-.qcardface--sm { width: 100%; aspect-ratio: 5 / 7; padding: 7px var(--s1) 6px; gap: 2px; grid-template-rows: auto minmax(0, 1fr) auto; }
-.qcardface--sm::before { inset: 3px; border-radius: var(--r-sm); }
-.qcardface--sm .qcardface__rarity { max-width: 100%; overflow: hidden; text-overflow: clip; font-size: calc(6.5px * var(--text-scale)); letter-spacing: 0.02em; }
-.qcardface--sm .qcardface__art { width: 64%; }
-.qcardface--sm .qcardface__copies { top: auto; bottom: 20px; right: 3px; }
-.qcardface--rare { --qc: var(--blue); --qc-glow: rgba(59, 130, 246, 0.45); }
-.qcardface--epic { --qc: var(--q-epic); --qc-glow: rgba(168, 85, 247, 0.55); }
-.qcardface--legendary { --qc: var(--q-gold); --qc-glow: rgba(245, 197, 66, 0.6); }
-.qcardface--legendary::after, .qcardface--epic::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(115deg, transparent 25%, rgba(255, 255, 255, 0.2) 42%, transparent 58%);
-  animation: q-sheen 4s ease-in-out infinite;
-}
-.qcardface__rarity {
-  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: calc(8.5px * var(--text-scale)); font-weight: var(--w-bold); letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--qc);
-}
-.qcardface--common .qcardface__rarity { color: var(--text-faint); }
-.qcardface__art {
-  display: grid; place-items: center; align-self: center; width: 76%; aspect-ratio: 1; border-radius: 50%;
-  color: var(--qh, var(--text)); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--qh, var(--violet)) 60%, transparent));
-  background: radial-gradient(circle, color-mix(in srgb, var(--qh, var(--violet)) 22%, transparent), transparent 70%);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--qh, var(--violet)) 35%, transparent);
-}
-.qcardface__name {
-  max-width: 100%; padding: 2px 6px; border-radius: var(--r-sm); background: rgba(0, 0, 0, 0.35);
-  font-size: var(--t-xs); font-weight: var(--w-bold); line-height: 1.15;
-}
-.qcardface--sm .qcardface__name { max-width: 100%; padding: 1px 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(8.5px * var(--text-scale)); }
-.qcardface__set { font-size: var(--t-2xs); color: var(--text-faint); }
-.qcardface--sm .qcardface__set { display: none; }
-
-.qcardslot {
-  aspect-ratio: 5 / 7; border-radius: var(--r-md); border: 1.5px dashed var(--border-strong);
-  display: grid; place-items: center; color: var(--text-faint); font-family: var(--ui); font-variant-numeric: tabular-nums; font-weight: var(--w-bold);
-}
-
-.qset { display: grid; gap: var(--s2); margin-bottom: 14px; }
-.qset__head { display: flex; justify-content: space-between; font-size: var(--t-sm); }
-.qset__cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
-
-/* ── Stickers ──────────────────────────────────────────────────────────── */
+/* ── Honours (stickers in code) ────────────────────────────────────────── */
 
 .qstickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: var(--s3) var(--s2); }
 .qstickers--row .qsticker { flex: none; width: 74px; }
@@ -6119,7 +6057,6 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 /* ── Celebration ───────────────────────────────────────────────────────── */
 
 .qparty { position: relative; display: grid; justify-items: center; gap: var(--s3); text-align: center; padding: 6px 0 var(--s1); }
-.qparty .qflip { width: 150px; height: 210px; }
 .qparty__line { margin: 0; font-size: var(--t-sm); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .qparty__level { display: grid; justify-items: center; gap: var(--s2); }
 .qparty__level p { margin: 0; color: var(--text-dim); }
@@ -6134,7 +6071,6 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qweek__day.is-done i { background: rgba(255, 159, 67, 0.15); border-color: rgba(255, 159, 67, 0.5); color: var(--q-flame); }
 .qweek__day.is-today i { border-color: var(--q-flame); }
 .qweek__day.is-today.is-done i { background: var(--q-flame); color: #2A1400; }
-.qpack small { font-size: var(--t-2xs); color: var(--text-faint); }
 .qtask__body b { font-size: var(--t-sm); }
 .qtask__body small { font-size: var(--t-xs); color: var(--text-faint); }
 .qleaders li { display: flex; align-items: center; gap: 10px; padding: var(--s2) 10px; border-radius: var(--r-md); background: var(--surface-2); }
@@ -6148,8 +6084,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qstat small { font-size: var(--t-2xs); }
 
 @media (prefers-reduced-motion: reduce) {
-  .qdrop::after, .qloot--legendary .qloot__art::after, .qloot--epic .qloot__art::after,
-  .qcardface--legendary::after, .qcardface--epic::after { animation: none; display: none; }
+  .qdrop::after, .qloot--legendary .qloot__art::after, .qloot--epic .qloot__art::after { animation: none; display: none; }
   .qflip__inner, .qloot, .qxp > span { transition: none; }
   .qloot:hover { transform: none; }
   .qheart.is-on svg { animation: none; }
@@ -6158,27 +6093,22 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 /* ── Collector game, part two: sheets, tiers, ratings, collection ──────── */
 
 /* Anything tappable in the game resets the button look it is built on. */
-.qcardface--tap, .qsticker--tap, .qshowcase {
+.qsticker--tap, .qshowcase {
   font: inherit; color: inherit; cursor: pointer; margin: 0;
 }
-.qcardface--tap { transition: transform var(--dur-1) var(--ease); }
-.qcardface--tap:hover { transform: translateY(-2px); }
 .qsticker--tap { border: 0; background: none; padding: 0; }
 .qsticker--tap:hover .qsticker__hex { transform: scale(1.06); }
 .qsticker__hex { transition: transform var(--dur-1) var(--ease); }
-.qcardface__copies {
-  position: absolute; top: 4px; right: 4px; padding: 0 5px; border-radius: var(--r-sm);
-  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-bold); background: rgba(0, 0, 0, 0.55); color: var(--text);
-}
 
 /* Tiers: the rim of the hexagon, and the word under it. */
 /* The rim: the hexagon itself takes the tier colour and an inner hexagon,
    inset by three pixels, carries the sticker's own colour. (An outline would
    be clipped away by the hexagon's own shape.) */
-.qsticker__hex.qtier--1, .qsticker__hex.qtier--2, .qsticker__hex.qtier--3 {
+.qsticker__hex.qtier--1, .qsticker__hex.qtier--2, .qsticker__hex.qtier--3, .qsticker__hex.qtier--4, .qsticker__hex.qtier--5 {
   position: relative; background: var(--qtier);
 }
-.qsticker__hex.qtier--1::before, .qsticker__hex.qtier--2::before, .qsticker__hex.qtier--3::before {
+.qsticker__hex.qtier--1::before, .qsticker__hex.qtier--2::before, .qsticker__hex.qtier--3::before,
+.qsticker__hex.qtier--4::before, .qsticker__hex.qtier--5::before {
   content: ''; position: absolute; inset: 3px;
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
   background: linear-gradient(160deg, var(--qh, var(--violet)), color-mix(in srgb, var(--qh, var(--violet)) 45%, #000));
@@ -6187,13 +6117,18 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qtier--1 { --qtier: #D08A4E; }
 .qtier--2 { --qtier: #C9D3E3; }
 .qtier--3 { --qtier: var(--q-gold); }
+/* Platinum is a cool pale blue; Diamond a prism, so the top tier reads as rarer than gold. */
+.qtier--4 { --qtier: #9FE6EE; }
+.qtier--5 { --qtier: linear-gradient(135deg, #A5F3FC, var(--violet-pale) 45%, var(--pink-pale)); }
 .qtiertext--1 { color: #D08A4E; }
 .qtiertext--2 { color: #C9D3E3; }
 .qtiertext--3 { color: var(--q-gold); }
+.qtiertext--4 { color: #9FE6EE; }
+.qtiertext--5 { color: var(--violet-pale); }
 .qsticker__tier { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; }
 .qsticker__hex--big { width: 84px; height: 94px; }
 
-/* A detail sheet: a sticker or a card, what it is and what it means. */
+/* A detail sheet: an honour, what it is and what it means. */
 .qsheet { display: grid; justify-items: center; gap: 10px; text-align: center; }
 .qsheet__state { margin: 0; font-size: var(--t-sm); display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
 .qsheet__lore { margin: 0; font-style: italic; color: var(--text-dim); max-width: 34ch; }
@@ -6204,7 +6139,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qsheet__note { margin: 0; font-size: var(--t-2xs); }
 .qsheet .qxp { width: 100%; }
 .qsheet__scroll { max-height: 62vh; overflow-y: auto; padding-right: 2px; }
-.qtiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; }
+.qtiers { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; width: 100%; }
 .qtiers__step {
   display: grid; gap: 1px; padding: var(--s2) var(--s1); border-radius: var(--r-sm); border: 1px solid var(--border);
   font-size: var(--t-xs); opacity: 0.55;
@@ -6228,8 +6163,8 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .lightbox__caption { font-size: var(--t-xs); opacity: 0.8; }
 
 @media (prefers-reduced-motion: reduce) {
-  .qcardface--tap, .qsticker__hex { transition: none; }
-  .qcardface--tap:hover, .qsticker--tap:hover .qsticker__hex { transform: none; }
+  .qsticker__hex { transition: none; }
+  .qsticker--tap:hover .qsticker__hex { transform: none; }
 }
 
 /* ==========================================================================
@@ -7234,17 +7169,6 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
 .spin__turn--sided { display: grid; }
 .spin__turn--sided > .spin__face { grid-area: 1 / 1; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 .spin__back { transform: rotateY(180deg); }
-/* A card's back: the house crest on a woven ground, rimmed in its rarity. */
-.qcardback {
-  position: relative; overflow: hidden; display: grid; place-items: center; width: 170px; height: 100%; border-radius: var(--r-md);
-  border: 2px solid var(--qc, #56637A); color: var(--q-gold);
-  background:
-    radial-gradient(circle at 50% 50%, rgba(245, 197, 66, 0.22), transparent 45%),
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0 6px, transparent 6px 12px),
-    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.05) 0 6px, transparent 6px 12px),
-    linear-gradient(160deg, #2E1065, #111827);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 0 0 5px rgba(0, 0, 0, 0.35), inset 0 0 0 6px color-mix(in srgb, var(--qc, #56637A) 60%, transparent);
-}
 .spin__hint { font-size: var(--t-2xs); color: var(--text-faint); }
 
 /* The collection: each delivered item as a royal card, gilded in front, crested behind. */

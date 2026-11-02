@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Listing } from '@shared/models';
 import { isExpired } from '@shared/payments';
 import { UPKEEP_SHARE, type GrowthKind, type GrowthTask } from '@shared/store-growth';
+import { TASK_XP } from '@shared/quest';
 import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api } from '../api';
 import { formatMoney, formatCount } from '../format';
@@ -32,7 +33,8 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
   const [items, setItems] = useState<Listing[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [tab, setTab] = useState<GrowthKind>('daily');
+  /** Null until picked: Getting started while it has steps left, otherwise Daily. */
+  const [picked, setTab] = useState<GrowthKind | null>(null);
   const [cleared, setCleared] = useState(0);
   const { open, sheet } = useShareSheet();
 
@@ -137,12 +139,15 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
     if (task.action === 'affiliate') return <Link to="/shop?tab=items" className="btn btn--sm btn--quiet">Items</Link>;
     if (task.action === 'list') return <Link to="/sell" className="btn btn--sm btn--quiet">List</Link>;
     if (task.action === 'orders') return <Link to="/shop?tab=payments" className="btn btn--sm btn--quiet">Orders</Link>;
+    if (task.action === 'settings') return <Link to="/shop?tab=storefront" className="btn btn--sm btn--quiet">Set up</Link>;
     if (task.action === null) return null;
     return <a href="#shop-items" className="btn btn--sm btn--quiet">Share</a>;
   };
 
   const ready = (kind: GrowthKind) => view.tasks.filter((task) => task.kind === kind && task.claimable).length;
   const readyAll = view.tasks.filter((task) => task.claimable).length;
+  const starterLeft = view.tasks.some((task) => task.kind === 'starter' && !task.claimed);
+  const tab: GrowthKind = picked ?? (starterLeft ? 'starter' : 'daily');
   const tasks = view.tasks.filter((task) => task.kind === tab);
   const shop = shopSpec();
   const upkeep = `${Math.round(UPKEEP_SHARE * 100)}%`;
@@ -199,6 +204,7 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
         <BoardHead info={(
           <>
             <b>Shop quests</b>
+            <p>Start is Getting started: one-time steps that set the shop up, {TASK_XP.starter} XP each.</p>
             <p>Daily quests reset at midnight, India time; weekly ones on Monday; monthly ones on the 1st.</p>
             <p>Each weekly quest pays 1 bump point and each monthly one pays 2. Upkeep pays {upkeep} of the XP and no bump points.</p>
             <p>Milestones pay once a step, then a bigger step appears. Followers, hearts and ratings only count while you keep them.</p>
@@ -210,7 +216,7 @@ export function ShopQuests({ store }: { store: StoreAccess }) {
             </button>
           )}
         </BoardHead>
-        <QuestTabs tab={tab} onTab={setTab} ready={ready} />
+        <QuestTabs tab={tab} onTab={setTab} ready={ready} starter={starterLeft || tab === 'starter'} />
         <ul className="qtasks">
           {tasks.map((task) => (
             <QuestRow key={task.id}

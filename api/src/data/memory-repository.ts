@@ -993,19 +993,20 @@ export class MemoryRepository implements Repository {
     return [...this.users.values()].filter((user) => kinds.some((each) => storeOf(user, each)));
   }
 
-  private questRanked(): User[] {
+  async listBoardMembers(boardId: string, limit: number): Promise<User[]> {
     return [...this.users.values()]
-      .filter((user) => !user.suspended && (user.quest?.xpCache ?? 0) > 0)
-      .sort((a, b) => (b.quest?.xpCache ?? 0) - (a.quest?.xpCache ?? 0));
+      .filter((user) => !user.suspended && (user.boards ?? []).includes(boardId))
+      .slice(0, limit)
+      .map((user) => structuredClone(user));
   }
 
-  async questLeaders(limit: number) {
-    const ranked = this.questRanked();
-    return { top: ranked.slice(0, limit), total: ranked.length };
-  }
-
-  async questRankAbove(xp: number): Promise<number> {
-    return this.questRanked().filter((user) => (user.quest?.xpCache ?? 0) > xp).length;
+  async boardCounts(): Promise<{ board: string; members: number }[]> {
+    const counts = new Map<string, number>();
+    for (const user of this.users.values()) {
+      if (user.suspended) continue;
+      for (const board of user.boards ?? []) counts.set(board, (counts.get(board) ?? 0) + 1);
+    }
+    return [...counts].map(([board, members]) => ({ board, members }));
   }
 
   async searchUsers(needle: string, limit: number): Promise<User[]> {

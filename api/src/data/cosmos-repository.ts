@@ -1009,35 +1009,25 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
-  async questLeaders(limit: number) {
-    const users = this.container('users');
-    const [top, counted] = await Promise.all([
-      users.items
-        .query<User>({
-          query: 'SELECT TOP @limit * FROM c WHERE c.quest.xpCache > 0'
-            + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true) ORDER BY c.quest.xpCache DESC',
-          parameters: [{ name: '@limit', value: limit }],
-        })
-        .fetchAll(),
-      users.items
-        .query<number>({
-          query: 'SELECT VALUE COUNT(1) FROM c WHERE c.quest.xpCache > 0'
-            + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true)',
-        })
-        .fetchAll(),
-    ]);
-    return { top: top.resources, total: counted.resources[0] ?? 0 };
-  }
-
-  async questRankAbove(xp: number): Promise<number> {
+  async listBoardMembers(boardId: string, limit: number): Promise<User[]> {
     const { resources } = await this.container('users')
-      .items.query<number>({
-        query: 'SELECT VALUE COUNT(1) FROM c WHERE c.quest.xpCache > @xp'
+      .items.query<User>({
+        query: 'SELECT TOP @limit * FROM c WHERE ARRAY_CONTAINS(c.boards, @board)'
           + ' AND (NOT IS_DEFINED(c.suspended) OR c.suspended != true)',
-        parameters: [{ name: '@xp', value: xp }],
+        parameters: [{ name: '@limit', value: limit }, { name: '@board', value: boardId }],
       })
       .fetchAll();
-    return resources[0] ?? 0;
+    return resources;
+  }
+
+  async boardCounts(): Promise<{ board: string; members: number }[]> {
+    const { resources } = await this.container('users')
+      .items.query<{ board: string; members: number }>({
+        query: 'SELECT b AS board, COUNT(1) AS members FROM c JOIN b IN c.boards'
+          + ' WHERE (NOT IS_DEFINED(c.suspended) OR c.suspended != true) GROUP BY b',
+      })
+      .fetchAll();
+    return resources;
   }
 
   async searchUsers(needle: string, limit: number): Promise<User[]> {

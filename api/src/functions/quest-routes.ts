@@ -3,7 +3,7 @@ import { isPersonFollow, reviewSide } from '../../../shared/storefront.js';
 import type { Dispute, QuestState, User } from '../../../shared/models.js';
 import { isCancelledLike, isPlaced, reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import {
-  CARD_XP, claimKey, dayKey, drawCard, emptyQuestState, packFor, questView, tidyQuestState,
+  DETAILED_REVIEW_CHARS, EARLY_BACK_HOURS, claimKey, dayKey, emptyQuestState, questView, tidyQuestState,
   type QuestFacts, type QuestView,
 } from '../../../shared/quest.js';
 import { getAuthService } from '../auth/index.js';
@@ -12,20 +12,20 @@ import { invitedSellerCount } from '../share.js';
 import { error, handler, json } from './http.js';
 
 /**
- * The collector game: XP, levels, tasks, packs and the public collector page.
+ * The collector game: XP, levels, tasks, honours and the public collector page.
  *
  * The rules live in `shared/quest.ts`. What this file adds is the reading -
  * gathering everything a person has done into the facts those rules count -
- * and the four writes the game owns: checking in, collecting a task's reward,
- * revealing the daily drop and opening a pack. Each write is idempotent by
- * construction (a day is checked into once, a claim key is set once, a pack id
- * opens once), so a double tap or a retry can never pay twice.
+ * and the three writes the game owns: checking in, collecting a task's reward
+ * and revealing the daily drop. Each write is idempotent by construction (a
+ * day is checked into once, a claim key is set once, a day is revealed once),
+ * so a double tap or a retry can never pay twice.
  */
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
 /** Everything the rules count, read from the rows rather than from a tally. */
-async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
+export async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
   const [allOrders, likes, follows, posts, wants, pledged, reviewsAbout, pageReviews, invitedSellers] = await Promise.all([
     repository.listOrdersForBuyer(user.id),
     repository.listLikesBy(user.id),
@@ -45,6 +45,7 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
   const listingIds = [...new Set(orders.map((order) => order.listingId))];
   const listings = await Promise.all(listingIds.map((id) => repository.getListing(id)));
   const preOrder = new Set(listings.filter((listing) => listing?.preOrder).map((listing) => listing!.id));
+  const openedAt = new Map(listings.filter((listing) => listing).map((listing) => [listing!.id, Date.parse(listing!.createdAt)]));
 
   // Reviews this person wrote live under whoever they wrote about, so they are
   // found through the person's own orders - one small partition read each.
@@ -53,13 +54,22 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
   ).flat().filter((review) => review.authorId === user.id);
 
   return {
-    orders: orders.map((order) => ({
-      createdAt: order.placedAt ?? order.createdAt,
-      status: order.status,
-      totalMinor: order.unitPriceMinor * order.quantity,
-      preOrder: preOrder.has(order.listingId),
+    orders: orders.map((order) => {
+      const at = order.placedAt ?? order.createdAt;
+      const opened = openedAt.get(order.listingId);
+      return {
+        createdAt: at,
+        status: order.status,
+        totalMinor: order.unitPriceMinor * order.quantity,
+        preOrder: preOrder.has(order.listingId),
+        sellerId: order.sellerId,
+        early: preOrder.has(order.listingId) && opened !== undefined
+          && Date.parse(at) - opened <= EARLY_BACK_HOURS * 3_600_000,
+      };
+    }),
+    reviewsWritten: written.map((review) => ({
+      createdAt: review.createdAt, detailed: review.body.trim().length >= DETAILED_REVIEW_CHARS,
     })),
-    reviewsWritten: written.map((review) => ({ createdAt: review.createdAt })),
     ratingsReceived: reviewsAbout
       .filter((review) => review.direction === 'seller_to_buyer' && reviewRevealed(review, false))
       .map((review) => review.rating),
@@ -80,18 +90,32 @@ async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
     referredSales: (user.affiliateOrderIds ?? []).length,
     hasTags: (user.tags ?? []).length > 0,
     shareOpens: (user.shareOpens ?? []).map((open) => ({ createdAt: open.at })),
-    sharesSent: (user.shareLog ?? []).map((sent) => ({ createdAt: sent.at })),
+    sharesSent: (user.shareLog ?? []).map((sent) => ({ createdAt: sent.at, kind: sent.kind })),
     invites: (user.invitees ?? []).map((invite) => ({ createdAt: invite.at })),
     invitedSellers,
+    wins: {
+      contest: (user.badges ?? []).filter((badge) => badge.kind === 'contest_winner' || badge.kind === 'challenge_winner').length,
+      debate: (user.badges ?? []).filter((badge) => badge.kind === 'debate_winner').length,
+      guess: (user.badges ?? []).filter((badge) => badge.kind === 'guess_winner').length,
+    },
+    helpfulAnswers: user.helpfulAnswers ?? 0,
+    joinedAt: user.createdAt,
+    podiums: (user.podiums ?? []).length,
+    hasPhoto: Boolean(user.photoUrl),
+    tagCount: (user.tags ?? []).length,
+    pushOn: (user.pushEndpoints ?? []).length > 0,
+    phoneVerified: user.verification?.phone === 'verified',
+    emailVerified: user.verification?.email === 'verified',
+    boards: (user.boards ?? []).length,
   };
 }
 
 /**
  * Works the view out and remembers the XP it came to.
  *
- * The cache is only there so the leaderboard can rank everybody with one scan
- * instead of recounting every account's orders; it is rewritten whenever it
- * has moved, and never read as the truth about anybody's own XP.
+ * The cache is only there so a name can wear its level elsewhere without
+ * recounting every account's orders; it is rewritten whenever it has moved,
+ * and never read as the truth about anybody's own XP.
  */
 async function viewFor(repository: Repo, user: User, state: QuestState = user.quest ?? emptyQuestState()) {
   const view = questView(user.id, await factsFor(repository, user), state);
@@ -131,7 +155,7 @@ async function commit(repository: Repo, user: User, before: QuestView, next: Que
   });
 }
 
-/** GET /api/quest/me - your level, XP, streak, tasks, stickers, cards and packs. */
+/** GET /api/quest/me - your level, XP, streak, tasks and honours. */
 async function me(request: HttpRequest, _context: InvocationContext) {
   const { repository, user } = await signedIn(request);
   if (!user) return error(404, 'not_found', 'This account no longer exists.');
@@ -183,101 +207,19 @@ async function claim(request: HttpRequest, _context: InvocationContext) {
 /**
  * POST /api/quest/reveal - flip today's drop.
  *
- * One card a day, drawn from who you are and which day it is, so it is the
- * same card however many times the request is made.
+ * Once a day, India time: the day is recorded, which is what pays the reveal's
+ * XP, so asking again is not an error and pays nothing.
  */
 async function reveal(request: HttpRequest, _context: InvocationContext) {
   const { repository, user } = await signedIn(request);
   if (!user) return error(404, 'not_found', 'This account no longer exists.');
   const state = user.quest ?? emptyQuestState();
-  const packId = `daily-${dayKey(Date.now())}`;
-  const card = drawCard(user.id, packId);
+  const today = dayKey(Date.now());
   const before = await viewFor(repository, user, state);
-  if (state.cards.some((owned) => owned.packId === packId)) {
-    return json(200, { card, view: before, gained: 0, levelBefore: before.level, levelAfter: before.level, already: true });
+  if ((state.reveals ?? []).includes(today)) {
+    return json(200, { view: before, gained: 0, levelBefore: before.level, levelAfter: before.level, already: true });
   }
-  return commit(repository, user, before, {
-    ...state,
-    cards: [...state.cards, { cardId: card.id, packId, at: new Date().toISOString() }],
-  }, { card, cardXp: CARD_XP[card.rarity] });
-}
-
-/** POST /api/quest/open - open one earned pack. */
-async function openPack(request: HttpRequest, _context: InvocationContext) {
-  const { repository, user } = await signedIn(request);
-  if (!user) return error(404, 'not_found', 'This account no longer exists.');
-
-  let body: { packId?: string };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return error(400, 'invalid_body', 'Request body must be JSON.');
-  }
-  const packId = String(body.packId ?? '');
-  const state = user.quest ?? emptyQuestState();
-  const before = await viewFor(repository, user, state);
-  const pack = packFor(state, before.level, packId);
-  if (!pack) return error(404, 'not_found', 'There is no unopened pack by that name.');
-
-  const card = drawCard(user.id, pack.id, pack.min);
-  return commit(repository, user, before, {
-    ...state,
-    cards: [...state.cards, { cardId: card.id, packId: pack.id, at: new Date().toISOString() }],
-  }, { card, cardXp: CARD_XP[card.rarity], pack });
-}
-
-/** How long one reading of the board is served before it is read again. */
-const BOARD_TTL_MS = 60_000;
-const BOARD_SIZE = 10;
-let board: { at: number; read: Promise<{ top: User[]; total: number }> } | null = null;
-
-/**
- * GET /api/quest/leaderboard - the top collectors.
- *
- * Ranked from the XP cached the last time each account's own view was worked
- * out. It can lag somebody who has not opened the app since their last order,
- * which is the right trade for a list: nobody's figure is recounted here.
- *
- * Read as the top ten by an indexed sort, not by loading every account, and
- * that reading is shared for a minute: the page is open to anybody, and
- * reloading it must not cost a pass over the users each time.
- */
-async function leaderboard(request: HttpRequest, _context: InvocationContext) {
-  const repository = await getRepository();
-  const auth = await getAuthService();
-  const viewer = await auth.getCurrentUser(request);
-
-  if (!board || Date.now() - board.at > BOARD_TTL_MS) {
-    const read = repository.questLeaders(BOARD_SIZE);
-    board = { at: Date.now(), read };
-    // A failed read is not kept: the next visitor tries again.
-    read.catch(() => { if (board?.read === read) board = null; });
-  }
-  const { top, total } = await board.read;
-
-  const row = (user: User, index: number) => ({
-    rank: index + 1,
-    userId: user.id,
-    name: user.displayName,
-    handle: user.username ?? null,
-    xp: user.quest?.xpCache ?? 0,
-    level: user.quest?.levelCache ?? 1,
-    cards: user.quest?.cards.length ?? 0,
-  });
-
-  // The viewer's own place: their account and one count, not the whole table.
-  let me: ReturnType<typeof row> | null = null;
-  if (viewer) {
-    const mineAt = top.findIndex((user) => user.id === viewer.id);
-    if (mineAt >= 0) {
-      me = row(top[mineAt]!, mineAt);
-    } else {
-      const account = await repository.getUserById(viewer.id);
-      const xp = account?.quest?.xpCache ?? 0;
-      if (account && !account.suspended && xp > 0) me = row(account, await repository.questRankAbove(xp));
-    }
-  }
-  return json(200, { top: top.map(row), me, total });
+  return commit(repository, user, before, { ...state, reveals: [...(state.reveals ?? []), today] });
 }
 
 /** How one dispute ended for one of its two people. */
@@ -311,9 +253,9 @@ function ratingSummary(ratings: readonly number[]) {
 /**
  * GET /api/users/{id}/collector - somebody's collector page, from the record.
  *
- * Public: level, stickers and cards are things people show off, and the trade
- * record next to them is the same record the credit sheet already publishes.
- * Nothing private crosses - no tasks, no packs, no saves, no amounts spent.
+ * Public: level and honours are things people show off, and the trade record
+ * next to them is the same record the credit sheet already publishes.
+ * Nothing private crosses - no tasks, no saves, no amounts spent.
  */
 async function collector(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
@@ -353,13 +295,7 @@ async function collector(request: HttpRequest, _context: InvocationContext) {
     progress: view.progress,
     streak: { current: view.streak.current, best: view.streak.best },
     stickers: view.stickers,
-    // One of each card, rarest first, with how many copies: a shelf rather
-    // than every duplicate.
-    cards: view.cards
-      .filter((card, index, all) => all.findIndex((other) => other.id === card.id) === index)
-      .map((card) => ({ ...card, copies: view.cards.filter((other) => other.id === card.id).length })),
-    cardCount: view.cards.length,
-    sets: view.sets,
+    podiums: user.podiums ?? [],
     penalty: view.penalty,
     // Three kinds of rating, never added together: from sellers (as a buyer),
     // from buyers (as a seller), and notes anybody left on the page.
@@ -389,8 +325,6 @@ export const questMeRoute = handler(me);
 export const questCheckInRoute = handler(checkIn);
 export const questClaimRoute = handler(claim);
 export const questRevealRoute = handler(reveal);
-export const questOpenRoute = handler(openPack);
-export const questLeaderboardRoute = handler(leaderboard);
 export const collectorRoute = handler(collector);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -398,6 +332,4 @@ app.http('quest-me', { ...anon, methods: ['GET'], route: 'quest/me', handler: qu
 app.http('quest-checkin', { ...anon, methods: ['POST'], route: 'quest/checkin', handler: questCheckInRoute });
 app.http('quest-claim', { ...anon, methods: ['POST'], route: 'quest/claim', handler: questClaimRoute });
 app.http('quest-reveal', { ...anon, methods: ['POST'], route: 'quest/reveal', handler: questRevealRoute });
-app.http('quest-open', { ...anon, methods: ['POST'], route: 'quest/open', handler: questOpenRoute });
-app.http('quest-leaderboard', { ...anon, methods: ['GET'], route: 'quest/leaderboard', handler: questLeaderboardRoute });
 app.http('user-collector', { ...anon, methods: ['GET'], route: 'users/{id}/collector', handler: collectorRoute });

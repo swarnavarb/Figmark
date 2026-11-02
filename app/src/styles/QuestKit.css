@@ -71,7 +71,6 @@
   background: rgba(167, 139, 250, 0.16); color: var(--violet-pale);
 }
 .qpay--bump { background: rgba(250, 204, 21, 0.16); color: #FDE047; }
-.qpay--pack { background: rgba(236, 72, 153, 0.16); color: var(--pink-pale); }
 .qtag {
   padding: 0 7px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.04em;
   text-transform: uppercase; border: 1px solid currentColor; opacity: 0.9;

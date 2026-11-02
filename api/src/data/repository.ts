@@ -433,10 +433,10 @@ export interface Repository {
   findStoreBySlug(kind: StoreKind, slug: string): Promise<User | null>;
   /** Accounts holding a service store of this kind - or of any kind - in whatever state it is. */
   listServiceStoreOwners(kind?: StoreKind): Promise<User[]>;
-  /** The top collectors by cached XP, suspended accounts left out, and how many are ranked at all. */
-  questLeaders(limit: number): Promise<{ top: User[]; total: number }>;
-  /** How many ranked accounts have more XP than this. */
-  questRankAbove(xp: number): Promise<number>;
+  /** Accounts competing on a hobby leaderboard, suspended ones left out, at most `limit`. */
+  listBoardMembers(boardId: string, limit: number): Promise<User[]>;
+  /** Every board somebody has joined, with how many people are on it. */
+  boardCounts(): Promise<{ board: string; members: number }[]>;
   /** People and shops whose name or handle contains `needle` (lower case), at most `limit`. */
   searchUsers(needle: string, limit: number): Promise<User[]>;
   /**
