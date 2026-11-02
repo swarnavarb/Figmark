@@ -419,7 +419,10 @@ function WantDialog({ card, onClose, onChanged }: {
   const { user } = useSession();
   // A collector who knows where one is and a shop that stocks it can both
   // answer - so the answer goes out in whichever voice is picked.
-  const { voice } = useVoice();
+  const { voice: picked } = useVoice();
+  // Wants are answered by people and shops; switched to a freight or art
+  // store, you answer as yourself.
+  const voice = picked.storeId?.includes(':') ? { ...picked, storeId: null } : picked;
   const as = voice.storeId ? 'shop' : 'person';
   const [data, setData] = useState<WantDetail | null>(null);
   const [message, setMessage] = useState('');

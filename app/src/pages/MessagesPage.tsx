@@ -722,7 +722,7 @@ export function ThreadPage() {
                   navigate(`/messages/${encodeURIComponent(handle!)}?as=${encodeURIComponent(party.handle)}`, { replace: true });
                 }
               }}>
-              <VoicePicker size={36} title="Write as" />
+              <VoicePicker size={36} title="Write as" adding={false} />
             </VoiceScope>
           )}
           {dealable && (

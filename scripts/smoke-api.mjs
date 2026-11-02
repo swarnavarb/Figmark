@@ -12136,6 +12136,35 @@ await check('a shipping request carries extras and free cover, and is counted in
   assert.equal((await storeInsights(req({ headers: buyer.headers, params: { kind: 'forwarder', ownerId: 'usr_fwd_lotus' } }), ctx)).status, 403);
 });
 
+await check('switched to a forwarder, Social is the company: reactions and comments come from it, not the person', async () => {
+  resetRateLimits();
+  const buyer = await newMember('Voice Tester', 'voice.tester@figmark.example', '+919000078944');
+  const as = { as: 'forwarder:usr_fwd_lotus' };
+  const made = await createPost(req({ headers: lotusTeam, body: { body: 'Sea freight cut-off is Friday.', storeId: 'forwarder:usr_fwd_lotus' } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const post = made.jsonBody.post;
+
+  const reacted = await reactTo(req({ headers: lotusTeam, query: as, params: on(post), body: { kind: 'love' } }), ctx);
+  assert.equal(reacted.status, 200, JSON.stringify(reacted.jsonBody));
+  assert.equal(reacted.jsonBody.reactions.mine, 'love');
+  // As the person, the same account has not reacted: the two voices stay apart.
+  const asPerson = (await readPost(req({ headers: lotusTeam, params: on(post) }), ctx)).jsonBody;
+  assert.equal(asPerson.card.social.reactions.mine ?? null, null);
+
+  const said = await commentOn(req({ headers: lotusTeam, query: as, params: on(post), body: { body: 'Booking closes at noon.' } }), ctx);
+  assert.equal(said.status, 201, JSON.stringify(said.jsonBody));
+  const read = (await readPost(req({ headers: lotusTeam, query: as, params: on(post) }), ctx)).jsonBody;
+  const comment = read.comments.find((row) => row.body === 'Booking closes at noon.');
+  assert.equal(comment.author.name, 'Lotus Freight');
+  assert.match(comment.author.href, /^\/services\/forwarder\//);
+  const who = (await reactors(req({ headers: buyer.headers, params: on(post) }), ctx)).jsonBody.reactors;
+  assert.equal(who[0].party.name, 'Lotus Freight');
+
+  // Nobody else can speak for the company, and it has no wall to repost to.
+  assert.equal((await reactTo(req({ headers: buyer.headers, query: as, params: on(post), body: { kind: 'love' } }), ctx)).status, 403);
+  assert.equal((await sharePost(req({ headers: lotusTeam, query: as, params: on(post), body: { mode: 'repost' } }), ctx)).status, 400);
+});
+
 await check('pay on arrival: booked, sent in, weighed with a photo, billed, paid, delivered - and tracked by the buyer', async () => {
   resetRateLimits();
   const buyer = await newMember('Arrival Tester', 'arrival.tester@figmark.example', '+919000078933');

@@ -9,7 +9,8 @@ import { TabBar, tabFor, type TabId } from './components/TabBar';
 import { MarketSearch } from './components/MarketSearch';
 import { ViewportSync } from './components/ViewportSync';
 import { Avatar, Icon, Modal } from './components/ui';
-import { api, type ServiceStoreRole } from './api';
+import { api } from './api';
+import { VoicePicker } from './components/SocialVoice';
 import { useSession } from './session';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
 import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
@@ -126,8 +127,11 @@ export function AppShell() {
             <Icon name="search" size={18} />
           </button>
           {/* The cart: every Buy not yet paid or booked. Forwarders, which
-              used to sit here, are under Services now. */}
-          {user && <CartButton />}
+              used to sit here, are under Services now. Discover is the
+              community side, so it carries Social's green switch instead. */}
+          {user && (pathname === '/discover'
+            ? <span className="nav__voice"><VoicePicker size={34} switchOnly /></span>
+            : <CartButton />)}
           {/* Before the avatar, because it is about you rather than about the
               app, and because that is where a thumb already goes. */}
           {user && <Notifications />}
@@ -285,20 +289,6 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
   const { signOutEverywhere, user } = useSession();
   // One Sign Out, and then the question of where: just here, or everywhere.
   const [choosing, setChoosing] = useState(false);
-  // The freight and art stores this account runs or works for, asked the first time the menu opens.
-  const [services, setServices] = useState<ServiceStoreRole[] | null>(null);
-  useEffect(() => {
-    if (!open || services) return;
-    void api.myServiceStores().then((result) => setServices(result.stores)).catch(() => setServices([]));
-  }, [open, services]);
-  const roles = [
-    { id: 'buy', emoji: '🛍️', label: 'Buying', to: '/', on: !pathname.startsWith('/shop') && !pathname.startsWith('/services/store/') },
-    ...(user?.sellerProfile ? [{ id: 'shop', emoji: '🏪', label: user.sellerProfile.storefrontName || 'My store', to: '/shop', on: pathname.startsWith('/shop') }] : []),
-    ...(services ?? []).map((row) => {
-      const to = `/services/store/${row.kind}/${row.ownerId}`;
-      return { id: `${row.kind}:${row.ownerId}`, emoji: row.kind === 'forwarder' ? '✈️' : '🎨', label: row.name, to, on: pathname.startsWith(to) };
-    }),
-  ];
 
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -324,17 +314,6 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
       {open && (
         <div className="pmenu__panel" role="menu">
           <span className="pmenu__who">{name}</span>
-          <div className="pmenu__roles" role="group" aria-label="Switch to">
-            <span className="pmenu__rolehead">
-              <span>Switch to</span>
-              <Link to="/open" className="pmenu__open" aria-label="Open another business"><Icon name="plus" size={12} /> Open</Link>
-            </span>
-            {roles.map((role) => (
-              <Link key={role.id} role="menuitemradio" aria-checked={role.on} to={role.to} className={`pmenu__item pmenu__role${role.on ? ' is-on' : ''}`}>
-                {role.emoji} <span>{role.label}</span>{role.on && <Icon name="check" size={14} />}
-              </Link>
-            ))}
-          </div>
           <Link role="menuitem" to="/me" className="pmenu__item">🙂 My Profile</Link>
           <Link role="menuitem" to="/quests" className="pmenu__item">🏆 Quests &amp; rewards</Link>
           <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>

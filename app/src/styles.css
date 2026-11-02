@@ -4015,16 +4015,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
 }
 .pmenu__item:hover { background: var(--surface-2); }
 .pmenu__item--out { color: var(--coral); }
-.pmenu__roles { display: grid; gap: 2px; margin-bottom: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.pmenu__rolehead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 10px; color: var(--text-faint); font-size: var(--t-xs); }
-.pmenu__open {
-  display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: var(--r-pill);
-  background: var(--surface-2); color: var(--text); font-size: var(--t-xs); font-weight: var(--w-semi); text-decoration: none;
-}
-.pmenu__open:hover { background: var(--border); }
-.pmenu__role { display: flex; align-items: center; gap: 8px; }
-.pmenu__role > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pmenu__role.is-on { background: var(--surface-2); }
 .photogrid__cell { display: block; aspect-ratio: 1; background: var(--surface-2); overflow: hidden; }
 .photogrid__cell img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-2) ease; }
 .photogrid__cell:hover img { transform: scale(1.04); }
@@ -4533,6 +4523,12 @@ a.psheet__row:hover { background: var(--surface-hover); }
   background: var(--surface-2); box-shadow: var(--shadow), var(--sx-glow, none);
   animation: pop-in var(--dur-1) var(--ease) both;
 }
+.voicepick__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.voicepick__open {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 4px 10px; border-radius: var(--r-pill, 999px); white-space: nowrap;
+  background: var(--surface); color: var(--text); font-size: var(--t-xs); font-weight: var(--w-bold); text-decoration: none;
+}
+.voicepick__open:hover { background: var(--surface-hover); }
 .voicepick__title {
   padding: var(--s1) var(--s2) 6px; color: var(--text-faint);
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.1em; text-transform: uppercase;
@@ -5633,6 +5629,10 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 .soccompact .voicepick__switch { width: 28px; height: 28px; }
+/* The same switch in the top bar on Discover, where the cart would be. */
+.nav__voice { display: grid; flex: 0 0 auto; }
+.nav__voice .voicepick__switch { width: 34px; height: 34px; }
+.nav__voice .voicepick__menu { color: var(--text); }
 .soctop__voice { flex: 0 0 auto; }
 /* Room for the counts on the corners, which a scrolling row would clip. */
 .soccompact__tabs { padding-top: 7px; padding-bottom: 2px; align-self: stretch; align-items: center; }

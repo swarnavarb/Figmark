@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import type { SocialIdentity } from '@shared/social';
@@ -6,12 +7,16 @@ import { Avatar } from './ui';
 import { Icon } from './Icon';
 
 /**
- * Which of your voices the social tab speaks in: you, or a shop you run.
+ * Which of your voices the social tab speaks in: you, a shop you run, or a
+ * freight or art store you have the voice of (`kind:ownerId`).
  *
  * One choice for everything on the tab - posting, reacting, commenting,
  * reposting - because a shop owner switching to the shop to post and then
  * finding their reactions still land as themselves would be two identities
  * leaking into each other. Remembered on this device, so it survives a reload.
+ *
+ * One choice for the whole app, too: switching from the profile menu is the
+ * same switch, so whoever you switched to is who you are on Social.
  */
 
 interface VoiceValue {
@@ -24,6 +29,8 @@ const STORAGE_KEY = 'figmark.social.voice';
 
 const ME: SocialIdentity = { storeId: null, name: '', handle: null };
 const VoiceContext = createContext<VoiceValue>({ voice: ME, voices: [ME], choose: () => undefined });
+/** Set once a provider is up, so the pages that wrap themselves in one share the app's. */
+const Provided = createContext(false);
 
 /** The shop this device last posted as, or null for yourself. */
 export function remembered(): string | null {
@@ -35,6 +42,11 @@ export function remembered(): string | null {
 }
 
 export function VoiceProvider({ children }: { children: ReactNode }) {
+  if (useContext(Provided)) return <>{children}</>;
+  return <OwnVoice>{children}</OwnVoice>;
+}
+
+function OwnVoice({ children }: { children: ReactNode }) {
   const { user } = useSession();
   const [stores, setStores] = useState<SocialIdentity[]>([]);
   const [chosen, setChosen] = useState<string | null>(remembered);
@@ -46,14 +58,20 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     setStores([]);
     if (!userId) return;
     let live = true;
-    api.stores()
-      .then((result) => {
-        if (!live) return;
-        setStores(result.stores
+    void Promise.all([
+      api.stores()
+        .then((result) => result.stores
           .filter((store) => store.permissions.includes('posts'))
-          .map((store) => ({ storeId: store.ownerId, name: store.name, handle: store.handle ?? null })));
-      })
-      .catch(() => undefined);
+          .map((store): SocialIdentity => ({ storeId: store.ownerId, name: store.name, handle: store.handle ?? null })))
+        .catch(() => [] as SocialIdentity[]),
+      api.myServiceStores()
+        .then((result) => result.stores
+          .filter((row) => row.live && row.rights.includes('voice'))
+          .map((row): SocialIdentity => ({ storeId: `${row.kind}:${row.ownerId}`, name: row.name, handle: null })))
+        .catch(() => [] as SocialIdentity[]),
+    ]).then(([shops, services]) => {
+      if (live) setStores([...shops, ...services]);
+    });
     return () => {
       live = false;
     };
@@ -79,7 +97,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(() => ({ voice, voices, choose }), [voice, voices, choose]);
-  return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
+  return (
+    <Provided.Provider value={true}>
+      <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>
+    </Provided.Provider>
+  );
 }
 
 /**
@@ -125,13 +147,16 @@ export function VoiceAvatar({ voice, size = 40 }: { voice: SocialIdentity; size?
  * Only a button when there is a choice to make: somebody with no shop sees a
  * plain avatar, not a menu with one entry in it.
  */
-export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, react and comment as' }: {
+export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, react and comment as', adding = true }: {
   size?: number;
+  /** An Add beside the title, for opening another business. Off where the voices are a conversation's. */
+  adding?: boolean;
   /** Just the small switch, for a bar that already shows your photo elsewhere. */
   switchOnly?: boolean;
   title?: string;
 }) {
   const { voice, voices, choose } = useVoice();
+  const { user } = useSession();
   const [open, setOpen] = useState(false);
   // Which way the menu opens: towards whichever side of the screen has room.
   // A switcher in a bar pinned to the bottom opening downwards opened off the
@@ -164,7 +189,10 @@ export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, reac
     };
   }, [open]);
 
-  if (voices.length < 2) return switchOnly ? null : <VoiceAvatar voice={voice} size={size} />;
+  // The green switch stays for anyone signed in, since its menu is also where
+  // another business is opened; the photo in a composer is only a menu with a choice in it.
+  if (!switchOnly && voices.length < 2) return <VoiceAvatar voice={voice} size={size} />;
+  if (switchOnly && !user) return null;
 
   return (
     <div className="voicepick" ref={box}>
@@ -182,7 +210,12 @@ export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, reac
       {open && (
         <div className={`voicepick__menu${place.up ? ' voicepick__menu--up' : ''}${place.right ? ' voicepick__menu--right' : ''}`}
           role="menu" aria-label={title}>
-          <p className="voicepick__title">{title}</p>
+          <div className="voicepick__head">
+            <p className="voicepick__title">{title}</p>
+            {adding && <Link to="/open" className="voicepick__open" aria-label="Open another business" onClick={() => setOpen(false)}>
+              <Icon name="plus" size={12} /> Add
+            </Link>}
+          </div>
           {voices.map((entry) => {
             const on = entry.storeId === voice.storeId;
             return (
@@ -195,7 +228,9 @@ export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, reac
                 <VoiceAvatar voice={entry} size={36} />
                 <span className="voicepick__who">
                   <strong>{entry.name}</strong>
-                  <span className="faint">{entry.storeId ? 'Storefront' : 'Your profile'}</span>
+                  <span className="faint">{!entry.storeId ? 'Your profile'
+                    : entry.storeId.startsWith('forwarder:') ? 'Freight forwarder'
+                      : entry.storeId.startsWith('artist:') ? 'Artist' : 'Storefront'}</span>
                 </span>
                 {on && <Icon name="check" size={16} />}
               </button>
