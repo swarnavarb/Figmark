@@ -1,4 +1,4 @@
-import type { FeeStatement, Pricing, ProState, ProVoucher } from '@shared/billing';
+import type { CancelFlag, CancelSettings, CancelStats, FeeStatement, Pricing, ProState, ProVoucher } from '@shared/billing';
 import type { HealthResponse } from '@shared/contracts';
 import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, SellerTrustSignals, TradeOverride, TradeRight, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
@@ -279,6 +279,9 @@ export const admin = {
   refreshFees: (userId: string) => post<{ statement: FeeStatement; locked: boolean }>(`/ops/fees/${encodeURIComponent(userId)}/refresh`),
   waiveFees: (userId: string, body: { amountMinor?: number; note?: string }) =>
     post<{ statement: FeeStatement; locked: boolean }>(`/ops/fees/${encodeURIComponent(userId)}/waive`, body),
+  cancels: () => request<{ rows: (CancelStats & { userId: string; name: string; flag: CancelFlag | null })[]; limit: CancelSettings }>('/ops/cancels'),
+  decideCancel: (userId: string, decision: 'clear' | 'keep' | 'pause', note?: string) =>
+    post<{ flag: CancelFlag }>(`/ops/cancels/${encodeURIComponent(userId)}/decide`, { decision, note }),
   settings: () => request<MarketSettings>('/ops/settings'),
   saveSettings: (settings: Partial<Omit<MarketSettings, 'updatedAt' | 'updatedBy'>>) =>
     post<MarketSettings>('/ops/settings/save', settings),

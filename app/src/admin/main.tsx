@@ -12,7 +12,7 @@ import { LearnView } from './LearnView';
 import { ReportsView } from './ReportsView';
 import { SettingsView } from './SettingsView';
 import { PricingView } from './PricingView';
-import { FeesAdminView, ProAdminView } from './ProAdminView';
+import { CancelsAdminView, FeesAdminView, ProAdminView } from './ProAdminView';
 import { StoresView } from './StoresView';
 import { DevicesView } from './DevicesView';
 import { PhotosView } from './PhotosView';
@@ -203,6 +203,7 @@ function Console() {
           : tab === 'pricing' ? <PricingView />
           : tab === 'pro' ? <ProAdminView />
           : tab === 'fees' ? <FeesAdminView />
+          : tab === 'cancels' ? <CancelsAdminView />
           : tab === 'audit' ? <AuditView />
           : <LearnView />}
 

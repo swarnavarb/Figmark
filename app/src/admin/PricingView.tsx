@@ -3,6 +3,7 @@ import {
   FEE_KIND_LABELS, GST_SCOPES, GST_SCOPE_LABELS, PRO_FEATURES,
   type FeeBand, type Pricing,
 } from '@shared/billing';
+import { REWARD_KINDS, REWARD_META, STAMPS } from '@shared/loyalty';
 import { ApiRequestError, admin } from './api';
 import { formatMoney, timeAgo } from '../format';
 import { Loading } from '../components/Feedback';
@@ -240,6 +241,91 @@ export function PricingView() {
             </label>
           ))}
         </fieldset>
+      </div>
+
+      <div className="card card--pad stack">
+        <h2>Sellers who cancel too often</h2>
+        <p className="field__hint" style={{ margin: 0 }}>
+          A seller calling off a paid order is the easy way round a platform fee. Over the limit, they are flagged under
+          Cancellations, told, and can appeal from their shop.
+        </p>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={draft.cancels.enabled} onChange={(e) => change({ cancels: { ...draft.cancels, enabled: e.target.checked } })} />
+          <span>Flag sellers over the limit</span>
+        </label>
+        <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <label className="field" style={{ maxWidth: 180 }}>
+            <span>Limit - % of orders cancelled</span>
+            <input type="number" inputMode="numeric" value={draft.cancels.maxPct}
+              onChange={(e) => change({ cancels: { ...draft.cancels, maxPct: Math.round(Number(e.target.value) || 0) } })} />
+          </label>
+          <label className="field" style={{ maxWidth: 180 }}>
+            <span>Counted over (days)</span>
+            <input type="number" inputMode="numeric" value={draft.cancels.windowDays}
+              onChange={(e) => change({ cancels: { ...draft.cancels, windowDays: Math.round(Number(e.target.value) || 0) } })} />
+          </label>
+          <label className="field" style={{ maxWidth: 180 }}>
+            <span>Only after this many orders</span>
+            <input type="number" inputMode="numeric" value={draft.cancels.minOrders}
+              onChange={(e) => change({ cancels: { ...draft.cancels, minOrders: Math.round(Number(e.target.value) || 0) } })} />
+          </label>
+        </div>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={draft.cancels.pauseDirect} onChange={(e) => change({ cancels: { ...draft.cancels, pauseDirect: e.target.checked } })} />
+          <span>Pause direct buying for a flagged seller - buyers can only pay through the gateway until it is cleared</span>
+        </label>
+      </div>
+
+      <div className="card card--pad stack">
+        <h2>Loyalty cards</h2>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={draft.loyalty.enabled} onChange={(e) => change({ loyalty: { ...draft.loyalty, enabled: e.target.checked } })} />
+          <span>Let shops run loyalty cards (a Pro tool while it is ticked under Pro)</span>
+        </label>
+        <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0, gap: 6 }}>
+          <b>What shops may offer</b>
+          {REWARD_KINDS.map((kind) => (
+            <label key={kind} className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+              <input type="checkbox" checked={draft.loyalty.rewardKinds[kind]}
+                onChange={(e) => change({ loyalty: { ...draft.loyalty, rewardKinds: { ...draft.loyalty.rewardKinds, [kind]: e.target.checked } } })} />
+              <span>{REWARD_META[kind].icon} <b>{REWARD_META[kind].label}</b><small className="faint" style={{ display: 'block' }}>{REWARD_META[kind].hint}</small></span>
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0, gap: 6 }}>
+          <b>Which stamped orders may carry a reward</b>
+          <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+            {Array.from({ length: STAMPS }, (_, index) => (
+              <label key={index} className={`chip${draft.loyalty.stampsAllowed[index] ? ' is-on' : ''}`} style={{ cursor: 'pointer' }}>
+                <input type="checkbox" className="sr-only" checked={draft.loyalty.stampsAllowed[index] !== false}
+                  onChange={(e) => change({ loyalty: { ...draft.loyalty, stampsAllowed: draft.loyalty.stampsAllowed.map((on, at) => (at === index ? e.target.checked : on)) } })} />
+                Stamp {index + 1}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <label className="field" style={{ maxWidth: 160 }}>
+            <span>Cards per shop</span>
+            <input type="number" inputMode="numeric" value={draft.loyalty.maxCards}
+              onChange={(e) => change({ loyalty: { ...draft.loyalty, maxCards: Math.round(Number(e.target.value) || 0) } })} />
+          </label>
+          <label className="field" style={{ maxWidth: 160 }}>
+            <span>Most cashback ₹</span>
+            <input type="number" inputMode="decimal" value={rupees(draft.loyalty.maxFlatMinor)}
+              onChange={(e) => change({ loyalty: { ...draft.loyalty, maxFlatMinor: toMinor(e.target.value) } })} />
+          </label>
+          <label className="field" style={{ maxWidth: 160 }}>
+            <span>Most cashback %</span>
+            <input type="number" inputMode="decimal" value={pct(draft.loyalty.maxCashbackBp)}
+              onChange={(e) => change({ loyalty: { ...draft.loyalty, maxCashbackBp: toBp(e.target.value) } })} />
+          </label>
+          <label className="field" style={{ maxWidth: 160 }}>
+            <span>Most % off</span>
+            <input type="number" inputMode="decimal" value={pct(draft.loyalty.maxPercentOffBp)}
+              onChange={(e) => change({ loyalty: { ...draft.loyalty, maxPercentOffBp: toBp(e.target.value) } })} />
+          </label>
+        </div>
       </div>
 
       <div className="card card--pad stack">

@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { REFUND_ORIGIN_LABELS } from '@shared/payments';
 import { AFFILIATE_STATUS_LABELS } from '@shared/affiliate';
-import { BADGE_META, storeCreditLeft, type Badge, type StoreCredit } from '@shared/play';
 import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../api';
 import { GIFT_METHOD_LABELS, type StoreGift } from '@shared/billing';
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice, PageError } from '../components/ui';
-import { formatDateOrdinal, formatMoney, formatTotals } from '../format';
+import { formatDateOrdinal, formatMoney } from '../format';
 import { Loading, PageLoading } from '../components/Feedback';
+import { LoyaltyTab, WalletStores } from './WalletStores';
 import '../styles/MyRefundsPage.css';
 
 /**
@@ -30,7 +30,8 @@ export function MyRefundsPage() {
   // In the URL, so a notification asking for reversal details lands on that tab.
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab = asked === 'details' ? 'details' : asked === 'earnings' ? 'earnings' : asked === 'credit' ? 'credit' : asked === 'gifts' ? 'gifts' : 'refunds';
+  const tab = asked === 'details' ? 'details' : asked === 'earnings' ? 'earnings' : asked === 'gifts' ? 'gifts'
+    : asked === 'loyalty' ? 'loyalty' : asked === 'refunds' ? 'refunds' : 'stores';
 
   const load = useCallback(async () => {
     try {
@@ -105,36 +106,46 @@ export function MyRefundsPage() {
     </div>
   ));
 
+  const tab_ = (id: string, label: string) => (
+    <button type="button" className={`tab${tab === id ? ' is-on' : ''}`}
+      onClick={() => setParams(id === 'stores' ? {} : { tab: id }, { replace: true })}>{label}</button>
+  );
   const tabs = (
     <div className="tabs" ref={tabRow}>
-      <button type="button" className={`tab${tab === 'refunds' ? ' is-on' : ''}`} onClick={() => setParams({}, { replace: true })}>
-        Refunds
-      </button>
-      <button type="button" className={`tab${tab === 'earnings' ? ' is-on' : ''}`}
-        onClick={() => setParams({ tab: 'earnings' }, { replace: true })}>
-        Affiliate earnings
-      </button>
-      <button type="button" className={`tab${tab === 'credit' ? ' is-on' : ''}`}
-        onClick={() => setParams({ tab: 'credit' }, { replace: true })}>
-        Store credit
-      </button>
-      <button type="button" className={`tab${tab === 'gifts' ? ' is-on' : ''}`}
-        onClick={() => setParams({ tab: 'gifts' }, { replace: true })}>
-        From stores
-      </button>
-      <button type="button" className={`tab${tab === 'details' ? ' is-on' : ''}`}
-        onClick={() => setParams({ tab: 'details' }, { replace: true })}>
-        Payment reversal details
-      </button>
+      {tab_('stores', 'By store')}
+      {tab_('loyalty', 'Loyalty cards')}
+      {tab_('refunds', 'Refunds')}
+      {tab_('gifts', 'Paid to you')}
+      {tab_('earnings', 'Affiliate earnings')}
+      {tab_('details', 'Payment reversal details')}
     </div>
   );
 
-  if (tab === 'credit') {
+  const head = (
+    <div className="page__head wallet__head">
+      <h1>My wallet</h1>
+      <small className="faint">Credit, cashback and refunds - store by store.</small>
+    </div>
+  );
+
+  if (tab === 'stores') {
+    if (error && !refunds) return <PageError message={error} />;
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>My wallet</h1></div>
+        {head}
         {tabs}
-        <CreditTab kept={(refunds ?? []).filter((refund) => refund.status === 'held' && refund.leftMinor > 0)} />
+        {asks}
+        {refunds ? <WalletStores refunds={refunds} /> : <Loading />}
+      </main>
+    );
+  }
+
+  if (tab === 'loyalty') {
+    return (
+      <main className="page stack page--top">
+        {head}
+        {tabs}
+        <LoyaltyTab />
       </main>
     );
   }
@@ -142,7 +153,7 @@ export function MyRefundsPage() {
   if (tab === 'gifts') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>My wallet</h1></div>
+        {head}
         {tabs}
         <GiftsTab />
       </main>
@@ -152,7 +163,7 @@ export function MyRefundsPage() {
   if (tab === 'earnings') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>My wallet</h1></div>
+        {head}
         {tabs}
         <EarningsTab />
       </main>
@@ -162,7 +173,7 @@ export function MyRefundsPage() {
   if (tab === 'details') {
     return (
       <main className="page stack page--top">
-        <div className="page__head"><h1>My wallet</h1></div>
+        {head}
         {tabs}
         {asks}
         <ReversalDetailsForm onSaved={load} />
@@ -180,9 +191,7 @@ export function MyRefundsPage() {
 
   return (
     <main className="page stack page--top">
-      <div className="page__head">
-        <h1>My wallet</h1>
-      </div>
+      {head}
       {tabs}
       {asks}
 
@@ -353,113 +362,6 @@ function EarningsTab() {
           </span>
         </div>
       ))}
-    </>
-  );
-}
-
-/**
- * Credit a shop kept from an overpayment, then store credit won in
- * competitions, debates and polls, by shop: each one comes
- * off the next order at that shop by itself, at checkout. And the badges
- * that came with it.
- */
-function CreditTab({ kept }: {
-  /** What a shop kept from a payment over what was owed, for this buyer's next order there. */
-  kept: MyRefund[];
-}) {
-  const [rewards, setRewards] = useState<{ credits: StoreCredit[]; badges: Badge[] } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    api.myRewards()
-      .then((result) => !cancelled && setRewards(result))
-      .catch((err) => !cancelled && setError(err instanceof ApiRequestError ? err.message : 'Could not load your store credit.'));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  if (error) return <ErrorNotice message={error} />;
-  if (!rewards) return <Loading />;
-  const keptCard = kept.length > 0 && (
-    <section className="claimcard wallet-credit">
-      <div className="wallet-credit__head">
-        <strong>Kept for you by shops</strong>
-        <span className="wallet-credit__left">
-          {formatTotals(kept.map((refund) => ({ amountMinor: refund.leftMinor, currency: refund.currency })))}
-        </span>
-      </div>
-      <p className="faint" style={{ margin: 0 }}>
-        Money a shop owes you back - an overpayment or a cancelled order - that they are keeping for you. It goes towards your next order with them.
-      </p>
-      <ul className="wallet-credit__list">
-        {kept.map((refund) => (
-          <li key={refund.creditId}>
-            <Link to={`/order/${refund.orderId}`}>{refund.sellerName} · {refund.itemName}</Link>
-            <span className="faint">{formatMoney(refund.leftMinor, refund.currency)} · {formatDateOrdinal(refund.createdAt)}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-  if (rewards.credits.length === 0 && rewards.badges.length === 0) {
-    if (keptCard) return <div className="wallet-credits">{keptCard}</div>;
-    return (
-      <EmptyState title="Nothing won yet">
-        Shops give store credit for winning photo competitions, making the best argument in a debate, and voting for the winner.
-        {' '}<Link to="/discover#competitions">See what is running</Link>
-      </EmptyState>
-    );
-  }
-  const byShop = new Map<string, { name: string; left: number; credits: StoreCredit[] }>();
-  for (const credit of rewards.credits) {
-    const shop = byShop.get(credit.storeId) ?? { name: credit.storeName, left: 0, credits: [] };
-    shop.left += storeCreditLeft(credit);
-    shop.credits.push(credit);
-    byShop.set(credit.storeId, shop);
-  }
-  return (
-    <>
-      {keptCard && <div className="wallet-credits">{keptCard}</div>}
-      {byShop.size > 0 && (
-        <div className="wallet-credits">
-          {[...byShop.entries()].map(([storeId, shop]) => (
-            <section key={storeId} className="claimcard wallet-credit">
-              <div className="wallet-credit__head">
-                <strong>{shop.name}</strong>
-                <span className="wallet-credit__left">{formatMoney(shop.left, 'INR')}</span>
-              </div>
-              <p className="faint" style={{ margin: 0 }}>Comes off your next order at {shop.name} by itself, at checkout.</p>
-              <ul className="wallet-credit__list">
-                {shop.credits.map((credit) => (
-                  <li key={credit.id}>
-                    <Link to={credit.link}>{credit.reason}</Link>
-                    <span className="faint">
-                      {formatMoney(credit.amountMinor, 'INR')}{credit.spentMinor > 0 ? ` · ${formatMoney(credit.spentMinor, 'INR')} spent` : ''}
-                      {' · '}{formatDateOrdinal(credit.createdAt)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      )}
-      {rewards.badges.length > 0 && (
-        <section className="stack">
-          <h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>Badges</h2>
-          <div className="wallet-badges">
-            {rewards.badges.map((badge) => (
-              <Link key={badge.id} to={badge.link} className="wallet-badge">
-                <span className="wallet-badge__emoji" aria-hidden="true">{BADGE_META[badge.kind].emoji}</span>
-                <span>
-                  <strong>{BADGE_META[badge.kind].label}</strong>
-                  <span className="faint">{badge.detail}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
     </>
   );
 }

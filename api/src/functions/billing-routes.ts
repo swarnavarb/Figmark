@@ -502,6 +502,11 @@ async function opsSavePricing(request: HttpRequest, _context: InvocationContext)
     fees: { ...current.fees, ...(input.fees as object | undefined) },
     gst: { ...current.gst, ...(input.gst as object | undefined), applyTo: { ...current.gst.applyTo, ...((input.gst as { applyTo?: object } | undefined)?.applyTo) } },
     pro: { ...current.pro, ...(input.pro as object | undefined), features: { ...current.pro.features, ...((input.pro as { features?: object } | undefined)?.features) } },
+    cancels: { ...current.cancels, ...(input.cancels as object | undefined) },
+    loyalty: {
+      ...current.loyalty, ...(input.loyalty as object | undefined),
+      rewardKinds: { ...current.loyalty.rewardKinds, ...((input.loyalty as { rewardKinds?: object } | undefined)?.rewardKinds) },
+    },
   };
   const cleaned = cleanPricing(merged);
   if ('error' in cleaned) return error(400, 'invalid_pricing', cleaned.error);

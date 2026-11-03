@@ -22,6 +22,9 @@ const signup = verifiedSignup(rawSignup);
 const { listingDetailRoute: listingDetail } = await import(new URL('catalog-routes.js', fns));
 const { powerSaleCreateRoute: schedulePowerSale } = await import(new URL('power-sale-routes.js', fns));
 const billing = await import(new URL('billing-routes.js', fns));
+const cancels = await import(new URL('cancel-routes.js', fns));
+const loyalty = await import(new URL('loyalty-routes.js', fns));
+const { noteSellerCancel, directRefusal } = await import(new URL('api/src/cancel-watch.js', dist));
 const { adminLedgerRoute: ledger } = await import(new URL('admin-routes.js', fns));
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
 const { forgetPricing, sweepFees } = await import(new URL('api/src/billing.js', dist));
@@ -289,6 +292,122 @@ await check('a direct payment needs its reference and waits on the person; the g
   assert.deepEqual(theirs.map((gift) => gift.status), ['received', 'received']);
   const stranger = await newPerson('Not The Owner');
   assert.equal((await billing.giveRoute(req({ headers: stranger.headers, body: { kind: 'shop', owner: shop.id, recipient: buyer.id, amountMinor: 100, method: 'credit', reason: 'x' } }), ctx)).status, 403);
+});
+
+/* ── Closed months stay closed ─────────────────────────────────────────── */
+console.log('closed months');
+
+await check('a sale cancelled inside its own month just drops off; after the month closes it comes off the month it was cancelled in', () => {
+  const now = Date.parse('2026-11-15T06:00:00Z');
+  const line = (id, at) => ({ id, kind: 'shop', label: id, link: '', at, basisMinor: 1_00_000, kg: null, feeMinor: 3_000, gstMinor: 0, totalMinor: 3_000, via: 'direct' });
+  const old = line('o:old', '2026-09-10T06:00:00Z');
+  const fresh = line('o:new', '2026-11-02T06:00:00Z');
+  let book = B.reconcileFeeBook([old, fresh], {}, now).book;
+  // Both cancelled now.
+  const after = B.reconcileFeeBook([], book, now);
+  assert.equal(after.book['o:new'], undefined, 'this month: gone, never counted');
+  assert.equal(after.book['o:old'].reversedIn, '2026-11');
+  const september = after.lines.find((entry) => entry.id === 'o:old');
+  const minus = after.lines.find((entry) => entry.reversalOf === 'o:old');
+  assert.equal(september.totalMinor, 3_000, 'September still holds its fee');
+  assert.equal(minus.totalMinor, -3_000);
+  assert.equal(B.feeMonthOf(minus.at), '2026-11', 'it comes off November');
+  const statement = B.buildStatement(after.lines, [], 7, now);
+  assert.equal(statement.months.find((month) => month.month === '2026-09').directMinor, 3_000);
+  assert.equal(statement.owedMinor, 0, 'the November credit pays September');
+  assert.equal(statement.overdueMinor, 0);
+  book = after.book;
+  // Read again: nothing moves.
+  assert.equal(B.reconcileFeeBook([], book, now).changed, false);
+});
+
+await check('the statement keeps a cancelled month-old sale in its month and credits it now', async () => {
+  const id = await directSale(70, 2_00_000);
+  const before = (await billing.myFeesRoute(req({ headers: shop.headers }), ctx)).jsonBody.statement;
+  const order = await repository.getOrder(id);
+  await repository.updateOrder({ ...order, status: 'cancelled' });
+  const after = (await billing.myFeesRoute(req({ headers: shop.headers }), ctx)).jsonBody.statement;
+  const month = B.feeMonthOf(ago(70));
+  assert.equal(after.months.find((row) => row.month === month).directMinor, before.months.find((row) => row.month === month).directMinor,
+    'the closed month is untouched');
+  assert.ok(after.lines.some((line) => line.reversalOf === `o:${id}` && line.totalMinor === -6_000), 'a minus line this month');
+  assert.equal(after.owedMinor, Math.max(0, before.owedMinor - 6_000));
+});
+
+/* ── Sellers who cancel too often ──────────────────────────────────────── */
+console.log('cancellations');
+
+await check('a seller over the limit is flagged, told, and direct buying pauses; an appeal reaches the console, which clears it', async () => {
+  const seller = await newPerson('Cancels A Lot');
+  const ids = [];
+  for (let index = 0; index < 6; index += 1) {
+    const id = `ord_cx_${index}_${seller.id.slice(-4)}`;
+    await repository.createOrder({
+      ...structuredClone(anyOrder), id, sellerId: seller.id, placedAt: ago(2), createdAt: ago(2), updatedAt: ago(2),
+      status: index < 2 ? 'cancelled' : 'confirmed', sellerCancelledAt: index < 2 ? ago(1) : null, feeTerms: terms,
+    });
+    ids.push(id);
+  }
+  await billing.opsFeesRoute(req({ headers: shop.headers }), ctx);
+  const { noteFeeAccount } = await import(new URL('api/src/billing.js', dist));
+  await noteFeeAccount(repository, seller.id, 'Cancels A Lot');
+  const flag = await noteSellerCancel(repository, seller.id);
+  assert.equal(flag.status, 'flagged', '2 of 6 is 33%, over 20%');
+  assert.equal(flag.directPaused, true);
+  assert.ok(await directRefusal(repository, seller.id), 'direct buying refused');
+  const mine = (await cancels.myCancelsRoute(req({ headers: seller.headers }), ctx)).jsonBody;
+  assert.equal(mine.directPaused, true);
+  assert.equal(mine.stats.cancelled, 2);
+  assert.equal((await cancels.cancelAppealRoute(req({ headers: seller.headers, body: { text: 'short' } }), ctx)).status, 400);
+  const appealed = await cancels.cancelAppealRoute(req({ headers: seller.headers, body: { text: 'A supplier shipment was lost at customs.' } }), ctx);
+  assert.equal(appealed.jsonBody.flag.status, 'appealed');
+  const ops = (await cancels.opsCancelsRoute(req({ headers: shop.headers }), ctx)).jsonBody;
+  assert.equal(ops.rows[0].userId, seller.id, 'appeals come first');
+  assert.equal((await cancels.opsCancelsRoute(req({ headers: seller.headers }), ctx)).status, 403);
+  const cleared = await cancels.opsCancelDecideRoute(req({ headers: shop.headers, params: { id: seller.id }, body: { decision: 'clear', note: 'Customs loss confirmed' } }), ctx);
+  assert.equal(cleared.jsonBody.flag.status, 'cleared');
+  assert.equal(await directRefusal(repository, seller.id), null, 'direct buying back on');
+  assert.equal((await noteSellerCancel(repository, seller.id)).status, 'cleared', 'old cancellations do not flag again');
+});
+
+/* ── Loyalty cards ─────────────────────────────────────────────────────── */
+console.log('loyalty cards');
+
+await check('a Pro shop’s card stamps every delivered order; cashback lands as store credit once, a free item waits for the shop', async () => {
+  const bad = await loyalty.saveCardRoute(req({ headers: shop.headers, body: { name: 'X', rewards: [] } }), ctx);
+  assert.equal(bad.status, 400);
+  const tooMuch = await loyalty.saveCardRoute(req({ headers: shop.headers, body: { name: 'Greedy', rewards: [{ kind: 'cashback_flat', amountMinor: 9_99_900 }] } }), ctx);
+  assert.equal(tooMuch.status, 400, 'over the operators’ cap');
+  const saved = await loyalty.saveCardRoute(req({
+    headers: shop.headers,
+    body: { name: 'Regulars', theme: 'gold', rewards: [null, { kind: 'cashback_flat', amountMinor: 5_000 }, { kind: 'free_item', text: 'Sticker pack' }] },
+  }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  const card = saved.jsonBody.card;
+  const buyer = await newPerson('Loyal Buyer');
+  for (let index = 0; index < 3; index += 1) {
+    const at = new Date(Date.now() + 1_000 + index).toISOString();
+    await repository.createOrder({
+      ...structuredClone(anyOrder), id: `ord_loy_${index}_${buyer.id.slice(-4)}`, sellerId: shop.id, buyerId: buyer.id,
+      status: 'delivered', completedAt: at, placedAt: at, quantity: 1, unitPriceMinor: 20_000,
+    });
+  }
+  const view = (await loyalty.shopLoyaltyRoute(req({ headers: buyer.headers, params: { id: shop.id } }), ctx)).jsonBody;
+  const row = view.cards.find((entry) => entry.card.id === card.id);
+  assert.equal(row.stamps, 3);
+  assert.equal(row.ready, 1, 'the sticker pack waits');
+  await loyalty.shopLoyaltyRoute(req({ headers: buyer.headers, params: { id: shop.id } }), ctx);
+  const credits = (await repository.getUserById(buyer.id)).storeCredits.filter((credit) => credit.id.startsWith('loyalty:'));
+  assert.deepEqual(credits.map((credit) => credit.amountMinor), [5_000], 'cashback paid once, however often it is read');
+  const wallet = (await loyalty.myLoyaltyRoute(req({ headers: buyer.headers }), ctx)).jsonBody.cards;
+  assert.equal(wallet.find((entry) => entry.card.id === card.id).rewards.length, 2);
+  const owed = (await loyalty.shopRewardsRoute(req({ headers: shop.headers }), ctx)).jsonBody.rewards;
+  const sticker = owed.find((entry) => entry.status === 'ready' && entry.buyerId === buyer.id);
+  assert.ok(sticker);
+  assert.equal((await loyalty.useRewardRoute(req({ headers: shop.headers, params: { id: sticker.id } }), ctx)).status, 200);
+  assert.equal((await loyalty.useRewardRoute(req({ headers: shop.headers, params: { id: sticker.id } }), ctx)).status, 404, 'once');
+  const outsider = await newPerson('No Pro');
+  assert.equal((await loyalty.saveCardRoute(req({ headers: outsider.headers, body: { name: 'Mine', rewards: [{ kind: 'free_shipping' }] } }), ctx)).status, 402);
 });
 
 console.log(`\n${passed} billing checks passed`);

@@ -8,6 +8,7 @@ import { api, type ProStatus } from '../api';
 import { useSession } from '../session';
 import { formatMoney } from '../format';
 import { InfoTip } from './InfoTip';
+import { Modal } from './ui';
 
 /**
  * Figmark's money, wherever it shows on a screen: the Pro badge beside a
@@ -159,7 +160,7 @@ export function CreditChip({ storeId }: { storeId: string | null | undefined }) 
   }, [user, storeId]);
   if (left <= 0) return null;
   return (
-    <Link to="/wallet?tab=credit" className="creditchip" title="Store credit here - it comes off your next order on its own">
+    <Link to="/wallet" className="creditchip" title="Store credit here - it comes off your next order on its own">
       <span aria-hidden="true">🎟️</span> {formatMoney(left)} credit
     </Link>
   );
@@ -245,4 +246,70 @@ export function FeeLockBanner({ owner }: { owner?: { feeLock?: { overdueMinor: n
 export function useIAmPro(): boolean {
   const { user } = useSession();
   return isProActive(user?.pro ?? null);
+}
+
+/* ── Flagged for cancelling too often ────────────────────────────────────── */
+
+/**
+ * Over the shop of a seller flagged for calling off too many orders: what
+ * happened, what it means (direct buying paused), and the appeal button.
+ */
+export function CancelFlagBanner() {
+  const { user } = useSession();
+  const [flag, setFlag] = useState(user?.cancelFlag ?? null);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => { setFlag(user?.cancelFlag ?? null); }, [user?.cancelFlag]);
+  if (!flag || flag.status === 'cleared') return null;
+
+  async function send() {
+    setBusy(true);
+    setProblem(null);
+    try {
+      setFlag((await api.appealCancels(text.trim())).flag);
+      setOpen(false);
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : 'That did not send.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="cancelflag" role="alert">
+      {flag.cancelled > 0 && <span className="cancelflag__meter" aria-hidden="true"><b>{Math.round(flag.ratePct)}%</b><small>cancelled</small></span>}
+      <div className="cancelflag__text">
+        <b>{flag.directPaused ? 'Direct buying is paused on your shop' : 'Your shop is flagged for cancellations'}</b>
+        <span>
+          {flag.cancelled > 0 ? `You called off ${flag.cancelled} of your last ${flag.orders} orders.` : 'The Figmark team paused it.'}
+          {flag.directPaused ? ' Buyers can still order and pay through Figmark with Buyer Protection.' : ''}
+          {flag.status === 'appealed' ? ' Your appeal is with the Figmark team.' : ''}
+          {flag.note ? ` Figmark: “${flag.note}”` : ''}
+        </span>
+      </div>
+      {flag.status === 'appealed'
+        ? <span className="badge">Appeal sent</span>
+        : <button type="button" className="btn btn--sm" onClick={() => setOpen(true)}>Appeal to admin</button>}
+      {open && (
+        <Modal title="Appeal to the Figmark team" onClose={() => setOpen(false)}>
+          <div className="stack">
+            <p className="muted" style={{ margin: 0 }}>
+              Tell us why these orders were called off - stock lost in transit, a supplier let you down, buyers asked you to.
+              The team reads every appeal and can switch direct buying back on.
+            </p>
+            <label className="field">
+              <span>What happened</span>
+              <textarea rows={4} value={text} maxLength={1000} onChange={(event) => setText(event.target.value)} />
+            </label>
+            {problem && <p className="notice notice--error">{problem}</p>}
+            <button type="button" className="btn" disabled={busy || text.trim().length < 10} onClick={() => void send()}>
+              {busy ? 'Sending…' : 'Send appeal'}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
 }

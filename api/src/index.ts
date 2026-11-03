@@ -27,6 +27,8 @@ import './functions/insight-routes.js';
 import './functions/profit-routes.js';
 import './functions/pro-routes.js';
 import './functions/billing-routes.js';
+import './functions/cancel-routes.js';
+import './functions/loyalty-routes.js';
 import './functions/customer-routes.js';
 import './functions/service-routes.js';
 import './functions/store-routes.js';

@@ -1,0 +1,36 @@
+/* The shop's loyalty cards (components/LoyaltyManager.tsx). */
+.loyman { display: grid; gap: var(--s4); }
+.loyman__cards { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.loyman__card { display: grid; gap: var(--s2); }
+.loyman__meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: var(--t-sm); color: var(--text-dim); }
+.loyman__slots { display: grid; gap: var(--s2); }
+.loyman__slot {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: var(--s2); align-items: center;
+  padding: var(--s2); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2);
+}
+.loyman__slot.is-off { opacity: 0.5; }
+.loyman__num {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  font-weight: 900; font-size: var(--t-sm); background: var(--surface); border: 2px dashed var(--border-strong);
+}
+.loyman__slot.has-reward .loyman__num { border: 0; background: var(--grad-gold); color: var(--gold-ink); }
+.loyman__inputs { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.loyman__inputs > * { flex: 1 1 140px; min-width: 0; }
+.loyman__themes { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.loyman__theme {
+  width: 38px; height: 38px; border-radius: 12px; border: 2px solid transparent; cursor: pointer; padding: 0;
+}
+.loyman__theme.is-on { border-color: var(--text); box-shadow: 0 0 0 3px var(--accent-soft); }
+.loyman__theme--gold { background: linear-gradient(130deg, var(--gold), var(--pink)); }
+.loyman__theme--pink { background: linear-gradient(130deg, var(--pink), var(--coral)); }
+.loyman__theme--mint { background: linear-gradient(130deg, var(--ok), var(--aqua)); }
+.loyman__theme--violet { background: linear-gradient(130deg, var(--violet), var(--blue)); }
+.loyman__theme--ink { background: linear-gradient(130deg, var(--surface-2), var(--bg)); border-color: var(--border-strong); }
+.loyman__items { max-height: 220px; overflow: auto; display: grid; gap: 4px; padding: var(--s2); border-radius: var(--r-md); border: 1px solid var(--border); }
+.loyman__item { display: flex; gap: 8px; align-items: center; font-size: var(--t-sm); }
+.loyman__owed { display: grid; gap: 6px; }
+.loyman__owedrow {
+  display: flex; justify-content: space-between; align-items: center; gap: var(--s2); flex-wrap: wrap;
+  padding: var(--s2) 0; border-top: 1px solid var(--border);
+}
+.loyman__owedrow:first-child { border-top: 0; }

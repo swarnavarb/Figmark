@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
-  DEFAULT_PRICING, PRO_FEATURES, buildStatement, cleanPricing, feeTermsFor, gstFor, gstSplit, platformFee, proLocked,
-  type FeeKind, type ProFeatureId, type FeeLine, type FeeSettlement, type FeeStatement, type FeeTerms, type Pricing,
+  DEFAULT_PRICING, PRO_FEATURES, buildStatement, reconcileFeeBook, cleanPricing, feeTermsFor, gstFor, gstSplit, platformFee, proLocked,
+  type FeeBookEntry, type FeeKind, type ProFeatureId, type FeeLine, type FeeSettlement, type FeeStatement, type FeeTerms, type Pricing,
 } from '../../shared/billing.js';
 import type { Order, User } from '../../shared/models.js';
 import type { OrderStatus } from '../../shared/enums.js';
@@ -190,13 +190,34 @@ export async function feeLinesFor(repository: Repo, owner: User): Promise<FeeLin
   ].filter((line): line is FeeLine => line !== null);
 }
 
+const BOOK_PREFIX = 'fee-book-';
+
+export async function loadFeeBook(repository: Repo, ownerId: string): Promise<Record<string, FeeBookEntry>> {
+  const saved = await repository.getSiteContent(`${BOOK_PREFIX}${ownerId}`);
+  const entries = (saved?.data as { entries?: Record<string, FeeBookEntry> } | undefined)?.entries;
+  return entries && typeof entries === 'object' ? entries : {};
+}
+
+/**
+ * The statement, with closed months held as they were: see `reconcileFeeBook`.
+ * The book is written only when something in it moved.
+ */
 export async function statementFor(repository: Repo, owner: User, now = Date.now()): Promise<FeeStatement> {
-  const [lines, settlements, pricing] = await Promise.all([
+  const [live, settlements, pricing, book] = await Promise.all([
     feeLinesFor(repository, owner),
     loadSettlements(repository, owner.id),
     loadPricing(repository),
+    loadFeeBook(repository, owner.id),
   ]);
-  return buildStatement(lines, settlements, pricing.graceDays, now);
+  const reconciled = reconcileFeeBook(live, book, now);
+  if (reconciled.changed) {
+    const id = `${BOOK_PREFIX}${owner.id}`;
+    const at = new Date().toISOString();
+    await repository.mutateSiteContent(id, (current) => ({
+      id, data: { entries: reconciled.book }, updatedBy: 'system', createdAt: current?.createdAt ?? at, updatedAt: at,
+    }));
+  }
+  return buildStatement(reconciled.lines, settlements, pricing.graceDays, now);
 }
 
 /* ── The lock ────────────────────────────────────────────────────────────── */

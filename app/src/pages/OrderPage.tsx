@@ -1166,7 +1166,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
 
   const protectionFee = quote.protectionFeeMinor;
   const canProtect = quote.protectionAvailable;
-  const canPayDirect = quote.sellerPayment !== null;
+  const canPayDirect = quote.sellerPayment !== null && !quote.directPaused;
 
   /* Credit the seller kept for this buyer counts towards what is due now -
      an advance first, then the balance - so the price on every way to buy
@@ -1245,7 +1245,9 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         <span className="buyway__icon"><Svg name="coin" size={22} /></span>
         <span className="buyway__title">Buy directly from the seller</span>
         <span className="buyway__note">
-          {canPayDirect
+          {quote.directPaused
+            ? <>Paused for this shop for now - pay through Figmark with Buyer Protection instead.</>
+            : canPayDirect
             ? <>Pay <PersonLink party={quote.seller} /> yourself, then show them it went through. Nothing is held: if something goes wrong, a community manager can act against the seller, but cannot get your money back. Only Buyer Protection can.</>
             : <><PersonLink party={quote.seller} /> has not added any payment details, so there is nowhere to send the money.</>}
         </span>

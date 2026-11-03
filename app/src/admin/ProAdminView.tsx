@@ -190,3 +190,106 @@ export function FeesAdminView() {
     </div>
   );
 }
+
+/**
+ * Every seller with sales and how many of their orders they called off. Over
+ * the limit, a seller is flagged (and, if the pricing says so, paid only
+ * through the gateway) until an operator clears them. Appeals first.
+ */
+export function CancelsAdminView() {
+  const [data, setData] = useState<Awaited<ReturnType<typeof admin.cancels>> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'flagged' | 'all'>('flagged');
+  const load = useCallback(() => admin.cancels().then(setData).catch((err) => setError(message(err, 'Could not load cancellations.'))), []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function decide(userId: string, decision: 'clear' | 'keep' | 'pause', ask: string) {
+    const note = window.prompt(ask);
+    if (note === null) return;
+    setBusy(userId);
+    setError(null);
+    try {
+      await admin.decideCancel(userId, decision, note.trim() || undefined);
+      await load();
+    } catch (err) {
+      setError(message(err, 'That did not go through.'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!data && !error) return <Loading />;
+  const rows = (data?.rows ?? []).filter((row) => filter === 'all' || row.over || (row.flag && row.flag.status !== 'cleared'));
+  const open = (data?.rows ?? []).filter((row) => row.flag && row.flag.status !== 'cleared');
+  return (
+    <div className="stack">
+      {error && <p className="notice notice--error">{error}</p>}
+      {data && (
+        <>
+          <div className="card card--pad">
+            <div className="row" style={{ flexWrap: 'wrap', gap: 24 }}>
+              <div><div className="faint">Limit</div><b>{data.limit.maxPct}% over {data.limit.windowDays} days</b></div>
+              <div><div className="faint">Flagged</div><b>{open.length}</b></div>
+              <div><div className="faint">Appeals waiting</div><b>{open.filter((row) => row.flag?.status === 'appealed').length}</b></div>
+              <div><div className="faint">Direct buying</div><b>{data.limit.pauseDirect ? 'Paused when flagged' : 'Left on'}</b></div>
+            </div>
+            <p className="field__hint" style={{ margin: '8px 0 0' }}>
+              A seller is counted from {data.limit.minOrders} orders. The limit and the pause are set under Pricing.
+            </p>
+          </div>
+          <div className="tabs">
+            <button type="button" className={`tab${filter === 'flagged' ? ' is-on' : ''}`} onClick={() => setFilter('flagged')}>Flagged &amp; over the limit</button>
+            <button type="button" className={`tab${filter === 'all' ? ' is-on' : ''}`} onClick={() => setFilter('all')}>Every seller</button>
+          </div>
+          <div className="card">
+            {rows.length === 0 ? <p className="muted card--pad">Nobody is over the limit.</p> : rows.map((row) => {
+              const flag = row.flag;
+              const flagged = flag && flag.status !== 'cleared';
+              return (
+                <div key={row.userId} className="userrow" style={{ cursor: 'default', alignItems: 'flex-start' }}>
+                  <div className="userrow__main">
+                    <span className="userrow__name">
+                      {row.name} · <span className={row.over ? 'cancelrate is-over' : 'cancelrate'}>{row.ratePct}%</span> cancelled
+                    </span>
+                    <span className="userrow__meta">
+                      {row.cancelled} of {row.orders} orders in {data.limit.windowDays} days
+                      {flag ? ` · flagged ${timeAgo(flag.at)}` : ''}
+                      {flag?.decidedBy ? ` · last decided by ${flag.decidedBy}` : ''}
+                    </span>
+                    {flag?.appeal && flag.status === 'appealed' && (
+                      <blockquote className="cancelappeal">“{flag.appeal.text}”<small> - {timeAgo(flag.appeal.at)}</small></blockquote>
+                    )}
+                  </div>
+                  <div className="userrow__tags">
+                    {flag?.status === 'appealed' && <span className="badge badge--warn">Appeal</span>}
+                    {flagged && flag.directPaused && <span className="badge badge--danger">Direct paused</span>}
+                    {flag?.status === 'cleared' && <span className="badge badge--ok">Cleared</span>}
+                    {flagged && (
+                      <button type="button" className="btn btn--sm" disabled={busy !== null}
+                        onClick={() => void decide(row.userId, 'clear', `Clear ${row.name} and switch direct buying back on? A note for them (optional):`)}>
+                        Clear
+                      </button>
+                    )}
+                    {flag?.status === 'appealed' && (
+                      <button type="button" className="btn btn--quiet btn--sm" disabled={busy !== null}
+                        onClick={() => void decide(row.userId, 'keep', `Turn down ${row.name}'s appeal? Tell them why:`)}>
+                        Turn down
+                      </button>
+                    )}
+                    {!flagged && (
+                      <button type="button" className="btn btn--quiet btn--sm" disabled={busy !== null}
+                        onClick={() => void decide(row.userId, 'pause', `Pause direct buying for ${row.name}? Tell them why:`)}>
+                        Pause direct
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

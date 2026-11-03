@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { FEE_KIND_LABELS, type FeeKind } from '@shared/billing';
 import { ApiRequestError, api, type FeesView, type ProView } from '../api';
 import { useSession } from '../session';
 import { formatMoney } from '../format';
-import { ErrorNotice, PageError, useConfirm } from '../components/ui';
+import { ErrorNotice, Modal, PageError, useConfirm } from '../components/ui';
 import { PageLoading } from '../components/Feedback';
 import { FeeHint, FeeLockBanner, ProBadge, forgetProStatus } from '../components/Billing';
 import '../styles/BillingPages.css';
@@ -24,6 +24,36 @@ const message = (err: unknown, fallback: string) => (err instanceof ApiRequestEr
 
 /* ── Pro ─────────────────────────────────────────────────────────────────── */
 
+interface Benefit { id: string; icon: string; punch: string; title: string; benefit: string; line?: string }
+
+/**
+ * A hand-drawn underline under a word: one rough stroke, drawn in as the
+ * page opens. Decoration only - the words read the same without it.
+ */
+function Hand({ children, tone = 'pink', thin = false }: { children: ReactNode; tone?: 'pink' | 'gold' | 'lime'; thin?: boolean }) {
+  return (
+    <span className={`handul handul--${tone}${thin ? ' handul--thin' : ''}`}>
+      {children}
+      <svg className="handul__line" viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path d="M3 9.5C34 4.2 61 3.4 92 5.6c27 1.9 52 4.6 79 2.8 9-.6 17-1.9 26-3.6" pathLength={1} />
+        {!thin && <path className="handul__echo" d="M14 12.4c38-3.1 77-3.4 116-1.5 19 .9 38 1 57-.6" pathLength={1} />}
+      </svg>
+    </span>
+  );
+}
+
+/** A rough ring drawn round the best price. */
+function Ring({ children }: { children: ReactNode }) {
+  return (
+    <span className="handring">
+      {children}
+      <svg className="handring__line" viewBox="0 0 200 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path d="M164 14C128 2 58 3 24 18 2 28 4 54 30 66c34 15 106 14 142-2 22-10 26-34 6-46-16-9-48-14-82-12" pathLength={1} />
+      </svg>
+    </span>
+  );
+}
+
 export function ProPage() {
   const { refresh } = useSession();
   const { confirm, dialog } = useConfirm();
@@ -32,6 +62,7 @@ export function ProPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [done, setDone] = useState<string | null>(null);
+  const [openBenefit, setOpenBenefit] = useState<string | null>(null);
 
   useEffect(() => {
     api.myPro().then(setView).catch((err) => setError(message(err, 'Could not load Pro.')));
@@ -61,74 +92,109 @@ export function ProPage() {
   const cheapest = Math.min(...view.plans.map(perMonth));
   const dearest = Math.max(...view.plans.map(perMonth));
 
+  const benefits: Benefit[] = [
+    ...(view.feeDiscount.bp > 0 ? [{
+      id: 'fee', icon: '💸', punch: `${view.feeDiscount.bp / 100}% off every platform fee`, title: 'Lower platform fee',
+      benefit: `Figmark takes ${view.feeDiscount.bp / 100}% less from every sale, artist job and kg forwarded`
+        + `${view.feeDiscount.days > 0 ? ` for ${view.feeDiscount.days} days after each purchase` : ' for as long as you are Pro'}. `
+        + 'On a busy month that alone can pay for the plan.',
+    }] : []),
+    {
+      id: 'bumps', icon: '🚀', punch: 'Jump to the top of Discover', title: 'Free bump points',
+      benefit: `Every plan comes with bump points. Spend one to lift an item to the top of Discover, where buyers look first. You have ${view.bumpPoints} now.`,
+    },
+    ...view.features.filter((feature) => feature.pro).map((feature) => ({
+      id: feature.id, icon: feature.icon, punch: feature.punch, title: feature.title, benefit: feature.benefit, line: feature.line,
+    })),
+    {
+      id: 'badge', icon: '🏁', punch: 'Look the part everywhere', title: 'The PRO badge',
+      benefit: 'A slanted gold PRO beside your shop\'s name on every item, in Social, in search and on your shop page. Buyers see a shop that takes selling seriously.',
+    },
+  ];
+  const open = benefits.find((entry) => entry.id === openBenefit) ?? null;
+
   return (
     <div className="stack billpage">
       {dialog}
-      <section className={`prohero${view.active ? ' is-on' : ''}`}>
-        <div className="prohero__badge"><ProBadge size="md" /></div>
-        <h1 className="prohero__title">Figmark Pro</h1>
-        {view.active ? (
-          <p className="prohero__line">
-            You&apos;re Pro until <b>{date(view.until)}</b> · {view.daysLeft} days left.
-            {view.discountBp > 0 && <> Your platform fee is <b>{view.discountBp / 100}% lower</b> until {date(view.discountUntil)}.</>}
-          </p>
-        ) : (
-          <p className="prohero__line">Every Pro tool for your shop, a lower platform fee to start, free bump points, and the PRO badge beside your name.</p>
-        )}
+      <section className={`gohero${view.active ? ' is-on' : ''}`}>
+        <span className="gohero__lines" aria-hidden="true" />
+        <div className="gohero__top">
+          <ProBadge size="md" />
+          {view.active && <span className="gohero__live">● Live · {view.daysLeft} days left</span>}
+        </div>
+        <h1 className="gohero__title">
+          {view.active ? <>You&apos;re <Hand tone="lime">Pro.</Hand></> : <>Go <Hand>Pro.</Hand><br />Sell faster.</>}
+        </h1>
+        <p className="gohero__line">
+          {view.active
+            ? <>Pro until <b>{date(view.until)}</b>.{view.discountBp > 0 && <> Your platform fee is <Hand tone="gold" thin>{view.discountBp / 100}% lower</Hand> until {date(view.discountUntil)}.</>}</>
+            : <>Every Pro tool, a <Hand tone="gold" thin>lower fee</Hand> to start, free bumps and the badge. From <b>{formatMoney(cheapest)}</b> a month.</>}
+        </p>
+        {!view.active && view.enabled && <a className="gohero__cta" href="#plans">Pick a plan <span aria-hidden="true">→</span></a>}
         {!view.enabled && <p className="notice notice--info">Pro tools are open to every shop right now - there is nothing to buy.</p>}
       </section>
+
+      <div className="goticker" aria-hidden="true">
+        <span>{[...benefits, ...benefits].map((entry, index) => <b key={index}>{entry.icon} {entry.title}</b>)}</span>
+      </div>
 
       {error && <ErrorNotice message={error} />}
       {done && <p className="notice notice--ok" role="status">{done}</p>}
 
-      <section className="card card--pad stack">
-        <h2>What you get</h2>
-        <ul className="profeats">
-          {view.features.filter((feature) => feature.pro).map((feature) => (
-            <li key={feature.id} className="profeat">
-              <span className="profeat__icon" aria-hidden="true">{feature.icon}</span>
-              <span><b>{feature.title}</b><small>{feature.line}</small></span>
+      <section className="stack">
+        <h2 className="gohead"><Hand thin>What you get</Hand></h2>
+        <ol className="gobens">
+          {benefits.map((entry, index) => (
+            <li key={entry.id} style={{ ['--i' as string]: index }}>
+              <button type="button" className="goben" onClick={() => setOpenBenefit(entry.id)} aria-haspopup="dialog">
+                <span className="goben__num" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                <span className="goben__icon" aria-hidden="true">{entry.icon}</span>
+                <span className="goben__text">
+                  <b className="goben__punch">{entry.punch}</b>
+                  <small>{entry.title}</small>
+                </span>
+                <span className="goben__go" aria-hidden="true">+</span>
+              </button>
             </li>
           ))}
-          {view.feeDiscount.bp > 0 && (
-            <li className="profeat">
-              <span className="profeat__icon" aria-hidden="true">💸</span>
-              <span>
-                <b>{view.feeDiscount.bp / 100}% off the platform fee</b>
-                <small>{view.feeDiscount.days > 0 ? `For ${view.feeDiscount.days} days after each purchase.` : 'For as long as you are Pro.'} On every sale, artist job and kg forwarded.</small>
-              </span>
-            </li>
-          )}
-          <li className="profeat">
-            <span className="profeat__icon" aria-hidden="true">🚀</span>
-            <span><b>Free bump points</b><small>Lift your items to the top of Discover. You have {view.bumpPoints} now.</small></span>
-          </li>
-          <li className="profeat">
-            <span className="profeat__icon" aria-hidden="true">🏁</span>
-            <span><b>The PRO badge <ProBadge /></b><small>Beside your shop&apos;s name, on every item, in Social and in search.</small></span>
-          </li>
-        </ul>
+        </ol>
       </section>
 
+      {open && (
+        <Modal title={open.title} onClose={() => setOpenBenefit(null)}>
+          <div className="gopop">
+            <span className="gopop__icon" aria-hidden="true">{open.icon}</span>
+            <p className="gopop__punch"><Hand>{open.punch}</Hand></p>
+            <p className="gopop__body">{open.benefit}</p>
+            {open.line && <p className="gopop__line">{open.line}</p>}
+            {view.enabled && !view.active && (
+              <a className="btn gopop__cta" href="#plans" onClick={() => setOpenBenefit(null)}>Get it with Pro</a>
+            )}
+          </div>
+        </Modal>
+      )}
+
       {view.enabled && (
-        <section className="stack">
-          <h2>{view.active ? 'Add more time' : 'Subscribe to Pro'}</h2>
-          <div className="proplans">
+        <section className="stack" id="plans">
+          <h2 className="gohead"><Hand thin>{view.active ? 'Add more time' : 'Pick your plan'}</Hand></h2>
+          <div className="goplans">
             {view.plans.map((plan) => {
               const saving = dearest > 0 && perMonth(plan) < dearest ? Math.round((1 - perMonth(plan) / dearest) * 100) : 0;
+              const top = plan.months === best && perMonth(plan) === cheapest;
               return (
-                <article key={plan.months} className={`proplan${plan.months === best ? ' is-best' : ''}`}>
-                  {plan.months === best && perMonth(plan) === cheapest && <span className="proplan__flag">Best value</span>}
-                  <h3 className="proplan__months">{plan.months} months</h3>
-                  <p className="proplan__price">{formatMoney(plan.totalMinor)}</p>
-                  <p className="proplan__per">{formatMoney(perMonth(plan))} a month{saving > 0 && <> · <b>save {saving}%</b></>}</p>
+                <article key={plan.months} className={`goplan${top ? ' is-best' : ''}`}>
+                  {top && <span className="goplan__flag">Best value</span>}
+                  <span className="goplan__months" aria-hidden="true">{plan.months}</span>
+                  <h3 className="goplan__label">{plan.months} months</h3>
+                  <p className="goplan__price">{top ? <Ring>{formatMoney(plan.totalMinor)}</Ring> : formatMoney(plan.totalMinor)}</p>
+                  <p className="goplan__per">{formatMoney(perMonth(plan))}/month{saving > 0 && <> · <b>save {saving}%</b></>}</p>
                   {view.gst && plan.gstMinor > 0 && (
-                    <p className="faint proplan__tax">
+                    <p className="faint goplan__tax">
                       {view.gst.mode === 'inclusive' ? 'Includes' : 'Plus'} {view.gst.rateBp / 100}% GST ({formatMoney(plan.gstMinor)})
                     </p>
                   )}
-                  {plan.bumpPoints > 0 && <p className="proplan__bumps">🚀 {plan.bumpPoints} bump points</p>}
-                  <button type="button" className="btn proplan__buy" disabled={busy !== null}
+                  {plan.bumpPoints > 0 && <p className="goplan__bumps">🚀 {plan.bumpPoints} bump points</p>}
+                  <button type="button" className="goplan__buy" disabled={busy !== null}
                     onClick={() => void (async () => {
                       const yes = await confirm({
                         title: `Pro for ${plan.months} months`,
@@ -137,7 +203,7 @@ export function ProPage() {
                       });
                       if (yes) await apply(`buy${plan.months}`, () => api.buyPro(plan.months), `Welcome to Pro - ${plan.months} months added.`);
                     })()}>
-                    {busy === `buy${plan.months}` ? 'Paying…' : view.active ? 'Add these months' : 'Subscribe'}
+                    {busy === `buy${plan.months}` ? 'Paying…' : view.active ? 'Add these months' : 'Go Pro'} <span aria-hidden="true">→</span>
                   </button>
                 </article>
               );
@@ -147,8 +213,8 @@ export function ProPage() {
       )}
 
       {view.enabled && (
-        <section className="card card--pad stack">
-          <h2>Have a code?</h2>
+        <section className="goticket stack">
+          <h2 className="gohead"><Hand thin>Have a code?</Hand></h2>
           <form className="provoucher" onSubmit={(event) => {
             event.preventDefault();
             if (!code.trim()) return;
@@ -319,7 +385,9 @@ export function FeesPage() {
                 </span>
                 <span className="billrow__end">
                   <b>{formatMoney(line.totalMinor)}</b>
-                  <span className={`badge${line.via === 'gateway' ? ' badge--ok' : ''}`}>{line.via === 'gateway' ? 'Taken by gateway' : 'Direct'}</span>
+                  <span className={`badge${line.reversalOf ? ' badge--ok' : line.via === 'gateway' ? ' badge--ok' : ''}`}>
+                    {line.reversalOf ? 'Taken off this month' : line.via === 'gateway' ? 'Taken by gateway' : 'Direct'}
+                  </span>
                 </span>
               </li>
             ))}

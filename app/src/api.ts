@@ -1,4 +1,5 @@
-import type { FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
+import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
+import type { CardProgress, IssuedReward, LoyaltyCard, LoyaltySettings } from '@shared/loyalty';
 import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
@@ -763,6 +764,8 @@ export interface Checkout {
   protectionFeeMinor: number;
   /** False when no community manager can be assigned to it right now. */
   protectionAvailable: boolean;
+  /** The shop takes protected payments only for now. */
+  directPaused?: boolean;
 }
 
 /** One order waiting on the seller to say whether the money arrived. */
@@ -907,6 +910,7 @@ export interface MyRefund {
   itemName: string;
   currency: string;
   sellerName: string;
+  sellerId: string;
   creditId: string;
   origin: RefundOrigin;
   reason: string | null;
@@ -2711,7 +2715,7 @@ export interface ProView {
   trialUsed: boolean;
   plans: (ProPlan & { baseMinor: number; gstMinor: number; totalMinor: number })[];
   feeDiscount: { bp: number; days: number };
-  features: { id: ProFeatureId; icon: string; title: string; line: string; pro: boolean }[];
+  features: { id: ProFeatureId; icon: string; title: string; line: string; punch: string; benefit: string; pro: boolean }[];
   locked: Record<ProFeatureId, boolean>;
   bumpPoints: number;
   history: ProGrant[];
@@ -2729,6 +2733,20 @@ export interface GiftsView {
   store: { kind: GiverKind; ownerId: string; name: string };
   gifts: StoreGift[];
   people: { id: string; name: string; handle: string | null }[];
+}
+
+/** A shop's live loyalty cards, and where the viewer stands on each. */
+export interface ShopLoyalty {
+  live: boolean;
+  shopName?: string;
+  cards: {
+    card: Omit<LoyaltyCard, 'listingIds'> & { listingIds: number | null };
+    stamps: number;
+    total: number;
+    next: CardProgress['next'];
+    ready: number;
+    signedIn: boolean;
+  }[];
 }
 
 export const api = {
@@ -2750,6 +2768,18 @@ export const api = {
   giftsReceived: () => request<{ gifts: StoreGift[] }>('/me/gifts/received'),
   answerGift: (id: string, arrived: boolean) => post<{ status: StoreGift['status'] }>(`/me/gifts/${encodeURIComponent(id)}/answer`, { arrived }),
   myStoreCredit: () => request<{ credits: { storeId: string; storeName: string; leftMinor: number }[] }>('/me/store-credit'),
+  myCancels: () => request<{ stats: CancelStats; limit: CancelSettings; flag: CancelFlag | null; directPaused: boolean }>('/me/cancels'),
+  appealCancels: (text: string) => post<{ flag: CancelFlag }>('/me/cancels/appeal', { text }),
+  shopLoyalty: (ownerId: string, listingId?: string) =>
+    request<ShopLoyalty>(`/loyalty/shop/${encodeURIComponent(ownerId)}${listingId ? `?listing=${encodeURIComponent(listingId)}` : ''}`),
+  myLoyalty: () => request<{ cards: CardProgress[] }>('/me/loyalty'),
+  myLoyaltyCards: () => request<{
+    cards: LoyaltyCard[]; stats: Record<string, { holders: number; stamps: number }>; settings: LoyaltySettings; locked: boolean; stampsPerCard: number;
+  }>('/me/loyalty/cards'),
+  saveLoyaltyCard: (card: Partial<LoyaltyCard>) => post<{ card: LoyaltyCard }>('/me/loyalty/cards/save', card),
+  deleteLoyaltyCard: (id: string) => post<{ deleted: string }>(`/me/loyalty/cards/${encodeURIComponent(id)}/delete`, {}),
+  loyaltyRewardsOwed: () => request<{ rewards: IssuedReward[] }>('/me/loyalty/rewards'),
+  useLoyaltyReward: (id: string) => post<{ used: string }>(`/me/loyalty/rewards/${encodeURIComponent(id)}/use`, {}),
 
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),

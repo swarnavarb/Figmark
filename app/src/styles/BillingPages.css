@@ -1,60 +1,164 @@
 /* Pro and platform fees (pages/BillingPages.tsx): one chunk, its own sheet. */
 
-.billpage { max-width: 760px; margin: 0 auto; }
+.billpage { max-width: 760px; margin: 0 auto; padding: var(--s3) var(--s3) 110px; }
 .billpage h2 { margin: 0; font-size: var(--t-lg, 18px); }
 
-/* The hero: dark, with a gold-to-pink track behind PRO. */
-.prohero {
-  position: relative; overflow: hidden; display: grid; gap: var(--s2); padding: var(--s4) var(--s4) 20px;
-  border-radius: var(--r-lg); border: 1px solid rgba(245, 158, 11, 0.35);
+/* ── Pro: fast, slanted, gold on dark ───────────────────────────────────── */
+
+/* A hand-drawn stroke under a word, drawn in as the page opens. */
+.handul { position: relative; display: inline-block; white-space: nowrap; z-index: 0; }
+.handul__line {
+  position: absolute; left: -4%; right: -4%; bottom: -0.22em; width: 108%; height: 0.42em; z-index: -1;
+  overflow: visible; fill: none; stroke: var(--pink); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round;
+}
+.handul__line path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: hand-draw 650ms cubic-bezier(0.6, 0, 0.3, 1) 220ms forwards; }
+.handul__line .handul__echo { stroke-width: 2; opacity: 0.7; animation-delay: 520ms; }
+.handul--gold .handul__line { stroke: var(--gold); }
+.handul--lime .handul__line { stroke: var(--lime); }
+.handul--thin .handul__line { height: 0.32em; bottom: -0.16em; stroke-width: 2.6; }
+@keyframes hand-draw { to { stroke-dashoffset: 0; } }
+
+.handring { position: relative; display: inline-block; padding: 0 0.15em; }
+.handring__line {
+  position: absolute; inset: -32% -14%; width: 128%; height: 164%; overflow: visible; pointer-events: none;
+  fill: none; stroke: var(--gold); stroke-width: 2.6; stroke-linecap: round;
+}
+.handring__line path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: hand-draw 900ms cubic-bezier(0.6, 0, 0.3, 1) 500ms forwards; }
+
+.gohero {
+  position: relative; overflow: hidden; display: grid; gap: var(--s3); padding: 28px var(--s4) 26px;
+  border-radius: var(--r-lg); background: var(--bg); isolation: isolate;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 30px 60px -30px rgba(236, 72, 153, 0.55);
+}
+.gohero.is-on { border-color: rgba(163, 230, 53, 0.45); }
+/* Speed lines streaking past behind the words. */
+.gohero__lines {
+  position: absolute; inset: -40% -20%; z-index: -1; pointer-events: none;
   background:
-    repeating-linear-gradient(115deg, transparent 0 22px, rgba(255, 255, 255, 0.03) 22px 26px),
-    radial-gradient(120% 140% at 100% 0%, rgba(236, 72, 153, 0.28), transparent 55%),
-    radial-gradient(120% 140% at 0% 100%, rgba(245, 158, 11, 0.24), transparent 55%),
-    var(--surface);
+    repeating-linear-gradient(115deg, transparent 0 34px, rgba(245, 158, 11, 0.16) 34px 37px, transparent 37px 70px, rgba(236, 72, 153, 0.14) 70px 72px),
+    radial-gradient(60% 80% at 100% 0%, rgba(236, 72, 153, 0.35), transparent 70%),
+    radial-gradient(60% 80% at 0% 100%, rgba(245, 158, 11, 0.28), transparent 70%);
+  animation: gopro-speed 2.4s linear infinite;
 }
-.prohero.is-on { border-color: rgba(52, 211, 153, 0.45); }
-.prohero__badge { justify-self: start; }
-.prohero__title {
-  margin: 0; font-size: calc(clamp(26px, 6vw, 36px) * var(--text-scale)); font-style: italic; font-weight: 900; letter-spacing: -0.01em;
-  background: linear-gradient(100deg, #FDE047, var(--gold) 45%, var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent;
+@keyframes gopro-speed { from { transform: translateX(0); } to { transform: translateX(-82px); } }
+.gohero__top { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.gohero__live {
+  padding: 3px 10px; border-radius: var(--r-pill); font-size: var(--t-xs); font-weight: 800; letter-spacing: 0.04em;
+  color: var(--lime-ink); background: var(--lime);
 }
-.prohero__line { margin: 0; color: var(--text-dim); max-width: 60ch; }
-.prohero__line b { color: var(--text); }
+.gohero__title {
+  margin: 0; color: var(--text); font: italic 900 calc(clamp(38px, 11vw, 64px) * var(--text-scale))/1.05 var(--display);
+  letter-spacing: -0.035em; text-transform: uppercase; transform: skewX(-6deg); transform-origin: left; padding-bottom: 0.08em;
+}
+.gohero__line { margin: 0; max-width: 52ch; color: var(--text-dim); font-size: var(--t-md); }
+.gohero__line b { color: var(--text); }
+.gohero__cta {
+  justify-self: start; display: inline-flex; gap: 8px; align-items: center; padding: 12px 22px; border-radius: 10px;
+  font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: 0.04em; text-decoration: none;
+  color: var(--gold-ink); background: linear-gradient(100deg, var(--gold-text), var(--gold) 45%, var(--pink));
+  transform: skewX(-10deg); transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.gohero__cta:hover { transform: skewX(-10deg) translateY(-2px); box-shadow: 0 10px 24px -10px var(--pink); }
+.gohero__cta span { transition: transform 160ms ease; }
+.gohero__cta:hover span { transform: translateX(4px); }
 
-.profeats { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
-.profeat { display: flex; gap: var(--s3); align-items: flex-start; }
-.profeat__icon {
-  flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; font-size: calc(18px * var(--text-scale));
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(236, 72, 153, 0.16));
+/* The benefits running past, like a stadium board. */
+.goticker {
+  overflow: hidden; border-block: 1px solid var(--border); padding: 8px 0;
+  mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
 }
-.profeat b { display: block; }
-.profeat small { color: var(--text-dim); }
+.goticker > span { display: inline-flex; gap: 28px; white-space: nowrap; animation: gopro-ticker 26s linear infinite; }
+.goticker b { font-size: var(--t-xs); font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+@keyframes gopro-ticker { to { transform: translateX(-50%); } }
 
-.proplans { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
-.proplan {
-  position: relative; display: grid; gap: 4px; align-content: start; padding: var(--s4); border-radius: var(--r-lg);
-  border: 1px solid var(--border); background: var(--surface);
+.gohead { margin: 0; font: italic 900 var(--t-lg)/1.2 var(--display); text-transform: uppercase; letter-spacing: 0.01em; }
+
+.gobens { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.gobens > li { animation: gopro-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 50ms); }
+@keyframes gopro-rise { from { opacity: 0; transform: translateY(10px); } }
+.goben {
+  width: 100%; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: var(--s3); align-items: center;
+  padding: 14px var(--s3); border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+  color: inherit; text-align: left; cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
 }
-.proplan.is-best {
-  border-color: transparent;
-  background: linear-gradient(var(--surface), var(--surface)) padding-box,
-    linear-gradient(120deg, #FDE047, var(--gold) 45%, var(--pink)) border-box;
+.goben:hover, .goben:focus-visible { border-color: var(--gold); background: var(--surface-2); transform: translateX(4px); }
+.goben:active { transform: translateX(2px) scale(0.99); }
+.goben__num { font: italic 900 var(--t-sm)/1 var(--display); color: var(--gold); opacity: 0.8; }
+.goben__icon {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; font-size: calc(20px * var(--text-scale));
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(236, 72, 153, 0.18)); transform: rotate(-6deg);
+}
+.goben__text { display: grid; gap: 2px; min-width: 0; }
+.goben__punch { font: italic 900 var(--t-md)/1.15 var(--display); letter-spacing: -0.01em; }
+.goben__text small { color: var(--text-faint); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+.goben__go {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; font-weight: 900;
+  color: var(--gold-ink); background: var(--gold); transition: transform 160ms ease;
+}
+.goben:hover .goben__go { transform: rotate(90deg); }
+
+/* The popup a benefit opens. */
+.gopop { display: grid; gap: var(--s3); justify-items: start; }
+.gopop__icon {
+  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; font-size: calc(28px * var(--text-scale));
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.24), rgba(236, 72, 153, 0.2)); transform: rotate(-6deg);
+}
+.gopop__punch { margin: 0; font: italic 900 var(--t-xl)/1.15 var(--display); letter-spacing: -0.02em; }
+.gopop__punch .handul { white-space: normal; }
+.gopop__body { margin: 0; font-size: var(--t-md); line-height: 1.5; }
+.gopop__line { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+.gopop__cta {
+  margin-top: var(--s1); border: 0; font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--gold-ink); background: linear-gradient(100deg, var(--gold-text), var(--gold) 50%, var(--pink)); transform: skewX(-8deg);
+}
+
+/* Plans, numbered like race bibs. */
+.goplans { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.goplan {
+  position: relative; overflow: hidden; display: grid; gap: 4px; align-content: start; padding: var(--s4); border-radius: 18px;
+  border: 1px solid var(--border); background: var(--surface); transition: transform 160ms ease, border-color 160ms ease;
+}
+.goplan:hover { transform: translateY(-3px); border-color: var(--border-strong); }
+.goplan.is-best {
   border: 2px solid transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(120deg, var(--gold-text), var(--gold) 45%, var(--pink)) border-box;
 }
-.proplan__flag {
-  position: absolute; top: -10px; right: 12px; padding: 1px 10px; border-radius: var(--r-pill);
-  font-size: var(--t-2xs); font-weight: 900; font-style: italic; letter-spacing: 0.05em; text-transform: uppercase;
-  color: #1A0B00; background: linear-gradient(100deg, #FDE047, var(--gold) 60%, var(--pink));
+.goplan__months {
+  position: absolute; right: -6px; top: -18px; font: italic 900 calc(110px * var(--text-scale))/1 var(--display);
+  letter-spacing: -0.06em; color: transparent; -webkit-text-stroke: 1.5px var(--border-strong); pointer-events: none;
 }
-.proplan__months { margin: 0; font-size: var(--t-sm); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
-.proplan__price { margin: 0; font-size: calc(28px * var(--text-scale)); font-weight: 900; }
-.proplan__per { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
-.proplan__per b { color: var(--ok, var(--ok)); }
-.proplan__tax { margin: 0; font-size: var(--t-xs); }
-.proplan__bumps { margin: 0; font-size: var(--t-sm); }
-.proplan__buy { margin-top: var(--s2); }
-.proplan.is-best .proplan__buy { color: var(--gold-ink); border: 0; background: linear-gradient(135deg, var(--gold-text), var(--gold) 55%, var(--pink-text)); }
+.goplan.is-best .goplan__months { -webkit-text-stroke-color: rgba(245, 158, 11, 0.45); }
+.goplan__flag {
+  justify-self: start; padding: 2px 10px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: 900; font-style: italic;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold-ink); background: linear-gradient(100deg, var(--gold-text), var(--gold) 60%, var(--pink));
+}
+.goplan__label { margin: 0; font-size: var(--t-sm); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 800; }
+.goplan__price { margin: 6px 0 0; font: 900 calc(30px * var(--text-scale))/1.1 var(--display); position: relative; }
+.goplan__per { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+.goplan__per b { color: var(--ok); }
+.goplan__tax { margin: 0; font-size: var(--t-xs); }
+.goplan__bumps { margin: 0; font-size: var(--t-sm); font-weight: 700; }
+.goplan__buy {
+  margin-top: var(--s3); display: inline-flex; justify-content: center; gap: 8px; padding: 12px 16px; border: 0; border-radius: 10px; cursor: pointer;
+  font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border-strong);
+  transform: skewX(-8deg); transition: transform 140ms ease, background 140ms ease;
+}
+.goplan__buy:hover:not(:disabled) { transform: skewX(-8deg) translateY(-2px); }
+.goplan__buy:disabled { opacity: 0.6; cursor: default; }
+.goplan.is-best .goplan__buy { color: var(--gold-ink); box-shadow: none; background: linear-gradient(100deg, var(--gold-text), var(--gold) 50%, var(--pink)); }
+
+.goticket {
+  padding: var(--s4); border-radius: 16px; border: 2px dashed var(--border-strong); background: var(--surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gohero__lines, .goticker > span, .gobens > li { animation: none; }
+  .handul__line path, .handring__line path { animation: none; stroke-dashoffset: 0; }
+}
 
 .provoucher { display: flex; gap: var(--s2); flex-wrap: wrap; }
 .provoucher input {

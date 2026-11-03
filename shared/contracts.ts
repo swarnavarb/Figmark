@@ -3,7 +3,7 @@
  * a change to a response shape breaks the typecheck on both sides at once.
  */
 
-import type { ProState } from './billing.js';
+import type { CancelFlag, ProState } from './billing.js';
 import type { UserCapabilities } from './capabilities.js';
 import type {
   ForwarderProfile,
@@ -56,6 +56,7 @@ export interface AuthUser {
   pro?: ProState | null;
   /** Set while platform fees are overdue: the account's shop and stores are hidden until paid. */
   feeLock?: { since: string; overdueMinor: number } | null;
+  cancelFlag?: CancelFlag | null;
   /** Whether sign-in asks this account for an authenticator code. */
   mfaEnabled: boolean;
   /**

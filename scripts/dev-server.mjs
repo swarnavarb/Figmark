@@ -162,6 +162,10 @@ const {
   opsPricingRoute, opsSavePricingRoute, opsVouchersRoute, opsMakeVouchersRoute, opsToggleVoucherRoute, opsGrantProRoute,
   opsFeesRoute, opsRefreshFeesRoute, opsWaiveFeesRoute,
 } = await import(new URL('billing-routes.js', apiRoot));
+const { myCancelsRoute, cancelAppealRoute, opsCancelsRoute, opsCancelDecideRoute } = await import(new URL('cancel-routes.js', apiRoot));
+const {
+  shopLoyaltyRoute, myLoyaltyRoute, myCardsRoute, saveCardRoute, deleteCardRoute, shopRewardsRoute, useRewardRoute,
+} = await import(new URL('loyalty-routes.js', apiRoot));
 const {
   routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute, opsRouteCommonSaveRoute, opsRouteButtonsSaveRoute,
 } = await import(new URL('route-admin-routes.js', apiRoot));
@@ -439,6 +443,17 @@ const routes = [
   ['GET', '/api/ops/fees', opsFeesRoute],
   ['POST', '/api/ops/fees/:id/refresh', opsRefreshFeesRoute],
   ['POST', '/api/ops/fees/:id/waive', opsWaiveFeesRoute],
+  ['GET', '/api/me/cancels', myCancelsRoute],
+  ['POST', '/api/me/cancels/appeal', cancelAppealRoute],
+  ['GET', '/api/ops/cancels', opsCancelsRoute],
+  ['POST', '/api/ops/cancels/:id/decide', opsCancelDecideRoute],
+  ['GET', '/api/loyalty/shop/:id', shopLoyaltyRoute],
+  ['GET', '/api/me/loyalty', myLoyaltyRoute],
+  ['GET', '/api/me/loyalty/cards', myCardsRoute],
+  ['POST', '/api/me/loyalty/cards/save', saveCardRoute],
+  ['POST', '/api/me/loyalty/cards/:id/delete', deleteCardRoute],
+  ['GET', '/api/me/loyalty/rewards', shopRewardsRoute],
+  ['POST', '/api/me/loyalty/rewards/:id/use', useRewardRoute],
   ['GET', '/api/ops/audit', adminAuditRoute],
   ['GET', '/api/wants', wantsBoardRoute],
   ['POST', '/api/wants/new', wantPostRoute],

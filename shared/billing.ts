@@ -17,6 +17,8 @@
  * Money in minor units, percentages in basis points (1% = 100).
  */
 
+import { DEFAULT_LOYALTY, cleanLoyaltySettings, type LoyaltySettings } from './loyalty.js';
+
 /* ── Platform fee ────────────────────────────────────────────────────────── */
 
 export const FEE_MODES = ['percent', 'flat'] as const;
@@ -114,24 +116,34 @@ export interface ProPlan {
 /** Every tool Pro unlocks, as the subscribe page lists it and a locked box names it. */
 export const PRO_FEATURES = [
   {
-    id: 'insights', icon: '✨', title: 'Insights',
+    id: 'insights', icon: '✨', title: 'Insights', punch: 'See what sells before it sells out',
     line: 'This week against last, retention, customer value, price changes and the next-lot forecast.',
+    benefit: 'Know which items are heating up, which customers are drifting away and what your next lot should hold - so you buy what sells and stop guessing.',
   },
   {
-    id: 'calculator', icon: '🧮', title: 'Profit calculator',
+    id: 'calculator', icon: '🧮', title: 'Profit calculator', punch: 'Price it right in seconds',
     line: 'Price abroad in, profit out - with your own rates, saved calculators and the floating calculator.',
+    benefit: 'Type the price abroad and see your landed cost, margin and a selling price at once - with your own freight and exchange rates, everywhere in the app.',
   },
   {
-    id: 'costs', icon: '🧾', title: 'Item cost sheets',
+    id: 'costs', icon: '🧾', title: 'Item cost sheets', punch: 'Real profit, not a guess',
     line: 'What each item really cost you, step by step, so the profit book shows real profit.',
+    benefit: 'Freight, customs, packing and fees, item by item. Your profit book then shows what you actually made - and which items quietly lose you money.',
   },
   {
-    id: 'customers', icon: '🎯', title: 'Customer signals & messaging',
+    id: 'customers', icon: '🎯', title: 'Customer signals & messaging', punch: 'Reach buyers who already want it',
     line: 'Who saved, pledged or wants what, what they might buy next, and messaging the ones you pick.',
+    benefit: 'See who saved, pledged or asked for an item and message just them when it lands - the warmest buyers you have, one tap away.',
   },
   {
-    id: 'powerSale', icon: '⚡', title: 'Power sales & exclusive drops',
+    id: 'powerSale', icon: '⚡', title: 'Power sales & exclusive drops', punch: 'Sell out in minutes',
     line: 'Timed drops for your followers, with quick fill and power templates.',
+    benefit: 'Run a timed drop for your followers. Everybody gets told at once, and the rush fills your orders before the timer runs out.',
+  },
+  {
+    id: 'loyalty', icon: '🎟️', title: 'Loyalty cards', punch: 'Turn buyers into regulars',
+    line: 'Eight-stamp cards with cashback, free items and money off on the stamps you pick.',
+    benefit: 'Every delivered order stamps the buyer\'s card. Put cashback or a free item on the stamps you choose - buyers see how close they are on every item you list, and come back to fill it.',
   },
 ] as const;
 export type ProFeatureId = (typeof PRO_FEATURES)[number]['id'];
@@ -257,6 +269,8 @@ export interface Pricing {
   graceDays: number;
   gst: GstSettings;
   pro: ProSettings;
+  cancels: CancelSettings;
+  loyalty: LoyaltySettings;
   updatedAt?: string | null;
   updatedBy?: string | null;
 }
@@ -288,8 +302,10 @@ export const DEFAULT_PRICING: Pricing = {
     feeDiscountBp: 2_500,
     feeDiscountDays: 30,
     trialDays: 0,
-    features: { insights: true, calculator: true, costs: true, customers: true, powerSale: true },
+    features: { insights: true, calculator: true, costs: true, customers: true, powerSale: true, loyalty: true },
   },
+  cancels: { enabled: true, windowDays: 30, maxPct: 20, minOrders: 5, pauseDirect: true },
+  loyalty: DEFAULT_LOYALTY,
 };
 
 export const PRICE_MAX_MINOR = 1_00_00_000;
@@ -400,7 +416,74 @@ export function cleanPricing(input: unknown): { pricing: Pricing } | { error: st
   const features = (pro.features ?? {}) as Record<string, unknown>;
   for (const id of PRO_FEATURE_IDS) if (features[id] !== undefined) pricing.pro.features[id] = features[id] !== false;
 
+  const cancels = (raw.cancels ?? {}) as Record<string, unknown>;
+  if (cancels.enabled !== undefined) pricing.cancels.enabled = cancels.enabled === true;
+  if (cancels.pauseDirect !== undefined) pricing.cancels.pauseDirect = cancels.pauseDirect === true;
+  for (const [key, low, high, message] of [
+    ['windowDays', 7, 180, 'Cancellations are counted over 7 to 180 days.'],
+    ['maxPct', 1, 100, 'The cancellation limit is 1% to 100%.'],
+    ['minOrders', 1, 1_000, 'Count a seller from 1 to 1,000 orders.'],
+  ] as const) {
+    if (cancels[key] === undefined) continue;
+    const value = int(cancels[key]);
+    if (value === null || value < low || value > high) return { error: message };
+    pricing.cancels[key] = value;
+  }
+
+  const loyalty = cleanLoyaltySettings(raw.loyalty, pricing.loyalty);
+  if ('error' in loyalty) return loyalty;
+  pricing.loyalty = loyalty.loyalty;
+
   return { pricing };
+}
+
+/* ── Sellers who cancel too often ────────────────────────────────────────── */
+
+/**
+ * A seller who calls off too many of their orders is flagged for the
+ * operators, and - when `pauseDirect` - can only take protected (gateway)
+ * payments until an operator clears them. Cancelling a direct sale is the
+ * cheapest way round a platform fee; a gateway sale cannot dodge it.
+ */
+export interface CancelSettings {
+  enabled: boolean;
+  /** Days counted back from now. */
+  windowDays: number;
+  /** Seller cancellations as a share of orders placed, at or above which they are flagged. */
+  maxPct: number;
+  /** Too few orders to judge below this. */
+  minOrders: number;
+  /** Pause direct buying for a flagged seller. */
+  pauseDirect: boolean;
+}
+
+export interface CancelFlag {
+  status: 'flagged' | 'appealed' | 'cleared';
+  at: string;
+  ratePct: number;
+  cancelled: number;
+  orders: number;
+  /** Whether direct buying is paused while flagged. */
+  directPaused: boolean;
+  appeal: { text: string; at: string } | null;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  note: string | null;
+}
+
+export const directPaused = (flag: CancelFlag | null | undefined) => Boolean(flag && flag.status !== 'cleared' && flag.directPaused);
+
+export interface CancelStats { orders: number; cancelled: number; ratePct: number; over: boolean }
+
+/** A seller's cancellation rate over the window, from their orders. */
+export function cancelStats(
+  orders: { placedAt?: string | null; sellerCancelledAt?: string | null }[], settings: CancelSettings, now = Date.now(),
+): CancelStats {
+  const from = new Date(now - settings.windowDays * 86_400_000).toISOString();
+  const placed = orders.filter((order) => Boolean(order.placedAt) && order.placedAt! >= from);
+  const cancelled = placed.filter((order) => order.sellerCancelledAt).length;
+  const ratePct = placed.length ? Math.round((cancelled / placed.length) * 1000) / 10 : 0;
+  return { orders: placed.length, cancelled, ratePct, over: settings.enabled && placed.length >= settings.minOrders && ratePct >= settings.maxPct };
 }
 
 /* ── Fee terms, fixed on each sale ───────────────────────────────────────── */
@@ -474,6 +557,12 @@ export interface FeeLine {
   totalMinor: number;
   /** `gateway` - taken from the payment as it passed through. `direct` - owed by the seller. */
   via: 'gateway' | 'direct';
+  /**
+   * A minus line: the sale `reversalOf` names was cancelled or refunded after
+   * its month had closed. Its month stays as it was; the fee comes off the
+   * month the cancellation landed in instead.
+   */
+  reversalOf?: string;
 }
 
 export interface FeeSettlement {
@@ -514,6 +603,90 @@ export interface FeeStatement {
 const IST = 330 * 60_000;
 export const feeMonthOf = (at: string) => new Date(Date.parse(at) + IST).toISOString().slice(0, 7);
 
+/**
+ * What the statement has already counted, per account. A month is closed once
+ * it has ended: from then on its lines are read from here, never from the
+ * sales, so a sale cancelled later cannot shrink a month that was due or paid.
+ */
+export interface FeeBookEntry {
+  line: FeeLine;
+  month: string;
+  /** The month a late cancellation took this fee off in, and when. */
+  reversedIn?: string | null;
+  reversedAt?: string | null;
+}
+
+/**
+ * Lines as the statement should show them: live ones for the open month, the
+ * book's copies for closed months, and a minus line for every sale that went
+ * away after its month closed. Returns the updated book and whether it changed.
+ */
+export function reconcileFeeBook(
+  live: FeeLine[], book: Record<string, FeeBookEntry>, now = Date.now(),
+): { lines: FeeLine[]; book: Record<string, FeeBookEntry>; changed: boolean } {
+  const current = feeMonthOf(new Date(now).toISOString());
+  const nowIso = new Date(now).toISOString();
+  const next: Record<string, FeeBookEntry> = { ...book };
+  const seen = new Set<string>();
+  let changed = false;
+  const lines: FeeLine[] = [];
+
+  for (const line of live) {
+    // Gateway fees come out of the payment as it is released; nothing to hold.
+    if (line.via !== 'direct') { lines.push(line); continue; }
+    seen.add(line.id);
+    const month = feeMonthOf(line.at);
+    const was = next[line.id];
+    if (!was) {
+      next[line.id] = { line, month };
+      changed = true;
+    } else if (was.reversedIn) {
+      // Back again (a cancellation undone): drop the minus line while its
+      // month is still open; a closed one stands, and the fee is owed anew now.
+      if (was.reversedIn === current) next[line.id] = { line: was.line, month: was.month };
+      else next[`${line.id}#${current}`] = { line: { ...line, id: `${line.id}#${current}`, at: nowIso }, month: current };
+      changed = true;
+    } else if (month === current && JSON.stringify(was.line) !== JSON.stringify(line)) {
+      next[line.id] = { line, month };
+      changed = true;
+    }
+  }
+
+  for (const [id, entry] of Object.entries(next)) {
+    if (seen.has(id) || id.includes('#')) continue;
+    if (entry.reversedIn) continue;
+    if (entry.month >= current) {
+      // Gone within its own month: it simply never counted.
+      delete next[id];
+      changed = true;
+    } else {
+      next[id] = { ...entry, reversedIn: current, reversedAt: nowIso };
+      changed = true;
+    }
+  }
+
+  for (const [id, entry] of Object.entries(next)) {
+    if (entry.line.via !== 'direct') continue;
+    // Closed months read from the book, the open month from the sale.
+    if (entry.month < current || id.includes('#') || entry.reversedIn) lines.push(entry.line);
+    else if (!seen.has(id)) continue;
+    else lines.push(live.find((line) => line.id === id)!);
+    if (entry.reversedIn && entry.reversedAt) {
+      lines.push({
+        ...entry.line,
+        id: `rev:${id}`,
+        label: `Cancelled after ${entry.month} closed · ${entry.line.label}`,
+        at: entry.reversedAt,
+        feeMinor: -entry.line.feeMinor,
+        gstMinor: -entry.line.gstMinor,
+        totalMinor: -entry.line.totalMinor,
+        reversalOf: id,
+      });
+    }
+  }
+  return { lines, book: next, changed };
+}
+
 /** A month's fees fall due on day `graceDays` of the next month (India time). */
 export function monthDueAt(month: string, graceDays: number): string {
   const [year, mon] = month.split('-').map(Number) as [number, number];
@@ -528,20 +701,23 @@ export function buildStatement(lines: FeeLine[], settlements: FeeSettlement[], g
     if (line.via === 'direct') row.directMinor += line.totalMinor;
     else row.gatewayMinor += line.totalMinor;
     row.gstMinor += line.gstMinor;
-    row.sales += 1;
+    if (!line.reversalOf) row.sales += 1;
     byMonth.set(month, row);
   }
   const months = [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month));
   const paid = settlements.reduce((sum, entry) => sum + entry.amountMinor, 0);
   const owedTotal = months.reduce((sum, month) => sum + month.directMinor, 0);
+  // A month that came out below zero (late cancellations) pays like a settlement.
+  const credit = months.reduce((sum, month) => sum + Math.max(0, -month.directMinor), 0);
   // Payments go to the oldest month first.
-  let left = paid;
+  let left = paid + credit;
   let overdue = 0;
   let nextDueAt: string | null = null;
   for (const month of [...months].reverse()) {
-    const take = Math.min(left, month.directMinor);
+    const due = Math.max(0, month.directMinor);
+    const take = Math.min(left, due);
     left -= take;
-    const unpaid = month.directMinor - take;
+    const unpaid = due - take;
     if (unpaid <= 0) continue;
     if (Date.parse(month.dueAt) <= now) overdue += unpaid;
     else if (!nextDueAt) nextDueAt = month.dueAt;

@@ -10,7 +10,7 @@ import type { OverviewQueues } from '@shared/overview';
 
 export type Tab =
   | 'overview' | 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports'
-  | 'devices' | 'photos' | 'routes' | 'challenge' | 'settings' | 'learn' | 'audit' | 'pricing' | 'pro' | 'fees';
+  | 'devices' | 'photos' | 'routes' | 'challenge' | 'settings' | 'learn' | 'audit' | 'pricing' | 'pro' | 'fees' | 'cancels';
 
 export interface Section {
   tab: Tab;
@@ -43,6 +43,7 @@ export const GROUPS: { title: string | null; sections: Section[] }[] = [
       { tab: 'payments', label: 'Earnings & payments', icon: 'bank' },
       { tab: 'pricing', label: 'Pricing, fees & GST', icon: 'tag' },
       { tab: 'fees', label: 'Platform fees owed', icon: 'lock' },
+      { tab: 'cancels', label: 'Cancellations', icon: 'close' },
       { tab: 'pro', label: 'Pro & vouchers', icon: 'spark' },
     ],
   },

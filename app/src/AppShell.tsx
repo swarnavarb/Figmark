@@ -1,4 +1,4 @@
-import { isProActive } from '@shared/billing';
+import { isProActive, proDaysLeft } from '@shared/billing';
 import { ProBadge } from './components/Billing';
 import { notePath } from './cameFrom';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -318,20 +318,48 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
       </button>
       {open && (
         <div className="pmenu__panel" role="menu">
-          <span className="pmenu__who">{name}</span>
-          <Link role="menuitem" to="/me" className="pmenu__item">🙂 My Profile</Link>
-          <Link role="menuitem" to="/quests" className="pmenu__item">🏆 Quests &amp; rewards</Link>
-          <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>
-          <Link role="menuitem" to="/cart" className="pmenu__item">🛒 My Cart</Link>
-          <Link role="menuitem" to="/wallet" className="pmenu__item">👛 My wallet</Link>
-          <Link role="menuitem" to="/pro" className="pmenu__item pmenu__item--pro">⚡ Subscribe to Pro {isPro && <ProBadge />}</Link>
-          {hasStore && <Link role="menuitem" to="/fees" className="pmenu__item">🧾 Platform fees{feeLocked && <span className="badge badge--danger" style={{ marginLeft: 6 }}>Due</span>}</Link>}
-          <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
-          <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>
-          <Link role="menuitem" to="/legal" className="pmenu__item">📄 Terms &amp; policies</Link>
+          <Link role="menuitem" to="/me" className="pmenu__card">
+            <Avatar name={name} size={44} />
+            <span className="pmenu__id">
+              <b>{name} {isPro && <ProBadge />}</b>
+              <small>{user?.username ? `@${user.username} · ` : ''}View profile</small>
+            </span>
+            <span className="pmenu__arrow" aria-hidden="true">›</span>
+          </Link>
+
+          <Link role="menuitem" to="/pro" className={`pmenu__pro${isPro ? ' is-on' : ''}`}>
+            <span className="pmenu__probolt" aria-hidden="true">⚡</span>
+            <span className="pmenu__protext">
+              <b>{isPro ? `Pro · ${proDaysLeft(user?.pro ?? null)} days left` : 'Go Pro'}</b>
+              <small>{isPro ? 'Add time, see your perks' : 'Lower fees · loyalty cards · insights'}</small>
+            </span>
+            <span className="pmenu__arrow" aria-hidden="true">›</span>
+          </Link>
+
+          <div className="pmenu__tiles">
+            <Link role="menuitem" to="/purchases" className="pmenu__tile"><span aria-hidden="true">🛍️</span>Purchases</Link>
+            <Link role="menuitem" to="/wallet" className="pmenu__tile"><span aria-hidden="true">👛</span>Wallet</Link>
+            <Link role="menuitem" to="/cart" className="pmenu__tile"><span aria-hidden="true">🛒</span>Cart</Link>
+            <Link role="menuitem" to="/quests" className="pmenu__tile"><span aria-hidden="true">🏆</span>Quests</Link>
+          </div>
+
+          {hasStore && (
+            <>
+              <span className="pmenu__group">Selling</span>
+              <Link role="menuitem" to="/fees" className="pmenu__item">
+                <span aria-hidden="true">🧾</span> Platform fees
+                {feeLocked && <span className="badge badge--danger pmenu__flag">Due</span>}
+              </Link>
+              <Link role="menuitem" to="/shop?tab=loyalty" className="pmenu__item"><span aria-hidden="true">🎟️</span> Loyalty cards</Link>
+            </>
+          )}
+          <span className="pmenu__group">Help</span>
+          <Link role="menuitem" to="/disputes" className="pmenu__item"><span aria-hidden="true">⚖️</span> My disputes</Link>
+          <Link role="menuitem" to="/learn" className="pmenu__item"><span aria-hidden="true">📘</span> Learn</Link>
+          <Link role="menuitem" to="/legal" className="pmenu__item"><span aria-hidden="true">📄</span> Terms &amp; policies</Link>
           <button role="menuitem" type="button" className="pmenu__item pmenu__item--out"
             onClick={() => { setOpen(false); setChoosing(true); }}>
-            👋 Sign Out
+            <span aria-hidden="true">👋</span> Sign out
           </button>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { GiveMoneyPanel } from '../components/GiveMoney';
-import { FeeLockBanner, ProGate, ProOwnerProvider, useProLocked } from '../components/Billing';
+import { CancelFlagBanner, FeeLockBanner, ProGate, ProOwnerProvider, useProLocked } from '../components/Billing';
 import { confirmAsk, confirmSentence } from '../components/Ask';
 import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -95,6 +95,7 @@ const EngagePanel = lazy(() => import('../components/EngagePanel').then((module)
  * share the Sell page's own stylesheet, so they still come with it.
  */
 const RoutesList = lazy(() => import('./RoutesPage').then((module) => ({ default: module.RoutesList })));
+const LoyaltyManager = lazy(() => import('../components/LoyaltyManager').then((module) => ({ default: module.LoyaltyManager })));
 const PowerSalePanel = lazy(() => import('../components/PowerSale').then((module) => ({ default: module.PowerSalePanel })));
 const LotDetail = lazy(() => import('./LotsPage').then((module) => ({ default: module.LotDetail })));
 const NewLotForm = lazy(() => import('./LotsPage').then((module) => ({ default: module.NewLotForm })));
@@ -105,7 +106,7 @@ function Later({ children }: { children: ReactNode }) {
 }
 
 type Section = 'items' | 'payments' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage'
-  | 'overview' | 'customers' | 'itemdata' | 'operations';
+  | 'overview' | 'customers' | 'itemdata' | 'operations' | 'loyalty';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -134,6 +135,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'people', label: 'People' },
   // Polls, debates, competitions and guesses the shop runs for its buyers.
   { id: 'engage', label: 'Engage' },
+  // Stamp cards for repeat buyers - Pro.
+  { id: 'loyalty', label: 'Loyalty cards' },
 ];
 
 /**
@@ -141,7 +144,7 @@ const SECTIONS: { id: Section; label: string }[] = [
  * The other Data sections are free with Pro parts, marked where they sit. Pro
  * is open to every shop until it is switched on with real payments.
  */
-const PRO_SECTIONS: readonly Section[] = ['calculator'];
+const PRO_SECTIONS: readonly Section[] = ['calculator', 'loyalty'];
 
 /** Sections that read the shop's numbers, and so need its analytics right. */
 const DATA_SECTIONS: readonly Section[] = ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'];
@@ -162,7 +165,7 @@ const SECTION_GROUPS: Record<Group, Section[]> = {
   items: ['items'],
   orders: ['payments', 'refunds'],
   lots: ['lots', 'routes'],
-  engage: ['engage'],
+  engage: ['engage', 'loyalty'],
   money: ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'],
   settings: ['storefront', 'people'],
 };
@@ -300,6 +303,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     if (entry.id === 'engage') return store.permissions.includes('posts');
+    if (entry.id === 'loyalty') return store.isOwner;
     return true;
   });
   // No tab, or a tab this store cannot open: the first section it can, so
@@ -317,6 +321,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     <main className="page tab-view">
       <h1 className="sr-only">Sell</h1>
       {store.isOwner && <FeeLockBanner />}
+      {store.isOwner && <CancelFlagBanner />}
       <SetupChecklist hasStore />
       <SellHome store={store} canList={store.permissions.includes('listings')} onGo={setSection}
         section={active} />
@@ -384,6 +389,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
           {active === 'engage' && <Later><EngagePanel store={store} /></Later>}
+          {active === 'loyalty' && <ProGate feature="loyalty" ownerId={store.ownerId}><Later><LoyaltyManager ownerId={store.ownerId} /></Later></ProGate>}
         </div>
       )}
     </main>

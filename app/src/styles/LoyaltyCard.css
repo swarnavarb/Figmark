@@ -1,0 +1,64 @@
+/* Loyalty cards as a buyer holds them (components/LoyaltyCard.tsx). */
+
+.stampcard {
+  --card-a: var(--gold);
+  --card-b: var(--pink);
+  --card-ink: var(--gold-ink);
+  position: relative; overflow: hidden; display: grid; gap: var(--s3);
+  padding: var(--s4); border-radius: 18px; color: var(--card-ink);
+  background:
+    radial-gradient(140% 120% at 100% 0%, rgba(255, 255, 255, 0.28), transparent 50%),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.07) 0 6px, transparent 6px 14px),
+    linear-gradient(130deg, var(--card-a), var(--card-b));
+  box-shadow: 0 10px 30px -14px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  min-width: 0;
+}
+/* The punched edge of a paper card. */
+.stampcard::after {
+  content: ''; position: absolute; top: 0; bottom: 0; right: 76px; width: 0;
+  border-right: 2px dashed rgba(0, 0, 0, 0.12); pointer-events: none;
+}
+.stampcard--pink { --card-a: var(--pink); --card-b: var(--coral); --card-ink: var(--pink-ink); }
+.stampcard--mint { --card-a: var(--ok); --card-b: var(--aqua); --card-ink: var(--ok-ink); }
+.stampcard--violet { --card-a: var(--violet); --card-b: var(--blue); --card-ink: var(--violet-ink); }
+.stampcard--ink { --card-a: var(--surface-2); --card-b: var(--bg); --card-ink: var(--text); }
+.stampcard--compact { padding: var(--s3); gap: var(--s2); border-radius: 14px; }
+.stampcard--compact::after { display: none; }
+
+.stampcard__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; position: relative; z-index: 1; }
+.stampcard__brand { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.12em; font-weight: 800; opacity: 0.75; }
+.stampcard__name { flex-basis: 100%; font-size: calc(19px * var(--text-scale)); font-weight: 900; font-style: italic; letter-spacing: -0.01em; line-height: 1.1; }
+.stampcard--compact .stampcard__name { font-size: var(--t-md); }
+.stampcard__round {
+  position: absolute; top: 0; right: 0; padding: 2px 8px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: 800; background: rgba(0, 0, 0, 0.18);
+}
+
+.stampcard__grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; position: relative; z-index: 1; }
+.stampcard--compact .stampcard__grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 5px; }
+.lstamp { display: grid; justify-items: center; gap: 4px; min-width: 0; }
+.lstamp__dot {
+  display: grid; place-items: center; width: 100%; max-width: 52px; aspect-ratio: 1; border-radius: 50%;
+  border: 2px dashed rgba(0, 0, 0, 0.28); background: rgba(255, 255, 255, 0.2);
+  font-size: var(--t-sm); font-weight: 900; color: inherit;
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.stampcard--compact .lstamp__dot { font-size: var(--t-xs); border-width: 1.5px; }
+.lstamp.has-reward .lstamp__dot { border-style: solid; border-color: rgba(255, 255, 255, 0.85); background: rgba(255, 255, 255, 0.36); }
+/* Earned: inked in, at a slant, like a rubber stamp. */
+.lstamp.is-on .lstamp__dot {
+  border: 0; transform: rotate(-12deg);
+  background: var(--card-ink); color: var(--card-a);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+.stampcard--ink .lstamp.is-on .lstamp__dot { background: var(--gold); color: var(--gold-ink); }
+.lstamp__gift { font-size: var(--t-2xs); font-weight: 700; text-align: center; line-height: 1.15; overflow-wrap: anywhere; }
+.stampcard__foot { position: relative; z-index: 1; font-size: var(--t-xs); font-weight: 600; }
+.stampcard__foot a { color: inherit; font-weight: 800; }
+
+/* Under an item. */
+.loyaltystrip { display: grid; gap: var(--s2); }
+.loyaltystrip__title { margin: 0; font-size: var(--t-sm); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+.loyaltystrip__row { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.loyaltystrip__status b { font-size: var(--t-sm); }
+

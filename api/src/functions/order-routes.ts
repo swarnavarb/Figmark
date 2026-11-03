@@ -9,6 +9,8 @@ import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { directRefusal, noteSellerCancel } from '../cancel-watch.js';
+import { directPaused } from '../../../shared/billing.js';
 import { cancellationImpact, prepaySavingMinor, repriceBasket } from '../offers.js';
 
 import { personRef, sellerRef } from '../../../shared/parties.js';
@@ -210,6 +212,11 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   }
 
   const protect = body.protection === true;
+  // A seller flagged for cancelling too often takes protected payments only.
+  if (!protect) {
+    const paused = await directRefusal(repository, order.sellerId);
+    if (paused) return error(409, 'direct_paused', `${paused.replace('Pay with the gateway', 'Turn on Buyer Protection')}`);
+  }
   // Whoever is available, carrying the fewest cases - never either end of
   // the trade, who cannot be neutral in it.
   const manager = protect ? await pickManager(repository, [order.buyerId, order.sellerId]) : null;
@@ -375,6 +382,8 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     protectionFeeMinor: protectionFeeMinor(totalMinor, protectionFlat),
     /** False when no community manager could be assigned - neither party, and available. */
     protectionAvailable: (await availableManagers(repository, [order.buyerId, order.sellerId])).length > 0,
+    // Flagged for cancelling too often: the shop takes protected payments only.
+    directPaused: (await directRefusal(repository, order.sellerId)) !== null,
   });
 }
 
@@ -698,6 +707,8 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     /** Rejections of a payment this viewer made, that they could dispute. */
     disputable: disputeSubjects(order, user.id),
     simulatedPayment: true,
+    // The shop was flagged for cancelling too often: only protected payment is open.
+    directPaused: side === 'buyer' && directPaused(other?.cancelFlag),
     // Lets the seller's cancel/reversal screen know, before they try, whether
     // the buyer has somewhere for the money to go.
     buyerHasReversalDetails: side === 'seller' ? Boolean(other?.reversalDetails) : null,
@@ -775,6 +786,10 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   // Kept credit that covers the whole of what is due needs no proof: no money
   // is moving, so there is nothing for the seller to check.
   const covered = await heldCreditMinor(repository, order) >= terms.amountMinor;
+  if (!covered) {
+    const paused = await directRefusal(repository, order.sellerId);
+    if (paused) return error(409, 'direct_paused', paused);
+  }
 
   // One of the two, at minimum. A claim with neither is just a button press,
   // and the seller has nothing to check it against.
@@ -1350,6 +1365,7 @@ async function myRefunds(request: HttpRequest, _context: InvocationContext) {
       itemName: order.itemName,
       currency: order.currency,
       sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'Seller',
+      sellerId: order.sellerId,
       creditId: credit.id,
       origin: credit.origin ?? 'overpaid',
       reason: credit.reason ?? null,
@@ -1923,6 +1939,9 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   }
 
   const now = new Date().toISOString();
+  // Turning down an order the buyer already paid for counts as calling it off.
+  const wasPaid = order.paymentStatus === 'paid' || order.paymentStatus === 'claimed' || orderMoney(order).paidMinor > 0;
+  if (wasPaid && user.id === order.sellerId) order.sellerCancelledAt = now;
   order.status = 'rejected';
   // Said back to the buyer on the order itself, not only in the timeline.
   order.cancelReason = reason;
@@ -1945,6 +1964,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });
 
   await restock(repository, order, now);
+  if (order.sellerCancelledAt) await noteSellerCancel(repository, order.sellerId).catch(() => null);
 
   const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
@@ -2184,7 +2204,9 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   // The order's pre-order place is freed either way.
   const shippedOut = order.status === 'shipped';
   const owed = callOffOrder(order, reason, user.id);
+  if (user.id === order.sellerId) order.sellerCancelledAt = new Date().toISOString();
   await repository.updateOrder(order);
+  if (order.sellerCancelledAt) await noteSellerCancel(repository, order.sellerId).catch(() => null);
   await restock(repository, order, new Date().toISOString(), body.restock === true && !shippedOut);
   // The rest of this buyer's basket loses whatever this item was earning it.
   await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });

@@ -1,4 +1,5 @@
 import { CreditChip, ProBadge } from '../components/Billing';
+import { LoyaltyStrip } from '../components/LoyaltyCard';
 import { viewSourceFor } from '../cameFrom';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -460,6 +461,7 @@ export function ListingPage() {
 
             </div>
           )}
+          <LoyaltyStrip ownerId={listing.sellerId} listingId={listing.id} />
         </aside>
       </div>
       <SimilarItems listingId={listing.id} />

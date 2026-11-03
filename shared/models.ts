@@ -1,4 +1,4 @@
-import type { FeeTerms, ProState } from './billing.js';
+import type { CancelFlag, FeeTerms, ProState } from './billing.js';
 import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
 import type { DeliveryEta } from './delivery-eta.js';
@@ -247,6 +247,8 @@ export interface User extends BaseDocument {
    * listings and stores are hidden and it cannot sell until it pays.
    */
   feeLock?: { since: string; overdueMinor: number } | null;
+  /** Flagged for calling off too many orders: see `CancelFlag`. */
+  cancelFlag?: CancelFlag | null;
   /**
    * The shop's profit-calculator cost sheets (Pro). Stored beside the account
    * in its `profit` part (see api/src/data/user-parts.ts): a shop has a handful
@@ -1827,6 +1829,8 @@ export interface Order extends BaseDocument {
   affiliate?: OrderAffiliate | null;
   /** Figmark's platform fee as agreed when the order was placed. Absent on orders from before fees. */
   feeTerms?: FeeTerms | null;
+  /** When the seller called this order off (cancelled, or turned it down after it was paid): counts towards their cancellation rate. */
+  sellerCancelledAt?: string | null;
   /**
    * The ladder this item read before it joined a lot.
    *
@@ -3107,6 +3111,10 @@ export type NotificationKind =
   | 'pro_plan'
   /** A store paid you or gave you credit. */
   | 'store_gift'
+  /** Flagged for cancelling too often, an appeal, or the flag cleared. */
+  | 'cancel_flag'
+  /** A loyalty stamp, or a reward it earned. */
+  | 'loyalty'
   | 'payment_dispute'
   | 'payment_settled'
   | 'dispute_opened'

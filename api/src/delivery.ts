@@ -182,6 +182,8 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
   }
   // The shop's on-time and repeat numbers move with every arrival.
   await refreshSellerStats(repository, order.sellerId).catch(() => null);
+  // A delivered order stamps the buyer's loyalty cards with this shop.
+  await import('./loyalty.js').then(({ syncLoyalty }) => syncLoyalty(repository, order.buyerId, order.sellerId)).catch(() => null);
   const held = order.hold.state === 'held';
   const named = await orderNames(repository, order);
   await notify(
