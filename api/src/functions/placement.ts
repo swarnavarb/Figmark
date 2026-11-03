@@ -11,6 +11,7 @@ import type { getRepository } from '../data/index.js';
 import { notify, orderNames } from './notify.js';
 import { holdsPlace, reconcilePreOrder } from './preorder.js';
 import { storeCreditLeft } from '../../../shared/play.js';
+import { refreshLoyaltyOff } from '../loyalty.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -153,6 +154,8 @@ export async function placeOrder(
   // The basket may have moved the price too: an offer earned or lost since the
   // buyer last looked is as much a change as the seller editing the price.
   await repriceBasket(repository, order.sellerId, order.buyerId, 'placed', { include: [order], quiet: true });
+  // And loyalty money off, as the buyer's card stands now.
+  await refreshLoyaltyOff(repository, order);
   if (unitMoved || orderTotalMinor(order) !== was) {
     return {
       code: 'price_changed',

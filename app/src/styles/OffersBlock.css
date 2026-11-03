@@ -1,0 +1,105 @@
+/* All of an item's offers and its loyalty card in one block, and the sheet it opens (components/OffersBlock.tsx). */
+
+.dealsblk {
+  position: relative; display: grid; gap: var(--s2); min-width: 0; padding: var(--s3);
+  border-radius: var(--r-lg); overflow: hidden;
+  background:
+    radial-gradient(120% 140% at 100% 0%, var(--violet-soft), transparent 60%),
+    var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--violet-line);
+}
+.dealsblk__head {
+  display: flex; align-items: center; gap: var(--s2); width: 100%; padding: 0; border: 0; background: none;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.dealsblk__badge {
+  flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--violet), var(--pink)); color: var(--violet-ink);
+  font-size: var(--t-md); font-weight: 900; box-shadow: 0 6px 16px -8px var(--violet);
+}
+.dealsblk__title { display: grid; flex: 1; min-width: 0; line-height: 1.2; }
+.dealsblk__title b { font-size: var(--t-md); }
+.dealsblk__title small { color: var(--text-dim); font-size: var(--t-xs); }
+.dealsblk__more {
+  flex: none; padding: 5px 10px; border-radius: var(--r-pill); font-size: var(--t-xs); font-weight: 800;
+  color: var(--accent-text); background: var(--violet-soft); transition: background 160ms ease, transform 160ms ease;
+}
+.dealsblk__head:hover .dealsblk__more { background: var(--violet-line); transform: translateX(2px); }
+
+.dealsblk__lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.dealsblk__lines li { animation: dealsblk-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 60ms); }
+.dealsblk__line {
+  display: flex; align-items: center; gap: var(--s2); width: 100%; padding: 6px var(--s1); border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--text); font: inherit; font-size: var(--t-sm); text-align: left; cursor: pointer;
+  transition: background 140ms ease;
+}
+.dealsblk__line:hover { background: var(--surface); }
+.dealsblk__icon { flex: none; width: 22px; text-align: center; }
+.dealsblk__label { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dealsblk__hint { flex: none; font-size: var(--t-2xs); font-weight: 700; color: var(--ok); }
+.dealsblk__extra {
+  padding: 2px var(--s1) 2px 34px; border: 0; background: none; font: inherit; font-size: var(--t-xs); font-weight: 700;
+  color: var(--accent-text); cursor: pointer;
+}
+.dealsblk__loyal {
+  display: flex; align-items: center; justify-content: flex-start; gap: var(--s2); width: 100%; padding: var(--s2); border: 0; border-radius: var(--r-md);
+  background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--border); transition: box-shadow 160ms ease, transform 160ms ease;
+}
+.dealsblk__loyal:hover { box-shadow: inset 0 0 0 1px var(--gold); transform: translateY(-1px); }
+.dealsblk__loyaltext { display: grid; justify-items: start; min-width: 0; line-height: 1.25; }
+.dealsblk__loyaltext b { font-size: var(--t-sm); }
+.dealsblk__loyaltext small { font-size: var(--t-xs); color: var(--text-dim); }
+@keyframes dealsblk-in { from { opacity: 0; transform: translateY(4px); } }
+
+/* ── The sheet ─────────────────────────────────────────────────────────── */
+.dsheet { display: grid; gap: var(--s4); }
+.dsheet__group { display: grid; gap: var(--s3); }
+.dsheet__h { margin: 0; font-size: var(--t-sm); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+.dsheet__auto {
+  margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); font-size: var(--t-sm);
+  background: var(--ok-soft); color: var(--ok); animation: ditem-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.dsheet__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.ditem {
+  display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r-md);
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
+  animation: ditem-in 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(80ms + var(--i, 0) * 55ms);
+  transition: box-shadow 300ms ease;
+}
+.ditem.is-focus { box-shadow: inset 0 0 0 1.5px var(--violet-lit), 0 0 0 4px var(--violet-soft); }
+.ditem__head { display: flex; align-items: center; gap: var(--s2); }
+.ditem__icon {
+  flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); font-size: var(--t-md);
+}
+.ditem__titles { display: grid; gap: 2px; flex: 1; min-width: 0; justify-items: start; }
+.ditem__name { font-size: var(--t-md); line-height: 1.2; }
+.ditem__state { font-size: var(--t-xs); font-weight: 700; color: var(--gold); }
+.ditem__state.is-on { color: var(--ok); }
+.ditem__sum { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.ditem__tiers { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.ditem__tiers th, .ditem__tiers td { text-align: left; padding: 4px var(--s2); border-bottom: 1px solid var(--border); }
+.ditem__tiers th { color: var(--text-faint); font-weight: 600; }
+.ditem__terms { font-size: var(--t-xs); color: var(--text-dim); }
+.ditem__terms summary {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none;
+  font-weight: 700; color: var(--accent-text);
+}
+.ditem__terms summary::-webkit-details-marker { display: none; }
+.ditem__terms summary::after { content: '›'; display: inline-block; transition: transform 200ms ease; }
+.ditem__terms[open] summary::after { transform: rotate(90deg); }
+.ditem__terms ul { margin: var(--s2) 0 0; padding-left: var(--s4); display: grid; gap: 4px; animation: ditem-in 260ms ease both; }
+.dsheet__loyalty { animation: ditem-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(120ms + var(--i, 0) * 55ms); }
+.dsheet__acts { display: flex; justify-content: flex-end; }
+@keyframes ditem-in { from { opacity: 0; transform: translateY(10px) scale(0.985); } }
+
+/* At checkout: the price, the offers and the rewards in one block. */
+.ckdeals {
+  display: grid; gap: var(--s3); padding: var(--s3); border-radius: var(--r-lg);
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
+}
+.ckdeals__more {
+  justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
+  font: inherit; font-size: var(--t-sm); font-weight: 700; color: var(--accent-text); cursor: pointer;
+}

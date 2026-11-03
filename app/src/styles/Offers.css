@@ -18,20 +18,7 @@
 .offr-ship__fee.is-free { color: var(--ok); }
 .offr-ship__way { color: var(--ok); font-size: var(--t-xs); font-weight: var(--w-medium); }
 
-/* ── Wholesale, where the price is ─────────────────────────────────────── */
-.offr-wholesale {
-  display: grid; gap: 2px; text-align: left; width: 100%; cursor: pointer;
-  padding: var(--s2) var(--s3); border-radius: var(--r-md);
-  background: var(--accent-soft); color: var(--text); border: 1px solid var(--accent-line);
-}
-.offr-wholesale b { color: var(--accent-text); font-size: var(--t-sm); }
-.offr-wholesale span { font-size: var(--t-xs); color: var(--text-dim); }
-.offr-wholesale u { color: var(--accent-text); margin-left: var(--s1); }
-
 /* ── The offers row ────────────────────────────────────────────────────── */
-.offr-rail { display: grid; gap: var(--s2); min-width: 0; }
-.offr-rail__title { margin: 0; font-size: var(--t-sm); display: flex; align-items: baseline; gap: var(--s2); }
-.offr-rail__title small { color: var(--text-faint); font-weight: var(--w-medium); }
 .offr-rail__row {
   display: flex; gap: var(--s2); overflow-x: auto; padding-bottom: var(--s1);
   scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
@@ -44,7 +31,6 @@
 .offr-pill:hover { border-color: var(--accent-line); }
 .offr-pill__label { font-size: var(--t-sm); font-weight: var(--w-semi); }
 .offr-pill__more { font-size: var(--t-2xs); color: var(--accent-text); }
-.offr-pill--wholesale { border-color: var(--accent-line); background: var(--accent-soft); }
 
 .offr-sheet { display: grid; gap: var(--s3); }
 .offr-sheet__summary { margin: 0; font-size: var(--t-md); }
@@ -59,9 +45,11 @@
 /* ── On the checkout and the order ─────────────────────────────────────── */
 .offr-note { display: grid; gap: var(--s2); font-size: var(--t-xs); color: var(--text-dim); min-width: 0; }
 .offr-note p { margin: 0; }
+.offr-note__line { display: flex; align-items: center; gap: 6px; }
 .offr-sum { display: grid; gap: var(--s1); font-size: var(--t-sm); }
 .offr-sum__row { display: flex; justify-content: space-between; gap: var(--s3); }
 .offr-sum__row--off { color: var(--ok); }
+.offr-sum__row--loyal { color: var(--gold); font-weight: var(--w-semi); }
 .offr-sum__row--total { font-weight: var(--w-bold); border-top: 1px solid var(--border); padding-top: var(--s1); }
 
 /* ── The seller's editor ───────────────────────────────────────────────── */

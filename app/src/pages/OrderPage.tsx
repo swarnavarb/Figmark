@@ -40,7 +40,7 @@ import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/OrderPage.css';
 import { Select } from '../components/Select';
 import { PriceBreakdown } from '../components/Offers';
-import { CheckoutLoyalty } from '../components/LoyaltyCard';
+import { CheckoutDeals } from '../components/OffersBlock';
 
 /**
  * One order, as the buyer sees it.
@@ -66,16 +66,6 @@ function statusTone(status: Order['status']): string {
     case 'payment_reversal_pending': return 'accent';
     default: return 'warn';
   }
-}
-
-/** The checkout's price, line by line: goods, shipping and each offer, with the terms. */
-function OfferSummary({ quote, payingFull }: { quote: Checkout; payingFull: boolean }) {
-  return (
-    <PriceBreakdown goodsMinor={quote.goodsMinor ?? quote.itemMinor} shippingMinor={quote.shippingMinor}
-      discountMinor={quote.offerDiscountMinor} applied={quote.appliedOffers} rules={quote.offerRules}
-      totalMinor={quote.itemMinor} currency={quote.currency}
-      prepaySavingMinor={payingFull ? quote.prepaySavingMinor : 0} />
-  );
 }
 
 export function OrderPage() {
@@ -368,10 +358,10 @@ export function OrderPage() {
                 {formatMoney(orderTotalMinor(order), order.currency)}
               </span>
             </div>
-            {(order.shippingMinor !== undefined || (order.appliedOffers?.length ?? 0) > 0 || (order.offerRules?.length ?? 0) > 0) && (
+            {(order.shippingMinor !== undefined || (order.appliedOffers?.length ?? 0) > 0 || (order.offerRules?.length ?? 0) > 0 || (order.loyaltyOffMinor ?? 0) > 0) && (
               <PriceBreakdown goodsMinor={order.unitPriceMinor * order.quantity} shippingMinor={order.shippingMinor}
                 discountMinor={order.offerDiscountMinor} applied={order.appliedOffers} rules={order.offerRules}
-                totalMinor={orderTotalMinor(order)} currency={order.currency} />
+                loyalty={order.loyaltyApplied} totalMinor={orderTotalMinor(order)} currency={order.currency} />
             )}
             {(order.offerRefundDueMinor ?? 0) > 0 && order.status !== 'cancelled' && (
               <p className="offr-warn">
@@ -1198,8 +1188,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   return (
     <div className="stack">
       {quote.priceChange && <PriceChangeNote change={quote.priceChange} currency={quote.currency} />}
-      <OfferSummary quote={quote} payingFull={plan !== 'advance'} />
-      {quote.loyalty && <CheckoutLoyalty orderId={order.id} loyalty={quote.loyalty} onChanged={() => setRepriced((n) => n + 1)} />}
+      <CheckoutDeals order={order} quote={quote} payingFull={plan !== 'advance'} onRepriced={() => setRepriced((n) => n + 1)} />
       {credit > 0 && (
         <>
           <div className="kv kv--credit">

@@ -1,7 +1,7 @@
 import { proLocked } from '../../shared/billing.js';
 import {
-  REWARD_META, STAMPS, nextReward, offersToDrop, replayCard, rewardPerk, rewardWords,
-  type CardProgress, type IssuedReward, type LoyaltyCard, type LoyaltyReward,
+  REWARD_META, STAMPS, nextReward, offersToDrop, replayCard, rewardOffMinor, rewardPerk, rewardWords,
+  type CardProgress, type IssuedReward, type LoyaltyApplied, type LoyaltyCard, type LoyaltyReward,
 } from '../../shared/loyalty.js';
 import type { Order, User } from '../../shared/models.js';
 import { appliedPerks, offerPerk, type Perk } from '../../shared/offers.js';
@@ -74,6 +74,19 @@ export async function cardsLive(repository: Repo, owner: User | null): Promise<b
 const orderValue = (order: Pick<Order, 'quantity' | 'unitPriceMinor'>) => order.quantity * order.unitPriceMinor;
 
 /**
+ * Rewards already taken off a placed order's price at checkout, by id, with
+ * the order that took each. A cancelled order gives its reward back.
+ */
+function claimsOf(orders: readonly Order[], except?: string): Map<string, { order: Order; applied: LoyaltyApplied }> {
+  const out = new Map<string, { order: Order; applied: LoyaltyApplied }>();
+  for (const order of orders) {
+    if (order.id === except || order.placedAt === null || isStopped(order.status)) continue;
+    for (const applied of order.loyaltyApplied ?? []) out.set(applied.rewardId, { order, applied });
+  }
+  return out;
+}
+
+/**
  * Brings one buyer's cards at one shop up to date: pays any cashback a stamp
  * has reached, holds any other reward for them, and says where they stand.
  * `orders` may be passed when the caller already has the buyer's orders.
@@ -95,9 +108,21 @@ export async function syncLoyalty(
   const theirs = orders.filter((order) => order.sellerId === ownerId);
   const fresh: IssuedReward[] = [];
   const progress: CardProgress[] = [];
+  const claims = claimsOf(theirs);
 
   for (const card of cards) {
-    const { total, payouts, waiting } = replayCard(card, theirs);
+    const { total, payouts, waiting } = replayCard(card, theirs, new Set(claims.keys()));
+    // Money off taken at checkout is written down once its order arrives.
+    for (const [id, { order, applied }] of claims) {
+      if (applied.cardId !== card.id || order.status !== 'delivered' || issued.some((entry) => entry.id === id)) continue;
+      const [, round] = id.split(':');
+      fresh.push({
+        id, cardId: card.id, cardName: card.name, ownerId, shopName, buyerId, buyerName: buyer.displayName,
+        round: Number(round) || 1, stamp: applied.stamp, reward: card.rewards[applied.stamp - 1] ?? { kind: 'percent_off' },
+        orderId: order.id, itemName: order.itemName, at: new Date().toISOString(),
+        valueMinor: applied.valueMinor, status: 'used', usedAt: order.placedAt ?? null,
+      });
+    }
     if (live && card.active) {
       for (const { id, round, stamp, reward, order } of payouts) {
         if (issued.some((entry) => entry.id === id)) continue;
@@ -143,7 +168,7 @@ export async function syncLoyalty(
       }
       await repository.updateUser({ ...person, storeCredits: credits });
     }
-    for (const entry of added) {
+    for (const entry of added.filter((row) => row.status !== 'used')) {
       await notify(repository, [buyerId], {
         kind: 'loyalty',
         title: entry.status === 'credited'
@@ -183,6 +208,8 @@ export interface CheckoutReward {
   clashMinor: number;
   /** The buyer gave up an offer for this one. */
   tookOverOffer: boolean;
+  /** Money off this order for a money-off reward: now when it fits, or if picked over the offer. */
+  offMinor: number;
 }
 
 /**
@@ -190,12 +217,13 @@ export interface CheckoutReward {
  * buyer's other orders on their way arrive first and this one after them.
  * Null when the shop runs no live card.
  */
-export async function checkoutLoyalty(repository: Repo, order: Order): Promise<CheckoutReward[] | null> {
+export async function checkoutLoyalty(repository: Repo, order: Order): Promise<(CheckoutReward & { id: string })[] | null> {
   const cards = (await loadCards(repository, order.sellerId)).filter((card) => card.active);
   if (cards.length === 0) return null;
   const owner = await repository.getUserById(order.sellerId);
   if (!(await cardsLive(repository, owner))) return null;
   const mine = (await repository.listOrdersForBuyer(order.buyerId)).filter((other) => other.sellerId === order.sellerId && other.id !== order.id);
+  const claimed = new Set(claimsOf(mine).keys());
   const base = Date.now();
   const coming = mine
     .filter((other) => other.status !== 'delivered' && !isStopped(other.status) && other.placedAt !== null)
@@ -204,15 +232,17 @@ export async function checkoutLoyalty(repository: Repo, order: Order): Promise<C
   const self = { ...order, status: 'delivered' as const, completedAt: new Date(base + coming.length + 1).toISOString() };
   const history = [...mine.filter((other) => other.status === 'delivered'), ...coming, self];
   const perks = appliedPerks(order.appliedOffers);
-  const rows: CheckoutReward[] = [];
+  const rows: (CheckoutReward & { id: string })[] = [];
   for (const card of cards) {
-    const here = replayCard(card, history).at.get(order.id);
+    const here = replayCard(card, history, claimed).at.get(order.id);
     if (!here) continue;
-    const row = (entry: { stamp: number; reward: LoyaltyReward }, fits: boolean): CheckoutReward => {
+    const value = Math.max(0, orderValue(order) - (order.offerDiscountMinor ?? 0));
+    const row = (entry: { id: string; stamp: number; reward: LoyaltyReward }, fits: boolean): CheckoutReward & { id: string } => {
       const drop = offersToDrop(entry.reward);
       const clashing = fits ? [] : (order.appliedOffers ?? []).filter((offer) => offer.savedMinor > 0
         && (drop === 'all' || drop.includes(offer.perk ?? offerPerk(offer))));
       return {
+        id: entry.id, offMinor: rewardOffMinor(entry.reward, fits ? value : orderValue(order)),
         cardId: card.id, cardName: card.name, stamp: entry.stamp, reward: entry.reward, fits,
         clashWith: clashing.map((offer) => offer.label), clashMinor: clashing.reduce((sum, offer) => sum + offer.savedMinor, 0),
         tookOverOffer: fits && Boolean(order.offersDropped)
@@ -231,4 +261,25 @@ export function dropFor(rows: readonly CheckoutReward[]): Perk[] | 'all' | null 
   if (clashing.length === 0) return null;
   if (clashing.some((row) => offersToDrop(row.reward) === 'all')) return 'all';
   return [...new Set(clashing.map((row) => rewardPerk(row.reward.kind)).filter((perk): perk is Perk => perk !== null))];
+}
+
+/**
+ * Takes the money-off rewards this checkout brings off its price, and drops
+ * any it brought before that it no longer does. True when the price moved.
+ */
+export function applyLoyaltyOff(order: Order, rows: readonly (CheckoutReward & { id: string })[] | null): boolean {
+  if (order.placedAt !== null) return false;
+  const applied: LoyaltyApplied[] = (rows ?? []).filter((row) => row.fits && row.offMinor > 0).map((row) => ({
+    rewardId: row.id, cardId: row.cardId, cardName: row.cardName, stamp: row.stamp,
+    label: `${rewardWords(row.reward, rupees)} · ${row.cardName}`, valueMinor: row.offMinor,
+  }));
+  const off = Math.min(orderValue(order), applied.reduce((sum, row) => sum + row.valueMinor, 0));
+  const moved = off !== (order.loyaltyOffMinor ?? 0);
+  if (applied.length) { order.loyaltyApplied = applied; order.loyaltyOffMinor = off; } else { delete order.loyaltyApplied; delete order.loyaltyOffMinor; }
+  return moved;
+}
+
+/** Works out a checkout's loyalty money off again, as it stands now. */
+export async function refreshLoyaltyOff(repository: Repo, order: Order): Promise<boolean> {
+  return applyLoyaltyOff(order, await checkoutLoyalty(repository, order).catch(() => null));
 }

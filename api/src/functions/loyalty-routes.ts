@@ -78,7 +78,7 @@ async function myCards(request: HttpRequest, _context: InvocationContext) {
     const stamped = orders.filter((order) => stampsCard(card, order));
     return [card.id, {
       holders: new Set(stamped.map((order) => order.buyerId)).size,
-      stamps: stamped.reduce((sum, order) => sum + stampsFrom(card, order), 0),
+      stamps: stamped.reduce((sum, order) => sum + stampsFrom(order), 0),
     }];
   }));
   return json(200, { cards, stats, settings: pricing.loyalty, locked: Boolean(locked), stampsPerCard: STAMPS });

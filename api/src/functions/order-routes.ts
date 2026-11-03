@@ -9,7 +9,7 @@ import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
-import { checkoutLoyalty } from '../loyalty.js';
+import { applyLoyaltyOff, checkoutLoyalty } from '../loyalty.js';
 import { directRefusal, noteSellerCancel } from '../cancel-watch.js';
 import { directPaused } from '../../../shared/billing.js';
 import { cancellationImpact, prepaySavingMinor, repriceBasket } from '../offers.js';
@@ -352,6 +352,8 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
     loyalty = await checkoutLoyalty(repository, order).catch(() => null);
   }
+  // A money-off reward this order reaches comes straight off its price.
+  if (applyLoyaltyOff(order, loyalty)) await repository.updateOrder(order);
 
   const seller = await repository.getUserById(order.sellerId);
   const totalMinor = orderTotalMinor(order);
@@ -367,6 +369,9 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     offerDiscountMinor: order.offerDiscountMinor ?? 0,
     appliedOffers: order.appliedOffers ?? [],
     offerRules: order.offerRules ?? [],
+    /** Loyalty money off this order's price, reward by reward. */
+    loyaltyOffMinor: order.loyaltyOffMinor ?? 0,
+    loyaltyApplied: order.loyaltyApplied ?? [],
     /** What paying in full instead of an advance would save, when the shop offers that. */
     prepaySavingMinor: await prepaySavingMinor(repository, order),
     /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
@@ -394,7 +399,7 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     // Flagged for cancelling too often: the shop takes protected payments only.
     directPaused: (await directRefusal(repository, order.sellerId)) !== null,
     /** Loyalty rewards this order brings; any with `fits: false` clash with its offers and the buyer picks. */
-    loyalty: loyalty && loyalty.length ? { rewards: loyalty, pickedReward: Boolean(order.offersDropped) } : null,
+    loyalty: loyalty && loyalty.length ? { rewards: loyalty.map(({ id: _id, ...row }) => row), pickedReward: Boolean(order.offersDropped) } : null,
   });
 }
 

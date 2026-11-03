@@ -7,6 +7,7 @@ import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
 import type { AppliedOffer, ListingOffer, Perk } from './offers.js';
+import type { LoyaltyApplied } from './loyalty.js';
 import type { FeedPrefs } from './feed.js';
 import type { Badge, GameStage, PostContest, PostGuess, StoreCredit } from './play.js';
 import type {
@@ -1872,6 +1873,12 @@ export interface Order extends BaseDocument {
    * with them: those kinds, or every offer. Missing: every offer applies.
    */
   offersDropped?: Perk[] | 'all';
+  /**
+   * Loyalty money off taken from this order's price at checkout ("15% off" on
+   * the stamp it reaches) - set while it is a checkout, kept once placed.
+   */
+  loyaltyOffMinor?: number;
+  loyaltyApplied?: LoyaltyApplied[];
   appliedOffers?: AppliedOffer[];
   /**
    * The shipping fee per item and the offers as they stood when the buyer

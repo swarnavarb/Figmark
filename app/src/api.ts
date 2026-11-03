@@ -1,5 +1,5 @@
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
-import type { CardProgress, IssuedReward, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
+import type { CardProgress, IssuedReward, LoyaltyApplied, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
 import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
@@ -768,6 +768,9 @@ export interface Checkout {
   directPaused?: boolean;
   /** Loyalty rewards this order brings. One with `fits: false` clashes with an offer here, and the buyer picks. */
   loyalty?: { rewards: CheckoutReward[]; pickedReward: boolean } | null;
+  /** Loyalty money off this order, already taken off `itemMinor`. */
+  loyaltyOffMinor?: number;
+  loyaltyApplied?: LoyaltyApplied[];
 }
 
 export interface CheckoutReward {
@@ -779,6 +782,8 @@ export interface CheckoutReward {
   clashWith: string[];
   clashMinor: number;
   tookOverOffer: boolean;
+  /** Money off this order for a money-off reward: now when it fits, or if picked over the offer. */
+  offMinor: number;
 }
 
 /** One order waiting on the seller to say whether the money arrived. */

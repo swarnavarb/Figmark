@@ -1,13 +1,15 @@
 /**
  * Loyalty cards: a Pro shop's stamp cards.
  *
- * Every delivered order of an item a card covers stamps it - once, or once
- * per item in it when the shop says so (`stampPer`). A card holds eight stamps; the shop puts a reward on any of them the operators allow -
- * cashback, a free item, free shipping, money off. A full card starts again.
+ * Every item bought stamps the card once, when its order is delivered. A
+ * card holds eight stamps; the shop puts a reward on any of them the
+ * operators allow - cashback, a free item, free shipping, money off. A full
+ * card starts again.
  *
- * Cashback is paid at once as store credit at that shop, so it comes off the
- * buyer's next order there by itself. Everything else is a reward the buyer
- * holds in their wallet until the shop marks it given.
+ * Cashback is credited to the buyer's wallet as store credit at that shop.
+ * Money off ("15% off") is an immediate discount: it comes off the price, at
+ * checkout, of the order that reaches the stamp. A free item, free shipping or
+ * the shop's own reward is held in the buyer's wallet until the shop gives it.
  *
  * Rewards and offers go together, unless they give the same kind of thing
  * (`Perk`): cashback and a money-off offer, a free item and buy-2-get-1, free
@@ -28,11 +30,11 @@ export const REWARD_KINDS = ['cashback_flat', 'cashback_percent', 'free_item', '
 export type RewardKind = (typeof REWARD_KINDS)[number];
 
 export const REWARD_META: Record<RewardKind, { icon: string; label: string; hint: string; credit: boolean }> = {
-  cashback_flat: { icon: '💸', label: 'Cashback (₹)', hint: 'A fixed amount, paid as store credit the moment the stamp lands.', credit: true },
-  cashback_percent: { icon: '🔁', label: 'Cashback (%)', hint: 'A share of the stamped order, paid as store credit at once.', credit: true },
+  cashback_flat: { icon: '💸', label: 'Cashback (₹)', hint: 'A fixed amount, credited to the buyer\'s wallet when the order arrives.', credit: true },
+  cashback_percent: { icon: '🔁', label: 'Cashback (%)', hint: 'A share of the order, credited to the buyer\'s wallet when it arrives.', credit: true },
   free_item: { icon: '🎁', label: 'Free item', hint: 'Something free with a later order - the shop hands it over.', credit: false },
   free_shipping: { icon: '🚚', label: 'Free shipping', hint: 'Shipping on the next order is on the shop.', credit: false },
-  percent_off: { icon: '🏷️', label: '% off next order', hint: 'Money off the next order, applied by the shop.', credit: false },
+  percent_off: { icon: '🏷️', label: '% off', hint: 'Taken off the price at checkout, on the order that reaches this stamp.', credit: false },
   custom: { icon: '⭐', label: 'Something else', hint: 'Anything the shop words itself: early access, a sticker, a sample.', credit: false },
 };
 
@@ -101,10 +103,7 @@ export function offersToDrop(reward: LoyaltyReward): Perk[] | 'all' {
   return perk ? [perk] : [];
 }
 
-/** One stamp per delivered order, or one per item in it. */
-export type StampPer = 'order' | 'item';
-
-/** The most stamps one order can give on a per-item card: a full card. */
+/** The most stamps one order can give: a full card. */
 export const MAX_STAMPS_PER_ORDER = STAMPS;
 
 export const CARD_THEMES = ['gold', 'pink', 'mint', 'violet', 'ink'] as const;
@@ -119,8 +118,6 @@ export interface LoyaltyCard {
   listingIds: string[] | null;
   /** An order below this does not stamp. */
   minOrderMinor: number;
-  /** `item` stamps once per item in an order; missing on older cards, which stamp once per order. */
-  stampPer?: StampPer;
   /** One slot per stamp, a reward or nothing. */
   rewards: (LoyaltyReward | null)[];
   active: boolean;
@@ -204,7 +201,7 @@ export function rewardWords(reward: LoyaltyReward, money: (minor: number) => str
     case 'cashback_percent': return `${pct(reward.bp)} cashback`;
     case 'free_item': return `Free ${reward.text || 'item'}`;
     case 'free_shipping': return 'Free shipping';
-    case 'percent_off': return `${pct(reward.bp)} off next order`;
+    case 'percent_off': return `${pct(reward.bp)} off`;
     default: return reward.text || 'A surprise';
   }
 }
@@ -212,7 +209,7 @@ export function rewardWords(reward: LoyaltyReward, money: (minor: number) => str
 /** Checks a card a shop saved against the operators' rules. */
 export function cleanCard(
   raw: unknown, settings: LoyaltySettings,
-): { card: Pick<LoyaltyCard, 'name' | 'theme' | 'listingIds' | 'minOrderMinor' | 'stampPer' | 'rewards' | 'active'> } | { error: string } {
+): { card: Pick<LoyaltyCard, 'name' | 'theme' | 'listingIds' | 'minOrderMinor' | 'rewards' | 'active'> } | { error: string } {
   if (!raw || typeof raw !== 'object') return { error: 'Send the card.' };
   const input = raw as Record<string, unknown>;
   const name = typeof input.name === 'string' ? input.name.trim().slice(0, 40) : '';
@@ -252,8 +249,7 @@ export function cleanCard(
     rewards.push(reward);
   }
   if (!rewards.some(Boolean)) return { error: 'Put a reward on at least one stamp.' };
-  const stampPer: StampPer = input.stampPer === 'item' ? 'item' : 'order';
-  return { card: { name, theme, listingIds, minOrderMinor: min, stampPer, rewards, active: input.active !== false } };
+  return { card: { name, theme, listingIds, minOrderMinor: min, rewards, active: input.active !== false } };
 }
 
 /** Whether an order stamps a card: delivered, an item the card covers, big enough, after the card began. */
@@ -276,9 +272,23 @@ type StampOrder = Parameters<typeof stampsCard>[1] & {
 /** The kinds of offer an order took. */
 export const orderPerks = (order: Pick<StampOrder, 'appliedOffers'>): Perk[] => appliedPerks(order.appliedOffers);
 
-/** How many stamps one order puts on a card. */
-export const stampsFrom = (card: Pick<LoyaltyCard, 'stampPer'>, order: { quantity: number }): number =>
-  card.stampPer === 'item' ? Math.min(MAX_STAMPS_PER_ORDER, Math.max(1, Math.floor(order.quantity))) : 1;
+/** How many stamps one order puts on a card: one per item. */
+export const stampsFrom = (order: { quantity: number }): number =>
+  Math.min(MAX_STAMPS_PER_ORDER, Math.max(1, Math.floor(order.quantity)));
+
+/** What a money-off reward takes off an order of this value; 0 for any other reward. */
+export const rewardOffMinor = (reward: LoyaltyReward, valueMinor: number): number =>
+  reward.kind === 'percent_off' ? Math.max(0, Math.round((valueMinor * (reward.bp ?? 0)) / 10_000)) : 0;
+
+/** A reward taken off an order's price at checkout. */
+export interface LoyaltyApplied {
+  rewardId: string;
+  cardId: string;
+  cardName: string;
+  stamp: number;
+  label: string;
+  valueMinor: number;
+}
 
 /** A reward a card has paid out, before it is written down. */
 export interface Payout<O> {
@@ -294,14 +304,15 @@ type Reached = Omit<Payout<never>, 'order'>;
 
 /**
  * One buyer's history on one card, replayed from their delivered orders in
- * the order they arrived. The same orders always give the same answer, so
+ * the order they arrived. `claimed` are rewards already taken off a placed
+ * order's price at checkout. The same orders always give the same answer, so
  * the ids it hands out are stable and paying twice is impossible.
  *
  * Each order pays every reward waiting that fits beside its offers; one that
  * clashes waits for a later order it fits. `at` says what was waiting, paid
  * and held when each order came in - what checkout shows the buyer.
  */
-export function replayCard<O extends StampOrder>(card: LoyaltyCard, orders: readonly O[]): {
+export function replayCard<O extends StampOrder>(card: LoyaltyCard, orders: readonly O[], claimed: ReadonlySet<string> = new Set()): {
   total: number; payouts: Payout<O>[]; waiting: Reached[]; at: Map<string, { paid: Reached[]; held: Reached[] }>;
 } {
   const stamped = orders.filter((order) => stampsCard(card, order))
@@ -311,11 +322,12 @@ export function replayCard<O extends StampOrder>(card: LoyaltyCard, orders: read
   const payouts: Payout<O>[] = [];
   const at = new Map<string, { paid: Reached[]; held: Reached[] }>();
   for (const order of stamped) {
-    for (let count = stampsFrom(card, order); count > 0; count -= 1) {
+    for (let count = stampsFrom(order); count > 0; count -= 1) {
       const { round, stamp } = stampPosition(total);
       total += 1;
       const reward = card.rewards[stamp - 1];
-      if (reward) queue.push({ id: `${card.id}:${round}:${stamp}`, round, stamp, reward });
+      // Already taken off an order's price at checkout.
+      if (reward && !claimed.has(`${card.id}:${round}:${stamp}`)) queue.push({ id: `${card.id}:${round}:${stamp}`, round, stamp, reward });
     }
     const perks = orderPerks(order);
     const paid = queue.filter((entry) => rewardFits(entry.reward, perks));

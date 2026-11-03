@@ -413,13 +413,12 @@ await check('a per-item card stamps each item; a reward goes with an offer unles
   const saved = await loyalty.saveCardRoute(req({
     headers: shop.headers,
     body: {
-      name: 'Per item', theme: 'mint', stampPer: 'item',
+      name: 'Per item', theme: 'mint',
       rewards: [null, { kind: 'cashback_flat', amountMinor: 3_000 }, { kind: 'free_shipping' }, null, { kind: 'free_item', text: 'Keychain', withOffers: false }],
     },
   }), ctx);
   assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
   const card = saved.jsonBody.card;
-  assert.equal(card.stampPer, 'item');
   assert.equal(card.rewards[4].withOffers, false);
   const buyer = await newPerson('Offer Buyer');
   const money = [{ offerId: 'o1', kind: 'discount', perk: 'money', label: '10% off on 2+', savedMinor: 1_000 }];
@@ -496,6 +495,46 @@ await check('at checkout a clashing reward is the buyer’s pick: taking it drop
   // And back again.
   await loyalty.pickAtCheckoutRoute(req({ headers: buyer.headers, params: { id: checkout.id }, body: { pick: 'offer' } }), ctx);
   assert.equal((await repository.getOrder(checkout.id)).offerDiscountMinor, 2_000);
+});
+
+await check('a money-off reward comes straight off the price at checkout, once', async () => {
+  const { checkoutLoyalty, applyLoyaltyOff, syncLoyalty } = await import(new URL('api/src/loyalty.js', dist));
+  const { orderTotalMinor } = await import(new URL('shared/service-stores.js', dist));
+  const buyer = await newPerson('Discount Buyer');
+  const base = await repository.getListing(anyOrder.listingId);
+  const listing = { ...structuredClone(base), id: `lst_off_${buyer.id.slice(-4)}`, sellerId: shop.id, quantityAvailable: 50, status: 'active', offers: [] };
+  await repository.createListing(listing);
+  const saved = await loyalty.saveCardRoute(req({
+    headers: shop.headers,
+    body: { name: 'Off card', theme: 'violet', listingIds: [listing.id], rewards: [null, { kind: 'percent_off', bp: 1_500 }] },
+  }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  const make = async (tag) => {
+    const order = {
+      ...structuredClone(anyOrder), id: `ord_off_${tag}_${buyer.id.slice(-4)}`, sellerId: shop.id, buyerId: buyer.id, listingId: listing.id,
+      status: 'pending', placedAt: null, completedAt: null, quantity: 2, unitPriceMinor: 10_000, paymentStatus: 'unpaid', payments: [],
+      offerRules: [], appliedOffers: [], offerDiscountMinor: 0, shippingMinor: 0, lotId: null,
+    };
+    await repository.createOrder(order);
+    return order;
+  };
+  // Two items: stamps 1 and 2, and stamp 2 is 15% off - taken off this order now.
+  const first = await make('a');
+  applyLoyaltyOff(first, await checkoutLoyalty(repository, first));
+  assert.equal(first.loyaltyOffMinor, 3_000);
+  assert.equal(orderTotalMinor(first), 17_000);
+  assert.equal(first.loyaltyApplied[0].stamp, 2);
+  // Placed and delivered: written down as used, never paid again.
+  const at = new Date(Date.now() + 9_000).toISOString();
+  Object.assign(first, { placedAt: at, status: 'delivered', completedAt: at });
+  await repository.updateOrder(first);
+  await syncLoyalty(repository, buyer.id, shop.id);
+  const issued = (await loyalty.shopRewardsRoute(req({ headers: shop.headers }), ctx)).jsonBody.rewards
+    .filter((entry) => entry.buyerId === buyer.id);
+  assert.deepEqual(issued.map((entry) => [entry.status, entry.valueMinor]), [['used', 3_000]], 'written down; nothing for the shop to hand over');
+  const second = await make('b');
+  applyLoyaltyOff(second, await checkoutLoyalty(repository, second));
+  assert.equal(second.loyaltyOffMinor ?? 0, 0, 'stamps 3 and 4 carry nothing');
 });
 
 console.log(`\n${passed} billing checks passed`);

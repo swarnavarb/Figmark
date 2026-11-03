@@ -196,11 +196,11 @@ export function goodsMinor(order: Pick<Order, 'unitPriceMinor' | 'quantity'>): n
  * settles it with the forwarder alongside the freight bill.
  */
 export function orderTotalMinor(
-  order: Pick<Order, 'unitPriceMinor' | 'quantity' | 'addOns'> & Partial<Pick<Order, 'shippingMinor' | 'offerDiscountMinor'>>,
+  order: Pick<Order, 'unitPriceMinor' | 'quantity' | 'addOns'> & Partial<Pick<Order, 'shippingMinor' | 'offerDiscountMinor' | 'loyaltyOffMinor'>>,
 ): number {
   return Math.max(
     0,
-    goodsMinor(order) - (order.offerDiscountMinor ?? 0) + (order.shippingMinor ?? 0)
+    goodsMinor(order) - (order.offerDiscountMinor ?? 0) - (order.loyaltyOffMinor ?? 0) + (order.shippingMinor ?? 0)
       + liveAddOns(order).reduce((sum, addOn) => sum + addOn.premiumMinor, 0),
   );
 }

@@ -6,6 +6,7 @@ import type { Listing } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
 import { Loading } from './Feedback';
+import { InfoTip } from './InfoTip';
 import { OfferEditor } from './Offers';
 import { EmptyState, ErrorNotice, Modal, PageError } from './ui';
 import '../styles/ShopOffers.css';
@@ -65,7 +66,7 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
       <section className="shopoffr__hero">
         <div>
           <h2 className="shopoffr__title">Offers</h2>
-          <p className="shopoffr__sub">Money off, bundles, free shipping and bulk prices - on {withOffers.length} of {live.length} items.</p>
+          <p className="shopoffr__sub">On {withOffers.length} of {live.length} items. They apply on their own at checkout.</p>
         </div>
         <dl className="shopoffr__stats">
           <div><dt>Items with offers</dt><dd>{withOffers.length}</dd></div>
@@ -74,10 +75,13 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
       </section>
 
       <p className="shopoffr__rule">
-        <b>Offers and loyalty rewards work together</b> - unless both give the same kind of thing (money off or back, a free
-        item, free shipping), or the reward is set to stay apart from offers. Then the buyer picks one at checkout. Clashes are
-        marked on each item below. Store credit and refunds always work with both.
-        {onLoyalty && <> <button type="button" className="shopoffr__link" onClick={onLoyalty}>Your loyalty cards →</button></>}
+        <b>Offers and loyalty rewards add up.</b> Same kind? The buyer picks one.
+        <InfoTip label="How offers and loyalty rewards work together">
+          <p>An offer and a reward clash when both give the same thing - money off or back, a free item, free shipping - or when the reward is set to stay apart from offers. The buyer picks one at checkout; a reward they skip waits for their next order.</p>
+          <p>Offers apply on their own: when a buyer adds more to the same lot, the price drops at checkout.</p>
+          <p>Keep loyalty rewards bigger than your offers - they thank people for coming back. Store credit and refunds always work with both.</p>
+        </InfoTip>
+        {onLoyalty && <button type="button" className="shopoffr__link" onClick={onLoyalty}>Loyalty cards →</button>}
       </p>
 
       <div className="shopoffr__tabs" role="tablist" aria-label="Which items">
@@ -166,9 +170,9 @@ function OffersDialog({ listing, cards, onClose, onSaved }: {
       <div className="stack">
         <OfferEditor offers={offers} onChange={setOffers} priceMinor={listing.priceMinor} />
         {clashesFor(listing.id, offers, cards).length > 0 && (
-          <div className="shopoffr__rule">
-            <b>These clash with your loyalty rewards - the buyer picks one at checkout:</b>
-            {clashesFor(listing.id, offers, cards).map((line) => <div key={line}>{line}</div>)}
+          <div className="shopoffr__clashes">
+            <b>⚠ Clashes with your loyalty rewards - the buyer picks one</b>
+            {clashesFor(listing.id, offers, cards).map((line) => <small key={line}>{line}</small>)}
           </div>
         )}
         {error && <ErrorNotice message={error} />}

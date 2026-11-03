@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   CARD_THEMES, REWARD_KINDS, REWARD_META, STAMPS, rewardWords,
-  type CardTheme, type IssuedReward, type LoyaltyCard, type LoyaltyReward, type LoyaltySettings, type RewardKind, type StampPer,
+  type CardTheme, type IssuedReward, type LoyaltyCard, type LoyaltyReward, type LoyaltySettings, type RewardKind,
   rewardPerk,
 } from '@shared/loyalty';
 import { PERK_WORDS, offerLabel, offerPerk, type Perk } from '@shared/offers';
@@ -10,6 +10,7 @@ import { ApiRequestError, api } from '../api';
 import { formatMoney, timeAgo } from '../format';
 import { Loading } from './Feedback';
 import { Select } from './Select';
+import { InfoTip } from './InfoTip';
 import { StampCard } from './LoyaltyCard';
 import '../styles/LoyaltyManager.css';
 
@@ -26,20 +27,19 @@ type Draft = {
   everything: boolean;
   listingIds: string[];
   minOrder: string;
-  stampPer: StampPer;
   rewards: (LoyaltyReward | null)[];
   active: boolean;
 };
 
 const blank = (): Draft => ({
-  name: 'Regulars card', theme: 'gold', everything: true, listingIds: [], minOrder: '0', stampPer: 'order',
+  name: 'Regulars card', theme: 'gold', everything: true, listingIds: [], minOrder: '0',
   rewards: Array.from({ length: STAMPS }, (_, index) => (index === 3 ? { kind: 'cashback_flat', amountMinor: 5_000 } : index === 7 ? { kind: 'free_shipping' } : null)),
   active: true,
 });
 
 const fromCard = (card: LoyaltyCard): Draft => ({
   id: card.id, name: card.name, theme: card.theme, everything: card.listingIds === null, listingIds: card.listingIds ?? [],
-  minOrder: String(card.minOrderMinor / 100), stampPer: card.stampPer ?? 'order', rewards: [...card.rewards], active: card.active,
+  minOrder: String(card.minOrderMinor / 100), rewards: [...card.rewards], active: card.active,
 });
 
 export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
@@ -104,7 +104,7 @@ export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
                 rewards={card.rewards} stamps={0} />
               <div className="loyman__meta">
                 <span className={`badge${card.active ? ' badge--ok' : ''}`}>{card.active ? 'Live' : 'Paused'}</span>
-                <span>{card.stampPer === 'item' ? 'A stamp per item' : 'A stamp per order'} · {data.stats[card.id]?.holders ?? 0} holders · {data.stats[card.id]?.stamps ?? 0} stamps given</span>
+                <span>{data.stats[card.id]?.holders ?? 0} holders · {data.stats[card.id]?.stamps ?? 0} stamps given</span>
                 {card.minOrderMinor > 0 && <span>From {formatMoney(card.minOrderMinor)}</span>}
                 <button type="button" className="btn btn--quiet btn--sm" onClick={() => setDraft(fromCard(card))}>Edit</button>
                 <button type="button" className="btn btn--quiet btn--sm"
@@ -128,7 +128,9 @@ export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
                 </span>
                 {entry.status === 'ready'
                   ? <button type="button" className="btn btn--sm" onClick={() => void use(entry.id)}>Mark given</button>
-                  : <span className={`badge${entry.status === 'credited' ? ' badge--ok' : ''}`}>{entry.status === 'credited' ? 'Paid as credit' : 'Given'}</span>}
+                  : <span className={`badge${entry.status === 'credited' ? ' badge--ok' : ''}`}>
+                    {entry.status === 'credited' ? 'Paid as credit' : entry.reward.kind === 'percent_off' && entry.valueMinor > 0 ? `${formatMoney(entry.valueMinor)} off at checkout` : 'Given'}
+                  </span>}
               </div>
             ))}
           </div>
@@ -161,6 +163,26 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
     }
   }
   const anyOffers = [...offersByPerk.values()].flat();
+  // The biggest money-off offer on those items, to hold rewards up against.
+  let bestPercent: { value: number; label: string } | null = null;
+  let bestFixed: { value: number; label: string } | null = null;
+  for (const listing of listings ?? []) {
+    if (listing.status !== 'active' || (!draft.everything && !draft.listingIds.includes(listing.id))) continue;
+    for (const offer of listing.offers ?? []) {
+      if (!offer.discount) continue;
+      if (offer.discount.type === 'percent' && offer.discount.value > (bestPercent?.value ?? 0)) bestPercent = { value: offer.discount.value, label: offerLabel(offer) };
+      if (offer.discount.type === 'fixed' && offer.discount.value > (bestFixed?.value ?? 0)) bestFixed = { value: offer.discount.value, label: offerLabel(offer) };
+    }
+  }
+  /** Says so when a reward gives less than an offer anybody gets. */
+  const weakNote = (reward: LoyaltyReward): string | null => {
+    const pct = reward.kind === 'percent_off' || reward.kind === 'cashback_percent' ? (reward.bp ?? 0) / 100 : null;
+    if (pct !== null && bestPercent && pct <= bestPercent.value) return `Smaller than your offer "${bestPercent.label}" - make it bigger so it feels like a reward.`;
+    if (reward.kind === 'cashback_flat' && bestFixed && (reward.amountMinor ?? 0) <= bestFixed.value) {
+      return `Smaller than your offer "${bestFixed.label}" - make it bigger so it feels like a reward.`;
+    }
+    return null;
+  };
   const clashNote = (reward: LoyaltyReward): string | null => {
     if (anyOffers.length === 0) return null;
     if (reward.withOffers === false) return `Never with an offer. On an order with ${anyOffers.length === 1 ? anyOffers[0] : 'one of your offers'}, the buyer picks one.`;
@@ -180,7 +202,6 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
         id: draft.id, name: draft.name, theme: draft.theme, active: draft.active,
         listingIds: draft.everything ? null : draft.listingIds,
         minOrderMinor: Math.round(Number(draft.minOrder || 0) * 100),
-        stampPer: draft.stampPer,
         rewards: draft.rewards,
       });
       onSaved();
@@ -229,17 +250,7 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
             </div>
           )
         )}
-        <div className="field">
-          <span>A stamp for</span>
-          <div className="loyman__per" role="radiogroup" aria-label="A stamp for">
-            {([['order', 'Every order', 'One stamp, however many items'], ['item', 'Every item', 'An order of 3 gives 3 stamps']] as const).map(([value, title, hint]) => (
-              <button key={value} type="button" role="radio" aria-checked={draft.stampPer === value}
-                className={`loyman__peropt${draft.stampPer === value ? ' is-on' : ''}`} onClick={() => setDraft({ ...draft, stampPer: value })}>
-                <b>{title}</b><small>{hint}</small>
-              </button>
-            ))}
-          </div>
-        </div>
+        <p className="loyman__per"><span aria-hidden="true">★</span> Every item bought earns 1 stamp - an order of 3 gives 3.</p>
         <label className="field" style={{ maxWidth: 220 }}>
           <span>Smallest order that stamps (₹)</span>
           <input type="number" inputMode="decimal" min={0} value={draft.minOrder} onChange={(e) => setDraft({ ...draft, minOrder: e.target.value })} />
@@ -252,11 +263,17 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
 
       <div className="card card--pad stack">
         <h3 style={{ margin: 0 }}>What each stamp gives</h3>
+        <p className="loyman__better">
+          <b>Make rewards better than your offers.</b> They thank people for coming back - a reward smaller than an offer
+          anyone gets feels like nothing.
+        </p>
         <p className="loyman__rule">
-          Rewards work alongside your offers, except two of the same kind - cashback or money off with a money-off offer, a free
-          item with buy-X-get-Y, free shipping with free shipping. Then the buyer picks one at checkout, and a reward they skip
-          waits for a later order. Untick &quot;Can be used with offers&quot; to keep a reward apart from every offer. Store credit
-          and refunds always work with both.
+          Cashback goes to the buyer&apos;s wallet. Money off comes straight off the price.
+          <InfoTip label="How rewards and offers work together">
+            <p>Rewards add up with your offers - except two of the same kind: cashback or money off with a money-off offer, a free item with buy-X-get-Y, free shipping with free shipping.</p>
+            <p>Then the buyer picks one at checkout, and a reward they skip waits for their next order. Untick &quot;Can be used with offers&quot; to keep a reward apart from every offer.</p>
+            <p>Store credit and refunds always work with both.</p>
+          </InfoTip>
         </p>
         <div className="loyman__slots">
           {draft.rewards.map((reward, index) => {
@@ -292,6 +309,7 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
                       <span>Can be used with offers</span>
                     </label>
                   )}
+                  {reward && weakNote(reward) && <small className="loyman__weak">↓ {weakNote(reward)}</small>}
                   {reward && clashNote(reward) && <small className="loyman__clash">⚠ {clashNote(reward)}</small>}
                 </div>
               </div>
