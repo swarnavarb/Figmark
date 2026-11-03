@@ -1,3 +1,5 @@
+import { takeFeeOnRelease } from './billing.js';
+import { rupees } from '../../shared/payments.js';
 import { inLot } from '../../shared/fulfilment.js';
 import type { Order, StageEvent } from '../../shared/models.js';
 import { autoReleaseDue, awaitingAcceptance, daysFrom, isStopped } from '../../shared/orders.js';
@@ -180,6 +182,8 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
   }
   // The shop's on-time and repeat numbers move with every arrival.
   await refreshSellerStats(repository, order.sellerId).catch(() => null);
+  // A delivered order stamps the buyer's loyalty cards with this shop.
+  await import('./loyalty.js').then(({ syncLoyalty }) => syncLoyalty(repository, order.buyerId, order.sellerId)).catch(() => null);
   const held = order.hold.state === 'held';
   const named = await orderNames(repository, order);
   await notify(
@@ -220,6 +224,9 @@ export async function releaseHeld(order: Order, reason: string, by: string, repo
     saved = (await repository.getOrder(saved.id)) ?? saved;
   }
   if (wasHeld) {
+    // Figmark's platform fee comes out of the money on its way through the
+    // gateway: nothing for the seller to settle later.
+    const fee = await takeFeeOnRelease(repository, saved).catch(() => 0);
     const named = await orderNames(repository, order);
     await notify(
       repository,
@@ -227,7 +234,7 @@ export async function releaseHeld(order: Order, reason: string, by: string, repo
       {
         kind: 'payment_released',
         title: `${capital(possessive(named.buyer))} payment released to ${named.forShop}`,
-        body: `${order.itemName} · ${reason}`,
+        body: `${order.itemName} · ${reason}${fee > 0 ? ` · ${rupees(fee)} platform fee taken` : ''}`,
         link: `/order/${encodeURIComponent(order.id)}`,
       },
       { except: by },

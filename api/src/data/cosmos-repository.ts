@@ -506,7 +506,7 @@ export class CosmosRepository implements Repository {
     if (ids.length === 0) return [];
     const { resources } = await this.container('users')
       .items.query<SellerCardSource>({
-        query: 'SELECT c.id, c.displayName, c.createdAt, c.sellerProfile, c.sellerTrust FROM c WHERE ARRAY_CONTAINS(@ids, c.id)',
+        query: 'SELECT c.id, c.displayName, c.createdAt, c.sellerProfile, c.sellerTrust, c.pro FROM c WHERE ARRAY_CONTAINS(@ids, c.id)',
         parameters: [{ name: '@ids', value: [...ids] }],
       })
       .fetchAll();
@@ -2013,7 +2013,7 @@ export class CosmosRepository implements Repository {
       // The operations console reads everything, because it deletes what an
       // account made and cannot do that from a filtered list. Everybody else
       // gets the catalog: active, and not hidden behind a members' window.
-      clauses.push('c.status = "active"', '(NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)');
+      clauses.push('c.status = "active"', '(NOT IS_DEFINED(c.unlisted) OR c.unlisted = false)', '(NOT IS_DEFINED(c.feeHold) OR c.feeHold = false)');
     }
     if (query.sellerId) where('c.sellerId = @seller', '@seller', query.sellerId);
     if (query.category) where('c.category = @cat', '@cat', query.category);

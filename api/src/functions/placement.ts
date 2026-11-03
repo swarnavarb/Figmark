@@ -1,3 +1,4 @@
+import { termsFor } from '../billing.js';
 import { randomUUID } from 'node:crypto';
 import type { Listing, Order, Pledge } from '../../../shared/models.js';
 import { fullRuleOf, isGoingAhead } from '../../../shared/preorder.js';
@@ -10,6 +11,7 @@ import type { getRepository } from '../data/index.js';
 import { notify, orderNames } from './notify.js';
 import { holdsPlace, reconcilePreOrder } from './preorder.js';
 import { storeCreditLeft } from '../../../shared/play.js';
+import { refreshLoyaltyOff } from '../loyalty.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -52,6 +54,7 @@ export function firstDibsFor(listing: Listing, buyerId: string | null): 'none' |
 export function unavailableReason(listing: Listing | null, order: Order): string | null {
   if (!listing || listing.status !== 'active' || isExpired(listing)) return 'This item is no longer for sale.';
   if (listing.privateFor && listing.privateFor !== order.buyerId) return 'This item is no longer for sale.';
+  if (listing.feeHold) return 'This shop is not taking orders right now.';
   if (firstDibsFor(listing, order.buyerId) === 'waiting') {
     return 'The people who voted for this get first dibs. It opens to everybody soon.';
   }
@@ -151,6 +154,8 @@ export async function placeOrder(
   // The basket may have moved the price too: an offer earned or lost since the
   // buyer last looked is as much a change as the seller editing the price.
   await repriceBasket(repository, order.sellerId, order.buyerId, 'placed', { include: [order], quiet: true });
+  // And loyalty money off, as the buyer's card stands now.
+  await refreshLoyaltyOff(repository, order);
   if (unitMoved || orderTotalMinor(order) !== was) {
     return {
       code: 'price_changed',
@@ -184,6 +189,10 @@ export async function placeOrder(
 
   order.createdAt = now;
   order.updatedAt = now;
+  // Figmark's platform fee, on the terms of this moment: a later change of
+  // rate, or of the shop's Pro, never moves what this sale owes.
+  const seller = await repository.getUserById(order.sellerId);
+  order.feeTerms = await termsFor(repository, 'shop', seller);
   // Shown on the checkout only; an order is at the price it was placed at.
   order.priceChange = null;
   // The timeline opens when the order did, not when Buy was first pressed.

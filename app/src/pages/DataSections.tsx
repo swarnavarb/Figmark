@@ -1,3 +1,5 @@
+import { ProLock, useProLocked } from '../components/Billing';
+import type { ProFeatureId } from '@shared/billing';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
@@ -56,7 +58,10 @@ function PeriodPicker({ days, onChange }: { days: number; onChange: (days: numbe
 }
 
 /** The deeper readings in a section: marked Pro, and open to everyone until Pro is switched on. */
-function ProBlock({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+function ProBlock({ title, note, children, feature = 'insights' }: { title: string; note?: string; children: ReactNode; feature?: ProFeatureId }) {
+  const locked = useProLocked(feature);
+  if (locked === null) return null;
+  if (locked) return <ProLock feature={feature} title={title} />;
   return (
     <section className="card card--pad stack dpro">
       <div className="dpro__head">
@@ -226,6 +231,7 @@ export function CustomersSection({ store }: { store: StoreAccess }) {
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [writing, setWriting] = useState(false);
+  const messagingLocked = useProLocked('customers') === true;
   const [params, setParams] = useSearchParams();
   const openId = params.get('customer');
   const openCustomer = (id: string | null) => setParams((current) => {
@@ -331,7 +337,9 @@ export function CustomersSection({ store }: { store: StoreAccess }) {
       {picked.size > 0 && (
         <div className="dpicked" role="status">
           <span>{picked.size} picked</span>
-          <button type="button" className="btn btn--sm" onClick={() => setWriting(true)}>✉️ Message them <span className="probadge">PRO</span></button>
+          {messagingLocked
+            ? <ProLock feature="customers" inline title="Message them" />
+            : <button type="button" className="btn btn--sm" onClick={() => setWriting(true)}>✉️ Message them <span className="probadge">PRO</span></button>}
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPicked(new Set())}>Clear</button>
         </div>
       )}

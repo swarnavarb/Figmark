@@ -1,3 +1,4 @@
+import { ProBadge } from '../components/Billing';
 import { ShippingChip, WholesaleChip } from '../components/Offers';
 import { wholesaleHint } from '@shared/offers';
 import { useNow } from '../clock';
@@ -716,7 +717,7 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
               <Glyph name="crest" size={13} />
               {listing.seller.photoUrl && <StorePic url={listing.seller.photoUrl} />}
             </span>
-            <span className="qseller__name">{listing.seller.storefrontName}</span>
+            <span className="qseller__name">{listing.seller.storefrontName}{listing.seller.pro && <ProBadge />}</span>
             <span className="qseller__lv"><LevelChip tag={listing.seller.level} /></span>
           </span>
         )}

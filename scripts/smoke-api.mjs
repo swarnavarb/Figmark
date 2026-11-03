@@ -222,6 +222,13 @@ const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 /** Reads a row straight from the store, for the state a response does not carry. */
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
 const repository_user = async (id) => (await getRepository()).getUserById(id);
+// These checks were written while every Pro tool was open to every shop.
+// Pro, platform fees, GST and vouchers have their own (smoke-billing.mjs);
+// here Pro is switched off, the way an operator can, so the older checks read
+// as they always did.
+await (await getRepository()).saveSiteContent({
+  id: 'pricing', data: { pro: { enabled: false } }, updatedBy: 'smoke', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+});
 const repository_dispute = async (id) => (await getRepository()).getDisputeById(id);
 // Fixture buyers have no password, so their notifications are read through the
 // same repository the routes write them to rather than by signing in as them.

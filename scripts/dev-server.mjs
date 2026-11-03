@@ -157,6 +157,16 @@ const {
 const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
 const { settingsRoute, opsSettingsRoute, opsSettingsSaveRoute } = await import(new URL('settings-routes.js', apiRoot));
 const {
+  pricingRoute, myFeesRoute, payFeesRoute, myProRoute, proStatusRoute, buyProRoute, redeemVoucherRoute, startTrialRoute,
+  listGivenRoute, giveRoute, receivedGiftsRoute, answerGiftRoute, myStoreCreditRoute,
+  opsPricingRoute, opsSavePricingRoute, opsVouchersRoute, opsMakeVouchersRoute, opsToggleVoucherRoute, opsGrantProRoute,
+  opsFeesRoute, opsRefreshFeesRoute, opsWaiveFeesRoute,
+} = await import(new URL('billing-routes.js', apiRoot));
+const { myCancelsRoute, cancelAppealRoute, opsCancelsRoute, opsCancelDecideRoute } = await import(new URL('cancel-routes.js', apiRoot));
+const {
+  shopLoyaltyRoute, myLoyaltyRoute, myCardsRoute, saveCardRoute, deleteCardRoute, shopRewardsRoute, useRewardRoute, pickAtCheckoutRoute,
+} = await import(new URL('loyalty-routes.js', apiRoot));
+const {
   routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute, opsRouteCommonSaveRoute, opsRouteButtonsSaveRoute,
 } = await import(new URL('route-admin-routes.js', apiRoot));
 const {
@@ -411,6 +421,40 @@ const routes = [
   ['GET', '/api/ops/actions', adminActionsRoute],
   ['POST', '/api/ops/actions/:id/decide', adminDecideActionRoute],
   ['GET', '/api/ops/ledger', adminLedgerRoute],
+  ['GET', '/api/pricing', pricingRoute],
+  ['GET', '/api/me/fees', myFeesRoute],
+  ['POST', '/api/me/fees/pay', payFeesRoute],
+  ['GET', '/api/me/pro', myProRoute],
+  ['GET', '/api/pro/status', proStatusRoute],
+  ['POST', '/api/me/pro/buy', buyProRoute],
+  ['POST', '/api/me/pro/redeem', redeemVoucherRoute],
+  ['POST', '/api/me/pro/trial', startTrialRoute],
+  ['GET', '/api/me/gifts', listGivenRoute],
+  ['POST', '/api/me/gifts/give', giveRoute],
+  ['GET', '/api/me/gifts/received', receivedGiftsRoute],
+  ['POST', '/api/me/gifts/:id/answer', answerGiftRoute],
+  ['GET', '/api/me/store-credit', myStoreCreditRoute],
+  ['GET', '/api/ops/pricing', opsPricingRoute],
+  ['POST', '/api/ops/pricing/save', opsSavePricingRoute],
+  ['GET', '/api/ops/pro/vouchers', opsVouchersRoute],
+  ['POST', '/api/ops/pro/vouchers/make', opsMakeVouchersRoute],
+  ['POST', '/api/ops/pro/vouchers/:code/toggle', opsToggleVoucherRoute],
+  ['POST', '/api/ops/pro/grant', opsGrantProRoute],
+  ['GET', '/api/ops/fees', opsFeesRoute],
+  ['POST', '/api/ops/fees/:id/refresh', opsRefreshFeesRoute],
+  ['POST', '/api/ops/fees/:id/waive', opsWaiveFeesRoute],
+  ['GET', '/api/me/cancels', myCancelsRoute],
+  ['POST', '/api/me/cancels/appeal', cancelAppealRoute],
+  ['GET', '/api/ops/cancels', opsCancelsRoute],
+  ['POST', '/api/ops/cancels/:id/decide', opsCancelDecideRoute],
+  ['GET', '/api/loyalty/shop/:id', shopLoyaltyRoute],
+  ['GET', '/api/me/loyalty', myLoyaltyRoute],
+  ['GET', '/api/me/loyalty/cards', myCardsRoute],
+  ['POST', '/api/me/loyalty/cards/save', saveCardRoute],
+  ['POST', '/api/me/loyalty/cards/:id/delete', deleteCardRoute],
+  ['GET', '/api/me/loyalty/rewards', shopRewardsRoute],
+  ['POST', '/api/me/loyalty/rewards/:id/use', useRewardRoute],
+  ['POST', '/api/orders/:id/loyalty-pick', pickAtCheckoutRoute],
   ['GET', '/api/ops/audit', adminAuditRoute],
   ['GET', '/api/wants', wantsBoardRoute],
   ['POST', '/api/wants/new', wantPostRoute],

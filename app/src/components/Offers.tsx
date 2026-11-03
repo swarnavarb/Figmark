@@ -2,9 +2,10 @@ import { useState } from 'react';
 import {
   OFFER_KIND_INFO, OFFER_KINDS, MAX_OFFERS_PER_ITEM, MAX_WHOLESALE_TIERS, cleanOffers, nextStepFor, offerLabel,
   offerSummary, offerTerms, wholesaleHint,
-  type AppliedOffer, type ListingOffer, type OfferKind, type OfferScope, type WholesaleTier,
+  type AppliedOffer, type ListingOffer, type OfferKind, type OfferScope, type OfferValue, type WholesaleTier,
 } from '@shared/offers';
 import { formatMoney } from '../format';
+import { InfoTip } from './InfoTip';
 import { Modal } from './ui';
 import '../styles/Offers.css';
 
@@ -65,21 +66,6 @@ export function ShippingLine({ shippingMinor, offers, currency }: {
   );
 }
 
-/** Wholesale, highlighted where the price is: the one offer buyers should not miss. */
-export function WholesaleCallout({ offers, priceMinor, currency, onOpen }: {
-  offers?: ListingOffer[]; priceMinor: number; currency: string; onOpen: (offer: ListingOffer) => void;
-}) {
-  const offer = (offers ?? []).find((entry) => entry.kind === 'wholesale');
-  const hint = wholesaleHint(offers, priceMinor);
-  if (!offer || !hint) return null;
-  return (
-    <button type="button" className="offr-wholesale" onClick={() => onOpen(offer)}>
-      <b>Wholesale price available</b>
-      <span>{formatMoney(hint.priceMinor, currency)} each when you buy {hint.minQty}+ <u>See prices</u></span>
-    </button>
-  );
-}
-
 function OfferSheet({ offer, priceMinor, currency, quantity, onClose }: {
   offer: ListingOffer; priceMinor: number; currency: string; quantity: number; onClose: () => void;
 }) {
@@ -118,45 +104,17 @@ function OfferSheet({ offer, priceMinor, currency, quantity, onClose }: {
   );
 }
 
-/**
- * Every offer on an item, one row that scrolls sideways so it never takes the
- * space of a list. Tapping one opens what it means and its terms.
- */
-export function OffersRail({ offers, priceMinor, currency, quantity, openOffer, onOpen }: {
-  offers?: ListingOffer[]; priceMinor: number; currency: string; quantity: number;
-  /** An offer opened from elsewhere on the page (the wholesale callout). */
-  openOffer?: ListingOffer | null; onOpen?: (offer: ListingOffer | null) => void;
-}) {
-  const [own, setOwn] = useState<ListingOffer | null>(null);
-  const open = openOffer ?? own;
-  const set = (offer: ListingOffer | null) => (onOpen ? onOpen(offer) : setOwn(offer));
-  if (!offers || offers.length === 0) return null;
-  return (
-    <section className="offr-rail" aria-label="Offers on this item">
-      <h3 className="offr-rail__title">Offers <small>{offers.length}</small></h3>
-      <div className="offr-rail__row" role="list">
-        {offers.map((offer) => (
-          <button key={offer.id} type="button" role="listitem" className={`offr-pill offr-pill--${offer.kind}`}
-            onClick={() => set(offer)}>
-            <span className="offr-pill__label">{offerLabel(offer)}</span>
-            <span className="offr-pill__more">Details &amp; terms</span>
-          </button>
-        ))}
-      </div>
-      {open && <OfferSheet offer={open} priceMinor={priceMinor} currency={currency} quantity={quantity} onClose={() => set(null)} />}
-    </section>
-  );
-}
-
 /** What is working on an order, and the terms it was bought under, for the checkout and order pages. */
 export function OfferTermsNote({ offers, priceMinor, currency }: { offers: ListingOffer[]; priceMinor: number; currency: string }) {
   const [open, setOpen] = useState<ListingOffer | null>(null);
   if (offers.length === 0) return null;
   return (
     <div className="offr-note">
-      <p>
-        Offer terms: price is worked out from what is in your order. If an item is cancelled or called off and the
-        rest no longer qualify, the offer ends and the price goes back up.
+      <p className="offr-note__line">
+        Price follows what is in your order.
+        <InfoTip label="How offers follow your order">
+          <p>Offers are worked out from what is in your order. If an item is cancelled or called off and the rest no longer qualify, the offer ends and the price goes back up.</p>
+        </InfoTip>
       </p>
       <div className="offr-rail__row">
         {offers.map((offer) => (
@@ -195,8 +153,8 @@ function defaultOffer(kind: OfferKind, priceMinor: number): ListingOffer {
 }
 
 function ValueFields({ value, onChange, label }: {
-  value: { type: 'fixed' | 'percent'; value: number } | undefined;
-  onChange: (next: { type: 'fixed' | 'percent'; value: number }) => void;
+  value: OfferValue | undefined;
+  onChange: (next: OfferValue) => void;
   label: string;
 }) {
   const current = value ?? { type: 'percent' as const, value: 5 };
@@ -215,10 +173,32 @@ function ValueFields({ value, onChange, label }: {
         <input type="number" min="1" step="1"
           value={current.type === 'percent' ? current.value || '' : rupeesIn(current.value)}
           onChange={(e) => onChange({
-            type: current.type,
+            ...current,
             value: current.type === 'percent' ? Math.round(Number(e.target.value) || 0) : minorOf(e.target.value),
           })} />
       </label>
+      {current.type === 'percent' && (
+        <CapField capMinor={current.capMinor} onChange={(capMinor) => onChange({ ...current, capMinor })} />
+      )}
+    </div>
+  );
+}
+
+/** "Up to ₹120", or no cap: a percentage that stops at an amount. */
+export function CapField({ capMinor, onChange }: { capMinor?: number; onChange: (next: number | undefined) => void }) {
+  return (
+    <div className="field offr-cap">
+      <span>Cap</span>
+      <div className="offr-cap__row" role="radiogroup" aria-label="Cap">
+        <button type="button" role="radio" aria-checked={!capMinor} className={`offr-cap__opt${capMinor ? '' : ' is-on'}`}
+          onClick={() => onChange(undefined)}>No cap</button>
+        <button type="button" role="radio" aria-checked={Boolean(capMinor)} className={`offr-cap__opt${capMinor ? ' is-on' : ''}`}
+          onClick={() => onChange(capMinor || 10_000)}>Up to ₹</button>
+        {Boolean(capMinor) && (
+          <input type="number" min="1" step="1" aria-label="Cap in rupees" value={rupeesIn(capMinor)}
+            onChange={(e) => onChange(minorOf(e.target.value) || 100)} />
+        )}
+      </div>
     </div>
   );
 }
@@ -368,13 +348,17 @@ export function OfferEditor({ offers, onChange, priceMinor }: {
  * price above it, and an order with neither shipping nor an offer reads as a
  * single line, the way it always did.
  */
-export function PriceBreakdown({ goodsMinor, shippingMinor = 0, discountMinor = 0, applied = [], rules = [], totalMinor, currency, prepaySavingMinor = 0 }: {
+export function PriceBreakdown({ goodsMinor, shippingMinor = 0, discountMinor = 0, applied = [], rules = [], totalMinor, currency, prepaySavingMinor = 0, loyalty = [], onTerms }: {
   goodsMinor: number; shippingMinor?: number; discountMinor?: number; applied?: AppliedOffer[]; rules?: ListingOffer[];
   totalMinor: number; currency: string;
   /** Shown as a saving line when the buyer is paying everything. */
   prepaySavingMinor?: number;
+  /** Loyalty money off, already inside the total. */
+  loyalty?: { rewardId: string; label: string; valueMinor: number }[];
+  /** Opens every offer's details and terms in one place, instead of the terms note. */
+  onTerms?: () => void;
 }) {
-  const plain = shippingMinor === 0 && discountMinor === 0 && applied.length === 0 && rules.length === 0 && prepaySavingMinor === 0;
+  const plain = shippingMinor === 0 && discountMinor === 0 && applied.length === 0 && rules.length === 0 && prepaySavingMinor === 0 && loyalty.length === 0;
   if (plain) return <div className="kv"><dt>Item</dt><dd>{formatMoney(totalMinor, currency)}</dd></div>;
   const shippingSaved = applied.filter((offer) => offer.savedMinor > 0 && shippingMinor === 0 && /shipping/i.test(offer.label));
   return (
@@ -390,11 +374,16 @@ export function PriceBreakdown({ goodsMinor, shippingMinor = 0, discountMinor = 
           <span>{shippingSaved.includes(offer) ? `saves ${formatMoney(offer.savedMinor, currency)}` : `−${formatMoney(offer.savedMinor, currency)}`}</span>
         </div>
       ))}
+      {loyalty.map((row) => (
+        <div key={row.rewardId} className="offr-sum__row offr-sum__row--off offr-sum__row--loyal">
+          <span>★ {row.label}</span><span>−{formatMoney(row.valueMinor, currency)}</span>
+        </div>
+      ))}
       {prepaySavingMinor > 0 && (
         <div className="offr-sum__row offr-sum__row--off"><span>Pay-in-full offer</span><span>−{formatMoney(prepaySavingMinor, currency)}</span></div>
       )}
       <div className="offr-sum__row offr-sum__row--total"><span>Total</span><span>{formatMoney(totalMinor - prepaySavingMinor, currency)}</span></div>
-      <OfferTermsNote offers={rules} priceMinor={goodsMinor} currency={currency} />
+      {onTerms ? null : <OfferTermsNote offers={rules} priceMinor={goodsMinor} currency={currency} />}
     </div>
   );
 }

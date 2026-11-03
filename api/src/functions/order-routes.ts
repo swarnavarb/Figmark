@@ -9,6 +9,9 @@ import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { applyLoyaltyOff, checkoutLoyalty } from '../loyalty.js';
+import { directRefusal, noteSellerCancel } from '../cancel-watch.js';
+import { directPaused } from '../../../shared/billing.js';
 import { cancellationImpact, prepaySavingMinor, repriceBasket } from '../offers.js';
 
 import { personRef, sellerRef } from '../../../shared/parties.js';
@@ -33,7 +36,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays, marketSettings } from '../settings.js';
-import { availableManagers, bringUpToDate, managerName, pickManager, quoteFee, recordFee, type FeeInput } from '../community.js';
+import { availableManagers, bringUpToDate, feeGst, managerName, pickManager, quoteFee, recordFee, type FeeInput } from '../community.js';
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
@@ -210,6 +213,11 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
   }
 
   const protect = body.protection === true;
+  // A seller flagged for cancelling too often takes protected payments only.
+  if (!protect) {
+    const paused = await directRefusal(repository, order.sellerId);
+    if (paused) return error(409, 'direct_paused', `${paused.replace('Pay with the gateway', 'Turn on Buyer Protection')}`);
+  }
   // Whoever is available, carrying the fewest cases - never either end of
   // the trade, who cannot be neutral in it.
   const manager = protect ? await pickManager(repository, [order.buyerId, order.sellerId]) : null;
@@ -249,7 +257,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       kind: 'protection' as const, payerId: user.id, amountMinor: feeMinor, currency: order.currency,
       reference: order.id, managerId: manager.id,
     };
-    fee = { input, payment: quoteFee(input, settings) };
+    fee = { input, payment: quoteFee(input, settings, await feeGst(repository, 'protection')) };
     order.protection = {
       managerId: manager.id,
       // Their name as it was today: a later rename must not rewrite the terms.
@@ -336,6 +344,16 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     // And against what else is in their basket: an offer is earned by the group.
     await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
   }
+  // Loyalty rewards this order brings, and any that clash with its offers.
+  let loyalty = await checkoutLoyalty(repository, order).catch(() => null);
+  if (order.placedAt === null && order.offersDropped && !(loyalty ?? []).some((row) => row.fits)) {
+    // The reward they gave an offer up for is not coming any more: the offer is back.
+    delete order.offersDropped;
+    await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
+    loyalty = await checkoutLoyalty(repository, order).catch(() => null);
+  }
+  // A money-off reward this order reaches comes straight off its price.
+  if (applyLoyaltyOff(order, loyalty)) await repository.updateOrder(order);
 
   const seller = await repository.getUserById(order.sellerId);
   const totalMinor = orderTotalMinor(order);
@@ -351,6 +369,9 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     offerDiscountMinor: order.offerDiscountMinor ?? 0,
     appliedOffers: order.appliedOffers ?? [],
     offerRules: order.offerRules ?? [],
+    /** Loyalty money off this order's price, reward by reward. */
+    loyaltyOffMinor: order.loyaltyOffMinor ?? 0,
+    loyaltyApplied: order.loyaltyApplied ?? [],
     /** What paying in full instead of an advance would save, when the shop offers that. */
     prepaySavingMinor: await prepaySavingMinor(repository, order),
     /** Why this cannot be bought right now - sold out, too few left, withdrawn - or null. */
@@ -375,6 +396,10 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     protectionFeeMinor: protectionFeeMinor(totalMinor, protectionFlat),
     /** False when no community manager could be assigned - neither party, and available. */
     protectionAvailable: (await availableManagers(repository, [order.buyerId, order.sellerId])).length > 0,
+    // Flagged for cancelling too often: the shop takes protected payments only.
+    directPaused: (await directRefusal(repository, order.sellerId)) !== null,
+    /** Loyalty rewards this order brings; any with `fits: false` clash with its offers and the buyer picks. */
+    loyalty: loyalty && loyalty.length ? { rewards: loyalty.map(({ id: _id, ...row }) => row), pickedReward: Boolean(order.offersDropped) } : null,
   });
 }
 
@@ -698,6 +723,8 @@ async function orderState(request: HttpRequest, _context: InvocationContext) {
     /** Rejections of a payment this viewer made, that they could dispute. */
     disputable: disputeSubjects(order, user.id),
     simulatedPayment: true,
+    // The shop was flagged for cancelling too often: only protected payment is open.
+    directPaused: side === 'buyer' && directPaused(other?.cancelFlag),
     // Lets the seller's cancel/reversal screen know, before they try, whether
     // the buyer has somewhere for the money to go.
     buyerHasReversalDetails: side === 'seller' ? Boolean(other?.reversalDetails) : null,
@@ -775,6 +802,10 @@ async function claimPayment(request: HttpRequest, _context: InvocationContext) {
   // Kept credit that covers the whole of what is due needs no proof: no money
   // is moving, so there is nothing for the seller to check.
   const covered = await heldCreditMinor(repository, order) >= terms.amountMinor;
+  if (!covered) {
+    const paused = await directRefusal(repository, order.sellerId);
+    if (paused) return error(409, 'direct_paused', paused);
+  }
 
   // One of the two, at minimum. A claim with neither is just a button press,
   // and the seller has nothing to check it against.
@@ -1350,6 +1381,7 @@ async function myRefunds(request: HttpRequest, _context: InvocationContext) {
       itemName: order.itemName,
       currency: order.currency,
       sellerName: seller?.sellerProfile?.storefrontName ?? seller?.displayName ?? 'Seller',
+      sellerId: order.sellerId,
       creditId: credit.id,
       origin: credit.origin ?? 'overpaid',
       reason: credit.reason ?? null,
@@ -1923,6 +1955,9 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   }
 
   const now = new Date().toISOString();
+  // Turning down an order the buyer already paid for counts as calling it off.
+  const wasPaid = order.paymentStatus === 'paid' || order.paymentStatus === 'claimed' || orderMoney(order).paidMinor > 0;
+  if (wasPaid && user.id === order.sellerId) order.sellerCancelledAt = now;
   order.status = 'rejected';
   // Said back to the buyer on the order itself, not only in the timeline.
   order.cancelReason = reason;
@@ -1945,6 +1980,7 @@ async function rejectOrder(request: HttpRequest, _context: InvocationContext) {
   await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });
 
   await restock(repository, order, now);
+  if (order.sellerCancelledAt) await noteSellerCancel(repository, order.sellerId).catch(() => null);
 
   const named = await orderNames(repository, order);
   await notify(repository, [order.buyerId], {
@@ -2184,7 +2220,9 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   // The order's pre-order place is freed either way.
   const shippedOut = order.status === 'shipped';
   const owed = callOffOrder(order, reason, user.id);
+  if (user.id === order.sellerId) order.sellerCancelledAt = new Date().toISOString();
   await repository.updateOrder(order);
+  if (order.sellerCancelledAt) await noteSellerCancel(repository, order.sellerId).catch(() => null);
   await restock(repository, order, new Date().toISOString(), body.restock === true && !shippedOut);
   // The rest of this buyer's basket loses whatever this item was earning it.
   await repriceBasket(repository, order.sellerId, order.buyerId, 'cancelled', { actorId: user.id });

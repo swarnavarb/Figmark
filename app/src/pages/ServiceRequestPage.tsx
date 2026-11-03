@@ -1,3 +1,4 @@
+import { CreditChip } from '../components/Billing';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { StoreKind } from '@shared/service-stores';
@@ -48,6 +49,7 @@ export function ServiceRequestPage() {
 
   return (
     <main className="page srq-page" style={accentStyle(store.accent)}>
+      <CreditChip storeId={`${request.kind}:${request.ownerId}`} />
       <BackLink to="/services/mine">{request.number}</BackLink>
       {params.get('sent') && request.status === 'submitted' && (
         <p className="srq-sent"><Icon name="check" size={15} /> Sent. Everyone on {store.name}’s team has been told — you will hear here when they quote.</p>

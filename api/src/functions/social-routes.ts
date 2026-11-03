@@ -1,3 +1,4 @@
+import { isProActive } from '../../../shared/billing.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { FORUM_CAP, FORUM_MODERATORS_MAX, FORUM_UNLOCK_LEVELS, forumLockedMessage, forumSlotsAt } from '../../../shared/enums.js';
@@ -1639,7 +1640,7 @@ async function spottedIn(posts: readonly Post[], userId: string | null, score: R
   return found
     .filter((entry): entry is { listing: Listing; post: Post; how: SpottedItem['how'] } => Boolean(entry.listing))
     .filter(({ listing, post }) => listing.sellerId !== userId && listing.sellerId !== post.authorId
-      && listing.sellerId !== post.channelId && saleState(listing).buyable && !listing.unlisted)
+      && listing.sellerId !== post.channelId && saleState(listing).buyable && !listing.unlisted && !listing.feeHold)
     .slice(0, DISCOVER_SPOTTED)
     .map(({ listing, post, how }) => ({
       listingId: listing.id,
@@ -1749,6 +1750,7 @@ async function channels(request: HttpRequest, _context: InvocationContext) {
       handle: seller.sellerProfile?.username ?? seller.username ?? null,
       photoUrl: seller.sellerProfile?.photoUrl ?? null,
       tier: seller.sellerProfile?.tier ?? null,
+      pro: isProActive(seller.pro),
       bio: seller.sellerProfile?.bio ?? '',
       followerCount: seller.sellerProfile?.followerCount ?? 0,
       following: followedSet.has(seller.id),
@@ -1921,6 +1923,7 @@ async function channelThread(request: HttpRequest, _context: InvocationContext) 
           description: seller!.sellerProfile!.bio ?? '',
           photoUrl: seller!.sellerProfile!.photoUrl ?? null,
           tier: seller!.sellerProfile!.tier ?? null,
+          pro: isProActive(seller!.pro),
           followerCount: seller!.sellerProfile!.followerCount ?? 0,
           following,
           mine,
@@ -3458,6 +3461,7 @@ async function search(request: HttpRequest, _context: InvocationContext) {
       photoUrl: owner.sellerProfile!.photoUrl ?? null,
       followerCount: owner.sellerProfile!.followerCount ?? 0,
       tier: owner.sellerProfile!.tier ?? null,
+      pro: isProActive(owner.pro),
       following: following.has(owner.id),
       mine: can(owner, user.id, 'posts'),
     }))

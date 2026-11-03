@@ -28,7 +28,7 @@ export interface ShopRecord {
 
 /** Items anybody may see on the shop's page: live or sold out, not private. */
 export function shelfOf(all: readonly Listing[]): Listing[] {
-  return all.filter((listing) => (listing.status === 'active' || listing.status === 'sold_out') && !listing.unlisted && !listing.privateFor);
+  return all.filter((listing) => (listing.status === 'active' || listing.status === 'sold_out') && !listing.unlisted && !listing.feeHold && !listing.privateFor);
 }
 
 const isLive = (listing: Listing, now: number) =>

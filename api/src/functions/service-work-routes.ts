@@ -13,6 +13,8 @@ import { getRepository } from '../data/index.js';
 import { limited, tooFast } from '../rate-limit.js';
 import { ownPhotos } from '../storage/index.js';
 import { notify } from './notify.js';
+import { spendStoreCredit, termsFor } from '../billing.js';
+import { creditStoreId } from '../../../shared/billing.js';
 import { error, handler, json } from './http.js';
 import { forgetPageStats, lanesOf } from './store-routes.js';
 
@@ -231,6 +233,7 @@ async function submitRequest(request: HttpRequest, _context: InvocationContext) 
     coverPayment: null,
     inbound: null,
     bill: null,
+    feeTerms: await termsFor(repository, kind, owner),
     estimateMinor: estimated.totalMinor,
     chargeableKg,
     quoteMinor: null,
@@ -344,7 +347,7 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
     action?: RequestAction; quoteMinor?: number; days?: number; note?: string; reference?: string; amountMinor?: number;
     courier?: string; awb?: string; stars?: number; text?: string; assigneeId?: string | null;
     weightKg?: number; box?: Partial<Dimensions> | null; photoUrls?: unknown; added?: { label?: string; minor?: number }[];
-    address?: unknown;
+    address?: unknown; useCredit?: boolean;
   }>(request);
   if (!input?.action || !(input.action in REQUEST_MOVES || input.action in ARRIVAL_MOVES)) return error(400, 'invalid_action', 'Unknown move.');
   const action = input.action;
@@ -400,8 +403,16 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
       }
       if (needsDelivery(doc)) return error(400, 'no_address', 'Add where it should be delivered before you pay.');
       const amount = money(input.amountMinor) || requestDueMinor(doc);
-      doc.payment = { amountMinor: amount, reference: text(input.reference, 80) || null, claimedAt: now, confirmedAt: null, confirmedBy: null };
-      told = { to: 'store', title: `${doc.customerName} says they paid ${doc.number}`, body: `₹${(amount / 100).toLocaleString('en-IN')}${doc.payment.reference ? ` · ref ${doc.payment.reference}` : ''} — check and confirm.` };
+      // Credit the store gave this customer comes off first, on its own.
+      const credit = input.useCredit === false ? 0
+        : await spendStoreCredit(repository, user.id, creditStoreId(kind, doc.ownerId), amount, { orderId: doc.id, itemName: `${doc.number} · ${doc.title || doc.storeName}` });
+      const reference = text(input.reference, 80) || (credit >= amount ? 'Store credit' : null);
+      doc.payment = { amountMinor: amount, ...(credit > 0 ? { creditMinor: credit } : {}), reference, claimedAt: now, confirmedAt: null, confirmedBy: null };
+      told = {
+        to: 'store',
+        title: `${doc.customerName} says they paid ${doc.number}`,
+        body: `₹${(amount / 100).toLocaleString('en-IN')}${credit > 0 ? ` (₹${(credit / 100).toLocaleString('en-IN')} from store credit)` : ''}${doc.payment.reference ? ` · ref ${doc.payment.reference}` : ''} — check and confirm.`,
+      };
       break;
     }
     case 'confirm_payment':
@@ -578,7 +589,7 @@ async function createLink(request: HttpRequest, _context: InvocationContext) {
   const actor = await repository.getUserById(user.id);
   const now = new Date().toISOString();
   const doc: ServiceRequest = {
-    id: `req_${randomUUID()}`, type: 'request', storeId: key, kind, ownerId: owner.id,
+    id: `req_${randomUUID()}`, type: 'request', storeId: key, kind, ownerId: owner.id, feeTerms: await termsFor(repository, kind, owner),
     storeName: store.companyName, storeSlug: store.directorySlug, number: requestNumber(kind), origin: 'link',
     subject: subjects.find((row) => row.id === input?.subjectId) ?? null, option: null,
     customerId: null, customerName: 'Whoever opens the link', customerHandle: null,

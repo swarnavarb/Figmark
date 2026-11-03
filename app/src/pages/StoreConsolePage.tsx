@@ -1,3 +1,6 @@
+import { GiveMoneyPanel } from '../components/GiveMoney';
+import { FeeLockBanner, ProBadge } from '../components/Billing';
+import { isProActive } from '@shared/billing';
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { StoreMember, StoreRight } from '@shared/models';
@@ -38,7 +41,7 @@ import '../styles/StoreConsolePage.css';
  * staring at a rate card they cannot change.
  */
 
-type Tab = 'overview' | 'requests' | 'quotes' | 'work' | 'insights' | 'channel' | 'store' | 'team';
+type Tab = 'overview' | 'requests' | 'quotes' | 'work' | 'insights' | 'channel' | 'refunds' | 'store' | 'team';
 
 export function StoreConsolePage() {
   const { kind: rawKind, ownerId: rawOwner } = useParams<{ kind: string; ownerId?: string }>();
@@ -98,14 +101,17 @@ export function StoreConsolePage() {
       count: kind === 'forwarder' ? work?.lots.filter((row) => row.acceptance === 'pending').length : work?.jobs.filter((row) => row.actions.length > 0).length },
     { id: 'insights', label: 'Insights', show: live },
     { id: 'channel', label: 'Channel', show: live },
+    { id: 'refunds', label: 'Refunds & credit', show: live && console.rights.includes('store') },
     { id: 'store', label: 'Store', show: console.rights.includes('store') },
     { id: 'team', label: 'Team', show: true },
   ];
+  const isPro = console.isOwner && isProActive(user.pro ?? null);
   const go = (next: Tab) => setParams((current) => { const copy = new URLSearchParams(current); copy.set('tab', next); return copy; }, { replace: true });
 
   return (
     <main className="page sc-page" style={accentStyle(store.accent)}>
       <BackLink to="/services/mine">{store.companyName}</BackLink>
+      {console.isOwner && <FeeLockBanner />}
       <section className="sc-hero">
         <StoreCover kind={kind} coverUrl={store.coverUrl} accent={store.accent}>
           <div className="sc-hero__actions">
@@ -116,7 +122,7 @@ export function StoreConsolePage() {
           <StoreMark name={store.companyName} logoUrl={store.logoUrl} accent={store.accent} size={72} />
           <div className="sc-hero__text">
             <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-              <h1>{store.companyName}</h1>
+              <h1>{store.companyName}{isPro && <ProBadge size="md" />}</h1>
               <StatusPill status={console.status} />
             </div>
             <span className="muted">{store.tagline || STORE_KIND_LABELS[kind].store}</span>
@@ -155,6 +161,7 @@ export function StoreConsolePage() {
       {tab === 'work' && work && (kind === 'forwarder'
         ? <ForwarderLots ownerId={ownerId} rows={work.lots} onChanged={load} />
         : <CommissionBoard ownerId={ownerId} rows={work.jobs} onChanged={load} />)}
+      {tab === 'refunds' && <GiveMoneyPanel kind={kind} ownerId={ownerId} />}
       {tab === 'store' && <StoreEditor kind={kind} console={console} onSaved={setConsole} />}
       {tab === 'team' && <TeamPanel kind={kind} console={console} onSaved={setConsole} />}
     </main>

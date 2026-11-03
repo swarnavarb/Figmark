@@ -1,3 +1,4 @@
+import { proRefusal } from '../billing.js';
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import {
@@ -144,6 +145,8 @@ async function listSavedCalcs(request: HttpRequest, _context: InvocationContext)
 async function saveSavedCalc(request: HttpRequest, _context: InvocationContext) {
   const { repository, shop } = await load(request);
   if (!shop) return error(403, 'forbidden', 'You cannot change the costs for that shop.');
+  const locked = await proRefusal(repository, shop.id, 'calculator');
+  if (locked) return locked;
   let body: { id?: string };
   try {
     body = (await request.json()) as typeof body;

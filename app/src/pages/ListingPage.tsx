@@ -1,3 +1,5 @@
+import { CreditChip, ProBadge } from '../components/Billing';
+import { OffersBlock } from '../components/OffersBlock';
 import { viewSourceFor } from '../cameFrom';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -22,8 +24,7 @@ import { useSession } from '../session';
 import { advanceMinor, isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
 import { AffiliateCard, ReferredBy, SimilarItems } from '../components/Affiliate';
-import { OffersRail, ShippingLine, WholesaleCallout } from '../components/Offers';
-import type { ListingOffer } from '@shared/offers';
+import { ShippingLine } from '../components/Offers';
 import { AFFILIATE_PARAM } from '@shared/affiliate';
 import { shopBadge, useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { themeOf } from '../components/momentCard';
@@ -64,7 +65,6 @@ export function ListingPage() {
   const [action, setAction] = useState<{ text: string; ok: boolean } | null>(null);
   const [quantity, setQuantity] = useState(1);
   /** The offer whose details and terms are open, from the row or the wholesale callout. */
-  const [openOffer, setOpenOffer] = useState<ListingOffer | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
 
@@ -178,7 +178,6 @@ export function ListingPage() {
       ) : null}
       {/* Shipping is said beside the price and never added to it. */}
       <ShippingLine shippingMinor={listing.shippingMinor} offers={listing.offers} currency={listing.currency} />
-      <WholesaleCallout offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency} onOpen={setOpenOffer} />
       {listing.advancePercent ? (
         <p className="buybox__adv">
           <Svg name="coin" size={15} /> Book with{' '}
@@ -187,8 +186,9 @@ export function ListingPage() {
         </p>
       ) : null}
 
-      <OffersRail offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency}
-        quantity={quantity} openOffer={openOffer} onOpen={setOpenOffer} />
+      {/* Every offer and the shop's loyalty card, in one block. */}
+      <OffersBlock offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency}
+        quantity={quantity} sellerId={listing.sellerId} listingId={listing.id} />
 
       {action && <p className={`notice ${action.ok ? 'notice--ok' : 'notice--error'}`}>{action.text}</p>}
 
@@ -375,6 +375,7 @@ export function ListingPage() {
 
         {/* ── Purchase rail ── */}
         <aside className="stack lp__rail">
+          <CreditChip storeId={seller?.id} />
           {seller && (
             <div className={`lp__seller sellercard storefront__cover--${brandHueFor(seller.username ?? seller.storefrontName)} rise`}
               style={{ ['--i' as string]: 2 }}>
@@ -391,7 +392,10 @@ export function ListingPage() {
                 <div className="sellercard__who">
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
-                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" />
+                  <span className="sellercard__nameline">
+                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" />
+                    {seller.pro && <ProBadge size="md" />}
+                  </span>
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
                 <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>

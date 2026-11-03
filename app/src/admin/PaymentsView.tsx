@@ -7,6 +7,8 @@ const KIND_LABELS: Record<LedgerEntry['kind'], string> = {
   protection: 'Buyer protection',
   dispute: 'Dispute fee',
   escalation: 'Escalation fee',
+  platform: 'Platform fee',
+  pro: 'Pro subscription',
 };
 
 /**
@@ -16,9 +18,11 @@ const KIND_LABELS: Record<LedgerEntry['kind'], string> = {
  */
 export function PaymentsView() {
   const [data, setData] = useState<Awaited<ReturnType<typeof admin.ledger>> | null>(null);
+  const [earnings, setEarnings] = useState<Awaited<ReturnType<typeof admin.fees>>['earnings'] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    admin.fees().then((body) => setEarnings(body.earnings)).catch(() => setEarnings({}));
     admin.ledger().then(setData)
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the payments.'));
   }, []);
@@ -28,6 +32,24 @@ export function PaymentsView() {
 
   return (
     <div className="stack">
+      {earnings && Object.keys(earnings).length > 0 && (
+        <div className="card card--pad stack">
+          <h2 style={{ margin: 0 }}>What Figmark earned</h2>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 24 }}>
+            {(Object.keys(KIND_LABELS) as LedgerEntry['kind'][]).filter((kind) => earnings[kind]).map((kind) => (
+              <div key={kind}>
+                <div className="faint">{KIND_LABELS[kind]} · {earnings[kind]!.count}</div>
+                <b>{formatMoney(earnings[kind]!.figmarkMinor)}</b>
+                <div className="faint" style={{ fontSize: 12 }}>
+                  of {formatMoney(earnings[kind]!.collectedMinor)}
+                  {earnings[kind]!.managerMinor > 0 ? ` · managers ${formatMoney(earnings[kind]!.managerMinor)}` : ''}
+                  {earnings[kind]!.gstMinor > 0 ? ` · GST ${formatMoney(earnings[kind]!.gstMinor)}` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="card card--pad">
         <div className="row" style={{ flexWrap: 'wrap', gap: 24 }}>
           <div><div className="faint">Collected</div><b>{formatMoney(data.totals.collectedMinor)}</b></div>

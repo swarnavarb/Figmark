@@ -1,3 +1,4 @@
+import { ProBadge } from './Billing';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { ApiRequestError, api, type ChannelRow, type ChannelThread, type PostCard } from '../api';
@@ -127,7 +128,7 @@ function ChannelRowView({ row, unread }: { row: ChannelRow; unread: number }) {
         <span className="chrow__top">
           <span className="chrow__name">
             {row.name}
-            {row.tier === 'pro' && <span className="chrow__tier">PRO</span>}
+            {row.pro && <ProBadge />}
             {row.service && <span className="chrow__tier">{row.service === 'forwarder' ? 'FREIGHT' : 'ARTIST'}</span>}
             {row.pinned && <Icon name="star" size={11} />}
           </span>
@@ -153,7 +154,7 @@ function DiscoverCard({ row, onFollowed }: { row: ChannelRow; onFollowed: () => 
     <div className="chcard">
       <Link to={`/social/c/${row.sellerId}`} className="chcard__open">
         <Avatar name={row.name} size={46} />
-        <strong className="chcard__name">{row.name}</strong>
+        <strong className="chcard__name">{row.name}{row.pro && <ProBadge />}</strong>
         <span className="chcard__bio">{row.bio || row.lastPost || 'A shop on Figmark'}</span>
         <span className="chcard__stats">{row.followerCount ?? 0} followers</span>
       </Link>
@@ -401,7 +402,7 @@ function Room() {
     <div className="social">
       <RoomBar onBack={back} reveal
         avatar={channel.photoUrl ? <img loading="lazy" decoding="async" className="roombar__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={34} />}
-        title={<>{channel.name}{channel.tier === 'pro' && <span className="roombar__tier">PRO</span>}</>}
+        title={<>{channel.name}{channel.pro && <ProBadge />}</>}
         sub={<>{channel.followerCount ?? 0} followers{channel.handle && <> · @{channel.handle}</>}</>}
         action={channel.handle && (
           <Link to={`/${channel.handle}`} className="roombar__btn"><Icon name="tag" size={13} /> Shop</Link>
@@ -415,7 +416,7 @@ function Room() {
           {channel.photoUrl ? <img loading="lazy" decoding="async" className="chhero__photo" src={channel.photoUrl} alt="" /> : <Avatar name={channel.name} size={64} />}
           <div className="chhero__text">
             <h1 className="chhero__name">{channel.name}</h1>
-            {channel.tier === 'pro' && <span className="chhero__tier">PRO</span>}
+            {channel.pro && <ProBadge size="md" />}
             <p className="chhero__meta">
               {channel.postCount ?? 0} messages · {channel.followerCount ?? 0} followers
               {channel.handle && <> · @{channel.handle}</>}

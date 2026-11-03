@@ -18,6 +18,7 @@ import { LBox, OptionTiles, Switch, ToggleRow, daysUntil, isoInDays } from './Li
 import { OfferEditor } from './Offers';
 import type { ListingOffer } from '@shared/offers';
 import type { TemplateTerms } from '@shared/templates';
+import { InfoTip } from './InfoTip';
 import '../styles/Buy.css';
 
 /**
@@ -369,6 +370,15 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
           </label>
         )}
         <OfferEditor offers={value.offers} onChange={(offers) => set({ offers })} priceMinor={priceMinor ?? 0} />
+        {value.offers.length > 0 && (
+          <span className="field__hint">
+            Offers apply on their own at checkout.{' '}
+            <InfoTip label="Offers and loyalty rewards">
+              <p>An offer and a loyalty reward that give the same thing - money off, a free item, free shipping - can&apos;t both be used. The buyer picks one at checkout. Sell → Engage → Offers marks each clash.</p>
+              <p>Keep loyalty rewards bigger than your offers: they thank people for coming back.</p>
+            </InfoTip>
+          </span>
+        )}
       </LBox>
 
       {/* Not on a power sale: its items are made by the sale, which sets its own terms. */}

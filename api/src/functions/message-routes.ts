@@ -1,3 +1,4 @@
+import { isProActive } from '../../../shared/billing.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { checkUsername, threadIdFor, USERNAME_PROBLEMS } from '../../../shared/handles.js';
@@ -987,7 +988,7 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
   const ORDER = { active: 0, sold: 1, expired: 2 } as const;
   // Drafts, private deals and members-only drops are nobody else's business.
   const listings = all
-    .filter((listing) => (listing.status === 'active' || listing.status === 'sold_out') && !listing.unlisted && !listing.privateFor)
+    .filter((listing) => (listing.status === 'active' || listing.status === 'sold_out') && !listing.unlisted && !listing.feeHold && !listing.privateFor)
     .map((listing) => ({ listing, state: stateOf(listing) }))
     .sort((a, b) => ORDER[a.state] - ORDER[b.state]);
   const count = (state: string) => listings.filter((entry) => entry.state === state).length;
@@ -1032,6 +1033,7 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     following,
     rating,
     tier: shop?.tier ?? null,
+    pro: isStore && isProActive(user.pro),
     // The owner's own handle, so a shop page can point at the person behind it.
     ownerHandle: isStore ? (user.username ?? null) : null,
     sellerId: user.id,

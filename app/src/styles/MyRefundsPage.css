@@ -12,16 +12,7 @@
 .earnrow--void { opacity: 0.6; }
 .earnrow--void .earnrow__side b { text-decoration: line-through; }
 
-/* Store credit won, by shop, and the badges that came with it. */
-.wallet-credits { display: grid; gap: var(--s3); }
-.wallet-credit { display: grid; gap: var(--s2); border-color: rgba(251, 191, 36, 0.35); }
-.wallet-credit__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.wallet-credit__left {
-  font: var(--w-bold) var(--t-xl)/1 var(--display);
-  background: var(--grad-gold); -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.wallet-credit__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); }
-.wallet-credit__list li { display: grid; gap: 2px; }
+/* The badges that came with credit won. */
 .wallet-badges { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .wallet-badge {
   display: flex; align-items: center; gap: 10px; padding: 10px var(--s3); border-radius: var(--r-lg);
@@ -32,3 +23,70 @@
   display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: var(--r-md);
   font-size: calc(22px * var(--text-scale)); background: var(--warn-soft); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.4);
 }
+
+/* ── The wallet, store by store (pages/WalletStores.tsx) ─────────────────── */
+.wallet__head { display: grid; gap: 2px; }
+.wlt { display: grid; gap: var(--s4); }
+.whero {
+  position: relative; overflow: hidden; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--s4);
+  padding: 20px var(--s4); border-radius: var(--r-lg); color: var(--gold-ink);
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.08) 0 2px, transparent 2px 18px),
+    radial-gradient(120% 140% at 100% 0%, rgba(255, 255, 255, 0.35), transparent 55%),
+    var(--grad-gold);
+  box-shadow: 0 18px 40px -22px rgba(249, 115, 22, 0.7);
+}
+.whero__main { display: grid; gap: 4px; }
+.whero__main small { font-size: var(--t-xs); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.whero__main b { font: 900 calc(40px * var(--text-scale))/1 var(--display); letter-spacing: -0.02em; }
+.whero__main span { font-size: var(--t-sm); font-weight: 600; }
+.whero__side { display: flex; gap: var(--s3); margin: 0; }
+.whero__side div { display: grid; gap: 2px; padding: 8px 12px; border-radius: var(--r-md); background: rgba(255, 255, 255, 0.28); min-width: 76px; }
+.whero__side dt { font-size: var(--t-2xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.whero__side dd { margin: 0; font-weight: 900; font-size: var(--t-md); }
+
+.wstores { display: grid; gap: var(--s3); }
+.wstore {
+  display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r-lg);
+  border: 1px solid var(--border); background: var(--surface);
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+.wstore.is-open { border-color: var(--gold); }
+.wstore__head {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: var(--s3); align-items: center;
+  width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer;
+}
+.wstore__mark {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px;
+  font: 900 var(--t-lg)/1 var(--display); color: var(--gold-ink); background: var(--grad-gold);
+  transform: rotate(-4deg);
+}
+.wstore__who { display: grid; gap: 2px; min-width: 0; }
+.wstore__who b { font-size: var(--t-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wstore__who small { color: var(--text-dim); font-size: var(--t-xs); }
+.wstore__total { font: 900 var(--t-xl)/1 var(--display); color: var(--gold-text); }
+.wstore__bar { display: flex; gap: 3px; height: 10px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-2); }
+.wstore__seg { display: block; flex-basis: 0; min-width: 6px; }
+.wstore__seg--kept { background: var(--aqua); }
+.wstore__seg--given { background: var(--ok); }
+.wstore__seg--won { background: var(--violet-lit); }
+.wstore__seg--loyalty { background: var(--pink); }
+.wstore__seg--owed { background: var(--coral); }
+.wstore__seg--reward { background: var(--gold); }
+.wstore__legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-xs); color: var(--text-dim); }
+.wstore__legend b { color: var(--text); }
+.wstore__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.wstore__more { display: grid; gap: var(--s3); padding-top: var(--s2); border-top: 1px dashed var(--border-strong); }
+.wstore__lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: var(--t-sm); }
+.wstore__lines li { display: flex; justify-content: space-between; gap: var(--s2); align-items: baseline; }
+.wstore__lines a { color: inherit; font-weight: 600; }
+
+.wloyal { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.wloyal__card { display: grid; gap: var(--s2); align-content: start; }
+.wloyal__rewards { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.wloyal__reward {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px;
+  padding: 8px 10px; border-radius: var(--r-md); background: var(--surface-2); font-size: var(--t-sm);
+}
+.wloyal__reward.is-ready { box-shadow: inset 0 0 0 1px var(--gold); }
+.wloyal__reward.is-used { opacity: 0.6; }

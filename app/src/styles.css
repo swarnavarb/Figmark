@@ -4001,20 +4001,57 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .pmenu { position: relative; }
 .pmenu__btn { display: grid; padding: 2px; border: 0; border-radius: 50%; background: var(--grad-hero); cursor: pointer; }
 .pmenu__panel {
-  position: absolute; right: 0; top: calc(100% + 8px); z-index: var(--z-header); min-width: 230px;
-  display: grid; gap: 2px; padding: 6px; border-radius: var(--r-lg);
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: var(--z-header); width: min(300px, calc(100vw - 24px));
+  display: grid; gap: 4px; padding: 8px; border-radius: 18px;
   background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
-  animation: pmenu-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: top right;
+  animation: pmenu-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: top right;
+  max-height: calc(100vh - 80px); overflow: auto;
 }
-@keyframes pmenu-in { from { opacity: 0; transform: scale(0.96); } }
-.pmenu__who { padding: 6px 10px; color: var(--text-faint); font-size: var(--t-xs); }
+@keyframes pmenu-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
+.pmenu__card {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 10px; border-radius: 14px; color: var(--text); text-decoration: none; background: var(--surface-2);
+}
+.pmenu__card:hover { background: var(--surface-hover); }
+.pmenu__id { display: grid; gap: 2px; min-width: 0; }
+.pmenu__id b { display: flex; align-items: center; gap: 6px; font-size: var(--t-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pmenu__id small { color: var(--text-faint); font-size: var(--t-xs); }
+.pmenu__arrow { color: var(--text-faint); font-size: var(--t-lg); line-height: 1; }
+.pmenu__pro {
+  position: relative; overflow: hidden; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 10px 12px; border-radius: 14px; text-decoration: none; color: var(--gold-ink);
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.12) 0 2px, transparent 2px 14px),
+    linear-gradient(100deg, var(--gold-text), var(--gold) 45%, var(--pink));
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.pmenu__pro:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -10px var(--pink); }
+.pmenu__pro.is-on { color: var(--text); background: linear-gradient(100deg, rgba(245, 158, 11, 0.16), rgba(236, 72, 153, 0.14)); box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.4); }
+.pmenu__probolt {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; font-size: var(--t-md);
+  background: rgba(0, 0, 0, 0.14); transform: skewX(-10deg);
+}
+.pmenu__protext { display: grid; gap: 1px; min-width: 0; }
+.pmenu__protext b { font-style: italic; font-weight: 900; text-transform: uppercase; letter-spacing: 0.03em; font-size: var(--t-sm); }
+.pmenu__protext small { font-size: var(--t-xs); font-weight: 600; opacity: 0.85; }
+.pmenu__pro .pmenu__arrow { color: inherit; }
+.pmenu__tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-block: 4px; }
+.pmenu__tile {
+  display: grid; justify-items: center; gap: 4px; padding: 10px 2px; border-radius: 12px; text-decoration: none;
+  color: var(--text-dim); font-size: var(--t-2xs); font-weight: 700; background: var(--surface-2);
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+.pmenu__tile span { font-size: calc(20px * var(--text-scale)); line-height: 1; }
+.pmenu__tile:hover { color: var(--text); background: var(--surface-hover); transform: translateY(-1px); }
+.pmenu__group { padding: 8px 10px 2px; color: var(--text-faint); font-size: var(--t-2xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; }
 .pmenu__item {
-  display: block; width: 100%; padding: 10px var(--s3); border: 0; border-radius: var(--r-md);
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; border-radius: var(--r-md);
   background: transparent; color: var(--text); text-align: left; text-decoration: none;
   font: inherit; font-weight: var(--w-medium); cursor: pointer;
 }
 .pmenu__item:hover { background: var(--surface-2); }
-.pmenu__item--out { color: var(--coral); }
+.pmenu__item--out { color: var(--coral); margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 var(--r-md) var(--r-md); }
+.pmenu__flag { margin-left: auto; }
 .photogrid__cell { display: block; aspect-ratio: 1; background: var(--surface-2); overflow: hidden; }
 .photogrid__cell img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-2) ease; }
 .photogrid__cell:hover img { transform: scale(1.04); }
@@ -6636,6 +6673,8 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 .icard + .icard { margin-top: 0; }
 .lp > .icard { margin-bottom: 14px; }
+/* The "in demand" box on a checkout: its own space before the buy panel. */
+.lp > .urgency { margin-bottom: 14px; }
 .icard__top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
 .icard__photo {
   display: grid; place-items: center; width: 84px; height: 84px; border-radius: var(--r-lg); overflow: hidden; color: var(--text-faint);
@@ -9012,3 +9051,91 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .compare__tag--a { left: var(--s2); }
 .compare__tag--b { right: var(--s2); }
 @media (prefers-reduced-motion: reduce) { .compare__tag { transition: none; } }
+
+/* ── Pro, fees and store credit (components/Billing.tsx) ─────────────────── */
+
+/* PRO beside a store's name: slanted like a racing number, striped, a sheen passing over. */
+.probadge-sport {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; overflow: hidden;
+  margin-left: 6px; padding: 1px 8px 1px 7px; vertical-align: middle;
+  font-style: italic; font-weight: 900; letter-spacing: 0.06em; line-height: 1.35; color: #1A0B00;
+  transform: skewX(-12deg); border-radius: 4px;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.0) 0 6px, rgba(255, 255, 255, 0.22) 6px 8px),
+    linear-gradient(100deg, #FDE047 0%, var(--gold) 45%, #F97316 70%, var(--pink) 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35) inset, 2px 2px 0 rgba(236, 72, 153, 0.55), 0 0 12px rgba(245, 158, 11, 0.35);
+}
+.probadge-sport > span { display: inline-block; transform: skewX(12deg); }
+.probadge-sport::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-120%);
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.65) 50%, transparent 70%);
+  animation: probadge-sheen 3.6s ease-in-out infinite;
+}
+.probadge-sport--sm { font-size: var(--t-2xs); }
+.probadge-sport--md { font-size: var(--t-xs); padding: 2px 10px 2px 9px; }
+@keyframes probadge-sheen { 0%, 60% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+@media (prefers-reduced-motion: reduce) { .probadge-sport::after { animation: none; display: none; } }
+
+/* A Pro tool, shut: its name, the ⓘ, and the way in. */
+.prolock {
+  display: grid; gap: var(--s3); padding: var(--s4); border-radius: var(--r-lg);
+  border: 1px dashed rgba(245, 158, 11, 0.55);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.10), rgba(236, 72, 153, 0.08));
+}
+.prolock__head { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.prolock__icon { font-size: calc(20px * var(--text-scale)); }
+.prolock__name { margin: 0; font-size: var(--t-sm); font-weight: 800; color: var(--gold-text); }
+.prolock__cta {
+  justify-self: start; color: var(--gold-ink); border: 0;
+  background: linear-gradient(135deg, var(--gold-text), var(--gold) 55%, var(--pink-text));
+}
+.prolock--inline {
+  display: inline-flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding: var(--s2) var(--s3); border-radius: var(--r-md);
+}
+.prolock__go {
+  padding: 2px 10px; border: 0; border-radius: var(--r-pill); cursor: pointer;
+  font-size: var(--t-xs); font-weight: 800; color: var(--gold-ink);
+  background: linear-gradient(135deg, var(--gold-text), var(--gold));
+}
+
+/* Store credit, in the corner of a store's pages. */
+.creditchip {
+  position: fixed; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 40;
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: 800; color: #052E16; text-decoration: none;
+  background: linear-gradient(135deg, #86EFAC, var(--ok)); box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35);
+}
+@media (min-width: 900px) { .creditchip { bottom: 20px; right: 20px; } }
+/* On a checkout it sits beside "Choose how to buy" instead of floating. */
+.creditchip--inline { position: static; flex: none; box-shadow: none; }
+
+/* The platform fee, under a price. */
+.feehint { display: block; font-size: var(--t-xs); color: var(--text-dim); }
+.feehint b { color: var(--text); }
+
+/* A shop that owes fees past their due date. */
+.feelock {
+  display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); margin-bottom: var(--s3);
+  border-radius: var(--r-md); border: 1px solid rgba(244, 63, 94, 0.5); background: var(--danger-soft);
+}
+.feelock__icon { font-size: calc(20px * var(--text-scale)); }
+.feelock__text { display: grid; gap: 2px; flex: 1; font-size: var(--t-sm); }
+.feelock__text span { color: var(--text-dim); font-size: var(--t-xs); }
+/* "Subscribe to Pro" in the profile menu: in gold, so it reads as the upgrade. */
+
+/* A seller flagged for cancelling too often (components/Billing.tsx). */
+.cancelflag {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); margin-bottom: var(--s3);
+  padding: var(--s3); border-radius: var(--r-lg); border: 1px solid var(--coral-line); background: var(--coral-soft);
+}
+.cancelflag__meter {
+  display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; flex: none;
+  border: 3px solid var(--coral); background: var(--surface); line-height: 1;
+}
+.cancelflag__meter b { font: 900 var(--t-lg)/1 var(--display); color: var(--coral); }
+.cancelflag__meter small { font-size: var(--t-2xs); color: var(--text-dim); }
+.cancelflag__text { display: grid; gap: 2px; flex: 1 1 220px; min-width: 0; }
+.cancelflag__text span { color: var(--text-dim); font-size: var(--t-sm); }
+.cancelrate { font-weight: 800; }
+.cancelrate.is-over { color: var(--coral); }
+.cancelappeal { margin: 6px 0 0; padding: 8px 12px; border-left: 3px solid var(--gold); border-radius: 0 var(--r-md) var(--r-md) 0; background: var(--surface-2); font-size: var(--t-sm); }

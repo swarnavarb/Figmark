@@ -190,8 +190,8 @@ export class MemoryRepository implements Repository {
   }
 
   async listSellerCardsByIds(ids: readonly string[]): Promise<SellerCardSource[]> {
-    return (await this.listUsersByIds(ids)).map(({ id, displayName, createdAt, sellerProfile, sellerTrust }) => ({
-      id, displayName, createdAt, sellerProfile, sellerTrust,
+    return (await this.listUsersByIds(ids)).map(({ id, displayName, createdAt, sellerProfile, sellerTrust, pro }) => ({
+      id, displayName, createdAt, sellerProfile, sellerTrust, pro,
     }));
   }
 
@@ -322,7 +322,7 @@ export class MemoryRepository implements Repository {
     // until its members' window closes. The operations console is the one
     // caller that has to see them, because it deletes what an account made.
     let items = [...this.listings.values()].filter(
-      (l) => query.includeHidden || (l.status === 'active' && !l.unlisted),
+      (l) => query.includeHidden || (l.status === 'active' && !l.unlisted && !l.feeHold),
     );
 
     if (query.sellerId) items = items.filter((l) => l.sellerId === query.sellerId);

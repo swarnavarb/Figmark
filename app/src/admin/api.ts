@@ -1,3 +1,4 @@
+import type { CancelFlag, CancelSettings, CancelStats, FeeStatement, Pricing, ProState, ProVoucher } from '@shared/billing';
 import type { HealthResponse } from '@shared/contracts';
 import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, SellerTrustSignals, TradeOverride, TradeRight, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
@@ -264,6 +265,23 @@ export const admin = {
   saveRouteSamples: (samples: SampleRoute[]) => post<{ samples: SampleRoute[] }>('/ops/route-samples/save', { samples }),
   saveRouteButtons: (library: ButtonLibrary) => post<ButtonLibrary>('/ops/route-buttons/save', library),
   saveRouteWords: (words: RouteWords) => post<RouteWords>('/ops/route-words/save', words),
+  pricing: () => request<Pricing>('/ops/pricing'),
+  savePricing: (pricing: Partial<Omit<Pricing, 'updatedAt' | 'updatedBy'>>) => post<Pricing>('/ops/pricing/save', pricing),
+  vouchers: () => request<{ vouchers: ProVoucher[] }>('/ops/pro/vouchers'),
+  makeVouchers: (body: { days: number; count?: number; maxUses?: number; expiresAt?: string | null; prefix?: string; code?: string; note?: string }) =>
+    post<{ vouchers: ProVoucher[] }>('/ops/pro/vouchers/make', body),
+  toggleVoucher: (code: string) => post<{ ok: true }>(`/ops/pro/vouchers/${encodeURIComponent(code)}/toggle`),
+  grantPro: (userId: string, days: number) => post<{ pro: ProState }>('/ops/pro/grant', { userId, days }),
+  fees: () => request<{
+    accounts: { userId: string; name: string; owedMinor: number; overdueMinor: number; locked: boolean; nextDueAt: string | null; checkedAt: string }[];
+    earnings: Record<string, { collectedMinor: number; figmarkMinor: number; managerMinor: number; gstMinor: number; count: number }>;
+  }>('/ops/fees'),
+  refreshFees: (userId: string) => post<{ statement: FeeStatement; locked: boolean }>(`/ops/fees/${encodeURIComponent(userId)}/refresh`),
+  waiveFees: (userId: string, body: { amountMinor?: number; note?: string }) =>
+    post<{ statement: FeeStatement; locked: boolean }>(`/ops/fees/${encodeURIComponent(userId)}/waive`, body),
+  cancels: () => request<{ rows: (CancelStats & { userId: string; name: string; flag: CancelFlag | null })[]; limit: CancelSettings }>('/ops/cancels'),
+  decideCancel: (userId: string, decision: 'clear' | 'keep' | 'pause', note?: string) =>
+    post<{ flag: CancelFlag }>(`/ops/cancels/${encodeURIComponent(userId)}/decide`, { decision, note }),
   settings: () => request<MarketSettings>('/ops/settings'),
   saveSettings: (settings: Partial<Omit<MarketSettings, 'updatedAt' | 'updatedBy'>>) =>
     post<MarketSettings>('/ops/settings/save', settings),

@@ -213,6 +213,10 @@ export interface StoreCredit {
   link: string;
   createdAt: string;
   spends: { orderId: string; itemName: string; amountMinor: number; at: string }[];
+  /** Who gave it: a shop (absent, as game prizes always were), a forwarder or an artist. */
+  kind?: 'shop' | 'forwarder' | 'artist';
+  /** Credit a store gave by hand, rather than one won. */
+  given?: boolean;
 }
 
 export const storeCreditLeft = (credit: Pick<StoreCredit, 'amountMinor' | 'spentMinor'>) =>

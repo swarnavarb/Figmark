@@ -1,3 +1,4 @@
+import { isProActive } from '../../shared/billing.js';
 import type { Listing, User } from '../../shared/models.js';
 import { isExpired } from '../../shared/payments.js';
 import { buildIdentity, sameIdentity, type ShopTag } from '../../shared/shop-tags.js';
@@ -52,6 +53,7 @@ export interface IndexedShop {
   photoUrl: string | null;
   followerCount: number;
   tier: string;
+  pro: boolean;
   dispatchRegion: string;
   identity: ShopTag[];
 }
@@ -87,6 +89,7 @@ export function shopIndex(repository: Repo): Promise<IndexedShop[]> {
         photoUrl: profile.photoUrl ?? null,
         followerCount: profile.followerCount ?? 0,
         tier: profile.tier,
+        pro: isProActive(owner.pro),
         dispatchRegion: profile.dispatchRegion ?? '',
         identity,
       };
@@ -107,6 +110,7 @@ export function shopCard(shop: IndexedShop, matched: string[] = []) {
     photoUrl: shop.photoUrl,
     followerCount: shop.followerCount,
     tier: shop.tier,
+    pro: shop.pro,
     dispatchRegion: shop.dispatchRegion,
     tags: shop.identity.slice(0, 3).map((tag) => tag.l),
     matched,

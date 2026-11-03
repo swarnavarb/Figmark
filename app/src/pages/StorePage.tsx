@@ -1,3 +1,4 @@
+import { CreditChip, ProBadge } from '../components/Billing';
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { FREIGHT_MODE_LABELS, STORE_KIND_LABELS, laneLabel, minKgLabel, transitLabel, type FreightMode, type StoreKind } from '@shared/service-stores';
@@ -83,6 +84,7 @@ export function StorePage() {
 
   return (
     <main className="page sp-page" style={accentStyle(store.accent)}>
+      <CreditChip storeId={`${store.kind}:${store.ownerId}`} />
       <BackLink to={`/services/${store.kind}`}>{store.name}</BackLink>
 
       <section className="sp-hero">
@@ -91,7 +93,7 @@ export function StorePage() {
           <StoreMark name={store.name} logoUrl={store.logoUrl} accent={store.accent} size={64} />
           <div className="sp-hero__text">
             <span className="sp-hero__kind">{STORE_KIND_LABELS[store.kind].store}</span>
-            <h1>{store.name}</h1>
+            <h1>{store.name}{store.pro && <ProBadge size="md" />}</h1>
             {store.tagline && <p className="sp-hero__tag">{store.tagline}</p>}
             <div className="sp-hero__chips">
               <StandingChips standing={stats.standing} followers={followers} />

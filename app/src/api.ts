@@ -1,3 +1,5 @@
+import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
+import type { CardProgress, IssuedReward, LoyaltyApplied, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
 import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
@@ -317,6 +319,8 @@ export interface SellerCard {
   /** The shop's handle: its page at `/username`, and where a message lands. */
   username: string | null;
   tier: string;
+  /** Pro, the subscription: the badge beside the name. */
+  pro?: boolean;
   dispatchRegion: string | null;
   followerCount: number;
   trustScore: number;
@@ -760,6 +764,26 @@ export interface Checkout {
   protectionFeeMinor: number;
   /** False when no community manager can be assigned to it right now. */
   protectionAvailable: boolean;
+  /** The shop takes protected payments only for now. */
+  directPaused?: boolean;
+  /** Loyalty rewards this order brings. One with `fits: false` clashes with an offer here, and the buyer picks. */
+  loyalty?: { rewards: CheckoutReward[]; pickedReward: boolean } | null;
+  /** Loyalty money off this order, already taken off `itemMinor`. */
+  loyaltyOffMinor?: number;
+  loyaltyApplied?: LoyaltyApplied[];
+}
+
+export interface CheckoutReward {
+  cardId: string;
+  cardName: string;
+  stamp: number;
+  reward: LoyaltyReward;
+  fits: boolean;
+  clashWith: string[];
+  clashMinor: number;
+  tookOverOffer: boolean;
+  /** Money off this order for a money-off reward: now when it fits, or if picked over the offer. */
+  offMinor: number;
 }
 
 /** One order waiting on the seller to say whether the money arrived. */
@@ -904,6 +928,7 @@ export interface MyRefund {
   itemName: string;
   currency: string;
   sellerName: string;
+  sellerId: string;
   creditId: string;
   origin: RefundOrigin;
   reason: string | null;
@@ -1400,6 +1425,8 @@ export interface ChannelRow {
   handle: string | null;
   photoUrl: string | null;
   tier: string | null;
+  /** Pro, the subscription: the badge beside the name. */
+  pro?: boolean;
   /** Whether you may speak for this shop. Yours sorts to the top. */
   mine: boolean;
   lastPost: string | null;
@@ -1426,6 +1453,7 @@ export interface ChannelThread {
     handle?: string | null;
     photoUrl?: string | null;
     tier?: string | null;
+    pro?: boolean;
     followerCount?: number;
     following?: boolean;
     /** Whether you may post as this shop rather than as a customer. */
@@ -1602,7 +1630,7 @@ export interface SocialSearchResult {
   people: { id: string; name: string; handle: string | null; bio: string; following: boolean }[];
   shops: {
     id: string; name: string; handle: string | null; bio: string; photoUrl: string | null;
-    followerCount: number; tier: string | null; following: boolean; mine: boolean;
+    followerCount: number; tier: string | null; pro?: boolean; following: boolean; mine: boolean;
   }[];
   forums: ForumRow[];
 }
@@ -2328,6 +2356,8 @@ export interface ShopCard {
   photoUrl: string | null;
   followerCount: number;
   tier: string;
+  /** Pro, the subscription: the badge beside the name. */
+  pro?: boolean;
   dispatchRegion: string;
   /** The few tags that say most about it. */
   tags: string[];
@@ -2368,6 +2398,8 @@ export interface PublicProfile {
   /** Ratings after trades and ratings left on this page, as one figure. */
   rating: MergedRating;
   tier: string | null;
+  /** Pro, the subscription: the badge beside the name. */
+  pro?: boolean;
   ownerHandle: string | null;
   sellerId: string;
   /** A shop's seller trust, 0-100; null on a person's page. */
@@ -2607,6 +2639,7 @@ export interface PublicStore {
   ownerId: string;
   handle: string | null;
   name: string;
+  pro?: boolean;
   slug: string;
   tagline: string;
   about: string;
@@ -2676,7 +2709,96 @@ export interface OpsStoreRow {
   studioAddress: string | null;
 }
 
+
+/* ── Figmark's money: platform fees, Pro, stores paying people ─────────── */
+
+export interface FeesView {
+  statement: FeeStatement;
+  locked: boolean;
+  lockedSince: string | null;
+  pro: boolean;
+  fees: PlatformFees;
+  gst: { rateBp: number; mode: 'inclusive' | 'exclusive' } | null;
+}
+
+export interface ProView {
+  enabled: boolean;
+  active: boolean;
+  until: string | null;
+  daysLeft: number;
+  trialDays: number;
+  trialUsed: boolean;
+  plans: (ProPlan & { baseMinor: number; gstMinor: number; totalMinor: number })[];
+  features: { id: ProFeatureId; icon: string; title: string; line: string; punch: string; benefit: string; pro: boolean }[];
+  locked: Record<ProFeatureId, boolean>;
+  bumpPoints: number;
+  history: ProGrant[];
+  gst: { rateBp: number; mode: 'inclusive' | 'exclusive'; gstin: string } | null;
+  fees: PlatformFees;
+}
+
+export interface ProStatus {
+  enabled: boolean;
+  active: boolean;
+  locked: Record<ProFeatureId, boolean>;
+}
+
+export interface GiftsView {
+  store: { kind: GiverKind; ownerId: string; name: string };
+  gifts: StoreGift[];
+  people: { id: string; name: string; handle: string | null }[];
+}
+
+/** A shop's live loyalty cards, and where the viewer stands on each. */
+export interface ShopLoyalty {
+  live: boolean;
+  shopName?: string;
+  cards: {
+    card: Omit<LoyaltyCard, 'listingIds'> & { listingIds: number | null };
+    stamps: number;
+    total: number;
+    next: CardProgress['next'];
+    ready: number;
+    /** Rewards reached on an order that took an offer, held for the next one without. */
+    waiting: number;
+    signedIn: boolean;
+  }[];
+}
+
 export const api = {
+  /* Figmark's money */
+  pricing: () => request<Pricing>('/pricing'),
+  myFees: () => request<FeesView>('/me/fees'),
+  payFees: (amountMinor?: number) =>
+    post<{ settlement: FeeSettlement; statement: FeeStatement; locked: boolean }>('/me/fees/pay', amountMinor === undefined ? {} : { amountMinor }),
+  myPro: () => request<ProView>('/me/pro'),
+  proStatus: (ownerId: string) => request<ProStatus>(`/pro/status?owner=${encodeURIComponent(ownerId)}`),
+  buyPro: (months: number) => post<ProView>('/me/pro/buy', { months }),
+  redeemPro: (code: string) => post<ProView>('/me/pro/redeem', { code }),
+  startProTrial: () => post<ProView>('/me/pro/trial', {}),
+  storeGifts: (kind: GiverKind, ownerId?: string) =>
+    request<GiftsView>(`/me/gifts?kind=${kind}${ownerId ? `&owner=${encodeURIComponent(ownerId)}` : ''}`),
+  giveMoney: (body: {
+    kind: GiverKind; owner?: string; recipient: string; amountMinor: number; method: GiftMethod; reason: string; reference?: string; orderId?: string;
+  }) => post<{ gift: StoreGift }>('/me/gifts/give', body),
+  giftsReceived: () => request<{ gifts: StoreGift[] }>('/me/gifts/received'),
+  answerGift: (id: string, arrived: boolean) => post<{ status: StoreGift['status'] }>(`/me/gifts/${encodeURIComponent(id)}/answer`, { arrived }),
+  myStoreCredit: () => request<{ credits: { storeId: string; storeName: string; leftMinor: number }[] }>('/me/store-credit'),
+  myCancels: () => request<{ stats: CancelStats; limit: CancelSettings; flag: CancelFlag | null; directPaused: boolean }>('/me/cancels'),
+  appealCancels: (text: string) => post<{ flag: CancelFlag }>('/me/cancels/appeal', { text }),
+  shopLoyalty: (ownerId: string, listingId?: string) =>
+    request<ShopLoyalty>(`/loyalty/shop/${encodeURIComponent(ownerId)}${listingId ? `?listing=${encodeURIComponent(listingId)}` : ''}`),
+  myLoyalty: () => request<{ cards: CardProgress[] }>('/me/loyalty'),
+  myLoyaltyCards: () => request<{
+    cards: LoyaltyCard[]; stats: Record<string, { holders: number; stamps: number }>; settings: LoyaltySettings; locked: boolean; stampsPerCard: number;
+  }>('/me/loyalty/cards'),
+  saveLoyaltyCard: (card: Partial<LoyaltyCard>) => post<{ card: LoyaltyCard }>('/me/loyalty/cards/save', card),
+  deleteLoyaltyCard: (id: string) => post<{ deleted: string }>(`/me/loyalty/cards/${encodeURIComponent(id)}/delete`, {}),
+  loyaltyRewardsOwed: () => request<{ rewards: IssuedReward[] }>('/me/loyalty/rewards'),
+  loyaltyPick: (orderId: string, pick: 'offer' | 'reward') =>
+    post<{ pick: string }>(`/orders/${encodeURIComponent(orderId)}/loyalty-pick`, { pick }),
+  useLoyaltyReward: (id: string) => post<{ used: string }>(`/me/loyalty/rewards/${encodeURIComponent(id)}/use`, {}),
+
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),
 

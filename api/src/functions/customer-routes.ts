@@ -14,6 +14,7 @@
  * toward the shop - ordered, saved, checked out, pledged, followed, voted,
  * commented. Browsing is counted (views), never named.
  */
+import { proRefusal } from '../billing.js';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Listing, Order, Post, User } from '../../../shared/models.js';
 import type { PartyRef } from '../../../shared/parties.js';
@@ -489,6 +490,8 @@ async function customer(request: HttpRequest, _context: InvocationContext) {
 async function messageGroup(request: HttpRequest, _context: InvocationContext) {
   const { user, repository, shopId } = await open(request);
   if (!shopId) return error(403, 'forbidden', 'You cannot message the customers of that shop.');
+  const locked = await proRefusal(repository, shopId, 'customers');
+  if (locked) return locked;
   let body: { buyerIds?: unknown; text?: unknown; listingId?: unknown };
   try {
     body = (await request.json()) as typeof body;

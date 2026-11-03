@@ -40,7 +40,8 @@ export type OfferKind = (typeof OFFER_KINDS)[number];
 /** Same shipment, or everything the buyer has from the shop. */
 export type OfferScope = 'lot' | 'shop';
 
-export type OfferValue = { type: 'fixed' | 'percent'; value: number };
+/** Money off: a fixed amount, or a percentage - optionally capped ("10% off, up to ₹120"). */
+export type OfferValue = { type: 'fixed' | 'percent'; value: number; capMinor?: number };
 
 export interface WholesaleTier {
   /** Units of this item in one order. */
@@ -100,7 +101,8 @@ const rupees = (minor: number): string => {
 };
 
 const moneyOff = (value: OfferValue | undefined): string =>
-  !value ? 'money off' : value.type === 'percent' ? `${value.value}% off` : `${rupees(value.value)} off`;
+  !value ? 'money off'
+    : value.type === 'percent' ? `${value.value}% off${value.capMinor ? ` up to ${rupees(value.capMinor)}` : ''}` : `${rupees(value.value)} off`;
 
 /** Where the items have to be for this offer to count them. */
 export const scopeWords = (scope: OfferScope | undefined): string =>
@@ -129,7 +131,9 @@ export function offerSummary(offer: ListingOffer): string {
     case 'free_shipping':
       return `Free shipping when you buy ${offer.minItems ?? 2} or more items ${scopeWords(offer.scope)}.`;
     case 'discount':
-      return `${moneyOff(offer.discount)} each item when you buy ${offer.minItems ?? 2} or more items ${scopeWords(offer.scope)}.`;
+      return offer.discount?.type === 'percent' && offer.discount.capMinor
+        ? `${offer.discount.value}% off each item, up to ${rupees(offer.discount.capMinor)} in all, when you buy ${offer.minItems ?? 2} or more items ${scopeWords(offer.scope)}.`
+        : `${moneyOff(offer.discount)} each item when you buy ${offer.minItems ?? 2} or more items ${scopeWords(offer.scope)}.`;
     case 'bundle':
       return `Buy ${offer.minItems ?? 2} of this item for ${rupees(offer.bundlePriceMinor ?? 0)} together.`;
     case 'wholesale':
@@ -205,8 +209,13 @@ const whole = (value: unknown, min: number, max: number): value is number =>
 
 function cleanValue(raw: unknown): OfferValue | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { type, value } = raw as { type?: unknown; value?: unknown };
-  if (type === 'percent') return whole(value, 1, 90) ? { type, value } : null;
+  const { type, value, capMinor } = raw as { type?: unknown; value?: unknown; capMinor?: unknown };
+  if (type === 'percent') {
+    if (!whole(value, 1, 90)) return null;
+    // No cap, or one of ₹1 or more.
+    if (capMinor === undefined || capMinor === null || capMinor === 0) return { type, value };
+    return whole(capMinor, 100, 100_000_000) ? { type, value, capMinor } : null;
+  }
   if (type === 'fixed') return whole(value, 100, 100_000_000) ? { type, value } : null;
   return null;
 }
@@ -368,9 +377,33 @@ export interface OfferWho {
   repeatBuyer: boolean;
 }
 
+/**
+ * What kind of thing an offer or a loyalty reward gives. Two of the same kind
+ * on one order clash - money and money, a free item and a free item, free
+ * shipping and free shipping - and the buyer picks one. Different kinds go
+ * together.
+ */
+export type Perk = 'money' | 'freebie' | 'shipping';
+
+export const PERK_WORDS: Record<Perk, string> = { money: 'money off or back', freebie: 'a free item', shipping: 'free shipping' };
+
+export function offerPerk(offer: Pick<ListingOffer, 'kind'> & { freeShipping?: boolean }): Perk {
+  if (offer.kind === 'free_shipping' || offer.kind === 'spend_free_shipping') return 'shipping';
+  if (offer.kind === 'buy_x_get_y') return 'freebie';
+  if (offer.kind === 'group_fill' && offer.freeShipping) return 'shipping';
+  return 'money';
+}
+
+/** The kinds of thing the offers on an order gave. */
+export function appliedPerks(applied: readonly Pick<AppliedOffer, 'kind' | 'savedMinor' | 'perk'>[] | undefined): Perk[] {
+  return [...new Set((applied ?? []).filter((offer) => offer.savedMinor > 0).map((offer) => offer.perk ?? offerPerk(offer)))];
+}
+
 export interface AppliedOffer {
   offerId: string;
   kind: OfferKind;
+  /** Money off, or free shipping: `group_fill` can be either. */
+  perk?: Perk;
   label: string;
   /** What it took off this line: money and shipping together. */
   savedMinor: number;
@@ -389,7 +422,9 @@ const percentOf = (amount: number, percent: number): number => Math.round(amount
 function valueOff(value: OfferValue, unitMinor: number, quantity: number): number {
   const perUnit = value.type === 'percent' ? percentOf(unitMinor, value.value) : value.value;
   // Never takes an item below ₹1.
-  return Math.min(perUnit, Math.max(0, unitMinor - 100)) * quantity;
+  const off = Math.min(perUnit, Math.max(0, unitMinor - 100)) * quantity;
+  // A capped percentage stops at the cap, for the whole line.
+  return value.type === 'percent' && value.capMinor ? Math.min(off, value.capMinor) : off;
 }
 
 /** Items counted toward a line's group offer, by the scope the shop chose. */
@@ -500,10 +535,10 @@ export function priceBasket(
     const free = shipFree as { offer: ListingOffer } | null;
     const applied: AppliedOffer[] = [];
     if (best && discountMinor > 0) {
-      applied.push({ offerId: best.offer.id, kind: best.offer.kind, label: offerLabel(best.offer), savedMinor: discountMinor });
+      applied.push({ offerId: best.offer.id, kind: best.offer.kind, perk: offerPerk(best.offer) === 'freebie' ? 'freebie' : 'money', label: offerLabel(best.offer), savedMinor: discountMinor });
     }
     if (free && fullShipping > 0) {
-      applied.push({ offerId: free.offer.id, kind: free.offer.kind, label: offerLabel(free.offer), savedMinor: fullShipping });
+      applied.push({ offerId: free.offer.id, kind: free.offer.kind, perk: 'shipping', label: offerLabel(free.offer), savedMinor: fullShipping });
     }
     result.set(line.id, { shippingMinor: free ? 0 : fullShipping, discountMinor, applied });
   }

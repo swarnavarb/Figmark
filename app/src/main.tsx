@@ -91,6 +91,8 @@ const SharedPost = page(loaders.invite, 'SharedPost');
 const SharedTopic = page(loaders.invite, 'SharedTopic');
 const SharedDiscover = page(loaders.invite, 'SharedDiscover');
 const PowerSaleBuilderPage = page(loaders.powerSale, 'PowerSaleBuilderPage');
+const ProPage = page(loaders.billing, 'ProPage');
+const FeesPage = page(loaders.billing, 'FeesPage');
 const NotFoundPage = page(loaders.notFound, 'NotFoundPage');
 
 /** An old address, sent on to its new one with whatever it asked for (the tab, a highlight). */
@@ -191,6 +193,8 @@ function App() {
         <Route path="/refunds" element={<MovedTo pathname="/wallet" />} />
         <Route path="/disputes" element={members(<MyDisputesPage />)} />
         <Route path="/quests" element={members(<QuestsPage />)} />
+        <Route path="/pro" element={members(<ProPage />)} />
+        <Route path="/fees" element={members(<FeesPage />)} />
         <Route path="/learn" element={<LearnPage />} />
         <Route path="/legal" element={<LegalPage />} />
         <Route path="/legal/:doc" element={<LegalPage />} />

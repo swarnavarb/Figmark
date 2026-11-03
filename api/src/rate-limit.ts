@@ -18,7 +18,7 @@ import { error } from './functions/http.js';
 export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
   | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
   | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check'
-  | 'reset' | 'reset_account' | 'export' | 'clienterror';
+  | 'reset' | 'reset_account' | 'export' | 'clienterror' | 'billing' | 'voucher' | 'gift';
 
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
@@ -27,6 +27,12 @@ const DAY = HOUR * 24;
 /** Each action's windows: at most `max` in any `ms`. */
 const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   post: [{ max: 10, ms: MINUTE }, { max: 60, ms: HOUR }],
+  // Paying fees or buying Pro: a double tap is the only reason to come back so soon.
+  billing: [{ max: 6, ms: MINUTE }],
+  // Pro codes: few enough tries that guessing one is hopeless.
+  voucher: [{ max: 8, ms: 10 * MINUTE }, { max: 30, ms: DAY }],
+  // A store paying or crediting people.
+  gift: [{ max: 20, ms: 10 * MINUTE }, { max: 200, ms: DAY }],
   // A batch of what was on screen, sent every few seconds while somebody scrolls.
   seen: [{ max: 30, ms: MINUTE }, { max: 600, ms: HOUR }],
   // Saving, hiding and muting: a tap each, but a tap that writes the account.
