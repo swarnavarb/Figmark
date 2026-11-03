@@ -151,6 +151,9 @@ function listingFor(sale: PowerSale, item: PowerSaleItem, index: number, showAt:
     description: item.description,
     category: item.category,
     condition: item.condition,
+    ...(item.attributes ? { attributes: item.attributes } : {}),
+    ...(item.shippingMinor != null ? { shippingMinor: item.shippingMinor } : {}),
+    ...(item.offers?.length ? { offers: item.offers } : {}),
     status: 'active',
     // Opens at the members' price. The public price is what it moves to when
     // the window closes - on the same listing rather than a second one, so a

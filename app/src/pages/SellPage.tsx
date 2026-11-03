@@ -29,6 +29,7 @@ import { BackBar, useGoBack } from '../components/ScrollManager';
 import { lotLabel } from '../components/LotName';
 import { NewLotForm } from './LotsPage';
 import { OpenBusinessChooser } from '../components/OpenBusiness';
+import { QuickFillPicker } from '../components/QuickFillPicker';
 import '../styles/SellPage.css';
 import { Select } from '../components/Select';
 
@@ -392,7 +393,6 @@ export function SellPage() {
       .templates()
       .then((result) => {
         if (cancelled) return;
-        result.templates = result.templates.filter((row) => row.kind !== 'power');
         setTemplates(result.templates);
         // The last one used, when it still exists; otherwise the first.
         const remembered = result.templates.find((row) => row.id === lastTemplate());
@@ -414,8 +414,7 @@ export function SellPage() {
    * replaces what the first one wrote - including clearing a field the new
    * one leaves blank - without touching anything typed by hand since.
    */
-  const applied = useRef<{ category: string; tags: string; condition: string; description: string } | null>(null);
-  const conditionNow = attributes['condition'] ?? '';
+  const applied = useRef<{ category: string; tags: string; attributes: string; description: string } | null>(null);
 
   /**
    * Fill the form in from a template, leaving everything editable.
@@ -426,11 +425,16 @@ export function SellPage() {
   function applyTemplate(template: PostTemplate, initial = false) {
     const fill = fillFrom(template);
     const templateCategory = canonicalCategory(fill.category) ?? CATEGORIES[0]!;
+    // The category's own answers; an older template knew only a grade, put
+    // into this category's wording where one stands for it.
+    const legacyCondition = conditionValueForTag(templateCategory, fill.condition);
+    const answers = pruneAttributes(templateCategory, Object.keys(fill.attributes).length > 0
+      ? fill.attributes
+      : legacyCondition ? { condition: legacyCondition } : {});
     const next = {
       category: templateCategory,
       tags: fill.tags ?? '',
-      // The template's grade, in this category's own wording where one stands for it.
-      condition: conditionValueForTag(templateCategory, fill.condition) ?? '',
+      attributes: JSON.stringify(answers),
       description: fill.description ?? '',
     };
     const before = applied.current;
@@ -440,14 +444,12 @@ export function SellPage() {
     const categoryFree = free('category', category);
     if (categoryFree) setCategory(next.category);
     if (free('tags', tags)) setTags(next.tags);
-    if (free('condition', conditionNow)) {
+    if (free('attributes', JSON.stringify(attributes))) {
       setAttributes(categoryFree
-        ? (next.condition ? { condition: next.condition } : {})
-        : (current) => {
-          const rest = { ...current };
-          if (next.condition) rest['condition'] = next.condition; else delete rest['condition'];
-          return pruneAttributes(category, rest);
-        });
+        ? answers
+        // The shop chose another category by hand: only the answers that are
+        // still questions there come across.
+        : (current) => pruneAttributes(category, { ...current, ...answers }));
     }
     if (free('description', description, initial && Boolean(prefill?.description))) setDescription(next.description);
     applied.current = next;
@@ -691,24 +693,11 @@ export function SellPage() {
               and already on the last template used. A row of names to tap
               rather than a switch and a dropdown: one tap, and "None" to let
               it go. */}
-          {verified && (templates.length > 0 || calcs.length > 0) && (
-            <LBox icon="⚡" title="Quick Fill" hint="Start from a template - everything stays editable.">
-              {templates.length > 0 && (
-                <div className="qfill" role="radiogroup" aria-label="Quick Fill template">
-                  {templates.map((template) => (
-                    <button key={template.id} type="button" role="radio" aria-checked={templateId === template.id}
-                      className={`qfill__chip${templateId === template.id ? ' is-on' : ''}`}
-                      onClick={() => { setTemplateId(template.id); applyTemplate(template); }}>
-                      {template.name}
-                    </button>
-                  ))}
-                  <button type="button" role="radio" aria-checked={!quickFill}
-                    className={`qfill__chip qfill__chip--none${quickFill ? '' : ' is-on'}`}
-                    onClick={() => { setTemplateId(''); setPreLot(null); }}>
-                    None
-                  </button>
-                </div>
-              )}
+          {verified && (
+            <LBox icon="⚡" title="Quick fill" hint="Start from a quick fill - everything stays editable.">
+              <QuickFillPicker templates={templates} value={quickFill ? templateId : ''}
+                onPick={(template) => { setTemplateId(template.id); applyTemplate(template); }}
+                onNone={() => { setTemplateId(''); setPreLot(null); }} />
               {calcs.length > 0 && (
                 <Select value={calc?.id ?? ''} aria-label="From your saved items" onChange={(e) => fillFromSaved(e.target.value)}>
                   <option value="">🧮 Fill from a saved calculation…</option>
@@ -720,12 +709,6 @@ export function SellPage() {
                 </Select>
               )}
             </LBox>
-          )}
-          {verified && templates.length === 0 && calcs.length === 0 && (
-            <span className="lbox__hint">
-              ⚡ Listing the same kind of thing often? Save a Quick Fill template in{' '}
-              <Link to="/shop?tab=items">Listings → Quick Fill</Link>.
-            </span>
           )}
 
           <LBox icon="📸" title="Photos" hint={verified ? 'The first one leads the listing.' : undefined}>

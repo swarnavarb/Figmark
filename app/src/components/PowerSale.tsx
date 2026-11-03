@@ -5,12 +5,14 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import type { PostTemplate } from '@shared/templates';
 import { useSession } from '../session';
 import { BackLink } from './ScrollManager';
-import { CONDITION_TAGS, LOT_STAGE_LABELS } from '@shared/enums';
-import { CATEGORIES } from '@shared/catalog';
+import { LOT_STAGE_LABELS } from '@shared/enums';
+import { CATEGORIES, canonicalCategory, conditionTagFor, conditionValueForTag, pruneAttributes, type Attributes } from '@shared/catalog';
+import { CategoryFields } from './CategoryFields';
+import { QuickFillPicker } from './QuickFillPicker';
 import {
   ApiRequestError, api, type LotSummary, type PhotoDraft, type PowerSaleDraft, type PowerSaleView,
 } from '../api';
-import { TermsFields, termsBody, termsDraft, termsProblem, type TermsDraft } from './Buy';
+import { TermsFields, termsBody, termsDraft, termsFromTemplate, termsProblem, type TermsDraft } from './Buy';
 import { LBox, OptionTiles, SHAPE_OPTIONS, Switch, ToggleRow, type Shape } from './ListingForm';
 import { PhotoManager } from './PhotoManager';
 import { EmptyState, ErrorNotice, Icon } from './ui';
@@ -287,7 +289,8 @@ function Countdown({ to }: { to: string }) {
 /** What every item in a run shares by default - and what a saved quick fill holds. */
 interface QuickFill {
   category: string;
-  condition: string;
+  /** The category's own answers - kind, condition in its words, size. */
+  attributes: Attributes;
   tags: string;
   shape: Shape;
   lotId: string;
@@ -313,10 +316,8 @@ interface ItemDraft {
   optsOpen: boolean;
 }
 
-const DEFAULT_FILL_NAME = 'Quick fill for Live drops';
-
 const blankFill = (): QuickFill => ({
-  category: CATEGORIES[0]!, condition: CONDITION_TAGS[0], tags: '', shape: 'single', lotId: '',
+  category: CATEGORIES[0]!, attributes: {}, tags: '', shape: 'single', lotId: '',
   terms: termsDraft(), allowMultiple: false,
 });
 
@@ -326,28 +327,23 @@ const blankItem = (fill: QuickFill = blankFill()): ItemDraft => ({
   open: false, fill, own: false, optsOpen: false,
 });
 
-/** A saved quick fill back into the form. */
+/** A saved quick fill into the options every item shares. */
 function fillFromTemplate(template: PostTemplate): { fill: QuickFill; description: string } {
-  const terms = template.terms;
+  const category = canonicalCategory(template.category) ?? CATEGORIES[0]!;
+  // An older quick fill knew only a grade: put it in this category's words.
+  const legacy = conditionValueForTag(category, template.condition);
+  const attributes = pruneAttributes(category, template.attributes && Object.keys(template.attributes).length > 0
+    ? template.attributes
+    : legacy ? { condition: legacy } : {});
   return {
     fill: {
-      category: template.category || CATEGORIES[0]!,
-      condition: template.condition ?? CONDITION_TAGS[0],
+      category,
+      attributes,
       tags: template.tags.join(', '),
       shape: template.defaultLotId ? 'lot' : template.sourcing === 'import' ? 'waiting' : 'single',
       lotId: template.defaultLotId ?? '',
-      terms: {
-        ...termsDraft(),
-        quantityMode: terms?.quantityMode ?? 'fixed',
-        quantity: String(terms?.quantity ?? 1),
-        advance: Boolean(terms?.advancePercent),
-        advancePercent: String(terms?.advancePercent ?? 20),
-        limited: Boolean(terms?.limitedDays),
-        days: String(terms?.limitedDays ?? 2),
-        etaMin: terms?.deliveryEta ? String(terms.deliveryEta.minDays) : '',
-        etaMax: terms?.deliveryEta ? String(terms.deliveryEta.maxDays) : '',
-      },
-      allowMultiple: Boolean(terms?.allowMultiple),
+      terms: termsFromTemplate(termsDraft(), template.terms),
+      allowMultiple: Boolean(template.terms?.allowMultiple),
     },
     description: template.description ?? '',
   };
@@ -390,20 +386,14 @@ function FillFields({ value, onChange, lots }: {
   const set = (patch: Partial<QuickFill>) => onChange({ ...value, ...patch });
   return (
     <>
-      <div className="field-row">
-        <label className="field">
-          <span>Category</span>
-          <Select value={value.category} onChange={(e) => set({ category: e.target.value })}>
-            {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-          </Select>
-        </label>
-        <label className="field">
-          <span>Condition</span>
-          <Select value={value.condition} onChange={(e) => set({ condition: e.target.value })}>
-            {CONDITION_TAGS.map((tag) => <option key={tag}>{tag}</option>)}
-          </Select>
-        </label>
-      </div>
+      <label className="field">
+        <span>Category</span>
+        <Select value={value.category}
+          onChange={(e) => set({ category: e.target.value, attributes: pruneAttributes(e.target.value, value.attributes) })}>
+          {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
+        </Select>
+      </label>
+      <CategoryFields category={value.category} value={value.attributes} onChange={(attributes) => set({ attributes })} />
       <label className="field">
         <span>Tags</span>
         <input value={value.tags} onChange={(e) => set({ tags: e.target.value })} placeholder="resin, sealed" />
@@ -464,9 +454,17 @@ function PowerSaleBuilderOpen() {
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
   const [fills, setFills] = useState<PostTemplate[]>([]);
   const [lots, setLots] = useState<LotSummary[]>([]);
+  /* Every quick fill, the same ones a listing picks from. Read again on
+     coming back to this tab, since Add / edit writes them in another one. */
+  useEffect(() => {
+    const read = () => void api.templates().then((result) => setFills(result.templates)).catch(() => undefined);
+    read();
+    const onVisible = () => { if (!document.hidden) read(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
   useEffect(() => {
     void api.savedCalcs(storeId).then((result) => setCalcs(result.calcs)).catch(() => setCalcs([]));
-    void api.templates().then((result) => setFills(result.templates.filter((row) => row.kind === 'power'))).catch(() => undefined);
     void api.myLots(storeId).then((result) => setLots(result.lots.filter((entry) => entry.lot.status === 'open'))).catch(() => undefined);
   }, [storeId]);
 
@@ -477,9 +475,6 @@ function PowerSaleBuilderOpen() {
   const [fillOn, setFillOn] = useState(true);
   const [fillDescription, setFillDescription] = useState('');
   const [fillId, setFillId] = useState('');
-  const [fillName, setFillName] = useState(DEFAULT_FILL_NAME);
-  const [fillOpen, setFillOpen] = useState(false);
-  const [fillNote, setFillNote] = useState<string | null>(null);
   const [startNow, setStartNow] = useState<'now' | 'later'>('now');
   const [startHours, setStartHours] = useState('2');
   const [lead, setLead] = useState('30');
@@ -515,47 +510,11 @@ function PowerSaleBuilderOpen() {
     if (on) setItems((rows) => rows.map((row) => (row.own ? row : { ...row, fill: next })));
   }
 
-  function pickFill(id: string) {
-    setFillId(id);
-    const template = fills.find((row) => row.id === id);
-    if (template) {
-      const read = fillFromTemplate(template);
-      applyFill(read.fill);
-      setFillDescription(read.description);
-      setFillName(template.name);
-    }
-  }
-
-  async function saveFill() {
-    setFillNote(null);
-    const terms = termsBody(fill.terms);
-    try {
-      const { template } = await api.saveTemplate({
-        id: fillId || undefined,
-        name: fillName.trim() || DEFAULT_FILL_NAME,
-        description: fillDescription.trim(),
-        kind: 'power',
-        category: fill.category,
-        condition: fill.condition,
-        tags: fill.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-        sourcing: fill.shape === 'single' ? 'in_hand' : 'import',
-        defaultLotId: fill.shape === 'lot' && fill.lotId ? fill.lotId : null,
-        terms: {
-          quantityMode: terms.quantityMode,
-          quantity: Math.max(1, terms.quantityAvailable),
-          advancePercent: terms.advancePercent,
-          limitedDays: fill.terms.limited ? Number(fill.terms.days) || 2 : null,
-          allowMultiple: fill.allowMultiple,
-          deliveryEta: terms.deliveryEta,
-        },
-      });
-      setFills((rows) => [template, ...rows.filter((row) => row.id !== template.id)]);
-      setFillId(template.id);
-      setFillName(template.name);
-      setFillNote('Saved to your quick fills.');
-    } catch (err) {
-      setFillNote(err instanceof ApiRequestError ? err.message : 'That did not save.');
-    }
+  function pickFill(template: PostTemplate | null) {
+    setFillId(template?.id ?? '');
+    const read = template ? fillFromTemplate(template) : { fill: blankFill(), description: '' };
+    applyFill(read.fill);
+    setFillDescription(read.description);
   }
 
   const filled = items.filter(touched);
@@ -583,7 +542,10 @@ function PowerSaleBuilderOpen() {
             title: item.title.trim(),
             description: item.description.trim() || fillDescription.trim(),
             category: own.category,
-            condition: own.condition,
+            attributes: own.attributes,
+            condition: conditionTagFor(own.category, own.attributes) ?? 'MISB',
+            shippingMinor: terms.shippingMinor,
+            offers: terms.offers,
             priceMinor: Math.round(Number(item.price) * 100),
             listPriceMinor: Math.round(publicPrice(item) * 100),
             quantity: Math.max(1, terms.quantityAvailable),
@@ -626,39 +588,13 @@ function PowerSaleBuilderOpen() {
         </LBox>
 
         <LBox icon="⚡" title="Quick fill" hint={fillOn ? 'Fills every item below; change any item on its own.' : 'Off: each item keeps its own options.'}
-          right={(
-            <>
-              <span className="probadge">PRO</span>
-              <Switch checked={fillOn} label="Use the quick fill for every item"
-                onChange={(on) => { setFillOn(on); if (on) applyFill(fill, true); }} />
-              <button type="button" className="psfold" aria-expanded={fillOpen}
-                aria-label={fillOpen ? 'Collapse quick fill' : 'Expand quick fill'} onClick={() => setFillOpen((v) => !v)}>
-                <Icon name="chevron" size={16} />
-              </button>
-            </>
-          )}>
-          {fillOpen && (<>
-            {fills.length > 0 && (
-              <Select value={fillId} onChange={(e) => pickFill(e.target.value)} aria-label="Saved quick fill">
-                <option value="">Start from a saved quick fill…</option>
-                {fills.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-              </Select>
-            )}
-            <label className="field">
-              <span>Description</span>
-              <textarea value={fillDescription} rows={2} onChange={(e) => setFillDescription(e.target.value)}
-                placeholder="Used for any item without its own description" />
-            </label>
-            <FillFields value={fill} onChange={(next) => applyFill(next)} lots={lots} />
-            <div className="row" style={{ gap: 8 }}>
-              <input value={fillName} onChange={(e) => setFillName(e.target.value)} placeholder={DEFAULT_FILL_NAME}
-                aria-label="Quick fill name" style={{ flex: 1, minWidth: 0 }} />
-              <button type="button" className="btn btn--quiet btn--sm" onClick={() => void saveFill()}>
-                {fillId ? 'Update' : 'Save'} quick fill
-              </button>
-            </div>
-            {fillNote && <span className="lbox__hint">{fillNote}</span>}
-          </>)}
+          right={<Switch checked={fillOn} label="Use the quick fill for every item"
+            onChange={(on) => { setFillOn(on); if (on) applyFill(fill, true); }} />}>
+          <QuickFillPicker templates={fills} value={fillId} newTab
+            onPick={(template) => pickFill(template)} onNone={() => pickFill(null)} />
+          {fillDescription && (
+            <span className="lbox__hint">Description for items without their own: {fillDescription}</span>
+          )}
         </LBox>
 
         <LBox icon="🧾" title="Items" hint={`${filled.length} of ${items.length} filled · posted in this order`}>

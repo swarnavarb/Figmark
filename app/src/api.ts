@@ -1150,8 +1150,12 @@ export interface PowerSaleDraft {
     description: string;
     category: string;
     condition: string;
+    /** The category's own answers, as the sell form asks them. */
+    attributes?: Record<string, string>;
     priceMinor: number;
     listPriceMinor: number;
+    shippingMinor?: number | null;
+    offers?: ListingOffer[];
     quantity: number;
     allowMultiple: boolean;
     costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
@@ -3192,7 +3196,7 @@ export const api = {
 
   templates: () => request<{ templates: PostTemplate[] }>('/templates'),
   saveTemplate: (body: {
-    id?: string; name: string; category?: string; tags?: string[];
+    id?: string; name: string; category?: string; attributes?: Record<string, string>; tags?: string[];
     condition?: string | null; sourcing?: string; description?: string; defaultLotId?: string | null;
     preLotSteps?: { name: string; description?: string }[]; preLotName?: string;
     lotRouteId?: string | null; kind?: 'post' | 'power'; terms?: TemplateTerms | null;

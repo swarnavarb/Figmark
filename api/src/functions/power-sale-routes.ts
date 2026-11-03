@@ -4,7 +4,8 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
 import { cleanCostSheet } from '../../../shared/profit.js';
 import { cleanEta, etaProblem } from '../../../shared/delivery-eta.js';
-import { canonicalCategory, listablePrice } from '../../../shared/catalog.js';
+import { canonicalCategory, conditionTagFor, listablePrice, pruneAttributes } from '../../../shared/catalog.js';
+import { cleanOffers } from '../../../shared/offers.js';
 import type { PowerSale, PowerSaleItem } from '../../../shared/models.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
@@ -161,18 +162,34 @@ function readItem(raw: unknown): { item: PowerSaleItem } | { why: string } {
     return { why: `${title}: the price after the window can't be below the members' price.` };
   }
 
-  const category = trimmed(entry.category, 40);
+  const category = canonicalCategory(trimmed(entry.category, 40)) ?? 'Collectibles';
   const condition = trimmed(entry.condition, 10);
+  /* The category's own answers, as a quick fill or the item set them. Only
+     options the category still offers are kept; nothing is required, because
+     a run is many items and one unanswered size should not stop it. */
+  const rawAttributes = entry.attributes && typeof entry.attributes === 'object' && !Array.isArray(entry.attributes)
+    ? Object.fromEntries(Object.entries(entry.attributes as Record<string, unknown>)
+      .filter((pair): pair is [string, string] => typeof pair[1] === 'string' && pair[1].trim() !== '')
+      .map(([key, value]) => [key.slice(0, 40), value.trim().slice(0, 80)]))
+    : {};
+  const attributes = pruneAttributes(category, rawAttributes);
+
+  const offers = cleanOffers(entry.offers, priceMinor);
+  if (offers.error) return { why: `${title}: ${offers.error}` };
+  const shipping = entry.shippingMinor == null ? null : Math.round(Number(entry.shippingMinor));
 
   return {
     item: {
       id: `psi_${randomUUID().slice(0, 10)}`,
       title,
       description: trimmed(entry.description, 600),
-      category: canonicalCategory(category) ?? 'Collectibles',
-      condition: (CONDITION_TAGS as readonly string[]).includes(condition)
-        ? (condition as ConditionTag)
-        : 'MISB',
+      category,
+      condition: conditionTagFor(category, attributes)
+        ?? ((CONDITION_TAGS as readonly string[]).includes(condition) ? (condition as ConditionTag) : 'MISB'),
+      ...(Object.keys(attributes).length > 0 ? { attributes } : {}),
+      ...(shipping !== null && Number.isFinite(shipping) && shipping >= 0
+        ? { shippingMinor: Math.min(10_000_000, shipping) } : {}),
+      ...(offers.offers.length > 0 ? { offers: offers.offers } : {}),
       priceMinor,
       listPriceMinor,
       quantity: Math.min(999, positive(entry.quantity, 1)),

@@ -22,7 +22,14 @@ export interface PostTemplate extends BaseDocument {
   sellerId: string;
   name: string;
   category: string;
+  /**
+   * The category's own answers - kind, condition in its own words, original
+   * or copy, size - as the sell form asks them. Absent on older templates,
+   * which only knew a grade (`condition`).
+   */
+  attributes?: Record<string, string>;
   tags: string[];
+  /** The grade, derived from `attributes` where the category has a condition. */
   condition: ConditionTag | null;
   /**
    * Whether items listed this way ship from the shelf or arrive in a lot.
@@ -50,8 +57,8 @@ export interface PostTemplate extends BaseDocument {
   lotRouteId: string | null;
   lotRouteName: string | null;
   /**
-   * 'power' is a power sale's quick fill: what every item in a run shares.
-   * Absent on older templates, which are all Quick Fill ones.
+   * Where it was first saved from. Every quick fill now works for both a
+   * listing and a live drop; kept only so older documents still read.
    */
   kind?: 'post' | 'power';
   /** A power quick fill's stock and payment terms. */
@@ -117,6 +124,7 @@ export function preLotRouteOf(source: { preLotRoute?: LotRoute | null } | null |
  */
 export interface TemplateFill {
   category: string;
+  attributes: Record<string, string>;
   tags: string;
   condition: ConditionTag | null;
   description: string;
@@ -129,6 +137,7 @@ export interface TemplateFill {
 export function fillFrom(template: PostTemplate): TemplateFill {
   return {
     category: template.category,
+    attributes: template.attributes ?? {},
     tags: template.tags.join(', '),
     condition: template.condition,
     description: template.description,

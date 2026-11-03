@@ -8,6 +8,7 @@ import type { Order, StageEvent } from '../../../shared/models.js';
 import { coarseStage, currentStepOf, itemStepOn, lotRefOf, normaliseSteps, routeOf, ticksOf } from '../../../shared/routes.js';
 import type { PostTemplate, TemplateTerms } from '../../../shared/templates.js';
 import { cleanOffers } from '../../../shared/offers.js';
+import { canonicalCategory, conditionTagFor, pruneAttributes } from '../../../shared/catalog.js';
 import { getAuthService } from '../auth/index.js';
 import { AuthError } from '../auth/errors.js';
 import { hasAnyCapability } from '../../../shared/capabilities.js';
@@ -49,6 +50,7 @@ interface TemplateBody {
   id?: string;
   name?: string;
   category?: string;
+  attributes?: Record<string, unknown> | null;
   tags?: string[];
   condition?: string | null;
   sourcing?: string;
@@ -80,6 +82,16 @@ function readTerms(raw: Partial<TemplateTerms> | null | undefined): TemplateTerm
     affiliateMinor: raw.affiliateMinor == null ? null : whole(raw.affiliateMinor, 100, 100_000_000),
     affiliateOffMinor: raw.affiliateOffMinor == null ? null : whole(raw.affiliateOffMinor, 100, 100_000_000),
   };
+}
+
+/** A template's category answers: plain strings, only options the category still offers. */
+function readAttributes(category: string, raw: Record<string, unknown> | null): Record<string, string> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const strings: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string' && value.trim()) strings[key.slice(0, 40)] = value.trim().slice(0, 80);
+  }
+  return pruneAttributes(category, strings);
 }
 
 /** POST /api/templates/new - write one, or correct one. */
@@ -118,15 +130,24 @@ async function saveTemplate(request: HttpRequest, _context: InvocationContext) {
 
   const preSteps = normaliseSteps(body.preLotSteps ?? []);
   const now = new Date().toISOString();
-  const condition = CONDITION_TAGS.includes(body.condition as ConditionTag)
+  const category = canonicalCategory(body.category?.trim() || existing?.category) ?? '';
+  /* The category's own answers, kept only where they are still options -
+     nothing is required on a template: a question it leaves open is asked on
+     each listing instead. */
+  const attributes = body.attributes !== undefined
+    ? readAttributes(category, body.attributes)
+    : existing?.attributes ?? {};
+  const legacy = CONDITION_TAGS.includes(body.condition as ConditionTag)
     ? (body.condition as ConditionTag)
     : null;
+  const condition = conditionTagFor(category, attributes) ?? legacy;
 
   const template: PostTemplate = {
     id: existing?.id ?? `tpl_${randomUUID().slice(0, 12)}`,
     sellerId: user.id,
     name,
-    category: body.category?.trim() ?? existing?.category ?? '',
+    category,
+    attributes,
     tags: (body.tags ?? existing?.tags ?? []).map((tag) => tag.trim()).filter(Boolean),
     condition,
     sourcing: body.sourcing === 'import' ? 'import' : 'in_hand',
