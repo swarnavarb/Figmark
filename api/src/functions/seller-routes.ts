@@ -21,7 +21,7 @@ import { getPhotoStore, ownPhotoName } from '../storage/index.js';
 import { tooFast } from '../rate-limit.js';
 import { readPhoto } from './template-routes.js';
 import { clientIp } from '../rate-limit.js';
-import { guessRegion } from '../region.js';
+import { guessRegion, placeIp } from '../region.js';
 import { forgetIndex, identityFor } from '../shop-identity.js';
 
 /**
@@ -137,7 +137,7 @@ async function uploadStorefrontPhoto(request: HttpRequest, _context: InvocationC
 async function regionGuess(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   await auth.requireAuth(request);
-  return json(200, { region: await guessRegion(clientIp(request)) });
+  return json(200, { region: await guessRegion(placeIp(request.headers, clientIp(request))) });
 }
 
 /**
