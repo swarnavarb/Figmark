@@ -1,3 +1,5 @@
+import { GiveMoneyPanel } from '../components/GiveMoney';
+import { FeeLockBanner, ProGate, ProOwnerProvider, useProLocked } from '../components/Billing';
 import { confirmAsk, confirmSentence } from '../components/Ask';
 import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -311,8 +313,10 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
   };
 
   return (
+    <ProOwnerProvider ownerId={store.ownerId}>
     <main className="page tab-view">
       <h1 className="sr-only">Sell</h1>
+      {store.isOwner && <FeeLockBanner />}
       <SetupChecklist hasStore />
       <SellHome store={store} canList={store.permissions.includes('listings')} onGo={setSection}
         section={active} />
@@ -372,7 +376,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'customers' && <CustomersSection store={store} />}
           {active === 'itemdata' && <ItemsDataSection store={store} />}
           {active === 'operations' && <OperationsSection store={store} />}
-          {active === 'calculator' && <ProfitCalculator store={store} />}
+          {active === 'calculator' && <ProGate feature="calculator" ownerId={store.ownerId}><ProfitCalculator store={store} /></ProGate>}
           {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <Later><RoutesList spotlightNew={params.get('spotlight') === 'new'} /></Later>}
@@ -383,6 +387,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </div>
       )}
     </main>
+    </ProOwnerProvider>
   );
 }
 
@@ -1197,6 +1202,7 @@ function MyItems({ store }: { store: StoreAccess }) {
   const saleCalcs = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const dropLocked = useProLocked('powerSale', store.ownerId) === true;
   const [mode, setMode] = useState<'stock' | 'power' | 'templates'>(
     saleCalcs?.length || params.get('view') === 'power' ? 'power' : 'stock');
   const [shelf, setShelf] = useState<'available' | 'expired' | 'sold_out'>('available');
@@ -1234,11 +1240,11 @@ function MyItems({ store }: { store: StoreAccess }) {
           other way to sell, a run of items dropped into the channel on a timer. */}
       <div className="doors">
         <button type="button" className="door door--pro"
-          onClick={() => navigate(`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
-          <span className="probadge door__flag">PRO</span>
+          onClick={() => navigate(dropLocked ? '/pro' : `/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
+          <span className="probadge door__flag">{dropLocked ? '🔒 PRO' : 'PRO'}</span>
           <span className="door__glyph" aria-hidden="true">{<Icon name="bolt" size={19} />}</span>
           <span className="door__title">Start a live drop</span>
-          <span className="door__note">A whole sale, on a timer, in your channel.</span>
+          <span className="door__note">{dropLocked ? 'Part of Pro - tap to subscribe.' : 'A whole sale, on a timer, in your channel.'}</span>
         </button>
       </div>
 
@@ -3040,6 +3046,8 @@ function Refunds({ store }: { store: StoreAccess }) {
   return (
     <div className="stack">
       {error && <ErrorNotice message={error} />}
+
+      {store.permissions.includes('admin') && <GiveMoneyPanel kind="shop" ownerId={store.ownerId} />}
 
       <section className="rfhero">
         <div className="rfhero__main">

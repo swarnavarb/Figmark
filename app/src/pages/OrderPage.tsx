@@ -1,3 +1,4 @@
+import { CreditChip } from '../components/Billing';
 import { daysAgainstPromise, dueBy, etaLabel, punctuality } from '@shared/delivery-eta';
 import { InfoTip } from '../components/InfoTip';
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
@@ -160,6 +161,7 @@ export function OrderPage() {
 
   return (
     <main className="page lp">
+      {!seller && <CreditChip storeId={order.sellerId} />}
       {/* Back to exactly where they came from - the list, its filters, and
           this order within it - rather than to the top of some list. Opened
           from anywhere that did not say (a notification, a shared link), a

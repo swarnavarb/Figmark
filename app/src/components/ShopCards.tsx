@@ -1,3 +1,4 @@
+import { ProBadge } from './Billing';
 import { Link } from 'react-router-dom';
 import { tagKey, tagSlug } from '@shared/shop-tags';
 import type { ShopCard } from '../api';
@@ -17,7 +18,7 @@ export function ShopTile({ shop }: { shop: ShopCard }) {
       {shop.photoUrl
         ? <img className="shoptile__photo" src={shop.photoUrl} alt="" loading="lazy" />
         : <Avatar name={shop.name} size={44} />}
-      <span className="shoptile__name">{shop.name}</span>
+      <span className="shoptile__name">{shop.name}{shop.pro && <ProBadge />}</span>
       <span className="shoptile__meta">
         {shop.followerCount} follower{shop.followerCount === 1 ? '' : 's'}
         {shop.dispatchRegion ? ` · ${shop.dispatchRegion.split(',')[0]}` : ''}

@@ -1,3 +1,4 @@
+import { ProGate } from '../components/Billing';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
@@ -72,7 +73,16 @@ export const isInsightCategory = (value: string | null): value is Category =>
 
 const HOUR = (hour: number) => `${hour % 12 || 12}${hour < 12 ? 'am' : 'pm'}`;
 
-export function InsightsPanel({ store, only, title }: {
+/** Insights, behind Pro: the tool, or its lock. */
+export function InsightsPanel(props: Parameters<typeof InsightsPanelOpen>[0]) {
+  return (
+    <ProGate feature="insights" ownerId={props.store.ownerId}>
+      <InsightsPanelOpen {...props} />
+    </ProGate>
+  );
+}
+
+function InsightsPanelOpen({ store, only, title }: {
   store: StoreAccess;
   /** Show just these views - one Data section's share of them - as a block under that section. */
   only?: Category[];
@@ -279,7 +289,6 @@ function Dashboard({ data, lots, deep, costs, open, only, title }: {
       <section className="stack ins prozone">
         <div className="datapro__head">
           <h2>{title ?? 'More'} <span className="probadge">PRO</span></h2>
-          <small className="faint">Open to every shop for now.</small>
         </div>
         {mine.length > 0 && (
           <div className="instodo">

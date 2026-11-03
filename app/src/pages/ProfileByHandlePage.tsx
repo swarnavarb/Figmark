@@ -1,3 +1,4 @@
+import { CreditChip, ProBadge } from '../components/Billing';
 import { useEffect, useState } from 'react';
 import { CommunityAlertBanner } from '../components/CommunityAlerts';
 import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
@@ -132,6 +133,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
 
   return (
     <main className="storefront storefront--shop">
+      <CreditChip storeId={data.sellerId} />
       {/* An unset banner is a full gradient in the shop's own hue, so every
           storefront opens with colour and no two look like the same shop. */}
       <div className={`storefront__cover storefront__cover--${brandHueFor(data.handle)}`}>
@@ -147,7 +149,7 @@ function Storefront({ data, isMe, onFollow, reload }: {
             {data.photoUrl ? <img loading="lazy" decoding="async" src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
           </div>
           <div className="phead__name">
-            <h1>{data.displayName}<VerifiedTick checks={data.verified} /></h1>
+            <h1>{data.displayName}<VerifiedTick checks={data.verified} />{data.isStore && data.pro && <ProBadge size="md" />}</h1>
             <span className="phead__line">
               <span className="phead__handle">@{data.handle}</span>
               <LevelChip tag={data.levelTag} inline />

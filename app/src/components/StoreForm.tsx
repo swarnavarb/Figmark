@@ -1,3 +1,4 @@
+import { FeeHint } from './Billing';
 import { useState } from 'react';
 import { COUNTRIES, countryFlag } from '@shared/countries';
 import type { ArtistOffering, BatteryRule, FreightLane, InfoRow, InsurancePlan, PortfolioPiece, PriceOption, ServiceAddon, ServiceFormField, StoreLink, StoreWarehouse } from '@shared/models';
@@ -236,7 +237,8 @@ function LaneEditor({ lane, onChange }: { lane: FreightLane; onChange: (patch: P
       </div>
       <div className="sf-cols3">
         <label className="field"><span>Rate per kg</span>
-          <MoneyInput label="Rate per kilogram" value={lane.ratePerKgMinor} onChange={(ratePerKgMinor) => onChange({ ratePerKgMinor })} /></label>
+          <MoneyInput label="Rate per kilogram" value={lane.ratePerKgMinor} onChange={(ratePerKgMinor) => onChange({ ratePerKgMinor })} />
+          <FeeHint kind="forwarder" perKg /></label>
         <label className="field"><span>Minimum kg *</span>
           <input inputMode="decimal" required aria-invalid={!(lane.minChargeKg > 0)} value={lane.minChargeKg || ''} placeholder="5"
             onChange={(e) => onChange({ minChargeKg: Number(e.target.value) || 0 })} />
@@ -570,7 +572,8 @@ export function MenuSection({ draft, set }: SectionProps) {
               <input value={offering.name} onChange={(e) => update(offering.id, { name: e.target.value })} placeholder="Full repaint" /></label>
             <div className="field-row">
               <label className="field"><span>Price from</span>
-                <MoneyInput label="Price from" value={offering.priceFromMinor} onChange={(priceFromMinor) => update(offering.id, { priceFromMinor })} /></label>
+                <MoneyInput label="Price from" value={offering.priceFromMinor} onChange={(priceFromMinor) => update(offering.id, { priceFromMinor })} />
+                <FeeHint kind="artist" priceMinor={offering.priceFromMinor} /></label>
               <label className="field"><span>Days</span>
                 <input inputMode="numeric" value={offering.turnaroundDays || ''} onChange={(e) => update(offering.id, { turnaroundDays: Number(e.target.value) || 0 })} /></label>
             </div>

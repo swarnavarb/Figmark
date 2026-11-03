@@ -827,6 +827,8 @@ export function toAuthUser(user: User): AuthUser {
     sellerProfile: user.sellerProfile,
     forwarderProfile: forwarderSummary(user.forwarderProfile),
     managerRights: user.managerRights ?? null,
+    pro: user.pro ?? null,
+    feeLock: user.feeLock ?? null,
     mfaEnabled: mfaOn(user),
     mfaRequired: config.staffMfa && !mfaOn(user) && (operator || Boolean(user.managerRights)),
     bio: user.bio ?? '',

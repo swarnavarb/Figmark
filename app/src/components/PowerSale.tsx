@@ -1,3 +1,4 @@
+import { ProLock, useProLocked } from './Billing';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNow } from '../clock';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -443,6 +444,16 @@ function FillFields({ value, onChange, lots }: {
  * out and how it closes.
  */
 export function PowerSaleBuilderPage() {
+  const [params] = useSearchParams();
+  const { user } = useSession();
+  const owner = params.get('store') ?? user?.id ?? null;
+  const locked = useProLocked('powerSale', owner);
+  if (locked === null) return null;
+  if (locked) return <main className="page"><ProLock feature="powerSale" /></main>;
+  return <PowerSaleBuilderOpen />;
+}
+
+function PowerSaleBuilderOpen() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const startWith = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;

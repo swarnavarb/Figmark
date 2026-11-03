@@ -1,3 +1,4 @@
+import { ProLock, useProLocked } from './Billing';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -37,6 +38,19 @@ export function CostSheetField({ value, onChange, sellingPriceMinor, shop, colla
   sellingPriceMinor: number;
   shop?: string;
   /** Folded away behind a "PRO" line until opened - for forms with other work on them. */
+  collapsible?: boolean;
+}) {
+  const locked = useProLocked('costs', shop);
+  if (locked === null) return null;
+  if (locked) return <ProLock feature="costs" inline title="What it cost you" />;
+  return <CostSheetOpen value={value} onChange={onChange} sellingPriceMinor={sellingPriceMinor} shop={shop} collapsible={collapsible} />;
+}
+
+function CostSheetOpen({ value, onChange, sellingPriceMinor, shop, collapsible = true }: {
+  value: CostSheetDraft | null;
+  onChange: (next: CostSheetDraft | null) => void;
+  sellingPriceMinor: number;
+  shop?: string;
   collapsible?: boolean;
 }) {
   const [open, setOpen] = useState(!collapsible || Boolean(value));

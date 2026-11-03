@@ -201,7 +201,7 @@
   --blue-soft: rgba(59, 130, 246, 0.17);
   --blue-line: rgba(59, 130, 246, 0.42);
 
-  --pink: #EC4899;
+  --pink: var(--pink);
   --pink-ink: #2A0618;
   --pink-text: #F472B6;
   --pink-soft: rgba(236, 72, 153, 0.17);
@@ -216,7 +216,7 @@
      The pale shades text takes on a tinted fill, and the gold the quest and
      loot screens are drawn in. Each used to be typed out wherever it was
      wanted, some fifty times over for the pale gold alone. */
-  --gold: #F59E0B;
+  --gold: var(--gold);
   --gold-text: #FDE68A;
   --gold-pale: #FEF3C7;
   --gold-ink: #1F1300;
@@ -237,7 +237,7 @@
   --accent-line: var(--violet-line);
 
   /* ── Semantic status. Identical mapping on every page. ───────────────── */
-  --ok: #34D399;
+  --ok: var(--ok);
   --ok-ink: #04251A;
   --ok-soft: rgba(52, 211, 153, 0.15);
   --warn: #FBBF24;
@@ -253,10 +253,10 @@
   --danger-soft: rgba(244, 63, 94, 0.16);
 
   /* ── Gradients. Used at scale, never on every component. ─────────────── */
-  --grad-hero: linear-gradient(135deg, #7C3AED 0%, #EC4899 52%, #FF5A5F 100%);
+  --grad-hero: linear-gradient(135deg, #7C3AED 0%, var(--pink) 52%, #FF5A5F 100%);
   --grad-cool: linear-gradient(135deg, #7C3AED 0%, #06D6E7 100%);
   --grad-blue: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
-  --grad-warm: linear-gradient(135deg, #EC4899 0%, #FF5A5F 100%);
+  --grad-warm: linear-gradient(135deg, var(--pink) 0%, #FF5A5F 100%);
   --grad-sea:  linear-gradient(135deg, #06D6E7 0%, #3B82F6 100%);
   --grad-play: linear-gradient(135deg, #A3E635 0%, #06D6E7 100%);
   --grad-gold: linear-gradient(135deg, #FBBF24 0%, #F97316 100%);
@@ -9012,3 +9012,73 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .compare__tag--a { left: var(--s2); }
 .compare__tag--b { right: var(--s2); }
 @media (prefers-reduced-motion: reduce) { .compare__tag { transition: none; } }
+
+/* ── Pro, fees and store credit (components/Billing.tsx) ─────────────────── */
+
+/* PRO beside a store's name: slanted like a racing number, striped, a sheen passing over. */
+.probadge-sport {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; overflow: hidden;
+  margin-left: 6px; padding: 1px 8px 1px 7px; vertical-align: middle;
+  font-style: italic; font-weight: 900; letter-spacing: 0.06em; line-height: 1.35; color: #1A0B00;
+  transform: skewX(-12deg); border-radius: 4px;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.0) 0 6px, rgba(255, 255, 255, 0.22) 6px 8px),
+    linear-gradient(100deg, #FDE047 0%, var(--gold) 45%, #F97316 70%, var(--pink) 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35) inset, 2px 2px 0 rgba(236, 72, 153, 0.55), 0 0 12px rgba(245, 158, 11, 0.35);
+}
+.probadge-sport > span { display: inline-block; transform: skewX(12deg); }
+.probadge-sport::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-120%);
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.65) 50%, transparent 70%);
+  animation: probadge-sheen 3.6s ease-in-out infinite;
+}
+.probadge-sport--sm { font-size: var(--t-2xs); }
+.probadge-sport--md { font-size: var(--t-xs); padding: 2px 10px 2px 9px; }
+@keyframes probadge-sheen { 0%, 60% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+@media (prefers-reduced-motion: reduce) { .probadge-sport::after { animation: none; display: none; } }
+
+/* A Pro tool, shut: its name, the ⓘ, and the way in. */
+.prolock {
+  display: grid; gap: var(--s3); padding: var(--s4); border-radius: var(--r-lg);
+  border: 1px dashed rgba(245, 158, 11, 0.55);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.10), rgba(236, 72, 153, 0.08));
+}
+.prolock__head { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.prolock__icon { font-size: calc(20px * var(--text-scale)); }
+.prolock__name { margin: 0; font-size: var(--t-sm); font-weight: 800; color: var(--gold-text); }
+.prolock__cta {
+  justify-self: start; color: var(--gold-ink); border: 0;
+  background: linear-gradient(135deg, var(--gold-text), var(--gold) 55%, var(--pink-text));
+}
+.prolock--inline {
+  display: inline-flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding: var(--s2) var(--s3); border-radius: var(--r-md);
+}
+.prolock__go {
+  padding: 2px 10px; border: 0; border-radius: var(--r-pill); cursor: pointer;
+  font-size: var(--t-xs); font-weight: 800; color: var(--gold-ink);
+  background: linear-gradient(135deg, var(--gold-text), var(--gold));
+}
+
+/* Store credit, in the corner of a store's pages. */
+.creditchip {
+  position: fixed; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 40;
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--r-pill);
+  font-size: var(--t-xs); font-weight: 800; color: #052E16; text-decoration: none;
+  background: linear-gradient(135deg, #86EFAC, var(--ok)); box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35);
+}
+@media (min-width: 900px) { .creditchip { bottom: 20px; right: 20px; } }
+
+/* The platform fee, under a price. */
+.feehint { display: block; font-size: var(--t-xs); color: var(--text-dim); }
+.feehint b { color: var(--text); }
+
+/* A shop that owes fees past their due date. */
+.feelock {
+  display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); margin-bottom: var(--s3);
+  border-radius: var(--r-md); border: 1px solid rgba(244, 63, 94, 0.5); background: var(--danger-soft);
+}
+.feelock__icon { font-size: calc(20px * var(--text-scale)); }
+.feelock__text { display: grid; gap: 2px; flex: 1; font-size: var(--t-sm); }
+.feelock__text span { color: var(--text-dim); font-size: var(--t-xs); }
+/* "Subscribe to Pro" in the profile menu: in gold, so it reads as the upgrade. */
+.pmenu__item--pro { color: var(--gold-text); font-weight: 700; }

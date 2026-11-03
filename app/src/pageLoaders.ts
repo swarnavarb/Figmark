@@ -42,6 +42,7 @@ export const loaders = {
   shortLink: () => import('./pages/ShortLinkPage'),
   invite: () => import('./pages/InvitePage'),
   powerSale: () => import('./components/PowerSale'),
+  billing: () => import('./pages/BillingPages'),
   notFound: () => import('./pages/NotFoundPage'),
 } as const;
 
@@ -73,6 +74,7 @@ const BY_PATH: [(path: string) => boolean, LoaderName][] = [
   [(path) => /^\/services\/(forwarder|artist)\/[^/]+$/.test(path), 'store'],
   [(path) => path.startsWith('/services') || path.startsWith('/forwarders'), 'services'],
   [(path) => path.startsWith('/community-service'), 'communityService'],
+  [(path) => path === '/pro' || path === '/fees', 'billing'],
   [(path) => path === '/me', 'profile'],
   [(path) => path.startsWith('/verify'), 'verify'],
   [(path) => path.startsWith('/purchases/lot/'), 'buyerLot'],

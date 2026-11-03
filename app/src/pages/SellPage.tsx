@@ -1,3 +1,4 @@
+import { FeeHint } from '../components/Billing';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { tagKey } from '@shared/shop-tags';
@@ -744,6 +745,7 @@ export function SellPage() {
                 <span>Price (₹)</span>
                 <input type="number" min="1" step="1" value={price} inputMode="numeric"
                   onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
+                <FeeHint kind="shop" priceMinor={priceMinor} />
               </label>
             </div>
             {/* What is it? Tags, not a dropdown: every category is visible at

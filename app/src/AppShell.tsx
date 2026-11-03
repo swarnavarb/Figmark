@@ -1,3 +1,5 @@
+import { isProActive } from '@shared/billing';
+import { ProBadge } from './components/Billing';
 import { notePath } from './cameFrom';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -289,6 +291,9 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
   const { signOutEverywhere, user } = useSession();
   // One Sign Out, and then the question of where: just here, or everywhere.
   const [choosing, setChoosing] = useState(false);
+  const isPro = isProActive(user?.pro ?? null);
+  const hasStore = Boolean(user?.sellerProfile || user?.forwarderProfile || user?.capabilities.canSell);
+  const feeLocked = Boolean(user?.feeLock);
 
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -319,6 +324,8 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <Link role="menuitem" to="/purchases" className="pmenu__item">🛍️ My Purchases</Link>
           <Link role="menuitem" to="/cart" className="pmenu__item">🛒 My Cart</Link>
           <Link role="menuitem" to="/wallet" className="pmenu__item">👛 My wallet</Link>
+          <Link role="menuitem" to="/pro" className="pmenu__item pmenu__item--pro">⚡ Subscribe to Pro {isPro && <ProBadge />}</Link>
+          {hasStore && <Link role="menuitem" to="/fees" className="pmenu__item">🧾 Platform fees{feeLocked && <span className="badge badge--danger" style={{ marginLeft: 6 }}>Due</span>}</Link>}
           <Link role="menuitem" to="/disputes" className="pmenu__item">⚖️ My disputes</Link>
           <Link role="menuitem" to="/learn" className="pmenu__item">📘 Learn</Link>
           <Link role="menuitem" to="/legal" className="pmenu__item">📄 Terms &amp; policies</Link>

@@ -1,3 +1,4 @@
+import { isProActive } from '../../../shared/billing.js';
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type {
@@ -678,6 +679,7 @@ function publicStore(owner: User, kind: StoreKind) {
     ownerId: owner.id,
     handle: owner.username ?? null,
     name: store.companyName,
+    pro: isProActive(owner.pro),
     slug: store.directorySlug,
     tagline: store.tagline ?? '',
     about: store.description,

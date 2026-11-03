@@ -220,3 +220,4 @@
 /* Sold out: ask to be told when it is back. */
 .buybox__restock { display: grid; gap: 4px; justify-items: center; margin-top: var(--s2); text-align: center; }
 .buybox__dibs { margin: var(--s2) 0 0; font-size: var(--t-sm); }
+.sellercard__nameline { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }

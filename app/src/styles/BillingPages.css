@@ -1,0 +1,84 @@
+/* Pro and platform fees (pages/BillingPages.tsx): one chunk, its own sheet. */
+
+.billpage { max-width: 760px; margin: 0 auto; }
+.billpage h2 { margin: 0; font-size: var(--t-lg, 18px); }
+
+/* The hero: dark, with a gold-to-pink track behind PRO. */
+.prohero {
+  position: relative; overflow: hidden; display: grid; gap: var(--s2); padding: var(--s4) var(--s4) 20px;
+  border-radius: var(--r-lg); border: 1px solid rgba(245, 158, 11, 0.35);
+  background:
+    repeating-linear-gradient(115deg, transparent 0 22px, rgba(255, 255, 255, 0.03) 22px 26px),
+    radial-gradient(120% 140% at 100% 0%, rgba(236, 72, 153, 0.28), transparent 55%),
+    radial-gradient(120% 140% at 0% 100%, rgba(245, 158, 11, 0.24), transparent 55%),
+    var(--surface);
+}
+.prohero.is-on { border-color: rgba(52, 211, 153, 0.45); }
+.prohero__badge { justify-self: start; }
+.prohero__title {
+  margin: 0; font-size: calc(clamp(26px, 6vw, 36px) * var(--text-scale)); font-style: italic; font-weight: 900; letter-spacing: -0.01em;
+  background: linear-gradient(100deg, #FDE047, var(--gold) 45%, var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.prohero__line { margin: 0; color: var(--text-dim); max-width: 60ch; }
+.prohero__line b { color: var(--text); }
+
+.profeats { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.profeat { display: flex; gap: var(--s3); align-items: flex-start; }
+.profeat__icon {
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; font-size: calc(18px * var(--text-scale));
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(236, 72, 153, 0.16));
+}
+.profeat b { display: block; }
+.profeat small { color: var(--text-dim); }
+
+.proplans { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.proplan {
+  position: relative; display: grid; gap: 4px; align-content: start; padding: var(--s4); border-radius: var(--r-lg);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.proplan.is-best {
+  border-color: transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(120deg, #FDE047, var(--gold) 45%, var(--pink)) border-box;
+  border: 2px solid transparent;
+}
+.proplan__flag {
+  position: absolute; top: -10px; right: 12px; padding: 1px 10px; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: 900; font-style: italic; letter-spacing: 0.05em; text-transform: uppercase;
+  color: #1A0B00; background: linear-gradient(100deg, #FDE047, var(--gold) 60%, var(--pink));
+}
+.proplan__months { margin: 0; font-size: var(--t-sm); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.proplan__price { margin: 0; font-size: calc(28px * var(--text-scale)); font-weight: 900; }
+.proplan__per { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+.proplan__per b { color: var(--ok, var(--ok)); }
+.proplan__tax { margin: 0; font-size: var(--t-xs); }
+.proplan__bumps { margin: 0; font-size: var(--t-sm); }
+.proplan__buy { margin-top: var(--s2); }
+.proplan.is-best .proplan__buy { color: var(--gold-ink); border: 0; background: linear-gradient(135deg, var(--gold-text), var(--gold) 55%, var(--pink-text)); }
+
+.provoucher { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.provoucher input {
+  flex: 1 1 200px; min-height: 44px; padding: 0 var(--s3); border-radius: var(--r-md); border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em;
+}
+
+/* Rows: one sale, one month, one payment. */
+.billrows { list-style: none; margin: 0; padding: 0; display: grid; }
+.billrow {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.billrow:first-child { border-top: 0; }
+.billrow > span:first-child { display: grid; min-width: 0; }
+.billrow small { color: var(--text-dim); }
+.billrow a { color: inherit; }
+.billrow__end { display: grid; justify-items: end; gap: 2px; }
+
+.feetiles { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.feetile { display: grid; gap: 2px; padding: var(--s3); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); }
+.feetile small { color: var(--text-dim); }
+.feetile b { font-size: calc(20px * var(--text-scale)); }
+.feetile.is-bad { border-color: rgba(244, 63, 94, 0.55); background: var(--danger-soft); }
+.feepay { justify-self: start; }
+.feerate { display: grid; gap: 2px; }
+.feerate__kind { font-weight: 700; font-size: var(--t-sm); }

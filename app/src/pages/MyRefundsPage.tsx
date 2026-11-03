@@ -4,6 +4,7 @@ import { REFUND_ORIGIN_LABELS } from '@shared/payments';
 import { AFFILIATE_STATUS_LABELS } from '@shared/affiliate';
 import { BADGE_META, storeCreditLeft, type Badge, type StoreCredit } from '@shared/play';
 import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../api';
+import { GIFT_METHOD_LABELS, type StoreGift } from '@shared/billing';
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney, formatTotals } from '../format';
@@ -29,7 +30,7 @@ export function MyRefundsPage() {
   // In the URL, so a notification asking for reversal details lands on that tab.
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab = asked === 'details' ? 'details' : asked === 'earnings' ? 'earnings' : asked === 'credit' ? 'credit' : 'refunds';
+  const tab = asked === 'details' ? 'details' : asked === 'earnings' ? 'earnings' : asked === 'credit' ? 'credit' : asked === 'gifts' ? 'gifts' : 'refunds';
 
   const load = useCallback(async () => {
     try {
@@ -117,6 +118,10 @@ export function MyRefundsPage() {
         onClick={() => setParams({ tab: 'credit' }, { replace: true })}>
         Store credit
       </button>
+      <button type="button" className={`tab${tab === 'gifts' ? ' is-on' : ''}`}
+        onClick={() => setParams({ tab: 'gifts' }, { replace: true })}>
+        From stores
+      </button>
       <button type="button" className={`tab${tab === 'details' ? ' is-on' : ''}`}
         onClick={() => setParams({ tab: 'details' }, { replace: true })}>
         Payment reversal details
@@ -130,6 +135,16 @@ export function MyRefundsPage() {
         <div className="page__head"><h1>My wallet</h1></div>
         {tabs}
         <CreditTab kept={(refunds ?? []).filter((refund) => refund.status === 'held' && refund.leftMinor > 0)} />
+      </main>
+    );
+  }
+
+  if (tab === 'gifts') {
+    return (
+      <main className="page stack page--top">
+        <div className="page__head"><h1>My wallet</h1></div>
+        {tabs}
+        <GiftsTab />
       </main>
     );
   }
@@ -446,5 +461,65 @@ function CreditTab({ kept }: {
         </section>
       )}
     </>
+  );
+}
+
+/**
+ * Money a shop, a forwarder or an artist sent this person, or credited them -
+ * a refund, a goodwill gesture. A direct payment waits on them saying it
+ * arrived; the store hears either way.
+ */
+function GiftsTab() {
+  const [gifts, setGifts] = useState<StoreGift[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(() => api.giftsReceived().then((body) => setGifts(body.gifts))
+    .catch((err) => setError(err instanceof ApiRequestError ? err.message : 'Could not load this.')), []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function answer(id: string, arrived: boolean) {
+    setBusy(id);
+    try {
+      await api.answerGift(id, arrived);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not go through.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (error && !gifts) return <ErrorNotice message={error} />;
+  if (!gifts) return <Loading />;
+  if (gifts.length === 0) {
+    return <EmptyState icon="🎁" title="Nothing from stores yet">When a shop, a forwarder or an artist pays you back or gives you credit, it shows here.</EmptyState>;
+  }
+  return (
+    <div className="stack">
+      {error && <ErrorNotice message={error} />}
+      {gifts.map((gift) => (
+        <article key={gift.id} className="card card--pad stack" style={{ gap: 6 }}>
+          <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+            <b>{gift.storeName}</b>
+            <b>{formatMoney(gift.amountMinor)}</b>
+          </div>
+          <span className="muted">{gift.reason}</span>
+          <small className="faint">
+            {GIFT_METHOD_LABELS[gift.method]}{gift.reference ? ` · ref ${gift.reference}` : ''}{gift.gatewayRef ? ` · ${gift.gatewayRef}` : ''} · {formatDateOrdinal(gift.at)}
+          </small>
+          {gift.method === 'credit' && <span className="badge badge--ok" style={{ justifySelf: 'start' }}>Store credit - comes off your next order there</span>}
+          {gift.method === 'direct' && gift.status !== 'received' && (
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn--sm" disabled={busy !== null} onClick={() => void answer(gift.id, true)}>✅ It arrived</button>
+              {gift.status !== 'not_received' && (
+                <button type="button" className="btn btn--ghost btn--sm" disabled={busy !== null} onClick={() => void answer(gift.id, false)}>Not yet</button>
+              )}
+              {gift.status === 'not_received' && <span className="badge badge--danger">You said it has not arrived</span>}
+            </div>
+          )}
+          {gift.status === 'received' && gift.method !== 'credit' && <span className="badge badge--ok" style={{ justifySelf: 'start' }}>Received</span>}
+        </article>
+      ))}
+    </div>
   );
 }

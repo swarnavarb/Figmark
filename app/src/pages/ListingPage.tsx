@@ -1,3 +1,4 @@
+import { CreditChip, ProBadge } from '../components/Billing';
 import { viewSourceFor } from '../cameFrom';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -375,6 +376,7 @@ export function ListingPage() {
 
         {/* ── Purchase rail ── */}
         <aside className="stack lp__rail">
+          <CreditChip storeId={seller?.id} />
           {seller && (
             <div className={`lp__seller sellercard storefront__cover--${brandHueFor(seller.username ?? seller.storefrontName)} rise`}
               style={{ ['--i' as string]: 2 }}>
@@ -391,7 +393,10 @@ export function ListingPage() {
                 <div className="sellercard__who">
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
-                  <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" />
+                  <span className="sellercard__nameline">
+                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" />
+                    {seller.pro && <ProBadge size="md" />}
+                  </span>
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
                 <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>

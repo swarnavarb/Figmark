@@ -1,3 +1,4 @@
+import type { FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
 import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
@@ -317,6 +318,8 @@ export interface SellerCard {
   /** The shop's handle: its page at `/username`, and where a message lands. */
   username: string | null;
   tier: string;
+  /** Pro, the subscription: the badge beside the name. */
+  pro?: boolean;
   dispatchRegion: string | null;
   followerCount: number;
   trustScore: number;
@@ -1400,6 +1403,8 @@ export interface ChannelRow {
   handle: string | null;
   photoUrl: string | null;
   tier: string | null;
+  /** Pro, the subscription: the badge beside the name. */
+  pro?: boolean;
   /** Whether you may speak for this shop. Yours sorts to the top. */
   mine: boolean;
   lastPost: string | null;
@@ -1426,6 +1431,7 @@ export interface ChannelThread {
     handle?: string | null;
     photoUrl?: string | null;
     tier?: string | null;
+    pro?: boolean;
     followerCount?: number;
     following?: boolean;
     /** Whether you may post as this shop rather than as a customer. */
@@ -1602,7 +1608,7 @@ export interface SocialSearchResult {
   people: { id: string; name: string; handle: string | null; bio: string; following: boolean }[];
   shops: {
     id: string; name: string; handle: string | null; bio: string; photoUrl: string | null;
-    followerCount: number; tier: string | null; following: boolean; mine: boolean;
+    followerCount: number; tier: string | null; pro?: boolean; following: boolean; mine: boolean;
   }[];
   forums: ForumRow[];
 }
@@ -2328,6 +2334,8 @@ export interface ShopCard {
   photoUrl: string | null;
   followerCount: number;
   tier: string;
+  /** Pro, the subscription: the badge beside the name. */
+  pro?: boolean;
   dispatchRegion: string;
   /** The few tags that say most about it. */
   tags: string[];
@@ -2368,6 +2376,8 @@ export interface PublicProfile {
   /** Ratings after trades and ratings left on this page, as one figure. */
   rating: MergedRating;
   tier: string | null;
+  /** Pro, the subscription: the badge beside the name. */
+  pro?: boolean;
   ownerHandle: string | null;
   sellerId: string;
   /** A shop's seller trust, 0-100; null on a person's page. */
@@ -2607,6 +2617,7 @@ export interface PublicStore {
   ownerId: string;
   handle: string | null;
   name: string;
+  pro?: boolean;
   slug: string;
   tagline: string;
   about: string;
@@ -2676,7 +2687,70 @@ export interface OpsStoreRow {
   studioAddress: string | null;
 }
 
+
+/* ── Figmark's money: platform fees, Pro, stores paying people ─────────── */
+
+export interface FeesView {
+  statement: FeeStatement;
+  locked: boolean;
+  lockedSince: string | null;
+  discountBp: number;
+  pro: boolean;
+  fees: PlatformFees;
+  gst: { rateBp: number; mode: 'inclusive' | 'exclusive' } | null;
+}
+
+export interface ProView {
+  enabled: boolean;
+  active: boolean;
+  until: string | null;
+  daysLeft: number;
+  discountUntil: string | null;
+  discountBp: number;
+  trialDays: number;
+  trialUsed: boolean;
+  plans: (ProPlan & { baseMinor: number; gstMinor: number; totalMinor: number })[];
+  feeDiscount: { bp: number; days: number };
+  features: { id: ProFeatureId; icon: string; title: string; line: string; pro: boolean }[];
+  locked: Record<ProFeatureId, boolean>;
+  bumpPoints: number;
+  history: ProGrant[];
+  gst: { rateBp: number; mode: 'inclusive' | 'exclusive'; gstin: string } | null;
+  fees: PlatformFees;
+}
+
+export interface ProStatus {
+  enabled: boolean;
+  active: boolean;
+  locked: Record<ProFeatureId, boolean>;
+}
+
+export interface GiftsView {
+  store: { kind: GiverKind; ownerId: string; name: string };
+  gifts: StoreGift[];
+  people: { id: string; name: string; handle: string | null }[];
+}
+
 export const api = {
+  /* Figmark's money */
+  pricing: () => request<Pricing>('/pricing'),
+  myFees: () => request<FeesView>('/me/fees'),
+  payFees: (amountMinor?: number) =>
+    post<{ settlement: FeeSettlement; statement: FeeStatement; locked: boolean }>('/me/fees/pay', amountMinor === undefined ? {} : { amountMinor }),
+  myPro: () => request<ProView>('/me/pro'),
+  proStatus: (ownerId: string) => request<ProStatus>(`/pro/status?owner=${encodeURIComponent(ownerId)}`),
+  buyPro: (months: number) => post<ProView>('/me/pro/buy', { months }),
+  redeemPro: (code: string) => post<ProView>('/me/pro/redeem', { code }),
+  startProTrial: () => post<ProView>('/me/pro/trial', {}),
+  storeGifts: (kind: GiverKind, ownerId?: string) =>
+    request<GiftsView>(`/me/gifts?kind=${kind}${ownerId ? `&owner=${encodeURIComponent(ownerId)}` : ''}`),
+  giveMoney: (body: {
+    kind: GiverKind; owner?: string; recipient: string; amountMinor: number; method: GiftMethod; reason: string; reference?: string; orderId?: string;
+  }) => post<{ gift: StoreGift }>('/me/gifts/give', body),
+  giftsReceived: () => request<{ gifts: StoreGift[] }>('/me/gifts/received'),
+  answerGift: (id: string, arrived: boolean) => post<{ status: StoreGift['status'] }>(`/me/gifts/${encodeURIComponent(id)}/answer`, { arrived }),
+  myStoreCredit: () => request<{ credits: { storeId: string; storeName: string; leftMinor: number }[] }>('/me/store-credit'),
+
   health: () => request<HealthResponse>('/health'),
   me: () => request<MeResponse>('/auth/me'),
 

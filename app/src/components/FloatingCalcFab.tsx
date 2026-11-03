@@ -1,3 +1,4 @@
+import { ProGate } from './Billing';
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { useDialog } from './ui';
 import { CalcIcon } from './CalcIcon';
@@ -54,7 +55,9 @@ function CalcSheet({ onClose }: { onClose: () => void }) {
   return (
     <section ref={box} tabIndex={-1} className="fcalc__sheet prozone" role="dialog" aria-modal="true" aria-label="Profit calculator">
       <Suspense fallback={<Loading />}>
-        <QuickCalc onLeave={onClose} />
+        <ProGate feature="calculator">
+          <QuickCalc onLeave={onClose} />
+        </ProGate>
       </Suspense>
     </section>
   );
