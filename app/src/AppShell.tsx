@@ -331,7 +331,7 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
             <span className="pmenu__probolt" aria-hidden="true">⚡</span>
             <span className="pmenu__protext">
               <b>{isPro ? `Pro · ${proDaysLeft(user?.pro ?? null)} days left` : 'Go Pro'}</b>
-              <small>{isPro ? 'Add time, see your perks' : 'Lower fees · loyalty cards · insights'}</small>
+              <small>{isPro ? 'Add time, see your perks' : 'Loyalty cards · insights · bumps'}</small>
             </span>
             <span className="pmenu__arrow" aria-hidden="true">›</span>
           </Link>
@@ -339,8 +339,8 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
           <div className="pmenu__tiles">
             <Link role="menuitem" to="/purchases" className="pmenu__tile"><span aria-hidden="true">🛍️</span>Purchases</Link>
             <Link role="menuitem" to="/wallet" className="pmenu__tile"><span aria-hidden="true">👛</span>Wallet</Link>
-            <Link role="menuitem" to="/cart" className="pmenu__tile"><span aria-hidden="true">🛒</span>Cart</Link>
-            <Link role="menuitem" to="/quests" className="pmenu__tile"><span aria-hidden="true">🏆</span>Quests</Link>
+            <Link role="menuitem" to="/me?tab=saved" className="pmenu__tile"><span aria-hidden="true">♥</span>Saves</Link>
+            <Link role="menuitem" to="/me?tab=collection" className="pmenu__tile"><span aria-hidden="true">🗂️</span>Collection</Link>
           </div>
 
           {hasStore && (
@@ -350,7 +350,7 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
                 <span aria-hidden="true">🧾</span> Platform fees
                 {feeLocked && <span className="badge badge--danger pmenu__flag">Due</span>}
               </Link>
-              <Link role="menuitem" to="/shop?tab=loyalty" className="pmenu__item"><span aria-hidden="true">🎟️</span> Loyalty cards</Link>
+              <Link role="menuitem" to="/shop?tab=offers" className="pmenu__item"><span aria-hidden="true">🎟️</span> Offers &amp; loyalty</Link>
             </>
           )}
           <span className="pmenu__group">Help</span>

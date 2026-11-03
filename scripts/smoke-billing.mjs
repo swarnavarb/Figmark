@@ -159,7 +159,7 @@ await check('buying 3 months opens every tool, adds the bump points, and is in t
   assert.equal(bought.jsonBody.active, true);
   assert.ok(bought.jsonBody.daysLeft >= 90);
   assert.equal(bought.jsonBody.locked.powerSale, false);
-  assert.ok(bought.jsonBody.discountBp > 0, 'the lower platform fee starts');
+  assert.equal(bought.jsonBody.discountBp, undefined, 'Pro never lowers the platform fee');
   const after = (await repository.getUserById(shop.id)).sellerProfile.growth.spotlights;
   assert.equal(after - before, 5);
   const sale = await schedulePowerSale(req({ headers: shop.headers, body: { openingBody: 'Drop!', items: [] } }), ctx);
@@ -180,7 +180,6 @@ await check('a voucher an operator made gives its days once per account, and sto
   const redeemed = await billing.redeemVoucherRoute(req({ headers: one.headers, body: { code: ' launch-30 ' } }), ctx);
   assert.equal(redeemed.status, 200, JSON.stringify(redeemed.jsonBody));
   assert.equal(redeemed.jsonBody.active, true);
-  assert.equal(redeemed.jsonBody.discountBp, 0, 'a voucher does not start the lower fee');
   assert.match((await billing.redeemVoucherRoute(req({ headers: one.headers, body: { code: 'LAUNCH-30' } }), ctx)).jsonBody.message, /already used/);
   assert.match((await billing.redeemVoucherRoute(req({ headers: two.headers, body: { code: 'LAUNCH-30' } }), ctx)).jsonBody.message, /used up/);
   const batch = await billing.opsMakeVouchersRoute(req({ headers: shop.headers, body: { days: 7, count: 3, prefix: 'fest' } }), ctx);
@@ -389,7 +388,7 @@ await check('a Pro shop’s card stamps every delivered order; cashback lands as
     const at = new Date(Date.now() + 1_000 + index).toISOString();
     await repository.createOrder({
       ...structuredClone(anyOrder), id: `ord_loy_${index}_${buyer.id.slice(-4)}`, sellerId: shop.id, buyerId: buyer.id,
-      status: 'delivered', completedAt: at, placedAt: at, quantity: 1, unitPriceMinor: 20_000,
+      status: 'delivered', completedAt: at, placedAt: at, quantity: 1, unitPriceMinor: 20_000, offerDiscountMinor: 0, appliedOffers: [],
     });
   }
   const view = (await loyalty.shopLoyaltyRoute(req({ headers: buyer.headers, params: { id: shop.id } }), ctx)).jsonBody;
@@ -408,6 +407,48 @@ await check('a Pro shop’s card stamps every delivered order; cashback lands as
   assert.equal((await loyalty.useRewardRoute(req({ headers: shop.headers, params: { id: sticker.id } }), ctx)).status, 404, 'once');
   const outsider = await newPerson('No Pro');
   assert.equal((await loyalty.saveCardRoute(req({ headers: outsider.headers, body: { name: 'Mine', rewards: [{ kind: 'free_shipping' }] } }), ctx)).status, 402);
+});
+
+await check('a per-item card stamps each item; rewards never stack with offers - one per order, held past an order that took one', async () => {
+  const saved = await loyalty.saveCardRoute(req({
+    headers: shop.headers,
+    body: { name: 'Per item', theme: 'mint', stampPer: 'item', rewards: [null, { kind: 'cashback_flat', amountMinor: 3_000 }, { kind: 'cashback_flat', amountMinor: 4_000 }] },
+  }), ctx);
+  assert.equal(saved.status, 200, JSON.stringify(saved.jsonBody));
+  const card = saved.jsonBody.card;
+  assert.equal(card.stampPer, 'item');
+  const buyer = await newPerson('Offer Buyer');
+  const order = async (tag, quantity, offer, offset) => {
+    const at = new Date(Date.now() + 5_000 + offset).toISOString();
+    await repository.createOrder({
+      ...structuredClone(anyOrder), id: `ord_per_${tag}_${buyer.id.slice(-4)}`, sellerId: shop.id, buyerId: buyer.id,
+      status: 'delivered', completedAt: at, placedAt: at, quantity, unitPriceMinor: 10_000,
+      offerDiscountMinor: offer ? 1_000 : 0, appliedOffers: offer ? [{ offerId: 'o1', kind: 'discount', label: '10% off', savedMinor: 1_000 }] : [],
+    });
+  };
+  const mine = async () => (await loyalty.shopLoyaltyRoute(req({ headers: buyer.headers, params: { id: shop.id } }), ctx)).jsonBody.cards
+    .find((entry) => entry.card.id === card.id);
+  const cash = async () => ((await repository.getUserById(buyer.id)).storeCredits ?? [])
+    .filter((credit) => credit.id.startsWith(`loyalty:${card.id}:`)).map((credit) => credit.amountMinor);
+
+  await order('a', 3, true, 0);
+  let row = await mine();
+  assert.equal(row.total, 3, 'three items, three stamps');
+  assert.equal(row.waiting, 2, 'both rewards reached are held: the order took an offer');
+  assert.deepEqual(await cash(), []);
+
+  await order('b', 1, false, 1);
+  row = await mine();
+  assert.equal(row.total, 4);
+  assert.equal(row.waiting, 1, 'one reward per order');
+  assert.deepEqual(await cash(), [3_000]);
+
+  await order('c', 1, false, 2);
+  row = await mine();
+  assert.equal(row.waiting, 0);
+  assert.deepEqual(await cash(), [3_000, 4_000], 'the held reward comes with the next clean order, once');
+  await mine();
+  assert.deepEqual(await cash(), [3_000, 4_000]);
 });
 
 console.log(`\n${passed} billing checks passed`);

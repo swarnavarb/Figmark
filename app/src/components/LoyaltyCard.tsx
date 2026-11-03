@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { REWARD_META, STAMPS, rewardWords, type CardTheme, type LoyaltyReward } from '@shared/loyalty';
+import { REWARD_META, STAMPS, rewardWords, type CardTheme, type LoyaltyReward, type StampPer } from '@shared/loyalty';
 import { api, type ShopLoyalty } from '../api';
 import { useSession } from '../session';
 import { formatMoney } from '../format';
@@ -48,11 +48,18 @@ export function StampCard({ name, shopName, theme, rewards, stamps, round = 1, c
   );
 }
 
-/** "2 more orders to ₹50 cashback" - the line under a card. */
-export function nextLine(stamps: number, next: { stamp: number; reward: LoyaltyReward } | null): string {
-  if (!next) return 'Every order stamps it.';
+/**
+ * "2 more orders to ₹50 cashback" - the line under a card. A per-item card
+ * counts items; a reward held back (its order took an offer) is said first.
+ */
+export function nextLine(
+  stamps: number, next: { stamp: number; reward: LoyaltyReward } | null, per: StampPer = 'order', waiting = 0,
+): string {
+  const unit = (count: number) => (per === 'item' ? (count === 1 ? 'item' : 'items') : (count === 1 ? 'order' : 'orders'));
+  const held = waiting > 0 ? `${waiting} reward${waiting > 1 ? 's' : ''} come${waiting > 1 ? '' : 's'} with your next order without an offer. ` : '';
+  if (!next) return `${held}Every ${unit(1)} stamps it.`;
   const away = next.stamp > stamps ? next.stamp - stamps : next.stamp + STAMPS - stamps;
-  return `${away} more ${away === 1 ? 'order' : 'orders'} to ${rewardWords(next.reward, (minor) => formatMoney(minor))}`;
+  return `${held}${away} more ${unit(away)} to ${rewardWords(next.reward, (minor) => formatMoney(minor))}`;
 }
 
 /**
@@ -77,10 +84,10 @@ export function LoyaltyStrip({ ownerId, listingId }: { ownerId: string; listingI
           <StampCard key={row.card.id} compact name={row.card.name} shopName={data.shopName ?? ''} theme={row.card.theme}
             rewards={row.card.rewards} stamps={row.stamps} round={Math.floor(row.total / STAMPS) + 1}
             footer={mine ? <span>Your buyers see this card here.</span>
-              : !row.signedIn ? <span>Sign in and order - every delivered order earns a stamp.</span>
+              : !row.signedIn ? <span>Sign in and order - every delivered {row.card.stampPer === 'item' ? 'item' : 'order'} earns a stamp.</span>
                 : (
                   <span className="loyaltystrip__status">
-                    <b>{row.stamps}/{STAMPS}</b> · {row.total === 0 ? 'This order would be your first stamp. ' : ''}{nextLine(row.stamps, row.next)}
+                    <b>{row.stamps}/{STAMPS}</b> · {row.total === 0 ? 'This order would be your first stamp. ' : ''}{nextLine(row.stamps, row.next, row.card.stampPer, row.waiting)}
                     {row.ready > 0 && <> · <Link to="/wallet?tab=loyalty">{row.ready} reward{row.ready > 1 ? 's' : ''} waiting</Link></>}
                   </span>
                 )} />

@@ -8,7 +8,7 @@
  * - **GST**, optional, on what Figmark itself charges: switched on, rated and
  *   scoped by the operators, included in the price or added on top.
  * - **Pro**, a subscription for 3, 6 or 12 months, or a voucher, that unlocks
- *   the Pro tools, may lower the platform fee for a while and gives bump points.
+ *   the Pro tools and gives bump points. Pro never lowers the platform fee.
  *
  * All of it is set in one document the operators edit (`pricing`), read by
  * the API and the app alike so a fee the seller is shown while listing is the
@@ -153,10 +153,6 @@ export interface ProSettings {
   /** Off: every tool is open to every shop, as before Pro was sold. */
   enabled: boolean;
   plans: ProPlan[];
-  /** Off the platform fee while it lasts, in basis points of the fee (2500 = a quarter off). */
-  feeDiscountBp: number;
-  /** How long the lower fee lasts after each purchase; 0 for the whole subscription. */
-  feeDiscountDays: number;
   /** Free Pro days a shop gets the first time it opens. 0 for none. */
   trialDays: number;
   /** Which tools are Pro. A tool switched off here is free for everybody. */
@@ -181,8 +177,6 @@ export interface ProGrant {
 /** Kept on the account: every store the account owns is Pro while it lasts. */
 export interface ProState {
   until: string | null;
-  /** The lower platform fee lasts until this moment. */
-  discountUntil?: string | null;
   /** Whether the free trial was used. */
   trialUsed?: boolean;
   history: ProGrant[];
@@ -197,15 +191,6 @@ export function proDaysLeft(pro: Pick<ProState, 'until'> | null | undefined, now
   return Math.max(0, Math.ceil((Date.parse(pro.until) - now) / 86_400_000));
 }
 
-/** The discount off the platform fee this account has right now, in basis points. */
-export function feeDiscountBp(pro: ProState | null | undefined, settings: ProSettings, now = Date.now()): number {
-  if (!settings.enabled || settings.feeDiscountBp <= 0 || !isProActive(pro, now)) return 0;
-  // Only a purchase starts the lower fee (see extendPro): days from a voucher
-  // or an operator open the tools, not a cheaper fee.
-  const until = pro?.discountUntil;
-  return until && Date.parse(until) > now ? settings.feeDiscountBp : 0;
-}
-
 /** Whether this tool is shut for this account. */
 export function proLocked(feature: ProFeatureId, settings: ProSettings, pro: ProState | null | undefined, now = Date.now()): boolean {
   return settings.enabled && settings.features[feature] !== false && !isProActive(pro, now);
@@ -214,20 +199,11 @@ export function proLocked(feature: ProFeatureId, settings: ProSettings, pro: Pro
 const DAY = 86_400_000;
 
 /** Adds days onto what is left, or onto now when nothing is. */
-export function extendPro(pro: ProState | null | undefined, days: number, grant: ProGrant, settings: ProSettings, now = Date.now()): ProState {
+export function extendPro(pro: ProState | null | undefined, days: number, grant: ProGrant, now = Date.now()): ProState {
   const from = Math.max(now, pro?.until ? Date.parse(pro.until) : 0);
   const until = new Date(from + days * DAY).toISOString();
-  // A purchase starts (or extends) the lower fee; a voucher or a gift of days
-  // carries whatever lower fee there was, without starting one.
-  let discountUntil = pro?.discountUntil ?? null;
-  if (grant.source === 'purchase') {
-    discountUntil = settings.feeDiscountDays > 0
-      ? new Date(Math.max(now, discountUntil ? Date.parse(discountUntil) : 0) + settings.feeDiscountDays * DAY).toISOString()
-      : until;
-  }
   return {
     until,
-    discountUntil,
     trialUsed: pro?.trialUsed || grant.source === 'trial',
     history: [...(pro?.history ?? []), grant].slice(-50),
   };
@@ -299,8 +275,6 @@ export const DEFAULT_PRICING: Pricing = {
       { months: 6, priceMinor: 89_900, bumpPoints: 12, enabled: true },
       { months: 12, priceMinor: 1_59_900, bumpPoints: 30, enabled: true },
     ],
-    feeDiscountBp: 2_500,
-    feeDiscountDays: 30,
     trialDays: 0,
     features: { insights: true, calculator: true, costs: true, customers: true, powerSale: true, loyalty: true },
   },
@@ -398,16 +372,6 @@ export function cleanPricing(input: unknown): { pricing: Pricing } | { error: st
     }
     pricing.pro.plans = plans;
   }
-  if (pro.feeDiscountBp !== undefined) {
-    const value = int(pro.feeDiscountBp);
-    if (value === null || value < 0 || value > 10_000) return { error: 'The Pro fee discount is 0% to 100% of the fee.' };
-    pricing.pro.feeDiscountBp = value;
-  }
-  if (pro.feeDiscountDays !== undefined) {
-    const value = int(pro.feeDiscountDays);
-    if (value === null || value < 0 || value > 366) return { error: 'The lower fee lasts 0 to 366 days.' };
-    pricing.pro.feeDiscountDays = value;
-  }
   if (pro.trialDays !== undefined) {
     const value = int(pro.trialDays);
     if (value === null || value < 0 || value > 90) return { error: 'The free trial is 0 to 90 days.' };
@@ -496,7 +460,10 @@ export interface FeeTerms {
   kind: FeeKind;
   feeBands?: FeeBand[];
   perKgMinor?: number;
-  /** Pro's lower fee, in basis points off the fee. */
+  /**
+   * Basis points off the fee. Always 0 now - Pro no longer lowers the fee -
+   * but kept so a sale made while it did still owes what it was agreed at.
+   */
   discountBp: number;
   gst: GstTerms;
   at: string;
@@ -506,7 +473,7 @@ export function feeTermsFor(pricing: Pricing, kind: FeeKind, pro: ProState | nul
   return {
     kind,
     ...(kind === 'forwarder' ? { perKgMinor: pricing.fees.forwarderPerKgMinor } : { feeBands: pricing.fees[kind] }),
-    discountBp: feeDiscountBp(pro, pricing.pro, now),
+    discountBp: 0,
     gst: gstFor(pricing.gst, 'platform'),
     at: new Date(now).toISOString(),
   };

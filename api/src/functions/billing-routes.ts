@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import {
-  GIFT_METHODS, GIVER_KINDS, PRO_FEATURES, cleanPricing, cleanVoucherCode, creditStoreId, daysForMonths, extendPro, feeDiscountBp,
+  GIFT_METHODS, GIVER_KINDS, PRO_FEATURES, cleanPricing, cleanVoucherCode, creditStoreId, daysForMonths, extendPro,
   gstFor, gstSplit, isProActive, proDaysLeft, proLocked, voucherProblem,
   type GiftMethod, type GiverKind, type ProGrant, type ProVoucher, type Pricing, type StoreGift,
 } from '../../../shared/billing.js';
@@ -90,7 +90,6 @@ async function myFees(request: HttpRequest, _context: InvocationContext) {
     statement,
     locked: Boolean(owner.feeLock),
     lockedSince: owner.feeLock?.since ?? null,
-    discountBp: feeDiscountBp(owner.pro, pricing.pro),
     pro: isProActive(owner.pro),
     fees: pricing.fees,
     gst: pricing.gst.enabled && pricing.gst.applyTo.platform ? { rateBp: pricing.gst.rateBp, mode: pricing.gst.mode } : null,
@@ -130,12 +129,9 @@ function proView(account: User, pricing: Pricing) {
     active: isProActive(account.pro, now),
     until: account.pro?.until ?? null,
     daysLeft: proDaysLeft(account.pro, now),
-    discountUntil: account.pro?.discountUntil ?? null,
-    discountBp: feeDiscountBp(account.pro, pricing.pro, now),
     trialDays: pricing.pro.trialDays,
     trialUsed: Boolean(account.pro?.trialUsed),
     plans: pricing.pro.plans.filter((plan) => plan.enabled).map((plan) => ({ ...plan, ...gstSplit(gst, plan.priceMinor) })),
-    feeDiscount: { bp: pricing.pro.feeDiscountBp, days: pricing.pro.feeDiscountDays },
     features: PRO_FEATURES.map((feature) => ({ ...feature, pro: pricing.pro.enabled && pricing.pro.features[feature.id] !== false })),
     locked: Object.fromEntries(PRO_FEATURES.map((feature) => [feature.id, proLocked(feature.id, pricing.pro, account.pro, now)])),
     bumpPoints: (account.sellerProfile?.growth?.spotlights ?? 0) + (account.quest?.bumps ?? 0),
@@ -197,7 +193,7 @@ async function buyPro(request: HttpRequest, _context: InvocationContext) {
     id: `pro_${randomUUID().slice(0, 12)}`, at: new Date(now).toISOString(), source: 'purchase', days: daysForMonths(plan.months),
     months: plan.months, amountMinor: charge.totalMinor, gstMinor: charge.gstMinor, gatewayRef: ref, bumpPoints: plan.bumpPoints, by: user.id,
   };
-  account.pro = extendPro(account.pro, grant.days, grant, pricing.pro, now);
+  account.pro = extendPro(account.pro, grant.days, grant, now);
   addBumps(account, plan.bumpPoints);
   await repository.updateUser(account);
   if (charge.totalMinor > 0) {
@@ -249,7 +245,7 @@ async function redeemVoucher(request: HttpRequest, _context: InvocationContext) 
   });
   if (refused) return error(400, 'bad_code', refused);
   const grant: ProGrant = { id: `pro_${randomUUID().slice(0, 12)}`, at: new Date().toISOString(), source: 'voucher', days, code, by: user.id };
-  account.pro = extendPro(account.pro, days, grant, pricing.pro);
+  account.pro = extendPro(account.pro, days, grant);
   await repository.updateUser(account);
   await notify(repository, [account.id], {
     kind: 'pro_plan', title: `Voucher applied: ${days} days of Pro`, body: 'Every Pro tool is open.', link: '/pro',
@@ -264,7 +260,7 @@ async function startTrial(request: HttpRequest, _context: InvocationContext) {
   if (!pricing.pro.enabled || pricing.pro.trialDays <= 0) return error(409, 'no_trial', 'There is no free trial right now.');
   if (account.pro?.trialUsed || (account.pro?.history ?? []).length > 0) return error(409, 'trial_used', 'The free trial is for accounts new to Pro.');
   const grant: ProGrant = { id: `pro_${randomUUID().slice(0, 12)}`, at: new Date().toISOString(), source: 'trial', days: pricing.pro.trialDays, by: user.id };
-  account.pro = extendPro(account.pro, grant.days, grant, pricing.pro);
+  account.pro = extendPro(account.pro, grant.days, grant);
   await repository.updateUser(account);
   return json(200, proView(account, pricing));
 }
@@ -592,10 +588,10 @@ async function opsGrantPro(request: HttpRequest, _context: InvocationContext) {
   const pricing = await loadPricing(repository);
   const grant: ProGrant = { id: `pro_${randomUUID().slice(0, 12)}`, at: new Date().toISOString(), source: 'admin', days, by: user.displayName ?? user.email };
   if (days > 0) {
-    account.pro = extendPro(account.pro, days, grant, pricing.pro);
+    account.pro = extendPro(account.pro, days, grant);
   } else {
     const until = account.pro?.until ? new Date(Date.parse(account.pro.until) + days * 86_400_000).toISOString() : null;
-    account.pro = { until, discountUntil: account.pro?.discountUntil ?? null, trialUsed: account.pro?.trialUsed, history: [...(account.pro?.history ?? []), grant] };
+    account.pro = { until, trialUsed: account.pro?.trialUsed, history: [...(account.pro?.history ?? []), grant] };
   }
   await repository.updateUser(account);
   if (days > 0) {

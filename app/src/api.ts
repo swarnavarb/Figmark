@@ -2698,7 +2698,6 @@ export interface FeesView {
   statement: FeeStatement;
   locked: boolean;
   lockedSince: string | null;
-  discountBp: number;
   pro: boolean;
   fees: PlatformFees;
   gst: { rateBp: number; mode: 'inclusive' | 'exclusive' } | null;
@@ -2709,12 +2708,9 @@ export interface ProView {
   active: boolean;
   until: string | null;
   daysLeft: number;
-  discountUntil: string | null;
-  discountBp: number;
   trialDays: number;
   trialUsed: boolean;
   plans: (ProPlan & { baseMinor: number; gstMinor: number; totalMinor: number })[];
-  feeDiscount: { bp: number; days: number };
   features: { id: ProFeatureId; icon: string; title: string; line: string; punch: string; benefit: string; pro: boolean }[];
   locked: Record<ProFeatureId, boolean>;
   bumpPoints: number;
@@ -2745,6 +2741,8 @@ export interface ShopLoyalty {
     total: number;
     next: CardProgress['next'];
     ready: number;
+    /** Rewards reached on an order that took an offer, held for the next one without. */
+    waiting: number;
     signedIn: boolean;
   }[];
 }

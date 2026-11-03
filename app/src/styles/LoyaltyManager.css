@@ -34,3 +34,16 @@
   padding: var(--s2) 0; border-top: 1px solid var(--border);
 }
 .loyman__owedrow:first-child { border-top: 0; }
+
+/* A stamp per order, or per item */
+.loyman__per { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.loyman__peropt {
+  display: grid; gap: 2px; text-align: left; padding: var(--s2) var(--s3); border-radius: var(--r-md);
+  border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer;
+}
+.loyman__peropt small { color: var(--text-dim); font-size: var(--t-xs); }
+.loyman__peropt.is-on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.loyman__rule {
+  margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); border-left: 3px solid var(--gold);
+  background: var(--surface-2); color: var(--text-dim); font-size: var(--t-sm);
+}

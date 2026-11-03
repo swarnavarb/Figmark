@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   CARD_THEMES, REWARD_KINDS, REWARD_META, STAMPS, rewardWords,
-  type CardTheme, type IssuedReward, type LoyaltyCard, type LoyaltyReward, type LoyaltySettings, type RewardKind,
+  type CardTheme, type IssuedReward, type LoyaltyCard, type LoyaltyReward, type LoyaltySettings, type RewardKind, type StampPer,
 } from '@shared/loyalty';
 import type { Listing } from '@shared/models';
 import { ApiRequestError, api } from '../api';
@@ -24,19 +24,20 @@ type Draft = {
   everything: boolean;
   listingIds: string[];
   minOrder: string;
+  stampPer: StampPer;
   rewards: (LoyaltyReward | null)[];
   active: boolean;
 };
 
 const blank = (): Draft => ({
-  name: 'Regulars card', theme: 'gold', everything: true, listingIds: [], minOrder: '0',
+  name: 'Regulars card', theme: 'gold', everything: true, listingIds: [], minOrder: '0', stampPer: 'order',
   rewards: Array.from({ length: STAMPS }, (_, index) => (index === 3 ? { kind: 'cashback_flat', amountMinor: 5_000 } : index === 7 ? { kind: 'free_shipping' } : null)),
   active: true,
 });
 
 const fromCard = (card: LoyaltyCard): Draft => ({
   id: card.id, name: card.name, theme: card.theme, everything: card.listingIds === null, listingIds: card.listingIds ?? [],
-  minOrder: String(card.minOrderMinor / 100), rewards: [...card.rewards], active: card.active,
+  minOrder: String(card.minOrderMinor / 100), stampPer: card.stampPer ?? 'order', rewards: [...card.rewards], active: card.active,
 });
 
 export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
@@ -101,7 +102,7 @@ export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
                 rewards={card.rewards} stamps={0} />
               <div className="loyman__meta">
                 <span className={`badge${card.active ? ' badge--ok' : ''}`}>{card.active ? 'Live' : 'Paused'}</span>
-                <span>{data.stats[card.id]?.holders ?? 0} holders · {data.stats[card.id]?.stamps ?? 0} stamps given</span>
+                <span>{card.stampPer === 'item' ? 'A stamp per item' : 'A stamp per order'} · {data.stats[card.id]?.holders ?? 0} holders · {data.stats[card.id]?.stamps ?? 0} stamps given</span>
                 {card.minOrderMinor > 0 && <span>From {formatMoney(card.minOrderMinor)}</span>}
                 <button type="button" className="btn btn--quiet btn--sm" onClick={() => setDraft(fromCard(card))}>Edit</button>
                 <button type="button" className="btn btn--quiet btn--sm"
@@ -157,6 +158,7 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
         id: draft.id, name: draft.name, theme: draft.theme, active: draft.active,
         listingIds: draft.everything ? null : draft.listingIds,
         minOrderMinor: Math.round(Number(draft.minOrder || 0) * 100),
+        stampPer: draft.stampPer,
         rewards: draft.rewards,
       });
       onSaved();
@@ -205,6 +207,17 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
             </div>
           )
         )}
+        <div className="field">
+          <span>A stamp for</span>
+          <div className="loyman__per" role="radiogroup" aria-label="A stamp for">
+            {([['order', 'Every order', 'One stamp, however many items'], ['item', 'Every item', 'An order of 3 gives 3 stamps']] as const).map(([value, title, hint]) => (
+              <button key={value} type="button" role="radio" aria-checked={draft.stampPer === value}
+                className={`loyman__peropt${draft.stampPer === value ? ' is-on' : ''}`} onClick={() => setDraft({ ...draft, stampPer: value })}>
+                <b>{title}</b><small>{hint}</small>
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="field" style={{ maxWidth: 220 }}>
           <span>Smallest order that stamps (₹)</span>
           <input type="number" inputMode="decimal" min={0} value={draft.minOrder} onChange={(e) => setDraft({ ...draft, minOrder: e.target.value })} />
@@ -217,6 +230,10 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
 
       <div className="card card--pad stack">
         <h3 style={{ margin: 0 }}>What each stamp gives</h3>
+        <p className="loyman__rule">
+          Rewards never stack with your offers. An order pays out one reward at most, and none if it already took an offer -
+          the reward waits for the buyer&apos;s next order without one. Give free items and money off the same way.
+        </p>
         <div className="loyman__slots">
           {draft.rewards.map((reward, index) => {
             const allowed = settings.stampsAllowed[index] !== false;

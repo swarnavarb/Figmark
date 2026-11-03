@@ -1,6 +1,6 @@
 import { proLocked } from '../../shared/billing.js';
 import {
-  REWARD_META, STAMPS, nextReward, rewardWords, stampPosition, stampsCard,
+  REWARD_META, STAMPS, nextReward, replayCard, rewardWords,
   type CardProgress, type IssuedReward, type LoyaltyCard,
 } from '../../shared/loyalty.js';
 import type { Order, User } from '../../shared/models.js';
@@ -17,7 +17,8 @@ import { notify } from './functions/notify.js';
  * - `loyalty-issued-<shop>` - every reward a stamp has earned anybody there.
  *
  * Stamps are never written: they are the buyer's delivered orders that a card
- * covers, counted whenever somebody looks (and the moment an order arrives).
+ * covers, replayed whenever somebody looks (and the moment an order arrives)
+ * by `replayCard`, which also keeps rewards and offers from colliding.
  * Rewards are written once each, by id, so counting again never pays twice.
  */
 
@@ -94,15 +95,10 @@ export async function syncLoyalty(
   const progress: CardProgress[] = [];
 
   for (const card of cards) {
-    const stamped = theirs.filter((order) => stampsCard(card, order))
-      .sort((a, b) => (a.completedAt ?? '').localeCompare(b.completedAt ?? ''));
+    const { total, payouts, waiting } = replayCard(card, theirs);
     if (live && card.active) {
-      stamped.forEach((order, index) => {
-        const { round, stamp } = stampPosition(index);
-        const reward = card.rewards[stamp - 1];
-        if (!reward) return;
-        const id = `${card.id}:${round}:${stamp}`;
-        if (issued.some((entry) => entry.id === id)) return;
+      for (const { id, round, stamp, reward, order } of payouts) {
+        if (issued.some((entry) => entry.id === id)) continue;
         const credit = REWARD_META[reward.kind].credit;
         const valueMinor = reward.kind === 'cashback_flat' ? reward.amountMinor ?? 0
           : reward.kind === 'cashback_percent' ? Math.round((orderValue(order) * (reward.bp ?? 0)) / 10_000) : 0;
@@ -111,13 +107,13 @@ export async function syncLoyalty(
           round, stamp, reward, orderId: order.id, itemName: order.itemName, at: new Date().toISOString(),
           valueMinor, status: credit ? 'credited' : 'ready', usedAt: null,
         });
-      });
+      }
     }
-    const total = stamped.length;
     const stamps = total % STAMPS;
     progress.push({
       card, shopName, stamps, round: Math.floor(total / STAMPS) + 1, total,
       next: nextReward(card, stamps),
+      waiting: waiting.length,
       rewards: [],
     });
   }

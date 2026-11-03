@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  PRO_FEATURES, bandFor, bandWords, feeDiscountBp, gstSplit, isProActive, platformFee,
+  PRO_FEATURES, bandFor, bandWords, gstSplit, isProActive, platformFee,
   type FeeKind, type Pricing, type ProFeatureId,
 } from '@shared/billing';
 import { api, type ProStatus } from '../api';
@@ -175,24 +175,21 @@ export function forgetStoreCredit(): void {
 
 /**
  * What Figmark takes from a sale at this price (or per kg), as the seller is
- * charged it: their band, less any Pro discount, with GST when it applies.
+ * charged it: their band, with GST when it applies.
  */
 export function FeeHint({ kind, priceMinor, perKg = false }: { kind: FeeKind; priceMinor?: number; perKg?: boolean }) {
   const pricing = usePricing();
   const { user } = useSession();
   if (!pricing) return null;
-  const discount = feeDiscountBp(user?.pro ?? null, pricing.pro);
   const gst = pricing.gst.enabled && pricing.gst.applyTo.platform ? { rateBp: pricing.gst.rateBp, mode: pricing.gst.mode } : null;
   const gstNote = gst ? ` ${gst.mode === 'inclusive' ? 'incl.' : '+'} ${gst.rateBp / 100}% GST` : '';
-  const off = discount > 0 ? ` · Pro: ${discount / 100}% off` : '';
 
   if (kind === 'forwarder' || perKg) {
     const perKgMinor = pricing.fees.forwarderPerKgMinor;
-    const after = Math.round(perKgMinor * (1 - discount / 10_000));
-    const shown = gstSplit(gst, after).totalMinor;
+    const shown = gstSplit(gst, perKgMinor).totalMinor;
     return (
       <span className="feehint">
-        Figmark fee: <b>{formatMoney(shown)} per chargeable kg</b>{gstNote}{off}
+        Figmark fee: <b>{formatMoney(shown)} per chargeable kg</b>{gstNote}
       </span>
     );
   }
@@ -206,17 +203,17 @@ export function FeeHint({ kind, priceMinor, perKg = false }: { kind: FeeKind; pr
             {band.upToMinor === null ? (index === 0 ? '' : 'above that ') : `up to ${formatMoney(band.upToMinor)} `}
             <b>{bandWords(band, (minor) => formatMoney(minor))}</b>
           </span>
-        ))}{gstNote}{off}
+        ))}{gstNote}
       </span>
     );
   }
-  const terms = { kind, feeBands: bands, discountBp: discount, gst, at: '' };
+  const terms = { kind, feeBands: bands, discountBp: 0, gst, at: '' };
   const fee = platformFee(terms, { amountMinor: priceMinor });
   const band = bandFor(bands, priceMinor);
   return (
     <span className="feehint">
       Figmark fee on this sale: <b>{formatMoney(fee.totalMinor)}</b>
-      {band && <> ({bandWords(band, (minor) => formatMoney(minor))}{gstNote}{off})</>}
+      {band && <> ({bandWords(band, (minor) => formatMoney(minor))}{gstNote})</>}
       {' '}· you keep <b>{formatMoney(Math.max(0, priceMinor - fee.totalMinor))}</b>
     </span>
   );

@@ -214,17 +214,6 @@ export function PricingView() {
         </div>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
           <label className="field" style={{ maxWidth: 200 }}>
-            <span>Lower platform fee - % off</span>
-            <input type="number" inputMode="decimal" value={pct(draft.pro.feeDiscountBp)}
-              onChange={(e) => change({ pro: { ...draft.pro, feeDiscountBp: toBp(e.target.value) } })} />
-          </label>
-          <label className="field" style={{ maxWidth: 200 }}>
-            <span>For how many days</span>
-            <input type="number" inputMode="numeric" value={draft.pro.feeDiscountDays}
-              onChange={(e) => change({ pro: { ...draft.pro, feeDiscountDays: Math.round(Number(e.target.value) || 0) } })} />
-            <span className="field__hint">After each purchase. 0 keeps it for the whole subscription.</span>
-          </label>
-          <label className="field" style={{ maxWidth: 200 }}>
             <span>Free trial days</span>
             <input type="number" inputMode="numeric" value={draft.pro.trialDays}
               onChange={(e) => change({ pro: { ...draft.pro, trialDays: Math.round(Number(e.target.value) || 0) } })} />

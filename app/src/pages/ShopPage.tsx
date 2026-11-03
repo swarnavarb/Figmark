@@ -95,6 +95,7 @@ const EngagePanel = lazy(() => import('../components/EngagePanel').then((module)
  * share the Sell page's own stylesheet, so they still come with it.
  */
 const RoutesList = lazy(() => import('./RoutesPage').then((module) => ({ default: module.RoutesList })));
+const ShopOffers = lazy(() => import('../components/ShopOffers').then((module) => ({ default: module.ShopOffers })));
 const LoyaltyManager = lazy(() => import('../components/LoyaltyManager').then((module) => ({ default: module.LoyaltyManager })));
 const PowerSalePanel = lazy(() => import('../components/PowerSale').then((module) => ({ default: module.PowerSalePanel })));
 const LotDetail = lazy(() => import('./LotsPage').then((module) => ({ default: module.LotDetail })));
@@ -106,7 +107,7 @@ function Later({ children }: { children: ReactNode }) {
 }
 
 type Section = 'items' | 'payments' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage'
-  | 'overview' | 'customers' | 'itemdata' | 'operations' | 'loyalty';
+  | 'overview' | 'customers' | 'itemdata' | 'operations' | 'offers' | 'loyalty';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -135,6 +136,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'people', label: 'People' },
   // Polls, debates, competitions and guesses the shop runs for its buyers.
   { id: 'engage', label: 'Engage' },
+  // Every item's offers on one screen, beside the loyalty cards they never stack with.
+  { id: 'offers', label: 'Offers' },
   // Stamp cards for repeat buyers - Pro.
   { id: 'loyalty', label: 'Loyalty cards' },
 ];
@@ -165,7 +168,7 @@ const SECTION_GROUPS: Record<Group, Section[]> = {
   items: ['items'],
   orders: ['payments', 'refunds'],
   lots: ['lots', 'routes'],
-  engage: ['engage', 'loyalty'],
+  engage: ['engage', 'offers', 'loyalty'],
   money: ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'],
   settings: ['storefront', 'people'],
 };
@@ -303,6 +306,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     if (entry.id === 'engage') return store.permissions.includes('posts');
+    if (entry.id === 'offers') return store.permissions.includes('listings');
     if (entry.id === 'loyalty') return store.isOwner;
     return true;
   });
@@ -389,6 +393,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
           {active === 'engage' && <Later><EngagePanel store={store} /></Later>}
+          {active === 'offers' && <Later><ShopOffers onLoyalty={visible.some((entry) => entry.id === 'loyalty') ? () => setSection('loyalty') : undefined} /></Later>}
           {active === 'loyalty' && <ProGate feature="loyalty" ownerId={store.ownerId}><Later><LoyaltyManager ownerId={store.ownerId} /></Later></ProGate>}
         </div>
       )}

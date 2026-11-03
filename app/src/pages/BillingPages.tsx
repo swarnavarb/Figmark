@@ -93,12 +93,6 @@ export function ProPage() {
   const dearest = Math.max(...view.plans.map(perMonth));
 
   const benefits: Benefit[] = [
-    ...(view.feeDiscount.bp > 0 ? [{
-      id: 'fee', icon: '💸', punch: `${view.feeDiscount.bp / 100}% off every platform fee`, title: 'Lower platform fee',
-      benefit: `Figmark takes ${view.feeDiscount.bp / 100}% less from every sale, artist job and kg forwarded`
-        + `${view.feeDiscount.days > 0 ? ` for ${view.feeDiscount.days} days after each purchase` : ' for as long as you are Pro'}. `
-        + 'On a busy month that alone can pay for the plan.',
-    }] : []),
     {
       id: 'bumps', icon: '🚀', punch: 'Jump to the top of Discover', title: 'Free bump points',
       benefit: `Every plan comes with bump points. Spend one to lift an item to the top of Discover, where buyers look first. You have ${view.bumpPoints} now.`,
@@ -127,8 +121,8 @@ export function ProPage() {
         </h1>
         <p className="gohero__line">
           {view.active
-            ? <>Pro until <b>{date(view.until)}</b>.{view.discountBp > 0 && <> Your platform fee is <Hand tone="gold" thin>{view.discountBp / 100}% lower</Hand> until {date(view.discountUntil)}.</>}</>
-            : <>Every Pro tool, a <Hand tone="gold" thin>lower fee</Hand> to start, free bumps and the badge. From <b>{formatMoney(cheapest)}</b> a month.</>}
+            ? <>Pro until <b>{date(view.until)}</b>. Every tool is <Hand tone="gold" thin>switched on</Hand>.</>
+            : <>Every Pro tool, <Hand tone="gold" thin>free bumps</Hand> and the badge. From <b>{formatMoney(cheapest)}</b> a month.</>}
         </p>
         {!view.active && view.enabled && <a className="gohero__cta" href="#plans">Pick a plan <span aria-hidden="true">→</span></a>}
         {!view.enabled && <p className="notice notice--info">Pro tools are open to every shop right now - there is nothing to buy.</p>}
@@ -326,8 +320,8 @@ export function FeesPage() {
         <div className="feetile"><small>To pay</small><b>{formatMoney(s.owedMinor)}</b></div>
         <div className="feetile"><small>Next due</small><b>{s.nextDueAt ? date(s.nextDueAt) : '—'}</b></div>
         <div className="feetile">
-          <small>Your rate</small>
-          <b>{view.discountBp > 0 ? `${view.discountBp / 100}% off` : 'Standard'}</b>
+          <small>Paid so far</small>
+          <b>{formatMoney(s.settlements.reduce((sum, row) => sum + (row.waived ? 0 : row.amountMinor), 0))}</b>
         </div>
       </section>
 

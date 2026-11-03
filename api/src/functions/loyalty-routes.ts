@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { cleanCard, STAMPS, stampsCard, type LoyaltyCard } from '../../../shared/loyalty.js';
+import { cleanCard, STAMPS, stampsCard, stampsFrom, type LoyaltyCard } from '../../../shared/loyalty.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { loadPricing, proRefusal } from '../billing.js';
@@ -51,6 +51,7 @@ async function shopCards(request: HttpRequest, _context: InvocationContext) {
         total: mine?.total ?? 0,
         next: mine?.next ?? null,
         ready: mine?.rewards.filter((entry) => entry.status === 'ready').length ?? 0,
+        waiting: mine?.waiting ?? 0,
         signedIn: Boolean(viewer),
       };
     }),
@@ -72,7 +73,10 @@ async function myCards(request: HttpRequest, _context: InvocationContext) {
   // How many people hold each card, and how many stamps it has given.
   const stats = Object.fromEntries(cards.map((card) => {
     const stamped = orders.filter((order) => stampsCard(card, order));
-    return [card.id, { holders: new Set(stamped.map((order) => order.buyerId)).size, stamps: stamped.length }];
+    return [card.id, {
+      holders: new Set(stamped.map((order) => order.buyerId)).size,
+      stamps: stamped.reduce((sum, order) => sum + stampsFrom(card, order), 0),
+    }];
   }));
   return json(200, { cards, stats, settings: pricing.loyalty, locked: Boolean(locked), stampsPerCard: STAMPS });
 }

@@ -175,7 +175,7 @@ export function WalletStores({ refunds }: { refunds: MyRefund[] }) {
                     {entry.cards.map((card) => (
                       <StampCard key={card.card.id} compact name={card.card.name} shopName={card.shopName} theme={card.card.theme}
                         rewards={card.card.rewards} stamps={card.stamps} round={card.round}
-                        footer={<span><b>{card.stamps}/{STAMPS}</b> · {nextLine(card.stamps, card.next)}</span>} />
+                        footer={<span><b>{card.stamps}/{STAMPS}</b> · {nextLine(card.stamps, card.next, card.card.stampPer, card.waiting)}</span>} />
                     ))}
                   </div>
                 )}
@@ -218,7 +218,7 @@ export function LoyaltyTab() {
   if (cards.length === 0) {
     return (
       <EmptyState icon="🎟️" title="No loyalty cards yet">
-        Shops with a loyalty card show it under their items. Every delivered order earns a stamp - fill the card for cashback, free items and more.
+        Shops with a loyalty card show it under their items. Every delivered order (or item, if the shop says so) earns a stamp - fill the card for cashback, free items and more.
       </EmptyState>
     );
   }
@@ -231,7 +231,7 @@ export function LoyaltyTab() {
           <section key={card.card.id} className="wloyal__card">
             <StampCard name={card.card.name} shopName={card.shopName} theme={card.card.theme} rewards={card.card.rewards}
               stamps={card.stamps} round={card.round}
-              footer={<span><b>{card.stamps}/{STAMPS}</b> stamps · {nextLine(card.stamps, card.next)}</span>} />
+              footer={<span><b>{card.stamps}/{STAMPS}</b> stamps · {nextLine(card.stamps, card.next, card.card.stampPer, card.waiting)}</span>} />
             {card.rewards.length > 0 && (
               <ul className="wloyal__rewards">
                 {[...card.rewards].reverse().map((entry) => (
@@ -248,6 +248,7 @@ export function LoyaltyTab() {
               </ul>
             )}
             {ready.length > 0 && <p className="faint" style={{ margin: 0 }}>The shop marks a reward used when they hand it over.</p>}
+            <p className="faint" style={{ margin: 0 }}>Rewards never stack with offers: one reward per order, on an order that took no offer.</p>
           </section>
         );
       })}

@@ -1,13 +1,18 @@
 /**
  * Loyalty cards: a Pro shop's stamp cards.
  *
- * Every delivered order of an item a card covers stamps it once. A card holds
- * eight stamps; the shop puts a reward on any of them the operators allow -
+ * Every delivered order of an item a card covers stamps it - once, or once
+ * per item in it when the shop says so (`stampPer`). A card holds eight stamps; the shop puts a reward on any of them the operators allow -
  * cashback, a free item, free shipping, money off. A full card starts again.
  *
  * Cashback is paid at once as store credit at that shop, so it comes off the
  * buyer's next order there by itself. Everything else is a reward the buyer
  * holds in their wallet until the shop marks it given.
+ *
+ * Rewards and offers never collide: an order pays out at most one reward, and
+ * none at all when it already took an offer (money off, free shipping, a
+ * bundle price). A reward reached on such an order still counts - it waits,
+ * and the buyer's next stamping order without an offer pays it.
  *
  * What may be offered, on which stamps, and how much, is the operators' to say
  * (`LoyaltySettings`, in the pricing document).
@@ -64,6 +69,12 @@ export interface LoyaltyReward {
   text?: string;
 }
 
+/** One stamp per delivered order, or one per item in it. */
+export type StampPer = 'order' | 'item';
+
+/** The most stamps one order can give on a per-item card: a full card. */
+export const MAX_STAMPS_PER_ORDER = STAMPS;
+
 export const CARD_THEMES = ['gold', 'pink', 'mint', 'violet', 'ink'] as const;
 export type CardTheme = (typeof CARD_THEMES)[number];
 
@@ -76,6 +87,8 @@ export interface LoyaltyCard {
   listingIds: string[] | null;
   /** An order below this does not stamp. */
   minOrderMinor: number;
+  /** `item` stamps once per item in an order; missing on older cards, which stamp once per order. */
+  stampPer?: StampPer;
   /** One slot per stamp, a reward or nothing. */
   rewards: (LoyaltyReward | null)[];
   active: boolean;
@@ -96,6 +109,7 @@ export interface IssuedReward {
   round: number;
   stamp: number;
   reward: LoyaltyReward;
+  /** The order that paid it out - the stamping order, or a later one when that one took an offer. */
   orderId: string;
   itemName: string;
   at: string;
@@ -116,6 +130,8 @@ export interface CardProgress {
   round: number;
   total: number;
   next: { stamp: number; reward: LoyaltyReward } | null;
+  /** Rewards reached but not paid yet: they come with the next order that takes no offer. */
+  waiting: number;
   rewards: IssuedReward[];
 }
 
@@ -164,7 +180,7 @@ export function rewardWords(reward: LoyaltyReward, money: (minor: number) => str
 /** Checks a card a shop saved against the operators' rules. */
 export function cleanCard(
   raw: unknown, settings: LoyaltySettings,
-): { card: Pick<LoyaltyCard, 'name' | 'theme' | 'listingIds' | 'minOrderMinor' | 'rewards' | 'active'> } | { error: string } {
+): { card: Pick<LoyaltyCard, 'name' | 'theme' | 'listingIds' | 'minOrderMinor' | 'stampPer' | 'rewards' | 'active'> } | { error: string } {
   if (!raw || typeof raw !== 'object') return { error: 'Send the card.' };
   const input = raw as Record<string, unknown>;
   const name = typeof input.name === 'string' ? input.name.trim().slice(0, 40) : '';
@@ -203,7 +219,8 @@ export function cleanCard(
     rewards.push(reward);
   }
   if (!rewards.some(Boolean)) return { error: 'Put a reward on at least one stamp.' };
-  return { card: { name, theme, listingIds, minOrderMinor: min, rewards, active: input.active !== false } };
+  const stampPer: StampPer = input.stampPer === 'item' ? 'item' : 'order';
+  return { card: { name, theme, listingIds, minOrderMinor: min, stampPer, rewards, active: input.active !== false } };
 }
 
 /** Whether an order stamps a card: delivered, an item the card covers, big enough, after the card began. */
@@ -216,6 +233,56 @@ export function stampsCard(
     && Boolean(order.completedAt) && order.completedAt! >= card.createdAt
     && (card.listingIds === null || card.listingIds.includes(order.listingId))
     && order.quantity * order.unitPriceMinor >= card.minOrderMinor;
+}
+
+type StampOrder = Parameters<typeof stampsCard>[1] & {
+  id: string;
+  offerDiscountMinor?: number;
+  appliedOffers?: { savedMinor: number }[];
+};
+
+/** Whether an order already took an offer - and so pays out no loyalty reward. */
+export const tookOffer = (order: Pick<StampOrder, 'offerDiscountMinor' | 'appliedOffers'>): boolean =>
+  (order.offerDiscountMinor ?? 0) > 0 || (order.appliedOffers ?? []).some((applied) => applied.savedMinor > 0);
+
+/** How many stamps one order puts on a card. */
+export const stampsFrom = (card: Pick<LoyaltyCard, 'stampPer'>, order: { quantity: number }): number =>
+  card.stampPer === 'item' ? Math.min(MAX_STAMPS_PER_ORDER, Math.max(1, Math.floor(order.quantity))) : 1;
+
+/** A reward a card has paid out, before it is written down. */
+export interface Payout<O> {
+  id: string;
+  round: number;
+  stamp: number;
+  reward: LoyaltyReward;
+  /** The order it is paid on. */
+  order: O;
+}
+
+/**
+ * One buyer's history on one card, replayed from their delivered orders in
+ * the order they arrived. The same orders always give the same answer, so
+ * the ids it hands out are stable and paying twice is impossible.
+ */
+export function replayCard<O extends StampOrder>(card: LoyaltyCard, orders: readonly O[]): {
+  total: number; payouts: Payout<O>[]; waiting: Omit<Payout<O>, 'order'>[];
+} {
+  const stamped = orders.filter((order) => stampsCard(card, order))
+    .sort((a, b) => (a.completedAt ?? '').localeCompare(b.completedAt ?? '') || a.id.localeCompare(b.id));
+  let total = 0;
+  const queue: Omit<Payout<O>, 'order'>[] = [];
+  const payouts: Payout<O>[] = [];
+  for (const order of stamped) {
+    for (let count = stampsFrom(card, order); count > 0; count -= 1) {
+      const { round, stamp } = stampPosition(total);
+      total += 1;
+      const reward = card.rewards[stamp - 1];
+      if (reward) queue.push({ id: `${card.id}:${round}:${stamp}`, round, stamp, reward });
+    }
+    // One reward per order, and none on an order that took an offer.
+    if (queue.length && !tookOffer(order)) payouts.push({ ...queue.shift()!, order });
+  }
+  return { total, payouts, waiting: queue };
 }
 
 /** The stamp after `total`: which one it is on the card, and the round. */
