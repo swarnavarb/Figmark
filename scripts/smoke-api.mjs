@@ -1280,6 +1280,11 @@ await check('the dispatch region guess never asks the browser, and says nothing 
   assert.equal(region.regionFrom({ city: 'Pune', region_code: 'MH', country_code: 'IN' }), 'Pune, MH');
   assert.equal(region.regionFrom({ city: 'Dubai', country_code: 'AE', country_name: 'United Arab Emirates' }), 'Dubai, United Arab Emirates');
   assert.equal(region.regionFrom({ error: true }), null);
+  // Placed by the visitor's own hop, not the platform front end appended last.
+  const hdrs = (xff) => ({ get: (name) => (name === 'x-forwarded-for' ? xff : null) });
+  assert.equal(region.placeIp(hdrs('49.36.10.1:5123, 20.2.3.4'), 'x'), '49.36.10.1');
+  assert.equal(region.placeIp(hdrs('10.0.0.2, 49.36.10.1'), 'x'), '49.36.10.1');
+  assert.equal(region.placeIp(hdrs(null), '1.2.3.4'), '1.2.3.4');
   assert.equal(region.regionFrom({ city: '', country_code: 'IN' }), null);
 });
 

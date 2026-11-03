@@ -38,6 +38,22 @@ export function regionFrom(answer: {
   return (tail ? `${city}, ${tail}` : city).slice(0, 60);
 }
 
+/**
+ * The address to place a request by - not the one to rate-limit by.
+ *
+ * Behind Static Web Apps the last `x-forwarded-for` hop is the platform's own
+ * front end, which sits in the app's Azure region: placing that address
+ * pre-filled the data centre's city (Hong Kong) for everyone. The first public hop is the visitor's own connection.
+ * A caller could forge it, but all it buys them is a wrong guess in their own
+ * pre-filled box, so here (unlike `clientIp`) it is the one to believe.
+ */
+export function placeIp(headers: { get(name: string): string | null }, fallback: string): string {
+  const hops = (headers.get('x-forwarded-for') ?? '').split(',')
+    .map((hop) => hop.trim().replace(/^\[([^\]]+)\](?::\d+)?$/, '$1').replace(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/, '$1'))
+    .filter(Boolean);
+  return hops.find((hop) => !isPrivateIp(hop)) ?? fallback;
+}
+
 export async function guessRegion(ip: string): Promise<string | null> {
   if (!config.regionGuess || isPrivateIp(ip)) return null;
   const hit = cache.get(ip);

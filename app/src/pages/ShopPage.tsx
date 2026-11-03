@@ -723,10 +723,27 @@ function shopNameFor(displayName: string): string {
   return `${name}${/s$/i.test(name) ? "'" : "'s"} Shop`;
 }
 
-/** A new shop's description, generic enough to keep and easy to replace. */
-function defaultShopBio(shopName: string): string {
-  return `Welcome to ${shopName}! We sell collectibles and figures, checked and packed with care, `
-    + 'and ship across India. Follow the shop to catch new drops first, and message us with any questions.';
+/**
+ * Starter descriptions for a new shop: generic enough to keep, easy to replace.
+ * One is picked at random per sign-up, so a page of new shops does not all
+ * open with the same paragraph.
+ */
+const SHOP_BIOS: readonly ((shopName: string) => string)[] = [
+  (n) => `Welcome to ${n}! New pieces go up regularly, each one checked and packed with care. `
+    + 'Follow the shop to catch new drops first, and message us with any questions.',
+  (n) => `Thanks for stopping by ${n}. Everything here is described honestly and shipped carefully. `
+    + 'Follow along for new arrivals, and send a message if you are looking for something in particular.',
+  (n) => `${n} is a small shop run by a collector, for collectors. Expect clear photos, careful packing `
+    + 'and quick replies. Follow to see what comes in next.',
+  (n) => `Welcome to ${n}. We list new finds often, pack every order with care and answer messages quickly. `
+    + 'Follow the shop so you never miss a drop.',
+  (n) => `Hi, and welcome to ${n}! Browse what is in stock, follow for new arrivals, and message us anytime. `
+    + 'We are happy to help you find what you are after.',
+];
+
+/** A new shop's description: starter `pick`, naming the shop in full. */
+function defaultShopBio(shopName: string, pick: number): string {
+  return SHOP_BIOS[pick % SHOP_BIOS.length]!(shopName.trim() || 'our shop');
 }
 
 /** Short facts a shop often says about itself, offered as one-tap tags. */
@@ -782,6 +799,8 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<ShopStep>('name');
+  /** Which starter description this sign-up got. */
+  const [bioPick] = useState(() => Math.floor(Math.random() * SHOP_BIOS.length));
   /** The furthest step reached, so the timeline can say what is done. */
   const [reached, setReached] = useState(0);
   /** Whether the shop username is free, asked a moment after typing stops. */
@@ -809,7 +828,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           storefrontName: result.storefront?.storefrontName ?? shopName,
           username: handle,
           // A new shop starts with words it can keep or replace, not a blank box.
-          bio: result.storefront?.bio ?? (fresh ? defaultShopBio(shopName) : ''),
+          bio: result.storefront?.bio ?? (fresh ? defaultShopBio(shopName, bioPick) : ''),
           dispatchRegion: result.storefront?.dispatchRegion ?? '',
           photoUrl: result.storefront?.photoUrl ?? '',
           link: result.storefront?.link ?? '',
@@ -854,11 +873,13 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) => {
     // The starter description names the shop; while it is still untouched it
     // follows a rename, so "Monsoon Minis" never welcomes people to "Nisha's Shop".
-    const untouchedBio = key === 'storefrontName' && draft.bio === defaultShopBio(draft.storefrontName ?? '');
+    // Compared on the trimmed name, so a space typed mid-name ("Axis C…")
+    // does not freeze the description at the first word.
+    const untouchedBio = key === 'storefrontName' && draft.bio === defaultShopBio(draft.storefrontName ?? '', bioPick);
     setDraft({
       ...draft,
       [key]: value,
-      ...(untouchedBio ? { bio: defaultShopBio(String(value).trim() || draft.storefrontName || '') } : {}),
+      ...(untouchedBio ? { bio: defaultShopBio(String(value), bioPick) } : {}),
     });
   };
 
@@ -952,7 +973,8 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
       </label>
 
       <TagInput value={tags} onChange={(next) => set('tags', next)} ideas={tagIdeas}
-        hint="Up to six short facts buyers scan at a glance." fullHint="Six tags is the most a shop shows." />
+        hint="Shown on your shop, and how buyers find you in search and on tag pages. Mix what you sell (Gunpla, Nendoroid) with how you work (Ships weekly)."
+        fullHint="Six tags is the most a shop shows. Remove one (×) to add another." />
 
       <div className="field-row">
         <label className="field">
