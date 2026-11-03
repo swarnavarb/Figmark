@@ -9,6 +9,7 @@ import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
 } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { checkoutLoyalty } from '../loyalty.js';
 import { directRefusal, noteSellerCancel } from '../cancel-watch.js';
 import { directPaused } from '../../../shared/billing.js';
 import { cancellationImpact, prepaySavingMinor, repriceBasket } from '../offers.js';
@@ -343,6 +344,14 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     // And against what else is in their basket: an offer is earned by the group.
     await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
   }
+  // Loyalty rewards this order brings, and any that clash with its offers.
+  let loyalty = await checkoutLoyalty(repository, order).catch(() => null);
+  if (order.placedAt === null && order.offersDropped && !(loyalty ?? []).some((row) => row.fits)) {
+    // The reward they gave an offer up for is not coming any more: the offer is back.
+    delete order.offersDropped;
+    await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
+    loyalty = await checkoutLoyalty(repository, order).catch(() => null);
+  }
 
   const seller = await repository.getUserById(order.sellerId);
   const totalMinor = orderTotalMinor(order);
@@ -384,6 +393,8 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
     protectionAvailable: (await availableManagers(repository, [order.buyerId, order.sellerId])).length > 0,
     // Flagged for cancelling too often: the shop takes protected payments only.
     directPaused: (await directRefusal(repository, order.sellerId)) !== null,
+    /** Loyalty rewards this order brings; any with `fits: false` clash with its offers and the buyer picks. */
+    loyalty: loyalty && loyalty.length ? { rewards: loyalty, pickedReward: Boolean(order.offersDropped) } : null,
   });
 }
 

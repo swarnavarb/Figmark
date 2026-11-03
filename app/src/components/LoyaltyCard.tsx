@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { REWARD_META, STAMPS, rewardWords, type CardTheme, type LoyaltyReward, type StampPer } from '@shared/loyalty';
-import { api, type ShopLoyalty } from '../api';
+import { ApiRequestError, api, type CheckoutReward, type ShopLoyalty } from '../api';
 import { useSession } from '../session';
 import { formatMoney } from '../format';
 import '../styles/LoyaltyCard.css';
@@ -50,13 +50,13 @@ export function StampCard({ name, shopName, theme, rewards, stamps, round = 1, c
 
 /**
  * "2 more orders to ₹50 cashback" - the line under a card. A per-item card
- * counts items; a reward held back (its order took an offer) is said first.
+ * counts items; a reward saved for later (the buyer kept a clashing offer) is said first.
  */
 export function nextLine(
   stamps: number, next: { stamp: number; reward: LoyaltyReward } | null, per: StampPer = 'order', waiting = 0,
 ): string {
   const unit = (count: number) => (per === 'item' ? (count === 1 ? 'item' : 'items') : (count === 1 ? 'order' : 'orders'));
-  const held = waiting > 0 ? `${waiting} reward${waiting > 1 ? 's' : ''} come${waiting > 1 ? '' : 's'} with your next order without an offer. ` : '';
+  const held = waiting > 0 ? `${waiting} reward${waiting > 1 ? 's' : ''} saved for a later order. ` : '';
   if (!next) return `${held}Every ${unit(1)} stamps it.`;
   const away = next.stamp > stamps ? next.stamp - stamps : next.stamp + STAMPS - stamps;
   return `${held}${away} more ${unit(away)} to ${rewardWords(next.reward, (minor) => formatMoney(minor))}`;
@@ -93,6 +93,75 @@ export function LoyaltyStrip({ ownerId, listingId }: { ownerId: string; listingI
                 )} />
         ))}
       </div>
+    </section>
+  );
+}
+
+/**
+ * At checkout: the loyalty rewards this order brings. A reward that clashes
+ * with an offer on the order (both money, both a free item, both free
+ * shipping - or one the shop keeps apart from offers) is the buyer's choice:
+ * keep the offer, and the reward waits for a later order; or take the reward,
+ * and that offer comes off this order.
+ */
+export function CheckoutLoyalty({ orderId, loyalty, onChanged }: {
+  orderId: string;
+  loyalty: { rewards: CheckoutReward[]; pickedReward: boolean };
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const money = (minor: number) => formatMoney(minor);
+  const fits = loyalty.rewards.filter((row) => row.fits);
+  const clashing = loyalty.rewards.filter((row) => !row.fits);
+  const offers = [...new Set(clashing.flatMap((row) => row.clashWith))];
+  const offerMinor = Math.max(0, ...clashing.map((row) => row.clashMinor));
+
+  async function pick(choice: 'offer' | 'reward') {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await api.loyaltyPick(orderId, choice);
+      onChanged();
+    } catch (err) {
+      setProblem(err instanceof ApiRequestError ? err.message : 'Could not change that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="ckloyal" aria-label="Loyalty rewards">
+      {fits.map((row) => (
+        <p key={`${row.cardId}:${row.stamp}`} className="ckloyal__fit">
+          <span className="ckloyal__icon" aria-hidden="true">{REWARD_META[row.reward.kind].icon}</span>
+          <span>
+            <b>{rewardWords(row.reward, money)}</b> with this order
+            <small> · {row.cardName}, stamp {row.stamp}{row.tookOverOffer ? ' · you took it over the offer' : ''}</small>
+          </span>
+        </p>
+      ))}
+      {loyalty.pickedReward && (
+        <button type="button" className="ckloyal__undo" disabled={busy} onClick={() => void pick('offer')}>Use the offer instead</button>
+      )}
+      {clashing.length > 0 && (
+        <div className="ckloyal__pick">
+          <b className="ckloyal__ask">Pick one - these can&apos;t be used together</b>
+          <div className="ckloyal__opts" role="radiogroup" aria-label="Offer or reward">
+            <button type="button" role="radio" aria-checked="true" className="ckloyal__opt is-on" disabled={busy}>
+              <span className="ckloyal__tag">Offer</span>
+              <b>{offers.join(' + ') || 'Your offer'}</b>
+              <small>{offerMinor > 0 ? `${money(offerMinor)} off now. ` : ''}The reward waits for a later order.</small>
+            </button>
+            <button type="button" role="radio" aria-checked="false" className="ckloyal__opt" disabled={busy} onClick={() => void pick('reward')}>
+              <span className="ckloyal__tag">Reward</span>
+              <b>{clashing.map((row) => rewardWords(row.reward, money)).join(' + ')}</b>
+              <small>{clashing[0]!.cardName}, stamp {clashing.map((row) => row.stamp).join(' & ')}. The offer comes off this order.</small>
+            </button>
+          </div>
+        </div>
+      )}
+      {problem && <p className="ckloyal__err" role="alert">{problem}</p>}
     </section>
   );
 }

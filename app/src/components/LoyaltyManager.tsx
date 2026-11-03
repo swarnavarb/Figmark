@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   CARD_THEMES, REWARD_KINDS, REWARD_META, STAMPS, rewardWords,
   type CardTheme, type IssuedReward, type LoyaltyCard, type LoyaltyReward, type LoyaltySettings, type RewardKind, type StampPer,
+  rewardPerk,
 } from '@shared/loyalty';
+import { PERK_WORDS, offerLabel, offerPerk, type Perk } from '@shared/offers';
 import type { Listing } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { formatMoney, timeAgo } from '../format';
@@ -144,8 +146,28 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!draft.everything && !listings) api.myListings().then((body) => setListings(body.listings)).catch(() => setListings([]));
-  }, [draft.everything, listings]);
+    // Always: the item picker needs them, and so does the clash check against the shop's offers.
+    if (!listings) api.myListings().then((body) => setListings(body.listings)).catch(() => setListings([]));
+  }, [listings]);
+  // The offers on the items this card covers, by what they give.
+  const offersByPerk = new Map<Perk, string[]>();
+  for (const listing of listings ?? []) {
+    if (listing.status !== 'active' || (!draft.everything && !draft.listingIds.includes(listing.id))) continue;
+    for (const offer of listing.offers ?? []) {
+      const perk = offerPerk(offer);
+      const words = offerLabel(offer);
+      const list = offersByPerk.get(perk) ?? [];
+      if (!list.includes(words)) offersByPerk.set(perk, [...list, words]);
+    }
+  }
+  const anyOffers = [...offersByPerk.values()].flat();
+  const clashNote = (reward: LoyaltyReward): string | null => {
+    if (anyOffers.length === 0) return null;
+    if (reward.withOffers === false) return `Never with an offer. On an order with ${anyOffers.length === 1 ? anyOffers[0] : 'one of your offers'}, the buyer picks one.`;
+    const perk = rewardPerk(reward.kind);
+    const same = perk ? offersByPerk.get(perk) ?? [] : [];
+    return same.length ? `Clashes with ${same.slice(0, 2).join(', ')}${same.length > 2 ? ` and ${same.length - 2} more` : ''} - both are ${PERK_WORDS[perk!]}. The buyer picks one at checkout.` : null;
+  };
   const kinds = REWARD_KINDS.filter((kind) => settings.rewardKinds[kind]);
   const setSlot = (index: number, reward: LoyaltyReward | null) =>
     setDraft({ ...draft, rewards: draft.rewards.map((slot, at) => (at === index ? reward : slot)) });
@@ -231,8 +253,10 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
       <div className="card card--pad stack">
         <h3 style={{ margin: 0 }}>What each stamp gives</h3>
         <p className="loyman__rule">
-          Rewards never stack with your offers. An order pays out one reward at most, and none if it already took an offer -
-          the reward waits for the buyer&apos;s next order without one. Give free items and money off the same way.
+          Rewards work alongside your offers, except two of the same kind - cashback or money off with a money-off offer, a free
+          item with buy-X-get-Y, free shipping with free shipping. Then the buyer picks one at checkout, and a reward they skip
+          waits for a later order. Untick &quot;Can be used with offers&quot; to keep a reward apart from every offer. Store credit
+          and refunds always work with both.
         </p>
         <div className="loyman__slots">
           {draft.rewards.map((reward, index) => {
@@ -261,6 +285,14 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
                     <input value={reward.text ?? ''} maxLength={60} placeholder={reward.kind === 'free_item' ? 'Sticker pack' : 'Early access to drops'}
                       onChange={(e) => setSlot(index, { ...reward, text: e.target.value })} />
                   )}
+                  {reward && (
+                    <label className="loyman__with">
+                      <input type="checkbox" checked={reward.withOffers !== false}
+                        onChange={(e) => setSlot(index, e.target.checked ? { ...reward, withOffers: undefined } : { ...reward, withOffers: false })} />
+                      <span>Can be used with offers</span>
+                    </label>
+                  )}
+                  {reward && clashNote(reward) && <small className="loyman__clash">⚠ {clashNote(reward)}</small>}
                 </div>
               </div>
             );

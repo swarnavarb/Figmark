@@ -40,6 +40,7 @@ import { Loading, PageLoading } from '../components/Feedback';
 import '../styles/OrderPage.css';
 import { Select } from '../components/Select';
 import { PriceBreakdown } from '../components/Offers';
+import { CheckoutLoyalty } from '../components/LoyaltyCard';
 
 /**
  * One order, as the buyer sees it.
@@ -1138,6 +1139,8 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   const [quote, setQuote] = useState<Checkout | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<'direct' | 'protected' | null>(null);
+  // Bumped when the buyer picks between an offer and a loyalty reward, to price it again.
+  const [repriced, setRepriced] = useState(0);
 
   useEffect(() => {
     void api
@@ -1148,7 +1151,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       );
     // Again whenever the price on the order moves, so the totals below are
     // never the ones from before it did.
-  }, [order.id, order.unitPriceMinor, order.quantity]);
+  }, [order.id, order.unitPriceMinor, order.quantity, repriced]);
 
   if (error) return <ErrorNotice message={error} />;
   if (!quote) return <Loading />;
@@ -1196,6 +1199,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
     <div className="stack">
       {quote.priceChange && <PriceChangeNote change={quote.priceChange} currency={quote.currency} />}
       <OfferSummary quote={quote} payingFull={plan !== 'advance'} />
+      {quote.loyalty && <CheckoutLoyalty orderId={order.id} loyalty={quote.loyalty} onChanged={() => setRepriced((n) => n + 1)} />}
       {credit > 0 && (
         <>
           <div className="kv kv--credit">

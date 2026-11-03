@@ -1,9 +1,11 @@
 import { proLocked } from '../../shared/billing.js';
 import {
-  REWARD_META, STAMPS, nextReward, replayCard, rewardWords,
-  type CardProgress, type IssuedReward, type LoyaltyCard,
+  REWARD_META, STAMPS, nextReward, offersToDrop, replayCard, rewardPerk, rewardWords,
+  type CardProgress, type IssuedReward, type LoyaltyCard, type LoyaltyReward,
 } from '../../shared/loyalty.js';
 import type { Order, User } from '../../shared/models.js';
+import { appliedPerks, offerPerk, type Perk } from '../../shared/offers.js';
+import { isStopped } from '../../shared/orders.js';
 import { rupees } from '../../shared/payments.js';
 import type { StoreCredit } from '../../shared/play.js';
 import type { getRepository } from './data/index.js';
@@ -165,4 +167,68 @@ export async function walletLoyalty(repository: Repo, buyerId: string): Promise<
     return cards.length ? syncLoyalty(repository, buyerId, ownerId, { orders, cards }) : [];
   }));
   return rows.flat().filter((row) => row.total > 0 || row.rewards.length > 0);
+}
+
+/** A reward an order at checkout would bring, and whether it goes with the offers on it. */
+export interface CheckoutReward {
+  cardId: string;
+  cardName: string;
+  stamp: number;
+  reward: LoyaltyReward;
+  /** Paid with this order beside its offers. False: it clashes with them, and the buyer picks. */
+  fits: boolean;
+  /** The offers on this order it clashes with, in words. */
+  clashWith: string[];
+  /** What those offers take off this order. */
+  clashMinor: number;
+  /** The buyer gave up an offer for this one. */
+  tookOverOffer: boolean;
+}
+
+/**
+ * What loyalty rewards an order at checkout would bring, worked out as if the
+ * buyer's other orders on their way arrive first and this one after them.
+ * Null when the shop runs no live card.
+ */
+export async function checkoutLoyalty(repository: Repo, order: Order): Promise<CheckoutReward[] | null> {
+  const cards = (await loadCards(repository, order.sellerId)).filter((card) => card.active);
+  if (cards.length === 0) return null;
+  const owner = await repository.getUserById(order.sellerId);
+  if (!(await cardsLive(repository, owner))) return null;
+  const mine = (await repository.listOrdersForBuyer(order.buyerId)).filter((other) => other.sellerId === order.sellerId && other.id !== order.id);
+  const base = Date.now();
+  const coming = mine
+    .filter((other) => other.status !== 'delivered' && !isStopped(other.status) && other.placedAt !== null)
+    .sort((a, b) => (a.placedAt ?? '').localeCompare(b.placedAt ?? ''))
+    .map((other, index) => ({ ...other, status: 'delivered' as const, completedAt: new Date(base + index + 1).toISOString() }));
+  const self = { ...order, status: 'delivered' as const, completedAt: new Date(base + coming.length + 1).toISOString() };
+  const history = [...mine.filter((other) => other.status === 'delivered'), ...coming, self];
+  const perks = appliedPerks(order.appliedOffers);
+  const rows: CheckoutReward[] = [];
+  for (const card of cards) {
+    const here = replayCard(card, history).at.get(order.id);
+    if (!here) continue;
+    const row = (entry: { stamp: number; reward: LoyaltyReward }, fits: boolean): CheckoutReward => {
+      const drop = offersToDrop(entry.reward);
+      const clashing = fits ? [] : (order.appliedOffers ?? []).filter((offer) => offer.savedMinor > 0
+        && (drop === 'all' || drop.includes(offer.perk ?? offerPerk(offer))));
+      return {
+        cardId: card.id, cardName: card.name, stamp: entry.stamp, reward: entry.reward, fits,
+        clashWith: clashing.map((offer) => offer.label), clashMinor: clashing.reduce((sum, offer) => sum + offer.savedMinor, 0),
+        tookOverOffer: fits && Boolean(order.offersDropped)
+          && (order.offersDropped === 'all' || drop === 'all' || drop.some((perk) => (order.offersDropped as Perk[]).includes(perk))),
+      };
+    };
+    for (const entry of here.paid) rows.push(row(entry, true));
+    for (const entry of here.held) if (perks.length > 0) rows.push(row(entry, false));
+  }
+  return rows;
+}
+
+/** The offers to give up for every clashing reward this order would bring. */
+export function dropFor(rows: readonly CheckoutReward[]): Perk[] | 'all' | null {
+  const clashing = rows.filter((row) => !row.fits);
+  if (clashing.length === 0) return null;
+  if (clashing.some((row) => offersToDrop(row.reward) === 'all')) return 'all';
+  return [...new Set(clashing.map((row) => rewardPerk(row.reward.kind)).filter((perk): perk is Perk => perk !== null))];
 }

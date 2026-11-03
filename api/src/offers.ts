@@ -1,4 +1,4 @@
-import { priceBasket, earlyBirdOpen } from '../../shared/offers.js';
+import { priceBasket, earlyBirdOpen, offerPerk } from '../../shared/offers.js';
 import type { LinePricing, OfferLine, ListingOffer } from '../../shared/offers.js';
 import type { Listing, Order } from '../../shared/models.js';
 import { inLot } from '../../shared/fulfilment.js';
@@ -53,7 +53,10 @@ export async function lockTimedOffers(repository: Repo, order: Order, listing: L
 function lineOf(order: Order, listing: Listing | null, groupFilled: boolean): OfferLine {
   const placed = order.placedAt !== null;
   // A placed order keeps the offers it was bought under; a checkout follows the item.
-  const rules: readonly ListingOffer[] = placed ? (order.offerRules ?? []) : (listing?.offers ?? order.offerRules ?? []);
+  const all: readonly ListingOffer[] = placed ? (order.offerRules ?? []) : (listing?.offers ?? order.offerRules ?? []);
+  // Offers the buyer gave up for a loyalty reward that clashed with them.
+  const dropped = order.offersDropped;
+  const rules = dropped === 'all' ? [] : dropped?.length ? all.filter((offer) => !dropped.includes(offerPerk(offer))) : all;
   const shipping = placed ? (order.shipPerItemMinor ?? 0) : Math.max(0, listing?.shippingMinor ?? order.shipPerItemMinor ?? 0);
   return {
     id: order.id,

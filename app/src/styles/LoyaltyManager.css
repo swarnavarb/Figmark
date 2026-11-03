@@ -47,3 +47,5 @@
   margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); border-left: 3px solid var(--gold);
   background: var(--surface-2); color: var(--text-dim); font-size: var(--t-sm);
 }
+.loyman__with { display: flex; gap: 6px; align-items: center; font-size: var(--t-sm); color: var(--text-dim); flex: 1 1 100%; }
+.loyman__clash { flex: 1 1 100%; color: var(--gold); font-size: var(--t-xs); }

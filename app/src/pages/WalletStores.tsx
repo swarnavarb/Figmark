@@ -248,7 +248,7 @@ export function LoyaltyTab() {
               </ul>
             )}
             {ready.length > 0 && <p className="faint" style={{ margin: 0 }}>The shop marks a reward used when they hand it over.</p>}
-            <p className="faint" style={{ margin: 0 }}>Rewards never stack with offers: one reward per order, on an order that took no offer.</p>
+            {card.waiting > 0 && <p className="faint" style={{ margin: 0 }}>{card.waiting} reward{card.waiting > 1 ? 's' : ''} saved for a later order - you kept an offer that clashed with {card.waiting > 1 ? 'them' : 'it'}.</p>}
           </section>
         );
       })}

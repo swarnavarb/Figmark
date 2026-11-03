@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { OFFER_KIND_INFO, cleanOffers, offerLabel, type ListingOffer } from '@shared/offers';
+import { OFFER_KIND_INFO, PERK_WORDS, cleanOffers, offerLabel, offerPerk, type ListingOffer } from '@shared/offers';
+import { rewardPerk, rewardWords, type LoyaltyCard } from '@shared/loyalty';
 import type { Listing } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
@@ -8,6 +9,26 @@ import { Loading } from './Feedback';
 import { OfferEditor } from './Offers';
 import { EmptyState, ErrorNotice, Modal, PageError } from './ui';
 import '../styles/ShopOffers.css';
+
+/**
+ * The loyalty rewards an item's offers clash with, in words: a reward the shop
+ * keeps apart from offers, or one that gives the same kind of thing.
+ */
+function clashesFor(listingId: string, offers: readonly ListingOffer[], cards: readonly LoyaltyCard[]): string[] {
+  if (offers.length === 0) return [];
+  const perks = new Set(offers.map(offerPerk));
+  const out: string[] = [];
+  for (const card of cards) {
+    if (!card.active || (card.listingIds && !card.listingIds.includes(listingId))) continue;
+    card.rewards.forEach((reward, index) => {
+      if (!reward) return;
+      const perk = rewardPerk(reward.kind);
+      const why = reward.withOffers === false ? 'kept apart from offers' : perk && perks.has(perk) ? `both ${PERK_WORDS[perk]}` : null;
+      if (why) out.push(`${rewardWords(reward, (minor) => formatMoney(minor))} (${card.name}, stamp ${index + 1}) - ${why}`);
+    });
+  }
+  return out;
+}
 
 /**
  * Engage → Offers: every item's offers on one screen, beside the shop's
@@ -19,6 +40,8 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'with' | 'without'>('with');
   const [editing, setEditing] = useState<Listing | null>(null);
+  const [cards, setCards] = useState<LoyaltyCard[]>([]);
+  useEffect(() => { api.myLoyaltyCards().then((body) => setCards(body.cards)).catch(() => undefined); }, []);
 
   const load = useCallback(async () => {
     try {
@@ -51,8 +74,9 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
       </section>
 
       <p className="shopoffr__rule">
-        <b>Offers and loyalty rewards never stack.</b> An order that takes an offer still earns its stamp, but any reward it
-        reaches waits for the buyer&apos;s next order without an offer.
+        <b>Offers and loyalty rewards work together</b> - unless both give the same kind of thing (money off or back, a free
+        item, free shipping), or the reward is set to stay apart from offers. Then the buyer picks one at checkout. Clashes are
+        marked on each item below. Store credit and refunds always work with both.
         {onLoyalty && <> <button type="button" className="shopoffr__link" onClick={onLoyalty}>Your loyalty cards →</button></>}
       </p>
 
@@ -79,6 +103,15 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
                 <div className="shopoffr__body">
                   <Link to={`/listing/${listing.id}`} className="shopoffr__name">{listing.title}</Link>
                   <small className="faint">{formatMoney(listing.priceMinor, listing.currency)}</small>
+                  {(() => {
+                    const clashes = clashesFor(listing.id, listing.offers ?? [], cards).map((line) => line.split(' (')[0]);
+                    const unique = [...new Set(clashes)];
+                    return unique.length > 0 && (
+                      <small className="shopoffr__clash">
+                        ⚠ Clashes with {unique.slice(0, 2).join(', ')}{unique.length > 2 ? ` +${unique.length - 2} more` : ''} - buyer picks one
+                      </small>
+                    );
+                  })()}
                   {(listing.offers?.length ?? 0) > 0 && (
                     <div className="shopoffr__chips">
                       {listing.offers!.map((offer) => (
@@ -97,7 +130,7 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
       )}
 
       {editing && (
-        <OffersDialog listing={editing} onClose={() => setEditing(null)}
+        <OffersDialog listing={editing} cards={cards} onClose={() => setEditing(null)}
           onSaved={(listing) => {
             setListings((rows) => (rows ?? []).map((row) => (row.id === listing.id ? listing : row)));
             setEditing(null);
@@ -107,7 +140,9 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
   );
 }
 
-function OffersDialog({ listing, onClose, onSaved }: { listing: Listing; onClose: () => void; onSaved: (listing: Listing) => void }) {
+function OffersDialog({ listing, cards, onClose, onSaved }: {
+  listing: Listing; cards: LoyaltyCard[]; onClose: () => void; onSaved: (listing: Listing) => void;
+}) {
   const [offers, setOffers] = useState<ListingOffer[]>(listing.offers ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +165,12 @@ function OffersDialog({ listing, onClose, onSaved }: { listing: Listing; onClose
     <Modal title={`Offers · ${listing.title}`} onClose={onClose} layout="panel">
       <div className="stack">
         <OfferEditor offers={offers} onChange={setOffers} priceMinor={listing.priceMinor} />
+        {clashesFor(listing.id, offers, cards).length > 0 && (
+          <div className="shopoffr__rule">
+            <b>These clash with your loyalty rewards - the buyer picks one at checkout:</b>
+            {clashesFor(listing.id, offers, cards).map((line) => <div key={line}>{line}</div>)}
+          </div>
+        )}
         {error && <ErrorNotice message={error} />}
         <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" className="btn btn--quiet" onClick={onClose}>Cancel</button>

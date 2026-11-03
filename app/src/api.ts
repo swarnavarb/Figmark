@@ -1,5 +1,5 @@
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
-import type { CardProgress, IssuedReward, LoyaltyCard, LoyaltySettings } from '@shared/loyalty';
+import type { CardProgress, IssuedReward, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
 import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
 import type { RouteWords } from '@shared/route-words';
@@ -766,6 +766,19 @@ export interface Checkout {
   protectionAvailable: boolean;
   /** The shop takes protected payments only for now. */
   directPaused?: boolean;
+  /** Loyalty rewards this order brings. One with `fits: false` clashes with an offer here, and the buyer picks. */
+  loyalty?: { rewards: CheckoutReward[]; pickedReward: boolean } | null;
+}
+
+export interface CheckoutReward {
+  cardId: string;
+  cardName: string;
+  stamp: number;
+  reward: LoyaltyReward;
+  fits: boolean;
+  clashWith: string[];
+  clashMinor: number;
+  tookOverOffer: boolean;
 }
 
 /** One order waiting on the seller to say whether the money arrived. */
@@ -2777,6 +2790,8 @@ export const api = {
   saveLoyaltyCard: (card: Partial<LoyaltyCard>) => post<{ card: LoyaltyCard }>('/me/loyalty/cards/save', card),
   deleteLoyaltyCard: (id: string) => post<{ deleted: string }>(`/me/loyalty/cards/${encodeURIComponent(id)}/delete`, {}),
   loyaltyRewardsOwed: () => request<{ rewards: IssuedReward[] }>('/me/loyalty/rewards'),
+  loyaltyPick: (orderId: string, pick: 'offer' | 'reward') =>
+    post<{ pick: string }>(`/orders/${encodeURIComponent(orderId)}/loyalty-pick`, { pick }),
   useLoyaltyReward: (id: string) => post<{ used: string }>(`/me/loyalty/rewards/${encodeURIComponent(id)}/use`, {}),
 
   health: () => request<HealthResponse>('/health'),

@@ -368,9 +368,33 @@ export interface OfferWho {
   repeatBuyer: boolean;
 }
 
+/**
+ * What kind of thing an offer or a loyalty reward gives. Two of the same kind
+ * on one order clash - money and money, a free item and a free item, free
+ * shipping and free shipping - and the buyer picks one. Different kinds go
+ * together.
+ */
+export type Perk = 'money' | 'freebie' | 'shipping';
+
+export const PERK_WORDS: Record<Perk, string> = { money: 'money off or back', freebie: 'a free item', shipping: 'free shipping' };
+
+export function offerPerk(offer: Pick<ListingOffer, 'kind'> & { freeShipping?: boolean }): Perk {
+  if (offer.kind === 'free_shipping' || offer.kind === 'spend_free_shipping') return 'shipping';
+  if (offer.kind === 'buy_x_get_y') return 'freebie';
+  if (offer.kind === 'group_fill' && offer.freeShipping) return 'shipping';
+  return 'money';
+}
+
+/** The kinds of thing the offers on an order gave. */
+export function appliedPerks(applied: readonly Pick<AppliedOffer, 'kind' | 'savedMinor' | 'perk'>[] | undefined): Perk[] {
+  return [...new Set((applied ?? []).filter((offer) => offer.savedMinor > 0).map((offer) => offer.perk ?? offerPerk(offer)))];
+}
+
 export interface AppliedOffer {
   offerId: string;
   kind: OfferKind;
+  /** Money off, or free shipping: `group_fill` can be either. */
+  perk?: Perk;
   label: string;
   /** What it took off this line: money and shipping together. */
   savedMinor: number;
@@ -500,10 +524,10 @@ export function priceBasket(
     const free = shipFree as { offer: ListingOffer } | null;
     const applied: AppliedOffer[] = [];
     if (best && discountMinor > 0) {
-      applied.push({ offerId: best.offer.id, kind: best.offer.kind, label: offerLabel(best.offer), savedMinor: discountMinor });
+      applied.push({ offerId: best.offer.id, kind: best.offer.kind, perk: offerPerk(best.offer) === 'freebie' ? 'freebie' : 'money', label: offerLabel(best.offer), savedMinor: discountMinor });
     }
     if (free && fullShipping > 0) {
-      applied.push({ offerId: free.offer.id, kind: free.offer.kind, label: offerLabel(free.offer), savedMinor: fullShipping });
+      applied.push({ offerId: free.offer.id, kind: free.offer.kind, perk: 'shipping', label: offerLabel(free.offer), savedMinor: fullShipping });
     }
     result.set(line.id, { shippingMinor: free ? 0 : fullShipping, discountMinor, applied });
   }

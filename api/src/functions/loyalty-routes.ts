@@ -4,7 +4,8 @@ import { cleanCard, STAMPS, stampsCard, stampsFrom, type LoyaltyCard } from '../
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { loadPricing, proRefusal } from '../billing.js';
-import { cardsLive, changeIssued, loadCards, loadIssued, saveCards, shopNameOf, syncLoyalty, walletLoyalty } from '../loyalty.js';
+import { repriceBasket } from '../offers.js';
+import { cardsLive, changeIssued, checkoutLoyalty, dropFor, loadCards, loadIssued, saveCards, shopNameOf, syncLoyalty, walletLoyalty } from '../loyalty.js';
 import { tooFast } from '../rate-limit.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
@@ -17,6 +18,8 @@ import { error, handler, json } from './http.js';
  * - `GET /api/me/loyalty` - the buyer's cards and rewards, every shop.
  * - `GET|POST /api/me/loyalty/cards…` - the shop's own cards (Pro).
  * - `GET /api/me/loyalty/rewards`, `POST …/{id}/use` - rewards the shop owes.
+ * - `POST /api/orders/{id}/loyalty-pick { pick }` - at checkout, when a reward
+ *   clashes with an offer: keep the `offer`, or take the `reward` instead.
  */
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -161,6 +164,27 @@ async function useReward(request: HttpRequest, _context: InvocationContext) {
   return json(200, { used: id });
 }
 
+async function pickAtCheckout(request: HttpRequest, _context: InvocationContext) {
+  const user = await (await getAuthService()).requireAuth(request);
+  const repository = await getRepository();
+  const order = await repository.getOrder(request.params.id ?? '');
+  if (!order || order.buyerId !== user.id) return error(404, 'not_found', 'No such order.');
+  if (order.placedAt !== null) return error(409, 'already_placed', 'This order is already placed - the choice was made when you paid.');
+  const input = await readBody<{ pick?: unknown }>(request);
+  if (input?.pick !== 'offer' && input?.pick !== 'reward') return error(400, 'invalid_pick', 'Pick the offer or the reward.');
+  // Worked out from the order with every offer on it, so the choice is always between the two.
+  delete order.offersDropped;
+  await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
+  if (input.pick === 'reward') {
+    const drop = dropFor((await checkoutLoyalty(repository, order)) ?? []);
+    if (!drop) return error(409, 'no_clash', 'Nothing to choose - the reward already comes with your offer.');
+    order.offersDropped = drop;
+    await repriceBasket(repository, order.sellerId, order.buyerId, 'ordered', { include: [order], quiet: true });
+  }
+  return json(200, { pick: input.pick, offersDropped: order.offersDropped ?? null });
+}
+
+export const pickAtCheckoutRoute = handler(pickAtCheckout);
 export const shopLoyaltyRoute = handler(shopCards);
 export const myLoyaltyRoute = handler(myLoyalty);
 export const myCardsRoute = handler(myCards);
@@ -176,3 +200,4 @@ app.http('my-loyalty-card-save', { ...anon, methods: ['POST'], route: 'me/loyalt
 app.http('my-loyalty-card-delete', { ...anon, methods: ['POST'], route: 'me/loyalty/cards/{id}/delete', handler: deleteCardRoute });
 app.http('my-loyalty-rewards', { ...anon, methods: ['GET'], route: 'me/loyalty/rewards', handler: shopRewardsRoute });
 app.http('my-loyalty-reward-use', { ...anon, methods: ['POST'], route: 'me/loyalty/rewards/{id}/use', handler: useRewardRoute });
+app.http('order-loyalty-pick', { ...anon, methods: ['POST'], route: 'orders/{id}/loyalty-pick', handler: pickAtCheckoutRoute });

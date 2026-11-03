@@ -9,14 +9,18 @@
  * buyer's next order there by itself. Everything else is a reward the buyer
  * holds in their wallet until the shop marks it given.
  *
- * Rewards and offers never collide: an order pays out at most one reward, and
- * none at all when it already took an offer (money off, free shipping, a
- * bundle price). A reward reached on such an order still counts - it waits,
- * and the buyer's next stamping order without an offer pays it.
+ * Rewards and offers go together, unless they give the same kind of thing
+ * (`Perk`): cashback and a money-off offer, a free item and buy-2-get-1, free
+ * shipping and free shipping. The shop can also mark a reward as never used
+ * with an offer. When one clashes, the buyer picks at checkout: keep the
+ * offer (the reward waits for a later order) or take the reward (the clashing
+ * offer comes off that order). Store credit and refunds are never part of it.
  *
  * What may be offered, on which stamps, and how much, is the operators' to say
  * (`LoyaltySettings`, in the pricing document).
  */
+
+import { appliedPerks, type OfferKind, type Perk } from './offers.js';
 
 export const STAMPS = 8;
 
@@ -67,6 +71,34 @@ export interface LoyaltyReward {
   bp?: number;
   /** A free item, or the shop's own words. */
   text?: string;
+  /**
+   * False: never used on an order that took any offer. Missing or true: used
+   * alongside offers of a different kind (see `rewardPerk`).
+   */
+  withOffers?: boolean;
+}
+
+/** What a reward gives, to match against offers; null for one that clashes with nothing. */
+export function rewardPerk(kind: RewardKind): Perk | null {
+  if (kind === 'free_item') return 'freebie';
+  if (kind === 'free_shipping') return 'shipping';
+  if (kind === 'custom') return null;
+  return 'money';
+}
+
+/** Whether a reward can be paid on an order that gave these kinds of offer. */
+export function rewardFits(reward: LoyaltyReward, offerPerks: readonly Perk[]): boolean {
+  if (offerPerks.length === 0) return true;
+  if (reward.withOffers === false) return false;
+  const perk = rewardPerk(reward.kind);
+  return perk === null || !offerPerks.includes(perk);
+}
+
+/** Which offers a buyer gives up to take this reward instead: one kind, or every offer. */
+export function offersToDrop(reward: LoyaltyReward): Perk[] | 'all' {
+  if (reward.withOffers === false) return 'all';
+  const perk = rewardPerk(reward.kind);
+  return perk ? [perk] : [];
 }
 
 /** One stamp per delivered order, or one per item in it. */
@@ -130,7 +162,7 @@ export interface CardProgress {
   round: number;
   total: number;
   next: { stamp: number; reward: LoyaltyReward } | null;
-  /** Rewards reached but not paid yet: they come with the next order that takes no offer. */
+  /** Rewards reached but not paid yet: they clashed with an offer, and come with a later order. */
   waiting: number;
   rewards: IssuedReward[];
 }
@@ -216,6 +248,7 @@ export function cleanCard(
       if (text.length < 2) return { error: `${at}: say what it is.` };
       reward.text = text;
     }
+    if (slot.withOffers === false) reward.withOffers = false;
     rewards.push(reward);
   }
   if (!rewards.some(Boolean)) return { error: 'Put a reward on at least one stamp.' };
@@ -237,13 +270,11 @@ export function stampsCard(
 
 type StampOrder = Parameters<typeof stampsCard>[1] & {
   id: string;
-  offerDiscountMinor?: number;
-  appliedOffers?: { savedMinor: number }[];
+  appliedOffers?: { kind: OfferKind; savedMinor: number; perk?: Perk }[];
 };
 
-/** Whether an order already took an offer - and so pays out no loyalty reward. */
-export const tookOffer = (order: Pick<StampOrder, 'offerDiscountMinor' | 'appliedOffers'>): boolean =>
-  (order.offerDiscountMinor ?? 0) > 0 || (order.appliedOffers ?? []).some((applied) => applied.savedMinor > 0);
+/** The kinds of offer an order took. */
+export const orderPerks = (order: Pick<StampOrder, 'appliedOffers'>): Perk[] => appliedPerks(order.appliedOffers);
 
 /** How many stamps one order puts on a card. */
 export const stampsFrom = (card: Pick<LoyaltyCard, 'stampPer'>, order: { quantity: number }): number =>
@@ -259,19 +290,26 @@ export interface Payout<O> {
   order: O;
 }
 
+type Reached = Omit<Payout<never>, 'order'>;
+
 /**
  * One buyer's history on one card, replayed from their delivered orders in
  * the order they arrived. The same orders always give the same answer, so
  * the ids it hands out are stable and paying twice is impossible.
+ *
+ * Each order pays every reward waiting that fits beside its offers; one that
+ * clashes waits for a later order it fits. `at` says what was waiting, paid
+ * and held when each order came in - what checkout shows the buyer.
  */
 export function replayCard<O extends StampOrder>(card: LoyaltyCard, orders: readonly O[]): {
-  total: number; payouts: Payout<O>[]; waiting: Omit<Payout<O>, 'order'>[];
+  total: number; payouts: Payout<O>[]; waiting: Reached[]; at: Map<string, { paid: Reached[]; held: Reached[] }>;
 } {
   const stamped = orders.filter((order) => stampsCard(card, order))
     .sort((a, b) => (a.completedAt ?? '').localeCompare(b.completedAt ?? '') || a.id.localeCompare(b.id));
   let total = 0;
-  const queue: Omit<Payout<O>, 'order'>[] = [];
+  let queue: Reached[] = [];
   const payouts: Payout<O>[] = [];
+  const at = new Map<string, { paid: Reached[]; held: Reached[] }>();
   for (const order of stamped) {
     for (let count = stampsFrom(card, order); count > 0; count -= 1) {
       const { round, stamp } = stampPosition(total);
@@ -279,10 +317,13 @@ export function replayCard<O extends StampOrder>(card: LoyaltyCard, orders: read
       const reward = card.rewards[stamp - 1];
       if (reward) queue.push({ id: `${card.id}:${round}:${stamp}`, round, stamp, reward });
     }
-    // One reward per order, and none on an order that took an offer.
-    if (queue.length && !tookOffer(order)) payouts.push({ ...queue.shift()!, order });
+    const perks = orderPerks(order);
+    const paid = queue.filter((entry) => rewardFits(entry.reward, perks));
+    queue = queue.filter((entry) => !paid.includes(entry));
+    for (const entry of paid) payouts.push({ ...entry, order });
+    at.set(order.id, { paid, held: [...queue] });
   }
-  return { total, payouts, waiting: queue };
+  return { total, payouts, waiting: queue, at };
 }
 
 /** The stamp after `total`: which one it is on the card, and the round. */

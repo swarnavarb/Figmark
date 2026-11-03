@@ -164,7 +164,7 @@ const {
 } = await import(new URL('billing-routes.js', apiRoot));
 const { myCancelsRoute, cancelAppealRoute, opsCancelsRoute, opsCancelDecideRoute } = await import(new URL('cancel-routes.js', apiRoot));
 const {
-  shopLoyaltyRoute, myLoyaltyRoute, myCardsRoute, saveCardRoute, deleteCardRoute, shopRewardsRoute, useRewardRoute,
+  shopLoyaltyRoute, myLoyaltyRoute, myCardsRoute, saveCardRoute, deleteCardRoute, shopRewardsRoute, useRewardRoute, pickAtCheckoutRoute,
 } = await import(new URL('loyalty-routes.js', apiRoot));
 const {
   routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute, opsRouteCommonSaveRoute, opsRouteButtonsSaveRoute,
@@ -454,6 +454,7 @@ const routes = [
   ['POST', '/api/me/loyalty/cards/:id/delete', deleteCardRoute],
   ['GET', '/api/me/loyalty/rewards', shopRewardsRoute],
   ['POST', '/api/me/loyalty/rewards/:id/use', useRewardRoute],
+  ['POST', '/api/orders/:id/loyalty-pick', pickAtCheckoutRoute],
   ['GET', '/api/ops/audit', adminAuditRoute],
   ['GET', '/api/wants', wantsBoardRoute],
   ['POST', '/api/wants/new', wantPostRoute],

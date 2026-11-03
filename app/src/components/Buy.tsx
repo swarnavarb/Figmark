@@ -369,6 +369,12 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
           </label>
         )}
         <OfferEditor offers={value.offers} onChange={(offers) => set({ offers })} priceMinor={priceMinor ?? 0} />
+        {value.offers.length > 0 && (
+          <span className="field__hint">
+            Running loyalty cards? An offer and a reward that give the same thing - money off or back, a free item, free shipping -
+            clash, and the buyer picks one at checkout. Sell → Engage → Offers marks each clash.
+          </span>
+        )}
       </LBox>
 
       {/* Not on a power sale: its items are made by the sale, which sets its own terms. */}

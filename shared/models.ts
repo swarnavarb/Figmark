@@ -6,7 +6,7 @@ import type { ViewLog } from './seller-data.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
-import type { AppliedOffer, ListingOffer } from './offers.js';
+import type { AppliedOffer, ListingOffer, Perk } from './offers.js';
 import type { FeedPrefs } from './feed.js';
 import type { Badge, GameStage, PostContest, PostGuess, StoreCredit } from './play.js';
 import type {
@@ -1867,6 +1867,11 @@ export interface Order extends BaseDocument {
   shippingMinor?: number;
   offerDiscountMinor?: number;
   /** The offers that are working on this order right now. */
+  /**
+   * Offers the buyer gave up at checkout to take a loyalty reward that clashed
+   * with them: those kinds, or every offer. Missing: every offer applies.
+   */
+  offersDropped?: Perk[] | 'all';
   appliedOffers?: AppliedOffer[];
   /**
    * The shipping fee per item and the offers as they stood when the buyer
