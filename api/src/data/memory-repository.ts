@@ -190,8 +190,8 @@ export class MemoryRepository implements Repository {
   }
 
   async listSellerCardsByIds(ids: readonly string[]): Promise<SellerCardSource[]> {
-    return (await this.listUsersByIds(ids)).map(({ id, displayName, createdAt, sellerProfile, sellerTrust }) => ({
-      id, displayName, createdAt, sellerProfile, sellerTrust,
+    return (await this.listUsersByIds(ids)).map(({ id, displayName, createdAt, sellerProfile, sellerTrust, pro }) => ({
+      id, displayName, createdAt, sellerProfile, sellerTrust, pro,
     }));
   }
 

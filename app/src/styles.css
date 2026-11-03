@@ -201,7 +201,7 @@
   --blue-soft: rgba(59, 130, 246, 0.17);
   --blue-line: rgba(59, 130, 246, 0.42);
 
-  --pink: var(--pink);
+  --pink: #EC4899;
   --pink-ink: #2A0618;
   --pink-text: #F472B6;
   --pink-soft: rgba(236, 72, 153, 0.17);
@@ -216,7 +216,7 @@
      The pale shades text takes on a tinted fill, and the gold the quest and
      loot screens are drawn in. Each used to be typed out wherever it was
      wanted, some fifty times over for the pale gold alone. */
-  --gold: var(--gold);
+  --gold: #F59E0B;
   --gold-text: #FDE68A;
   --gold-pale: #FEF3C7;
   --gold-ink: #1F1300;
@@ -237,7 +237,7 @@
   --accent-line: var(--violet-line);
 
   /* ── Semantic status. Identical mapping on every page. ───────────────── */
-  --ok: var(--ok);
+  --ok: #34D399;
   --ok-ink: #04251A;
   --ok-soft: rgba(52, 211, 153, 0.15);
   --warn: #FBBF24;
@@ -253,10 +253,10 @@
   --danger-soft: rgba(244, 63, 94, 0.16);
 
   /* ── Gradients. Used at scale, never on every component. ─────────────── */
-  --grad-hero: linear-gradient(135deg, #7C3AED 0%, var(--pink) 52%, #FF5A5F 100%);
+  --grad-hero: linear-gradient(135deg, #7C3AED 0%, #EC4899 52%, #FF5A5F 100%);
   --grad-cool: linear-gradient(135deg, #7C3AED 0%, #06D6E7 100%);
   --grad-blue: linear-gradient(135deg, #3B82F6 0%, #7C3AED 100%);
-  --grad-warm: linear-gradient(135deg, var(--pink) 0%, #FF5A5F 100%);
+  --grad-warm: linear-gradient(135deg, #EC4899 0%, #FF5A5F 100%);
   --grad-sea:  linear-gradient(135deg, #06D6E7 0%, #3B82F6 100%);
   --grad-play: linear-gradient(135deg, #A3E635 0%, #06D6E7 100%);
   --grad-gold: linear-gradient(135deg, #FBBF24 0%, #F97316 100%);
