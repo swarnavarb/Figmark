@@ -8,6 +8,8 @@ import type {
   CommunityStanding, Dispute, DisputeRound, DisputeSanction, FeePayment, Order, User,
 } from '../../shared/models.js';
 import { splitFee, type MarketSettings } from '../../shared/settings.js';
+import { gstFor, gstSplit, type GstTerms } from '../../shared/billing.js';
+import { loadPricing } from './billing.js';
 import type { getRepository } from './data/index.js';
 import { loadReports, saveReports } from './moderation.js';
 import { marketSettings } from './settings.js';
@@ -97,7 +99,7 @@ export async function chargeFee(
   input: FeeInput,
   settings?: MarketSettings,
 ): Promise<FeePayment> {
-  const payment = quoteFee(input, settings ?? await marketSettings(repository));
+  const payment = quoteFee(input, settings ?? await marketSettings(repository), await feeGst(repository, input.kind));
   await recordFee(repository, input, payment);
   return payment;
 }
@@ -111,19 +113,29 @@ export type FeeInput = { kind: FeePayment['kind']; payerId: string; amountMinor:
  * and lose that race cleanly - before any money moves: two `pay` calls at once
  * must not both charge for protection.
  */
-export function quoteFee(input: FeeInput, settings: MarketSettings): FeePayment {
-  const { commissionMinor, managerShareMinor } = splitFee(input.amountMinor, settings.commissionBasisPoints);
+export function quoteFee(input: FeeInput, settings: MarketSettings, gst: GstTerms = null): FeePayment {
+  // GST, when it applies, is Figmark's to pass on: worked out on the fee and
+  // kept out of the split, so the manager's share is never taxed twice.
+  const taxed = gstSplit(gst, input.amountMinor);
+  const { commissionMinor, managerShareMinor } = splitFee(taxed.baseMinor, settings.commissionBasisPoints);
   return {
     id: `fee_${randomUUID().slice(0, 12)}`,
     kind: input.kind,
     payerId: input.payerId,
-    amountMinor: input.amountMinor,
+    amountMinor: taxed.totalMinor,
+    ...(taxed.gstMinor > 0 ? { gstMinor: taxed.gstMinor } : {}),
     currency: input.currency,
     commissionMinor,
     managerShareMinor,
     gatewayRef: `gw_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
     paidAt: new Date().toISOString(),
   };
+}
+
+/** The GST on a protection or dispute fee, as the operators set it. */
+export async function feeGst(repository: Repo, kind: FeePayment['kind']): Promise<GstTerms> {
+  const pricing = await loadPricing(repository);
+  return gstFor(pricing.gst, kind === 'protection' ? 'protection' : kind === 'pro' ? 'pro' : kind === 'platform' ? 'platform' : 'disputes');
 }
 
 /** Charges a fee quoted by `quoteFee`. */
@@ -216,6 +228,10 @@ export async function mutateList<T>(
 export async function loadLedger(repository: Repo): Promise<LedgerEntry[]> {
   const entries = await readLog<LedgerEntry>(repository, LEDGER_PREFIX, `${LEDGER_PREFIX}~`, 'entries');
   return entries.sort((a, b) => a.paidAt.localeCompare(b.paidAt));
+}
+
+export async function recordLedgerEntry(repository: Repo, entry: LedgerEntry): Promise<void> {
+  await recordLedger(repository, entry);
 }
 
 async function recordLedger(repository: Repo, entry: LedgerEntry): Promise<void> {

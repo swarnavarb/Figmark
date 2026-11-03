@@ -627,4 +627,4 @@ export function sessionDigest(token: string): string {
 }
 
 /** The parts of an account a public seller card is drawn from. */
-export type SellerCardSource = Pick<User, 'id' | 'displayName' | 'createdAt' | 'sellerProfile' | 'sellerTrust'>;
+export type SellerCardSource = Pick<User, 'id' | 'displayName' | 'createdAt' | 'sellerProfile' | 'sellerTrust' | 'pro'>;

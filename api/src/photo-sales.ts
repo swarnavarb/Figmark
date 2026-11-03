@@ -123,7 +123,7 @@ const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
 /** Listed for sale at some point and seen by the public: drafts, private deals and members' windows are not. */
 export function everListed(listing: Listing): boolean {
-  return listing.status !== 'draft' && !listing.privateFor && !listing.unlisted;
+  return listing.status !== 'draft' && !listing.privateFor && !listing.unlisted && !listing.feeHold;
 }
 
 /** Buyable right now. */

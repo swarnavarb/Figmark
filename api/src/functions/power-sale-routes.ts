@@ -1,3 +1,4 @@
+import { proRefusal } from '../billing.js';
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { CONDITION_TAGS, type ConditionTag } from '../../../shared/enums.js';
@@ -245,6 +246,8 @@ async function create(request: HttpRequest, _context: InvocationContext) {
 
   const shop = await shopFor(request, repository, user.id);
   if ('refusal' in shop) return shop.refusal;
+  const locked = await proRefusal(repository, shop.sellerId, 'powerSale');
+  if (locked) return locked;
   const body = await readBody(request);
 
   const openingBody = trimmed(body.openingBody, 600);

@@ -52,8 +52,10 @@ export function statusOf(store: Pick<StoreCore, 'status'> | null | undefined): S
 }
 
 /** Open for business: listed, bookable, and able to work lots. */
-export function isLive(store: Pick<StoreCore, 'status'> | null | undefined): boolean {
-  return statusOf(store) === 'approved';
+export function isLive(store: (Pick<StoreCore, 'status'> & { feeHold?: boolean }) | null | undefined): boolean {
+  // A store whose owner owes platform fees past their due date is closed
+  // until they pay: out of the directory, and taking no new work.
+  return statusOf(store) === 'approved' && !store?.feeHold;
 }
 
 

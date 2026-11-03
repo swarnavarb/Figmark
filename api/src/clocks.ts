@@ -23,6 +23,7 @@ import { settleDueGames } from './play.js';
 import { sendHeldPushes } from './push.js';
 import { sweepExpiredQuotes } from './functions/service-work-routes.js';
 import { refreshAllSellerStats } from './seller-stats.js';
+import { sweepFees } from './billing.js';
 
 /** Run one clock; a failure is logged and the rest still run. */
 async function run(
@@ -62,6 +63,10 @@ app.timer('clock', {
     const at = new Date();
     if (at.getUTCHours() === 20 && at.getUTCMinutes() < 5) {
       await run(context, 'seller-stats-clock', () => refreshAllSellerStats(repository), (n) => `counted ${n} shop(s)`);
+    }
+    /* Platform fees, once a day just after midnight India time: lock what is overdue, open what was paid, remind what is due soon. */
+    if (at.getUTCHours() === 18 && at.getUTCMinutes() >= 35 && at.getUTCMinutes() < 40) {
+      await run(context, 'fee-clock', () => sweepFees(repository), (n) => `locked or opened ${n} account(s)`);
     }
   },
 });

@@ -38,6 +38,11 @@ const eta = await import(new URL('shared/delivery-eta.js', dist));
 const cust = await import(new URL('shared/customers.js', dist));
 const data = await import(new URL('shared/seller-data.js', dist));
 const { DEMO_EMAIL, DEMO_PASSWORD, PACKER_EMAIL } = fixtures;
+// Written while every Pro tool was open to every shop; Pro has its own checks
+// in smoke-billing.mjs, so here it is switched off, the way an operator can.
+await (await getRepository()).saveSiteContent({
+  id: 'pricing', data: { pro: { enabled: false } }, updatedBy: 'smoke', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+});
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 const req = ({ headers = {}, body, query = {}, params = {} } = {}) => ({

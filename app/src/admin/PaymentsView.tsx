@@ -7,6 +7,8 @@ const KIND_LABELS: Record<LedgerEntry['kind'], string> = {
   protection: 'Buyer protection',
   dispute: 'Dispute fee',
   escalation: 'Escalation fee',
+  platform: 'Platform fee',
+  pro: 'Pro subscription',
 };
 
 /**

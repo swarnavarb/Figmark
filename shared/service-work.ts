@@ -1,3 +1,4 @@
+import type { FeeTerms } from './billing.js';
 import type {
   ArtistOffering, BatteryContent, BatteryRule, FreightLane, InfoRow, InsurancePlan, PriceBasis, PriceOption, ServiceAddon,
   ServiceFieldKey, ServiceFormField, StoreWarehouse, VolumetricRule,
@@ -650,6 +651,8 @@ export const ACTION_LABELS: Record<StoreKind, Partial<Record<RequestAction, stri
 
 export interface RequestPayment {
   amountMinor: number;
+  /** Paid out of store credit the store gave the customer: part of `amountMinor`. */
+  creditMinor?: number;
   reference: string | null;
   claimedAt: string;
   confirmedAt: string | null;
@@ -736,6 +739,8 @@ export interface ServiceRequest {
   inbound?: { courier: string; awb: string; at: string } | null;
   /** Weighed at the destination: what is owed, and the photo of the scale. */
   bill?: RequestBill | null;
+  /** Figmark's platform fee as agreed when the request was made. */
+  feeTerms?: FeeTerms | null;
   estimateMinor: number;
   chargeableKg: number | null;
   quoteMinor: number | null;

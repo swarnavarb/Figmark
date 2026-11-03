@@ -1,3 +1,4 @@
+import { isProActive } from '../../../shared/billing.js';
 import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
 import { cleanOffers } from '../../../shared/offers.js';
 import { randomUUID } from 'node:crypto';
@@ -69,6 +70,8 @@ function toSellerCard(user: SellerCardSource) {
     // The shop's own handle: where its page is, and where a message to it goes.
     username: user.sellerProfile?.username ?? null,
     tier: user.sellerProfile?.tier ?? 'unverified',
+    // Pro, the subscription: the badge beside the shop's name.
+    pro: isProActive(user.pro),
     dispatchRegion: user.sellerProfile?.dispatchRegion ?? null,
     followerCount: user.sellerProfile?.followerCount ?? 0,
     trustScore: user.sellerTrust.score,
@@ -196,6 +199,9 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
  * can save it, comment on it or buy it either.
  */
 async function canSee(repository: Awaited<ReturnType<typeof getRepository>>, listing: Listing, viewerId: string | undefined) {
+  // A shop that owes platform fees past their due date is hidden from
+  // everybody but itself until it pays.
+  if (listing.feeHold) return mayManage(repository, listing, viewerId);
   return !listing.privateFor || viewerId === listing.privateFor || await mayManage(repository, listing, viewerId);
 }
 

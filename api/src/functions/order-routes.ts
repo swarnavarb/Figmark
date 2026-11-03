@@ -33,7 +33,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { confirmReceived, settleDue } from '../delivery.js';
 import { autoReleaseDays, marketSettings } from '../settings.js';
-import { availableManagers, bringUpToDate, managerName, pickManager, quoteFee, recordFee, type FeeInput } from '../community.js';
+import { availableManagers, bringUpToDate, feeGst, managerName, pickManager, quoteFee, recordFee, type FeeInput } from '../community.js';
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
@@ -249,7 +249,7 @@ async function pay(request: HttpRequest, _context: InvocationContext) {
       kind: 'protection' as const, payerId: user.id, amountMinor: feeMinor, currency: order.currency,
       reference: order.id, managerId: manager.id,
     };
-    fee = { input, payment: quoteFee(input, settings) };
+    fee = { input, payment: quoteFee(input, settings, await feeGst(repository, 'protection')) };
     order.protection = {
       managerId: manager.id,
       // Their name as it was today: a later rename must not rewrite the terms.

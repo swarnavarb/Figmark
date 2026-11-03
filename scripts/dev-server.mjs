@@ -157,6 +157,12 @@ const {
 const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
 const { settingsRoute, opsSettingsRoute, opsSettingsSaveRoute } = await import(new URL('settings-routes.js', apiRoot));
 const {
+  pricingRoute, myFeesRoute, payFeesRoute, myProRoute, proStatusRoute, buyProRoute, redeemVoucherRoute, startTrialRoute,
+  listGivenRoute, giveRoute, receivedGiftsRoute, answerGiftRoute, myStoreCreditRoute,
+  opsPricingRoute, opsSavePricingRoute, opsVouchersRoute, opsMakeVouchersRoute, opsToggleVoucherRoute, opsGrantProRoute,
+  opsFeesRoute, opsRefreshFeesRoute, opsWaiveFeesRoute,
+} = await import(new URL('billing-routes.js', apiRoot));
+const {
   routeWordsRoute, opsRouteLibraryRoute, opsRouteSamplesSaveRoute, opsRouteWordsSaveRoute, opsRouteCommonSaveRoute, opsRouteButtonsSaveRoute,
 } = await import(new URL('route-admin-routes.js', apiRoot));
 const {
@@ -411,6 +417,28 @@ const routes = [
   ['GET', '/api/ops/actions', adminActionsRoute],
   ['POST', '/api/ops/actions/:id/decide', adminDecideActionRoute],
   ['GET', '/api/ops/ledger', adminLedgerRoute],
+  ['GET', '/api/pricing', pricingRoute],
+  ['GET', '/api/me/fees', myFeesRoute],
+  ['POST', '/api/me/fees/pay', payFeesRoute],
+  ['GET', '/api/me/pro', myProRoute],
+  ['GET', '/api/pro/status', proStatusRoute],
+  ['POST', '/api/me/pro/buy', buyProRoute],
+  ['POST', '/api/me/pro/redeem', redeemVoucherRoute],
+  ['POST', '/api/me/pro/trial', startTrialRoute],
+  ['GET', '/api/me/gifts', listGivenRoute],
+  ['POST', '/api/me/gifts/give', giveRoute],
+  ['GET', '/api/me/gifts/received', receivedGiftsRoute],
+  ['POST', '/api/me/gifts/:id/answer', answerGiftRoute],
+  ['GET', '/api/me/store-credit', myStoreCreditRoute],
+  ['GET', '/api/ops/pricing', opsPricingRoute],
+  ['POST', '/api/ops/pricing/save', opsSavePricingRoute],
+  ['GET', '/api/ops/pro/vouchers', opsVouchersRoute],
+  ['POST', '/api/ops/pro/vouchers/make', opsMakeVouchersRoute],
+  ['POST', '/api/ops/pro/vouchers/:code/toggle', opsToggleVoucherRoute],
+  ['POST', '/api/ops/pro/grant', opsGrantProRoute],
+  ['GET', '/api/ops/fees', opsFeesRoute],
+  ['POST', '/api/ops/fees/:id/refresh', opsRefreshFeesRoute],
+  ['POST', '/api/ops/fees/:id/waive', opsWaiveFeesRoute],
   ['GET', '/api/ops/audit', adminAuditRoute],
   ['GET', '/api/wants', wantsBoardRoute],
   ['POST', '/api/wants/new', wantPostRoute],

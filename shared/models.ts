@@ -1,3 +1,4 @@
+import type { FeeTerms, ProState } from './billing.js';
 import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
 import type { DeliveryEta } from './delivery-eta.js';
@@ -236,6 +237,16 @@ export interface User extends BaseDocument {
    * makes an account a seller - not a role, not a separate signup.
    */
   sellerProfile: SellerProfile | null;
+  /**
+   * Pro, bought, redeemed or given: every store this account owns is Pro
+   * while it lasts. On the row (small, and read with every store).
+   */
+  pro?: ProState | null;
+  /**
+   * Set while the account owes platform fees past their due date. Its
+   * listings and stores are hidden and it cannot sell until it pays.
+   */
+  feeLock?: { since: string; overdueMinor: number } | null;
   /**
    * The shop's profit-calculator cost sheets (Pro). Stored beside the account
    * in its `profit` part (see api/src/data/user-parts.ts): a shop has a handful
@@ -693,6 +704,8 @@ export interface StoreCore {
   trust: TrustSignals;
   /** Withdrawn entries keep their history but stop appearing in search. */
   listedInDirectory: boolean;
+  /** Closed to customers: the owner owes platform fees past their due date. */
+  feeHold?: boolean;
 
   status?: StoreStatus;
   application?: StoreApplication | null;
@@ -1110,6 +1123,8 @@ export interface Listing extends BaseDocument {
    * the catalog by definition.
    */
   unlisted?: boolean;
+  /** Hidden from everybody but its shop: the shop owes platform fees past their due date. */
+  feeHold?: boolean;
   /**
    * Written ahead, shown from this moment - a power sale item listed before
    * its drop so it lands on time between clock runs. Every read leaves it out
@@ -1810,6 +1825,8 @@ export interface Order extends BaseDocument {
    * somebody has already earned. The name is a snapshot for the same reason.
    */
   affiliate?: OrderAffiliate | null;
+  /** Figmark's platform fee as agreed when the order was placed. Absent on orders from before fees. */
+  feeTerms?: FeeTerms | null;
   /**
    * The ladder this item read before it joined a lot.
    *
@@ -2520,7 +2537,7 @@ export interface DisputeSubjectRef {
 /** A fee paid through the gateway, split between Figmark and the manager doing the work. */
 export interface FeePayment {
   id: string;
-  kind: 'dispute' | 'escalation' | 'protection';
+  kind: 'dispute' | 'escalation' | 'protection' | 'platform' | 'pro';
   payerId: string;
   amountMinor: number;
   currency: string;
@@ -2530,6 +2547,8 @@ export interface FeePayment {
   managerShareMinor: number;
   gatewayRef: string;
   paidAt: string;
+  /** GST on it, when GST applies; part of `amountMinor` if inclusive, on top if not. */
+  gstMinor?: number;
 }
 
 /**
@@ -3082,6 +3101,12 @@ export type NotificationKind =
   | 'credit_refund_answered'
   | 'credit_applied'
   | 'refund_started'
+  /** Platform fees: a month's statement, a reminder, a lock, or a payment. */
+  | 'platform_fees'
+  /** Pro started, renewed, or about to end. */
+  | 'pro_plan'
+  /** A store paid you or gave you credit. */
+  | 'store_gift'
   | 'payment_dispute'
   | 'payment_settled'
   | 'dispute_opened'

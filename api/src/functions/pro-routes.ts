@@ -14,6 +14,7 @@ import { inBatches } from '../data/concurrency.js';
 import { error, handler, json } from './http.js';
 import { names, shopFor } from './insight-routes.js';
 import { notify } from './notify.js';
+import { proRefusal } from '../billing.js';
 
 
 /** How many earlier versions of an item's costs are kept to step back to. */
@@ -250,6 +251,8 @@ async function saveOrderCostsBatch(request: HttpRequest, _context: InvocationCon
 async function saveCostSheet(request: HttpRequest, _context: InvocationContext) {
   const { repository, shopId } = await open(request);
   if (!shopId) return error(403, 'forbidden', 'You cannot change the costs for that shop.');
+  const locked = await proRefusal(repository, shopId, 'costs');
+  if (locked) return locked;
   const listing = await repository.getListing(request.params.id ?? '');
   if (!listing || listing.sellerId !== shopId) return error(404, 'not_found', 'No such item in this shop.');
 
@@ -305,6 +308,8 @@ type ValueLabel = 'vip' | 'regular' | 'at_risk' | 'one_time' | 'new';
 async function deep(request: HttpRequest, _context: InvocationContext) {
   const { repository, shopId } = await open(request);
   if (!shopId) return error(403, 'forbidden', 'You cannot read the numbers for that shop.');
+  const locked = await proRefusal(repository, shopId, 'insights');
+  if (locked) return locked;
 
   const [lots, orders, listings] = await Promise.all([
     repository.listLots({ sellerId: shopId }),

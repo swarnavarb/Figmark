@@ -61,7 +61,7 @@ async function fillingLots(_request: HttpRequest, _context: InvocationContext) {
     // Only what a buyer can actually press Buy on: a box with nothing for
     // sale in it is a dead end on a shelf.
     const listings = (await repository.listListingsInLot(lot.id))
-      .filter((listing) => listing.status === 'active' && !listing.unlisted && !listing.privateFor);
+      .filter((listing) => listing.status === 'active' && !listing.unlisted && !listing.feeHold && !listing.privateFor);
     if (listings.length === 0) continue;
     const orders = (await repository.listOrdersForLot(lot.id)).filter((order) => !isCancelledLike(order.status));
     rows.push({
