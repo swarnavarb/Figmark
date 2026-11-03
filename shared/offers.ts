@@ -40,7 +40,8 @@ export type OfferKind = (typeof OFFER_KINDS)[number];
 /** Same shipment, or everything the buyer has from the shop. */
 export type OfferScope = 'lot' | 'shop';
 
-export type OfferValue = { type: 'fixed' | 'percent'; value: number };
+/** Money off: a fixed amount, or a percentage - optionally capped ("10% off, up to ₹120"). */
+export type OfferValue = { type: 'fixed' | 'percent'; value: number; capMinor?: number };
 
 export interface WholesaleTier {
   /** Units of this item in one order. */
@@ -100,7 +101,8 @@ const rupees = (minor: number): string => {
 };
 
 const moneyOff = (value: OfferValue | undefined): string =>
-  !value ? 'money off' : value.type === 'percent' ? `${value.value}% off` : `${rupees(value.value)} off`;
+  !value ? 'money off'
+    : value.type === 'percent' ? `${value.value}% off${value.capMinor ? ` up to ${rupees(value.capMinor)}` : ''}` : `${rupees(value.value)} off`;
 
 /** Where the items have to be for this offer to count them. */
 export const scopeWords = (scope: OfferScope | undefined): string =>
@@ -129,7 +131,9 @@ export function offerSummary(offer: ListingOffer): string {
     case 'free_shipping':
       return `Free shipping when you buy ${offer.minItems ?? 2} or more items ${scopeWords(offer.scope)}.`;
     case 'discount':
-      return `${moneyOff(offer.discount)} each item when you buy ${offer.minItems ?? 2} or more items ${scopeWords(offer.scope)}.`;
+      return offer.discount?.type === 'percent' && offer.discount.capMinor
+        ? `${offer.discount.value}% off each item, up to ${rupees(offer.discount.capMinor)} in all, when you buy ${offer.minItems ?? 2} or more items ${scopeWords(offer.scope)}.`
+        : `${moneyOff(offer.discount)} each item when you buy ${offer.minItems ?? 2} or more items ${scopeWords(offer.scope)}.`;
     case 'bundle':
       return `Buy ${offer.minItems ?? 2} of this item for ${rupees(offer.bundlePriceMinor ?? 0)} together.`;
     case 'wholesale':
@@ -205,8 +209,13 @@ const whole = (value: unknown, min: number, max: number): value is number =>
 
 function cleanValue(raw: unknown): OfferValue | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { type, value } = raw as { type?: unknown; value?: unknown };
-  if (type === 'percent') return whole(value, 1, 90) ? { type, value } : null;
+  const { type, value, capMinor } = raw as { type?: unknown; value?: unknown; capMinor?: unknown };
+  if (type === 'percent') {
+    if (!whole(value, 1, 90)) return null;
+    // No cap, or one of ₹1 or more.
+    if (capMinor === undefined || capMinor === null || capMinor === 0) return { type, value };
+    return whole(capMinor, 100, 100_000_000) ? { type, value, capMinor } : null;
+  }
   if (type === 'fixed') return whole(value, 100, 100_000_000) ? { type, value } : null;
   return null;
 }
@@ -413,7 +422,9 @@ const percentOf = (amount: number, percent: number): number => Math.round(amount
 function valueOff(value: OfferValue, unitMinor: number, quantity: number): number {
   const perUnit = value.type === 'percent' ? percentOf(unitMinor, value.value) : value.value;
   // Never takes an item below ₹1.
-  return Math.min(perUnit, Math.max(0, unitMinor - 100)) * quantity;
+  const off = Math.min(perUnit, Math.max(0, unitMinor - 100)) * quantity;
+  // A capped percentage stops at the cap, for the whole line.
+  return value.type === 'percent' && value.capMinor ? Math.min(off, value.capMinor) : off;
 }
 
 /** Items counted toward a line's group offer, by the scope the shop chose. */

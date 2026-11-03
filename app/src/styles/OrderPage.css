@@ -59,6 +59,7 @@
 .starbtn:hover { transform: scale(1.12); }
 .buyway:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-hover); }
 .buyway:disabled { opacity: 0.55; cursor: not-allowed; }
+.buyway__headrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
 .buyway__head { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); }
 .buyway[class*='buyway--']:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 16px 34px var(--bw-glow); background: var(--bw-grad); }
 .buyway[class*='buyway--']:active:not(:disabled) { transform: scale(0.98); }

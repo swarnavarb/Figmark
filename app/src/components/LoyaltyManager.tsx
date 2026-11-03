@@ -11,6 +11,7 @@ import { formatMoney, timeAgo } from '../format';
 import { Loading } from './Feedback';
 import { Select } from './Select';
 import { InfoTip } from './InfoTip';
+import { CapField } from './Offers';
 import { StampCard } from './LoyaltyCard';
 import '../styles/LoyaltyManager.css';
 
@@ -295,8 +296,11 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
                       onChange={(e) => setSlot(index, { ...reward, amountMinor: Math.round(Number(e.target.value || 0) * 100) })} />
                   )}
                   {(reward?.kind === 'cashback_percent' || reward?.kind === 'percent_off') && (
-                    <input type="number" inputMode="decimal" aria-label="Percent" placeholder="%" value={(reward.bp ?? 0) / 100}
-                      onChange={(e) => setSlot(index, { ...reward, bp: Math.round(Number(e.target.value || 0) * 100) })} />
+                    <>
+                      <input type="number" inputMode="decimal" aria-label="Percent" placeholder="%" value={(reward.bp ?? 0) / 100}
+                        onChange={(e) => setSlot(index, { ...reward, bp: Math.round(Number(e.target.value || 0) * 100) })} />
+                      <CapField capMinor={reward.capMinor} onChange={(capMinor) => setSlot(index, { ...reward, capMinor })} />
+                    </>
                   )}
                   {(reward?.kind === 'free_item' || reward?.kind === 'custom') && (
                     <input value={reward.text ?? ''} maxLength={60} placeholder={reward.kind === 'free_item' ? 'Sticker pack' : 'Early access to drops'}

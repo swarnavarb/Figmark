@@ -1,6 +1,6 @@
 import { proLocked } from '../../shared/billing.js';
 import {
-  REWARD_META, STAMPS, nextReward, offersToDrop, replayCard, rewardOffMinor, rewardPerk, rewardWords,
+  REWARD_META, STAMPS, nextReward, offersToDrop, percentReward, replayCard, rewardOffMinor, rewardPerk, rewardWords,
   type CardProgress, type IssuedReward, type LoyaltyApplied, type LoyaltyCard, type LoyaltyReward,
 } from '../../shared/loyalty.js';
 import type { Order, User } from '../../shared/models.js';
@@ -128,7 +128,7 @@ export async function syncLoyalty(
         if (issued.some((entry) => entry.id === id)) continue;
         const credit = REWARD_META[reward.kind].credit;
         const valueMinor = reward.kind === 'cashback_flat' ? reward.amountMinor ?? 0
-          : reward.kind === 'cashback_percent' ? Math.round((orderValue(order) * (reward.bp ?? 0)) / 10_000) : 0;
+          : reward.kind === 'cashback_percent' ? percentReward(reward, orderValue(order)) : 0;
         fresh.push({
           id, cardId: card.id, cardName: card.name, ownerId, shopName, buyerId, buyerName: buyer.displayName,
           round, stamp, reward, orderId: order.id, itemName: order.itemName, at: new Date().toISOString(),

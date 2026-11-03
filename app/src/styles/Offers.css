@@ -61,3 +61,11 @@
 .offr-edit__tier { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: var(--s2); align-items: end; }
 .offr-edit__preview { margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
 .offr-edit__preview b { color: var(--text); font-weight: var(--w-medium); }
+.offr-cap { grid-column: 1 / -1; }
+.offr-cap__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.offr-cap__row input { width: 110px; }
+.offr-cap__opt {
+  padding: 6px 12px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-dim); font: inherit; font-size: var(--t-sm); font-weight: 700; cursor: pointer;
+}
+.offr-cap__opt.is-on { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 3px var(--accent-soft); }

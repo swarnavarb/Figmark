@@ -142,7 +142,7 @@ let creditFor: string | null = null;
  * credit with that store - it comes off their next order there on its own.
  * One small read per visit, whichever store pages they open.
  */
-export function CreditChip({ storeId }: { storeId: string | null | undefined }) {
+export function CreditChip({ storeId, inline = false }: { storeId: string | null | undefined; inline?: boolean }) {
   const { user } = useSession();
   const [left, setLeft] = useState(0);
   useEffect(() => {
@@ -160,7 +160,7 @@ export function CreditChip({ storeId }: { storeId: string | null | undefined }) 
   }, [user, storeId]);
   if (left <= 0) return null;
   return (
-    <Link to="/wallet" className="creditchip" title="Store credit here - it comes off your next order on its own">
+    <Link to="/wallet" className={inline ? 'creditchip creditchip--inline' : 'creditchip'} title="Store credit here - it comes off your next order on its own">
       <span aria-hidden="true">🎟️</span> {formatMoney(left)} credit
     </Link>
   );

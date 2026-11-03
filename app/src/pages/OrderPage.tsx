@@ -152,7 +152,8 @@ export function OrderPage() {
 
   return (
     <main className="page lp">
-      {!seller && <CreditChip storeId={order.sellerId} />}
+      {/* A checkout shows it beside "Choose how to buy" instead. */}
+      {!seller && placed && <CreditChip storeId={order.sellerId} />}
       {/* Back to exactly where they came from - the list, its filters, and
           this order within it - rather than to the top of some list. Opened
           from anywhere that did not say (a notification, a shared link), a
@@ -1192,7 +1193,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
       {credit > 0 && (
         <>
           <div className="kv kv--credit">
-            <dt>💰 Credit kept for you by <PersonLink party={quote.seller} /></dt>
+            <dt>💰 Credit kept for you by <PersonLink party={quote.seller} bare /></dt>
             <dd>−{formatMoney(Math.min(credit, planDue), quote.currency)}</dd>
           </div>
           <div className="kv"><dt><strong>Due now</strong></dt><dd><strong>{formatMoney(dueNow, quote.currency)}</strong></dd></div>
@@ -1232,7 +1233,10 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
         </p>
       )}
 
-      <span className="buyway__head">Choose how to buy</span>
+      <div className="buyway__headrow">
+        <span className="buyway__head">Choose how to buy</span>
+        <CreditChip storeId={order.sellerId} inline />
+      </div>
       <button type="button" className="buyway buyway--sea" disabled={!canPayDirect || coveredByCredit} style={{ ['--i' as string]: 0 }}
         onClick={() => setRoute('direct')}>
         <span className="buyway__icon"><Svg name="coin" size={22} /></span>
@@ -1241,8 +1245,8 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
           {quote.directPaused
             ? <>Paused for this shop for now - pay through Figmark with Buyer Protection instead.</>
             : canPayDirect
-            ? <>Pay <PersonLink party={quote.seller} /> yourself, then show them it went through. Nothing is held: if something goes wrong, a community manager can act against the seller, but cannot get your money back. Only Buyer Protection can.</>
-            : <><PersonLink party={quote.seller} /> has not added any payment details, so there is nowhere to send the money.</>}
+            ? <>Pay <PersonLink party={quote.seller} bare /> yourself, then show them it went through. Nothing is held: if something goes wrong, a community manager can act against the seller, but cannot get your money back. Only Buyer Protection can.</>
+            : <><PersonLink party={quote.seller} bare /> has not added any payment details, so there is nowhere to send the money.</>}
         </span>
         <span className="buyway__price">{formatMoney(dueNow, quote.currency)}</span>
       </button>
@@ -1353,7 +1357,7 @@ function DirectPay({ orderId, quote, payment, busy, onPaid, onBack }: {
 
       <div className="card card--pad stack">
         <div className="row row--between">
-          <strong>Send {formatMoney(quote.itemMinor, quote.currency)} to <PersonLink party={quote.seller} /></strong>
+          <strong>Send {formatMoney(quote.itemMinor, quote.currency)} to <PersonLink party={quote.seller} bare /></strong>
         </div>
         {rows.filter(([, value]) => value).map(([label, value]) => (
           <div className="kv" key={label}>
@@ -1376,7 +1380,7 @@ function DirectPay({ orderId, quote, payment, busy, onPaid, onBack }: {
 
       <p className="notice notice--info">
         Figmark is not handling this payment and is not holding anything. Once you have sent it,
-        tell <PersonLink party={quote.seller} /> here — they confirm it landed before the order moves.
+        tell <PersonLink party={quote.seller} bare /> here — they confirm it landed before the order moves.
       </p>
 
       <label className="tick tick--wide">

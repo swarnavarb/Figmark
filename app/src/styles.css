@@ -6673,6 +6673,8 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 .icard + .icard { margin-top: 0; }
 .lp > .icard { margin-bottom: 14px; }
+/* The "in demand" box on a checkout: its own space before the buy panel. */
+.lp > .urgency { margin-bottom: 14px; }
 .icard__top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
 .icard__photo {
   display: grid; place-items: center; width: 84px; height: 84px; border-radius: var(--r-lg); overflow: hidden; color: var(--text-faint);
@@ -9104,6 +9106,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   background: linear-gradient(135deg, #86EFAC, var(--ok)); box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35);
 }
 @media (min-width: 900px) { .creditchip { bottom: 20px; right: 20px; } }
+/* On a checkout it sits beside "Choose how to buy" instead of floating. */
+.creditchip--inline { position: static; flex: none; box-shadow: none; }
 
 /* The platform fee, under a price. */
 .feehint { display: block; font-size: var(--t-xs); color: var(--text-dim); }

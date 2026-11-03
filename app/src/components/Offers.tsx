@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   OFFER_KIND_INFO, OFFER_KINDS, MAX_OFFERS_PER_ITEM, MAX_WHOLESALE_TIERS, cleanOffers, nextStepFor, offerLabel,
   offerSummary, offerTerms, wholesaleHint,
-  type AppliedOffer, type ListingOffer, type OfferKind, type OfferScope, type WholesaleTier,
+  type AppliedOffer, type ListingOffer, type OfferKind, type OfferScope, type OfferValue, type WholesaleTier,
 } from '@shared/offers';
 import { formatMoney } from '../format';
 import { InfoTip } from './InfoTip';
@@ -153,8 +153,8 @@ function defaultOffer(kind: OfferKind, priceMinor: number): ListingOffer {
 }
 
 function ValueFields({ value, onChange, label }: {
-  value: { type: 'fixed' | 'percent'; value: number } | undefined;
-  onChange: (next: { type: 'fixed' | 'percent'; value: number }) => void;
+  value: OfferValue | undefined;
+  onChange: (next: OfferValue) => void;
   label: string;
 }) {
   const current = value ?? { type: 'percent' as const, value: 5 };
@@ -173,10 +173,32 @@ function ValueFields({ value, onChange, label }: {
         <input type="number" min="1" step="1"
           value={current.type === 'percent' ? current.value || '' : rupeesIn(current.value)}
           onChange={(e) => onChange({
-            type: current.type,
+            ...current,
             value: current.type === 'percent' ? Math.round(Number(e.target.value) || 0) : minorOf(e.target.value),
           })} />
       </label>
+      {current.type === 'percent' && (
+        <CapField capMinor={current.capMinor} onChange={(capMinor) => onChange({ ...current, capMinor })} />
+      )}
+    </div>
+  );
+}
+
+/** "Up to ₹120", or no cap: a percentage that stops at an amount. */
+export function CapField({ capMinor, onChange }: { capMinor?: number; onChange: (next: number | undefined) => void }) {
+  return (
+    <div className="field offr-cap">
+      <span>Cap</span>
+      <div className="offr-cap__row" role="radiogroup" aria-label="Cap">
+        <button type="button" role="radio" aria-checked={!capMinor} className={`offr-cap__opt${capMinor ? '' : ' is-on'}`}
+          onClick={() => onChange(undefined)}>No cap</button>
+        <button type="button" role="radio" aria-checked={Boolean(capMinor)} className={`offr-cap__opt${capMinor ? ' is-on' : ''}`}
+          onClick={() => onChange(capMinor || 10_000)}>Up to ₹</button>
+        {Boolean(capMinor) && (
+          <input type="number" min="1" step="1" aria-label="Cap in rupees" value={rupeesIn(capMinor)}
+            onChange={(e) => onChange(minorOf(e.target.value) || 100)} />
+        )}
+      </div>
     </div>
   );
 }

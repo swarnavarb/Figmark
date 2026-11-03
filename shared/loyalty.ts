@@ -71,6 +71,8 @@ export interface LoyaltyReward {
   amountMinor?: number;
   /** Cashback or money off, in basis points. */
   bp?: number;
+  /** The most a percentage pays on one order ("10% off, up to ₹120"); missing for no cap. */
+  capMinor?: number;
   /** A free item, or the shop's own words. */
   text?: string;
   /**
@@ -198,10 +200,10 @@ export function rewardWords(reward: LoyaltyReward, money: (minor: number) => str
   const pct = (bp = 0) => `${(bp / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`;
   switch (reward.kind) {
     case 'cashback_flat': return `${money(reward.amountMinor ?? 0)} cashback`;
-    case 'cashback_percent': return `${pct(reward.bp)} cashback`;
+    case 'cashback_percent': return `${pct(reward.bp)} cashback${reward.capMinor ? ` up to ${money(reward.capMinor)}` : ''}`;
     case 'free_item': return `Free ${reward.text || 'item'}`;
     case 'free_shipping': return 'Free shipping';
-    case 'percent_off': return `${pct(reward.bp)} off`;
+    case 'percent_off': return `${pct(reward.bp)} off${reward.capMinor ? ` up to ${money(reward.capMinor)}` : ''}`;
     default: return reward.text || 'A surprise';
   }
 }
@@ -240,6 +242,11 @@ export function cleanCard(
       const bp = int(slot.bp);
       if (bp === null || bp <= 0 || bp > cap) return { error: `${at}: up to ${cap / 100}%.` };
       reward.bp = bp;
+      if (slot.capMinor !== undefined && slot.capMinor !== null && slot.capMinor !== 0) {
+        const most = int(slot.capMinor);
+        if (most === null || most < 100 || most > 10_00_000) return { error: `${at}: the cap is ₹1 to ₹10,000, or no cap.` };
+        reward.capMinor = most;
+      }
     } else if (kind === 'free_item' || kind === 'custom') {
       const text = typeof slot.text === 'string' ? slot.text.trim().slice(0, 60) : '';
       if (text.length < 2) return { error: `${at}: say what it is.` };
@@ -278,7 +285,13 @@ export const stampsFrom = (order: { quantity: number }): number =>
 
 /** What a money-off reward takes off an order of this value; 0 for any other reward. */
 export const rewardOffMinor = (reward: LoyaltyReward, valueMinor: number): number =>
-  reward.kind === 'percent_off' ? Math.max(0, Math.round((valueMinor * (reward.bp ?? 0)) / 10_000)) : 0;
+  reward.kind === 'percent_off' ? percentReward(reward, valueMinor) : 0;
+
+/** A percentage reward on an order of this value, stopped at its cap. */
+export function percentReward(reward: LoyaltyReward, valueMinor: number): number {
+  const raw = Math.max(0, Math.round((valueMinor * (reward.bp ?? 0)) / 10_000));
+  return reward.capMinor ? Math.min(raw, reward.capMinor) : raw;
+}
 
 /** A reward taken off an order's price at checkout. */
 export interface LoyaltyApplied {

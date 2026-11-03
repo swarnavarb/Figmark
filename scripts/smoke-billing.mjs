@@ -537,4 +537,22 @@ await check('a money-off reward comes straight off the price at checkout, once',
   assert.equal(second.loyaltyOffMinor ?? 0, 0, 'stamps 3 and 4 carry nothing');
 });
 
+await check('a percentage can be capped: "10% off up to ₹120" stops at ₹120, and no cap means none', async () => {
+  const offers = await import(new URL('shared/offers.js', dist));
+  const loyal = await import(new URL('shared/loyalty.js', dist));
+  const clean = offers.cleanOffers([{ id: 'c', kind: 'discount', minItems: 2, scope: 'lot', discount: { type: 'percent', value: 10, capMinor: 12_000 } }], 100_000);
+  assert.equal(clean.error, null);
+  assert.equal(offers.offerLabel(clean.offers[0]), '10% off up to ₹120 on 2+');
+  const line = (id, discount) => ({ id, listingId: 'l', lotId: 'lot1', quantity: 2, unitPriceMinor: 100_000, shippingPerItemMinor: 0,
+    offers: [{ id: 'c', kind: 'discount', minItems: 2, scope: 'lot', discount }], groupFilled: false, paidInFull: false, active: true });
+  assert.equal(offers.priceBasket([line('a', { type: 'percent', value: 10, capMinor: 12_000 })]).get('a').discountMinor, 12_000);
+  assert.equal(offers.priceBasket([line('b', { type: 'percent', value: 10 })]).get('b').discountMinor, 20_000, 'flat 10%, no cap');
+  assert.ok(offers.cleanOffers([{ id: 'c', kind: 'discount', minItems: 2, discount: { type: 'percent', value: 10, capMinor: 5 } }]).error, 'a cap under ₹1');
+  const card = loyal.cleanCard({ name: 'Capped', rewards: [{ kind: 'percent_off', bp: 1_000, capMinor: 12_000 }, { kind: 'cashback_percent', bp: 500 }] }, loyal.DEFAULT_LOYALTY);
+  assert.ok(card.card, JSON.stringify(card));
+  assert.equal(loyal.rewardOffMinor(card.card.rewards[0], 500_000), 12_000);
+  assert.equal(loyal.percentReward(card.card.rewards[1], 500_000), 25_000, 'no cap');
+  assert.equal(loyal.rewardWords(card.card.rewards[0], (m) => `₹${m / 100}`), '10% off up to ₹120');
+});
+
 console.log(`\n${passed} billing checks passed`);
