@@ -3325,6 +3325,12 @@ export interface PowerSaleItem {
    * not from when it drops, because the members' window is not the deal.
    */
   limitedDays?: number | null;
+  /** The category's own answers (kind, condition in its own words, size). */
+  attributes?: Record<string, string>;
+  /** Shipping per item: 0 is free; absent says nothing. */
+  shippingMinor?: number | null;
+  /** The shop's offers on the item. */
+  offers?: ListingOffer[];
 }
 
 /** What a channel drop post shows beside its item: the clock and the price after it. */

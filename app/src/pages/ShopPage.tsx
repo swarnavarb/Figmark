@@ -7,7 +7,11 @@ import {
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
 } from '@shared/enums';
-import { CATEGORIES, CONDITION_BUCKETS, canonicalCategory, factsOf } from '@shared/catalog';
+import {
+  CATEGORIES, CONDITION_BUCKETS, canonicalCategory, conditionValueForTag, factsOf, pruneAttributes, specFor, type Attributes,
+} from '@shared/catalog';
+import { etaLabel } from '@shared/delivery-eta';
+import { CategoryFields } from '../components/CategoryFields';
 import { countryFlag } from '@shared/countries';
 import { CONDITION_TAGS, SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';
@@ -46,7 +50,7 @@ import { Spinner } from '../components/Spinner';
 import { EXPIRY_WARNING_HOURS, REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
 import { isOpen, waitingOnShop } from '../engage';
 import {
-  AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip, TermsFields, termsDraft, termsFromTemplate, termsToTemplate,
+  AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip, TermsFields, termsDraft, termsFromTemplate, termsProblem, termsToTemplate,
   type TermsDraft,
 } from '../components/Buy';
 import { ProofPicker } from '../components/ProofPicker';
@@ -107,7 +111,7 @@ function Later({ children }: { children: ReactNode }) {
 }
 
 type Section = 'items' | 'payments' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage'
-  | 'overview' | 'customers' | 'itemdata' | 'operations' | 'offers' | 'loyalty';
+  | 'overview' | 'customers' | 'itemdata' | 'operations' | 'offers' | 'loyalty' | 'templates';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'items', label: 'Items' },
@@ -132,6 +136,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'refunds', label: 'Refunds' },
   { id: 'lots', label: 'Lots' },
   { id: 'routes', label: 'Routes' },
+  // Quick fills: written here, used on a listing and on a live drop alike.
+  { id: 'templates', label: 'Quick fill' },
   { id: 'storefront', label: 'Storefront' },
   { id: 'people', label: 'People' },
   // Polls, debates, competitions and guesses the shop runs for its buyers.
@@ -162,12 +168,13 @@ const DATA_SECTIONS: readonly Section[] = ['overview', 'customers', 'itemdata', 
  * screen. Each opens on its first section; the rest of its sections are chips
  * under it. Packing is not here: a packer works from My services.
  */
-type Group = 'items' | 'orders' | 'lots' | 'engage' | 'money' | 'settings';
+type Group = 'items' | 'orders' | 'lots' | 'quickfill' | 'engage' | 'money' | 'settings';
 
 const SECTION_GROUPS: Record<Group, Section[]> = {
   items: ['items'],
   orders: ['payments', 'refunds'],
   lots: ['lots', 'routes'],
+  quickfill: ['templates'],
   engage: ['engage', 'offers', 'loyalty'],
   money: ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'],
   settings: ['storefront', 'people'],
@@ -177,6 +184,7 @@ const GROUP_TABS: { id: Group; label: string; icon: IconName }[] = [
   { id: 'items', label: 'Listings', icon: 'tag' },
   { id: 'orders', label: 'Orders', icon: 'box' },
   { id: 'lots', label: 'Shipments', icon: 'truck' },
+  { id: 'quickfill', label: 'Quick fill', icon: 'bolt' },
   { id: 'engage', label: 'Engage', icon: 'poll' },
   { id: 'money', label: 'Data', icon: 'spark' },
   { id: 'settings', label: 'Shop settings', icon: 'bank' },
@@ -292,7 +300,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       // A sub-view belongs to the tab it was opened in, and so does an order
       // waiting to be filed into a lot about to be opened, an open lot, and
       // a list's filter.
-      for (const key of ['view', 'file', 'lot', 'show', 'state', 'customer']) copy.delete(key);
+      for (const key of ['view', 'file', 'lot', 'show', 'state', 'customer', 'edit']) copy.delete(key);
       for (const [key, value] of Object.entries(extra)) copy.set(key, value);
       return copy;
     }, { replace: true });
@@ -306,7 +314,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
     if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
     if (entry.id === 'engage') return store.permissions.includes('posts');
-    if (entry.id === 'offers') return store.permissions.includes('listings');
+    if (entry.id === 'offers' || entry.id === 'templates') return store.permissions.includes('listings');
     if (entry.id === 'loyalty') return store.isOwner;
     return true;
   });
@@ -389,6 +397,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'refunds' && <Refunds store={store} />}
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <Later><RoutesList spotlightNew={params.get('spotlight') === 'new'} /></Later>}
+          {active === 'templates' && <TemplatesPanel store={store} />}
           {active === 'analytics' && <><Analytics store={store} /><div style={{ marginTop: 20 }}><MoneyProBlock store={store} /></div></>}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
@@ -476,7 +485,8 @@ function SellHome({ store, canList, onGo, section }: {
 
   return (
     <div className="sellhome">
-      <SellDashboard store={store} group={section ? groupOf(section) : 'items'} onGo={onGo} />
+      {/* Quick fills are listing stationery: the listings card stays up over them. */}
+      <SellDashboard store={store} group={section && groupOf(section) !== 'quickfill' ? groupOf(section) : 'items'} onGo={onGo} />
       {canList && (
         <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`}
           className={`btn sellhome__list${section === 'items' || section === null ? ' btn--lg' : ' sellhome__list--slim'}`}>
@@ -506,6 +516,7 @@ const DASH_TITLES: Record<Group, string> = {
   items: 'Your listings',
   orders: 'Your orders',
   lots: 'Your shipments',
+  quickfill: 'Your listings',
   engage: 'Your games',
   money: 'Last 30 days',
   settings: 'Your shop',
@@ -1236,7 +1247,7 @@ function MyItems({ store }: { store: StoreAccess }) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const dropLocked = useProLocked('powerSale', store.ownerId) === true;
-  const [mode, setMode] = useState<'stock' | 'power' | 'templates'>(
+  const [mode, setMode] = useState<'stock' | 'power'>(
     saleCalcs?.length || params.get('view') === 'power' ? 'power' : 'stock');
   const [shelf, setShelf] = useState<'available' | 'expired' | 'sold_out'>('available');
   const [editing, setEditing] = useState<Listing | null>(null);
@@ -1285,7 +1296,6 @@ function MyItems({ store }: { store: StoreAccess }) {
         <SegTabs label="Items view" value={mode} onChange={setMode} tabs={[
           { id: 'stock', label: 'Your stock', count: all.length },
           { id: 'power', label: 'Scheduled sales' },
-          { id: 'templates', label: 'Quick Fill' },
         ]} />
         {mode === 'stock' && data && (
           <SegTabs ext label="Shelf" value={shelf} onChange={setShelf} tabs={[
@@ -1298,9 +1308,7 @@ function MyItems({ store }: { store: StoreAccess }) {
 
       {notice && <p className="notice notice--ok" role="status">{notice}</p>}
 
-      {mode === 'templates' ? (
-        <TemplatesPanel store={store} />
-      ) : mode === 'power' ? (
+      {mode === 'power' ? (
         <Later><PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} /></Later>
       ) : !data ? (
         <Loading />
@@ -2367,32 +2375,42 @@ function MoneyLine({ total, paid, balance, share, due, children }: {
   );
 }
 
-/* ── Quick Fill templates ───────────────────────────────────────────────── */
+/* ── Quick fill ─────────────────────────────────────────────────────────── */
 
 /**
  * The stationery a shop lists from.
  *
  * A shop that sells Marvel Legends lists forty of them a month, and every one
- * has the same category, the same three tags, the same two lines about
- * condition and shipping, and the same journey. Typing that forty times is how
- * a listing screen becomes a chore - and a chore is how a shop ends up with
- * forty listings that describe themselves forty different ways.
+ * has the same category, the same answers about it, the same tags and two
+ * lines, and the same terms. Typing that forty times is how a listing screen
+ * becomes a chore - and a chore is how a shop ends up with forty listings that
+ * describe themselves forty different ways.
  *
- * A template is not a kind of listing and it is not attached to one. It fills
- * the form in and gets out of the way; every field it touches stays editable,
- * which is the difference between a template and a straitjacket.
+ * Written here, in one place, and picked from a listing and from a live drop
+ * alike. A quick fill is not a kind of listing and it is not attached to one:
+ * it fills the form in and gets out of the way, and every field it touches
+ * stays editable. Tracking is not part of it - an item follows the tracking of
+ * the lot it travels in.
  */
 function TemplatesPanel({ store }: { store: StoreAccess }) {
   const [templates, setTemplates] = useState<PostTemplate[] | null>(null);
-  const [editing, setEditing] = useState<PostTemplate | 'new' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // The one open for writing lives in the URL, so Add / edit on a listing or a
+  // live drop can land straight on it: `edit=new`, or a template's id.
+  const [params, setParams] = useSearchParams();
+  const editId = params.get('edit');
+  const setEditing = (id: string | null) => setParams((current) => {
+    const copy = new URLSearchParams(current);
+    if (id) copy.set('edit', id); else copy.delete('edit');
+    return copy;
+  }, { replace: true });
 
   const load = useCallback(async () => {
     try {
       setTemplates((await api.templates()).templates);
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your templates.');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your quick fills.');
     }
   }, []);
 
@@ -2401,7 +2419,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
   }, [load]);
 
   async function remove(template: PostTemplate) {
-    if (!await confirmSentence(`Delete the template "${template.name}"? Items already listed from it keep what it filled in.`)) return;
+    if (!await confirmSentence(`Delete the quick fill "${template.name}"? Items already listed from it keep what it filled in.`)) return;
     setBusy(template.id);
     setError(null);
     try {
@@ -2419,9 +2437,11 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
   if (error && templates === null) return <ErrorNotice message={error} />;
   if (templates === null) return <Loading />;
 
+  const editing = editId === 'new' ? 'new' : templates.find((row) => row.id === editId) ?? null;
   if (editing) {
     return (
       <TemplateForm
+        key={editing === 'new' ? 'new' : editing.id}
         store={store}
         template={editing === 'new' ? null : editing}
         onCancel={() => setEditing(null)}
@@ -2433,57 +2453,70 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
   return (
     <div className="stack">
       {error && <ErrorNotice message={error} />}
+      <p className="muted" style={{ margin: 0 }}>
+        Pick one when you list an item or build a live drop - it fills in the category, its details, tags,
+        description, delivery time and terms. Everything stays editable.
+      </p>
       <button type="button" className="btn" style={{ justifySelf: 'start' }}
         onClick={() => setEditing('new')}>
-        <Icon name="plus" size={15} /> Create template
+        <Icon name="plus" size={15} /> New quick fill
       </button>
 
       {templates.length === 0 ? (
-        <EmptyState icon="◫" title="No templates yet">
-          Make one for the kind of thing you list most. The next item starts half-written — category,
-          tags, your usual two lines, and the journey it will travel.
+        <EmptyState icon="⚡" title="No quick fills yet">
+          Make one for the kind of thing you list most. The next item - or a whole live drop - starts
+          half-written.
         </EmptyState>
       ) : (
-        templates.map((template) => (
-          <article key={template.id} className="tplcard">
-            <div className="tplcard__top">
-              <span className="tplcard__name">{template.name}</span>
-              {template.kind === 'power' && <span className="probadge">⚡ Power · PRO</span>}
-              <span className="badge">{template.category || 'No category'}</span>
-            </div>
-            <span className="faint">
-              {[
-                template.tags.length > 0 ? template.tags.join(', ') : null,
-                template.condition,
-                template.defaultLotId ? 'Goes into a lot' : 'No lot',
-              ].filter(Boolean).join(' · ')}
-            </span>
-            <span className="faint">
-              {template.lotRouteName ?? 'China → India'} ·{' '}
-              {preLotRouteOf(template).steps.length} steps before the lot
-            </span>
-            {template.description && <p className="tplcard__body">{template.description}</p>}
-            <div className="tplcard__foot">
-              {template.kind === 'power' ? (
-                <Link to={`/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`} className="btn btn--quiet btn--sm">Use in a live drop</Link>
-              ) : (
-                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(template)}>
+        templates.map((template) => {
+          const category = canonicalCategory(template.category);
+          const facts = category ? factsOf({ category, condition: template.condition ?? '', attributes: template.attributes ?? {} }) : null;
+          const eta = etaLabel(template.terms?.deliveryEta);
+          return (
+            <article key={template.id} className="tplcard">
+              <div className="tplcard__top">
+                <span className="tplcard__name">{template.name}</span>
+                <span className="badge">{category ?? 'No category'}</span>
+              </div>
+              <span className="faint">
+                {[
+                  facts?.condition || null,
+                  facts?.authenticity?.label ?? null,
+                  ...(facts?.details.map((detail) => detail.value) ?? []),
+                ].filter(Boolean).join(' · ') || 'Details asked on each item'}
+              </span>
+              <span className="faint">
+                {[
+                  template.defaultLotId ? 'Importing · into a lot' : template.sourcing === 'import' ? 'Importing' : 'In hand',
+                  eta ? `Arrives in ${eta}` : null,
+                  template.tags.length > 0 ? template.tags.join(', ') : null,
+                ].filter(Boolean).join(' · ')}
+              </span>
+              {template.description && <p className="tplcard__body">{template.description}</p>}
+              <div className="tplcard__foot">
+                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(template.id)}>
                   Edit
                 </button>
-              )}
-              <button type="button" className="btn btn--ghost btn--sm" disabled={busy === template.id}
-                onClick={() => void remove(template)}>
-                Delete
-              </button>
-            </div>
-          </article>
-        ))
+                <button type="button" className="btn btn--ghost btn--sm" disabled={busy === template.id}
+                  onClick={() => void remove(template)}>
+                  Delete
+                </button>
+              </div>
+            </article>
+          );
+        })
       )}
     </div>
   );
 }
 
-/** Write one, or correct one. The same form either way. */
+/** The two answers to "where is it?", as the listing form asks them. */
+const QUICK_FILL_WHERE: { id: Sourcing; icon: string; title: string; note: string }[] = [
+  { id: 'in_hand', icon: '🏠', title: 'In hand', note: 'On your shelf, ready to ship' },
+  { id: 'import', icon: '✈️', title: 'Importing', note: 'Coming in from abroad' },
+];
+
+/** Write one, or correct one. The same form either way, asking what the listing form asks. */
 function TemplateForm({ store, template, onCancel, onSaved }: {
   store: StoreAccess;
   template: PostTemplate | null;
@@ -2492,37 +2525,35 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
 }) {
   const [name, setName] = useState(template?.name ?? '');
   const [category, setCategory] = useState(canonicalCategory(template?.category) ?? CATEGORIES[0]!);
+  // The category's own answers; an older quick fill only knew a grade.
+  const [attributes, setAttributes] = useState<Attributes>(() => {
+    const start = canonicalCategory(template?.category) ?? CATEGORIES[0]!;
+    if (template?.attributes && Object.keys(template.attributes).length > 0) return pruneAttributes(start, template.attributes);
+    const legacy = conditionValueForTag(start, template?.condition);
+    return legacy ? { condition: legacy } : {};
+  });
   const [tags, setTags] = useState((template?.tags ?? []).join(', '));
-  const [condition, setCondition] = useState(template?.condition ?? '');
-  const [sourcing, setSourcing] = useState<Sourcing>(template?.sourcing ?? 'in_hand');
+  const [sourcing, setSourcing] = useState<Sourcing>(template?.defaultLotId ? 'import' : template?.sourcing ?? 'in_hand');
   const [description, setDescription] = useState(template?.description ?? '');
   const [defaultLotId, setDefaultLotId] = useState(template?.defaultLotId ?? '');
-  /** Every other option a listing has - advance, expiry, shipping, offers, commission - so a template can carry them too. */
+  /** Delivery time, stock and payment, shipping and offers, commission, expiry. */
   const [terms, setTerms] = useState<TermsDraft>(() => termsFromTemplate(termsDraft(), template?.terms));
-  const [lotRouteId, setLotRouteId] = useState(template?.lotRouteId ?? '');
   const [lots, setLots] = useState<LotSummary[]>([]);
-  const [routes, setRoutes] = useState<RoutesResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void api.myLots(store.isOwner ? undefined : store.ownerId)
-      .then((result) => setLots(result.lots)).catch(() => setLots([]));
-  }, [store.ownerId, store.isOwner]);
+      .then((result) => setLots(result.lots.filter((entry) => entry.lot.status === 'open' || entry.lot.id === template?.defaultLotId)))
+      .catch(() => setLots([]));
+  }, [store.ownerId, store.isOwner, template?.defaultLotId]);
 
-  /* "Write a route" opens in a new tab so this half-written template is not
-     lost; coming back to this one reads the routes again, so the new route is
-     there to pick. */
-  useEffect(() => {
-    const readRoutes = () => void api.routes().then(setRoutes).catch(() => setRoutes(null));
-    readRoutes();
-    const onVisible = () => { if (!document.hidden) readRoutes(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, []);
+  // A delivery time is optional here, but one half-typed is not saved as nonsense.
+  const etaIssue = terms.etaMin || terms.etaMax ? termsProblem(terms) : null;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (etaIssue) return;
     setBusy(true);
     setError(null);
     try {
@@ -2530,19 +2561,13 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
         ...(template ? { id: template.id } : {}),
         name: name.trim(),
         category,
+        attributes,
         tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-        condition: condition || null,
         sourcing,
         description: description.trim(),
-        defaultLotId: defaultLotId || null,
-        lotRouteId: lotRouteId || null,
-        terms: termsToTemplate(terms),
-        /* The first half of the route this item is expected to travel, stored
-           on the template so an order sold before any lot exists still has a
-           ladder to read. Derived rather than written a second time: two
-           hand-authored ladders is exactly what used to put "at the China
-           warehouse" on a buyer's screen twice. */
-        preLotSteps: before.map((step) => ({ name: step.name, description: step.description })),
+        defaultLotId: sourcing === 'import' && defaultLotId ? defaultLotId : null,
+        // One buyer taking several is a live drop's question; kept as it was.
+        terms: { ...termsToTemplate(terms), allowMultiple: template?.terms?.allowMultiple ?? false },
       });
       onSaved();
     } catch (err) {
@@ -2552,102 +2577,69 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
     }
   }
 
-  /* The route this template's items are expected to travel, and the half of it
-     that happens before any lot exists. */
-  const chosen = routes?.routes.find((route) => route.id === lotRouteId)
-    ?? routes?.builtIn
-    ?? BUILT_IN_ROUTE;
-  const before = preStepsOf(chosen);
-
   return (
     <form className="sellform" onSubmit={submit}>
-      <h2 style={{ margin: 0 }}>{template ? 'Edit template' : 'New template'}</h2>
+      <h2 style={{ margin: 0 }}>{template ? 'Edit quick fill' : 'New quick fill'}</h2>
 
-      <LBox icon="⚡" title="Template" hint="What you pick it by. Buyers never see it.">
-        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Template name"
-          placeholder="Marvel Standard" required autoFocus />
+      <LBox icon="⚡" title="Name" hint="What you pick it by on a listing or a live drop. Buyers never see it.">
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Quick fill name"
+          placeholder="Marvel Legends, sealed" required autoFocus />
       </LBox>
 
-      <LBox icon="🏷️" title="The item" hint="Everything here stays editable on every listing.">
-        <div className="field-row">
-          <label className="field">
-            <span>Category</span>
-            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORIES.map((entry) => <option key={entry}>{entry}</option>)}
-            </Select>
-          </label>
-          <label className="field">
-            <span>Condition</span>
-            <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
-              <option value="">Ask each time</option>
-              {CONDITION_TAGS.map((tag) => <option key={tag} value={tag}>{CONDITION_BUCKETS[tag].label}</option>)}
-            </Select>
-          </label>
+      <LBox icon="🏷️" title="The item" hint="Anything left blank is asked on each item. Everything stays editable.">
+        <div className="field" role="group" aria-label="Category">
+          <span>Category</span>
+          <div className="tags">
+            {CATEGORIES.map((entry) => (
+              <button key={entry} type="button" className={`tag${category === entry ? ' is-on' : ''}`}
+                aria-pressed={category === entry}
+                onClick={() => {
+                  setCategory(entry);
+                  setAttributes((current) => pruneAttributes(entry, current));
+                }}>
+                {entry}
+              </button>
+            ))}
+          </div>
+          <span className="field__hint">{specFor(category)?.blurb}</span>
         </div>
+        <CategoryFields category={category} value={attributes} onChange={setAttributes} />
+        <label className="field">
+          <span>Description</span>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+            placeholder={'Original Marvel Legends figure.\nShips in a double box.'} />
+        </label>
         <label className="field">
           <span>Tags</span>
           <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Marvel, Action figure, 1/12" />
         </label>
-        <label className="field">
-          <span>Description</span>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
-            placeholder={'Original Marvel Legends figure.\nCondition: MISB.'} />
-        </label>
       </LBox>
 
-      <LBox icon="🚚" title="Ships from">
-        <OptionTiles label="What this template lists" value={sourcing} onChange={setSourcing}
-          options={[
-            { id: 'in_hand', icon: '🏠', title: 'In hand', note: 'Ships from your shelf' },
-            { id: 'import', icon: '✈️', title: 'Import', note: 'Travels in a lot' },
-          ]} />
-        <label className="field">
-          <span>Default lot</span>
-          <Select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
-            <option value="">No lot — filed after it sells</option>
-            {lots.map(({ lot }) => (
-              <option key={lot.id} value={lot.id}>
-                {lotLabel(lot)}
-              </option>
-            ))}
-          </Select>
-        </label>
+      <LBox icon="🚚" title="Where is it?">
+        <OptionTiles label="Where is it?" value={sourcing} onChange={setSourcing} options={QUICK_FILL_WHERE} />
+        {sourcing === 'import' && (
+          <label className="field">
+            <span>Lot</span>
+            <Select value={defaultLotId} onChange={(e) => setDefaultLotId(e.target.value)}>
+              <option value="">Add to a lot later</option>
+              {lots.map(({ lot }) => (
+                <option key={lot.id} value={lot.id}>
+                  {lotLabel(lot)}
+                </option>
+              ))}
+            </Select>
+            <span className="field__hint">Buyers follow the lot&rsquo;s tracking once the item is in one.</span>
+          </label>
+        )}
       </LBox>
 
       <TermsFields value={terms} onChange={setTerms} forTemplate />
 
-      {/* One route, not two ladders. The route already says where the item
-          stops travelling alone, so both halves come from the same list and
-          cannot contradict each other the way two written ones did. */}
-      <LBox icon="🧭" title="Tracking" hint="The journey a customer of this item follows.">
-        <Select value={lotRouteId} onChange={(e) => setLotRouteId(e.target.value)} aria-label="Route">
-          <option value="">
-            {routes ? `${routes.builtIn.name} — ${routes.builtIn.steps.length} steps` : 'Loading…'}
-          </option>
-          {(routes?.routes ?? []).map((route) => (
-            <option key={route.id} value={route.id}>
-              {route.name} — {route.steps.length} steps
-            </option>
-          ))}
-        </Select>
-        <span className="lbox__hint">
-          None fit? <Link to="/routes/studio/new" target="_blank" rel="noopener">Write a route</Link> (new tab).
-        </span>
-        <div className="field">
-          <span>Before it joins a lot</span>
-          <Ladder steps={before} current={-1} />
-          <span className="field__hint">
-            {before.length === 0
-              ? 'No steps before the lot — the customer waits with no timeline until one is opened.'
-              : `The other ${chosen.steps.length - before.length} steps arrive with the lot.`}
-          </span>
-        </div>
-      </LBox>
-
       {error && <ErrorNotice message={error} />}
+      {etaIssue && <p className="field__hint" role="status">{etaIssue}</p>}
       <div className="row">
-        <button type="submit" className="btn" disabled={busy || !name.trim()}>
-          {busy ? 'Saving…' : 'Save template'}
+        <button type="submit" className="btn" disabled={busy || !name.trim() || Boolean(etaIssue)}>
+          {busy ? 'Saving…' : 'Save quick fill'}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
       </div>

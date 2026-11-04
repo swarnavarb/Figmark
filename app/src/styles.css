@@ -2668,6 +2668,18 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 .faq__item p { margin: var(--s2) 0 0; font-size: var(--t-xs); line-height: 1.5; }
 
 /* ── Orders, templates and photos ──────────────────────────────────────── */
+/* Quick fills, one tap each - on a listing and on a live drop alike. "None"
+   and Add / edit sit at the end, set apart. */
+.qfill { display: flex; flex-wrap: wrap; gap: 6px; }
+.qfill__chip {
+  padding: 7px var(--s3); border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface); color: inherit; font: inherit; font-size: var(--t-sm); cursor: pointer;
+  text-decoration: none; line-height: 1.2;
+}
+.qfill__chip.is-on { border-color: transparent; background: var(--gold-soft, var(--surface-2)); box-shadow: inset 0 0 0 2px var(--gold, var(--accent)); font-weight: var(--w-bold); }
+.qfill__chip--none { color: var(--text-dim); }
+.qfill__chip--edit { border-style: dashed; color: var(--accent); }
+.qfill__chip--edit:hover { text-decoration: none; background: var(--surface-2); }
 
 /*
  * One purchase, with everything it needs answering about. A shop works forty
@@ -5909,14 +5921,26 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qribbon--epic { background: var(--q-epic); color: #fff; }
 .qribbon--new { background: var(--lime); color: var(--lime-ink); }
 
+/* The condition, stamped on: one shape for "MISB" and for "New with tags"
+   alike - a tag that grows with its words, cut short with an ellipsis rather
+   than a circle that only ever fitted four letters. */
 .qgrade {
   position: absolute; left: 8px; bottom: 8px; z-index: 2;
-  min-width: 42px; height: 42px; padding: 0 var(--s1); border-radius: 50%; display: grid; place-content: center; text-align: center;
-  background: rgba(11, 15, 24, 0.85); border: 2px dashed var(--qr-text);
-  font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-bold); line-height: 1.05; letter-spacing: 0.02em;
-  color: var(--text); text-shadow: none; transform: rotate(-12deg);
+  display: inline-flex; align-items: center; gap: 5px;
+  max-width: calc(100% - 16px); height: 22px; padding: 0 8px 0 7px; border-radius: 6px;
+  background: rgba(11, 15, 24, 0.86); border: 1.5px dashed var(--qr-text);
+  font-family: var(--ui); font-size: var(--t-2xs); font-weight: var(--w-bold); line-height: 1; letter-spacing: 0.03em;
+  color: var(--text); text-shadow: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transform: rotate(-4deg); transform-origin: left center;
 }
+.qgrade::before {
+  content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--qr-text);
+}
+/* A sticker (Pre-order, Sold out, Expired) shares the bottom edge: the
+   condition steps up above it rather than running into it. */
+.qloot__art:has(.qsticker-tag) .qgrade { bottom: 36px; }
 .qloot--plain .qgrade { border-color: #56637A; }
+.qloot--plain .qgrade::before { background: #56637A; }
 .qgrade small { display: block; font-size: calc(6.5px * var(--text-scale)); color: var(--text-faint); letter-spacing: 0.12em; text-transform: uppercase; }
 .qheart:hover { color: #FDA4CF; }
 .qheart.is-on { color: #FF4D8D; border-color: rgba(255, 77, 141, 0.6); background: rgba(40, 8, 24, 0.8); }
@@ -6017,7 +6041,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qloot { -webkit-tap-highlight-color: transparent; animation: qloot-in 460ms var(--ease) backwards; }
 .qgrid > .qloot:nth-child(2n) { animation-delay: 70ms; }
 .qloot:active { transform: scale(0.965); transition-duration: 90ms; }
-.qloot:active .qgrade { transform: rotate(-2deg) scale(1.12); }
+.qloot:active .qgrade { transform: rotate(-1deg) scale(1.06); }
 .qgrade { transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1); }
 @keyframes qloot-in {
   from { opacity: 0; transform: translateY(14px) scale(0.97); }

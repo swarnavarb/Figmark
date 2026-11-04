@@ -323,7 +323,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
   const keptRupees = priceMinor && priceMinor > 0 ? Math.floor(priceMinor / 100) - commissionRupees - offRupees : null;
   return (
     <>
-      {withEta && <EtaFields value={value} onChange={onChange} />}
+      {withEta && <EtaFields value={value} onChange={onChange} optional={forTemplate} />}
 
       <LBox icon="📦" title="Stock & payment">
         {!preOrder && !forTemplate && (
@@ -452,25 +452,31 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
  * it is the first thing a buyer asks, and the shop's on-time rate is
  * measured against it.
  */
-export function EtaFields({ value, onChange }: { value: TermsDraft; onChange: (next: TermsDraft) => void }) {
+export function EtaFields({ value, onChange, optional = false }: {
+  value: TermsDraft;
+  onChange: (next: TermsDraft) => void;
+  /** A quick fill may leave it for each item to say. */
+  optional?: boolean;
+}) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
   const etaIssue = value.etaMin || value.etaMax ? etaProblem(etaOf(value)) : null;
   return (
     <LBox icon="🚚" title="Delivery time" hint={etaOf(value) && !etaIssue
       ? `Buyers see "Arrives in ${etaLabel(etaOf(value))}". Your on-time rate is worked out from it.`
-      : 'Required. Days from the order being placed to the buyer receiving it in hand.'}>
+      : optional ? 'Optional here: left blank, each item says its own. Days from order to the buyer having it.'
+        : 'Required. Days from the order being placed to the buyer receiving it in hand.'}>
       <div className="etafields">
         <label className="field">
           <span>Quickest (days)</span>
           <input type="number" inputMode="numeric" min="1" max={ETA_MAX_DAYS} step="1" placeholder="45"
-            value={value.etaMin} required aria-required="true"
+            value={value.etaMin} required={!optional} aria-required={!optional}
             onChange={(e) => set({ etaMin: e.target.value, ...(value.etaMax === '' || Number(value.etaMax) < Number(e.target.value) ? { etaMax: e.target.value } : {}) })} />
         </label>
         <span className="etafields__to" aria-hidden="true">to</span>
         <label className="field">
           <span>Longest (days)</span>
           <input type="number" inputMode="numeric" min={value.etaMin || 1} max={ETA_MAX_DAYS} step="1" placeholder="50"
-            value={value.etaMax} required aria-required="true"
+            value={value.etaMax} required={!optional} aria-required={!optional}
             onChange={(e) => set({ etaMax: e.target.value })} />
         </label>
       </div>
