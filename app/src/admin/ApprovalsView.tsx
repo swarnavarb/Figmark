@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { SANCTION_LABELS, XP_PENALTY } from '@shared/disputes';
 import { ApiRequestError, admin, type PendingAction } from './api';
 import { timeAgo } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelRows } from '../components/PageSkeletons';
 import { Select } from '../components/Select';
 
 /**
@@ -42,7 +42,7 @@ export function ApprovalsView() {
     }
   }
 
-  if (!actions && !error) return <Loading />;
+  if (!actions && !error) return <SkelRows n={6} />;
   const pending = (actions ?? []).filter((entry) => entry.status === 'pending');
   const done = (actions ?? []).filter((entry) => entry.status !== 'pending');
 

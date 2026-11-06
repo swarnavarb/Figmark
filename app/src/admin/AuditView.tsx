@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiRequestError, admin, type AuditEntry } from './api';
 import { timeAgo, formatDateTime } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelInline, SkelRows } from '../components/PageSkeletons';
 
 /**
  * What operators did: every write made from this console, recorded once it
@@ -54,7 +54,7 @@ export function AuditView() {
           <span>
             Record operator actions
             <span className="phoneprefs__hint muted">
-              {recording === null ? <Loading size="sm" /> : recording
+              {recording === null ? <SkelInline w={90} /> : recording
                 ? 'On: every change made from this console is written here.'
                 : 'Off: nothing is recorded, including turning it off. Entries already here stay for 90 days.'}
             </span>
@@ -70,7 +70,7 @@ export function AuditView() {
           </button>
         ))}
       </div>
-      {!entries ? <Loading /> : entries.length === 0 ? <p className="muted">Nothing recorded in this period.</p> : (
+      {!entries ? <SkelRows n={6} /> : entries.length === 0 ? <p className="muted">Nothing recorded in this period.</p> : (
         <div className="card">
           {entries.map((entry) => (
             <div key={entry.id} className="userrow" style={{ cursor: 'default' }}>

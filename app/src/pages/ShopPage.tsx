@@ -76,7 +76,8 @@ import {
 } from '../api';
 import { ItemHead } from '../components/ItemHead';
 import { Avatar, EmptyState, ErrorNotice, Icon, type IconName, Modal, Thumb, leadPhoto, PageError } from '../components/ui';
-import { Loading, PageLoading } from '../components/Feedback';
+import { PageLoading } from '../components/Feedback';
+import { SkelBlock, SkelCards, SkelInline, SkelRows, SkelTiles } from '../components/PageSkeletons';
 import {
   currencySymbol, formatCount, formatDateOrdinal, formatMoney, formatTotals, fromMinor, timeAgo, toMinor,
 } from '../format';
@@ -107,7 +108,7 @@ const NewLotForm = lazy(() => import('./LotsPage').then((module) => ({ default: 
 
 /** A part of the page whose code is still on its way: the loading mark in its place. */
 function Later({ children }: { children: ReactNode }) {
-  return <Suspense fallback={<Loading />}>{children}</Suspense>;
+  return <Suspense fallback={<SkelCards n={2} />}>{children}</Suspense>;
 }
 
 type Section = 'items' | 'payments' | 'calculator' | 'refunds' | 'lots' | 'routes' | 'analytics' | 'storefront' | 'people' | 'engage'
@@ -428,6 +429,8 @@ function SellHome({ store, canList, onGo, section }: {
 }) {
   const [todo, setTodo] = useState<{ answer: number; since: string[]; noLot: number; noLotListings: number; lots: number } | null>(null);
   const [seen, setSeen] = useState(() => readAnswerSeen(store.ownerId));
+  /** Whether the counts have been asked for and answered, whatever the answer - so a shop with none to show stops holding their place. */
+  const [todoAsked, setTodoAsked] = useState(false);
   const seesLots = store.permissions.includes('lots');
 
   useEffect(() => setSeen(readAnswerSeen(store.ownerId)), [store.ownerId]);
@@ -438,6 +441,7 @@ function SellHome({ store, canList, onGo, section }: {
        changes section, and again only when the bell brings news of an order
        or a payment - no clock of its own. */
     const read = () => void api.sellTodo(store.ownerId).catch(() => null).then((counts) => {
+      if (!cancelled) setTodoAsked(true);
       // Nothing to count yet - an unverified shop is refused both - says nothing rather than zeros.
       if (cancelled || !counts || (counts.answer === null && counts.lots === null)) return;
       setTodo({
@@ -502,6 +506,18 @@ function SellHome({ store, canList, onGo, section }: {
               <b className="todo__count">{tile.count}</b>
               <span className="todo__label">{tile.label}</span>
             </button>
+          ))}
+        </div>
+      )}
+      {/* Before the counts arrive, the same tiles hold their place - with the
+          words they will say - so the tabs below do not jump down when they land. */}
+      {!todo && !todoAsked && (
+        <div className="todo" aria-hidden="true">
+          {(seesLots ? ['orders to answer', 'active orders & listings not in a lot', 'lots on the move'] : ['orders to answer']).map((label) => (
+            <span key={label} className="todo__tile">
+              <b className="todo__count"><SkelInline w={22} h={22} /></b>
+              <span className="todo__label">{label}</span>
+            </span>
           ))}
         </div>
       )}
@@ -674,12 +690,14 @@ function SellDashboard({ store, group, onGo }: {
             </button>
           ) : (
             <span key={index} className="sdash__tile sdash__tile--wait" aria-hidden="true">
-              <b className="sdash__value">–</b>
-              <span className="sdash__label">&nbsp;</span>
+              <b className="sdash__value"><SkelInline w={24} h={20} /></b>
+              <span className="sdash__label"><SkelInline w={64} h={9} /></span>
             </span>
           ))}
         </div>
         {note && <p className="sdash__note">{note}</p>}
+        {/* The line under the counts, held while they load, so the card does not grow when they land. */}
+        {!tiles && !hidden && <p className="sdash__note" aria-hidden="true"><SkelInline w={150} h={9} /></p>}
       </div>
     </section>
   );
@@ -879,7 +897,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   // Only a failed load stands in for the form; a failed save is said beside
   // Save, with everything typed still there to fix.
   if (error && !draft) return <ErrorNotice message={error} />;
-  if (!draft) return <Loading />;
+  if (!draft) return <SkelCards n={3} h={120} mark={false} chips={0} />;
 
   const set = <K extends keyof StorefrontDraft>(key: K, value: StorefrontDraft[K]) => {
     // The starter description names the shop; while it is still untouched it
@@ -1311,7 +1329,7 @@ function MyItems({ store }: { store: StoreAccess }) {
       {mode === 'power' ? (
         <Later><PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} /></Later>
       ) : !data ? (
-        <Loading />
+        <SkelCards n={3} h={96} chips={1} />
       ) : (
         <>
           {mine.length === 0 && (
@@ -1669,7 +1687,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   }
 
   if (error && !data) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelCards n={3} h={110} />;
 
   const needsAnswer = new Set([...data.waiting, ...data.placed].map((row) => row.id));
   /* Inside a lot, the book is that lot's orders and nothing else. */
@@ -2435,7 +2453,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
   // Only a first load that fails has nothing to show; a failed delete says so
   // above the list and leaves the list where it is.
   if (error && templates === null) return <ErrorNotice message={error} />;
-  if (templates === null) return <Loading />;
+  if (templates === null) return <SkelRows n={3} />;
 
   const editing = editId === 'new' ? 'new' : templates.find((row) => row.id === editId) ?? null;
   if (editing) {
@@ -3054,7 +3072,7 @@ function Refunds({ store }: { store: StoreAccess }) {
   }, [load]);
 
   if (error && !data) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelCards n={2} />;
 
   // Kept for the buyer's next order is decided: it is credit, not a refund
   // still to make, so it is counted on its own.
@@ -3662,7 +3680,7 @@ function ListingIntoLot({ listing, store, onClose, onDone }: {
           Every order of this listing goes straight into the lot you pick.
         </span>
         {lots === null ? (
-          <Loading />
+          <SkelRows n={2} />
         ) : lots.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
             No lots open yet. <Link to="/shop?tab=lots&spotlight=new" onClick={onClose}>Create one</Link> first.
@@ -3768,7 +3786,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
           </span>
 
           {lots === null ? (
-            <Loading />
+            <SkelRows n={2} />
           ) : lots.length === 0 ? (
             <p className="muted" style={{ margin: 0 }}>No lots open yet. Create one below.</p>
           ) : (
@@ -4050,7 +4068,7 @@ function Unlotted({ store, onBack }: {
       {notice && <p className="notice notice--ok" role="status">{notice}</p>}
 
       {!orders || !listings ? (
-        !error && <Loading />
+        !error && <SkelCards n={2} />
       ) : (
         <>
           {orders.length + listings.length > 0 && (
@@ -4274,7 +4292,7 @@ function ShipTogether({ store, orders, listings, onClose, onDone }: {
         <fieldset className="pickset">
           <legend>Choose a lot</legend>
           {lots === null ? (
-            <Loading />
+            <SkelRows n={2} />
           ) : (
             <>
               {lots.map(({ lot }) => (
@@ -4443,7 +4461,16 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
   }
 
   if (error && !data) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) {
+    // The lot list as it will be: New lot, the two shelves, the lot cards.
+    return (
+      <div className="stack">
+        <SkelBlock w={120} h={40} r={12} />
+        <SkelBlock h={46} r={14} />
+        <SkelCards n={2} h={150} chips={3} />
+      </div>
+    );
+  }
 
   /* Closed or fully delivered is done - the same rule the server uses to stop
      filing orders into a lot or moving it. */
@@ -4646,7 +4673,7 @@ function Analytics({ store }: { store: StoreAccess }) {
   }, [store.ownerId, store.isOwner]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <div className="stack"><SkelTiles n={4} cols={2} /><SkelBlock h={180} /></div>;
 
   const { analytics } = data;
   const peak = Math.max(1, ...analytics.daily.map((day) => day.revenueMinor));

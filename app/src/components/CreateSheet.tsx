@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { SkelRows } from './PageSkeletons';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import type { Post } from '@shared/models';
@@ -8,7 +9,7 @@ import { api, type ServiceStoreRole } from '../api';
 import { useSession } from '../session';
 import { VoiceScope, remembered } from './SocialVoice';
 import type { StudioMode } from './PostStudio';
-import { Loading } from './Feedback';
+
 
 /*
  * The studio arrives with the first tap on one of its kinds, as every screen
@@ -189,7 +190,7 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
 
   if (making) {
     return (
-      <Suspense fallback={createPortal(<div className="csheet"><Loading /></div>, document.body)}>
+      <Suspense fallback={createPortal(<div className="csheet"><div className="csheet__box"><SkelRows n={4} /></div></div>, document.body)}>
         <PostStudio mode={making.action.studio!} storeId={making.storeId} storeName={making.storeName}
           presets={making.action.presets} onClose={onClose} onPosted={posted} />
       </Suspense>

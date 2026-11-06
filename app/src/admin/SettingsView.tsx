@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { SETTING_RULES, type MarketSettings } from '@shared/settings';
 import { ApiRequestError, admin } from './api';
 import { formatMoney, timeAgo } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelCards } from '../components/PageSkeletons';
 
 type Editable = Exclude<keyof MarketSettings, 'updatedAt' | 'updatedBy' | 'auditTrail'>;
 
@@ -48,7 +48,7 @@ export function SettingsView() {
       .catch((err) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the settings.'));
   }, []);
 
-  if (!settings && !error) return <Loading />;
+  if (!settings && !error) return <SkelCards n={3} h={120} mark={false} chips={0} />;
 
   const values = Object.fromEntries(FIELDS.map(({ key, unit }) => [key, fromInput(unit, draft[key] ?? '')])) as Record<Editable, number>;
   const invalid = FIELDS.filter(({ key }) => {

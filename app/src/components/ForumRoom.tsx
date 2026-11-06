@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SkelBlock, SkelInline, SkelPosts } from './PageSkeletons';
 import { CommunityNotices } from './CommunityAlerts';
 import { useParams } from 'react-router-dom';
 import { ApiRequestError, api, type ChannelThread, type PostCard } from '../api';
@@ -172,6 +173,24 @@ function Forum() {
           </header>
         )}
 
+        {/* Before the forum is read: its own header, with the way back working
+            and a shimmer where its name, line and counts go. */}
+        {!channel && !error && (
+          <header className="forumhero" aria-busy="true">
+            <div className="forumhero__row">
+              <button type="button" className="forumhero__back" aria-label="Back" onClick={back}>
+                <Icon name="back" size={19} />
+              </button>
+              <span className="forumhero__name"><SkelInline w={170} h={22} /></span>
+            </div>
+            <p className="forumhero__desc"><SkelInline w={240} /></p>
+            <div className="forumhero__meta">
+              <p className="forumhero__stats"><SkelInline w={120} /></p>
+              <span className="forumhero__acts"><SkelInline w={82} h={28} /><SkelInline w={92} h={28} /></span>
+            </div>
+          </header>
+        )}
+
         {channel?.rules && (
           <details className="forumrules" open={!member}>
             <summary><Icon name="lock" size={13} /> House rules</summary>
@@ -216,9 +235,10 @@ function Forum() {
           )}
 
           {!data && !error && (
-            <div className="spost" aria-hidden="true">
-              <span className="skel" style={{ width: '40%', height: 12 }} />
-              <span className="skel" style={{ width: '90%', height: 12 }} />
+            <div className="stack" aria-hidden="true">
+              <SkelBlock h={112} />
+              <SkelBlock h={52} r={14} />
+              <SkelPosts n={2} />
             </div>
           )}
 

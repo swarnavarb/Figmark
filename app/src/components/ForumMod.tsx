@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { SkelRows } from './PageSkeletons';
 import { Link } from 'react-router-dom';
 import {
   ApiRequestError, api, type ForumMember, type ForumMembers, type ForumModAction, type ForumRole, type ForumRow,
 } from '../api';
 import { Avatar, Modal, useConfirm } from './ui';
 import { Icon } from './Icon';
-import { useToast, Loading } from './Feedback';
+import { useToast } from './Feedback';
 import { timeAgo } from '../format';
 
 type Pane = 'members' | 'banned' | 'warnings' | 'settings';
@@ -101,7 +102,7 @@ export function ForumPeople({ forumId, description, rules, onClose, onForum }: {
           </div>
         )}
         {error && <p className="spost__error">{error}</p>}
-        {!data && !error && <Loading />}
+        {!data && !error && <SkelRows n={3} />}
 
         {data && pane === 'members' && (
           <>

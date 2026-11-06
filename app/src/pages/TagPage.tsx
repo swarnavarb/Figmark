@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SkelGrid } from '../components/PageSkeletons';
 import { Link, useParams } from 'react-router-dom';
 import { ApiRequestError, api, type PostCard, type ShopCard } from '../api';
 import { SocialPostCard } from '../components/SocialPost';
@@ -6,7 +7,7 @@ import { VoiceProvider } from '../components/SocialVoice';
 import { ShopTile } from '../components/ShopCards';
 import { BackLink } from '../components/ScrollManager';
 import { EmptyState, ErrorNotice } from '../components/ui';
-import { Loading } from '../components/Feedback';
+
 import '../styles/TagPage.css';
 
 /**
@@ -37,7 +38,7 @@ export function TagPage() {
     <main className="page">
       <BackLink to="/" title={data ? <span className="tagpage__title"><span aria-hidden="true">#</span>{data.tag.label}</span> : 'Tag'} />
       {error && <ErrorNotice message={error} />}
-      {!data && !error && <Loading />}
+      {!data && !error && <SkelGrid n={4} />}
       {data && (
         <>
           <div className="page__head">

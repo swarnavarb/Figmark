@@ -6,7 +6,7 @@ import { BADGE_META, storeCreditLeft, type Badge, type StoreCredit } from '@shar
 import { ApiRequestError, api, type MyRefund } from '../api';
 import { formatDateOrdinal, formatMoney } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
-import { Loading } from '../components/Feedback';
+import { SkelCards, SkelInline } from '../components/PageSkeletons';
 import { StampCard, nextLine } from '../components/LoyaltyCard';
 
 /**
@@ -99,7 +99,7 @@ export function WalletStores({ refunds }: { refunds: MyRefund[] }) {
   const rows = useMemo(() => (data ? buildRows(refunds, data.credits, data.gifts, data.cards) : []), [data, refunds]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <WalletSkeleton />;
   const spend = rows.reduce((sum, entry) => sum + entry.spendMinor, 0);
   const owed = rows.reduce((sum, entry) => sum + entry.owedMinor, 0);
   const ready = rows.reduce((sum, entry) => sum + entry.ready, 0);
@@ -214,7 +214,7 @@ export function LoyaltyTab() {
       .catch((err) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your loyalty cards.'));
   }, []);
   if (error) return <ErrorNotice message={error} />;
-  if (!cards) return <Loading />;
+  if (!cards) return <SkelCards n={2} h={120} />;
   if (cards.length === 0) {
     return (
       <EmptyState icon="🎟️" title="No loyalty cards yet">
@@ -252,6 +252,27 @@ export function LoyaltyTab() {
           </section>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * The wallet before its figures arrive: the same orange card with its own
+ * words, and a shimmer where each amount goes.
+ */
+export function WalletSkeleton() {
+  return (
+    <div className="wlt" role="status" aria-label="Loading your wallet">
+      <section className="whero" aria-hidden="true">
+        <div className="whero__main">
+          <small>Ready to spend at your stores</small>
+          <b><SkelInline w={90} h={30} /></b>
+          <span>It comes off your next order at each store by itself.</span>
+        </div>
+        <dl className="whero__side">
+          {['Owed back', 'Stores', 'Rewards'].map((label) => <div key={label}><dt>{label}</dt><dd><SkelInline w={34} h={16} /></dd></div>)}
+        </dl>
+      </section>
     </div>
   );
 }

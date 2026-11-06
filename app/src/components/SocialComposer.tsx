@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react';
+import { SkelRows } from './PageSkeletons';
 import { ApiRequestError, api, type ForumRow, type ShareableListing } from '../api';
 import type { Post } from '@shared/models';
 import { Thumb } from './ui';
@@ -9,7 +10,7 @@ import { shrink } from './PhotoManager';
 import { POST_MAX_PHOTOS, VIBES, VIBE_MAX_CHARS, type Vibe } from '@shared/social';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
-import { Loading } from './Feedback';
+
 import '../styles/SocialComposer.css';
 
 /*
@@ -336,7 +337,7 @@ export function Composer({ onPosted, forum = null }: {
       {picking && !item && (
         <div className="stockpick" role="listbox" aria-label="Pick an item to post">
           {!stock ? (
-            <Loading label="Loading your items" />
+            <SkelRows n={3} />
           ) : stock.length === 0 ? (
             <p className="faint">Nothing listed yet. List something from Sell and post it here.</p>
           ) : (
@@ -385,7 +386,7 @@ export function Composer({ onPosted, forum = null }: {
           </p>
           <div className="forumpick__list">
             {!joined ? (
-              <Loading label="Loading your forums" />
+              <SkelRows n={3} />
             ) : joined.length === 0 ? (
               <p className="faint">You have not joined a forum yet. Join one from Forums and post into it from here.</p>
             ) : (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { SkelRows } from '../components/PageSkeletons';
 import { Link, useParams } from 'react-router-dom';
 import { BackLink } from '../components/ScrollManager';
 import { LOT_PHASE_HINTS } from '@shared/fulfilment';
@@ -12,7 +13,7 @@ import { buyerStatus, ShipmentChip } from '../components/OrderStatus';
 import { ErrorNotice, Thumb, PageError } from '../components/ui';
 import { formatDate } from '../format';
 import { PayMore } from './PurchasesPage';
-import { Loading, PageLoading } from '../components/Feedback';
+import { PageLoading } from '../components/Feedback';
 import '../styles/BuyerLotPage.css';
 
 /**
@@ -173,7 +174,7 @@ function InsideItem({ item, steps, vars }: {
       {open && (
         <div className="inside__track">
           {error && <ErrorNotice message={error} />}
-          {!track && !error && <Loading label="Loading its timeline" />}
+          {!track && !error && <SkelRows n={4} />}
           {track?.route && (
             <Ladder steps={track.route.steps} current={track.route.currentStep}
               history={track.order.stageHistory} vars={vars} />

@@ -4,7 +4,7 @@ import {
   type DeviceFigures, type PlatformFigures,
 } from '@shared/devices';
 import { ApiRequestError, admin } from './api';
-import { Loading } from '../components/Feedback';
+import { SkelFigures } from '../components/PageSkeletons';
 
 /**
  * How people use Figmark: on what, in which browser, how many put it on their
@@ -25,7 +25,7 @@ export function DevicesView() {
   }, []);
 
   if (error) return <p className="notice notice--error">{error}</p>;
-  if (!figures) return <Loading />;
+  if (!figures) return <SkelFigures chart={false} />;
   if (figures.people === 0) {
     return (
       <div className="card card--pad">

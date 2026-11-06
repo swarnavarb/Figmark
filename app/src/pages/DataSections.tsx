@@ -1,4 +1,5 @@
 import { ProLock, useProLocked } from '../components/Billing';
+import { SkelFigures } from '../components/PageSkeletons';
 import type { ProFeatureId } from '@shared/billing';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -11,7 +12,7 @@ import {
 } from '../api';
 import { formatDate, formatMoney, timeAgo } from '../format';
 import { EmptyState, ErrorNotice, Modal, PersonLink, Thumb } from '../components/ui';
-import { Loading } from '../components/Feedback';
+
 import { NudgeButton } from '../components/NudgeButton';
 import { InsightsPanel } from './InsightsPanel';
 import '../styles/DataSections.css';
@@ -142,7 +143,7 @@ export function DataOverviewSection({ store, onGo }: { store: StoreAccess; onGo:
   const [days, setDays] = usePeriod();
   const { data, error } = useOverview(store, days);
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelFigures />;
   const { current: now, previous: before } = data;
 
   const needs: { key: string; text: string; tone: 'warn' | 'hot' | 'ok'; go: Parameters<typeof onGo>[0] }[] = [];
@@ -258,7 +259,7 @@ export function CustomersSection({ store }: { store: StoreAccess }) {
   }, [data, filter, query]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelFigures />;
   const { summary, pro } = data;
   const toggle = (id: string) => setPicked((current) => {
     const next = new Set(current);
@@ -538,7 +539,7 @@ function CustomerSheet({ buyerId, shop, asStore, onClose }: { buyerId: string; s
   }, [buyerId, shop]);
   return (
     <Modal title={data?.who.name ?? 'Customer'} onClose={onClose}>
-      {error ? <ErrorNotice message={error} /> : !data ? <Loading /> : (
+      {error ? <ErrorNotice message={error} /> : !data ? <SkelFigures chart={false} /> : (
         <div className="stack dcust">
           <div className="dcust__head">
             <PersonLink party={data.who}>Open their profile</PersonLink>
@@ -660,7 +661,7 @@ export function ItemsDataSection({ store }: { store: StoreAccess }) {
   const [days, setDays] = usePeriod();
   const { data, error } = useOverview(store, days);
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelFigures />;
   const totalViews = data.views.bySource.reduce((sum, row) => sum + row.views, 0);
   return (
     <div className="stack">
@@ -740,7 +741,7 @@ export function OperationsSection({ store }: { store: StoreAccess }) {
   const [days, setDays] = usePeriod();
   const { data, error } = useOverview(store, days);
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelFigures />;
   const { onTime, reply, cancellations } = data;
   return (
     <div className="stack">

@@ -7,8 +7,9 @@ import { GIFT_METHOD_LABELS, type StoreGift } from '@shared/billing';
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
-import { Loading, PageLoading } from '../components/Feedback';
-import { LoyaltyTab, WalletStores } from './WalletStores';
+import { PageLoading } from '../components/Feedback';
+import { SkelRows, SkelTiles } from '../components/PageSkeletons';
+import { LoyaltyTab, WalletStores, WalletSkeleton } from './WalletStores';
 import '../styles/MyRefundsPage.css';
 
 /**
@@ -135,7 +136,7 @@ export function MyRefundsPage() {
         {head}
         {tabs}
         {asks}
-        {refunds ? <WalletStores refunds={refunds} /> : <Loading />}
+        {refunds ? <WalletStores refunds={refunds} /> : <WalletSkeleton />}
       </main>
     );
   }
@@ -320,7 +321,7 @@ function EarningsTab() {
   }, []);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!earnings) return <Loading />;
+  if (!earnings) return <div className="stack"><SkelTiles n={3} /><SkelRows n={3} /></div>;
 
   const currency = earnings[0]?.currency ?? 'INR';
   const sum = (status: AffiliateEarning['status']) => earnings
@@ -392,7 +393,7 @@ function GiftsTab() {
   }
 
   if (error && !gifts) return <ErrorNotice message={error} />;
-  if (!gifts) return <Loading />;
+  if (!gifts) return <SkelRows n={3} />;
   if (gifts.length === 0) {
     return <EmptyState icon="🎁" title="Nothing from stores yet">When a shop, a forwarder or an artist pays you back or gives you credit, it shows here.</EmptyState>;
   }

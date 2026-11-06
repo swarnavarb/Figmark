@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiRequestError, admin, type LedgerEntry } from './api';
 import { formatMoney, timeAgo } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelFigures } from '../components/PageSkeletons';
 
 const KIND_LABELS: Record<LedgerEntry['kind'], string> = {
   protection: 'Buyer protection',
@@ -28,7 +28,7 @@ export function PaymentsView() {
   }, []);
 
   if (error) return <p className="notice notice--error">{error}</p>;
-  if (!data) return <Loading />;
+  if (!data) return <SkelFigures chart={false} />;
 
   return (
     <div className="stack">

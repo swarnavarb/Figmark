@@ -29,7 +29,8 @@ import { useSession } from '../session';
 import { RequestRowCard } from '../components/ServiceWorkKit';
 import { BackBar, BackLink } from '../components/ScrollManager';
 import { ConditionTag } from '../components/ConditionTag';
-import { Loading, PageLoading } from '../components/Feedback';
+import { PageLoading } from '../components/Feedback';
+import { SkelCards, SkelFaces, SkelInline } from '../components/PageSkeletons';
 import '../styles/ServicesPage.css';
 
 /**
@@ -87,7 +88,7 @@ function MyServicesButton({ mine, signedIn }: { mine: MyServicesView | null; sig
   const line = !signedIn
     ? 'Sign in to see the work you do for others'
     : mine === null
-      ? <Loading size="sm" />
+      ? <SkelInline w={150} />
       : !enrolled(mine)
         ? 'You’re not enrolled in any services'
         : waiting > 0
@@ -184,6 +185,7 @@ function ServiceTile({ kind, mine }: { kind: StoreKind; mine: MyServicesView | n
       </header>
       <div className="svx__foot">
         <span className="svx__faces" aria-hidden="true">
+          {providers === null && <SkelFaces n={3} />}
           {faces.map((provider) => (
             <span key={provider.userId} className="svx__face">
               <StoreMark name={provider.name} logoUrl={provider.logoUrl ?? null} accent={provider.accent ?? undefined} size={30} />
@@ -192,7 +194,7 @@ function ServiceTile({ kind, mine }: { kind: StoreKind; mine: MyServicesView | n
           {others > 0 && <span className="svx__face svx__face--more">+{others}</span>}
         </span>
         <span className="svx__count">
-          {providers === null ? <Loading size="sm" /> : providers.length === 0 ? 'Nobody yet' : `${providers.length} on Figmark`}
+          {providers === null ? <SkelInline w={92} /> : providers.length === 0 ? 'Nobody yet' : `${providers.length} on Figmark`}
         </span>
         <span className="svx__go">Explore <Icon name="right" size={15} /></span>
       </div>
@@ -295,7 +297,7 @@ function RouteSearch() {
         <button type="button" className={`chip${door ? ' is-on' : ''}`} aria-pressed={door} onClick={() => setDoor(!door)}>🚚 Door-to-door</button>
       </div>
       {error && <ErrorNotice message={error} />}
-      {result === null ? <Loading /> : result.routes.length === 0 ? (
+      {result === null ? <SkelCards n={2} h={150} /> : result.routes.length === 0 ? (
         <p className="svx__empty">No forwarder runs that yet. Try another country or fewer filters.</p>
       ) : (
         <div className="svs-list">
@@ -362,7 +364,7 @@ function StudioSearch() {
         </div>
       )}
       {error && <ErrorNotice message={error} />}
-      {result === null ? <Loading /> : result.studios.length === 0 ? (
+      {result === null ? <SkelCards n={2} h={130} /> : result.studios.length === 0 ? (
         <p className="svx__empty">No studio offers that yet. Try another word.</p>
       ) : (
         <div className="svs-list">
@@ -566,7 +568,7 @@ export function MyServicesPage() {
       )}
 
       {mine === null ? (
-        !error && <Loading />
+        !error && <div className="stack"><SkelInline w={70} h={14} /><SkelCards n={1} h={76} chips={0} /></div>
       ) : !enrolled(mine) && assigned.length === 0 ? (asked.length > 0 ? null :
         <EmptyState icon={<Icon name="users" size={26} />} title="Nothing handed to you yet">
           When a team adds you, or a shop names you on a lot as its supplier or handler, the work shows up here.
@@ -715,7 +717,7 @@ export function ConsignmentsPage() {
       {error && <ErrorNotice message={error} />}
 
       {rows === null ? (
-        <Loading />
+        <SkelCards n={2} h={120} mark={false} chips={3} />
       ) : rows.length === 0 ? (
         <EmptyState icon="✈" title="Nothing consigned yet">
           When a shop picks you on a lot it turns up here, with what it weighs.
@@ -788,7 +790,7 @@ export function DistributionPage() {
       {error && <ErrorNotice message={error} />}
 
       {rows === null ? (
-        <Loading />
+        <SkelCards n={2} h={120} mark={false} chips={3} />
       ) : rows.length === 0 ? (
         <EmptyState icon="📦" title="Nothing to hand out yet">
           When a shop names you on a lot it lands here, with the customers to pack and send.

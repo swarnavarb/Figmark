@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ProVoucher } from '@shared/billing';
 import { ApiRequestError, admin } from './api';
 import { formatMoney, timeAgo } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelFigures, SkelRows } from '../components/PageSkeletons';
 
 const message = (err: unknown, fallback: string) => (err instanceof ApiRequestError ? err.message : fallback);
 
@@ -99,7 +99,7 @@ export function ProAdminView() {
       </div>
 
       <div className="card">
-        {!vouchers ? <Loading /> : vouchers.length === 0 ? <p className="muted card--pad">No codes yet.</p> : vouchers.map((voucher) => (
+        {!vouchers ? <SkelRows n={4} /> : vouchers.length === 0 ? <p className="muted card--pad">No codes yet.</p> : vouchers.map((voucher) => (
           <div key={voucher.code} className="userrow" style={{ cursor: 'default' }}>
             <div className="userrow__main">
               <span className="userrow__name"><code>{voucher.code}</code> · {voucher.days} days</span>
@@ -144,7 +144,7 @@ export function FeesAdminView() {
     }
   }
 
-  if (!data && !error) return <Loading />;
+  if (!data && !error) return <SkelFigures chart={false} />;
   const owed = data?.accounts.reduce((sum, row) => sum + row.owedMinor, 0) ?? 0;
   const overdue = data?.accounts.reduce((sum, row) => sum + row.overdueMinor, 0) ?? 0;
   return (
@@ -219,7 +219,7 @@ export function CancelsAdminView() {
     }
   }
 
-  if (!data && !error) return <Loading />;
+  if (!data && !error) return <SkelFigures chart={false} />;
   const rows = (data?.rows ?? []).filter((row) => filter === 'all' || row.over || (row.flag && row.flag.status !== 'cleared'));
   const open = (data?.rows ?? []).filter((row) => row.flag && row.flag.status !== 'cleared');
   return (

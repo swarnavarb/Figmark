@@ -23,7 +23,7 @@ import { GROUPS, SECTIONS, isTab, type Tab } from './sections';
 import { backOps, goOps, useOpsPath } from './nav';
 import { BackBar } from '../components/ScrollManager';
 import { Icon } from '../components/Icon';
-import { Loading } from '../components/Feedback';
+import { SkelRows } from '../components/PageSkeletons';
 import '../styles.css';
 import '../styles/admin.css';
 
@@ -85,7 +85,7 @@ function Console() {
     };
   }, [menuOpen]);
 
-  if (loading) return <main className="ops__body"><Loading /></main>;
+  if (loading) return <main className="ops__body"><SkelRows n={6} /></main>;
   if (!user) return <SignIn onSignedIn={refresh} />;
 
   // Signed in, but not as an operator. Said plainly rather than shown an empty

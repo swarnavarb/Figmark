@@ -1,4 +1,5 @@
 import { CreditChip, ProBadge } from '../components/Billing';
+import { PageLoading } from '../components/Feedback';
 import { useEffect, useState } from 'react';
 import { CommunityAlertBanner } from '../components/CommunityAlerts';
 import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
@@ -63,7 +64,7 @@ export function ProfileByHandlePage() {
       </main>
     );
   }
-  if (!data) return <PageSkeleton />;
+  if (!data) return <PageLoading label="Loading the page" />;
 
   const isMe = user?.id === data.sellerId;
   const reload = () => void api.profile(data.handle).then(setData).catch(() => undefined);
@@ -81,20 +82,6 @@ export function ProfileByHandlePage() {
         ? <Storefront data={data} isMe={isMe} onFollow={onFollow} reload={reload} />
         : <CollectorProfile profile={data} isMe={isMe} onFollow={onFollow} reload={reload} />}
     </>
-  );
-}
-
-/** The page's outline while it loads, so nothing jumps when it lands. */
-function PageSkeleton() {
-  return (
-    <main className="storefront">
-      <div className="storefront__cover pskel__cover" />
-      <div className="storefront__body">
-        <div className="pskel__head"><span className="pskel__face" /><SkeletonText lines={2} /></div>
-        <div className="pskel__slab" />
-        <SkeletonText lines={3} />
-      </div>
-    </main>
   );
 }
 

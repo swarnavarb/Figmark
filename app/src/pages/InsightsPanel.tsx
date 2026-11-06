@@ -1,4 +1,5 @@
 import { ProGate } from '../components/Billing';
+import { SkelFigures, SkelRows } from '../components/PageSkeletons';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
@@ -15,7 +16,7 @@ import { Bundles, Digest, Forecast, Loyalty, Pricing, Reminders, Returns } from 
 import { ProfitBook, bookTotals } from './ProfitBook';
 import { CalcIcon } from '../components/CalcIcon';
 import { tagPath } from '../components/ShopCards';
-import { Loading } from '../components/Feedback';
+
 
 /**
  * Insights (Pro): who wants what, before and after they buy.
@@ -137,7 +138,7 @@ function InsightsPanelOpen({ store, only, title }: {
   const reloadCosts = () => void api.costs(shop).then(setCosts).catch(() => undefined);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelFigures />;
 
   if (view) {
     const entry = CATEGORIES.find((row) => row.id === view)!;
@@ -160,7 +161,7 @@ function InsightsPanelOpen({ store, only, title }: {
         {view === 'lots' && <Lots data={lots} />}
         {view === 'timing' && <Timing data={data} />}
         {view === 'profit' && <ProfitBook shop={shop} data={costs} reload={reloadCosts} />}
-        {DEEP_VIEWS.includes(view) && !deep && <Loading />}
+        {DEEP_VIEWS.includes(view) && !deep && <SkelFigures />}
         {deep && view === 'loyalty' && <Loyalty deep={deep} />}
         {deep && view === 'pricing' && <Pricing deep={deep} />}
         {deep && view === 'forecast' && <Forecast deep={deep} />}
@@ -814,7 +815,7 @@ function Tags({ shop }: { shop: string | undefined }) {
   }, [shop]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelRows n={4} />;
   if (data.tags.length === 0) {
     return <EmptyState icon="#️⃣" title="No tags yet">Add tags to your shop in Shop settings, or to the items you list.</EmptyState>;
   }
@@ -873,7 +874,7 @@ function Market({ shop }: { shop: string | undefined }) {
   }, [shop]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <SkelRows n={4} />;
   if (data.categories.length === 0) {
     return <EmptyState icon="🌐" title="List something first">Market trends follow the categories you sell in.</EmptyState>;
   }

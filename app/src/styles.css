@@ -2784,8 +2784,49 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
   border: 1px solid var(--border); border-radius: var(--r-md);
 }
 
+/* Page skeletons (components/PageSkeletons.tsx): the few layouts the pages'
+   own classes do not already give, so each skeleton sits where its page will. */
+.psk { display: grid; gap: var(--s3); align-content: start; }
+.psk-lines { display: grid; gap: 8px; min-width: 0; }
+.psk-row { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.psk-row--between { justify-content: space-between; }
+.psk-wrap { flex-wrap: wrap; }
+.psk-scroll { overflow: hidden; }
+.psk-scroll > * { flex: none; }
+.psk-card { display: grid; gap: var(--s3); align-content: start; }
+.psk-hero { display: grid; gap: var(--s3); align-content: start; background: var(--surface); }
+.psk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); }
+.psk-cat { display: grid; justify-items: center; gap: 6px; width: 70px; }
+.psk-kv { display: grid; gap: 18px; }
+.psk-kv > span { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.psk-tile { display: grid; gap: 8px; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); }
+.psk-tile--tall { min-height: 92px; align-content: start; }
+.psk-tiles2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.psk-tiles3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); }
+.psk-tiles5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.psk-shelf { display: grid; justify-items: center; gap: 6px; }
+.psk-lift { position: relative; margin-top: -64px; margin-inline: var(--s3); }
+.psk-roombar { display: flex; align-items: center; gap: var(--s3); min-height: 56px; padding: 0 var(--page-pad, 16px) 0 52px; background: var(--surface); }
+.psk-chat { display: grid; gap: var(--s3); padding: var(--s4) 0; }
+.psk-chat__mine { justify-self: end; }
+.psk-bill { max-width: 760px; margin-inline: auto; }
+.psk-tile--fee { background: var(--surface); min-height: 74px; align-content: start; }
+.psk-steps { list-style: none; margin: 0 0 var(--s2); padding: 0; display: flex; align-items: center; gap: var(--s4); font-size: var(--t-xs); color: var(--text-dim); }
+.psk-steps > li { display: flex; align-items: center; gap: 6px; }
+.psk-steps__dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); }
+.psk-face { display: block; width: 96px; height: 96px; border-width: 4px; }
+.psk-follow { margin-bottom: 14px; }
+.psk-photo { position: relative; aspect-ratio: 4 / 3; border-radius: 18px; background: var(--surface-2); animation: skel-shimmer 1.5s var(--ease) infinite; background-image: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-hover) 42%, var(--surface-2) 84%); background-size: 260% 100%; }
+.psk-photo__chips { position: absolute; top: 12px; left: 12px; }
+.psk-bands { display: grid; gap: var(--s3); padding: var(--s3); }
+.psk-band__label { width: 46px; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; color: var(--text-faint); }
+.psk-inline { display: inline-block; vertical-align: middle; border-radius: var(--r-sm); }
+.psk-faces { display: inline-flex; }
+.psk-faces > * + * { margin-left: -8px; box-shadow: 0 0 0 2px var(--surface); }
+.psk-learn { display: flex; gap: var(--s3); align-items: flex-start; }
+
 @media (prefers-reduced-motion: reduce) {
-  .skel { animation: none; background: var(--surface-2); }
+  .skel, .psk-photo { animation: none; background: var(--surface-2); }
 }
 
 /* ── Loading mark ──────────────────────────────────────────────────────────

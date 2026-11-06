@@ -7,7 +7,8 @@ import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handl
 import { ApiRequestError, api, type ActivityResponse, type BlockedRow, type FeedListing, type PostCard, type PublicProfile } from '../api';
 import { listingRarity } from '@shared/quest';
 import { LootCard } from './FeedPage';
-import { useToast, Loading } from '../components/Feedback';
+import { useToast } from '../components/Feedback';
+import { SkelCards, SkelGrid, SkelRows } from '../components/PageSkeletons';
 import { CollectorHeader, PurchasedCollection } from './CollectorProfile';
 import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Thumb, TrustBadge, leadPhoto } from '../components/ui';
@@ -237,7 +238,7 @@ export function ProfilePage() {
           <DeleteAccount />
         </>
       ) : tab === 'posts' ? (
-        posts === null ? <Loading />
+        posts === null ? <SkelCards n={2} h={160} />
           : posts.length === 0 ? (
             <EmptyState icon="📝" title="No posts yet">
               Say hi to your followers — <Link to="/social">write your first post</Link>.
@@ -253,7 +254,7 @@ export function ProfilePage() {
       ) : tab === 'photos' ? (
         <PhotoGrid posts={posts} listings={data?.listings ?? null} />
       ) : !data ? (
-        <Loading />
+        <SkelGrid n={4} />
       ) : tab === 'listings' ? (
         data.listings.length === 0 ? (
           <EmptyState icon="✦" title="You haven't listed anything yet">
@@ -530,7 +531,7 @@ function UsernameSettings() {
 
 /** Everything this account has posted a picture of, as a tight square grid. */
 function PhotoGrid({ posts, listings }: { posts: PostCard[] | null; listings: ActivityResponse['listings'] | null }) {
-  if (posts === null || listings === null) return <Loading />;
+  if (posts === null || listings === null) return <SkelGrid n={6} />;
   const photos = [
     ...posts.filter((card) => card.post.photoUrl)
       .map((card) => ({ key: card.post.id, url: card.post.photoUrl!, to: card.listing ? `/listing/${card.listing.id}` : null })),
@@ -560,7 +561,7 @@ function SavedItems() {
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your saves.'));
   }, []);
   if (error) return <ErrorNotice message={error} />;
-  if (!items) return <Loading />;
+  if (!items) return <SkelGrid n={4} />;
   if (items.length === 0) {
     return (
       <EmptyState icon="♥" title="Nothing saved yet">
@@ -600,7 +601,7 @@ function BlockedList() {
     <section className="card card--pad stack" style={{ marginTop: 18 }}>
       <span className="card__title">Blocked people and shops</span>
       <p className="faint" style={{ margin: 0 }}>Blocking someone blocks their shop too. Neither of you can message the other.</p>
-      {!rows ? <Loading /> : rows.length === 0 ? <p className="muted">You have not blocked anyone.</p> : (
+      {!rows ? <SkelRows n={2} /> : rows.length === 0 ? <p className="muted">You have not blocked anyone.</p> : (
         <ul className="followlist">
           {rows.map((row) => (
             <li key={row.id} className="followlist__row">

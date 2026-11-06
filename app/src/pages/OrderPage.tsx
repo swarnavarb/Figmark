@@ -1,4 +1,5 @@
 import { CreditChip } from '../components/Billing';
+import { SkelBlock } from '../components/PageSkeletons';
 import { daysAgainstPromise, dueBy, etaLabel, punctuality } from '@shared/delivery-eta';
 import { InfoTip } from '../components/InfoTip';
 import { liveAddOns, orderTotalMinor } from '@shared/service-stores';
@@ -36,7 +37,7 @@ import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
 import { MomentBanner, shopBadge, type ShareSpec } from '../components/ShareKit';
 import { OrderPhotos } from '../components/OrderPhotos';
-import { Loading, PageLoading } from '../components/Feedback';
+import { PageLoading } from '../components/Feedback';
 import '../styles/OrderPage.css';
 import { Select } from '../components/Select';
 import { PriceBreakdown } from '../components/Offers';
@@ -1145,7 +1146,7 @@ function BuyPanel({ order, busy, onPaid, onBook, onCancel }: {
   }, [order.id, order.unitPriceMinor, order.quantity, repriced]);
 
   if (error) return <ErrorNotice message={error} />;
-  if (!quote) return <Loading />;
+  if (!quote) return <SkelBlock h={86} r={14} />;
 
   if (quote.unavailable) {
     return (

@@ -12,7 +12,7 @@ import { RouteStudio } from '../pages/RouteStudioPage';
 import { ApiRequestError, admin } from './api';
 import { BackButton, backOps, goOps, useOpsPath } from './nav';
 import { timeAgo } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelRows } from '../components/PageSkeletons';
 import { Select } from '../components/Select';
 
 type Library = Awaited<ReturnType<typeof admin.routeLibrary>>;
@@ -47,7 +47,7 @@ export function RoutesView() {
   useEffect(() => { void load(); }, []);
 
   if (error && !data) return <p className="notice notice--error">{error}</p>;
-  if (!data) return <Loading />;
+  if (!data) return <SkelRows n={6} />;
 
   const savedCommon = (common: RouteStep[], customised: boolean) => setData({
     ...data, common, commonCustomised: customised, commonUpdatedAt: customised ? new Date().toISOString() : null, commonUpdatedBy: null,

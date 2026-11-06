@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { SkelCards } from './PageSkeletons';
 import { compressImage } from '../imageCompress';
 import { ApiRequestError, api } from '../api';
 import { ErrorNotice } from './ui';
-import { Loading } from './Feedback';
+
 
 /**
  * Payment Reversal Details - where a seller sends this buyer's money back.
@@ -72,7 +73,7 @@ export function ReversalDetailsForm({ onSaved }: { onSaved?: () => void | Promis
     }
   }
 
-  if (loading) return <Loading />;
+  if (loading) return <SkelCards n={1} h={180} mark={false} chips={0} />;
 
   return (
     <div className="card card--pad stack">

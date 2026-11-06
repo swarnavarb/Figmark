@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { Icon } from './Icon';
+import { useLocation } from 'react-router-dom';
+import { PageSkeleton, shapeFor, type PageShape } from './PageSkeletons';
 
 /* ── Skeletons ───────────────────────────────────────────────────────────── */
 
@@ -89,7 +91,11 @@ export function SkeletonRows({ count = 6 }: { count?: number }) {
  * every page waits the same way; the mark is for the app starting up, `Loading`
  * for a part of a page, and the Spinner for a button at work.
  */
-export function PageLoading({ label = 'Loading the page' }: { label?: string }) {
+export function PageLoading({ label = 'Loading the page', shape }: { label?: string; shape?: PageShape }) {
+  /* The page's own skeleton, picked from the address unless the caller
+     names one: the wait for a screen's code and the wait for its data happen
+     at the same address, so both draw the same shape. */
+  const { pathname } = useLocation();
   /* A page that arrives within a few frames never shows its skeleton: a
      skeleton flashed for one frame reads as a flicker, not as loading. The
      empty page held meanwhile is still marked pending, so the boot screen
@@ -101,15 +107,10 @@ export function PageLoading({ label = 'Loading the page' }: { label?: string }) 
   }, []);
   if (!shown) return <main className="page pageload" role="status" aria-label={label} data-boot-pending />;
   return (
-    <main className="page pageload" role="status" aria-label={label} data-boot-pending>
-      <span className="pageload__head" aria-hidden="true">
-        <Skeleton w={40} h={40} radius={999} />
-        <Skeleton w="48%" h={22} radius={8} />
-      </span>
-      <SkeletonText lines={2} />
-      <Skeleton className="pageload__card" w="100%" h={132} radius={16} />
-      <SkeletonRows count={4} />
-    </main>
+    <>
+      <span className="sr-only" role="status">{label}</span>
+      <PageSkeleton shape={shape ?? shapeFor(pathname)} />
+    </>
   );
 }
 

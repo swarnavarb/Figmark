@@ -22,7 +22,6 @@
 .ptrust--warn { color: var(--warn); }
 .ptrust--low { color: #F87171; }
 .ptrust--none { color: var(--text-faint); }
-.pskel__head { display: grid; grid-template-columns: 84px 1fr; gap: var(--s3); align-items: end; margin: -34px 0 var(--s4); }
 /* On a shop: badges it earned, and what its listings say it sells. */
 .earnedtag { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); cursor: default; }
 .alsosells { align-items: center; }

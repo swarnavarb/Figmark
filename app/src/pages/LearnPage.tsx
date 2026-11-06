@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
+import { PageLoading } from '../components/Feedback';
 import { useSearchParams } from 'react-router-dom';
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import { ApiRequestError, api } from '../api';
-import { SkeletonText } from '../components/Feedback';
 import { LearnText } from '../components/LearnText';
 import { Lightbox } from '../components/SocialPost';
 import { PageError } from '../components/ui';
@@ -30,7 +30,7 @@ export function LearnPage() {
   }, []);
 
   if (error) return <PageError message={error} />;
-  if (!doc) return <main className="page"><SkeletonText lines={8} /></main>;
+  if (!doc) return <PageLoading label="Loading the guide" shape="learn" />;
 
   const asked = params.get('tab');
   const tab: LearnTab | undefined = doc.tabs.find((entry) => entry.id === asked) ?? doc.tabs[0];

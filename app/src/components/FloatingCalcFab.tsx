@@ -1,8 +1,9 @@
 import { ProGate } from './Billing';
+import { SkelBlock } from './PageSkeletons';
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { useDialog } from './ui';
 import { CalcIcon } from './CalcIcon';
-import { Loading } from './Feedback';
+
 
 /**
  * The floating calculator button, mounted on every screen.
@@ -54,7 +55,7 @@ function CalcSheet({ onClose }: { onClose: () => void }) {
   useDialog(box, onClose);
   return (
     <section ref={box} tabIndex={-1} className="fcalc__sheet prozone" role="dialog" aria-modal="true" aria-label="Profit calculator">
-      <Suspense fallback={<Loading />}>
+      <Suspense fallback={<SkelBlock h={220} />}>
         <ProGate feature="calculator">
           <QuickCalc onLeave={onClose} />
         </ProGate>

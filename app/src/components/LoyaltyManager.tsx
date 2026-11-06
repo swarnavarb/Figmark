@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { SkelCards, SkelRows } from './PageSkeletons';
 import {
   CARD_THEMES, REWARD_KINDS, REWARD_META, STAMPS, rewardWords,
   type CardTheme, type IssuedReward, type LoyaltyCard, type LoyaltyReward, type LoyaltySettings, type RewardKind,
@@ -8,7 +9,7 @@ import { PERK_WORDS, offerLabel, offerPerk, type Perk } from '@shared/offers';
 import type { Listing } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { formatMoney, timeAgo } from '../format';
-import { Loading } from './Feedback';
+
 import { Select } from './Select';
 import { InfoTip } from './InfoTip';
 import { CapField } from './Offers';
@@ -60,7 +61,7 @@ export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
   useEffect(() => { void load(); }, [load]);
 
   if (error && !data) return <p className="notice notice--error">{error}</p>;
-  if (!data) return <Loading />;
+  if (!data) return <SkelCards n={2} h={120} />;
   if (!data.settings.enabled) return <p className="notice">Loyalty cards are switched off on Figmark right now.</p>;
   if (draft) {
     return <CardEditor draft={draft} settings={data.settings} onCancel={() => setDraft(null)} onSaved={() => { setDraft(null); void load(); }} />;
@@ -236,7 +237,7 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
           <span>Every item in the shop stamps it</span>
         </label>
         {!draft.everything && (
-          !listings ? <Loading /> : (
+          !listings ? <SkelRows n={3} /> : (
             <div className="loyman__items">
               {listings.filter((listing) => listing.status !== 'archived').map((listing) => (
                 <label key={listing.id} className="loyman__item">

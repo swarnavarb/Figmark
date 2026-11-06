@@ -25,6 +25,7 @@ import {
 } from '../components/FeedRails';
 import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
+import { SkelBlock } from '../components/PageSkeletons';
 import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
 import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
 import { useSave } from '../components/useSave';
@@ -328,6 +329,9 @@ export function FeedPage() {
       <h1 className="sr-only">Shop</h1>
       <QuestBar />
 
+      {/* The daily pick holds its place while the catalogue loads, so the
+          page does not drop by a card's height when it arrives. */}
+      {browsing && loading && !data && <SkelBlock h={112} />}
       {browsing && <DailyDrop listings={rated} now={now} />}
       {/* Drops sit up top, before the catalogue: an event on now beats any one item. */}
       {browsing && <DropsStage />}

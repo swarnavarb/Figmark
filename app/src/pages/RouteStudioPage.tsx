@@ -12,7 +12,7 @@ import {
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { ErrorNotice, Icon, Modal, WaveLoader } from '../components/ui';
-import { SkeletonRows } from '../components/Feedback';
+import { SkelRouteCards } from '../components/PageSkeletons';
 import { STAGE_ICON_META } from '../components/RouteBuilder';
 import { stepEmoji } from '../components/OrderTrack';
 import {
@@ -514,7 +514,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
         )}
 
         {error && <ErrorNotice message={error} />}
-        {!library && !error && <SkeletonRows count={5} />}
+        {!library && !error && <SkelRouteCards n={4} />}
 
         {library && (
           <div className="stack">

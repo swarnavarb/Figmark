@@ -34,7 +34,7 @@ import { RouteStudio, routeStepsFrom } from './RouteStudioPage';
 import { ForwarderBooking } from '../components/ForwarderBooking';
 import { formatDate, formatMoney, formatWeight } from '../format';
 import { ConditionTag } from '../components/ConditionTag';
-import { Loading } from '../components/Feedback';
+import { PageSkeleton, SkelCards, SkelInline, SkelRows } from '../components/PageSkeletons';
 import { Select } from '../components/Select';
 
 /**
@@ -541,9 +541,7 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
           </label>
         ))}
 
-        {!library && (
-          <Loading label="Loading routes" />
-        )}
+        {!library && <SkelRows n={3} />}
       </fieldset>
 
       {/* A forwarder, a supplier and a handler are all things a lot may
@@ -699,7 +697,7 @@ function ChangeRouteDialog({ lot, current, onSaved, onCancel }: {
           </label>
         ) : (
           <p className="field__hint">
-            {library ? 'You have no route for lots yet.' : <Loading size="sm" label="Loading routes" />}
+            {library ? 'You have no route for lots yet.' : <SkelInline w={170} />}
           </p>
         )}
 
@@ -979,7 +977,7 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
       {error && <ErrorNotice message={error} />}
 
       {items === null ? (
-        <Loading />
+        <SkelRows n={4} />
       ) : items.length === 0 ? (
         <p className="muted">
           {query
@@ -1116,7 +1114,7 @@ export function LotDetail({ lotId, onBack, customers }: {
 
   // A <div>, not a <main>: this is drawn inside the Sell tab's own <main>.
   if (error && !data) return <div className="stack"><ErrorNotice message={error} /></div>;
-  if (!data) return <div className="stack"><Loading /></div>;
+  if (!data) return <PageSkeleton shape="lotDetail" />;
 
   const { lot, listings, totals, route, items } = data;
   /** Somewhere else an item could ride: any open lot of this shop but this one. */
@@ -1385,7 +1383,7 @@ export function LotDetail({ lotId, onBack, customers }: {
               </Fragment>
             : people
               ? <LotPeople board={people} onChanged={setPeople} onError={setError} />
-              : <Loading />}
+              : <SkelCards n={3} h={92} mark={false} chips={1} />}
 
           {/* Sold, bound for a lot, in none - which before this screen existed
               was a list nobody could see. Shut, because most of the time there

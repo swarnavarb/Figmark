@@ -4,7 +4,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { routePartsLine, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
-import { SkeletonRows } from '../components/Feedback';
+import { SkelRouteCards } from '../components/PageSkeletons';
 import { InfoTip } from '../components/InfoTip';
 import { MoreMenu } from '../components/MoreMenu';
 import '../styles/RoutesPage.css';
@@ -119,7 +119,7 @@ export function RoutesList({ spotlightNew = false }: {
 
       {error && <ErrorNotice message={error} />}
       {flash && <p className="notice notice--ok">{flash}</p>}
-      {!data && !error && <SkeletonRows count={4} />}
+      {!data && !error && <SkelRouteCards n={3} />}
 
       {data && data.routes.length > 0 && (
         <div className="rlist">
