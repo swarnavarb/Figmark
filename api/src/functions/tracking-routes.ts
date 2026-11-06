@@ -12,6 +12,7 @@ import { methodOf, orderMoney } from '../../../shared/payments.js';
 import { AuthError, getAuthService } from '../auth/index.js';
 import { forwarderWorks } from '../service-access.js';
 import { getRepository } from '../data/index.js';
+import { StaleWriteError } from '../data/concurrency.js';
 import { followsItsLot, mapLimit, tellLot } from '../data/lot-view.js';
 import {
   afterDelivered, deliver, dropFromCollection, isDeliveryLocked, lockedReason, settleAll, syncLotDelivery, undeliver,
@@ -117,7 +118,7 @@ interface RouteBody {
   steps?: {
     id?: string; name?: string; description?: string; side?: StepSide; trigger?: StepTrigger;
     stageId?: string; stageName?: string; stageIcon?: string; locked?: boolean; forward?: boolean;
-    waitMessage?: string; lastMile?: boolean; button?: string; custom?: boolean; assignee?: StepAssignee;
+    waitMessage?: string; lastMile?: boolean; button?: string; custom?: boolean; assignee?: StepAssignee; typicalDays?: number;
   }[];
 }
 
@@ -303,7 +304,7 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
      worth failing the whole request over when the other nine are fine. */
   const want = new Set(wanted);
   const waiting = (await repository.listOrdersAwaitingLot(lot.sellerId)).filter((order) => want.has(order.id));
-  const added = await mapLimit(waiting, 6, (order) => {
+  const moves = await mapLimit(waiting, 6, (order) => {
     /* Filed where the item is, not where the lot is. A parcel already counted
        into the warehouse joined its lot there, and recording the lot's own
        step put "travelling with lot" above an arrival that happened first. */
@@ -329,8 +330,13 @@ async function addItems(request: HttpRequest, _context: InvocationContext) {
         updatedAt: now,
       },
       AWAITING_LOT_ID,
-    );
+    ).catch((err: unknown) => {
+      // Moved elsewhere at the same moment: that one is simply not added.
+      if (err instanceof StaleWriteError) return null;
+      throw err;
+    });
   });
+  const added = moves.filter((order): order is Order => order !== null);
 
   if (added.length > 0) {
     await notifyBuyers(repository, added, ({ items, shop }) => ({
@@ -464,13 +470,26 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
       .filter((entry) => entry.needs !== null);
     if (held.length > 0) {
       const first = held[0]!;
-      return error(
-        409,
-        'orders_not_ready',
+      const buyers = await namesFor(repository, held.map((entry) => entry.order));
+      /* Every item in the way, not just the first: a seller told about one
+         fixes it, presses Move, and is told about the next. */
+      const list = held.map(({ order, needs }) => ({
+        orderId: order.id,
+        itemName: order.itemName,
+        quantity: order.quantity,
+        buyerName: buyers.get(order.buyerId)?.displayName ?? 'Buyer',
+        key: needs!.key,
+        label: needs!.label,
+        step: needs!.step,
+      }));
+      return json(409, {
+        error: 'orders_not_ready',
+        held: list,
+        message:
         held.length === 1
           ? `${first.order.itemName} still needs “${first.needs!.label}”. Press it, or cancel that order, to move the lot.`
           : `${held.length} orders still need their earlier buttons pressed - ${first.order.itemName} needs “${first.needs!.label}”. Press them, or cancel those orders, to move the lot.`,
-      );
+      });
     }
   }
 
@@ -607,19 +626,7 @@ const NEVER_JOINS = 'That route never joins a lot - it is for items shipped one 
  */
 async function rerouteLot(repository: Repo, lot: Lot, next: LotRoute, userId: string, note?: string) {
   const before = routeOf(lot);
-  /* Carried across by the step itself when it survived the edit, then by the
-     stage the two ladders share, so a lot halfway to India stays halfway to
-     India rather than starting again - except a lot still filling, which has
-     taken none of its own steps and stays filling on the new ladder. */
-  const was = currentStepOf(lot);
-  const sameStep = before.routeId !== null && before.routeId === next.routeId
-    ? next.steps.findIndex((step) => step.id === before.steps[was]?.id)
-    : -1;
-  const at = was < lotOffset(before)
-    ? Math.max(0, lotOffset(next) - 1)
-    // Never onto a step that happens to one item, nor past where the lot is unpacked.
-    : Math.max(lotOffset(next) - 1, Math.min(
-      sameStep >= 0 ? sameStep : stepForStage(next, coarseStage(before, was)), lotEndIndex(next)));
+  const at = reroutedStep(lot, next);
   const stage = coarseStage(next, at);
   const now = new Date().toISOString();
   const updatedRoute = before.routeId !== null && before.routeId === next.routeId;
@@ -684,6 +691,27 @@ async function rerouteLot(repository: Repo, lot: Lot, next: LotRoute, userId: st
   return { lot: updated, ordersUpdated: orders.length };
 }
 
+/**
+ * Where a lot lands on a new copy of a route.
+ *
+ * Carried across by the step itself when it survived the edit, then by the
+ * stage the two ladders share, so a lot halfway to India stays halfway to
+ * India rather than starting again - except a lot still filling, which has
+ * taken none of its own steps and stays filling on the new ladder.
+ */
+function reroutedStep(lot: Lot, next: LotRoute): number {
+  const before = routeOf(lot);
+  const was = currentStepOf(lot);
+  const sameStep = before.routeId !== null && before.routeId === next.routeId
+    ? next.steps.findIndex((step) => step.id === before.steps[was]?.id)
+    : -1;
+  return was < lotOffset(before)
+    ? Math.max(0, lotOffset(next) - 1)
+    // Never onto a step that happens to one item, nor past where the lot is unpacked.
+    : Math.max(lotOffset(next) - 1, Math.min(
+      sameStep >= 0 ? sameStep : stepForStage(next, coarseStage(before, was)), lotEndIndex(next)));
+}
+
 /** The shop's unfinished lots on this route whose copy is older than the route now is. */
 async function lotsBehindOf(repository: Repo, sellerId: string, route: TrackingRoute): Promise<Lot[]> {
   const lots = await repository.listLots({ sellerId });
@@ -711,6 +739,29 @@ async function applyRoute(request: HttpRequest, _context: InvocationContext) {
 
   const next: LotRoute = { routeId: route.id, name: route.name, steps: withButtons(route.steps) };
   const behind = await lotsBehindOf(repository, user.id, route);
+
+  /* `?preview=1` says what would happen and writes nothing: each lot, the
+     step it reads now and the one it would read after, so the seller sees
+     what twenty buyers are about to be shown before agreeing to it. */
+  if (request.query.get('preview') === '1') {
+    const lots = await mapLimit(behind, 6, async (lot) => {
+      const before = routeOf(lot);
+      const now = currentStepOf(lot);
+      const after = reroutedStep(lot, next);
+      const people = new Set((await repository.listOrdersForLot(lot.id))
+        .filter((order) => !isCancelledLike(order.status) && order.status !== 'delivered')
+        .map((order) => order.buyerId)).size;
+      return {
+        lotId: lot.id,
+        name: lot.name,
+        number: lotNo(lot.lotNumber) ?? lotNumberFrom(lot.id, lot.createdAt),
+        from: now < lotOffset(before) ? 'Filling' : before.steps[now]?.name ?? '',
+        to: after < lotOffset(next) ? 'Filling' : next.steps[after]?.name ?? '',
+        buyers: people,
+      };
+    });
+    return json(200, { lots });
+  }
   /* One lot at a time, and one that fails does not stop the rest: the reply
      says how many made it, so the seller can try the stragglers again. */
   let ordersUpdated = 0;

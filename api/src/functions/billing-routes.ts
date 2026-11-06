@@ -24,6 +24,7 @@ import { AuthError } from '../auth/errors.js';
 import { storeKey, type ServiceRequest } from '../../../shared/service-work.js';
 import { notify } from './notify.js';
 import { error, handler, json } from './http.js';
+import { config } from '../config.js';
 
 /**
  * Figmark's money, as the people paying it and the operators setting it see it:
@@ -53,6 +54,19 @@ const money = (value: unknown): number => {
   return Number.isFinite(amount) && amount > 0 ? Math.min(amount, 1_00_00_000) : 0;
 };
 const gatewayRef = () => `gw_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+
+/**
+ * Whether Pro and platform fees may be "paid" without a payment gateway.
+ *
+ * There is no gateway yet: a purchase is granted the moment it is asked for.
+ * That is right for a test site and wrong for the real one, where it hands
+ * out Pro for nothing. So production refuses until a gateway is wired in, or
+ * an operator deliberately sets FIGMARK_SIMULATED_BILLING=on.
+ */
+function simulatedBillingRefused() {
+  if (config.siteEnvironment !== 'production' || process.env.FIGMARK_SIMULATED_BILLING === 'on') return null;
+  return error(503, 'payments_unavailable', 'Online payment is not available yet. Please try again later.');
+}
 
 /** What a visitor may read of the pricing: everything but who last edited it. */
 function publicPricing(pricing: Pricing) {
@@ -98,6 +112,8 @@ async function myFees(request: HttpRequest, _context: InvocationContext) {
 
 /** POST /api/me/fees/pay { amountMinor? } - pays through the gateway; all that is owed unless told less. */
 async function payFees(request: HttpRequest, _context: InvocationContext) {
+  const refused = simulatedBillingRefused();
+  if (refused) return refused;
   const { user, repository, account } = await me(request);
   const slow = await tooFast(user.id, 'billing');
   if (slow) return slow;
@@ -178,6 +194,8 @@ function addBumps(account: User, points: number): void {
 
 /** POST /api/me/pro/buy { months } - pays through the gateway and adds the months. */
 async function buyPro(request: HttpRequest, _context: InvocationContext) {
+  const refused = simulatedBillingRefused();
+  if (refused) return refused;
   const { user, repository, account } = await me(request);
   const slow = await tooFast(user.id, 'billing');
   if (slow) return slow;
@@ -246,7 +264,17 @@ async function redeemVoucher(request: HttpRequest, _context: InvocationContext) 
   if (refused) return error(400, 'bad_code', refused);
   const grant: ProGrant = { id: `pro_${randomUUID().slice(0, 12)}`, at: new Date().toISOString(), source: 'voucher', days, code, by: user.id };
   account.pro = extendPro(account.pro, days, grant);
-  await repository.updateUser(account);
+  try {
+    await repository.updateUser(account);
+  } catch (err) {
+    /* The days never reached the account, so the use is handed back: a code
+       spent on a write that lost a race would otherwise be gone for nothing. */
+    await mutateVouchers(repository, user.id, (list) => list.map((entry) => entry.code === code
+      ? { ...entry, redeemed: entry.redeemed.filter((use, index, all) =>
+        !(use.userId === user.id && index === all.map((row) => row.userId).lastIndexOf(user.id))) }
+      : entry)).catch(() => undefined);
+    throw err;
+  }
   await notify(repository, [account.id], {
     kind: 'pro_plan', title: `Voucher applied: ${days} days of Pro`, body: 'Every Pro tool is open.', link: '/pro',
   });

@@ -101,6 +101,8 @@ export class ApiRequestError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** The whole refusal, for the few that carry more than words (a list of what is in the way). */
+    readonly detail: Record<string, unknown> | null = null,
   ) {
     super(message);
     this.name = 'ApiRequestError';
@@ -262,6 +264,7 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
       body?.error ?? 'http_error',
       body?.message ?? `Request failed with status ${response.status}.`,
+      body && typeof body === 'object' ? (body as unknown as Record<string, unknown>) : null,
     );
   }
   return (await response.json()) as T;
@@ -3157,13 +3160,17 @@ export const api = {
     steps: {
       id?: string; name: string; description?: string; side?: StepSide; trigger?: StepTrigger;
       stageId?: string; stageName?: string; stageIcon?: StageIcon; locked?: boolean; forward?: boolean;
-      waitMessage?: string; lastMile?: boolean; button?: string; custom?: boolean; assignee?: StepAssignee;
+      waitMessage?: string; lastMile?: boolean; button?: string; custom?: boolean; assignee?: StepAssignee; typicalDays?: number;
     }[];
   }) =>
     post<{ route: TrackingRoute; lotsBehind?: number }>('/routes/new', body),
   /** Give every unfinished lot on this route its latest steps. */
   applyRoute: (id: string) =>
     post<{ lotsUpdated: number; lotsFailed?: number; ordersUpdated: number }>(`/routes/${encodeURIComponent(id)}/apply`, {}),
+  /** What updating would do, lot by lot, without doing it. */
+  previewApplyRoute: (id: string) =>
+    post<{ lots: { lotId: string; name: string; number: string; from: string; to: string; buyers: number }[] }>(
+      `/routes/${encodeURIComponent(id)}/apply?preview=1`, {}),
   deleteRoute: (id: string) => post<{ deleted: string }>(`/routes/${encodeURIComponent(id)}/delete`, {}),
   lotCandidates: (id: string, q?: string) =>
     request<{ items: CandidateItem[] }>(

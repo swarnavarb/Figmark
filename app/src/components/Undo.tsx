@@ -19,6 +19,8 @@ export interface UndoRequest {
   until: string;
   /** Takes it back. Throwing keeps the bar and shows why. */
   undo: () => Promise<void>;
+  /** The line under the label, when the stock "buyers see it in…" is not true - a change only on this screen. */
+  note?: string;
   /** Called once it has been taken back, to refresh whatever showed it. */
   onUndone?: () => void;
 }
@@ -81,7 +83,7 @@ export function UndoHost({ children }: { children: ReactNode }) {
             style={{ ['--left' as string]: `${Math.max(0, Math.min(1, left / (3 * 60 * 1000))) * 360}deg` }} />
           <span className="undobar__text">
             <b>{current.label}</b>
-            <span>{failed ?? `Buyers see it in ${clock} — until then you can take it back.`}</span>
+            <span>{failed ?? current.note ?? `Buyers see it in ${clock} — until then you can take it back.`}</span>
           </span>
           <button type="button" className="undobar__btn" disabled={busy} onClick={() => void run()}>
             {busy ? 'Undoing…' : 'Undo'}

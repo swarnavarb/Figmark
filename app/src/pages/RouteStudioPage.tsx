@@ -1,3 +1,4 @@
+import { useUndo } from '../components/Undo';
 import { confirmSentence } from '../components/Ask';
 import { createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -6,7 +7,7 @@ import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepK
 import { setButtonLibrary, stepKinds } from '@shared/route-buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  renderStepText, routeParts, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
+  cleanTypicalDays, TYPICAL_DAYS_MAX, renderStepText, routeParts, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
   type RouteStep, type StepAssignee, type StepTrigger, type TrackingRoute,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
@@ -169,6 +170,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   const [vars, setVars] = useState<PreviewVars>(EXAMPLE_LANE);
   /** The chain as last opened or saved: anything else on screen is unsaved work. */
   const [savedAs, setSavedAs] = useState<string | null>(null);
+  const offerUndo = useUndo();
   /** Saved, and some unfinished lots still read the route's older steps. */
   const [behind, setBehind] = useState<{ route: TrackingRoute; lots: number } | null>(null);
 
@@ -304,6 +306,20 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   }
 
   function removeAt(index: number) {
+    /* One tap deletes a step with its own words, button and wait message, so
+       it can be put back for a few seconds - exactly as it was, lines too. */
+    const was = { steps, joinAt, leaveAt };
+    const gone = steps[index];
+    offerUndo({
+      label: `Step “${gone?.name.trim() || 'untitled'}” deleted`,
+      until: new Date(Date.now() + 10_000).toISOString(),
+      note: 'Not saved yet - you can put it back.',
+      undo: async () => {
+        setSteps(was.steps);
+        setJoinAt(was.joinAt);
+        setLeaveAt(was.leaveAt);
+      },
+    });
     setSteps(steps.filter((_, i) => i !== index));
     /* Both lines shift by the same rule, and the leave line is held against
        the join line as it is *after* the removal - holding it against the old
@@ -368,6 +384,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
             button: step.button,
             custom: step.custom,
             assignee: step.assignee,
+            typicalDays: step.typicalDays,
           })),
       });
       setSavedAs(snapshot(name, steps, joinAt, leaveAt));
@@ -407,7 +424,10 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
   async function remove() {
     if (sample?.onDelete) { sample.onDelete(); return; }
     if (!editing) return;
-    if (!await confirmSentence(`Delete "${name.trim() || 'this route'}"? Lots already on it keep their steps.`)) return;
+    const onLots = library?.usage?.[editing]?.lots ?? 0;
+    if (!await confirmSentence(`Delete "${name.trim() || 'this route'}"? ${onLots > 0
+      ? `${onLots === 1 ? '1 lot is' : `${onLots} lots are`} on it now and keep their steps.`
+      : 'Lots already on it keep their steps.'}`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -592,7 +612,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
           </InfoTip>
         </div>
         {mode === 'edit' && (<>
-        <div className="rsmap" aria-label="The route's three parts">
+        <div className="rsmap" aria-label="The route's three parts" aria-live="polite">
           {lanes.map((lane) => (
             <a key={lane.zone} href={`#rs-lane-${lane.zone}`} className={`rsmap__seg rsmap__seg--${lane.zone}`}
               style={{ flexGrow: Math.max(1, lane.indexes.length) }}>
@@ -727,7 +747,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 function snapshot(name: string, steps: readonly RouteStep[], joinAt: number, leaveAt: number): string {
   return JSON.stringify([name.trim(), joinAt, leaveAt, steps.map((step) => [
     step.name, step.description, step.trigger ?? null, step.button ?? null, step.waitMessage ?? null,
-    step.forward ?? false, step.custom ?? false, step.assignee ?? null,
+    step.forward ?? false, step.custom ?? false, step.assignee ?? null, step.typicalDays ?? null,
   ])]);
 }
 
@@ -1009,6 +1029,18 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
           placeholder="Say what happens here, in one line — {origin} and {dest} work too"
           aria-label={`Step ${index + 1} description`}
           onChange={(event) => onChange({ description: event.target.value })} />
+
+        {/* How long it usually takes, for the late flag on the board and the
+            buyer's rough arrival. Not on Delivered, which is the end. */}
+        {!isDelivered && (
+          <label className="rsnode__days">
+            <span>Usually takes</span>
+            <input type="number" inputMode="numeric" min={1} max={TYPICAL_DAYS_MAX} placeholder="–"
+              value={step.typicalDays ?? ''} aria-label={`Days step ${index + 1} usually takes`}
+              onChange={(event) => onChange({ typicalDays: cleanTypicalDays(event.target.value) })} />
+            <span>days</span>
+          </label>
+        )}
 
         {/* The button: handed out from where the step sits and what it says,
             or one of the seller's own. Never inside a lot. */}

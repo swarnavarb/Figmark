@@ -90,6 +90,16 @@ export function SkeletonRows({ count = 6 }: { count?: number }) {
  * for a part of a page, and the Spinner for a button at work.
  */
 export function PageLoading({ label = 'Loading the page' }: { label?: string }) {
+  /* A page that arrives within a few frames never shows its skeleton: a
+     skeleton flashed for one frame reads as a flicker, not as loading. The
+     empty page held meanwhile is still marked pending, so the boot screen
+     waits for it exactly as it waited for the skeleton. */
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShown(true), 150);
+    return () => window.clearTimeout(timer);
+  }, []);
+  if (!shown) return <main className="page pageload" role="status" aria-label={label} data-boot-pending />;
   return (
     <main className="page pageload" role="status" aria-label={label} data-boot-pending>
       <span className="pageload__head" aria-hidden="true">

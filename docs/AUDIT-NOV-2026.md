@@ -4,7 +4,39 @@ Date: 6 Nov 2026 · Base commit `6ec7106` · Follows `AUDIT-REPORT.md` (19 Oct),
 
 Method: code reading of the lot/route engine (`shared/routes.ts`, `api/src/functions/tracking-routes.ts`, `fulfilment-routes.ts`, `RouteStudioPage.tsx`, `RoutesPage.tsx`, `LotsPage.tsx`), auth checks on every newer route file (billing, loyalty, service-work, customer, board), `npm audit`, and a scan of the CSS/TSX for motion and XSS patterns. `npm run build` and `npm test` pass before and after the fixes (1,069 checks).
 
-## Fixed on this branch
+## Status after round 2 (6 Nov 2026)
+
+Everything below that could be fixed in code has been, and deployed to `development`. The suite runs 1,073 checks, all passing.
+
+| Item | Status | What changed |
+|---|---|---|
+| S-1 Pro/fees without payment | ✅ Guarded | With `SITE_ENVIRONMENT=production`, buying Pro and paying fees answer 503 "payments not available" until a gateway is connected. An operator can override this deliberately with `FIGMARK_SIMULATED_BILLING=on`. Development behaves as before. |
+| S-2 Item in two lots | ✅ Fixed | `moveOrderToLot` claims the old copy first (delete with `IfMatch` etag). A second, simultaneous move is refused and `addItems` skips that item. If the new copy can't be written, the old one is put back. The in-memory store behaves the same way. |
+| S-3 Handler without consent | ✅ Fixed | Naming someone as handler gives them a seat only if they have a handler profile, are the shop's staff, or are the seller. Anyone else is kept on the lot as a name only. |
+| S-4 Voucher used up on failure | ✅ Fixed | If saving the account fails, the voucher use is handed back. |
+| S-5 Vite advisory | ✅ Fixed | `npm audit fix` in `app/`: 0 advisories. |
+| Lot numbers repeat | ✅ Fixed | A new lot's number is re-drawn until no other lot in the shop has it. |
+| Held lot names one item | ✅ Fixed | The 409 now carries `held: [...]` (every item, its buyer and the missing button), and the lot page lists them all. |
+| Motion: tab bar | ✅ Fixed | The highlight slides with `transform` instead of `left`. |
+| Motion: page changes | ✅ Added | A 180 ms opacity cross-fade on every page change. Nothing remounts, there's no transform that could move fixed bars, and it's off under reduced motion. |
+| Motion: skeleton flash | ✅ Fixed | The page skeleton appears only after 150 ms. |
+| Motion: lot move | ✅ Added | The new step rises into place, and the phone gives a haptic tick. |
+| Route update preview | ✅ Added | `POST /routes/{id}/apply?preview=1` writes nothing and returns each lot's current step, its new step, and its buyer count. The Routes list shows this in the confirm dialog. |
+| Delete route count | ✅ Added | The confirm in both the Routes list and Route Studio says how many lots are on the route. |
+| Undo step delete | ✅ Added | A 10-second Undo in Route Studio. |
+| Typical days per step | ✅ Added | Optional "Usually takes N days" on each step (1–180). The lot page shows "Day X on this step · usually N" with a running-late flag and about how many days are left. Buyers' lot view shows a rough remaining time, labelled as the shop's estimate. |
+| Manifest export | ✅ Added | "⬇ Manifest (CSV)" on the lot page: item, condition, quantity, buyer, handle, status and step. Cells are guarded against spreadsheet formula injection. |
+| Who to contact | ✅ Added | The lot page names the forwarder or handler for the current step, with tap-to-call or tap-to-email. |
+| Screen readers | ✅ Added | `aria-live` on Route Studio's lane counts. |
+
+Not done, and why:
+- **Progress-bar `width` transitions (about 20)**. These run only when a value changes, inside small fixed-size tracks, so they cost little. Converting them would mean changing every component that sets the width, so I left them.
+- **`backdrop-filter`**. Whether to keep the frosted-glass look is a design decision, so I didn't remove it.
+- **Lot cost sheet**. Per-listing cost sheets already exist (Pro). Splitting freight across a lot is a separate feature.
+- **Documents on a lot, bulk actions on the item list, a real payment gateway, WhatsApp lot updates, public tracking links, and route statistics**. Each is a product feature that needs decisions or third-party accounts. WhatsApp Business is already connected for verification, but lot updates would need approved message templates. The gateway needs a provider account.
+- **`noteOnLot` on finished lots**. Left as it is; whether it should change is a product decision.
+
+## Fixed in round 1
 
 | # | Severity | What was wrong | Fix |
 |---|---|---|---|

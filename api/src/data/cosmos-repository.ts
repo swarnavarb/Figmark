@@ -634,12 +634,34 @@ export class CosmosRepository implements Repository {
     // partition first: if the delete then fails the item is in two lots,
     // which a manifest makes obvious - the other order would leave it in none,
     // which nothing would.
-    const moved: Order = { ...order, updatedAt: new Date().toISOString() };
-    const { resource } = await this.container('orders').items.upsert<Order>(moved);
-    if (fromLotId !== moved.lotId) {
-      await this.container('orders').item(moved.id, fromLotId).delete().catch(() => undefined);
+    const { _etag: etag, ...rest } = order as Order & { _etag?: string };
+    const moved: Order = { ...rest, updatedAt: new Date().toISOString() };
+    if (fromLotId === moved.lotId) {
+      const { resource } = await this.container('orders').items.upsert<Order>(moved);
+      return this.snapshots.remember('orders', (resource as Order | undefined) ?? moved);
     }
-    return this.snapshots.remember('orders', (resource as Order | undefined) ?? moved);
+    /* The old copy is claimed first, checked against the version that was
+       read: two moves of one item at once (two tabs, a double tap) used to
+       both write a new copy, leaving the item in two lots. Now the second
+       finds the old copy gone or changed and is refused. */
+    try {
+      await this.container('orders').item(moved.id, fromLotId)
+        .delete(etag ? { accessCondition: { type: 'IfMatch', condition: etag } } : undefined);
+    } catch (error) {
+      const code = (error as { code?: unknown }).code;
+      if (code === 412 || code === 404) {
+        throw new StaleWriteError('That item was moved somewhere else at the same moment. Reload and try again.');
+      }
+      throw error;
+    }
+    try {
+      const { resource } = await this.container('orders').items.create<Order>(moved);
+      return this.snapshots.remember('orders', (resource as Order | undefined) ?? moved);
+    } catch (error) {
+      // Put it back where it was rather than leave it in no lot at all.
+      await this.container('orders').items.upsert<Order>({ ...rest, lotId: fromLotId }).catch(() => undefined);
+      throw error;
+    }
   }
 
   async listHandlers(): Promise<User[]> {

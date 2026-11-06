@@ -1,3 +1,4 @@
+import { StaleWriteError } from './concurrency.js';
 import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
 import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
@@ -259,10 +260,15 @@ export class MemoryRepository implements Repository {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  async moveOrderToLot(order: Order, _fromLotId: string): Promise<Order> {
+  async moveOrderToLot(order: Order, fromLotId: string): Promise<Order> {
     // One map keyed by id here, so the partition move Cosmos has to perform is
     // a plain write - which is exactly why the two implementations need their
     // own version of this rather than sharing `updateOrder`.
+    // As in Cosmos, a move from a lot the item has already left is refused.
+    const stored = this.orders.get(order.id);
+    if (stored && stored.lotId !== fromLotId && stored.lotId !== order.lotId) {
+      throw new StaleWriteError('That item was moved somewhere else at the same moment. Reload and try again.');
+    }
     const moved = { ...order, updatedAt: new Date().toISOString() };
     this.orders.set(moved.id, moved);
     return moved;

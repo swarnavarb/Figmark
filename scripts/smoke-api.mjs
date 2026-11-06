@@ -13975,4 +13975,83 @@ await check('pending reviews: a recent completed order is asked for once, on bot
   assert.equal((await pendingReviews(req({ headers: auth }), ctx)).jsonBody.pending.some((row) => row.orderId === placed.id), false);
 });
 
+await check('route text is capped, typical days are kept, and an update can be previewed without writing', async () => {
+  const long = 'x'.repeat(5000);
+  const tooMany = await saveRoute(req({
+    headers: auth, body: { name: 'Huge', steps: Array.from({ length: 41 }, (_, index) => ({ name: `Step ${index}` })) },
+  }), ctx);
+  assert.equal(tooMany.status, 400, 'more than forty steps is refused');
+  const made = await saveRoute(req({
+    headers: auth,
+    body: {
+      name: long,
+      steps: [
+        { name: 'Order placed', side: 'pre', typicalDays: 2 },
+        { name: 'At the warehouse', side: 'pre', trigger: 'china_received', typicalDays: 4, description: long },
+        { name: 'Flown', side: 'post', typicalDays: 999 },
+        { name: 'Customs', side: 'post', typicalDays: 'three' },
+        { name: 'Delivered', side: 'post' },
+      ],
+    },
+  }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const route = made.jsonBody.route;
+  assert.equal(route.name.length, 80, 'the name is cut to its limit');
+  assert.equal(route.steps[1].description.length, 500, 'and so is a description');
+  assert.equal(route.steps[1].typicalDays, 4);
+  assert.equal(route.steps[2].typicalDays, 180, 'typical days are held to the most a step may take');
+  assert.equal(route.steps[3].typicalDays, undefined, 'and a value that is not a number is dropped');
+
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Preview box', routeId: route.id } }), ctx)).jsonBody.lot;
+  assert.ok(lot, 'a lot opens on it');
+  // The route is edited, so the lot is behind; the preview says so and changes nothing.
+  const edited = await saveRoute(req({
+    headers: auth,
+    body: { id: route.id, name: 'Edited', steps: route.steps.map((step) => (step.name === 'Flown' ? { ...step, name: 'Flown out' } : step)) },
+  }), ctx);
+  assert.equal(edited.status, 200, JSON.stringify(edited.jsonBody));
+  const preview = await applyRoute(req({ headers: auth, params: { id: route.id }, query: { preview: '1' } }), ctx);
+  assert.equal(preview.status, 200, JSON.stringify(preview.jsonBody));
+  const row = preview.jsonBody.lots.find((entry) => entry.lotId === lot.id);
+  assert.ok(row, 'the lot that would change is listed');
+  assert.ok(row.number && typeof row.from === 'string' && typeof row.to === 'string');
+  const after = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
+  assert.ok(!after.route.steps.some((step) => step.name === 'Flown out'), 'a preview writes nothing');
+
+  // A lot note is capped too.
+  const noted = await noteOnLot(req({ headers: auth, params: { id: lot.id }, body: { note: long } }), ctx);
+  assert.equal(noted.status, 200, JSON.stringify(noted.jsonBody));
+  assert.equal(noted.jsonBody.lot.stageHistory.at(-1).note.length, 1000);
+});
+
+await check('a lot held back by its orders lists every one of them', async () => {
+  const held = await stepLotRaw(req({ headers: auth, params: { id: routedLot.id }, body: {} }), ctx);
+  if (held.status === 409 && held.jsonBody.error === 'orders_not_ready') {
+    assert.ok(Array.isArray(held.jsonBody.held) && held.jsonBody.held.length > 0, 'with the list of what is in the way');
+    for (const row of held.jsonBody.held) {
+      assert.ok(row.orderId && row.itemName && row.buyerName && row.label, JSON.stringify(row));
+    }
+  }
+});
+
+await check('a lot number is never one another of the same shop already has', async () => {
+  let sellerId = '';
+  for (let index = 0; index < 5; index += 1) {
+    const made = (await createLot(req({ headers: auth, body: { name: `Numbered ${index}` } }), ctx)).jsonBody.lot;
+    sellerId = made.sellerId;
+  }
+  const repository = await getRepository();
+  const all = (await repository.listLots({ sellerId, limit: 10_000 })).map((entry) => entry.lotNumber).filter(Boolean);
+  assert.equal(new Set(all).size, all.length, 'every lot number in the shop is different');
+});
+
+await check('naming somebody who never signed up to handle parcels gives them no seat on the lot', async () => {
+  const stranger = await newBuyer('Not A Handler');
+  const lot = (await createLot(req({ headers: auth, body: { name: 'Seat box' } }), ctx)).jsonBody.lot;
+  const tagged = await setCrew(req({ headers: auth, params: { id: lot.id }, body: { handlerUserId: stranger.id } }), ctx);
+  assert.equal(tagged.status, 200, JSON.stringify(tagged.jsonBody));
+  assert.equal(tagged.jsonBody.lot.handler.handlerUserId, null, 'the name stays, the seat does not');
+  assert.ok(tagged.jsonBody.lot.handler.name, 'their name is still on the lot');
+});
+
 console.log(`\n${passed} checks passed`);

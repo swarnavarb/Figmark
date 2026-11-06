@@ -176,6 +176,38 @@ export interface RouteStep {
    * overseas, or the handler at the destination. The seller always can.
    */
   assignee?: StepAssignee;
+  /**
+   * How many days this step usually takes, from reaching it to reaching the
+   * next - "Customs: usually 3". Optional, and only the seller's own guide:
+   * it lets the board say a lot is running late, and lets a buyer read a
+   * rough arrival instead of "In transit" with no end.
+   */
+  typicalDays?: number;
+}
+
+/** The longest a step may say it usually takes. */
+export const TYPICAL_DAYS_MAX = 180;
+
+/** A typical-days value as stored: a whole number of days, 1 to the max, or none. */
+export function cleanTypicalDays(value: unknown): number | undefined {
+  const days = Math.round(Number(value));
+  return Number.isFinite(days) && days >= 1 ? Math.min(TYPICAL_DAYS_MAX, days) : undefined;
+}
+
+/**
+ * Roughly how many days are left once a lot is at `at`: what is left of the
+ * step it is on, plus every later step's usual time. Null when any step
+ * still to come has no time given, since a total that silently skips one
+ * would promise an arrival too early.
+ */
+export function daysLeftOn(route: HasSteps, at: number, daysIntoStep = 0): number | null {
+  let total = 0;
+  for (let index = Math.max(0, at); index < route.steps.length - 1; index += 1) {
+    const days = route.steps[index]!.typicalDays;
+    if (!days) return null;
+    total += index === at ? Math.max(0, days - daysIntoStep) : days;
+  }
+  return total;
 }
 
 /**
@@ -407,7 +439,7 @@ export function sameSteps(a: readonly RouteStep[], b: readonly RouteStep[]): boo
   const key = (steps: readonly RouteStep[]) => JSON.stringify(steps.map((step, index) => [
     step.name, step.description, sideOf(step, index), step.trigger ?? null, step.lastMile ?? false,
     step.forward ?? false, step.button ?? null, step.waitMessage ?? null, step.custom ?? false,
-    step.assignee ?? null,
+    step.assignee ?? null, step.typicalDays ?? null,
   ]));
   return key(a) === key(b);
 }
@@ -889,6 +921,7 @@ export function normaliseSteps(
       // A forwarder may be handed a lot step, which has no button of its own,
       // so theirs is carried whatever the step; `assignButtons` drops it where
       // it means nothing.
+      typicalDays: cleanTypicalDays(step.typicalDays),
       assignee: step.assignee === 'forwarder' ? ('forwarder' as const)
         : (step.trigger || step.custom || keepButtons) && (step.assignee === 'supplier' || step.assignee === 'handler')
           ? step.assignee : undefined,

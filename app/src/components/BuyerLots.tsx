@@ -1,4 +1,4 @@
-import { lotNo } from '@shared/routes';
+import { daysLeftOn, lotNo } from '@shared/routes';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { countryFlag } from '@shared/countries';
@@ -173,6 +173,15 @@ export function LotPeek({ group, onClose, onPayMore }: {
         </div>
         <PhaseTrack phase={lot.phase} />
         <p className="peek__hint">{LOT_PHASE_HINTS[lot.phase]}</p>
+        {(() => {
+          /* The shop's own guide to how long each step takes, added up from
+             where the lot is: a rough arrival, said as the shop's estimate. */
+          if (lot.phase === 'filling') return null;
+          const left = daysLeftOn({ steps: lot.steps }, lot.lotStep);
+          return left !== null && left > 0
+            ? <p className="peek__eta">Usually about {left} {left === 1 ? 'day' : 'days'} more, going by the shop&apos;s own timings.</p>
+            : null;
+        })()}
 
         <span className="peek__title">Inside, yours</span>
         <ul className="peek__items">

@@ -1,3 +1,4 @@
+import { haptic } from '../haptics';
 import { confirmSentence } from '../components/Ask';
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -5,6 +6,7 @@ import { BackBar } from '../components/ScrollManager';
 import {
   WAITING_FOR_LOT, itemLeaveIndex, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
   type RouteStep, type TrackingRoute, lotNo,
+  atSellerYet, daysLeftOn,
 } from '@shared/routes';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';
 import type { Lot, Order } from '@shared/models';
@@ -1139,6 +1141,22 @@ export function LotDetail({ lotId, onBack, customers }: {
   const nextAt = Math.max(route.currentStep + 1, route.offset);
   const nextStep = nextAt <= crateEnd ? route.steps[nextAt] ?? null : null;
   const lane = { origin: lot.originCountry, destination: lot.destinationCountry };
+  /* How long the lot has sat on its step, against how long the seller said
+     that step usually takes: the late flag, and roughly how long is left. */
+  const onStepSince = [...data.history].reverse().find((event) => event.movedLot)?.enteredAt ?? null;
+  const daysOnStep = onStepSince ? Math.max(0, Math.floor((Date.now() - Date.parse(onStepSince)) / 86_400_000)) : null;
+  const usualDays = lotStep >= 0 ? route.steps[route.currentStep]?.typicalDays ?? null : null;
+  const late = !lotIsDone(lot) && usualDays !== null && daysOnStep !== null && daysOnStep > usualDays;
+  const daysLeft = lotStep >= 0 && !lotIsDone(lot) ? daysLeftOn(route, route.currentStep, daysOnStep ?? 0) : null;
+  /* Who to ring about the step the lot is on: the forwarder while it is in
+     their hands (a step handed to them, or any step before it lands), the
+     handler once it is with them at the destination. */
+  const hereStep = lotStep >= 0 ? route.steps[route.currentStep] : undefined;
+  const landed = hereStep ? atSellerYet({ route: { routeId: route.routeId, name: route.name, steps: route.steps }, currentStep: route.currentStep, stage: lot.stage }) : false;
+  const contactNow = !hereStep || lotIsDone(lot) ? null
+    : hereStep.assignee === 'forwarder' || !landed
+      ? (lot.forwarder?.name ? { role: 'Forwarder', name: lot.forwarder.name, contact: lot.forwarder.contact ?? null } : null)
+      : (lot.handler?.name ? { role: 'Handler', name: lot.handler.name, contact: lot.handler.contact } : null);
   /** The orders the lot would leave behind by moving to `target`, and the button each still needs. */
   const holdingAt = (target: number) => (target > route.currentStep
     ? items
@@ -1165,8 +1183,18 @@ export function LotDetail({ lotId, onBack, customers }: {
       setPeople(null);
       setFlash({ text: label, ok: true });
     } catch (err) {
+      /* Refused because items changed since this page loaded: every one of
+         them is named, not only the first, and the board is read again so
+         the checklist below shows the same list. */
+      const held = err instanceof ApiRequestError && err.code === 'orders_not_ready' && Array.isArray(err.detail?.held)
+        ? (err.detail!.held as { itemName: string; buyerName: string; label: string }[])
+        : null;
+      if (held) void load();
       setFlash({
-        text: err instanceof Error ? err.message : 'Something went wrong.',
+        text: held && held.length > 1
+          ? `${held.length} items still need a button before the lot can move: ${held
+            .map((row) => `${row.itemName} (${row.buyerName}) - “${row.label}”`).join('; ')}.`
+          : err instanceof Error ? err.message : 'Something went wrong.',
         ok: false,
       });
     } finally {
@@ -1219,6 +1247,8 @@ export function LotDetail({ lotId, onBack, customers }: {
 
   /** After a move of the whole lot: three minutes to take it back. */
   function offerLotUndo(result: { undo?: { id: string; until: string; to: number } }) {
+    // Felt as well as seen: the whole crate just moved.
+    haptic();
     const undo = result.undo;
     if (!undo) return;
     offerUndo({
@@ -1277,13 +1307,30 @@ export function LotDetail({ lotId, onBack, customers }: {
         </div>
         <div className="lothero__now">
           <span className="lothero__pulse" aria-hidden="true" />
-          <span className="lothero__state">{status}</span>
+          {/* Keyed by the step, so a move replays its arrival: the new step
+              rises into place where it used to just swap text. */}
+          <span className="lothero__state lothero__state--arrive" key={lotStep}>{status}</span>
           <InfoTip label="What customers see">
             Customers see this lot as <b><LotPhaseBadge phase={phase} /></b> on their order&apos;s tracking.
             {phase === 'filling' && ' Close the lot when nothing more is going in; they then see it being prepped for dispatch.'}
           </InfoTip>
           <span className="lothero__step">Step {Math.max(0, lotStep + 1)}/{lotSteps.length}</span>
         </div>
+        {contactNow && (
+          <p className="lothero__pace">
+            {contactNow.role} for this step: <b>{contactNow.name}</b>
+            {contactNow.contact && <> · {/^[+\d][\d\s-]{6,}$/.test(contactNow.contact)
+              ? <a href={`tel:${contactNow.contact.replace(/[\s-]/g, '')}`}>{contactNow.contact}</a>
+              : /@/.test(contactNow.contact) ? <a href={`mailto:${contactNow.contact}`}>{contactNow.contact}</a> : contactNow.contact}</>}
+          </p>
+        )}
+        {(usualDays !== null || daysLeft !== null) && daysOnStep !== null && !lotIsDone(lot) && (
+          <p className={`lothero__pace${late ? ' is-late' : ''}`} role={late ? 'status' : undefined}>
+            {usualDays !== null && <>Day {daysOnStep + 1} on this step · usually {usualDays} {usualDays === 1 ? 'day' : 'days'}{late ? ' - running late' : ''}</>}
+            {usualDays !== null && daysLeft !== null && ' · '}
+            {daysLeft !== null && <>about {daysLeft} {daysLeft === 1 ? 'day' : 'days'} to go</>}
+          </p>
+        )}
         <div className="lothero__bar" aria-hidden="true">
           <span style={{ width: `${((lotStep + 1) / Math.max(1, lotSteps.length)) * 100}%` }} />
         </div>
@@ -1302,6 +1349,12 @@ export function LotDetail({ lotId, onBack, customers }: {
                 async () => { await api.closeLot(lot.id, phase === 'filling'); },
               )}>
               {phase === 'filling' ? 'Close lot' : 'Reopen lot'}
+            </button>
+          )}
+          {items.length > 0 && (
+            <button type="button" className="btn btn--ghost btn--sm"
+              onClick={() => downloadManifest(lot, route, items)}>
+              ⬇ Manifest (CSV)
             </button>
           )}
         </div>
@@ -1677,4 +1730,36 @@ export function LotDetail({ lotId, onBack, customers }: {
       )}
     </div>
   );
+}
+
+/**
+ * The lot's manifest as a spreadsheet: what the forwarder, the handler and
+ * the customs broker each ask for, without the seller copying it out by hand.
+ */
+function downloadManifest(lot: Lot, route: LotRouteView, items: LotItem[]) {
+  const lane = { origin: lot.originCountry, destination: lot.destinationCountry };
+  /* Quoted always, and a cell that opens like a formula is defused, so a
+     buyer's name cannot run as one when the file is opened in a spreadsheet. */
+  const cell = (value: unknown) => {
+    let text = String(value ?? '');
+    if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+  const rows = [
+    ['Lot', 'Item', 'Condition', 'Quantity', 'Buyer', 'Buyer handle', 'Status', 'Step'],
+    ...items.map((item) => [
+      `LOT ${lotNo(route.lotNumber)}`, item.itemName, item.condition, item.quantity, item.buyerName,
+      item.buyerHandle ? `@${item.buyerHandle}` : '', item.status,
+      renderStepText(route.steps[item.currentStep]?.name ?? '', lane),
+    ]),
+  ];
+  const csv = `\uFEFF${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n`;
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = ['LOT', lotNo(route.lotNumber) ?? lot.id, 'manifest.csv'].join('_');
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
