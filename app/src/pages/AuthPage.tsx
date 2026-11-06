@@ -5,6 +5,7 @@ import { ApiRequestError, api } from '../api';
 import { ErrorNotice, Icon, useDialog } from '../components/ui';
 import { useSession } from '../session';
 import { Captcha } from '../components/Captcha';
+import { AuthTour } from '../components/AuthTour';
 
 type Mode = 'signin' | 'signup';
 
@@ -16,14 +17,41 @@ type Mode = 'signin' | 'signup';
  * bank verification are deferred to the point they actually matter.
  */
 export function AuthPage() {
+  const [tour, setTour] = useTour();
   return (
     <div className="auth">
-      <div className="auth__panel">
-        <AuthBrand />
+      <div className={`auth__panel${tour ? ' auth__panel--tour' : ''}`}>
+        {tour ? <AuthTour onSkip={() => setTour(false)} /> : <AuthBrand />}
         <AuthCard />
       </div>
     </div>
   );
+}
+
+const TOUR_KEY = 'figmark.authTourSkipped';
+
+/**
+ * Whether the slides are showing. Skipped once, they stay skipped for the rest
+ * of the visit: somebody who has already read them wants the form, not the
+ * pitch, the next time something asks them to sign in.
+ */
+function useTour(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(() => {
+    try {
+      return window.sessionStorage.getItem(TOUR_KEY) !== '1';
+    } catch {
+      return true;
+    }
+  });
+  return [on, (next: boolean) => {
+    setOn(next);
+    try {
+      if (next) window.sessionStorage.removeItem(TOUR_KEY);
+      else window.sessionStorage.setItem(TOUR_KEY, '1');
+    } catch {
+      // Private windows can refuse storage; the slides just come back next time.
+    }
+  }];
 }
 
 function AuthBrand() {
@@ -49,15 +77,28 @@ export function AuthModal({ reason, mode = 'signup', onClose }: { reason: string
   // Escape, focus kept inside, the page still behind: what every dialog does.
   const box = useRef<HTMLDivElement>(null);
   useDialog(box, onClose);
+  const [tour, setTour] = useTour();
 
   return (
     <div ref={box} tabIndex={-1} className="authpop" role="dialog" aria-modal="true" aria-label="Sign in or create an account"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="authpop__panel">
-        <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
-        <AuthBrand />
-        <p className="authpop__why">🔒 {reason ?? 'Sign in or create a free account to do that.'} You stay on this page.</p>
-        <AuthCard initialMode={mode} />
+      <div className={`authpop__panel${tour ? ' authpop__panel--tour' : ''}`}>
+        {tour && <AuthTour onSkip={() => setTour(false)} />}
+        <div className="authpop__sheet">
+          {tour && <span className="authpop__grip" aria-hidden="true" />}
+          <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
+          {tour ? <h2 className="authpop__title">Sign in or create a free account</h2> : <AuthBrand />}
+          {/* Under the sheet's own heading the generic line would only repeat it. */}
+          {(reason || !tour) && (
+            <p className="authpop__why">🔒 {reason ?? 'Sign in or create a free account to do that.'} You stay on this page.</p>
+          )}
+          <AuthCard initialMode={mode} />
+          {!tour && (
+            <button type="button" className="linkbtn authpop__tour" onClick={() => setTour(true)}>
+              New here? See what Figmark does for buyers and sellers
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

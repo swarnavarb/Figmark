@@ -7101,6 +7101,49 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   color: var(--text-dim); background: var(--surface-2); cursor: pointer;
 }
 .authpop__why { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+/* The form's own sheet. Without the slides it is the panel's contents, laid out as before. */
+.authpop__sheet { display: grid; gap: var(--s3); min-width: 0; }
+.authpop__title { margin: 0; padding-right: 40px; font-size: var(--t-lg); line-height: 1.25; }
+.linkbtn.authpop__tour { justify-self: center; font-size: var(--t-sm); }
+
+/* With the slides: a coloured tour on top and the form in a sheet pulled up
+   over its foot, the way a phone shows a bottom sheet. */
+.authpop__panel--tour {
+  width: min(100%, 460px); padding: 0; gap: 0; overflow: hidden;
+  background: var(--bg);
+}
+.authpop__panel--tour .authtour { min-height: 380px; }
+.authpop__panel--tour .authpop__sheet {
+  position: relative; margin-top: -26px; padding: 14px var(--s4) var(--s4);
+  border-radius: 28px 28px 0 0; background: var(--surface);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.authpop__panel--tour .authpop__close { top: 18px; right: 14px; }
+.authpop__panel--tour .auth__card { padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.authpop__grip { justify-self: center; width: 40px; height: 5px; border-radius: var(--r-pill); background: var(--border-strong); }
+
+/* A phone: the whole screen, the tour scrolling away under the sheet as the form is filled in. */
+@media (max-width: 639px) {
+  .authpop:has(.authpop__panel--tour) { padding: 0; place-items: stretch; }
+  .authpop__panel--tour { width: 100%; min-height: 100dvh; border-radius: 0; display: flex; flex-direction: column; }
+  .authpop__panel--tour .authtour { flex: none; padding-top: calc(env(safe-area-inset-top, 0px) + 18px); min-height: 56dvh; }
+  .authpop__panel--tour .authpop__sheet { flex: 1 0 auto; align-content: start; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--s4)); }
+}
+
+/* A wide screen: the tour on the left, the form beside it. */
+@media (min-width: 880px) {
+  .authpop__panel--tour { width: min(100%, 940px); grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+  .authpop__panel--tour .authtour { min-height: 560px; padding: 28px 30px 56px; }
+  .authpop__panel--tour .authtour__title { font-size: calc(32px * var(--text-scale)); }
+  .authpop__panel--tour .tourart { max-width: 340px; max-height: 190px; }
+  .authpop__panel--tour .authpop__sheet { margin: 0; padding: 30px 28px 26px; border-radius: 0; box-shadow: none; align-content: start; max-height: calc(100dvh - 2 * var(--s4)); overflow-y: auto; }
+  .authpop__panel--tour .authpop__grip { display: none; }
+}
+
+/* The page version: the same tour above the card. */
+.auth__panel--tour { max-width: 460px; }
+.auth__panel--tour .authtour { min-height: 380px; margin-bottom: -26px; border-radius: var(--r-xl) var(--r-xl) 0 0; }
+.auth__panel--tour .auth__card { position: relative; border-radius: 28px; }
 @keyframes authpop-in { from { opacity: 0; } }
 @keyframes authpop-rise { from { opacity: 0; transform: translateY(18px) scale(0.98); } }
 @media (prefers-reduced-motion: reduce) { .authpop, .authpop__panel { animation: none; } }
