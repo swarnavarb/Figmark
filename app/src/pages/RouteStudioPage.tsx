@@ -305,8 +305,12 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
 
   function removeAt(index: number) {
     setSteps(steps.filter((_, i) => i !== index));
-    if (index < joinAt) setJoinAt(Math.max(0, joinAt - 1));
-    if (index < leaveAt) setLeaveAt(Math.max(joinAt, leaveAt - 1));
+    /* Both lines shift by the same rule, and the leave line is held against
+       the join line as it is *after* the removal - holding it against the old
+       one moved a step from after the lot into it whenever the lot was empty. */
+    const nextJoin = index < joinAt ? Math.max(0, joinAt - 1) : joinAt;
+    setJoinAt(nextJoin);
+    setLeaveAt(Math.max(nextJoin, index < leaveAt ? leaveAt - 1 : leaveAt));
   }
 
   function setAt(index: number, patch: Partial<RouteStep>) {
@@ -417,9 +421,19 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
     }
   }
 
+  /* Refreshing or closing the tab loses unsaved work as surely as the back
+     button does, so the browser is asked to confirm then too. */
+  const unsaved = started && savedAs !== snapshot(name, steps, joinAt, leaveAt);
+  useEffect(() => {
+    if (!unsaved) return;
+    const hold = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', hold);
+    return () => window.removeEventListener('beforeunload', hold);
+  }, [unsaved]);
+
   /** Leaving asks first whenever there is anything on screen that was not saved. */
   async function leave() {
-    const dirty = started && savedAs !== snapshot(name, steps, joinAt, leaveAt);
+    const dirty = unsaved;
     if (dirty && !await confirmSentence('Leave without saving? This route will be lost.')) return;
     onCancel();
   }

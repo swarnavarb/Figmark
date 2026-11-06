@@ -11552,8 +11552,10 @@ await check('a step forward can be undone for three minutes, and shows nowhere u
   let told = (await notifications(req({ headers: buyer.headers }), ctx)).jsonBody.notifications;
   assert.ok(!told.some((row) => row.body.includes('Undo box')), 'the buyer is not told yet');
 
-  // Undone: back where it was, no trace, the held notice gone.
-  const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: undo.to, undoOf: undo.id } }), ctx);
+  // Undone: back where it was, no trace, the held notice gone - whatever
+  // position the request names. The move itself says where it started, so
+  // an undo cannot be used to jump the lot past checks a move must pass.
+  const back = await stepLot(req({ headers: auth, params: { id: lot.id }, body: { to: 999, undoOf: undo.id } }), ctx);
   assert.equal(back.status, 200, JSON.stringify(back.jsonBody));
   const board = (await lotContents(req({ headers: auth, params: { id: lot.id } }), ctx)).jsonBody;
   assert.equal(board.route.currentStep, startAt);

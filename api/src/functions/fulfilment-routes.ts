@@ -363,11 +363,15 @@ export async function buildLot(
     // handed out still travels with them in order.
     route = { routeId: template.id, name: template.name, steps: withButtons(template.steps) };
   } else {
+    // The same ceiling a saved route has: the lot carries every step in one document.
+    if (!Array.isArray(body.routeSteps) || body.routeSteps.length > 40) {
+      return refuse(400, 'invalid_route', 'A route can have at most 40 steps.');
+    }
     const steps = normaliseSteps(
       body.routeSteps!.map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
     );
     if (steps.length < 2) return refuse(400, 'invalid_route', 'A route needs at least two steps.');
-    route = { routeId: null, name: body.routeName?.trim() || 'Route', steps: withButtons(steps) };
+    route = { routeId: null, name: body.routeName?.trim().slice(0, 80) || 'Route', steps: withButtons(steps) };
   }
 
   const id = `lot_${randomUUID().slice(0, 12)}`;

@@ -39,6 +39,22 @@ import { commonSteps, readButtonLibrary, routeSamples } from '../route-library.j
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
+/* Longest words a person can store on a route or a lot's timeline. Every
+   lot carries a copy of its route and its whole history in one document,
+   and each note goes out as a push notice, so none of it is left unbounded. */
+const ROUTE_NAME_MAX = 80;
+const ROUTE_STEPS_MAX = 40;
+const STEP_NAME_MAX = 120;
+const STEP_TEXT_MAX = 500;
+const NOTE_MAX = 1000;
+const TRACKING_ID_MAX = 80;
+const SHIPPER_MAX = 80;
+
+/** Trimmed and cut to `max` characters; blank comes back as undefined. */
+function clip(value: unknown, max: number): string | undefined {
+  return typeof value === 'string' ? value.trim().slice(0, max) || undefined : undefined;
+}
+
 /* ── Route templates ───────────────────────────────────────────────────── */
 
 /**
@@ -117,13 +133,24 @@ async function saveRoute(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const name = body.name?.trim();
+  const name = clip(body.name, ROUTE_NAME_MAX);
   if (!name) return error(400, 'invalid_route', 'Give the route a name.');
+  if (!Array.isArray(body.steps ?? [])) return error(400, 'invalid_route', 'Steps must be a list.');
+  if ((body.steps ?? []).length > ROUTE_STEPS_MAX) {
+    return error(400, 'invalid_route', `A route can have at most ${ROUTE_STEPS_MAX} steps.`);
+  }
 
   // stageIcon arrives as an arbitrary string from the request body;
   // normaliseSteps is what actually validates it against the known set.
   const written = normaliseSteps(
-    (body.steps ?? []).map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
+    (body.steps ?? []).map((step) => ({
+      ...step,
+      name: typeof step?.name === 'string' ? step.name.slice(0, STEP_NAME_MAX) : '',
+      description: typeof step?.description === 'string' ? step.description.slice(0, STEP_TEXT_MAX) : '',
+      waitMessage: typeof step?.waitMessage === 'string' ? step.waitMessage.slice(0, STEP_TEXT_MAX) : undefined,
+      stageName: typeof step?.stageName === 'string' ? step.stageName.slice(0, STEP_NAME_MAX) : undefined,
+      stageIcon: step?.stageIcon as StageIcon | undefined,
+    })),
     { keepButtons: true },
   );
   // Two, because one step is a state and not a journey - and because a buyer
@@ -367,9 +394,21 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
       return error(403, 'forbidden', 'Only the shop can take back a move it made.');
     }
     const undoId = body.undoOf;
+    /* Only the latest move can be taken back, and only to where it started.
+       The position comes from the move itself, not the request: trusting
+       `to` let an undo jump the lot anywhere - past items still being held
+       back, past where it is unpacked, or, for a forwarder, onto steps the
+       shop never handed them. */
+    const moves = lot.stageHistory.filter((event) => event.movedLot);
+    const undone = moves[moves.length - 1];
+    if (!undone || undone.undoId !== undoId) {
+      return error(409, 'undo_expired', 'Only the latest move can be taken back. Move the lot as a normal step instead.');
+    }
+    const back = Math.max(0, Math.min(route.steps.length - 1,
+      typeof undone.undoFrom === 'number' ? undone.undoFrom : Math.max(lotFloor(route), Math.min(target, lotEndIndex(route)))));
     const repository = await getRepository();
     const now = new Date().toISOString();
-    const stage = coarseStage(route, target);
+    const stage = coarseStage(route, back);
     /* The lot alone: every item still following it reads the position it
        is back at, and the move it no longer has. `movedSeq` stays the
        undone move's, so an item placed on its own since keeps its place. */
@@ -377,7 +416,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
       .filter((order) => order.stageHistory.some((event) => event.undoId === undoId));
     const restored = await repository.updateLot({
       ...lot,
-      currentStep: target,
+      currentStep: back,
       stage,
       stageHistory: withoutUndo(lot.stageHistory, undoId),
       updatedAt: now,
@@ -389,8 +428,7 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
   /* A lot may not be stepped into the half of the route that happens to one
      item at a time. The floor is one short of its own first step, which is
      where a lot sits while it is still filling. */
-  const floor = Math.max(0, lotOffset(route) - 1);
-  if (target < floor) {
+  if (target < lotFloor(route)) {
     return error(409, 'no_such_step', 'That lot is already at the start of its own steps; the ones before it happen to each item.');
   }
   if (target >= route.steps.length) {
@@ -447,14 +485,15 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     stage,
     step: step.name,
     enteredAt: now,
-    note: body.note?.trim() || null,
+    note: clip(body.note, NOTE_MAX) ?? null,
     recordedBy: userId,
     // Only kept where the step this move lands on is actually a hand-over -
     // a stray trackingId sent against a step nobody flagged `forward` would
     // read as tracking for a leg that never had a carrier.
-    trackingId: step.forward ? body.trackingId?.trim() || undefined : undefined,
-    shipper: step.forward ? body.shipper?.trim() || undefined : undefined,
+    trackingId: step.forward ? clip(body.trackingId, TRACKING_ID_MAX) : undefined,
+    shipper: step.forward ? clip(body.shipper, SHIPPER_MAX) : undefined,
     ...undoTag(now),
+    undoFrom: from,
   };
 
   /* One write, however many items are in the crate. Every item still in it
@@ -489,6 +528,11 @@ async function stepLot(request: HttpRequest, _context: InvocationContext) {
     ordersUpdated: live.length,
     undo: { id: event.undoId, until: event.undoUntil, to: from },
   });
+}
+
+/** The lowest step a lot sits on: one short of its own first step, where it waits while filling. */
+function lotFloor(route: LotRoute): number {
+  return Math.max(0, lotOffset(route) - 1);
 }
 
 /** A lot this person moves as the forwarder booked on it. */
@@ -768,7 +812,7 @@ async function noteOnLot(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
 
-  const note = body.note?.trim();
+  const note = clip(body.note, NOTE_MAX);
   if (!note) return error(400, 'invalid_request', 'Write the note first.');
 
   const route = routeOf(lot);
@@ -857,8 +901,20 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
   if (undoing && (!canUndo(order.stageHistory, undoing) || typeof body.to !== 'number')) {
     return error(409, 'undo_expired', UNDO_EXPIRED);
   }
+  /* Taken back to where the move started, as recorded on the move - and only
+     the latest one, so an older move's undo cannot rewind past a newer one. */
+  if (undoing) {
+    const moves = order.stageHistory.filter((event) => typeof event.undoFrom === 'number');
+    const undone = order.stageHistory.find((event) => event.undoId === undoing);
+    if (undone && typeof undone.undoFrom === 'number') {
+      if (moves[moves.length - 1] !== undone) {
+        return error(409, 'undo_expired', 'Only the latest move can be taken back. Move it as a normal step instead.');
+      }
+      body.to = undone.undoFrom;
+    }
+  }
 
-  const note = undoing ? null : body.note?.trim() || null;
+  const note = undoing ? null : clip(body.note, NOTE_MAX) ?? null;
   const moving = typeof body.to === 'number';
   if (!moving && !note) {
     return error(400, 'invalid_request', 'Write a note, or pick a step to move it to.');
@@ -893,10 +949,10 @@ async function stepItem(request: HttpRequest, _context: InvocationContext) {
     enteredAt: now,
     note,
     recordedBy: userId,
-    trackingId: moving && targetStep?.forward ? body.trackingId?.trim() || undefined : undefined,
-    shipper: moving && targetStep?.forward ? body.shipper?.trim() || undefined : undefined,
+    trackingId: moving && targetStep?.forward ? clip(body.trackingId, TRACKING_ID_MAX) : undefined,
+    shipper: moving && targetStep?.forward ? clip(body.shipper, SHIPPER_MAX) : undefined,
     // A move can be taken back for a while; a note is just said.
-    ...(moving ? undoTag(now) : {}),
+    ...(moving ? { ...undoTag(now), undoFrom: here } : {}),
   };
 
   const last = Boolean(route) && target === route!.steps.length - 1;

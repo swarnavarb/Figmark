@@ -1455,6 +1455,12 @@ export interface StageEvent {
    * back really does leave them none the wiser.
    */
   undoBefore?: { status: OrderStatus; dispatchedAt: string | null; shipment: OrderShipment | null };
+  /**
+   * The route position a move started from, kept on the server so taking the
+   * move back returns there - never to a position the caller names, which
+   * would let an "undo" jump a lot past checks an ordinary move must pass.
+   */
+  undoFrom?: number;
   note: string | null;
   /** User id that recorded the transition. */
   recordedBy: string;
