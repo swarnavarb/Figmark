@@ -18,7 +18,7 @@ import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, is
 import {
   AWAITING_LOT_ID, asBuyerSees, awaitingLot, furthestStage, inLot, lotPhase, settledHistory, stagesFor,
 } from '../../../shared/fulfilment.js';
-import type { Lot, LotCrewSettings, LotSupplier, Order, StageEvent } from '../../../shared/models.js';
+import type { Lot, LotCrewSettings, LotSupplier, Order, StageEvent, User } from '../../../shared/models.js';
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { bookingFor, forwarderWorks } from '../service-access.js';
@@ -363,15 +363,28 @@ export async function buildLot(
     // handed out still travels with them in order.
     route = { routeId: template.id, name: template.name, steps: withButtons(template.steps) };
   } else {
+    // The same ceiling a saved route has: the lot carries every step in one document.
+    if (!Array.isArray(body.routeSteps) || body.routeSteps.length > 40) {
+      return refuse(400, 'invalid_route', 'A route can have at most 40 steps.');
+    }
     const steps = normaliseSteps(
       body.routeSteps!.map((step) => ({ ...step, stageIcon: step.stageIcon as StageIcon | undefined })),
     );
     if (steps.length < 2) return refuse(400, 'invalid_route', 'A route needs at least two steps.');
-    route = { routeId: null, name: body.routeName?.trim() || 'Route', steps: withButtons(steps) };
+    route = { routeId: null, name: body.routeName?.trim().slice(0, 80) || 'Route', steps: withButtons(steps) };
   }
 
-  const id = `lot_${randomUUID().slice(0, 12)}`;
   const now = new Date().toISOString();
+  /* A lot number is four characters of the id, so two of one shop's lots
+     could share one - about even odds by its three-hundredth lot. Drawn
+     again until it is the only one in the shop, since it is what the seller,
+     the forwarder and every buyer say out loud. */
+  const taken = new Set((await repository.listLots({ sellerId: userId, limit: 10_000 }))
+    .map((existing) => lotNo(existing.lotNumber) ?? lotNumberFrom(existing.id, existing.createdAt)));
+  let id = `lot_${randomUUID().slice(0, 12)}`;
+  for (let tries = 0; tries < 50 && taken.has(lotNumberFrom(id, now)); tries += 1) {
+    id = `lot_${randomUUID().slice(0, 12)}`;
+  }
   const lotNumber = lotNumberFrom(id, now);
   /*
    * A new lot has not taken any of its own steps yet.
@@ -413,7 +426,7 @@ export async function buildLot(
       || named?.handlerProfile?.companyName || named?.displayName || '';
     if (handlerName) {
       handlerNamed = {
-        handlerUserId: named?.id ?? null,
+        handlerUserId: await handlerSeat(repository, userId, named),
         name: handlerName,
         contact: named?.handlerProfile?.contactPhone || named?.handlerProfile?.contactEmail || null,
         city: named?.handlerProfile?.cities[0] ?? null,
@@ -487,6 +500,25 @@ async function createLot(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** Loads a lot and refuses anyone who is not its owner. */
+/**
+ * Whether naming this person as a lot's handler gives them a seat on it.
+ *
+ * A seat shows them the lot's orders and buyers' names, so it goes only to
+ * someone who signed up to handle parcels (a handler profile), the shop's
+ * own staff, or the seller themself. Anyone else tagged keeps their name on
+ * the lot as plain text - as an unbookable forwarder does - so a shop cannot
+ * put strangers' work, or its buyers' names, in front of somebody who never
+ * agreed to it.
+ */
+async function handlerSeat(
+  repository: Awaited<ReturnType<typeof getRepository>>, sellerId: string, person: User | null,
+): Promise<string | null> {
+  if (!person) return null;
+  if (person.id === sellerId || person.handlerProfile) return person.id;
+  const seller = await repository.getUserById(sellerId);
+  return seller && can(seller, person.id, 'lots') ? person.id : null;
+}
+
 export async function ownedLot(request: HttpRequest, lotId: string): Promise<{ lot: Lot; userId: string }> {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
@@ -799,9 +831,10 @@ async function setCrew(request: HttpRequest, _context: InvocationContext) {
       || named?.displayName
       || '';
 
+    const seat = await handlerSeat(repository, lot.sellerId, named);
     next.handler = name
       ? {
-          handlerUserId: named?.id ?? null,
+          handlerUserId: seat,
           name,
           contact:
             body.handlerContact?.trim()

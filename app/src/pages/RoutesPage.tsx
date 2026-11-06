@@ -4,7 +4,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { routePartsLine, type RouteStep } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
-import { SkeletonRows } from '../components/Feedback';
+import { SkelRouteCards } from '../components/PageSkeletons';
 import { InfoTip } from '../components/InfoTip';
 import { MoreMenu } from '../components/MoreMenu';
 import '../styles/RoutesPage.css';
@@ -48,7 +48,23 @@ export function RoutesList({ spotlightNew = false }: {
   const [applying, setApplying] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   async function apply(id: string, lots: number) {
-    if (!await confirmSentence(`Update ${lots === 1 ? 'the lot' : `all ${lots} lots`} on this route? Every buyer in ${lots === 1 ? 'it' : 'them'} reads the new steps from where the lot is now.`)) return;
+    /* Said lot by lot before anything changes: where each one reads now,
+       where it will read after, and how many buyers are told. */
+    setApplying(id);
+    let said = `Every buyer in ${lots === 1 ? 'it' : 'them'} reads the new steps from where the lot is now.`;
+    try {
+      const { lots: rows } = await api.previewApplyRoute(id);
+      if (rows.length > 0) {
+        const shown = rows.slice(0, 6).map((row) => `LOT ${row.number}: ${row.from === row.to ? `stays at ${row.to}` : `${row.from} → ${row.to}`} (${row.buyers} ${row.buyers === 1 ? 'buyer' : 'buyers'})`);
+        if (rows.length > shown.length) shown.push(`and ${rows.length - shown.length} more`);
+        said = `${shown.join('; ')}.`;
+      }
+    } catch {
+      // The preview is a courtesy: without it the plain question still stands.
+    } finally {
+      setApplying(null);
+    }
+    if (!await confirmSentence(`Update ${lots === 1 ? 'the lot' : `all ${lots} lots`} on this route? ${said}`)) return;
     setApplying(id);
     setError(null);
     try {
@@ -63,8 +79,9 @@ export function RoutesList({ spotlightNew = false }: {
   }
 
   /** Take a route off the list. Lots already on it keep their own copy of its steps. */
-  async function remove(id: string, name: string) {
-    if (!await confirmSentence(`Delete "${name}"? Lots already on it keep their steps; new lots can no longer pick it.`)) return;
+  async function remove(id: string, name: string, onLots = 0) {
+    const using = onLots > 0 ? ` ${onLots === 1 ? '1 lot is' : `${onLots} lots are`} on it now and keep their steps;` : ' Lots already on it keep their steps;';
+    if (!await confirmSentence(`Delete "${name}"?${using} new lots can no longer pick it.`)) return;
     setApplying(id);
     setError(null);
     try {
@@ -102,7 +119,7 @@ export function RoutesList({ spotlightNew = false }: {
 
       {error && <ErrorNotice message={error} />}
       {flash && <p className="notice notice--ok">{flash}</p>}
-      {!data && !error && <SkeletonRows count={4} />}
+      {!data && !error && <SkelRouteCards n={3} />}
 
       {data && data.routes.length > 0 && (
         <div className="rlist">
@@ -118,7 +135,7 @@ export function RoutesList({ spotlightNew = false }: {
                       : undefined} />
                   {/* Rare and final, so it is behind the ⋯ rather than a red button under every route. */}
                   <MoreMenu label={`More for ${route.name}`} items={[
-                    { label: 'Delete route', danger: true, disabled: applying === route.id, onClick: () => void remove(route.id, route.name) },
+                    { label: 'Delete route', danger: true, disabled: applying === route.id, onClick: () => void remove(route.id, route.name, use?.lots ?? 0) },
                   ]} />
                 </div>
                 {use && use.behind > 0 && (

@@ -6,7 +6,7 @@ import {
 import { REWARD_KINDS, REWARD_META, STAMPS } from '@shared/loyalty';
 import { ApiRequestError, admin } from './api';
 import { formatMoney, timeAgo } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelCards } from '../components/PageSkeletons';
 
 /**
  * How Figmark earns, set in one place: the platform fee on every sale (by
@@ -94,7 +94,7 @@ export function PricingView() {
     void admin.pricing().then(fill).catch((err) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the pricing.'));
   }, []);
 
-  if (!draft && !error) return <Loading />;
+  if (!draft && !error) return <SkelCards n={3} h={140} mark={false} chips={0} />;
   if (!draft) return <p className="notice notice--error">{error}</p>;
 
   const change = (next: Partial<Draft>) => { setDraft({ ...draft, ...next }); setOk(false); };

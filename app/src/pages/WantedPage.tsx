@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SkelCards } from '../components/PageSkeletons';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CONDITION_TAGS } from '@shared/enums';
 import { CATEGORIES, CONDITION_BUCKETS } from '@shared/catalog';
@@ -9,7 +10,7 @@ import { useSession } from '../session';
 import { Icon } from '../components/Icon';
 import { shrink } from '../components/PhotoManager';
 import { VoicePicker, useVoice } from '../components/SocialVoice';
-import { Loading } from '../components/Feedback';
+
 import { Select } from '../components/Select';
 
 /**
@@ -536,7 +537,7 @@ function WantDialog({ card, onClose, onChanged }: {
       )}
 
       {!data ? (
-        <Loading />
+        <SkelCards n={2} h={96} chips={1} />
       ) : (
         <>
           {/* The automated half of answering: what is already listed that looks like it. */}

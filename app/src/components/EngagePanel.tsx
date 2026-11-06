@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { SkelCards } from './PageSkeletons';
 import { Link } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api, type PostCard } from '../api';
@@ -8,7 +9,7 @@ import { Icon } from './Icon';
 import { isOpen, waitingOnShop } from '../engage';
 import type { StudioMode } from './PostStudio';
 import '../styles/EngagePanel.css';
-import { Loading } from './Feedback';
+
 import { plural } from '../format';
 
 const PostStudio = lazy(() => import('./PostStudio').then((module) => ({ default: module.PostStudio })));
@@ -66,7 +67,7 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
       </section>
 
       {error && <ErrorNotice message={error} />}
-      {!cards && !error && <Loading label="Loading your engagement" />}
+      {!cards && !error && <SkelCards n={2} h={110} />}
 
       {waiting.length > 0 && (
         <section className="sengage__block">

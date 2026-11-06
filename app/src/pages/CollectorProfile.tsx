@@ -7,6 +7,7 @@ import {
   type CollectionCandidate, type CollectionShelf, type CollectorPage, type PostCard, type PublicProfile,
 } from '../api';
 import { SkeletonText, useToast } from '../components/Feedback';
+import { SkelBlock, SkelInline } from '../components/PageSkeletons';
 import {
   Glyph, LevelRing, ShowcaseModal, Sticker, XpBar,
 } from '../components/Quest';
@@ -102,6 +103,9 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
             </span>
           </div>
           <div className="phead__details">
+            {/* Held until the page is read: the line and the ticks it will show. */}
+            {!page && !person.memberSince && <SkelInline w={130} />}
+            {!page && <span className="row" style={{ gap: 6 }}><SkelInline w={60} h={22} /><SkelInline w={82} h={22} /><SkelInline w={72} h={22} /></span>}
             {(person.memberSince || person.lastSeenAt) && (
               <p className="phead__since">
                 {person.memberSince && `Here since ${formatDate(person.memberSince)}`}
@@ -116,6 +120,13 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
 
         {actions}
 
+        {!page && (
+          <div className="pstats" aria-hidden="true">
+            {['followers', 'following', 'honours', 'top-3 finishes'].map((label) => (
+              <span key={label} className="pstat"><b><SkelInline w={24} h={20} /></b><small>{label}</small></span>
+            ))}
+          </div>
+        )}
         {page && (
           <div className="pstats">
             <FollowCounts userId={page.sellerId} followerCount={page.followerCount} isStore={false} />
@@ -135,6 +146,9 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           </div>
         )}
 
+        {!collector && (
+          <div className="qprofile__xp" aria-hidden="true"><SkelInline w={180} h={8} /><SkelInline w={120} h={9} /></div>
+        )}
         {collector && (
           <div className="qprofile__xp">
             <XpBar progress={collector.progress} />
@@ -162,7 +176,7 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
         {page && <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} />}
 
         {!collector ? (
-          <SkeletonText lines={3} />
+          <SkelBlock h={96} />
         ) : (
           <>
             <button type="button" className="qshowcase" onClick={() => setShowcase(true)}

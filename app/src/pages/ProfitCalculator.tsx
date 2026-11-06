@@ -1,4 +1,5 @@
 import { confirmSentence } from '../components/Ask';
+import { SkelCards } from '../components/PageSkeletons';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
@@ -14,7 +15,7 @@ import { SavedCalcList, useFloatingCalc } from '../components/FloatingCalc';
 import { BackBar, scrollToTopOf, useGoBack } from '../components/ScrollManager';
 import { CalcIcon } from '../components/CalcIcon';
 import { PriceRoute } from '../components/CostSheetField';
-import { Loading } from '../components/Feedback';
+
 import { Select } from '../components/Select';
 
 /**
@@ -118,7 +119,7 @@ export function ProfitCalculator({ store }: { store: StoreAccess }) {
   const result = useMemo(() => (active ? calculateProfit(active, input) : null), [active, input]);
 
   if (error && !templates) return <ErrorNotice message={error} />;
-  if (!templates) return <Loading />;
+  if (!templates) return <SkelCards n={2} h={150} mark={false} chips={0} />;
 
   const set = (patch: Partial<ProfitInput>) => setInput((current) => ({ ...current, ...patch }));
   /** Any change to the sheet makes it a draft, kept on screen until saved or dropped. */

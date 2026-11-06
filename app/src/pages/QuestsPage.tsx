@@ -1,4 +1,5 @@
 import { formatCount } from '../format';
+import { PageLoading } from '../components/Feedback';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -89,7 +90,7 @@ export function QuestsPage() {
   }
 
   if (!view) {
-    return <main className="page qpage">{bar}<SkeletonText lines={6} /></main>;
+    return <PageLoading label="Loading your quests" shape="quests" />;
   }
 
   const starterLeft = view.tasks.some((task) => task.kind === 'starter' && !task.claimed);

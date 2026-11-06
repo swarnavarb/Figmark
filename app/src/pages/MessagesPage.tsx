@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { PageSkeleton } from '../components/PageSkeletons';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Message, MessageDeal } from '@shared/models';
 import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
@@ -554,7 +555,7 @@ export function ThreadPage() {
       <div className="social">
         <RoomBar tone="chat" onBack={back} avatar={<span className="skel" style={{ width: 34, height: 34, borderRadius: '50%' }} />}
           title={<span className="skel" style={{ width: 110, height: 12 }} />} />
-        <main className="page social"><SkeletonRows count={5} /></main>
+        <PageSkeleton shape="threadBody" />
       </div>
     );
   }

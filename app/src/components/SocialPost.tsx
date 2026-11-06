@@ -1,4 +1,5 @@
 import { askText } from './Ask';
+import { SkelRows } from './PageSkeletons';
 import { ReportButton } from './ReportButton';
 import { useNow } from '../clock';
 import { RaiseDisputeModal, ReportModal } from './DisputeFlows';
@@ -22,7 +23,7 @@ import { useVoice, VoiceAvatar } from './SocialVoice';
 import { PostInFigmark } from './PostInFigmark';
 import { figmarkLink, LinkCard } from './LinkCard';
 import { OpeningCard } from './Showcase';
-import { Loading, useToast } from './Feedback';
+import { useToast } from './Feedback';
 import { PhotoSales, type PhotoPoster } from './PhotoSales';
 import { ContestPlay, GuessPlay, PollPlay, TeamChip } from './PostPlay';
 import { markOpened, useSeen } from '../seen';
@@ -1361,7 +1362,7 @@ function Reactors({ card, onClose }: { card: PostCard; onClose: () => void }) {
         ))}
       </div>
       {error && <p className="notice notice--error">{error}</p>}
-      {!rows && !error && <Loading />}
+      {!rows && !error && <SkelRows n={4} />}
       <ul className="reactors__list">
         {shown.map((row, index) => (
           <li key={`${row.party.handle ?? row.party.name}-${index}`} className="reactors__row">
@@ -1442,7 +1443,7 @@ function Comments({ card, onCount, onPost }: {
   return (
     <section className="cmts" aria-label="Comments">
       {error && <p className="notice notice--error">{error}</p>}
-      {!threads && !error && <Loading label="Loading comments" />}
+      {!threads && !error && <SkelRows n={2} />}
       {threads && threads.length === 0 && (
         <p className="cmts__empty">No comments yet. Start the conversation 💬</p>
       )}

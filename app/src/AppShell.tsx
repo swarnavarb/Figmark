@@ -1,7 +1,7 @@
 import { isProActive, proDaysLeft } from '@shared/billing';
 import { ProBadge } from './components/Billing';
 import { notePath } from './cameFrom';
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FloatingCalc } from './components/FloatingCalcFab';
 import { Notifications } from './components/Notifications';
@@ -214,9 +214,11 @@ export function AppShell() {
 
       {/* Each screen is its own download (see main.tsx), fetched the first
           time it is opened; the chrome around it stays put meanwhile. */}
-      <Suspense fallback={<PageLoading />}>
-        <Outlet />
-      </Suspense>
+      <RouteFade>
+        <Suspense fallback={<PageLoading />}>
+          <Outlet />
+        </Suspense>
+      </RouteFade>
 
       {user && <FloatingCalc />}
 
@@ -449,4 +451,28 @@ function StaffMfaNotice() {
       </p>
     </div>
   );
+}
+
+/**
+ * A short cross-fade whenever the page changes, so moving between screens
+ * reads as one app rather than a cut.
+ *
+ * Opacity only, played with the Web Animations API on the element that is
+ * already there: no remount (a page keeps its state when only its id
+ * changes), no transform (which would become the containing block for any
+ * fixed bar inside the page and move it for the length of the fade), and
+ * nothing at all on the first paint or under reduced motion.
+ */
+function RouteFade({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  const ref = useRef<HTMLDivElement>(null);
+  const first = useRef(true);
+  useLayoutEffect(() => {
+    if (first.current) { first.current = false; return; }
+    const element = ref.current;
+    if (!element || typeof element.animate !== 'function') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    element.animate([{ opacity: 0.001 }, { opacity: 1 }], { duration: 180, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+  }, [pathname]);
+  return <div ref={ref} className="route-fade">{children}</div>;
 }

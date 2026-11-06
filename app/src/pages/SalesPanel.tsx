@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { SkelRows } from '../components/PageSkeletons';
 import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type SalesResponse } from '../api';
 import { formatMoney } from '../format';
 import { NudgeButton } from '../components/NudgeButton';
 import { PersonLink, Thumb } from '../components/ui';
-import { Loading } from '../components/Feedback';
+
 
 /**
  * Sales (free Analytics): how much sold over a period, what sold best, who
@@ -42,7 +43,7 @@ export function SalesPanel({ shop }: { shop?: string }) {
   }, [days, shop]);
 
   if (error) return <p className="faint">{error}</p>;
-  if (!data) return <Loading label="Loading sales" />;
+  if (!data) return <SkelRows n={5} />;
 
   const peak = Math.max(1, ...data.series.map((row) => row.revenueMinor));
   const change = (now: number, before: number) =>

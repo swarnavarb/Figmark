@@ -1,4 +1,5 @@
 import { ProLock, useProLocked } from './Billing';
+import { SkelBlock } from './PageSkeletons';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -9,7 +10,7 @@ import { api } from '../api';
 import { formatMoney, formatRupees } from '../format';
 import { STAGE_TONES } from '../pages/ProfitCalculator';
 import { CalcIcon } from './CalcIcon';
-import { Loading } from './Feedback';
+
 import '../styles/FloatingCalc.css';
 import { Select } from './Select';
 
@@ -111,7 +112,7 @@ function CostSheetOpen({ value, onChange, sellingPriceMinor, shop, collapsible =
         {collapsible && <CostSwitch on onToggle={() => setOpen(false)} />}
       </div>
 
-      {templates === null ? <Loading label="Loading your calculators" /> : templates.length > 0 ? (
+      {templates === null ? <SkelBlock h={44} r={12} /> : templates.length > 0 ? (
         <div className="stack" style={{ gap: 10 }}>
           <label className="field">
             <span>Calculator</span>

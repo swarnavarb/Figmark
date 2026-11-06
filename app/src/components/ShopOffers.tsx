@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SkelCards } from './PageSkeletons';
 import { Link } from 'react-router-dom';
 import { OFFER_KIND_INFO, PERK_WORDS, cleanOffers, offerLabel, offerPerk, type ListingOffer } from '@shared/offers';
 import { rewardPerk, rewardWords, type LoyaltyCard } from '@shared/loyalty';
 import type { Listing } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
-import { Loading } from './Feedback';
+
 import { InfoTip } from './InfoTip';
 import { OfferEditor } from './Offers';
 import { EmptyState, ErrorNotice, Modal, PageError } from './ui';
@@ -59,7 +60,7 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
   const kinds = new Set(withOffers.flatMap((listing) => (listing.offers ?? []).map((offer) => offer.kind)));
 
   if (!listings && error) return <PageError message={error} />;
-  if (!listings) return <Loading />;
+  if (!listings) return <SkelCards n={2} h={96} />;
 
   return (
     <div className="shopoffr stack">

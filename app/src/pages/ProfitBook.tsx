@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { SkelCards } from '../components/PageSkeletons';
 import { Link } from 'react-router-dom';
 import {
   COMMON_CURRENCIES, SCENARIOS, amountForPaid, amountForRupees, formulaBase, formulaForLine, formulaMinor, formulaPaid,
@@ -8,7 +9,7 @@ import {
 import { ApiRequestError, api, type BookLot, type BookRow, type CostsResponse } from '../api';
 import { formatMoney } from '../format';
 import { ErrorNotice, Modal, PersonLink, Tile } from '../components/ui';
-import { Loading } from '../components/Feedback';
+
 import { Select } from '../components/Select';
 
 /**
@@ -82,7 +83,7 @@ export function ProfitBook({ shop, data, reload }: { shop?: string; data: CostsR
     inLots: rows.filter((row) => row.lotId),
   }), [rows]);
 
-  if (!data) return <Loading />;
+  if (!data) return <SkelCards n={2} h={140} mark={false} />;
 
   const lot = lotId ? data.lots.find((entry) => entry.id === lotId) ?? null : null;
   const scope = lot ? inLots.filter((row) => row.lotId === lot.id) : tab === 'lots' ? inLots : inHand;

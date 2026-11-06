@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { SkelRows } from './PageSkeletons';
 import { Link, useNavigate } from 'react-router-dom';
 import { calculateProfit, stepsFromResult, type ProfitInput, type ProfitTemplate, type SavedCalc } from '@shared/profit';
 import type { StoreAccess } from '@shared/stores';
@@ -7,7 +8,7 @@ import { formatMoney } from '../format';
 import { CalcInputs, CalcLines, PriceRoute } from './CostSheetField';
 import { ErrorNotice } from './ui';
 import { CalcIcon } from './CalcIcon';
-import { Loading } from './Feedback';
+
 import { Select } from './Select';
 
 /**
@@ -228,7 +229,7 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
     </div>
   );
 
-  if (stores === null) return <>{head}<Loading /></>;
+  if (stores === null) return <>{head}<SkelRows n={2} /></>;
   if (stores.length === 0) return <>{head}<p className="muted">The calculator is for shops. Open a shop to use it.</p></>;
 
   return (
@@ -245,7 +246,7 @@ export function QuickCalc({ onLeave }: { onLeave: () => void }) {
         )}
         {tab === 'saved' ? (
           <SavedCalcList calcs={calcs} store={store} onChanged={setCalcs} onAct={onLeave} />
-        ) : templates === null ? <Loading label="Loading your calculators" /> : !template ? (
+        ) : templates === null ? <SkelRows n={3} /> : !template ? (
           <p className="muted">
             No calculator saved yet.{' '}
             <Link to="/shop?tab=calculator" state={{ store: storeId }} onClick={onLeave}>Set one up</Link> first.

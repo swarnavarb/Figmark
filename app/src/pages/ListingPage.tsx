@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
 import { Avatar, Icon, PersonLink, Thumb, useConfirm, PageError } from '../components/ui';
-import { SkeletonText } from '../components/Feedback';
+import { PageLoading } from '../components/Feedback';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
@@ -89,18 +89,7 @@ export function ListingPage() {
   const shareSheet = useShareSheet();
 
   if (error) return <PageError message={error} />;
-  if (!data) {
-    return (
-      <main className="page lp" role="status" aria-label="Loading the item">
-        <div className="detail">
-          <div>
-            <div className="skel skel-thumb" style={{ borderRadius: 18 }} />
-            <div style={{ marginTop: 18 }}><SkeletonText lines={5} /></div>
-          </div>
-        </div>
-      </main>
-    );
-  }
+  if (!data) return <PageLoading label="Loading the item" shape="listing" />;
 
   const { listing, seller, comments } = data;
   // The primary photo first, then the rest in the order they were added.

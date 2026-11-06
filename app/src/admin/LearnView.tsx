@@ -5,7 +5,7 @@ import { LearnText } from '../components/LearnText';
 import { shrink } from '../components/PhotoManager';
 import { ApiRequestError, admin } from './api';
 import { Confirm } from './Confirm';
-import { Loading } from '../components/Feedback';
+import { SkelRows } from '../components/PageSkeletons';
 
 /**
  * Writing the Learn guide.
@@ -51,7 +51,7 @@ export function LearnView() {
     void admin.learn().then(take).catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load the guide.'));
   }, [take]);
 
-  if (!tabs) return error ? <p className="notice notice--error">{error}</p> : <Loading />;
+  if (!tabs) return error ? <p className="notice notice--error">{error}</p> : <SkelRows n={5} />;
 
   const dirty = JSON.stringify(tabs) !== saved;
   const index = Math.min(selected, tabs.length - 1);

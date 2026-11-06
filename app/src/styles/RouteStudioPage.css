@@ -300,3 +300,15 @@
 /* The Studio in Steps view: the words, and nothing moving behind them. */
 .rshead__top { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .rshead__top .rshead__name { flex: 1; min-width: 0; }
+
+/* How long a step usually takes: a small inline field under its description. */
+.rsnode__days {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  font-size: var(--t-xs); color: var(--text-faint);
+}
+.rsnode__days input {
+  width: 4.5em; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text);
+  font: inherit; font-variant-numeric: tabular-nums; text-align: center;
+}

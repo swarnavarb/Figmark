@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { contestPhase } from '@shared/play';
 import { ApiRequestError, api as marketplace, type PostCard } from '../api';
 import { timeAgo } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelCards } from '../components/PageSkeletons';
 
 const PostStudio = lazy(() => import('../components/PostStudio').then((module) => ({ default: module.PostStudio })));
 
@@ -48,7 +48,7 @@ export function ChallengeView() {
       </div>
 
       {error && <p className="notice notice--error">{error}</p>}
-      {!cards && !error && <Loading />}
+      {!cards && !error && <SkelCards n={3} h={110} />}
       {cards && cards.length === 0 && <p className="muted">No challenge is running or recently finished.</p>}
       {cards && cards.length > 0 && (
         <div className="card">

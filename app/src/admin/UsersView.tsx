@@ -3,7 +3,7 @@ import type { TradeRight } from '@shared/models';
 import { ApiRequestError, admin, type AdminUserDetail, type AdminUserRow, type EmailProviderUsage } from './api';
 import { Confirm } from './Confirm';
 import { formatDate, formatMoney } from '../format';
-import { Loading } from '../components/Feedback';
+import { SkelCards, SkelRows } from '../components/PageSkeletons';
 import { Spinner } from '../components/Spinner';
 import { Select } from '../components/Select';
 
@@ -68,7 +68,7 @@ export function UsersView() {
       </div>
     );
   }
-  if (!rows) return <Loading />;
+  if (!rows) return <SkelRows n={6} />;
 
   if (openId) {
     return (
@@ -178,7 +178,7 @@ function UserDetail({ id, onClose }: { id: string; onClose: () => void }) {
   }
 
   if (error && !data) return <p className="notice notice--error">{error}</p>;
-  if (!data) return <Loading />;
+  if (!data) return <SkelCards n={2} h={140} />;
 
   const { user } = data;
   const deletable = data.blockers.length === 0;
