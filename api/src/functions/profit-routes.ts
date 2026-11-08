@@ -27,8 +27,8 @@ const clampNumber = (value: unknown, min: number, max: number, fallback = 0) =>
 
 /** One line as the client sent it, made safe to keep. */
 function cleanLine(raw: Partial<CostLine>, index: number): CostLine {
-  const kind: CostKind = raw.kind && raw.kind in KIND_LABELS ? raw.kind : 'per_item';
-  const basis: CostBasis = raw.basis && raw.basis in BASIS_LABELS ? raw.basis : 'item';
+  const kind: CostKind = raw.kind && Object.hasOwn(KIND_LABELS, raw.kind) ? raw.kind : 'per_item';
+  const basis: CostBasis = raw.basis && Object.hasOwn(BASIS_LABELS, raw.basis) ? raw.basis : 'item';
   const stage: CostStage = COST_STAGES.includes(raw.stage as CostStage) ? (raw.stage as CostStage) : 'selling';
   return {
     id: typeof raw.id === 'string' && /^[\w-]{1,40}$/.test(raw.id) ? raw.id : `line_${index}_${randomUUID().slice(0, 6)}`,

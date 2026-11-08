@@ -1,8 +1,9 @@
-import type { HttpResponseInit, InvocationContext } from '@azure/functions';
+import type { HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import type { ApiError } from '../../../shared/contracts.js';
 import { AuthError } from '../auth/errors.js';
 import { StaleWriteError } from '../data/concurrency.js';
 import { getRepository } from '../data/index.js';
+import { writeBackstop } from '../rate-limit.js';
 import { syncRouteWords } from '../route-library.js';
 
 /**
@@ -159,9 +160,26 @@ function crossSiteForm(request: unknown): HttpResponseInit | null {
   if (typeof req?.headers?.get !== 'function') return null;
   const method = (req.method ?? 'GET').toUpperCase();
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
+  // What the browser itself says about where the request came from (Fetch
+  // Metadata), which no page can set. The app's own writes are same-origin;
+  // one from another site - or a sibling subdomain, which SameSite=Lax lets
+  // carry the cookie - is somebody else's page acting as the visitor. Absent,
+  // as from a server (WhatsApp's webhook) or an older browser, the content
+  // type check below still stands.
+  const site = (req.headers.get('sec-fetch-site') ?? '').trim().toLowerCase();
+  if (site === 'cross-site' || site === 'same-site') {
+    return error(403, 'cross_site_request', 'This request did not come from Figmark. Open Figmark and try again.');
+  }
   const type = (req.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
   if (type !== 'application/x-www-form-urlencoded' && type !== 'multipart/form-data' && type !== 'text/plain') return null;
   return error(415, 'unsupported_media_type', 'Send this as JSON.');
+}
+
+/** The write backstop (rate-limit.ts), for anything shaped like a request. */
+function backstop(request: unknown): HttpResponseInit | null {
+  const req = request as { headers?: { get?: unknown } } | undefined;
+  if (typeof req?.headers?.get !== 'function') return null;
+  return writeBackstop(request as HttpRequest);
 }
 
 /** Wrap a handler so every route gets uniform error translation. */
@@ -170,7 +188,7 @@ export function handler<Args extends unknown[]>(
 ): (...args: [...Args, InvocationContext]) => Promise<HttpResponseInit> {
   return async (...args) => {
     const context = args[args.length - 1] as InvocationContext;
-    const refused = oversized(args[0]) ?? crossSiteForm(args[0]);
+    const refused = oversized(args[0]) ?? crossSiteForm(args[0]) ?? backstop(args[0]);
     if (refused) return refused;
     try {
       /* The route short forms every label is drawn with: read at most once a

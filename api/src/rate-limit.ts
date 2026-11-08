@@ -241,7 +241,62 @@ export function clientIp(request: HttpRequest): string {
   return value;
 }
 
+/* ── Write backstop ─────────────────────────────────────────────────────── */
+
+/**
+ * A ceiling on writes of every kind, whatever the route.
+ *
+ * The limits above are per action, on the routes where abuse costs something
+ * (sign-in, sign-up, uploads, messages, paid calls). Every other write had no
+ * ceiling at all, so one script could call them as fast as a worker answers.
+ * This is the floor under all of them: counted per worker in memory - no
+ * store round trip on every write - so it is a backstop against floods, not
+ * a quota. Two buckets, both must hold: the session (a person, however many
+ * tabs) and the address (generous, because a mobile carrier puts thousands of
+ * people behind one; and the only bucket for somebody inventing a new cookie
+ * per request).
+ *
+ * On Azure only, where the platform reports the address. The dev server and
+ * the tests have none to go by, and run far faster than any person;
+ * FIGMARK_WRITE_BACKSTOP=on turns it on anywhere, for a test of this itself.
+ */
+const WRITE_BACKSTOP = { session: 120, address: 600, ms: MINUTE } as const;
+const writeWindows = new Map<string, { start: number; count: number }>();
+let writeSweptAt = 0;
+
+const backstopOn = () => process.env.FIGMARK_WRITE_BACKSTOP
+  ? process.env.FIGMARK_WRITE_BACKSTOP === 'on'
+  : runningInAzure() && enabled();
+
+function overWindow(key: string, max: number, now: number): boolean {
+  const window = writeWindows.get(key);
+  if (!window || now - window.start >= WRITE_BACKSTOP.ms) {
+    writeWindows.set(key, { start: now, count: 1 });
+    return false;
+  }
+  window.count += 1;
+  return window.count > max;
+}
+
+/** The refusal for a write over the backstop, or null. Reads and preflights are never counted. */
+export function writeBackstop(request: HttpRequest, now = Date.now()): ReturnType<typeof error> | null {
+  const method = (request.method ?? 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS' || !backstopOn()) return null;
+  if (now - writeSweptAt >= WRITE_BACKSTOP.ms) {
+    writeSweptAt = now;
+    for (const [key, window] of writeWindows) if (now - window.start >= WRITE_BACKSTOP.ms) writeWindows.delete(key);
+  }
+  // The token's signature names the session without keeping the token itself.
+  const session = /(?:^|;\s*)figmark_session=[^.;]+\.([A-Za-z0-9_-]{16,})/.exec(request.headers.get('cookie') ?? '')?.[1];
+  const overAddress = overWindow(`ip:${clientIp(request)}`, WRITE_BACKSTOP.address, now);
+  const overSession = session ? overWindow(`s:${session.slice(-22)}`, WRITE_BACKSTOP.session, now) : false;
+  return overAddress || overSession
+    ? error(429, 'slow_down', 'That is a lot in a short time. Try again in a minute.')
+    : null;
+}
+
 /** Forget everything, for tests. */
 export function resetRateLimits() {
   seen.clear();
+  writeWindows.clear();
 }

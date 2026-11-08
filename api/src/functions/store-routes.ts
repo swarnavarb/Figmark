@@ -595,7 +595,7 @@ async function artistAct(request: HttpRequest, _context: InvocationContext) {
   if (found.refusal) return found.refusal;
   const { owner, repository, user } = found;
   const input = await body<{ action?: ArtistJobAction; quoteMinor?: number; days?: number; note?: string; photos?: string[]; courier?: string; awb?: string }>(request);
-  if (!input?.action || !(input.action in ARTIST_JOB_MOVES)) return error(400, 'invalid_action', 'Say what to do.');
+  if (!input?.action || !Object.hasOwn(ARTIST_JOB_MOVES, input.action)) return error(400, 'invalid_action', 'Say what to do.');
 
   const order = await repository.getOrder(request.params.orderId ?? '');
   const job = order?.artistJob;

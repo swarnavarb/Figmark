@@ -2575,7 +2575,9 @@ function withPopularity(listing: Listing): Listing {
 
 /** The clause for one sort, falling back to newest for anything unrecognised. */
 function catalogOrder(sort: string | undefined): string {
-  return (sort && CATALOG_ORDER[sort]) || CATALOG_ORDER.newest!;
+  // Own keys only: `?sort=constructor` read Object's constructor off the
+  // prototype and wrote its source text into the statement.
+  return (sort && Object.hasOwn(CATALOG_ORDER, sort) && CATALOG_ORDER[sort]) || CATALOG_ORDER.newest!;
 }
 
 /** An `identifiers` document: the id is the normalised email or phone. */

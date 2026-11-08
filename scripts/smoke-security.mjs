@@ -554,6 +554,65 @@ await check('a write posted as a form or plain text is refused, so no other page
   }
 });
 
+await check('a write the browser marks as from another site is refused, whatever its content type', async () => {
+  for (const site of ['cross-site', 'same-site']) {
+    let read = false;
+    const response = await loginRoute({
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json', 'sec-fetch-site': site }),
+      json: async () => { read = true; return { identifier: DEMO_EMAIL, password: DEMO_PASSWORD }; },
+    }, ctx);
+    assert.equal(response.status, 403, site);
+    assert.equal(response.jsonBody.error, 'cross_site_request');
+    assert.equal(read, false, 'refused before the body is read');
+  }
+  // The app's own requests, and servers that send no such header, go through.
+  for (const headers of [{ 'sec-fetch-site': 'same-origin' }, {}]) {
+    const response = await loginRoute({
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json', 'x-client-ip': '198.51.100.90', ...headers }),
+      json: async () => ({ identifier: DEMO_EMAIL, password: DEMO_PASSWORD }),
+    }, ctx);
+    assert.equal(response.status, 200, JSON.stringify(headers));
+  }
+});
+
+await check('a flood of writes hits the backstop; reads and other sessions are not held back', async () => {
+  const { writeBackstop } = await import(new URL('api/src/rate-limit.js', base));
+  const was = process.env.FIGMARK_WRITE_BACKSTOP;
+  process.env.FIGMARK_WRITE_BACKSTOP = 'on';
+  try {
+    resetRateLimits();
+    const now = Date.now();
+    const write = (session, ip = '198.51.100.91', method = 'POST') => writeBackstop({
+      method,
+      headers: new Headers({ 'x-client-ip': ip, ...(session ? { cookie: `${SESSION_COOKIE_NAME}=payload.${session}` } : {}) }),
+    }, now);
+    const one = 'a'.repeat(43);
+    for (let i = 0; i < 120; i += 1) assert.equal(write(one), null, `write ${i + 1} of the session's 120`);
+    assert.equal(write(one)?.status, 429, 'the 121st write in a minute from one session');
+    assert.equal(write(one, undefined, 'GET'), null, 'reads are never counted');
+    assert.equal(write('b'.repeat(43)), null, 'another session on the same address carries on');
+    // A new cookie per request escapes the session bucket but not the address one.
+    let refused = 0;
+    for (let i = 0; i < 601; i += 1) if (write(`forged${String(i).padStart(20, '0')}`, '198.51.100.92')) refused += 1;
+    assert.equal(refused, 1, 'only the 601st from the address is refused');
+    assert.equal(writeBackstop({
+      method: 'POST', headers: new Headers({ 'x-client-ip': '198.51.100.91' }),
+    }, now + 61_000), null, 'a minute later the window is fresh');
+  } finally {
+    if (was === undefined) delete process.env.FIGMARK_WRITE_BACKSTOP;
+    else process.env.FIGMARK_WRITE_BACKSTOP = was;
+    resetRateLimits();
+  }
+});
+
+await check('an email address is masked before it reaches the log', async () => {
+  const { maskEmail } = await import(new URL('api/src/verification/email-providers.js', base));
+  assert.equal(maskEmail('priya.sharma@example.com'), 'p***@example.com');
+  assert.equal(maskEmail('not-an-address'), '***');
+});
+
 await check('a forgotten password is reset with an emailed code, and every old session ends', async () => {
   resetRateLimits();
   const who = 'meera@figmark.in';
