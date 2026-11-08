@@ -1,0 +1,24 @@
+name: Diagnose service cards (temporary)
+on: { push: { branches: [claude/diag-services] } }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read the live APIs
+        run: |
+          for host in icy-stone-0498a9900.6.azurestaticapps.net proud-flower-00cef0800.4.azurestaticapps.net figmark.in; do
+            echo "================ $host"
+            for path in /api/service-search/forwarder /api/service-search/artist; do
+              echo "---- $path"
+              curl -sS -m 40 -w '\nHTTP %{http_code}\n' "https://$host$path" | head -c 1500; echo
+            done
+            echo "---- /api/feed (count, sourcing, condition)"
+            curl -sS -m 40 "https://$host/api/feed" | python3 -c 'import sys,json
+          try:
+            d=json.load(sys.stdin); L=d.get("listings",[])
+            print("listings:",len(L)); print([(x.get("sourcing"),x.get("condition")) for x in L[:20]])
+          except Exception as e: print("not json",e)'
+            echo "---- deployed bundle has the service cards?"
+            js=$(curl -sS -m 30 "https://$host/" | grep -oE '/assets/[^"]+\.js' | head -20)
+            found=0; for f in $js; do if curl -sS -m 30 "https://$host$f" | grep -q "svlabel"; then echo "yes, in $f"; found=1; fi; done; [ $found = 1 ] || echo "svlabel not found in entry chunks: $js"
+          done
