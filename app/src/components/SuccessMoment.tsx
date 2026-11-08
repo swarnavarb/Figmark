@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { haptic } from '../haptics';
 import { useDialog } from './ui';
@@ -41,21 +41,26 @@ export function SuccessMoment({ tone = 'success', title, body, detail, primary, 
   const box = useRef<HTMLDivElement>(null);
   useDialog(box, onClose);
 
+  // The confetti goes off as the tick lands, not before it is drawn.
+  const [burst, setBurst] = useState(false);
   useEffect(() => {
     haptic(tone === 'success' ? 'success' : 'tap');
-  }, [tone]);
+    if (!confetti) return;
+    const timer = window.setTimeout(() => setBurst(true), 760);
+    return () => window.clearTimeout(timer);
+  }, [tone, confetti]);
 
   return createPortal(
     <div className="smo" role="dialog" aria-modal="true" aria-label={title}
       onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className={`smo__card smo__card--${tone}`} ref={box} tabIndex={-1}>
-        {confetti && <Confetti run={1} />}
+        {burst && <Confetti run={1} />}
         <MomentMark tone={tone} />
         <h2 className="smo__title">{title}</h2>
         {detail && <p className="smo__detail">{detail}</p>}
         {body && <p className="smo__body">{body}</p>}
         <div className="smo__actions">
-          <button type="button" className="btn btn--lg btn--block" autoFocus
+          <button type="button" className="btn btn--lg btn--block"
             onClick={() => { (primary?.onClick ?? onClose)(); if (primary) onClose(); }}>
             {primary?.label ?? 'Done'}
           </button>

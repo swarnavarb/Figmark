@@ -37,7 +37,7 @@ export function OfflineBar() {
   return (
     <div className={`offbar${online ? ' offbar--back' : ''}`} role="status" aria-live="polite">
       <span className="offbar__dot" aria-hidden="true" />
-      {online ? 'Back online' : "You're offline - changes won't send until you reconnect"}
+      {online ? 'Back online' : "You're offline · changes won't send yet"}
     </div>
   );
 }

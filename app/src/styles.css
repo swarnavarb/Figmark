@@ -9378,7 +9378,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   left: 50%; top: calc(env(safe-area-inset-top, 0px) + 8px);
   transform: translateX(-50%);
   display: inline-flex; align-items: center; gap: 8px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100vw - 24px); white-space: nowrap;
   padding: 7px 14px; border-radius: var(--r-pill);
   border: 1px solid var(--coral-line); background: #2A0F14; color: var(--coral-pale);
   font-size: var(--t-sm); font-weight: var(--w-semi);
@@ -9475,4 +9475,5 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .actord__text b { font-size: var(--t-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .actord__text small { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: var(--t-xs); }
 .actord__card.is-act small { color: var(--accent-text); font-weight: var(--w-bold); }
-.actord__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: hotdot-pulse 1.6s ease-in-out infinite; }
+.actord__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: actord-blink 1.6s ease-in-out infinite; }
+@keyframes actord-blink { 50% { opacity: 0.35; } }
