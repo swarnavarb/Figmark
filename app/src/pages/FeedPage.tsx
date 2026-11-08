@@ -17,7 +17,7 @@ import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
 import { ShopStrip } from '../components/ShopCards';
-import { ServiceCard, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch } from '../components/ServiceCards';
+import { ServiceCard, ServiceGrid, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch } from '../components/ServiceCards';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import {
@@ -435,8 +435,10 @@ export function FeedPage() {
       {loading && !data ? (
         <SkeletonGrid count={6} />
       ) : shown.length === 0 ? (
+        <>
         <EmptyState title={photo ? 'Nothing like your photo yet'
-          : rarityFilter ? `Nothing ${RARITY_LABELS[rarityFilter].toLowerCase()} right now` : 'Nothing matches those filters'}>
+          : rarityFilter ? `Nothing ${RARITY_LABELS[rarityFilter].toLowerCase()} right now`
+          : browsing ? 'Nothing for sale yet' : 'Nothing matches those filters'}>
           {photo
             ? 'Try another photo, or search with words instead.'
             : rarityFilter
@@ -445,6 +447,9 @@ export function FeedPage() {
               ? 'Try removing a filter or searching for something broader.'
               : 'Be the first to list something.'}
         </EmptyState>
+        {/* No items to sit beside, but the people offering services are still worth showing. */}
+        {browsing && <ServiceGrid providers={providers} />}
+        </>
       ) : (
         <div className="grid qgrid">
           {shown.slice(0, drawn).map((listing, n) => (

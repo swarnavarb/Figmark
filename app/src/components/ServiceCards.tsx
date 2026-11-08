@@ -5,7 +5,7 @@ import { FREIGHT_MODE_LABELS } from '@shared/service-stores';
 import { countryCode, countryFlag } from '@shared/countries';
 import { formatMoney } from '../format';
 import { accentStyle } from './StoreKit';
-import { initialsOf } from '../format';
+import { gradientFor, initialsOf } from '../format';
 
 /**
  * Forwarders and artists, shown where they are some use.
@@ -286,7 +286,7 @@ function GalleryCard({ pick }: { pick: ArtistPick }) {
         <span className="svart__lamp" aria-hidden="true" />
         <span className="svart__frame">
           <span className="svart__mat">
-            {lead ? <img loading="lazy" decoding="async" src={lead} alt="" /> : <span className="svart__blank" aria-hidden="true">🎨</span>}
+            {lead ? <WorkPicture url={lead} name={store.name} /> : <span className="svart__blank" aria-hidden="true">🎨</span>}
           </span>
         </span>
         {pick.portfolio.length > 1 && <span className="svart__count">+{pick.portfolio.length - 1} works</span>}
@@ -300,6 +300,42 @@ function GalleryCard({ pick }: { pick: ArtistPick }) {
         <span className="svart__go">Commission ›</span>
       </span>
     </Link>
+  );
+}
+
+/**
+ * A piece of work. A "seed:" address is a stand-in picture (demo and test
+ * stores have no uploads): drawn as the app draws those everywhere else, a
+ * gradient of its own, rather than handed to an <img> that cannot load it.
+ */
+function WorkPicture({ url, name }: { url: string; name: string }) {
+  if (url.startsWith('seed:')) {
+    return <span className="svart__seed" style={{ background: gradientFor(url) }} aria-hidden="true">{initialsOf(name)}</span>;
+  }
+  return <img loading="lazy" decoding="async" src={url} alt="" />;
+}
+
+/**
+ * Every service, as a grid, for a Shop with no items to place them beside:
+ * forwarders and artists taking turns.
+ */
+export function ServiceGrid({ providers }: { providers: Providers }) {
+  const picks: ProviderPick[] = [];
+  for (let i = 0; i < Math.max(providers.forwarders.length, providers.artists.length); i += 1) {
+    if (providers.forwarders[i]) picks.push(providers.forwarders[i]!);
+    if (providers.artists[i]) picks.push(providers.artists[i]!);
+  }
+  if (picks.length === 0) return null;
+  return (
+    <section className="svgrid" aria-label="Services on Figmark">
+      <div className="svstrip__head">
+        <h2>Services on Figmark</h2>
+        <span className="faint">Ship it in, or have it made one of a kind</span>
+      </div>
+      <div className="grid qgrid">
+        {picks.slice(0, 8).map((pick) => <ServiceCard key={`${pick.kind}:${pick.store.ownerId}`} pick={pick} />)}
+      </div>
+    </section>
   );
 }
 

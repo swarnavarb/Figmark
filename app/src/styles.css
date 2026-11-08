@@ -9590,6 +9590,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .svart__mat { display: block; padding: 4px; background: #F4EFE6; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35); }
 .svart__mat img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.svart__seed {
+  display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3;
+  font-family: var(--display); font-size: var(--t-lg); font-weight: 800; color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.svgrid { display: grid; gap: 10px; margin-top: 18px; }
 .svart__blank { width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; font-size: calc(34px * var(--text-scale)); background: #E9E2D4; }
 .svart__count {
   position: absolute; left: 8px; top: 8px; padding: 1px 6px; border-radius: var(--r-pill);
@@ -9604,7 +9610,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .svart__kind { font-size: calc(9px * var(--text-scale)); letter-spacing: 0.14em; text-transform: uppercase; color: #8A6A3A; font-weight: 700; }
 .svart__name {
   font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700;
-  font-size: var(--t-md); line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: var(--t-md); line-height: 1.15;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .svart__line { font-size: var(--t-xs); color: #5B4E43; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .svart__price { font-size: var(--t-xs); color: #5B4E43; }
