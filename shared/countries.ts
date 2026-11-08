@@ -57,3 +57,12 @@ export function countryFlag(country: string | null | undefined): string {
   if (!code) return '🌐';
   return [...code].map((letter) => String.fromCodePoint(0x1F1E6 + letter.charCodeAt(0) - 65)).join('');
 }
+
+/**
+ * A country as its two-letter code, for a label that has room for two
+ * characters ("CN → IN"). Falls back to the name's first two letters.
+ */
+export function countryCode(country: string | null | undefined): string {
+  const name = country?.trim() ?? '';
+  return FLAG_CODE_BY_COUNTRY.get(name) ?? (name.slice(0, 2).toUpperCase() || '··');
+}

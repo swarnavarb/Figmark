@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type RouteMatch, type SearchStore, type StudioMatch } from '../api';
 import { FREIGHT_MODE_LABELS } from '@shared/service-stores';
-import { countryFlag } from '@shared/countries';
+import { countryCode, countryFlag } from '@shared/countries';
 import { formatMoney } from '../format';
 import { accentStyle } from './StoreKit';
 import { initialsOf } from '../format';
@@ -195,48 +195,93 @@ export function placeServices(items: Placeable[], providers: Providers): Map<num
   return placed;
 }
 
-/* ── The card ─────────────────────────────────────────────────────────── */
+/* ── The cards ────────────────────────────────────────────────────────
+   Not item cards, and not each other. A forwarder is a parcel label: cream
+   paper, an airmail border, the route as port codes, a postmark for its
+   record and a barcode. An artist is a piece hung on a gallery wall: the
+   work in a gilt frame under a spotlight, a museum placard for the name. */
 
 export function ServiceCard({ pick }: { pick: ProviderPick }) {
-  const { store } = pick;
+  return pick.kind === 'forwarder' ? <LabelCard pick={pick} /> : <GalleryCard pick={pick} />;
+}
+
+/** A forwarder as the label on a parcel they would carry. */
+function LabelCard({ pick }: { pick: ForwarderPick }) {
+  const { store, lanes } = pick;
+  const lane = lanes[0];
   return (
-    <Link to={`/services/${pick.kind}/${store.slug}`} className={`svcard svcard--${pick.kind}`} style={accentStyle(store.accent)}>
-      {pick.kind === 'forwarder' ? <RouteArt pick={pick} /> : <WorkArt pick={pick} />}
-      <span className="svcard__tag">{pick.kind === 'forwarder' ? '📦 Forwarder' : '🎨 Artist'}</span>
-      <span className="svcard__body">
-        <span className="svcard__who">
-          <span className="svcard__mark" aria-hidden="true">
-            {store.logoUrl ? <img loading="lazy" decoding="async" src={store.logoUrl} alt="" /> : initialsOf(store.name)}
+    <Link to={`/services/forwarder/${store.slug}`} className="svcard svlabel" aria-label={`${store.name}, freight forwarder`}>
+      <span className="svlabel__sheet">
+        <span className="svlabel__head">
+          <span>Forwarder</span>
+          <span className="svlabel__mode">{lane ? FREIGHT_MODE_LABELS[lane.mode].label.split(' ')[0] : 'Cargo'}</span>
+        </span>
+        <span className="svlabel__route">
+          <span className="svlabel__port">
+            <small>From</small>
+            <b>{lane ? countryCode(lane.originCountry) : '··'}</b>
+            <span aria-hidden="true">{lane ? countryFlag(lane.originCountry) : '📦'}</span>
           </span>
+          <span className="svlabel__via" aria-hidden="true">
+            <span className="svlabel__glyph">{lane ? FREIGHT_MODE_LABELS[lane.mode].glyph : '✈️'}</span>
+            <span className="svlabel__dash" />
+            {lane && <small>{shortDays(lane.days)}</small>}
+          </span>
+          <span className="svlabel__port">
+            <small>To</small>
+            <b>{lane ? countryCode(lane.destinationCountry) : '··'}</b>
+            <span aria-hidden="true">{lane ? countryFlag(lane.destinationCountry) : '🏠'}</span>
+          </span>
+        </span>
+        <span className="svlabel__carrier">
+          <small>Carrier</small>
           <b>{store.name}</b>
-        </span>
-        <span className="svcard__standing">
-          {store.rating !== null ? <>★ {store.rating.toFixed(1)}</> : 'New'}
-          {store.completed > 0 && <> · {store.completed} done</>}
-        </span>
-        {pick.kind === 'forwarder' ? (
-          <span className="svcard__lines">
-            {pick.lanes.slice(0, 2).map((lane) => (
-              <span key={lane.id} className="svcard__line">
-                {countryFlag(lane.originCountry)}→{countryFlag(lane.destinationCountry)}
-                {' '}{FREIGHT_MODE_LABELS[lane.mode].glyph}
-                {/* The price before the days: on a long sea route it is the days that get cut, not the price. */}
-                {lane.fromMinor > 0 && <b> {formatMoney(lane.fromMinor, 'INR')}/kg</b>}
-                {' · '}{shortDays(lane.days)}
-              </span>
-            ))}
+          {/* The record as a postmark, over the carrier's corner like one on a real label. */}
+          <span className="svlabel__stamp" aria-label={store.rating !== null ? `Rated ${store.rating.toFixed(1)}` : 'New on Figmark'}>
+            <b>{store.rating !== null ? `★${store.rating.toFixed(1)}` : 'NEW'}</b>
+            <small>{store.completed > 0 ? `${store.completed} sent` : 'Figmark'}</small>
           </span>
-        ) : (
-          <span className="svcard__lines">
-            <span className="svcard__line">{pick.services.slice(0, 2).map((service) => service.name).join(' · ') || pick.specialties.slice(0, 2).join(' · ')}</span>
-            {pick.fromMinor > 0 && <span className="svcard__line">from <b>{formatMoney(pick.fromMinor, 'INR')}</b></span>}
-          </span>
-        )}
-        <span className="svcard__more">
-          {pick.kind === 'forwarder'
-            ? `${moreOf(pick.lanes.length - 2, 'route')}More ›`
-            : `${moreOf(pick.services.length - 2, 'service')}More ›`}
         </span>
+        <span className="svlabel__rates">
+          {lanes.slice(0, 2).map((row) => (
+            <span key={row.id} className="svlabel__rate">
+              <span>{countryCode(row.originCountry)}→{countryCode(row.destinationCountry)} {FREIGHT_MODE_LABELS[row.mode].glyph}</span>
+              <b>{row.fromMinor > 0 ? `${formatMoney(row.fromMinor, 'INR')}/kg` : shortDays(row.days)}</b>
+            </span>
+          ))}
+        </span>
+        <span className="svlabel__foot">
+          <span className="svlabel__barcode" aria-hidden="true" />
+          <span className="svlabel__go">{lanes.length > 2 ? `${lanes.length} routes ›` : 'Routes ›'}</span>
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+/** An artist as a piece of their work, hung and lit, with its placard. */
+function GalleryCard({ pick }: { pick: ArtistPick }) {
+  const { store } = pick;
+  const [lead] = pick.portfolio;
+  const line = pick.services.slice(0, 2).map((service) => service.name).join(' · ') || pick.specialties.slice(0, 2).join(' · ');
+  return (
+    <Link to={`/services/artist/${store.slug}`} className="svcard svart" aria-label={`${store.name}, artist`}>
+      <span className="svart__wall">
+        <span className="svart__lamp" aria-hidden="true" />
+        <span className="svart__frame">
+          <span className="svart__mat">
+            {lead ? <img loading="lazy" decoding="async" src={lead} alt="" /> : <span className="svart__blank" aria-hidden="true">🎨</span>}
+          </span>
+        </span>
+        {pick.portfolio.length > 1 && <span className="svart__count">+{pick.portfolio.length - 1} works</span>}
+      </span>
+      <span className="svart__placard">
+        <span className="svart__kind">Artist{store.rating !== null ? ` · ★ ${store.rating.toFixed(1)}` : ' · New'}</span>
+        <b className="svart__name">{store.name}</b>
+        {line && <span className="svart__line">{line}</span>}
+        {pick.fromMinor > 0 && <span className="svart__price">from <b>{formatMoney(pick.fromMinor, 'INR')}</b></span>}
+        <span className="svart__palette" aria-hidden="true"><i /><i /><i /><i /></span>
+        <span className="svart__go">Commission ›</span>
       </span>
     </Link>
   );
@@ -249,44 +294,6 @@ function shortDays(days: string): string {
 
 function moreOf(count: number, noun: string): string {
   return count > 0 ? `+${count} ${noun}${count === 1 ? '' : 's'} · ` : '';
-}
-
-/** A forwarder's picture is its best route: two flags and the path between them. */
-function RouteArt({ pick }: { pick: ForwarderPick }) {
-  const lane = pick.lanes[0];
-  return (
-    <span className="svcard__art svcard__art--route" aria-hidden="true">
-      <svg className="svcard__path" viewBox="0 0 120 60" preserveAspectRatio="none">
-        <path d="M14 44 C 40 6, 80 6, 106 44" pathLength={100} />
-      </svg>
-      <span className="svcard__flag">{lane ? countryFlag(lane.originCountry) : '📦'}</span>
-      <span className="svcard__plane">{lane ? FREIGHT_MODE_LABELS[lane.mode].glyph : '✈️'}</span>
-      <span className="svcard__flag">{lane ? countryFlag(lane.destinationCountry) : '🏠'}</span>
-      {lane && <span className="svcard__days">{lane.days}</span>}
-    </span>
-  );
-}
-
-/** An artist's picture is their work: the lead piece, with up to two more beside it. */
-function WorkArt({ pick }: { pick: ArtistPick }) {
-  const [lead, ...rest] = pick.portfolio;
-  if (!lead) {
-    return (
-      <span className="svcard__art svcard__art--blank" aria-hidden="true">
-        <span>🎨</span>
-      </span>
-    );
-  }
-  return (
-    <span className={`svcard__art svcard__art--work${rest.length ? ' has-side' : ''}`} aria-hidden="true">
-      <img className="svcard__lead" loading="lazy" decoding="async" src={lead} alt="" />
-      {rest.length > 0 && (
-        <span className="svcard__side">
-          {rest.slice(0, 2).map((url) => <img key={url} loading="lazy" decoding="async" src={url} alt="" />)}
-        </span>
-      )}
-    </span>
-  );
 }
 
 /** A row of service cards, for search: "custom paint" brings up the studios that do it. */
