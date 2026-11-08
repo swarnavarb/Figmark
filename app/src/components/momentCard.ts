@@ -155,7 +155,7 @@ export function cardFor(m: Moment, loaded: { photo: boolean; avatar: boolean }):
     stamp: { label: theme.stamp, from: theme.from, to: theme.to, ink: theme.ink },
     headline: m.headline,
     hero,
-    chips: itemish && m.fill ? [{ label: 'PRE-ORDER', fill: '#F472B6', ink: '#2A0614' }] : [],
+    chips: itemish && m.fill ? [{ label: 'PRE-ORDER', fill: '#EB8A7B', ink: '#2A2926' }] : [],
     meter: itemish && m.fill && m.fill.threshold > 0 ? { joined: m.fill.joined, total: m.fill.threshold, line: fillLine(m.fill) } : null,
     title: m.title,
     detail: [m.detail, byline].filter(Boolean).join(' · ') || null,

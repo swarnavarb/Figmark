@@ -125,7 +125,7 @@
 /* A called-off order: the timeline stops at a last rung, and nothing follows it. */
 .ladder__row--ended .ladder__dot {
   display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--danger-soft, rgba(244, 63, 94, 0.15)); color: var(--danger, var(--danger));
+  background: var(--danger-soft, rgba(233, 90, 74, 0.15)); color: var(--danger, var(--danger));
   font-size: var(--t-xs); font-weight: var(--w-bold);
 }
 .ladder__row--ended .ladder__name { color: var(--danger, var(--danger)); }

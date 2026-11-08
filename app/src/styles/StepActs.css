@@ -19,16 +19,16 @@
 .trk {
   display: grid; gap: 14px; padding: var(--s4); border-radius: var(--r-lg);
   background:
-    radial-gradient(110% 90% at 100% 0%, rgba(6, 214, 231, 0.12), transparent 60%),
-    radial-gradient(100% 100% at 0% 100%, rgba(124, 58, 237, 0.12), transparent 60%),
+    radial-gradient(110% 90% at 100% 0%, rgba(45, 167, 192, 0.12), transparent 60%),
+    radial-gradient(100% 100% at 0% 100%, rgba(64, 62, 233, 0.12), transparent 60%),
     var(--surface);
-  box-shadow: inset 0 0 0 1px var(--border), 0 10px 28px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0 0 1px var(--border), 0 10px 28px rgba(20, 20, 18, 0.3);
 }
 /* ── The tracking card ─────────────────────────────────────────────────── */
 .trk__hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s3); align-items: center; }
 .trk__icon {
   display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-lg); font-size: var(--t-xl);
-  background: var(--grad-sea); box-shadow: 0 8px 22px rgba(6, 214, 231, 0.3);
+  background: var(--grad-sea); box-shadow: 0 8px 22px rgba(45, 167, 192, 0.3);
 }
 .trk__eyebrow {
   font-family: var(--mono); font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint);
@@ -54,10 +54,10 @@
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
 }
 .trkbox__item.is-done .trkbox__icon {
-  background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.4);
+  background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(87, 176, 126, 0.4);
 }
 .trkbox__item.is-here .trkbox__icon {
-  background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent), 0 0 18px rgba(124, 58, 237, 0.35);
+  background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent), 0 0 18px rgba(64, 62, 233, 0.35);
   animation: trkbox-here 2.4s var(--ease) infinite;
 }
 .trkbox__item.is-next .trkbox__icon { opacity: 0.75; box-shadow: inset 0 0 0 1px var(--border-strong); }

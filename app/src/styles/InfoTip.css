@@ -10,6 +10,6 @@
   color: var(--text-faint); font: italic 700 11px/1 Georgia, 'Times New Roman', serif; cursor: pointer;
   vertical-align: middle; transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
-.qinfo:hover, .qinfo.is-on { color: var(--text); border-color: var(--violet-lit); background: rgba(124, 58, 237, 0.18); }
+.qinfo:hover, .qinfo.is-on { color: var(--text); border-color: var(--violet-lit); background: rgba(64, 62, 233, 0.18); }
 .qinfo:focus-visible { outline: 2px solid var(--violet-lit); outline-offset: 2px; }
-.qinfo__bubble p b { color: #fff; }
+.qinfo__bubble p b { color: #FFFFFF; }

@@ -32,7 +32,7 @@ const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ defa
  */
 // A forum's hero opens in this colour (see .forumhero), so the phone's status
 // bar takes it too rather than the Social tab's pink.
-const FORUM_STATUS = '#C627CB';
+const FORUM_STATUS = '#1A1A19';
 
 export function AppShell() {
   const { user, warning, sessionsInsecure, missingContainers, dataPerWorker, testEnvironment, signOut, authPrompt, closeAuth, promptAuth } = useSession();
@@ -117,6 +117,8 @@ export function AppShell() {
         <NavLink to="/" className="brand" aria-label="Figmark home">
           <span className="brand__mark" aria-hidden="true" />
           <span className="brand__name">Figmark</span>
+          {/* A greeting beside the mark, as a friend's app would open. */}
+          {user && <span className="brand__hi">Hi, {user.displayName.split(' ')[0]}!</span>}
         </NavLink>
 
         {/* Buy, sell and social moved to the tab bar; what belongs up here is
@@ -241,12 +243,12 @@ export function AppShell() {
  * colours, to set the first page's tone before paint.
  */
 const TONE_STATUS: Record<TabId, string> = {
-  buy: '#5B5EF1',
-  discover: '#8B2FC9',
-  sell: '#177ACE',
-  services: '#3A8C4E',
-  social: '#FF3471',
-  quests: '#C46A08',
+  buy: '#1A1A19',
+  discover: '#1A1A19',
+  sell: '#1A1A19',
+  services: '#1A1A19',
+  social: '#1A1A19',
+  quests: '#1A1A19',
 };
 
 /**

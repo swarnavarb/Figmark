@@ -31,13 +31,13 @@
 .forumgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: var(--s3); }
 .forumcard__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: var(--s1); }
 .forumcard__last {
-  padding: var(--s2) 10px; border-radius: var(--r-md); background: rgba(0, 0, 0, 0.22);
+  padding: var(--s2) 10px; border-radius: var(--r-md); background: rgba(20, 20, 18, 0.22);
   font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .forumcard__join {
   justify-self: start; display: inline-flex; align-items: center; gap: 6px;
   padding: var(--s2) var(--s4); border: 0; border-radius: var(--r-pill);
-  background: linear-gradient(115deg, rgb(var(--c1)), rgb(var(--c2))); color: #fff;
+  background: linear-gradient(115deg, rgb(var(--c1)), rgb(var(--c2))); color: #FFFFFF;
   font-weight: 800; font-size: var(--t-xs); letter-spacing: 0.04em; text-transform: uppercase; font-style: italic;
   cursor: pointer;
 }
@@ -48,27 +48,27 @@
 }
 .wanthero {
   position: relative; overflow: hidden; isolation: isolate;
-  display: grid; gap: var(--s1); padding: var(--s4) 18px; border-radius: var(--r-xl); color: #fff;
+  display: grid; gap: var(--s1); padding: var(--s4) 18px; border-radius: var(--r-xl); color: #FFFFFF;
   background:
-    linear-gradient(180deg, rgba(8, 11, 18, 0) 30%, rgba(8, 11, 18, 0.32) 100%),
-    linear-gradient(115deg, #FF5B1F 0%, var(--gold) 55%, #D4FF3A 130%);
-  box-shadow: 0 10px 30px rgba(255, 120, 40, 0.28);
+    linear-gradient(180deg, rgba(32, 31, 29, 0) 30%, rgba(32, 31, 29, 0.32) 100%),
+    linear-gradient(115deg, #E64938 0%, var(--gold) 55%, #79C098 130%);
+  box-shadow: 0 10px 30px rgba(240, 191, 55, 0.28);
 }
 .wanthero--loading { min-height: 150px; animation: skel-shimmer 1.5s var(--ease) infinite; }
 .wanthero__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: var(--s2); }
 .wanthero__ask {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 10px 18px; border: 0; border-radius: var(--r-pill);
-  background: #fff; color: var(--sx-ink); cursor: pointer;
+  background: #FFFFFF; color: var(--sx-ink); cursor: pointer;
   font-weight: 800; font-size: var(--t-xs); letter-spacing: 0.04em; text-transform: uppercase; font-style: italic;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 6px 18px rgba(20, 20, 18, 0.18);
 }
 .wanted__section { display: grid; gap: var(--s2); }
 .wanted__list { display: grid; gap: 10px; }
 .wanted__cats::-webkit-scrollbar { display: none; }
 .wanted .wantcard::before {
   content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, #FF5B1F, #D4FF3A);
+  background: linear-gradient(180deg, #E64938, #79C098);
 }
 .isophotos { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s1) 0 var(--s3); }
 .isophotos__tile { position: relative; display: block; width: 72px; height: 72px; border-radius: var(--r-md); overflow: hidden; }
@@ -105,21 +105,21 @@
   font-family: var(--display); font-size: var(--t-md); font-weight: 800; font-style: italic; text-transform: uppercase;
 }
 .wanted__cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-.wanted .wantcard:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255, 140, 40, 0.5), 0 8px 22px rgba(255, 120, 40, 0.14); }
+.wanted .wantcard:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(240, 191, 55, 0.5), 0 8px 22px rgba(240, 191, 55, 0.14); }
 .wanted .want__title { font-size: var(--t-md); font-weight: 800; }
 .wanted .want__budget {
   padding: 3px 10px; border-radius: var(--r-pill);
-  background: linear-gradient(115deg, #FF5B1F, var(--gold)); color: #fff; font-size: var(--t-xs);
+  background: linear-gradient(115deg, #E64938, var(--gold)); color: #FFFFFF; font-size: var(--t-xs);
 }
-.wanted .alsome .btn:not(.btn--quiet) { background: var(--sx-grad); border-color: transparent; color: #fff; }
+.wanted .alsome .btn:not(.btn--quiet) { background: var(--sx-grad); border-color: transparent; color: #FFFFFF; }
 /* ISO: photos on a request, and who answered. */
 .want__photo { width: 56px; height: 56px; flex: 0 0 auto; border-radius: var(--r-md); object-fit: cover; }
 .isophotos--view .isophotos__tile { width: 96px; height: 96px; }
 .isoanswer__tag {
   padding: 1px 7px; border-radius: 4px; font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
 }
-.isoanswer__tag--shop { background: rgba(255, 91, 31, 0.16); color: #FF8A5B; }
-.isoanswer__tag--person { background: rgba(212, 255, 58, 0.14); color: #D4FF3A; }
+.isoanswer__tag--shop { background: rgba(230, 73, 56, 0.16); color: #ED7A6D; }
+.isoanswer__tag--person { background: rgba(121, 192, 152, 0.14); color: #79C098; }
 
 /* ── Following: the way out of an empty feed ────────────────────────────── */
 
@@ -159,7 +159,7 @@
   padding: 7px 14px; border: 0; border-radius: var(--r-pill);
   background: var(--accent); color: var(--accent-ink);
   font-size: var(--t-xs); font-weight: var(--w-bold); cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 18px rgba(20, 20, 18, 0.35);
 }
 .feed__freshwho { font-weight: var(--w-medium); opacity: 0.85; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

@@ -8,9 +8,9 @@
 .invp__hero {
   position: relative; overflow: hidden; display: grid; gap: var(--s3); justify-items: center; text-align: center;
   padding: 36px 20px 28px; border-radius: var(--r-xl); border: 1px solid var(--border-strong);
-  background: radial-gradient(90% 80% at 50% 0%, rgba(124, 58, 237, 0.35), transparent 70%), var(--surface);
+  background: radial-gradient(90% 80% at 50% 0%, rgba(64, 62, 233, 0.35), transparent 70%), var(--surface);
 }
-.invp__hero--seller { background: radial-gradient(90% 80% at 50% 0%, rgba(163, 230, 53, 0.28), transparent 70%), var(--surface); }
+.invp__hero--seller { background: radial-gradient(90% 80% at 50% 0%, rgba(101, 182, 136, 0.28), transparent 70%), var(--surface); }
 .invp__chip {
   padding: var(--s1) var(--s3); border-radius: var(--r-pill); font-size: var(--t-xs); font-weight: 600;
   background: var(--violet-soft); border: 1px solid var(--violet-line); color: var(--violet-text);

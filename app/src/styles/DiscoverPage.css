@@ -1,43 +1,36 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .discitem__photo .ctype {
   position: absolute; top: 8px; left: 8px;
-  background: rgba(8, 11, 18, 0.72); backdrop-filter: blur(6px);
+  background: rgba(32, 31, 29, 0.72); backdrop-filter: blur(6px);
 }
 
 /* Discover: the public side, ranked. */
 
 .discpage { display: grid; align-content: start; gap: 14px; max-width: 680px; margin-inline: auto; }
 
-/* The top: the brand's own gradient - the same violet, pink and coral the
-   chosen lens and the + wear - with an aurora drifting slowly behind glass. */
+/* The top: one flat block of periwinkle, the loudest colour in the palette,
+   with the title set big in condensed capitals. */
 .dischero {
   position: relative; overflow: hidden; isolation: isolate;
   display: grid; gap: var(--s2);
   padding: 18px;
-  border-radius: var(--r-xl); border: 1px solid rgba(255, 255, 255, 0.1);
-  background:
-    linear-gradient(150deg, rgba(124, 58, 237, 0.5) 0%, rgba(236, 72, 153, 0.28) 55%, rgba(255, 90, 95, 0.22) 100%),
-    color-mix(in srgb, var(--surface) 88%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 44px rgba(124, 58, 237, 0.22);
+  border-radius: var(--r-xl); border: 0;
+  background: var(--violet);
   animation: disc-in 380ms var(--ease-out) both;
 }
 .dischero__aurora { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-.dischero__aurora span { position: absolute; border-radius: 50%; filter: blur(42px); opacity: 0.75; will-change: transform; }
-.dischero__aurora span:nth-child(1) { width: 240px; height: 240px; top: -110px; right: -70px; background: var(--pink); animation: aurora-a 14s ease-in-out infinite alternate; }
-.dischero__aurora span:nth-child(2) { width: 200px; height: 200px; bottom: -120px; left: -50px; background: var(--violet); animation: aurora-b 17s ease-in-out infinite alternate; }
-.dischero__aurora span:nth-child(3) { width: 140px; height: 140px; bottom: -60px; right: 22%; background: var(--coral); opacity: 0.45; animation: aurora-a 20s ease-in-out infinite alternate-reverse; }
 @keyframes aurora-a { to { transform: translate(-40px, 30px) scale(1.15); } }
 @keyframes aurora-b { to { transform: translate(50px, -24px) scale(1.1); } }
 .dischero__stats { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
 .dischero__stat {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px;
   border-radius: var(--r-pill); border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(8, 11, 18, 0.38); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  color: #fff; font: inherit; font-size: var(--t-sm); cursor: pointer;
+  background: rgba(32, 31, 29, 0.38); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: #FFFFFF; font: inherit; font-size: var(--t-sm); cursor: pointer;
   transition: border-color var(--dur-1) ease, background-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
 .dischero__stat:active { transform: scale(0.97); }
-@media (hover: hover) and (pointer: fine) { .dischero__stat:hover { border-color: rgba(255, 255, 255, 0.4); background: rgba(8, 11, 18, 0.5); } }
+@media (hover: hover) and (pointer: fine) { .dischero__stat:hover { border-color: rgba(255, 255, 255, 0.4); background: rgba(32, 31, 29, 0.5); } }
 .dischero__stat strong { font-family: var(--display); }
 /* Live: a lit dot, the colour of "now", breathing. */
 .dischero__pulse {
@@ -51,15 +44,14 @@
 @keyframes disc-ping { from { transform: scale(1); opacity: 0.7; } to { transform: scale(3); opacity: 0; } }
 .dischero__kicker {
   display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--mono); font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.78);
+  font-family: var(--mono); font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.85);
 }
 .dischero__title {
-  margin: 0; font-family: var(--display); font-size: calc(var(--t-2xl) * 1.3); font-weight: var(--w-bold);
-  letter-spacing: -0.035em; line-height: 0.95;
-  background: linear-gradient(110deg, #fff 25%, #FBCFE8 60%, #FFB4B6); -webkit-background-clip: text; background-clip: text; color: transparent;
+  margin: 0; font-family: var(--display); font-size: calc(var(--t-2xl) * 1.3); font-weight: var(--w-semi);
+  letter-spacing: 0; line-height: 0.95; text-transform: uppercase; color: #FFFFFF;
 }
 .dischero__sub { margin: 0; max-width: 46ch; color: rgba(255, 255, 255, 0.78); font-size: var(--t-sm); line-height: 1.45; }
-.dischero__share { color: #fff; background: rgba(8, 11, 18, 0.3); border-color: rgba(255, 255, 255, 0.16); }
+.dischero__share { color: var(--bg); background: var(--text); border-color: transparent; }
 
 /* The spotlight: a deck of cards to flick through. The top one is big; two
    more peek out behind it, smaller and lower, so it reads as a pile. */
@@ -74,9 +66,9 @@
 .spotcard {
   position: absolute; inset: 0; overflow: hidden; isolation: isolate;
   display: grid; align-items: end;
-  border-radius: var(--r-xl); border: 1px solid rgba(255, 255, 255, 0.12);
-  background: var(--surface-2); color: #fff; text-decoration: none;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+  border-radius: var(--r-xl); border: 0;
+  background: var(--surface-2); color: #FFFFFF; text-decoration: none;
+  box-shadow: 0 16px 36px rgba(20, 20, 18, 0.4);
   transform-origin: 50% 100%;
   transition: transform 360ms var(--ease-out), opacity var(--dur-2) var(--ease-out);
   -webkit-tap-highlight-color: transparent;
@@ -88,14 +80,14 @@
 .spotcard.is-flying { z-index: 5; transition: transform var(--dur-2) var(--ease-out), opacity var(--dur-2) ease 60ms; opacity: 0; pointer-events: none; }
 .spotcard.is-flying--left { transform: translateX(-120%) rotate(-14deg); }
 .spotcard.is-flying--right { transform: translateX(120%) rotate(14deg); }
-.spotcard--violet { background: linear-gradient(160deg, #4C1D95, #1E1B4B); }
-.spotcard--pink { background: linear-gradient(160deg, #9D174D, #3B0764); }
-.spotcard--aqua { background: linear-gradient(160deg, #0E7490, #172554); }
-.spotcard--gold { background: linear-gradient(160deg, #B45309, #451A03); }
-.spotcard--coral { background: linear-gradient(160deg, #BE123C, #3F0D1E); }
+.spotcard--violet { background: var(--violet); }
+.spotcard--pink { background: var(--coral); }
+.spotcard--aqua { background: #3E8C99; }
+.spotcard--gold { background: #C79A2A; }
+.spotcard--coral { background: var(--coral); }
 .spotcard__photo { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; }
 .spotcard__emoji { position: absolute; inset: 0; z-index: -2; display: grid; place-items: center; font-size: calc(84px * var(--text-scale)); opacity: 0.9; }
-.spotcard__shade { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, transparent 30%, rgba(4, 6, 12, 0.88) 100%); }
+.spotcard__shade { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, transparent 30%, rgba(27, 27, 25, 0.88) 100%); }
 .spotcard__body { display: grid; gap: 6px; padding: var(--s4); min-width: 0; }
 .spotcard__kind {
   justify-self: start; padding: var(--s1) 10px; border-radius: var(--r-pill);
@@ -104,7 +96,7 @@
 }
 .spotcard__title {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  font: var(--w-bold) var(--t-lg)/1.2 var(--display); letter-spacing: -0.01em;
+  font: var(--w-semi) var(--t-xl)/1.02 var(--display); letter-spacing: 0; text-transform: uppercase;
 }
 .spotcard__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .spotcard__line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); color: rgba(255, 255, 255, 0.78); }
@@ -149,7 +141,7 @@
   transition: background-color var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
 .dislens__tab:active { transform: scale(0.96); }
-.dislens__tab.is-on { background: var(--grad-hero); border-color: transparent; color: #fff; box-shadow: var(--shadow-violet); }
+.dislens__tab.is-on { background: var(--grad-hero); border-color: transparent; color: #FFFFFF; box-shadow: var(--shadow-violet); }
 @media (hover: hover) and (pointer: fine) { .dislens__tab:hover:not(.is-on) { color: var(--text); border-color: var(--border-strong); } }
 
 /* Live now and the competitions: sideways rows of doors into the posts. */
@@ -194,16 +186,16 @@
 .livecard__left { color: var(--coral); font-weight: var(--w-semi); }
 .livecard__cta {
   justify-self: start; display: inline-flex; align-items: center; gap: var(--s1); margin-top: 2px;
-  padding: 6px var(--s3); border-radius: var(--r-pill); background: var(--grad-hero); color: #fff;
+  padding: 6px var(--s3); border-radius: var(--r-pill); background: var(--grad-hero); color: #FFFFFF;
   font-size: var(--t-xs); font-weight: var(--w-bold);
 }
-.contestcard { border-color: rgba(251, 191, 36, 0.35); }
+.contestcard { border-color: rgba(239, 188, 48, 0.35); }
 .contestcard__art { position: relative; display: grid; place-items: center; height: 128px; overflow: hidden; background: var(--grad-gold); font-size: calc(44px * var(--text-scale)); }
 .contestcard__art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .contestcard__phase {
   position: absolute; top: 8px; left: 8px; padding: 3px 9px; border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-  font-size: var(--t-2xs); font-weight: var(--w-bold); color: #fff;
+  background: rgba(20, 20, 18, 0.65); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  font-size: var(--t-2xs); font-weight: var(--w-bold); color: #FFFFFF;
 }
 .contestcard__phase--entries { color: var(--lime); }
 .contestcard__phase--voting { color: var(--aqua); }
@@ -262,7 +254,7 @@
   font-size: var(--t-2xs); font-weight: var(--w-bold);
   color: var(--violet-text); background: var(--violet-soft);
 }
-.discitem__why--rare { color: #FF8A8D; background: var(--coral-soft); }
+.discitem__why--rare { color: #F2A097; background: var(--coral-soft); }
 .discitem__why--filling { color: var(--aqua-pale); background: var(--aqua-soft); }
 .discitem__why--hot { color: var(--warn); background: var(--warn-soft); }
 .discitem__why--yours { color: var(--accent-text); background: var(--accent-soft); }

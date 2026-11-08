@@ -321,7 +321,7 @@ export function StarRow({ value, size = 16 }: { value: number; size?: number }) 
           <svg key={n} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
             <defs>
               <linearGradient id={`sr-${n}-${fill}`}>
-                <stop offset={`${fill * 100}%`} stopColor="#FBBF24" />
+                <stop offset={`${fill * 100}%`} stopColor="#EFBC30" />
                 <stop offset={`${fill * 100}%`} stopColor="rgba(255,255,255,0.14)" />
               </linearGradient>
             </defs>

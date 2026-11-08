@@ -27,7 +27,7 @@
 .sd-step { display: grid; gap: 10px; }
 .sd-step h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--t-md); }
 .sd-step > .faint { margin: 0; font-size: var(--t-xs); }
-.sd-step__n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--sk); color: #0b1020; font-size: var(--t-xs); font-weight: var(--w-bold); }
+.sd-step__n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--sk); color: #272724; font-size: var(--t-xs); font-weight: var(--w-bold); }
 .sd-extform { display: grid; gap: 10px; padding: 14px; border: 1px dashed var(--sk-line, var(--border)); border-radius: var(--r-lg); }
 .sd-extform p { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
 .sd-extform .btn { justify-self: start; }
@@ -48,7 +48,7 @@
 }
 .sd-fab__btn {
   width: 100%; justify-content: center; gap: 8px; min-height: 52px; font-size: var(--t-md);
-  background: var(--sk); color: #0b1020; border-color: transparent;
+  background: var(--sk); color: #272724; border-color: transparent;
   box-shadow: 0 14px 34px color-mix(in srgb, var(--sk) 40%, transparent), 0 2px 0 rgba(255, 255, 255, 0.25) inset;
   animation: sd-rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
@@ -59,10 +59,10 @@
 /* The form, over the page. */
 .sd-sheet { position: fixed; inset: 0; z-index: 80; display: grid; align-items: end; justify-items: center; }
 @media (min-width: 720px) { .sd-sheet { align-items: center; } }
-.sd-sheet__scrim { position: absolute; inset: 0; border: 0; background: rgba(4, 7, 14, 0.66); backdrop-filter: blur(4px); cursor: pointer; }
+.sd-sheet__scrim { position: absolute; inset: 0; border: 0; background: rgba(28, 28, 25, 0.66); backdrop-filter: blur(4px); cursor: pointer; }
 .sd-sheet__panel {
   position: relative; display: grid; grid-template-rows: auto 1fr auto; width: min(100%, 760px); max-height: min(92vh, 900px);
-  border: 1px solid var(--border); border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--bg, #0b1020); box-shadow: var(--shadow);
+  border: 1px solid var(--border); border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--bg, #272724); box-shadow: var(--shadow);
   animation: sd-rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 @media (min-width: 720px) { .sd-sheet__panel { border-radius: var(--r-xl); } }

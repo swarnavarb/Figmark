@@ -43,7 +43,7 @@
 .loyman__per span { color: var(--gold); }
 .loyman__better {
   margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); font-size: var(--t-sm); color: var(--text-dim);
-  background: linear-gradient(100deg, rgba(245, 158, 11, 0.16), transparent 85%); box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.35);
+  background: linear-gradient(100deg, rgba(237, 179, 19, 0.16), transparent 85%); box-shadow: inset 0 0 0 1px rgba(237, 179, 19, 0.35);
 }
 .loyman__better b { color: var(--gold); }
 .loyman__weak { flex: 1 1 100%; color: var(--coral); font-size: var(--t-xs); }

@@ -1,8 +1,8 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .dealcard {
   display: grid; gap: var(--s2); min-width: min(260px, 70vw); max-width: 320px; padding: var(--s3);
-  border-radius: var(--r-lg); border: 1px solid rgba(251, 191, 36, 0.45);
-  background: linear-gradient(160deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.04));
+  border-radius: var(--r-lg); border: 1px solid rgba(239, 188, 48, 0.45);
+  background: linear-gradient(160deg, rgba(237, 179, 19, 0.14), rgba(237, 179, 19, 0.04));
 }
 .dealcard__item { display: flex; gap: 10px; align-items: center; min-width: 0; }
 .dealcard__body { display: grid; gap: 2px; min-width: 0; }
@@ -54,9 +54,9 @@
 .dealcard--offer {
   border-color: var(--pink-line);
   background:
-    radial-gradient(120% 90% at 100% 0%, rgba(236, 72, 153, 0.22), transparent 60%),
-    linear-gradient(160deg, rgba(139, 92, 246, 0.14), rgba(236, 72, 153, 0.06));
-  box-shadow: 0 8px 22px -14px rgba(236, 72, 153, 0.7);
+    radial-gradient(120% 90% at 100% 0%, rgba(233, 91, 75, 0.22), transparent 60%),
+    linear-gradient(160deg, rgba(102, 100, 238, 0.14), rgba(233, 91, 75, 0.06));
+  box-shadow: 0 8px 22px -14px rgba(233, 91, 75, 0.7);
 }
 .dealcard__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .dealcard__tag { white-space: nowrap; font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.04em; color: var(--pink-text); text-transform: uppercase; }
@@ -66,11 +66,11 @@
   background: var(--pink-soft); color: var(--pink-text); font-variant-numeric: tabular-nums;
 }
 .dealcard__clock.is-done { background: var(--surface-2); color: var(--text-dim); }
-.dealcard.is-urgent .dealcard__clock { background: var(--coral); color: #fff; animation: dealpulse 1.6s ease-in-out infinite; }
+.dealcard.is-urgent .dealcard__clock { background: var(--coral); color: #FFFFFF; animation: dealpulse 1.6s ease-in-out infinite; }
 .dealcard__title { font-size: var(--t-base); line-height: 1.25; overflow-wrap: anywhere; }
 .dealcard__price { display: flex; align-items: baseline; gap: 6px; font-size: calc(1.2rem * var(--text-scale)); font-weight: var(--w-bold); }
 .dealcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--text-dim); }
-.dealcard__save { padding: 1px 7px; border-radius: var(--r-pill); background: rgba(163, 230, 53, 0.16); color: var(--lime); font-weight: var(--w-bold); }
+.dealcard__save { padding: 1px 7px; border-radius: var(--r-pill); background: rgba(101, 182, 136, 0.16); color: var(--lime); font-weight: var(--w-bold); }
 .dealcard__bar { display: block; height: 4px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
 .dealcard__ended { font-size: var(--t-xs); color: var(--text-dim); text-align: center; }
 .dealcard.is-expired, .dealcard.is-gone { filter: saturate(0.35); }
@@ -86,10 +86,10 @@
 }
 .itemref__deal:hover { border-style: solid; }
 .dealstate { padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.03em; white-space: nowrap; }
-.dealstate--live { background: rgba(163, 230, 53, 0.16); color: var(--lime); }
+.dealstate--live { background: rgba(101, 182, 136, 0.16); color: var(--lime); }
 .dealstate--bought { background: var(--surface-2); color: var(--text-dim); }
-.dealstate--expired { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
-.dealstate--gone { background: rgba(255, 90, 95, 0.14); color: var(--coral); }
+.dealstate--expired { background: rgba(239, 188, 48, 0.15); color: var(--warn); }
+.dealstate--gone { background: rgba(237, 121, 108, 0.14); color: var(--coral); }
 /* The shop's picker: what to start a private deal from. */
 .dealpick { display: grid; gap: 10px; }
 .dealpick__fresh {
@@ -122,7 +122,7 @@
 .cbar__photo.is-failed { outline: 2px solid var(--sx-blaze); }
 .cbar__photodrop {
   position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; display: grid; place-items: center;
-  border: 0; border-radius: 50%; background: rgba(0, 0, 0, 0.65); color: #fff; cursor: pointer;
+  border: 0; border-radius: 50%; background: rgba(20, 20, 18, 0.65); color: #FFFFFF; cursor: pointer;
 }
 .inbox__new {
   display: flex; align-items: center; gap: var(--s2);
@@ -138,7 +138,7 @@
 .inbox__found button:hover, .inbox__found button:focus-visible { background: var(--surface-2); }
 .inbox__go {
   padding: 9px var(--s4); border: 0; border-radius: var(--r-pill);
-  background: var(--sx-grad); color: #fff; font-weight: 800; font-size: var(--t-xs); cursor: pointer;
+  background: var(--sx-grad); color: #FFFFFF; font-weight: 800; font-size: var(--t-xs); cursor: pointer;
 }
 .inbox__go:disabled { opacity: 0.45; cursor: default; }
 .inbox__boxes { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
@@ -156,7 +156,7 @@
   border: 1px solid var(--sx-line); border-radius: 50%;
   background: var(--surface); color: var(--sx-blaze); cursor: pointer;
 }
-.inbox__compose.is-on, .inbox__compose:hover:not(:disabled) { background: var(--sx-grad); color: #fff; border-color: transparent; }
-.chip.is-on .chip__count { background: rgba(255, 255, 255, 0.24); color: #fff; }
+.inbox__compose.is-on, .inbox__compose:hover:not(:disabled) { background: var(--sx-grad); color: #FFFFFF; border-color: transparent; }
+.chip.is-on .chip__count { background: rgba(255, 255, 255, 0.24); color: #FFFFFF; }
 .cmsg__link:hover { filter: brightness(1.06); }
 .cmsg__link:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }

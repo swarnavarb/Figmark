@@ -95,7 +95,7 @@
 .svk-msg__del { margin-left: auto; padding: 2px; border: 0; background: none; color: var(--text-faint); cursor: pointer; opacity: 0.6; }
 .svk-msg__del:hover { opacity: 1; color: var(--danger); }
 .svk-tag { padding: 1px 7px; border-radius: var(--r-pill); background: var(--surface); color: var(--text-dim); font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.02em; }
-.svk-tag--company { background: var(--sk, var(--violet-lit)); color: #0b1020; }
+.svk-tag--company { background: var(--sk, var(--violet-lit)); color: #272724; }
 .svk-tag--announce { display: inline-flex; align-items: center; gap: 3px; background: var(--warn-soft); color: var(--warn); }
 .svk-channel__compose { display: grid; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface); }
 .svk-channel__voice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -147,7 +147,7 @@
 /* Asking for a custom quote, over the page. */
 .svk-sheet { position: fixed; inset: 0; z-index: 80; display: grid; align-items: end; justify-items: center; }
 @media (min-width: 720px) { .svk-sheet { align-items: center; } }
-.svk-sheet__scrim { position: absolute; inset: 0; border: 0; background: rgba(4, 7, 14, 0.66); backdrop-filter: blur(4px); cursor: pointer; }
+.svk-sheet__scrim { position: absolute; inset: 0; border: 0; background: rgba(28, 28, 25, 0.66); backdrop-filter: blur(4px); cursor: pointer; }
 .svk-sheet__panel {
   position: relative; display: grid; grid-template-rows: auto 1fr auto; width: min(100%, 620px); max-height: min(92vh, 860px);
   border: 1px solid var(--border); border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--bg); box-shadow: var(--shadow);

@@ -1,17 +1,17 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .qboard__rank--1 { background: var(--q-gold); }
-.qboard__rank--2 { background: #C9D3E3; }
-.qboard__rank--3 { background: #D08A4E; }
+.qboard__rank--2 { background: #D9D8D3; }
+.qboard__rank--3 { background: #EFBC2F; }
 .qboard__rank--4 { background: var(--surface-hover); color: var(--text-dim); }
 .qpanel.qarcade {
   --strip: 84px;
   position: relative; overflow: hidden; padding-bottom: var(--strip);
-  color: #EDE9FE;
+  color: #EBEAFD;
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(124, 58, 237, 0.28), transparent 60%),
-    radial-gradient(90% 70% at 0% 100%, rgba(8, 145, 178, 0.2), transparent 60%),
-    #0B0820;
-  border-color: rgba(167, 139, 250, 0.3);
+    radial-gradient(120% 80% at 100% 0%, rgba(64, 62, 233, 0.28), transparent 60%),
+    radial-gradient(90% 70% at 0% 100%, rgba(35, 131, 151, 0.2), transparent 60%),
+    #262522;
+  border-color: rgba(148, 146, 243, 0.3);
 }
 .qarcade > :not(.qworld) { position: relative; z-index: 1; }
 .qworld::after { background-size: 190px 140px; background-position: 70px 40px; opacity: 0.3; animation-duration: 44s; }
@@ -49,12 +49,12 @@
 .qworld__game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 /* The rows as HUD panels over the starfield. */
 .qarcade .qtask {
-  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(167, 139, 250, 0.18);
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(148, 146, 243, 0.18);
   backdrop-filter: blur(2px);
 }
-.qarcade .qtask:has(.qbtn-gold) { border-color: rgba(250, 204, 21, 0.6); }
-.qarcade .qtask.is-claimed { opacity: 1; background: rgba(34, 197, 94, 0.08); border-color: rgba(74, 222, 128, 0.3); }
-.qarcade .qtask.is-claimed .qtask__body b { color: #86EFAC; text-decoration: line-through; text-decoration-color: rgba(134, 239, 172, 0.45); }
+.qarcade .qtask:has(.qbtn-gold) { border-color: rgba(238, 183, 33, 0.6); }
+.qarcade .qtask.is-claimed { opacity: 1; background: rgba(74, 157, 110, 0.08); border-color: rgba(109, 187, 143, 0.3); }
+.qarcade .qtask.is-claimed .qtask__body b { color: #A2D3B7; text-decoration: line-through; text-decoration-color: rgba(162, 211, 183, 0.45); }
 .qpage { max-width: 760px; }
 .qweek { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .qweek__day { display: grid; gap: var(--s1); text-align: center; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); color: var(--text-faint); }
@@ -89,7 +89,7 @@
 .qpanel.qstreak { display: flex; align-items: center; gap: var(--s3); padding: 10px var(--s3); }
 .qstreak__flame {
   flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: var(--r-md);
-  background: rgba(255, 159, 67, 0.15); border: 1px solid rgba(255, 159, 67, 0.45); color: var(--q-flame); line-height: 1;
+  background: rgba(242, 199, 80, 0.15); border: 1px solid rgba(242, 199, 80, 0.45); color: var(--q-flame); line-height: 1;
 }
 .qstreak__head { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm); }
 .qstreak .qweek { gap: var(--s1); }
