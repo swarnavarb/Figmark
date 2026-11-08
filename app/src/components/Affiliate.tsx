@@ -1,3 +1,4 @@
+import { useToast } from './Feedback';
 import { askText } from './Ask';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -206,6 +207,7 @@ export function SimilarItems({ listingId }: { listingId: string }) {
  * earns them, and - once the item is delivered - a way to say it was paid.
  */
 export function AffiliateOwed({ order, onDone }: { order: Order; onDone: () => void | Promise<void> }) {
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   if (!order.affiliate) return null;
@@ -225,6 +227,7 @@ export function AffiliateOwed({ order, onDone }: { order: Order; onDone: () => v
     try {
       await api.markAffiliatePaid(order.id, reference);
       await onDone();
+      toast('Marked as paid.');
     } catch (err) {
       setProblem(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {

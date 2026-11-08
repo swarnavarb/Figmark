@@ -26,6 +26,11 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Picked and on their way: shown at once from the phone's own copy, each until it lands. */
+  const [pending, setPending] = useState<{ key: string; preview: string }[]>([]);
+  /** The photos as last committed, so each upload adds to the one before it rather than to a stale list. */
+  const latest = useRef(photos);
+  latest.current = photos;
   const [dragging, setDragging] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   /** Photos uploaded here and not yet saved with the listing: safe to throw away. */
@@ -35,7 +40,9 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
   const commit = (next: PhotoDraft[]) => {
     const chosen = next.findIndex((photo) => photo.isPrimary);
     const primary = chosen >= 0 ? chosen : 0;
-    onChange(next.map((photo, index) => ({ ...photo, isPrimary: index === primary })));
+    const settled = next.map((photo, index) => ({ ...photo, isPrimary: index === primary }));
+    latest.current = settled;
+    onChange(settled);
   };
 
   const move = (from: number, to: number) => {
@@ -46,25 +53,43 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
     commit(next);
   };
 
+  /*
+   * Each photo is shown the moment it is picked and joins the listing the
+   * moment it lands. Adding them all at the end meant nothing showed until
+   * the last had uploaded, and one failure part-way lost every photo before
+   * it - uploaded, but never added.
+   */
   async function add(event: ChangeEvent<HTMLInputElement>) {
     const files = [...(event.target.files ?? [])];
+    // Cleared so choosing the same file twice still fires a change.
+    if (fileInput.current) fileInput.current.value = '';
     if (files.length === 0) return;
+    const room = Math.max(0, 6 - photos.length);
+    const taking = files.slice(0, room);
+    const skipped = files.length - taking.length;
     setBusy(true);
     setError(null);
-    const added: PhotoDraft[] = [];
-    try {
-      for (const file of files.slice(0, 6 - photos.length)) {
-        const stored = await api.uploadPhoto(await shrink(file));
-        added.push({ ...stored, isPrimary: false });
+    const queued = taking.map((file, index) => ({ key: `${Date.now()}-${index}`, preview: URL.createObjectURL(file), file }));
+    setPending(queued.map(({ key, preview }) => ({ key, preview })));
+    let failed = 0;
+    for (const item of queued) {
+      try {
+        const stored = await api.uploadPhoto(await shrink(item.file));
         fresh.current.add(stored.url);
+        commit([...latest.current, { ...stored, isPrimary: false }]);
+      } catch (err) {
+        failed += 1;
+        setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload.');
+      } finally {
+        URL.revokeObjectURL(item.preview);
+        setPending((now) => now.filter((row) => row.key !== item.key));
       }
-      commit([...photos, ...added]);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload.');
-    } finally {
-      setBusy(false);
-      // Cleared so choosing the same file twice still fires a change.
-      if (fileInput.current) fileInput.current.value = '';
+    }
+    setBusy(false);
+    if (failed > 0 && failed < queued.length) {
+      setError(`${failed} of ${queued.length} photos did not upload - the rest are in. Try those again.`);
+    } else if (failed === 0 && skipped > 0) {
+      setError(`Only six photos fit - ${skipped} not added.`);
     }
   }
 
@@ -108,7 +133,14 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
           </figure>
         ))}
 
-        {photos.length < 6 && (
+        {pending.map((row) => (
+          <figure key={row.key} className="photo photo--sending" aria-label="Uploading photo">
+            <img src={row.preview} alt="" />
+            <span className="photo__ring" aria-hidden="true" />
+          </figure>
+        ))}
+
+        {photos.length + pending.length < 6 && (
           <button type="button" className="photo photo--add" disabled={busy}
             onClick={() => fileInput.current?.click()}>
             <span aria-hidden="true">{busy ? '…' : '+'}</span>

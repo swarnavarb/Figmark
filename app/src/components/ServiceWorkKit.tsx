@@ -1,3 +1,4 @@
+import { useToast } from './Feedback';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { BatteryContent, FreightLane, InfoRow, PriceOption, ServiceFormField, StoreWarehouse } from '@shared/models';
@@ -344,6 +345,7 @@ export function QuoteAskSheet({ store, lane, onClose }: {
   lane: FreightLane | null;
   onClose: () => void;
 }) {
+  const toast = useToast();
   const navigate = useNavigate();
   const [laneId, setLaneId] = useState<string>(lane?.id ?? '');
   const [from, setFrom] = useState(lane?.originCountry ?? 'China');
@@ -375,6 +377,7 @@ export function QuoteAskSheet({ store, lane, onClose }: {
         what, weightKg: Number(weight) || null, battery, notes,
       });
       navigate(`/services/quotes/${store.kind}/${store.ownerId}/${view.quote.id}?sent=1`);
+      toast("Request sent. You'll be told when they quote.");
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
       setBusy(false);
@@ -803,6 +806,7 @@ export function RequestLog({ request }: { request: ServiceRequest }) {
  * message, whether they are speaking for the company - when the owner lets them.
  */
 export function StoreChannel({ kind, ownerId, storeName, accentLogo }: { kind: StoreKind; ownerId: string; storeName: string; accentLogo?: ReactNode }) {
+  const toast = useToast();
   const { user } = useSession();
   const [view, setView] = useState<ChannelView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -836,6 +840,7 @@ export function StoreChannel({ kind, ownerId, storeName, accentLogo }: { kind: S
       setView((current) => current ? { ...current, messages: [...current.messages, message] } : current);
       setDraft('');
       setShare(false);
+      toast('Posted.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
     } finally {

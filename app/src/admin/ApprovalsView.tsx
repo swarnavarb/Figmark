@@ -97,7 +97,7 @@ function ApprovalCard({ action, busy, onDecide }: {
       {banner ? (
         <label className="field">
           <span>Show for (days)</span>
-          <input type="number" min={1} max={60} value={days} onChange={(e) => setDays(e.target.value)} style={{ maxWidth: 120 }} />
+          <input type="number" inputMode="decimal" min={1} max={60} value={days} onChange={(e) => setDays(e.target.value)} style={{ maxWidth: 120 }} />
         </label>
       ) : (
         <label className="field">

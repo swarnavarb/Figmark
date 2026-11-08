@@ -1,4 +1,6 @@
 import { FeeHint } from '../components/Billing';
+import { ServiceNudge } from '../components/ServiceCards';
+import { haptic } from '../haptics';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { tagKey } from '@shared/shop-tags';
@@ -546,6 +548,17 @@ export function SellPage() {
     if (missing.length > 0) {
       setTriedPublish(true);
       setError(`Still to answer: ${missing.map((field) => field.label.replace(/\?$/, '').toLowerCase()).join(', ')}.`);
+      // Straight to the first one, rather than a list to go and look for.
+      haptic('error');
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const first = document.querySelector<HTMLElement>('.attr.is-missing');
+        if (!first) return;
+        first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        first.querySelector<HTMLElement>('input, select, button')?.focus({ preventScroll: true });
+        first.classList.remove('is-nudged');
+        void first.offsetWidth;
+        first.classList.add('is-nudged');
+      }));
       return;
     }
     setBusy(true);
@@ -627,7 +640,7 @@ export function SellPage() {
       }
       published.current = true;
       clearDraft(draftKey);
-      navigate(`/listing/${listingId}`);
+      navigate(`/listing/${listingId}`, { state: { published: true } });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not publish this listing.');
     } finally {
@@ -804,6 +817,8 @@ export function SellPage() {
                 </span>
               </label>
             )}
+            {/* The seller is the one who brings an import in, so this is where a forwarder is some use. */}
+            {where === 'import' && <ServiceNudge kind="forwarder" lead="Need it shipped in? Compare forwarders" />}
           </LBox>
 
           {/* Asked of every item, never folded away: it is what buyers ask first. */}

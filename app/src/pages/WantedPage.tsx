@@ -1,3 +1,4 @@
+import { useToast } from '../components/Feedback';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SkelCards } from '../components/PageSkeletons';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -291,6 +292,7 @@ function WantBody({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
 
 /** Saying what you are after. */
 function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () => Promise<void> }) {
+  const toast = useToast();
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
   const [category, setCategory] = useState<string>(CATEGORIES[0]!);
@@ -331,6 +333,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
         photoUrls: photos,
       });
       await onPosted();
+      toast('Posted. Sellers can answer your hunt now.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not post that.');
     } finally {
@@ -417,6 +420,7 @@ function WantDialog({ card, onClose, onChanged }: {
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
+  const toast = useToast();
   const { user } = useSession();
   // A collector who knows where one is and a shop that stocks it can both
   // answer - so the answer goes out in whichever voice is picked.
@@ -463,6 +467,7 @@ function WantDialog({ card, onClose, onChanged }: {
       });
       await load();
       await onChanged();
+      toast('Offer sent to the buyer.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
     } finally {
@@ -490,6 +495,7 @@ function WantDialog({ card, onClose, onChanged }: {
       await api.closeWant(card.id, card.buyerId);
       await onChanged();
       onClose();
+      toast('Hunt closed.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not close that.');
       setBusy(false);

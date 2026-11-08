@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import type { DemoAccount } from '@shared/contracts';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api } from '../api';
 import { ErrorNotice, Icon, useDialog } from '../components/ui';
 import { useSession } from '../session';
 import { Captcha } from '../components/Captcha';
+import { PasswordInput } from '../components/PasswordInput';
+import { useToast } from '../components/Feedback';
+import { haptic } from '../haptics';
+import { AuthTour } from '../components/AuthTour';
 
 type Mode = 'signin' | 'signup';
 
@@ -16,14 +20,41 @@ type Mode = 'signin' | 'signup';
  * bank verification are deferred to the point they actually matter.
  */
 export function AuthPage() {
+  const [tour, setTour] = useTour();
   return (
     <div className="auth">
-      <div className="auth__panel">
-        <AuthBrand />
+      <div className={`auth__panel${tour ? ' auth__panel--tour' : ''}`}>
+        {tour ? <AuthTour onSkip={() => setTour(false)} /> : <AuthBrand />}
         <AuthCard />
       </div>
     </div>
   );
+}
+
+const TOUR_KEY = 'figmark.authTourSkipped';
+
+/**
+ * Whether the slides are showing. Skipped once, they stay skipped for the rest
+ * of the visit: somebody who has already read them wants the form, not the
+ * pitch, the next time something asks them to sign in.
+ */
+function useTour(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(() => {
+    try {
+      return window.sessionStorage.getItem(TOUR_KEY) !== '1';
+    } catch {
+      return true;
+    }
+  });
+  return [on, (next: boolean) => {
+    setOn(next);
+    try {
+      if (next) window.sessionStorage.removeItem(TOUR_KEY);
+      else window.sessionStorage.setItem(TOUR_KEY, '1');
+    } catch {
+      // Private windows can refuse storage; the slides just come back next time.
+    }
+  }];
 }
 
 function AuthBrand() {
@@ -49,24 +80,162 @@ export function AuthModal({ reason, mode = 'signup', onClose }: { reason: string
   // Escape, focus kept inside, the page still behind: what every dialog does.
   const box = useRef<HTMLDivElement>(null);
   useDialog(box, onClose);
+  const [tour, setTour] = useTour();
+  const panel = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const sheet = useBottomSheet(tour, panel, sheetRef);
 
   return (
     <div ref={box} tabIndex={-1} className="authpop" role="dialog" aria-modal="true" aria-label="Sign in or create an account"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="authpop__panel">
-        <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
-        <AuthBrand />
-        <p className="authpop__why">🔒 {reason ?? 'Sign in or create a free account to do that.'} You stay on this page.</p>
-        <AuthCard initialMode={mode} />
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      onPointerDownCapture={sheet.noteInput} onKeyDownCapture={sheet.noteInput}>
+      <div ref={panel} className={`authpop__panel${tour ? ' authpop__panel--tour' : ''}${sheet.active && sheet.open ? ' is-sheet-open' : ''}`}>
+        {tour && <AuthTour onSkip={() => setTour(false)} still={sheet.active && sheet.open} />}
+        <div ref={sheetRef} className={`authpop__sheet${sheet.active ? ' is-sheet' : ''}${sheet.open ? ' is-open' : ''}${sheet.dragging ? ' is-dragging' : ''}`}
+          style={sheet.style} {...sheet.handlers}>
+          <div className="authpop__sheethead">
+            {tour && (sheet.active ? (
+              <button type="button" className="authpop__grip" aria-expanded={sheet.open}
+                aria-label={sheet.open ? 'Lower the sign-in form' : 'Raise the sign-in form'} onClick={sheet.toggle} />
+            ) : <span className="authpop__grip" aria-hidden="true" />)}
+            <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
+            {tour ? <h2 className="authpop__title">Sign in or create a free account</h2> : <AuthBrand />}
+            {tour && sheet.active && !sheet.open && <p className="authpop__hint">Swipe up to get started</p>}
+          </div>
+          {/* Under the sheet's own heading the generic line would only repeat it. */}
+          {(reason || !tour) && (
+            <p className="authpop__why">🔒 {reason ?? 'Sign in or create a free account to do that.'} You stay on this page.</p>
+          )}
+          <AuthCard initialMode={mode} />
+          {!tour && (
+            <button type="button" className="linkbtn authpop__tour" onClick={() => setTour(true)}>
+              New here? See what Figmark does for buyers and sellers
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
+}
+
+const PHONE = '(max-width: 639px)';
+
+/**
+ * The sign-in form as a phone's bottom sheet over the slides: it rests low,
+ * showing its heading, and a swipe up (or a tap on the grip, or on any field)
+ * raises it to fill the screen. A swipe down on its heading lowers it again.
+ * Only on a phone with the slides showing; anywhere else it is a plain panel.
+ */
+function useBottomSheet(tour: boolean, panel: RefObject<HTMLDivElement>, sheet: RefObject<HTMLDivElement>) {
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(PHONE).matches);
+  const [open, setOpen] = useState(false);
+  /** How far below its raised place the sheet rests, in pixels. */
+  const [rest, setRest] = useState(0);
+  const [drag, setDrag] = useState<number | null>(null);
+  const start = useRef<{ y: number; id: number; at: number; base: number; moved: boolean } | null>(null);
+  /** A drag ends in a click; this swallows it so a field under the finger is not pressed. */
+  const justDragged = useRef(false);
+  /** Set once the person has touched or typed: before that, focus moving in is the dialog's own doing. */
+  const touched = useRef(false);
+  const active = tour && phone;
+
+  useEffect(() => {
+    const query = window.matchMedia?.(PHONE);
+    if (!query) return;
+    const update = () => setPhone(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!active) return;
+    const measure = () => {
+      const box = panel.current;
+      const stage = box?.querySelector<HTMLElement>('.authtour__stage');
+      const own = sheet.current;
+      if (!box || !stage || !own) return;
+      const top = box.getBoundingClientRect().top;
+      // Over the foot of the slides, but always with enough showing to say what it is.
+      const resting = Math.min(stage.getBoundingClientRect().bottom - top - 18, box.clientHeight - 168);
+      setRest(Math.max(0, Math.round(resting - own.offsetTop)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (panel.current) observer.observe(panel.current);
+    const stage = panel.current?.querySelector('.authtour__stage');
+    if (stage) observer.observe(stage);
+    return () => observer.disconnect();
+  }, [active, panel, sheet]);
+
+  function settle(next: boolean) {
+    setOpen(next);
+    setDrag(null);
+    if (!next) sheet.current?.scrollTo({ top: 0 });
+  }
+
+  const handlers = active ? {
+    onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      // Raised, the form scrolls; only its heading drags it back down.
+      if (open && !(event.target as HTMLElement).closest('.authpop__sheethead')) return;
+      start.current = { y: event.clientY, id: event.pointerId, at: performance.now(), base: open ? 0 : rest, moved: false };
+    },
+    onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+      const from = start.current;
+      if (!from || from.id !== event.pointerId) return;
+      const dy = event.clientY - from.y;
+      if (!from.moved) {
+        if (Math.abs(dy) < 6) return;
+        from.moved = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+      setDrag(Math.min(rest, Math.max(0, from.base + dy)));
+    },
+    onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+      const from = start.current;
+      start.current = null;
+      if (!from || from.id !== event.pointerId || !from.moved) return;
+      justDragged.current = true;
+      window.setTimeout(() => { justDragged.current = false; }, 0);
+      const dy = event.clientY - from.y;
+      const speed = dy / Math.max(1, performance.now() - from.at);
+      // A flick decides it; otherwise it goes where it was dragged more than a third of the way to.
+      if (speed < -0.35) settle(true);
+      else if (speed > 0.35) settle(false);
+      else settle(from.base + dy < rest * 0.66);
+    },
+    onPointerCancel() {
+      start.current = null;
+      setDrag(null);
+    },
+    onClickCapture(event: React.MouseEvent) {
+      if (justDragged.current) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    onFocusCapture() {
+      if (touched.current && !open) setOpen(true);
+    },
+  } : {};
+
+  const offset = drag ?? (open ? 0 : rest);
+  return {
+    active,
+    open: active && open,
+    dragging: drag !== null,
+    style: active ? { transform: `translate3d(0, ${offset}px, 0)` } : undefined,
+    handlers,
+    toggle: () => settle(!open),
+    noteInput: () => { touched.current = true; },
+  };
 }
 
 function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const { signIn, signUp } = useSession();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const [demo, setDemo] = useState<DemoAccount[]>([]);
   const [durable, setDurable] = useState(true);
@@ -153,6 +322,9 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
       if (mode === 'signin') await signIn(identifier, password, askOtp ? otp : undefined);
       else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password, acceptTerms: agreed, captchaToken: captchaToken ?? undefined });
       else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password, acceptTerms: agreed, captchaToken: captchaToken ?? undefined });
+      haptic('success');
+      const first = displayName.trim().split(/\s+/)[0];
+      toast(mode === 'signin' ? 'Welcome back 👋' : `Welcome to Figmark${first ? `, ${first}` : ''}! 🎉`);
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === 'mfa_required') {
         // Not a failure: the password was right and the second step is next.
@@ -229,7 +401,7 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
 
             <label className="field">
               <span>Password</span>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder={mode === 'signup' ? 'At least 8 characters' : ''} required />
               {mode === 'signup' && (
@@ -421,7 +593,7 @@ function ResetPassword({ initialIdentifier, onDone }: { initialIdentifier: strin
           </label>
           <label className="field">
             <span>New password</span>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password" placeholder="At least 8 characters" required />
             <span className="field__hint">Every other device signed in to this account is signed out.</span>
           </label>

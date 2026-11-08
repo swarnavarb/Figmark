@@ -14,7 +14,7 @@ import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatMoney } from '../format';
 import { StoreMark, accentStyle } from '../components/StoreKit';
 import { EstimateBox, FormFields, InfoRows, PriceOptions, PriceRows, QuoteAskSheet, StandingChips, WarehouseCards, expiresIn } from '../components/ServiceWorkKit';
-import { PageLoading } from '../components/Feedback';
+import { PageLoading, useToast } from '../components/Feedback';
 import { loaders } from '../pageLoaders';
 import '../styles/ServiceDetailPage.css';
 
@@ -174,6 +174,7 @@ function coverLine(plan: InsurancePlan): string {
 function RequestSheet({ data, laneId, offeringId, quote, onClose }: {
   data: StorePageView; laneId: string | null; offeringId: string | null; quote?: QuoteView | null; onClose: () => void;
 }) {
+  const toast = useToast();
   const navigate = useNavigate();
   const { store } = data;
   const listed = store.lanes.find((row) => row.id === laneId) ?? null;
@@ -227,6 +228,7 @@ function RequestSheet({ data, laneId, offeringId, quote, onClose }: {
         subjectId: (laneId ?? offeringId ?? '')!, optionId, planId, answers, addonIds, external, quoteId: quote?.quote.id ?? null,
       });
       navigate(`/services/requests/${store.kind}/${store.ownerId}/${view.request.id}?sent=1`);
+      toast('Request sent.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
       setBusy(false);
@@ -336,6 +338,7 @@ function RequestSheet({ data, laneId, offeringId, quote, onClose }: {
  * book a parcel on it. Expired quotes are deleted, so the page says so.
  */
 export function ServiceQuotePage() {
+  const toast = useToast();
   const { kind, ownerId, id } = useParams<{ kind: string; ownerId: string; id: string }>();
   const [params] = useSearchParams();
   const [view, setView] = useState<QuoteView | null>(null);
@@ -365,6 +368,7 @@ export function ServiceQuotePage() {
     try {
       await api.actOnQuote(quote.kind, quote.ownerId, quote.id, { action: 'withdraw' });
       navigate('/purchases');
+      toast('Quote withdrawn.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not go through.');
       setBusy(false);

@@ -4,6 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useSession } from '../session';
 import { CreateSheet } from './CreateSheet';
 import { warmTab } from '../pageLoaders';
+import { haptic } from '../haptics';
 
 /**
  * Six places and one action.
@@ -126,8 +127,18 @@ export function tabFor(pathname: string): Tab {
   return TABS.find((tab) => tab.match(pathname)) ?? TABS[0]!;
 }
 
-/** Where the Create button sits among the bar's seven columns. */
-const CREATE_COLUMN = 3;
+/**
+ * The sections that get a place on the bar: four, with the + between them.
+ *
+ * Seven targets were about fifty pixels each on a small phone, and Sell sat
+ * beside a + that also sells. Services and Quests keep their pages, colours
+ * and addresses; they are reached from the profile menu (and Quests from its
+ * toasts) instead. To bring one back, add its id here - nothing else changes.
+ */
+export const BAR_TABS: readonly TabId[] = ['buy', 'discover', 'sell', 'social'];
+
+/** Where the Create button sits among the bar's five columns. */
+const CREATE_COLUMN = 2;
 
 /**
  * The bottom bar.
@@ -150,8 +161,10 @@ export function TabBar() {
   const [creating, setCreating] = useState(false);
   // A page outside the six reads as Shop, as the header's colour does.
   const active = tabFor(pathname);
-  const activeIndex = TABS.indexOf(active);
-  // Seven equal columns, the middle one the Create button's.
+  const bar = TABS.filter((tab) => BAR_TABS.includes(tab.id));
+  // Off the bar (Services, Quests): no pill, rather than one under the wrong tab.
+  const activeIndex = bar.indexOf(active);
+  // Five equal columns, the middle one the Create button's.
   const column = activeIndex < CREATE_COLUMN ? activeIndex : activeIndex + 1;
 
   // Going anywhere puts the sheet away.
@@ -167,7 +180,10 @@ export function TabBar() {
         aria-current={on ? 'page' : undefined}
         onPointerDown={() => warmTab(tab.to)}
         onClick={(event) => {
-          if (user || !tab.members) return;
+          if (user || !tab.members) {
+            if (!on) haptic();
+            return;
+          }
           event.preventDefault();
           promptAuth(tab.members);
         }}
@@ -200,10 +216,10 @@ export function TabBar() {
             tab - enough to make the page scroll sideways. */}
         <span
           className="tabbar__pill"
-          style={{ '--i': column, '--tabs': TABS.length + 1 } as React.CSSProperties}
+          style={{ '--i': column, '--tabs': bar.length + 1, opacity: activeIndex < 0 ? 0 : undefined } as React.CSSProperties}
           aria-hidden="true"
         />
-        {TABS.slice(0, CREATE_COLUMN).map(tabLink)}
+        {bar.slice(0, CREATE_COLUMN).map(tabLink)}
         <div className="tab-create">
           <button type="button" className={`tab-create__btn${creating ? ' is-open' : ''}`}
             aria-label="Create a post or listing" aria-haspopup="dialog" aria-expanded={creating}
@@ -221,7 +237,7 @@ export function TabBar() {
           </button>
           <span className="tab-item__label" aria-hidden="true">Create</span>
         </div>
-        {TABS.slice(CREATE_COLUMN).map(tabLink)}
+        {bar.slice(CREATE_COLUMN).map(tabLink)}
         {creating && <CreateSheet onClose={() => setCreating(false)} />}
       </nav>
     </div>

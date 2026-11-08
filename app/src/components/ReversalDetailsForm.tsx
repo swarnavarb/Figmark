@@ -89,7 +89,7 @@ export function ReversalDetailsForm({ onSaved }: { onSaved?: () => void | Promis
         </label>
         <label className="field">
           <span>Account, UPI, or payment identifier</span>
-          <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@upi or account number" />
+          <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@upi or account number" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
         </label>
         <label className="field">
           <span>Name on the account</span>

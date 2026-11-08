@@ -246,8 +246,15 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
     } finally {
       if (timer) clearTimeout(timer);
     }
-  } catch {
-    throw new ApiRequestError(0, 'network_error', 'Could not connect. Check your connection and try again.');
+  } catch (err) {
+    // Said in words that point at the fix: offline, slow, or simply unreachable.
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const slow = err instanceof DOMException && err.name === 'AbortError' && !init?.signal?.aborted;
+    throw new ApiRequestError(0, 'network_error', offline
+      ? "You're offline. Nothing was sent - try again once you're connected."
+      : slow
+        ? 'That is taking too long. Check your connection and try again.'
+        : 'Could not connect. Check your connection and try again.');
   }
 
   if (!response.ok) {
@@ -263,7 +270,9 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiRequestError(
       response.status,
       body?.error ?? 'http_error',
-      body?.message ?? `Request failed with status ${response.status}.`,
+      body?.message ?? (response.status >= 500
+        ? 'Figmark is having trouble right now. Please try again in a moment.'
+        : `Request failed with status ${response.status}.`),
       body && typeof body === 'object' ? (body as unknown as Record<string, unknown>) : null,
     );
   }

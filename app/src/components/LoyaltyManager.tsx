@@ -1,3 +1,4 @@
+import { useToast } from './Feedback';
 import { useCallback, useEffect, useState } from 'react';
 import { SkelCards, SkelRows } from './PageSkeletons';
 import {
@@ -14,6 +15,7 @@ import { Select } from './Select';
 import { InfoTip } from './InfoTip';
 import { CapField } from './Offers';
 import { StampCard } from './LoyaltyCard';
+import { useConfirm } from './ui';
 import '../styles/LoyaltyManager.css';
 
 /**
@@ -45,6 +47,8 @@ const fromCard = (card: LoyaltyCard): Draft => ({
 });
 
 export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
+  const toast = useToast();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.myLoyaltyCards>> | null>(null);
   const [owed, setOwed] = useState<IssuedReward[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -73,6 +77,7 @@ export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
     try {
       await api.useLoyaltyReward(id);
       await load();
+      toast('Reward used 🎁');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not go through.');
     }
@@ -80,6 +85,7 @@ export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
 
   return (
     <div className="loyman">
+      {confirmDialog}
       <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div>
           <h2 style={{ margin: 0 }}>Loyalty cards</h2>
@@ -110,8 +116,16 @@ export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
                 {card.minOrderMinor > 0 && <span>From {formatMoney(card.minOrderMinor)}</span>}
                 <button type="button" className="btn btn--quiet btn--sm" onClick={() => setDraft(fromCard(card))}>Edit</button>
                 <button type="button" className="btn btn--quiet btn--sm"
-                  onClick={() => window.confirm(`Delete "${card.name}"? Rewards already earned stay with the buyers.`)
-                    && void api.deleteLoyaltyCard(card.id).then(load)}>Delete</button>
+                  onClick={async () => {
+                    if (!(await confirm({ title: `Delete "${card.name}"?`, body: 'Rewards already earned stay with the buyers.', action: 'Delete', danger: true }))) return;
+                    try {
+                      await api.deleteLoyaltyCard(card.id);
+                      toast('Card deleted.');
+                      await load();
+                    } catch (err) {
+                      toast(err instanceof ApiRequestError ? err.message : 'Could not delete that card.', 'error');
+                    }
+                  }}>Delete</button>
               </div>
             </div>
           ))}
@@ -145,6 +159,7 @@ export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
 function CardEditor({ draft: start, settings, onCancel, onSaved }: {
   draft: Draft; settings: LoyaltySettings; onCancel: () => void; onSaved: () => void;
 }) {
+  const toast = useToast();
   const [draft, setDraft] = useState(start);
   const [listings, setListings] = useState<Listing[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -207,6 +222,7 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
         rewards: draft.rewards,
       });
       onSaved();
+      toast('Loyalty card saved.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save the card.');
     } finally {

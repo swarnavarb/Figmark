@@ -5,7 +5,7 @@ import { ApiRequestError, api, type CommunityDesk } from '../api';
 import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
 import { BackLink } from '../components/ScrollManager';
-import { PageLoading } from '../components/Feedback';
+import { PageLoading, useToast } from '../components/Feedback';
 import '../styles/CommunityServicePage.css';
 
 type Tab = 'waiting' | 'all' | 'earnings';
@@ -21,6 +21,7 @@ type Tab = 'waiting' | 'all' | 'earnings';
  * And one switch: whether they are taking new disputes.
  */
 export function CommunityServicePage() {
+  const toast = useToast();
   const [desk, setDesk] = useState<CommunityDesk | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('waiting');
@@ -49,6 +50,7 @@ export function CommunityServicePage() {
     try {
       await api.communityAvailability(!desk!.manager.available);
       await load();
+      toast('Availability updated.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not change that.');
     } finally {

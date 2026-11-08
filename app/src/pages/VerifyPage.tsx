@@ -3,7 +3,10 @@ import { AADHAAR_MOBILE_RULE, maskMobile } from '@shared/verification';
 import { ApiRequestError, api, type VerificationStatus } from '../api';
 import { ErrorNotice, PageError } from '../components/ui';
 import { useSession } from '../session';
-import { PageLoading } from '../components/Feedback';
+import { PageLoading, useToast } from '../components/Feedback';
+import { SuccessMoment } from '../components/SuccessMoment';
+import { haptic } from '../haptics';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * Verification: email, then WhatsApp, then Aadhaar.
@@ -31,7 +34,28 @@ export function VerifyPage() {
     void load();
   }, [load]);
 
+  const toast = useToast();
+  const navigate = useNavigate();
+  // Which level was just reached, for the moment that marks it.
+  const [reached, setReached] = useState<'buy' | 'sell' | null>(null);
+
+  const statusRef = useRef<VerificationStatus | null>(null);
+  statusRef.current = status;
+
   const changed = useCallback((next: VerificationStatus) => {
+    const before = statusRef.current;
+    if (before) {
+      const was = before.checks;
+      const now = next.checks;
+      const canSellNow = now.email && now.phone && now.aadhaar;
+      const canBuyNow = now.email && now.phone;
+      if (canSellNow && !(was.email && was.phone && was.aadhaar)) setReached('sell');
+      else if (canBuyNow && !(was.email && was.phone)) setReached('buy');
+      else if ((now.email && !was.email) || (now.phone && !was.phone)) {
+        haptic('success');
+        toast(now.email && !was.email ? 'Email verified ✓' : 'WhatsApp number verified ✓');
+      }
+    }
     setStatus(next);
     // The session carries the capabilities every screen reads; bring it up to date.
     void refresh();
@@ -46,6 +70,15 @@ export function VerifyPage() {
 
   return (
     <main className="page vfy">
+      {reached && (
+        <SuccessMoment title={reached === 'sell' ? "You're verified" : 'Ready to buy'}
+          body={reached === 'sell'
+            ? 'You can buy and sell now. Your page shows the Email, WhatsApp and Aadhaar ticks.'
+            : 'Your email and WhatsApp are verified - you can buy on Figmark. Verify Aadhaar too whenever you want to sell.'}
+          primary={reached === 'sell' ? { label: 'List my first item', onClick: () => navigate('/sell') } : { label: 'Start browsing', onClick: () => navigate('/') }}
+          secondary={{ label: 'Stay here', onClick: () => {} }}
+          onClose={() => setReached(null)} />
+      )}
       <h1>Verification</h1>
       <p className="muted" style={{ marginTop: 0 }}>
         To buy on Figmark, verify your email and WhatsApp number. To sell - including private deals and power

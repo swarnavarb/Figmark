@@ -298,7 +298,8 @@
   --text-scale: 1;
 
   /* One type scale */
-  --t-2xs: calc(10.5px * var(--text-scale));
+  /* 11px, not 10.5: the smallest size still read outdoors on a phone. Badges and counters use it. */
+  --t-2xs: calc(11px * var(--text-scale));
   --t-xs: calc(11.5px * var(--text-scale));
   --t-sm: calc(13px * var(--text-scale));
   --t-base: calc(14.5px * var(--text-scale));
@@ -685,7 +686,15 @@ code, kbd, samp, pre {
     transform 60ms var(--ease);
 }
 .btn:hover:not(:disabled) { filter: saturate(1.16) brightness(1.1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), var(--shadow-violet); }
-.btn:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
+.btn:active:not(:disabled) { transform: translateY(1px) scale(0.97); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
+/* The button that was pressed and is now working (pressFeedback.ts): a spinner
+   beside its words, and less faded than a button that simply cannot be pressed. */
+.btn[data-working]:disabled { opacity: 0.82; cursor: progress; }
+.btn[data-working]::before {
+  content: ''; flex: none; width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: spin 700ms linear infinite;
+}
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn--ghost { background: var(--surface); border-color: var(--border-strong); color: var(--text); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); }
@@ -693,6 +702,12 @@ code, kbd, samp, pre {
 .btn--quiet { background: transparent; border-color: transparent; color: var(--text-dim); padding: 6px 10px; box-shadow: none; }
 .btn--quiet:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 .btn--sm { padding: 6px 11px; font-size: var(--t-xs); }
+/* On a touchscreen a small button is still a finger's width to hit: it keeps
+   its look, and grows only in height. */
+@media (pointer: coarse) {
+  .btn--sm, .btn--quiet { min-height: 36px; }
+  .btn:not(.btn--sm):not(.btn--quiet) { min-height: 42px; }
+}
 
 /* ── Segmented control ─────────────────────────────────────────────────── */
 
@@ -5080,20 +5095,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
   box-shadow: var(--sx-glow); cursor: pointer;
   animation: pop-in var(--dur-2) var(--ease) both;
 }
-.chtoast {
-  position: fixed; left: 50%; translate: -50% 0; z-index: var(--z-float);
-  top: calc(var(--nav-h) + 14px);
-  padding: var(--s2) var(--s4); border-radius: var(--r-pill);
-  background: #fff; color: var(--sx-ink, #111); font-weight: var(--w-bold); font-size: var(--t-xs);
-  box-shadow: var(--shadow);
-  animation: chtoast 2.2s var(--ease) both;
-}
-@keyframes chtoast {
-  0% { opacity: 0; transform: translateY(-8px); }
-  12%, 80% { opacity: 1; transform: none; }
-  100% { opacity: 0; transform: translateY(-8px); }
-}
-
 /* The bar you write from: pinned above the tab bar, and down to the edge
    when the tab bar steps aside. */
 .cbar {
@@ -5150,7 +5151,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 }
 @media (prefers-reduced-motion: reduce) {
   .cmsg__bubble, .cmsg.is-flash .cmsg__bubble, .cmsg__actions, .cmsg__picker button,
-  .chnew, .chtoast, .chhero--loading { animation: none; }
+  .chnew, .chhero--loading { animation: none; }
   .chmine, .chpin, .cbar { transition: none; }
 }
 
@@ -7101,6 +7102,74 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   color: var(--text-dim); background: var(--surface-2); cursor: pointer;
 }
 .authpop__why { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+/* The form's own sheet. Without the slides it is the panel's contents, laid out as before. */
+.authpop__sheet { display: grid; gap: var(--s3); min-width: 0; }
+.authpop__title { margin: 0; padding-right: 40px; font-size: var(--t-lg); line-height: 1.25; }
+.linkbtn.authpop__tour { justify-self: center; font-size: var(--t-sm); }
+
+/* With the slides: a coloured tour on top and the form in a sheet pulled up
+   over its foot, the way a phone shows a bottom sheet. */
+.authpop__panel--tour {
+  width: min(100%, 460px); padding: 0; gap: 0; overflow: hidden;
+  background: var(--bg);
+}
+.authpop__panel--tour .authtour { min-height: 380px; }
+.authpop__panel--tour .authpop__sheet {
+  position: relative; margin-top: -26px; padding: 14px var(--s4) var(--s4);
+  border-radius: 28px 28px 0 0; background: var(--surface);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.authpop__panel--tour .authpop__close { top: 4px; right: -2px; }
+.authpop__panel--tour .auth__card { padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.authpop__sheethead { display: grid; gap: var(--s3); }
+.authpop__panel--tour .authpop__sheethead { position: relative; }
+.authpop__grip { justify-self: center; width: 40px; height: 5px; padding: 0; border: 0; border-radius: var(--r-pill); background: var(--border-strong); }
+/* As a button the grip is a bigger target than the bar it draws. */
+button.authpop__grip { position: relative; cursor: pointer; }
+button.authpop__grip::before { content: ''; position: absolute; inset: -14px -30px; }
+.authpop__hint { margin: calc(-1 * var(--s2)) 0 0; font-size: var(--t-sm); color: var(--text-dim); animation: authpop-nudge 2.4s var(--ease) 1.5s infinite; }
+@keyframes authpop-nudge { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .authpop__hint { animation: none; } }
+
+/* A phone: the slides fill the screen and the form is a bottom sheet over
+   them, resting low until it is swiped up (see useBottomSheet). */
+@media (max-width: 639px) {
+  .authpop:has(.authpop__panel--tour) { padding: 0; place-items: stretch; overflow: hidden; }
+  .authpop__panel--tour { position: relative; display: block; width: 100%; height: 100dvh; border-radius: 0; }
+  .authpop__panel--tour .authtour { min-height: 100%; padding-top: calc(env(safe-area-inset-top, 0px) + 18px); transition: background-color 700ms var(--ease), opacity var(--dur-2) var(--ease); }
+  .authpop__panel--tour.is-sheet-open .authtour { opacity: 0.35; }
+  .authpop__panel--tour .authtour__title { font-size: calc(24px * var(--text-scale)); }
+  .authpop__panel--tour .authtour__art { margin-top: 0; }
+  .authpop__panel--tour .tourart { max-height: 165px; }
+  .authpop__panel--tour .authpop__sheet {
+    position: absolute; inset: calc(env(safe-area-inset-top, 0px) + 12px) 0 0; margin: 0;
+    align-content: start; overflow-y: auto; overscroll-behavior: contain;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--s5));
+    transition: transform 460ms var(--ease);
+    will-change: transform;
+  }
+  .authpop__sheet.is-sheet:not(.is-open) { overflow: hidden; touch-action: none; }
+  .authpop__sheet.is-dragging { transition: none; }
+  .authpop__sheet.is-sheet .authpop__sheethead { touch-action: none; cursor: grab; }
+}
+@media (max-width: 639px) and (prefers-reduced-motion: reduce) {
+  .authpop__panel--tour .authpop__sheet { transition: none; }
+}
+
+/* A wide screen: the tour on the left, the form beside it. */
+@media (min-width: 880px) {
+  .authpop__panel--tour { width: min(100%, 940px); grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+  .authpop__panel--tour .authtour { min-height: 560px; padding: 28px 30px 56px; }
+  .authpop__panel--tour .authtour__title { font-size: calc(32px * var(--text-scale)); }
+  .authpop__panel--tour .tourart { max-width: 400px; max-height: 240px; }
+  .authpop__panel--tour .authpop__sheet { margin: 0; padding: 30px 28px 26px; border-radius: 0; box-shadow: none; align-content: start; max-height: calc(100dvh - 2 * var(--s4)); overflow-y: auto; }
+  .authpop__panel--tour .authpop__grip { display: none; }
+}
+
+/* The page version: the same tour above the card. */
+.auth__panel--tour { max-width: 460px; }
+.auth__panel--tour .authtour { min-height: 380px; margin-bottom: -26px; border-radius: var(--r-xl) var(--r-xl) 0 0; }
+.auth__panel--tour .auth__card { position: relative; border-radius: 28px; }
 @keyframes authpop-in { from { opacity: 0; } }
 @keyframes authpop-rise { from { opacity: 0; transform: translateY(18px) scale(0.98); } }
 @media (prefers-reduced-motion: reduce) { .authpop, .authpop__panel { animation: none; } }
@@ -9211,3 +9280,379 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .cancelrate { font-weight: 800; }
 .cancelrate.is-over { color: var(--coral); }
 .cancelappeal { margin: 6px 0 0; padding: 8px 12px; border-left: 3px solid var(--gold); border-radius: 0 var(--r-md) var(--r-md) 0; background: var(--surface-2); font-size: var(--t-sm); }
+
+/* ── Success moments ─────────────────────────────────────────────────────
+   The beat after an order is placed, an item goes live, a delivery is
+   confirmed (components/SuccessMoment.tsx). One drawn mark, one line on
+   what happens next, one thing to do. */
+.smo {
+  position: fixed; inset: 0; z-index: var(--z-lightbox);
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(4, 7, 14, 0.72);
+  backdrop-filter: blur(6px);
+  animation: smo-fade 220ms var(--ease-out) both;
+}
+.smo__card {
+  position: relative; overflow: hidden;
+  width: min(400px, 100%);
+  display: grid; justify-items: center; gap: 6px;
+  padding: 30px 22px 20px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-xl);
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(52, 211, 153, 0.16), transparent 70%),
+    var(--surface);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  text-align: center;
+  animation: smo-rise 420ms var(--ease-out) both;
+}
+.smo__card--pending {
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(245, 158, 11, 0.16), transparent 70%),
+    var(--surface);
+}
+.smo__card:focus { outline: none; }
+.smo__title {
+  margin: 10px 0 0; font-size: var(--t-xl); font-weight: 800; letter-spacing: -0.02em;
+  animation: smo-up 380ms 420ms var(--ease-out) both;
+}
+.smo__detail {
+  margin: 0; padding: 4px 12px; border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text); font-weight: 700; font-size: var(--t-base);
+  animation: smo-up 380ms 500ms var(--ease-out) both;
+}
+.smo__body {
+  margin: 4px 0 0; color: var(--text-dim); font-size: var(--t-base); line-height: 1.5; max-width: 32ch;
+  animation: smo-up 380ms 560ms var(--ease-out) both;
+}
+.smo__actions {
+  width: 100%; display: grid; gap: 8px; margin-top: 16px;
+  animation: smo-up 380ms 640ms var(--ease-out) both;
+}
+
+.smark { position: relative; display: grid; place-items: center; flex: none; }
+.smark svg { position: relative; overflow: visible; }
+.smark__disc { fill: rgba(52, 211, 153, 0.12); transform-origin: 50% 50%; animation: smark-pop 520ms var(--ease-out) both; }
+.smark__ring {
+  fill: none; stroke: var(--ok); stroke-width: 5; stroke-linecap: round;
+  stroke-dasharray: 100; stroke-dashoffset: 100;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+  animation: smark-draw 520ms 80ms var(--ease-out) forwards;
+}
+.smark__tick {
+  fill: none; stroke: var(--ok); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 100; stroke-dashoffset: 100;
+  animation: smark-draw 360ms 480ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+.smark--success svg { animation: smark-bounce 420ms 760ms var(--ease-out) both; }
+.smark__burst {
+  position: absolute; inset: 0; border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+  animation: smark-burst 900ms 700ms var(--ease-out) both;
+}
+.smark--pending .smark__disc { fill: rgba(245, 158, 11, 0.12); }
+.smark--pending .smark__ring, .smark--pending .smark__tick { stroke: var(--gold); }
+.smark--pending .smark__tick { stroke-width: 4.5; }
+.smark--pending .smark__burst { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45); }
+.smark__sand { fill: var(--gold); opacity: 0; animation: smo-fade 300ms 860ms both; }
+.smark--pending svg { animation: smark-turn 900ms 1200ms var(--ease) both; }
+
+@keyframes smo-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes smo-rise { from { opacity: 0; transform: translateY(28px) scale(0.94); } to { opacity: 1; transform: none; } }
+@keyframes smo-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes smark-pop { 0% { transform: scale(0.2); } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes smark-draw { to { stroke-dashoffset: 0; } }
+@keyframes smark-bounce { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.1); } }
+@keyframes smark-burst { 0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); } 100% { box-shadow: 0 0 0 34px rgba(52, 211, 153, 0); } }
+@keyframes smark-turn { 0% { transform: rotate(0); } 100% { transform: rotate(180deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .smo, .smo__card, .smo__title, .smo__detail, .smo__body, .smo__actions,
+  .smark svg, .smark__disc, .smark__burst, .smark__sand { animation: none; }
+  .smark__ring, .smark__tick { animation: none; stroke-dashoffset: 0; }
+  .smark__sand { opacity: 1; }
+}
+
+/* ── Connection bar (components/OfflineBar.tsx) ─────────────────────── */
+.offbar {
+  position: fixed; z-index: var(--z-notice);
+  left: 50%; top: calc(env(safe-area-inset-top, 0px) + 8px);
+  transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 8px;
+  max-width: calc(100vw - 24px); white-space: nowrap;
+  padding: 7px 14px; border-radius: var(--r-pill);
+  border: 1px solid var(--coral-line); background: #2A0F14; color: var(--coral-pale);
+  font-size: var(--t-sm); font-weight: var(--w-semi);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: offbar-in 260ms var(--ease-out) both;
+}
+.offbar--back { border-color: rgba(52, 211, 153, 0.45); background: #0C2A20; color: var(--ok-pale); }
+.offbar__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+@keyframes offbar-in { from { opacity: 0; transform: translate(-50%, -12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* A message on its way: shown at once, a little faded, with a clock, until the server has it. */
+.cmsg.is-sending .cmsg__bubble { opacity: 0.7; pointer-events: none; animation: msg-in 220ms var(--ease-out) both; }
+.cmsg.is-sending .cmsg__col::after {
+  content: 'Sending…'; align-self: flex-end; margin-top: 2px;
+  font-size: var(--t-2xs); color: var(--text-faint);
+}
+
+/* A photo on its way up (PhotoManager): the phone's own copy, dimmed, with a ring turning over it. */
+.photo--sending img { opacity: 0.55; filter: saturate(0.7); }
+.photo__ring {
+  position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+  border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.85); border-right-color: transparent;
+  animation: spin 800ms linear infinite;
+}
+
+/* A password field's show/hide eye (components/PasswordInput.tsx). */
+.pwfield { position: relative; display: block; }
+.pwfield > input { width: 100%; padding-right: 44px; }
+.pwfield__eye {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 36px; display: grid; place-items: center;
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--text-faint); cursor: pointer;
+}
+.pwfield__eye:hover, .pwfield__eye[aria-pressed='true'] { color: var(--text); }
+
+/* The first unanswered field on the Sell form, after Publish: a short shake where the eye should go. */
+.attr.is-nudged { animation: attr-nudge 420ms var(--ease) both; }
+@keyframes attr-nudge {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+
+/* The slide-to-confirm control (components/SlideToConfirm.tsx): shared by the Shop's
+   ready list and the order page, so its rules live here rather than in one chunk. */
+.slide { position: relative; flex: 1; min-width: 0; height: 44px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--rdy, var(--ok)) 12%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--rdy, var(--ok)) 55%, transparent); overflow: hidden; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.slide__knob:focus-visible { outline: 2px solid var(--rdy, var(--ok)); outline-offset: 2px; }
+.slide__fill { position: absolute; inset: 0 auto 0 0; border-radius: var(--r-pill); background: var(--rdy, var(--ok)); opacity: 0.85; transition: width var(--dur-2) cubic-bezier(0.22, 1, 0.36, 1); }
+.slide__label { position: absolute; inset: 0 30px 0 46px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: var(--t-sm); font-weight: var(--w-bold); color: var(--rdy, var(--ok)); line-height: 1.15; pointer-events: none; }
+.slide.is-on .slide__label { inset: 0 46px 0 14px; color: var(--rdy-ink, var(--ok-ink)); }
+.slide__hint { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-weight: var(--w-bold); letter-spacing: -0.1em; color: color-mix(in srgb, var(--rdy, var(--ok)) 50%, transparent); pointer-events: none; animation: slide-hint 1.6s ease-in-out infinite; }
+.slide__knob { position: absolute; top: 4px; left: 4px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--rdy, var(--ok)); color: var(--rdy-ink, var(--ok-ink)); font-size: calc(18px * var(--text-scale)); font-weight: var(--w-bold); cursor: grab; touch-action: none; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35); transition: transform var(--dur-2) cubic-bezier(0.22, 1, 0.36, 1); }
+.slide.is-on .slide__knob { background: var(--surface); color: var(--rdy, var(--ok)); }
+.slide.is-dragging .slide__knob { cursor: grabbing; transition: none; }
+.slide.is-dragging .slide__fill { transition: none; }
+.slide.is-disabled { opacity: 0.6; }
+.slide.is-disabled .slide__knob { cursor: default; }
+.slide.is-working .slide__knob { cursor: progress; }
+.slide.is-working .slide__label { color: var(--rdy-ink, var(--ok-ink)); }
+@media (prefers-reduced-motion: reduce) {
+  .slide__knob, .slide__fill { transition: none; }
+  .slide__hint { animation: none; }
+}
+
+/* ── Your orders, at the top of Shop (components/ActiveOrders.tsx) ────── */
+.actord { display: grid; gap: 8px; margin: 4px 0 14px; }
+.actord__head { display: flex; align-items: baseline; justify-content: space-between; }
+.actord__head h2 { margin: 0; font-size: var(--t-md); }
+.actord__all { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--accent-text); text-decoration: none; }
+.actord__row {
+  display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory;
+  margin-inline: calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 4px;
+  scrollbar-width: none; overscroll-behavior-x: contain;
+}
+.actord__row::-webkit-scrollbar { display: none; }
+.actord__card {
+  flex: 0 0 auto; width: min(240px, 72vw); scroll-snap-align: start;
+  display: flex; align-items: center; gap: 10px; padding: 8px;
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+  color: var(--text); text-decoration: none;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.actord__card:active { transform: scale(0.98); }
+.actord__card.is-act { border-color: var(--accent-line); background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--surface); }
+.actord__thumb {
+  flex: none; width: 48px; height: 48px; border-radius: var(--r-md); overflow: hidden;
+  display: grid; place-items: center; font-weight: 800; font-size: var(--t-sm);
+}
+.actord__thumb .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+.actord__text { min-width: 0; display: grid; gap: 2px; }
+.actord__text b { font-size: var(--t-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.actord__text small { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: var(--t-xs); }
+.actord__card.is-act small { color: var(--accent-text); font-weight: var(--w-bold); }
+.actord__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: actord-blink 1.6s ease-in-out infinite; }
+@keyframes actord-blink { 50% { opacity: 0.35; } }
+
+/* ── Service cards (components/ServiceCards.tsx) ──────────────────────────
+   In the Shop grid at an item card's size, but nothing like one - and not
+   like each other. Forwarders are parcel labels; artists are framed work. */
+.svcard {
+  position: relative; display: flex; flex-direction: column; min-width: 0;
+  color: var(--text); text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-1) var(--ease);
+  animation: qloot-in 460ms var(--ease) backwards;
+}
+.svcard:active { transform: scale(0.965); transition-duration: 90ms; }
+/* The small round store mark, used by the pointer lines (ServiceNudge). */
+.svcard__mark {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center; font-size: calc(9px * var(--text-scale)); font-weight: 800;
+  background: var(--sk-soft, var(--surface-2)); color: var(--sk-text, var(--text)); border: 1px solid var(--sk-line, var(--border));
+}
+.svcard__mark img { width: 100%; height: 100%; object-fit: cover; }
+
+/* The forwarder: a parcel label. Cream paper inside an airmail border, set in
+   the monospace of a shipping form, slightly askew like one stuck on a box. */
+.svlabel {
+  --paper: #F2E9D8; --ink: #1A2233; --air-red: #D43B3B; --air-blue: #2350A8;
+  padding: 7px; border-radius: 6px;
+  background: repeating-linear-gradient(135deg, var(--air-red) 0 12px, var(--paper) 12px 18px, var(--air-blue) 18px 30px, var(--paper) 30px 36px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45);
+  transform: rotate(-0.8deg);
+}
+.svlabel:active { transform: rotate(-0.8deg) scale(0.965); }
+.svlabel__sheet {
+  position: relative; flex: 1; display: flex; flex-direction: column; gap: 7px;
+  padding: 9px 10px 10px; border-radius: 3px; overflow: hidden;
+  background:
+    radial-gradient(120% 60% at 100% 0%, rgba(120, 90, 40, 0.10), transparent 60%),
+    var(--paper);
+  color: var(--ink); font-family: var(--mono);
+}
+.svlabel__head {
+  display: flex; justify-content: space-between; gap: 6px;
+  padding-bottom: 6px; border-bottom: 2px solid var(--ink);
+  font-size: calc(8.5px * var(--text-scale)); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.svlabel__mode { padding: 0 5px; background: var(--ink); color: var(--paper); border-radius: 2px; }
+.svlabel__route { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px; }
+.svlabel__port { display: grid; justify-items: center; line-height: 1; gap: 2px; }
+.svlabel__port small { font-size: calc(8px * var(--text-scale)); letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.6; }
+.svlabel__port b { font-family: var(--display); font-size: calc(30px * var(--text-scale)); font-weight: 800; letter-spacing: -0.02em; }
+.svlabel__port span { font-size: calc(14px * var(--text-scale)); }
+.svlabel__via { position: relative; display: grid; justify-items: center; align-content: center; gap: 2px; min-width: 0; }
+.svlabel__glyph { font-size: calc(16px * var(--text-scale)); line-height: 1; animation: svlabel-fly 3.2s var(--ease) infinite; }
+.svlabel__dash { width: 100%; height: 0; border-top: 2px dashed var(--ink); opacity: 0.55; }
+.svlabel__via small { font-size: calc(9px * var(--text-scale)); font-weight: 700; }
+@keyframes svlabel-fly { 0%, 100% { transform: translateX(-5px); } 50% { transform: translateX(5px); } }
+.svlabel__carrier { position: relative; display: grid; gap: 1px; padding-top: 6px; border-top: 1px dashed rgba(26, 34, 51, 0.45); min-width: 0; }
+.svlabel__carrier small { font-size: calc(8px * var(--text-scale)); letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.6; }
+.svlabel__carrier b {
+  font-family: var(--display); font-size: var(--t-sm); font-weight: 800; line-height: 1.15;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  padding-right: 46px;
+}
+.svlabel__rates { display: grid; gap: 2px; }
+.svlabel__rate { display: flex; justify-content: space-between; gap: 6px; font-size: calc(10.5px * var(--text-scale)); }
+.svlabel__rate span { opacity: 0.75; white-space: nowrap; }
+.svlabel__rate b { white-space: nowrap; }
+.svlabel__stamp {
+  position: absolute; right: -6px; top: 0;
+  width: 54px; height: 54px; border-radius: 50%;
+  display: grid; place-content: center; text-align: center; line-height: 1.05;
+  border: 2px solid var(--air-red); outline: 1px solid var(--air-red); outline-offset: -6px;
+  color: var(--air-red); transform: rotate(-14deg); opacity: 0.85;
+  mix-blend-mode: multiply;
+}
+.svlabel__stamp b { font-size: calc(11px * var(--text-scale)); }
+.svlabel__stamp small { font-size: calc(6.5px * var(--text-scale)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.svlabel__foot { margin-top: auto; display: flex; align-items: end; justify-content: space-between; gap: 8px; }
+.svlabel__barcode {
+  flex: 1; max-width: 70px; height: 24px;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 3px, var(--ink) 3px 4px, transparent 4px 6px, var(--ink) 6px 9px, transparent 9px 10px);
+}
+.svlabel__go {
+  padding: 5px 8px; border-radius: 3px; background: var(--ink); color: var(--paper);
+  font-size: calc(10px * var(--text-scale)); font-weight: 700; white-space: nowrap;
+}
+
+/* The artist: their work on a gallery wall, lit from above, in a gilt frame,
+   with a museum placard under it in a serif. */
+.svart {
+  border-radius: var(--r-lg); overflow: hidden;
+  background: linear-gradient(180deg, #2A2320, #1A1513);
+  border: 1px solid rgba(214, 170, 92, 0.35);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+.svart__wall {
+  position: relative; display: grid; place-items: center; padding: 14px 14px 10px;
+  background:
+    radial-gradient(60% 75% at 50% 0%, rgba(255, 228, 170, 0.30), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 2px, transparent 2px 7px);
+}
+.svart__lamp {
+  position: absolute; top: 0; left: 50%; width: 34px; height: 6px; margin-left: -17px;
+  border-radius: 0 0 6px 6px; background: linear-gradient(180deg, #8A8F99, #4B505A);
+  box-shadow: 0 6px 14px rgba(255, 220, 150, 0.55);
+}
+.svart__frame {
+  display: block; width: 80%; padding: 4px; border-radius: 2px;
+  background: linear-gradient(135deg, #F3D48A, #A87A2A 40%, #F7E2A6 55%, #8F6420);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(60, 40, 10, 0.6);
+  transform: rotate(0.6deg);
+}
+.svart__mat { display: block; padding: 4px; background: #F4EFE6; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35); }
+.svart__mat img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.svart__blank { width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; font-size: calc(34px * var(--text-scale)); background: #E9E2D4; }
+.svart__count {
+  position: absolute; left: 8px; top: 8px; padding: 1px 6px; border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.55); color: #F3D48A; font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+.svart__placard {
+  position: relative; flex: 1; display: flex; flex-direction: column; gap: 3px;
+  margin: 0 8px 8px; padding: 8px 9px 9px; border-radius: 3px;
+  background: #F4EFE6; color: #2B231D;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+}
+.svart__kind { font-size: calc(9px * var(--text-scale)); letter-spacing: 0.14em; text-transform: uppercase; color: #8A6A3A; font-weight: 700; }
+.svart__name {
+  font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700;
+  font-size: var(--t-md); line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.svart__line { font-size: var(--t-xs); color: #5B4E43; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svart__price { font-size: var(--t-xs); color: #5B4E43; }
+.svart__price b { color: #2B231D; }
+.svart__palette { position: absolute; right: 9px; top: 10px; display: flex; gap: 3px; }
+.svart__palette i { width: 7px; height: 7px; border-radius: 50% 45% 55% 50%; }
+.svart__palette i:nth-child(1) { background: #D9363E; }
+.svart__palette i:nth-child(2) { background: #E8B33A; }
+.svart__palette i:nth-child(3) { background: #2E7DD7; }
+.svart__palette i:nth-child(4) { background: #3BA776; }
+.svart__go {
+  margin-top: auto; align-self: flex-start; padding: 5px 10px; border-radius: var(--r-pill);
+  background: #2B231D; color: #F3D48A; font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+.qgrid > .svcard { grid-column: auto; }
+
+/* Service cards in a row, for a search that is really asking for a person. */
+.svstrip { display: grid; gap: 8px; margin: 2px 0 14px; }
+.svstrip__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.svstrip__head h2 { margin: 0; font-size: var(--t-md); }
+.svstrip__row {
+  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory;
+  margin-inline: calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 6px;
+  scrollbar-width: none; overscroll-behavior-x: contain;
+}
+.svstrip__row::-webkit-scrollbar { display: none; }
+.svstrip__row > .svcard { flex: 0 0 calc((100vw - 2 * var(--page-pad) - 10px) / 2.2); max-width: 220px; scroll-snap-align: start; }
+.svstrip__row { padding-top: 6px; padding-bottom: 12px; }
+
+/* One line pointing at who can help with this item (ServiceNudge). */
+.svnudge {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: var(--r-lg); border: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.12), transparent 70%), var(--surface);
+  color: var(--text); text-decoration: none;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.svnudge--forwarder { background: linear-gradient(90deg, rgba(6, 214, 231, 0.12), transparent 70%), var(--surface); }
+.svnudge:hover { border-color: var(--border-strong); }
+.svnudge:active { transform: scale(0.985); }
+.svnudge__faces { display: flex; flex: none; }
+.svnudge__faces .svcard__mark { width: 28px; height: 28px; font-size: calc(10px * var(--text-scale)); border: 2px solid var(--surface); }
+.svnudge__faces .svcard__mark + .svcard__mark { margin-left: -9px; }
+.svnudge__text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.svnudge__text b { font-size: var(--t-sm); }
+.svnudge__text span { font-size: var(--t-xs); color: var(--text-dim); }
+.svnudge__go { font-size: calc(22px * var(--text-scale)); color: var(--text-faint); }
+
+@media (prefers-reduced-motion: reduce) {
+  .svcard, .svlabel__glyph { animation: none; }
+}

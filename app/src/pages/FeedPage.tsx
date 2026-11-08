@@ -17,6 +17,7 @@ import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
 import { ShopStrip } from '../components/ShopCards';
+import { ServiceCard, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch } from '../components/ServiceCards';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import {
@@ -25,6 +26,7 @@ import {
 } from '../components/FeedRails';
 import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
+import { ActiveOrders } from '../components/ActiveOrders';
 import { SkelBlock } from '../components/PageSkeletons';
 import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
 import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
@@ -319,6 +321,14 @@ export function FeedPage() {
   const authenticityChoices = group ? authenticityOptions : authenticityOptions.slice(0, 2);
 
   const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView;
+
+  // Forwarders and artists among the items: each beside an item it fits (ServiceCards).
+  const providers = useProviders();
+  const services = useMemo(() => (browsing ? placeServices(shown, providers) : new Map<number, never>()),
+    [browsing, shown, providers]);
+  // A search for a repaint or a forwarder is asking for a person: the studios or routes first.
+  const wants = search && !photo ? searchWants(search) : null;
+  const studioHits = useStudioSearch(wants === 'artist' ? search : null);
   const counts = useMemo(() => Object.fromEntries(
     RARITY_FILTERS.map((tier) => [tier, rated.filter((listing) => listing.rarity.tier === tier).length]),
   ) as Record<RarityTier, number>, [rated]);
@@ -328,6 +338,8 @@ export function FeedPage() {
       {/* The catalogue's cards are its heading; this names the page for screen readers. */}
       <h1 className="sr-only">Shop</h1>
       <QuestBar />
+      {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
+      {browsing && <ActiveOrders />}
 
       {/* The daily pick holds its place while the catalogue loads, so the
           page does not drop by a card's height when it arrives. */}
@@ -398,6 +410,8 @@ export function FeedPage() {
 
       {browsing && <FillingBoxes lots={fillingLots} />}
 
+      {wants === 'artist' && <ServiceStrip title="Artists who do this" sub="Restore, repaint, customise" picks={studioHits} />}
+      {wants === 'forwarder' && <ServiceStrip title="Forwarders" sub="Routes, days and price per kg" picks={providers.forwarders} />}
       {search && !photo && <ShopStrip title={`Shops for “${search}”`} sub="Known for it by name, tags or what they list" shops={searchShops} />}
       {browsing && <ShopStrip title="Shops for you" sub="From what you like, buy and follow" shops={forYou} />}
 
@@ -436,6 +450,7 @@ export function FeedPage() {
           {shown.slice(0, drawn).map((listing, n) => (
             <Fragment key={listing.id}>
               <LootCard listing={listing} priority={n < 2} />
+              {services.has(n) && <ServiceCard pick={services.get(n)!} />}
               {browsing && rails.map((entry, r) => entry.at === n && <Fragment key={r}>{entry.rail}</Fragment>)}
             </Fragment>
           ))}

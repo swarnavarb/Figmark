@@ -1,0 +1,195 @@
+/* ── Sign-in slides: why Figmark, for buyers and for sellers ─────────────
+ * Each slide carries a tone; the whole tour borrows the current slide's, so
+ * the backdrop shifts colour as the slides turn. */
+
+.authtour--violet { --tone: var(--violet-lit); --tone-text: var(--violet-pale); --tone-soft: var(--violet-soft); --tone-ink: var(--violet-ink); }
+.authtour--aqua   { --tone: var(--aqua);       --tone-text: var(--aqua-pale);   --tone-soft: var(--aqua-soft);   --tone-ink: var(--aqua-ink); }
+.authtour--coral  { --tone: var(--coral);      --tone-text: var(--coral-pale);  --tone-soft: var(--coral-soft);  --tone-ink: var(--coral-ink); }
+.authtour--lime   { --tone: var(--lime);       --tone-text: var(--lime-pale);   --tone-soft: var(--lime-soft);   --tone-ink: var(--lime-ink); }
+
+.authtour {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px 44px;
+  color: var(--text);
+  background-color: color-mix(in srgb, var(--tone) 14%, var(--bg));
+  transition: background-color 700ms var(--ease);
+}
+.authtour__glow {
+  position: absolute; inset: -30% -20% auto auto; z-index: -1;
+  width: 120%; height: 130%;
+  color: var(--tone);
+  background:
+    radial-gradient(closest-side at 78% 22%, currentColor, transparent),
+    radial-gradient(closest-side at 10% 90%, color-mix(in srgb, currentColor 60%, transparent), transparent);
+  opacity: 0.28;
+  filter: blur(18px);
+  transition: color 700ms var(--ease);
+  pointer-events: none;
+}
+
+/* The bar: the count, the dots, and Skip on the far side. */
+.authtour__bar { display: flex; align-items: center; gap: 10px; }
+.authtour__mark { width: 26px; height: 26px; border-radius: 8px; flex: none; }
+.authtour__count {
+  padding: 4px 11px; border-radius: var(--r-pill);
+  background: var(--tone); color: var(--tone-ink);
+  font-size: var(--t-xs); font-weight: var(--w-bold); font-variant-numeric: tabular-nums;
+  transition: background-color 700ms var(--ease), color 700ms var(--ease);
+}
+.authtour__dots { display: flex; align-items: center; gap: 2px; }
+.authtour__dot {
+  position: relative; overflow: hidden;
+  width: 7px; height: 7px; margin: 8px 3px; padding: 0; border: 0; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--text) 30%, transparent);
+  cursor: pointer;
+  transition: width var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease);
+}
+/* A bigger hit area than the dot it draws. */
+.authtour__dot::before { content: ''; position: absolute; inset: -8px -4px; }
+.authtour__dot.is-on { width: 24px; background: color-mix(in srgb, var(--tone) 45%, transparent); }
+.authtour__dot.is-on:not(:has(.authtour__fill)) { background: var(--tone); }
+.authtour__fill {
+  position: absolute; inset: 0; transform-origin: left center;
+  background: var(--tone);
+  animation: authtour-fill linear both;
+}
+@keyframes authtour-fill { from { transform: scaleX(0); } }
+.authtour__skip {
+  margin-left: auto; padding: 6px 2px; border: 0; background: none;
+  color: var(--tone-text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); cursor: pointer;
+}
+.authtour__skip:hover { text-decoration: underline; }
+
+/* The slides: one wide strip, moved a whole slide at a time. */
+.authtour__stage { flex: 1 0 auto; overflow: hidden; margin-top: 18px; touch-action: pan-y; user-select: none; }
+.authtour__track { display: flex; height: 100%; transition: transform 560ms var(--ease); will-change: transform; }
+.authtour__slide { flex: 0 0 100%; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.authtour__copy { display: grid; gap: 8px; }
+.authtour__who {
+  justify-self: start;
+  padding: 3px 10px; border-radius: var(--r-pill);
+  background: var(--tone-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 45%, transparent);
+  color: var(--tone-text); font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.04em; text-transform: uppercase;
+}
+.authtour__title { margin: 2px 0 0; font-size: calc(26px * var(--text-scale)); line-height: 1.15; letter-spacing: -0.01em; text-wrap: balance; }
+.authtour__points { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
+.authtour__points li {
+  position: relative; padding-left: 26px;
+  color: var(--text-dim); font-size: var(--t-sm); line-height: 1.45;
+}
+.authtour__points li::before {
+  content: ''; position: absolute; left: 0; top: 2px; width: 17px; height: 17px; border-radius: 50%;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.4l3 3 6-6.4' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 13px no-repeat,
+    var(--tone);
+  opacity: 0.95;
+}
+.authtour__art { margin-top: auto; display: grid; place-items: center; }
+
+/* The words arrive in order each time a slide comes in. */
+.authtour__slide[aria-hidden='false'] .authtour__copy > *,
+.authtour__slide[aria-hidden='false'] .authtour__points li { animation: authtour-in 520ms var(--ease) both; }
+.authtour__slide[aria-hidden='false'] .authtour__title { animation-delay: 60ms; }
+.authtour__slide[aria-hidden='false'] .authtour__points li:nth-child(1) { animation-delay: 140ms; }
+.authtour__slide[aria-hidden='false'] .authtour__points li:nth-child(2) { animation-delay: 200ms; }
+.authtour__slide[aria-hidden='false'] .authtour__points li:nth-child(3) { animation-delay: 260ms; }
+.authtour__slide[aria-hidden='false'] .authtour__points li:nth-child(4) { animation-delay: 320ms; }
+@keyframes authtour-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* Arrows for a mouse; a finger swipes. */
+.authtour__nav { display: none; position: absolute; right: 18px; bottom: 16px; gap: 6px; }
+.authtour__arrow {
+  width: 34px; height: 34px; border: 0; border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text);
+  font-size: calc(20px * var(--text-scale)); line-height: 1; cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease);
+}
+.authtour__arrow:hover { background: var(--tone-soft); color: var(--tone-text); }
+@media (hover: hover) and (pointer: fine) { .authtour__nav { display: flex; } }
+
+/* The gain in each point reads first, in full white. */
+.authtour__points strong { color: var(--text); font-weight: var(--w-bold); }
+
+/* ── The drawings ──────────────────────────────────────────────────────── */
+.tourart { width: 100%; max-width: 330px; height: auto; max-height: 200px; overflow: visible; }
+.tourart__soft { fill: var(--tone-soft); }
+.tourart__line { fill: none; stroke: var(--tone); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.tourart__solid { fill: var(--tone); }
+.tourart__ink { fill: none; stroke: var(--tone-ink); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.tourart__glyph { fill: var(--tone-ink); }
+.tourart__device { fill: var(--surface); stroke: color-mix(in srgb, var(--tone) 55%, transparent); stroke-width: 2; }
+.tourart__legs { fill: var(--surface-hover); }
+.tourart__shirt--blue { fill: var(--blue); }
+.tourart__shirt--pink { fill: var(--pink); }
+.tourart__shirt--gold { fill: var(--gold); }
+.tourart__box { fill: var(--gold); }
+.tourart__tape { fill: none; stroke: var(--gold-ink); stroke-width: 2; opacity: 0.35; }
+.tourart__land { fill: var(--tone); opacity: 0.55; }
+.tourart__stripe { fill: var(--text); opacity: 0.9; }
+.tourart__ring { fill: var(--tone-soft); }
+.tourart__heart { fill: var(--pink); }
+.tourart__route { fill: none; stroke: var(--tone); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 2 8; }
+.tourart__tick { fill: none; stroke: var(--tone); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 20; }
+
+/* The moving parts. Each plays when its slide comes in, so it starts from the top on every visit. */
+.tourart__wave, .tourart__step, .tourart__pop, .tourart__twinkle, .tourart__meridian, .tourart__bar, .tourart__trackfill, .tourart__ring {
+  transform-box: fill-box;
+}
+.tourart__wave { transform-origin: 50% 0; }
+.tourart__step, .tourart__pop, .tourart__twinkle, .tourart__meridian, .tourart__ring { transform-origin: center; }
+.tourart__bar { transform-origin: 50% 100%; }
+.tourart__trackfill { transform-origin: 50% 0; }
+.tourart__twinkle { fill: var(--tone-text); }
+.tourart__fly { offset-rotate: 0deg; }
+
+.authtour__slide[aria-hidden='false'] .tourart { animation: tourart-float 5s ease-in-out infinite; }
+.authtour__slide[aria-hidden='false'] .tourart__route { animation: tourart-dash 1.4s linear infinite; }
+.authtour__slide[aria-hidden='false'] .tourart__spin { animation: tourart-spin 9s linear infinite; }
+.authtour__slide[aria-hidden='false'] .tourart__meridian { animation: tourart-turn 4.5s ease-in-out infinite; }
+.authtour__slide[aria-hidden='false'] .tourart__fly { animation: tourart-fly 3.2s var(--ease) infinite; }
+.authtour__slide[aria-hidden='false'] .tourart__bob { animation: tourart-bob 2.4s ease-in-out infinite; }
+.authtour__slide[aria-hidden='false'] .tourart__wave { animation: tourart-wave 1.1s ease-in-out infinite alternate; }
+.authtour__slide[aria-hidden='false'] .tourart__twinkle { animation: tourart-twinkle 2.2s ease-in-out infinite both; }
+.authtour__slide[aria-hidden='false'] .tourart__step { animation: tourart-step 420ms var(--ease) both; }
+.authtour__slide[aria-hidden='false'] .tourart__trackfill { animation: tourart-grow 420ms var(--ease) both; }
+.authtour__slide[aria-hidden='false'] .tourart__ring { animation: tourart-ring 2s ease-out 600ms infinite both; }
+.authtour__slide[aria-hidden='false'] .tourart__pop { animation: tourart-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.authtour__slide[aria-hidden='false'] .tourart__drop { animation: tourart-drop 800ms cubic-bezier(0.34, 1.4, 0.64, 1) 150ms both; }
+.authtour__slide[aria-hidden='false'] .tourart__tick { animation: tourart-draw 420ms var(--ease) both; }
+.authtour__slide[aria-hidden='false'] .tourart__ping { animation: tourart-bob 1.8s ease-in-out 1.6s infinite; }
+.authtour__slide[aria-hidden='false'] .tourart__walk { animation: tourart-walk 1.4s var(--ease) both; }
+.authtour__slide[aria-hidden='false'] .tourart__bar { animation: tourart-grow 600ms var(--ease) both; }
+.authtour__slide[aria-hidden='false'] .tourart__heart { animation: tourart-heart 2.6s ease-out 1.2s infinite both; }
+
+@keyframes tourart-float { 50% { transform: translateY(-4px); } }
+@keyframes tourart-dash { to { stroke-dashoffset: -20; } }
+@keyframes tourart-spin { to { transform: translateX(-100px); } }
+@keyframes tourart-turn { 50% { transform: scaleX(0.25); } }
+@keyframes tourart-fly {
+  0% { offset-distance: 0%; opacity: 0; transform: scale(0.6); }
+  15% { opacity: 1; transform: scale(1); }
+  85% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; transform: scale(0.8); }
+}
+@keyframes tourart-bob { 50% { transform: translateY(-5px); } }
+@keyframes tourart-wave { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+@keyframes tourart-twinkle { 0%, 100% { opacity: 0.2; transform: scale(0.6); } 50% { opacity: 1; transform: scale(1.15); } }
+@keyframes tourart-step { from { opacity: 0.25; transform: scale(0.4); } }
+@keyframes tourart-grow { from { transform: scaleY(0); } }
+@keyframes tourart-ring { from { transform: scale(0.9); opacity: 0.9; } to { transform: scale(1.7); opacity: 0; } }
+@keyframes tourart-pop { from { opacity: 0; transform: scale(0.2); } }
+@keyframes tourart-drop { from { opacity: 0; transform: translateY(-70px); } }
+@keyframes tourart-draw { from { stroke-dashoffset: 20; } }
+@keyframes tourart-walk { from { opacity: 0; transform: translateX(40px); } }
+@keyframes tourart-heart { from { opacity: 0; transform: translateY(8px); } 25% { opacity: 1; } to { opacity: 0; transform: translateY(-34px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .authtour, .authtour__glow, .authtour__count, .authtour__dot, .authtour__track { transition: none; }
+  .authtour__slide .authtour__copy > *, .authtour__slide .authtour__points li, .authtour__fill,
+  .authtour__slide .tourart, .authtour__slide .tourart * { animation: none !important; }
+  .tourart__fly { display: none; }
+}

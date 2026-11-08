@@ -24,14 +24,29 @@ function iosTick(): void {
   iosSwitch.click();
 }
 
-export function haptic(): void {
+/**
+ * What the tap is saying. `tap` is the light catch of a gesture; `success`
+ * is the double beat of something done (an order placed, an item live);
+ * `error` a longer buzz for something that did not go through.
+ */
+export type HapticKind = 'tap' | 'success' | 'error';
+
+const ANDROID: Record<HapticKind, number | number[]> = {
+  tap: 12,
+  success: [14, 70, 22],
+  error: [30, 60, 30, 60, 30],
+};
+
+export function haptic(kind: HapticKind = 'tap'): void {
   try {
     if (typeof navigator.vibrate === 'function' && /Android/.test(navigator.userAgent)) {
-      navigator.vibrate(12);
+      navigator.vibrate(ANDROID[kind]);
       return;
     }
     if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1)) {
       iosTick();
+      // iOS has one tick and no patterns: a second, a beat later, reads as a double.
+      if (kind !== 'tap') window.setTimeout(iosTick, kind === 'success' ? 110 : 90);
     }
   } catch {
     // A missing tick is not worth an error.

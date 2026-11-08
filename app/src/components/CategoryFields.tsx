@@ -71,7 +71,7 @@ function FieldInput({ field, attributes, missing, onSet }: {
     return (
       <label className={`attr${missing ? ' is-missing' : ''}`}>
         {label}
-        <input value={current} maxLength={80} placeholder={field.placeholder}
+        <input value={current} maxLength={80} placeholder={field.placeholder} aria-invalid={missing || undefined}
           onChange={(event) => onSet(event.target.value)} />
         {field.hint && <span className="field__hint">{field.hint}</span>}
       </label>
@@ -107,7 +107,7 @@ function FieldInput({ field, attributes, missing, onSet }: {
   }
 
   return (
-    <div className={`attr${missing ? ' is-missing' : ''}`} role="group" aria-label={field.label}>
+    <div className={`attr${missing ? ' is-missing' : ''}`} role="group" aria-label={field.label} aria-invalid={missing || undefined}>
       {label}
       {waitingOnType ? (
         <span className="field__hint">Pick what kind it is first.</span>

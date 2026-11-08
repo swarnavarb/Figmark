@@ -37,7 +37,10 @@ import { formatDate, formatDateOrdinal, formatMoney, timeAgo } from '../format';
 import { AffiliateOwed, ReferredBy } from '../components/Affiliate';
 import { MomentBanner, shopBadge, type ShareSpec } from '../components/ShareKit';
 import { OrderPhotos } from '../components/OrderPhotos';
-import { PageLoading } from '../components/Feedback';
+import { PageLoading, useToast } from '../components/Feedback';
+import { SuccessMoment, firstTime } from '../components/SuccessMoment';
+import { SlideToConfirm } from '../components/SlideToConfirm';
+import { haptic } from '../haptics';
 import '../styles/OrderPage.css';
 import { Select } from '../components/Select';
 import { PriceBreakdown } from '../components/Offers';
@@ -588,6 +591,9 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   const [closing, setClosing] = useState(false);
   // The fee for disputing a reversal, shown before it is paid - never taken on one tap.
   const [disputeFee, setDisputeFee] = useState<{ feeMinor: number; currency: string } | null>(null);
+  // The action that just went through, for the moment that marks it (see OrderMomentSheet).
+  const [moment, setMoment] = useState<string | null>(null);
+  const toast = useToast();
 
   const { order, actions } = state;
 
@@ -613,7 +619,14 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
       setCancelling(false);
       setReversing(false);
       setRejecting(false);
+      // The big moments get a sheet of their own; the rest a quiet line.
+      if (name === 'claim' || name === 'book' || name === 'confirm') setMoment(name);
+      else if (DONE_WORDS[name]) {
+        haptic('success');
+        toast(DONE_WORDS[name]!);
+      }
     } catch (err) {
+      haptic('error');
       setError(err instanceof ApiRequestError ? err.message : 'That did not work.');
       // Repriced or sold out while the checkout was open: show it as it is
       // now, so the next press is on a total the buyer has actually seen.
@@ -649,6 +662,8 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
 
   return (
     <div className="stack" style={{ marginBottom: 20 }}>
+      {moment && <OrderMomentSheet name={moment} order={order} sellerName={state.side === 'buyer' ? state.counterparty.name : null}
+        onClose={() => setMoment(null)} />}
       {/* Only the held payment is simulated. A direct sale is real money that
           genuinely left the buyer's account — Figmark simply had no part in it,
           which the checkout says in its own words. Claiming otherwise here
@@ -931,6 +946,85 @@ function OrderActions({ state, onDone }: { state: OrderState; onDone: () => Prom
   );
 }
 
+/** A seller's first ever paid sale, marked once on this device. */
+function FirstSale({ itemName }: { itemName: string }) {
+  const [show, setShow] = useState(() => firstTime('sale'));
+  if (!show) return null;
+  return (
+    <SuccessMoment title="Your first sale!" confetti detail={itemName}
+      body="Somebody paid for something you listed. Ship it well - your first review starts your reputation."
+      primary={{ label: 'Pack it up', onClick: () => {} }} onClose={() => setShow(false)} />
+  );
+}
+
+/** What a toast says once an order action went through, for the ones without a sheet of their own. */
+const DONE_WORDS: Record<string, string> = {
+  accept: 'Order accepted. The buyer has been told.',
+  reject: 'Order turned down. The buyer has been told.',
+  close: 'Order closed.',
+  cancel: 'Order cancelled.',
+  settle: 'Thanks - your answer is with the buyer.',
+  dispute: 'Dispute opened. A community manager will look at it.',
+  'dispute-reversal': 'Dispute raised.',
+  'request-details': 'Asked the buyer for their refund details.',
+  'submit-reversal': 'Refund sent. The buyer has been told.',
+  'confirm-details': 'Refund details confirmed.',
+  ack: 'Thanks for confirming the refund.',
+  'ack-no': 'Noted - the seller has been told it has not arrived.',
+  'credit-yes': 'Thanks for confirming.',
+  'credit-no': 'Noted - the seller has been told.',
+};
+
+/**
+ * The sheet after the order's big steps: paid, booked, received.
+ *
+ * Paid through Buyer Protection is a tick - the money is with Figmark. Paid
+ * directly is an hourglass: the buyer says it was sent, and nobody has
+ * confirmed it yet, so a tick would be the screen claiming more than it knows.
+ */
+function OrderMomentSheet({ name, order, sellerName, onClose }: {
+  name: string;
+  order: Order;
+  sellerName: string | null;
+  onClose: () => void;
+}) {
+  const [first] = useState(() => (name === 'claim' && order.paymentStatus === 'paid' ? firstTime('purchase') : false));
+  const seller = sellerName ?? 'the seller';
+  const toTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (name === 'confirm') {
+    return (
+      <SuccessMoment title="Enjoy it!" detail={order.itemName}
+        body={order.hold.state === 'released'
+          ? `Thanks for confirming. The payment is on its way to ${seller}.`
+          : 'Thanks for confirming it arrived.'}
+        primary={{ label: '⭐ Rate the seller', onClick: () => document.getElementById('order-review')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }}
+        onClose={onClose} />
+    );
+  }
+  if (name === 'book') {
+    return (
+      <SuccessMoment title="Your spot is booked" detail={order.itemName}
+        body="We'll tell you as the pre-order fills and when it is time to pay the rest."
+        primary={{ label: 'See my order', onClick: toTop }} onClose={onClose} />
+    );
+  }
+  if (order.paymentStatus === 'paid') {
+    return (
+      <SuccessMoment title="Order placed" confetti={first}
+        detail={formatMoney(orderMoney(order).paidMinor, order.currency)}
+        body={order.protection != null
+          ? `${order.itemName} is yours. Figmark holds the payment safely until it reaches you.`
+          : `${order.itemName} is yours. ${seller} has been told.`}
+        primary={{ label: 'Track my order', onClick: toTop }} onClose={onClose} />
+    );
+  }
+  return (
+    <SuccessMoment tone="pending" title="Sent to the seller" detail={order.itemName}
+      body={`We've told ${seller} you paid. Once they confirm the money arrived, your order moves ahead.`}
+      primary={{ label: 'See my order', onClick: toTop }} onClose={onClose} />
+  );
+}
+
 /** Delivered to the buyer: the nudge to put it on a collection shelf. */
 /**
  * The moment worth showing off on this order, with its picture: a spot booked
@@ -979,8 +1073,13 @@ function OrderMoment({ data, state }: { data: OrderTracking; state: OrderState }
       target: listing.id,
       storeId: order.sellerId,
     };
-    return <MomentBanner spec={spec} title={filled ? 'It filled! Tell everyone' : 'Sold! Tell your followers'}
-      note="A sale is the best advert you have. Post it to your Status - it brings the next buyer, and counts for your Grow quests." />;
+    return (
+      <>
+        <FirstSale itemName={order.itemName} />
+        <MomentBanner spec={spec} title={filled ? 'It filled! Tell everyone' : 'Sold! Tell your followers'}
+          note="A sale is the best advert you have. Post it to your Status - it brings the next buyer, and counts for your Grow quests." />
+      </>
+    );
   }
 
   // A friend saves through the buyer's own link, when the shop gives money off for one.
@@ -1411,11 +1510,14 @@ function DirectPay({ orderId, quote, payment, busy, onPaid, onBack }: {
 
           {error && <ErrorNotice message={error} />}
 
-          <button className="btn btn--lg" style={{ justifySelf: 'start' }}
-            disabled={busy || shrinking || (!reference.trim() && !screenshot)}
-            onClick={() => void onPaid({ reference: reference.trim(), screenshot })}>
-            {busy ? 'Sending…' : 'Tell the seller I have paid'}
-          </button>
+          {/* A slide, not a tap: this tells somebody money is on its way to them,
+              and should never happen from a stray touch. */}
+          <SlideToConfirm on={false} label="Slide to tell the seller I paid" onLabel="Telling the seller"
+            disabled={busy || shrinking || (!reference.trim() && !screenshot)} working={busy}
+            onChange={(next) => { if (next) void onPaid({ reference: reference.trim(), screenshot }); }} />
+          {!reference.trim() && !screenshot && (
+            <span className="field__hint" style={{ marginTop: -6 }}>Add the reference or a screenshot first.</span>
+          )}
         </>
       )}
     </div>
@@ -1867,6 +1969,7 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
   const [body, setBody] = useState(mine?.body ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [thanked, setThanked] = useState(false);
 
   const other = state.side === 'buyer' ? 'the seller' : 'the buyer';
   const showForm = !mine || editing;
@@ -1876,10 +1979,12 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
     setBusy(true);
     setError(null);
     try {
+      const fresh = !mine;
       if (mine) await api.editReview(state.order.id, rating, body.trim());
       else await api.reviewOrder(state.order.id, rating, body.trim());
       setEditing(false);
       await onDone();
+      if (fresh) setThanked(true);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that review.');
     } finally {
@@ -1888,7 +1993,12 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
   }
 
   return (
-    <div className="card card--pad stack">
+    <div className="card card--pad stack" id="order-review">
+      {thanked && (
+        <SuccessMoment title="Thanks for the review" detail={'★'.repeat(rating) + '☆'.repeat(5 - rating)}
+          body={`It helps the next person decide - and raises your own trust on Figmark.`}
+          onClose={() => setThanked(false)} />
+      )}
       <h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>How did it go?</h2>
       <Link to={`/listing/${state.order.listingId}`} className="revitem">
         <span className="revitem__name">{state.order.itemName}</span>

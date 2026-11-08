@@ -1,4 +1,5 @@
 import { ProBadge } from './Billing';
+import { useToast } from './Feedback';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { ApiRequestError, api, type ChannelRow, type ChannelThread, type PostCard } from '../api';
@@ -240,7 +241,9 @@ function Room() {
   const [pinAt, setPinAt] = useState(0);
   const [lightbox, setLightbox] = useState<{ photos: string[]; start: number; about?: string; by?: string } | null>(null);
   const [following, setFollowing] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Said through the app's one toast, like every other confirmation.
+  const toast = useToast();
+  const setNotice = useCallback((text: string | null) => { if (text) toast(text, 'info'); }, [toast]);
   const known = useRef<Set<string>>(new Set());
   const firstLoad = useRef(true);
   // What the room was when last read, for a refresh to be told "unchanged" against.
@@ -521,8 +524,6 @@ function Room() {
           <Icon name="down" size={14} /> {fresh} new message{fresh === 1 ? '' : 's'}
         </button>
       )}
-
-      {notice && <p className="chtoast" role="status" onAnimationEnd={() => setNotice(null)}>{notice}</p>}
 
       <RoomComposer data={data} replyTo={replyTo} onClearReply={() => setReplyTo(null)}
         onPosted={async () => {

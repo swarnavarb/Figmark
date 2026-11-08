@@ -3310,7 +3310,7 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
           )}
           <label className="field">
             <span>Amount ({currencySymbol(credit.currency)})</span>
-            <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <input type="number" inputMode="decimal" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} />
             <span className="field__hint">
               {typedMinor > cap
                 ? `At most ${formatMoney(cap, credit.currency)}.`
@@ -3591,7 +3591,7 @@ function NewRefund({ refundable, onClose, onDone, onChanged }: {
           )}
           <label className="field">
             <span>Amount ({currencySymbol(chosen?.currency)})</span>
-            <input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+            <input type="number" inputMode="decimal" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
             {chosen && typedMinor > chosen.refundableMinor && (
               <span className="field__hint">At most {formatMoney(chosen.refundableMinor, chosen.currency)} on this order.</span>
             )}

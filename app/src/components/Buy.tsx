@@ -19,6 +19,7 @@ import { OfferEditor } from './Offers';
 import type { ListingOffer } from '@shared/offers';
 import type { TemplateTerms } from '@shared/templates';
 import { InfoTip } from './InfoTip';
+import { useToast } from './Feedback';
 import '../styles/Buy.css';
 
 /**
@@ -336,7 +337,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
             {value.quantityMode === 'fixed' && (
               <label className="field">
                 <span>How many</span>
-                <input type="number" min="0" step="1" value={value.quantity}
+                <input type="number" inputMode="decimal" min="0" step="1" value={value.quantity}
                   onChange={(e) => set({ quantity: e.target.value })} />
               </label>
             )}
@@ -347,7 +348,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
         {value.advance && (
           <label className="field">
             <span>Advance (% of the price)</span>
-            <input type="number" min="1" max="99" value={value.advancePercent}
+            <input type="number" inputMode="decimal" min="1" max="99" value={value.advancePercent}
               onChange={(e) => set({ advancePercent: e.target.value })} />
           </label>
         )}
@@ -365,7 +366,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
         {value.shipping === 'paid' && (
           <label className="field">
             <span>Shipping per item (₹)</span>
-            <input type="number" min="1" step="1" value={value.shippingFee} onChange={(e) => set({ shippingFee: e.target.value })} />
+            <input type="number" inputMode="decimal" min="1" step="1" value={value.shippingFee} onChange={(e) => set({ shippingFee: e.target.value })} />
             <span className="field__hint">Charged on each item. Offers below can make it free when buyers take more.</span>
           </label>
         )}
@@ -390,7 +391,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
         {value.affiliate && (
           <label className="field">
             <span>Commission per unit sold (₹)</span>
-            <input type="number" min="1" step="1" value={value.affiliateAmount}
+            <input type="number" inputMode="decimal" min="1" step="1" value={value.affiliateAmount}
               onChange={(e) => set({ affiliateAmount: e.target.value })} />
             <span className="field__hint">
               A fixed amount, less than the price. Owed once the item is delivered; you pay it to the
@@ -408,7 +409,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
         {value.affiliate && value.affiliateOff && (
           <label className="field">
             <span>Buyer's discount per unit (₹)</span>
-            <input type="number" min="1" step="1" value={value.affiliateOffAmount}
+            <input type="number" inputMode="decimal" min="1" step="1" value={value.affiliateOffAmount}
               max={maxOffRupees != null && maxOffRupees >= 1 ? maxOffRupees : undefined}
               onChange={(e) => set({ affiliateOffAmount: e.target.value })} />
             <span className="field__hint">
@@ -438,7 +439,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
           {value.limited && (
             <label className="field">
               <span>Ends in (days)</span>
-              <input type="number" min="1" max="365" value={value.days} onChange={(e) => set({ days: e.target.value })} />
+              <input type="number" inputMode="decimal" min="1" max="365" value={value.days} onChange={(e) => set({ days: e.target.value })} />
             </label>
           )}
         </LBox>
@@ -546,16 +547,18 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
   })));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   const expired = isExpired(listing);
   const privateDeal = Boolean(listing.privateFor);
   /** A private deal's new clock; null keeps the one it has, unless that ran out. */
   const [dealHours, setDealHours] = useState<number | null>(privateDeal && expired ? DEAL_DEFAULT_HOURS : null);
 
-  async function run(fn: () => Promise<Listing | null>) {
+  async function run(fn: () => Promise<Listing | null>, done: string) {
     setBusy(true);
     setError(null);
     try {
       onSaved(await fn());
+      toast(done);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {
@@ -576,7 +579,7 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
         affiliateMinor: null, affiliateOffMinor: null,
         expiresAt: dealHours != null ? new Date(Date.now() + dealHours * 3_600_000).toISOString() : listing.expiresAt ?? null,
       } : {}),
-    })).listing);
+    })).listing, expired ? 'Back on sale ✨' : 'Saved.');
   }
 
   return (
@@ -596,7 +599,7 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
           </label>
           <label className="field">
             <span>Price (₹)</span>
-            <input type="number" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
+            <input type="number" inputMode="decimal" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
           </label>
           <PhotoManager photos={photos} onChange={setPhotos} />
         </LBox>
@@ -611,7 +614,7 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
           <button type="button" className="btn btn--danger" disabled={busy || expired}
             onClick={async () => {
               if (await confirmSentence('Expire this item? It comes off sale immediately - you can put it back on with a new expiry any time.')) {
-                void run(async () => { await api.expireListing(listing.id); return null; });
+                void run(async () => { await api.expireListing(listing.id); return null; }, 'Expired. It is off sale now.');
               }
             }}>
             Expire
@@ -619,7 +622,7 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
           <button type="button" className="btn btn--quiet" disabled={busy}
             onClick={async () => {
               if (await confirmSentence('Remove this item? It leaves your shop and your lists for good. Orders that already have it keep it.')) {
-                void run(async () => { await api.removeListing(listing.id); return null; });
+                void run(async () => { await api.removeListing(listing.id); return null; }, 'Removed.');
               }
             }}>
             🗑️ Remove

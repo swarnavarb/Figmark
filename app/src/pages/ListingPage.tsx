@@ -2,10 +2,13 @@ import { CreditChip, ProBadge } from '../components/Billing';
 import { OffersBlock } from '../components/OffersBlock';
 import { viewSourceFor } from '../cameFrom';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
 import { Avatar, Icon, PersonLink, Thumb, useConfirm, PageError } from '../components/ui';
 import { PageLoading } from '../components/Feedback';
+import { SuccessMoment, firstTime } from '../components/SuccessMoment';
+import { ServiceNudge } from '../components/ServiceCards';
+import { haptic } from '../haptics';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
@@ -67,6 +70,15 @@ export function ListingPage() {
   /** The offer whose details and terms are open, from the row or the wholesale callout. */
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  // Just published from the Sell screen: the moment it goes live gets marked.
+  const location = useLocation();
+  const [live, setLive] = useState<{ first: boolean } | null>(() =>
+    (location.state as { published?: boolean } | null)?.published ? { first: firstTime('listing') } : null);
+  useEffect(() => {
+    // Said once: a refresh or a return to this item does not say it again.
+    if (live) navigate(location.pathname + location.search, { replace: true, state: null });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only on arrival
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +120,7 @@ export function ListingPage() {
       await fn();
       if (label) setAction({ text: label, ok: true });
     } catch (err) {
+      haptic('error');
       setAction({ text: err instanceof ApiRequestError ? err.message : 'Something went wrong.', ok: false });
     } finally {
       setBusy(false);
@@ -122,6 +135,7 @@ export function ListingPage() {
   // looking like a completed one.
   const buy = () =>
     run('', async () => {
+      haptic();
       const placed = await api.order(listing.id, quantity, via, ref, fromPost);
       navigate(`/order/${placed.order.id}`);
     });
@@ -327,7 +341,22 @@ export function ListingPage() {
                 onShare={() => shareSheet.open(shareSpec)} />
             )}
             {shareSheet.sheet}
+            {live && (
+              <SuccessMoment title={live.first ? 'Your first item is live!' : "It's live!"} confetti={live.first}
+                detail={listing.title}
+                body={listing.privateFor ? 'Only your buyer can see it. They have been sent the link.'
+                  : 'Buyers can find it now. Sharing it gets the first eyes on it fastest.'}
+                primary={listing.privateFor ? undefined : { label: 'Share it', onClick: () => shareSheet.open(shareSpec) }}
+                secondary={listing.privateFor ? undefined : { label: 'Not now', onClick: () => {} }}
+                onClose={() => setLive(null)} />
+            )}
             <DetailBlocks listing={listing} />
+            {/* A loose figure is where a restorer or a painter earns their keep: the studios that do it. */}
+            {listing.condition === 'LOOSE' && !listing.privateFor && (
+              <div style={{ marginTop: 14 }}>
+                <ServiceNudge kind="artist" lead="Loose? Have it restored or repainted" />
+              </div>
+            )}
             <div className="lp__about">
               <span className="dtile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
               <p>{listing.description}</p>
@@ -746,7 +775,7 @@ function PreOrderControls({ listingId, view, onChange }: {
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
             <button className="btn" onClick={() => void proceed()} disabled={busy}>Go ahead with {view.committed}</button>
             <span className="row" style={{ gap: 6 }}>
-              <input type="number" min="1" max="365" value={extendDays} aria-label="Extend by days"
+              <input type="number" inputMode="decimal" min="1" max="365" value={extendDays} aria-label="Extend by days"
                 onChange={(e) => setExtendDays(e.target.value)} style={{ width: 64 }} />
               <button className="btn btn--ghost" onClick={() => void extend()} disabled={busy}>Extend (days)</button>
             </span>
@@ -778,7 +807,7 @@ function PreOrderControls({ listingId, view, onChange }: {
                     Admit all {view.waitlistCount}
                   </button>
                   <span className="row" style={{ gap: 6 }}>
-                    <input type="number" min="1" max={view.waitlistCount} value={admitUnits} placeholder="n"
+                    <input type="number" inputMode="decimal" min="1" max={view.waitlistCount} value={admitUnits} placeholder="n"
                       aria-label="How many to admit" onChange={(e) => setAdmitUnits(e.target.value)} style={{ width: 64 }} />
                     <button className="btn btn--ghost" disabled={busy || !(Number(admitUnits) >= 1)}
                       onClick={() => void run(() => api.decidePreOrder(listingId, { action: 'admit', units: Number(admitUnits) }))}>
@@ -804,11 +833,11 @@ function PreOrderControls({ listingId, view, onChange }: {
           <div className="field-row">
             <label className="field">
               <span>Bookings needed</span>
-              <input type="number" min="2" value={threshold} disabled={ahead} onChange={(e) => setThreshold(e.target.value)} />
+              <input type="number" inputMode="decimal" min="2" value={threshold} disabled={ahead} onChange={(e) => setThreshold(e.target.value)} />
             </label>
             <label className="field">
               <span>Bookings close in (days)</span>
-              <input type="number" min="1" max="365" value={days} disabled={ahead} onChange={(e) => setDays(e.target.value)} />
+              <input type="number" inputMode="decimal" min="1" max="365" value={days} disabled={ahead} onChange={(e) => setDays(e.target.value)} />
             </label>
           </div>
           <div className="field-row">

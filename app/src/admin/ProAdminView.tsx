@@ -63,9 +63,9 @@ export function ProAdminView() {
       <div className="card card--pad stack">
         <h2>Make codes</h2>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
-          <label className="field" style={{ maxWidth: 120 }}><span>Days of Pro</span><input type="number" value={form.days} onChange={set('days')} /></label>
-          <label className="field" style={{ maxWidth: 120 }}><span>How many codes</span><input type="number" value={form.count} onChange={set('count')} /></label>
-          <label className="field" style={{ maxWidth: 140 }}><span>Uses per code</span><input type="number" value={form.maxUses} onChange={set('maxUses')} /></label>
+          <label className="field" style={{ maxWidth: 120 }}><span>Days of Pro</span><input type="number" inputMode="decimal" value={form.days} onChange={set('days')} /></label>
+          <label className="field" style={{ maxWidth: 120 }}><span>How many codes</span><input type="number" inputMode="decimal" value={form.count} onChange={set('count')} /></label>
+          <label className="field" style={{ maxWidth: 140 }}><span>Uses per code</span><input type="number" inputMode="decimal" value={form.maxUses} onChange={set('maxUses')} /></label>
           <label className="field" style={{ maxWidth: 180 }}><span>Expires (optional)</span><input type="date" value={form.expiresAt} onChange={set('expiresAt')} /></label>
         </div>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
@@ -92,7 +92,7 @@ export function ProAdminView() {
           <label className="field" style={{ minWidth: 260 }}><span>Account id</span>
             <input value={grant.userId} placeholder="From People and stores" onChange={(e) => setGrant({ ...grant, userId: e.target.value })} /></label>
           <label className="field" style={{ maxWidth: 140 }}><span>Days (negative takes away)</span>
-            <input type="number" value={grant.days} onChange={(e) => setGrant({ ...grant, days: e.target.value })} /></label>
+            <input type="number" inputMode="decimal" value={grant.days} onChange={(e) => setGrant({ ...grant, days: e.target.value })} /></label>
           <button type="button" className="btn btn--ghost" disabled={busy || !grant.userId.trim()} onClick={() => void give()}>Give</button>
         </div>
         {granted && <p className="notice notice--ok">{granted}</p>}

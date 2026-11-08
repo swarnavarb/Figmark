@@ -10,6 +10,7 @@ import { ApiRequestError, api, type OrderState } from '../api';
 import { formatDate, formatMoney } from '../format';
 import { ErrorNotice, Modal } from './ui';
 import { useUndo } from './Undo';
+import { haptic } from '../haptics';
 
 /** A button on a rung: the one to press next, one already pressed, or one further on, not open yet. */
 export type StepButtonState = 'done' | 'next' | 'later';
@@ -150,6 +151,7 @@ export function useStepActs(
     setError(null);
     try {
       const result = await api.setCheckpoint(order.id, checkpoint, on, shipment);
+      haptic(on ? 'success' : 'tap');
       const undo = result.undo;
       if (undo) {
         offerUndo({
