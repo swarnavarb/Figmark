@@ -1,4 +1,5 @@
 import { FeeHint } from '../components/Billing';
+import { ServiceNudge } from '../components/ServiceCards';
 import { haptic } from '../haptics';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -816,6 +817,8 @@ export function SellPage() {
                 </span>
               </label>
             )}
+            {/* The seller is the one who brings an import in, so this is where a forwarder is some use. */}
+            {where === 'import' && <ServiceNudge kind="forwarder" lead="Need it shipped in? Compare forwarders" />}
           </LBox>
 
           {/* Asked of every item, never folded away: it is what buyers ask first. */}

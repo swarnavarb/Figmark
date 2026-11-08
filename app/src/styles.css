@@ -9477,3 +9477,115 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .actord__card.is-act small { color: var(--accent-text); font-weight: var(--w-bold); }
 .actord__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: actord-blink 1.6s ease-in-out infinite; }
 @keyframes actord-blink { 50% { opacity: 0.35; } }
+
+/* ── Service cards (components/ServiceCards.tsx) ──────────────────────────
+   A forwarder or an artist in the Shop grid: an item card's size, so the grid
+   keeps its rhythm, but plainly a service - their hue on the frame and a tag. */
+.svcard {
+  display: flex; flex-direction: column; position: relative; overflow: hidden; min-width: 0;
+  border-radius: var(--r-lg); border: 1.5px solid var(--sk-line, var(--border));
+  background: linear-gradient(180deg, var(--sk-soft, transparent), transparent 55%), var(--surface);
+  color: var(--text); text-decoration: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+  animation: qloot-in 460ms var(--ease) backwards;
+}
+.svcard:active { transform: scale(0.965); transition-duration: 90ms; }
+.svcard:hover { border-color: var(--sk, var(--border-strong)); }
+.svcard__tag {
+  position: absolute; top: 8px; left: 8px; z-index: 1;
+  padding: 3px 8px; border-radius: var(--r-pill);
+  background: rgba(6, 10, 18, 0.78); border: 1px solid var(--sk-line, var(--border));
+  color: var(--sk-text, var(--text)); font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.02em;
+  backdrop-filter: blur(4px);
+}
+.svcard__art { position: relative; aspect-ratio: 4 / 3; overflow: hidden; display: block; background: var(--surface-2); }
+.svcard__art--route {
+  background:
+    radial-gradient(70% 90% at 50% 100%, var(--sk-soft, rgba(124, 58, 237, 0.18)), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 18px),
+    var(--surface-2);
+}
+.svcard__path { position: absolute; left: 22%; top: 34%; width: 56%; height: 36%; overflow: visible; }
+.svcard__path path {
+  fill: none; stroke: var(--sk, var(--violet-lit)); stroke-width: 1.6; stroke-dasharray: 3 4; opacity: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+.svcard__flag {
+  position: absolute; top: 62%; transform: translate(-50%, -50%);
+  font-size: calc(34px * var(--text-scale)); line-height: 1; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.45));
+}
+.svcard__flag:first-of-type { left: 22%; }
+.svcard__plane + .svcard__flag { left: 78%; }
+.svcard__plane {
+  position: absolute; left: 50%; top: 34%; margin: -14px 0 0 -12px;
+  font-size: calc(22px * var(--text-scale)); line-height: 1;
+  animation: svcard-fly 3.2s var(--ease) infinite;
+}
+.svcard__days {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  padding: 2px 8px; border-radius: var(--r-pill); background: rgba(6, 10, 18, 0.7);
+  font-size: var(--t-2xs); font-weight: var(--w-bold); color: var(--text-dim); white-space: nowrap;
+}
+@keyframes svcard-fly { 0%, 100% { transform: translate(-6px, 3px) rotate(-6deg); } 50% { transform: translate(6px, -3px) rotate(6deg); } }
+.svcard__art--work.has-side { display: grid; grid-template-columns: 2fr 1fr; gap: 2px; }
+.svcard__lead, .svcard__side img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.svcard__side { display: grid; grid-template-rows: 1fr 1fr; gap: 2px; min-height: 0; }
+.svcard__side img { min-height: 0; }
+.svcard__art--blank { display: grid; place-items: center; font-size: calc(40px * var(--text-scale)); background: radial-gradient(circle at 50% 60%, var(--sk-soft), var(--surface-2) 70%); }
+.svcard__body { display: grid; gap: 4px; padding: 9px 10px 10px; min-width: 0; }
+.svcard__who { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.svcard__who b { font-size: var(--t-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svcard__mark {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center; font-size: calc(9px * var(--text-scale)); font-weight: 800;
+  background: var(--sk-soft, var(--surface-2)); color: var(--sk-text, var(--text)); border: 1px solid var(--sk-line, var(--border));
+}
+.svcard__mark img { width: 100%; height: 100%; object-fit: cover; }
+.svcard__standing { font-size: var(--t-xs); color: var(--gold); font-weight: var(--w-semi); }
+.svcard__lines { display: grid; gap: 2px; min-width: 0; }
+.svcard__line { font-size: var(--t-xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svcard__line b { color: var(--text); }
+.svcard__more {
+  margin-top: 4px; justify-self: start;
+  padding: 5px 10px; border-radius: var(--r-pill);
+  background: var(--sk-soft, var(--surface-2)); border: 1px solid var(--sk-line, var(--border));
+  color: var(--sk-text, var(--text)); font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+.qgrid > .svcard { grid-column: auto; }
+
+/* Service cards in a row, for a search that is really asking for a person. */
+.svstrip { display: grid; gap: 8px; margin: 2px 0 14px; }
+.svstrip__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.svstrip__head h2 { margin: 0; font-size: var(--t-md); }
+.svstrip__row {
+  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory;
+  margin-inline: calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 6px;
+  scrollbar-width: none; overscroll-behavior-x: contain;
+}
+.svstrip__row::-webkit-scrollbar { display: none; }
+.svstrip__row > .svcard { flex: 0 0 calc((100vw - 2 * var(--page-pad) - 10px) / 2.2); max-width: 220px; scroll-snap-align: start; }
+
+/* One line pointing at who can help with this item (ServiceNudge). */
+.svnudge {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: var(--r-lg); border: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.12), transparent 70%), var(--surface);
+  color: var(--text); text-decoration: none;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.svnudge--forwarder { background: linear-gradient(90deg, rgba(6, 214, 231, 0.12), transparent 70%), var(--surface); }
+.svnudge:hover { border-color: var(--border-strong); }
+.svnudge:active { transform: scale(0.985); }
+.svnudge__faces { display: flex; flex: none; }
+.svnudge__faces .svcard__mark { width: 28px; height: 28px; font-size: calc(10px * var(--text-scale)); border: 2px solid var(--surface); }
+.svnudge__faces .svcard__mark + .svcard__mark { margin-left: -9px; }
+.svnudge__text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.svnudge__text b { font-size: var(--t-sm); }
+.svnudge__text span { font-size: var(--t-xs); color: var(--text-dim); }
+.svnudge__go { font-size: calc(22px * var(--text-scale)); color: var(--text-faint); }
+
+@media (prefers-reduced-motion: reduce) {
+  .svcard, .svcard__plane { animation: none; }
+}

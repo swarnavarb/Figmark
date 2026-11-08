@@ -7,6 +7,7 @@ import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '.
 import { Avatar, Icon, PersonLink, Thumb, useConfirm, PageError } from '../components/ui';
 import { PageLoading } from '../components/Feedback';
 import { SuccessMoment, firstTime } from '../components/SuccessMoment';
+import { ServiceNudge } from '../components/ServiceCards';
 import { haptic } from '../haptics';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
@@ -350,6 +351,12 @@ export function ListingPage() {
                 onClose={() => setLive(null)} />
             )}
             <DetailBlocks listing={listing} />
+            {/* A loose figure is where a restorer or a painter earns their keep: the studios that do it. */}
+            {listing.condition === 'LOOSE' && !listing.privateFor && (
+              <div style={{ marginTop: 14 }}>
+                <ServiceNudge kind="artist" lead="Loose? Have it restored or repainted" />
+              </div>
+            )}
             <div className="lp__about">
               <span className="dtile__label">About this item · listed {timeAgo(listing.createdAt)}</span>
               <p>{listing.description}</p>
