@@ -178,8 +178,20 @@ export async function sendEmail(repository: Repository, message: EmailMessage, n
     await release(repository, provider, now, outcome.quota ? outcome.detail : null);
     failures.push(`${provider.name}: ${outcome.detail}`);
   }
-  console.warn(`Email to ${message.to} not sent: ${failures.join('; ') || 'no provider configured'}`);
+  // The log is read by whoever runs the site and kept for weeks: the address is
+  // masked, here and wherever a provider's reply quoted it back.
+  const said = failures.map((failure) => failure.replace(EMAIL_PATTERN, maskEmail)).join('; ');
+  console.warn(`Email to ${maskEmail(message.to)} not sent: ${said || 'no provider configured'}`);
   throw new EmailUnavailableError(failures.join('; '));
+}
+
+const EMAIL_PATTERN = /[^\s"'<>@,;:]+@[^\s"'<>@,;:]+\.[a-z]{2,}/gi;
+
+/** `priya@example.com` as `p***@example.com`: enough to tell domains apart, not to know who. */
+export function maskEmail(address: string): string {
+  const at = address.lastIndexOf('@');
+  if (at < 1) return '***';
+  return `${address[0]}***${address.slice(at)}`;
 }
 
 /** Today's counts, for the operators' status line. */

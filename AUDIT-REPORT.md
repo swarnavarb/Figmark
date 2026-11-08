@@ -46,6 +46,35 @@ The code-level findings below have been fixed on `claude/pre-launch-audit` and d
 | Blockers 4, 5 (settings, live Azure) | ⏳ Needs Azure access | Settings listed in `docs/OPERATIONS.md` §1; nothing here could reach Azure |
 | Search service, image moderation, CDN | ⏳ Open | Scale-up items, not launch blockers |
 
+## Security checklist re-check (8 Nov 2026)
+
+Re-run against the current code: an authorization fuzz of all 397 routes (41,000 requests as a fresh sign-up and as an unrelated seeded shop, with real IDs of other people's orders, lots, listings, disputes, posts and users), a targeted retest with valid bodies, `npm audit`, a bundle scan and a real-browser cross-origin forgery.
+
+| Check | Result |
+|---|---|
+| SQL injection | ✅ Every Cosmos value is a parameter. **Fixed:** `?sort=constructor` (and `in` checks on 5 other maps) matched inherited keys; `Object.hasOwn` now |
+| Cross-site scripting | ✅ No `innerHTML`/`dangerouslySetInnerHTML`; OG pages escaped; links allow only `/` and `https:`; CSP `script-src 'self'` |
+| CSRF | ✅ **Hardened:** writes marked `Sec-Fetch-Site: cross-site`/`same-site` refused (403). A no-cors `Blob` body carries no Content-Type, so it slipped past the 415 check; reproduced and now refused in Chromium |
+| File uploads | ✅ Bytes sniffed, structure rebuilt, metadata stripped, re-encoded, size-capped on every upload path |
+| Broken object-level authorization | ✅ No write on another person's object succeeded; all 45 staff routes 403 to non-staff. Per-user reads that answer 200 are public reputation (trust, badges) by design |
+| Rate limiting | ✅ Per-action limits on sign-in, sign-up, reset, verification, uploads, messages, paid calls. **Added:** a per-worker backstop on every write (120/min per session, 600/min per address, Azure only) |
+| Session secret | ✅ HMAC-SHA256, timing-safe; the published dev key is used only on a laptop with no database; deployed without a key, sign-in is off |
+| Keys server-side | ✅ No keys in the bundle or any of 41,000 responses; no real secrets tracked in git |
+| Password hashing | ✅ scrypt N=2^14 r=8 p=5, per-hash salt, rehash on sign-in, breach check on Azure |
+| MFA | ✅ TOTP with replay guard and hashed recovery codes; required for staff on Azure; wrong codes count as failed sign-ins |
+| CORS | ✅ None enabled: the API is same-origin only |
+| Token in localStorage | ✅ None: session is an `HttpOnly; Secure; SameSite=Lax` cookie; storage holds UI state and drafts only |
+| Permissions server-side | ✅ Enforced in handlers; see BOLA row |
+| Row-level security | ✅ (no RLS in Cosmos) DB credentials server-only; per-object checks in every handler; private chat photos served only to thread members |
+| Webhook signatures | ✅ WhatsApp: HMAC-SHA256 over the raw body, timing-safe, before parsing |
+| SSRF | ✅ Every outbound `fetch` goes to a fixed host; push endpoints allowlisted to browser push services; OG shell origin allowlisted on Azure |
+| Source maps | ✅ `sourcemap: false`; none in `app/dist` |
+| Default credentials | ✅ The API ships no fixtures; Cosmos never seeds demo accounts; admins only via `ADMIN_EMAILS` on a confirmed address |
+| Sensitive data in logs | ✅ **Fixed:** the one leak, an email address on send failure, is masked (also inside provider replies) |
+| Dependencies | ✅ `npm audit`: 0 vulnerabilities in api and app |
+
+Still to verify on the deployed host: that SWA sets `x-azure-clientip` itself, so a client cannot choose it (S-3).
+
 ## How it was tested
 
 | Area | Method | Result |

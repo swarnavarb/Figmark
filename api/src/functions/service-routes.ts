@@ -218,7 +218,7 @@ async function packsForAnyone(repository: Repo, userId: string): Promise<boolean
 /** GET /api/services/{kind} - who offers it. */
 async function serviceDirectory(request: HttpRequest, _context: InvocationContext) {
   const kind = request.params.kind as ServiceKind | undefined;
-  if (!kind || !(kind in SERVICES)) return error(404, 'not_found', 'No such service.');
+  if (!kind || !Object.hasOwn(SERVICES, kind)) return error(404, 'not_found', 'No such service.');
 
   const meta = SERVICES[kind];
   if (!meta.browsable) {

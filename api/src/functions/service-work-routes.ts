@@ -349,7 +349,7 @@ async function actOnRequest(request: HttpRequest, _context: InvocationContext) {
     weightKg?: number; box?: Partial<Dimensions> | null; photoUrls?: unknown; added?: { label?: string; minor?: number }[];
     address?: unknown; useCredit?: boolean;
   }>(request);
-  if (!input?.action || !(input.action in REQUEST_MOVES || input.action in ARRIVAL_MOVES)) return error(400, 'invalid_action', 'Unknown move.');
+  if (!input?.action || !(Object.hasOwn(REQUEST_MOVES, input.action) || Object.hasOwn(ARRIVAL_MOVES, input.action))) return error(400, 'invalid_action', 'Unknown move.');
   const action = input.action;
   if (!requestActions(doc, side).includes(action)) return error(409, 'not_now', 'That cannot be done on this request right now.');
   const actor = await repository.getUserById(user.id);
