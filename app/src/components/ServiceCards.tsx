@@ -174,7 +174,7 @@ export function placeServices(items: Placeable[], providers: Providers): Map<num
   const placed = new Map<number, ProviderPick>();
   const queue = { forwarder: [...providers.forwarders], artist: [...providers.artists] };
   let due = FIRST_AT;
-  let turn: 'forwarder' | 'artist' = 'forwarder';
+  let turn = 'forwarder' as 'forwarder' | 'artist';
   for (let i = 0; i < items.length; i += 1) {
     if (i < due) continue;
     if (queue.forwarder.length === 0 && queue.artist.length === 0) break;
@@ -183,8 +183,9 @@ export function placeServices(items: Placeable[], providers: Providers): Map<num
     if (item.sourcing === 'import' && queue.forwarder.length) pick = queue.forwarder.shift();
     else if (item.condition === 'LOOSE' && queue.artist.length) pick = queue.artist.shift();
     else if (i >= due + PATIENCE) {
-      const kind = queue[turn].length ? turn : turn === 'forwarder' ? 'artist' : 'forwarder';
-      pick = queue[kind].shift();
+      const other: 'forwarder' | 'artist' = turn === 'forwarder' ? 'artist' : 'forwarder';
+      const kind: 'forwarder' | 'artist' = queue[turn].length ? turn : other;
+      pick = kind === 'forwarder' ? queue.forwarder.shift() : queue.artist.shift();
     }
     if (!pick) continue;
     placed.set(i, pick);
