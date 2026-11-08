@@ -7118,16 +7118,41 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   border-radius: 28px 28px 0 0; background: var(--surface);
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-.authpop__panel--tour .authpop__close { top: 18px; right: 14px; }
+.authpop__panel--tour .authpop__close { top: 4px; right: -2px; }
 .authpop__panel--tour .auth__card { padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
-.authpop__grip { justify-self: center; width: 40px; height: 5px; border-radius: var(--r-pill); background: var(--border-strong); }
+.authpop__sheethead { display: grid; gap: var(--s3); }
+.authpop__panel--tour .authpop__sheethead { position: relative; }
+.authpop__grip { justify-self: center; width: 40px; height: 5px; padding: 0; border: 0; border-radius: var(--r-pill); background: var(--border-strong); }
+/* As a button the grip is a bigger target than the bar it draws. */
+button.authpop__grip { position: relative; cursor: pointer; }
+button.authpop__grip::before { content: ''; position: absolute; inset: -14px -30px; }
+.authpop__hint { margin: calc(-1 * var(--s2)) 0 0; font-size: var(--t-sm); color: var(--text-dim); animation: authpop-nudge 2.4s var(--ease) 1.5s infinite; }
+@keyframes authpop-nudge { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .authpop__hint { animation: none; } }
 
-/* A phone: the whole screen, the tour scrolling away under the sheet as the form is filled in. */
+/* A phone: the slides fill the screen and the form is a bottom sheet over
+   them, resting low until it is swiped up (see useBottomSheet). */
 @media (max-width: 639px) {
-  .authpop:has(.authpop__panel--tour) { padding: 0; place-items: stretch; }
-  .authpop__panel--tour { width: 100%; min-height: 100dvh; border-radius: 0; display: flex; flex-direction: column; }
-  .authpop__panel--tour .authtour { flex: none; padding-top: calc(env(safe-area-inset-top, 0px) + 18px); min-height: 56dvh; }
-  .authpop__panel--tour .authpop__sheet { flex: 1 0 auto; align-content: start; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--s4)); }
+  .authpop:has(.authpop__panel--tour) { padding: 0; place-items: stretch; overflow: hidden; }
+  .authpop__panel--tour { position: relative; display: block; width: 100%; height: 100dvh; border-radius: 0; }
+  .authpop__panel--tour .authtour { min-height: 100%; padding-top: calc(env(safe-area-inset-top, 0px) + 18px); transition: background-color 700ms var(--ease), opacity var(--dur-2) var(--ease); }
+  .authpop__panel--tour.is-sheet-open .authtour { opacity: 0.35; }
+  .authpop__panel--tour .authtour__title { font-size: calc(24px * var(--text-scale)); }
+  .authpop__panel--tour .authtour__art { margin-top: 0; }
+  .authpop__panel--tour .tourart { max-height: 165px; }
+  .authpop__panel--tour .authpop__sheet {
+    position: absolute; inset: calc(env(safe-area-inset-top, 0px) + 12px) 0 0; margin: 0;
+    align-content: start; overflow-y: auto; overscroll-behavior: contain;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--s5));
+    transition: transform 460ms var(--ease);
+    will-change: transform;
+  }
+  .authpop__sheet.is-sheet:not(.is-open) { overflow: hidden; touch-action: none; }
+  .authpop__sheet.is-dragging { transition: none; }
+  .authpop__sheet.is-sheet .authpop__sheethead { touch-action: none; cursor: grab; }
+}
+@media (max-width: 639px) and (prefers-reduced-motion: reduce) {
+  .authpop__panel--tour .authpop__sheet { transition: none; }
 }
 
 /* A wide screen: the tour on the left, the form beside it. */
@@ -7135,7 +7160,7 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   .authpop__panel--tour { width: min(100%, 940px); grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
   .authpop__panel--tour .authtour { min-height: 560px; padding: 28px 30px 56px; }
   .authpop__panel--tour .authtour__title { font-size: calc(32px * var(--text-scale)); }
-  .authpop__panel--tour .tourart { max-width: 340px; max-height: 190px; }
+  .authpop__panel--tour .tourart { max-width: 400px; max-height: 240px; }
   .authpop__panel--tour .authpop__sheet { margin: 0; padding: 30px 28px 26px; border-radius: 0; box-shadow: none; align-content: start; max-height: calc(100dvh - 2 * var(--s4)); overflow-y: auto; }
   .authpop__panel--tour .authpop__grip { display: none; }
 }

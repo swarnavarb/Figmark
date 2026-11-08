@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import type { DemoAccount } from '@shared/contracts';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
 import { ApiRequestError, api } from '../api';
@@ -78,16 +78,27 @@ export function AuthModal({ reason, mode = 'signup', onClose }: { reason: string
   const box = useRef<HTMLDivElement>(null);
   useDialog(box, onClose);
   const [tour, setTour] = useTour();
+  const panel = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const sheet = useBottomSheet(tour, panel, sheetRef);
 
   return (
     <div ref={box} tabIndex={-1} className="authpop" role="dialog" aria-modal="true" aria-label="Sign in or create an account"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className={`authpop__panel${tour ? ' authpop__panel--tour' : ''}`}>
-        {tour && <AuthTour onSkip={() => setTour(false)} />}
-        <div className="authpop__sheet">
-          {tour && <span className="authpop__grip" aria-hidden="true" />}
-          <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
-          {tour ? <h2 className="authpop__title">Sign in or create a free account</h2> : <AuthBrand />}
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      onPointerDownCapture={sheet.noteInput} onKeyDownCapture={sheet.noteInput}>
+      <div ref={panel} className={`authpop__panel${tour ? ' authpop__panel--tour' : ''}${sheet.active && sheet.open ? ' is-sheet-open' : ''}`}>
+        {tour && <AuthTour onSkip={() => setTour(false)} still={sheet.active && sheet.open} />}
+        <div ref={sheetRef} className={`authpop__sheet${sheet.active ? ' is-sheet' : ''}${sheet.open ? ' is-open' : ''}${sheet.dragging ? ' is-dragging' : ''}`}
+          style={sheet.style} {...sheet.handlers}>
+          <div className="authpop__sheethead">
+            {tour && (sheet.active ? (
+              <button type="button" className="authpop__grip" aria-expanded={sheet.open}
+                aria-label={sheet.open ? 'Lower the sign-in form' : 'Raise the sign-in form'} onClick={sheet.toggle} />
+            ) : <span className="authpop__grip" aria-hidden="true" />)}
+            <button type="button" className="authpop__close" aria-label="Close" onClick={onClose}>✕</button>
+            {tour ? <h2 className="authpop__title">Sign in or create a free account</h2> : <AuthBrand />}
+            {tour && sheet.active && !sheet.open && <p className="authpop__hint">Swipe up to get started</p>}
+          </div>
           {/* Under the sheet's own heading the generic line would only repeat it. */}
           {(reason || !tour) && (
             <p className="authpop__why">🔒 {reason ?? 'Sign in or create a free account to do that.'} You stay on this page.</p>
@@ -102,6 +113,119 @@ export function AuthModal({ reason, mode = 'signup', onClose }: { reason: string
       </div>
     </div>
   );
+}
+
+const PHONE = '(max-width: 639px)';
+
+/**
+ * The sign-in form as a phone's bottom sheet over the slides: it rests low,
+ * showing its heading, and a swipe up (or a tap on the grip, or on any field)
+ * raises it to fill the screen. A swipe down on its heading lowers it again.
+ * Only on a phone with the slides showing; anywhere else it is a plain panel.
+ */
+function useBottomSheet(tour: boolean, panel: RefObject<HTMLDivElement>, sheet: RefObject<HTMLDivElement>) {
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(PHONE).matches);
+  const [open, setOpen] = useState(false);
+  /** How far below its raised place the sheet rests, in pixels. */
+  const [rest, setRest] = useState(0);
+  const [drag, setDrag] = useState<number | null>(null);
+  const start = useRef<{ y: number; id: number; at: number; base: number; moved: boolean } | null>(null);
+  /** A drag ends in a click; this swallows it so a field under the finger is not pressed. */
+  const justDragged = useRef(false);
+  /** Set once the person has touched or typed: before that, focus moving in is the dialog's own doing. */
+  const touched = useRef(false);
+  const active = tour && phone;
+
+  useEffect(() => {
+    const query = window.matchMedia?.(PHONE);
+    if (!query) return;
+    const update = () => setPhone(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!active) return;
+    const measure = () => {
+      const box = panel.current;
+      const stage = box?.querySelector<HTMLElement>('.authtour__stage');
+      const own = sheet.current;
+      if (!box || !stage || !own) return;
+      const top = box.getBoundingClientRect().top;
+      // Over the foot of the slides, but always with enough showing to say what it is.
+      const resting = Math.min(stage.getBoundingClientRect().bottom - top - 18, box.clientHeight - 168);
+      setRest(Math.max(0, Math.round(resting - own.offsetTop)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (panel.current) observer.observe(panel.current);
+    const stage = panel.current?.querySelector('.authtour__stage');
+    if (stage) observer.observe(stage);
+    return () => observer.disconnect();
+  }, [active, panel, sheet]);
+
+  function settle(next: boolean) {
+    setOpen(next);
+    setDrag(null);
+    if (!next) sheet.current?.scrollTo({ top: 0 });
+  }
+
+  const handlers = active ? {
+    onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      // Raised, the form scrolls; only its heading drags it back down.
+      if (open && !(event.target as HTMLElement).closest('.authpop__sheethead')) return;
+      start.current = { y: event.clientY, id: event.pointerId, at: performance.now(), base: open ? 0 : rest, moved: false };
+    },
+    onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+      const from = start.current;
+      if (!from || from.id !== event.pointerId) return;
+      const dy = event.clientY - from.y;
+      if (!from.moved) {
+        if (Math.abs(dy) < 6) return;
+        from.moved = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+      setDrag(Math.min(rest, Math.max(0, from.base + dy)));
+    },
+    onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+      const from = start.current;
+      start.current = null;
+      if (!from || from.id !== event.pointerId || !from.moved) return;
+      justDragged.current = true;
+      window.setTimeout(() => { justDragged.current = false; }, 0);
+      const dy = event.clientY - from.y;
+      const speed = dy / Math.max(1, performance.now() - from.at);
+      // A flick decides it; otherwise it goes where it was dragged more than a third of the way to.
+      if (speed < -0.35) settle(true);
+      else if (speed > 0.35) settle(false);
+      else settle(from.base + dy < rest * 0.66);
+    },
+    onPointerCancel() {
+      start.current = null;
+      setDrag(null);
+    },
+    onClickCapture(event: React.MouseEvent) {
+      if (justDragged.current) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    onFocusCapture() {
+      if (touched.current && !open) setOpen(true);
+    },
+  } : {};
+
+  const offset = drag ?? (open ? 0 : rest);
+  return {
+    active,
+    open: active && open,
+    dragging: drag !== null,
+    style: active ? { transform: `translate3d(0, ${offset}px, 0)` } : undefined,
+    handlers,
+    toggle: () => settle(!open),
+    noteInput: () => { touched.current = true; },
+  };
 }
 
 function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
