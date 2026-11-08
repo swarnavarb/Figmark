@@ -892,7 +892,14 @@ async function serviceSearch(request: HttpRequest, _context: InvocationContext) 
     const profile = owner.artistProfile!;
     for (const tag of profile.specialties ?? []) tags.add(tag);
     const offerings = liveOfferings(profile);
-    const words = (text: string) => !q || text.toLowerCase().includes(q);
+    // Any of the words, not the whole phrase: "custom repaint" finds a studio
+    // that lists a Repaint, and one that lists Custom work.
+    const terms = q.split(/\s+/).filter((term) => term.length >= 3);
+    const words = (text: string) => {
+      if (!q) return true;
+      const haystack = text.toLowerCase();
+      return terms.length ? terms.some((term) => haystack.includes(term)) : haystack.includes(q);
+    };
     const matching = offerings.filter((row) => words(`${row.name} ${row.description}`));
     if (q && matching.length === 0 && !(profile.specialties ?? []).some(words)) return [];
     const shown = matching.length ? matching : offerings;

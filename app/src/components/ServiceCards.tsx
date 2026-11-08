@@ -167,28 +167,44 @@ interface Placeable { sourcing: string; condition: string }
 
 /**
  * Where service cards go in a list of items: after the item index each is
- * keyed by. A forwarder follows an imported item, an artist a loose one; if
+ * keyed by (two at one index only at the end of a short Shop). A forwarder follows an imported item, an artist a loose one; if
  * none turns up for a while, whichever kind is due takes the next spot.
  */
-export function placeServices(items: Placeable[], providers: Providers): Map<number, ProviderPick> {
-  const placed = new Map<number, ProviderPick>();
+export function placeServices(items: Placeable[], providers: Providers): Map<number, ProviderPick[]> {
+  const placed = new Map<number, ProviderPick[]>();
   const queue = { forwarder: [...providers.forwarders], artist: [...providers.artists] };
+  const shownKinds = new Set<'forwarder' | 'artist'>();
   let due = FIRST_AT;
+  let lastAt = -1;
   let turn = 'forwarder' as 'forwarder' | 'artist';
   for (let i = 0; i < items.length; i += 1) {
-    if (i < due) continue;
     if (queue.forwarder.length === 0 && queue.artist.length === 0) break;
+    // A short Shop (a new market, a test site) can end before anything was
+    // due: its last spot then shows the kind not seen yet - one card if none
+    // was, and the other kind too if the first is a few items back.
+    const unseen = (['forwarder', 'artist'] as const).find((kind) => !shownKinds.has(kind) && queue[kind].length > 0);
+    const lastCall = i === items.length - 1 && unseen !== undefined && (lastAt < 0 || i - lastAt >= 3);
+    if (i < due && !lastCall) continue;
     const item = items[i]!;
     let pick: ProviderPick | undefined;
-    if (item.sourcing === 'import' && queue.forwarder.length) pick = queue.forwarder.shift();
-    else if (item.condition === 'LOOSE' && queue.artist.length) pick = queue.artist.shift();
-    else if (i >= due + PATIENCE) {
+    if (item.sourcing === 'import' && queue.forwarder.length && !(lastCall && unseen === 'artist')) pick = queue.forwarder.shift();
+    else if (item.condition === 'LOOSE' && queue.artist.length && !(lastCall && unseen === 'forwarder')) pick = queue.artist.shift();
+    else if (i >= due + PATIENCE || lastCall) {
       const other: 'forwarder' | 'artist' = turn === 'forwarder' ? 'artist' : 'forwarder';
-      const kind: 'forwarder' | 'artist' = queue[turn].length ? turn : other;
+      const kind: 'forwarder' | 'artist' = lastCall && unseen ? unseen : queue[turn].length ? turn : other;
       pick = kind === 'forwarder' ? queue.forwarder.shift() : queue.artist.shift();
     }
     if (!pick) continue;
-    placed.set(i, pick);
+    const here = [pick];
+    // Nothing shown at all and the Shop is over: both kinds together, so a
+    // short Shop shows a forwarder and an artist rather than one at random.
+    if (lastCall && placed.size === 0) {
+      const second = pick.kind === 'forwarder' ? queue.artist.shift() : queue.forwarder.shift();
+      if (second) here.push(second);
+    }
+    placed.set(i, here);
+    for (const row of here) shownKinds.add(row.kind);
+    lastAt = i;
     turn = pick.kind === 'forwarder' ? 'artist' : 'forwarder';
     due = i + SERVICE_GAP;
   }
