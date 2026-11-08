@@ -20,6 +20,8 @@ import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
 import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
 import { PageLoading } from './components/Feedback';
+import { resolvedTheme } from './theme';
+import { ThemePicker } from './components/ThemePicker';
 
 /** The sign-in sheet, fetched the first time somebody needs it. */
 const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthModal })));
@@ -32,7 +34,7 @@ const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ defa
  */
 // A forum's hero opens in this colour (see .forumhero), so the phone's status
 // bar takes it too rather than the Social tab's pink.
-const FORUM_STATUS = '#C627CB';
+const FORUM_STATUS = '#1A1A19';
 
 export function AppShell() {
   const { user, warning, sessionsInsecure, missingContainers, dataPerWorker, testEnvironment, signOut, authPrompt, closeAuth, promptAuth } = useSession();
@@ -67,6 +69,13 @@ export function AppShell() {
   // Each section's header carries that section's hue, the same one its pill
   // in the tab bar does; a page outside the six reads as Shop, as the bar does.
   const tone = tabFor(pathname).id;
+  // A change of theme repaints the status bar too.
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setThemeTick((n) => n + 1);
+    window.addEventListener('figmark:theme', bump);
+    return () => window.removeEventListener('figmark:theme', bump);
+  }, []);
   // Before paint: Safari picks its status bar colour from the first frame it
   // sees, so a frame in the wrong tone sticks. (public/boot/tone.js sets the first
   // page's tone before any of this loads.)
@@ -77,10 +86,11 @@ export function AppShell() {
     // a changed one: Safari does not always notice an edited theme-color.
     const meta = document.createElement('meta');
     meta.name = 'theme-color';
-    meta.content = pathname.startsWith('/social/f/') ? FORUM_STATUS : TONE_STATUS[tone];
+    meta.content = resolvedTheme() === 'light' ? LIGHT_STATUS
+      : pathname.startsWith('/social/f/') ? FORUM_STATUS : TONE_STATUS[tone];
     document.querySelectorAll('meta[name="theme-color"]').forEach((old) => old.remove());
     document.head.append(meta);
-  }, [tone, pathname]);
+  }, [tone, pathname, themeTick]);
 
   const closeSearch = useCallback(() => setSearching(false), []);
   const submitSearch = useCallback((term: string) => {
@@ -117,6 +127,8 @@ export function AppShell() {
         <NavLink to="/" className="brand" aria-label="Figmark home">
           <span className="brand__mark" aria-hidden="true" />
           <span className="brand__name">Figmark</span>
+          {/* A greeting beside the mark, as a friend's app would open. */}
+          {user && <span className="brand__hi">Hi, {user.displayName.split(' ')[0]}!</span>}
         </NavLink>
 
         {/* Buy, sell and social moved to the tab bar; what belongs up here is
@@ -240,13 +252,16 @@ export function AppShell() {
  * the two read as one block. public/boot/tone.js repeats the paths and
  * colours, to set the first page's tone before paint.
  */
+/** The light theme's stage, for the status bar in every section. */
+const LIGHT_STATUS = '#F2F0EA';
+
 const TONE_STATUS: Record<TabId, string> = {
-  buy: '#5B5EF1',
-  discover: '#8B2FC9',
-  sell: '#177ACE',
-  services: '#3A8C4E',
-  social: '#FF3471',
-  quests: '#C46A08',
+  buy: '#1A1A19',
+  discover: '#1A1A19',
+  sell: '#1A1A19',
+  services: '#1A1A19',
+  social: '#1A1A19',
+  quests: '#1A1A19',
 };
 
 /**
@@ -362,6 +377,8 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
               <Link role="menuitem" to="/shop?tab=offers" className="pmenu__item"><span aria-hidden="true">🎟️</span> Offers &amp; loyalty</Link>
             </>
           )}
+          <span className="pmenu__group">Theme</span>
+          <ThemePicker className="pmenu__theme" />
           <span className="pmenu__group">Help</span>
           <Link role="menuitem" to="/disputes" className="pmenu__item"><span aria-hidden="true">⚖️</span> My disputes</Link>
           <Link role="menuitem" to="/learn" className="pmenu__item"><span aria-hidden="true">📘</span> Learn</Link>

@@ -1,7 +1,7 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .bands { display: grid; gap: 2px; border-radius: var(--r-md); overflow: hidden; }
-.band--china { background: rgba(244, 63, 94, 0.16); }
-.band--india { background: rgba(52, 211, 153, 0.14); }
+.band--china { background: rgba(233, 90, 74, 0.16); }
+.band--india { background: rgba(87, 176, 126, 0.14); }
 .band__side {
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--text-dim);

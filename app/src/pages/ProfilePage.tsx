@@ -1,4 +1,5 @@
 import { TEXT_SIZES, readTextSize, setTextSize, type TextSize } from '../textSize';
+import { ThemePicker } from '../components/ThemePicker';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { labelFor } from '@shared/fulfilment';
@@ -351,12 +352,14 @@ export function ProfilePage() {
  * three controls. Kept apart from the shop's on purpose: an account can be
  * both, and they are two different faces.
  */
-/** How the app looks on this device: for now, how big its text is. */
+/** How the app looks on this device: its theme and how big its text is. */
 function DisplaySettings() {
   const [size, setSize] = useState<TextSize>(readTextSize);
   return (
     <div className="card card--pad form" style={{ marginBottom: 16 }}>
       <h2 style={{ margin: 0 }}>Display</h2>
+      <p className="muted" style={{ margin: 0 }}>Theme on this device. Auto follows your phone's light or dark setting.</p>
+      <ThemePicker />
       <p className="muted" style={{ margin: 0 }}>Text size on this device.</p>
       <div className="seg" role="radiogroup" aria-label="Text size">
         {TEXT_SIZES.map((option) => (

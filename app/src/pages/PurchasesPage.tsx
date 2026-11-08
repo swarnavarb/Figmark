@@ -11,6 +11,7 @@ import { ItemCard, PriceChangeNote, Svg } from '../components/ListingBlocks';
 import { formatMoney, timeAgo } from '../format';
 import { useToast } from '../components/Feedback';
 import { SkelCards } from '../components/PageSkeletons';
+import { StickerCluster } from '../components/Sticker';
 
 type Item = ItemGroup['items'][number];
 
@@ -126,8 +127,15 @@ export function PurchasesPage() {
   );
 
   return (
-    <main className="page">
+    <main className="page page--sage">
       <header className="cartbox rise">
+        <StickerCluster
+          className="hero-stickers"
+          items={[
+            { name: 'box', size: 58, x: 30, y: 8, tilt: -8 },
+            { name: 'sparkle', size: 22, x: 4, y: 76 },
+          ]}
+        />
         <span className="cartbox__icon"><Svg name="box" size={24} /></span>
         <div className="cartbox__text">
           <span className="cartbox__eyebrow">Ordered or booked</span>

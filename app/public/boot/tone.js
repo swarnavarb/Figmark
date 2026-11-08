@@ -8,13 +8,13 @@
 (function () {
   var path = location.pathname;
   var starts = function (list) { return list.some(function (p) { return path.indexOf(p) === 0; }); };
-  var tone = starts(['/social', '/messages']) ? ['social', '#FF3471']
-    : starts(['/services', '/forwarders', '/community-service', '/packing']) ? ['services', '#3A8C4E']
-    : starts(['/shop', '/sell', '/lots', '/lot/', '/routes']) ? ['sell', '#177ACE']
-    : starts(['/discover']) ? ['discover', '#8B2FC9']
-    : starts(['/quests']) ? ['quests', '#C46A08']
-    : ['buy', '#5B5EF1'];
-  if (path.indexOf('/social/f/') === 0) tone[1] = '#C627CB';
+  var tone = starts(['/social', '/messages']) ? ['social', '#1A1A19']
+    : starts(['/services', '/forwarders', '/community-service', '/packing']) ? ['services', '#1A1A19']
+    : starts(['/shop', '/sell', '/lots', '/lot/', '/routes']) ? ['sell', '#1A1A19']
+    : starts(['/discover']) ? ['discover', '#1A1A19']
+    : starts(['/quests']) ? ['quests', '#1A1A19']
+    : ['buy', '#1A1A19'];
+  if (path.indexOf('/social/f/') === 0) tone[1] = '#1A1A19';
   document.documentElement.setAttribute('data-tone', tone[0]);
   document.querySelector('meta[name="theme-color"]').content = tone[1];
 })();
@@ -26,4 +26,18 @@
     var size = localStorage.getItem('figmark:text-size');
     if (size === 'large' || size === 'larger') document.documentElement.setAttribute('data-text-size', size);
   } catch (e) { /* Storage refused: default size. */ }
+})();
+
+// The theme, before the first paint, so a light screen never flashes dark.
+// Keep in step with src/theme.ts.
+(function () {
+  var choice = 'auto';
+  try {
+    var stored = localStorage.getItem('figmark:theme');
+    if (stored === 'light' || stored === 'dark') choice = stored;
+  } catch (e) { /* Storage refused: follow the device. */ }
+  var light = choice === 'light' || (choice === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+  document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-theme-choice', choice);
+  if (light) document.querySelector('meta[name="theme-color"]').content = '#F2F0EA';
 })();

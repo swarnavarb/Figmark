@@ -1,9 +1,9 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
-.lotbox .lotphase { padding: 2px var(--s2); font-size: var(--t-2xs); gap: var(--s1); background: rgba(217, 119, 6, 0.14); color: #8A4B05; border-color: rgba(217, 119, 6, 0.35); }
-.lotbox .lotphase--closed { background: rgba(124, 58, 237, 0.12); color: #5B21B6; border-color: rgba(124, 58, 237, 0.35); }
-.lotbox .lotphase--in_transit { background: rgba(37, 99, 235, 0.12); color: #1E4FB8; border-color: rgba(37, 99, 235, 0.35); }
-.lotbox .lotphase--received { background: rgba(5, 150, 105, 0.13); color: #05684A; border-color: rgba(5, 150, 105, 0.35); }
-.lotbox .lotphase--cancelled { background: rgba(220, 38, 38, 0.1); color: #9B1C1C; border-color: rgba(220, 38, 38, 0.3); }
+.lotbox .lotphase { padding: 2px var(--s2); font-size: var(--t-2xs); gap: var(--s1); background: rgba(207, 156, 16, 0.14); color: #85640A; border-color: rgba(207, 156, 16, 0.35); }
+.lotbox .lotphase--closed { background: rgba(64, 62, 233, 0.12); color: #1816C2; border-color: rgba(64, 62, 233, 0.35); }
+.lotbox .lotphase--in_transit { background: rgba(44, 41, 231, 0.12); color: #1815C1; border-color: rgba(44, 41, 231, 0.35); }
+.lotbox .lotphase--received { background: rgba(50, 105, 74, 0.13); color: #234A34; border-color: rgba(50, 105, 74, 0.35); }
+.lotbox .lotphase--cancelled { background: rgba(227, 50, 31, 0.1); color: #A32214; border-color: rgba(227, 50, 31, 0.3); }
 .lotname__name { font-weight: inherit; min-width: 0; overflow-wrap: anywhere; }
 
 /*
@@ -16,9 +16,9 @@
   display: inline-flex; align-items: center; gap: 6px; width: fit-content;
   padding: var(--s1) 10px; border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: var(--w-semi);
-  background: rgba(251, 191, 36, 0.16); color: #FCD34D; border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(239, 188, 48, 0.16); color: #F2C957; border: 1px solid rgba(239, 188, 48, 0.35);
 }
-.lotphase--closed { background: rgba(167, 139, 250, 0.16); color: var(--violet-pale); border-color: rgba(167, 139, 250, 0.4); }
-.lotphase--in_transit { background: rgba(96, 165, 250, 0.16); color: var(--blue-pale); border-color: rgba(96, 165, 250, 0.4); }
-.lotphase--received { background: rgba(52, 211, 153, 0.16); color: var(--ok-pale); border-color: rgba(52, 211, 153, 0.4); }
-.lotphase--cancelled { background: rgba(248, 113, 113, 0.14); color: var(--coral-pale); border-color: rgba(248, 113, 113, 0.4); }
+.lotphase--closed { background: rgba(148, 146, 243, 0.16); color: var(--violet-pale); border-color: rgba(148, 146, 243, 0.4); }
+.lotphase--in_transit { background: rgba(110, 107, 239, 0.16); color: var(--blue-pale); border-color: rgba(110, 107, 239, 0.4); }
+.lotphase--received { background: rgba(87, 176, 126, 0.16); color: var(--ok-pale); border-color: rgba(87, 176, 126, 0.4); }
+.lotphase--cancelled { background: rgba(239, 134, 122, 0.14); color: var(--coral-pale); border-color: rgba(239, 134, 122, 0.4); }

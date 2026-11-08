@@ -37,3 +37,4 @@ npm-debug.log*
 
 # human-style QA runs (screenshots, logs, reports)
 qa-runs/
+seed-demo-manifest.json

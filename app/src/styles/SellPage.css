@@ -33,6 +33,6 @@
     /* Solid, with a shadow above: see-through, the fields scrolling under it
        read as part of it. */
     background: var(--surface); border: 1px solid var(--border);
-    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 -10px 24px rgba(20, 20, 18, 0.45);
   }
 }

@@ -18,7 +18,7 @@
 .sp-hero__card {
   position: relative; display: grid; gap: 14px; margin: -48px var(--s3) 0; padding: 18px;
   border: 1px solid var(--border); border-radius: var(--r-xl);
-  background: linear-gradient(160deg, var(--sk-soft), transparent 45%), rgba(15, 20, 32, 0.94); backdrop-filter: blur(14px);
+  background: rgba(41, 40, 37, 0.94); backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
 }
 @media (min-width: 720px) {

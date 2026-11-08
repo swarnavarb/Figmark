@@ -176,6 +176,43 @@ jobs:
           # Load-bearing: see the comment on the production deploy step above.
           production_branch: development
 
+  deploy_redesign_preview:
+    name: Deploy redesign preview (development app)
+    permissions:
+      contents: read
+    needs: build
+    # The redesign branch only, to a named preview environment of the
+    # development app (the repository's token): its own address beside the
+    # development site, never the production app and never the development
+    # app's own slot.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/cool-euler-qifuvw'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: figmark-build
+
+      - name: Deploy
+        id: deploy
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: app/dist
+          api_location: api
+          output_location: ''
+          skip_app_build: true
+          skip_api_build: true
+          production_branch: development
+          # A named preview environment: lands on <app>-redesign.<region>.
+          deployment_environment: redesign
+
+      - name: Preview address
+        run: echo "Preview at ${{ steps.deploy.outputs.static_web_app_url }}"
+
   # The timers. Static Web Apps' managed functions run HTTP triggers only, so
   # the same API build also goes to a plain Function App started from
   # clock-host.js: the clocks and no routes (see docs/AZURE.md, "The clock

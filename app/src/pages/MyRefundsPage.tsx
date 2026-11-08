@@ -135,7 +135,7 @@ export function MyRefundsPage() {
   if (tab === 'stores') {
     if (error && !refunds) return <PageError message={error} />;
     return (
-      <main className="page stack page--top">
+      <main className="page stack page--top page--sage">
         {head}
         {tabs}
         {asks}
@@ -146,7 +146,7 @@ export function MyRefundsPage() {
 
   if (tab === 'loyalty') {
     return (
-      <main className="page stack page--top">
+      <main className="page stack page--top page--sage">
         {head}
         {tabs}
         <LoyaltyTab />
@@ -156,7 +156,7 @@ export function MyRefundsPage() {
 
   if (tab === 'gifts') {
     return (
-      <main className="page stack page--top">
+      <main className="page stack page--top page--sage">
         {head}
         {tabs}
         <GiftsTab />
@@ -166,7 +166,7 @@ export function MyRefundsPage() {
 
   if (tab === 'earnings') {
     return (
-      <main className="page stack page--top">
+      <main className="page stack page--top page--sage">
         {head}
         {tabs}
         <EarningsTab />
@@ -176,7 +176,7 @@ export function MyRefundsPage() {
 
   if (tab === 'details') {
     return (
-      <main className="page stack page--top">
+      <main className="page stack page--top page--sage">
         {head}
         {tabs}
         {asks}
@@ -194,7 +194,7 @@ export function MyRefundsPage() {
   const waiting = refunds.filter((refund) => refund.status === 'refund_pending');
 
   return (
-    <main className="page stack page--top">
+    <main className="page stack page--top page--sage">
       {head}
       {tabs}
       {asks}

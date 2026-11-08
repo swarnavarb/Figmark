@@ -9,7 +9,7 @@
 .dsteps__step + .dsteps__step::before { content: ''; width: 18px; height: 2px; margin: 0 6px; background: var(--border-strong); border-radius: 2px; }
 .dsteps__dot {
   width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%;
-  border: 2px solid var(--border-strong); font-size: var(--t-2xs); font-weight: var(--w-bold); color: #fff;
+  border: 2px solid var(--border-strong); font-size: var(--t-2xs); font-weight: var(--w-bold); color: #FFFFFF;
 }
 .dnote > span:first-child { display: inline-block; padding: var(--s1) 10px; border-radius: var(--r-pill); background: var(--surface-2); }
 .evidence__item--link { padding: 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-sm); }

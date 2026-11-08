@@ -32,13 +32,13 @@
   position: sticky; bottom: calc(var(--tabbar-h) + 10px); z-index: 6;
   display: flex; align-items: center; gap: var(--s2); padding: var(--s2); border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(14px);
-  box-shadow: inset 0 0 0 1px var(--border-strong), 0 12px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px var(--border-strong), 0 12px 30px rgba(20, 20, 18, 0.35);
 }
 .rsbar__preview {
   flex: 1 1 auto; min-width: 0; height: 46px; padding: 0 var(--s4); border: 0; border-radius: var(--r-pill); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); white-space: nowrap;
-  font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); color: #fff; background: var(--grad-cool);
-  box-shadow: 0 8px 20px -10px rgba(34, 211, 238, 0.8);
+  font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); color: #FFFFFF; background: var(--grad-cool);
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.5);
 }
 .rsbar__save { height: 46px; border-radius: var(--r-pill); padding: 0 18px; }
 .rszone__add {
@@ -96,10 +96,8 @@
   position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: start;
   padding: var(--s3); border-radius: var(--r-lg);
   background:
-    radial-gradient(120% 120% at 0% 0%, rgba(247, 196, 108, 0.16), transparent 55%),
-    radial-gradient(100% 100% at 100% 100%, rgba(124, 58, 237, 0.14), transparent 60%),
     var(--surface);
-  box-shadow: inset 0 0 0 1px var(--border), 0 10px 26px rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--border), 0 10px 26px rgba(20, 20, 18, 0.25);
 }
 .pipdock__pip { display: block; animation: pip-hop 520ms var(--ease) both; }
 .pipdock__talk { display: grid; gap: var(--s2); min-width: 0; padding-right: 18px; }
@@ -149,7 +147,7 @@
   position: fixed; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 82px); z-index: var(--z-popover);
   max-width: 520px; margin: 0 auto; display: grid; gap: var(--s2); padding: 14px var(--s4);
   border-radius: var(--r-lg); background: var(--surface); color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--accent-line), 0 18px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 18px 40px rgba(20, 20, 18, 0.45);
   animation: rstour-in 0.22s ease-out;
 }
 .rstour__top { display: flex; align-items: center; justify-content: space-between; }
@@ -183,7 +181,7 @@
 }
 .rsbtn__chip {
   display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: var(--r-pill);
-  background: var(--accent); color: #fff; font-size: var(--t-xs); font-weight: var(--w-bold); white-space: nowrap;
+  background: var(--accent); color: #FFFFFF; font-size: var(--t-xs); font-weight: var(--w-bold); white-space: nowrap;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
 .rsbtn__words { min-width: 0; padding: 6px 9px; font-size: var(--t-xs); }
@@ -214,7 +212,7 @@
 .rslane .rszone { margin: 0 0 var(--s1); }
 .rsnode__card:focus-within { border-color: var(--zone, var(--accent-line)); }
 .rsnode__card--locked { background: var(--surface-2); }
-.rsnode__card--delivered { border-color: rgba(52, 211, 153, 0.45); }
+.rsnode__card--delivered { border-color: rgba(87, 176, 126, 0.45); }
 .rsbar__preview:disabled { opacity: 0.5; cursor: default; }
 .rsnode__name:focus { outline: none; }
 .rsnode__name:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); cursor: default; }
@@ -241,7 +239,7 @@
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 .pipdock__choice:hover { border-color: var(--accent); }
-.pipdock__choice.is-primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+.pipdock__choice.is-primary { border-color: var(--accent); background: var(--accent); color: #FFFFFF; }
 .pipdock__hide:hover { color: var(--text); background: var(--surface-2); }
 .pipcall:hover { color: var(--text); border-color: var(--accent); }
 /* Under the field being typed in: the name's under the name, the button's under the button. */
@@ -259,7 +257,7 @@
   height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-pill);
   background: var(--surface); color: var(--text-dim); font: inherit; font-size: var(--t-2xs); cursor: pointer;
 }
-.rsbtn__whochip.is-on { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: var(--w-semi); }
+.rsbtn__whochip.is-on { border-color: var(--accent); background: var(--accent); color: #FFFFFF; font-weight: var(--w-semi); }
 .rsbtn__whochip.is-fixed { display: inline-flex; align-items: center; cursor: default; opacity: 0.85; }
 .rsnode__handover { font-size: var(--t-2xs); line-height: 1.4; color: var(--text-dim); }
 

@@ -17,7 +17,7 @@
    Store form sections (wizard and console share them).
    ========================================================================== */
 .sf-preview { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
-.sf-preview__label { position: absolute; z-index: 2; top: 10px; left: 10px; padding: 2px var(--s2); border-radius: var(--r-pill); background: rgba(8, 11, 18, 0.7); font-size: var(--t-2xs); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.sf-preview__label { position: absolute; z-index: 2; top: 10px; left: 10px; padding: 2px var(--s2); border-radius: var(--r-pill); background: rgba(32, 31, 29, 0.7); font-size: var(--t-2xs); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
 .sf-preview__body { display: grid; gap: 3px; justify-items: start; padding: 0 var(--s4) var(--s4); margin-top: -28px; position: relative; }
 .sf-preview__name { margin-top: var(--s2); font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.02em; }
 .sf-preview__tag { font-size: var(--t-sm); color: var(--sk-text); }
@@ -43,10 +43,10 @@
 .sf-example { margin-top: -4px; }
 .sf-offeredit { padding: 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .sf-toggle { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--t-sm); color: var(--text-dim); cursor: pointer; }
-.sf-toggle input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: transform var(--dur-2) var(--ease); }
+.sf-toggle input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: #FFFFFF; transition: transform var(--dur-2) var(--ease); }
 .sf-toggle input:checked::after { transform: translateX(15px); }
 .sf-toggle--big { align-items: flex-start; }
-.sf-switchcard { padding: 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: linear-gradient(120deg, var(--sk-soft, transparent), transparent 60%), var(--surface-2); }
+.sf-switchcard { padding: 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .sf-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .sf-tag { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid var(--sk-line, var(--border)); border-radius: var(--r-pill); background: var(--sk-soft, var(--surface-2)); color: var(--text); font: inherit; font-size: var(--t-xs); cursor: pointer; }
 .sf-menu-preview { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
@@ -58,7 +58,7 @@
 .sa-head__eyebrow { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.12em; font-weight: var(--w-semi); color: var(--sk-text); }
 .sa-head .muted { max-width: 620px; }
 .sa-decision { display: grid; gap: 6px; padding: 14px var(--s4); margin-bottom: var(--s4); border-radius: var(--r-lg); border: 1px solid var(--coral-line); background: var(--coral-soft); }
-.sa-decision--rejected { border-color: rgba(244, 63, 94, 0.4); background: var(--danger-soft); }
+.sa-decision--rejected { border-color: rgba(233, 90, 74, 0.4); background: var(--danger-soft); }
 .sa-steps { display: flex; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; overflow-x: auto; scrollbar-width: none; }
 .sa-step {
   display: inline-flex; align-items: center; gap: var(--s2); padding: 6px var(--s3) 6px 6px;
@@ -68,7 +68,7 @@
 }
 .sa-step__dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); font-size: var(--t-2xs); }
 .sa-step.is-on { border-color: var(--sk); color: var(--text); background: var(--sk-soft); }
-.sa-step.is-on .sa-step__dot { background: var(--sk); color: #0a0f1a; }
+.sa-step.is-on .sa-step__dot { background: var(--sk); color: #242421; }
 .sa-step.is-done .sa-step__dot { background: var(--ok); color: var(--ok-ink); }
 .sa-nav { display: flex; align-items: center; gap: var(--s3); padding-top: 14px; border-top: 1px solid var(--border); }
 .sa-progress { flex: 1; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }

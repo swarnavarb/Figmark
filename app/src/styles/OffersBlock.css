@@ -4,7 +4,6 @@
   position: relative; display: grid; gap: var(--s2); min-width: 0; padding: var(--s3);
   border-radius: var(--r-lg); overflow: hidden;
   background:
-    radial-gradient(120% 140% at 100% 0%, var(--violet-soft), transparent 60%),
     var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--violet-line);
 }
@@ -14,7 +13,7 @@
 }
 .dealsblk__badge {
   flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px;
-  background: linear-gradient(135deg, var(--violet), var(--pink)); color: var(--violet-ink);
+  background: linear-gradient(var(--violet), var(--violet)); color: var(--violet-ink);
   font-size: var(--t-md); font-weight: 900; box-shadow: 0 6px 16px -8px var(--violet);
 }
 .dealsblk__title { display: grid; flex: 1; min-width: 0; line-height: 1.2; }

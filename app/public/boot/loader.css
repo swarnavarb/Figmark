@@ -9,19 +9,21 @@
 .boot {
   position: fixed; inset: 0; z-index: 2147483000;
   display: grid; place-content: center; justify-items: center; gap: 26px;
-  background: #080B12;
+  background: #1A1A19;
   transition: opacity 320ms ease, visibility 0s linear 320ms;
 }
 .boot--out { opacity: 0; visibility: hidden; }
+/* The light theme's stage (public/boot/tone.js sets data-theme first). */
+[data-theme='light'] .boot { background: #F2F0EA; }
 
 .fmload { position: relative; width: 112px; height: 112px; display: grid; place-items: center; }
 
 /* A thin arc chasing round the mark. */
 .fmload__ring {
   position: absolute; inset: 0; border-radius: 50%;
-  background: conic-gradient(from 0deg, rgba(124, 58, 237, 0) 0 48%, #7C3AED 68%, #EC4899 86%, #FF5A5F 100%);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
-          mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  background: conic-gradient(from 0deg, rgba(64, 62, 233, 0) 0 48%, #403EE9 68%, #E95B4B 86%, #ED796C 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #141412 calc(100% - 3px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #141412 calc(100% - 3px));
   animation: fmload-spin 1.1s linear infinite;
 }
 .fmload__ring::before {
@@ -33,8 +35,8 @@
 .fmload__mark {
   position: relative; overflow: hidden;
   width: 52px; height: 52px; border-radius: 16px;
-  background: linear-gradient(135deg, #7C3AED 0%, #EC4899 52%, #FF5A5F 100%);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset, 0 10px 34px rgba(236, 72, 153, 0.38);
+  background: linear-gradient(135deg, #403EE9 0%, #E95B4B 52%, #ED796C 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset, 0 10px 34px rgba(233, 91, 75, 0.38);
   animation: fmload-breathe 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 .fmload__mark::after {
@@ -50,14 +52,14 @@
   position: absolute; top: 50%; left: 50%;
   width: 8px; height: 8px; margin: -4px; border-radius: 50%;
 }
-.fmload__orbit i:nth-child(1) { background: #06D6E7; box-shadow: 0 0 10px #06D6E7; transform: rotate(0deg) translateX(72px); }
-.fmload__orbit i:nth-child(2) { background: #A3E635; box-shadow: 0 0 10px #A3E635; transform: rotate(120deg) translateX(72px); width: 6px; height: 6px; margin: -3px; }
-.fmload__orbit i:nth-child(3) { background: #3B82F6; box-shadow: 0 0 10px #3B82F6; transform: rotate(240deg) translateX(72px); width: 7px; height: 7px; margin: -3.5px; }
+.fmload__orbit i:nth-child(1) { background: #2DA7C0; box-shadow: 0 0 10px #2DA7C0; transform: rotate(0deg) translateX(72px); }
+.fmload__orbit i:nth-child(2) { background: #65B688; box-shadow: 0 0 10px #65B688; transform: rotate(120deg) translateX(72px); width: 6px; height: 6px; margin: -3px; }
+.fmload__orbit i:nth-child(3) { background: #4947EA; box-shadow: 0 0 10px #4947EA; transform: rotate(240deg) translateX(72px); width: 7px; height: 7px; margin: -3.5px; }
 
 .boot__word {
   font: 700 15px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   letter-spacing: 0.32em; text-transform: uppercase; padding-left: 0.32em;
-  background: linear-gradient(90deg, #6B7C96 0%, #6B7C96 40%, #F2F5FA 50%, #6B7C96 60%, #6B7C96 100%);
+  background: linear-gradient(90deg, #8B8776 0%, #8B8776 40%, #EFEFFD 50%, #8B8776 60%, #8B8776 100%);
   background-size: 250% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent;
   animation: fmload-word 2.2s linear infinite;
@@ -86,6 +88,6 @@
     animation-duration: 1.6s !important;
     animation-iteration-count: infinite !important;
   }
-  .boot__word { animation: none; color: #9FB0C9; background: none; }
+  .boot__word { animation: none; color: #BAB8AE; background: none; }
   @keyframes fmload-fade { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 }

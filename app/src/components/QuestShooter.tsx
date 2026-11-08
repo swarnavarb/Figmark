@@ -87,7 +87,7 @@ export function QuestShooter({ volley = 0 }: {
 
     function blast(x: number, y: number) {
       booms.push({ x, y, life: 1 });
-      const hues = ['#FDE047', '#F472B6', '#A78BFA', '#FFFFFF'];
+      const hues = ['#F2C752', '#EB8A7B', '#9492F3', '#FFFFFF'];
       for (let i = 0; i < 22; i += 1) {
         const angle = (i / 22) * Math.PI * 2 + Math.random() * 0.3;
         const speed = 50 + Math.random() * 90;
@@ -150,12 +150,12 @@ export function QuestShooter({ volley = 0 }: {
 
       const sprite = ALIEN_FRAMES[Math.floor(now / 450) % 2]!;
       for (const alien of aliens) {
-        if (alien.alive) drawSprite(ctx!, sprite, alienX(alien), top, alien.slot % 2 ? '#22D3EE' : '#A78BFA');
+        if (alien.alive) drawSprite(ctx!, sprite, alienX(alien), top, alien.slot % 2 ? '#3EB9D2' : '#9492F3');
       }
-      drawSprite(ctx!, SHIP_ROWS, shipX - 9, h - 15, '#22D3EE');
+      drawSprite(ctx!, SHIP_ROWS, shipX - 9, h - 15, '#3EB9D2');
 
-      ctx!.fillStyle = '#FDE047';
-      ctx!.shadowColor = '#FDE047';
+      ctx!.fillStyle = '#F2C752';
+      ctx!.shadowColor = '#F2C752';
       ctx!.shadowBlur = 8;
       for (const shot of shots) ctx!.fillRect(shot.x - 1, shot.y, 2, 7);
       ctx!.shadowBlur = 0;
@@ -179,13 +179,13 @@ export function QuestShooter({ volley = 0 }: {
         ctx!.globalAlpha = boom.life;
         const glow = ctx!.createRadialGradient(boom.x, boom.y, 0, boom.x, boom.y, 18 * boom.life + 4);
         glow.addColorStop(0, '#FFFFFF');
-        glow.addColorStop(0.4, '#FDE047');
-        glow.addColorStop(1, 'rgba(244,114,182,0)');
+        glow.addColorStop(0.4, '#F2C752');
+        glow.addColorStop(1, 'rgba(235,138,123,0)');
         ctx!.fillStyle = glow;
         ctx!.beginPath();
         ctx!.arc(boom.x, boom.y, 18 * boom.life + 4, 0, Math.PI * 2);
         ctx!.fill();
-        ctx!.strokeStyle = '#F472B6';
+        ctx!.strokeStyle = '#EB8A7B';
         ctx!.lineWidth = 2;
         ctx!.beginPath();
         ctx!.arc(boom.x, boom.y, 6 + grow * 26, 0, Math.PI * 2);

@@ -1,6 +1,6 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .pc__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; align-items: start; }
-.pc__result { border-color: rgba(52, 211, 153, 0.45); }
+.pc__result { border-color: rgba(87, 176, 126, 0.45); }
 .pc__facts { margin: 0; display: grid; gap: 6px; }
 .pc__use { padding: 2px var(--s2); }
 .pc__bar { display: flex; height: 14px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-2); }
@@ -16,7 +16,7 @@
 }
 .pc__cmpname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--w-semi); }
 .pc__neg { color: var(--coral-pale); }
-.pc__editor { border-color: rgba(251, 191, 36, 0.4); }
+.pc__editor { border-color: rgba(239, 188, 48, 0.4); }
 .pc__check { display: flex; align-items: center; gap: var(--s2); }
 .pc__group { display: grid; gap: 6px; min-width: 0; }
 .pc__grouphead { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.06em; text-transform: uppercase; }
@@ -58,7 +58,7 @@
 .pc__savebar {
   position: sticky; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 2;
   display: flex; align-items: center; gap: var(--s2); padding: 10px var(--s3); border-radius: var(--r-lg);
-  background: rgba(20, 14, 28, 0.94); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.45), 0 10px 30px rgba(0, 0, 0, 0.45);
+  background: rgba(39, 38, 35, 0.94); box-shadow: inset 0 0 0 1px rgba(239, 188, 48, 0.45), 0 10px 30px rgba(20, 20, 18, 0.45);
   backdrop-filter: blur(10px);
 }
 .pc__scen {
@@ -80,7 +80,7 @@
 .pc__headline { display: grid; gap: var(--s1); }
 .pc__pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .pc__seg { height: 100%; }
-.pc__cmp.is-on { border-color: rgba(251, 191, 36, 0.6); }
+.pc__cmp.is-on { border-color: rgba(239, 188, 48, 0.6); }
 .pc__actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .pc__row.is-off { opacity: 0.55; }
 .pc__rowbody .pc__tools { margin-left: auto; }
@@ -102,14 +102,13 @@
   display: grid; grid-template-columns: 1fr; align-items: center; gap: var(--s1) var(--s2); width: 100%;
   padding: var(--s3) 14px; border-radius: var(--r-md); cursor: pointer; text-align: left; color: var(--gold-text);
   font: inherit; font-weight: var(--w-semi);
-  border: 1px dashed rgba(251, 191, 36, 0.55); background: rgba(245, 158, 11, 0.06);
+  border: 1px dashed rgba(239, 188, 48, 0.55); background: rgba(237, 179, 19, 0.06);
 }
-.costfield__open:hover { background: rgba(245, 158, 11, 0.12); }
+.costfield__open:hover { background: rgba(237, 179, 19, 0.12); }
 .costfield {
   padding: var(--s3); border-radius: var(--r-md); border: 1px solid transparent;
   background:
-    linear-gradient(var(--surface), var(--surface)) padding-box,
-    linear-gradient(135deg, rgba(251, 191, 36, 0.55), rgba(236, 72, 153, 0.4) 50%, rgba(139, 92, 246, 0.45)) border-box;
+    linear-gradient(var(--surface), var(--surface)) padding-box, linear-gradient(rgba(239, 188, 48, 0.55), rgba(239, 188, 48, 0.55)) border-box;
 }
 .costfield__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); color: var(--gold-text); }
 .costfield__fill { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--s2); align-items: end; }
@@ -119,7 +118,7 @@
 .fcalc__result {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
   padding: 10px; border-radius: var(--r-md);
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(236, 72, 153, 0.12));
+  background: linear-gradient(rgba(237, 179, 19, 0.14), rgba(237, 179, 19, 0.14));
 }
 .calclines { display: grid; gap: 6px; }
 .savedcalc {
@@ -131,7 +130,7 @@
 .pc__keep { display: flex; gap: var(--s2); }
 .pc__calc .pc__fields--three { gap: var(--s2); }
 .pc__price { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
-.pc__pricebox:focus-within { box-shadow: inset 0 0 0 1.5px rgba(251, 191, 36, 0.7), 0 0 0 4px rgba(251, 191, 36, 0.12); }
+.pc__pricebox:focus-within { box-shadow: inset 0 0 0 1.5px rgba(239, 188, 48, 0.7), 0 0 0 4px rgba(239, 188, 48, 0.12); }
 .pc__pricebox input::-webkit-inner-spin-button, .pc__pricebox input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .pc__pricebox input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .pc__route { display: grid; gap: 10px; }
@@ -143,9 +142,9 @@
 .pc__name:hover, .pc__name:focus { outline: none; border-color: var(--border); background: var(--surface-2); color: var(--text); }
 .pc__ratechain { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
 .pc__chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.pc__chip:hover { color: var(--text); border-color: rgba(251, 191, 36, 0.5); }
+.pc__chip:hover { color: var(--text); border-color: rgba(239, 188, 48, 0.5); }
 .pc__scens { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
-.pc__scen:hover { border-color: rgba(251, 191, 36, 0.6); transform: translateY(-2px); }
+.pc__scen:hover { border-color: rgba(239, 188, 48, 0.6); transform: translateY(-2px); }
 .pc__scen:active { transform: scale(0.98); }
 .pc__scen--blank .pc__scenicon { color: var(--gold-text); }
 @media (prefers-reduced-motion: reduce) {
@@ -154,16 +153,16 @@
 .costfield__openrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .costswitch {
   position: relative; flex: none; width: 42px; height: 24px; padding: 0; cursor: pointer;
-  border-radius: var(--r-pill); border: 1px solid rgba(251, 191, 36, 0.5); background: var(--surface-2);
+  border-radius: var(--r-pill); border: 1px solid rgba(239, 188, 48, 0.5); background: var(--surface-2);
   transition: background var(--dur-2) ease, border-color var(--dur-2) ease;
 }
 .costswitch__knob {
   position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--text-dim); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  background: var(--text-dim); box-shadow: 0 1px 3px rgba(20, 20, 18, 0.35);
   transition: transform var(--dur-2) cubic-bezier(0.34, 1.4, 0.64, 1), background var(--dur-2) ease;
 }
-.costswitch.is-on { background: linear-gradient(135deg, var(--gold), var(--pink)); border-color: transparent; }
-.costswitch.is-on .costswitch__knob { transform: translateX(18px); background: #fff; }
+.costswitch.is-on { background: linear-gradient(var(--gold), var(--gold)); border-color: transparent; }
+.costswitch.is-on .costswitch__knob { transform: translateX(18px); background: #FFFFFF; }
 @media (prefers-reduced-motion: reduce) {
   .costswitch, .costswitch__knob { transition: none; }
 }

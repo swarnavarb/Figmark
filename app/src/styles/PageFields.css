@@ -38,5 +38,5 @@
 .taginput:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .taginput__x:hover { background: var(--surface-hover); color: var(--text); }
 /* A payment QR: square and large enough to check before a buyer scans it. */
-.sfpic--qr .sfpic__img, .sfpic--qr .sfpic__empty { width: 96px; height: 96px; object-fit: contain; background: #fff; }
+.sfpic--qr .sfpic__img, .sfpic--qr .sfpic__empty { width: 96px; height: 96px; object-fit: contain; background: #FFFFFF; }
 .sfpic--qr .sfpic__empty { background: var(--surface-2); }

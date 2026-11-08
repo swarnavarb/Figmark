@@ -2,8 +2,8 @@
 .sk-mark {
   flex: 0 0 auto; display: inline-grid; place-items: center; overflow: hidden;
   border-radius: 28%;
-  background: linear-gradient(140deg, var(--sk, var(--violet)) 0%, color-mix(in srgb, var(--sk, var(--violet)) 45%, #0b1020) 100%);
-  color: #fff; font-family: var(--display); font-weight: var(--w-bold); letter-spacing: -0.03em;
+  background: linear-gradient(140deg, var(--sk, var(--violet)) 0%, color-mix(in srgb, var(--sk, var(--violet)) 45%, var(--surface)) 100%);
+  color: #FFFFFF; font-family: var(--display); font-weight: var(--w-bold); letter-spacing: -0.03em;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 6px 18px color-mix(in srgb, var(--sk, var(--violet)) 35%, transparent);
 }
 .sk-status {
@@ -21,14 +21,14 @@
   height: 132px; border-radius: var(--r-lg);
   background:
     radial-gradient(120% 140% at 0% 100%, color-mix(in srgb, var(--sk, var(--violet)) 38%, transparent) 0%, transparent 60%),
-    linear-gradient(135deg, #0d1424 0%, #121a2e 60%, color-mix(in srgb, var(--sk, var(--violet)) 22%, #0d1424) 100%);
+    linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 60%, color-mix(in srgb, var(--sk, var(--violet)) 22%, var(--surface)) 100%);
   color: var(--sk, var(--violet-lit));
 }
 .sk-cover::after {
   content: ''; position: absolute; inset: 0; z-index: -1;
   background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
   background-size: 18px 18px;
-  mask-image: linear-gradient(90deg, transparent, #000 40%, #000 70%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #141412 40%, #141412 70%, transparent);
 }
 .sk-cover__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .sk-cover__art { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -64,7 +64,7 @@
 .sk-plan {
   display: grid; gap: var(--s2); padding: var(--s3);
   border: 1px solid var(--border); border-radius: var(--r-lg);
-  background: linear-gradient(160deg, rgba(52, 211, 153, 0.07), transparent 55%), var(--surface);
+  background: var(--surface);
   transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
 .sk-plan__pick {
@@ -85,7 +85,7 @@ button.sk-plan__pick { cursor: pointer; }
   background: var(--surface); color: inherit; font: inherit; text-align: left;
 }
 .sk-offer__top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.sk-pic__ini { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold); color: rgba(255, 255, 255, 0.85); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.3); }
+.sk-pic__ini { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold); color: rgba(255, 255, 255, 0.85); text-shadow: 0 2px 12px rgba(20, 20, 18, 0.3); }
 .sk-folio { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); }
 .sk-money { display: flex; align-items: center; gap: 0; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); }
 .sk-stat {
@@ -112,7 +112,7 @@ button.sk-plan__pick { cursor: pointer; }
 @media (min-width: 640px) {
   .sk-ticket__quote { margin-left: 0; }
 }
-.sk-plan.is-on { border-color: rgba(52, 211, 153, 0.6); box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.5), 0 10px 28px rgba(52, 211, 153, 0.14); }
+.sk-plan.is-on { border-color: rgba(87, 176, 126, 0.6); box-shadow: 0 0 0 1px rgba(87, 176, 126, 0.5), 0 10px 28px rgba(0, 0, 0, 0.13); }
 .sk-plan.is-on .sk-plan__shield { background: var(--ok); color: var(--ok-ink); }
 .sk-plan__name { font-weight: var(--w-semi); }
 .sk-plan__line { font-size: var(--t-xs); color: var(--text-dim); }
@@ -134,7 +134,7 @@ button.sk-plan__pick { cursor: pointer; }
 .sk-money__sym { padding: 0 2px 0 11px; color: var(--text-faint); }
 .sk-stat__value { font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold); line-height: 1.05; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sk-stat__label { font-size: var(--t-xs); color: var(--text-faint); }
-.sk-stat--warn { border-color: rgba(251, 191, 36, 0.4); background: linear-gradient(160deg, var(--warn-soft), transparent 70%), var(--surface); }
+.sk-stat--warn { border-color: rgba(239, 188, 48, 0.4); background: var(--surface); }
 .sk-stat--warn .sk-stat__value { color: var(--warn); }
 .sk-stat--ok .sk-stat__value { color: var(--ok); }
 .sk-stat--accent .sk-stat__value { color: var(--sk-text, var(--accent-text)); }

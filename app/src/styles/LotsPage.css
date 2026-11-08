@@ -109,9 +109,8 @@
   display: grid; gap: 10px; margin-bottom: 10px; padding: 14px var(--s4);
   border-radius: var(--r-xl);
   background:
-    radial-gradient(120% 100% at 100% 0%, rgb(var(--hue) / 0.18), transparent 60%),
     linear-gradient(160deg, var(--surface-2), var(--surface));
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgb(var(--hue) / 0.22);
+  box-shadow: 0 10px 28px rgba(20, 20, 18, 0.28), inset 0 0 0 1px rgb(var(--hue) / 0.22);
 }
 .lothero--filling { --hue: 251 191 36; }
 .lothero--done { --hue: 52 211 153; }
@@ -156,13 +155,13 @@
    Booking a forwarder on a lot.
    ========================================================================== */
 .fb__weight { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: var(--s1) 10px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--t-xs); color: var(--text-dim); }
-.fb-booked { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border: 1px solid var(--sk-line, var(--border)); border-radius: var(--r-lg); background: linear-gradient(110deg, var(--sk-soft, transparent), transparent 60%), var(--surface-2); }
+.fb-booked { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border: 1px solid var(--sk-line, var(--border)); border-radius: var(--r-lg); background: var(--surface-2); }
 .fb-booked__name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-weight: var(--w-semi); }
 .fb-booked__cover { font-size: var(--t-xs); color: var(--ok); }
 .fb-stores { display: grid; gap: var(--s2); }
 .fb-store { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
 .fb-store:hover { border-color: var(--sk-line); }
-.fb-store.is-on { border-color: var(--sk); background: linear-gradient(110deg, var(--sk-soft), transparent 70%), var(--surface-2); box-shadow: 0 0 0 1px var(--sk); }
+.fb-store.is-on { border-color: var(--sk); background: var(--surface-2); box-shadow: 0 0 0 1px var(--sk); }
 .fb-store__name { font-weight: var(--w-semi); }
 .fb-store__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
 .fb-store__price { display: grid; justify-items: end; font-family: var(--display); font-weight: var(--w-bold); color: var(--sk-text); }
