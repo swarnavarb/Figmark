@@ -18,8 +18,8 @@
 .pplay__prize, .pplay__best {
   margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); font-size: var(--t-sm); line-height: 1.5;
 }
-.pplay__prize { background: linear-gradient(115deg, var(--warn-soft), transparent 80%); box-shadow: inset 0 0 0 1px rgba(239, 188, 48, 0.3); }
-.pplay__best { background: linear-gradient(115deg, var(--violet-soft), transparent 80%); box-shadow: inset 0 0 0 1px var(--violet-line); }
+.pplay__prize { background: linear-gradient(var(--warn-soft), var(--warn-soft)); box-shadow: inset 0 0 0 1px rgba(239, 188, 48, 0.3); }
+.pplay__best { background: linear-gradient(var(--violet-soft), var(--violet-soft)); box-shadow: inset 0 0 0 1px var(--violet-line); }
 
 /* ── Photo grid ────────────────────────────────────────────────────────── */
 
@@ -105,15 +105,13 @@
   position: relative; display: grid; gap: var(--s3); padding: 14px;
   border-radius: var(--r-lg); border: 1px solid rgba(239, 188, 48, 0.35);
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(239, 188, 48, 0.14), transparent 60%),
-    radial-gradient(90% 70% at 0% 100%, rgba(233, 91, 75, 0.1), transparent 60%),
     var(--surface-2);
 }
-.pcontest--figmark { border-color: var(--violet-line); background: radial-gradient(120% 80% at 100% 0%, var(--violet-soft), transparent 60%), var(--surface-2); }
+.pcontest--figmark { border-color: var(--violet-line); background: var(--surface-2); }
 .pcontest__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pcontest__trophy {
   display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: var(--r-md);
-  font-size: calc(22px * var(--text-scale)); background: var(--grad-gold); box-shadow: 0 6px 18px rgba(238, 183, 33, 0.35);
+  font-size: calc(22px * var(--text-scale)); background: var(--grad-gold); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
 }
 .pcontest--figmark .pcontest__trophy { background: var(--grad-hero); box-shadow: var(--shadow-violet); }
 /* The name takes the row; the phase sits on its own line under it, so neither is squeezed. */
@@ -183,7 +181,7 @@
 .podium__step--2 { order: 1; }
 .podium__step--3 { order: 3; }
 .podium__photo { position: relative; aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; border: 2px solid var(--border-strong); }
-.podium__step--1 .podium__photo { border-color: var(--warn); box-shadow: 0 8px 26px rgba(239, 188, 48, 0.35); }
+.podium__step--1 .podium__photo { border-color: var(--warn); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.32); }
 .podium__photo img { width: 100%; height: 100%; object-fit: cover; }
 .podium__medal { position: absolute; top: 4px; left: 4px; font-size: calc(22px * var(--text-scale)); filter: drop-shadow(0 2px 4px rgba(20, 20, 18, 0.5)); }
 .podium__step figcaption { display: grid; gap: 1px; text-align: center; font-size: var(--t-xs); min-width: 0; }
@@ -204,7 +202,7 @@
 .pguess {
   display: grid; gap: var(--s3); padding: 14px; border-radius: var(--r-lg);
   border: 1px solid var(--violet-line);
-  background: radial-gradient(120% 90% at 100% 0%, var(--violet-soft), transparent 60%), var(--surface-2);
+  background: var(--surface-2);
 }
 .pguess__price { display: grid; gap: 2px; justify-items: start; }
 .pguess__kicker { font-size: var(--t-xs); font-weight: var(--w-bold); text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-text); }

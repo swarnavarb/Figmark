@@ -8,8 +8,6 @@
   position: relative; overflow: hidden; padding-bottom: var(--strip);
   color: #EBEAFD;
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(64, 62, 233, 0.28), transparent 60%),
-    radial-gradient(90% 70% at 0% 100%, rgba(35, 131, 151, 0.2), transparent 60%),
     #262522;
   border-color: rgba(148, 146, 243, 0.3);
 }

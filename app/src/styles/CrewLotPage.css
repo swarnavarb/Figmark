@@ -24,7 +24,7 @@
 .cl-route__step.is-mine .cl-route__name { color: var(--text); font-weight: var(--w-semi); }
 .cl-route__you { padding: 1px 6px; border-radius: var(--r-pill); background: var(--accent); color: #FFFFFF; font-size: var(--t-2xs); font-weight: var(--w-bold); text-transform: uppercase; letter-spacing: 0.08em; }
 .cl-buttons { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); margin-bottom: var(--s4); }
-.cl-btncard { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--accent-line); border-radius: var(--r-lg); background: linear-gradient(150deg, var(--accent-soft), transparent 65%), var(--surface); }
+.cl-btncard { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--accent-line); border-radius: var(--r-lg); background: var(--surface); }
 .cl-btncard__label { font-weight: var(--w-semi); font-size: var(--t-md); }
 .cl-btncard__step { font-size: var(--t-xs); color: var(--text-faint); }
 .cl-btncard__bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
@@ -36,7 +36,7 @@
 .cl-item__name { font-weight: var(--w-medium); }
 .cl-item__flag { display: inline-flex; align-items: center; gap: var(--s1); justify-self: start; padding: 2px var(--s2); border-radius: var(--r-pill); background: var(--pink-soft); color: var(--pink-text); font-size: var(--t-2xs); font-weight: var(--w-semi); }
 .cl-item__acts { display: flex; flex-wrap: wrap; gap: 6px; }
-.cl-crate { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: 1px solid var(--aqua-line); border-radius: var(--r-lg); background: linear-gradient(130deg, var(--aqua-soft), transparent 60%), var(--surface); }
+.cl-crate { display: grid; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s4); border: 1px solid var(--aqua-line); border-radius: var(--r-lg); background: var(--surface); }
 .cl-crate__head { display: flex; align-items: center; gap: var(--s3); }
 .cl-crate__head > span:last-child { display: grid; }
 .cl-crate__icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-md); background: var(--aqua); color: var(--aqua-ink); }

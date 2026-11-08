@@ -18,9 +18,6 @@
   background: var(--violet);
   animation: disc-in 380ms var(--ease-out) both;
 }
-.dischero__aurora { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-@keyframes aurora-a { to { transform: translate(-40px, 30px) scale(1.15); } }
-@keyframes aurora-b { to { transform: translate(50px, -24px) scale(1.1); } }
 .dischero__stats { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
 .dischero__stat {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px;
@@ -214,7 +211,7 @@
 @media (prefers-reduced-motion: reduce) {
   .dischero, .livecard, .contestcard { animation: fade-in 160ms ease both; }
   .livecard, .contestcard, .dislens__tab, .dischero__stat, .dislens, .spotcard, .spotdeck__dots span { transition: none; }
-  .dischero__aurora span, .dischero__pulse::after { animation: none; }
+  .dischero__pulse::after { animation: none; }
 }
 .dischero__guest { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin: 6px 0 0; font-size: var(--t-sm); }
 

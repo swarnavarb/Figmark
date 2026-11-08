@@ -264,7 +264,7 @@
 .opsdash__kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); }
 @media (min-width: 720px) { .opsdash__kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .opsdash__kpi { display: grid; gap: var(--s1); padding: var(--s4); min-width: 0; }
-.opsdash__kpi--accent { background: linear-gradient(160deg, rgba(64, 62, 233, 0.22), rgba(45, 167, 192, 0.06)) var(--surface); border-color: var(--accent-line); }
+.opsdash__kpi--accent { background: linear-gradient(rgba(64, 62, 233, 0.22), rgba(64, 62, 233, 0.22)) var(--surface); border-color: var(--accent-line); }
 .opsdash__kpi-label { font-size: var(--t-xs); color: var(--text-dim); font-weight: var(--w-semi); }
 .opsdash__kpi-value { font-family: var(--display); font-size: var(--t-2xl); font-weight: var(--w-bold); line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .opsdash__kpi-hint { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-xs); color: var(--text-faint); min-width: 0; }

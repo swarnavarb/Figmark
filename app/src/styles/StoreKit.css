@@ -64,7 +64,7 @@
 .sk-plan {
   display: grid; gap: var(--s2); padding: var(--s3);
   border: 1px solid var(--border); border-radius: var(--r-lg);
-  background: linear-gradient(160deg, rgba(87, 176, 126, 0.07), transparent 55%), var(--surface);
+  background: var(--surface);
   transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
 .sk-plan__pick {
@@ -112,7 +112,7 @@ button.sk-plan__pick { cursor: pointer; }
 @media (min-width: 640px) {
   .sk-ticket__quote { margin-left: 0; }
 }
-.sk-plan.is-on { border-color: rgba(87, 176, 126, 0.6); box-shadow: 0 0 0 1px rgba(87, 176, 126, 0.5), 0 10px 28px rgba(87, 176, 126, 0.14); }
+.sk-plan.is-on { border-color: rgba(87, 176, 126, 0.6); box-shadow: 0 0 0 1px rgba(87, 176, 126, 0.5), 0 10px 28px rgba(0, 0, 0, 0.13); }
 .sk-plan.is-on .sk-plan__shield { background: var(--ok); color: var(--ok-ink); }
 .sk-plan__name { font-weight: var(--w-semi); }
 .sk-plan__line { font-size: var(--t-xs); color: var(--text-dim); }
@@ -134,7 +134,7 @@ button.sk-plan__pick { cursor: pointer; }
 .sk-money__sym { padding: 0 2px 0 11px; color: var(--text-faint); }
 .sk-stat__value { font-family: var(--display); font-size: var(--t-xl); font-weight: var(--w-bold); line-height: 1.05; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sk-stat__label { font-size: var(--t-xs); color: var(--text-faint); }
-.sk-stat--warn { border-color: rgba(239, 188, 48, 0.4); background: linear-gradient(160deg, var(--warn-soft), transparent 70%), var(--surface); }
+.sk-stat--warn { border-color: rgba(239, 188, 48, 0.4); background: var(--surface); }
 .sk-stat--warn .sk-stat__value { color: var(--warn); }
 .sk-stat--ok .sk-stat__value { color: var(--ok); }
 .sk-stat--accent .sk-stat__value { color: var(--sk-text, var(--accent-text)); }

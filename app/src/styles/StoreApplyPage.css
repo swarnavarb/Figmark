@@ -46,7 +46,7 @@
 .sf-toggle input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: #FFFFFF; transition: transform var(--dur-2) var(--ease); }
 .sf-toggle input:checked::after { transform: translateX(15px); }
 .sf-toggle--big { align-items: flex-start; }
-.sf-switchcard { padding: 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: linear-gradient(120deg, var(--sk-soft, transparent), transparent 60%), var(--surface-2); }
+.sf-switchcard { padding: 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); }
 .sf-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .sf-tag { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid var(--sk-line, var(--border)); border-radius: var(--r-pill); background: var(--sk-soft, var(--surface-2)); color: var(--text); font: inherit; font-size: var(--t-xs); cursor: pointer; }
 .sf-menu-preview { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }

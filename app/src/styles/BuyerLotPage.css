@@ -20,9 +20,7 @@
   position: relative; display: grid; gap: 10px; justify-items: start;
   padding: 22px 18px 18px; border-radius: 3px 3px 14px 14px;
   background:
-    linear-gradient(180deg, rgba(20, 20, 18, 0.08), transparent 16px),
-    linear-gradient(90deg, rgba(102, 77, 8, 0.12), transparent 12px, transparent calc(100% - 12px), rgba(102, 77, 8, 0.12)),
-    var(--card);
+    linear-gradient(180deg, rgba(20, 20, 18, 0.08), transparent 16px), var(--card);
   color: var(--card-ink); box-shadow: 0 10px 28px rgba(20, 20, 18, 0.4);
 }
 .blot__front .ptrack { width: 100%; color: var(--card-ink); margin-top: var(--s1); }

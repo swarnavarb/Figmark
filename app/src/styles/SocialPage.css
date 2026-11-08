@@ -37,7 +37,7 @@
 .forumcard__join {
   justify-self: start; display: inline-flex; align-items: center; gap: 6px;
   padding: var(--s2) var(--s4); border: 0; border-radius: var(--r-pill);
-  background: linear-gradient(115deg, rgb(var(--c1)), rgb(var(--c2))); color: #FFFFFF;
+  background: linear-gradient(rgb(var(--c1)), rgb(var(--c1))); color: #FFFFFF;
   font-weight: 800; font-size: var(--t-xs); letter-spacing: 0.04em; text-transform: uppercase; font-style: italic;
   cursor: pointer;
 }
@@ -50,9 +50,8 @@
   position: relative; overflow: hidden; isolation: isolate;
   display: grid; gap: var(--s1); padding: var(--s4) 18px; border-radius: var(--r-xl); color: #FFFFFF;
   background:
-    linear-gradient(180deg, rgba(32, 31, 29, 0) 30%, rgba(32, 31, 29, 0.32) 100%),
-    linear-gradient(115deg, #E64938 0%, var(--gold) 55%, #79C098 130%);
-  box-shadow: 0 10px 30px rgba(240, 191, 55, 0.28);
+    linear-gradient(180deg, rgba(32, 31, 29, 0) 30%, rgba(32, 31, 29, 0.32) 100%), linear-gradient(#E64938, #E64938);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 .wanthero--loading { min-height: 150px; animation: skel-shimmer 1.5s var(--ease) infinite; }
 .wanthero__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: var(--s2); }
@@ -68,7 +67,7 @@
 .wanted__cats::-webkit-scrollbar { display: none; }
 .wanted .wantcard::before {
   content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, #E64938, #79C098);
+  background: linear-gradient(#E64938, #E64938);
 }
 .isophotos { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s1) 0 var(--s3); }
 .isophotos__tile { position: relative; display: block; width: 72px; height: 72px; border-radius: var(--r-md); overflow: hidden; }
@@ -89,7 +88,7 @@
 .forumcard--violet { --c1: 124, 58, 237; --c2: 255, 46, 126; }
 .forumcard--volt { --c1: 164, 214, 20; --c2: 24, 224, 176; }
 .forumcard--sea { --c1: 6, 182, 212; --c2: 124, 58, 237; }
-.forumcard .forumav { background: linear-gradient(135deg, rgb(var(--c1)), rgb(var(--c2))); }
+.forumcard .forumav { background: linear-gradient(rgb(var(--c1)), rgb(var(--c1))); }
 .forumcard__stats { color: var(--text-dim); font-size: var(--t-xs); }
 .forumcard__name { font-size: var(--t-md); font-weight: 800; letter-spacing: -0.01em; }
 .forumcard__desc { color: var(--text-dim); font-size: var(--t-sm); }
@@ -105,11 +104,11 @@
   font-family: var(--display); font-size: var(--t-md); font-weight: 800; font-style: italic; text-transform: uppercase;
 }
 .wanted__cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-.wanted .wantcard:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(240, 191, 55, 0.5), 0 8px 22px rgba(240, 191, 55, 0.14); }
+.wanted .wantcard:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(240, 191, 55, 0.5), 0 8px 22px rgba(0, 0, 0, 0.13); }
 .wanted .want__title { font-size: var(--t-md); font-weight: 800; }
 .wanted .want__budget {
   padding: 3px 10px; border-radius: var(--r-pill);
-  background: linear-gradient(115deg, #E64938, var(--gold)); color: #FFFFFF; font-size: var(--t-xs);
+  background: linear-gradient(#E64938, #E64938); color: #FFFFFF; font-size: var(--t-xs);
 }
 .wanted .alsome .btn:not(.btn--quiet) { background: var(--sx-grad); border-color: transparent; color: #FFFFFF; }
 /* ISO: photos on a request, and who answered. */

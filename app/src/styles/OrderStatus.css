@@ -3,7 +3,7 @@
   --sb: var(--violet-text); --sb-soft: var(--violet-soft); --sb-line: var(--violet-line);
   display: flex; align-items: center; gap: var(--s3);
   margin: 0 0 var(--s4); padding: var(--s3) 14px; border-radius: var(--r-md);
-  background: linear-gradient(135deg, var(--sb-soft), rgba(255, 255, 255, 0.02));
+  background: linear-gradient(var(--sb-soft), var(--sb-soft));
   box-shadow: inset 0 0 0 1px var(--sb-line);
   border-left: 4px solid var(--sb);
 }
@@ -27,7 +27,7 @@
 .sbanner--urgent {
   --sb: #FADAD6; --sb-soft: rgba(237, 121, 108, 0.32); --sb-line: var(--coral-line);
   border-left-color: var(--coral);
-  background: linear-gradient(135deg, rgba(237, 121, 108, 0.34), rgba(233, 91, 75, 0.2));
+  background: linear-gradient(rgba(237, 121, 108, 0.34), rgba(237, 121, 108, 0.34));
   animation: sbanner-pulse 1.8s ease-in-out infinite;
 }
 .sbanner--urgent .sbanner__title { color: #FFFFFF; }

@@ -9,7 +9,7 @@
 .icard__go:hover { background: var(--grad-hero); transform: translateY(-1px); }
 .cartbox::after {
   content: ''; position: absolute; right: -60px; top: -60px; width: 180px; height: 180px; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle, rgba(45, 167, 192, 0.18), transparent 70%);
+  background: none;
 }
 .cartbox__text { display: grid; gap: 2px; min-width: 0; }
 .lotbox__peek {

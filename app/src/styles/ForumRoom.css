@@ -23,10 +23,8 @@
   border-radius: 0 0 22px 22px; color: #FFFFFF;
   background-color: rgb(var(--top-rgb));
   background-image:
-    var(--top-band),
-    linear-gradient(180deg, rgba(32, 31, 29, 0) 40%, rgba(32, 31, 29, 0.3) 100%),
-    linear-gradient(115deg, var(--violet) 0%, #1C19E0 45%, #E85545 100%);
-  box-shadow: 0 10px 30px rgba(28, 25, 224, 0.28);
+    var(--top-band), linear-gradient(180deg, rgba(32, 31, 29, 0) 40%, rgba(32, 31, 29, 0.3) 100%), linear-gradient(var(--violet), var(--violet));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 .forumhero__row { display: flex; align-items: center; gap: var(--s1); min-height: 44px; }
 .forumhero__back, .forumhero__icon {
@@ -63,7 +61,7 @@
  * where each class is used; see the note at the top of styles.css.
  */
 .streams__tab:hover { color: var(--text); }
-.streams__tab.is-on { background: var(--grad-blue); color: var(--accent-ink); box-shadow: 0 2px 10px rgba(64, 62, 233, 0.4); }
+.streams__tab.is-on { background: var(--grad-blue); color: var(--accent-ink); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.36); }
 .forumroom { --page-max: 720px; }
 .forumhero__back { margin-left: -8px; }
 .forumhero__back:hover, .forumhero__icon:hover { background: rgba(255, 255, 255, 0.18); }

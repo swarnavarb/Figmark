@@ -21,9 +21,9 @@
 .sc-hero__id .sk-mark { box-shadow: 0 0 0 4px var(--bg), 0 10px 30px color-mix(in srgb, var(--sk) 35%, transparent); }
 .sc-tabs { margin: 14px 0 var(--s4); }
 .sc-banner { display: grid; gap: 10px; justify-items: start; padding: var(--s4); border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); }
-.sc-banner--pending { border-color: rgba(239, 188, 48, 0.4); background: linear-gradient(120deg, var(--warn-soft), transparent 70%), var(--surface); }
-.sc-banner--changes { border-color: var(--coral-line); background: linear-gradient(120deg, var(--coral-soft), transparent 70%), var(--surface); }
-.sc-banner--rejected, .sc-banner--suspended { border-color: rgba(233, 90, 74, 0.4); background: linear-gradient(120deg, var(--danger-soft), transparent 70%), var(--surface); }
+.sc-banner--pending { border-color: rgba(239, 188, 48, 0.4); background: var(--surface); }
+.sc-banner--changes { border-color: var(--coral-line); background: var(--surface); }
+.sc-banner--rejected, .sc-banner--suspended { border-color: rgba(233, 90, 74, 0.4); background: var(--surface); }
 .sc-stats { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 720px) {
   .sc-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -31,7 +31,7 @@
 .sc-callout {
   display: flex; align-items: center; gap: var(--s3); width: 100%; padding: 14px var(--s4); text-align: left;
   border: 1px solid rgba(239, 188, 48, 0.45); border-radius: var(--r-lg);
-  background: linear-gradient(110deg, var(--warn-soft), transparent 70%), var(--surface);
+  background: var(--surface);
   color: var(--text); font: inherit; cursor: pointer;
 }
 .sc-glance { display: grid; gap: 1px; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--border); }
@@ -44,7 +44,7 @@
 .sc-lot { display: grid; gap: var(--s2); padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); color: inherit; text-decoration: none; }
 .sc-lot--tap { transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
 .sc-lot--tap:hover { border-color: var(--sk-line); transform: translateY(-1px); }
-.sc-lot--pending { border-color: rgba(239, 188, 48, 0.45); background: linear-gradient(110deg, var(--warn-soft), transparent 60%), var(--surface); }
+.sc-lot--pending { border-color: rgba(239, 188, 48, 0.45); background: var(--surface); }
 .sc-lot--off { opacity: 0.55; }
 .sc-lot__top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px var(--s3); }
 .sc-lot__name { font-weight: var(--w-semi); font-size: var(--t-md); }

@@ -36,14 +36,14 @@
 .serial__btn--done .serial__n { background: var(--ok); color: #282724; }
 .serial__btn--next {
   color: #FFFFFF; background: var(--accent);
-  box-shadow: 0 6px 16px -8px rgba(64, 62, 233, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 .serial__btn--next .serial__n { background: rgba(255, 255, 255, 0.22); color: #FFFFFF; }
 .serial__btn--lot { color: var(--aqua); background: var(--aqua-soft); }
 .serial__btn--lot.serial__btn--done { color: var(--ok); background: var(--ok-soft); }
 .serial__btn--next.serial__btn--lot {
-  background: linear-gradient(135deg, #238397, var(--aqua)); color: #272623;
-  box-shadow: 0 6px 16px -8px rgba(45, 167, 192, 0.85);
+  background: linear-gradient(#238397, #238397); color: #272623;
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.5);
 }
 .serial__btn--later { opacity: 0.8; }
 .serial__btn--next.serial__btn--lot { animation-name: serial-next-lot; }

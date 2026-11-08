@@ -1594,6 +1594,28 @@ const POSTS: PostSeed[] = [
   },
 ];
 
+/** The redesign's flat swatches, nearest by hue: [fill, ink]. */
+function flatSwatch(hex: string): [string, string] {
+  const v = hex.replace('#', '');
+  const r = parseInt(v.slice(0, 2), 16) / 255;
+  const g = parseInt(v.slice(2, 4), 16) / 255;
+  const b = parseInt(v.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let hue = 0;
+  if (max !== min) {
+    const d = max - min;
+    hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    hue = (hue * 60 + 360) % 360;
+  }
+  if (hue < 25 || hue >= 330) return ['#EA6A5A', '#1A1A19'];
+  if (hue < 70) return ['#F5CB5C', '#1A1A19'];
+  if (hue < 165) return ['#C6D3CB', '#1A1A19'];
+  if (hue < 205) return ['#BDE8F0', '#1A1A19'];
+  if (hue < 290) return ['#6D6BF2', '#F4F1EA'];
+  return ['#EA6A5A', '#1A1A19'];
+}
+
 /**
  * Seed pictures, drawn rather than fetched.
  *
@@ -1605,13 +1627,19 @@ export function seedArt([rawCaption, from, to]: [string, string, string], index:
   // Written into XML, so an ampersand or a bracket in a caption would make
   // the whole picture fail to decode.
   const caption = rawCaption.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Flat blocks in the app's palette: the hue of the first colour picks the
+  // swatch, the second the shape laid over it.
+  const [bg] = flatSwatch(from);
+  const [shape] = flatSwatch(to === from ? '#F5CB5C' : to);
+  const accent = shape === bg ? '#F4F1EA' : shape;
+  const size = Math.min(54, Math.floor(1050 / Math.max(caption.length, 1)));
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">`
-    + `<defs><linearGradient id="g${index}" x1="0" y1="0" x2="1" y2="1">`
-    + `<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>`
-    + `<rect width="800" height="1000" fill="url(#g${index})"/>`
-    + `<circle cx="600" cy="230" r="150" fill="#fff" fill-opacity=".14"/>`
-    + `<circle cx="190" cy="800" r="230" fill="#000" fill-opacity=".10"/>`
-    + `<text x="400" y="540" text-anchor="middle" font-family="system-ui,sans-serif" font-size="56" font-weight="700" fill="#fff">${caption}</text>`
+    + `<rect width="800" height="1000" fill="${bg}"/>`
+    + `<circle cx="590" cy="250" r="170" fill="${accent}"/>`
+    + `<rect x="90" y="640" width="300" height="300" rx="60" fill="#1A1A19" fill-opacity=".9" transform="rotate(-8 240 790)"/>`
+    + `<path d="M150 210l22 52 56 6-42 37 12 55-48-28-48 28 12-55-42-37 56-6z" fill="#1A1A19"/>`
+    + `<rect x="80" y="470" width="640" height="112" rx="56" fill="#1A1A19"/>`
+    + `<text x="400" y="${526 + size * 0.36}" text-anchor="middle" font-family="system-ui,sans-serif" font-size="${size}" font-weight="800" letter-spacing="1" fill="#F4F1EA">${caption.toUpperCase()}</text>`
     + `</svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

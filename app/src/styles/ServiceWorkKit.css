@@ -88,7 +88,7 @@
 .svk-msg { display: grid; gap: 4px; max-width: 86%; padding: 10px 12px; border-radius: 14px 14px 14px 4px; background: var(--surface-2); }
 .svk-msg p { margin: 0; font-size: var(--t-sm); line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
 .svk-msg.is-mine { justify-self: end; border-radius: 14px 14px 4px 14px; }
-.svk-msg--company { background: linear-gradient(140deg, var(--sk-soft, var(--surface-2)), var(--surface-2)); border: 1px solid var(--sk-line, var(--border)); }
+.svk-msg--company { background: linear-gradient(var(--sk-soft, var(--surface-2)), var(--sk-soft, var(--surface-2))); border: 1px solid var(--sk-line, var(--border)); }
 .svk-msg.is-announce { max-width: 100%; justify-self: stretch; }
 .svk-msg__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); }
 .svk-msg__head b { font-size: var(--t-sm); }

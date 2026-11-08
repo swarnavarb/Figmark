@@ -131,18 +131,17 @@ export function hueFor(seed: string): number {
 /**
  * The square an item without a photo gets.
  *
- * Two stops thirty degrees apart rather than one flat colour, lit from the
- * top left, so a grid of these reads as a set of objects under one light
- * rather than a set of swatches.
+ * One flat block per item, picked from the seed so the same item always
+ * gets the same colour.
  */
 export function gradientFor(seed: string): string {
   const hue = hueFor(seed);
-  // Deep and saturated rather than bright. A placeholder is the backdrop an
-  // item would have been photographed against, not the item: at full
-  // brightness a grid of these is a wall of neon slabs competing with the
-  // products, which is the opposite of the job. Dark enough that the
-  // initials, the badge and the price all still read on top.
-  return `linear-gradient(145deg, hsl(${hue} 58% 34%), hsl(${(hue + 34) % 360} 64% 19%))`;
+  // Deep rather than bright: a placeholder is the backdrop an item would have
+  // been photographed against, not the item, and the initials, badge and
+  // price all still have to read on top. Flat, in deep palette swatches.
+  const swatches = ['#4E4CC9', '#B9483A', '#2F6F7A', '#8C6A1F', '#556B5F', '#7A4FB0'];
+  const pick = swatches[Math.floor(hue / 60) % swatches.length];
+  return `linear-gradient(${pick}, ${pick})`;
 }
 
 /**

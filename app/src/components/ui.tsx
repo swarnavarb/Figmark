@@ -13,6 +13,7 @@ export { Icon } from './Icon';
 import { Icon } from './Icon';
 import { BackLink } from './ScrollManager';
 import { ManagerMark } from './ManagerBadge';
+import { Sticker, type StickerName } from './Sticker';
 export type { IconName } from './Icon';
 
 /**
@@ -102,14 +103,26 @@ export function TrustBadge({ score, tier }: { score: number; tier?: string }) {
  * The default is the six-point spark the "everything" tile uses, which is the
  * nearest thing this app has to a shrug.
  */
+const EMPTY_PAIRS: Array<[StickerName, StickerName]> = [
+  ['star', 'sparkle'], ['box', 'star'], ['toy', 'sparkle'], ['heart', 'bolt'],
+  ['tag', 'sparkle'], ['chat', 'star'], ['ticket', 'heart'], ['coin', 'sparkle'],
+];
+
 export function EmptyState({ icon, title, children }: {
   icon?: ReactNode;
   title: string;
   children?: ReactNode;
 }) {
+  // A different pair of stickers per title, the same pair every time for one.
+  const seed = [...title].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  const [left, right] = EMPTY_PAIRS[seed % EMPTY_PAIRS.length] ?? EMPTY_PAIRS[0]!;
   return (
     <div className="empty">
-      <div className="empty__icon">{icon ?? <Icon name="spark" size={26} />}</div>
+      <div className="empty__art">
+        <Sticker name={left} size={40} tilt={-14} className="empty__st empty__st--l" />
+        <div className="empty__icon">{icon ?? <Icon name="spark" size={26} />}</div>
+        <Sticker name={right} size={34} tilt={12} className="empty__st empty__st--r" />
+      </div>
       <h3>{title}</h3>
       {children && <p className="muted">{children}</p>}
     </div>

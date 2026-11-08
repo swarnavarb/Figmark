@@ -23,8 +23,7 @@
   width: 120%; height: 130%;
   color: var(--tone);
   background:
-    radial-gradient(closest-side at 78% 22%, currentColor, transparent),
-    radial-gradient(closest-side at 10% 90%, color-mix(in srgb, currentColor 60%, transparent), transparent);
+    radial-gradient(closest-side at 78% 22%, currentColor, transparent);
   opacity: 0.28;
   filter: blur(18px);
   transition: color 700ms var(--ease);

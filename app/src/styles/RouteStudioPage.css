@@ -38,7 +38,7 @@
   flex: 1 1 auto; min-width: 0; height: 46px; padding: 0 var(--s4); border: 0; border-radius: var(--r-pill); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); white-space: nowrap;
   font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); color: #FFFFFF; background: var(--grad-cool);
-  box-shadow: 0 8px 20px -10px rgba(62, 185, 210, 0.8);
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.5);
 }
 .rsbar__save { height: 46px; border-radius: var(--r-pill); padding: 0 18px; }
 .rszone__add {
@@ -96,8 +96,6 @@
   position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: start;
   padding: var(--s3); border-radius: var(--r-lg);
   background:
-    radial-gradient(120% 120% at 0% 0%, rgba(244, 209, 111, 0.16), transparent 55%),
-    radial-gradient(100% 100% at 100% 100%, rgba(64, 62, 233, 0.14), transparent 60%),
     var(--surface);
   box-shadow: inset 0 0 0 1px var(--border), 0 10px 26px rgba(20, 20, 18, 0.25);
 }

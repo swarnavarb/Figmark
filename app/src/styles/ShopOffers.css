@@ -3,7 +3,7 @@
 .shopoffr__hero {
   display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--s3);
   padding: var(--s4); border-radius: var(--r-lg); border: 1px solid var(--violet-line);
-  background: radial-gradient(120% 160% at 100% 0%, var(--violet-soft), transparent 60%), var(--surface);
+  background: var(--surface);
 }
 .shopoffr__title { margin: 0; font-size: var(--t-xl); letter-spacing: -0.02em; }
 .shopoffr__sub { margin: 4px 0 0; color: var(--text-dim); font-size: var(--t-sm); }

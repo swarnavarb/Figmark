@@ -116,8 +116,6 @@
 .pstudio__stylemark { width: 100%; height: 26px; border-radius: var(--r-sm); background: var(--surface); position: relative; overflow: hidden; }
 .pstudio__style--text .pstudio__stylemark {
   background:
-    linear-gradient(90deg, var(--violet-line) 70%, transparent 0) 6px 5px / calc(100% - 12px) 6px no-repeat,
-    linear-gradient(90deg, var(--aqua-line) 40%, transparent 0) 6px 15px / calc(100% - 12px) 6px no-repeat,
     var(--surface);
 }
 .pstudio__style--photo .pstudio__stylemark {
@@ -127,7 +125,7 @@
     linear-gradient(var(--violet-line), var(--violet-line)) calc(100% - 4px) 4px / calc(33% - 6px) 18px no-repeat,
     var(--surface);
 }
-.pstudio__style--versus .pstudio__stylemark { background: linear-gradient(115deg, var(--blue) 0 48%, var(--surface) 48% 52%, var(--pink) 52%); opacity: 0.8; }
+.pstudio__style--versus .pstudio__stylemark { background: linear-gradient(var(--blue), var(--blue)); opacity: 0.8; }
 .pstudio__style--rating .pstudio__stylemark::after {
   content: '★★★★☆'; position: absolute; inset: 0; display: grid; place-items: center;
   color: var(--warn); font-size: calc(13px * var(--text-scale)); letter-spacing: 1px;
@@ -182,7 +180,7 @@
 .pstudio__store {
   display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r-lg);
   border: 1px solid var(--violet-line);
-  background: linear-gradient(135deg, var(--violet-soft), transparent 70%), var(--surface);
+  background: var(--surface);
 }
 .pstudio__storehead { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--violet-text); text-transform: uppercase; letter-spacing: 0.06em; }
 .pstudio__toggle { border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); }

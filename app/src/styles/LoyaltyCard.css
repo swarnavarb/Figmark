@@ -7,9 +7,7 @@
   position: relative; isolation: isolate; overflow: hidden; display: grid; gap: var(--s3);
   padding: var(--s4) var(--s4) var(--s3); border-radius: 20px; color: var(--card-ink); min-width: 0;
   background:
-    radial-gradient(120% 90% at 0% 0%, rgba(255, 255, 255, 0.34), transparent 55%),
-    radial-gradient(90% 90% at 100% 100%, rgba(20, 20, 18, 0.2), transparent 60%),
-    linear-gradient(135deg, var(--card-a), var(--card-b));
+    radial-gradient(120% 90% at 0% 0%, rgba(255, 255, 255, 0.34), transparent 55%), radial-gradient(90% 90% at 100% 100%, rgba(20, 20, 18, 0.2), transparent 60%), linear-gradient(var(--card-a), var(--card-a));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.14),
     0 22px 44px -26px rgba(20, 20, 18, 0.75), 0 3px 8px -3px rgba(20, 20, 18, 0.35);
@@ -105,7 +103,7 @@
 .stampdots.stampcard--mint { --card-a: var(--ok); --card-b: var(--aqua); }
 .stampdots.stampcard--violet { --card-a: var(--violet); --card-b: var(--blue); }
 .stampdots.stampcard--ink { --card-a: var(--gold); --card-b: var(--gold); }
-.stampdots i.is-on { background: linear-gradient(135deg, var(--card-a), var(--card-b)); box-shadow: none; opacity: 1; }
+.stampdots i.is-on { background: linear-gradient(var(--card-a), var(--card-a)); box-shadow: none; opacity: 1; }
 
 /* How it works, in three lines. */
 .loyhow { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: var(--t-sm); color: var(--text-dim); }
@@ -116,7 +114,7 @@
 .ckloyal { display: grid; gap: var(--s2); }
 .ckloyal__fit {
   display: flex; gap: var(--s2); align-items: center; margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md);
-  background: linear-gradient(100deg, rgba(237, 179, 19, 0.16), transparent 80%);
+  background: transparent;
   box-shadow: inset 0 0 0 1px var(--border); animation: ckloyal-in 380ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .ckloyal__what { display: grid; min-width: 0; font-size: var(--t-sm); }

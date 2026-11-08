@@ -2,7 +2,7 @@
 .dealcard {
   display: grid; gap: var(--s2); min-width: min(260px, 70vw); max-width: 320px; padding: var(--s3);
   border-radius: var(--r-lg); border: 1px solid rgba(239, 188, 48, 0.45);
-  background: linear-gradient(160deg, rgba(237, 179, 19, 0.14), rgba(237, 179, 19, 0.04));
+  background: linear-gradient(rgba(237, 179, 19, 0.14), rgba(237, 179, 19, 0.14));
 }
 .dealcard__item { display: flex; gap: 10px; align-items: center; min-width: 0; }
 .dealcard__body { display: grid; gap: 2px; min-width: 0; }
@@ -54,9 +54,8 @@
 .dealcard--offer {
   border-color: var(--pink-line);
   background:
-    radial-gradient(120% 90% at 100% 0%, rgba(233, 91, 75, 0.22), transparent 60%),
-    linear-gradient(160deg, rgba(102, 100, 238, 0.14), rgba(233, 91, 75, 0.06));
-  box-shadow: 0 8px 22px -14px rgba(233, 91, 75, 0.7);
+    linear-gradient(rgba(102, 100, 238, 0.14), rgba(102, 100, 238, 0.14));
+  box-shadow: 0 8px 22px -14px rgba(0, 0, 0, 0.5);
 }
 .dealcard__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .dealcard__tag { white-space: nowrap; font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.04em; color: var(--pink-text); text-transform: uppercase; }

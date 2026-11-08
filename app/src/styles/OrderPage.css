@@ -22,8 +22,8 @@
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   padding: 14px var(--s4);
   border-radius: var(--r-md);
-  background: linear-gradient(135deg, var(--violet), #3734E9);
-  box-shadow: 0 6px 20px rgba(64, 62, 233, 0.35);
+  background: linear-gradient(var(--violet), var(--violet));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
 }
 .claimcard__label { font-size: var(--t-sm); font-weight: var(--w-semi); color: rgba(249, 249, 249, 0.85); }
 .claimcard__amount { font-size: var(--t-xl); font-weight: var(--w-bold); color: #FFFFFF; letter-spacing: -0.02em; }
@@ -84,13 +84,13 @@
   .os__grid { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
 }
 .os-card { display: grid; gap: var(--s3); padding: var(--s4); border: 1px solid var(--border); border-radius: var(--r-xl); background: var(--surface); }
-.os-card--cover { background: linear-gradient(150deg, rgba(87, 176, 126, 0.08), transparent 55%), var(--surface); }
+.os-card--cover { background: var(--surface); }
 .os-card--cover.is-on { border-color: rgba(87, 176, 126, 0.45); }
-.os-card--art { background: radial-gradient(120% 90% at 100% 0%, var(--pink-soft), transparent 55%), var(--surface); }
+.os-card--art { background: var(--surface); }
 .os-card--art.is-on { border-color: var(--pink-line); }
 .os-card__top { display: flex; align-items: center; gap: var(--s3); }
 .os-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 42px; height: 42px; border-radius: var(--r-md); background: var(--ok-soft); color: var(--ok); }
-.os-card__icon--art { background: var(--grad-warm); color: #FFFFFF; box-shadow: 0 8px 20px rgba(233, 91, 75, 0.35); }
+.os-card__icon--art { background: var(--grad-warm); color: #FFFFFF; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.32); }
 .os-card__title { font-weight: var(--w-semi); font-size: var(--t-md); }
 .os-card__badge { flex: 0 0 auto; }
 .os-card__lede { margin: 0; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.55; }

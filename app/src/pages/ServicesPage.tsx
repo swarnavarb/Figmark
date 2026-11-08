@@ -32,6 +32,7 @@ import { ConditionTag } from '../components/ConditionTag';
 import { PageLoading } from '../components/Feedback';
 import { SkelCards, SkelFaces, SkelInline } from '../components/PageSkeletons';
 import '../styles/ServicesPage.css';
+import { StickerCluster } from '../components/Sticker';
 
 /**
  * The trades around the trade.
@@ -58,7 +59,16 @@ export function ServicesPage() {
     <main className="page tab-view">
       <div className="page__head">
         <div>
-          <h1>Services</h1>
+          <h1 className="page__titled">
+            Services
+            <StickerCluster
+              className="title-stickers"
+              items={[
+                { name: 'box', size: 34, x: 0, y: 4, tilt: -10 },
+                { name: 'toy', size: 30, x: 58, y: 0, tilt: 10 },
+              ]}
+            />
+          </h1>
           <p className="muted">
             The people around the trade — who flies the crate, and who makes the piece one of a kind.
           </p>

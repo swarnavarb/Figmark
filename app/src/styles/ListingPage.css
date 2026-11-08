@@ -55,7 +55,7 @@
 .lp__private {
   display: flex; align-items: center; gap: var(--s3); margin: 10px 0; padding: var(--s3) 14px; border-radius: var(--r-lg);
   border: 1px solid var(--pink-line);
-  background: radial-gradient(120% 120% at 100% 0%, rgba(233, 91, 75, 0.2), transparent 60%), var(--surface);
+  background: var(--surface);
 }
 .lp__privateicon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-md); background: var(--pink-soft); font-size: var(--t-lg); flex: none; }
 .buybox__ask:hover { border-color: var(--border-strong); }
@@ -72,7 +72,7 @@
   border-radius: var(--r-pill); background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--border);
 }
-.buybox__buy:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(233, 91, 75, 0.4); background: var(--grad-hero); }
+.buybox__buy:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36); background: var(--grad-hero); }
 .buybox__save { flex: 0 0 48px; padding: 0; justify-content: center; }
 .buybox__opening::after { content: '…'; display: inline-block; width: 1em; text-align: left; animation: lp-dots 1s steps(4) infinite; }
 .pocard__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s3); align-items: center; }
@@ -82,7 +82,7 @@
 .gallery__fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
 .gallery__badges { position: absolute; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .hashtags { display: flex; flex-wrap: wrap; gap: var(--s2); }
-.hashtag:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(97, 95, 237, 0.25); color: var(--text); }
+.hashtag:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.23); color: var(--text); }
 .posts__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .posts__count {
   min-width: 26px; padding: 2px var(--s2); border-radius: var(--r-pill); text-align: center; font-size: var(--t-xs); font-weight: var(--w-semi);
@@ -110,7 +110,7 @@
  * where each class is used; see the note at the top of styles.css.
  */
 .meter.is-warm .meter__fill { background: var(--grad-warm); }
-.meter.is-hot .meter__fill { background: linear-gradient(135deg, var(--coral), var(--warn)); }
+.meter.is-hot .meter__fill { background: linear-gradient(var(--coral), var(--coral)); }
 .meter.is-full .meter__fill { background: var(--grad-play); }
 /* Dashed: they are in, but they have not paid. The bar says the same thing. */
 .pile b.pile__soft { border-style: dashed; border-color: var(--text-faint); opacity: 0.8; }
@@ -128,7 +128,7 @@
 .fillring__track { fill: none; stroke: rgba(255, 255, 255, 0.08); stroke-width: 6; }
 .gallery__badges .qribbon { position: static; transform: none; border-radius: var(--r-pill); padding: var(--s1) 10px; }
 .hashtag__hash {
-  font-weight: var(--w-bold); background: linear-gradient(120deg, var(--aqua), var(--pink));
+  font-weight: var(--w-bold); background: linear-gradient(var(--aqua), var(--aqua));
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .posts__hint, .posts__empty { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
@@ -158,8 +158,7 @@
 .posts__field {
   display: flex; align-items: flex-end; gap: var(--s2); padding: 6px 6px 6px 14px; border-radius: var(--r-xl);
   border: 1px solid transparent;
-  background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
-    linear-gradient(120deg, rgba(45, 167, 192, 0.4), rgba(97, 95, 237, 0.4), rgba(233, 91, 75, 0.4)) border-box;
+  background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box, linear-gradient(rgba(45, 167, 192, 0.4), rgba(45, 167, 192, 0.4)) border-box;
 }
 .posts__send {
   display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 0; border-radius: 50%; color: #FFFFFF;
@@ -208,13 +207,12 @@
 .lshare:active { transform: scale(0.99); }
 .lshare--fill {
   border-color: transparent;
-  background: linear-gradient(var(--surface), var(--surface)) padding-box,
-    linear-gradient(135deg, var(--lshare-from), var(--lshare-to)) border-box;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box, linear-gradient(var(--lshare-from), var(--lshare-from)) border-box;
 }
 .lshare__icon { font-size: calc(22px * var(--text-scale)); line-height: 1; }
 .lshare__go {
   flex: 0 0 auto; padding: 7px 14px; border-radius: var(--r-pill); font-weight: 700; font-size: var(--t-sm);
-  color: #FFFFFF; background: linear-gradient(135deg, var(--lshare-from), var(--lshare-to));
+  color: #FFFFFF; background: linear-gradient(var(--lshare-from), var(--lshare-from));
 }
 
 /* Sold out: ask to be told when it is back. */

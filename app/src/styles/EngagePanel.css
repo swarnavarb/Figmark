@@ -4,8 +4,7 @@
 .sengage__hero {
   display: grid; gap: var(--s3); padding: var(--s4); border-radius: var(--r-lg);
   border: 1px solid var(--violet-line);
-  background: radial-gradient(120% 120% at 100% 0%, rgba(233, 91, 75, 0.18), transparent 60%),
-    radial-gradient(100% 100% at 0% 100%, var(--violet-soft), transparent 60%), var(--surface);
+  background: var(--surface);
 }
 .sengage__hero h2 { margin: 0 0 var(--s1); font: var(--w-bold) var(--t-lg)/1.2 var(--display); }
 .sengage__hero p { margin: 0; font-size: var(--t-sm); }

@@ -7,6 +7,7 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
 import { Thumb } from './ui';
+import { StickerCluster } from './Sticker';
 
 /**
  * The two Buy-tab shelves that sell an event, each telling its own story.
@@ -230,13 +231,13 @@ export function DropsStage() {
 
   return (
     <section className="stage" aria-label="Drops">
-      <span className="stage__valance" aria-hidden="true" />
-      <span className="stage__drape stage__drape--l" aria-hidden="true" />
-      <span className="stage__drape stage__drape--r" aria-hidden="true" />
-      <span className="stage__bulbs" aria-hidden="true">
-        {Array.from({ length: 14 }, (_, i) => <span key={i} style={{ ['--b' as string]: i }} />)}
-      </span>
-      <span className="stage__spot" aria-hidden="true" />
+      <StickerCluster
+        className="stage__stickers"
+        items={[
+          { name: 'ticket', size: 50, x: 30, y: 0, tilt: -12 },
+          { name: 'bolt', size: 34, x: 0, y: 30, tilt: 10 },
+        ]}
+      />
       <div className="stage__head">
         <h2>⚡ Drops</h2>
         <span>Join now or get a reminder on the live drops</span>
@@ -244,9 +245,6 @@ export function DropsStage() {
       <div className="stage__row">
         {drops.map((drop, index) => <DropTicket key={drop.id} drop={drop} index={index} />)}
       </div>
-      <span className="stage__floor" aria-hidden="true">
-        {Array.from({ length: 7 }, (_, i) => <i key={i} style={{ ['--f' as string]: i }} />)}
-      </span>
     </section>
   );
 }

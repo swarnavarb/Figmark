@@ -13,7 +13,6 @@
   border-radius: var(--r-xl); border: 1px solid var(--border); color: inherit; text-decoration: none;
   /* Each business carries its own hue, as a glow from the corner its icon sits in. */
   background:
-    radial-gradient(90% 120% at 0% 0%, color-mix(in srgb, var(--obz-hue) 14%, transparent), transparent 60%),
     var(--surface);
   transition: border-color var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }

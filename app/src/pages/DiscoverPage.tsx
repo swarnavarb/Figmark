@@ -15,6 +15,7 @@ import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 import '../styles/DiscoverPage.css';
+import { StickerCluster } from '../components/Sticker';
 
 /**
  * Discover: the public side of Figmark, for somebody who does not know what
@@ -436,7 +437,14 @@ function DiscoverBody() {
   return (
     <main className="page discpage">
       <header className="dischero">
-        <span className="dischero__aurora" aria-hidden="true"><span /><span /><span /></span>
+        <StickerCluster
+          className="dischero__stickers"
+          items={[
+            { name: 'toy', size: 70, x: 34, y: 30, tilt: 8 },
+            { name: 'star', size: 40, x: 0, y: 0, tilt: -12 },
+            { name: 'sparkle', size: 24, x: 4, y: 72, tilt: 0 },
+          ]}
+        />
         <div className="dischero__top">
           <span className="dischero__kicker"><span aria-hidden="true">✦</span> Across Figmark</span>
           <button type="button" className="iconbtn dischero__share" aria-label="Share Discover" onClick={() => void share()}>

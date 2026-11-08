@@ -8,6 +8,7 @@ import { formatDateOrdinal, formatMoney } from '../format';
 import { EmptyState, ErrorNotice } from '../components/ui';
 import { SkelCards, SkelInline } from '../components/PageSkeletons';
 import { StampCard, nextLine } from '../components/LoyaltyCard';
+import { StickerCluster } from '../components/Sticker';
 
 /**
  * The wallet, store by store: everything one shop, forwarder or artist holds
@@ -107,6 +108,13 @@ export function WalletStores({ refunds }: { refunds: MyRefund[] }) {
   return (
     <div className="wlt">
       <section className="whero">
+        <StickerCluster
+          className="hero-stickers"
+          items={[
+            { name: 'coin', size: 62, x: 28, y: 6, tilt: 10 },
+            { name: 'sparkle', size: 24, x: 0, y: 0 },
+          ]}
+        />
         <div className="whero__main">
           <small>Ready to spend at your stores</small>
           <b>{formatMoney(spend)}</b>

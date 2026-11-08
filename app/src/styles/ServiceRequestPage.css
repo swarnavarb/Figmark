@@ -2,7 +2,7 @@
 .srq-page { max-width: 1000px; }
 .srq-sent { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 12px 14px; border-radius: var(--r-md); background: var(--ok-soft); color: var(--ok); font-size: var(--t-sm); }
 .srq-head { display: grid; gap: 12px; margin-bottom: 20px; padding: 20px; border: 1px solid var(--border); border-radius: var(--r-xl);
-  background: linear-gradient(150deg, var(--sk-soft), transparent 55%), var(--surface); }
+  background: var(--surface); }
 .srq-head h1 { margin: 0; font-size: clamp(1.4rem, 3.6vw, 2rem); letter-spacing: -0.02em; }
 .srq-head__store { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
 .srq-head__store > span { display: grid; gap: 2px; }

@@ -108,8 +108,7 @@
 .costfield {
   padding: var(--s3); border-radius: var(--r-md); border: 1px solid transparent;
   background:
-    linear-gradient(var(--surface), var(--surface)) padding-box,
-    linear-gradient(135deg, rgba(239, 188, 48, 0.55), rgba(233, 91, 75, 0.4) 50%, rgba(102, 100, 238, 0.45)) border-box;
+    linear-gradient(var(--surface), var(--surface)) padding-box, linear-gradient(rgba(239, 188, 48, 0.55), rgba(239, 188, 48, 0.55)) border-box;
 }
 .costfield__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); color: var(--gold-text); }
 .costfield__fill { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--s2); align-items: end; }
@@ -119,7 +118,7 @@
 .fcalc__result {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
   padding: 10px; border-radius: var(--r-md);
-  background: linear-gradient(135deg, rgba(237, 179, 19, 0.14), rgba(233, 91, 75, 0.12));
+  background: linear-gradient(rgba(237, 179, 19, 0.14), rgba(237, 179, 19, 0.14));
 }
 .calclines { display: grid; gap: 6px; }
 .savedcalc {
@@ -162,7 +161,7 @@
   background: var(--text-dim); box-shadow: 0 1px 3px rgba(20, 20, 18, 0.35);
   transition: transform var(--dur-2) cubic-bezier(0.34, 1.4, 0.64, 1), background var(--dur-2) ease;
 }
-.costswitch.is-on { background: linear-gradient(135deg, var(--gold), var(--pink)); border-color: transparent; }
+.costswitch.is-on { background: linear-gradient(var(--gold), var(--gold)); border-color: transparent; }
 .costswitch.is-on .costswitch__knob { transform: translateX(18px); background: #FFFFFF; }
 @media (prefers-reduced-motion: reduce) {
   .costswitch, .costswitch__knob { transition: none; }
