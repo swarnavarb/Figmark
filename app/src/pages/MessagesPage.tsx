@@ -9,7 +9,8 @@ import { onThreadChanged } from '../live';
 import { MESSAGES_NEWS_EVENT } from '../components/Notifications';
 import { ManagerMark } from '../components/ManagerBadge';
 import { Avatar, EmptyState, ErrorNotice, Icon, LevelChip, useConfirm } from '../components/ui';
-import { SkeletonRows } from '../components/Feedback';
+import { SkeletonRows, useToast } from '../components/Feedback';
+import { haptic } from '../haptics';
 import { DealCard, DealForm, DealPicker, ItemRefCard, useMakeDeal } from '../components/PrivateDeal';
 import { formatMoney } from '../format';
 import { timeAgo } from '../format';
@@ -238,7 +239,9 @@ export function ThreadPage() {
   /** Photos on their way: shown at once from the file, sent once they are up. */
   const [photos, setPhotos] = useState<DraftPhoto[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Said through the app's one toast, like every other confirmation.
+  const toast = useToast();
+  const setNotice = useCallback((text: string | null) => { if (text) toast(text, 'info'); }, [toast]);
   // Arriving from a saved calculation's "Private deal": the form opens with it.
   // Watched by the navigation's key, because "Private deal" pressed while this
   // very chat is open lands on the same page rather than a fresh one.
@@ -495,15 +498,42 @@ export function ThreadPage() {
     if (!handle || uploading || (!body.trim() && !about && sendable.length === 0)) return;
     setBusy(true);
     setError(null);
-    try {
-      await api.sendMessage(handle, body.trim(), data?.us.handle, undefined, replyTo?.id, about?.id, sendable);
+    // A plain text message shows in the chat the moment it is sent, marked as
+    // sending, rather than after the round trip and a reload. Photos and items
+    // still wait: their bubbles depend on what the server makes of them.
+    const text = body.trim();
+    const quick = Boolean(data && text && sendable.length === 0 && !about);
+    const pendingId = `pending:${Date.now()}`;
+    const quoted = replyTo;
+    if (quick && data) {
+      const now = new Date().toISOString();
+      setData((current) => current && {
+        ...current,
+        messages: [...current.messages, {
+          id: pendingId, createdAt: now, updatedAt: now, threadId: current.threadId,
+          from: current.us, to: current.them, body: text, readAt: null,
+          replyTo: quoted ? { id: quoted.id, name: quoted.from.displayName, body: quoted.body } : null,
+        }],
+      });
       setBody('');
+      setReplyTo(null);
+    }
+    try {
+      await api.sendMessage(handle, text, data?.us.handle, undefined, quoted?.id, about?.id, sendable);
+      if (!quick) setBody('');
       photos.forEach((photo) => URL.revokeObjectURL(photo.preview));
       setPhotos([]);
       setReplyTo(null);
       if (about) dropAbout();
       await load();
     } catch (err) {
+      if (quick) {
+        // Back where it was, so nothing typed is lost: one tap sends it again.
+        setData((current) => current && { ...current, messages: current.messages.filter((message) => message.id !== pendingId) });
+        setBody((now) => now || text);
+        setReplyTo(quoted);
+      }
+      haptic('error');
       setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
     } finally {
       setBusy(false);
@@ -529,7 +559,7 @@ export function ThreadPage() {
       await api.deleteMessage(handle, message.id, data?.us.handle);
       setData((current) => current && { ...current, messages: current.messages.filter((entry) => entry.id !== message.id) });
     } catch (err) {
-      setNotice(err instanceof ApiRequestError ? err.message : 'Could not delete that.');
+      toast(err instanceof ApiRequestError ? err.message : 'Could not delete that.', 'error');
     }
   }
 
@@ -637,8 +667,6 @@ export function ThreadPage() {
             </EmptyState>
           ) : blocks}
         </div>
-
-        {notice && <p className="chtoast" role="status" onAnimationEnd={() => setNotice(null)}>{notice}</p>}
 
         {picker && data.us.isStore && (
           <DealPicker us={data.us} them={data.them} focus={picker.focus} onClose={() => setPicker(null)} />
@@ -823,7 +851,7 @@ function DirectMessage({ message, thread, handle, startsRun, onReply, onJump, on
 
   return (
     <div id={`dm-${message.id}`} ref={box}
-      className={`cmsg cmsg--${mine ? 'mine' : 'visitor'}${startsRun ? ' is-first' : ''}${open ? ' is-open' : ''}`}>
+      className={`cmsg cmsg--${mine ? 'mine' : 'visitor'}${startsRun ? ' is-first' : ''}${open ? ' is-open' : ''}${message.id.startsWith('pending:') ? ' is-sending' : ''}`}>
       {!mine && (
         <span className="cmsg__avatar">{startsRun ? <Avatar name={message.from.displayName} size={32} /> : null}</span>
       )}

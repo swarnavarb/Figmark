@@ -152,11 +152,11 @@ export function PreOrderBox({
           <div className="field-row">
             <label className="field">
               <span>Bookings needed</span>
-              <input type="number" min="2" max={MAX_THRESHOLD} value={units} onChange={(e) => onUnits(e.target.value)} />
+              <input type="number" inputMode="decimal" min="2" max={MAX_THRESHOLD} value={units} onChange={(e) => onUnits(e.target.value)} />
             </label>
             <label className="field">
               <span>Bookings close in (days)</span>
-              <input type="number" min="1" max={MAX_CUTOFF_DAYS} value={closes} onChange={(e) => onCloses(e.target.value)} />
+              <input type="number" inputMode="decimal" min="1" max={MAX_CUTOFF_DAYS} value={closes} onChange={(e) => onCloses(e.target.value)} />
             </label>
           </div>
           {/* Both answerable later from the item's page; asked here so nobody

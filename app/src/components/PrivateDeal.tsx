@@ -1,3 +1,4 @@
+import { useToast } from './Feedback';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNow } from '../clock';
 import { Link, useNavigate } from 'react-router-dom';
@@ -151,6 +152,7 @@ export function DealForm({ us, them, onClose, onSent, initialTitle = '' }: {
   /** What they are asking about, when they came from a post about it. */
   initialTitle?: string;
 }) {
+  const toast = useToast();
   const [title, setTitle] = useState(initialTitle.slice(0, 120));
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -168,6 +170,7 @@ export function DealForm({ us, them, onClose, onSent, initialTitle = '' }: {
         kind: 'request', title: title.trim(), priceMinor, quantity: Math.max(1, Number(quantity) || 1),
       });
       onSent();
+      toast('Deal sent 🤝');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
       setBusy(false);

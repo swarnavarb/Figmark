@@ -12,7 +12,7 @@ import {
   emptyLane, type SectionProps,
 } from '../components/StoreForm';
 import type { StoreReviewEvent, StoreStatus } from '@shared/models';
-import { PageLoading } from '../components/Feedback';
+import { PageLoading, useToast } from '../components/Feedback';
 
 /**
  * Applying for a service store.
@@ -49,6 +49,7 @@ function freshDraft(kind: StoreKind): StoreDraft {
 }
 
 export function StoreApplyPage() {
+  const toast = useToast();
   const { kind: raw } = useParams<{ kind: string }>();
   const kind = (STORE_KINDS as readonly string[]).includes(raw ?? '') ? (raw as StoreKind) : null;
   const { user } = useSession();
@@ -111,6 +112,7 @@ export function StoreApplyPage() {
       setEditing(false);
       setHistory((current) => [...current, { at: new Date().toISOString(), by: user!.id, status: 'pending', note: status ? 'Sent back for review.' : 'Application sent.' }]);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      toast("Application sent. We'll review it shortly.");
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
     } finally {

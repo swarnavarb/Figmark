@@ -18,6 +18,7 @@ import { applyDeferredStyles, liftBootScreen } from './components/Preloader';
 import { loadRouteWords } from './routeWords';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { listenForErrors } from './errors';
+import { listenForPresses } from './pressFeedback';
 import { primeStartupReads } from './api';
 import { loaders, warmPage, warmTabsWhenIdle } from './pageLoaders';
 import './styles.css';
@@ -211,6 +212,8 @@ function App() {
 
 // Errors in the browser reach the server's log.
 listenForErrors();
+// A spinner on whichever button was pressed and is now working.
+listenForPresses();
 // Only shows notifications; it caches nothing, so the site loads as before.
 registerServiceWorker();
 // Android's install prompt can arrive at any moment; keep it for the guide.

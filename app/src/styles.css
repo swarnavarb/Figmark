@@ -298,7 +298,8 @@
   --text-scale: 1;
 
   /* One type scale */
-  --t-2xs: calc(10.5px * var(--text-scale));
+  /* 11px, not 10.5: the smallest size still read outdoors on a phone. Badges and counters use it. */
+  --t-2xs: calc(11px * var(--text-scale));
   --t-xs: calc(11.5px * var(--text-scale));
   --t-sm: calc(13px * var(--text-scale));
   --t-base: calc(14.5px * var(--text-scale));
@@ -685,7 +686,15 @@ code, kbd, samp, pre {
     transform 60ms var(--ease);
 }
 .btn:hover:not(:disabled) { filter: saturate(1.16) brightness(1.1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), var(--shadow-violet); }
-.btn:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
+.btn:active:not(:disabled) { transform: translateY(1px) scale(0.97); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3); }
+/* The button that was pressed and is now working (pressFeedback.ts): a spinner
+   beside its words, and less faded than a button that simply cannot be pressed. */
+.btn[data-working]:disabled { opacity: 0.82; cursor: progress; }
+.btn[data-working]::before {
+  content: ''; flex: none; width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: spin 700ms linear infinite;
+}
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn--ghost { background: var(--surface); border-color: var(--border-strong); color: var(--text); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); }
@@ -693,6 +702,12 @@ code, kbd, samp, pre {
 .btn--quiet { background: transparent; border-color: transparent; color: var(--text-dim); padding: 6px 10px; box-shadow: none; }
 .btn--quiet:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 .btn--sm { padding: 6px 11px; font-size: var(--t-xs); }
+/* On a touchscreen a small button is still a finger's width to hit: it keeps
+   its look, and grows only in height. */
+@media (pointer: coarse) {
+  .btn--sm, .btn--quiet { min-height: 36px; }
+  .btn:not(.btn--sm):not(.btn--quiet) { min-height: 42px; }
+}
 
 /* ── Segmented control ─────────────────────────────────────────────────── */
 
@@ -5080,20 +5095,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
   box-shadow: var(--sx-glow); cursor: pointer;
   animation: pop-in var(--dur-2) var(--ease) both;
 }
-.chtoast {
-  position: fixed; left: 50%; translate: -50% 0; z-index: var(--z-float);
-  top: calc(var(--nav-h) + 14px);
-  padding: var(--s2) var(--s4); border-radius: var(--r-pill);
-  background: #fff; color: var(--sx-ink, #111); font-weight: var(--w-bold); font-size: var(--t-xs);
-  box-shadow: var(--shadow);
-  animation: chtoast 2.2s var(--ease) both;
-}
-@keyframes chtoast {
-  0% { opacity: 0; transform: translateY(-8px); }
-  12%, 80% { opacity: 1; transform: none; }
-  100% { opacity: 0; transform: translateY(-8px); }
-}
-
 /* The bar you write from: pinned above the tab bar, and down to the edge
    when the tab bar steps aside. */
 .cbar {
@@ -5150,7 +5151,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 }
 @media (prefers-reduced-motion: reduce) {
   .cmsg__bubble, .cmsg.is-flash .cmsg__bubble, .cmsg__actions, .cmsg__picker button,
-  .chnew, .chtoast, .chhero--loading { animation: none; }
+  .chnew, .chhero--loading { animation: none; }
   .chmine, .chpin, .cbar { transition: none; }
 }
 
@@ -9279,3 +9280,199 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .cancelrate { font-weight: 800; }
 .cancelrate.is-over { color: var(--coral); }
 .cancelappeal { margin: 6px 0 0; padding: 8px 12px; border-left: 3px solid var(--gold); border-radius: 0 var(--r-md) var(--r-md) 0; background: var(--surface-2); font-size: var(--t-sm); }
+
+/* ── Success moments ─────────────────────────────────────────────────────
+   The beat after an order is placed, an item goes live, a delivery is
+   confirmed (components/SuccessMoment.tsx). One drawn mark, one line on
+   what happens next, one thing to do. */
+.smo {
+  position: fixed; inset: 0; z-index: var(--z-lightbox);
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(4, 7, 14, 0.72);
+  backdrop-filter: blur(6px);
+  animation: smo-fade 220ms var(--ease-out) both;
+}
+.smo__card {
+  position: relative; overflow: hidden;
+  width: min(400px, 100%);
+  display: grid; justify-items: center; gap: 6px;
+  padding: 30px 22px 20px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-xl);
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(52, 211, 153, 0.16), transparent 70%),
+    var(--surface);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  text-align: center;
+  animation: smo-rise 420ms var(--ease-out) both;
+}
+.smo__card--pending {
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(245, 158, 11, 0.16), transparent 70%),
+    var(--surface);
+}
+.smo__card:focus { outline: none; }
+.smo__title {
+  margin: 10px 0 0; font-size: var(--t-xl); font-weight: 800; letter-spacing: -0.02em;
+  animation: smo-up 380ms 420ms var(--ease-out) both;
+}
+.smo__detail {
+  margin: 0; padding: 4px 12px; border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text); font-weight: 700; font-size: var(--t-base);
+  animation: smo-up 380ms 500ms var(--ease-out) both;
+}
+.smo__body {
+  margin: 4px 0 0; color: var(--text-dim); font-size: var(--t-base); line-height: 1.5; max-width: 32ch;
+  animation: smo-up 380ms 560ms var(--ease-out) both;
+}
+.smo__actions {
+  width: 100%; display: grid; gap: 8px; margin-top: 16px;
+  animation: smo-up 380ms 640ms var(--ease-out) both;
+}
+
+.smark { position: relative; display: grid; place-items: center; flex: none; }
+.smark svg { position: relative; overflow: visible; }
+.smark__disc { fill: rgba(52, 211, 153, 0.12); transform-origin: 50% 50%; animation: smark-pop 520ms var(--ease-out) both; }
+.smark__ring {
+  fill: none; stroke: var(--ok); stroke-width: 5; stroke-linecap: round;
+  stroke-dasharray: 100; stroke-dashoffset: 100;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+  animation: smark-draw 520ms 80ms var(--ease-out) forwards;
+}
+.smark__tick {
+  fill: none; stroke: var(--ok); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 100; stroke-dashoffset: 100;
+  animation: smark-draw 360ms 480ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+.smark--success svg { animation: smark-bounce 420ms 760ms var(--ease-out) both; }
+.smark__burst {
+  position: absolute; inset: 0; border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+  animation: smark-burst 900ms 700ms var(--ease-out) both;
+}
+.smark--pending .smark__disc { fill: rgba(245, 158, 11, 0.12); }
+.smark--pending .smark__ring, .smark--pending .smark__tick { stroke: var(--gold); }
+.smark--pending .smark__tick { stroke-width: 4.5; }
+.smark--pending .smark__burst { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45); }
+.smark__sand { fill: var(--gold); opacity: 0; animation: smo-fade 300ms 860ms both; }
+.smark--pending svg { animation: smark-turn 900ms 1200ms var(--ease) both; }
+
+@keyframes smo-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes smo-rise { from { opacity: 0; transform: translateY(28px) scale(0.94); } to { opacity: 1; transform: none; } }
+@keyframes smo-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes smark-pop { 0% { transform: scale(0.2); } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes smark-draw { to { stroke-dashoffset: 0; } }
+@keyframes smark-bounce { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.1); } }
+@keyframes smark-burst { 0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); } 100% { box-shadow: 0 0 0 34px rgba(52, 211, 153, 0); } }
+@keyframes smark-turn { 0% { transform: rotate(0); } 100% { transform: rotate(180deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .smo, .smo__card, .smo__title, .smo__detail, .smo__body, .smo__actions,
+  .smark svg, .smark__disc, .smark__burst, .smark__sand { animation: none; }
+  .smark__ring, .smark__tick { animation: none; stroke-dashoffset: 0; }
+  .smark__sand { opacity: 1; }
+}
+
+/* ── Connection bar (components/OfflineBar.tsx) ─────────────────────── */
+.offbar {
+  position: fixed; z-index: var(--z-notice);
+  left: 50%; top: calc(env(safe-area-inset-top, 0px) + 8px);
+  transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 8px;
+  max-width: calc(100vw - 24px);
+  padding: 7px 14px; border-radius: var(--r-pill);
+  border: 1px solid var(--coral-line); background: #2A0F14; color: var(--coral-pale);
+  font-size: var(--t-sm); font-weight: var(--w-semi);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: offbar-in 260ms var(--ease-out) both;
+}
+.offbar--back { border-color: rgba(52, 211, 153, 0.45); background: #0C2A20; color: var(--ok-pale); }
+.offbar__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+@keyframes offbar-in { from { opacity: 0; transform: translate(-50%, -12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* A message on its way: shown at once, a little faded, with a clock, until the server has it. */
+.cmsg.is-sending .cmsg__bubble { opacity: 0.7; pointer-events: none; animation: msg-in 220ms var(--ease-out) both; }
+.cmsg.is-sending .cmsg__col::after {
+  content: 'Sending…'; align-self: flex-end; margin-top: 2px;
+  font-size: var(--t-2xs); color: var(--text-faint);
+}
+
+/* A photo on its way up (PhotoManager): the phone's own copy, dimmed, with a ring turning over it. */
+.photo--sending img { opacity: 0.55; filter: saturate(0.7); }
+.photo__ring {
+  position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+  border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.85); border-right-color: transparent;
+  animation: spin 800ms linear infinite;
+}
+
+/* A password field's show/hide eye (components/PasswordInput.tsx). */
+.pwfield { position: relative; display: block; }
+.pwfield > input { width: 100%; padding-right: 44px; }
+.pwfield__eye {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 36px; display: grid; place-items: center;
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--text-faint); cursor: pointer;
+}
+.pwfield__eye:hover, .pwfield__eye[aria-pressed='true'] { color: var(--text); }
+
+/* The first unanswered field on the Sell form, after Publish: a short shake where the eye should go. */
+.attr.is-nudged { animation: attr-nudge 420ms var(--ease) both; }
+@keyframes attr-nudge {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+
+/* The slide-to-confirm control (components/SlideToConfirm.tsx): shared by the Shop's
+   ready list and the order page, so its rules live here rather than in one chunk. */
+.slide { position: relative; flex: 1; min-width: 0; height: 44px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--rdy, var(--ok)) 12%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--rdy, var(--ok)) 55%, transparent); overflow: hidden; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.slide__knob:focus-visible { outline: 2px solid var(--rdy, var(--ok)); outline-offset: 2px; }
+.slide__fill { position: absolute; inset: 0 auto 0 0; border-radius: var(--r-pill); background: var(--rdy, var(--ok)); opacity: 0.85; transition: width var(--dur-2) cubic-bezier(0.22, 1, 0.36, 1); }
+.slide__label { position: absolute; inset: 0 30px 0 46px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: var(--t-sm); font-weight: var(--w-bold); color: var(--rdy, var(--ok)); line-height: 1.15; pointer-events: none; }
+.slide.is-on .slide__label { inset: 0 46px 0 14px; color: var(--rdy-ink, var(--ok-ink)); }
+.slide__hint { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-weight: var(--w-bold); letter-spacing: -0.1em; color: color-mix(in srgb, var(--rdy, var(--ok)) 50%, transparent); pointer-events: none; animation: slide-hint 1.6s ease-in-out infinite; }
+.slide__knob { position: absolute; top: 4px; left: 4px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--rdy, var(--ok)); color: var(--rdy-ink, var(--ok-ink)); font-size: calc(18px * var(--text-scale)); font-weight: var(--w-bold); cursor: grab; touch-action: none; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35); transition: transform var(--dur-2) cubic-bezier(0.22, 1, 0.36, 1); }
+.slide.is-on .slide__knob { background: var(--surface); color: var(--rdy, var(--ok)); }
+.slide.is-dragging .slide__knob { cursor: grabbing; transition: none; }
+.slide.is-dragging .slide__fill { transition: none; }
+.slide.is-disabled { opacity: 0.6; }
+.slide.is-disabled .slide__knob { cursor: default; }
+.slide.is-working .slide__knob { cursor: progress; }
+.slide.is-working .slide__label { color: var(--rdy-ink, var(--ok-ink)); }
+@media (prefers-reduced-motion: reduce) {
+  .slide__knob, .slide__fill { transition: none; }
+  .slide__hint { animation: none; }
+}
+
+/* ── Your orders, at the top of Shop (components/ActiveOrders.tsx) ────── */
+.actord { display: grid; gap: 8px; margin: 4px 0 14px; }
+.actord__head { display: flex; align-items: baseline; justify-content: space-between; }
+.actord__head h2 { margin: 0; font-size: var(--t-md); }
+.actord__all { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--accent-text); text-decoration: none; }
+.actord__row {
+  display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory;
+  margin-inline: calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 4px;
+  scrollbar-width: none; overscroll-behavior-x: contain;
+}
+.actord__row::-webkit-scrollbar { display: none; }
+.actord__card {
+  flex: 0 0 auto; width: min(240px, 72vw); scroll-snap-align: start;
+  display: flex; align-items: center; gap: 10px; padding: 8px;
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+  color: var(--text); text-decoration: none;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.actord__card:active { transform: scale(0.98); }
+.actord__card.is-act { border-color: var(--accent-line); background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--surface); }
+.actord__thumb {
+  flex: none; width: 48px; height: 48px; border-radius: var(--r-md); overflow: hidden;
+  display: grid; place-items: center; font-weight: 800; font-size: var(--t-sm);
+}
+.actord__thumb .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+.actord__text { min-width: 0; display: grid; gap: 2px; }
+.actord__text b { font-size: var(--t-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.actord__text small { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: var(--t-xs); }
+.actord__card.is-act small { color: var(--accent-text); font-weight: var(--w-bold); }
+.actord__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: hotdot-pulse 1.6s ease-in-out infinite; }

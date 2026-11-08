@@ -690,9 +690,9 @@ function Charges({ sheet, result, onChange }: {
                           : ''}
                       </summary>
                       <span className="pc__kg">
-                        <label>Min kg <input type="number" min={0} step={0.5} value={line.minKg ?? 0}
+                        <label>Min kg <input type="number" inputMode="decimal" min={0} step={0.5} value={line.minKg ?? 0}
                           onChange={(e) => setLine(line.id, { minKg: Number(e.target.value) || 0 })} /></label>
-                        <label>Round up to <input type="number" min={0} step={0.5} value={line.stepKg ?? 0}
+                        <label>Round up to <input type="number" inputMode="decimal" min={0} step={0.5} value={line.stepKg ?? 0}
                           onChange={(e) => setLine(line.id, { stepKg: Number(e.target.value) || 0 })} /> kg</label>
                         <label className="pc__check"><input type="checkbox" checked={Boolean(line.volumetric)}
                           onChange={(e) => setLine(line.id, { volumetric: e.target.checked })} /> Volumetric if heavier</label>

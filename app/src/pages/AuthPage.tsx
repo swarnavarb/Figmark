@@ -5,6 +5,9 @@ import { ApiRequestError, api } from '../api';
 import { ErrorNotice, Icon, useDialog } from '../components/ui';
 import { useSession } from '../session';
 import { Captcha } from '../components/Captcha';
+import { PasswordInput } from '../components/PasswordInput';
+import { useToast } from '../components/Feedback';
+import { haptic } from '../haptics';
 import { AuthTour } from '../components/AuthTour';
 
 type Mode = 'signin' | 'signup';
@@ -232,6 +235,7 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
   const { signIn, signUp } = useSession();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const [demo, setDemo] = useState<DemoAccount[]>([]);
   const [durable, setDurable] = useState(true);
@@ -318,6 +322,9 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
       if (mode === 'signin') await signIn(identifier, password, askOtp ? otp : undefined);
       else if (username.trim()) await signUp({ displayName, username: username.trim(), email, phone, password, acceptTerms: agreed, captchaToken: captchaToken ?? undefined });
       else await signUp({ displayName, username: suggested || undefined, usernameSuggested: true, email, phone, password, acceptTerms: agreed, captchaToken: captchaToken ?? undefined });
+      haptic('success');
+      const first = displayName.trim().split(/\s+/)[0];
+      toast(mode === 'signin' ? 'Welcome back 👋' : `Welcome to Figmark${first ? `, ${first}` : ''}! 🎉`);
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === 'mfa_required') {
         // Not a failure: the password was right and the second step is next.
@@ -394,7 +401,7 @@ function AuthCard({ initialMode = 'signin' }: { initialMode?: Mode }) {
 
             <label className="field">
               <span>Password</span>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder={mode === 'signup' ? 'At least 8 characters' : ''} required />
               {mode === 'signup' && (
@@ -586,7 +593,7 @@ function ResetPassword({ initialIdentifier, onDone }: { initialIdentifier: strin
           </label>
           <label className="field">
             <span>New password</span>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password" placeholder="At least 8 characters" required />
             <span className="field__hint">Every other device signed in to this account is signed out.</span>
           </label>

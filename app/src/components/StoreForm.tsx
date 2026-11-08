@@ -128,7 +128,7 @@ export function BusinessSection({ kind, draft, set }: SectionProps) {
         </label>
         <label className="field">
           <span>Phone / WhatsApp</span>
-          <input value={draft.contactPhone ?? ''} onChange={(e) => set({ contactPhone: e.target.value })} placeholder="+91 …" />
+          <input type="tel" inputMode="tel" autoComplete="tel" value={draft.contactPhone ?? ''} onChange={(e) => set({ contactPhone: e.target.value })} placeholder="+91 …" />
         </label>
       </div>
       <div className="field-row">
@@ -672,7 +672,7 @@ export function PortfolioSection({ draft, set }: SectionProps) {
         <span>Direct payment details</span>
         <span className="field__hint">Optional. Without them, buyers can only pay you with Buyer Protection.</span>
         <div className="field-row">
-          <input value={payment.upiId ?? ''} onChange={(e) => pay({ upiId: e.target.value })} placeholder="UPI ID" aria-label="UPI ID" />
+          <input value={payment.upiId ?? ''} onChange={(e) => pay({ upiId: e.target.value })} placeholder="UPI ID" aria-label="UPI ID" inputMode="email" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
           <input value={payment.accountName ?? ''} onChange={(e) => pay({ accountName: e.target.value })} placeholder="Account name" aria-label="Account name" />
         </div>
         <input value={payment.instructions ?? ''} onChange={(e) => pay({ instructions: e.target.value })} placeholder="Anything to quote when paying" aria-label="Payment instructions" />
@@ -796,7 +796,7 @@ export function PaymentTermsSection({ kind, draft, set }: SectionProps) {
         <span>Where customers pay you</span>
         <span className="field__hint">Shown to a customer once they accept your quote or open your payment link — never on your page.</span>
         <div className="field-row">
-          <input value={payment.upiId ?? ''} onChange={(e) => pay({ upiId: e.target.value })} placeholder="UPI ID" aria-label="UPI ID" />
+          <input value={payment.upiId ?? ''} onChange={(e) => pay({ upiId: e.target.value })} placeholder="UPI ID" aria-label="UPI ID" inputMode="email" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
           <input value={payment.accountName ?? ''} onChange={(e) => pay({ accountName: e.target.value })} placeholder="Account name" aria-label="Account name" />
         </div>
         <div className="field-row">

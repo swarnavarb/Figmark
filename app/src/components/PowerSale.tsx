@@ -1,3 +1,4 @@
+import { useToast } from './Feedback';
 import { ProLock, useProLocked } from './Billing';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNow } from '../clock';
@@ -149,6 +150,7 @@ function SaleCard({ sale, storeId, onChanged }: {
   storeId: string;
   onChanged: () => void | Promise<void>;
 }) {
+  const toast = useToast();
   const [open, setOpen] = useState(sale.status === 'running');
   const [busy, setBusy] = useState(false);
   const live = sale.status === 'running' || sale.status === 'scheduled';
@@ -158,6 +160,7 @@ function SaleCard({ sale, storeId, onChanged }: {
     try {
       await api.stopPowerSale(sale.id, storeId);
       await onChanged();
+      toast('Power sale stopped.');
     } finally {
       setBusy(false);
     }
@@ -444,6 +447,7 @@ export function PowerSaleBuilderPage() {
 }
 
 function PowerSaleBuilderOpen() {
+  const toast = useToast();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const startWith = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;
@@ -565,6 +569,7 @@ function PowerSaleBuilderOpen() {
       };
       await api.createPowerSale(draft);
       navigate(back);
+      toast('Power sale is live ⚡');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not schedule that.');
     } finally {
@@ -633,11 +638,11 @@ function PowerSaleBuilderOpen() {
               <div className="field-row">
                 <label className="field">
                   <span>Member price (₹)</span>
-                  <input type="number" min="1" value={item.price} onChange={(e) => set(item.key, { price: e.target.value })} />
+                  <input type="number" inputMode="decimal" min="1" value={item.price} onChange={(e) => set(item.key, { price: e.target.value })} />
                 </label>
                 <label className="field">
                   <span>Public price (₹)</span>
-                  <input type="number" min="1" value={item.listPrice} placeholder={item.price || ''}
+                  <input type="number" inputMode="decimal" min="1" value={item.listPrice} placeholder={item.price || ''}
                     onChange={(e) => set(item.key, { listPrice: e.target.value })} />
                 </label>
               </div>
@@ -715,7 +720,7 @@ function PowerSaleBuilderOpen() {
             <label className="field">
               <span>The opening message is dropped in</span>
               <span className="psunit">
-                <input type="number" min="0" step="0.5" value={startHours} onChange={(e) => setStartHours(e.target.value)} />
+                <input type="number" inputMode="decimal" min="0" step="0.5" value={startHours} onChange={(e) => setStartHours(e.target.value)} />
                 <span>hrs from now</span>
               </span>
               <span className="field__hint">
@@ -726,7 +731,7 @@ function PowerSaleBuilderOpen() {
           <label className="field">
             <span>Wait for the 1st item to drop</span>
             <span className="psunit">
-              <input type="number" min="30" value={lead} onChange={(e) => setLead(e.target.value)} />
+              <input type="number" inputMode="decimal" min="30" value={lead} onChange={(e) => setLead(e.target.value)} />
               <span>min after the opening message</span>
             </span>
             <span className="field__hint">
@@ -737,14 +742,14 @@ function PowerSaleBuilderOpen() {
             <label className="field">
               <span>Wait between each drop</span>
               <span className="psunit">
-                <input type="number" min="1" value={every} onChange={(e) => setEvery(e.target.value)} />
+                <input type="number" inputMode="decimal" min="1" value={every} onChange={(e) => setEvery(e.target.value)} />
                 <span>min</span>
               </span>
             </label>
             <label className="field">
               <span>Member price</span>
               <span className="psunit">
-                <input type="number" min="5" value={window_} onChange={(e) => setWindow(e.target.value)} />
+                <input type="number" inputMode="decimal" min="5" value={window_} onChange={(e) => setWindow(e.target.value)} />
                 <span>min</span>
               </span>
             </label>

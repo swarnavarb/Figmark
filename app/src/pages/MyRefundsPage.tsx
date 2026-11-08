@@ -7,7 +7,7 @@ import { GIFT_METHOD_LABELS, type StoreGift } from '@shared/billing';
 import { ReversalDetailsForm } from '../components/ReversalDetailsForm';
 import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
-import { PageLoading } from '../components/Feedback';
+import { PageLoading, useToast } from '../components/Feedback';
 import { SkelRows, SkelTiles } from '../components/PageSkeletons';
 import { LoyaltyTab, WalletStores, WalletSkeleton } from './WalletStores';
 import '../styles/MyRefundsPage.css';
@@ -23,6 +23,7 @@ import '../styles/MyRefundsPage.css';
  * refund the seller says they sent, with the two buttons to answer it.
  */
 export function MyRefundsPage() {
+  const toast = useToast();
   const [refunds, setRefunds] = useState<MyRefund[] | null>(null);
   const [requests, setRequests] = useState<{ orderId: string; itemName: string; sellerName: string; requestedAt: string }[]>([]);
   const [hasDetails, setHasDetails] = useState(false);
@@ -63,6 +64,7 @@ export function MyRefundsPage() {
     try {
       await api.ackCreditRefund(refund.orderId, received, refund.creditId);
       await load();
+      toast('Thanks - noted.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
     } finally {
@@ -76,6 +78,7 @@ export function MyRefundsPage() {
     try {
       await api.confirmReversalDetails(orderId);
       await load();
+      toast('Refund details confirmed.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not send.');
     } finally {

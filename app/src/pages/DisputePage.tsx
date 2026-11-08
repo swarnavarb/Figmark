@@ -648,7 +648,7 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
                     {(kind === 'warning_post' || kind === 'alert_banner') && (
                       <label className="field">
                         <span>Days</span>
-                        <input type="number" min={1} max={60} value={entry.days ?? 7}
+                        <input type="number" inputMode="decimal" min={1} max={60} value={entry.days ?? 7}
                           onChange={(e) => edit(kind, { days: Number(e.target.value) })} />
                       </label>
                     )}
@@ -673,7 +673,7 @@ function DecideForm({ view, onDone }: { view: DisputeView; onDone: () => Promise
                     {kind === 'rating_reduction' && (
                       <label className="field">
                         <span>Rating points</span>
-                        <input type="number" min={1} max={50} value={entry.points ?? 5}
+                        <input type="number" inputMode="decimal" min={1} max={50} value={entry.points ?? 5}
                           onChange={(e) => edit(kind, { points: Number(e.target.value) })} />
                       </label>
                     )}

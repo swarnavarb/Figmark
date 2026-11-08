@@ -1,3 +1,4 @@
+import { OfflineBar } from './components/OfflineBar';
 import { isProActive, proDaysLeft } from '@shared/billing';
 import { ProBadge } from './components/Billing';
 import { notePath } from './cameFrom';
@@ -223,6 +224,7 @@ export function AppShell() {
       {user && <FloatingCalc />}
 
       <TabBar />
+      <OfflineBar />
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
       {authPrompt && <Suspense fallback={null}><AuthModal reason={authPrompt.reason} mode={authPrompt.mode} onClose={closeAuth} /></Suspense>}
       <VerifyPrompt />
@@ -343,6 +345,11 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
             <Link role="menuitem" to="/wallet" className="pmenu__tile"><span aria-hidden="true">👛</span>Wallet</Link>
             <Link role="menuitem" to="/me?tab=saved" className="pmenu__tile"><span aria-hidden="true">♥</span>Saves</Link>
             <Link role="menuitem" to="/me?tab=collection" className="pmenu__tile"><span aria-hidden="true">🗂️</span>Collection</Link>
+            {/* Off the tab bar, which keeps four sections (TabBar's BAR_TABS); reached from here instead. */}
+            <Link role="menuitem" to="/quests" className="pmenu__tile"><span aria-hidden="true">🏆</span>Quests</Link>
+            <Link role="menuitem" to="/services" className="pmenu__tile"><span aria-hidden="true">🛠️</span>Services</Link>
+            <Link role="menuitem" to="/social?view=messages" className="pmenu__tile"><span aria-hidden="true">💬</span>Messages</Link>
+            <Link role="menuitem" to="/disputes" className="pmenu__tile"><span aria-hidden="true">⚖️</span>Disputes</Link>
           </div>
 
           {hasStore && (

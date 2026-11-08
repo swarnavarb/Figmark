@@ -25,6 +25,7 @@ import {
 } from '../components/FeedRails';
 import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
+import { ActiveOrders } from '../components/ActiveOrders';
 import { SkelBlock } from '../components/PageSkeletons';
 import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
 import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
@@ -328,6 +329,8 @@ export function FeedPage() {
       {/* The catalogue's cards are its heading; this names the page for screen readers. */}
       <h1 className="sr-only">Shop</h1>
       <QuestBar />
+      {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
+      {browsing && <ActiveOrders />}
 
       {/* The daily pick holds its place while the catalogue loads, so the
           page does not drop by a card's height when it arrives. */}

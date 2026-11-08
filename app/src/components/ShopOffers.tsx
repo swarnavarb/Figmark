@@ -1,3 +1,4 @@
+import { useToast } from './Feedback';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SkelCards } from './PageSkeletons';
 import { Link } from 'react-router-dom';
@@ -148,6 +149,7 @@ export function ShopOffers({ onLoyalty }: { onLoyalty?: () => void }) {
 function OffersDialog({ listing, cards, onClose, onSaved }: {
   listing: Listing; cards: LoyaltyCard[]; onClose: () => void; onSaved: (listing: Listing) => void;
 }) {
+  const toast = useToast();
   const [offers, setOffers] = useState<ListingOffer[]>(listing.offers ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,6 +161,7 @@ function OffersDialog({ listing, cards, onClose, onSaved }: {
     try {
       const body = { offers } as unknown as Parameters<typeof api.editListing>[1];
       onSaved((await api.editListing(listing.id, body)).listing);
+      toast('Offer saved.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save the offers.');
     } finally {

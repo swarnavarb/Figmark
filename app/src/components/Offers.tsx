@@ -170,7 +170,7 @@ function ValueFields({ value, onChange, label }: {
       </label>
       <label className="field">
         <span>{current.type === 'percent' ? 'Percent' : 'Rupees'}</span>
-        <input type="number" min="1" step="1"
+        <input type="number" inputMode="decimal" min="1" step="1"
           value={current.type === 'percent' ? current.value || '' : rupeesIn(current.value)}
           onChange={(e) => onChange({
             ...current,
@@ -195,7 +195,7 @@ export function CapField({ capMinor, onChange }: { capMinor?: number; onChange: 
         <button type="button" role="radio" aria-checked={Boolean(capMinor)} className={`offr-cap__opt${capMinor ? ' is-on' : ''}`}
           onClick={() => onChange(capMinor || 10_000)}>Up to ₹</button>
         {Boolean(capMinor) && (
-          <input type="number" min="1" step="1" aria-label="Cap in rupees" value={rupeesIn(capMinor)}
+          <input type="number" inputMode="decimal" min="1" step="1" aria-label="Cap in rupees" value={rupeesIn(capMinor)}
             onChange={(e) => onChange(minorOf(e.target.value) || 100)} />
         )}
       </div>
@@ -218,7 +218,7 @@ function OfferFields({ offer, onChange }: { offer: ListingOffer; onChange: (next
   const minItems = (label = 'How many items') => (
     <label className="field">
       <span>{label}</span>
-      <input type="number" min="1" step="1" value={offer.minItems ?? ''} onChange={(e) => set({ minItems: Math.round(Number(e.target.value) || 0) })} />
+      <input type="number" inputMode="decimal" min="1" step="1" value={offer.minItems ?? ''} onChange={(e) => set({ minItems: Math.round(Number(e.target.value) || 0) })} />
     </label>
   );
   switch (offer.kind) {
@@ -230,16 +230,16 @@ function OfferFields({ offer, onChange }: { offer: ListingOffer; onChange: (next
     case 'bundle':
       return <>{minItems('Bundle size')}
         <label className="field"><span>Bundle price (₹, for the whole bundle)</span>
-          <input type="number" min="1" step="1" value={rupeesIn(offer.bundlePriceMinor)} onChange={(e) => set({ bundlePriceMinor: minorOf(e.target.value) })} /></label></>;
+          <input type="number" inputMode="decimal" min="1" step="1" value={rupeesIn(offer.bundlePriceMinor)} onChange={(e) => set({ bundlePriceMinor: minorOf(e.target.value) })} /></label></>;
     case 'wholesale':
       return <WholesaleFields tiers={offer.tiers ?? []} onChange={(tiers) => set({ tiers })} />;
     case 'spend_free_shipping':
       return <label className="field"><span>Free shipping when the order from your shop reaches (₹)</span>
-        <input type="number" min="1" step="1" value={rupeesIn(offer.minSpendMinor)} onChange={(e) => set({ minSpendMinor: minorOf(e.target.value) })} /></label>;
+        <input type="number" inputMode="decimal" min="1" step="1" value={rupeesIn(offer.minSpendMinor)} onChange={(e) => set({ minSpendMinor: minorOf(e.target.value) })} /></label>;
     case 'early_bird':
       return <>
         <label className="field"><span>For the first this many buyers (leave empty for no limit)</span>
-          <input type="number" min="1" step="1" value={offer.limit ?? ''} onChange={(e) => set({ limit: e.target.value ? Math.round(Number(e.target.value)) : undefined })} /></label>
+          <input type="number" inputMode="decimal" min="1" step="1" value={offer.limit ?? ''} onChange={(e) => set({ limit: e.target.value ? Math.round(Number(e.target.value)) : undefined })} /></label>
         <label className="field"><span>Or until this date (optional)</span>
           <input type="date" value={offer.until ? offer.until.slice(0, 10) : ''}
             onChange={(e) => set({ until: e.target.value ? new Date(`${e.target.value}T23:59:59`).toISOString() : null })} /></label>
@@ -258,7 +258,7 @@ function OfferFields({ offer, onChange }: { offer: ListingOffer; onChange: (next
     case 'buy_x_get_y':
       return <>{minItems('Buy this many')}
         <label className="field"><span>Get this many free</span>
-          <input type="number" min="1" step="1" value={offer.freeQty ?? ''} onChange={(e) => set({ freeQty: Math.round(Number(e.target.value) || 0) })} /></label></>;
+          <input type="number" inputMode="decimal" min="1" step="1" value={offer.freeQty ?? ''} onChange={(e) => set({ freeQty: Math.round(Number(e.target.value) || 0) })} /></label></>;
     case 'repeat_buyer':
     case 'first_order':
     case 'prepay':
@@ -274,14 +274,14 @@ function WholesaleFields({ tiers, onChange }: { tiers: WholesaleTier[]; onChange
       {tiers.map((tier, index) => (
         <div key={index} className="offr-edit__tier">
           <label className="field"><span>Buy at least</span>
-            <input type="number" min="2" step="1" value={tier.minQty || ''} onChange={(e) => update(index, { minQty: Math.round(Number(e.target.value) || 0) })} /></label>
+            <input type="number" inputMode="decimal" min="2" step="1" value={tier.minQty || ''} onChange={(e) => update(index, { minQty: Math.round(Number(e.target.value) || 0) })} /></label>
           <label className="field"><span>Price</span>
             <select value={tier.type} onChange={(e) => update(index, { type: e.target.value as 'percent' | 'price', value: e.target.value === 'percent' ? 10 : 0 })}>
               <option value="percent">% off</option>
               <option value="price">Dropped price (₹ each)</option>
             </select></label>
           <label className="field"><span>{tier.type === 'percent' ? 'Percent' : 'Rupees each'}</span>
-            <input type="number" min="1" step="1" value={tier.type === 'percent' ? tier.value || '' : rupeesIn(tier.value)}
+            <input type="number" inputMode="decimal" min="1" step="1" value={tier.type === 'percent' ? tier.value || '' : rupeesIn(tier.value)}
               onChange={(e) => update(index, { value: tier.type === 'percent' ? Math.round(Number(e.target.value) || 0) : minorOf(e.target.value) })} /></label>
           {tiers.length > 1 && (
             <button type="button" className="btn btn--ghost btn--sm" onClick={() => onChange(tiers.filter((_, i) => i !== index))}>Remove step</button>

@@ -1,3 +1,4 @@
+import { useToast } from './Feedback';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -65,6 +66,7 @@ export function OrderServices({ orderId, onChanged }: { orderId: string; onChang
 function CoverCard({ orderId, view, onChanged, onError }: {
   orderId: string; view: OrderServicesView; onChanged: () => Promise<void>; onError: (message: string | null) => void;
 }) {
+  const toast = useToast();
   const { insurance } = view;
   const current = insurance.current;
   const [picked, setPicked] = useState<string | null>(current?.planId ?? insurance.plans[0]?.id ?? null);
@@ -77,6 +79,7 @@ function CoverCard({ orderId, view, onChanged, onError }: {
     try {
       await api.setInsurance(orderId, planId);
       await onChanged();
+      toast('Cover updated.');
     } catch (err) {
       onError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     } finally {
