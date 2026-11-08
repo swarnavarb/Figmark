@@ -17,7 +17,7 @@
 /* ── Quests page ───────────────────────────────────────────────────────── */
 .qhero {
   display: flex; gap: 18px; align-items: center; margin-bottom: 14px; padding: 18px; border-radius: var(--r-xl);
-  background: linear-gradient(160deg, #33322E, var(--surface));
+  background: linear-gradient(160deg, var(--surface-2), var(--surface));
   border: 1px solid var(--violet-line);
 }
 .qhero__eyebrow { margin: 0; font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet-text); }
@@ -46,7 +46,7 @@
 .qbump.is-empty { background: var(--surface-2); border-color: var(--border); }
 /* The hero on either board: ring, level, and the bump wallet, which drops below on a phone. */
 .qhero--shop {
-  background: linear-gradient(160deg, #32312D, var(--surface));
+  background: linear-gradient(160deg, var(--surface-2), var(--surface));
   border-color: var(--blue-line);
 }
 .qhero__title { display: flex; align-items: center; gap: var(--s2); margin: 0; font-size: var(--t-xl); }

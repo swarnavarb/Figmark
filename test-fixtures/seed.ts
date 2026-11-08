@@ -1623,23 +1623,21 @@ function flatSwatch(hex: string): [string, string] {
  * blocked, so a carousel in the seed feed carries small SVG posters instead of
  * links to somebody else's server.
  */
-export function seedArt([rawCaption, from, to]: [string, string, string], index: number): string {
-  // Written into XML, so an ampersand or a bracket in a caption would make
-  // the whole picture fail to decode.
-  const caption = rawCaption.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export function seedArt([, from, to]: [string, string, string], index: number): string {
   // Flat blocks in the app's palette: the hue of the first colour picks the
-  // swatch, the second the shape laid over it.
+  // backdrop, the second the disc on it. No words: the card around a photo
+  // already says what it is, and a caption baked in fights its labels.
   const [bg] = flatSwatch(from);
   const [shape] = flatSwatch(to === from ? '#F5CB5C' : to);
   const accent = shape === bg ? '#F4F1EA' : shape;
-  const size = Math.min(54, Math.floor(1050 / Math.max(caption.length, 1)));
+  // The disc moves with the index, so a carousel of these does not repeat.
+  const cx = 300 + ((index * 137) % 300);
+  const cy = 300 + ((index * 89) % 260);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">`
     + `<rect width="800" height="1000" fill="${bg}"/>`
-    + `<circle cx="590" cy="250" r="170" fill="${accent}"/>`
-    + `<rect x="90" y="640" width="300" height="300" rx="60" fill="#1A1A19" fill-opacity=".9" transform="rotate(-8 240 790)"/>`
-    + `<path d="M150 210l22 52 56 6-42 37 12 55-48-28-48 28 12-55-42-37 56-6z" fill="#1A1A19"/>`
-    + `<rect x="80" y="470" width="640" height="112" rx="56" fill="#1A1A19"/>`
-    + `<text x="400" y="${526 + size * 0.36}" text-anchor="middle" font-family="system-ui,sans-serif" font-size="${size}" font-weight="800" letter-spacing="1" fill="#F4F1EA">${caption.toUpperCase()}</text>`
+    + `<circle cx="${cx}" cy="${cy}" r="210" fill="${accent}"/>`
+    + `<rect x="0" y="760" width="800" height="240" fill="#1A1A19" fill-opacity=".08"/>`
+    + `<path d="M150 170l22 52 56 6-42 37 12 55-48-28-48 28 12-55-42-37 56-6z" fill="#1A1A19"/>`
     + `</svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

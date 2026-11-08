@@ -2,7 +2,7 @@
 .sk-mark {
   flex: 0 0 auto; display: inline-grid; place-items: center; overflow: hidden;
   border-radius: 28%;
-  background: linear-gradient(140deg, var(--sk, var(--violet)) 0%, color-mix(in srgb, var(--sk, var(--violet)) 45%, #272724) 100%);
+  background: linear-gradient(140deg, var(--sk, var(--violet)) 0%, color-mix(in srgb, var(--sk, var(--violet)) 45%, var(--surface)) 100%);
   color: #FFFFFF; font-family: var(--display); font-weight: var(--w-bold); letter-spacing: -0.03em;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 6px 18px color-mix(in srgb, var(--sk, var(--violet)) 35%, transparent);
 }
@@ -21,7 +21,7 @@
   height: 132px; border-radius: var(--r-lg);
   background:
     radial-gradient(120% 140% at 0% 100%, color-mix(in srgb, var(--sk, var(--violet)) 38%, transparent) 0%, transparent 60%),
-    linear-gradient(135deg, #2A2926 0%, #31302C 60%, color-mix(in srgb, var(--sk, var(--violet)) 22%, #2A2926) 100%);
+    linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 60%, color-mix(in srgb, var(--sk, var(--violet)) 22%, var(--surface)) 100%);
   color: var(--sk, var(--violet-lit));
 }
 .sk-cover::after {

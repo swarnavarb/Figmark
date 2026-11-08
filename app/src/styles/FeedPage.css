@@ -44,7 +44,7 @@
 .qdrop {
   position: relative; overflow: hidden; display: flex; gap: var(--s4); align-items: center;
   margin-bottom: 14px; padding: 14px; border-radius: var(--r-lg);
-  background: linear-gradient(135deg, #33322E, #302F2B);
+  background: linear-gradient(135deg, var(--surface-2), var(--surface-2));
   border: 1px solid var(--q-gold-line);
 }
 .qdrop__body { position: relative; z-index: 1; min-width: 0; display: grid; gap: var(--s1); justify-items: start; }
@@ -180,7 +180,7 @@
 .fire--back { height: 100%; --fire-lift: 3; opacity: 0.7; }
 .launch__rocket::after {
   content: ''; position: absolute; left: 50%; top: 100%; width: 6px; height: 46px; margin-left: -3px; border-radius: 3px;
-  background: linear-gradient(#F1C346, #F1C346); filter: blur(1.5px);
+  background: linear-gradient(#F1C346, rgba(235, 138, 123, 0.5) 40%, transparent); filter: blur(1.5px);
 }
 
 /*
@@ -195,7 +195,7 @@
 .qzone.is-on .qzone__medal {
   border: 2px solid var(--q-gold);
   box-shadow: 0 0 0 3px rgba(241, 195, 70, 0.15), 0 0 18px rgba(0, 0, 0, 0.27);
-  background: radial-gradient(circle at 35% 30%, #42413B, var(--surface-2));
+  background: radial-gradient(circle at 35% 30%, var(--surface-hover), var(--surface-2));
 }
 /* Where the next cards are drawn from: invisible, the width of the grid. */
 .qgrid__more { grid-column: 1 / -1; height: 1px; }
@@ -230,7 +230,7 @@
   background: linear-gradient(transparent, rgba(20, 20, 18, 0.82)); text-shadow: 0 1px 4px rgba(20, 20, 18, 0.8);
 }
 /* Fire: embers rise all the way out of the top; a few flames lick up over the photos. */
-.rail--fire { background: var(--coral); }
+.rail--fire { background: radial-gradient(90% 70% at 50% 100%, #AB2415 0%, #393834 45%, #20201D 100%); }
 .fire--front { z-index: 2; height: 70px; --fire-lift: 1.25; }
 .fire--front .fire__flame:nth-of-type(odd) { display: none; }
 /* Front flames at mixed heights, so the row reads as fire rather than a fence. */
@@ -239,7 +239,7 @@
 .fire--front .fire__flame:nth-of-type(10) { --fire-lift: 2.2; }
 .fire--front .fire__flame:nth-of-type(6) { --fire-lift: 1.1; }
 /* Rush: streaks race right to left, a few of them across the photos too. */
-.rail--rush { background: var(--violet); color: var(--violet-ink); }
+.rail--rush { background: radial-gradient(90% 80% at 0% 50%, #131197 0%, #353430 50%, #252421 100%); }
 .railitem__left {
   position: absolute; top: 8px; left: 8px; z-index: 1; display: inline-flex; align-items: center; gap: var(--s1); padding: 3px var(--s2); border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0; color: #FFFFFF; text-shadow: none;
@@ -247,7 +247,7 @@
 }
 .railitem__left.is-hot { background: rgba(190, 40, 23, 0.85); box-shadow: inset 0 0 0 1px rgba(245, 179, 172, 0.7); animation: rush-beat 1s ease-in-out infinite; }
 /* Money Honey: deep green and honey gold, rupees raining through it. */
-.rail--honey { background: var(--lime); }
+.rail--honey { background: radial-gradient(70% 90% at 50% 30%, #80610A 0%, #31302C 35%, #2D2C29 70%, #1C1C19 100%); }
 .honey__lux { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .honey__lux--front { z-index: 2; }
 .honey__spark {
@@ -268,7 +268,7 @@
 .honey__rupee:nth-child(3n) { color: var(--lime-pale); text-shadow: 0 0 8px rgba(101, 182, 136, 0.7), 0 2px 0 #254F37; }
 .honey__rain--front .honey__rupee { font-size: calc(16px * var(--s, 1)); }
 /* Pre-orders: a night sky, a rocket crossing it, and a fuel gauge per item. */
-.rail--launch { background: var(--aqua); }
+.rail--launch { background: radial-gradient(100% 90% at 100% 100%, #1816C2 0%, #0D0B5B 45%, #20201D 100%); }
 .launch__sky { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .launch__star:nth-child(3n) { width: 2px; height: 2px; }
 .launch__front { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
@@ -298,7 +298,7 @@
 @media (prefers-reduced-motion: reduce) {
   .honey__rain, .launch__rocket, .honey__spark, .launch__shoot, .launch__ticket, .launch__pad { display: none; }
 }
-.railitem.is-affiliate .railitem__photo { box-shadow: 0 0 0 2px var(--lime), 0 6px 18px rgba(0, 0, 0, 0.27); }
+.railitem.is-affiliate .railitem__photo { box-shadow: 0 0 0 2px var(--lime), 0 6px 18px rgba(101, 182, 136, 0.3); }
 .railitem__earn { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 2; display: flex; container-type: inline-size; }
 .railitem__earn--right { top: 11px; left: 58%; right: 6px; justify-content: flex-end; }
 .railitem__earn--right .earnpill { font-size: var(--t-2xs); padding: 0.2em 0.5em; }

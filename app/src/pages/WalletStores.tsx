@@ -111,8 +111,8 @@ export function WalletStores({ refunds }: { refunds: MyRefund[] }) {
         <StickerCluster
           className="hero-stickers"
           items={[
-            { name: 'coin', size: 62, x: 28, y: 6, tilt: 10 },
-            { name: 'sparkle', size: 24, x: 0, y: 0 },
+            { name: 'coin', size: 62, x: 30, y: 4, tilt: 10 },
+            { name: 'sparkle', size: 22, x: 70, y: 82 },
           ]}
         />
         <div className="whero__main">

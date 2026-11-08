@@ -442,7 +442,7 @@ function DiscoverBody() {
           items={[
             { name: 'toy', size: 70, x: 34, y: 30, tilt: 8 },
             { name: 'star', size: 40, x: 0, y: 0, tilt: -12 },
-            { name: 'sparkle', size: 24, x: 4, y: 72, tilt: 0 },
+            { name: 'sparkle', size: 22, x: 62, y: 90, tilt: 0 },
           ]}
         />
         <div className="dischero__top">

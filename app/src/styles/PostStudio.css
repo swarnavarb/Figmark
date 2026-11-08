@@ -33,7 +33,7 @@
 .flexup:hover { border-color: var(--violet-line); }
 .flexedit {
   position: relative; line-height: 0;
-  border-radius: var(--r-md); overflow: hidden; background: #141412;
+  border-radius: var(--r-md); overflow: hidden; background: var(--bg);
   cursor: crosshair; touch-action: manipulation; user-select: none;
 }
 .flexedit > img { width: 100%; height: auto; max-height: 56vh; object-fit: contain; pointer-events: none; }
@@ -134,7 +134,7 @@
   .pstudio__styles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.pstudio__cover { line-height: 0; border-radius: var(--r-md); overflow: hidden; background: #141412; }
+.pstudio__cover { line-height: 0; border-radius: var(--r-md); overflow: hidden; background: var(--bg); }
 .pstudio__cover img { width: 100%; max-height: 40vh; object-fit: contain; }
 
 .pstudio__answers { display: grid; gap: 10px; }

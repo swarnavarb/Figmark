@@ -10,6 +10,7 @@
  *
  *   npm run build:api && npm run build:fixtures
  *   COSMOS_ENDPOINT=https://cosmos-figmark-dev... COSMOS_KEY=... node scripts/seed-demo.mjs
+ *   ... node scripts/seed-demo.mjs --refresh-art   # redraw the demo pictures only
  *
  * Development only: it refuses an endpoint that does not name a development
  * account. Safe to run twice - anything already there is left alone. Every
@@ -64,6 +65,30 @@ async function put(kind, id, write) {
 }
 
 console.log(`Seeding ${endpoint}`);
+
+// --refresh-art: only redraw the demo pictures on what an earlier run wrote,
+// leaving everything that has happened to those records since alone.
+if (process.argv.includes('--refresh-art')) {
+  let listings = 0;
+  let posts = 0;
+  for (const fixture of all('listings')) {
+    const live = await repository.getListing(fixture.id);
+    if (!live || live.seed !== SEED) continue;
+    await repository.updateListing({ ...live, photos: fixture.photos });
+    listings += 1;
+  }
+  for (const fixture of all('posts')) {
+    if (!fixture.photoUrls?.length) continue;
+    const live = await repository.getPost(fixture.channelId, fixture.id);
+    if (!live || live.seed !== SEED) continue;
+    // Posts have no update: written again whole, with what was said on them since.
+    await repository.deletePost(live.channelId, live.id);
+    await repository.createPost({ ...live, photoUrls: fixture.photoUrls });
+    posts += 1;
+  }
+  console.log(`Redrew the pictures on ${listings} listings and ${posts} posts.`);
+  process.exit(0);
+}
 
 for (const user of all('users')) {
   await put('users', user.id, async () => {

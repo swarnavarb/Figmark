@@ -133,7 +133,7 @@ export function PurchasesPage() {
           className="hero-stickers"
           items={[
             { name: 'box', size: 58, x: 30, y: 8, tilt: -8 },
-            { name: 'sparkle', size: 24, x: 0, y: 0 },
+            { name: 'sparkle', size: 22, x: 4, y: 76 },
           ]}
         />
         <span className="cartbox__icon"><Svg name="box" size={24} /></span>

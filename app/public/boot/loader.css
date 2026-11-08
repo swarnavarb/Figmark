@@ -13,6 +13,8 @@
   transition: opacity 320ms ease, visibility 0s linear 320ms;
 }
 .boot--out { opacity: 0; visibility: hidden; }
+/* The light theme's stage (public/boot/tone.js sets data-theme first). */
+[data-theme='light'] .boot { background: #F2F0EA; }
 
 .fmload { position: relative; width: 112px; height: 112px; display: grid; place-items: center; }
 

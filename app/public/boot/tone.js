@@ -27,3 +27,17 @@
     if (size === 'large' || size === 'larger') document.documentElement.setAttribute('data-text-size', size);
   } catch (e) { /* Storage refused: default size. */ }
 })();
+
+// The theme, before the first paint, so a light screen never flashes dark.
+// Keep in step with src/theme.ts.
+(function () {
+  var choice = 'auto';
+  try {
+    var stored = localStorage.getItem('figmark:theme');
+    if (stored === 'light' || stored === 'dark') choice = stored;
+  } catch (e) { /* Storage refused: follow the device. */ }
+  var light = choice === 'light' || (choice === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+  document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-theme-choice', choice);
+  if (light) document.querySelector('meta[name="theme-color"]').content = '#F2F0EA';
+})();

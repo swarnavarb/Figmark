@@ -12,7 +12,7 @@
   background: conic-gradient(from var(--earn-angle), var(--lime), var(--aqua) 25%, rgba(101, 182, 136, 0.15) 45%, rgba(101, 182, 136, 0.15) 70%, var(--lime));
   animation: earn-spin 2.6s linear infinite;
 }
-.earnpill::after { content: ''; position: absolute; inset: 1.5px; z-index: -1; border-radius: inherit; background: #242320; }
+.earnpill::after { content: ''; position: absolute; inset: 1.5px; z-index: -1; border-radius: inherit; background: var(--surface); }
 .earnpill__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (prefers-reduced-motion: reduce) {
   .earnpill::before { animation: none; }

@@ -62,7 +62,7 @@
 .sd-sheet__scrim { position: absolute; inset: 0; border: 0; background: rgba(28, 28, 25, 0.66); backdrop-filter: blur(4px); cursor: pointer; }
 .sd-sheet__panel {
   position: relative; display: grid; grid-template-rows: auto 1fr auto; width: min(100%, 760px); max-height: min(92vh, 900px);
-  border: 1px solid var(--border); border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--bg, #272724); box-shadow: var(--shadow);
+  border: 1px solid var(--border); border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--bg, var(--surface)); box-shadow: var(--shadow);
   animation: sd-rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 @media (min-width: 720px) { .sd-sheet__panel { border-radius: var(--r-xl); } }

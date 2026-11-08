@@ -18,7 +18,6 @@ import { QuestShooter } from '../components/QuestShooter';
 import { ShopQuests } from '../components/ShopQuests';
 import { useSession } from '../session';
 import '../styles/QuestsPage.css';
-import { StickerCluster } from '../components/Sticker';
 
 /**
  * Quests: where the collector game is played rather than glimpsed.
@@ -76,13 +75,6 @@ export function QuestsPage() {
   const bar = (
     <div className="qbar">
       <h1 className="qpage__title">Quests</h1>
-      <StickerCluster
-        className="title-stickers"
-        items={[
-          { name: 'trophy', size: 36, x: 0, y: 4, tilt: -10 },
-          { name: 'star', size: 22, x: 60, y: 0, tilt: 14 },
-        ]}
-      />
       {sides}
     </div>
   );

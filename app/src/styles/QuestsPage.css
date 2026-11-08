@@ -8,7 +8,7 @@
   position: relative; overflow: hidden; padding-bottom: var(--strip);
   color: #EBEAFD;
   background:
-    #262522;
+    var(--surface);
   border-color: rgba(148, 146, 243, 0.3);
 }
 .qarcade > :not(.qworld) { position: relative; z-index: 1; }
