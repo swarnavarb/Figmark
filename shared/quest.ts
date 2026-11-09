@@ -1014,7 +1014,7 @@ const STICKERS: readonly StickerDef[] = [
     have: ({ facts }) => facts.posts.length },
   { id: 'mentor', name: 'Mentor', hue: 'blue', glyph: 'crest', tiers: [1, 10, 25, 50, 100],
     meaning: 'Answers other collectors\' questions well enough that the asker marks it as the answer.',
-    how: 'Answers marked as the answer',
+    how: 'Answers picked as the best answer',
     have: ({ facts }) => facts.helpfulAnswers ?? 0 },
   { id: 'bounty-hunter', name: 'Bounty Hunter', hue: 'gold', glyph: 'star', tiers: [1, 5, 15, 40, 100],
     meaning: 'Posts what they are hunting for, so shops know what to bring in.',

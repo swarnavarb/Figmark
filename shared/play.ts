@@ -235,9 +235,9 @@ export const BADGE_META: Record<BadgeKind, { emoji: string; label: string }> = {
   guess_winner: { emoji: '🎯', label: 'Sharpest guess' },
   first_sale: { emoji: '🛍️', label: 'First sale' },
   hundred_sales: { emoji: '💯', label: '100 sales' },
-  helpful_answer: { emoji: '💡', label: 'First accepted answer' },
-  helpful_10: { emoji: '🧠', label: '10 accepted answers' },
-  helpful_50: { emoji: '🎓', label: '50 accepted answers' },
+  helpful_answer: { emoji: '💡', label: 'Best answer' },
+  helpful_10: { emoji: '🧠', label: '10 best answers' },
+  helpful_50: { emoji: '🎓', label: '50 best answers' },
 };
 
 /** Sales that earn a milestone badge, and the badge. */
@@ -248,10 +248,19 @@ export const SALE_MILESTONES: { count: number; kind: BadgeKind; detail: string }
 
 /** Accepted answers that earn a badge, and the badge. */
 export const HELPFUL_MILESTONES: { count: number; kind: BadgeKind; detail: string }[] = [
-  { count: 1, kind: 'helpful_answer', detail: 'An answer marked as the answer' },
-  { count: 10, kind: 'helpful_10', detail: '10 answers marked as the answer' },
-  { count: 50, kind: 'helpful_50', detail: '50 answers marked as the answer' },
+  { count: 1, kind: 'helpful_answer', detail: 'Picked as the best answer' },
+  { count: 10, kind: 'helpful_10', detail: '10 answers picked as the best' },
+  { count: 50, kind: 'helpful_50', detail: '50 answers picked as the best' },
 ];
+
+/**
+ * What a badge says it was for. A milestone's words come from the list above
+ * rather than what was stored when it was won, so renaming one renames every
+ * copy already on someone's page.
+ */
+export function badgeDetail(badge: Pick<Badge, 'kind' | 'detail'>): string {
+  return [...SALE_MILESTONES, ...HELPFUL_MILESTONES].find((each) => each.kind === badge.kind)?.detail ?? badge.detail;
+}
 
 export interface Badge {
   /** Made from what it was won for, so awarding twice is a no-op. */

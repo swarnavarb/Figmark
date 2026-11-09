@@ -380,10 +380,7 @@ export function HonoursCard({ level, title, progress, line, stickers, whose = 't
           <b>{earned}</b><small>of {stickers.length}<br />honours</small>
         </button>
       </div>
-      <button type="button" className="slevel__bar" onClick={() => setShowcase(true)} aria-label="Open the showcase: every honour">
-        <span className="slevel__bartitle"><Glyph name="crown" size={14} /> Honours</span>
-        <span className="slevel__barcount">{earned}/{stickers.length} earned <span aria-hidden="true">›</span></span>
-      </button>
+      <h3 className="slevel__bartitle"><Glyph name="crown" size={14} /> Honours</h3>
       {stickers.length > 0 && (
         <div className="qstickers qstickers--row slevel__stickers" role="group" aria-label="Honours" tabIndex={0}>
           {sorted.map((sticker) => <Sticker key={sticker.id} sticker={sticker} onOpen={() => setOpen(sticker)} />)}

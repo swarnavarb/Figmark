@@ -20,7 +20,7 @@ import { AuthError, getAuthService } from '../auth/index.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
-import { SALE_MILESTONES, type BadgeKind } from '../../../shared/play.js';
+import { SALE_MILESTONES, badgeDetail, type BadgeKind } from '../../../shared/play.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
@@ -1061,7 +1061,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     // everything else - wins, accepted answers - is the person's.
     gameBadges: [...(user.badges ?? [])]
       .filter((badge) => SHOP_BADGES.has(badge.kind) === isStore && (own || !SALES_BADGES.has(badge.kind)))
-      .sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
+      .sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12)
+      .map((badge) => ({ ...badge, detail: badgeDetail(badge) })),
     /** What the tabs and chips count, so neither has to guess. */
     counts: { listings: listings.length, onSale: count('active'), sold: count('sold'), expired: count('expired') },
     // Active first, then sold out, then expired.

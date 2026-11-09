@@ -40,7 +40,7 @@ import { tagKey, tidyLabel } from '../../../shared/shop-tags.js';
 import {
   CONTEST_CAPTION_MAX, CONTEST_MAX_ENTRIES, CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, GUESS_MAX_MINOR,
   PHASE_MAX_HOURS, PHASE_MIN_HOURS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX, SHORTLIST_MAX, SHORTLIST_MIN,
-  HELPFUL_MILESTONES, closestGuess, contestPhase, isJudging,
+  HELPFUL_MILESTONES, badgeDetail, closestGuess, contestPhase, isJudging,
   type ContestPrize, type ContestWinner, type GuessView, type PostContest, type PostGuess,
 } from '../../../shared/play.js';
 import {
@@ -4052,7 +4052,7 @@ async function myRewards(request: HttpRequest, _context: InvocationContext) {
   const me = await repository.getUserById(user.id);
   return json(200, {
     credits: [...(me?.storeCredits ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    badges: [...(me?.badges ?? [])].sort((a, b) => b.at.localeCompare(a.at)),
+    badges: [...(me?.badges ?? [])].sort((a, b) => b.at.localeCompare(a.at)).map((badge) => ({ ...badge, detail: badgeDetail(badge) })),
   });
 }
 

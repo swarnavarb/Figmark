@@ -9,7 +9,7 @@ import { listingRarity } from '@shared/quest';
 import { LootCard } from './FeedPage';
 import { useToast } from '../components/Feedback';
 import { SkelCards, SkelGrid, SkelRows } from '../components/PageSkeletons';
-import { CollectionPreview, CollectorHeader, PurchasedCollection, useStuck } from './CollectorProfile';
+import { CollectionPreview, CollectorHeader, PurchasedCollection, WinsTab, useStuck } from './CollectorProfile';
 import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
@@ -23,13 +23,14 @@ import { PictureField, TagInput } from '../components/PageFields';
 import '../styles/ProfilePage.css';
 import { factsOf } from '@shared/catalog';
 
-type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
+type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'wins' | 'listings' | 'sales' | 'following' | 'settings';
 
 const TAB_LABELS: Record<Tab, string> = {
   collection: '🗂️ Collection',
   saved: '♥ Saved',
   posts: '📝 Posts',
   photos: '📸 Photos',
+  wins: '🏆 Wins',
   listings: 'My listings',
   sales: 'My sales',
   following: 'Following',
@@ -218,6 +219,9 @@ export function ProfilePage() {
         {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
+            {entry === 'wins' && publicPage?.gameBadges && publicPage.gameBadges.length > 0 && (
+              <span className="faint" style={{ marginLeft: 6 }}>{publicPage.gameBadges.length}</span>
+            )}
             {data && entry !== 'settings' && entry !== 'posts' && entry !== 'photos' && entry !== 'collection' && entry !== 'saved' && (
               <span className="faint" style={{ marginLeft: 6 }}>
                 {entry === 'listings' ? data.listings.length
@@ -234,6 +238,8 @@ export function ProfilePage() {
         <PurchasedCollection userId={user.id} isMe />
       ) : tab === 'saved' ? (
         <SavedItems />
+      ) : tab === 'wins' ? (
+        <WinsTab wins={publicPage?.gameBadges ?? []} isMe name={user.displayName} />
       ) : tab === 'settings' ? (
         <>
           <MyPageSettings />

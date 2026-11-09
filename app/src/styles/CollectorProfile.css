@@ -60,7 +60,6 @@
 }
 .shelfhead::after { background: linear-gradient(90deg, rgba(245, 197, 66, 0.75), transparent); }
 .qviewer__tools .field { width: 100%; text-align: left; }
-.winchip { border-color: rgba(251, 191, 36, 0.45); color: var(--warn); background: var(--warn-soft); text-decoration: none; }
 
 /*
  * Styles only components/ProfileParts.tsx and what it brings in can draw, loaded with that
@@ -172,17 +171,10 @@
   transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .slevel__count:hover { border-color: rgba(245, 197, 66, 0.6); }
-.slevel__count:active, .slevel__bar:active { transform: scale(0.97); }
-.slevel__bar {
-  appearance: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
-  width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left;
-  transition: transform var(--dur-1) var(--ease);
-}
-.slevel__bartitle { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.slevel__count:active { transform: scale(0.97); }
+.slevel__bartitle { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi); }
 .slevel__bartitle svg { color: var(--q-gold); }
-.slevel__barcount { font-size: var(--t-xs); color: var(--accent-text); font-weight: var(--w-semi); font-variant-numeric: tabular-nums; }
-.slevel__bar:hover .slevel__barcount { text-decoration: underline; }
-.slevel__count:focus-visible, .slevel__bar:focus-visible { outline: 2px solid var(--q-gold); outline-offset: 2px; }
+.slevel__count:focus-visible { outline: 2px solid var(--q-gold); outline-offset: 2px; }
 .slevel__empty { margin: 0; font-size: var(--t-xs); }
 .slevel__note { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
 .slevel__note > span { display: inline-flex; align-items: center; gap: 4px; }

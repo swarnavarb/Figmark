@@ -3398,7 +3398,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 /* Follow, beside the name of whoever is not followed yet. */
 .spost__follow {
   display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto;
-  padding: 2px 9px; margin-left: 2px;
+  padding: 4px 12px;
   border: 1px solid var(--accent-line); border-radius: var(--r-pill);
   background: var(--accent-soft); color: var(--accent-text);
   font-size: var(--t-2xs); font-weight: var(--w-bold); line-height: 1.5; cursor: pointer;
@@ -9722,64 +9722,167 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   .revphotos__item--busy { animation: none; }
 }
 
-/* ── A person's page: shelf preview, wins in the honours card, pinned tabs ── */
+/* ── A person's page: shelf preview, win cards, pinned tabs ── */
 
-/* Three cards standing on a gold plank; they drop on in turn and settle with a tilt. */
+/*
+ * The shelf: a dark stage with gold speed lines racing across it. The latest piece
+ * stands large, the next two beside it, each cut on a slant; they whip in from the
+ * right, shed their blur and catch one flash of light.
+ */
 .qpreview {
-  display: grid; gap: var(--s3); margin: 14px 0 0; padding: 14px 14px 18px; border-radius: var(--r-lg);
-  background: radial-gradient(110% 120% at 0% 0%, rgba(245, 197, 66, 0.12), transparent 55%), var(--surface);
-  border: 1px solid rgba(245, 197, 66, 0.28);
-  animation: lp-rise 600ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; gap: var(--s3); margin: 14px 0 0; padding: 14px; border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(245, 197, 66, 0.16), transparent 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(124, 58, 237, 0.18), transparent 60%),
+    linear-gradient(160deg, #10121C, #07080D);
+  border: 1px solid rgba(245, 197, 66, 0.32);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 240, 200, 0.08);
+  animation: lp-rise 500ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
 }
+/* Speed lines: thin slanted streaks, drifting fast to the left behind everything. */
+.qpreview::before {
+  content: ''; position: absolute; inset: -20% -60%; z-index: -1; pointer-events: none;
+  background: repeating-linear-gradient(105deg, transparent 0 34px, rgba(245, 197, 66, 0.07) 34px 35px, transparent 35px 58px, rgba(255, 255, 255, 0.035) 58px 59px);
+  animation: qpreview-rush 2.4s linear infinite;
+}
+/* One gold slash across the stage. */
+.qpreview::after {
+  content: ''; position: absolute; z-index: -1; pointer-events: none; left: -10%; right: -10%; top: 58%; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(245, 197, 66, 0.85) 40%, rgba(255, 244, 200, 1) 50%, rgba(245, 197, 66, 0.85) 60%, transparent);
+  box-shadow: 0 0 18px rgba(245, 197, 66, 0.6);
+  transform: rotate(-8deg) scaleX(0); animation: qpreview-slash 700ms cubic-bezier(0.2, 0.9, 0.2, 1) 120ms forwards;
+}
+@keyframes qpreview-rush { to { transform: translateX(-118px); } }
+@keyframes qpreview-slash { to { transform: rotate(-8deg) scaleX(1); } }
 .qpreview__head {
   appearance: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
   width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left;
 }
-.qpreview__title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
-.qpreview__title svg { color: var(--q-gold); }
-.qpreview__all { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--accent-text); transition: transform var(--dur-1) var(--ease); }
-.qpreview__head:hover .qpreview__all { transform: translateX(3px); }
-.qpreview__stage {
-  position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 92px)); justify-content: center; align-items: end;
-  gap: var(--s4); padding: 0 var(--s2) 10px; perspective: 900px;
+.qpreview__title {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--t-sm); font-weight: var(--w-bold); font-style: italic; letter-spacing: 0.08em; text-transform: uppercase;
 }
-.qpreview__card {
-  position: relative; z-index: 1; display: block; padding: 0; border: 0; background: none; cursor: pointer;
-  --tilt: 0deg; transform: rotate(var(--tilt));
-  animation: qpreview-drop 700ms cubic-bezier(0.34, 1.4, 0.64, 1) both; animation-delay: calc(150ms + var(--i, 0) * 110ms);
-  transition: transform 260ms cubic-bezier(0.34, 1.4, 0.64, 1), filter 260ms ease;
-}
-.qpreview__card:nth-child(1) { --tilt: -5deg; }
-.qpreview__card:nth-child(3) { --tilt: 5deg; }
-.qpreview__card:hover, .qpreview__card:focus-visible { transform: translateY(-8px) rotate(0deg) scale(1.04); filter: drop-shadow(0 10px 14px rgba(245, 197, 66, 0.25)); }
-.qpreview__card:active { transform: translateY(-3px) scale(0.98); }
-.qpreview__card:focus-visible { outline: 2px solid var(--q-gold); outline-offset: 4px; border-radius: var(--r-md); }
-.qpreview__card .royal { animation: none; }
-@keyframes qpreview-drop {
-  0% { opacity: 0; transform: translateY(-44px) rotate(0deg); }
-  60% { opacity: 1; }
-  100% { opacity: 1; transform: translateY(0) rotate(var(--tilt)); }
-}
-/* The plank: brass, lit from above, with one gleam that runs along it as the cards land. */
-.qpreview__plank {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 12px; border-radius: 3px; overflow: hidden;
-  background: linear-gradient(180deg, #F7E08A, #B8860B 55%, #7A5A12);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45), 0 0 18px rgba(245, 197, 66, 0.25);
-  transform-origin: center; animation: qpreview-plank 600ms cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-.qpreview__plank::after {
-  content: ''; position: absolute; inset: 0; width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(255, 250, 220, 0.85), transparent);
-  transform: translateX(-120%); animation: qpreview-gleam 1.2s ease-out 700ms both;
-}
-@keyframes qpreview-plank { from { transform: scaleX(0.3); opacity: 0; } }
-@keyframes qpreview-gleam { to { transform: translateX(300%); } }
+.qpreview__title svg { color: var(--q-gold); filter: drop-shadow(0 0 6px rgba(245, 197, 66, 0.8)); }
+.qpreview__all { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--q-gold); transition: transform var(--dur-1) var(--ease); }
+.qpreview__head:hover .qpreview__all { transform: translateX(4px); }
 
-/* Wins, inside the honours card: chips pop in one after another. */
-.slevel__wins { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
-.slevel__winslabel { display: inline-flex; align-items: center; gap: 4px; margin-right: 2px; font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-dim); }
-.slevel__winslabel svg { color: var(--q-gold); }
-.slevel__wins .winchip { display: block; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; animation: lp-pop 480ms cubic-bezier(0.34, 1.4, 0.64, 1) both; animation-delay: calc(250ms + var(--i, 0) * 70ms); }
+/* The latest large on the left; the next two stacked beside it. */
+.qpreview__grid { display: grid; gap: 8px; height: 216px; }
+.qpreview--n3 .qpreview__grid { grid-template-columns: 1.35fr 1fr; grid-template-rows: 1fr 1fr; }
+.qpreview--n3 .qpreview__tile:first-child { grid-row: span 2; }
+.qpreview--n2 .qpreview__grid { grid-template-columns: 1.2fr 1fr; height: 176px; }
+.qpreview--n1 .qpreview__grid { height: 176px; }
+.qpreview__tile {
+  --cut: 14px;
+  position: relative; display: block; overflow: hidden; padding: 0; border: 0; cursor: pointer;
+  background: #0B0C12; color: #FFFFFF; text-align: left;
+  clip-path: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+  animation: qpreview-whip 560ms cubic-bezier(0.2, 0.9, 0.2, 1) both; animation-delay: calc(140ms + var(--i, 0) * 90ms);
+  transition: transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1), filter 220ms ease;
+}
+.qpreview__tile:first-child { --cut: 18px; }
+/* A gold rim, drawn inside the slanted cut. */
+.qpreview__tile::before {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 45%, rgba(4, 5, 10, 0.92)),
+    linear-gradient(105deg, rgba(245, 197, 66, 0.35), transparent 30%);
+}
+/* The flash: a bright band that runs across each tile once as it lands, and again under a finger. */
+.qpreview__tile::after {
+  content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 248, 225, 0.55) 48%, rgba(255, 255, 255, 0.85) 50%, rgba(255, 248, 225, 0.55) 52%, transparent 65%);
+  transform: translateX(-130%);
+  animation: qpreview-flash 900ms cubic-bezier(0.2, 0.9, 0.2, 1) both; animation-delay: calc(520ms + var(--i, 0) * 90ms);
+}
+.qpreview__tile:hover::after, .qpreview__tile:focus-visible::after { animation: qpreview-flash2 700ms cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+.qpreview__tile:hover, .qpreview__tile:focus-visible { transform: translateY(-3px) scale(1.025); filter: brightness(1.12) saturate(1.1); }
+.qpreview__tile:active { transform: scale(0.97); transition-duration: 90ms; }
+.qpreview__tile:focus-visible { outline: none; filter: brightness(1.2) drop-shadow(0 0 8px rgba(245, 197, 66, 0.8)); }
+@keyframes qpreview-whip {
+  0% { opacity: 0; transform: translateX(70px) skewX(-14deg); filter: blur(8px); }
+  60% { opacity: 1; filter: blur(0); }
+  80% { transform: translateX(-4px) skewX(2deg); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+@keyframes qpreview-flash { 0% { transform: translateX(-130%); } 100% { transform: translateX(130%); } }
+@keyframes qpreview-flash2 { 0% { transform: translateX(-130%); } 100% { transform: translateX(130%); } }
+.thumb.qpreview__img {
+  position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; font-size: var(--t-xl); font-weight: var(--w-bold);
+  transition: transform 600ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.qpreview__img .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+.qpreview__tile:hover .qpreview__img { transform: scale(1.08); }
+/* 01, 02, 03 in outline, racing-number style. */
+.qpreview__num {
+  position: absolute; z-index: 4; top: 6px; right: calc(var(--cut) + 4px);
+  font-size: var(--t-xl); font-weight: var(--w-bold); font-style: italic; line-height: 1; letter-spacing: -0.02em;
+  color: transparent; -webkit-text-stroke: 1px rgba(255, 236, 170, 0.9); text-shadow: 0 0 12px rgba(245, 197, 66, 0.45);
+}
+.qpreview__new {
+  position: absolute; z-index: 4; top: 10px; left: calc(var(--cut) + 2px);
+  padding: 2px 8px 2px 6px; border-radius: 3px; transform: skewX(-12deg);
+  background: linear-gradient(90deg, #F7E08A, #F5C542 60%, #D99A1E); color: #1A1300;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.1em; text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba(245, 197, 66, 0.45);
+}
+.qpreview__name {
+  position: absolute; z-index: 4; left: 10px; right: calc(var(--cut) + 6px); bottom: 8px;
+  font-size: var(--t-xs); font-weight: var(--w-bold); font-style: italic; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+.qpreview__tile:first-child .qpreview__name { font-size: var(--t-sm); }
+
+/* Wins: one card each, in its kind's colour, rising in turn; the medal glints. */
+.wincards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.wincard {
+  --tone: 245, 197, 66;
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 14px 12px 14px 14px; border-radius: var(--r-lg); color: inherit; text-decoration: none;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(var(--tone), 0.22), transparent 55%),
+    linear-gradient(160deg, var(--surface-2), var(--surface));
+  border: 1px solid rgba(var(--tone), 0.4);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: lp-pop 520ms cubic-bezier(0.34, 1.4, 0.64, 1) both; animation-delay: calc(var(--i, 0) * 70ms);
+  transition: transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1), border-color 220ms ease, box-shadow 220ms ease;
+}
+.wincard::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(var(--tone), 0.18) 50%, transparent 60%);
+  transform: translateX(-100%); transition: transform 700ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.wincard:hover { transform: translateY(-2px); border-color: rgba(var(--tone), 0.75); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35), 0 0 22px rgba(var(--tone), 0.18); }
+.wincard:hover::after { transform: translateX(100%); }
+.wincard:active { transform: scale(0.98); }
+.wincard:focus-visible { outline: 2px solid rgba(var(--tone), 0.9); outline-offset: 2px; }
+.wincard--violet { --tone: 139, 92, 246; }
+.wincard--cyan { --tone: 34, 211, 238; }
+.wincard--green { --tone: 74, 222, 128; }
+.wincard--coral { --tone: 255, 90, 95; }
+/* The medal: a coin with a bright rim and a slow-turning sheen. */
+.wincard__medal {
+  position: relative; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.35), transparent 45%), radial-gradient(circle, rgba(var(--tone), 0.45), rgba(var(--tone), 0.12));
+  box-shadow: 0 0 0 2px rgba(var(--tone), 0.8), 0 0 0 5px rgba(var(--tone), 0.15), 0 6px 18px rgba(var(--tone), 0.35);
+}
+.wincard__medal::before {
+  content: ''; position: absolute; inset: -2px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from 0deg, transparent 0 70%, rgba(255, 255, 255, 0.7) 80%, transparent 90%);
+  -webkit-mask: radial-gradient(circle, transparent 23px, #000 24px); mask: radial-gradient(circle, transparent 23px, #000 24px);
+  animation: wincard-turn 3.2s linear infinite;
+}
+.wincard__medal > span { font-size: var(--t-xl); line-height: 1; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4)); }
+@keyframes wincard-turn { to { transform: rotate(1turn); } }
+.wincard__body { display: grid; gap: 2px; min-width: 0; }
+.wincard__kind { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.1em; text-transform: uppercase; color: rgb(var(--tone)); }
+.wincard__what { font-size: var(--t-sm); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wincard__when { font-size: var(--t-xs); color: var(--text-dim); }
+.wincard__go { font-size: var(--t-lg); color: rgba(var(--tone), 0.9); transition: transform var(--dur-1) var(--ease); }
+.wincard:hover .wincard__go { transform: translateX(3px); }
 
 /* Honours in the card: each sticker pops onto the row in turn. */
 .slevel__stickers > .qsticker { animation: lp-pop 460ms cubic-bezier(0.34, 1.4, 0.64, 1) both; }
@@ -9811,9 +9914,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 @keyframes tabs-pin { from { transform: scale(0.97); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .qpreview, .qpreview__card, .qpreview__plank, .qpreview__plank::after,
-  .slevel__wins .winchip, .slevel__stickers > .qsticker, .tabs--sticky.is-stuck { animation: none; }
-  .tabs--sticky { transition: none; }
-  .qpreview__plank::after { display: none; }
-  .qpreview__card { transition: none; }
+  .qpreview, .qpreview::before, .qpreview__tile, .wincard, .wincard__medal::before,
+  .slevel__stickers > .qsticker, .tabs--sticky.is-stuck { animation: none; }
+  .qpreview::after { animation: none; transform: rotate(-8deg); }
+  .qpreview__tile::after, .wincard::after { display: none; }
+  .tabs--sticky, .qpreview__tile, .qpreview__img, .wincard { transition: none; }
 }

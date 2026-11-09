@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { BADGE_META } from '@shared/play';
+import { BADGE_META, badgeDetail, type Badge, type BadgeKind } from '@shared/play';
 import type { CollectionItem } from '@shared/models';
 import {
   ApiRequestError, api,
@@ -75,7 +75,6 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
   }, [person.userId]);
 
   const stats = collector?.stats;
-  const wins = page?.gameBadges ?? [];
 
   return (
     <>
@@ -157,7 +156,7 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
 
         {page && <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} />}
 
-        {/* The same card a shop shows: level, XP, every honour; "n/m earned" opens them all. */}
+        {/* The same card a shop shows: level, XP, every honour; the count opens them all. Wins have their own tab. */}
         {!collector ? (
           <SkelBlock h={150} />
         ) : (
@@ -167,17 +166,6 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
             how={LEVELS_EXPLAINED}
             note={(
               <>
-                {/* Won, not claimed: competitions, debates and guesses - beside the honours they sit with. */}
-                {wins.length > 0 && (
-                  <div className="slevel__wins" aria-label="Wins">
-                    <span className="slevel__winslabel"><Glyph name="crown" size={12} /> Wins</span>
-                    {wins.map((badge, i) => (
-                      <Link key={badge.id} to={badge.link} className="chip winchip" title={badge.detail} style={{ ['--i' as string]: i }}>
-                        {BADGE_META[badge.kind].emoji} {badge.detail}
-                      </Link>
-                    ))}
-                  </div>
-                )}
                 {collector.penalty > 0 && (
                   <p className="slevel__note"><span className="qprofile__penalty">−{collector.penalty} XP from low ratings and lost disputes</span></p>
                 )}
@@ -267,12 +255,13 @@ export function useStuck<T extends HTMLElement>() {
   return [ref, stuck, attach] as const;
 }
 
-/* ── A few cards on a gold shelf, above the tabs ───────────────────────── */
+/* ── The shelf, above the tabs: the latest pieces, at speed ───────────── */
 
 /**
- * The three latest pieces of somebody's collection, standing on a shelf, so
- * the most visual thing on the page is seen without opening a tab. Any tap
- * opens the whole collection. Shows nothing until there is something to show.
+ * The three latest pieces of somebody's collection, so the most visual thing
+ * on the page is seen without opening a tab: the newest large, the next two
+ * beside it, cut on a slant over a field of speed lines. Any tap opens the
+ * whole collection. Shows nothing until there is something to show.
  */
 export function CollectionPreview({ userId, onOpen }: { userId: string; onOpen: () => void }) {
   const [shelf, setShelf] = useState<CollectionShelf | null>(null);
@@ -283,21 +272,70 @@ export function CollectionPreview({ userId, onOpen }: { userId: string; onOpen: 
   if (!shelf || shelf.items.length === 0) return null;
   const latest = [...shelf.items].sort((a, b) => b.deliveredAt.localeCompare(a.deliveredAt)).slice(0, 3);
   return (
-    <section className="qpreview" aria-label="Collection">
+    <section className={`qpreview qpreview--n${latest.length}`} aria-label="Collection">
       <button type="button" className="qpreview__head" onClick={onOpen}>
-        <span className="qpreview__title"><Glyph name="chest" size={15} /> On the shelf</span>
+        <span className="qpreview__title"><Glyph name="bolt" size={14} /> On the shelf</span>
         <span className="qpreview__all">See all {shelf.items.length} <span aria-hidden="true">›</span></span>
       </button>
-      <div className="qpreview__stage">
+      <div className="qpreview__grid">
         {latest.map((item, i) => (
-          <button key={item.orderId} type="button" className="qpreview__card" style={{ ['--i' as string]: i }}
+          <button key={item.orderId} type="button" className="qpreview__tile" style={{ ['--i' as string]: i }}
             onClick={onOpen} aria-label={`${item.name}: open the collection`}>
-            <RoyalCard item={item} />
+            <Thumb seed={item.listingId} label={item.name} photo={item.photos[0] ? { url: item.photos[0] } : null}
+              className="thumb qpreview__img" />
+            <span className="qpreview__num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+            {i === 0 && <span className="qpreview__new">Latest</span>}
+            <span className="qpreview__name">{item.name}</span>
           </button>
         ))}
-        <span className="qpreview__plank" aria-hidden="true" />
       </div>
     </section>
+  );
+}
+
+/* ── Wins: what this person won, as cards ──────────────────────────────── */
+
+/** Each kind of win in its own colour: competitions gold, debates violet, guesses cyan. */
+const WIN_TONE: Record<BadgeKind, 'gold' | 'violet' | 'cyan' | 'green' | 'coral'> = {
+  contest_winner: 'gold',
+  challenge_winner: 'gold',
+  debate_winner: 'violet',
+  guess_winner: 'cyan',
+  helpful_answer: 'green',
+  helpful_10: 'green',
+  helpful_50: 'green',
+  first_sale: 'coral',
+  hundred_sales: 'coral',
+};
+
+/**
+ * Everything they won - competitions, debates, guess games, best answers -
+ * one card each, newest first. A card opens what it was won on.
+ */
+export function WinsTab({ wins, isMe, name }: { wins: Badge[]; isMe: boolean; name: string }) {
+  if (wins.length === 0) {
+    return (
+      <EmptyState title="No wins yet">
+        {isMe
+          ? 'Win a competition, a debate or a guess-the-price game, or have an answer picked as the best, and it lands here.'
+          : `When ${name} wins a competition, a debate or a guess-the-price game, it lands here.`}
+      </EmptyState>
+    );
+  }
+  return (
+    <div className="wincards">
+      {wins.map((badge, i) => (
+        <Link key={badge.id} to={badge.link} className={`wincard wincard--${WIN_TONE[badge.kind]}`} style={{ ['--i' as string]: i }}>
+          <span className="wincard__medal" aria-hidden="true"><span>{BADGE_META[badge.kind].emoji}</span></span>
+          <span className="wincard__body">
+            <span className="wincard__kind">{BADGE_META[badge.kind].label}</span>
+            <strong className="wincard__what">{badgeDetail(badge)}</strong>
+            <small className="wincard__when">Won {formatDate(badge.at)}</small>
+          </span>
+          <span className="wincard__go" aria-hidden="true">›</span>
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -617,7 +655,7 @@ function ShelfRow({ name, onRename, onDelete }: { name: string; onRename: (name:
 
 /* ── The page ──────────────────────────────────────────────────────────── */
 
-type Tab = 'feed' | 'reviews' | 'collection';
+type Tab = 'feed' | 'reviews' | 'wins' | 'collection';
 
 export function CollectorProfile({ profile, isMe, onFollow, reload }: {
   profile: PublicProfile;
@@ -670,6 +708,9 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
           <button type="button" className={`tab${tab === 'reviews' ? ' is-on' : ''}`} onClick={() => setTab('reviews')}>
             Reviews {profile.rating.count}
           </button>
+          <button type="button" className={`tab${tab === 'wins' ? ' is-on' : ''}`} onClick={() => setTab('wins')}>
+            Wins {profile.gameBadges?.length ?? 0}
+          </button>
         </div>
 
         {tab === 'collection' ? (
@@ -691,6 +732,8 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
               ))}
             </div>
           )
+        ) : tab === 'wins' ? (
+          <WinsTab wins={profile.gameBadges ?? []} isMe={isMe} name={profile.displayName} />
         ) : (
           <ReviewsTab profile={profile} canWrite={!isMe} onWritten={reload} />
         )}
