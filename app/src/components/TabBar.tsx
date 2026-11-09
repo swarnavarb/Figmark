@@ -188,7 +188,7 @@ export function TabBar() {
           promptAuth(tab.members);
         }}
       >
-        <svg className="tab-item__glyph" viewBox="0 0 24 24" width="22" height="22" fill="none"
+        <svg className="tab-item__glyph" viewBox="0 0 24 24" width="20" height="20" fill="none"
           stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
           aria-hidden="true">
           {tab.icon}

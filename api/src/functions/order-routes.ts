@@ -1,3 +1,4 @@
+import { shopRefusal } from '../../../shared/shop-status.js';
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { REVIEW_DIRECTIONS, type DisputeReason } from '../../../shared/enums.js';
@@ -336,7 +337,8 @@ async function checkout(request: HttpRequest, _context: InvocationContext) {
   let unavailable: string | null = null;
   if (order.placedAt === null) {
     const listing = await repository.getListing(order.listingId);
-    unavailable = unavailableReason(listing, order);
+    unavailable = unavailableReason(listing, order)
+      ?? shopRefusal((await repository.getUserById(order.sellerId))?.sellerProfile?.orderStatus);
     if (listing) await repriceCheckout(repository, order, listing);
     // Whether they pay in full is decided when they pay, not before: a checkout
     // opened again starts from the price without the pay-in-full offer.

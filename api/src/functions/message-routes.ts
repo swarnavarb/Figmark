@@ -1,3 +1,4 @@
+import { shopStatusOf } from '../../../shared/shop-status.js';
 import { isProActive } from '../../../shared/billing.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
@@ -1034,6 +1035,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     rating,
     tier: shop?.tier ?? null,
     pro: isStore && isProActive(user.pro),
+    // Open, paused (with when it lifts) or stopped for orders.
+    orderStatus: isStore ? shopStatusOf(shop?.orderStatus) : null,
     // The owner's own handle, so a shop page can point at the person behind it.
     ownerHandle: isStore ? (user.username ?? null) : null,
     sellerId: user.id,

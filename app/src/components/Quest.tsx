@@ -333,9 +333,11 @@ export function Sticker({ sticker, onOpen }: { sticker: StickerView; onOpen?: ()
     <>
       <span className={`qsticker__hex qhue--${sticker.hue} qtier--${sticker.tier}`}><Glyph name={sticker.glyph} size={22} /></span>
       <span className="qsticker__name">{sticker.name}</span>
-      {sticker.tier > 0 && sticker.tiers.length > 1 && (
-        <span className={`qsticker__tier qtiertext--${sticker.tier}`}>{STICKER_TIER_NAMES[sticker.tier]}</span>
-      )}
+      {/* Every honour carries a pill under its name, so the row lines up: the
+          metal it reached, "Earned" for a one-step one, "Locked" until then. */}
+      <span className={`qsticker__tier qsticker__tier--${sticker.earned ? sticker.tier : 0}`}>
+        {!sticker.earned ? 'Locked' : sticker.tiers.length > 1 ? STICKER_TIER_NAMES[sticker.tier] : 'Earned'}
+      </span>
     </>
   );
   const className = `qsticker${sticker.earned ? '' : ' is-locked'}`;

@@ -2364,6 +2364,12 @@ export interface VerificationStatus {
   ready: { email: boolean; whatsapp: boolean; aadhaar: boolean };
 }
 
+/** Whether a shop takes orders now, and when a pause lifts. */
+export interface ShopStatusView {
+  state: 'open' | 'paused' | 'stopped';
+  until: string | null;
+}
+
 /** A shop as search and suggestions show it. */
 export interface ShopCard {
   id: string;
@@ -2416,6 +2422,8 @@ export interface PublicProfile {
   tier: string | null;
   /** Pro, the subscription: the badge beside the name. */
   pro?: boolean;
+  /** Open, paused (until when) or stopped for orders. Null on a person's page. */
+  orderStatus?: ShopStatusView | null;
   ownerHandle: string | null;
   sellerId: string;
   /** A shop's seller trust, 0-100; null on a person's page. */
@@ -3368,6 +3376,9 @@ export const api = {
     request<ReviewsAbout>(`/users/${encodeURIComponent(userId)}/reviews`),
 
   stores: () => request<{ stores: StoreAccess[] }>('/me/stores'),
+  shopPulse: (id: string) => request<{ followerCount: number; orderStatus: ShopStatusView }>(`/shops/${encodeURIComponent(id)}/pulse`),
+  setShopStatus: (body: { storeId: string; state: ShopStatusView['state']; days?: number }) =>
+    post<{ orderStatus: ShopStatusView }>('/me/storefront/orders', body),
   updateManager: (body: {
     storeId?: string;
     identifier: string;

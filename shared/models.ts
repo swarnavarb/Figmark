@@ -1,3 +1,4 @@
+import type { ShopOrderStatus } from './shop-status.js';
 import type { CancelFlag, FeeTerms, ProState } from './billing.js';
 import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
@@ -590,6 +591,8 @@ export interface SellerProfile {
   levelCache?: number;
   /** Growth quests and the bump points they earned. Absent until the shop first plays. */
   growth?: StoreGrowthState;
+  /** Open, paused or stopped for orders (shared/shop-status.ts). Absent means open. */
+  orderStatus?: ShopOrderStatus | null;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { CreditChip, ProBadge } from '../components/Billing';
 import { PageLoading } from '../components/Feedback';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CommunityAlertBanner } from '../components/CommunityAlerts';
 import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
 import { Link, useParams } from 'react-router-dom';
@@ -10,7 +10,8 @@ import { listingRarity } from '@shared/quest';
 import { BADGE_META } from '@shared/play';
 import { LootCard } from './FeedPage';
 import { SocialPostCard } from '../components/SocialPost';
-import { SkeletonText } from '../components/Feedback';
+import { SkeletonText, useToast } from '../components/Feedback';
+import { shopStatusLabel, shopStatusMessage, timeLeft } from '@shared/shop-status';
 import { Avatar, EmptyState, ErrorNotice, LevelChip } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo } from '../format';
 import { useSession } from '../session';
@@ -21,7 +22,7 @@ import {
 import { CollectorProfile } from './CollectorProfile';
 import { ShopStrip, tagPath } from '../components/ShopCards';
 import { tagKey } from '@shared/shop-tags';
-import type { ShopCard } from '../api';
+import type { ShopCard, ShopStatusView } from '../api';
 import '../styles/ProfileByHandlePage.css';
 
 /**
@@ -74,23 +75,56 @@ export function ProfileByHandlePage() {
     followerCount: followers ?? Math.max(0, page.followerCount + (following === page.following ? 0 : following ? 1 : -1)),
   });
 
+  // The follower count and the open sign as they are now, read while the page is open.
+  const onPulse = (pulse: { followerCount: number; orderStatus: ShopStatusView }) => setData((page) => page && {
+    ...page, followerCount: pulse.followerCount, orderStatus: pulse.orderStatus,
+  });
+
   return (
     <>
       {/* What a community manager's final decision put on this page, if anything. */}
       <CommunityAlertBanner userId={data.sellerId} />
       {data.isStore
-        ? <Storefront data={data} isMe={isMe} onFollow={onFollow} reload={reload} />
+        ? <Storefront data={data} isMe={isMe} onFollow={onFollow} reload={reload} onPulse={onPulse} />
         : <CollectorProfile profile={data} isMe={isMe} onFollow={onFollow} reload={reload} />}
     </>
   );
 }
 
-function Storefront({ data, isMe, onFollow, reload }: {
+/** How often an open shop page looks again at its followers and open sign. */
+const PULSE_MS = 12_000;
+
+function Storefront({ data, isMe, onFollow, reload, onPulse }: {
   data: PublicProfile;
   isMe: boolean;
   onFollow: (following: boolean, followers?: number) => void;
   reload: () => void;
+  onPulse: (pulse: { followerCount: number; orderStatus: ShopStatusView }) => void;
 }) {
+  const toast = useToast();
+  // Live while on screen: a follow from somebody else, or the shop pausing,
+  // shows up without a reload. Nothing is asked from a tab nobody can see.
+  const pulseRef = useRef(onPulse);
+  pulseRef.current = onPulse;
+  useEffect(() => {
+    let gone = false;
+    const look = () => {
+      if (document.visibilityState !== 'visible') return;
+      void api.shopPulse(data.sellerId).then((pulse) => { if (!gone) pulseRef.current(pulse); }).catch(() => undefined);
+    };
+    const timer = window.setInterval(look, PULSE_MS);
+    document.addEventListener('visibilitychange', look);
+    return () => {
+      gone = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', look);
+    };
+  }, [data.sellerId]);
+  const status: ShopStatusView = data.orderStatus ?? { state: 'open', until: null };
+  const tellStatus = () => {
+    const owner = isMe ? ' Change it from Sell.' : '';
+    toast(`${shopStatusMessage(status)}${owner}`, status.state === 'open' ? 'ok' : status.state === 'paused' ? 'info' : 'error');
+  };
   const [tab, setTab] = useState<Tab>('items');
   const [shelf, setShelf] = useState<Shelf>('all');
   const [ratingOpen, setRatingOpen] = useState(false);
@@ -126,7 +160,13 @@ function Storefront({ data, isMe, onFollow, reload }: {
       <div className={`storefront__cover storefront__cover--${brandHueFor(data.handle)}`}>
         {data.coverUrl && <img loading="lazy" decoding="async" src={data.coverUrl} alt="" />}
         <Canopy />
-        <span className="storefront__open"><i aria-hidden="true" /> Open for orders</span>
+        {/* Green open, amber paused, red stopped; a tap says what that means for a buyer. */}
+        <button type="button" className={`storefront__open storefront__open--${status.state}`} onClick={tellStatus}
+          aria-label={`${shopStatusLabel(status.state)}. Tap for details.`}>
+          <i aria-hidden="true" />
+          {shopStatusLabel(status.state)}
+          {status.state === 'paused' && status.until && <small>· {timeLeft(status.until)}</small>}
+        </button>
       </div>
 
       <div className="storefront__body">
@@ -146,7 +186,6 @@ function Storefront({ data, isMe, onFollow, reload }: {
             <p className="phead__since">
               Open since {formatDate(data.memberSince)}
               {data.lastSeenAt && ` · seen ${timeAgo(data.lastSeenAt)}`}
-              {data.tier && <span className="badge phead__tier">{data.tier}</span>}
             </p>
             <VerifiedChips checks={data.verified} passedOnly />
           </div>
@@ -182,32 +221,55 @@ function Storefront({ data, isMe, onFollow, reload }: {
           </div>
         )}
 
-        {/* Who they are, in one place: what they said, what they sell, where from. */}
+        {/* Who they are, in one place: what they said, then one labelled row per
+            kind of fact - what they sell, what else, where from, who runs it. */}
         {(data.bio.trim() || data.tags.length > 0 || data.dispatchRegion || data.link || data.ownerHandle || alsoSells.length > 0) && (
         <section className="ppanel" aria-label="About">
           <h2 className="ppanel__title">About</h2>
           <Bio text={data.bio} />
-          {(data.tags.length > 0 || data.dispatchRegion || data.link || data.ownerHandle) && (
-            <div className="chips chips--tight">
-              {/* Each tag opens every shop that carries it. */}
-              {data.tags.map((tag) => <Link key={tag} to={tagPath(tag)} className="chip">{tag}</Link>)}
-              {data.dispatchRegion && <span className="chip chip--static">📦 ships from {data.dispatchRegion}</span>}
-              {data.link && (
-                <a className="chip" href={withScheme(data.link)} target="_blank" rel="noreferrer noopener">
-                  🔗 {data.link.replace(/^https?:\/\//, '')}
-                </a>
-              )}
-              {/* The person behind a shop is a separate page, rated as a buyer. */}
-              {data.ownerHandle && <Link to={`/${data.ownerHandle}`} className="chip">👤 @{data.ownerHandle}</Link>}
-            </div>
-          )}
-          {/* What its listings say it sells, beyond the tags it chose. */}
-          {alsoSells.length > 0 && (
-            <div className="chips chips--tight alsosells">
-              <span className="alsosells__label">Also sells</span>
-              {alsoSells.map((tag) => <Link key={tag.key} to={tagPath(tag.label)} className="chip alsosells__tag">{tag.label}</Link>)}
-            </div>
-          )}
+          <dl className="pabout__facts">
+            {data.tags.length > 0 && (
+              <div className="pabout__row">
+                <dt>Known for</dt>
+                {/* Each tag opens every shop that carries it. */}
+                <dd className="pabout__chips">
+                  {data.tags.map((tag) => <Link key={tag} to={tagPath(tag)} className="pabout__chip">{tag}</Link>)}
+                </dd>
+              </div>
+            )}
+            {/* What its listings say it sells, beyond the tags it chose. */}
+            {alsoSells.length > 0 && (
+              <div className="pabout__row">
+                <dt>Also sells</dt>
+                <dd className="pabout__chips">
+                  {alsoSells.map((tag) => <Link key={tag.key} to={tagPath(tag.label)} className="pabout__chip pabout__chip--more">{tag.label}</Link>)}
+                </dd>
+              </div>
+            )}
+            {data.dispatchRegion && (
+              <div className="pabout__row">
+                <dt>Ships from</dt>
+                <dd className="pabout__chips"><span className="pabout__chip pabout__chip--fact">📦 {data.dispatchRegion}</span></dd>
+              </div>
+            )}
+            {/* The person behind a shop is a separate page, rated as a buyer. */}
+            {data.ownerHandle && (
+              <div className="pabout__row">
+                <dt>Run by</dt>
+                <dd className="pabout__chips"><Link to={`/${data.ownerHandle}`} className="pabout__chip pabout__chip--fact">👤 @{data.ownerHandle}</Link></dd>
+              </div>
+            )}
+            {data.link && (
+              <div className="pabout__row">
+                <dt>Link</dt>
+                <dd className="pabout__chips">
+                  <a className="pabout__chip pabout__chip--fact" href={withScheme(data.link)} target="_blank" rel="noreferrer noopener">
+                    🔗 {data.link.replace(/^https?:\/\//, '')}
+                  </a>
+                </dd>
+              </div>
+            )}
+          </dl>
         </section>
         )}
 
@@ -256,9 +318,11 @@ function Storefront({ data, isMe, onFollow, reload }: {
             </div>
           </>
         )}
-      </div>
 
-      <ShopStrip title="Similar shops" sub="About the same things as this one" shops={similar} />
+        <div className="storefront__similar">
+          <ShopStrip title="Similar shops" sub="About the same things as this one" shops={similar} />
+        </div>
+      </div>
 
       {ratingOpen && (
         <RatingSheet profile={data} rating={data.rating} onClose={() => setRatingOpen(false)} onReviews={() => setTab('reviews')} />

@@ -87,6 +87,7 @@ import { CalcIcon } from '../components/CalcIcon';
 import { PictureField, TagInput } from '../components/PageFields';
 import { MoreMenu } from '../components/MoreMenu';
 import { EarnPill, earnOf } from '../components/Affiliate';
+import { ShopStatusSwitch } from '../components/ShopStatusSwitch';
 import '../styles/ShopPage.css';
 import { Select } from '../components/Select';
 
@@ -338,6 +339,8 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       <SetupChecklist hasStore />
       <SellHome store={store} canList={store.permissions.includes('listings')} onGo={setSection}
         section={active} />
+      {/* Open, paused or stopped for orders: an admin's call, like the payment details. */}
+      {store.permissions.includes('admin') && <ShopStatusSwitch storeId={store.ownerId} />}
 
       {stores.length > 1 && (
         <label className="field" style={{ marginBlock: 14 }}>

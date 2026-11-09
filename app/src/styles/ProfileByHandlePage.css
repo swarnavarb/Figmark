@@ -22,20 +22,60 @@
 .ptrust--warn { color: var(--warn); }
 .ptrust--low { color: #F87171; }
 .ptrust--none { color: var(--text-faint); }
-/* On a shop: badges it earned, and what its listings say it sells. */
 .earnedtag { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); cursor: default; }
-.alsosells { align-items: center; }
-.alsosells__label { font-size: var(--t-xs); color: var(--text-faint); margin-right: 2px; }
-.alsosells__tag { border-style: dashed; }
 .storefront--shop .storefront__avatar {
   width: 76px; height: 76px; border-radius: var(--r-xl);
   box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px rgba(139, 92, 246, 0.55), 0 12px 28px rgba(0, 0, 0, 0.5);
 }
 .phead--shop { --phead-face: 76px; --phead-below: 22px; }
-.phead__tier { font-size: var(--t-2xs); padding: 1px var(--s2); }
 /* The shop's "open" sign moves off the cover's foot, where the name now sits. */
 .storefront--shop .storefront__open { bottom: auto; top: 74px; }
 @media (min-width: 720px) {
   .storefront--shop .storefront__open { top: 96px; }
 }
-.ppanel .alsosells { margin-top: 0; }
+
+/* ── The open sign: green open, amber paused, red stopped ──────────────── */
+button.storefront__open { font: inherit; font-size: var(--t-xs); font-weight: var(--w-bold); border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.storefront__open:active { transform: scale(0.96); }
+.storefront__open:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.storefront__open small { font-weight: var(--w-semi); opacity: 0.85; font-size: inherit; }
+.storefront__open--open { box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.55), 0 0 16px rgba(52, 211, 153, 0.25); }
+.storefront__open--paused { background: rgba(60, 40, 0, 0.6); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.7), 0 0 16px rgba(251, 191, 36, 0.25); }
+.storefront__open--paused i { background: var(--warn); }
+.storefront__open--stopped { background: rgba(60, 0, 0, 0.6); box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.75), 0 0 16px rgba(248, 113, 113, 0.3); }
+.storefront__open--stopped i { background: #F87171; animation: none; }
+
+/* The level chip on a shop's own page needs no "Shop" tag: the page is one. */
+.phead--shop .lvtag__shop { display: none; }
+
+/* ── About: one labelled row per kind of fact ─────────────────────────── */
+.pabout__facts { display: grid; gap: 10px; margin: 2px 0 0; }
+.pabout__row {
+  display: grid; grid-template-columns: 82px minmax(0, 1fr); align-items: center; gap: 10px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+}
+.pabout__row dt {
+  font-size: var(--t-2xs); font-weight: var(--w-bold); color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.06em; line-height: 1.25; white-space: nowrap;
+}
+/* One line per row that slides sideways, never a pile of chips stacking down. */
+.pabout__chips {
+  margin: 0; min-width: 0; display: flex; gap: 6px; flex-wrap: nowrap;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x pan-y;
+  scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); padding-right: 18px;
+}
+.pabout__chips::-webkit-scrollbar { display: none; }
+.pabout__chip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  padding: 5px 11px; border-radius: var(--r-pill); font-size: var(--t-xs); font-weight: var(--w-semi);
+  color: var(--text); text-decoration: none; background: var(--accent-soft, rgba(139, 92, 246, 0.14));
+  border: 1px solid rgba(139, 92, 246, 0.35); transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+a.pabout__chip:hover { border-color: rgba(139, 92, 246, 0.7); }
+a.pabout__chip:active { transform: scale(0.96); }
+.pabout__chip--more { background: transparent; border-style: dashed; color: var(--text-dim); border-color: var(--border-strong, rgba(255, 255, 255, 0.18)); }
+.pabout__chip--fact { background: var(--surface-2); border-color: var(--border); color: var(--text-dim); }
+
+/* Similar shops sit inside the page's margins, with room above them. */
+.storefront__similar { margin-top: 28px; }

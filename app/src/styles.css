@@ -338,7 +338,11 @@
   /* The bottom bar's height, including the home indicator. Declared here
      because two things need it: the bar sets itself from it, and a
      full-height screen has to stop above it. */
-  --tabbar-h: calc(61px + env(safe-area-inset-bottom, 0px));
+  /* The bar floats: 54px of pill plus the gap under it, so everything that
+     stops above the bar still clears it. */
+  --tabbar-float: 54px;
+  --tabbar-gap: calc(10px + env(safe-area-inset-bottom, 0px));
+  --tabbar-h: calc(var(--tabbar-float) + var(--tabbar-gap));
 
   /* ── Type. Three roles, and no fourth. ───────────────────────────────── */
   --ui: 'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -1649,6 +1653,8 @@ summary::-webkit-details-marker { display: none; }
   /* Down to the true bottom when an iPhone has left the window a keyboard
      short - see ViewportSync. Zero otherwise. */
   margin-bottom: calc(-1 * var(--vv-shrunk, 0px));
+  /* A floating pill, held off the edges and the home indicator. */
+  padding: 0 12px var(--tabbar-gap);
   pointer-events: none;
 }
 .tabbar {
@@ -1662,18 +1668,21 @@ summary::-webkit-details-marker { display: none; }
   background: color-mix(in srgb, var(--surface) 55%, transparent);
   backdrop-filter: blur(24px) saturate(1.6);
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  border-top: 1px solid var(--border);
-  height: var(--tabbar-h);
-  padding: 6px var(--s2);
-  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  max-width: 440px;
+  margin: 0 auto;
+  height: var(--tabbar-float);
+  padding: 5px 8px;
 }
 
 /* Slides under the current tab. One rounded rectangle, no cut-outs: the shape
    that has to survive every background and pixel ratio is the simple one. */
 .tabbar__pill {
   position: absolute;
-  top: 6px;
-  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  top: 5px;
+  bottom: 5px;
   /* Both numbers are against the bar's padding box, so the last tab's pill
      stops exactly where the row does. A percentage of the whole bar overshot
      by the padding and made the page scroll sideways. */
@@ -1688,7 +1697,7 @@ summary::-webkit-details-marker { display: none; }
      gradient says which, and gives each section an identity you learn. */
   background: var(--tab-grad, var(--grad-blue));
   border: 0;
-  border-radius: var(--r-md);
+  border-radius: 17px;
   z-index: -1;
   box-shadow: 0 4px 16px var(--tab-glow, rgba(124, 58, 237, 0.42));
   transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
@@ -1713,8 +1722,8 @@ summary::-webkit-details-marker { display: none; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: var(--s2) 0;
+  gap: 2px;
+  padding: 2px 0;
   color: var(--text-faint);
   text-decoration: none;
   font-size: var(--t-2xs);
@@ -1744,18 +1753,18 @@ summary::-webkit-details-marker { display: none; }
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  padding-bottom: var(--s1);
+  padding-bottom: 2px;
   color: var(--text-dim);
   font-size: var(--t-2xs);
   font-weight: var(--w-semi);
 }
 .tab-create__btn {
   position: absolute;
-  top: -22px;
+  top: -20px;
   left: 50%;
   translate: -50% 0;
-  width: 50px;
-  height: 50px;
+  width: 46px;
+  height: 46px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -4763,7 +4772,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .tabbar { transition: transform var(--dur-2) var(--ease); }
 :root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail))); }
 /* Past the bar's own height by the + button's lift, so no rim of it is left showing. */
-:root[data-bars='hidden'] .tabbar { transform: translateY(calc(100% + 30px)); }
+:root[data-bars='hidden'] .tabbar { transform: translateY(calc(100% + var(--tabbar-gap) + 24px)); }
 
 @media (prefers-reduced-motion: reduce) {
   .spost__glow::before, .spost__glow::after, .social .writer::before { animation: none; }
@@ -6153,7 +6162,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 /* ── Honours (stickers in code) ────────────────────────────────────────── */
 
 .qstickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: var(--s3) var(--s2); }
-.qstickers--row .qsticker { flex: none; width: 74px; }
+.qstickers--row .qsticker { flex: none; width: 84px; align-content: start; }
 .qsticker { display: grid; justify-items: center; gap: 5px; text-align: center; font-size: var(--t-2xs); color: var(--text-dim); line-height: 1.2; }
 .qsticker__hex {
   width: 54px; height: 60px; display: grid; place-items: center;
@@ -6235,7 +6244,27 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qtiertext--3 { color: var(--q-gold); }
 .qtiertext--4 { color: #9FE6EE; }
 .qtiertext--5 { color: var(--violet-pale); }
-.qsticker__tier { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; }
+/* The name sits at a fixed size and two lines' height whatever the button
+   inherits, so every pill in a row lands on the same line. */
+.qsticker__name {
+  font-size: var(--t-xs); line-height: 1.2; color: var(--text); max-width: 100%;
+  min-height: 2.4em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  text-wrap: balance;
+}
+/* The tier as a small metal pill: bronze, silver, gold, platinum, diamond. */
+.qsticker__tier {
+  font-family: var(--ui); font-size: calc(9.5px * var(--text-scale, 1)); font-weight: var(--w-bold);
+  letter-spacing: 0.1em; text-transform: uppercase; line-height: 1;
+  padding: 4px 8px 3px; border-radius: var(--r-pill); white-space: nowrap;
+  color: #1A1206; background: var(--qtier-pill, var(--surface-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.18), 0 2px 8px var(--qtier-glow, transparent);
+}
+.qsticker__tier--0 { --qtier-pill: var(--surface-2); color: var(--text-faint); box-shadow: inset 0 0 0 1px var(--border); }
+.qsticker__tier--1 { --qtier-pill: linear-gradient(135deg, #F2B482, #B8733F 55%, #8A4F24); --qtier-glow: rgba(208, 138, 78, 0.3); }
+.qsticker__tier--2 { --qtier-pill: linear-gradient(135deg, #FFFFFF, #C9D3E3 50%, #8D99AE); --qtier-glow: rgba(201, 211, 227, 0.25); }
+.qsticker__tier--3 { --qtier-pill: linear-gradient(135deg, #FFF1A8, #F5C542 50%, #B8860B); --qtier-glow: rgba(245, 197, 66, 0.35); }
+.qsticker__tier--4 { --qtier-pill: linear-gradient(135deg, #E6FDFF, #9FE6EE 50%, #5BB5C2); --qtier-glow: rgba(159, 230, 238, 0.3); }
+.qsticker__tier--5 { --qtier-pill: linear-gradient(135deg, #A5F3FC, var(--violet-pale) 50%, var(--pink-pale)); --qtier-glow: rgba(196, 181, 253, 0.35); }
 .qsticker__hex--big { width: 84px; height: 94px; }
 
 /* A detail sheet: an honour, what it is and what it means. */

@@ -3,33 +3,48 @@ import { Link } from 'react-router-dom';
 import { tagKey, tagSlug } from '@shared/shop-tags';
 import type { ShopCard } from '../api';
 import { Avatar } from './ui';
+import { brandHueFor, formatCount } from '../format';
 import '../styles/ShopCards.css';
 
 /** Where a tag's own page lives: "Resin kits" → /tags/resin-kit. */
 export const tagPath = (label: string) => `/tags/${encodeURIComponent(tagSlug(tagKey(label)))}`;
 
-/** One shop: picture, name, and the tags that say what it is about. */
+/**
+ * One shop, drawn as a little shopfront: the name on a signboard, a striped
+ * awning in the shop's own hue, its picture in the window, and what it sells
+ * along the counter.
+ */
 export function ShopTile({ shop }: { shop: ShopCard }) {
   const to = shop.handle ? `/${shop.handle}` : '#';
   // What matched first, so a search result says why it is here.
-  const tags = [...new Set([...shop.matched, ...shop.tags])].slice(0, 3);
+  const tags = [...new Set([...shop.matched, ...shop.tags])].slice(0, 2);
+  const region = shop.dispatchRegion ? shop.dispatchRegion.split(',')[0] : '';
   return (
-    <Link to={to} className="shoptile">
-      {shop.photoUrl
-        ? <img className="shoptile__photo" src={shop.photoUrl} alt="" loading="lazy" />
-        : <Avatar name={shop.name} size={44} />}
-      <span className="shoptile__name">{shop.name}{shop.pro && <ProBadge />}</span>
-      <span className="shoptile__meta">
-        {shop.followerCount} follower{shop.followerCount === 1 ? '' : 's'}
-        {shop.dispatchRegion ? ` · ${shop.dispatchRegion.split(',')[0]}` : ''}
+    <Link to={to} className={`shoptile shoptile--${brandHueFor(shop.handle ?? shop.id)}`}>
+      <span className="shoptile__sign">
+        <span className="shoptile__name">{shop.name}</span>
+        {shop.pro && <ProBadge />}
       </span>
-      {tags.length > 0 && (
-        <span className="shoptile__tags">
-          {tags.map((tag) => (
-            <span key={tag} className={`shoptile__tag${shop.matched.includes(tag) ? ' is-hit' : ''}`}>{tag}</span>
-          ))}
+      <span className="shoptile__awning" aria-hidden="true" />
+      <span className="shoptile__front">
+        <span className="shoptile__window">
+          {shop.photoUrl
+            ? <img className="shoptile__photo" src={shop.photoUrl} alt="" loading="lazy" />
+            : <Avatar name={shop.name} size={46} />}
         </span>
-      )}
+        <span className="shoptile__meta">
+          <b>{formatCount(shop.followerCount)}</b> follower{shop.followerCount === 1 ? '' : 's'}
+          {region && <><br />📦 {region}</>}
+        </span>
+        {tags.length > 0 && (
+          <span className="shoptile__tags">
+            {tags.map((tag) => (
+              <span key={tag} className={`shoptile__tag${shop.matched.includes(tag) ? ' is-hit' : ''}`}>{tag}</span>
+            ))}
+          </span>
+        )}
+        <span className="shoptile__door">Step inside <span aria-hidden="true">→</span></span>
+      </span>
     </Link>
   );
 }

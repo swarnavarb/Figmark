@@ -13,21 +13,87 @@
 .shopstrip__title { margin: 0; font-size: var(--t-md, 16px); }
 .shopstrip__sub { font-size: var(--t-xs); color: var(--text-faint); }
 .shopstrip__row {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 170px); gap: 10px;
-  overflow-x: auto; padding-bottom: var(--s1); scroll-snap-type: x proximity; scrollbar-width: none;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(156px, 168px); gap: 12px;
+  overflow-x: auto; overflow-y: hidden; padding: 4px 2px var(--s2); scroll-snap-type: x proximity; scrollbar-width: none;
+  overscroll-behavior-x: contain;
 }
+
+/* ── A shop as a shopfront: sign, awning, window, counter, door ────────── */
 .shoptile {
-  display: grid; justify-items: start; align-content: start; gap: var(--s1); scroll-snap-align: start; min-width: 0;
-  padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
-  color: var(--text); text-decoration: none;
+  --sf-hue: var(--violet);
+  position: relative; display: grid; grid-template-rows: auto auto 1fr; min-width: 0; scroll-snap-align: start;
+  color: var(--text); text-decoration: none; border-radius: var(--r-md) var(--r-md) var(--r-sm) var(--r-sm);
+  background: var(--surface); border: 1px solid var(--border); overflow: hidden;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+  transition: transform var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
-.shoptile:hover { border-color: var(--border-strong); }
-.shoptile__photo { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
-.shoptile__name { max-width: 100%; font-weight: var(--w-semi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shoptile__meta { font-size: var(--t-xs); color: var(--text-faint); }
-.shoptile__tags { display: flex; flex-wrap: wrap; gap: var(--s1); margin-top: 2px; }
+.shoptile:hover { border-color: color-mix(in srgb, var(--sf-hue) 60%, var(--border)); transform: translateY(-2px); box-shadow: 0 14px 28px rgba(0, 0, 0, 0.45); }
+.shoptile:active { transform: scale(0.97); }
+.shoptile:focus-visible { outline: 2px solid var(--sf-hue); outline-offset: 2px; }
+.shoptile--violet { --sf-hue: var(--violet); }
+.shoptile--coral  { --sf-hue: var(--coral); }
+.shoptile--aqua   { --sf-hue: #0891B2; }
+.shoptile--blue   { --sf-hue: var(--blue); }
+.shoptile--pink   { --sf-hue: var(--pink); }
+.shoptile--lime   { --sf-hue: #65A30D; }
+
+/* The signboard: the name on a dark board edged in the shop's colour. */
+.shoptile__sign {
+  display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0;
+  padding: 8px 10px 7px; text-align: center;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--sf-hue) 30%, #0B0F18), #0B0F18);
+  border-bottom: 2px solid var(--sf-hue);
+}
+.shoptile__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--display); font-weight: var(--w-bold); font-size: var(--t-sm); letter-spacing: 0.01em;
+}
+
+/* The awning: stripes in the shop's hue and cream, scalloped along the hem. */
+.shoptile__awning {
+  position: relative; height: 16px; z-index: 1;
+  background: repeating-linear-gradient(90deg, var(--sf-hue) 0 16px, #F8F5EE 16px 32px);
+  filter: drop-shadow(0 5px 4px rgba(0, 0, 0, 0.35));
+}
+.shoptile__awning::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 8px;
+  background:
+    radial-gradient(circle at 8px 0, var(--sf-hue) 7.5px, transparent 8px) 0 0 / 32px 8px repeat-x,
+    radial-gradient(circle at 24px 0, #F8F5EE 7.5px, transparent 8px) 0 0 / 32px 8px repeat-x;
+}
+
+/* The front: the window with the shop's face, then what it sells. */
+.shoptile__front {
+  display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 16px 10px 0; text-align: center; min-width: 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--sf-hue) 10%, transparent), transparent 70%),
+    var(--surface);
+}
+.shoptile__window {
+  display: grid; place-items: center; width: 58px; height: 58px; border-radius: 12px; overflow: hidden;
+  background: var(--surface-2);
+  box-shadow: 0 0 0 3px #0B0F18, 0 0 0 5px color-mix(in srgb, var(--sf-hue) 70%, transparent), inset 0 0 12px rgba(0, 0, 0, 0.4);
+}
+.shoptile__photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shoptile__window .avatar { border-radius: 0 !important; width: 100% !important; height: 100% !important; }
+.shoptile__meta { font-size: var(--t-2xs); color: var(--text-faint); line-height: 1.45; }
+.shoptile__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+.shoptile__tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; max-width: 100%; }
 .shoptile__tag {
-  padding: 2px var(--s2); border-radius: var(--r-pill); background: var(--surface-2);
-  font-size: var(--t-xs); color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 2px 8px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border);
+  font-size: var(--t-2xs); color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.shoptile__tag.is-hit { background: var(--accent-soft); color: var(--text); }
+.shoptile__tag.is-hit { background: var(--accent-soft); border-color: rgba(139, 92, 246, 0.45); color: var(--text); }
+/* The door step along the foot: where a tap takes you. */
+.shoptile__door {
+  align-self: stretch; margin: auto -10px 0; padding: 7px 10px;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em; color: var(--sf-hue);
+  border-top: 1px dashed color-mix(in srgb, var(--sf-hue) 40%, var(--border));
+  background: color-mix(in srgb, var(--sf-hue) 8%, transparent);
+}
+.shoptile--lime .shoptile__door, .shoptile--aqua .shoptile__door { color: color-mix(in srgb, var(--sf-hue) 70%, #fff); }
+
+@media (prefers-reduced-motion: reduce) {
+  .shoptile { transition: none; }
+  .shoptile:hover, .shoptile:active { transform: none; }
+}
