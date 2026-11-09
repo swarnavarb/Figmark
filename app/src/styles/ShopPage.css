@@ -989,3 +989,14 @@ label.rdy__line { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .shopswitch, .shopswitch__thumb, .shopswitch__step { transition: none; }
 }
+
+/* ── Also sells: categories picked, set apart from the typed tags ──────── */
+.alsopick { display: flex; flex-wrap: wrap; gap: 6px; }
+.alsopick__opt {
+  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); padding: 5px 11px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); cursor: pointer;
+  transition: border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
+}
+.alsopick__opt:hover:not(:disabled) { border-color: var(--aqua-line); color: var(--text); }
+.alsopick__opt.is-on { border-color: var(--aqua-line); background: var(--aqua-soft); color: var(--text); }
+.alsopick__opt:disabled { opacity: 0.4; cursor: default; }

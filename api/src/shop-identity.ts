@@ -22,9 +22,11 @@ function counted(listings: readonly Listing[]) {
 }
 
 /** The identity this shop should have now. */
-export async function identityFor(repository: Repo, owner: User, ownTags?: readonly string[]): Promise<ShopTag[]> {
+export async function identityFor(
+  repository: Repo, owner: User, ownTags?: readonly string[], alsoSells?: readonly string[],
+): Promise<ShopTag[]> {
   const listings = await repository.listListings({ sellerId: owner.id, includeHidden: true });
-  return buildIdentity(ownTags ?? owner.sellerProfile?.tags ?? [], counted(listings));
+  return buildIdentity(ownTags ?? owner.sellerProfile?.tags ?? [], counted(listings), alsoSells ?? owner.sellerProfile?.alsoSells ?? []);
 }
 
 /**

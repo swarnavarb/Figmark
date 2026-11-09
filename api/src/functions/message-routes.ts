@@ -1027,6 +1027,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     // What the shop is known for beyond its own tags, from what it lists;
     // and badges read off its orders, worked out here and never stored.
     identity: (shop?.identity ?? []).map((tag) => ({ key: tag.k, label: tag.l, own: Boolean(tag.own) })),
+    // The other categories the shop says it carries, beside what it is known for.
+    alsoSells: isStore ? (shop?.alsoSells ?? []) : [],
     earned: isStore ? earnedTags(sales) : [],
     link: shop?.link ?? null,
     dispatchRegion: shop?.dispatchRegion ?? '',

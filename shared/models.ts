@@ -582,6 +582,14 @@ export interface SellerProfile {
    */
   tags?: string[];
   /**
+   * Other catalog categories the shop carries beyond what its tags say it is
+   * known for - "Also sells". Picked from the fixed category list, at most
+   * four (see cleanAlsoSells in shared/shop-tags.ts). Folded into the
+   * identity at a lower weight than tags, so search, similar shops and
+   * suggestions read it, and the Data tab reports on each one.
+   */
+  alsoSells?: string[];
+  /**
    * What the shop is about, folded from its own tags and every listing's
    * (see shared/shop-tags.ts). At most ten short entries; rewritten when a
    * listing or the tags change, and read by search and suggestions.

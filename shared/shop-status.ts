@@ -6,7 +6,7 @@
  *            everywhere, but nobody can buy, book or pledge until it reopens.
  *            The pause lifts on its own when its time is up, so a shop that
  *            forgets does not stay shut.
- * - stopped: closed until the shop says otherwise. Its items leave the Shop
+ * - stopped: closed (the switch reads "Closed") until the shop says otherwise. Its items leave the Shop
  *            feed and search, but stay on its own page; nothing can be bought.
  *
  * Stored on the seller profile as `orderStatus`; absent reads as open.
@@ -70,7 +70,7 @@ export function timeLeft(until: string, now = Date.now()): string {
 
 /** The label on the shop's pill. */
 export function shopStatusLabel(state: ShopOrderState): string {
-  return state === 'open' ? 'Open for orders' : state === 'paused' ? 'Orders paused' : 'Not taking orders';
+  return state === 'open' ? 'Open for orders' : state === 'paused' ? 'Orders paused' : 'Shop closed';
 }
 
 /** What a buyer reads when they tap the pill, or when a purchase is refused. */
@@ -80,7 +80,7 @@ export function shopStatusMessage(status: { state: ShopOrderState; until: string
     const left = status.until ? ` It reopens in ${timeLeft(status.until, now)}.` : '';
     return `This shop has paused orders for a short break.${left} You can still browse, save and message it.`;
   }
-  return 'This shop is not taking orders right now. You can still browse its page, save items and message it.';
+  return 'This shop is closed right now and not taking orders. You can still browse its page, save items and message it.';
 }
 
 /** The refusal a purchase gets while the shop is not open, or null when it is. */

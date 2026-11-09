@@ -2264,6 +2264,8 @@ export interface StorefrontDraft {
   photoUrl?: string;
   coverUrl?: string;
   tags?: string[];
+  /** Other catalog categories the shop carries: "Also sells". */
+  alsoSells?: string[];
   link?: string;
   /** How a buyer pays this shop directly. Null clears it. */
   payment?: SellerPaymentDetails | null;
@@ -2391,6 +2393,8 @@ export interface ShopCard {
 export interface TagInsights {
   tags: {
     key: string; label: string; own: boolean;
+    /** Declared under "Also sells" rather than as a tag. */
+    side: boolean;
     yourItems: number; yourLikesPerItem: number; sold: number;
     marketItems: number; marketLikesPerItem: number; shopsSharing: number;
     verdict: 'none_live' | 'open' | 'ahead' | 'behind' | 'level';
@@ -2410,6 +2414,8 @@ export interface PublicProfile {
   tags: string[];
   /** The shop's identity: its own tags and what it lists, most telling first. */
   identity: { key: string; label: string; own: boolean }[];
+  /** Other categories the shop says it carries, beside its tags. */
+  alsoSells?: string[];
   /** Badges the shop earned from its orders. */
   earned: { id: string; label: string }[];
   link: string | null;

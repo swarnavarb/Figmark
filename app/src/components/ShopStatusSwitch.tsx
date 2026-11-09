@@ -6,10 +6,10 @@ import { haptic } from '../haptics';
 
 type State = ShopStatusView['state'];
 
-/** Left to right: stop, pause, open - the switch reads like a traffic light on its side. */
+/** Left to right: closed, pause, open - the switch reads like a traffic light on its side. */
 const STEPS: { id: State; label: string; hint: string }[] = [
-  { id: 'stopped', label: 'Stop', hint: 'Off the Shop feed. Nobody can buy.' },
-  { id: 'paused', label: 'Pause', hint: `Still listed. No orders for up to ${PAUSE_MAX_DAYS} days.` },
+  { id: 'stopped', label: 'Closed', hint: 'Hidden from the marketplace. Nobody can buy.' },
+  { id: 'paused', label: 'Pause', hint: `Still visible. No orders for up to ${PAUSE_MAX_DAYS} days.` },
   { id: 'open', label: 'Open', hint: 'Listed and taking orders.' },
 ];
 
@@ -20,9 +20,9 @@ function changedText(status: ShopStatusView): string {
   if (status.state === 'open') return 'Your shop is open. Buyers can order again.';
   if (status.state === 'paused') {
     const left = status.until ? timeLeft(status.until) : `${PAUSE_MAX_DAYS} days`;
-    return `Orders paused for ${left}. Your items stay in the Shop, but nobody can buy until it reopens on its own.`;
+    return `Orders paused for ${left}. Your items are visible in the marketplace, but nobody can buy until it reopens on its own.`;
   }
-  return 'Shop stopped. Your items are off the Shop feed and nobody can buy. Your page stays up.';
+  return 'Shop closed. Your items are not visible in the marketplace and nobody can buy from your shop.';
 }
 
 /**
@@ -31,18 +31,26 @@ function changedText(status: ShopStatusView): string {
  * - Green, open: everything as normal.
  * - Amber, paused: a break of one to three days. Items stay on the Shop feed,
  *   nobody can buy, and the shop reopens by itself when the time is up.
- * - Red, stopped: items leave the Shop feed (the shop's own page keeps them)
+ * - Red, closed (stored as 'stopped'): items leave the Shop feed (the shop's own page keeps them)
  *   and nobody can buy until the shop opens again.
  */
 export function ShopStatusSwitch({ storeId }: { storeId: string }) {
   const toast = useToast();
   const [status, setStatus] = useState<ShopStatusView | null>(null);
-  const [days, setDays] = useState<number>(PAUSE_MAX_DAYS);
+  // A pause starts at one day; the shop stretches it to three if it needs to.
+  const [days, setDays] = useState<number>(1);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setStatus(null);
-    void api.shopPulse(storeId).then((pulse) => setStatus(pulse.orderStatus)).catch(() => setStatus({ state: 'open', until: null }));
+    void api.shopPulse(storeId).then((pulse) => {
+      setStatus(pulse.orderStatus);
+      // A pause already running shows the days it has left.
+      const until = pulse.orderStatus.until ? Date.parse(pulse.orderStatus.until) : NaN;
+      if (pulse.orderStatus.state === 'paused' && Number.isFinite(until)) {
+        setDays(Math.min(PAUSE_MAX_DAYS, Math.max(1, Math.ceil((until - Date.now()) / 86_400_000))));
+      }
+    }).catch(() => setStatus({ state: 'open', until: null }));
   }, [storeId]);
 
   const choose = async (state: State, pauseDays = days) => {
@@ -75,7 +83,7 @@ export function ShopStatusSwitch({ storeId }: { storeId: string }) {
       <div className="shopswitch__head">
         <span className="shopswitch__title">
           <i aria-hidden="true" />
-          {current === 'open' ? 'Open for orders' : current === 'paused' ? 'Orders paused' : 'Shop stopped'}
+          {current === 'open' ? 'Open for orders' : current === 'paused' ? 'Orders paused' : 'Shop closed'}
         </span>
         <small className="shopswitch__note">
           {current === 'paused' && status?.until ? `Reopens in ${timeLeft(status.until)}` : STEPS[index]!.hint}

@@ -20,7 +20,7 @@ import {
   Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
 } from '../components/ProfileParts';
 import { CollectorProfile } from './CollectorProfile';
-import { ShopStrip, tagPath } from '../components/ShopCards';
+import { ShopStrip, shortName, tagPath } from '../components/ShopCards';
 import { tagKey } from '@shared/shop-tags';
 import type { ShopCard, ShopStatusView } from '../api';
 import '../styles/ProfileByHandlePage.css';
@@ -140,9 +140,13 @@ function Storefront({ data, isMe, onFollow, reload, onPulse }: {
   useEffect(() => {
     void api.similarShops(data.sellerId).then((result) => setSimilar(result.shops)).catch(() => setSimilar(null));
   }, [data.sellerId]);
-  // Identity tags the shop did not choose itself: what its listings say.
+  // What else the shop carries: the categories it declared under Also sells,
+  // or, for a shop that has not picked any, what its listings say beyond its tags.
   const chosen = new Set(data.tags.map(tagKey));
-  const alsoSells = data.identity.filter((tag) => !tag.own && !chosen.has(tag.key)).slice(0, 4);
+  const declared = (data.alsoSells ?? []).map((label) => ({ key: tagKey(label), label }));
+  const alsoSells = declared.length > 0
+    ? declared
+    : data.identity.filter((tag) => !tag.own && !chosen.has(tag.key)).slice(0, 4);
 
   const shown = data.listings.filter((listing) => shelf === 'all' || listing.state === shelf);
   const filters = ([
@@ -172,11 +176,15 @@ function Storefront({ data, isMe, onFollow, reload, onPulse }: {
       <div className="storefront__body">
         {/* The shop's name sits on its cover, just above the edge; its details line up under it. */}
         <header className="phead phead--shop">
-          <div className="phead__face storefront__avatar">
-            {data.photoUrl ? <img loading="lazy" decoding="async" src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
+          {/* Pro hangs off the shop's picture, so a long name has the whole line. */}
+          <div className="phead__face">
+            <div className="storefront__avatar">
+              {data.photoUrl ? <img loading="lazy" decoding="async" src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
+            </div>
+            {data.isStore && data.pro && <span className="phead__pro"><ProBadge size="sm" /></span>}
           </div>
           <div className="phead__name">
-            <h1>{data.displayName}<VerifiedTick checks={data.verified} />{data.isStore && data.pro && <ProBadge size="md" />}</h1>
+            <h1 title={data.displayName} className={data.displayName.length > 18 ? 'phead__title--long' : undefined}>{data.isStore ? shortName(data.displayName) : data.displayName}<VerifiedTick checks={data.verified} /></h1>
             <span className="phead__line">
               <span className="phead__handle">@{data.handle}</span>
               <LevelChip tag={data.levelTag} inline />
@@ -237,7 +245,7 @@ function Storefront({ data, isMe, onFollow, reload, onPulse }: {
                 </dd>
               </div>
             )}
-            {/* What its listings say it sells, beyond the tags it chose. */}
+            {/* Other categories it carries, beyond the tags it chose. */}
             {alsoSells.length > 0 && (
               <div className="pabout__row">
                 <dt>Also sells</dt>

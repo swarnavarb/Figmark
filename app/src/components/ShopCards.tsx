@@ -1,10 +1,14 @@
 import { ProBadge } from './Billing';
 import { Link } from 'react-router-dom';
 import { tagKey, tagSlug } from '@shared/shop-tags';
+import { SHOP_NAME_MAX } from '@shared/storefront';
 import type { ShopCard } from '../api';
 import { Avatar } from './ui';
 import { brandHueFor, formatCount } from '../format';
 import '../styles/ShopCards.css';
+
+/** A name cut to what a shop may be called now; names from before the limit end in "…". */
+export const shortName = (name: string) => (name.length > SHOP_NAME_MAX ? `${name.slice(0, SHOP_NAME_MAX - 1).trimEnd()}…` : name);
 
 /** Where a tag's own page lives: "Resin kits" → /tags/resin-kit. */
 export const tagPath = (label: string) => `/tags/${encodeURIComponent(tagSlug(tagKey(label)))}`;
@@ -21,16 +25,20 @@ export function ShopTile({ shop }: { shop: ShopCard }) {
   const region = shop.dispatchRegion ? shop.dispatchRegion.split(',')[0] : '';
   return (
     <Link to={to} className={`shoptile shoptile--${brandHueFor(shop.handle ?? shop.id)}`}>
+      {/* A lit sign over the door: the name in neon, the whole width of the board. */}
       <span className="shoptile__sign">
-        <span className="shoptile__name">{shop.name}</span>
-        {shop.pro && <ProBadge />}
+        <span className="shoptile__name">{shortName(shop.name)}</span>
       </span>
       <span className="shoptile__awning" aria-hidden="true" />
       <span className="shoptile__front">
-        <span className="shoptile__window">
-          {shop.photoUrl
-            ? <img className="shoptile__photo" src={shop.photoUrl} alt="" loading="lazy" />
-            : <Avatar name={shop.name} size={46} />}
+        {/* Pro hangs off the window rather than the sign, so the name gets the board. */}
+        <span className="shoptile__face">
+          <span className="shoptile__window">
+            {shop.photoUrl
+              ? <img className="shoptile__photo" src={shop.photoUrl} alt="" loading="lazy" />
+              : <Avatar name={shop.name} size={46} />}
+          </span>
+          {shop.pro && <span className="shoptile__pro"><ProBadge /></span>}
         </span>
         <span className="shoptile__meta">
           <b>{formatCount(shop.followerCount)}</b> follower{shop.followerCount === 1 ? '' : 's'}

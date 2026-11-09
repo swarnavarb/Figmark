@@ -1,7 +1,7 @@
 import { GiveMoneyPanel } from '../components/GiveMoney';
 import { CancelFlagBanner, FeeLockBanner, ProGate, ProOwnerProvider, useProLocked } from '../components/Billing';
 import { confirmAsk, confirmSentence } from '../components/Ask';
-import { Suspense, lazy, useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
@@ -41,6 +41,8 @@ import {
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
+import { ALSO_SELLS_MAX, tagKey } from '@shared/shop-tags';
+import { SHOP_NAME_MAX } from '@shared/storefront';
 import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { OrderPhotos } from '../components/OrderPhotos';
 import { RestockChoice } from '../components/RestockChoice';
@@ -783,6 +785,43 @@ const TAG_IDEAS = ['Ships weekly', 'Pre-orders open', 'Authentic only', 'Imports
   'Custom painting', 'Bundles', ...CATEGORIES.slice(0, 4)];
 
 /**
+ * "Also sells": the other catalog categories a shop carries, picked rather
+ * than typed so every shop means the same thing by them. Tags say what the
+ * shop is known for, in its own words; this says what else is on its shelves.
+ * A category that is already one of its tags is not offered.
+ */
+function AlsoSellsField({ value, tags, onChange }: { value: string[]; tags: string[]; onChange: (next: string[]) => void }) {
+  const labelId = useId();
+  const tagged = new Set(tags.map(tagKey));
+  const options = CATEGORIES.filter((name) => !tagged.has(tagKey(name)));
+  const full = value.length >= ALSO_SELLS_MAX;
+  const toggle = (name: string) => onChange(value.includes(name)
+    ? value.filter((row) => row !== name)
+    : full ? value : [...value, name]);
+  return (
+    <div className="field" role="group" aria-labelledby={labelId}>
+      <span id={labelId}>Also sells</span>
+      <div className="alsopick">
+        {options.map((name) => {
+          const on = value.includes(name);
+          return (
+            <button key={name} type="button" aria-pressed={on} disabled={!on && full}
+              className={`alsopick__opt${on ? ' is-on' : ''}`} onClick={() => toggle(name)}>
+              {on ? '✓ ' : '+ '}{name}
+            </button>
+          );
+        })}
+      </div>
+      <span className="field__hint">
+        Other categories you stock, beyond what your tags say you are known for. Used to suggest your shop to
+        buyers; the Data tab shows how each does.{' '}
+        {full ? `Four is the most. Untick one to pick another.` : `${ALSO_SELLS_MAX - value.length} left.`}
+      </span>
+    </div>
+  );
+}
+
+/**
  * A handle for a shop nobody has named yet: the owner's own, plus "_shop".
  *
  * "@messi" opens "@messi_shop". A shop shares one namespace with people, so
@@ -867,6 +906,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           payment: result.storefront?.payment ?? null,
           coverUrl: result.storefront?.coverUrl ?? '',
           tags: result.storefront?.tags ?? [],
+          alsoSells: result.storefront?.alsoSells ?? [],
         });
         // Where the shop dispatches from, guessed on the server from the
         // connection - never by asking the browser for a location.
@@ -952,9 +992,11 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
     <>
       <label className="field">
         <span>Storefront name *</span>
-        <input value={draft.storefrontName ?? ''} onChange={(e) => set('storefrontName', e.target.value)}
-          placeholder="Kaiju Imports" required />
-        <span className="field__hint">What buyers see instead of your own name.</span>
+        <input value={draft.storefrontName ?? ''} onChange={(e) => set('storefrontName', e.target.value.slice(0, SHOP_NAME_MAX))}
+          placeholder="Kaiju Imports" maxLength={Math.max(SHOP_NAME_MAX, saved?.storefrontName.length ?? 0)} required />
+        <span className="field__hint">
+          What buyers see instead of your own name. {(draft.storefrontName ?? '').length}/{SHOP_NAME_MAX}
+        </span>
       </label>
 
       {/* The shop's own address, not the owner's: a shop is followed,
@@ -1007,6 +1049,8 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
       <TagInput value={tags} onChange={(next) => set('tags', next)} ideas={tagIdeas}
         hint="Shown on your shop, and how buyers find you in search and on tag pages. Mix what you sell (Gunpla, Nendoroid) with how you work (Ships weekly)."
         fullHint="Six tags is the most a shop shows. Remove one (×) to add another." />
+
+      <AlsoSellsField value={draft.alsoSells ?? []} tags={tags} onChange={(next) => set('alsoSells', next)} />
 
       <div className="field-row">
         <label className="field">
@@ -1097,6 +1141,9 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
             {tags.map((tag) => <span key={tag} className="badge badge--quiet">{tag}</span>)}
           </div>
         )}
+        {(draft.alsoSells ?? []).length > 0 && (
+          <span className="faint">Also sells {(draft.alsoSells ?? []).join(' · ')}</span>
+        )}
         <div className="row">
           <span className="badge">{saved?.tier ?? 'unverified'}</span>
           <span className="faint">{saved?.followerCount ?? 0} followers</span>
@@ -1150,7 +1197,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const doneAt = (at: number) => at < reached && at !== index;
   /** An optional step with nothing filled in: passed, but not done. */
   const emptyAt = (id: ShopStep) => (id === 'photos' && !draft.photoUrl && !draft.coverUrl)
-    || (id === 'about' && !draft.bio?.trim() && tags.length === 0 && !draft.dispatchRegion?.trim() && !draft.link?.trim())
+    || (id === 'about' && !draft.bio?.trim() && tags.length === 0 && !(draft.alsoSells ?? []).length && !draft.dispatchRegion?.trim() && !draft.link?.trim())
     || (id === 'payment' && !hasPayment);
   const optionalEmpty = emptyAt(step);
 

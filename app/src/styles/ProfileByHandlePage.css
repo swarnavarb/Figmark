@@ -29,7 +29,7 @@
 }
 .phead--shop { --phead-face: 76px; --phead-below: 22px; }
 /* The shop's "open" sign moves off the cover's foot, where the name now sits. */
-.storefront--shop .storefront__open { bottom: auto; top: 74px; }
+.storefront--shop .storefront__open { bottom: auto; top: 62px; }
 @media (min-width: 720px) {
   .storefront--shop .storefront__open { top: 96px; }
 }
@@ -44,6 +44,13 @@ button.storefront__open { font: inherit; font-size: var(--t-xs); font-weight: va
 .storefront__open--paused i { background: var(--warn); }
 .storefront__open--stopped { background: rgba(60, 0, 0, 0.6); box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.75), 0 0 16px rgba(248, 113, 113, 0.3); }
 .storefront__open--stopped i { background: #F87171; animation: none; }
+
+/* Pro sits on the foot of the shop's picture, so the name has the whole line. */
+.phead__pro { position: absolute; left: 50%; bottom: -8px; translate: -50% 0; z-index: 2; line-height: 1; white-space: nowrap; }
+.phead--shop .phead__name h1 { text-wrap: balance; }
+/* A long name steps down a size so two lines stay under the open sign. */
+.phead--shop .phead__name h1.phead__title--long { font-size: var(--t-lg); line-height: 1.12; }
+@media (min-width: 720px) { .phead--shop .phead__name h1.phead__title--long { font-size: var(--t-xl); } }
 
 /* The level chip on a shop's own page needs no "Shop" tag: the page is one. */
 .phead--shop .lvtag__shop { display: none; }

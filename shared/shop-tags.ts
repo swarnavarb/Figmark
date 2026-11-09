@@ -21,11 +21,44 @@ export interface ShopTag {
   n: number;
   /** 1 when the shop chose this tag itself. */
   own?: 1;
+  /** 1 when the shop declared it as a side line under "Also sells". */
+  side?: 1;
 }
 
-export const IDENTITY_SIZE = 10;
+export const IDENTITY_SIZE = 12;
 /** A declared tag counts like this many listings: what a shop says it is matters most. */
 export const OWN_WEIGHT = 5;
+/** A declared side line counts less than a tag: it is what else the shop carries, not what it is. */
+export const SIDE_WEIGHT = 2;
+/** The most side lines a shop may declare. */
+export const ALSO_SELLS_MAX = 4;
+
+/**
+ * Tags and "Also sells" answer different questions, and are kept apart.
+ *
+ * - Tags ("Known for") are the shop's own words for what it is and how it
+ *   works: "Gunpla", "Japan imports", "Ships weekly". Free text, up to six.
+ * - Also sells is the other categories it carries beyond that: picked from
+ *   the catalog's fixed category list, up to four, so every shop that says
+ *   "Also sells Trading cards" means the same thing. It weighs less than a
+ *   tag in search and suggestions, and the Data tab reads how each one does.
+ *
+ * A side line that repeats one of the shop's tags is dropped: the tag says it.
+ */
+export function cleanAlsoSells(raw: readonly string[], categories: readonly string[], tags: readonly string[] = []): string[] {
+  const known = new Map(categories.map((name) => [tagKey(name), name]));
+  const taken = new Set(tags.map(tagKey));
+  const out: string[] = [];
+  for (const entry of raw) {
+    const key = tagKey(String(entry ?? ''));
+    const name = known.get(key);
+    if (!name || taken.has(key)) continue;
+    taken.add(key);
+    out.push(name);
+    if (out.length >= ALSO_SELLS_MAX) break;
+  }
+  return out;
+}
 
 /** Words that mean the same thing to a buyer, folded to one key. */
 const SAME: Record<string, string> = {
@@ -87,22 +120,25 @@ export function tidyLabel(raw: string): string {
 export function buildIdentity(
   own: readonly string[],
   listings: readonly { tags?: readonly string[]; category?: string; expired?: boolean }[],
+  side: readonly string[] = [],
 ): ShopTag[] {
-  const rows = new Map<string, { n: number; own: boolean; labels: Map<string, number> }>();
-  const add = (label: string, weight: number, isOwn: boolean) => {
+  const rows = new Map<string, { n: number; own: boolean; side: boolean; labels: Map<string, number> }>();
+  const add = (label: string, weight: number, isOwn: boolean, isSide = false) => {
     // A shop's own spelling stands; a listing's "garage-kit" reads "Garage kit".
     const trimmed = label.trim().slice(0, 24);
     const clean = isOwn ? trimmed : tidyLabel(trimmed);
     const k = tagKey(clean);
     if (k.length < 2) return;
-    const row = rows.get(k) ?? { n: 0, own: false, labels: new Map<string, number>() };
+    const row = rows.get(k) ?? { n: 0, own: false, side: false, labels: new Map<string, number>() };
     row.n += weight;
     row.own ||= isOwn;
+    row.side ||= isSide;
     // The shop's own spelling wins; otherwise the commonest one.
-    row.labels.set(clean, (row.labels.get(clean) ?? 0) + (isOwn ? 1000 : weight));
+    row.labels.set(clean, (row.labels.get(clean) ?? 0) + (isOwn ? 1000 : isSide ? 500 : weight));
     rows.set(k, row);
   };
   for (const tag of own) add(tag, OWN_WEIGHT, true);
+  for (const line of side) add(line, SIDE_WEIGHT, false, true);
   for (const listing of listings) {
     const weight = listing.expired ? 0.5 : 1;
     const seen = new Set<string>();
@@ -116,13 +152,20 @@ export function buildIdentity(
       add(tag, weight * by, false);
     }
   }
-  return [...rows.entries()]
-    .map(([k, row]) => {
+  const ranked = [...rows.entries()]
+    .map(([k, row]): ShopTag => {
       const l = [...row.labels.entries()].sort((a, b) => b[1] - a[1])[0]![0];
-      return { k, l, n: Math.round(row.n * 2) / 2, ...(row.own ? { own: 1 as const } : {}) };
+      return {
+        k, l, n: Math.round(row.n * 2) / 2,
+        ...(row.own ? { own: 1 as const } : row.side ? { side: 1 as const } : {}),
+      };
     })
-    .sort((a, b) => b.n - a.n || a.k.localeCompare(b.k))
-    .slice(0, IDENTITY_SIZE);
+    .sort((a, b) => b.n - a.n || a.k.localeCompare(b.k));
+  // What the shop declared always stays; what its listings say fills the rest.
+  const declared = ranked.filter((tag) => tag.own || tag.side);
+  const room = Math.max(0, IDENTITY_SIZE - declared.length);
+  const kept = new Set([...declared, ...ranked.filter((tag) => !tag.own && !tag.side).slice(0, room)]);
+  return ranked.filter((tag) => kept.has(tag));
 }
 
 /** Whether two identities differ enough to be worth writing. */
