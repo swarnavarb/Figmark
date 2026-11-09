@@ -5947,7 +5947,10 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 
 /* ── The loot card ─────────────────────────────────────────────────────── */
 
-.grid.qgrid { gap: var(--s3); }
+/* Dense: a shelf spans the whole row, so a row left half full before one (a
+   service card shifts the count by one) is filled by the next card instead of
+   left as a hole. */
+.grid.qgrid { gap: var(--s3); grid-auto-flow: row dense; }
 .qloot {
   --qr: var(--border); --qr-glow: transparent; --qr-text: var(--violet-text);
   display: flex; flex-direction: column; position: relative; overflow: hidden;

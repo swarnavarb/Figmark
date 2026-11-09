@@ -386,3 +386,5 @@
 @media (prefers-reduced-motion: reduce) {
   .qfeed .qzone__medal, .qzone__label::after { transition: none; }
 }
+/* Between the things and the services on the category row. */
+.qzones__rule { flex: none; align-self: center; width: 1px; height: 44px; margin: 0 4px 18px; background: linear-gradient(transparent, var(--border-strong), transparent); }
