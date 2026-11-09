@@ -1,3 +1,5 @@
+import { api, warmReads } from './api';
+
 /**
  * Each screen's code, as the function that fetches it.
  *
@@ -95,9 +97,31 @@ const BY_PATH: [(path: string) => boolean, LoaderName][] = [
  * used to be asked for only once that answer was back and the route drew,
  * one round trip after another. Now both travel together.
  */
-export function warmPage(path: string): void {
+export function warmPage(path: string, search = ''): void {
   const found = BY_PATH.find(([matches]) => matches(path));
-  if (found) void loaders[found[1]]().catch(() => undefined);
+  if (!found) return;
+  void loaders[found[1]]().catch(() => undefined);
+  // The shop's reads too, while its code is on its way - only for the plain
+  // catalogue, the one the Shop tab opens; a filtered address asks for its own.
+  // After the first load, pressing Shop while on the Shop page warms nothing:
+  // that page already has its answers.
+  if (found[1] === 'feed' && !search && !(booted && location.pathname === '/')) warmShopReads();
+  booted = true;
+}
+
+/** Whether the first screen's warm-up (main.tsx) has run. */
+let booted = false;
+
+/** What the catalogue asks for as it draws (FeedPage, Showcase, ShopCards, ServiceCards), with the same arguments. */
+function warmShopReads(): void {
+  warmReads([
+    () => api.feed({ sort: 'newest' }),
+    api.drops,
+    api.fillingLots,
+    api.shopsForYou,
+    () => api.searchRoutes({}),
+    () => api.searchStudios(''),
+  ]);
 }
 
 /** The six tabs' screens, the places a thumb goes next. */

@@ -148,7 +148,11 @@ const EXPECTS_401 = ['/auth/me', '/auth/login', '/auth/signup'];
  * after it has changed something always reads the new state.
  */
 const READ_TTL_MS = 5_000;
-const reads = new Map<string, { at: number; promise: Promise<unknown> }>();
+/** How long a read started ahead of its screen (warmReads) waits to be asked for. */
+const WARM_TTL_MS = 30_000;
+const reads = new Map<string, { at: number; promise: Promise<unknown>; warm?: boolean }>();
+/** Set while warmReads is starting its reads, so request() files them as warm. */
+let warming = false;
 
 function forgetReads(): void {
   // Startup reads still on their way stay: they answer for before the write
@@ -207,6 +211,24 @@ export function primeStartupReads(): void {
     .catch(() => finish({}));
 }
 
+/**
+ * Start a screen's reads before its code has arrived.
+ *
+ * A screen's code is its own chunk, and its reads used to leave only once
+ * that chunk had downloaded and drawn: two waits, one after the other. Called
+ * as the chunk is asked for, these travel alongside it, and the screen's own
+ * identical requests, made when it draws, ride them (for up to 30 seconds,
+ * however slow the chunk was).
+ */
+export function warmReads(starts: (() => Promise<unknown>)[]): void {
+  warming = true;
+  try {
+    for (const start of starts) start().catch(() => undefined);
+  } finally {
+    warming = false;
+  }
+}
+
 function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   if (method !== 'GET') {
@@ -216,9 +238,13 @@ function request<T>(path: string, init?: RequestInit): Promise<T> {
   const waiting = primed.get(path);
   if (waiting) waiting.asked = true;
   const held = reads.get(path);
-  if (held && (waiting || Date.now() - held.at < READ_TTL_MS)) return held.promise as Promise<T>;
+  if (held && (waiting || Date.now() - held.at < (held.warm && !warming ? WARM_TTL_MS : READ_TTL_MS))) {
+    // A warm read answers its screen once; after that it ages like any other.
+    if (!warming) held.warm = false;
+    return held.promise as Promise<T>;
+  }
   const promise = send<T>(path, init);
-  reads.set(path, { at: Date.now(), promise });
+  reads.set(path, { at: Date.now(), promise, warm: warming });
   // A failure is not an answer worth keeping: the next ask tries again.
   promise.catch(() => {
     if (reads.get(path)?.promise === promise) reads.delete(path);

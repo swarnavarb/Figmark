@@ -29,7 +29,7 @@ import {
   DemandRail, EarnRail, EndingRail, FEED_VIEW_TITLES, PreOrderRail, demandPicks, earnPicks, endingPicks, isFeedView,
   preOrderPicks,
 } from '../components/FeedRails';
-import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
+import { DropsStage, FillingBoxes, useDrops, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
 import { ActiveOrders } from '../components/ActiveOrders';
 import { SkelBlock } from '../components/PageSkeletons';
@@ -310,6 +310,7 @@ export function FeedPage() {
     ];
   }, [shown.length, demand, endingSoon, earn, preOrders, now]);
   const fillingLots = useFillingLots();
+  const drops = useDrops();
 
   /* Shops alongside items: the ones known for what was searched, and when
      just browsing, the ones this buyer's likes and purchases point to. */
@@ -323,7 +324,7 @@ export function FeedPage() {
     return () => controller.abort();
   }, [search]);
   useEffect(() => {
-    void api.shopsForYou().then((result) => setForYou(result.shops)).catch(() => setForYou(null));
+    void api.shopsForYou().then((result) => setForYou(result.shops)).catch(() => setForYou([]));
   }, []);
 
   // The categories under the chosen heading, and what a buyer can narrow them by.
@@ -341,7 +342,21 @@ export function FeedPage() {
 
   const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView && !svc;
 
-  // The chosen badge in view: Forwarders and Artists sit past the edge on a phone.
+  /* The page fills top to bottom: the daily pick, the drops, the filters, the
+     lots, the shops, then the grid. A section waits for the ones above it, so
+     nothing that answers late pushes down what is already being read. */
+  const answered = Boolean(data) || Boolean(error);
+  const [showDaily, showDrops, showFilters, showBoxes, showShops, showGrid] = useCascade([
+    !browsing || answered,
+    !browsing || drops !== null,
+    true,
+    !browsing || fillingLots !== null,
+    !browsing || forYou !== null,
+    answered || !loading,
+  ]);
+  const pending = <><SkelBlock h={112} /><SkeletonGrid count={4} /></>;
+
+  // The chosen badge in view: most categories sit past the edge on a phone.
   const zonesRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const row = zonesRef.current;
@@ -372,13 +387,14 @@ export function FeedPage() {
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
       {browsing && <ActiveOrders />}
 
-      {/* The daily pick holds its place while the catalogue loads, so the
-          page does not drop by a card's height when it arrives. */}
-      {browsing && loading && !data && <SkelBlock h={112} />}
-      {browsing && <DailyDrop listings={rated} now={now} />}
+      {/* Until a section can show, its place holds a skeleton and nothing below it draws. */}
+      {!showDaily && pending}
+      {browsing && showDaily && <DailyDrop listings={rated} now={now} />}
       {/* Drops sit up top, before the catalogue: an event on now beats any one item. */}
-      {browsing && <DropsStage />}
+      {showDaily && !showDrops && pending}
+      {browsing && showDrops && <DropsStage drops={drops} />}
 
+      {showFilters && showDrops && (
       <div className="stack" id="catalogue" style={{ marginBottom: 18 }}>
         {/* Zones: what a thing is. Round, like the pin badges they are named after. */}
         <div className="qzones" role="tablist" aria-label="Categories" ref={zonesRef}>
@@ -387,19 +403,19 @@ export function FeedPage() {
             <span className="qzone__medal qhue--gold"><CategoryIcon id="everything" /></span>
             <span className="qzone__label">Everything</span>
           </button>
-          {CATEGORY_GROUPS.map((entry) => (
-            <button key={entry.id} type="button" role="tab" aria-selected={group === entry.id}
-              className={`qzone${group === entry.id ? ' is-on' : ''}`} onClick={() => chooseGroup(entry.id)}>
-              <span className={`qzone__medal qhue--${entry.hue}`}><CategoryIcon id={entry.id} /></span>
-              <span className="qzone__label">{entry.label}</span>
-            </button>
-          ))}
-          {/* Services, after the things: who ships it in, who makes it one of a kind. */}
-          <span className="qzones__rule" aria-hidden="true" />
+          {/* Services next to Everything: who ships it in, who makes it one of a kind. */}
           {SERVICE_ZONES.map((entry) => (
             <button key={entry.kind} type="button" role="tab" aria-selected={svc === entry.kind}
               className={`qzone qzone--service${svc === entry.kind ? ' is-on' : ''}`} onClick={() => chooseService(entry.kind)}>
               <span className={`qzone__medal qhue--${entry.hue}`}>{entry.icon}</span>
+              <span className="qzone__label">{entry.label}</span>
+            </button>
+          ))}
+          <span className="qzones__rule" aria-hidden="true" />
+          {CATEGORY_GROUPS.map((entry) => (
+            <button key={entry.id} type="button" role="tab" aria-selected={group === entry.id}
+              className={`qzone${group === entry.id ? ' is-on' : ''}`} onClick={() => chooseGroup(entry.id)}>
+              <span className={`qzone__medal qhue--${entry.hue}`}><CategoryIcon id={entry.id} /></span>
               <span className="qzone__label">{entry.label}</span>
             </button>
           ))}
@@ -451,15 +467,18 @@ export function FeedPage() {
         </>
         )}
       </div>
+      )}
 
-      {browsing && <FillingBoxes lots={fillingLots} />}
+      {showDrops && !showBoxes && pending}
+      {browsing && showBoxes && <FillingBoxes lots={fillingLots ?? []} />}
 
       {wants === 'artist' && <ServiceStrip title="Artists who do this" sub="Restore, repaint, customise" picks={studioHits} />}
       {wants === 'forwarder' && <ServiceStrip title="Forwarders" sub="Routes, days and price per kg" picks={providers.forwarders} />}
       {search && !photo && <ShopStrip title={`Shops for “${search}”`} sub="Known for it by name, tags or what they list" shops={searchShops} />}
-      {browsing && <ShopStrip band eyebrow="Handpicked" title="Shops for you" shops={forYou} />}
+      {showBoxes && !showShops && pending}
+      {browsing && showShops && <ShopStrip band eyebrow="Handpicked" title="Shops for you" shops={forYou} />}
 
-      {svc ? <ServiceResults kind={svc} providers={providers} params={params} /> : (
+      {!showShops ? null : svc ? <ServiceResults kind={svc} providers={providers} params={params} /> : (
       <>
       {error && <ErrorNotice message={error} />}
 
@@ -478,7 +497,7 @@ export function FeedPage() {
         {data && <span className="faint">{shown.length} {shown.length === 1 ? 'item' : 'items'}</span>}
       </div>
 
-      {loading && !data ? (
+      {!showGrid || (loading && !data) ? (
         <SkeletonGrid count={6} />
       ) : shown.length === 0 ? (
         <>
@@ -523,6 +542,30 @@ export function FeedPage() {
 }
 
 const PAGE = 24;
+
+/** Longest a slow section holds back the ones below it. */
+const CASCADE_WAIT_MS = 1200;
+
+/**
+ * Which sections may show, given which have their answers, top to bottom: a
+ * section shows once it is ready and every one above it shows. Once shown it
+ * stays, whatever reloads later. After CASCADE_WAIT_MS a section still waiting
+ * stops holding back the ones below it.
+ */
+function useCascade(ready: boolean[]): boolean[] {
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setWaited(true), CASCADE_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const shown = useRef<boolean[]>([]);
+  let above = true;
+  return ready.map((isReady, n) => {
+    above = above && (isReady || waited || Boolean(shown.current[n]));
+    if (above) shown.current[n] = true;
+    return above;
+  });
+}
 
 /**
  * How many cards to draw: a screenful and a bit, then the next lot as the

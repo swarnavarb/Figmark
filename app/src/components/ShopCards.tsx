@@ -130,6 +130,35 @@ function ShopArt() {
 }
 
 /**
+ * The street behind the band, as a day that loops: dawn, a van on its morning
+ * round, a cargo plane over the rooftops at noon, birds heading home, sunset,
+ * then the city's windows and the lamps coming on under the stars and moon.
+ * Every layer is drawn in CSS (ShopCards.css); this only stacks them.
+ */
+function StreetScene() {
+  return (
+    <div className="shopscene" aria-hidden="true">
+      <span className="shopscene__daysky" />
+      <span className="shopscene__nightsky" />
+      <span className="shopscene__stars" />
+      <span className="shopscene__comet" />
+      <span className="shopscene__arc"><span className="shopscene__sun" /></span>
+      <span className="shopscene__moon" />
+      <span className="shopscene__clouds" />
+      <span><span className="shopscene__plane" /></span>
+      <span><span className="shopscene__birds"><i /><i /><i /></span></span>
+      <span className="shopscene__city" />
+      <span className="shopscene__city shopscene__city--night" />
+      <span className="shopscene__pave" />
+      <span className="shopscene__pave shopscene__pave--night" />
+      <span className="shopscene__lamps" />
+      <span className="shopscene__glow" />
+      <span className="shopscene__road"><span className="shopscene__van" /></span>
+    </div>
+  );
+}
+
+/**
  * A row of shops that scrolls sideways, under a heading. Nothing at all when empty.
  * As a band, it runs edge to edge between two wavy hems, with an eyebrow over
  * the title and a faint storefront in the corner.
@@ -145,6 +174,7 @@ export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
   if (!shops || shops.length === 0) return null;
   return (
     <section className={`shopstrip${band ? ' shopstrip--band' : ''}`} aria-label={title}>
+      {band && <StreetScene />}
       <header className="shopstrip__head">
         <span className="shopstrip__words">
           {eyebrow && <span className="shopstrip__eyebrow">{eyebrow}</span>}
