@@ -4,7 +4,7 @@ import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react
 import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type ActivityResponse, type BlockedRow, type FeedListing, type PostCard, type PublicProfile } from '../api';
+import { ApiRequestError, api, type ActivityResponse, type BlockedRow, type CollectorPage, type FeedListing, type PostCard, type PublicProfile } from '../api';
 import { listingRarity } from '@shared/quest';
 import { LootCard } from './FeedPage';
 import { useToast } from '../components/Feedback';
@@ -73,6 +73,7 @@ export function ProfilePage() {
   const tab = (asked && asked in TAB_LABELS ? asked : 'collection') as Tab;
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [publicPage, setPublicPage] = useState<PublicProfile | null>(null);
+  const [podiums, setPodiums] = useState<CollectorPage['podiums'] | null>(null);
   useEffect(() => {
     if (!user?.username) return;
     void api.profile(user.username).then(setPublicPage).catch(() => setPublicPage(null));
@@ -135,6 +136,11 @@ export function ProfilePage() {
         page={publicPage}
         isMe
         onReviews={() => user.username && navigate(`/${user.username}`)}
+        onWins={() => {
+          setTab('wins');
+          tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+        onLoaded={(collector) => setPodiums(collector.podiums)}
         actions={
           <div className="pacts">
             <button type="button" className="pbtn pbtn--follow" onClick={editProfile}>Edit profile</button>
@@ -219,8 +225,8 @@ export function ProfilePage() {
         {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
-            {entry === 'wins' && publicPage?.gameBadges && publicPage.gameBadges.length > 0 && (
-              <span className="faint" style={{ marginLeft: 6 }}>{publicPage.gameBadges.length}</span>
+            {entry === 'wins' && (publicPage?.gameBadges?.length ?? 0) + (podiums?.length ?? 0) > 0 && (
+              <span className="faint" style={{ marginLeft: 6 }}>{(publicPage?.gameBadges?.length ?? 0) + (podiums?.length ?? 0)}</span>
             )}
             {data && entry !== 'settings' && entry !== 'posts' && entry !== 'photos' && entry !== 'collection' && entry !== 'saved' && (
               <span className="faint" style={{ marginLeft: 6 }}>
@@ -234,12 +240,14 @@ export function ProfilePage() {
       </div>
 
       {error && <ErrorNotice message={error} />}
+      {/* Tall enough that a tab opened from above can scroll up under the header. */}
+      <div className="tabpanel">
       {tab === 'collection' ? (
         <PurchasedCollection userId={user.id} isMe />
       ) : tab === 'saved' ? (
         <SavedItems />
       ) : tab === 'wins' ? (
-        <WinsTab wins={publicPage?.gameBadges ?? []} isMe name={user.displayName} />
+        <WinsTab wins={publicPage?.gameBadges ?? []} podiums={podiums} isMe name={user.displayName} />
       ) : tab === 'settings' ? (
         <>
           <MyPageSettings />
@@ -351,6 +359,7 @@ export function ProfilePage() {
           ))}
         </div>
       )}
+      </div>
       </div>
     </main>
   );

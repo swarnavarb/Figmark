@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { BADGE_META, badgeDetail, type Badge, type BadgeKind } from '@shared/play';
+import { boardInfo, seasonLabel } from '@shared/boards';
 import type { CollectionItem } from '@shared/models';
 import {
   ApiRequestError, api,
@@ -54,7 +55,7 @@ export type ProfilePart = Pick<PublicProfile,
  * Used on anybody's page and on your own hub at /me, so the two always look
  * the same - the only difference is the buttons under the name.
  */
-export function CollectorHeader({ person, actions, page, onReviews, isMe = false }: {
+export function CollectorHeader({ person, actions, page, onReviews, onWins, onLoaded, isMe = false }: {
   person: Person;
   actions: ReactNode;
   /** Your own page: honours read as yours. */
@@ -62,6 +63,10 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
   /** The public page: its one rating and follower count. Absent until loaded. */
   page: ProfilePart | null;
   onReviews: () => void;
+  /** The leaderboard count was tapped: open the Wins tab, where the medals are. */
+  onWins: () => void;
+  /** Their record arrived - the page shows its leaderboard medals with the wins. */
+  onLoaded?: (collector: CollectorPage) => void;
 }) {
   const [collector, setCollector] = useState<CollectorPage | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +75,10 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
   useEffect(() => {
     setCollector(null);
     void api.collector(person.userId)
-      .then(setCollector)
+      .then((next) => {
+        setCollector(next);
+        onLoaded?.(next);
+      })
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load their record.'));
   }, [person.userId]);
 
@@ -122,7 +130,7 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
 
         {!page && (
           <div className="pstats" aria-hidden="true">
-            {['followers', 'following', 'orders', 'podiums'].map((label) => (
+            {['followers', 'following', 'orders', 'leaderboard'].map((label) => (
               <span key={label} className="pstat"><b><SkelInline w={24} h={20} /></b><small>{label}</small></span>
             ))}
           </div>
@@ -134,9 +142,10 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
             <span className="pstat" title={stats ? `${stats.completed} of ${stats.orders} orders completed` : undefined}>
               <b>{stats ? <CountUp to={stats.completed} /> : '—'}</b><small>orders</small>
             </span>
-            <span className="pstat" title="Top-3 finishes in hobby leaderboard seasons">
-              <b>{collector ? <CountUp to={collector.podiums.length} /> : '—'}</b><small>podiums</small>
-            </span>
+            <button type="button" className="pstat pstat--tap pstat--long" onClick={onWins}
+              aria-label={`${collector?.podiums.length ?? 0} top-3 leaderboard finishes. Open the Wins tab`}>
+              <b>{collector ? <CountUp to={collector.podiums.length} /> : '—'}</b><small>leaderboard</small>
+            </button>
           </div>
         )}
 
@@ -308,33 +317,80 @@ const WIN_TONE: Record<BadgeKind, 'gold' | 'violet' | 'cyan' | 'green' | 'coral'
   hundred_sales: 'coral',
 };
 
+type Podium = CollectorPage['podiums'][number];
+
+const PLACE = { 1: { tone: 'gold', name: '1st' }, 2: { tone: 'silver', name: '2nd' }, 3: { tone: 'bronze', name: '3rd' } } as const;
+
+/** One top-3 finish on a monthly leaderboard, as a medal on its ribbon. */
+function MedalCard({ finish, index }: { finish: Podium; index: number }) {
+  const board = boardInfo(finish.board);
+  const place = PLACE[finish.place];
+  return (
+    <Link to="/quests" className={`medalcard medalcard--${place.tone}`} style={{ ['--i' as string]: index }}
+      aria-label={`${place.name} on the ${board?.label ?? 'hobby'} leaderboard, ${seasonLabel(finish.season)}`}>
+      <span className="medalcard__ribbon" aria-hidden="true" />
+      <span className="medalcard__medal" aria-hidden="true"><b>{finish.place}</b></span>
+      <span className="medalcard__place">{place.name} place</span>
+      <strong className="medalcard__board">
+        {board?.glyph ?? '#'} {board?.label ?? finish.board.replace(/^\w+:/, '')}
+      </strong>
+      <small className="medalcard__season">{seasonLabel(finish.season)}</small>
+    </Link>
+  );
+}
+
 /**
- * Everything they won - competitions, debates, guess games, best answers -
- * one card each, newest first. A card opens what it was won on.
+ * Everything they won: their leaderboard medals first - a month in a hobby's
+ * top three - then competitions, debates, guess games and best answers, one
+ * card each, newest first. A card opens what it was won on.
  */
-export function WinsTab({ wins, isMe, name }: { wins: Badge[]; isMe: boolean; name: string }) {
-  if (wins.length === 0) {
+export function WinsTab({ wins, podiums, isMe, name }: {
+  wins: Badge[];
+  /** Absent while their record loads. */
+  podiums: Podium[] | null;
+  isMe: boolean;
+  name: string;
+}) {
+  if (podiums === null) return <SkeletonText lines={3} />;
+  if (wins.length === 0 && podiums.length === 0) {
     return (
       <EmptyState title="No wins yet">
         {isMe
-          ? 'Win a competition, a debate or a guess-the-price game, or have an answer picked as the best, and it lands here.'
-          : `When ${name} wins a competition, a debate or a guess-the-price game, it lands here.`}
+          ? 'Finish a month in the top three of a hobby leaderboard, win a competition, a debate or a guess-the-price game, or have an answer picked as the best, and it lands here.'
+          : `When ${name} wins a competition or makes a leaderboard's top three, it lands here.`}
       </EmptyState>
     );
   }
+  // Newest season first; within one, the better place first.
+  const medals = [...podiums].sort((a, b) => b.season.localeCompare(a.season) || a.place - b.place);
   return (
-    <div className="wincards">
-      {wins.map((badge, i) => (
-        <Link key={badge.id} to={badge.link} className={`wincard wincard--${WIN_TONE[badge.kind]}`} style={{ ['--i' as string]: i }}>
-          <span className="wincard__medal" aria-hidden="true"><span>{BADGE_META[badge.kind].emoji}</span></span>
-          <span className="wincard__body">
-            <span className="wincard__kind">{BADGE_META[badge.kind].label}</span>
-            <strong className="wincard__what">{badgeDetail(badge)}</strong>
-            <small className="wincard__when">Won {formatDate(badge.at)}</small>
-          </span>
-          <span className="wincard__go" aria-hidden="true">›</span>
-        </Link>
-      ))}
+    <div className="stack">
+      {medals.length > 0 && (
+        <section className="winsec" aria-label="Leaderboard">
+          <h3 className="winsec__title"><Glyph name="crown" size={14} /> Leaderboard <small>{medals.length}</small></h3>
+          <div className="medalcards">
+            {medals.map((finish, i) => <MedalCard key={`${finish.board}-${finish.season}`} finish={finish} index={i} />)}
+          </div>
+        </section>
+      )}
+      {wins.length > 0 && (
+        <section className="winsec" aria-label="Wins">
+          {medals.length > 0 && <h3 className="winsec__title"><Glyph name="bolt" size={14} /> Wins <small>{wins.length}</small></h3>}
+          <div className="wincards">
+            {wins.map((badge, i) => (
+              <Link key={badge.id} to={badge.link} className={`wincard wincard--${WIN_TONE[badge.kind]}`} style={{ ['--i' as string]: i }}>
+                <span className="wincard__medal" aria-hidden="true"><span>{BADGE_META[badge.kind].emoji}</span></span>
+                <span className="wincard__body">
+                  <span className="wincard__kind">{BADGE_META[badge.kind].label}</span>
+                  <strong className="wincard__what">{badgeDetail(badge)}</strong>
+                  <small className="wincard__when">Won {formatDate(badge.at)}</small>
+                </span>
+                <span className="wincard__go" aria-hidden="true">›</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -666,10 +722,12 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [tab, setTab] = useState<Tab>('collection');
   const [tabsRef, stuck, tabsAttach] = useStuck<HTMLDivElement>();
-  const openCollection = () => {
-    setTab('collection');
+  const [podiums, setPodiums] = useState<CollectorPage['podiums'] | null>(null);
+  const openTab = (next: Tab) => {
+    setTab(next);
     tabsRef.current?.scrollIntoView({ behavior: stillMotion() ? 'auto' : 'smooth', block: 'start' });
   };
+  const openCollection = () => openTab('collection');
 
   // Posts are read when the tab is first opened: most visits are not for them.
   useEffect(() => setPosts(null), [profile.sellerId]);
@@ -693,6 +751,7 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
   return (
     <main className="storefront qprofile">
       <CollectorHeader person={person} page={profile} isMe={isMe} onReviews={() => setTab('reviews')}
+        onWins={() => openTab('wins')} onLoaded={(collector) => setPodiums(collector.podiums)}
         actions={<PageActions profile={profile} isMe={isMe} onFollow={onFollow}
           edit={<Link to="/me?tab=settings#settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
 
@@ -709,10 +768,12 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
             Reviews {profile.rating.count}
           </button>
           <button type="button" className={`tab${tab === 'wins' ? ' is-on' : ''}`} onClick={() => setTab('wins')}>
-            Wins {profile.gameBadges?.length ?? 0}
+            Wins {(profile.gameBadges?.length ?? 0) + (podiums?.length ?? 0)}
           </button>
         </div>
 
+        {/* Tall enough that a tab opened from above can scroll up under the header. */}
+        <div className="tabpanel">
         {tab === 'collection' ? (
           <PurchasedCollection userId={profile.sellerId} isMe={isMe} owner={{ name: profile.displayName, handle: profile.handle }} />
         ) : tab === 'feed' ? (
@@ -733,10 +794,11 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
             </div>
           )
         ) : tab === 'wins' ? (
-          <WinsTab wins={profile.gameBadges ?? []} isMe={isMe} name={profile.displayName} />
+          <WinsTab wins={profile.gameBadges ?? []} podiums={podiums} isMe={isMe} name={profile.displayName} />
         ) : (
           <ReviewsTab profile={profile} canWrite={!isMe} onWritten={reload} />
         )}
+        </div>
       </div>
     </main>
   );
