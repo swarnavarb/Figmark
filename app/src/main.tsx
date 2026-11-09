@@ -29,7 +29,7 @@ applyDeferredStyles();
 primeStartupReads();
 loadRouteWords();
 // This address's screen, fetched alongside the session rather than after it.
-warmPage(location.pathname);
+warmPage(location.pathname, location.search);
 
 /**
  * A screen, fetched the first time it is opened.

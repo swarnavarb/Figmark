@@ -204,11 +204,12 @@ function DropTicket({ drop: initial, index }: { drop: DropCardData; index: numbe
  * Drops: every sale whose opening message has gone out in its channel and
  * that is not over yet. Hidden entirely when there are none.
  */
-export function DropsStage() {
+/** The drops on now and coming up, kept fresh while the page is open; null until the first answer. */
+export function useDrops(): DropCardData[] | null {
   const [drops, setDrops] = useState<DropCardData[] | null>(null);
   useEffect(() => {
     let alive = true;
-    const load = () => api.drops().then((result) => alive && setDrops(result.drops)).catch(() => alive && setDrops([]));
+    const load = () => api.drops().then((result) => alive && setDrops(result.drops)).catch(() => alive && setDrops((was) => was ?? []));
     void load();
     // A drop announced while the tab is open appears without a reload - but
     // only asked for while somebody can see it, and at once on coming back.
@@ -217,6 +218,10 @@ export function DropsStage() {
     document.addEventListener('visibilitychange', onVisible);
     return () => { alive = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
+  return drops;
+}
+
+export function DropsStage({ drops }: { drops: DropCardData[] | null }) {
   if (!drops || drops.length === 0) return null;
   const liveCount = drops.filter((drop) => drop.live).length;
 
@@ -473,9 +478,9 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
   );
 }
 
-/** The lots, loaded once for the feed. */
-export function useFillingLots(): FillingLot[] {
-  const [lots, setLots] = useState<FillingLot[]>([]);
+/** The lots, loaded once for the feed; null until they answer. */
+export function useFillingLots(): FillingLot[] | null {
+  const [lots, setLots] = useState<FillingLot[] | null>(null);
   useEffect(() => {
     void api.fillingLots().then((result) => setLots(result.lots)).catch(() => setLots([]));
   }, []);

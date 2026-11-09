@@ -247,22 +247,142 @@
   .shoptile:hover, .shoptile:active { transform: none; }
 }
 
-/* ── The street the shops stand on ───────────────────────────────────────
-   A dusk sky warm enough that every shop's dark brick stands out, a sun low
-   on the right, two pale layers of skyline with trees - the far towers rising over
-   the rooftops beside the heading -, and a pavement with a
-   kerb along the bottom where the buildings stand. All CSS backgrounds: the
-   band is one box, and the skyline repeats along however wide it is. */
+/* ── The street the shops stand on, through a day ────────────────────────
+   One day on a loop (--day): dawn, noon, sunset, night, dawn again. The
+   band's own background is the dusk sky; the day sky and the night sky are
+   layers over it that come and go, and every other piece - sun, moon, stars,
+   clouds, plane, birds, the city, its lamps, a van - is its own layer, so each
+   moves on the compositor (transform, opacity) without repainting the street.
+   Still for anybody who asks for less motion: a dusk street, as before. */
 .shopstrip--band {
   --pave: 58px;
-  background:
-    /* pavement: slabs, a lit edge, then the kerb */
-    linear-gradient(90deg, rgba(90, 72, 50, 0.16) 1px, transparent 1px) left bottom / 46px var(--pave) repeat-x,
-    linear-gradient(#E9D9BF, #D9C4A3 70%, #C4AC88) left bottom / 100% var(--pave) no-repeat,
-    linear-gradient(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.55)) left calc(100% - var(--pave)) / 100% 2px no-repeat,
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 110' preserveAspectRatio='none'%3E%3Cpath fill='%23D4B9AE' d='M0 110V66h30V50h26v60h10V72l14-10 14 10v38h12V40h30v70h8V58h22v52h14V68h18l8-8 8 8v42h12V46h28v64h10V62h26v48z'/%3E%3Cg fill='%23F7E3C4' opacity='.85'%3E%3Crect x='36' y='58' width='4' height='5'/%3E%3Crect x='46' y='58' width='4' height='5'/%3E%3Crect x='36' y='72' width='4' height='5'/%3E%3Crect x='118' y='50' width='4' height='5'/%3E%3Crect x='128' y='50' width='4' height='5'/%3E%3Crect x='118' y='64' width='4' height='5'/%3E%3Crect x='254' y='56' width='4' height='5'/%3E%3Crect x='264' y='70' width='4' height='5'/%3E%3C/g%3E%3Cg fill='%23A99A7E'%3E%3Ccircle cx='8' cy='92' r='10'/%3E%3Ccircle cx='176' cy='90' r='12'/%3E%3Ccircle cx='188' cy='96' r='8'/%3E%3Ccircle cx='300' cy='92' r='10'/%3E%3C/g%3E%3Cg fill='%238C7F68'%3E%3Crect x='7' y='98' width='2' height='12'/%3E%3Crect x='181' y='98' width='2' height='12'/%3E%3Crect x='299' y='98' width='2' height='12'/%3E%3C/g%3E%3C/svg%3E") left calc(100% - var(--pave) + 1px) / 320px 110px repeat-x,
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='none'%3E%3Cpath fill='%23E2B9A6' d='M0 300V170h26v-20h16v150h10V120h22v-18h10v-14h4v14h10v198h12V150h24v150h10V60h8V44h4v16h8v240h14V180h20v-40h22v160h10V96l12-16 12 16v204h16V140h22v160h14V110h24v190h10V160h20v-30h20v170z'/%3E%3Cg fill='%23F7DCC8' opacity='.9'%3E%3Crect x='56' y='130' width='5' height='6'/%3E%3Crect x='66' y='130' width='5' height='6'/%3E%3Crect x='56' y='146' width='5' height='6'/%3E%3Crect x='136' y='76' width='4' height='6'/%3E%3Crect x='136' y='92' width='4' height='6'/%3E%3Crect x='254' y='104' width='5' height='6'/%3E%3Crect x='254' y='120' width='5' height='6'/%3E%3Crect x='336' y='124' width='5' height='6'/%3E%3C/g%3E%3C/svg%3E") left calc(100% - var(--pave) + 1px) / 420px calc(100% - var(--pave) - 6px) repeat-x,
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 80'%3E%3Cg fill='%23FFF8EE' opacity='.8'%3E%3Cpath d='M30 50a14 14 0 0 1 26-8 18 18 0 0 1 34 4 12 12 0 0 1 2 24H34a10 10 0 0 1-4-20z'/%3E%3Cpath d='M190 26a10 10 0 0 1 18-6 13 13 0 0 1 25 3 9 9 0 0 1 1 17h-42a7 7 0 0 1-2-14z'/%3E%3C/g%3E%3C/svg%3E") left 10% top 34px / 300px 80px no-repeat,
-    radial-gradient(circle at 64% 22%, #FFF4D6 0 26px, rgba(255, 214, 150, 0.55) 27px, transparent 96px),
-    linear-gradient(180deg, #F7C9A8 0%, #F9DCC0 38%, #F5E8D6 70%);
+  --day: 36s;
+  position: relative; isolation: isolate;
+  background: linear-gradient(180deg, #F7C9A8 0%, #F9DCC0 38%, #F5E8D6 70%);
 }
+.shopstrip--band > .shopstrip__head,
+.shopstrip--band > .shopstrip__row { position: relative; z-index: 1; }
+.shopscene { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.shopscene > span { position: absolute; inset: 0; }
+.shopscene__daysky { opacity: 0; background: linear-gradient(180deg, #A9D8F2 0%, #CDE9F2 40%, #F6EFDC 75%); }
+.shopscene__nightsky { opacity: 0; background: linear-gradient(180deg, #1B1E48 0%, #312D66 42%, #66497A 72%, #A0667A 100%); }
+.shopscene__stars { opacity: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 110'%3E%3Cg fill='%23FFF8E6'%3E%3Ccircle cx='12' cy='14' r='1.2'/%3E%3Ccircle cx='58' cy='40' r='.9'/%3E%3Ccircle cx='96' cy='10' r='1.4'/%3E%3Ccircle cx='140' cy='32' r='1'/%3E%3Ccircle cx='184' cy='16' r='1.2'/%3E%3Ccircle cx='30' cy='70' r='.8'/%3E%3Ccircle cx='118' cy='62' r='.9'/%3E%3Ccircle cx='204' cy='58' r='1'/%3E%3Ccircle cx='76' cy='88' r='.7'/%3E%3Ccircle cx='166' cy='86' r='.8'/%3E%3C/g%3E%3C/svg%3E") left top / 220px 110px repeat; }
+/* A shooting star, once a night. */
+.shopscene > .shopscene__comet {
+  inset: 22px auto auto 30%; width: 70px; height: 2px; opacity: 0; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #FFF8E6); transform: rotate(-18deg);
+}
+/* The sun on its arc: the arc carries it across, the sun rises and sets on it. */
+.shopscene__sun {
+  position: absolute; left: 64%; top: 22px; width: 44px; height: 44px; border-radius: 50%;
+  background: #FFF4D6; box-shadow: 0 0 0 10px rgba(255, 224, 160, 0.4), 0 0 46px 18px rgba(255, 210, 140, 0.45);
+}
+.shopscene > .shopscene__moon {
+  inset: 18px auto auto 76%; width: 26px; height: 26px; border-radius: 50%; opacity: 0;
+  box-shadow: inset -7px 3px 0 0 #FFF3D2, 0 0 18px 2px rgba(255, 240, 200, 0.25);
+}
+.shopscene > .shopscene__clouds {
+  right: auto; width: 200%;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 80'%3E%3Cg fill='%23FFF8EE' opacity='.8'%3E%3Cpath d='M30 50a14 14 0 0 1 26-8 18 18 0 0 1 34 4 12 12 0 0 1 2 24H34a10 10 0 0 1-4-20z'/%3E%3Cpath d='M190 26a10 10 0 0 1 18-6 13 13 0 0 1 25 3 9 9 0 0 1 1 17h-42a7 7 0 0 1-2-14z'/%3E%3C/g%3E%3C/svg%3E") left top 34px / 300px 80px repeat-x;
+}
+.shopscene__plane { position: absolute; left: 100%; top: 22px; width: 110px; height: 26px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 110 26'%3E%3Cdefs%3E%3ClinearGradient id='t' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%23fff' stop-opacity='.9'/%3E%3Cstop offset='1' stop-color='%23fff' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='40' y='12' width='70' height='2.4' rx='1.2' fill='url(%23t)'/%3E%3Cpath fill='%235A4E6B' d='M4 13c0-2 2-3 5-3h24l6-7h4l-3 7h6c2 0 3 1 3 3s-1 3-3 3h-6l3 7h-4l-6-7H9c-3 0-5-1-5-3z'/%3E%3Crect x='12' y='11' width='3' height='2' rx='.6' fill='%23FFE7B0'/%3E%3Crect x='18' y='11' width='3' height='2' rx='.6' fill='%23FFE7B0'/%3E%3Crect x='24' y='11' width='3' height='2' rx='.6' fill='%23FFE7B0'/%3E%3C/svg%3E") center / contain no-repeat; }
+.shopscene__birds { position: absolute; right: 100%; top: 40px; display: flex; gap: 6px; }
+.shopscene__birds i { display: block; width: 14px; height: 6px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 8'%3E%3Cpath d='M1 6q5-6 9 0 4-6 9 0' fill='none' stroke='%234A3A48' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+.shopscene__birds i:nth-child(2) { margin-top: -7px; }
+.shopscene__birds i:nth-child(3) { margin-top: 3px; }
+.shopscene__city,
+.shopscene__city--night {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 110' preserveAspectRatio='none'%3E%3Cpath fill='%23D4B9AE' d='M0 110V66h30V50h26v60h10V72l14-10 14 10v38h12V40h30v70h8V58h22v52h14V68h18l8-8 8 8v42h12V46h28v64h10V62h26v48z'/%3E%3Cg fill='%23F7E3C4' opacity='.85'%3E%3Crect x='36' y='58' width='4' height='5'/%3E%3Crect x='46' y='58' width='4' height='5'/%3E%3Crect x='36' y='72' width='4' height='5'/%3E%3Crect x='118' y='50' width='4' height='5'/%3E%3Crect x='128' y='50' width='4' height='5'/%3E%3Crect x='118' y='64' width='4' height='5'/%3E%3Crect x='254' y='56' width='4' height='5'/%3E%3Crect x='264' y='70' width='4' height='5'/%3E%3C/g%3E%3Cg fill='%23A99A7E'%3E%3Ccircle cx='8' cy='92' r='10'/%3E%3Ccircle cx='176' cy='90' r='12'/%3E%3Ccircle cx='188' cy='96' r='8'/%3E%3Ccircle cx='300' cy='92' r='10'/%3E%3C/g%3E%3Cg fill='%238C7F68'%3E%3Crect x='7' y='98' width='2' height='12'/%3E%3Crect x='181' y='98' width='2' height='12'/%3E%3Crect x='299' y='98' width='2' height='12'/%3E%3C/g%3E%3C/svg%3E") left calc(100% - var(--pave) + 1px) / 320px 110px repeat-x,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='none'%3E%3Cpath fill='%23E2B9A6' d='M0 300V170h26v-20h16v150h10V120h22v-18h10v-14h4v14h10v198h12V150h24v150h10V60h8V44h4v16h8v240h14V180h20v-40h22v160h10V96l12-16 12 16v204h16V140h22v160h14V110h24v190h10V160h20v-30h20v170z'/%3E%3Cg fill='%23F7DCC8' opacity='.9'%3E%3Crect x='56' y='130' width='5' height='6'/%3E%3Crect x='66' y='130' width='5' height='6'/%3E%3Crect x='56' y='146' width='5' height='6'/%3E%3Crect x='136' y='76' width='4' height='6'/%3E%3Crect x='136' y='92' width='4' height='6'/%3E%3Crect x='254' y='104' width='5' height='6'/%3E%3Crect x='254' y='120' width='5' height='6'/%3E%3Crect x='336' y='124' width='5' height='6'/%3E%3C/g%3E%3C/svg%3E") left calc(100% - var(--pave) + 1px) / 420px calc(100% - var(--pave) - 6px) repeat-x;
+}
+.shopscene__city--night {
+  opacity: 0;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 110' preserveAspectRatio='none'%3E%3Cpath fill='%23242145' d='M0 110V66h30V50h26v60h10V72l14-10 14 10v38h12V40h30v70h8V58h22v52h14V68h18l8-8 8 8v42h12V46h28v64h10V62h26v48z'/%3E%3Cg fill='%23FFE3A0'%3E%3Crect x='36' y='58' width='4' height='5'/%3E%3Crect x='46' y='58' width='4' height='5'/%3E%3Crect x='36' y='72' width='4' height='5'/%3E%3Crect x='118' y='50' width='4' height='5'/%3E%3Crect x='128' y='50' width='4' height='5'/%3E%3Crect x='118' y='64' width='4' height='5'/%3E%3Crect x='254' y='56' width='4' height='5'/%3E%3Crect x='264' y='70' width='4' height='5'/%3E%3C/g%3E%3Cg fill='%231B1A36'%3E%3Ccircle cx='8' cy='92' r='10'/%3E%3Ccircle cx='176' cy='90' r='12'/%3E%3Ccircle cx='188' cy='96' r='8'/%3E%3Ccircle cx='300' cy='92' r='10'/%3E%3C/g%3E%3Cg fill='%23151430'%3E%3Crect x='7' y='98' width='2' height='12'/%3E%3Crect x='181' y='98' width='2' height='12'/%3E%3Crect x='299' y='98' width='2' height='12'/%3E%3C/g%3E%3C/svg%3E") left calc(100% - var(--pave) + 1px) / 320px 110px repeat-x,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='none'%3E%3Cpath fill='%232E2B58' d='M0 300V170h26v-20h16v150h10V120h22v-18h10v-14h4v14h10v198h12V150h24v150h10V60h8V44h4v16h8v240h14V180h20v-40h22v160h10V96l12-16 12 16v204h16V140h22v160h14V110h24v190h10V160h20v-30h20v170z'/%3E%3Cg fill='%23FFD98A'%3E%3Crect x='56' y='130' width='5' height='6'/%3E%3Crect x='66' y='130' width='5' height='6'/%3E%3Crect x='56' y='146' width='5' height='6'/%3E%3Crect x='136' y='76' width='4' height='6'/%3E%3Crect x='136' y='92' width='4' height='6'/%3E%3Crect x='254' y='104' width='5' height='6'/%3E%3Crect x='254' y='120' width='5' height='6'/%3E%3Crect x='336' y='124' width='5' height='6'/%3E%3C/g%3E%3C/svg%3E") left calc(100% - var(--pave) + 1px) / 420px calc(100% - var(--pave) - 6px) repeat-x;
+}
+.shopscene > .shopscene__pave {
+  top: auto; height: var(--pave);
+  background:
+    linear-gradient(90deg, rgba(90, 72, 50, 0.16) 1px, transparent 1px) left bottom / 46px 100% repeat-x,
+    linear-gradient(#E9D9BF, #D9C4A3 70%, #C4AC88),
+    linear-gradient(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.55)) left top / 100% 2px no-repeat;
+}
+.shopscene > .shopscene__pave--night {
+  opacity: 0;
+  background:
+    linear-gradient(90deg, rgba(20, 16, 40, 0.3) 1px, transparent 1px) left bottom / 46px 100% repeat-x,
+    linear-gradient(#6A5E7A, #554B68 70%, #463D58);
+}
+.shopscene > .shopscene__lamps { top: auto; bottom: calc(var(--pave) - 6px); height: 70px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 70'%3E%3Cpath fill='%234A4152' d='M44 70V18h3v52z'/%3E%3Cpath fill='none' stroke='%234A4152' stroke-width='2.4' stroke-linecap='round' d='M45.5 20q0-8 8-8'/%3E%3Cpath fill='%234A4152' d='M50 10h10l-2 4h-6z'/%3E%3Cellipse cx='55' cy='15' rx='3' ry='1.4' fill='%23E8DCC0'/%3E%3Crect x='41' y='66' width='9' height='4' rx='1' fill='%234A4152'/%3E%3C/svg%3E") left bottom / 240px 70px repeat-x; }
+.shopscene > .shopscene__glow { top: auto; height: calc(var(--pave) + 64px); opacity: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 122'%3E%3Cdefs%3E%3CradialGradient id='h'%3E%3Cstop offset='0' stop-color='%23FFE6A6'/%3E%3Cstop offset='.35' stop-color='%23FFD27A' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23FFC060' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='p'%3E%3Cstop offset='0' stop-color='%23FFD98A' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23FFC060' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='55' cy='16' r='22' fill='url(%23h)'/%3E%3Cellipse cx='58' cy='92' rx='58' ry='14' fill='url(%23p)'/%3E%3C/svg%3E") left bottom / 240px 122px repeat-x; }
+.shopscene > .shopscene__road { top: auto; bottom: 18px; height: 30px; }
+.shopscene__van { position: absolute; right: 100%; bottom: 0; width: 54px; height: 30px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 54 30'%3E%3Cpath fill='%23F2EADB' d='M2 6c0-2 1-3 3-3h30v21H2z'/%3E%3Cpath fill='%23E0573E' d='M35 9h9c2 0 3 1 4 2l4 6v7H35z'/%3E%3Cpath fill='%23BFE3F5' d='M38 11h6l4 6h-10z'/%3E%3Crect x='2' y='14' width='33' height='3' fill='%23E0573E'/%3E%3Cpath fill='%23C9A36A' d='M12 7h10v6H12z'/%3E%3Cpath stroke='%238A6A3C' stroke-width='.8' d='M17 7v6'/%3E%3Ccircle cx='12' cy='25' r='4.2' fill='%232A2530'/%3E%3Ccircle cx='12' cy='25' r='1.6' fill='%239A93A0'/%3E%3Ccircle cx='43' cy='25' r='4.2' fill='%232A2530'/%3E%3Ccircle cx='43' cy='25' r='1.6' fill='%239A93A0'/%3E%3Crect x='50' y='16' width='3' height='2.4' rx='.8' fill='%23FFE7A0'/%3E%3C/svg%3E") center / contain no-repeat; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .shopscene > *, .shopscene__sun, .shopscene__plane, .shopscene__birds, .shopscene__van {
+    animation-duration: var(--day); animation-iteration-count: infinite; animation-timing-function: linear;
+  }
+  .shopscene__daysky { animation-name: scene-day; }
+  .shopscene__nightsky { animation-name: scene-night; }
+  .shopscene__stars { animation-name: scene-stars; }
+  .shopscene__city--night, .shopscene > .shopscene__pave--night { animation-name: scene-lights; }
+  .shopscene > .shopscene__glow { animation-name: scene-lamps; }
+  .shopscene > .shopscene__comet { animation-name: scene-comet; }
+  .shopscene > .shopscene__moon { animation-name: scene-moon; }
+  .shopscene__arc { animation-name: scene-arc; }
+  .shopscene__sun { left: 38%; animation-name: scene-sun; }
+  .shopscene > .shopscene__clouds { animation: scene-drift 90s linear infinite, scene-clouds var(--day) linear infinite; }
+  .shopscene__plane { animation-name: scene-plane; }
+  .shopscene__birds { animation-name: scene-birds; }
+  .shopscene__birds i { animation: scene-flap 0.45s ease-in-out infinite alternate; }
+  .shopscene__birds i:nth-child(2) { animation-delay: -0.2s; }
+  .shopscene__van { animation-name: scene-van; }
+  .shopstrip--band .shopstrip__title, .shopstrip--band .shopstrip__eyebrow, .shopstrip__art {
+    animation: scene-ink var(--day) linear infinite;
+  }
+  .shopstrip--band .shopstrip__eyebrow { animation-name: scene-ink-soft; }
+}
+
+/* The day, as fractions of --day: 0 dawn, 10-42 day, 54 sunset, 66-90 night. */
+@keyframes scene-day { 0%, 2% { opacity: 0; } 12%, 42% { opacity: 1; } 54%, 100% { opacity: 0; } }
+@keyframes scene-night { 0% { opacity: 0.3; } 7%, 56% { opacity: 0; } 68%, 90% { opacity: 1; } 96% { opacity: 0.4; } 100% { opacity: 0.3; } }
+@keyframes scene-stars { 0% { opacity: 0.25; } 5%, 62% { opacity: 0; } 72% { opacity: 1; } 78% { opacity: 0.7; } 84%, 89% { opacity: 1; } 100% { opacity: 0.25; } }
+@keyframes scene-lights { 0% { opacity: 0.3; } 6%, 57% { opacity: 0; } 66%, 91% { opacity: 1; } 100% { opacity: 0.3; } }
+@keyframes scene-lamps { 0% { opacity: 0.4; } 4%, 59% { opacity: 0; } 61% { opacity: 0.6; } 61.5% { opacity: 0.2; } 63%, 92% { opacity: 1; } 100% { opacity: 0.4; } }
+@keyframes scene-comet {
+  0%, 76% { opacity: 0; transform: translate(0, 0) rotate(-18deg); }
+  77% { opacity: 1; }
+  79%, 100% { opacity: 0; transform: translate(120px, 40px) rotate(-18deg); }
+}
+@keyframes scene-moon {
+  0%, 60% { opacity: 0; transform: translateY(30px); }
+  70% { opacity: 1; transform: translateY(6px); }
+  92% { opacity: 1; transform: translateY(-4px); }
+  99%, 100% { opacity: 0; transform: translateY(-8px); }
+}
+/* Across from the left of the sky to the right, then back while it is night. */
+@keyframes scene-arc { 0% { transform: translateX(0); } 58%, 99% { transform: translateX(52%); } 100% { transform: translateX(0); } }
+@keyframes scene-sun {
+  0% { transform: translateY(64px); background: #FFC88A; opacity: 1; }
+  10% { transform: translateY(14px); background: #FFF0CC; }
+  24% { transform: translateY(-6px); background: #FFF8E2; }
+  40% { transform: translateY(6px); background: #FFF0C4; }
+  50% { transform: translateY(36px); background: #FFB066; }
+  58% { transform: translateY(110px); background: #FF8048; opacity: 1; }
+  60%, 98% { transform: translateY(110px); opacity: 0; }
+  100% { transform: translateY(64px); background: #FFC88A; opacity: 1; }
+}
+@keyframes scene-drift { to { transform: translateX(-50%); } }
+/* The cargo plane, right to left over the rooftops just after noon. */
+@keyframes scene-plane { 0%, 16% { transform: translateX(0); } 34%, 100% { transform: translateX(calc(-100vw - 260px)); } }
+@keyframes scene-birds { 0%, 38% { transform: translateX(0); } 54%, 100% { transform: translateX(calc(100vw + 120px)); } }
+@keyframes scene-flap { to { transform: scaleY(0.4); } }
+/* The van's morning round, left to right along the street. */
+@keyframes scene-van { 0%, 4% { transform: translateX(0); } 24%, 100% { transform: translateX(calc(100vw + 120px)); } }
+/* The heading, dark on the day's sky and light on the night's. */
+@keyframes scene-ink { 0%, 61% { color: #1A1712; } 65%, 92% { color: #FFF4E0; } 95%, 100% { color: #1A1712; } }
+@keyframes scene-ink-soft { 0%, 61% { color: #8A5A3C; } 65%, 92% { color: #F3C9A0; } 95%, 100% { color: #8A5A3C; } }
+/* Clouds pale against the night, so the heading stays the brightest thing in the sky. */
+@keyframes scene-clouds { 0%, 56% { opacity: 1; } 66%, 90% { opacity: 0.18; } 98%, 100% { opacity: 1; } }
