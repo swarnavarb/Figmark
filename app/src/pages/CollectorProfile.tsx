@@ -586,7 +586,7 @@ function RoyalCard({ item, no, photo = item.photos[0], flipped = false, big = fa
   flipped?: boolean;
   big?: boolean;
 }) {
-  const serial = no ? String(no).padStart(3, '0') : null;
+  const serial = no ? String(no).padStart(2, '0') : null;
   return (
     <span className={`royal${flipped ? ' is-flipped' : ''}${big ? ' royal--big' : ''}`}>
       <span className="royal__card">
@@ -594,15 +594,14 @@ function RoyalCard({ item, no, photo = item.photos[0], flipped = false, big = fa
           <span className="royal__frame">
             <Thumb seed={item.listingId} label={item.name} photo={photo ? { url: photo } : null} className="thumb royal__thumb" />
           </span>
-          {serial && <span className="royal__no">No.{serial}</span>}
-          <span className="royal__spark" aria-hidden="true">✦</span>
+          {serial && <span className="royal__no" aria-hidden="true">{serial}</span>}
           <span className="royal__plate">
             <span className="royal__label">{item.name}</span>
             <span className="royal__date">{formatDate(item.deliveredAt)}</span>
           </span>
         </span>
         <span className="royal__face royal__back">
-          {serial && <span className="royal__serial" aria-hidden="true"><small>No.</small>{serial}</span>}
+          {serial && <span className="royal__serial" aria-hidden="true"><small>No.</small><b>{serial}</b></span>}
           <span className="royal__name">{item.name}</span>
           <span className="royal__date">Delivered {formatDate(item.deliveredAt)}</span>
         </span>

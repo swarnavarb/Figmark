@@ -259,10 +259,11 @@
 @media (prefers-reduced-motion: reduce) { .raterow__star, .raterow__star svg { transition: none; } }
 
 /* ── Collector cards ───────────────────────────────────────────────────────
- * The photo edge to edge inside a holographic foil frame that drifts, a gold
- * number slashed into the corner, a foil streak across the photo and the name
- * set heavy and italic at the bottom. They whip in, one after another.
+ * The photo edge to edge inside a border of colour that runs round it in
+ * waves, the shelf's outlined gold number in the corner, and the name set
+ * heavy and italic at the bottom. Light slides across the photo now and then.
  */
+@property --royal-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 .royal--big { width: min(240px, 64vw); }
 .royal__card {
   position: relative; display: block; width: 100%; aspect-ratio: 5 / 7; padding: 0; border: 0; background: none; cursor: pointer;
@@ -272,50 +273,45 @@
 .royal__face {
   position: absolute; inset: 0; border-radius: 12px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden;
   border: 2px solid transparent;
-  background: linear-gradient(#05070D, #05070D) padding-box, var(--holo) border-box;
-  background-size: 100% 100%, 300% 300%;
-  animation: royal-holo 6s linear infinite alternate;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5), 0 0 18px rgba(124, 58, 237, 0.25);
+  background:
+    linear-gradient(#05070D, #05070D) padding-box,
+    conic-gradient(from var(--royal-a), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua)) border-box;
+  animation: royal-ring 5s linear infinite;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55), 0 0 16px rgba(124, 58, 237, 0.3), 0 0 22px rgba(236, 72, 153, 0.12);
+  /* Turned over, the other side takes over halfway: iOS ignores backface-visibility once the photo animates. */
+  transition: visibility 0s linear 160ms;
 }
-@keyframes royal-holo { from { background-position: 0 0, 0% 50%; } to { background-position: 0 0, 100% 50%; } }
+@keyframes royal-ring { to { --royal-a: 360deg; } }
+.royal__back, .royal.is-flipped .royal__front { visibility: hidden; }
+.royal.is-flipped .royal__back { visibility: visible; }
 .royal__front { display: block; padding: 0; }
 .royal__frame { position: absolute; inset: 0; overflow: hidden; border-radius: 10px; }
 /* Dark at the foot so the name reads over any photo. */
 .royal__frame::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(180deg, rgba(5, 7, 13, 0.35), transparent 22%, transparent 46%, rgba(5, 7, 13, 0.94) 88%);
+  background: linear-gradient(180deg, rgba(5, 7, 13, 0.45), transparent 24%, transparent 48%, rgba(5, 7, 13, 0.95) 90%);
 }
 .thumb.royal__thumb { width: 100%; height: 100%; border-radius: 0; font-size: var(--t-md); transition: transform 500ms cubic-bezier(0.2, 0.9, 0.2, 1); }
 .royal__thumb .thumb__img { width: 100%; height: 100%; object-fit: cover; }
-/* A foil streak cut across the photo. */
-.royal__front::before {
-  content: ''; position: absolute; z-index: 2; left: -12%; bottom: 33%; width: 78%; height: 3px; pointer-events: none;
-  background: var(--holo); background-size: 200% 100%; transform: rotate(-9deg);
-  box-shadow: 0 0 8px rgba(236, 72, 153, 0.7), 0 0 2px rgba(255, 255, 255, 0.9);
-  animation: royal-streak 2.6s linear infinite;
-}
-@keyframes royal-streak { to { background-position: 200% 0; } }
-/* Light running across the foil now and then. */
-.royal__front::after {
-  content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none; transform: translateX(-130%);
-  background: linear-gradient(110deg, transparent 32%, rgba(255, 255, 255, 0.10) 40%, rgba(255, 255, 255, 0.55) 47%, rgba(103, 232, 249, 0.25) 52%, transparent 62%);
+/* Light sliding across the photo now and then. */
+.royal__frame::before {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateX(-130%);
+  background: linear-gradient(110deg, transparent 32%, rgba(255, 255, 255, 0.10) 40%, rgba(255, 255, 255, 0.5) 47%, rgba(103, 232, 249, 0.22) 52%, transparent 62%);
   animation: royal-sheen 4.5s 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 @keyframes royal-sheen { 30%, 100% { transform: translateX(130%); } }
+/* The shelf's number: outlined gold, italic, glowing. */
 .royal__no {
-  position: absolute; z-index: 2; top: 0; left: 0; padding: 3px 13px 3px 7px;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 100%, 0 100%);
-  background: linear-gradient(135deg, var(--gold-pale), var(--q-gold) 45%, var(--q-gold-deep));
-  font-family: var(--display); font-style: italic; font-weight: 800; font-size: calc(9px * var(--text-scale)); letter-spacing: 0.06em;
-  color: var(--q-gold-ink); font-variant-numeric: tabular-nums;
+  position: absolute; z-index: 2; top: 6px; right: 8px; padding-right: 0.08em;
+  font-size: var(--t-lg); font-weight: var(--w-bold); font-style: italic; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  color: transparent; -webkit-text-stroke: 1px rgba(255, 236, 170, 0.92); text-shadow: 0 0 12px rgba(245, 197, 66, 0.5);
 }
-.royal__spark {
-  position: absolute; z-index: 2; top: 5px; right: 7px; font-size: calc(11px * var(--text-scale)); line-height: 1; color: #fff;
-  text-shadow: 0 0 6px var(--aqua), 0 0 12px var(--pink);
-  animation: royal-twinkle 2.2s ease-in-out infinite;
+.royal__plate { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: grid; gap: 3px; padding: 0 8px 8px; text-align: left; }
+/* A short gold rule above the name. */
+.royal__plate::before {
+  content: ''; width: 18px; height: 2px; margin-bottom: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--gold-pale), var(--q-gold)); box-shadow: 0 0 6px rgba(245, 197, 66, 0.6);
 }
-@keyframes royal-twinkle { 50% { opacity: 0.35; transform: scale(0.7) rotate(45deg); } }
-.royal__plate { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: grid; gap: 2px; padding: 0 8px 7px; text-align: left; }
 .royal__label {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
   font-family: var(--display); font-style: italic; font-weight: 800; font-size: var(--t-2xs); line-height: 1.12;
@@ -324,36 +320,39 @@
 .royal__date {
   font-size: calc(8px * var(--text-scale)); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--q-gold);
 }
-.royal--big .royal__no { padding: 5px 18px 5px 10px; font-size: var(--t-xs); }
-.royal--big .royal__spark { top: 9px; right: 11px; font-size: var(--t-md); }
-.royal--big .royal__plate { gap: 4px; padding: 0 14px 13px; }
+.royal--big .royal__face { border-width: 3px; border-radius: 16px; }
+.royal--big .royal__frame { border-radius: 13px; }
+.royal--big .royal__no { top: 10px; right: 14px; font-size: calc(40px * var(--text-scale)); -webkit-text-stroke-width: 1.5px; }
+.royal--big .royal__plate { gap: 5px; padding: 0 16px 15px; }
+.royal--big .royal__plate::before { width: 28px; height: 3px; }
 .royal--big .royal__label { font-size: var(--t-lg); }
 .royal--big .royal__date { font-size: var(--t-2xs); }
-.royal--big .royal__front::before { height: 4px; }
-/* Behind: the number large, over speed lines. */
+/* Behind: the number large and outlined, over speed lines. */
 .royal__back {
-  transform: rotateY(180deg); display: grid; place-content: center; justify-items: center; gap: 6px; padding: 12px; text-align: center;
+  transform: rotateY(180deg); display: grid; place-content: center; justify-items: center; gap: 8px; padding: 14px; text-align: center;
+  isolation: isolate;
   background:
     linear-gradient(transparent, transparent) padding-box,
-    var(--holo) border-box;
-  background-size: 100% 100%, 300% 300%;
+    conic-gradient(from var(--royal-a), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua)) border-box;
 }
 .royal__back::before {
-  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 10px;
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
   background:
-    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 11px),
-    radial-gradient(circle at 50% 40%, rgba(124, 58, 237, 0.45), transparent 62%),
-    linear-gradient(160deg, #1E1B4B, #05070D 70%);
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.045) 0 2px, transparent 2px 11px),
+    radial-gradient(circle at 50% 38%, rgba(124, 58, 237, 0.5), transparent 60%),
+    radial-gradient(circle at 50% 110%, rgba(236, 72, 153, 0.25), transparent 55%),
+    linear-gradient(160deg, #1E1B4B, #05070D 72%);
 }
-.royal__back { isolation: isolate; }
-.royal__serial {
-  display: grid; justify-items: center; line-height: 0.9;
-  font-family: var(--display); font-style: italic; font-weight: 800; font-size: calc(30px * var(--text-scale)); letter-spacing: -0.03em;
-  background: linear-gradient(180deg, var(--gold-pale), var(--q-gold) 55%, var(--q-gold-deep)); -webkit-background-clip: text; background-clip: text; color: transparent;
-  filter: drop-shadow(0 0 10px rgba(245, 197, 66, 0.45));
+.royal__serial { display: grid; justify-items: center; gap: 4px; line-height: 1; font-style: italic; font-weight: var(--w-bold); }
+.royal__serial small {
+  font-family: var(--display); font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.3em; padding-left: 0.3em; color: var(--q-gold);
 }
-.royal__serial small { font-size: 0.32em; letter-spacing: 0.2em; }
-.royal--big .royal__serial { font-size: calc(64px * var(--text-scale)); }
+.royal__serial b {
+  padding: 0.04em 0.14em 0.08em 0.06em; font-size: calc(40px * var(--text-scale)); font-weight: inherit; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  color: transparent; -webkit-text-stroke: 1.2px rgba(255, 236, 170, 0.95); text-shadow: 0 0 18px rgba(245, 197, 66, 0.55);
+}
+.royal--big .royal__serial b { font-size: calc(96px * var(--text-scale)); -webkit-text-stroke-width: 2px; }
+.royal--big .royal__serial small { font-size: var(--t-xs); }
 .royal__name {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
   font-family: var(--display); font-style: italic; font-weight: 800; font-size: var(--t-xs); line-height: 1.2; text-transform: uppercase; color: #fff;
@@ -363,12 +362,13 @@
 button.qitem:hover .royal__card, button.qitem:focus-visible .royal__card { transform: translateY(-5px) rotate(-2deg) scale(1.04); }
 button.qitem .royal__card { transition-duration: 320ms; }
 button.qitem:hover .thumb.royal__thumb { transform: scale(1.1); }
-button.qitem:hover .royal__front::after { animation: royal-sheen2 700ms cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+button.qitem:hover .royal__frame::before { animation: royal-sheen2 700ms cubic-bezier(0.2, 0.9, 0.2, 1) both; }
 @keyframes royal-sheen2 { from { transform: translateX(-130%); } to { transform: translateX(130%); } }
 button.qitem:active .royal__card { transform: scale(0.96); transition-duration: 90ms; }
 button.qitem:focus-visible { outline: none; }
 button.qitem:focus-visible .royal__face { box-shadow: 0 0 0 2px var(--q-gold), 0 0 18px rgba(245, 197, 66, 0.6); }
 @media (prefers-reduced-motion: reduce) {
-  .royal__face, .royal__front::before, .royal__front::after, .royal__spark { animation: none; }
+  .royal__face, .royal__frame::before { animation: none; }
   .royal__card, .thumb.royal__thumb { transition: none; }
+  .royal__face { transition: none; }
 }
