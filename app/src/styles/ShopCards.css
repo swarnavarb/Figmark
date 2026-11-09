@@ -10,24 +10,202 @@
 .shopstrip { display: grid; gap: var(--s2); margin: 0 0 18px; min-width: 0; }
 /* ── Shops by what they are about ─────────────────────────────────────── */
 .shopstrip__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s1) 10px; }
+/* A thin line running on from the title to the edge, in place of a subtitle. */
+.shopstrip__rule {
+  flex: 1 1 40px; align-self: center; height: 1px; min-width: 40px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
 .shopstrip__title { margin: 0; font-size: var(--t-md, 16px); }
 .shopstrip__sub { font-size: var(--t-xs); color: var(--text-faint); }
 .shopstrip__row {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 170px); gap: 10px;
-  overflow-x: auto; padding-bottom: var(--s1); scroll-snap-type: x proximity; scrollbar-width: none;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(156px, 168px); gap: 14px;
+  overflow-x: auto; overflow-y: hidden; padding: 4px 6px var(--s2); scroll-snap-type: x proximity; scrollbar-width: none;
+  overscroll-behavior-x: contain;
 }
+
+/* ── A shop as a little building: roof, sign, awning, window, door, step ── */
 .shoptile {
-  display: grid; justify-items: start; align-content: start; gap: var(--s1); scroll-snap-align: start; min-width: 0;
-  padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
-  color: var(--text); text-decoration: none;
+  --sf-hue: var(--violet);
+  --brick: color-mix(in srgb, var(--sf-hue) 16%, #141722);
+  position: relative; display: grid; grid-template-rows: auto auto auto auto 1fr auto; min-width: 0; scroll-snap-align: start;
+  margin-top: 6px; color: var(--text); text-decoration: none;
+  border-radius: 4px 4px 2px 2px;
+  /* Brick, faintly: mortar lines over the wall colour, every other row offset. */
+  background:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.32) 1px, transparent 1px) 0 0 / 100% 10px,
+    linear-gradient(90deg, rgba(0, 0, 0, 0.28) 1px, transparent 1px) 0 0 / 22px 20px,
+    linear-gradient(90deg, rgba(0, 0, 0, 0.28) 1px, transparent 1px) 11px 10px / 22px 20px,
+    var(--brick);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 12px 22px rgba(0, 0, 0, 0.4);
+  transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
-.shoptile:hover { border-color: var(--border-strong); }
-.shoptile__photo { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
-.shoptile__name { max-width: 100%; font-weight: var(--w-semi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shoptile__meta { font-size: var(--t-xs); color: var(--text-faint); }
-.shoptile__tags { display: flex; flex-wrap: wrap; gap: var(--s1); margin-top: 2px; }
+.shoptile:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 16px 30px rgba(0, 0, 0, 0.5); }
+.shoptile:active { transform: scale(0.97); }
+.shoptile:focus-visible { outline: 2px solid var(--sf-hue); outline-offset: 3px; }
+.shoptile--violet { --sf-hue: var(--violet); }
+.shoptile--coral  { --sf-hue: var(--coral); }
+.shoptile--aqua   { --sf-hue: #0891B2; }
+.shoptile--blue   { --sf-hue: var(--blue); }
+.shoptile--pink   { --sf-hue: var(--pink); }
+.shoptile--lime   { --sf-hue: #65A30D; }
+
+/* The cornice: a ledge wider than the wall, with a row of dentils under it. */
+.shoptile__roof {
+  position: relative; height: 12px; margin: -6px -5px 0; border-radius: 3px 3px 0 0;
+  background:
+    repeating-linear-gradient(90deg, #2A2F3D 0 6px, #1A1E28 6px 10px) 0 7px / 100% 5px no-repeat,
+    linear-gradient(180deg, #3A4052, #262B38);
+  box-shadow: 0 3px 4px rgba(0, 0, 0, 0.45);
+}
+
+/* The signboard: a dark board with the name lit in neon tubes of the shop's colour. */
+.shoptile__sign {
+  --neon: color-mix(in srgb, var(--sf-hue) 78%, #fff);
+  position: relative; display: grid; place-items: center; min-width: 0; min-height: 44px;
+  margin: 7px 8px 0; padding: 8px 8px 7px; text-align: center; border-radius: 3px;
+  background:
+    radial-gradient(120% 90% at 50% 55%, color-mix(in srgb, var(--sf-hue) 24%, transparent), transparent 70%),
+    linear-gradient(180deg, #11141D, #07090F);
+  box-shadow: inset 0 0 0 2px #07090F, inset 0 0 0 3px color-mix(in srgb, var(--sf-hue) 32%, transparent), 0 3px 6px rgba(0, 0, 0, 0.5);
+}
+/* The two screws that hold the board up. */
+.shoptile__sign::before, .shoptile__sign::after {
+  content: ''; position: absolute; top: 5px; width: 4px; height: 4px; border-radius: 50%;
+  background: #3A3F4C; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.shoptile__sign::before { left: 5px; }
+.shoptile__sign::after { right: 5px; }
+.shoptile__name {
+  /* Not clipped: overflow would cut the glow into a box. Names are capped at
+     SHOP_NAME_MAX, so two lines is the most one takes. */
+  display: block; overflow-wrap: anywhere; text-wrap: balance; max-width: 100%;
+  font-family: var(--display); font-weight: var(--w-bold); font-size: var(--t-sm); line-height: 1.15; letter-spacing: 0.02em;
+  color: #FFF8F0;
+  text-shadow:
+    0 0 1px #fff,
+    0 0 4px var(--neon),
+    0 0 9px var(--neon),
+    0 0 18px var(--sf-hue),
+    0 0 30px color-mix(in srgb, var(--sf-hue) 70%, transparent);
+  animation: neon-hum 5.5s linear infinite;
+}
+/* Now and then the tube hums: a dip so brief it reads as lit, not broken. */
+@keyframes neon-hum {
+  0%, 91%, 94%, 100% { opacity: 1; }
+  92% { opacity: 0.72; }
+  93% { opacity: 0.95; }
+}
+
+/* The awning: stripes in the shop's hue and cream, a little wider than the wall, scalloped along the hem. */
+.shoptile__awning {
+  position: relative; height: 14px; margin: 8px -3px 0; z-index: 1; border-radius: 2px 2px 0 0;
+  background: repeating-linear-gradient(90deg, var(--sf-hue) 0 14px, #F8F5EE 14px 28px);
+  filter: drop-shadow(0 5px 4px rgba(0, 0, 0, 0.4));
+}
+.shoptile__awning::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 7px;
+  background:
+    radial-gradient(circle at 7px 0, var(--sf-hue) 6.5px, transparent 7px) 0 0 / 28px 7px repeat-x,
+    radial-gradient(circle at 21px 0, #F8F5EE 6.5px, transparent 7px) 0 0 / 28px 7px repeat-x;
+}
+
+/* The shopfront: a display window beside the door, both set into the wall. */
+.shoptile__front { display: flex; align-items: flex-end; gap: 6px; padding: 14px 8px 0; min-width: 0; }
+.shoptile__window {
+  position: relative; flex: 1 1 auto; min-width: 0; height: 74px; display: grid; place-items: center;
+  border-radius: 3px;
+  background:
+    linear-gradient(125deg, rgba(255, 255, 255, 0.14) 0 18%, transparent 18% 32%, rgba(255, 255, 255, 0.06) 32% 38%, transparent 38%),
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--sf-hue) 34%, transparent), transparent 70%),
+    #0A0D15;
+  box-shadow: inset 0 0 0 3px #2B3040, inset 0 0 0 4px rgba(0, 0, 0, 0.6), inset 0 -8px 12px rgba(0, 0, 0, 0.45);
+}
+/* The window's centre bar, behind the face. */
+.shoptile__window::before {
+  content: ''; position: absolute; top: 3px; bottom: 3px; left: 50%; width: 2px; translate: -1px 0; background: #2B3040;
+}
+.shoptile__face {
+  position: relative; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 10px; overflow: hidden;
+  background: var(--surface-2); box-shadow: 0 0 0 2px #0A0D15, 0 0 0 3px color-mix(in srgb, var(--sf-hue) 70%, transparent), 0 0 14px color-mix(in srgb, var(--sf-hue) 45%, transparent);
+}
+.shoptile__photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shoptile__face .avatar { border-radius: 0 !important; width: 100% !important; height: 100% !important; }
+.shoptile__pro { position: absolute; bottom: -6px; left: 50%; translate: -50% 0; line-height: 1; white-space: nowrap; z-index: 1; }
+
+/* The door: an arched frame with the lit shop inside, and a leaf that swings open on its left hinge. */
+.shoptile__door {
+  position: relative; flex: 0 0 40px; height: 82px; border-radius: 20px 20px 0 0; perspective: 220px;
+  background:
+    radial-gradient(90% 70% at 50% 85%, rgba(255, 214, 140, 0.95), rgba(255, 170, 70, 0.55) 45%, rgba(80, 40, 10, 0.9) 100%);
+  box-shadow: inset 0 0 0 3px #2B3040, inset 0 0 0 4px rgba(0, 0, 0, 0.55);
+}
+.shoptile__leaf {
+  position: absolute; inset: 3px; display: grid; justify-items: center; align-content: start; padding-top: 11px;
+  border-radius: 17px 17px 0 0; transform-origin: left center; backface-visibility: hidden;
+  background:
+    linear-gradient(180deg, transparent 52%, rgba(0, 0, 0, 0.25) 52% 54%, transparent 54%),
+    linear-gradient(180deg, color-mix(in srgb, var(--sf-hue) 45%, #1A1208), color-mix(in srgb, var(--sf-hue) 25%, #0E0A05));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  transition: transform 0.48s cubic-bezier(0.55, 0, 0.2, 1), filter 0.48s ease;
+}
+.shoptile__leaf::after {
+  content: ''; position: absolute; right: 5px; top: 52%; width: 5px; height: 5px; border-radius: 50%;
+  background: #E9C46A; box-shadow: 0 0 4px rgba(233, 196, 106, 0.6);
+}
+.shoptile__doorsign {
+  padding: 1px 4px; border-radius: 2px; font-size: calc(8px * var(--text-scale)); font-weight: var(--w-bold);
+  letter-spacing: 0.06em; text-transform: uppercase; line-height: 1.35; color: #04140C; background: var(--ok);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 60%, transparent);
+}
+.shoptile__door--paused .shoptile__doorsign { background: var(--warn); color: #2A1A00; box-shadow: 0 0 8px rgba(251, 191, 36, 0.5); }
+.shoptile__door--stopped .shoptile__doorsign { background: #F87171; color: #2B0505; box-shadow: 0 0 8px rgba(248, 113, 113, 0.5); }
+/* Tapped: the leaf swings in, light spills out onto the step, and the building leans toward you. */
+.shoptile.is-entering { transform: scale(1.03); }
+.shoptile.is-entering .shoptile__leaf { transform: rotateY(-82deg); filter: brightness(0.7); }
+.shoptile.is-entering .shoptile__door { animation: shop-light 0.5s ease-out forwards; }
+.shoptile.is-entering .shoptile__step { color: #FFE2B0; text-shadow: 0 0 10px rgba(255, 190, 100, 0.7); }
+@keyframes shop-light { to { box-shadow: inset 0 0 0 3px #2B3040, inset 0 0 0 4px rgba(0, 0, 0, 0.55), 0 0 22px 4px rgba(255, 190, 100, 0.55); } }
+
+/* The plaque by the door: who follows it, from where, and what it sells. */
+.shoptile__plaque {
+  display: grid; justify-items: center; gap: 5px; margin: 8px 6px 0; padding: 6px 4px 7px; text-align: center; min-width: 0;
+  border-radius: 4px; background: rgba(7, 9, 15, 0.72); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.shoptile__meta { font-size: var(--t-2xs); color: var(--text-faint); line-height: 1.35; }
+.shoptile__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+/* What it sells, on two paper price tags, one line, set smaller when they run long. */
+.shoptile__tags { display: flex; flex-wrap: nowrap; justify-content: center; gap: 4px; max-width: 100%; min-width: 0; }
 .shoptile__tag {
-  padding: 2px var(--s2); border-radius: var(--r-pill); background: var(--surface-2);
-  font-size: var(--t-xs); color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  position: relative; min-width: 0; flex: 0 1 auto;
+  padding: 2px 6px 2px 10px; font-size: calc(9.5px * var(--text-scale)); font-weight: var(--w-semi); line-height: 1.3;
+  color: #2A2116; background: #F2E9D8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  clip-path: polygon(6px 0, 100% 0, 100% 100%, 6px 100%, 0 50%); border-radius: 0 3px 3px 0;
 }
-.shoptile__tag.is-hit { background: var(--accent-soft); color: var(--text); }
+/* The string hole. */
+.shoptile__tag::before {
+  content: ''; position: absolute; left: 4px; top: 50%; width: 3px; height: 3px; margin-top: -1.5px; border-radius: 50%;
+  background: #12151F;
+}
+.shoptile__tag.is-hit { background: color-mix(in srgb, var(--sf-hue) 30%, #F2E9D8); }
+.shoptile__tags--sm .shoptile__tag { font-size: calc(8.5px * var(--text-scale)); padding-right: 5px; }
+.shoptile__tags--xs .shoptile__tag { font-size: calc(7.5px * var(--text-scale)); padding: 2px 4px 2px 9px; }
+.shoptile__tags--xxs { gap: 3px; }
+.shoptile__tags--xxs .shoptile__tag { font-size: calc(7px * var(--text-scale)); padding: 2px 3px 2px 8px; letter-spacing: -0.01em; }
+
+/* The step and pavement along the foot: where a tap takes you. */
+.shoptile__step {
+  margin: 8px -4px 0; padding: 6px 10px; text-align: center; border-radius: 2px;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em; color: var(--text-dim);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 23px, rgba(0, 0, 0, 0.25) 23px 24px),
+    linear-gradient(180deg, #3A3F4C, #2A2E39);
+  box-shadow: 0 -2px 0 #4A5062, 0 4px 8px rgba(0, 0, 0, 0.4);
+}
+.shoptile:hover .shoptile__step { color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .shoptile { transition: none; }
+  .shoptile__name { animation: none; }
+  .shoptile__leaf { transition: none; }
+  .shoptile:hover, .shoptile:active { transform: none; }
+}

@@ -1,3 +1,4 @@
+import { shopStatusOf } from '../../../shared/shop-status.js';
 import { isProActive } from '../../../shared/billing.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
@@ -23,6 +24,7 @@ import { SALE_MILESTONES, type BadgeKind } from '../../../shared/play.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
+import { realFollowerCount } from '../follower-count.js';
 import { getPhotoStore } from '../storage/index.js';
 import { readPhotoRequest } from './template-routes.js';
 import { earnedTags } from '../../../shared/shop-tags.js';
@@ -992,7 +994,9 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     .map((listing) => ({ listing, state: stateOf(listing) }))
     .sort((a, b) => ORDER[a.state] - ORDER[b.state]);
   const count = (state: string) => listings.filter((entry) => entry.state === state).length;
-  const followerCount = isStore ? (shop?.followerCount ?? 0) : (user.followerCount ?? 0);
+  // Counted from the follows, not the stored counter, which can drift.
+  const followerCount = await realFollowerCount(repository, user, isStore)
+    .catch(() => (isStore ? (shop?.followerCount ?? 0) : (user.followerCount ?? 0)));
 
   const facts = storeFactsFrom({
     user,
@@ -1026,6 +1030,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     // What the shop is known for beyond its own tags, from what it lists;
     // and badges read off its orders, worked out here and never stored.
     identity: (shop?.identity ?? []).map((tag) => ({ key: tag.k, label: tag.l, own: Boolean(tag.own) })),
+    // The other categories the shop says it carries, beside what it is known for.
+    alsoSells: isStore ? (shop?.alsoSells ?? []) : [],
     earned: isStore ? earnedTags(sales) : [],
     link: shop?.link ?? null,
     dispatchRegion: shop?.dispatchRegion ?? '',
@@ -1034,6 +1040,8 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     rating,
     tier: shop?.tier ?? null,
     pro: isStore && isProActive(user.pro),
+    // Open, paused (with when it lifts) or stopped for orders.
+    orderStatus: isStore ? shopStatusOf(shop?.orderStatus) : null,
     // The owner's own handle, so a shop page can point at the person behind it.
     ownerHandle: isStore ? (user.username ?? null) : null,
     sellerId: user.id,

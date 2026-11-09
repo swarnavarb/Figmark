@@ -823,7 +823,8 @@ function Tags({ shop }: { shop: string | undefined }) {
   return (
     <div className="stack">
       <p className="faint">
-        Your shop is known for its own tags and the tags on what you list. Buyers find shops by these in search and on
+        Your shop is known for its own tags and the tags on what you list, and the categories you picked under Also
+        sells count too, a little less. Buyers find shops by these in search and on
         each tag's page. Likes per item compare your items with the same tag against everyone else's.
       </p>
 
@@ -834,6 +835,7 @@ function Tags({ shop }: { shop: string | undefined }) {
             <div className="tagins__head">
               <Link to={tagPath(row.label)} className="tagins__name">#{row.label}</Link>
               {row.own && <span className="badge badge--quiet">Your tag</span>}
+              {row.side && <span className="badge badge--aqua">Also sells</span>}
               <span className={`badge badge--${TAG_VERDICT[row.verdict].tone}`}>{TAG_VERDICT[row.verdict].text}</span>
             </div>
             <div className="tagins__nums">

@@ -23,6 +23,10 @@ import { readPhoto } from './template-routes.js';
 import { clientIp } from '../rate-limit.js';
 import { guessRegion, placeIp } from '../region.js';
 import { forgetIndex, identityFor } from '../shop-identity.js';
+import { realFollowerCount } from '../follower-count.js';
+import { ALSO_SELLS_OPTIONS, cleanAlsoSells } from '../../../shared/shop-tags.js';
+import { SHOP_NAME_MAX } from '../../../shared/storefront.js';
+import { SHOP_ORDER_STATES, nextShopStatus, shopStatusOf, type ShopOrderState } from '../../../shared/shop-status.js';
 
 /**
  * The seller's own side of the app: storefront, tracking, analytics.
@@ -159,6 +163,7 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
     photoUrl?: string;
     coverUrl?: string;
     tags?: string[];
+    alsoSells?: string[];
     link?: string;
     payment?: {
       upiId?: string;
@@ -212,6 +217,10 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
   if (body.storefrontName !== undefined) {
     const name = body.storefrontName.trim();
     if (!name) return error(400, 'invalid_storefront', 'A storefront needs a name.');
+    // Only a new name is held to the limit: a shop named before it keeps saving.
+    if (name.length > SHOP_NAME_MAX && name !== existing.storefrontName) {
+      return error(400, 'invalid_storefront', `Keep the shop name to ${SHOP_NAME_MAX} characters or fewer.`);
+    }
     existing.storefrontName = name;
     // The slug follows the name only while nobody has linked to it yet, which
     // for now is always - a stable public URL is a separate promise to make.
@@ -241,6 +250,11 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
       .map((tag) => tag.slice(0, 24))
       .slice(0, 6);
   }
+  // Side lines come from a fixed list, never free text; one a tag already says is dropped.
+  if (body.alsoSells !== undefined || body.tags !== undefined) {
+    const raw = Array.isArray(body.alsoSells) ? body.alsoSells : (existing.alsoSells ?? []);
+    existing.alsoSells = cleanAlsoSells(raw, ALSO_SELLS_OPTIONS, existing.tags ?? []);
+  }
   if (body.payment !== undefined) {
     // Carried as typed. The platform does not move this money and cannot
     // verify an account exists, so validating the shape of it would only
@@ -265,7 +279,7 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
   }
 
   // The shop's own tags weigh most in what it is known for; recounted with the save.
-  existing.identity = await identityFor(repository, record, existing.tags ?? []);
+  existing.identity = await identityFor(repository, record, existing.tags ?? [], existing.alsoSells ?? []);
   record.sellerProfile = existing;
   record.updatedAt = new Date().toISOString();
   const saved = await repository.updateUser(record);
@@ -991,6 +1005,62 @@ async function updateManagers(request: HttpRequest, _context: InvocationContext)
   return json(200, { managers: saved.sellerProfile?.managers ?? [] });
 }
 
+/**
+ * POST /api/me/storefront/orders - open, pause (1-3 days) or stop the shop.
+ *
+ * Body: { storeId?, state: 'open' | 'paused' | 'stopped', days? }. An admin's
+ * decision, as the payment details are: it decides whether money comes in.
+ */
+async function setOrderStatus(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+
+  let body: { storeId?: string; state?: ShopOrderState; days?: number };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  if (!body.state || !SHOP_ORDER_STATES.includes(body.state)) {
+    return error(400, 'invalid_state', 'Choose open, paused or stopped.');
+  }
+
+  const repository = await getRepository();
+  const owner = await repository.getUserById(body.storeId ?? user.id);
+  if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+  if (!can(owner, user.id, 'admin')) {
+    return error(403, 'forbidden', 'Only a store admin can open or close the shop.');
+  }
+
+  owner.sellerProfile.orderStatus = nextShopStatus(body.state, body.days);
+  owner.updatedAt = new Date().toISOString();
+  const saved = await repository.updateUser(owner);
+  return json(200, { orderStatus: shopStatusOf(saved.sellerProfile?.orderStatus) });
+}
+
+/**
+ * GET /api/shops/{id}/pulse - what a shop page keeps current while it is open:
+ * the follower count and whether the shop is taking orders. Small on purpose,
+ * because an open page asks for it every few seconds.
+ */
+async function shopPulse(request: HttpRequest, _context: InvocationContext) {
+  const id = request.params.id;
+  if (!id) return error(400, 'invalid_id', 'A shop id is required.');
+  const repository = await getRepository();
+  const [card] = await repository.listSellerCardsByIds([id]);
+  if (!card?.sellerProfile) return error(404, 'not_found', 'No such shop.');
+  const owner = await repository.getUserById(id);
+  const followerCount = owner
+    ? await realFollowerCount(repository, owner, true).catch(() => card.sellerProfile!.followerCount ?? 0)
+    : card.sellerProfile.followerCount ?? 0;
+  return json(200, {
+    followerCount,
+    orderStatus: shopStatusOf(card.sellerProfile.orderStatus),
+  });
+}
+
+export const orderStatusRoute = handler(setOrderStatus);
+export const shopPulseRoute = handler(shopPulse);
 export const myStoresRoute = handler(myStores);
 export const updateManagersRoute = handler(updateManagers);
 export const storefrontRoute = handler(getStorefront);
@@ -1012,5 +1082,7 @@ app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', han
 app.http('me-sales', { ...anon, methods: ['GET'], route: 'me/sales', handler: salesRoute });
 app.http('me-sell-todo', { ...anon, methods: ['GET'], route: 'me/sell/todo', handler: sellTodoRoute });
 app.http('me-sell-dashboard', { ...anon, methods: ['GET'], route: 'me/sell/dashboard', handler: sellDashboardRoute });
+app.http('me-storefront-orders', { ...anon, methods: ['POST'], route: 'me/storefront/orders', handler: orderStatusRoute });
+app.http('shop-pulse', { ...anon, methods: ['GET'], route: 'shops/{id}/pulse', handler: shopPulseRoute });
 app.http('me-stores', { ...anon, methods: ['GET'], route: 'me/stores', handler: myStoresRoute });
 app.http('me-store-managers', { ...anon, methods: ['POST'], route: 'me/storefront/managers', handler: updateManagersRoute });

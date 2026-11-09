@@ -1,3 +1,4 @@
+import { shopRefusal } from '../../../shared/shop-status.js';
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Listing, Pledge } from '../../../shared/models.js';
@@ -96,6 +97,8 @@ async function pledge(request: HttpRequest, _context: InvocationContext) {
   const current = (await reconcilePreOrder(repository, listing)).listing;
   const preOrder = current.preOrder!;
   if (preOrder.closedAt) return error(409, 'preorder_closed', 'That pre-order is over.');
+  const shopClosed = shopRefusal((await repository.getUserById(current.sellerId))?.sellerProfile?.orderStatus);
+  if (shopClosed) return error(409, 'shop_closed', shopClosed);
   if (preOrder.decisionDueAt) {
     return error(409, 'preorder_paused', 'The seller is deciding whether this goes ahead. Check back soon.');
   }

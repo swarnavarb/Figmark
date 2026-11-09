@@ -21,12 +21,15 @@ export interface ShopTag {
   n: number;
   /** 1 when the shop chose this tag itself. */
   own?: 1;
+  /** 1 when the shop declared it as a side line under "Also sells". */
+  side?: 1;
 }
 
-export const IDENTITY_SIZE = 10;
+export const IDENTITY_SIZE = 12;
 /** A declared tag counts like this many listings: what a shop says it is matters most. */
 export const OWN_WEIGHT = 5;
-
+/** A declared side line counts less than a tag: it is what else the shop carries, not what it is. */
+export const SIDE_WEIGHT = 2;
 /** Words that mean the same thing to a buyer, folded to one key. */
 const SAME: Record<string, string> = {
   'gundam kit': 'gunpla',
@@ -77,6 +80,110 @@ export function tidyLabel(raw: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/** The most side lines a shop may declare. */
+export const ALSO_SELLS_MAX = 6;
+
+/**
+ * What a shop may say it also sells: every catalog category, and under each
+ * the specific lines buyers actually look for. A fixed list, so two shops
+ * that both "also sell Plushies" match each other and the buyers who like
+ * plushies; free text would split that into a dozen spellings.
+ *
+ * Most group names are the catalog's categories (shared/category-specs.ts);
+ * the rest are kinds of shop the catalog files under one of those.
+ */
+export const ALSO_SELLS_GROUPS: readonly { category: string; lines: readonly string[] }[] = [
+  { category: 'Figures', lines: ['Scale figures', 'Figurines', 'Statues & busts', 'Nendoroids', 'Figmas', 'Action figures', 'Funko Pops',
+    'Prize figures', 'Garage kits', 'Resin figures', 'Mini figures', 'Bobbleheads', 'Chibi figures'] },
+  { category: 'Model kits', lines: ['Gunpla', 'Mecha kits', 'Plastic models', 'Military models', 'Car & bike models', 'Ship & aircraft models',
+    'Diecast cars', 'Hot Wheels', 'Model trains', 'Model paints & tools', 'Decals & parts'] },
+  { category: 'Trading cards', lines: ['Pokémon cards', 'One Piece cards', 'Yu-Gi-Oh cards', 'Magic: The Gathering', 'Dragon Ball cards',
+    'Lorcana cards', 'Cricket cards', 'Sports cards', 'Graded cards', 'Sealed boxes', 'Singles', 'Sleeves & binders', 'Deck boxes & playmats'] },
+  { category: 'Anime merch', lines: ['Plushies', 'Keychains', 'Acrylic stands', 'Badges & pins', 'Posters & art prints', 'Wall scrolls',
+    'Gacha & capsule toys', 'Ichiban Kuji', 'Anime apparel', 'Cosplay', 'Wigs & props', 'Phone charms', 'Itabags'] },
+  { category: 'Toys & games', lines: ['Blind boxes', 'Art toys', 'LEGO', 'Building blocks', 'Board games', 'Card games', 'Puzzles',
+    'RC toys', 'Educational toys', 'Retro toys', 'Fidget toys'] },
+  { category: 'Collectibles', lines: ['Vintage toys', 'Coins', 'Stamps', 'Banknotes', 'Autographs', 'Movie memorabilia', 'Sports memorabilia',
+    'Antiques', 'Limited editions', 'Pins & patches'] },
+  { category: 'Books & manga', lines: ['Manga', 'Manhwa & webtoons', 'Comics', 'Graphic novels', 'Light novels', 'Art books',
+    'Magazines', 'Novels', 'Children\'s books'] },
+  { category: 'Games & consoles', lines: ['Video games', 'Retro games', 'Consoles', 'Handhelds', 'Controllers', 'Gaming accessories',
+    'Game codes & cards', 'Amiibo', 'Gaming chairs'] },
+  { category: 'Sneakers', lines: ['Limited releases', 'Jordans', 'Running shoes', 'Basketball shoes', 'Skate shoes', 'Boots',
+    'Slides & sandals', 'Sneaker care', 'Laces & insoles'] },
+  { category: 'Streetwear', lines: ['T-shirts', 'Hoodies & sweatshirts', 'Jackets', 'Pants & cargos', 'Jerseys', 'Caps & hats',
+    'Socks', 'Vintage clothing', 'Graphic tees'] },
+  { category: 'Fashion', lines: ['Dresses', 'Ethnic wear', 'Kurtas', 'Sarees', 'Tops', 'Denim', 'Activewear', 'Kids\' clothing'] },
+  { category: 'Bags & watches', lines: ['Bags', 'Backpacks', 'Handbags', 'Watches', 'Smartwatches', 'Wallets', 'Belts', 'Sunglasses'] },
+  { category: 'Jewellery', lines: ['Rings', 'Necklaces', 'Earrings', 'Bracelets', 'Silver jewellery', 'Fashion jewellery', 'Anime jewellery'] },
+  { category: 'Electronics', lines: ['Phones', 'Phone accessories', 'Phone cases', 'Headphones & earbuds', 'Speakers', 'Cameras',
+    'Camera accessories', 'Laptops & tablets', 'PC parts', 'Keyboards & mice', 'Smart home', 'Chargers & cables', 'Drones'] },
+  { category: 'Beauty', lines: ['Skincare', 'K-beauty', 'J-beauty', 'Makeup', 'Fragrance', 'Haircare', 'Nail art', 'Grooming'] },
+  { category: 'Home & decor', lines: ['Display cases', 'Shelves & stands', 'Lighting', 'LED & neon signs', 'Wall art', 'Ornaments',
+    'Candles', 'Cushions & bedding', 'Kitchen & mugs', 'Plants & planters', 'Clocks'] },
+  { category: 'Stationery', lines: ['Notebooks & journals', 'Pens', 'Stickers', 'Washi tape', 'Planners', 'Art supplies', 'Calligraphy'] },
+  { category: 'Art & crafts', lines: ['Original art', 'Prints', 'Commissions', 'Handmade', 'Custom painting', 'Crochet & knitting',
+    'Resin art', 'Pottery', 'Craft supplies'] },
+  { category: 'Music & media', lines: ['Vinyl records', 'CDs', 'K-pop albums', 'K-pop merch', 'Photocards', 'Lightsticks',
+    'Cassettes', 'Instruments', 'Blu-ray & DVDs', 'Posters'] },
+  { category: 'Sports & outdoors', lines: ['Cricket gear', 'Football gear', 'Gym equipment', 'Cycling', 'Camping', 'Fitness wear', 'Yoga'] },
+  { category: 'Food & snacks', lines: ['Japanese snacks', 'Korean snacks', 'Imported snacks', 'Candy', 'Tea & coffee', 'Instant noodles', 'Drinks'] },
+  { category: 'Pets', lines: ['Pet toys', 'Pet accessories', 'Pet clothing', 'Aquarium', 'Pet food'] },
+];
+
+/** Every name a shop may pick under Also sells, categories first within each group, each once. */
+export const ALSO_SELLS_OPTIONS: readonly string[] = [...new Map(
+  ALSO_SELLS_GROUPS.flatMap((group) => [group.category, ...group.lines]).map((name) => [tagKey(name), name] as const),
+).values()];
+
+/** The category a picked line sits under, or the line itself when it is a category. */
+export function alsoSellsCategory(name: string): string | undefined {
+  const key = tagKey(name);
+  return ALSO_SELLS_GROUPS.find((group) => tagKey(group.category) === key || group.lines.some((line) => tagKey(line) === key))?.category;
+}
+
+/**
+ * What a shop's side lines count as in its identity: each line, and the
+ * category over it, so a shop that also sells Plushies is found by buyers of
+ * Anime merch too. Categories the shop already named come once.
+ */
+export function alsoSellsKeys(lines: readonly string[]): string[] {
+  const out = new Map<string, string>();
+  for (const line of lines) {
+    out.set(tagKey(line), line);
+    const parent = alsoSellsCategory(line);
+    if (parent && !out.has(tagKey(parent))) out.set(tagKey(parent), parent);
+  }
+  return [...out.values()];
+}
+
+/**
+ * Tags and "Also sells" answer different questions, and are kept apart.
+ *
+ * - Tags ("Known for") are the shop's own words for what it is and how it
+ *   works: "Gunpla", "Japan imports", "Ships weekly". Free text, up to six.
+ * - Also sells is the other things it carries beyond that: picked from a
+ *   fixed list (ALSO_SELLS_OPTIONS), up to six, so every shop that says
+ *   "Also sells Plushies" means the same thing. It weighs less than a tag in
+ *   search and suggestions, and the Data tab reads how each one does.
+ *
+ * A side line that repeats one of the shop's tags is dropped: the tag says it.
+ */
+export function cleanAlsoSells(raw: readonly string[], options: readonly string[] = ALSO_SELLS_OPTIONS, tags: readonly string[] = []): string[] {
+  const known = new Map(options.map((name) => [tagKey(name), name]));
+  const taken = new Set(tags.map(tagKey));
+  const out: string[] = [];
+  for (const entry of raw) {
+    const key = tagKey(String(entry ?? ''));
+    const name = known.get(key);
+    if (!name || taken.has(key)) continue;
+    taken.add(key);
+    out.push(name);
+    if (out.length >= ALSO_SELLS_MAX) break;
+  }
+  return out;
+}
+
 /**
  * Fold a shop's own tags and its listings into its identity.
  *
@@ -87,22 +194,25 @@ export function tidyLabel(raw: string): string {
 export function buildIdentity(
   own: readonly string[],
   listings: readonly { tags?: readonly string[]; category?: string; expired?: boolean }[],
+  side: readonly string[] = [],
 ): ShopTag[] {
-  const rows = new Map<string, { n: number; own: boolean; labels: Map<string, number> }>();
-  const add = (label: string, weight: number, isOwn: boolean) => {
+  const rows = new Map<string, { n: number; own: boolean; side: boolean; labels: Map<string, number> }>();
+  const add = (label: string, weight: number, isOwn: boolean, isSide = false) => {
     // A shop's own spelling stands; a listing's "garage-kit" reads "Garage kit".
     const trimmed = label.trim().slice(0, 24);
     const clean = isOwn ? trimmed : tidyLabel(trimmed);
     const k = tagKey(clean);
     if (k.length < 2) return;
-    const row = rows.get(k) ?? { n: 0, own: false, labels: new Map<string, number>() };
+    const row = rows.get(k) ?? { n: 0, own: false, side: false, labels: new Map<string, number>() };
     row.n += weight;
     row.own ||= isOwn;
+    row.side ||= isSide;
     // The shop's own spelling wins; otherwise the commonest one.
-    row.labels.set(clean, (row.labels.get(clean) ?? 0) + (isOwn ? 1000 : weight));
+    row.labels.set(clean, (row.labels.get(clean) ?? 0) + (isOwn ? 1000 : isSide ? 500 : weight));
     rows.set(k, row);
   };
   for (const tag of own) add(tag, OWN_WEIGHT, true);
+  for (const line of side) add(line, SIDE_WEIGHT, false, true);
   for (const listing of listings) {
     const weight = listing.expired ? 0.5 : 1;
     const seen = new Set<string>();
@@ -116,13 +226,20 @@ export function buildIdentity(
       add(tag, weight * by, false);
     }
   }
-  return [...rows.entries()]
-    .map(([k, row]) => {
+  const ranked = [...rows.entries()]
+    .map(([k, row]): ShopTag => {
       const l = [...row.labels.entries()].sort((a, b) => b[1] - a[1])[0]![0];
-      return { k, l, n: Math.round(row.n * 2) / 2, ...(row.own ? { own: 1 as const } : {}) };
+      return {
+        k, l, n: Math.round(row.n * 2) / 2,
+        ...(row.own ? { own: 1 as const } : row.side ? { side: 1 as const } : {}),
+      };
     })
-    .sort((a, b) => b.n - a.n || a.k.localeCompare(b.k))
-    .slice(0, IDENTITY_SIZE);
+    .sort((a, b) => b.n - a.n || a.k.localeCompare(b.k));
+  // What the shop declared always stays; what its listings say fills the rest.
+  const declared = ranked.filter((tag) => tag.own || tag.side);
+  const room = Math.max(0, IDENTITY_SIZE - declared.length);
+  const kept = new Set([...declared, ...ranked.filter((tag) => !tag.own && !tag.side).slice(0, room)]);
+  return ranked.filter((tag) => kept.has(tag));
 }
 
 /** Whether two identities differ enough to be worth writing. */

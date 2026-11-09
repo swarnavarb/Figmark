@@ -254,7 +254,13 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 }
 .phead .vfychip { font-size: var(--t-xs); padding: 2px var(--s2); }
 .phead .qprofile__face { background: var(--bg); }
-.vtick { display: inline-flex; vertical-align: -0.1em; margin-left: 6px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.45)); }
+.vtick {
+  display: inline-flex; vertical-align: -0.1em; margin-left: 6px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.45));
+  padding: 0; border: 0; background: none; color: inherit; font: inherit; line-height: 0; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: transform var(--dur-2) var(--ease);
+}
+.vtick:active { transform: scale(0.88); }
+.vtick:focus-visible { outline: 2px solid #1D9BF0; outline-offset: 2px; border-radius: 50%; }
 .ppanel .pbio { margin: 0; padding: 0 0 0 var(--s3); border: 0; border-radius: 0; background: none; }
 .ppanel .pbio::before { top: 2px; bottom: 2px; }
 
@@ -264,3 +270,29 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 .revcard__itemtext { display: grid; min-width: 0; }
 .revcard__itemtext > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--w-semi); }
 .revcard__itemtext small { color: var(--ok); font-size: var(--t-2xs); }
+
+/* ── Rate this page: five stars to tap straight away ──────────────────── */
+.raterow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; border-radius: var(--r-lg);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), transparent 65%), var(--surface);
+  border: 1px solid rgba(251, 191, 36, 0.32);
+}
+.raterow__text { display: grid; gap: 2px; min-width: 0; }
+.raterow__text b { font-size: var(--t-sm); }
+.raterow__text small { font-size: var(--t-xs); color: var(--text-faint); }
+.raterow__stars { display: flex; gap: 2px; }
+.raterow__star {
+  display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%;
+  background: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-2) var(--ease);
+}
+.raterow__star svg { fill: none; stroke: var(--warn); stroke-width: 1.7; stroke-linejoin: round; transition: fill var(--dur-2) var(--ease); }
+.raterow__star.is-on svg { fill: var(--warn); }
+/* Hovering a star lights it and every one before it, as the rating it would give. */
+.raterow__stars:hover .raterow__star svg { fill: rgba(251, 191, 36, 0.9); }
+.raterow__star:hover ~ .raterow__star svg { fill: none; }
+.raterow__star:active { transform: scale(0.86); }
+.raterow__star:focus-visible { outline: 2px solid var(--warn); outline-offset: 1px; }
+.raterow.is-locked .raterow__star svg { stroke: var(--text-faint); }
+@media (prefers-reduced-motion: reduce) { .raterow__star, .raterow__star svg { transition: none; } }

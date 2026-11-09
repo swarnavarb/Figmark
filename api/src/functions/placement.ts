@@ -1,4 +1,5 @@
 import { termsFor } from '../billing.js';
+import { shopRefusal } from '../../../shared/shop-status.js';
 import { randomUUID } from 'node:crypto';
 import type { Listing, Order, Pledge } from '../../../shared/models.js';
 import { fullRuleOf, isGoingAhead } from '../../../shared/preorder.js';
@@ -140,6 +141,9 @@ export async function placeOrder(
   const unavailable = unavailableReason(fetched, order);
   if (unavailable) return { code: 'unavailable', message: unavailable };
   const listing = fetched!;
+  // A paused or stopped shop takes no orders, even from a checkout opened before it closed.
+  const shopClosed = shopRefusal((await repository.getUserById(order.sellerId))?.sellerProfile?.orderStatus);
+  if (shopClosed) return { code: 'unavailable', message: shopClosed };
 
   if (listing.preOrder) {
     const refused = preOrderRefusal(listing, await repository.listPledges(listing.id), order.buyerId);

@@ -221,3 +221,14 @@
 .buybox__restock { display: grid; gap: 4px; justify-items: center; margin-top: var(--s2); text-align: center; }
 .buybox__dibs { margin: var(--s2) 0 0; font-size: var(--t-sm); }
 .sellercard__nameline { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+
+/* Paused or closed: Buy stays where it was, greyed, and says why. */
+.buybox__buy.is-shut, .buybox__buy.is-shut:disabled {
+  background: var(--surface-2); color: var(--text-faint); box-shadow: inset 0 0 0 1px var(--border-strong);
+  cursor: not-allowed; opacity: 1; filter: grayscale(1);
+}
+.buybox__shut {
+  margin: 0; padding: 8px 12px; border-radius: var(--r-md); font-size: var(--t-xs); line-height: 1.45; color: var(--text-dim);
+  background: var(--surface-2); border-left: 3px solid var(--warn);
+}
+.buybox__shut--stopped { border-left-color: #F87171; }

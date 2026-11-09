@@ -14,6 +14,12 @@ import { growthAreas } from './store-growth.js';
  * feed - stays the plain account id it always was.
  */
 export const PERSON_FOLLOW = 'person:';
+
+/**
+ * The longest a shop's name may be. Long enough for "Kaiju Imports & Collectibles",
+ * short enough to sit on a signboard and a card beside its ticks on a phone.
+ */
+export const SHOP_NAME_MAX = 30;
 export const personFollowId = (userId: string) => `${PERSON_FOLLOW}${userId}`;
 export const isPersonFollow = (id: string) => id.startsWith(PERSON_FOLLOW);
 

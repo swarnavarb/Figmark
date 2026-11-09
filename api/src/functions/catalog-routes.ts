@@ -1,7 +1,9 @@
+import { listedInShop, shopRefusal, shopStatusOf } from '../../../shared/shop-status.js';
 import { isProActive } from '../../../shared/billing.js';
 import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
 import { cleanOffers } from '../../../shared/offers.js';
 import { randomUUID } from 'node:crypto';
+import { forgetFollowerCount, realFollowerCount } from '../follower-count.js';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
 import {
@@ -87,6 +89,10 @@ function toSellerCard(user: SellerCardSource) {
     // The shop's own picture and banner, so its card looks like its page.
     photoUrl: user.sellerProfile?.photoUrl ?? null,
     coverUrl: user.sellerProfile?.coverUrl ?? null,
+    // Open, paused or stopped for orders, so a card can say so before Buy is pressed.
+    orderState: shopStatusOf(user.sellerProfile?.orderStatus).state,
+    // When a pause lifts on its own; null otherwise.
+    orderUntil: shopStatusOf(user.sellerProfile?.orderStatus).until,
   };
 }
 
@@ -162,6 +168,11 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     Promise.all(lotKeys.map(([lotId, sellerId]) => repository.getLot(sellerId, lotId))),
   ]);
   const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
+  // A shop that stopped taking orders leaves the Shop feed and search; its
+  // own page (asked for with ?seller=) still shows everything it has up.
+  const stopped = new Set(sellers.filter((s) => !listedInShop(s.sellerProfile?.orderStatus)).map((s) => s.id));
+  const shown = request.query.get('seller') || stopped.size === 0
+    ? listings : listings.filter((listing) => !stopped.has(listing.sellerId));
   // The lot contributes exactly one buyer-visible fact: when it ships.
   const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
 
@@ -174,7 +185,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   }
 
   return json(200, {
-    listings: listings.map((listing) => ({
+    listings: shown.map((listing) => ({
       ...cardListing(publicListing(listing)),
       liked: likedIds.has(listing.id),
       seller: sellerById.get(listing.sellerId) ?? null,
@@ -184,7 +195,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     // offer a category that has nothing behind it. Note that this narrows with
     // the filters, which is the point: it answers "what else is in here", not
     // "what exists somewhere".
-    categories: [...new Set(listings.map((l) => l.category))].sort(),
+    categories: [...new Set(shown.map((l) => l.category))].sort(),
     followedSellerIds,
     // Under a page's worth: this is every match there is, so a search typed
     // further can narrow these on the device instead of asking again.
@@ -1280,7 +1291,11 @@ async function toggleFollow(request: HttpRequest, _context: InvocationContext) {
       },
     }, { except: user.id });
   }
-  return json(200, { following, followerCount: person ? target.followerCount : target.sellerProfile!.followerCount });
+  // The real number, from the follows themselves; it also puts a drifted counter right.
+  forgetFollowerCount(sellerId);
+  const kept = person ? (target.followerCount ?? 0) : target.sellerProfile!.followerCount;
+  const followerCount = await realFollowerCount(repository, target, !person).catch(() => kept);
+  return json(200, { following, followerCount });
 }
 
 const MAX_ORDER_QUANTITY = 100;
@@ -1325,6 +1340,9 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   // is not for sale whatever the client sends.
   if (isExpired(listing)) return error(409, 'expired', 'This item has expired and cannot be bought.');
   if (listing.status !== 'active') return error(409, 'unavailable', 'This item is not for sale.');
+  // A shop that paused or stopped orders takes none, whatever the client sends.
+  const shopClosed = shopRefusal((await repository.getUserById(listing.sellerId))?.sellerProfile?.orderStatus);
+  if (shopClosed) return error(409, 'shop_closed', shopClosed);
 
   // A whole number from 1 up, or nothing at all - anything else is refused
   // rather than coerced, because NaN passes every comparison below it.

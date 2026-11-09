@@ -180,6 +180,7 @@ async function tagInsights(request: HttpRequest, _context: InvocationContext) {
       key: tag.k,
       label: tag.l,
       own: Boolean(tag.own),
+      side: Boolean(tag.side),
       yourItems: yours.length,
       yourLikesPerItem: round(yourLikes),
       sold: mine.filter((row) => keysOf(row).has(tag.k)).reduce((sum, row) => sum + (sold.get(row.id) ?? 0), 0),

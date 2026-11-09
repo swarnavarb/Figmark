@@ -1,4 +1,5 @@
 import type { VerifiedChecks } from '@shared/verification';
+import { useToast } from './Feedback';
 
 /**
  * Email, WhatsApp and Aadhaar, as a row of chips on a person's or a shop's page.
@@ -32,15 +33,25 @@ export function fullyVerified(checks: VerifiedChecks | null | undefined): boolea
   return Boolean(checks?.email && checks.phone && checks.aadhaar);
 }
 
-/** The blue tick beside a name, once all three checks have passed. Nothing otherwise. */
+/**
+ * The blue tick beside a name, once all three checks have passed. Nothing
+ * otherwise. A tap says what it stands for.
+ */
 export function VerifiedTick({ checks, size = 20 }: { checks: VerifiedChecks | null | undefined; size?: number }) {
+  const toast = useToast();
   if (!fullyVerified(checks)) return null;
   return (
-    <span className="vtick" title="Verified: email, WhatsApp and Aadhaar" aria-label="Verified" role="img">
+    <button type="button" className="vtick" title="Verified: email, WhatsApp and Aadhaar"
+      aria-label="Verified. Tap for details."
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toast('Verified: email, WhatsApp and Aadhaar have all been checked.', 'ok');
+      }}>
       <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
         <path fill="#1D9BF0" d="m12 1.6 2.6 1.9 3.2-.1 1 3 2.6 1.9-1 3.1 1 3.1-2.6 1.9-1 3-3.2-.1L12 22.4l-2.6-1.9-3.2.1-1-3-2.6-1.9 1-3.1-1-3.1 2.6-1.9 1-3 3.2.1Z" />
         <path fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" d="m7.8 12.2 2.9 2.9 5.5-5.6" />
       </svg>
-    </span>
+    </button>
   );
 }
