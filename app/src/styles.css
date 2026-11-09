@@ -7380,19 +7380,18 @@ button.authpop__grip::before { content: ''; position: absolute; inset: -14px -30
 .spin__back { transform: rotateY(180deg); }
 .spin__hint { font-size: var(--t-2xs); color: var(--text-faint); }
 
-/* The collection: each delivered item as a royal card, gilded in front, crested behind. */
-.royal { position: relative; display: block; perspective: 800px; animation: royal-in 800ms var(--ease) both; }
-@keyframes royal-in { from { transform: rotateY(-120deg) scale(0.85); opacity: 0; } }
-.royal__front::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%);
-  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.4) 45%, transparent 60%);
-  animation: royal-sheen 5s 1s ease-in-out infinite;
+/* Collector cards; the rest of their rules are in styles/CollectorProfile.css. */
+.royal {
+  --holo: linear-gradient(115deg, var(--aqua), var(--violet) 22%, var(--pink) 40%, var(--q-gold) 58%, var(--aqua) 78%, var(--violet));
+  position: relative; display: block; perspective: 900px;
+  animation: royal-in 560ms cubic-bezier(0.2, 0.9, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 70ms);
 }
-@keyframes royal-sheen { 35%, 100% { transform: translateX(120%); } }
-.thumb.royal__thumb { width: 100%; height: 100%; border-radius: 0; font-size: var(--t-md); }
-
+@keyframes royal-in {
+  0% { opacity: 0; transform: translateX(-26px) skewX(-14deg) scale(0.92); filter: blur(3px) brightness(1.8); }
+  60% { opacity: 1; transform: translateX(3px) skewX(3deg); filter: blur(0) brightness(1.25); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .royal, .royal__front::after, button.qitem { animation: none; }
+  button.qitem, .royal { animation: none; }
 }
 
 /* ── The collection, shelf by shelf, and a card opened ─────────────────── */
@@ -7404,7 +7403,7 @@ button.authpop__grip::before { content: ''; position: absolute; inset: -14px -30
   font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: var(--t-md); letter-spacing: 0.04em;
   background: linear-gradient(180deg, var(--gold-pale), #F5C542 55%, #B8860B); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-button.qitem { padding: 0; border: 0; background: none; cursor: pointer; animation: lp-rise 500ms calc(var(--i) * 40ms) var(--ease) both; }
+button.qitem { padding: 0; border: 0; background: none; cursor: pointer; }
 .qviewer__dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--q-track); }
 .qviewer__dots i.is-on { background: var(--q-gold); }
 .rsheet__verified h4 {

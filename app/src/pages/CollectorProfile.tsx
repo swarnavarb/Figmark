@@ -532,7 +532,7 @@ export function PurchasedCollection({ userId, isMe, owner = null }: {
             {section.items.map((item, i) => (
               <button key={item.orderId} type="button" className="qitem" style={{ ['--i' as string]: i }}
                 onClick={() => setViewing(item.orderId)} aria-label={`Open ${item.name}`}>
-                <RoyalCard item={item} />
+                <RoyalCard item={item} no={shelf.items.length - shelf.items.indexOf(item)} />
               </button>
             ))}
           </div>
@@ -540,7 +540,7 @@ export function PurchasedCollection({ userId, isMe, owner = null }: {
       ))}
 
       {open && (
-        <CardViewer item={open} isMe={isMe} groups={shelf.groups} owner={owner} userId={userId} onClose={() => setViewing(null)}
+        <CardViewer item={open} no={shelf.items.length - shelf.items.indexOf(open)} isMe={isMe} groups={shelf.groups} owner={owner} userId={userId} onClose={() => setViewing(null)}
           onEdit={(changes, done) => run(() => api.collectionEdit(open.orderId, changes), done)}
           onRemove={() => void remove(open)} />
       )}
@@ -573,13 +573,20 @@ export function PurchasedCollection({ userId, isMe, owner = null }: {
   );
 }
 
-/** One royal card: the item in a gilded frame, its name engraved on a crested back. */
-function RoyalCard({ item, photo = item.photos[0], flipped = false, big = false }: {
+/**
+ * One collector card: the photo edge to edge in a holographic foil frame, its
+ * collector number slashed into the corner and its name across the bottom.
+ * Behind it, the number again, large, over speed lines.
+ */
+function RoyalCard({ item, no, photo = item.photos[0], flipped = false, big = false }: {
   item: CollectionItem;
+  /** Its place in the collection, counting from the first thing they collected. */
+  no?: number;
   photo?: string;
   flipped?: boolean;
   big?: boolean;
 }) {
+  const serial = no ? String(no).padStart(3, '0') : null;
   return (
     <span className={`royal${flipped ? ' is-flipped' : ''}${big ? ' royal--big' : ''}`}>
       <span className="royal__card">
@@ -587,10 +594,15 @@ function RoyalCard({ item, photo = item.photos[0], flipped = false, big = false 
           <span className="royal__frame">
             <Thumb seed={item.listingId} label={item.name} photo={photo ? { url: photo } : null} className="thumb royal__thumb" />
           </span>
-          <span className="royal__plate">{item.name}</span>
+          {serial && <span className="royal__no">No.{serial}</span>}
+          <span className="royal__spark" aria-hidden="true">✦</span>
+          <span className="royal__plate">
+            <span className="royal__label">{item.name}</span>
+            <span className="royal__date">{formatDate(item.deliveredAt)}</span>
+          </span>
         </span>
         <span className="royal__face royal__back">
-          <span className="royal__crest" aria-hidden="true">♛</span>
+          {serial && <span className="royal__serial" aria-hidden="true"><small>No.</small>{serial}</span>}
           <span className="royal__name">{item.name}</span>
           <span className="royal__date">Delivered {formatDate(item.deliveredAt)}</span>
         </span>
@@ -603,10 +615,11 @@ function RoyalCard({ item, photo = item.photos[0], flipped = false, big = false 
  * A card opened: the same card, larger, on a turntable. Arrows walk its photos.
  * The owner can shelve it, choose the photo it leads with, and hide the rest.
  */
-function CardViewer({ item, isMe, groups, owner, userId, onClose, onEdit, onRemove }: {
+function CardViewer({ item, no, isMe, groups, owner, userId, onClose, onEdit, onRemove }: {
   owner: { name: string; handle: string | null } | null;
   userId: string;
   item: CollectionItem;
+  no: number;
   isMe: boolean;
   groups: CollectionShelf['groups'];
   onClose: () => void;
@@ -646,7 +659,7 @@ function CardViewer({ item, isMe, groups, owner, userId, onClose, onEdit, onRemo
           {/* A tap turns it over, front to back and back again. */}
           <button type="button" className="qviewer__card" onClick={() => setFlipped(!flipped)}
             aria-label={flipped ? 'Show the front' : 'Turn it over'} aria-pressed={flipped}>
-            <RoyalCard item={item} photo={photo} flipped={flipped} big />
+            <RoyalCard item={item} no={no} photo={photo} flipped={flipped} big />
           </button>
           {photos.length > 1 && (
             <button type="button" className="qviewer__arrow" aria-label="Next photo" onClick={() => step(1)}>›</button>
