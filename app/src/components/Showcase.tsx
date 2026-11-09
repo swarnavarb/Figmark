@@ -11,11 +11,9 @@ import { Thumb } from './ui';
 /**
  * The two Buy-tab shelves that sell an event, each telling its own story.
  *
- * Drops is a stage: bulbs along a velvet valance, drapes drawn back at the
- * sides, footlights on the boards, each drop a ticket behind its own curtain
- * still shut, a clock
- * counting down to the first item, and a bell to be told when the curtain
- * goes up. When it does, the curtain parts and the card goes live.
+ * Drops is a short row of race cards: a start clock counting down to the
+ * first item, the shop and what is in it, and a bell to be told when it
+ * starts. When the clock runs out the card goes live and says how far in it is.
  *
  * Lots filling up is a packing line: open cartons riding a conveyor belt,
  * the shop's items dropping into them one after another, and the number of
@@ -49,7 +47,7 @@ function span(seconds: number): string {
   return `${m}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-/* ── Drops: the stage ──────────────────────────────────────────────────── */
+/* ── Drops: race cards ──────────────────────────────────────────────────── */
 
 /** The bell: on, off, or off to a guest who is asked to sign in first. */
 function useReminder(drop: DropCardData, onChange: (next: DropCardData) => void) {
@@ -149,62 +147,51 @@ function FlipClock({ until, now }: { until: string; now: number }) {
   );
 }
 
-/** One drop, as a ticket on the stage. */
-function DropTicket({ drop: initial, index }: { drop: DropCardData; index: number }) {
+/** One drop, as a compact race card: a start clock, the shop, what is in it, and the bell. */
+function DropCard({ drop: initial, index }: { drop: DropCardData; index: number }) {
   const [drop, setDrop] = useState(initial);
   useEffect(() => setDrop(initial), [initial]);
   const now = useTick(true);
-  const startsIn = parts(drop.startsAt, now).left;
-  // The curtain goes up the second the clock runs out, without waiting for
-  // the server to say so - the channel is where the first item lands.
-  const live = drop.live || startsIn === 0;
+  const clock = parts(drop.startsAt, now);
+  // Live the second the clock runs out, without waiting for the server to
+  // say so - the channel is where the first item lands.
+  const live = drop.live || clock.left === 0;
   const next = parts(drop.nextAt, now);
-  const currency = 'INR';
+  const prices = drop.preview.map((item) => item.priceMinor).filter((price) => price > 0);
+  const from = prices.length > 0 ? Math.min(...prices) : null;
 
   return (
-    <article className={`ticket${live ? ' is-live' : ''}`} style={{ ['--i' as string]: index }}>
-      <span className="ticket__curtain ticket__curtain--l" aria-hidden="true" />
-      <span className="ticket__curtain ticket__curtain--r" aria-hidden="true" />
-      <div className="ticket__inner">
-        <span className="ticket__top">
-          {live
-            ? <span className="ticket__live"><span className="ticket__dot" /> LIVE</span>
-            : <span className="ticket__soon">⚡ Drop</span>}
-          <span className="ticket__shop">{drop.shop.name}</span>
-        </span>
-        <b className="ticket__name">{drop.name}</b>
-        {!live ? (
-          <>
-            <span className="ticket__when">Curtain up in</span>
-            <FlipClock until={drop.startsAt} now={now} />
-          </>
+    <article className={`dropcard${live ? ' is-live' : ''}`} style={{ ['--i' as string]: index }}>
+      <span className="dropcard__top">
+        {live ? (
+          <span className="dropcard__badge dropcard__badge--live"><span className="ticket__dot" /> Live</span>
         ) : (
-          <span className="ticket__when">
-            Drop {Math.max(1, drop.itemsOut)}/{drop.itemCount}
-            {next.left > 0 ? <> · next in <b>{span(next.left)}</b></> : ' · dropping now'}
+          <span className="dropcard__badge" role="timer"
+            aria-label={`Starts in ${Number(clock.h)} hours ${Number(clock.m)} minutes ${Number(clock.s)} seconds`}>
+            <span aria-hidden="true">{clock.h}:{clock.m}:{clock.s}</span>
           </span>
         )}
-        <ul className="ticket__preview">
-          {drop.preview.map((item, at) => (
-            <li key={at} className={item.out || live ? 'is-out' : ''}>
-              <span className="ticket__item">{item.out || at === 0 ? item.title : 'Mystery item'}</span>
-              <span className="ticket__price">
-                {formatMoney(item.priceMinor, currency)}
-                {item.listPriceMinor > item.priceMinor && <s>{formatMoney(item.listPriceMinor, currency)}</s>}
-              </span>
-            </li>
-          ))}
-          {drop.itemCount > drop.preview.length && <li className="ticket__more">+{drop.itemCount - drop.preview.length} more</li>}
-        </ul>
-        <span className="ticket__perf" aria-hidden="true" />
-        <span className="ticket__acts">
-          {live
-            ? <Link to={drop.channel} className="ticket__go">Jump in →</Link>
-            : <RemindButton drop={drop} onChange={setDrop} />}
-          {!live && <CalendarButton drop={drop} compact />}
-          {!live && <Link to={drop.channel} className="ticket__chan">Channel</Link>}
-        </span>
-      </div>
+        <span className="dropcard__shop">{drop.shop.name}</span>
+      </span>
+      <Link to={drop.channel} className="dropcard__name">{drop.name}</Link>
+      <span className="dropcard__meta">
+        {live ? (
+          <>
+            Drop <b>{Math.max(1, drop.itemsOut)}/{drop.itemCount}</b>
+            {next.left > 0 ? <> · next in <b>{span(next.left)}</b></> : ' · dropping now'}
+          </>
+        ) : (
+          <>
+            <b>{drop.itemCount}</b> {drop.itemCount === 1 ? 'item' : 'items'}
+            {from !== null && <> · from <b>{formatMoney(from, 'INR')}</b></>}
+          </>
+        )}
+      </span>
+      <span className="dropcard__acts">
+        {live
+          ? <Link to={drop.channel} className="dropcard__go">Jump in →</Link>
+          : <><RemindButton drop={drop} onChange={setDrop} compact /><CalendarButton drop={drop} compact /></>}
+      </span>
     </article>
   );
 }
@@ -227,26 +214,20 @@ export function DropsStage() {
     return () => { alive = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
   if (!drops || drops.length === 0) return null;
+  const liveCount = drops.filter((drop) => drop.live).length;
 
   return (
-    <section className="stage" aria-label="Drops">
-      <span className="stage__valance" aria-hidden="true" />
-      <span className="stage__drape stage__drape--l" aria-hidden="true" />
-      <span className="stage__drape stage__drape--r" aria-hidden="true" />
-      <span className="stage__bulbs" aria-hidden="true">
-        {Array.from({ length: 14 }, (_, i) => <span key={i} style={{ ['--b' as string]: i }} />)}
-      </span>
-      <span className="stage__spot" aria-hidden="true" />
-      <div className="stage__head">
-        <h2>⚡ Drops</h2>
-        <span>Join now or get a reminder on the live drops</span>
+    <section className="drops" aria-label="Drops">
+      <header className="drops__head">
+        <h2 className="drops__title"><span className="drops__bolt" aria-hidden="true">⚡</span><span className="drops__word">Drops</span></h2>
+        <span className="drops__tally">
+          {liveCount > 0 && <span className="drops__live"><span className="ticket__dot" /> {liveCount} live</span>}
+          {drops.length - liveCount > 0 && <span>{drops.length - liveCount} soon</span>}
+        </span>
+      </header>
+      <div className="drops__row">
+        {drops.map((drop, index) => <DropCard key={drop.id} drop={drop} index={index} />)}
       </div>
-      <div className="stage__row">
-        {drops.map((drop, index) => <DropTicket key={drop.id} drop={drop} index={index} />)}
-      </div>
-      <span className="stage__floor" aria-hidden="true">
-        {Array.from({ length: 7 }, (_, i) => <i key={i} style={{ ['--f' as string]: i }} />)}
-      </span>
     </section>
   );
 }

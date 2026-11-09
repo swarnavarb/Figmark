@@ -22,6 +22,33 @@
   overflow-x: auto; overflow-y: hidden; padding: 4px 6px var(--s2); scroll-snap-type: x proximity; scrollbar-width: none;
   overscroll-behavior-x: contain;
 }
+.shopstrip__words { display: grid; gap: 2px; min-width: 0; }
+
+/* ── As a band: edge to edge between two wavy hems ───────────────────────
+   Deep pine with a volt glow in the corner. The hems are a mask, so the band
+   is one background and the waves are cut from it, whatever its colour. */
+.shopstrip--band {
+  margin: 4px calc(var(--page-pad) * -1) 22px; padding: 38px var(--page-pad) 30px; gap: var(--s3);
+  background:
+    radial-gradient(60% 70% at 92% 10%, rgba(198, 244, 50, 0.14), transparent 70%),
+    radial-gradient(80% 60% at 0% 100%, rgba(16, 185, 129, 0.12), transparent 70%),
+    linear-gradient(180deg, #0E2721, #0A1D18);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 14' preserveAspectRatio='none'%3E%3Cpath d='M0 14V7Q20 0 40 7T80 7V14Z'/%3E%3C/svg%3E") top left / 80px 14px repeat-x,
+    linear-gradient(#000 0 0) center / 100% calc(100% - 26px) no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 14' preserveAspectRatio='none'%3E%3Cpath d='M0 0V7Q20 14 40 7T80 7V0Z'/%3E%3C/svg%3E") bottom left / 80px 14px repeat-x;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 14' preserveAspectRatio='none'%3E%3Cpath d='M0 14V7Q20 0 40 7T80 7V14Z'/%3E%3C/svg%3E") top left / 80px 14px repeat-x,
+    linear-gradient(#000 0 0) center / 100% calc(100% - 26px) no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 14' preserveAspectRatio='none'%3E%3Cpath d='M0 0V7Q20 14 40 7T80 7V0Z'/%3E%3C/svg%3E") bottom left / 80px 14px repeat-x;
+}
+.shopstrip--band .shopstrip__head { flex-wrap: nowrap; align-items: center; justify-content: space-between; }
+.shopstrip__eyebrow {
+  font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.28em; text-transform: uppercase; color: #9FC2B3;
+}
+.shopstrip--band .shopstrip__title {
+  font-family: var(--display); font-size: calc(26px * var(--text-scale)); font-weight: 800; line-height: 1.1; letter-spacing: -0.01em;
+}
+.shopstrip__art { flex: none; width: 84px; height: 70px; margin: -6px 0 -10px; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35)); }
+.shopstrip--band .shopstrip__row { margin: 0 calc(var(--page-pad) * -1); padding-inline: var(--page-pad); scroll-padding-inline: var(--page-pad); }
 
 /* ── A shop as a little building: roof, sign, awning, window, door, step ── */
 .shoptile {
