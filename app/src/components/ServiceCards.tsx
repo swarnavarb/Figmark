@@ -158,8 +158,11 @@ export function rotate<T extends { store: SearchStore }>(picks: T[], seed = dayS
 
 /** Items between service cards, at least: enough that the Shop stays a shop. */
 export const SERVICE_GAP = 12;
-/** The first one waits until the buyer has seen a screenful of items. */
-const FIRST_AT = 5;
+/**
+ * The first one starts the third row (after four items, two rows on a phone),
+ * so a buyer meets it near the top rather than a long scroll down.
+ */
+const FIRST_AT = 3;
 /** How far it looks ahead for an item it fits before settling for any spot. */
 const PATIENCE = 6;
 
@@ -187,7 +190,10 @@ export function placeServices(items: Placeable[], providers: Providers): Map<num
     if (i < due && !lastCall) continue;
     const item = items[i]!;
     let pick: ProviderPick | undefined;
-    if (item.sourcing === 'import' && queue.forwarder.length && !(lastCall && unseen === 'artist')) pick = queue.forwarder.shift();
+    // The first is shown on time rather than waiting for an item it fits: a
+    // forwarder if there is one, the service most buyers here ask about.
+    if (lastAt < 0 && !lastCall) pick = queue.forwarder.shift() ?? queue.artist.shift();
+    else if (item.sourcing === 'import' && queue.forwarder.length && !(lastCall && unseen === 'artist')) pick = queue.forwarder.shift();
     else if (item.condition === 'LOOSE' && queue.artist.length && !(lastCall && unseen === 'forwarder')) pick = queue.artist.shift();
     else if (i >= due + PATIENCE || lastCall) {
       const other: 'forwarder' | 'artist' = turn === 'forwarder' ? 'artist' : 'forwarder';
