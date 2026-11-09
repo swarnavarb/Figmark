@@ -3,6 +3,7 @@ import { isProActive } from '../../../shared/billing.js';
 import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
 import { cleanOffers } from '../../../shared/offers.js';
 import { randomUUID } from 'node:crypto';
+import { forgetFollowerCount, realFollowerCount } from '../follower-count.js';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
 import {
@@ -90,6 +91,8 @@ function toSellerCard(user: SellerCardSource) {
     coverUrl: user.sellerProfile?.coverUrl ?? null,
     // Open, paused or stopped for orders, so a card can say so before Buy is pressed.
     orderState: shopStatusOf(user.sellerProfile?.orderStatus).state,
+    // When a pause lifts on its own; null otherwise.
+    orderUntil: shopStatusOf(user.sellerProfile?.orderStatus).until,
   };
 }
 
@@ -1288,7 +1291,11 @@ async function toggleFollow(request: HttpRequest, _context: InvocationContext) {
       },
     }, { except: user.id });
   }
-  return json(200, { following, followerCount: person ? target.followerCount : target.sellerProfile!.followerCount });
+  // The real number, from the follows themselves; it also puts a drifted counter right.
+  forgetFollowerCount(sellerId);
+  const kept = person ? (target.followerCount ?? 0) : target.sellerProfile!.followerCount;
+  const followerCount = await realFollowerCount(repository, target, !person).catch(() => kept);
+  return json(200, { following, followerCount });
 }
 
 const MAX_ORDER_QUANTITY = 100;

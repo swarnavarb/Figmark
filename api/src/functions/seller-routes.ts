@@ -23,8 +23,8 @@ import { readPhoto } from './template-routes.js';
 import { clientIp } from '../rate-limit.js';
 import { guessRegion, placeIp } from '../region.js';
 import { forgetIndex, identityFor } from '../shop-identity.js';
-import { cleanAlsoSells } from '../../../shared/shop-tags.js';
-import { CATEGORIES } from '../../../shared/catalog.js';
+import { realFollowerCount } from '../follower-count.js';
+import { ALSO_SELLS_OPTIONS, cleanAlsoSells } from '../../../shared/shop-tags.js';
 import { SHOP_NAME_MAX } from '../../../shared/storefront.js';
 import { SHOP_ORDER_STATES, nextShopStatus, shopStatusOf, type ShopOrderState } from '../../../shared/shop-status.js';
 
@@ -250,10 +250,10 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
       .map((tag) => tag.slice(0, 24))
       .slice(0, 6);
   }
-  // Side lines are catalog categories, never free text; one a tag already says is dropped.
+  // Side lines come from a fixed list, never free text; one a tag already says is dropped.
   if (body.alsoSells !== undefined || body.tags !== undefined) {
     const raw = Array.isArray(body.alsoSells) ? body.alsoSells : (existing.alsoSells ?? []);
-    existing.alsoSells = cleanAlsoSells(raw, CATEGORIES, existing.tags ?? []);
+    existing.alsoSells = cleanAlsoSells(raw, ALSO_SELLS_OPTIONS, existing.tags ?? []);
   }
   if (body.payment !== undefined) {
     // Carried as typed. The platform does not move this money and cannot
@@ -1049,8 +1049,12 @@ async function shopPulse(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const [card] = await repository.listSellerCardsByIds([id]);
   if (!card?.sellerProfile) return error(404, 'not_found', 'No such shop.');
+  const owner = await repository.getUserById(id);
+  const followerCount = owner
+    ? await realFollowerCount(repository, owner, true).catch(() => card.sellerProfile!.followerCount ?? 0)
+    : card.sellerProfile.followerCount ?? 0;
   return json(200, {
-    followerCount: card.sellerProfile.followerCount ?? 0,
+    followerCount,
     orderStatus: shopStatusOf(card.sellerProfile.orderStatus),
   });
 }

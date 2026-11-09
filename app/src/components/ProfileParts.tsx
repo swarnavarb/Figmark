@@ -551,12 +551,26 @@ function PageReviewForm({ subjectId, side, existing, onWritten }: {
   }
 
   if (!open) {
+    // Five stars to tap straight away: the one tapped is the rating the form opens with.
+    const start = (value: number) => gate(() => { setRating(value); setOpen(true); }, 'Sign in to leave a rating.');
+    const what = side === 'store' ? 'this shop' : 'this page';
     return (
-      <button className={`btn btn--quiet btn--sm${user ? '' : ' is-locked'}`} style={{ justifySelf: 'start' }}
-        onClick={gate(() => setOpen(true), 'Sign in to leave a rating.')}>
-        {!user && <span className="lockmark" aria-hidden="true">🔒</span>}
-        {existing === null ? '★ Rate this page' : 'Change your rating'}
-      </button>
+      <div className={`raterow${existing === null ? '' : ' raterow--mine'}${user ? '' : ' is-locked'}`}>
+        <div className="raterow__text">
+          <b>{existing === null ? `Rate ${what}` : 'Your rating'}</b>
+          <small>{!user ? '🔒 Sign in to rate' : existing === null ? 'Tap a star to start' : 'Tap a star to change it'}</small>
+        </div>
+        <div className="raterow__stars" role="group" aria-label={existing === null ? `Rate ${what}` : 'Change your rating'}>
+          {[1, 2, 3, 4, 5].map((value) => (
+            <button key={value} type="button" className={`raterow__star${existing !== null && value <= existing ? ' is-on' : ''}`}
+              aria-label={`${value} out of 5`} onClick={start(value)}>
+              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+                <path d="m12 2.8 2.8 5.8 6.3.8-4.6 4.4 1.2 6.3L12 17l-5.7 3.1 1.2-6.3-4.6-4.4 6.3-.8Z" />
+              </svg>
+            </button>
+          ))}
+        </div>
+      </div>
     );
   }
 

@@ -41,7 +41,7 @@ import {
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
 } from '@shared/routes';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ALSO_SELLS_MAX, tagKey } from '@shared/shop-tags';
+import { ALSO_SELLS_GROUPS, ALSO_SELLS_MAX, tagKey } from '@shared/shop-tags';
 import { SHOP_NAME_MAX } from '@shared/storefront';
 import type { BuyerReversalDetails, Listing, Lot, OrderPhoto, SellerPaymentDetails, SellerProfile, StoreManager } from '@shared/models';
 import { OrderPhotos } from '../components/OrderPhotos';
@@ -785,37 +785,79 @@ const TAG_IDEAS = ['Ships weekly', 'Pre-orders open', 'Authentic only', 'Imports
   'Custom painting', 'Bundles', ...CATEGORIES.slice(0, 4)];
 
 /**
- * "Also sells": the other catalog categories a shop carries, picked rather
- * than typed so every shop means the same thing by them. Tags say what the
- * shop is known for, in its own words; this says what else is on its shelves.
- * A category that is already one of its tags is not offered.
+ * "Also sells": what else a shop stocks, picked from a fixed list rather than
+ * typed, so every shop means the same thing by it. Tags say what the shop is
+ * known for, in its own words; this says what else is on its shelves.
+ *
+ * Grouped by category; a category opens to the specific lines under it.
+ * Anything already one of the shop's tags is not offered again.
  */
 function AlsoSellsField({ value, tags, onChange }: { value: string[]; tags: string[]; onChange: (next: string[]) => void }) {
   const labelId = useId();
+  const [find, setFind] = useState('');
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const tagged = new Set(tags.map(tagKey));
-  const options = CATEGORIES.filter((name) => !tagged.has(tagKey(name)));
+  const picked = new Set(value.map(tagKey));
   const full = value.length >= ALSO_SELLS_MAX;
-  const toggle = (name: string) => onChange(value.includes(name)
-    ? value.filter((row) => row !== name)
+  const toggle = (name: string) => onChange(picked.has(tagKey(name))
+    ? value.filter((row) => tagKey(row) !== tagKey(name))
     : full ? value : [...value, name]);
+  const q = tagKey(find);
+  const chip = (name: string, main = false) => {
+    const on = picked.has(tagKey(name));
+    return (
+      <button key={name} type="button" aria-pressed={on} disabled={!on && full}
+        className={`alsopick__opt${main ? ' alsopick__opt--main' : ''}${on ? ' is-on' : ''}`} onClick={() => toggle(name)}>
+        {on ? '✓ ' : '+ '}{name}
+      </button>
+    );
+  };
+  const groups = ALSO_SELLS_GROUPS
+    .map((group) => ({
+      ...group,
+      options: [group.category, ...group.lines].filter((name) => !tagged.has(tagKey(name)) && (!q || tagKey(name).includes(q) || tagKey(group.category).includes(q))),
+    }))
+    .filter((group) => group.options.length > 0);
   return (
     <div className="field" role="group" aria-labelledby={labelId}>
       <span id={labelId}>Also sells</span>
-      <div className="alsopick">
-        {options.map((name) => {
-          const on = value.includes(name);
-          return (
-            <button key={name} type="button" aria-pressed={on} disabled={!on && full}
-              className={`alsopick__opt${on ? ' is-on' : ''}`} onClick={() => toggle(name)}>
-              {on ? '✓ ' : '+ '}{name}
+      {value.length > 0 && (
+        <div className="alsopick__picked" aria-label="Picked">
+          {value.map((name) => (
+            <button key={name} type="button" className="alsopick__opt is-on" onClick={() => toggle(name)} aria-label={`Remove ${name}`}>
+              {name} <span aria-hidden="true">×</span>
             </button>
+          ))}
+        </div>
+      )}
+      <input className="alsopick__find" value={find} onChange={(e) => setFind(e.target.value)}
+        placeholder="Find: plushies, LEGO, skincare…" aria-label="Find something to add" />
+      <div className="alsopick">
+        {groups.map((group) => {
+          const count = [group.category, ...group.lines].filter((name) => picked.has(tagKey(name))).length;
+          const open = Boolean(q) || openGroup === group.category;
+          return (
+            <div key={group.category} className={`alsopick__group${open ? ' is-open' : ''}`}>
+              <button type="button" className="alsopick__head" aria-expanded={open}
+                onClick={() => setOpenGroup(open && !q ? null : group.category)}>
+                <span>{group.category}</span>
+                {count > 0 && <b>{count}</b>}
+                <span className="alsopick__caret" aria-hidden="true">▾</span>
+              </button>
+              {open && (
+                <div className="alsopick__opts">
+                  {group.options.map((name) => chip(name, name === group.category))}
+                </div>
+              )}
+            </div>
           );
         })}
+        {groups.length === 0 && <span className="faint">Nothing on the list matches. Say it in your tags instead.</span>}
       </div>
       <span className="field__hint">
-        Other categories you stock, beyond what your tags say you are known for. Used to suggest your shop to
-        buyers; the Data tab shows how each does.{' '}
-        {full ? `Four is the most. Untick one to pick another.` : `${ALSO_SELLS_MAX - value.length} left.`}
+        Other things you stock, beyond what your tags say you are known for. Used to suggest your shop to buyers
+        who like them; the Data tab shows how each does.{' '}
+        {full ? `${ALSO_SELLS_MAX} is the most. Remove one to pick another.` : `${ALSO_SELLS_MAX - value.length} left.`}
       </span>
     </div>
   );

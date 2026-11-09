@@ -31,22 +31,70 @@ export const OWN_WEIGHT = 5;
 /** A declared side line counts less than a tag: it is what else the shop carries, not what it is. */
 export const SIDE_WEIGHT = 2;
 /** The most side lines a shop may declare. */
-export const ALSO_SELLS_MAX = 4;
+export const ALSO_SELLS_MAX = 6;
+
+/**
+ * What a shop may say it also sells: every catalog category, and under each
+ * the specific lines buyers actually look for. A fixed list, so two shops
+ * that both "also sell Plushies" match each other and the buyers who like
+ * plushies; free text would split that into a dozen spellings.
+ *
+ * Group names are the catalog's categories (shared/category-specs.ts).
+ */
+export const ALSO_SELLS_GROUPS: readonly { category: string; lines: readonly string[] }[] = [
+  { category: 'Figures', lines: ['Scale figures', 'Nendoroids', 'Action figures', 'Funko Pops', 'Statues', 'Garage kits', 'Prize figures'] },
+  { category: 'Model kits', lines: ['Gunpla', 'Plastic models', 'Diecast cars', 'Model paints & tools', 'Mecha kits'] },
+  { category: 'Trading cards', lines: ['Pokémon cards', 'One Piece cards', 'Yu-Gi-Oh cards', 'Sports cards', 'Sealed boxes', 'Sleeves & binders', 'Graded cards'] },
+  { category: 'Anime merch', lines: ['Plushies', 'Keychains', 'Acrylic stands', 'Posters & art prints', 'Cosplay', 'Badges & pins', 'Gacha'] },
+  { category: 'Sneakers', lines: ['Limited releases', 'Running shoes', 'Sneaker care', 'Slides & sandals'] },
+  { category: 'Streetwear', lines: ['T-shirts', 'Hoodies', 'Caps & hats', 'Jerseys', 'Anime apparel'] },
+  { category: 'Bags & watches', lines: ['Bags', 'Watches', 'Wallets', 'Jewellery', 'Sunglasses'] },
+  { category: 'Electronics', lines: ['Phone accessories', 'Audio', 'Gaming accessories', 'Cameras', 'Smart gadgets'] },
+  { category: 'Beauty', lines: ['Skincare', 'K-beauty', 'J-beauty', 'Fragrance', 'Makeup'] },
+  { category: 'Collectibles', lines: ['Blind boxes', 'LEGO', 'Vintage toys', 'Coins & stamps', 'Autographs'] },
+  { category: 'Books & manga', lines: ['Manga', 'Comics', 'Art books', 'Light novels'] },
+  { category: 'Games & consoles', lines: ['Video games', 'Retro games', 'Board games', 'Consoles', 'Controllers'] },
+  { category: 'Home & decor', lines: ['Display cases', 'Lighting', 'Stationery', 'Wall art', 'Kitchen & mugs'] },
+];
+
+/** Every name a shop may pick under Also sells, categories first within each group. */
+export const ALSO_SELLS_OPTIONS: readonly string[] = ALSO_SELLS_GROUPS.flatMap((group) => [group.category, ...group.lines]);
+
+/** The category a picked line sits under, or the line itself when it is a category. */
+export function alsoSellsCategory(name: string): string | undefined {
+  const key = tagKey(name);
+  return ALSO_SELLS_GROUPS.find((group) => tagKey(group.category) === key || group.lines.some((line) => tagKey(line) === key))?.category;
+}
+
+/**
+ * What a shop's side lines count as in its identity: each line, and the
+ * category over it, so a shop that also sells Plushies is found by buyers of
+ * Anime merch too. Categories the shop already named come once.
+ */
+export function alsoSellsKeys(lines: readonly string[]): string[] {
+  const out = new Map<string, string>();
+  for (const line of lines) {
+    out.set(tagKey(line), line);
+    const parent = alsoSellsCategory(line);
+    if (parent && !out.has(tagKey(parent))) out.set(tagKey(parent), parent);
+  }
+  return [...out.values()];
+}
 
 /**
  * Tags and "Also sells" answer different questions, and are kept apart.
  *
  * - Tags ("Known for") are the shop's own words for what it is and how it
  *   works: "Gunpla", "Japan imports", "Ships weekly". Free text, up to six.
- * - Also sells is the other categories it carries beyond that: picked from
- *   the catalog's fixed category list, up to four, so every shop that says
- *   "Also sells Trading cards" means the same thing. It weighs less than a
- *   tag in search and suggestions, and the Data tab reads how each one does.
+ * - Also sells is the other things it carries beyond that: picked from a
+ *   fixed list (ALSO_SELLS_OPTIONS), up to six, so every shop that says
+ *   "Also sells Plushies" means the same thing. It weighs less than a tag in
+ *   search and suggestions, and the Data tab reads how each one does.
  *
  * A side line that repeats one of the shop's tags is dropped: the tag says it.
  */
-export function cleanAlsoSells(raw: readonly string[], categories: readonly string[], tags: readonly string[] = []): string[] {
-  const known = new Map(categories.map((name) => [tagKey(name), name]));
+export function cleanAlsoSells(raw: readonly string[], options: readonly string[] = ALSO_SELLS_OPTIONS, tags: readonly string[] = []): string[] {
+  const known = new Map(options.map((name) => [tagKey(name), name]));
   const taken = new Set(tags.map(tagKey));
   const out: string[] = [];
   for (const entry of raw) {

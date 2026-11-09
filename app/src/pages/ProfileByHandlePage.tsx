@@ -176,15 +176,14 @@ function Storefront({ data, isMe, onFollow, reload, onPulse }: {
       <div className="storefront__body">
         {/* The shop's name sits on its cover, just above the edge; its details line up under it. */}
         <header className="phead phead--shop">
-          {/* Pro hangs off the shop's picture, so a long name has the whole line. */}
-          <div className="phead__face">
-            <div className="storefront__avatar">
-              {data.photoUrl ? <img loading="lazy" decoding="async" src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
-            </div>
-            {data.isStore && data.pro && <span className="phead__pro"><ProBadge size="sm" /></span>}
+          <div className="phead__face storefront__avatar">
+            {data.photoUrl ? <img loading="lazy" decoding="async" src={data.photoUrl} alt="" /> : <Avatar name={data.displayName} size={64} />}
           </div>
           <div className="phead__name">
-            <h1 title={data.displayName} className={data.displayName.length > 18 ? 'phead__title--long' : undefined}>{data.isStore ? shortName(data.displayName) : data.displayName}<VerifiedTick checks={data.verified} /></h1>
+            <h1 title={data.displayName} className={data.displayName.length > 18 ? 'phead__title--long' : undefined}>{data.isStore ? shortName(data.displayName) : data.displayName}
+              {/* Tick then Pro, kept together so they wrap as one after the last word. */}
+              <span className="phead__marks"><VerifiedTick checks={data.verified} />{data.isStore && data.pro && <ProBadge size="sm" />}</span>
+            </h1>
             <span className="phead__line">
               <span className="phead__handle">@{data.handle}</span>
               <LevelChip tag={data.levelTag} inline />
@@ -328,7 +327,7 @@ function Storefront({ data, isMe, onFollow, reload, onPulse }: {
         )}
 
         <div className="storefront__similar">
-          <ShopStrip title="Similar shops" sub="About the same things as this one" shops={similar} />
+          <ShopStrip title="Similar shops" shops={similar} />
         </div>
       </div>
 

@@ -24,6 +24,7 @@ import { brandHueFor, daysUntil, formatDate, formatDateTime, formatMoney, timeAg
 import { PreOrderRules, isoInDays } from '../components/ListingForm';
 import { FULL_RULE_LABELS, SHORT_RULE_LABELS, isTakingBookings } from '@shared/preorder';
 import { useSession } from '../session';
+import { shopStatusMessage } from '@shared/shop-status';
 import { advanceMinor, isExpired, isMultiple } from '@shared/payments';
 import { EditListingDialog, StockChip } from '../components/Buy';
 import { AffiliateCard, ReferredBy, SimilarItems } from '../components/Affiliate';
@@ -104,6 +105,10 @@ export function ListingPage() {
   if (!data) return <PageLoading label="Loading the item" shape="listing" />;
 
   const { listing, seller, comments } = data;
+  // A shop that is paused or closed takes no orders: Buy is greyed out and says why.
+  const shut = !data.isOwn && seller?.orderState && seller.orderState !== 'open'
+    ? { state: seller.orderState, until: seller.orderUntil ?? null }
+    : null;
   // The primary photo first, then the rest in the order they were added.
   const rarity = listingRarity(listing);
   // Condition in the category's own words, and whether it is the real thing.
@@ -224,15 +229,24 @@ export function ListingPage() {
             </span>
           )}
           {/* No purchase on an expired item. The server refuses it too. */}
-          <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
-            disabled={busy || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
-            {busy ? <span className="buybox__opening">Opening checkout</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : 'Buy now'}</>}
-          </button>
+          {shut ? (
+            <button className="btn btn--lg buybox__buy is-shut" disabled aria-describedby="buybox-shut">
+              {shut.state === 'paused' ? 'Orders paused' : 'Shop closed'}
+            </button>
+          ) : (
+            <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
+              disabled={busy || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
+              {busy ? <span className="buybox__opening">Opening checkout</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : 'Buy now'}</>}
+            </button>
+          )}
           <button className={`btn btn--ghost buybox__save${liked ? ' is-on' : ''}${lock}`} aria-label={liked ? 'Saved' : 'Save'}
             aria-pressed={liked} onClick={gate(() => void toggleLike(), 'Sign in to save items.')} disabled={busy}>
             <Icon name="heart" size={18} />
           </button>
         </div>
+      )}
+      {shut && !isExpired(listing) && listing.status !== 'archived' && (
+        <p id="buybox-shut" className={`buybox__shut buybox__shut--${shut.state}`}>{shopStatusMessage(shut)}</p>
       )}
       {data.firstDibs?.open && !data.isOwn && (
         <p className={`notice ${data.firstDibs.mine ? 'notice--ok' : 'notice--warn'} buybox__dibs`}>
@@ -380,6 +394,7 @@ export function ListingPage() {
               roster={data.preOrder}
               estimatedDispatchAt={data.estimatedDispatchAt}
               canJoin={!data.isOwn}
+              shut={shut ? shopStatusMessage(shut) : null}
               canRun={data.isOwn}
               meId={user?.id ?? null}
               via={via}
@@ -514,6 +529,7 @@ function PreOrderPanel({
   meId,
   via,
   onChange,
+  shut = null,
 }: {
   listingId: string;
   roster: PreOrderRoster;
@@ -525,6 +541,8 @@ function PreOrderPanel({
   meId: string | null;
   via: string | null;
   onChange: (roster: PreOrderRoster) => void;
+  /** Why nobody can join right now: the shop is paused or closed. */
+  shut?: string | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -643,7 +661,7 @@ function PreOrderPanel({
       {canJoin && canQueue && (
         <div className="row">
           <button className={`btn${mine?.waitlisted ? ' btn--ghost' : ''}${user ? '' : ' is-locked'}`} style={{ flex: 1 }}
-            onClick={gate(() => change(), 'Sign in to join the waitlist.')} disabled={busy}>
+            onClick={gate(() => change(), 'Sign in to join the waitlist.')} disabled={busy || Boolean(shut && !mine?.waitlisted)}>
             {!user && <span className="lockmark" aria-hidden="true">🔒</span>}
             {mine?.waitlisted ? <><Icon name="check" size={14} /> On the waitlist · #{mine.waitlisted}</> : '+ Join the waitlist'}
           </button>
@@ -654,11 +672,12 @@ function PreOrderPanel({
         <PreOrderControls listingId={listingId} view={view} onChange={onChange} />
       )}
 
+      {canJoin && shut && (open || canQueue) && <p className="notice notice--warn">{shut}</p>}
       {canJoin && open && (
         <div className="stack" style={{ gap: 10 }}>
           <div className="row">
             <button className={`btn${mine?.pledged ? ' btn--ghost' : ''}${user ? '' : ' is-locked'}`} style={{ flex: 1 }}
-              onClick={gate(() => change(), 'Sign in to join this pre-order.')} disabled={busy}>
+              onClick={gate(() => change(), 'Sign in to join this pre-order.')} disabled={busy || Boolean(shut && !mine?.pledged)}>
               {!user && <span className="lockmark" aria-hidden="true">🔒</span>}
               {mine?.pledged ? (
                 <><Icon name="check" size={14} /> You&rsquo;re in</>

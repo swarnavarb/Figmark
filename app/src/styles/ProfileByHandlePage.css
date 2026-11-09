@@ -45,8 +45,11 @@ button.storefront__open { font: inherit; font-size: var(--t-xs); font-weight: va
 .storefront__open--stopped { background: rgba(60, 0, 0, 0.6); box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.75), 0 0 16px rgba(248, 113, 113, 0.3); }
 .storefront__open--stopped i { background: #F87171; animation: none; }
 
-/* Pro sits on the foot of the shop's picture, so the name has the whole line. */
-.phead__pro { position: absolute; left: 50%; bottom: -8px; translate: -50% 0; z-index: 2; line-height: 1; white-space: nowrap; }
+/* The tick and Pro after the name: together, never split across lines. */
+.phead__marks { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; white-space: nowrap; vertical-align: 0.05em; }
+.phead__marks:empty { display: none; }
+.phead__marks .vtick { margin-left: 0; vertical-align: 0; }
+.phead__marks .probadge-sport { text-shadow: none; }
 .phead--shop .phead__name h1 { text-wrap: balance; }
 /* A long name steps down a size so two lines stay under the open sign. */
 .phead--shop .phead__name h1.phead__title--long { font-size: var(--t-lg); line-height: 1.12; }

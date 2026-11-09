@@ -1,7 +1,9 @@
 import { isProActive } from '../../shared/billing.js';
+import { realFollowerCount } from './follower-count.js';
+import { shopStatusOf, type ShopOrderState } from '../../shared/shop-status.js';
 import type { Listing, User } from '../../shared/models.js';
 import { isExpired } from '../../shared/payments.js';
-import { buildIdentity, sameIdentity, type ShopTag } from '../../shared/shop-tags.js';
+import { alsoSellsKeys, buildIdentity, sameIdentity, type ShopTag } from '../../shared/shop-tags.js';
 import type { getRepository } from './data/index.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -26,7 +28,7 @@ export async function identityFor(
   repository: Repo, owner: User, ownTags?: readonly string[], alsoSells?: readonly string[],
 ): Promise<ShopTag[]> {
   const listings = await repository.listListings({ sellerId: owner.id, includeHidden: true });
-  return buildIdentity(ownTags ?? owner.sellerProfile?.tags ?? [], counted(listings), alsoSells ?? owner.sellerProfile?.alsoSells ?? []);
+  return buildIdentity(ownTags ?? owner.sellerProfile?.tags ?? [], counted(listings), alsoSellsKeys(alsoSells ?? owner.sellerProfile?.alsoSells ?? []));
 }
 
 /**
@@ -58,6 +60,8 @@ export interface IndexedShop {
   pro: boolean;
   dispatchRegion: string;
   identity: ShopTag[];
+  /** Open, paused or stopped for orders, as of when the index was read. */
+  orderState: ShopOrderState;
 }
 
 /*
@@ -66,6 +70,8 @@ export interface IndexedShop {
  * than that.
  */
 const INDEX_MS = 60_000;
+/** Shops whose follower counter has been checked against the real follows. */
+const followersChecked = new Set<string>();
 let index: { at: number; shops: Promise<IndexedShop[]> } | null = null;
 
 export function forgetIndex() {
@@ -89,11 +95,18 @@ export function shopIndex(repository: Repo): Promise<IndexedShop[]> {
         name: profile.storefrontName,
         handle: profile.username ?? null,
         photoUrl: profile.photoUrl ?? null,
-        followerCount: profile.followerCount ?? 0,
+        // Counted from the real follows once per shop per process; that also
+        // puts the stored counter right, which follows keep current after.
+        followerCount: followersChecked.has(owner.id)
+          ? profile.followerCount ?? 0
+          : await realFollowerCount(repository, owner, true)
+            .then((count) => { followersChecked.add(owner.id); return count; })
+            .catch(() => profile.followerCount ?? 0),
         tier: profile.tier,
         pro: isProActive(owner.pro),
         dispatchRegion: profile.dispatchRegion ?? '',
         identity,
+        orderState: shopStatusOf(profile.orderStatus).state,
       };
     }));
   })();
@@ -116,5 +129,6 @@ export function shopCard(shop: IndexedShop, matched: string[] = []) {
     dispatchRegion: shop.dispatchRegion,
     tags: shop.identity.slice(0, 3).map((tag) => tag.l),
     matched,
+    orderState: shop.orderState,
   };
 }

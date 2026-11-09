@@ -990,13 +990,35 @@ label.rdy__line { cursor: pointer; }
   .shopswitch, .shopswitch__thumb, .shopswitch__step { transition: none; }
 }
 
-/* ── Also sells: categories picked, set apart from the typed tags ──────── */
+/* ── Also sells: picked from a grouped list, set apart from typed tags ── */
 .alsopick { display: flex; flex-wrap: wrap; gap: 6px; }
+.alsopick__picked { display: flex; flex-wrap: wrap; gap: 6px; }
+.alsopick__find {
+  font: inherit; font-size: var(--t-sm); padding: 8px 12px; border-radius: var(--r-md);
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+}
+.alsopick__group { border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); overflow: hidden; }
+/* Shut, a group is a pill in a wrapping row; open, it takes the full width. */
+.alsopick__group.is-open { flex-basis: 100%; border-radius: var(--r-md); border-color: var(--aqua-line); }
+.alsopick__head {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 12px; border: 0; background: none;
+  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text); text-align: left; cursor: pointer;
+}
+.alsopick__head b {
+  min-width: 18px; padding: 0 6px; border-radius: var(--r-pill); background: var(--aqua-soft); color: var(--aqua);
+  font-size: var(--t-2xs); line-height: 18px; text-align: center;
+}
+.alsopick__caret { margin-left: auto; color: var(--text-faint); transition: transform var(--dur-2) var(--ease); }
+.alsopick__group.is-open .alsopick__caret { transform: rotate(180deg); }
+.alsopick__group.is-open .alsopick__head { padding: 9px 12px; font-size: var(--t-sm); }
+.alsopick__opts { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 12px; }
 .alsopick__opt {
   font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); padding: 5px 11px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); cursor: pointer;
   transition: border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
 }
+.alsopick__opt--main { border-style: dashed; }
 .alsopick__opt:hover:not(:disabled) { border-color: var(--aqua-line); color: var(--text); }
-.alsopick__opt.is-on { border-color: var(--aqua-line); background: var(--aqua-soft); color: var(--text); }
+.alsopick__opt.is-on { border-color: var(--aqua-line); border-style: solid; background: var(--aqua-soft); color: var(--text); }
 .alsopick__opt:disabled { opacity: 0.4; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .alsopick__caret, .alsopick__opt { transition: none; } }

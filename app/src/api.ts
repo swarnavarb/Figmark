@@ -346,6 +346,10 @@ export interface SellerCard {
   memberSince: string;
   photoUrl?: string | null;
   coverUrl?: string | null;
+  /** Open, paused or closed ('stopped') for orders. Absent reads as open. */
+  orderState?: 'open' | 'paused' | 'stopped';
+  /** When a pause lifts on its own. */
+  orderUntil?: string | null;
 }
 
 export interface FeedListing extends Listing {
@@ -2387,6 +2391,8 @@ export interface ShopCard {
   tags: string[];
   /** The tags that matched what was searched or liked. */
   matched: string[];
+  /** Open, paused or closed ('stopped') for orders: the sign on its door. */
+  orderState?: 'open' | 'paused' | 'stopped';
 }
 
 /** How each of a shop's tags does, for the Data tab. */

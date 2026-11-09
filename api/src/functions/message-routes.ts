@@ -24,6 +24,7 @@ import { SALE_MILESTONES, type BadgeKind } from '../../../shared/play.js';
 import { affiliateUnitMinor } from '../../../shared/affiliate.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { storeFactsFrom } from '../store-facts.js';
+import { realFollowerCount } from '../follower-count.js';
 import { getPhotoStore } from '../storage/index.js';
 import { readPhotoRequest } from './template-routes.js';
 import { earnedTags } from '../../../shared/shop-tags.js';
@@ -993,7 +994,9 @@ async function publicProfile(request: HttpRequest, _context: InvocationContext) 
     .map((listing) => ({ listing, state: stateOf(listing) }))
     .sort((a, b) => ORDER[a.state] - ORDER[b.state]);
   const count = (state: string) => listings.filter((entry) => entry.state === state).length;
-  const followerCount = isStore ? (shop?.followerCount ?? 0) : (user.followerCount ?? 0);
+  // Counted from the follows, not the stored counter, which can drift.
+  const followerCount = await realFollowerCount(repository, user, isStore)
+    .catch(() => (isStore ? (shop?.followerCount ?? 0) : (user.followerCount ?? 0)));
 
   const facts = storeFactsFrom({
     user,
