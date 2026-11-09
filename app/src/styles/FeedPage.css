@@ -303,3 +303,86 @@
 .railitem__earn { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 2; display: flex; container-type: inline-size; }
 .railitem__earn--right { top: 11px; left: 58%; right: 6px; justify-content: flex-end; }
 .railitem__earn--right .earnpill { font-size: var(--t-2xs); padding: 0.2em 0.5em; }
+
+/* ── The shelf picker, sporty and premium ──────────────────────────────
+   Carbon-weave badges with a volt ring on the one chosen, a racing bar under
+   its name; a parallelogram slot for how it is sold; pickers that light volt.
+   Chosen names are set heavy and slanted, the way a kit number is. */
+.qfeed {
+  --volt: #D4FF3A;
+  --volt-deep: #9EDB1F;
+  --volt-ink: #0D1405;
+  --carbon:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.03) 0 2px, transparent 2px 5px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.22) 0 2px, transparent 2px 5px),
+    linear-gradient(160deg, #1B2130, #0E121C);
+}
+.qfeed .qzones { gap: 6px; padding: 8px 4px 6px; }
+.qfeed .qzone { width: auto; min-width: 70px; padding: 0 4px; gap: 8px; }
+.qfeed .qzone__medal {
+  position: relative; width: 58px; height: 58px; border-radius: 18px;
+  background: var(--carbon); border: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 6px 14px rgba(0, 0, 0, 0.35);
+  transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--dur-2) var(--ease);
+}
+.qfeed .qzone:hover .qzone__medal { transform: translateY(-2px); }
+.qfeed .qzone:active .qzone__medal { transform: scale(0.94); }
+.qzone__label {
+  position: relative; padding-bottom: 5px;
+  font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
+}
+/* The racing bar under the chosen name. */
+.qzone__label::after {
+  content: ''; position: absolute; left: 50%; bottom: 0; width: 22px; height: 3px; margin-left: -11px;
+  transform: skewX(-24deg) scaleX(0); border-radius: 1px; background: var(--volt);
+  transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.qfeed .qzone.is-on { color: var(--text); font-weight: inherit; }
+.qfeed .qzone.is-on .qzone__label { font-weight: 800; }
+.qfeed .qzone.is-on .qzone__label::after { transform: skewX(-24deg) scaleX(1); }
+.qfeed .qzone.is-on .qzone__medal {
+  border: 0; color: var(--volt); transform: translateY(-2px);
+  background:
+    radial-gradient(circle at 30% 20%, rgba(212, 255, 58, 0.16), transparent 60%),
+    var(--carbon);
+  box-shadow: inset 0 0 0 2px var(--volt), 0 0 0 4px rgba(212, 255, 58, 0.12), 0 8px 22px rgba(158, 219, 31, 0.28);
+}
+
+/* How it is sold: a carbon track, a volt parallelogram under the chosen. */
+.qfeed .qkinds {
+  margin-top: 4px; border-radius: 14px; padding: 4px;
+  background: var(--carbon);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), inset 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.qfeed .qkinds__slot {
+  border-radius: 9px; top: 4px; bottom: 4px;
+  background: linear-gradient(100deg, var(--volt), var(--volt-deep));
+  box-shadow: none;
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+}
+.qfeed .qkinds__flash { background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.7) 50%, transparent 70%); }
+.qfeed .qkind {
+  padding: 9px 18px; border-radius: 9px;
+  font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.qfeed .qkind.is-on { color: var(--volt-ink); font-weight: 800; }
+.qfeed .qkind.is-on .qkind__label { display: inline-block; transform: skewX(-10deg); }
+
+/* The pickers: carbon pills, volt when set. */
+.qfeed .filters { margin-top: 2px; }
+.qfeed .filters .picker {
+  border: 0; background: var(--carbon); color: var(--text-dim);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 10px rgba(0, 0, 0, 0.25);
+  font-weight: var(--w-medium);
+}
+.qfeed .filters .picker:hover { color: var(--text); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 4px 10px rgba(0, 0, 0, 0.25); }
+.qfeed .filters .picker.is-on {
+  background: linear-gradient(100deg, var(--volt), var(--volt-deep)); color: var(--volt-ink); font-weight: 800;
+  box-shadow: 0 4px 16px rgba(158, 219, 31, 0.32);
+  animation: qfilter-in 420ms var(--ease) backwards;
+}
+.qfeed .filters .picker.is-on .picker__icon { background: rgba(13, 20, 5, 0.14); box-shadow: inset 0 0 0 1px rgba(13, 20, 5, 0.18); }
+.qfeed .picker:focus-within { outline-color: var(--volt); }
+@media (prefers-reduced-motion: reduce) {
+  .qfeed .qzone__medal, .qzone__label::after { transition: none; }
+}

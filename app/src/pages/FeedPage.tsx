@@ -354,13 +354,13 @@ export function FeedPage() {
           <button type="button" role="tab" aria-selected={group === ''}
             className={`qzone${group === '' ? ' is-on' : ''}`} onClick={() => chooseGroup('')}>
             <span className="qzone__medal qhue--gold"><CategoryIcon id="everything" /></span>
-            Everything
+            <span className="qzone__label">Everything</span>
           </button>
           {CATEGORY_GROUPS.map((entry) => (
             <button key={entry.id} type="button" role="tab" aria-selected={group === entry.id}
               className={`qzone${group === entry.id ? ' is-on' : ''}`} onClick={() => chooseGroup(entry.id)}>
               <span className={`qzone__medal qhue--${entry.hue}`}><CategoryIcon id={entry.id} /></span>
-              {entry.label}
+              <span className="qzone__label">{entry.label}</span>
             </button>
           ))}
         </div>
@@ -413,7 +413,7 @@ export function FeedPage() {
       {wants === 'artist' && <ServiceStrip title="Artists who do this" sub="Restore, repaint, customise" picks={studioHits} />}
       {wants === 'forwarder' && <ServiceStrip title="Forwarders" sub="Routes, days and price per kg" picks={providers.forwarders} />}
       {search && !photo && <ShopStrip title={`Shops for “${search}”`} sub="Known for it by name, tags or what they list" shops={searchShops} />}
-      {browsing && <ShopStrip title="Shops for you" sub="From what you like, buy and follow" shops={forYou} />}
+      {browsing && <ShopStrip band eyebrow="Handpicked" title="Shops for you" shops={forYou} />}
 
       {error && <ErrorNotice message={error} />}
 
@@ -894,7 +894,7 @@ function KindTabs({ value, onChoose }: { value: CatalogKind; onChoose: (kind: st
           className={`qkind${value === entry ? ' is-on' : ''}`} style={{ ['--i' as string]: i }}
           onPointerDown={tapFx} onClick={() => onChoose(entry)}>
           <span className="qkind__icon">{KIND_ICONS[entry]}</span>
-          {CATALOG_KIND_LABELS[entry]}
+          <span className="qkind__label">{CATALOG_KIND_LABELS[entry]}</span>
         </button>
       ))}
     </div>
