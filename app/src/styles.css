@@ -9776,10 +9776,10 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 @keyframes qpreview-gleam { to { transform: translateX(300%); } }
 
 /* Wins, inside the honours card: chips pop in one after another. */
-.slevel__wins { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.slevel__wins { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .slevel__winslabel { display: inline-flex; align-items: center; gap: 4px; margin-right: 2px; font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-dim); }
 .slevel__winslabel svg { color: var(--q-gold); }
-.slevel__wins .winchip { animation: lp-pop 480ms cubic-bezier(0.34, 1.4, 0.64, 1) both; animation-delay: calc(250ms + var(--i, 0) * 70ms); }
+.slevel__wins .winchip { display: block; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; animation: lp-pop 480ms cubic-bezier(0.34, 1.4, 0.64, 1) both; animation-delay: calc(250ms + var(--i, 0) * 70ms); }
 
 /* Honours in the card: each sticker pops onto the row in turn. */
 .slevel__stickers > .qsticker { animation: lp-pop 460ms cubic-bezier(0.34, 1.4, 0.64, 1) both; }
