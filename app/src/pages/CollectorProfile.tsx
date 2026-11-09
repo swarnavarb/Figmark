@@ -595,10 +595,6 @@ function RoyalCard({ item, no, photo = item.photos[0], flipped = false, big = fa
             <Thumb seed={item.listingId} label={item.name} photo={photo ? { url: photo } : null} className="thumb royal__thumb" />
           </span>
           {serial && <span className="royal__no" aria-hidden="true">{serial}</span>}
-          <span className="royal__plate">
-            <span className="royal__label">{item.name}</span>
-            <span className="royal__date">{formatDate(item.deliveredAt)}</span>
-          </span>
         </span>
         <span className="royal__face royal__back">
           {serial && <span className="royal__serial" aria-hidden="true"><small>No.</small><b>{serial}</b></span>}
@@ -672,7 +668,7 @@ function CardViewer({ item, no, isMe, groups, owner, userId, onClose, onEdit, on
         <PhotoSales url={photo} about={item.name} by={userId} tone="light" onLeave={onClose}
           poster={owner && !isMe ? { name: owner.name, handle: owner.handle, link: owner.handle ? `/${owner.handle}` : undefined } : null} />
         <p className="faint" style={{ margin: 0 }}>
-          Tap the card to turn it over · delivered {formatDate(item.deliveredAt)}
+          Tap to flip
           {isHidden && ' · this photo is hidden from others'}
         </p>
 

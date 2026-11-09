@@ -278,18 +278,21 @@
     conic-gradient(from var(--royal-a), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua)) border-box;
   animation: royal-ring 5s linear infinite;
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55), 0 0 16px rgba(124, 58, 237, 0.3), 0 0 22px rgba(236, 72, 153, 0.12);
-  /* Turned over, the other side takes over halfway: iOS ignores backface-visibility once the photo animates. */
-  transition: visibility 0s linear 160ms;
+  /* iOS keeps painting a face's number and text through backface-visibility,
+   * so the side turning away is gone by the time the card is edge-on (~95ms
+   * into the turn) and the side coming round fades in from there. */
+  transition: opacity 70ms linear 95ms, visibility 0s linear 95ms;
 }
+.royal__face * { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 @keyframes royal-ring { to { --royal-a: 360deg; } }
-.royal__back, .royal.is-flipped .royal__front { visibility: hidden; }
-.royal.is-flipped .royal__back { visibility: visible; }
+.royal__back, .royal.is-flipped .royal__front { opacity: 0; visibility: hidden; transition: opacity 50ms linear 40ms, visibility 0s linear 95ms; }
+.royal.is-flipped .royal__back { opacity: 1; visibility: visible; }
 .royal__front { display: block; padding: 0; }
 .royal__frame { position: absolute; inset: 0; overflow: hidden; border-radius: 10px; }
-/* Dark at the foot so the name reads over any photo. */
+/* A touch of dark at the top so the number reads over any photo. */
 .royal__frame::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(180deg, rgba(5, 7, 13, 0.45), transparent 24%, transparent 48%, rgba(5, 7, 13, 0.95) 90%);
+  background: linear-gradient(180deg, rgba(5, 7, 13, 0.45), transparent 26%, transparent 70%, rgba(5, 7, 13, 0.35));
 }
 .thumb.royal__thumb { width: 100%; height: 100%; border-radius: 0; font-size: var(--t-md); transition: transform 500ms cubic-bezier(0.2, 0.9, 0.2, 1); }
 .royal__thumb .thumb__img { width: 100%; height: 100%; object-fit: cover; }
@@ -306,27 +309,12 @@
   font-size: var(--t-lg); font-weight: var(--w-bold); font-style: italic; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
   color: transparent; -webkit-text-stroke: 1px rgba(255, 236, 170, 0.92); text-shadow: 0 0 12px rgba(245, 197, 66, 0.5);
 }
-.royal__plate { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: grid; gap: 3px; padding: 0 8px 8px; text-align: left; }
-/* A short gold rule above the name. */
-.royal__plate::before {
-  content: ''; width: 18px; height: 2px; margin-bottom: 2px; border-radius: 2px;
-  background: linear-gradient(90deg, var(--gold-pale), var(--q-gold)); box-shadow: 0 0 6px rgba(245, 197, 66, 0.6);
-}
-.royal__label {
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
-  font-family: var(--display); font-style: italic; font-weight: 800; font-size: var(--t-2xs); line-height: 1.12;
-  letter-spacing: 0.01em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
-}
-.royal__date {
+.royal__back .royal__date {
   font-size: calc(8px * var(--text-scale)); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--q-gold);
 }
 .royal--big .royal__face { border-width: 3px; border-radius: 16px; }
 .royal--big .royal__frame { border-radius: 13px; }
 .royal--big .royal__no { top: 10px; right: 14px; font-size: calc(40px * var(--text-scale)); -webkit-text-stroke-width: 1.5px; }
-.royal--big .royal__plate { gap: 5px; padding: 0 16px 15px; }
-.royal--big .royal__plate::before { width: 28px; height: 3px; }
-.royal--big .royal__label { font-size: var(--t-lg); }
-.royal--big .royal__date { font-size: var(--t-2xs); }
 /* Behind: the number large and outlined, over speed lines. */
 .royal__back {
   transform: rotateY(180deg); display: grid; place-content: center; justify-items: center; gap: 8px; padding: 14px; text-align: center;
@@ -359,6 +347,7 @@
 }
 .royal--big .royal__name { font-size: var(--t-md); }
 .royal__back .royal__date { color: var(--gold-text); }
+.royal--big .royal__back .royal__date { font-size: var(--t-2xs); }
 button.qitem:hover .royal__card, button.qitem:focus-visible .royal__card { transform: translateY(-5px) rotate(-2deg) scale(1.04); }
 button.qitem .royal__card { transition-duration: 320ms; }
 button.qitem:hover .thumb.royal__thumb { transform: scale(1.1); }
@@ -370,5 +359,5 @@ button.qitem:focus-visible .royal__face { box-shadow: 0 0 0 2px var(--q-gold), 0
 @media (prefers-reduced-motion: reduce) {
   .royal__face, .royal__frame::before { animation: none; }
   .royal__card, .thumb.royal__thumb { transition: none; }
-  .royal__face { transition: none; }
+  .royal__face, .royal__back, .royal.is-flipped .royal__front { transition: none; }
 }
