@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { REVIEW_DIRECTIONS, type DisputeReason } from '../../../shared/enums.js';
 import { threadIdFor } from '../../../shared/handles.js';
-import type {
-  CreditRecord, Dispute, DisputeTopic, Message, MessageParty, Order, PaymentRecord, Review, SellerPaymentDetails, User,
+import {
+  REVIEW_PHOTO_MAX,
+  type CreditRecord, type Dispute, type DisputeTopic, type Message, type MessageParty, type Order, type PaymentRecord,
+  type Review, type SellerPaymentDetails, type User,
 } from '../../../shared/models.js';
 import {
   PAYMENT_KIND_LABELS, advanceMinor, allocatePayment, creditIsLive, creditLeft, methodOf, orderMoney, rupees,
@@ -480,7 +482,7 @@ async function review(request: HttpRequest, _context: InvocationContext) {
   if ('refusal' in found) return found.refusal;
   const order = found.order;
 
-  let body: { rating?: number; body?: string };
+  let body: { rating?: number; body?: string; photoUrls?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -493,6 +495,8 @@ async function review(request: HttpRequest, _context: InvocationContext) {
   }
   const text = (body.body ?? '').trim();
   if (text.length > 2000) return error(400, 'invalid_review', 'Keep a review under 2000 characters.');
+  const photoUrls = await ownPhotos(body.photoUrls, REVIEW_PHOTO_MAX);
+  if (!photoUrls) return error(400, 'invalid_review', `Up to ${REVIEW_PHOTO_MAX} photos, uploaded here.`);
 
   if (!order.completedAt) {
     return error(409, 'not_reviewable', 'Reviews open once the order is complete.');
@@ -526,10 +530,12 @@ async function review(request: HttpRequest, _context: InvocationContext) {
       name: order.itemName,
       photoUrl: bought?.photos?.[0]?.thumbUrl ?? bought?.photos?.[0]?.url ?? null,
     },
+    ...(photoUrls.length ? { photoUrls } : {}),
     createdAt: now,
     updatedAt: now,
   };
   await repository.createReview(written);
+  await claimPhotos(photoUrls, `review:${written.id}`);
 
   await rescore(written.subjectId, repository);
   await announceReview(order, written, repository);
@@ -550,7 +556,7 @@ async function editReview(request: HttpRequest, _context: InvocationContext) {
   const found = await ownOrder(request, repository, user.id);
   if ('refusal' in found) return found.refusal;
 
-  let body: { rating?: number; body?: string };
+  let body: { rating?: number; body?: string; photoUrls?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -562,12 +568,19 @@ async function editReview(request: HttpRequest, _context: InvocationContext) {
   }
   const text = (body.body ?? '').trim();
   if (text.length > 2000) return error(400, 'invalid_review', 'Keep a review under 2000 characters.');
+  // Left out, the photos stay as they were; sent, they are the new set.
+  const photoUrls = body.photoUrls === undefined ? undefined : await ownPhotos(body.photoUrls, REVIEW_PHOTO_MAX);
+  if (photoUrls === null) return error(400, 'invalid_review', `Up to ${REVIEW_PHOTO_MAX} photos, uploaded here.`);
 
   const mine = (await repository.listReviewsForOrder(found.order.id)).find((entry) => entry.authorId === user.id);
   if (!mine) return error(404, 'not_found', 'You have not reviewed this order yet.');
 
   mine.rating = rating;
   mine.body = text;
+  if (photoUrls !== undefined) {
+    mine.photoUrls = photoUrls;
+    await claimPhotos(photoUrls, `review:${mine.id}`);
+  }
   mine.revealed = true;
   mine.editedAt = new Date().toISOString();
   mine.updatedAt = mine.editedAt;

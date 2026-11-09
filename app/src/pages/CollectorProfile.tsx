@@ -8,16 +8,16 @@ import {
 } from '../api';
 import { SkeletonText, useToast } from '../components/Feedback';
 import { SkelBlock, SkelInline } from '../components/PageSkeletons';
-import {
-  Glyph, LevelRing, ShowcaseModal, Sticker, XpBar,
-} from '../components/Quest';
+import { Glyph, LevelRing } from '../components/Quest';
 import { SocialPostCard } from '../components/SocialPost';
 import { shrink } from '../components/PhotoManager';
 import { ManagerTag } from '../components/ManagerBadge';
 import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Modal, Thumb } from '../components/ui';
 import { brandHueFor, formatDate, timeAgo, formatCount } from '../format';
-import { Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab } from '../components/ProfileParts';
+import {
+  Bio, FollowCounts, HonoursCard, LEVELS_EXPLAINED, PageActions, RatingSheet, RatingSlab, ReviewsTab,
+} from '../components/ProfileParts';
 import { PhotoSales } from '../components/PhotoSales';
 import { Select } from '../components/Select';
 
@@ -54,9 +54,11 @@ export type ProfilePart = Pick<PublicProfile,
  * Used on anybody's page and on your own hub at /me, so the two always look
  * the same - the only difference is the buttons under the name.
  */
-export function CollectorHeader({ person, actions, page, onReviews }: {
+export function CollectorHeader({ person, actions, page, onReviews, isMe = false }: {
   person: Person;
   actions: ReactNode;
+  /** Your own page: honours read as yours. */
+  isMe?: boolean;
   /** The public page: its one rating and follower count. Absent until loaded. */
   page: ProfilePart | null;
   onReviews: () => void;
@@ -64,7 +66,6 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
   const [collector, setCollector] = useState<CollectorPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ratingOpen, setRatingOpen] = useState(false);
-  const [showcase, setShowcase] = useState(false);
 
   useEffect(() => {
     setCollector(null);
@@ -146,19 +147,6 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
           </div>
         )}
 
-        {!collector && (
-          <div className="qprofile__xp" aria-hidden="true"><SkelInline w={180} h={8} /><SkelInline w={120} h={9} /></div>
-        )}
-        {collector && (
-          <div className="qprofile__xp">
-            <XpBar progress={collector.progress} />
-            <span className="faint">{formatCount(collector.xp)} XP · {collector.nextLevelXp - collector.xp} to level {collector.level + 1}</span>
-          </div>
-        )}
-        {collector && collector.penalty > 0 && (
-          <p className="qprofile__penalty">−{collector.penalty} XP from low ratings and lost disputes</p>
-        )}
-
         {(person.bio || (person.tags && person.tags.length > 0)) && (
           <section className="ppanel" aria-label="About">
             <h2 className="ppanel__title">About</h2>
@@ -175,25 +163,22 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
 
         {page && <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} />}
 
+        {/* The same card a shop shows: level, XP, every honour; "n/m earned" opens them all. */}
         {!collector ? (
-          <SkelBlock h={96} />
+          <SkelBlock h={150} />
         ) : (
-          <>
-            <button type="button" className="qshowcase" onClick={() => setShowcase(true)}
-              aria-label="Open the showcase: every honour">
-              <span className="qpanel__head">
-                <span className="qshowcase__title"><Glyph name="crown" size={15} /> Honours</span>
-                <span className="faint">{earned.length}/{collector.stickers.length} earned{collector.podiums.length > 0 ? ` · ${collector.podiums.length} top-3 finish${collector.podiums.length === 1 ? '' : 'es'}` : ''} ›</span>
-              </span>
-              {earned.length === 0 ? (
-                <span className="faint qshowcase__empty">Nothing yet. Honours are earned by buying, reviewing, backing pre-orders, winning and trading well.</span>
-              ) : (
-                <span className="qstickers qstickers--row" role="group" aria-label="Honours" tabIndex={0}>
-                  {[...earned].sort((a, b) => b.tier - a.tier).slice(0, 8).map((entry) => <Sticker key={entry.id} sticker={entry} />)}
-                </span>
-              )}
-            </button>
-          </>
+          <HonoursCard level={collector.level} title={collector.title} progress={collector.progress}
+            stickers={collector.stickers} whose={isMe ? 'mine' : 'theirs'}
+            line={`${formatCount(collector.xp)} XP · ${formatCount(collector.nextLevelXp - collector.xp)} to level ${collector.level + 1}`}
+            how={LEVELS_EXPLAINED}
+            note={(collector.penalty > 0 || collector.podiums.length > 0) && (
+              <p className="slevel__note">
+                {collector.podiums.length > 0 && (
+                  <span><Glyph name="crown" size={12} /> {collector.podiums.length} top-3 finish{collector.podiums.length === 1 ? '' : 'es'}</span>
+                )}
+                {collector.penalty > 0 && <span className="qprofile__penalty">−{collector.penalty} XP from low ratings and lost disputes</span>}
+              </p>
+            )} />
         )}
       </div>
 
@@ -210,9 +195,6 @@ export function CollectorHeader({ person, actions, page, onReviews }: {
                 <Stat label="Following" value={String(stats.following)} sub="shops" />
             </div>
           ) : <SkeletonText lines={2} />} />
-      )}
-      {showcase && collector && (
-        <ShowcaseModal stickers={collector.stickers} whose="theirs" onClose={() => setShowcase(false)} />
       )}
     </>
   );
@@ -576,7 +558,7 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
 
   return (
     <main className="storefront qprofile">
-      <CollectorHeader person={person} page={profile} onReviews={() => setTab('reviews')}
+      <CollectorHeader person={person} page={profile} isMe={isMe} onReviews={() => setTab('reviews')}
         actions={<PageActions profile={profile} isMe={isMe} onFollow={onFollow}
           edit={<Link to="/me?tab=settings#settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
 

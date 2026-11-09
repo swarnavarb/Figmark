@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import type { Order, Review, StoreReview, User } from '../../../shared/models.js';
+import { REVIEW_PHOTO_MAX, type Order, type Review, type StoreReview, type User } from '../../../shared/models.js';
 import { reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import { personRef } from '../../../shared/parties.js';
 import { actorName, gistOf, stars, toWhom, whose } from '../../../shared/notifications.js';
@@ -13,7 +13,8 @@ import { confirmDetailsOn } from './order-routes.js';
 import { reviewSide } from '../../../shared/storefront.js';
 import { GONE_STATUSES } from '../../../shared/customers.js';
 import { verifiedChecks } from '../../../shared/verification.js';
-import { ownPhotoName } from '../storage/index.js';
+import { ownPhotoName, ownPhotos } from '../storage/index.js';
+import { claimPhotos } from '../storage/release.js';
 
 /** The page a page-review request is about: `?side=store` or the person's own. */
 function sideOf(request: HttpRequest): 'store' | 'person' {
@@ -163,6 +164,7 @@ async function pageReviews(request: HttpRequest, _context: InvocationContext) {
       body: entry.body,
       authorName: entry.authorName,
       authorHandle: entry.authorHandle,
+      photoUrls: entry.photoUrls ?? [],
       createdAt: entry.createdAt,
       mine: viewer?.id === entry.authorId,
       /** Disputed, validated, or waiting on an operator - for the button under it. */
@@ -194,7 +196,7 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
   const subject = await repository.getUserById(id);
   if (!subject) return error(404, 'not_found', 'No such account.');
 
-  let body: { rating?: number; body?: string; side?: string };
+  let body: { rating?: number; body?: string; side?: string; photoUrls?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -209,6 +211,8 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
   if (text.length < 4) {
     return error(400, 'invalid_body', 'Say something about them, not just a number.');
   }
+  const photoUrls = await ownPhotos(body.photoUrls, REVIEW_PHOTO_MAX);
+  if (!photoUrls) return error(400, 'invalid_body', `Up to ${REVIEW_PHOTO_MAX} photos, uploaded here.`);
 
   const author = await repository.getUserById(user.id);
   // One per person per page: the shop and the person behind it are rated apart.
@@ -226,11 +230,13 @@ async function writePageReview(request: HttpRequest, _context: InvocationContext
     rating,
     body: text.slice(0, 600),
     side,
+    ...(photoUrls.length ? { photoUrls } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
 
   const saved = await repository.saveStoreReview(review);
+  await claimPhotos(photoUrls, `store_review:${review.id}`);
 
   // News to the page it was left on - said as which page, since one account
   // can have both, and with the stars, since that is what they will ask first.
@@ -287,6 +293,7 @@ async function tradeReviews(request: HttpRequest, _context: InvocationContext) {
         id: entry.id,
         rating: entry.rating,
         body: entry.body,
+        photoUrls: entry.photoUrls ?? [],
         direction: entry.direction,
         author: personRef(authorOf.get(entry.authorId)),
         createdAt: entry.createdAt,

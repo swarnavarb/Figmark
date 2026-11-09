@@ -18,7 +18,6 @@
   padding: 1px var(--s2); border-radius: var(--r-pill); background: var(--violet); color: #fff;
   font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-bold); white-space: nowrap; border: 2px solid var(--bg);
 }
-.qprofile__xp { display: flex; align-items: center; gap: 10px; margin-bottom: var(--s3); font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); }
 .qstats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); margin: var(--s3) 0; }
 .qstat {
   display: grid; gap: 1px; text-align: center; padding: 10px 6px; border-radius: var(--r-md);
@@ -28,14 +27,7 @@
 .qtone--gold { color: var(--q-gold); }
 .qtone--ok { color: var(--ok); }
 .qtone--hot { color: var(--coral); }
-.qshowcase {
-  appearance: none;
-  padding: 14px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); margin-bottom: 6px;
-}
 .qprofile__penalty { margin: -6px 0 10px; font-size: var(--t-xs); color: var(--coral); }
-.qshowcase { display: grid; gap: 0; width: 100%; text-align: left; }
-.qshowcase__title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
-.qshowcase__empty { display: block; margin-top: var(--s2); font-size: var(--t-xs); }
 .qcollection { margin-top: var(--s1); }
 .qready { display: grid; gap: 10px; padding: var(--s3); border-radius: var(--r-lg); border: 1px solid var(--q-gold-line); background: linear-gradient(160deg, rgba(245, 197, 66, 0.07), var(--surface)); }
 .qready__row { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; }
@@ -81,7 +73,6 @@
 @media (min-width: 720px) {
   .qstats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
-.qshowcase:hover { border-color: var(--border-strong); }
 .qshelves__manage { border-style: dashed; }
 .qitem__remove { color: var(--coral); }
 .revhead { display: flex; align-items: center; gap: var(--s2); margin: 6px 0 0; }
@@ -175,6 +166,27 @@
 .slevel__stickers { margin-top: 0; padding-bottom: 2px; }
 .slevel__how { font-size: var(--t-xs); }
 .slevel__how li.is-minus b { color: var(--coral); }
+.slevel__count {
+  appearance: none; padding: 6px 10px; border: 1px solid rgba(245, 197, 66, 0.3); border-radius: var(--r-md);
+  background: rgba(245, 197, 66, 0.06); color: inherit; font: inherit; cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.slevel__count:hover { border-color: rgba(245, 197, 66, 0.6); }
+.slevel__count:active, .slevel__bar:active { transform: scale(0.97); }
+.slevel__bar {
+  appearance: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+  width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left;
+  transition: transform var(--dur-1) var(--ease);
+}
+.slevel__bartitle { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.slevel__bartitle svg { color: var(--q-gold); }
+.slevel__barcount { font-size: var(--t-xs); color: var(--accent-text); font-weight: var(--w-semi); font-variant-numeric: tabular-nums; }
+.slevel__bar:hover .slevel__barcount { text-decoration: underline; }
+.slevel__count:focus-visible, .slevel__bar:focus-visible { outline: 2px solid var(--q-gold); outline-offset: 2px; }
+.slevel__empty { margin: 0; font-size: var(--t-xs); }
+.slevel__note { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.slevel__note > span { display: inline-flex; align-items: center; gap: 4px; }
+.slevel__note .qprofile__penalty { margin: 0; }
 .stamp--sold { color: #F87171; }
 .stamp--expired { color: #CBD5E1; }
 .royal__card {
@@ -246,9 +258,6 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 }
 .vfychip.is-ok { color: var(--ok); background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.3); }
 .qprofile__face { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); }
-.qprofile__xp {
-  padding: var(--s2) var(--s3); border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--border);
-}
 @media (prefers-reduced-motion: reduce) {
   .pstat--tap { transition: none; }
 }

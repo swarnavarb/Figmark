@@ -131,6 +131,7 @@ export function ProfilePage() {
           lastSeenAt: null,
         }}
         page={publicPage}
+        isMe
         onReviews={() => user.username && navigate(`/${user.username}`)}
         actions={
           <div className="pacts">
