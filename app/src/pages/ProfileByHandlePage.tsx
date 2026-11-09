@@ -1,5 +1,6 @@
 import { CreditChip, ProBadge } from '../components/Billing';
 import { PageLoading } from '../components/Feedback';
+import { rememberPageKind } from '../components/PageSkeletons';
 import { useEffect, useRef, useState } from 'react';
 import { CommunityAlertBanner } from '../components/CommunityAlerts';
 import { VerifiedChips, VerifiedTick } from '../components/VerifiedChips';
@@ -53,7 +54,12 @@ export function ProfileByHandlePage() {
     }
     setError(null);
     setData(null);
-    void api.profile(username).then(setData)
+    void api.profile(username)
+      .then((page) => {
+        // The next visit's loading screen is drawn as this kind of page.
+        rememberPageKind(username, page.isStore ? 'shop' : 'person');
+        setData(page);
+      })
       .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not open that page.'));
   }, [username]);
 

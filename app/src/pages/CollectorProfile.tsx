@@ -131,7 +131,7 @@ export function CollectorHeader({ person, actions, page, onReviews, onWins, onLo
         {!page && (
           <div className="pstats" aria-hidden="true">
             {['followers', 'following', 'orders', 'leaderboard'].map((label) => (
-              <span key={label} className="pstat"><b><SkelInline w={24} h={20} /></b><small>{label}</small></span>
+              <span key={label} className={`pstat${label === 'leaderboard' ? ' pstat--long' : ''}`}><b><SkelInline w={24} h={20} /></b><small>{label}</small></span>
             ))}
           </div>
         )}
@@ -163,11 +163,11 @@ export function CollectorHeader({ person, actions, page, onReviews, onWins, onLo
 
         {error && <ErrorNotice message={error} />}
 
-        {page && <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} />}
+        {page ? <RatingSlab rating={page.rating} side="person" onOpen={() => setRatingOpen(true)} /> : <SkelBlock h={76} />}
 
         {/* The same card a shop shows: level, XP, every honour; the count opens them all. Wins have their own tab. */}
         {!collector ? (
-          <SkelBlock h={150} />
+          <SkelBlock h={300} />
         ) : (
           <HonoursCard level={collector.level} title={collector.title} progress={collector.progress}
             stickers={collector.stickers} whose={isMe ? 'mine' : 'theirs'}
@@ -720,7 +720,8 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
   reload: () => void;
 }) {
   const [posts, setPosts] = useState<PostCard[] | null>(null);
-  const [tab, setTab] = useState<Tab>('collection');
+  // Feed first: the shelf above the tabs already shows the collection.
+  const [tab, setTab] = useState<Tab>('feed');
   const [tabsRef, stuck, tabsAttach] = useStuck<HTMLDivElement>();
   const [podiums, setPodiums] = useState<CollectorPage['podiums'] | null>(null);
   const openTab = (next: Tab) => {
@@ -730,7 +731,10 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
   const openCollection = () => openTab('collection');
 
   // Posts are read when the tab is first opened: most visits are not for them.
-  useEffect(() => setPosts(null), [profile.sellerId]);
+  useEffect(() => {
+    setPosts(null);
+    setTab('feed');
+  }, [profile.sellerId]);
   useEffect(() => {
     if (tab !== 'feed' || posts !== null) return;
     void api.personPosts(profile.sellerId).then((result) => setPosts(result.posts)).catch(() => setPosts([]));
@@ -758,11 +762,11 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
       <div className="storefront__body">
         <CollectionPreview userId={profile.sellerId} onOpen={openCollection} />
         <div ref={tabsAttach} className={`tabs tabs--sticky${stuck ? ' is-stuck' : ''}`}>
-          <button type="button" className={`tab${tab === 'collection' ? ' is-on' : ''}`} onClick={() => setTab('collection')}>
-            Collection
-          </button>
           <button type="button" className={`tab${tab === 'feed' ? ' is-on' : ''}`} onClick={() => setTab('feed')}>
             Feed {posts ? posts.length : ''}
+          </button>
+          <button type="button" className={`tab${tab === 'collection' ? ' is-on' : ''}`} onClick={() => setTab('collection')}>
+            Collection
           </button>
           <button type="button" className={`tab${tab === 'reviews' ? ' is-on' : ''}`} onClick={() => setTab('reviews')}>
             Reviews {profile.rating.count}

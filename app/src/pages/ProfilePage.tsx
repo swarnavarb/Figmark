@@ -7,7 +7,7 @@ import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handl
 import { ApiRequestError, api, type ActivityResponse, type BlockedRow, type CollectorPage, type FeedListing, type PostCard, type PublicProfile } from '../api';
 import { listingRarity } from '@shared/quest';
 import { LootCard } from './FeedPage';
-import { useToast } from '../components/Feedback';
+import { SkeletonText, useToast } from '../components/Feedback';
 import { SkelCards, SkelGrid, SkelRows } from '../components/PageSkeletons';
 import { CollectionPreview, CollectorHeader, PurchasedCollection, WinsTab, useStuck } from './CollectorProfile';
 import { SocialPostCard } from '../components/SocialPost';
@@ -26,11 +26,11 @@ import { factsOf } from '@shared/catalog';
 type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'wins' | 'listings' | 'sales' | 'following' | 'settings';
 
 const TAB_LABELS: Record<Tab, string> = {
-  collection: '🗂️ Collection',
-  saved: '♥ Saved',
   posts: '📝 Posts',
+  collection: '🗂️ Collection',
   photos: '📸 Photos',
   wins: '🏆 Wins',
+  saved: '♥ Saved',
   listings: 'My listings',
   sales: 'My sales',
   following: 'Following',
@@ -70,7 +70,16 @@ export function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   const asked = params.get('tab');
-  const tab = (asked && asked in TAB_LABELS ? asked : 'collection') as Tab;
+  const named = asked && asked in TAB_LABELS ? asked as Tab : null;
+  // With no tab named, the page opens on your posts - the shelf above already
+  // shows the collection - unless a delivery is waiting to be added to it.
+  const [waiting, setWaiting] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (named || waiting !== null) return;
+    void api.myCollection().then((result) => setWaiting(result.candidates.length > 0)).catch(() => setWaiting(false));
+  }, [named, waiting]);
+  const tab: Tab = named ?? (waiting ? 'collection' : 'posts');
+  const deciding = !named && waiting === null;
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [publicPage, setPublicPage] = useState<PublicProfile | null>(null);
   const [podiums, setPodiums] = useState<CollectorPage['podiums'] | null>(null);
@@ -242,7 +251,9 @@ export function ProfilePage() {
       {error && <ErrorNotice message={error} />}
       {/* Tall enough that a tab opened from above can scroll up under the header. */}
       <div className="tabpanel">
-      {tab === 'collection' ? (
+      {deciding ? (
+        <SkeletonText lines={3} />
+      ) : tab === 'collection' ? (
         <PurchasedCollection userId={user.id} isMe />
       ) : tab === 'saved' ? (
         <SavedItems />
