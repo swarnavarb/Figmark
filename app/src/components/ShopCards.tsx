@@ -114,24 +114,17 @@ export function ShopTile({ shop }: { shop: ShopCard }) {
   );
 }
 
-/** A little storefront with a striped awning, for the band's corner. */
+/** A faint storefront outline for the band's corner: a hint, not a picture. */
 function ShopArt() {
   return (
-    <svg className="shopstrip__art" viewBox="0 0 96 80" aria-hidden="true">
-      <ellipse cx="48" cy="74" rx="40" ry="4" fill="rgba(0,0,0,0.35)" />
-      <rect x="14" y="30" width="68" height="44" rx="3" fill="#123A30" stroke="#2F6B58" strokeWidth="1.5" />
-      <rect x="20" y="42" width="30" height="22" rx="2" fill="#1D5A4A" />
-      <rect x="22" y="44" width="26" height="18" rx="1.5" fill="#D9FF4A" opacity="0.18" />
-      <rect x="56" y="42" width="20" height="32" rx="2" fill="#0B241E" stroke="#2F6B58" strokeWidth="1.2" />
-      <circle cx="72" cy="58" r="1.6" fill="#D9FF4A" />
-      <path d="M10 18 H86 L82 32 H14 Z" fill="#0F2F27" />
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-        <path key={i} d={`M${10 + i * 9.5} 18 h9.5 l-0.5 14 h-8.5 z`} fill={i % 2 ? '#F2F5FA' : '#C6F432'} />
-      ))}
-      <path d="M14 32 q4.25 5 8.5 0 q4.25 5 8.5 0 q4.25 5 8.5 0 q4.25 5 8.5 0 q4.25 5 8.5 0 q4.25 5 8.5 0 q4.25 5 8.5 0 q4.25 5 8.5 0"
-        fill="#C6F432" />
-      <rect x="30" y="6" width="36" height="12" rx="3" fill="#0B241E" stroke="#C6F432" strokeWidth="1.2" />
-      <path d="M40 12 h16" stroke="#C6F432" strokeWidth="2" strokeLinecap="round" />
+    <svg className="shopstrip__art" viewBox="0 0 64 56" fill="none" stroke="currentColor" strokeWidth="1.6"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 22v28h52V22" />
+      <path d="M4 10h56l-3 12H7z" />
+      <path d="M16 10l-2 12M26 10l-1 12M38 10l1 12M48 10l2 12" />
+      <path d="M7 22c0 4 9 4 9 0 0 4 9 4 9 0 0 4 9 4 9 0 0 4 9 4 9 0 0 4 9 4 9 0 0 4 3 4 3 0" />
+      <rect x="12" y="32" width="18" height="12" rx="1.5" />
+      <path d="M38 50V32h12v18" />
     </svg>
   );
 }
@@ -139,7 +132,7 @@ function ShopArt() {
 /**
  * A row of shops that scrolls sideways, under a heading. Nothing at all when empty.
  * As a band, it runs edge to edge between two wavy hems, with an eyebrow over
- * the title and a little storefront in the corner.
+ * the title and a faint storefront in the corner.
  */
 export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
   title: string;
