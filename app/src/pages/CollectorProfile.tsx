@@ -264,6 +264,12 @@ export function useStuck<T extends HTMLElement>() {
   return [ref, stuck, attach] as const;
 }
 
+/** A piece's number in the collection, counting from the first thing they collected
+ * (the list comes newest first). The shelf above the tabs and the cards share it. */
+function collectorNo(items: CollectionItem[], item: CollectionItem): number {
+  return items.length - items.indexOf(item);
+}
+
 /* ── The shelf, above the tabs: the latest pieces, at speed ───────────── */
 
 /**
@@ -292,7 +298,7 @@ export function CollectionPreview({ userId, onOpen }: { userId: string; onOpen: 
             onClick={onOpen} aria-label={`${item.name}: open the collection`}>
             <Thumb seed={item.listingId} label={item.name} photo={item.photos[0] ? { url: item.photos[0] } : null}
               className="thumb qpreview__img" />
-            <span className="qpreview__num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+            <span className="qpreview__num" aria-hidden="true">{String(collectorNo(shelf.items, item)).padStart(2, '0')}</span>
             {i === 0 && <span className="qpreview__new">Latest</span>}
             <span className="qpreview__name">{item.name}</span>
           </button>
@@ -532,7 +538,7 @@ export function PurchasedCollection({ userId, isMe, owner = null }: {
             {section.items.map((item, i) => (
               <button key={item.orderId} type="button" className="qitem" style={{ ['--i' as string]: i }}
                 onClick={() => setViewing(item.orderId)} aria-label={`Open ${item.name}`}>
-                <RoyalCard item={item} no={shelf.items.length - shelf.items.indexOf(item)} />
+                <RoyalCard item={item} no={collectorNo(shelf.items, item)} />
               </button>
             ))}
           </div>
@@ -540,7 +546,7 @@ export function PurchasedCollection({ userId, isMe, owner = null }: {
       ))}
 
       {open && (
-        <CardViewer item={open} no={shelf.items.length - shelf.items.indexOf(open)} isMe={isMe} groups={shelf.groups} owner={owner} userId={userId} onClose={() => setViewing(null)}
+        <CardViewer item={open} no={collectorNo(shelf.items, open)} isMe={isMe} groups={shelf.groups} owner={owner} userId={userId} onClose={() => setViewing(null)}
           onEdit={(changes, done) => run(() => api.collectionEdit(open.orderId, changes), done)}
           onRemove={() => void remove(open)} />
       )}
