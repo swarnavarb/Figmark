@@ -18,7 +18,6 @@
   padding: 1px var(--s2); border-radius: var(--r-pill); background: var(--violet); color: #fff;
   font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); font-weight: var(--w-bold); white-space: nowrap; border: 2px solid var(--bg);
 }
-.qprofile__xp { display: flex; align-items: center; gap: 10px; margin-bottom: var(--s3); font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); }
 .qstats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); margin: var(--s3) 0; }
 .qstat {
   display: grid; gap: 1px; text-align: center; padding: 10px 6px; border-radius: var(--r-md);
@@ -28,14 +27,7 @@
 .qtone--gold { color: var(--q-gold); }
 .qtone--ok { color: var(--ok); }
 .qtone--hot { color: var(--coral); }
-.qshowcase {
-  appearance: none;
-  padding: 14px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); margin-bottom: 6px;
-}
 .qprofile__penalty { margin: -6px 0 10px; font-size: var(--t-xs); color: var(--coral); }
-.qshowcase { display: grid; gap: 0; width: 100%; text-align: left; }
-.qshowcase__title { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); font-weight: var(--w-semi); }
-.qshowcase__empty { display: block; margin-top: var(--s2); font-size: var(--t-xs); }
 .qcollection { margin-top: var(--s1); }
 .qready { display: grid; gap: 10px; padding: var(--s3); border-radius: var(--r-lg); border: 1px solid var(--q-gold-line); background: linear-gradient(160deg, rgba(245, 197, 66, 0.07), var(--surface)); }
 .qready__row { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; }
@@ -57,10 +49,6 @@
 }
 .rsheet__stat { display: grid; justify-items: center; gap: 2px; min-height: 54px; padding: 10px var(--s1); border-radius: var(--r-md); background: var(--surface-2); text-align: center; }
 .slevel__how li b { font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--q-gold); white-space: nowrap; }
-.royal__frame::after {
-  content: ''; position: absolute; inset: 3px; border-radius: var(--r-sm); pointer-events: none;
-  border: 1px solid rgba(255, 230, 150, 0.75); box-shadow: inset 0 0 14px rgba(59, 42, 5, 0.6);
-}
 .shelfhead::before, .shelfhead::after {
   content: ''; flex: 1; height: 1px;
   background: linear-gradient(90deg, transparent, rgba(245, 197, 66, 0.75));
@@ -68,7 +56,6 @@
 }
 .shelfhead::after { background: linear-gradient(90deg, rgba(245, 197, 66, 0.75), transparent); }
 .qviewer__tools .field { width: 100%; text-align: left; }
-.winchip { border-color: rgba(251, 191, 36, 0.45); color: var(--warn); background: var(--warn-soft); text-decoration: none; }
 
 /*
  * Styles only components/ProfileParts.tsx and what it brings in can draw, loaded with that
@@ -81,7 +68,6 @@
 @media (min-width: 720px) {
   .qstats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
-.qshowcase:hover { border-color: var(--border-strong); }
 .qshelves__manage { border-style: dashed; }
 .qitem__remove { color: var(--coral); }
 .revhead { display: flex; align-items: center; gap: var(--s2); margin: 6px 0 0; }
@@ -175,42 +161,22 @@
 .slevel__stickers { margin-top: 0; padding-bottom: 2px; }
 .slevel__how { font-size: var(--t-xs); }
 .slevel__how li.is-minus b { color: var(--coral); }
+.slevel__count {
+  appearance: none; padding: 6px 10px; border: 1px solid rgba(245, 197, 66, 0.3); border-radius: var(--r-md);
+  background: rgba(245, 197, 66, 0.06); color: inherit; font: inherit; cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.slevel__count:hover { border-color: rgba(245, 197, 66, 0.6); }
+.slevel__count:active { transform: scale(0.97); }
+.slevel__bartitle { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.slevel__bartitle svg { color: var(--q-gold); }
+.slevel__count:focus-visible { outline: 2px solid var(--q-gold); outline-offset: 2px; }
+.slevel__empty { margin: 0; font-size: var(--t-xs); }
+.slevel__note { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.slevel__note > span { display: inline-flex; align-items: center; gap: 4px; }
+.slevel__note .qprofile__penalty { margin: 0; }
 .stamp--sold { color: #F87171; }
 .stamp--expired { color: #CBD5E1; }
-.royal__card {
-  position: relative; display: block; width: 100%; aspect-ratio: 5 / 7; padding: 0; border: 0; background: none; cursor: pointer;
-  transform-style: preserve-3d; transition: transform 700ms cubic-bezier(0.3, 1.3, 0.5, 1);
-}
-.royal.is-flipped .royal__card { transform: rotateY(180deg); }
-.royal__face { position: absolute; inset: 0; border-radius: var(--r-md); overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-.royal__front {
-  display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--s1); padding: 5px;
-  background: linear-gradient(135deg, #7A5A12, #F7E08A 22%, #B8860B 48%, #FFF3B0 70%, #8A6A1F);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 244, 200, 0.6);
-}
-.royal__frame { position: relative; overflow: hidden; border-radius: var(--r-sm); box-shadow: inset 0 0 0 1.5px #3B2A05; }
-.royal__plate {
-  padding: 1px var(--s1) 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
-  font-family: Georgia, 'Times New Roman', serif; font-size: var(--t-2xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #2A1D00;
-}
-.royal__back {
-  transform: rotateY(180deg); display: grid; place-content: center; justify-items: center; gap: 6px; padding: 10px; text-align: center;
-  border: 2px solid #D4AF37;
-  background:
-    radial-gradient(circle at 50% 38%, rgba(245, 197, 66, 0.28), transparent 58%),
-    repeating-conic-gradient(from 0deg at 50% 38%, rgba(245, 197, 66, 0.07) 0 9deg, transparent 9deg 18deg),
-    linear-gradient(160deg, #3B0764, #1E1B4B 60%, #0B0F1E);
-  box-shadow: inset 0 0 0 4px #1E1B4B, inset 0 0 0 5px rgba(212, 175, 55, 0.7), 0 8px 20px rgba(0, 0, 0, 0.45);
-}
-.royal__crest { font-size: var(--t-xl); line-height: 1; color: #F5C542; text-shadow: 0 0 12px rgba(245, 197, 66, 0.7); }
-.royal__name {
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
-  font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: var(--t-sm); line-height: 1.25; color: var(--gold-text);
-}
-.royal__date { font-size: calc(8px * var(--text-scale)); letter-spacing: 0.12em; text-transform: uppercase; color: rgba(253, 230, 138, 0.7); }
-@media (prefers-reduced-motion: reduce) {
-  .royal__card { transition: none; }
-}
 .qshelf { display: grid; gap: var(--s3); }
 /* A shelf's name, engraved, with gilded rules running to both edges. */
 .shelfhead { display: flex; align-items: center; gap: var(--s3); margin: var(--s2) 0 0; }
@@ -219,8 +185,6 @@
 }
 .shelfhead span::before { left: 0; }
 .shelfhead span::after { right: 0; }
-button.qitem:hover .royal__front { filter: brightness(1.08); }
-.royal--big { width: min(230px, 62vw); }
 .qviewer { display: grid; justify-items: center; gap: 10px; text-align: center; }
 .qviewer__stage { display: grid; grid-template-columns: 34px auto 34px; align-items: center; gap: 6px; }
 .qviewer__arrow {
@@ -246,9 +210,6 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 }
 .vfychip.is-ok { color: var(--ok); background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.3); }
 .qprofile__face { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); }
-.qprofile__xp {
-  padding: var(--s2) var(--s3); border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--border);
-}
 @media (prefers-reduced-motion: reduce) {
   .pstat--tap { transition: none; }
 }
@@ -296,3 +257,107 @@ button.qitem:hover .royal__front { filter: brightness(1.08); }
 .raterow__star:focus-visible { outline: 2px solid var(--warn); outline-offset: 1px; }
 .raterow.is-locked .raterow__star svg { stroke: var(--text-faint); }
 @media (prefers-reduced-motion: reduce) { .raterow__star, .raterow__star svg { transition: none; } }
+
+/* ── Collector cards ───────────────────────────────────────────────────────
+ * The photo edge to edge inside a border of colour that runs round it in
+ * waves, the shelf's outlined gold number in the corner, and the name set
+ * heavy and italic at the bottom. Light slides across the photo now and then.
+ */
+@property --royal-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.royal--big { width: min(240px, 64vw); }
+.royal__card {
+  position: relative; display: block; width: 100%; aspect-ratio: 5 / 7; padding: 0; border: 0; background: none; cursor: pointer;
+  transform-style: preserve-3d; transition: transform 700ms cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+.royal.is-flipped .royal__card { transform: rotateY(180deg); }
+.royal__face {
+  position: absolute; inset: 0; border-radius: 12px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(#05070D, #05070D) padding-box,
+    conic-gradient(from var(--royal-a), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua)) border-box;
+  animation: royal-ring 5s linear infinite;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55), 0 0 16px rgba(124, 58, 237, 0.3), 0 0 22px rgba(236, 72, 153, 0.12);
+  /* iOS keeps painting a face's number and text through backface-visibility,
+   * so the side turning away is gone by the time the card is edge-on (~95ms
+   * into the turn) and the side coming round fades in from there. */
+  transition: opacity 70ms linear 95ms, visibility 0s linear 95ms;
+}
+.royal__face * { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+@keyframes royal-ring { to { --royal-a: 360deg; } }
+.royal__back, .royal.is-flipped .royal__front { opacity: 0; visibility: hidden; transition: opacity 50ms linear 40ms, visibility 0s linear 95ms; }
+.royal.is-flipped .royal__back { opacity: 1; visibility: visible; }
+.royal__front { display: block; padding: 0; }
+.royal__frame { position: absolute; inset: 0; overflow: hidden; border-radius: 10px; }
+/* A touch of dark at the top so the number reads over any photo. */
+.royal__frame::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(5, 7, 13, 0.45), transparent 26%, transparent 70%, rgba(5, 7, 13, 0.35));
+}
+.thumb.royal__thumb { width: 100%; height: 100%; border-radius: 0; font-size: var(--t-md); transition: transform 500ms cubic-bezier(0.2, 0.9, 0.2, 1); }
+.royal__thumb .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+/* Light sliding across the photo now and then. */
+.royal__frame::before {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateX(-130%);
+  background: linear-gradient(110deg, transparent 32%, rgba(255, 255, 255, 0.10) 40%, rgba(255, 255, 255, 0.5) 47%, rgba(103, 232, 249, 0.22) 52%, transparent 62%);
+  animation: royal-sheen 4.5s 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes royal-sheen { 30%, 100% { transform: translateX(130%); } }
+/* The shelf's number: outlined gold, italic, glowing. */
+.royal__no {
+  position: absolute; z-index: 2; top: 6px; right: 8px; padding-right: 0.08em;
+  font-size: var(--t-lg); font-weight: var(--w-bold); font-style: italic; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  color: transparent; -webkit-text-stroke: 1px rgba(255, 236, 170, 0.92); text-shadow: 0 0 12px rgba(245, 197, 66, 0.5);
+}
+.royal__back .royal__date {
+  font-size: calc(8px * var(--text-scale)); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--q-gold);
+}
+.royal--big .royal__face { border-width: 3px; border-radius: 16px; }
+.royal--big .royal__frame { border-radius: 13px; }
+.royal--big .royal__no { top: 10px; right: 14px; font-size: calc(40px * var(--text-scale)); -webkit-text-stroke-width: 1.5px; }
+/* Behind: the number large and outlined, over speed lines. */
+.royal__back {
+  transform: rotateY(180deg); display: grid; place-content: center; justify-items: center; gap: 8px; padding: 14px; text-align: center;
+  isolation: isolate;
+  background:
+    linear-gradient(transparent, transparent) padding-box,
+    conic-gradient(from var(--royal-a), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua), var(--violet), var(--pink), var(--q-gold), var(--aqua)) border-box;
+}
+.royal__back::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.045) 0 2px, transparent 2px 11px),
+    radial-gradient(circle at 50% 38%, rgba(124, 58, 237, 0.5), transparent 60%),
+    radial-gradient(circle at 50% 110%, rgba(236, 72, 153, 0.25), transparent 55%),
+    linear-gradient(160deg, #1E1B4B, #05070D 72%);
+}
+.royal__serial { display: grid; justify-items: center; gap: 4px; line-height: 1; font-style: italic; font-weight: var(--w-bold); }
+.royal__serial small {
+  font-family: var(--display); font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.3em; padding-left: 0.3em; color: var(--q-gold);
+}
+.royal__serial b {
+  padding: 0.04em 0.14em 0.08em 0.06em; font-size: calc(40px * var(--text-scale)); font-weight: inherit; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  color: transparent; -webkit-text-stroke: 1.2px rgba(255, 236, 170, 0.95); text-shadow: 0 0 18px rgba(245, 197, 66, 0.55);
+}
+.royal--big .royal__serial b { font-size: calc(96px * var(--text-scale)); -webkit-text-stroke-width: 2px; }
+.royal--big .royal__serial small { font-size: var(--t-xs); }
+.royal__name {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+  font-family: var(--display); font-style: italic; font-weight: 800; font-size: var(--t-xs); line-height: 1.2; text-transform: uppercase; color: #fff;
+}
+.royal--big .royal__name { font-size: var(--t-md); }
+.royal__back .royal__date { color: var(--gold-text); }
+.royal--big .royal__back .royal__date { font-size: var(--t-2xs); }
+button.qitem:hover .royal__card, button.qitem:focus-visible .royal__card { transform: translateY(-5px) rotate(-2deg) scale(1.04); }
+button.qitem .royal__card { transition-duration: 320ms; }
+button.qitem:hover .thumb.royal__thumb { transform: scale(1.1); }
+button.qitem:hover .royal__frame::before { animation: royal-sheen2 700ms cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+@keyframes royal-sheen2 { from { transform: translateX(-130%); } to { transform: translateX(130%); } }
+button.qitem:active .royal__card { transform: scale(0.96); transition-duration: 90ms; }
+button.qitem:focus-visible { outline: none; }
+button.qitem:focus-visible .royal__face { box-shadow: 0 0 0 2px var(--q-gold), 0 0 18px rgba(245, 197, 66, 0.6); }
+@media (prefers-reduced-motion: reduce) {
+  .royal__face, .royal__frame::before { animation: none; }
+  .royal__card, .thumb.royal__thumb { transition: none; }
+  .royal__face, .royal__back, .royal.is-flipped .royal__front { transition: none; }
+}

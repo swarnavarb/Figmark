@@ -526,24 +526,6 @@ export function SocialPostCard({
         <div className="spost__who">
           <span className="spost__byline">
             <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
-            {/* Right by the name, for anyone not yet followed. A shop does not
-                follow anybody, so speaking as one still follows as the person. */}
-            {!nested && !social.mine && !following && post.channel === 'seller' && voice.storeId !== post.channelId && (
-              <button type="button" className="spost__follow" disabled={followBusy}
-                title={voice.storeId ? 'Shops do not follow - this follows as you' : undefined}
-                onClick={async () => {
-                  setFollowBusy(true);
-                  try {
-                    setFollowing((await api.follow(post.channelId)).following);
-                  } catch (err) {
-                    setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
-                  } finally {
-                    setFollowBusy(false);
-                  }
-                }}>
-                <Icon name="plus" size={11} /> Follow
-              </button>
-            )}
             {card.forum && !inForum && (
               <>
                 <Icon name="right" size={12} className="spost__in" />
@@ -574,6 +556,24 @@ export function SocialPostCard({
             {kindLine}
           </span>
         </div>
+        {/* On the right, before the menu, for anyone not yet followed. A shop does not
+            follow anybody, so speaking as one still follows as the person. */}
+        {!nested && !social.mine && !following && post.channel === 'seller' && voice.storeId !== post.channelId && (
+          <button type="button" className="spost__follow" disabled={followBusy}
+            title={voice.storeId ? 'Shops do not follow - this follows as you' : undefined}
+            onClick={async () => {
+              setFollowBusy(true);
+              try {
+                setFollowing((await api.follow(post.channelId)).following);
+              } catch (err) {
+                setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
+              } finally {
+                setFollowBusy(false);
+              }
+            }}>
+            <Icon name="plus" size={11} /> Follow
+          </button>
+        )}
         {!nested && (
           <div className="spost__menuwrap">
             <button type="button" className="iconbtn" aria-label="More" aria-expanded={menu}
@@ -1613,7 +1613,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
           <PersonLink party={comment.author} className="cmt__name">{comment.authorName}</PersonLink>
           {debate && comment.side && <TeamChip poll={card.social.poll} side={comment.side} />}
           {best && <span className="teamchip teamchip--best">🎤 Best argument</span>}
-          {comment.accepted && <span className="teamchip teamchip--answer">✅ Answer</span>}
+          {comment.accepted && <span className="teamchip teamchip--answer">✅ Best answer</span>}
           <p className="cmt__body">
             {comment.replyToName && <span className="cmt__to">@{comment.replyToName} </span>}
             <Tagged text={comment.body} />

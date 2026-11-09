@@ -2385,9 +2385,14 @@ export interface Review extends BaseDocument {
    * beside the review stays true if the listing is later changed or taken down.
    */
   item?: { listingId: string; name: string; photoUrl: string | null };
+  /** The reviewer's own photos of what arrived, uploaded and compressed; at most `REVIEW_PHOTO_MAX`. */
+  photoUrls?: string[];
   /** When its author last changed it; absent if never edited. */
   editedAt?: string;
 }
+
+/** How many photos one review can carry, verified or left on a page. */
+export const REVIEW_PHOTO_MAX = 6;
 
 /**
  * A review of somebody's page rather than of a trade with them.
@@ -2413,6 +2418,8 @@ export interface StoreReview extends BaseDocument {
   body: string;
   /** Which of the account's two pages it was left on. Absent on older rows. */
   side?: 'store' | 'person';
+  /** Photos with it, uploaded and compressed; at most `REVIEW_PHOTO_MAX`. */
+  photoUrls?: string[];
 }
 
 /* -------------------------------------------------------------------------- */

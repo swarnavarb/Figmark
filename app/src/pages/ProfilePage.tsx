@@ -4,12 +4,12 @@ import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react
 import { labelFor } from '@shared/fulfilment';
 import { actionsFor } from '@shared/orders';
 import { checkUsername, suggestUsername, USERNAME_PROBLEMS } from '@shared/handles';
-import { ApiRequestError, api, type ActivityResponse, type BlockedRow, type FeedListing, type PostCard, type PublicProfile } from '../api';
+import { ApiRequestError, api, type ActivityResponse, type BlockedRow, type CollectorPage, type FeedListing, type PostCard, type PublicProfile } from '../api';
 import { listingRarity } from '@shared/quest';
 import { LootCard } from './FeedPage';
-import { useToast } from '../components/Feedback';
+import { SkeletonText, useToast } from '../components/Feedback';
 import { SkelCards, SkelGrid, SkelRows } from '../components/PageSkeletons';
-import { CollectorHeader, PurchasedCollection } from './CollectorProfile';
+import { CollectionPreview, CollectorHeader, PurchasedCollection, WinsTab, useStuck } from './CollectorProfile';
 import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
@@ -23,13 +23,14 @@ import { PictureField, TagInput } from '../components/PageFields';
 import '../styles/ProfilePage.css';
 import { factsOf } from '@shared/catalog';
 
-type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'listings' | 'sales' | 'following' | 'settings';
+type Tab = 'collection' | 'saved' | 'posts' | 'photos' | 'wins' | 'listings' | 'sales' | 'following' | 'settings';
 
 const TAB_LABELS: Record<Tab, string> = {
-  collection: '🗂️ Collection',
-  saved: '♥ Saved',
   posts: '📝 Posts',
+  collection: '🗂️ Collection',
   photos: '📸 Photos',
+  wins: '🏆 Wins',
+  saved: '♥ Saved',
   listings: 'My listings',
   sales: 'My sales',
   following: 'Following',
@@ -69,14 +70,25 @@ export function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   const asked = params.get('tab');
-  const tab = (asked && asked in TAB_LABELS ? asked : 'collection') as Tab;
+  const named = asked && asked in TAB_LABELS ? asked as Tab : null;
+  // With no tab named, the page opens on your posts - the shelf above already
+  // shows the collection - unless a delivery is waiting to be added to it.
+  const [waiting, setWaiting] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (named || waiting !== null) return;
+    void api.myCollection().then((result) => setWaiting(result.candidates.length > 0)).catch(() => setWaiting(false));
+  }, [named, waiting]);
+  const tab: Tab = named ?? (waiting ? 'collection' : 'posts');
+  const deciding = !named && waiting === null;
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [publicPage, setPublicPage] = useState<PublicProfile | null>(null);
+  const [podiums, setPodiums] = useState<CollectorPage['podiums'] | null>(null);
   useEffect(() => {
     if (!user?.username) return;
     void api.profile(user.username).then(setPublicPage).catch(() => setPublicPage(null));
   }, [user?.username]);
   const setTab = (next: Tab) => setParams({ tab: next }, { replace: true });
+  const [tabsRef, stuck, tabsAttach] = useStuck<HTMLDivElement>();
   const location = useLocation();
   /** Edit profile: the Settings tab, scrolled to, so the tap lands somewhere visible. */
   const editProfile = () => navigate({ search: '?tab=settings', hash: '#settings' }, { replace: true });
@@ -131,7 +143,13 @@ export function ProfilePage() {
           lastSeenAt: null,
         }}
         page={publicPage}
+        isMe
         onReviews={() => user.username && navigate(`/${user.username}`)}
+        onWins={() => {
+          setTab('wins');
+          tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+        onLoaded={(collector) => setPodiums(collector.podiums)}
         actions={
           <div className="pacts">
             <button type="button" className="pbtn pbtn--follow" onClick={editProfile}>Edit profile</button>
@@ -207,10 +225,18 @@ export function ProfilePage() {
         </div>
       )}
 
-      <div className="tabs" id="settings" style={{ scrollMarginTop: 'calc(var(--nav-h, 56px) + 12px)' }}>
+      <CollectionPreview userId={user.id} onOpen={() => {
+        setTab('collection');
+        tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }} />
+
+      <div ref={tabsAttach} className={`tabs tabs--sticky${stuck ? ' is-stuck' : ''}`} id="settings">
         {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
+            {entry === 'wins' && (publicPage?.gameBadges?.length ?? 0) + (podiums?.length ?? 0) > 0 && (
+              <span className="faint" style={{ marginLeft: 6 }}>{(publicPage?.gameBadges?.length ?? 0) + (podiums?.length ?? 0)}</span>
+            )}
             {data && entry !== 'settings' && entry !== 'posts' && entry !== 'photos' && entry !== 'collection' && entry !== 'saved' && (
               <span className="faint" style={{ marginLeft: 6 }}>
                 {entry === 'listings' ? data.listings.length
@@ -223,10 +249,16 @@ export function ProfilePage() {
       </div>
 
       {error && <ErrorNotice message={error} />}
-      {tab === 'collection' ? (
+      {/* Tall enough that a tab opened from above can scroll up under the header. */}
+      <div className="tabpanel">
+      {deciding ? (
+        <SkeletonText lines={3} />
+      ) : tab === 'collection' ? (
         <PurchasedCollection userId={user.id} isMe />
       ) : tab === 'saved' ? (
         <SavedItems />
+      ) : tab === 'wins' ? (
+        <WinsTab wins={publicPage?.gameBadges ?? []} podiums={podiums} isMe name={user.displayName} />
       ) : tab === 'settings' ? (
         <>
           <MyPageSettings />
@@ -338,6 +370,7 @@ export function ProfilePage() {
           ))}
         </div>
       )}
+      </div>
       </div>
     </main>
   );

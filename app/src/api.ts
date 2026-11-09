@@ -680,6 +680,8 @@ export interface PublicReview {
   body: string;
   direction: string;
   author: PartyRef;
+  /** The reviewer's photos of what arrived; empty when none. */
+  photoUrls?: string[];
   createdAt: string;
   /** What it was written about. Null only where the order has since gone. */
   item: {
@@ -707,6 +709,8 @@ export interface PageReview {
   body: string;
   authorName: string;
   authorHandle: string | null;
+  /** Photos left with it; empty when none. */
+  photoUrls?: string[];
   createdAt: string;
   mine: boolean;
   moderation?: ModerationMark;
@@ -3377,10 +3381,10 @@ export const api = {
   communityTeam: () => request<{ managers: CommunityTeamMember[] }>('/community/team'),
   communityStanding: (userId: string) => request<CommunityStanding>(`/community/standing/${encodeURIComponent(userId)}`),
   marketSettings: () => request<PublicSettings>('/settings'),
-  reviewOrder: (id: string, rating: number, body: string) =>
-    post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
-  editReview: (id: string, rating: number, body: string) =>
-    put<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body }),
+  reviewOrder: (id: string, rating: number, body: string, photoUrls: string[] = []) =>
+    post<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body, photoUrls }),
+  editReview: (id: string, rating: number, body: string, photoUrls?: string[]) =>
+    put<{ review: Review }>(`/orders/${encodeURIComponent(id)}/review`, { rating, body, photoUrls }),
   /** The buyer's photo of what arrived, posted to the shop's channel. */
   shareUnboxing: (id: string, body: string, photoUrls: string[]) =>
     post<{ post: Post }>(`/orders/${encodeURIComponent(id)}/unboxing`, { body, photoUrls }),
@@ -3472,7 +3476,7 @@ export const api = {
   report: (body: { targetType: ReportTarget; targetId: string; parentId: string; reason: string }) =>
     post<{ report: ContentReport }>('/reports', body),
   /** The shop-wide rules, such as how long protected payments are held. */
-  writePageReview: (userId: string, body: { rating: number; body: string; side: PageSide }) =>
+  writePageReview: (userId: string, body: { rating: number; body: string; side: PageSide; photoUrls?: string[] }) =>
     post<{ review: PageReview }>(`/users/${encodeURIComponent(userId)}/page-reviews/new`, body),
   saveProfile: (body: { bio?: string; photoUrl?: string; coverUrl?: string; tags?: string[] }) =>
     post<{ profile: { bio: string; photoUrl: string | null; coverUrl: string | null; tags: string[] } }>('/me/profile', body),

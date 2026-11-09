@@ -149,31 +149,83 @@ function Post({ media = '4 / 3' }: { media?: string }) {
  * the cover's edge, name beside it, details under), the follow row, the four
  * counts and the About panel - the classes the page itself lays out with.
  */
-function Profile({ shop = false }: { shop?: boolean }) {
+type ProfileKind = 'shop' | 'person' | 'me' | null;
+
+const KIND_KEY = 'figmark.pageKind:';
+
+/**
+ * Remembers, in this browser only, whether an address is a shop or a person,
+ * so the next visit's loading screen is drawn as the page it will be.
+ */
+export function rememberPageKind(handle: string, kind: 'shop' | 'person') {
+  try {
+    localStorage.setItem(KIND_KEY + handle.replace(/^@/, '').toLowerCase(), kind);
+  } catch {
+    // Storage blocked: the neutral loading screen is drawn instead.
+  }
+}
+
+function rememberedKind(handle: string): 'shop' | 'person' | null {
+  try {
+    const kind = localStorage.getItem(KIND_KEY + handle);
+    return kind === 'shop' || kind === 'person' ? kind : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A person's page, a shop's or your own, block for block as it will draw: the
+ * header, the buttons, the four numbers, About, the rating slab, the level card
+ * and the tabs. An address never opened before could be either, so its labels
+ * are left blank rather than guessed.
+ */
+function Profile({ kind }: { kind: ProfileKind }) {
+  const shop = kind === 'shop';
+  const stats = kind === null ? null
+    : shop ? ['followers', 'live', 'sold out', 'trust'] : ['followers', 'following', 'orders', 'leaderboard'];
+  const tabs = shop ? ['Items', 'Feed', 'Reviews']
+    : kind === 'me' ? ['📝 Posts', '🗂️ Collection', '📸 Photos', '🏆 Wins', '♥ Saved'] : ['Feed', 'Collection', 'Reviews', 'Wins'];
   return (
     <main className={`storefront${shop ? ' storefront--shop' : ' qprofile'}`} aria-hidden="true">
       {/* A shop's cover is coloured by its handle, which the address already holds. */}
       <div className={shop ? `storefront__cover storefront__cover--${brandHueFor(handleInPath())}` : 'storefront__cover pskel__cover'} />
       <div className="storefront__body">
         <header className="phead">
-          <div className="phead__face"><span className="pskel__face psk-face" /></div>
+          <div className="phead__face"><span className="pskel__face psk-face" style={shop ? { borderRadius: 18 } : undefined} /></div>
           <div className="phead__name"><S w="72%" h={24} /><S w="48%" h={11} /></div>
           <div className="phead__details">
             <S w={130} h={10} />
             <span className="psk-row"><S w={60} h={22} r={999} /><S w={82} h={22} r={999} /><S w={72} h={22} r={999} /></span>
           </div>
         </header>
-        <span className="psk-row psk-follow"><S h={44} r={999} style={{ flex: 1 }} />{shop && <S w={44} h={44} r="50%" />}</span>
+        {kind === 'me'
+          ? <span className="psk-row psk-follow"><S h={44} r={999} style={{ flex: 1 }} /></span>
+          : <span className="psk-row psk-follow"><S h={44} r={999} style={{ flex: 1 }} /><S h={44} r={999} style={{ flex: 1 }} /><S w={44} h={44} r="50%" /></span>}
         <div className="pstats">
-          {['followers', shop ? 'live' : 'following', shop ? 'sold out' : 'honours', shop ? 'trust' : 'top-3 finishes'].map((label) => (
-            <span key={label} className="pstat"><b><S w={26} h={22} style={{ margin: '0 auto' }} /></b><small>{label}</small></span>
+          {(stats ?? ['', '', '', '']).map((label, i) => (
+            <span key={label || i} className={`pstat${label === 'leaderboard' ? ' pstat--long' : ''}`}>
+              <b><S w={26} h={22} style={{ margin: '0 auto' }} /></b>
+              <small>{label || <S w={52} h={9} style={{ margin: '2px auto 0' }} />}</small>
+            </span>
           ))}
         </div>
         <section className="ppanel">
           <h2 className="ppanel__title">About</h2>
           <Lines n={2} />
           <span className="psk-row psk-wrap"><S w={84} h={24} r={999} /><S w={64} h={24} r={999} /><S w={88} h={24} r={999} /></span>
+          {/* A shop's About goes on: what it is known for, also sells, ships from, who runs it. */}
+          {shop && [3, 3, 1, 1].map((chips, row) => (
+            <span key={row} className="psk-row" style={{ paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <S w={72} h={9} />
+              {Array.from({ length: chips }, (_, chip) => <S key={chip} w={78} h={26} r={999} />)}
+            </span>
+          ))}
         </section>
+        <S h={76} r={16} style={{ display: 'block', margin: '14px 0' }} />
+        <S h={300} r={16} style={{ display: 'block', margin: '0 0 16px' }} />
+        {kind === null ? <S h={44} r={999} style={{ display: 'block', marginBottom: 14 }} /> : <Tabs labels={tabs} />}
+        {shop ? <Grid n={4} /> : <Lines n={3} />}
       </div>
     </main>
   );
@@ -587,8 +639,8 @@ const SHAPES = {
       <Rows n={3} />
     </main>
   ),
-  me: () => <Profile />,
-  profile: () => <Profile shop />,
+  me: () => <Profile kind="me" />,
+  profile: () => <Profile kind={rememberedKind(handleInPath())} />,
   verify: () => (
     <main className="page vfy psk">
       <h1 style={{ margin: 0 }}>Verification</h1>

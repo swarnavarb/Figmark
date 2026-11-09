@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { REVIEW_PHOTO_MAX } from '@shared/models';
 import type { StickerView } from '@shared/quest';
 import type { MergedRating, StoreLevel } from '@shared/storefront';
 import {
@@ -13,7 +14,8 @@ import { SkeletonText, useToast } from './Feedback';
 import { useShareSheet, type ShareSpec } from './ShareKit';
 import { Icon } from './Icon';
 import { StarRow } from './ListingBlocks';
-import { LevelRing, Sticker, StickerSheet, XpBar } from './Quest';
+import { Glyph, LevelRing, ShowcaseModal, Sticker, StickerSheet, XpBar } from './Quest';
+import { ReviewPhotoPicker, ReviewPhotoStrip } from './ReviewPhotos';
 import { ReportButton } from './ReportButton';
 import { Avatar, ErrorNotice, Modal, PersonLink, Thumb, leadPhoto } from './ui';
 import '../styles/CollectorProfile.css';
@@ -336,47 +338,96 @@ function RatingPart({ icon, title, sub, part }: {
   );
 }
 
-/* ── A shop's level and honours ────────────────────────────────────────── */
+/* ── Level and honours: one card for a shop and a person ──────────────── */
+
+/**
+ * The level ring, the XP bar, and every honour in a row - earned ones lit,
+ * the rest greyed - with "n/m earned" opening the whole showcase.
+ *
+ * A shop's page and a person's page show the same card, so a buyer reads
+ * both the same way. `how` is the "How levels work" body: a shop's carries
+ * where every point came from.
+ */
+export function HonoursCard({ level, title, progress, line, stickers, whose = 'theirs', how, note }: {
+  level: number;
+  title: string;
+  progress: number;
+  /** Under the title: points or XP, and what the next level needs. */
+  line: string;
+  stickers: StickerView[];
+  whose?: 'mine' | 'theirs';
+  /** What goes under "How levels work". */
+  how?: ReactNode;
+  /** One line under the stickers - XP lost, top-3 finishes. */
+  note?: ReactNode;
+}) {
+  const [open, setOpen] = useState<StickerView | null>(null);
+  const [showcase, setShowcase] = useState(false);
+  const earned = stickers.filter((sticker) => sticker.earned).length;
+  // Earned first, highest tier first; a stable sort keeps the server's order within that.
+  const sorted = [...stickers].sort((a, b) => Number(b.earned) - Number(a.earned) || b.tier - a.tier);
+  return (
+    <section className="slevel" aria-label="Level and honours">
+      <div className="slevel__head">
+        <span className="slevel__ring"><LevelRing level={level} progress={progress} size={58} /></span>
+        <span className="slevel__who">
+          <b>Level {level} · {title}</b>
+          <small className="faint">{line}</small>
+          <XpBar progress={progress} tone="gold" />
+        </span>
+        <button type="button" className="slevel__count" onClick={() => setShowcase(true)}
+          aria-label={`${earned} of ${stickers.length} honours earned. Open all honours`}>
+          <b>{earned}</b><small>of {stickers.length}<br />honours</small>
+        </button>
+      </div>
+      <h3 className="slevel__bartitle"><Glyph name="crown" size={14} /> Honours</h3>
+      {stickers.length > 0 && (
+        <div className="qstickers qstickers--row slevel__stickers" role="group" aria-label="Honours" tabIndex={0}>
+          {sorted.map((sticker) => <Sticker key={sticker.id} sticker={sticker} onOpen={() => setOpen(sticker)} />)}
+        </div>
+      )}
+      {earned === 0 && (
+        <p className="faint slevel__empty">Nothing earned yet. Honours come from buying, reviewing, backing pre-orders, winning and trading well.</p>
+      )}
+      {note}
+      {how && (
+        <details className="slevel__how">
+          <summary>How levels work</summary>
+          {how}
+        </details>
+      )}
+      {open && <StickerSheet sticker={open} whose={whose} onClose={() => setOpen(null)} />}
+      {showcase && <ShowcaseModal stickers={stickers} whose={whose} onClose={() => setShowcase(false)} />}
+    </section>
+  );
+}
+
+/** Shops and buyers level on one scale: said the same on both pages. */
+export const LEVELS_EXPLAINED = (
+  <p className="faint">
+    Shops and buyers level on the same scale, and every way of earning pays the same: 20 XP per action
+    (up to 100 of each kind) and the same amount per sticker step. Marketing - affiliate sales, followers,
+    channel posts - counts first.
+  </p>
+);
 
 export function StoreLevelCard({ level, stickers }: { level: StoreLevel; stickers: StickerView[] }) {
-  const [open, setOpen] = useState<StickerView | null>(null);
-  const earned = stickers.filter((sticker) => sticker.earned).length;
-  // In the order the server gave: earned first, Trusted and Top rated leading.
-  const sorted = stickers;
   return (
-    <section className="slevel">
-      <div className="slevel__head">
-        <span className="slevel__ring"><LevelRing level={level.level} progress={level.progress} size={58} /></span>
-        <span className="slevel__who">
-          <b>Level {level.level} · {level.title}</b>
-          <small className="faint">
-            {level.next === null ? `${level.points} points · top level` : `${level.points} points · ${level.next - level.points} to level ${level.level + 1}`}
-          </small>
-          <XpBar progress={level.progress} tone="gold" />
-        </span>
-        <span className="slevel__count"><b>{earned}</b><small>of {stickers.length}<br />honours</small></span>
-      </div>
-      <div className="qstickers qstickers--row slevel__stickers">
-        {sorted.map((sticker) => <Sticker key={sticker.id} sticker={sticker} onOpen={() => setOpen(sticker)} />)}
-      </div>
-      <details className="slevel__how">
-        <summary>How levels work</summary>
-        <p className="faint">
-          Shops and buyers level on the same scale, and every way of earning pays the same: 20 XP per action
-          (up to 100 of each kind) and the same amount per sticker step. Marketing - affiliate sales, followers,
-          channel posts - counts first.
-        </p>
-        <ul>
-          {level.breakdown.map((line) => (
-            <li key={line.label} className={line.xp < 0 ? 'is-minus' : ''}>
-              <span>{line.label}<small className="faint"> · {line.detail}</small></span>
-              <b>{line.xp > 0 ? '+' : ''}{line.xp}</b>
-            </li>
-          ))}
-        </ul>
-      </details>
-      {open && <StickerSheet sticker={open} whose="theirs" onClose={() => setOpen(null)} />}
-    </section>
+    <HonoursCard level={level.level} title={level.title} progress={level.progress} stickers={stickers}
+      line={level.next === null ? `${level.points} points · top level` : `${level.points} points · ${level.next - level.points} to level ${level.level + 1}`}
+      how={(
+        <>
+          {LEVELS_EXPLAINED}
+          <ul>
+            {level.breakdown.map((row) => (
+              <li key={row.label} className={row.xp < 0 ? 'is-minus' : ''}>
+                <span>{row.label}<small className="faint"> · {row.detail}</small></span>
+                <b>{row.xp > 0 ? '+' : ''}{row.xp}</b>
+              </li>
+            ))}
+          </ul>
+        </>
+      )} />
   );
 }
 
@@ -459,6 +510,7 @@ export function ReviewsTab({ profile, canWrite, onWritten }: {
                   <StarRow value={review.rating} />
                 </div>
                 {review.body && <p className="revcard__body">{review.body}</p>}
+                <ReviewPhotoStrip photos={review.photoUrls} about={review.item?.name} />
                 <div className="revcard__foot">
                   {review.item && (
                     <Link to={`/listing/${review.item.listingId}`} className="revcard__item revcard__item--card"
@@ -505,6 +557,7 @@ export function ReviewsTab({ profile, canWrite, onWritten }: {
                   <StarRow value={review.rating} />
                 </div>
                 <p className="revcard__body">{review.body}</p>
+                <ReviewPhotoStrip photos={review.photoUrls} />
                 <div className="revcard__foot">
                   <ReportButton targetType="store_review" targetId={review.id} parentId={profile.sellerId}
                     mine={review.mine} moderation={review.moderation} label={`Page review by ${review.authorName}`} />
@@ -532,6 +585,7 @@ function PageReviewForm({ subjectId, side, existing, onWritten }: {
   const [open, setOpen] = useState(false);
   const [rating, setRating] = useState(existing ?? 5);
   const [body, setBody] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -539,9 +593,10 @@ function PageReviewForm({ subjectId, side, existing, onWritten }: {
     setBusy(true);
     setError(null);
     try {
-      await api.writePageReview(subjectId, { rating, body: body.trim(), side });
+      await api.writePageReview(subjectId, { rating, body: body.trim(), side, photoUrls: photos });
       setOpen(false);
       setBody('');
+      setPhotos([]);
       onWritten();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save that.');
@@ -590,6 +645,10 @@ function PageReviewForm({ subjectId, side, existing, onWritten }: {
         <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3}
           placeholder={side === 'store' ? 'Quick to reply, packs well, knows the range…' : 'Paid on time, easy to deal with…'} />
       </label>
+      <div className="field">
+        <span>Photos <small className="faint">· optional, up to {REVIEW_PHOTO_MAX}</small></span>
+        <ReviewPhotoPicker value={photos} onChange={setPhotos} disabled={busy} />
+      </div>
       {error && <ErrorNotice message={error} />}
       <div className="row">
         <button className="btn" disabled={busy || body.trim().length < 4} onClick={() => void submit()}>

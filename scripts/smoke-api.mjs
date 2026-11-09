@@ -3194,6 +3194,23 @@ await check('your own review can be edited, and only by you', async () => {
   assert.ok(none.status >= 400);
 });
 
+await check('a review carries up to six of our own uploaded photos, and they show with it', async () => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
+  const mine = (await upload(req({ headers: auth, body: { dataUrl: pixel } }), ctx)).jsonBody;
+  const put = (photoUrls) => reviewOrder(req({ method: 'PUT',
+    headers: auth, params: { id: 'ord_1004' }, body: { rating: 5, body: 'With photos.', photoUrls },
+  }), ctx);
+  assert.equal((await put(Array(7).fill(mine.url))).status, 400, 'seven is one too many');
+  assert.equal((await put(['https://tracker.example/pixel.gif'])).status, 400, 'only photos uploaded here');
+  assert.equal((await put([mine.url, mine.url])).status, 200);
+  // Left out on the next edit, the photos stay.
+  await reviewOrder(req({ method: 'PUT', headers: auth, params: { id: 'ord_1004' }, body: { rating: 5, body: 'Still with photos.' } }), ctx);
+  const state = (await orderState(req({ headers: auth, params: { id: 'ord_1004' } }), ctx)).jsonBody;
+  assert.deepEqual(state.myReview.photoUrls, [mine.url, mine.url]);
+  const about = (await reviewsAbout(req({ params: { id: state.myReview.subjectId } }), ctx)).jsonBody;
+  assert.deepEqual(about.reviews.find((entry) => entry.id === state.myReview.id).photoUrls, [mine.url, mine.url]);
+});
+
 /** The mean of a set of one-to-five ratings, on the nought-to-hundred scale. */
 const meanScore = (ratings) =>
   ratings.length === 0 ? null : Math.round((ratings.reduce((sum, r) => sum + r, 0) / ratings.length) * 20);
@@ -3533,6 +3550,15 @@ await check('a rating with nothing said is refused', async () => {
   }), ctx);
   assert.equal(bare.status, 400);
   assert.equal(bare.jsonBody.error, 'invalid_body');
+});
+
+await check('a page review takes at most six photos, all uploaded here', async () => {
+  for (const photoUrls of [Array(7).fill('/api/photos/a.jpg'), ['https://tracker.example/pixel.gif'], 'not a list']) {
+    const bad = await writePageReview(req({
+      headers: visitorAuth, params: { id: 'usr_kaiju' }, body: { rating: 5, body: 'Nice shop', photoUrls },
+    }), ctx);
+    assert.equal(bad.status, 400, JSON.stringify(photoUrls));
+  }
 });
 
 await check('nobody reviews their own page', async () => {

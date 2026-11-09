@@ -3398,7 +3398,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 /* Follow, beside the name of whoever is not followed yet. */
 .spost__follow {
   display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto;
-  padding: 2px 9px; margin-left: 2px;
+  padding: 4px 12px;
   border: 1px solid var(--accent-line); border-radius: var(--r-pill);
   background: var(--accent-soft); color: var(--accent-text);
   font-size: var(--t-2xs); font-weight: var(--w-bold); line-height: 1.5; cursor: pointer;
@@ -6213,7 +6213,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 /* ── Collector game, part two: sheets, tiers, ratings, collection ──────── */
 
 /* Anything tappable in the game resets the button look it is built on. */
-.qsticker--tap, .qshowcase {
+.qsticker--tap {
   font: inherit; color: inherit; cursor: pointer; margin: 0;
 }
 .qsticker--tap { border: 0; background: none; padding: 0; }
@@ -6286,7 +6286,6 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 .qtiers__step.is-done { opacity: 1; background: var(--surface-2); }
 .qtiers__step small { font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--text-faint); }
-.qshowcase__title svg { color: var(--q-gold); }
 .thumb.qready__thumb { width: 120px; aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; font-size: calc(18px * var(--text-scale)); }
 .qshelf__row input, .qshelf__new input { flex: 1; min-width: 0; }
 .qbreak__row dt { display: grid; font-size: var(--t-sm); }
@@ -7381,19 +7380,18 @@ button.authpop__grip::before { content: ''; position: absolute; inset: -14px -30
 .spin__back { transform: rotateY(180deg); }
 .spin__hint { font-size: var(--t-2xs); color: var(--text-faint); }
 
-/* The collection: each delivered item as a royal card, gilded in front, crested behind. */
-.royal { position: relative; display: block; perspective: 800px; animation: royal-in 800ms var(--ease) both; }
-@keyframes royal-in { from { transform: rotateY(-120deg) scale(0.85); opacity: 0; } }
-.royal__front::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%);
-  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.4) 45%, transparent 60%);
-  animation: royal-sheen 5s 1s ease-in-out infinite;
+/* Collector cards; the rest of their rules are in styles/CollectorProfile.css. */
+.royal {
+  --holo: linear-gradient(115deg, var(--aqua), var(--violet) 22%, var(--pink) 40%, var(--q-gold) 58%, var(--aqua) 78%, var(--violet));
+  position: relative; display: block; perspective: 900px;
+  animation: royal-in 560ms cubic-bezier(0.2, 0.9, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 70ms);
 }
-@keyframes royal-sheen { 35%, 100% { transform: translateX(120%); } }
-.thumb.royal__thumb { width: 100%; height: 100%; border-radius: 0; font-size: var(--t-md); }
-
+@keyframes royal-in {
+  0% { opacity: 0; transform: translateX(-26px) skewX(-14deg) scale(0.92); filter: blur(3px) brightness(1.8); }
+  60% { opacity: 1; transform: translateX(3px) skewX(3deg); filter: blur(0) brightness(1.25); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .royal, .royal__front::after, button.qitem { animation: none; }
+  button.qitem, .royal { animation: none; }
 }
 
 /* ── The collection, shelf by shelf, and a card opened ─────────────────── */
@@ -7405,7 +7403,7 @@ button.authpop__grip::before { content: ''; position: absolute; inset: -14px -30
   font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: var(--t-md); letter-spacing: 0.04em;
   background: linear-gradient(180deg, var(--gold-pale), #F5C542 55%, #B8860B); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-button.qitem { padding: 0; border: 0; background: none; cursor: pointer; animation: lp-rise 500ms calc(var(--i) * 40ms) var(--ease) both; }
+button.qitem { padding: 0; border: 0; background: none; cursor: pointer; }
 .qviewer__dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--q-track); }
 .qviewer__dots i.is-on { background: var(--q-gold); }
 .rsheet__verified h4 {
@@ -9692,4 +9690,306 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .svcard, .svlabel__glyph { animation: none; }
+}
+
+/* ── Photos with a review: a row of thumbnails, and the picker that fills it ── */
+.revphotos { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.revphotos__item {
+  position: relative; display: block; flex: none; width: 72px; height: 72px; margin: 0; padding: 0; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2);
+}
+.revphotos__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.revphotos__open { cursor: zoom-in; transition: transform var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
+.revphotos__open:hover { border-color: var(--border-strong); }
+.revphotos__open:active { transform: scale(0.96); }
+.revphotos__item--busy { background: linear-gradient(90deg, var(--surface-2), var(--surface-hover), var(--surface-2)); background-size: 200% 100%; animation: revphotos-load 1.2s linear infinite; }
+@keyframes revphotos-load { to { background-position: -200% 0; } }
+.revphotos__drop {
+  position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: 50%; background: rgba(8, 11, 18, 0.75); color: #fff; cursor: pointer;
+}
+.revphotos__add {
+  position: relative; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s1);
+  width: 72px; height: 72px; border: 1.5px dashed var(--border-strong); border-radius: var(--r-sm);
+  color: var(--text-dim); font-size: var(--t-2xs); cursor: pointer;
+}
+.revphotos__add input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.revphotos__add:focus-within { outline: 2px solid var(--accent); }
+.revphotos__add.is-off { opacity: 0.6; cursor: not-allowed; }
+.revphotos__error { flex-basis: 100%; font-size: var(--t-xs); color: var(--danger-text); }
+@media (prefers-reduced-motion: reduce) {
+  .revphotos__item--busy { animation: none; }
+}
+
+/* ── A person's page: shelf preview, win cards, pinned tabs ── */
+
+/*
+ * The shelf: a dark stage with gold speed lines racing across it. The latest piece
+ * stands large, the next two beside it, each cut on a slant; they whip in from the
+ * right, shed their blur and catch one flash of light.
+ */
+.qpreview {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; gap: var(--s3); margin: 14px 0 0; padding: 14px; border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(245, 197, 66, 0.16), transparent 55%),
+    radial-gradient(90% 80% at 0% 100%, rgba(124, 58, 237, 0.18), transparent 60%),
+    linear-gradient(160deg, #10121C, #07080D);
+  border: 1px solid rgba(245, 197, 66, 0.32);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 240, 200, 0.08);
+  animation: lp-rise 500ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+/* Speed lines: thin slanted streaks, drifting fast to the left behind everything. */
+.qpreview::before {
+  content: ''; position: absolute; inset: -20% -60%; z-index: -1; pointer-events: none;
+  background: repeating-linear-gradient(105deg, transparent 0 34px, rgba(245, 197, 66, 0.07) 34px 35px, transparent 35px 58px, rgba(255, 255, 255, 0.035) 58px 59px);
+  animation: qpreview-rush 2.4s linear infinite;
+}
+/* One gold slash across the stage. */
+.qpreview::after {
+  content: ''; position: absolute; z-index: -1; pointer-events: none; left: -10%; right: -10%; top: 58%; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(245, 197, 66, 0.85) 40%, rgba(255, 244, 200, 1) 50%, rgba(245, 197, 66, 0.85) 60%, transparent);
+  box-shadow: 0 0 18px rgba(245, 197, 66, 0.6);
+  transform: rotate(-8deg) scaleX(0); animation: qpreview-slash 700ms cubic-bezier(0.2, 0.9, 0.2, 1) 120ms forwards;
+}
+@keyframes qpreview-rush { to { transform: translateX(-118px); } }
+@keyframes qpreview-slash { to { transform: rotate(-8deg) scaleX(1); } }
+.qpreview__head {
+  appearance: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+  width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left;
+}
+.qpreview__title {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--t-sm); font-weight: var(--w-bold); font-style: italic; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.qpreview__title svg { color: var(--q-gold); filter: drop-shadow(0 0 6px rgba(245, 197, 66, 0.8)); }
+.qpreview__all { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--q-gold); transition: transform var(--dur-1) var(--ease); }
+.qpreview__head:hover .qpreview__all { transform: translateX(4px); }
+
+/* The latest large on the left; the next two stacked beside it. */
+.qpreview__grid { display: grid; gap: 8px; height: 216px; }
+.qpreview--n3 .qpreview__grid { grid-template-columns: 1.35fr 1fr; grid-template-rows: 1fr 1fr; }
+.qpreview--n3 .qpreview__tile:first-child { grid-row: span 2; }
+.qpreview--n2 .qpreview__grid { grid-template-columns: 1.2fr 1fr; height: 176px; }
+.qpreview--n1 .qpreview__grid { height: 176px; }
+.qpreview__tile {
+  --cut: 14px;
+  position: relative; display: block; overflow: hidden; padding: 0; border: 0; cursor: pointer;
+  background: #0B0C12; color: #FFFFFF; text-align: left;
+  clip-path: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+  animation: qpreview-whip 560ms cubic-bezier(0.2, 0.9, 0.2, 1) both; animation-delay: calc(140ms + var(--i, 0) * 90ms);
+  transition: transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1), filter 220ms ease;
+}
+.qpreview__tile:first-child { --cut: 18px; }
+/* A gold rim, drawn inside the slanted cut. */
+.qpreview__tile::before {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 45%, rgba(4, 5, 10, 0.92)),
+    linear-gradient(105deg, rgba(245, 197, 66, 0.35), transparent 30%);
+}
+/* The flash: a bright band that runs across each tile once as it lands, and again under a finger. */
+.qpreview__tile::after {
+  content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 248, 225, 0.55) 48%, rgba(255, 255, 255, 0.85) 50%, rgba(255, 248, 225, 0.55) 52%, transparent 65%);
+  transform: translateX(-130%);
+  animation: qpreview-flash 900ms cubic-bezier(0.2, 0.9, 0.2, 1) both; animation-delay: calc(520ms + var(--i, 0) * 90ms);
+}
+.qpreview__tile:hover::after, .qpreview__tile:focus-visible::after { animation: qpreview-flash2 700ms cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+.qpreview__tile:hover, .qpreview__tile:focus-visible { transform: translateY(-3px) scale(1.025); filter: brightness(1.12) saturate(1.1); }
+.qpreview__tile:active { transform: scale(0.97); transition-duration: 90ms; }
+.qpreview__tile:focus-visible { outline: none; filter: brightness(1.2) drop-shadow(0 0 8px rgba(245, 197, 66, 0.8)); }
+@keyframes qpreview-whip {
+  0% { opacity: 0; transform: translateX(70px) skewX(-14deg); filter: blur(8px); }
+  60% { opacity: 1; filter: blur(0); }
+  80% { transform: translateX(-4px) skewX(2deg); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+@keyframes qpreview-flash { 0% { transform: translateX(-130%); } 100% { transform: translateX(130%); } }
+@keyframes qpreview-flash2 { 0% { transform: translateX(-130%); } 100% { transform: translateX(130%); } }
+.thumb.qpreview__img {
+  position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; font-size: var(--t-xl); font-weight: var(--w-bold);
+  transition: transform 600ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.qpreview__img .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+.qpreview__tile:hover .qpreview__img { transform: scale(1.08); }
+/* 01, 02, 03 in outline, racing-number style. */
+.qpreview__num {
+  position: absolute; z-index: 4; top: 6px; right: calc(var(--cut) + 4px);
+  font-size: var(--t-xl); font-weight: var(--w-bold); font-style: italic; line-height: 1; letter-spacing: -0.02em;
+  color: transparent; -webkit-text-stroke: 1px rgba(255, 236, 170, 0.9); text-shadow: 0 0 12px rgba(245, 197, 66, 0.45);
+}
+.qpreview__new {
+  position: absolute; z-index: 4; top: 10px; left: calc(var(--cut) + 2px);
+  padding: 2px 8px 2px 6px; border-radius: 3px; transform: skewX(-12deg);
+  background: linear-gradient(90deg, #F7E08A, #F5C542 60%, #D99A1E); color: #1A1300;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.1em; text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba(245, 197, 66, 0.45);
+}
+.qpreview__name {
+  position: absolute; z-index: 4; left: 10px; right: calc(var(--cut) + 6px); bottom: 8px;
+  font-size: var(--t-xs); font-weight: var(--w-bold); font-style: italic; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+.qpreview__tile:first-child .qpreview__name { font-size: var(--t-sm); }
+
+/* The Wins tab in two parts: leaderboard medals, then event wins. */
+.winsec { display: grid; gap: 10px; }
+.winsec__title {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim);
+}
+.winsec__title svg { color: var(--q-gold); }
+.winsec__title small { font-size: var(--t-2xs); color: var(--text-faint); letter-spacing: 0; }
+
+/*
+ * A leaderboard medal: a ribbon, a struck metal disc with the place on it, the
+ * board and the month. Gold, silver or bronze; they drop in on their ribbons
+ * and swing to rest, and a glint crosses the metal now and then.
+ */
+.medalcards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); }
+.medalcard {
+  --metal-hi: #FFF3B0; --metal: #F5C542; --metal-lo: #A0700E; --glow: 245, 197, 66;
+  --ribbon-a: var(--violet); --ribbon-b: #4C1D95;
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; justify-items: center; gap: 2px; padding: 0 12px 14px; text-align: center;
+  border-radius: var(--r-lg); color: inherit; text-decoration: none;
+  background:
+    radial-gradient(90% 70% at 50% 30%, rgba(var(--glow), 0.2), transparent 70%),
+    linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid rgba(var(--glow), 0.45);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: lp-pop 520ms cubic-bezier(0.34, 1.4, 0.64, 1) both; animation-delay: calc(var(--i, 0) * 80ms);
+  transition: transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 220ms ease, border-color 220ms ease;
+}
+.medalcard:hover { transform: translateY(-3px); border-color: rgba(var(--glow), 0.8); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38), 0 0 26px rgba(var(--glow), 0.22); }
+.medalcard:active { transform: scale(0.97); }
+.medalcard:focus-visible { outline: 2px solid rgba(var(--glow), 0.9); outline-offset: 2px; }
+.medalcard--silver { --metal-hi: #FFFFFF; --metal: #CBD5E1; --metal-lo: #64748B; --glow: 203, 213, 225; --ribbon-a: #2563EB; --ribbon-b: #1E3A8A; }
+.medalcard--bronze { --metal-hi: #FFD9B0; --metal: #D08A4E; --metal-lo: #7C4319; --glow: 208, 138, 78; --ribbon-a: #DC2626; --ribbon-b: #7F1D1D; }
+/* The ribbon: two bands meeting in a V behind the medal. */
+.medalcard__ribbon {
+  width: 46px; height: 34px; margin-bottom: -12px;
+  background: linear-gradient(90deg, var(--ribbon-a) 0 50%, var(--ribbon-b) 50% 100%);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%);
+  box-shadow: inset 0 -6px 8px rgba(0, 0, 0, 0.25);
+}
+.medalcard__medal {
+  position: relative; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; margin-bottom: 6px;
+  background:
+    radial-gradient(circle at 32% 28%, var(--metal-hi), transparent 42%),
+    radial-gradient(circle, var(--metal) 0 55%, var(--metal-lo) 100%);
+  box-shadow: 0 0 0 3px var(--metal-lo), 0 0 0 5px rgba(var(--glow), 0.35), 0 8px 20px rgba(var(--glow), 0.35), inset 0 -4px 8px rgba(0, 0, 0, 0.25);
+  transform-origin: 50% -30px; animation: medal-swing 1.1s cubic-bezier(0.34, 1.4, 0.64, 1) both; animation-delay: calc(120ms + var(--i, 0) * 80ms);
+  overflow: hidden;
+}
+/* The struck ring inside the rim, and the number pressed into the metal. */
+.medalcard__medal::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.45); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12); }
+.medalcard__medal::after {
+  content: ''; position: absolute; inset: -40%;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.75) 50%, transparent 58%);
+  transform: translateX(-100%); animation: medal-glint 4.5s ease-in-out infinite; animation-delay: calc(1.2s + var(--i, 0) * 300ms);
+}
+.medalcard__medal b {
+  position: relative; font-size: var(--t-xl); font-weight: var(--w-bold); line-height: 1; color: var(--metal-lo);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6), 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+@keyframes medal-swing { 0% { transform: rotate(-24deg); opacity: 0; } 30% { opacity: 1; } 55% { transform: rotate(10deg); } 80% { transform: rotate(-4deg); } 100% { transform: rotate(0); } }
+@keyframes medal-glint { 0%, 70% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.medalcard__place { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.12em; text-transform: uppercase; color: rgb(var(--glow)); }
+.medalcard__board { font-size: var(--t-sm); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.medalcard__season { font-size: var(--t-xs); color: var(--text-dim); }
+
+/* Wins: one card each, in its kind's colour, rising in turn; the medal glints. */
+.wincards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.wincard {
+  --tone: 245, 197, 66;
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 14px 12px 14px 14px; border-radius: var(--r-lg); color: inherit; text-decoration: none;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(var(--tone), 0.22), transparent 55%),
+    linear-gradient(160deg, var(--surface-2), var(--surface));
+  border: 1px solid rgba(var(--tone), 0.4);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: lp-pop 520ms cubic-bezier(0.34, 1.4, 0.64, 1) both; animation-delay: calc(var(--i, 0) * 70ms);
+  transition: transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1), border-color 220ms ease, box-shadow 220ms ease;
+}
+.wincard::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(var(--tone), 0.18) 50%, transparent 60%);
+  transform: translateX(-100%); transition: transform 700ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.wincard:hover { transform: translateY(-2px); border-color: rgba(var(--tone), 0.75); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35), 0 0 22px rgba(var(--tone), 0.18); }
+.wincard:hover::after { transform: translateX(100%); }
+.wincard:active { transform: scale(0.98); }
+.wincard:focus-visible { outline: 2px solid rgba(var(--tone), 0.9); outline-offset: 2px; }
+.wincard--violet { --tone: 139, 92, 246; }
+.wincard--cyan { --tone: 34, 211, 238; }
+.wincard--green { --tone: 74, 222, 128; }
+.wincard--coral { --tone: 255, 90, 95; }
+/* The medal: a coin with a bright rim and a slow-turning sheen. */
+.wincard__medal {
+  position: relative; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.35), transparent 45%), radial-gradient(circle, rgba(var(--tone), 0.45), rgba(var(--tone), 0.12));
+  box-shadow: 0 0 0 2px rgba(var(--tone), 0.8), 0 0 0 5px rgba(var(--tone), 0.15), 0 6px 18px rgba(var(--tone), 0.35);
+}
+.wincard__medal::before {
+  content: ''; position: absolute; inset: -2px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from 0deg, transparent 0 70%, rgba(255, 255, 255, 0.7) 80%, transparent 90%);
+  -webkit-mask: radial-gradient(circle, transparent 23px, #000 24px); mask: radial-gradient(circle, transparent 23px, #000 24px);
+  animation: wincard-turn 3.2s linear infinite;
+}
+.wincard__medal > span { font-size: var(--t-xl); line-height: 1; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4)); }
+@keyframes wincard-turn { to { transform: rotate(1turn); } }
+.wincard__body { display: grid; gap: 2px; min-width: 0; }
+.wincard__kind { font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.1em; text-transform: uppercase; color: rgb(var(--tone)); }
+.wincard__what { font-size: var(--t-sm); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wincard__when { font-size: var(--t-xs); color: var(--text-dim); }
+.wincard__go { font-size: var(--t-lg); color: rgba(var(--tone), 0.9); transition: transform var(--dur-1) var(--ease); }
+.wincard:hover .wincard__go { transform: translateX(3px); }
+
+/* Honours in the card: each sticker pops onto the row in turn. */
+.slevel__stickers > .qsticker { animation: lp-pop 460ms cubic-bezier(0.34, 1.4, 0.64, 1) both; }
+.slevel__stickers > .qsticker:nth-child(2) { animation-delay: 50ms; }
+.slevel__stickers > .qsticker:nth-child(3) { animation-delay: 100ms; }
+.slevel__stickers > .qsticker:nth-child(4) { animation-delay: 150ms; }
+.slevel__stickers > .qsticker:nth-child(5) { animation-delay: 200ms; }
+.slevel__stickers > .qsticker:nth-child(6) { animation-delay: 250ms; }
+.slevel__stickers > .qsticker:nth-child(n + 7) { animation-delay: 300ms; }
+
+/* Under the tabs: at least a screen tall, so opening a short tab from higher up still brings the tabs to the top. */
+.tabpanel { min-height: calc(100dvh - var(--nav-h) - 72px); }
+/* "Leaderboard" is the longest label in the row: its cell takes room from "orders", so it fits a phone. */
+.pstats:has(> .pstat--long) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1.25fr); }
+.pstat--long small { letter-spacing: 0.03em; }
+
+/* Tabs that stay under the header while the page scrolls, and lift when they pin. */
+.tabs--sticky {
+  /* Under the header while it shows; up to the top edge (below any notch) when it steps aside, moving with it. */
+  position: sticky; top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: var(--z-dock);
+  scroll-margin-top: calc(var(--nav-h) + 12px);
+  transition: top var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
+}
+:root:not([data-bars='hidden']) .tabs--sticky { top: calc(var(--nav-h) + 8px); }
+/* A gap above the tabs, unless the shelf right above already leaves one. */
+.qprofile .tabs--sticky { margin-top: 16px; }
+.qprofile .qpreview { margin-bottom: 16px; }
+.qprofile .qpreview + .tabs--sticky { margin-top: 0; }
+.tabs--sticky.is-stuck {
+  border-color: rgba(124, 58, 237, 0.45);
+  background: rgba(20, 22, 34, 0.82); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  animation: tabs-pin 320ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+@keyframes tabs-pin { from { transform: scale(0.97); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .qpreview, .qpreview::before, .qpreview__tile, .wincard, .wincard__medal::before,
+  .medalcard, .medalcard__medal, .medalcard__medal::after,
+  .slevel__stickers > .qsticker, .tabs--sticky.is-stuck { animation: none; }
+  .qpreview::after { animation: none; transform: rotate(-8deg); }
+  .qpreview__tile::after, .wincard::after { display: none; }
+  .tabs--sticky, .qpreview__tile, .qpreview__img, .wincard, .medalcard { transition: none; }
 }

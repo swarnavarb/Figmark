@@ -45,6 +45,8 @@ import '../styles/OrderPage.css';
 import { Select } from '../components/Select';
 import { PriceBreakdown } from '../components/Offers';
 import { CheckoutDeals } from '../components/OffersBlock';
+import { ReviewPhotoPicker, ReviewPhotoStrip } from '../components/ReviewPhotos';
+import { REVIEW_PHOTO_MAX } from '@shared/models';
 
 /**
  * One order, as the buyer sees it.
@@ -1967,6 +1969,7 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
   const [editing, setEditing] = useState(false);
   const [rating, setRating] = useState(mine?.rating ?? 5);
   const [body, setBody] = useState(mine?.body ?? '');
+  const [photos, setPhotos] = useState<string[]>(mine?.photoUrls ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [thanked, setThanked] = useState(false);
@@ -1980,8 +1983,8 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
     setError(null);
     try {
       const fresh = !mine;
-      if (mine) await api.editReview(state.order.id, rating, body.trim());
-      else await api.reviewOrder(state.order.id, rating, body.trim());
+      if (mine) await api.editReview(state.order.id, rating, body.trim(), photos);
+      else await api.reviewOrder(state.order.id, rating, body.trim(), photos);
       setEditing(false);
       await onDone();
       if (fresh) setThanked(true);
@@ -2039,6 +2042,10 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
               Visible right away, and you can change the rating or the words whenever you like.
             </span>
           </label>
+          <div className="field">
+            <span>Photos <small className="faint">· optional, up to {REVIEW_PHOTO_MAX}</small></span>
+            <ReviewPhotoPicker value={photos} onChange={setPhotos} disabled={busy} />
+          </div>
           {error && <ErrorNotice message={error} />}
           <div className="row">
             <button type="submit" className="btn" disabled={busy}>
@@ -2046,7 +2053,7 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
             </button>
             {mine && (
               <button type="button" className="btn btn--quiet" disabled={busy}
-                onClick={() => { setEditing(false); setRating(mine.rating); setBody(mine.body); }}>
+                onClick={() => { setEditing(false); setRating(mine.rating); setBody(mine.body); setPhotos(mine.photoUrls ?? []); }}>
                 Cancel
               </button>
             )}
@@ -2059,6 +2066,7 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
             <span className="faint">your rating of {other}{mine!.editedAt ? ' · edited' : ''}</span>
           </div>
           {mine!.body && <p className="muted">{mine!.body}</p>}
+          <ReviewPhotoStrip photos={mine!.photoUrls} about={state.order.itemName} />
           <div className="row">
             <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(true)}>
               Edit review
@@ -2074,6 +2082,7 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
           <>
             <Stars value={state.theirReview.rating} />
             {state.theirReview.body && <p className="muted">{state.theirReview.body}</p>}
+            <ReviewPhotoStrip photos={state.theirReview.photoUrls} about={state.order.itemName} />
             <ReportButton targetType="review" targetId={state.theirReview.id}
               parentId={state.theirReview.subjectId} mine={false} />
           </>
