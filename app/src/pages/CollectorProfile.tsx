@@ -75,7 +75,7 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
   }, [person.userId]);
 
   const stats = collector?.stats;
-  const earned = collector?.stickers.filter((entry) => entry.earned) ?? [];
+  const wins = page?.gameBadges ?? [];
 
   return (
     <>
@@ -123,7 +123,7 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
 
         {!page && (
           <div className="pstats" aria-hidden="true">
-            {['followers', 'following', 'honours', 'top-3 finishes'].map((label) => (
+            {['followers', 'following', 'orders', 'podiums'].map((label) => (
               <span key={label} className="pstat"><b><SkelInline w={24} h={20} /></b><small>{label}</small></span>
             ))}
           </div>
@@ -131,19 +131,13 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
         {page && (
           <div className="pstats">
             <FollowCounts userId={page.sellerId} followerCount={page.followerCount} isStore={false} />
-            <span className="pstat"><b>{collector ? earned.length : '—'}</b><small>honours</small></span>
-            <span className="pstat"><b>{collector ? collector.podiums.length : '—'}</b><small>top-3 finishes</small></span>
-          </div>
-        )}
-
-        {/* Won, not claimed: competitions, debates and guesses. */}
-        {page?.gameBadges && page.gameBadges.length > 0 && (
-          <div className="chips chips--tight" aria-label="Wins">
-            {page.gameBadges.map((badge) => (
-              <Link key={badge.id} to={badge.link} className="chip winchip" title={badge.detail}>
-                {BADGE_META[badge.kind].emoji} {badge.detail}
-              </Link>
-            ))}
+            {/* Honours have their own card below; this cell says something new. */}
+            <span className="pstat" title={stats ? `${stats.completed} of ${stats.orders} orders completed` : undefined}>
+              <b>{stats ? <CountUp to={stats.completed} /> : '—'}</b><small>orders</small>
+            </span>
+            <span className="pstat" title="Top-3 finishes in hobby leaderboard seasons">
+              <b>{collector ? <CountUp to={collector.podiums.length} /> : '—'}</b><small>podiums</small>
+            </span>
           </div>
         )}
 
@@ -171,13 +165,23 @@ export function CollectorHeader({ person, actions, page, onReviews, isMe = false
             stickers={collector.stickers} whose={isMe ? 'mine' : 'theirs'}
             line={`${formatCount(collector.xp)} XP · ${formatCount(collector.nextLevelXp - collector.xp)} to level ${collector.level + 1}`}
             how={LEVELS_EXPLAINED}
-            note={(collector.penalty > 0 || collector.podiums.length > 0) && (
-              <p className="slevel__note">
-                {collector.podiums.length > 0 && (
-                  <span><Glyph name="crown" size={12} /> {collector.podiums.length} top-3 finish{collector.podiums.length === 1 ? '' : 'es'}</span>
+            note={(
+              <>
+                {/* Won, not claimed: competitions, debates and guesses - beside the honours they sit with. */}
+                {wins.length > 0 && (
+                  <div className="slevel__wins" aria-label="Wins">
+                    <span className="slevel__winslabel"><Glyph name="crown" size={12} /> Wins</span>
+                    {wins.map((badge, i) => (
+                      <Link key={badge.id} to={badge.link} className="chip winchip" title={badge.detail} style={{ ['--i' as string]: i }}>
+                        {BADGE_META[badge.kind].emoji} {badge.detail}
+                      </Link>
+                    ))}
+                  </div>
                 )}
-                {collector.penalty > 0 && <span className="qprofile__penalty">−{collector.penalty} XP from low ratings and lost disputes</span>}
-              </p>
+                {collector.penalty > 0 && (
+                  <p className="slevel__note"><span className="qprofile__penalty">−{collector.penalty} XP from low ratings and lost disputes</span></p>
+                )}
+              </>
             )} />
         )}
       </div>
@@ -207,6 +211,93 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub: 
       <span className="qstat__label">{label}</span>
       <small className="faint">{sub}</small>
     </div>
+  );
+}
+
+const stillMotion = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+
+/** A count that runs up from nothing when it first shows, easing out. */
+function CountUp({ to }: { to: number }) {
+  const [shown, setShown] = useState(() => (stillMotion() ? to : 0));
+  useEffect(() => {
+    if (to <= 0 || stillMotion()) { setShown(to); return; }
+    let frame = 0;
+    const start = performance.now();
+    const length = Math.min(900, 300 + to * 40);
+    const tick = (now: number) => {
+      const at = Math.min(1, (now - start) / length);
+      setShown(Math.round(to * (1 - (1 - at) ** 3)));
+      if (at < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [to]);
+  return <>{formatCount(shown)}</>;
+}
+
+/**
+ * Whether a sticky element is pinned right now, so it can dress for it:
+ * checked once a frame while the page scrolls, against the top it sticks at.
+ */
+export function useStuck<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [el, setEl] = useState<T | null>(null);
+  const [stuck, setStuck] = useState(false);
+  // A callback ref, so it is watched whenever it mounts - not only on the first render.
+  const attach = useCallback((node: T | null) => { ref.current = node; setEl(node); }, []);
+  useEffect(() => {
+    if (!el) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const top = parseFloat(getComputedStyle(el).top) || 0;
+      // Pinned once it sits at its top and the page has scrolled under it.
+      setStuck(window.scrollY > 0 && el.getBoundingClientRect().top <= top + 0.5);
+    };
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(measure); };
+    measure();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [el]);
+  return [ref, stuck, attach] as const;
+}
+
+/* ── A few cards on a gold shelf, above the tabs ───────────────────────── */
+
+/**
+ * The three latest pieces of somebody's collection, standing on a shelf, so
+ * the most visual thing on the page is seen without opening a tab. Any tap
+ * opens the whole collection. Shows nothing until there is something to show.
+ */
+export function CollectionPreview({ userId, onOpen }: { userId: string; onOpen: () => void }) {
+  const [shelf, setShelf] = useState<CollectionShelf | null>(null);
+  useEffect(() => {
+    setShelf(null);
+    void api.collection(userId).then(setShelf).catch(() => setShelf({ groups: [], items: [] }));
+  }, [userId]);
+  if (!shelf || shelf.items.length === 0) return null;
+  const latest = [...shelf.items].sort((a, b) => b.deliveredAt.localeCompare(a.deliveredAt)).slice(0, 3);
+  return (
+    <section className="qpreview" aria-label="Collection">
+      <button type="button" className="qpreview__head" onClick={onOpen}>
+        <span className="qpreview__title"><Glyph name="chest" size={15} /> On the shelf</span>
+        <span className="qpreview__all">See all {shelf.items.length} <span aria-hidden="true">›</span></span>
+      </button>
+      <div className="qpreview__stage">
+        {latest.map((item, i) => (
+          <button key={item.orderId} type="button" className="qpreview__card" style={{ ['--i' as string]: i }}
+            onClick={onOpen} aria-label={`${item.name}: open the collection`}>
+            <RoyalCard item={item} />
+          </button>
+        ))}
+        <span className="qpreview__plank" aria-hidden="true" />
+      </div>
+    </section>
   );
 }
 
@@ -536,6 +627,11 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
 }) {
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [tab, setTab] = useState<Tab>('collection');
+  const [tabsRef, stuck, tabsAttach] = useStuck<HTMLDivElement>();
+  const openCollection = () => {
+    setTab('collection');
+    tabsRef.current?.scrollIntoView({ behavior: stillMotion() ? 'auto' : 'smooth', block: 'start' });
+  };
 
   // Posts are read when the tab is first opened: most visits are not for them.
   useEffect(() => setPosts(null), [profile.sellerId]);
@@ -563,7 +659,8 @@ export function CollectorProfile({ profile, isMe, onFollow, reload }: {
           edit={<Link to="/me?tab=settings#settings" className="pbtn pbtn--follow">Edit profile</Link>} />} />
 
       <div className="storefront__body">
-        <div className="tabs" style={{ marginTop: 16 }}>
+        <CollectionPreview userId={profile.sellerId} onOpen={openCollection} />
+        <div ref={tabsAttach} className={`tabs tabs--sticky${stuck ? ' is-stuck' : ''}`}>
           <button type="button" className={`tab${tab === 'collection' ? ' is-on' : ''}`} onClick={() => setTab('collection')}>
             Collection
           </button>

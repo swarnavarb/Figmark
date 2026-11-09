@@ -9,7 +9,7 @@ import { listingRarity } from '@shared/quest';
 import { LootCard } from './FeedPage';
 import { useToast } from '../components/Feedback';
 import { SkelCards, SkelGrid, SkelRows } from '../components/PageSkeletons';
-import { CollectorHeader, PurchasedCollection } from './CollectorProfile';
+import { CollectionPreview, CollectorHeader, PurchasedCollection, useStuck } from './CollectorProfile';
 import { SocialPostCard } from '../components/SocialPost';
 import { Avatar, EmptyState, ErrorNotice, LevelChip, Thumb, TrustBadge, leadPhoto } from '../components/ui';
 import { formatMoney, timeAgo } from '../format';
@@ -77,6 +77,7 @@ export function ProfilePage() {
     void api.profile(user.username).then(setPublicPage).catch(() => setPublicPage(null));
   }, [user?.username]);
   const setTab = (next: Tab) => setParams({ tab: next }, { replace: true });
+  const [tabsRef, stuck, tabsAttach] = useStuck<HTMLDivElement>();
   const location = useLocation();
   /** Edit profile: the Settings tab, scrolled to, so the tap lands somewhere visible. */
   const editProfile = () => navigate({ search: '?tab=settings', hash: '#settings' }, { replace: true });
@@ -208,7 +209,12 @@ export function ProfilePage() {
         </div>
       )}
 
-      <div className="tabs" id="settings" style={{ scrollMarginTop: 'calc(var(--nav-h, 56px) + 12px)' }}>
+      <CollectionPreview userId={user.id} onOpen={() => {
+        setTab('collection');
+        tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }} />
+
+      <div ref={tabsAttach} className={`tabs tabs--sticky${stuck ? ' is-stuck' : ''}`} id="settings">
         {(Object.keys(TAB_LABELS) as Tab[]).map((entry) => (
           <button key={entry} className={`tab${tab === entry ? ' is-on' : ''}`} onClick={() => setTab(entry)}>
             {TAB_LABELS[entry]}
