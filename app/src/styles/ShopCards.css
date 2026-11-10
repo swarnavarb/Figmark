@@ -556,3 +556,87 @@
 @keyframes scene-ink-soft { 0%, 61% { color: #8A5A3C; } 65%, 92% { color: #F3C9A0; } 95%, 100% { color: #8A5A3C; } }
 /* Clouds pale against the night, so the heading stays the brightest thing in the sky. */
 @keyframes scene-clouds { 0%, 56% { opacity: 1; } 66%, 90% { opacity: 0.18; } 98%, 100% { opacity: 1; } }
+
+/* ── The lite street (streetMode.ts) ──────────────────────────────────────
+   Everything above still draws the classic street. On the lite one, a person,
+   dog or gull is a stack of five drawings of one stride (--f runs from one end
+   of the swing, 1, through the middle, 0, to the other, -1; --b is how far up
+   the step lifts them), and the stride is a flip of which one shows: opacity,
+   which the graphics chip animates, instead of limbs redrawn every frame.
+   streetPower.ts rests the street (data-resting) and calms it (data-calm). */
+.shopstrip--lite .pose--0 { --f: 1; --b: 0; }
+.shopstrip--lite .pose--1 { --f: 0.71; --b: 0.29; }
+.shopstrip--lite .pose--2 { --f: 0; --b: 1; }
+.shopstrip--lite .pose--3 { --f: -0.71; --b: 0.29; }
+.shopstrip--lite .pose--4 { --f: -1; --b: 0; }
+/* Standing still (less motion asked for, or before it starts), the middle pose shows. */
+.shopstrip--lite .pose { opacity: 0; }
+.shopstrip--lite .pose--2 { opacity: 1; }
+
+.shopstrip--lite .walker { position: relative; display: block; flex: none; }
+.shopstrip--lite .pose { display: block; }
+.shopstrip--lite .walker > .pose:not(:first-child) { position: absolute; left: 0; bottom: 0; }
+.shopstrip--lite .walker--dog { display: none; }
+.shopstrip--lite .is-dog .walker--dog { display: block; }
+
+/* Each pose holds its limbs where that moment of the stride has them. */
+.shopstrip--lite .walker--person > .pose { transform: translateY(calc(var(--bob) * var(--b))); }
+/* The step's lift by look, as the classic street has it on each drawing. */
+.shopstrip--lite .walker--person { --bob: -1.5px; --gait: 0.5s; }
+.shopstrip--lite .walker--parcel { --gait: 0.55s; }
+.shopstrip--lite .walker--stroll { --gait: 0.62s; }
+.shopstrip--lite .walker--kid { --bob: -5px; --gait: 0.36s; }
+.shopstrip--lite .walker--runner { --bob: -3px; --gait: 0.2s; }
+.shopstrip--lite .walker--chaser { --bob: -3px; --gait: 0.21s; }
+.shopstrip--lite .shopper__leg--front { transform: rotate(calc(var(--swing) * var(--f))); }
+.shopstrip--lite .shopper__leg--back { transform: rotate(calc(var(--swing) * var(--f) * -1)); }
+.shopstrip--lite .shopper__arm--front { transform: rotate(calc(var(--arm) * var(--f) * -1)); }
+.shopstrip--lite .shopper__arm--back { transform: rotate(calc(var(--arm) * var(--f))); }
+.shopstrip--lite .shopper__hang { transform: rotate(calc(var(--arm) * var(--f) * 0.85)); }
+.shopstrip--lite .shopper--parcel .shopper__arm { transform: rotate(-58deg); }
+.shopstrip--lite .is-dog .shopper__arm--front { transform: rotate(-35deg); }
+.shopstrip--lite .dog__legs--a rect { transform: rotate(calc(-28deg * var(--f))); }
+.shopstrip--lite .dog__legs--b rect { transform: rotate(calc(28deg * var(--f))); }
+.shopstrip--lite .dog__tail { transform: rotate(calc(2deg - 16deg * var(--f))); }
+.shopstrip--lite .gull__wing--l { transform: rotate(calc(-4deg - 22deg * var(--f))); }
+.shopstrip--lite .gull__wing--r { transform: rotate(calc(4deg + 22deg * var(--f))); }
+
+/* A flock of five, each gull its own stack of wingbeats. */
+.shopstrip--lite .gullset { position: absolute; width: 32px; height: 16px; }
+.shopstrip--lite .gullset > .pose { position: absolute; inset: 0; }
+.shopstrip--lite .gullset .gull { left: 0; top: 0; width: 100%; height: 100%; }
+.shopstrip--lite .gullset:nth-child(1) { left: 96px; top: 20px; }
+.shopstrip--lite .gullset:nth-child(2) { left: 68px; top: 8px; width: 26px; height: 13px; }
+.shopstrip--lite .gullset:nth-child(3) { left: 66px; top: 36px; width: 27px; height: 13.5px; }
+.shopstrip--lite .gullset:nth-child(4) { left: 34px; top: 0; width: 22px; height: 11px; }
+.shopstrip--lite .gullset:nth-child(5) { left: 30px; top: 48px; width: 23px; height: 11.5px; }
+
+/* The van: its body drawn once, its hubs spun as their own layers over the tyres. */
+.shopstrip--lite .shopfront__van { display: block; }
+.shopstrip--lite .van__body { display: block; width: 100%; height: 100%; overflow: visible; }
+.shopstrip--lite .van__hub {
+  position: absolute; top: 77.14%; width: 5.65%; height: 12.38%; border-radius: 50%;
+  background:
+    linear-gradient(#7C7584, #7C7584) center / 100% 15.4% no-repeat,
+    linear-gradient(#7C7584, #7C7584) center / 15.4% 100% no-repeat,
+    #B9B2BE;
+}
+.shopstrip--lite .van__hub--back { left: 15.65%; }
+.shopstrip--lite .van__hub--front { left: 77.61%; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Off the classic street's limb, bob and wing animations... */
+  .shopstrip--lite .shopper, .shopstrip--lite .shopper *, .shopstrip--lite .dog *, .shopstrip--lite .gull,
+  .shopstrip--lite .gull * { animation: none; }
+  /* ...the quick loops - poses, gulls, hubs, neon - are started from script
+     (startStreetLoops in streetPower.ts), so they never wake the page. */
+  .shopstrip--lite .shoptile__name, .shopstrip--lite .pose, .shopstrip--lite .gullset, .shopstrip--lite .van__hub { animation: none; }
+
+  /* Calm (a weaker phone, data saver, a low battery): people glide in their stride, gulls hold their wings out. */
+  .shopstrip--lite[data-calm] .pose { opacity: 0; }
+  .shopstrip--lite[data-calm] .pose--0 { opacity: 1; }
+
+  /* Resting: everything stops where it is until the street is woken. */
+  .shopstrip--lite[data-resting], .shopstrip--lite[data-resting] *,
+  .shopstrip--lite[data-resting] *::before, .shopstrip--lite[data-resting] *::after { animation-play-state: paused !important; }
+}

@@ -5,6 +5,8 @@ import { tagKey, tagSlug } from '@shared/shop-tags';
 import { SHOP_NAME_MAX } from '@shared/storefront';
 import { api, type ShopCard } from '../api';
 import { warmPage } from '../pageLoaders';
+import { streetMode } from '../streetMode';
+import { startStreetLoops, useStreetPower } from './streetPower';
 import { Avatar } from './ui';
 import { brandHueFor, formatCount } from '../format';
 import '../styles/ShopCards.css';
@@ -128,7 +130,7 @@ const DAY_MS = 96_000;
  * drawn: coming back to the page carries on from where the day had got to
  * instead of starting again at dawn.
  */
-function StreetScene() {
+function StreetScene({ lite }: { lite: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const band = ref.current?.closest('.shopstrip--band');
@@ -149,7 +151,10 @@ function StreetScene() {
       <span className="shopscene__moon" />
       <span className="shopscene__clouds" />
       <span><span className="shopscene__plane" /></span>
-      <span><span className="shopscene__birds">{[0, 1, 2, 3, 4].map((n) => <Gull key={n} />)}</span></span>
+      <span><span className="shopscene__birds">{[0, 1, 2, 3, 4].map((n) => lite
+        /* Lite: each gull is its five wing poses, stacked, shown in turn. */
+        ? <span key={n} className="gullset">{posed(() => <Gull />)}</span>
+        : <Gull key={n} />)}</span></span>
       <span className="shopscene__city" />
       <span className="shopscene__city shopscene__city--night" />
       <span className="shopscene__pave" />
@@ -157,6 +162,17 @@ function StreetScene() {
     </div>
   );
 }
+
+/**
+ * The lite street's poses: five drawings of one stride (or wingbeat, or trot),
+ * from one end of the swing through the middle to the other. They are stacked
+ * and shown one at a time, so the motion is a flip of what is visible - work
+ * the graphics chip does - rather than limbs redrawn on every frame.
+ */
+const POSES = [0, 1, 2, 3, 4] as const;
+/* Each pose in a plain box of its own: Chrome hands the flip to the graphics
+   chip for a box, never for an svg element itself. */
+const posed = (draw: () => ReactNode) => POSES.map((pose) => <span key={pose} className={`pose pose--${pose}`}>{draw()}</span>);
 
 /** A gull, seen from the front: two wings that beat about the body. */
 function Gull() {
@@ -248,15 +264,20 @@ const COATS = ['#C9883F', '#2B2230', '#F1E6D2', '#8A5A36', '#A8A2AA'];
  */
 function dressLane(lane: HTMLElement, restart: boolean) {
   const kind = lane.dataset.roam;
-  lane.querySelectorAll<SVGElement>('.shopper').forEach(person => {
-    person.classList.toggle('shopper--her', Math.random() < 0.5);
-    person.style.setProperty('--shirt', pick(SHIRTS));
-    person.style.setProperty('--skirt', pick(SHIRTS));
-    person.style.setProperty('--pants', pick(PANTS));
-    person.style.setProperty('--skin', pick(SKINS));
-    person.style.setProperty('--hair', pick(HAIRS));
-  });
-  lane.querySelector<SVGElement>('.dog')?.style.setProperty('--coat', pick(COATS));
+  // A person is one drawing, or on the lite street their stack of poses: all dressed alike.
+  const walkers = [...lane.querySelectorAll<HTMLElement | SVGElement>(':scope > .shopper, :scope > .walker--person')];
+  const people = walkers
+    .map(person => (person.matches('.shopper') ? [person] : [...person.querySelectorAll('.shopper')]) as SVGElement[]);
+  for (const poses of people) {
+    const her = Math.random() < 0.5;
+    const clothes = { '--shirt': pick(SHIRTS), '--skirt': pick(SHIRTS), '--pants': pick(PANTS), '--skin': pick(SKINS), '--hair': pick(HAIRS) };
+    for (const person of poses) {
+      person.classList.toggle('shopper--her', her);
+      for (const [name, value] of Object.entries(clothes)) person.style.setProperty(name, value);
+    }
+  }
+  const coat = pick(COATS);
+  lane.querySelectorAll<SVGElement>('.dog').forEach(dog => dog.style.setProperty('--coat', coat));
   if (kind === 'chase') {
     const style = Math.random();
     lane.classList.toggle('no-ball', style > 0.6);
@@ -279,12 +300,13 @@ function dressLane(lane: HTMLElement, restart: boolean) {
   lane.style.animationDuration = chase ? `${(width + 160) / speed / 0.4}s` : `${(width + 120) / speed}s`;
   lane.style.animationDelay = `${(chase ? 4 + Math.random() * 14 : 0.5 + Math.random() * 7).toFixed(2)}s`;
   lane.style.animationFillMode = 'backwards';
-  const adult = lane.querySelector<SVGElement>('.shopper');
+  // The pace sets the stride: on the drawing itself, or on the lite street on the stack its poses flip in.
+  const adult = walkers[0];
   if (adult && kind !== 'parcel' && !chase) adult.style.setProperty('--gait', `${(20 / speed).toFixed(3)}s`);
 }
 
 /** The van, side on, facing right: cargo box, cab, wheels that turn, lamps for the drive home. */
-function Van() {
+function Van({ lite }: { lite: boolean }) {
   const wheel = (cx: number) => (
     <g className="van__wheel" key={cx}>
       <circle cx={cx} cy="70" r="11" fill="#26222C" />
@@ -292,8 +314,8 @@ function Van() {
       <path d={`M${cx - 5} 70h10M${cx} 65v10`} stroke="#7C7584" strokeWidth="1.6" />
     </g>
   );
-  return (
-    <svg className="shopfront__van" viewBox="0 0 184 84" aria-hidden="true">
+  const body = (
+    <svg className={lite ? 'van__body' : 'shopfront__van'} viewBox="0 0 184 84" aria-hidden="true">
       <defs>
         <linearGradient id="van-glow">
           <stop offset="0" stopColor="#FFE7A0" stopOpacity=".9" />
@@ -318,9 +340,23 @@ function Van() {
       <rect x="0" y="62" width="10" height="5" rx="2" fill="#3A3440" />
       <circle cx="34" cy="70" r="13.4" fill="#3A3440" />
       <circle cx="148" cy="70" r="13.4" fill="#3A3440" />
-      {wheel(34)}
-      {wheel(148)}
+      {lite ? <>
+        <circle cx="34" cy="70" r="11" fill="#26222C" />
+        <circle cx="148" cy="70" r="11" fill="#26222C" />
+      </> : <>
+        {wheel(34)}
+        {wheel(148)}
+      </>}
     </svg>
+  );
+  if (!lite) return body;
+  /* Lite: the hubs are their own layers over the tyres, so the graphics chip spins them. */
+  return (
+    <span className="shopfront__van" aria-hidden="true">
+      {body}
+      <i className="van__hub van__hub--back" />
+      <i className="van__hub van__hub--front" />
+    </span>
   );
 }
 
@@ -331,7 +367,7 @@ function Van() {
  * in the way of a tap. It knows its own width so everybody walks at a
  * person's pace however wide the street (--street-w).
  */
-function StreetFront() {
+function StreetFront({ lite }: { lite: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const street = ref.current;
@@ -340,26 +376,58 @@ function StreetFront() {
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(street);
-    street.querySelectorAll<HTMLElement>('[data-roam]').forEach(lane => dressLane(lane, false));
+    const lanes = [...street.querySelectorAll<HTMLElement>('[data-roam]')];
+    lanes.forEach(lane => dressLane(lane, false));
+    if (lite) {
+      /* Lite: a lap is noticed by one timer looking at the lanes twice a
+         second. Listening for animationiteration instead would have Chrome
+         wake the page every time any animation loops - and the poses loop
+         all the time. */
+      const lapOf = (lane: HTMLElement) => {
+        const walk = lane.getAnimations().find(animation => ((animation as CSSAnimation).animationName ?? '').startsWith('street-'));
+        return walk?.effect?.getComputedTiming().currentIteration ?? null;
+      };
+      const laps = new Map(lanes.map(lane => [lane, lapOf(lane)]));
+      const timer = window.setInterval(() => {
+        for (const lane of lanes) {
+          const lap = lapOf(lane);
+          const was = laps.get(lane);
+          if (lap !== null && was !== null && was !== undefined && lap > was) {
+            dressLane(lane, true);
+            // A new pace, a new stride.
+            startStreetLoops(lane);
+            laps.set(lane, lapOf(lane) ?? 0);
+          } else if (lap !== null) laps.set(lane, lap);
+        }
+      }, 500);
+      return () => { observer.disconnect(); window.clearInterval(timer); };
+    }
     const onLap = (event: AnimationEvent) => {
       const lane = event.target as HTMLElement;
       if (lane.dataset?.roam && event.animationName.startsWith('street-')) dressLane(lane, true);
     };
     street.addEventListener('animationiteration', onLap);
     return () => { observer.disconnect(); street.removeEventListener('animationiteration', onLap); };
-  }, []);
+  }, [lite]);
+  /* Lite: everybody is a stack of their poses. */
+  const person = (look: Look) => (lite
+    ? <span className={`walker walker--person walker--${look}`}>{posed(() => <Person look={look} />)}</span>
+    : <Person look={look} />);
+  const dog = lite
+    ? <span className="walker walker--dog">{posed(() => <Dog />)}</span>
+    : <Dog />;
   return (
     <div className="shopfront" ref={ref} aria-hidden="true">
-      <span className="shopfront__lane shopfront__lane--parcel" data-roam="parcel"><Person look="parcel" /></span>
-      <span className="shopfront__lane shopfront__lane--bag" data-roam="bag"><Person look="bag" /><Dog /></span>
-      <span className="shopfront__lane shopfront__lane--dog is-dog" data-roam="dog"><Person look="stroll" /><Dog /></span>
-      <span className="shopfront__lane shopfront__lane--stroll" data-roam="stroll"><Person look="stroll" /><Person look="kid" /></span>
+      <span className="shopfront__lane shopfront__lane--parcel" data-roam="parcel">{person('parcel')}</span>
+      <span className="shopfront__lane shopfront__lane--bag" data-roam="bag">{person('bag')}{dog}</span>
+      <span className="shopfront__lane shopfront__lane--dog is-dog" data-roam="dog">{person('stroll')}{dog}</span>
+      <span className="shopfront__lane shopfront__lane--stroll" data-roam="stroll">{person('stroll')}{person('kid')}</span>
       <span className="shopfront__lane shopfront__lane--chase" data-roam="chase">
-        <Person look="chaser" />
-        <Person look="runner" />
+        {person('chaser')}
+        {person('runner')}
         <span className="shopfront__ball" />
       </span>
-      <Van />
+      <Van lite={lite} />
     </div>
   );
 }
@@ -377,10 +445,14 @@ export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
   band?: boolean;
   shops: ShopCard[] | null;
 }) {
-  if (!shops || shops.length === 0) return null;
+  const ref = useRef<HTMLElement>(null);
+  const lite = band && streetMode() === 'lite';
+  const empty = !shops || shops.length === 0;
+  useStreetPower(ref, lite && !empty);
+  if (empty) return null;
   return (
-    <section className={`shopstrip${band ? ' shopstrip--band' : ''}`} aria-label={title}>
-      {band && <StreetScene />}
+    <section ref={ref} className={`shopstrip${band ? ' shopstrip--band' : ''}${lite ? ' shopstrip--lite' : ''}`} aria-label={title}>
+      {band && <StreetScene lite={lite} />}
       <header className="shopstrip__head">
         <span className="shopstrip__words">
           {eyebrow && <span className="shopstrip__eyebrow">{eyebrow}</span>}
@@ -400,7 +472,7 @@ export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
           </Fragment>
         ) : <ShopTile key={shop.id} shop={shop} />)}
       </div>
-      {band && <StreetFront />}
+      {band && <StreetFront lite={lite} />}
     </section>
   );
 }
