@@ -1,5 +1,5 @@
 import { ProBadge } from './Billing';
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { tagKey, tagSlug } from '@shared/shop-tags';
 import { SHOP_NAME_MAX } from '@shared/storefront';
@@ -133,7 +133,8 @@ function ShopArt() {
  * The street behind the band, as a day that loops: dawn, a van on its morning
  * round, a cargo plane over the rooftops at noon, birds heading home, sunset,
  * then the city's windows and the lamps coming on under the stars and moon.
- * Every layer is drawn in CSS (ShopCards.css); this only stacks them.
+ * Every layer is drawn in CSS (ShopCards.css); this only stacks them. What
+ * passes in front of the shops - the van, people - is StreetFront.
  */
 function StreetScene() {
   return (
@@ -151,9 +152,18 @@ function StreetScene() {
       <span className="shopscene__city shopscene__city--night" />
       <span className="shopscene__pave" />
       <span className="shopscene__pave shopscene__pave--night" />
-      <span className="shopscene__lamps" />
-      <span className="shopscene__glow" />
-      <span className="shopscene__road"><span className="shopscene__van" /></span>
+    </div>
+  );
+}
+
+/** The pavement in front of the shops: people walking by, and the van. Drawn over the row, never in the way of a tap. */
+function StreetFront() {
+  return (
+    <div className="shopfront" aria-hidden="true">
+      <span className="shopfront__walker shopfront__walker--bag" />
+      <span className="shopfront__walker shopfront__walker--parcel" />
+      <span className="shopfront__walker shopfront__walker--stroll" />
+      <span className="shopfront__van" />
     </div>
   );
 }
@@ -185,8 +195,15 @@ export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
           : sub ? <span className="shopstrip__sub">{sub}</span> : <span className="shopstrip__rule" aria-hidden="true" />}
       </header>
       <div className="shopstrip__row">
-        {shops.map((shop) => <ShopTile key={shop.id} shop={shop} />)}
+        {shops.map((shop) => band ? (
+          /* On the street, a lamp stands in the gap after every shop. */
+          <Fragment key={shop.id}>
+            <ShopTile shop={shop} />
+            <span className="shopstrip__lamp" aria-hidden="true"><i /></span>
+          </Fragment>
+        ) : <ShopTile key={shop.id} shop={shop} />)}
       </div>
+      {band && <StreetFront />}
     </section>
   );
 }
