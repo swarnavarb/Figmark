@@ -3,6 +3,7 @@ import { useNow } from '../clock';
 import { Link } from 'react-router-dom';
 import { countryFlag } from '@shared/countries';
 import { ApiRequestError, api, type DropCardData, type FillingLot } from '../api';
+import { watchOnScreen } from '../pauseOffscreen';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
@@ -11,9 +12,10 @@ import { Thumb } from './ui';
 /**
  * The two Buy-tab shelves that sell an event, each telling its own story.
  *
- * Drops is a short row of race cards: a start clock counting down to the
- * first item, the shop and what is in it, and a bell to be told when it
- * starts. When the clock runs out the card goes live and says how far in it is.
+ * Drops is a small stage: bulbs along a velvet valance, drapes drawn back at
+ * the sides, footlights on the boards, each drop a ticket behind its own
+ * curtain still shut, a clock counting down to the first item, and a bell to
+ * be told when the curtain goes up. When it does, the curtain parts.
  *
  * Lots filling up is a packing line: open cartons riding a conveyor belt,
  * the shop's items dropping into them one after another, and the number of
@@ -47,7 +49,7 @@ function span(seconds: number): string {
   return `${m}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-/* ── Drops: race cards ──────────────────────────────────────────────────── */
+/* ── Drops: the stage ──────────────────────────────────────────────────── */
 
 /** The bell: on, off, or off to a guest who is asked to sign in first. */
 function useReminder(drop: DropCardData, onChange: (next: DropCardData) => void) {
@@ -113,9 +115,10 @@ function calendarFile(drop: { id: string; name: string; startsAt: string; shop: 
 }
 
 /** Save the drop to the phone's own calendar - the reminder that works with the app closed. */
-function CalendarButton({ drop, compact = false }: { drop: DropCardData; compact?: boolean }) {
+function CalendarButton({ drop, compact = false, iconOnly = false }: { drop: DropCardData; compact?: boolean; iconOnly?: boolean }) {
   return (
-    <button type="button" className={`remind remind--cal${compact ? ' remind--sm' : ''}`}
+    <button type="button" className={`remind remind--cal${compact ? ' remind--sm' : ''}${iconOnly ? ' remind--icon' : ''}`}
+      aria-label={iconOnly ? 'Add to calendar' : undefined}
       onClick={(event) => {
         event.preventDefault();
         const blob = new Blob([calendarFile(drop)], { type: 'text/calendar;charset=utf-8' });
@@ -127,7 +130,7 @@ function CalendarButton({ drop, compact = false }: { drop: DropCardData; compact
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       }}>
-      <span aria-hidden="true">📅</span> {compact ? 'Calendar' : 'Add to calendar'}
+      <span aria-hidden="true">📅</span>{!iconOnly && <> {compact ? 'Calendar' : 'Add to calendar'}</>}
     </button>
   );
 }
@@ -147,51 +150,53 @@ function FlipClock({ until, now }: { until: string; now: number }) {
   );
 }
 
-/** One drop, as a compact race card: a start clock, the shop, what is in it, and the bell. */
-function DropCard({ drop: initial, index }: { drop: DropCardData; index: number }) {
+/** One drop, as a small ticket on the stage, behind its own curtain until it goes live. */
+function DropTicket({ drop: initial, index }: { drop: DropCardData; index: number }) {
   const [drop, setDrop] = useState(initial);
   useEffect(() => setDrop(initial), [initial]);
   const now = useTick(true);
-  const clock = parts(drop.startsAt, now);
-  // Live the second the clock runs out, without waiting for the server to
-  // say so - the channel is where the first item lands.
-  const live = drop.live || clock.left === 0;
+  const startsIn = parts(drop.startsAt, now).left;
+  // The curtain goes up the second the clock runs out, without waiting for
+  // the server to say so - the channel is where the first item lands.
+  const live = drop.live || startsIn === 0;
   const next = parts(drop.nextAt, now);
   const prices = drop.preview.map((item) => item.priceMinor).filter((price) => price > 0);
   const from = prices.length > 0 ? Math.min(...prices) : null;
 
   return (
-    <article className={`dropcard${live ? ' is-live' : ''}`} style={{ ['--i' as string]: index }}>
-      <span className="dropcard__top">
+    <article className={`ticket${live ? ' is-live' : ''}`} style={{ ['--i' as string]: index }}>
+      <span className="ticket__curtain ticket__curtain--l" aria-hidden="true" />
+      <span className="ticket__curtain ticket__curtain--r" aria-hidden="true" />
+      <div className="ticket__inner">
+        <span className="ticket__top">
+          {live
+            ? <span className="ticket__live"><span className="ticket__dot" /> LIVE</span>
+            : <span className="ticket__soon">⚡ Drop</span>}
+          <span className="ticket__shop">{drop.shop.name}</span>
+        </span>
+        <Link to={drop.channel} className="ticket__name">{drop.name}</Link>
         {live ? (
-          <span className="dropcard__badge dropcard__badge--live"><span className="ticket__dot" /> Live</span>
-        ) : (
-          <span className="dropcard__badge" role="timer"
-            aria-label={`Starts in ${Number(clock.h)} hours ${Number(clock.m)} minutes ${Number(clock.s)} seconds`}>
-            <span aria-hidden="true">{clock.h}:{clock.m}:{clock.s}</span>
-          </span>
-        )}
-        <span className="dropcard__shop">{drop.shop.name}</span>
-      </span>
-      <Link to={drop.channel} className="dropcard__name">{drop.name}</Link>
-      <span className="dropcard__meta">
-        {live ? (
-          <>
+          <span className="ticket__when">
             Drop <b>{Math.max(1, drop.itemsOut)}/{drop.itemCount}</b>
             {next.left > 0 ? <> · next in <b>{span(next.left)}</b></> : ' · dropping now'}
-          </>
+          </span>
         ) : (
-          <>
-            <b>{drop.itemCount}</b> {drop.itemCount === 1 ? 'item' : 'items'}
-            {from !== null && <> · from <b>{formatMoney(from, 'INR')}</b></>}
-          </>
+          <span className="ticket__clock">
+            <span className="ticket__when">Curtain up in</span>
+            <FlipClock until={drop.startsAt} now={now} />
+          </span>
         )}
-      </span>
-      <span className="dropcard__acts">
-        {live
-          ? <Link to={drop.channel} className="dropcard__go">Jump in →</Link>
-          : <><RemindButton drop={drop} onChange={setDrop} compact /><CalendarButton drop={drop} compact /></>}
-      </span>
+        <span className="ticket__when">
+          <b>{drop.itemCount}</b> {drop.itemCount === 1 ? 'item' : 'items'}
+          {from !== null && <> · from <b>{formatMoney(from, 'INR')}</b></>}
+        </span>
+        <span className="ticket__perf" aria-hidden="true" />
+        <span className="ticket__acts">
+          {live
+            ? <Link to={drop.channel} className="ticket__go">Jump in →</Link>
+            : <><RemindButton drop={drop} onChange={setDrop} compact /><CalendarButton drop={drop} compact iconOnly /></>}
+        </span>
+      </div>
     </article>
   );
 }
@@ -200,11 +205,12 @@ function DropCard({ drop: initial, index }: { drop: DropCardData; index: number 
  * Drops: every sale whose opening message has gone out in its channel and
  * that is not over yet. Hidden entirely when there are none.
  */
-export function DropsStage() {
+/** The drops on now and coming up, kept fresh while the page is open; null until the first answer. */
+export function useDrops(): DropCardData[] | null {
   const [drops, setDrops] = useState<DropCardData[] | null>(null);
   useEffect(() => {
     let alive = true;
-    const load = () => api.drops().then((result) => alive && setDrops(result.drops)).catch(() => alive && setDrops([]));
+    const load = () => api.drops().then((result) => alive && setDrops(result.drops)).catch(() => alive && setDrops((was) => was ?? []));
     void load();
     // A drop announced while the tab is open appears without a reload - but
     // only asked for while somebody can see it, and at once on coming back.
@@ -213,21 +219,35 @@ export function DropsStage() {
     document.addEventListener('visibilitychange', onVisible);
     return () => { alive = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
+  return drops;
+}
+
+export function DropsStage({ drops }: { drops: DropCardData[] | null }) {
   if (!drops || drops.length === 0) return null;
   const liveCount = drops.filter((drop) => drop.live).length;
 
   return (
-    <section className="drops" aria-label="Drops">
-      <header className="drops__head">
-        <h2 className="drops__title"><span className="drops__bolt" aria-hidden="true">⚡</span><span className="drops__word">Drops</span></h2>
-        <span className="drops__tally">
-          {liveCount > 0 && <span className="drops__live"><span className="ticket__dot" /> {liveCount} live</span>}
+    <section className="stage" aria-label="Drops">
+      <span className="stage__valance" aria-hidden="true" />
+      <span className="stage__drape stage__drape--l" aria-hidden="true" />
+      <span className="stage__drape stage__drape--r" aria-hidden="true" />
+      <span className="stage__bulbs" aria-hidden="true">
+        {Array.from({ length: 12 }, (_, i) => <span key={i} style={{ ['--b' as string]: i }} />)}
+      </span>
+      <span className="stage__spot" aria-hidden="true" />
+      <div className="stage__head">
+        <h2>⚡ Drops</h2>
+        <span className="stage__tally">
+          {liveCount > 0 && <span className="stage__live"><span className="ticket__dot" /> {liveCount} live</span>}
           {drops.length - liveCount > 0 && <span>{drops.length - liveCount} soon</span>}
         </span>
-      </header>
-      <div className="drops__row">
-        {drops.map((drop, index) => <DropCard key={drop.id} drop={drop} index={index} />)}
       </div>
+      <div className="stage__row">
+        {drops.map((drop, index) => <DropTicket key={drop.id} drop={drop} index={index} />)}
+      </div>
+      <span className="stage__floor" aria-hidden="true">
+        {Array.from({ length: 5 }, (_, i) => <i key={i} style={{ ['--f' as string]: i }} />)}
+      </span>
     </section>
   );
 }
@@ -370,8 +390,16 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
       belt.style.transform = `translate3d(${-offset.current}px, 0, 0)`;
       frame = requestAnimationFrame(step);
     };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
+    // The belt runs only while it can be seen, and carries on from where it stopped.
+    const stop = watchOnScreen(belt, (visible) => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      if (visible) {
+        last = performance.now();
+        frame = requestAnimationFrame(step);
+      }
+    });
+    return () => { stop(); cancelAnimationFrame(frame); };
   }, [lots.length, still]);
 
   if (lots.length === 0) return null;
@@ -459,9 +487,9 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
   );
 }
 
-/** The lots, loaded once for the feed. */
-export function useFillingLots(): FillingLot[] {
-  const [lots, setLots] = useState<FillingLot[]>([]);
+/** The lots, loaded once for the feed; null until they answer. */
+export function useFillingLots(): FillingLot[] | null {
+  const [lots, setLots] = useState<FillingLot[] | null>(null);
   useEffect(() => {
     void api.fillingLots().then((result) => setLots(result.lots)).catch(() => setLots([]));
   }, []);

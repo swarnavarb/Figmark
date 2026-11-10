@@ -17,14 +17,19 @@ import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
 import { ShopStrip } from '../components/ShopCards';
-import { ServiceCard, ServiceGrid, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch } from '../components/ServiceCards';
+import {
+  ServiceCard, ServiceGrid, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch,
+  type ForwarderPick, type ProviderPick, type Providers,
+} from '../components/ServiceCards';
+import { FREIGHT_MODE_LABELS } from '@shared/service-stores';
+import { countryFlag } from '@shared/countries';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import {
   DemandRail, EarnRail, EndingRail, FEED_VIEW_TITLES, PreOrderRail, demandPicks, earnPicks, endingPicks, isFeedView,
   preOrderPicks,
 } from '../components/FeedRails';
-import { DropsStage, FillingBoxes, useFillingLots } from '../components/Showcase';
+import { DropsStage, FillingBoxes, useDrops, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
 import { ActiveOrders } from '../components/ActiveOrders';
 import { SkelBlock } from '../components/PageSkeletons';
@@ -191,6 +196,7 @@ export function useCatalog() {
     (id: string) => {
       const next = new URLSearchParams(params);
       next.delete('category');
+      clearServices(next);
       if (next.get('group') === id || id === '') next.delete('group');
       else next.set('group', id);
       setParams(next, { replace: true });
@@ -262,6 +268,19 @@ export function FeedPage() {
     canShowMore, showMore,
   } = useCatalog();
   const rarityFilter = (params.get('rarity') ?? '') as RarityTier | '';
+  // Forwarders or artists instead of items: a badge on the category row.
+  const svcParam = params.get('svc');
+  const svc: ServiceKind | null = svcParam === 'forwarder' || svcParam === 'artist' ? svcParam : null;
+  const chooseService = (kind: ServiceKind) => {
+    const next = new URLSearchParams(params);
+    const off = svc === kind;
+    clearServices(next);
+    if (!off) {
+      for (const key of ['group', 'category', 'type', 'size', 'authenticity', 'kind', 'maxPrice', 'condition', 'rarity', 'view']) next.delete(key);
+      next.set('svc', kind);
+    }
+    setParams(next, { replace: true });
+  };
 
   // Read against one clock per render so every card agrees on "now".
   const now = useNow(60_000);
@@ -291,6 +310,7 @@ export function FeedPage() {
     ];
   }, [shown.length, demand, endingSoon, earn, preOrders, now]);
   const fillingLots = useFillingLots();
+  const drops = useDrops();
 
   /* Shops alongside items: the ones known for what was searched, and when
      just browsing, the ones this buyer's likes and purchases point to. */
@@ -304,7 +324,7 @@ export function FeedPage() {
     return () => controller.abort();
   }, [search]);
   useEffect(() => {
-    void api.shopsForYou().then((result) => setForYou(result.shops)).catch(() => setForYou(null));
+    void api.shopsForYou().then((result) => setForYou(result.shops)).catch(() => setForYou([]));
   }, []);
 
   // The categories under the chosen heading, and what a buyer can narrow them by.
@@ -320,7 +340,33 @@ export function FeedPage() {
   // grades ("7A", "Batch / 1:1") appear once a heading narrows what is meant.
   const authenticityChoices = group ? authenticityOptions : authenticityOptions.slice(0, 2);
 
-  const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView;
+  const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView && !svc;
+
+  /* The page fills top to bottom: the daily pick, the drops, the filters, the
+     lots, the shops, then the grid. A section waits for the ones above it, so
+     nothing that answers late pushes down what is already being read. */
+  const answered = Boolean(data) || Boolean(error);
+  const [showDaily, showDrops, showFilters, showBoxes, showShops, showGrid] = useCascade([
+    !browsing || answered,
+    !browsing || drops !== null,
+    true,
+    !browsing || fillingLots !== null,
+    !browsing || forYou !== null,
+    answered || !loading,
+  ]);
+  const pending = <><SkelBlock h={112} /><SkeletonGrid count={4} /></>;
+
+  // The chosen badge in view: most categories sit past the edge on a phone.
+  const zonesRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const row = zonesRef.current;
+    const on = row?.querySelector<HTMLElement>('.qzone.is-on');
+    if (!row || !on || row.scrollWidth <= row.clientWidth) return;
+    const left = on.offsetLeft - row.offsetLeft;
+    if (left < row.scrollLeft || left + on.offsetWidth > row.scrollLeft + row.clientWidth) {
+      row.scrollTo({ left: left - (row.clientWidth - on.offsetWidth) / 2 });
+    }
+  }, [group, svc]);
 
   // Forwarders and artists among the items: each beside an item it fits (ServiceCards).
   const providers = useProviders();
@@ -341,21 +387,31 @@ export function FeedPage() {
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
       {browsing && <ActiveOrders />}
 
-      {/* The daily pick holds its place while the catalogue loads, so the
-          page does not drop by a card's height when it arrives. */}
-      {browsing && loading && !data && <SkelBlock h={112} />}
-      {browsing && <DailyDrop listings={rated} now={now} />}
+      {/* Until a section can show, its place holds a skeleton and nothing below it draws. */}
+      {!showDaily && pending}
+      {browsing && showDaily && <DailyDrop listings={rated} now={now} />}
       {/* Drops sit up top, before the catalogue: an event on now beats any one item. */}
-      {browsing && <DropsStage />}
+      {showDaily && !showDrops && pending}
+      {browsing && showDrops && <DropsStage drops={drops} />}
 
+      {showFilters && showDrops && (
       <div className="stack" id="catalogue" style={{ marginBottom: 18 }}>
         {/* Zones: what a thing is. Round, like the pin badges they are named after. */}
-        <div className="qzones" role="tablist" aria-label="Categories">
-          <button type="button" role="tab" aria-selected={group === ''}
-            className={`qzone${group === '' ? ' is-on' : ''}`} onClick={() => chooseGroup('')}>
+        <div className="qzones" role="tablist" aria-label="Categories" ref={zonesRef}>
+          <button type="button" role="tab" aria-selected={group === '' && !svc}
+            className={`qzone${group === '' && !svc ? ' is-on' : ''}`} onClick={() => chooseGroup('')}>
             <span className="qzone__medal qhue--gold"><CategoryIcon id="everything" /></span>
             <span className="qzone__label">Everything</span>
           </button>
+          {/* Services next to Everything: who ships it in, who makes it one of a kind. */}
+          {SERVICE_ZONES.map((entry) => (
+            <button key={entry.kind} type="button" role="tab" aria-selected={svc === entry.kind}
+              className={`qzone qzone--service${svc === entry.kind ? ' is-on' : ''}`} onClick={() => chooseService(entry.kind)}>
+              <span className={`qzone__medal qhue--${entry.hue}`}>{entry.icon}</span>
+              <span className="qzone__label">{entry.label}</span>
+            </button>
+          ))}
+          <span className="qzones__rule" aria-hidden="true" />
           {CATEGORY_GROUPS.map((entry) => (
             <button key={entry.id} type="button" role="tab" aria-selected={group === entry.id}
               className={`qzone${group === entry.id ? ' is-on' : ''}`} onClick={() => chooseGroup(entry.id)}>
@@ -365,6 +421,8 @@ export function FeedPage() {
           ))}
         </div>
 
+        {svc ? <ServiceFilters kind={svc} providers={providers} params={params} set={set} /> : (
+        <>
         {/* How it is sold. How rare it is sits with the other one-of-many
             choices below, as a picker rather than a third row of chips. */}
         <KindTabs value={(kind || 'all') as CatalogKind} onChoose={chooseKind} />
@@ -406,15 +464,22 @@ export function FeedPage() {
             </button>
           )}
         </div>
+        </>
+        )}
       </div>
+      )}
 
-      {browsing && <FillingBoxes lots={fillingLots} />}
+      {showDrops && !showBoxes && pending}
+      {browsing && showBoxes && <FillingBoxes lots={fillingLots ?? []} />}
 
       {wants === 'artist' && <ServiceStrip title="Artists who do this" sub="Restore, repaint, customise" picks={studioHits} />}
       {wants === 'forwarder' && <ServiceStrip title="Forwarders" sub="Routes, days and price per kg" picks={providers.forwarders} />}
       {search && !photo && <ShopStrip title={`Shops for “${search}”`} sub="Known for it by name, tags or what they list" shops={searchShops} />}
-      {browsing && <ShopStrip band eyebrow="Handpicked" title="Shops for you" shops={forYou} />}
+      {showBoxes && !showShops && pending}
+      {browsing && showShops && <ShopStrip band eyebrow="Handpicked" title="Shops for you" shops={forYou} />}
 
+      {!showShops ? null : svc ? <ServiceResults kind={svc} providers={providers} params={params} /> : (
+      <>
       {error && <ErrorNotice message={error} />}
 
       <div className="qrow__head">
@@ -432,7 +497,7 @@ export function FeedPage() {
         {data && <span className="faint">{shown.length} {shown.length === 1 ? 'item' : 'items'}</span>}
       </div>
 
-      {loading && !data ? (
+      {!showGrid || (loading && !data) ? (
         <SkeletonGrid count={6} />
       ) : shown.length === 0 ? (
         <>
@@ -455,8 +520,9 @@ export function FeedPage() {
           {shown.slice(0, drawn).map((listing, n) => (
             <Fragment key={listing.id}>
               <LootCard listing={listing} priority={n < 2} />
-              {services.get(n)?.map((pick) => <ServiceCard key={`${pick.kind}:${pick.store.ownerId}`} pick={pick} />)}
+              {/* A shelf first, then a service card: the card then starts the row under the shelf. */}
               {browsing && rails.map((entry, r) => entry.at === n && <Fragment key={r}>{entry.rail}</Fragment>)}
+              {services.get(n)?.map((pick) => <ServiceCard key={`${pick.kind}:${pick.store.ownerId}`} pick={pick} />)}
             </Fragment>
           ))}
           {drawn < shown.length && <span ref={more} className="qgrid__more" aria-hidden="true" />}
@@ -469,11 +535,37 @@ export function FeedPage() {
           </button>
         </div>
       )}
+      </>
+      )}
     </main>
   );
 }
 
 const PAGE = 24;
+
+/** Longest a slow section holds back the ones below it. */
+const CASCADE_WAIT_MS = 1200;
+
+/**
+ * Which sections may show, given which have their answers, top to bottom: a
+ * section shows once it is ready and every one above it shows. Once shown it
+ * stays, whatever reloads later. After CASCADE_WAIT_MS a section still waiting
+ * stops holding back the ones below it.
+ */
+function useCascade(ready: boolean[]): boolean[] {
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setWaited(true), CASCADE_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const shown = useRef<boolean[]>([]);
+  let above = true;
+  return ready.map((isReady, n) => {
+    above = above && (isReady || waited || Boolean(shown.current[n]));
+    if (above) shown.current[n] = true;
+    return above;
+  });
+}
 
 /**
  * How many cards to draw: a screenful and a bit, then the next lot as the
@@ -822,7 +914,7 @@ export function Picker({ label, value, onChange, options, empty, icon }: {
   );
 }
 
-type PickerIcon = 'sort' | 'price' | 'condition' | 'rarity' | 'type' | 'authentic' | 'size';
+type PickerIcon = 'sort' | 'price' | 'condition' | 'rarity' | 'type' | 'authentic' | 'size' | 'route' | 'craft';
 
 const icon = (path: ReactNode) => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
@@ -847,6 +939,8 @@ const PICKER_ICONS: Record<PickerIcon, ReactNode> = {
   type: icon(<><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" /></>),
   authentic: icon(<><path d="M12 3 4 6v6c0 4.5 3.2 7.8 8 9 4.8-1.2 8-4.5 8-9V6z" /><path d="m9 12 2 2 4-4" /></>),
   size: icon(<path d="M3 16 16 3l5 5L8 21zM7 12l2 2M10 9l2 2M13 6l2 2" />),
+  route: icon(<><circle cx="6" cy="18" r="2" /><circle cx="18" cy="6" r="2" /><path d="M8 18h6a3 3 0 0 0 0-6h-4a3 3 0 0 1 0-6h6" /></>),
+  craft: icon(<><path d="m14 4 6 6-9 9H5v-6z" /><path d="m12 6 6 6" /></>),
 };
 
 /** The tabs on the bar: mixed lots were dropped from it. */
@@ -916,4 +1010,125 @@ function tapFx(event: PointerEvent<HTMLElement>) {
   wave.addEventListener('animationend', () => wave.remove(), { once: true });
   // Reduced motion runs no animation, so nothing would fire animationend.
   window.setTimeout(() => wave.remove(), 800);
+}
+
+/* ── Services: forwarders and artists, found from the category row ─────── */
+
+type ServiceKind = 'forwarder' | 'artist';
+
+/** The filters only a services view reads, cleared whenever it is left. */
+const SERVICE_KEYS = ['svc', 'from', 'to', 'mode', 'craft', 'svsort'] as const;
+function clearServices(params: URLSearchParams) {
+  for (const key of SERVICE_KEYS) params.delete(key);
+}
+
+const SERVICE_ZONES: { kind: ServiceKind; label: string; hue: string; icon: ReactNode }[] = [
+  {
+    kind: 'forwarder', label: 'Forwarders', hue: 'aqua',
+    icon: (
+      <svg className="cat__glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 8 12 3l9 5v8l-9 5-9-5z" /><path d="m3 8 9 5 9-5M12 13v8M7.5 5.5l9 5" />
+      </svg>
+    ),
+  },
+  {
+    kind: 'artist', label: 'Artists', hue: 'pink',
+    icon: (
+      <svg className="cat__glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-1 2-2 0-1.5-1.5-1.6-1.5-3 0-1.1.9-2 2-2H17a4 4 0 0 0 4-4c0-4-4-7-9-7z" />
+        <circle cx="7.5" cy="11" r="1" /><circle cx="10" cy="7" r="1" /><circle cx="15" cy="7.5" r="1" />
+      </svg>
+    ),
+  },
+];
+
+const FORWARDER_SORTS = [{ value: 'rated', label: 'Top rated' }, { value: 'cheap', label: 'Cheapest per kg' }];
+const ARTIST_SORTS = [{ value: 'rated', label: 'Top rated' }, { value: 'cheap', label: 'Lowest price' }];
+
+/** Every distinct value, sorted, as picker options. */
+function optionsOf(values: string[]) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((value) => ({ value, label: value }));
+}
+
+/** What each services view can be narrowed by, read from who is offering. */
+function ServiceFilters({ kind, providers, params, set }: {
+  kind: ServiceKind;
+  providers: Providers;
+  params: URLSearchParams;
+  set: (key: string, value: string) => void;
+}) {
+  if (kind === 'forwarder') {
+    const lanes = providers.forwarders.flatMap((pick) => pick.lanes);
+    const modes = [...new Set(lanes.map((lane) => lane.mode))];
+    return (
+      <div className="filters">
+        <Picker label="Sort" icon="sort" value={params.get('svsort') ?? 'rated'} onChange={(value) => set('svsort', value === 'rated' ? '' : value)}
+          options={FORWARDER_SORTS} />
+        <Picker label="Ships from" icon="route" value={params.get('from') ?? ''} onChange={(value) => set('from', value)}
+          empty="From anywhere" options={optionsOf(lanes.map((lane) => lane.originCountry)).map((option) => ({ ...option, label: `${countryFlag(option.value)} ${option.value}` }))} />
+        <Picker label="Ships to" icon="route" value={params.get('to') ?? ''} onChange={(value) => set('to', value)}
+          empty="To anywhere" options={optionsOf(lanes.map((lane) => lane.destinationCountry)).map((option) => ({ ...option, label: `${countryFlag(option.value)} ${option.value}` }))} />
+        <Picker label="Mode" icon="type" value={params.get('mode') ?? ''} onChange={(value) => set('mode', value)}
+          empty="Any mode" options={modes.map((mode) => ({ value: mode, label: `${FREIGHT_MODE_LABELS[mode].glyph} ${FREIGHT_MODE_LABELS[mode].label}` }))} />
+      </div>
+    );
+  }
+  return (
+    <div className="filters">
+      <Picker label="Sort" icon="sort" value={params.get('svsort') ?? 'rated'} onChange={(value) => set('svsort', value === 'rated' ? '' : value)}
+        options={ARTIST_SORTS} />
+      <Picker label="Speciality" icon="craft" value={params.get('craft') ?? ''} onChange={(value) => set('craft', value)}
+        empty="Any speciality" options={optionsOf(providers.artists.flatMap((pick) => pick.specialties))} />
+    </div>
+  );
+}
+
+/** Rating first, then work done: a store nobody has rated yet sits after the rated ones. */
+const byStanding = (a: ProviderPick, b: ProviderPick) =>
+  (b.store.rating ?? -1) - (a.store.rating ?? -1) || b.store.completed - a.store.completed;
+
+/** The forwarders or artists the filters leave, as cards in the Shop's own grid. */
+function ServiceResults({ kind, providers, params }: { kind: ServiceKind; providers: Providers; params: URLSearchParams }) {
+  const cheap = params.get('svsort') === 'cheap';
+  let picks: ProviderPick[];
+  if (kind === 'forwarder') {
+    const from = params.get('from') ?? '';
+    const to = params.get('to') ?? '';
+    const mode = params.get('mode') ?? '';
+    const fits = (lane: ForwarderPick['lanes'][number]) =>
+      (!from || lane.originCountry === from) && (!to || lane.destinationCountry === to) && (!mode || lane.mode === mode);
+    // Only the routes that fit, cheapest first, so the card shows the one asked about.
+    const found = providers.forwarders
+      .map((pick) => ({ ...pick, lanes: pick.lanes.filter(fits) }))
+      .filter((pick) => pick.lanes.length > 0);
+    const cheapest = (pick: ForwarderPick) => Math.min(...pick.lanes.map((lane) => lane.fromMinor || Infinity));
+    picks = found.sort((a, b) => (cheap ? cheapest(a) - cheapest(b) : 0) || byStanding(a, b));
+  } else {
+    const craft = params.get('craft') ?? '';
+    const found = providers.artists.filter((pick) => !craft || pick.specialties.includes(craft));
+    picks = found.sort((a, b) => (cheap ? (a.fromMinor || Infinity) - (b.fromMinor || Infinity) : 0) || byStanding(a, b));
+  }
+  const noun = kind === 'forwarder' ? 'forwarder' : 'artist';
+  return (
+    <>
+      <div className="qrow__head">
+        <h2>{kind === 'forwarder' ? 'Freight forwarders' : 'Artists'}</h2>
+        <span className="faint">{picks.length} {picks.length === 1 ? noun : `${noun}s`}</span>
+      </div>
+      {picks.length === 0 ? (
+        <EmptyState title={`No ${noun}s match`}>Try removing a filter.</EmptyState>
+      ) : (
+        <div className="grid qgrid">
+          {picks.map((pick) => <ServiceCard key={`${pick.kind}:${pick.store.ownerId}`} pick={pick} />)}
+        </div>
+      )}
+      <div className="qgrid__showmore">
+        <Link to={kind === 'forwarder' ? '/services/forwarder' : '/services/artist'} className="btn btn--ghost">
+          All {noun}s and how to book
+        </Link>
+      </div>
+    </>
+  );
 }

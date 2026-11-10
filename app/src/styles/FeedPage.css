@@ -317,8 +317,10 @@
     repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.22) 0 2px, transparent 2px 5px),
     linear-gradient(160deg, #1B2130, #0E121C);
 }
-.qfeed .qzones { gap: 6px; padding: 8px 4px 6px; }
-.qfeed .qzone { width: auto; min-width: 70px; padding: 0 4px; gap: 8px; }
+.qfeed .qzones { gap: 4px; padding: 8px 4px 6px; }
+/* Every badge as wide as the next, so the boxes stand evenly spaced; a long
+   name ("Sneakers & wear") takes a second line rather than more room. */
+.qfeed .qzone { width: 82px; padding: 0; gap: 8px; align-content: start; }
 .qfeed .qzone__medal {
   position: relative; width: 58px; height: 58px; border-radius: 18px;
   background: var(--carbon); border: 0;
@@ -329,7 +331,8 @@
 .qfeed .qzone:active .qzone__medal { transform: scale(0.94); }
 .qzone__label {
   position: relative; padding-bottom: 5px;
-  font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
+  max-width: 100%; font-size: var(--t-2xs); font-weight: var(--w-semi); line-height: 1.25; letter-spacing: 0.02em;
+  text-transform: uppercase; text-align: center; text-wrap: balance;
 }
 /* The racing bar under the chosen name. */
 .qzone__label::after {
@@ -385,4 +388,26 @@
 .qfeed .picker:focus-within { outline-color: var(--volt); }
 @media (prefers-reduced-motion: reduce) {
   .qfeed .qzone__medal, .qzone__label::after { transition: none; }
+}
+/* Between the services and the things on the category row. Its negative
+   margins give back its width and one gap, so the boxes either side of it
+   stand as far apart as any other two. */
+.qzones__rule {
+  flex: none; align-self: flex-start; width: 1px; height: 44px; margin: 7px -2.5px 0;
+  background: linear-gradient(transparent, var(--border-strong), transparent);
+}
+
+/* ── The page filling in, top to bottom ─────────────────────────────────
+   FeedPage lets a section draw only once every section above it has (its
+   cascade), and each rises in as it arrives - a beat apart when several land
+   together. The cards follow in reading order (styles.css, .qloot). */
+@keyframes qfeed-rise { from { opacity: 0; transform: translateY(12px); } }
+@media (prefers-reduced-motion: no-preference) {
+  .qfeed > :not(h1) { animation: qfeed-rise 360ms var(--ease) backwards; }
+  .qfeed > :nth-child(3) { animation-delay: 50ms; }
+  .qfeed > :nth-child(4) { animation-delay: 100ms; }
+  .qfeed > :nth-child(5) { animation-delay: 150ms; }
+  .qfeed > :nth-child(6) { animation-delay: 200ms; }
+  .qfeed > :nth-child(7) { animation-delay: 250ms; }
+  .qfeed > :nth-child(n+8) { animation-delay: 300ms; }
 }
