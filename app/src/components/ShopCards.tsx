@@ -121,9 +121,25 @@ export function ShopTile({ shop }: { shop: ShopCard }) {
  * Every layer is drawn in CSS (ShopCards.css); this only stacks them. What
  * passes in front of the shops - the van, people - is StreetFront.
  */
+const DAY_MS = 96_000;
+
+/**
+ * The street's day keeps time with the clock, not with when the band was
+ * drawn: coming back to the page carries on from where the day had got to
+ * instead of starting again at dawn.
+ */
 function StreetScene() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const band = ref.current?.closest('.shopstrip--band');
+    if (!band || typeof band.getAnimations !== 'function') return;
+    const at = Date.now() % DAY_MS;
+    for (const animation of band.getAnimations({ subtree: true })) {
+      if (animation.effect?.getTiming().duration === DAY_MS) animation.currentTime = at;
+    }
+  }, []);
   return (
-    <div className="shopscene" aria-hidden="true">
+    <div className="shopscene" ref={ref} aria-hidden="true">
       <span className="shopscene__daysky" />
       <span className="shopscene__nightsky" />
       <span className="shopscene__stars" />
