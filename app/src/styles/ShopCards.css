@@ -344,7 +344,12 @@
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 250'%3E%3Cdefs%3E%3CradialGradient id='h'%3E%3Cstop offset='0' stop-color='%23FFEAB8' stop-opacity='.7'/%3E%3Cstop offset='.18' stop-color='%23FFDB95' stop-opacity='.38'/%3E%3Cstop offset='.5' stop-color='%23FFCF80' stop-opacity='.12'/%3E%3Cstop offset='1' stop-color='%23FFC060' stop-opacity='0'/%3E%3C/radialGradient%3E%3ClinearGradient id='c' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23FFE2A0' stop-opacity='.16'/%3E%3Cstop offset='.7' stop-color='%23FFE2A0' stop-opacity='.06'/%3E%3Cstop offset='1' stop-color='%23FFE2A0' stop-opacity='.02'/%3E%3C/linearGradient%3E%3CradialGradient id='p'%3E%3Cstop offset='0' stop-color='%23FFD98A' stop-opacity='.32'/%3E%3Cstop offset='.45' stop-color='%23FFD27A' stop-opacity='.14'/%3E%3Cstop offset='1' stop-color='%23FFC060' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='60' cy='30' r='44' fill='url(%23h)'/%3E%3Cpath d='M60 30L6 222h108z' fill='url(%23c)'/%3E%3Cellipse cx='60' cy='228' rx='76' ry='20' fill='url(%23p)'/%3E%3C/svg%3E") left top / 160px 250px no-repeat;
 }
 /* The gaps without a lamp keep the same spacing. */
-.shopstrip__gap { flex: 0 0 26px; }
+/* The gaps without a lamp keep the same spacing, and a pot of flowers. */
+.shopstrip__gap { flex: 0 0 26px; position: relative; z-index: 1; align-self: flex-end; height: 34px; margin-bottom: -6px; }
+.shopstrip__gap i {
+  position: absolute; left: -1px; bottom: 0; width: 28px; height: 34px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 34'%3E%3Cpath d='M14 20V9M14 20l-6-8M14 20l6-7' stroke='%233F8F4E' stroke-width='1.6' fill='none'/%3E%3Cellipse cx='9' cy='17' rx='3' ry='1.6' fill='%234FA35E' transform='rotate(-30 9 17)'/%3E%3Cellipse cx='19' cy='17' rx='3' ry='1.6' fill='%234FA35E' transform='rotate(30 19 17)'/%3E%3Cg fill='%23F2789F'%3E%3Ccircle cx='14' cy='5' r='2.6'/%3E%3Ccircle cx='11' cy='8' r='2.6'/%3E%3Ccircle cx='17' cy='8' r='2.6'/%3E%3Ccircle cx='14' cy='11' r='2.6'/%3E%3C/g%3E%3Ccircle cx='14' cy='8' r='1.8' fill='%23F7D154'/%3E%3Ccircle cx='7' cy='11' r='2.4' fill='%23F7D154'/%3E%3Ccircle cx='21.4' cy='12' r='2.4' fill='%23FFFFFF'/%3E%3Cpath d='M5 20h18l-2.4 13H7.4z' fill='%23C2643C'/%3E%3Crect x='4' y='19' width='20' height='3.4' rx='1' fill='%23D9784E'/%3E%3C/svg%3E") center bottom / 28px 34px no-repeat;
+}
 
 /* ── In front of the shops: people, children, the van ─────────────────────
    Each lane crosses the street at its own pace. --street-w is the street's
@@ -356,6 +361,7 @@
 .shopfront__lane--parcel { left: 60%; bottom: 20px; }
 .shopfront__lane--bag { left: 20%; bottom: 13px; }
 .shopfront__lane--stroll { left: 78%; bottom: 7px; gap: 2px; }
+.shopfront__lane--dog { left: 50%; bottom: 10px; }
 .shopfront__lane--chase { left: 38%; bottom: 3px; gap: 12px; }
 
 /* A person: legs swing from the hip, arms from the shoulder (view-box
@@ -371,7 +377,20 @@
 .shopper__skin { fill: var(--skin, #E3B18A); }
 .shopper__arm--back .shopper__sleeve { filter: brightness(0.82); }
 .shopper__leg--back .shopper__pants { filter: brightness(0.8); }
-.shopper__hair { fill: var(--hair, #2B2230); }
+.shopper__hair, .shopper__locks { fill: var(--hair, #2B2230); }
+/* Long hair and a skirt, for the women. */
+.shopper__locks, .shopper__skirt { display: none; }
+.shopper--her .shopper__locks, .shopper--her .shopper__skirt { display: inline; }
+.shopper__skirt { fill: var(--skirt, var(--shirt)); }
+/* The dog shows on lanes that walk one; a walker holds the lead out, not a bag. */
+.dog { display: none; width: 34px; height: 22px; overflow: visible; }
+.is-dog .dog { display: block; }
+.is-dog .shopper__hang, .no-bag .shopper__hang { display: none; }
+.dog__coat, .dog__legs { fill: var(--coat, #C9883F); }
+.dog__ear { fill: #1E1A22; opacity: 0.45; }
+.dog__lead { fill: none; stroke: #2B2230; stroke-width: 1; }
+.dog__tail { fill: none; stroke: var(--coat, #C9883F); stroke-width: 2.4; stroke-linecap: round; transform-box: fill-box; transform-origin: right bottom; }
+.dog__legs rect { transform-box: fill-box; transform-origin: top; }
 .shopper__bag { fill: #F2B03C; }
 .shopper__handle { fill: none; stroke: #B97A1A; stroke-width: 1.2; }
 .shopper__box rect { fill: #C9A36A; }
@@ -393,11 +412,12 @@
 .shopfront__van { position: absolute; right: 100%; bottom: 2px; width: 168px; height: 77px; overflow: visible; }
 .van__wheel { transform-box: fill-box; transform-origin: center; }
 .van__lamp { fill: #FFE7A0; }
-.van__beam { fill: #FFE7A0; opacity: 0; }
+.van__beam { fill: url(#van-glow); opacity: 0; filter: blur(3px); }
 
 @media (prefers-reduced-motion: no-preference) {
   .shopfront__lane { left: 0; animation: street-right calc((var(--street-w) + 120) * 1s / 40) linear infinite; }
   .shopfront__lane--parcel { animation-name: street-left; animation-duration: calc((var(--street-w) + 120) * 1s / 34); animation-delay: calc(var(--street-w) * -0.35s / 34); }
+  .shopfront__lane--dog { animation-duration: calc((var(--street-w) + 120) * 1s / 36); animation-delay: calc(var(--street-w) * -0.5s / 36); }
   .shopfront__lane--bag { animation-delay: calc(var(--street-w) * -0.7s / 40); }
   .shopfront__lane--stroll { animation-duration: calc((var(--street-w) + 120) * 1s / 30); animation-delay: calc(var(--street-w) * -0.15s / 30); }
   /* The children run across, then are off playing elsewhere for a while. */
@@ -411,6 +431,10 @@
   .shopper__hang { animation: shopper-hang var(--gait) ease-in-out infinite alternate-reverse; }
   /* Both arms round the parcel: they hold, they do not swing. */
   .shopper--parcel .shopper__arm { animation: none; transform: rotate(-58deg); }
+  .is-dog .shopper__arm--front { animation: none; transform: rotate(-35deg); }
+  .dog__legs--a rect { animation: dog-trot 0.3s ease-in-out infinite alternate; }
+  .dog__legs--b rect { animation: dog-trot 0.3s ease-in-out infinite alternate-reverse; }
+  .dog__tail { animation: dog-wag 0.24s ease-in-out infinite alternate; }
   .shopfront__ball { animation: ball-bounce 0.42s cubic-bezier(0.3, 0, 0.7, 1) infinite alternate, ball-roll 0.5s linear infinite; }
 
   .shopfront__van { animation: street-van var(--day) linear infinite; }
@@ -439,7 +463,9 @@
   100% { transform: translateX(0) scaleX(1); }
 }
 @keyframes van-wheel { to { transform: rotate(1turn); } }
-@keyframes van-beam { 0%, 66% { opacity: 0; } 68%, 84% { opacity: 0.22; } 86%, 100% { opacity: 0; } }
+@keyframes dog-trot { from { transform: rotate(-28deg); } to { transform: rotate(28deg); } }
+@keyframes dog-wag { from { transform: rotate(-14deg); } to { transform: rotate(18deg); } }
+@keyframes van-beam { 0%, 66% { opacity: 0; } 68%, 84% { opacity: 0.14; } 86%, 100% { opacity: 0; } }
 
 @media (prefers-reduced-motion: no-preference) {
   .shopscene > *, .shopscene__sun, .shopscene__plane, .shopscene__birds, .shopstrip__lamp i {

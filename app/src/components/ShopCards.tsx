@@ -180,9 +180,11 @@ function Person({ look }: { look: Look }) {
       {arm('back')}
       <rect className="shopper__shirt" x="10.4" y="15" width="10.4" height="21" rx="4.6" />
       <rect className="shopper__skin" x="13.9" y="11" width="3.4" height="5" />
+      <path className="shopper__locks" d="M10 8.6a5.6 5.6 0 0 1 11.2 0v9.6c-1.4 1-2.8.6-3.4-.4V10h-4.4v7.8c-.6 1-2 1.4-3.4.4z" />
       <circle className="shopper__skin" cx="15.6" cy="8.6" r="5.6" />
       <path className="shopper__hair" d="M10.1 8.4a5.6 5.6 0 0 1 11-1.6c-2.4.3-5.6-.2-7.4-1.8-.6 1.6-1.8 2.8-3.6 3.4z" />
       {leg('front')}
+      <path className="shopper__skirt" d="M10.8 32.4h9.6l3.2 12.6H7.6z" />
       {look === 'parcel' && (
         <g className="shopper__box">
           <rect x="18.5" y="19" width="12.5" height="11" rx="1.2" />
@@ -199,6 +201,65 @@ function Person({ look }: { look: Look }) {
   );
 }
 
+/** A dog on a lead, trotting to the right; the lead runs up to the walker's hand. */
+function Dog() {
+  return (
+    <svg className="dog" viewBox="0 0 34 22" aria-hidden="true">
+      <path className="dog__lead" d="M27 8Q8 9-11-9.5" />
+      <path className="dog__tail" d="M7 9Q3 7 2 2" />
+      <g className="dog__legs dog__legs--a"><rect x="8" y="13" width="2.8" height="8.6" rx="1.4" /><rect x="23" y="13" width="2.8" height="8.6" rx="1.4" /></g>
+      <g className="dog__legs dog__legs--b"><rect x="11" y="13" width="2.8" height="8.6" rx="1.4" /><rect x="26" y="13" width="2.8" height="8.6" rx="1.4" /></g>
+      <rect className="dog__coat" x="5" y="7" width="24" height="9" rx="4.5" />
+      <circle className="dog__coat" cx="28.4" cy="6.4" r="4.4" />
+      <ellipse className="dog__coat" cx="32" cy="8" rx="2.4" ry="1.9" />
+      <path className="dog__ear" d="M25.2 3.4l-1.4 6.2 3-1.4z" />
+      <circle cx="33.8" cy="7.4" r=".9" fill="#1E1A22" />
+      <circle cx="29.6" cy="5.4" r=".7" fill="#1E1A22" />
+    </svg>
+  );
+}
+
+const pick = (list: readonly string[]): string => list[Math.floor(Math.random() * list.length)] ?? list[0] ?? "";
+const SHIRTS = ['#E0573E', '#3E7FD6', '#2FA37A', '#F2B03C', '#9B5DE5', '#E85D9A', '#2BB3B1', '#D9822B', '#5B6CFF', '#C94C6B'];
+const PANTS = ['#2F3350', '#3A3046', '#4A3C2E', '#20434F', '#55505C', '#3E5A8A'];
+const SKINS = ['#F0C6A0', '#E3B18A', '#C68B62', '#9A6644', '#6E4630'];
+const HAIRS = ['#1E1A22', '#4A2E1E', '#6B4A2E', '#8A4A22', '#C99A4B', '#2B2230', '#9C9AA2'];
+const COATS = ['#C9883F', '#2B2230', '#F1E6D2', '#8A5A36', '#A8A2AA'];
+
+/**
+ * Somebody new each time a lane comes round: man or woman, their own clothes,
+ * pace, direction and pause before they appear, with a bag, a dog or neither.
+ */
+function dressLane(lane: HTMLElement, restart: boolean) {
+  const kind = lane.dataset.roam;
+  lane.querySelectorAll<SVGElement>('.shopper').forEach(person => {
+    person.classList.toggle('shopper--her', Math.random() < 0.5);
+    person.style.setProperty('--shirt', pick(SHIRTS));
+    person.style.setProperty('--skirt', pick(SHIRTS));
+    person.style.setProperty('--pants', pick(PANTS));
+    person.style.setProperty('--skin', pick(SKINS));
+    person.style.setProperty('--hair', pick(HAIRS));
+  });
+  lane.querySelector<SVGElement>('.dog')?.style.setProperty('--coat', pick(COATS));
+  if (kind === 'bag') {
+    const roll = Math.random();
+    lane.classList.toggle('is-dog', roll < 0.35);
+    lane.classList.toggle('no-bag', roll > 0.75);
+  }
+  if (!restart) return;
+  const speed = 28 + Math.random() * 20;
+  const width = lane.parentElement?.offsetWidth ?? 1200;
+  lane.style.animation = 'none';
+  void lane.offsetWidth;
+  lane.style.animation = '';
+  lane.style.animationName = Math.random() < 0.5 ? 'street-right' : 'street-left';
+  lane.style.animationDuration = `${(width + 120) / speed}s`;
+  lane.style.animationDelay = `${(0.5 + Math.random() * 7).toFixed(2)}s`;
+  lane.style.animationFillMode = 'backwards';
+  const adult = lane.querySelector<SVGElement>('.shopper');
+  if (adult && kind !== 'parcel') adult.style.setProperty('--gait', `${(20 / speed).toFixed(3)}s`);
+}
+
 /** The van, side on, facing right: cargo box, cab, wheels that turn, lamps for the drive home. */
 function Van() {
   const wheel = (cx: number) => (
@@ -210,6 +271,13 @@ function Van() {
   );
   return (
     <svg className="shopfront__van" viewBox="0 0 184 84" aria-hidden="true">
+      <defs>
+        <linearGradient id="van-glow">
+          <stop offset="0" stopColor="#FFE7A0" stopOpacity=".9" />
+          <stop offset=".35" stopColor="#FFE7A0" stopOpacity=".35" />
+          <stop offset="1" stopColor="#FFE7A0" stopOpacity="0" />
+        </linearGradient>
+      </defs>
       <path className="van__beam" d="M178 58l-2 4 96 20V46z" />
       <ellipse cx="92" cy="81" rx="84" ry="3.6" fill="rgba(30, 20, 30, 0.22)" />
       <rect x="4" y="8" width="114" height="60" rx="6" fill="#F4EDE0" />
@@ -249,13 +317,20 @@ function StreetFront() {
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(street);
-    return () => observer.disconnect();
+    street.querySelectorAll<HTMLElement>('[data-roam]').forEach(lane => dressLane(lane, false));
+    const onLap = (event: AnimationEvent) => {
+      const lane = event.target as HTMLElement;
+      if (lane.dataset?.roam && event.animationName.startsWith('street-')) dressLane(lane, true);
+    };
+    street.addEventListener('animationiteration', onLap);
+    return () => { observer.disconnect(); street.removeEventListener('animationiteration', onLap); };
   }, []);
   return (
     <div className="shopfront" ref={ref} aria-hidden="true">
-      <span className="shopfront__lane shopfront__lane--parcel"><Person look="parcel" /></span>
-      <span className="shopfront__lane shopfront__lane--bag"><Person look="bag" /></span>
-      <span className="shopfront__lane shopfront__lane--stroll"><Person look="stroll" /><Person look="kid" /></span>
+      <span className="shopfront__lane shopfront__lane--parcel" data-roam="parcel"><Person look="parcel" /></span>
+      <span className="shopfront__lane shopfront__lane--bag" data-roam="bag"><Person look="bag" /><Dog /></span>
+      <span className="shopfront__lane shopfront__lane--dog is-dog" data-roam="dog"><Person look="stroll" /><Dog /></span>
+      <span className="shopfront__lane shopfront__lane--stroll" data-roam="stroll"><Person look="stroll" /><Person look="kid" /></span>
       <span className="shopfront__lane shopfront__lane--chase">
         <Person look="chaser" />
         <Person look="runner" />
@@ -298,7 +373,7 @@ export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
           <Fragment key={shop.id}>
             <ShopTile shop={shop} />
             {n % 2 === 0 ? <span className="shopstrip__lamp" aria-hidden="true"><i /></span>
-              : <span className="shopstrip__gap" aria-hidden="true" />}
+              : <span className="shopstrip__gap" aria-hidden="true"><i /></span>}
           </Fragment>
         ) : <ShopTile key={shop.id} shop={shop} />)}
       </div>
