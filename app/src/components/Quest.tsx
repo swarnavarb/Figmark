@@ -12,6 +12,7 @@ import { useToast } from './Feedback';
 import { Confetti } from './Confetti';
 import { Modal } from './ui';
 import { useShareSheet, type ShareSpec } from './ShareKit';
+import { reducedMotion } from '../motion';
 
 /*
  * The collector game's shared pieces.
@@ -365,7 +366,7 @@ export function Spin({ spinKey, children, back }: {
   const node = useRef<HTMLDivElement>(null);
   const angle = useRef(0);
   const drag = useRef<{ x: number; from: number; moved: boolean } | null>(null);
-  const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const still = reducedMotion();
 
   const turnTo = useCallback((to: number, from: number, ms: number) => {
     const el = node.current;

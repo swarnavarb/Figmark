@@ -27,3 +27,15 @@
     if (size === 'large' || size === 'larger') document.documentElement.setAttribute('data-text-size', size);
   } catch (e) { /* Storage refused: default size. */ }
 })();
+
+// Full or reduced motion, before the first paint, so nothing starts moving
+// only to stop. The reader's choice from the profile menu, else the phone's.
+// Keep in step with src/motion.ts.
+(function () {
+  var choice = null;
+  try { choice = localStorage.getItem('figmark:motion'); } catch (e) { /* Storage refused: the phone decides. */ }
+  if (choice !== 'full' && choice !== 'reduced') {
+    choice = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full';
+  }
+  document.documentElement.setAttribute('data-motion', choice);
+})();

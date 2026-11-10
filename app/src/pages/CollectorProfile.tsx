@@ -21,6 +21,7 @@ import {
 } from '../components/ProfileParts';
 import { PhotoSales } from '../components/PhotoSales';
 import { Select } from '../components/Select';
+import { reducedMotion } from '../motion';
 
 /**
  * A person's page, as a collector's.
@@ -211,7 +212,7 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub: 
   );
 }
 
-const stillMotion = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+const stillMotion = () => reducedMotion();
 
 /** A count that runs up from nothing when it first shows, easing out. */
 function CountUp({ to }: { to: number }) {

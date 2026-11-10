@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from 'react';
+import { reducedMotion } from '../motion';
 
 /**
  * Keeps the lite street (streetMode.ts) light on the battery.
@@ -78,7 +79,7 @@ const seconds = (value: string, fallback: number) => {
 export function startStreetLoops(root: Element): void {
   const band = root.closest('.shopstrip--lite');
   if (!band || typeof (root as HTMLElement).animate !== 'function') return;
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  if (reducedMotion()) return;
   for (const animation of root.getAnimations({ subtree: true })) if (animation.id === LOOP) animation.cancel();
   const calm = band.hasAttribute('data-calm');
   const started: Animation[] = [];
@@ -124,7 +125,7 @@ export function useStreetPower(ref: RefObject<HTMLElement | null>, enabled: bool
     const found = ref.current;
     if (!enabled || !found || typeof found.getAnimations !== 'function') return undefined;
     const band: HTMLElement = found;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
+    if (reducedMotion()) return undefined;
 
     const nav = navigator as Nav;
     let calm = lowEnd(nav);

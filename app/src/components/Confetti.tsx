@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { reducedMotion } from '../motion';
 
 /**
  * A small celebration, for things worth one. Respects reduced motion by not happening.
@@ -7,7 +8,7 @@ import type { ReactNode } from 'react';
  * pull the whole social post card into the first script the app loads.
  */
 export function Confetti({ run }: { run: number }): ReactNode {
-  const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const reduce = reducedMotion();
   if (run === 0 || reduce) return null;
   const pieces = Array.from({ length: 18 }, (_, index) => index);
   return (

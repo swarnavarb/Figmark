@@ -23,6 +23,7 @@ import { pauseOffscreenAnimations } from './pauseOffscreen';
 import { primeStartupReads } from './api';
 import { loaders, warmPage, warmTabsWhenIdle } from './pageLoaders';
 import './styles.css';
+import { watchMotion } from './motion';
 
 // The stylesheet index.html fetched without blocking the loading screen's paint.
 applyDeferredStyles();
@@ -213,6 +214,7 @@ function App() {
 
 // Errors in the browser reach the server's log.
 listenForErrors();
+watchMotion();
 // A spinner on whichever button was pressed and is now working.
 listenForPresses();
 pauseOffscreenAnimations();

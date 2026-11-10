@@ -438,6 +438,22 @@ code, kbd, samp, pre {
   }
 }
 
+/* Reduced motion is also the lighter mode (src/motion.ts; the switch in the
+   profile menu). Frosted glass re-blurs whatever scrolls behind it on every
+   frame, among the heaviest work a phone's graphics do, so bars, sheets and
+   badges go plain; the see-through ones turn nearly solid so the page beneath
+   stays out of the way without the blur. */
+:where(:root[data-motion="reduced"]) *,
+:where(:root[data-motion="reduced"]) *::before,
+:where(:root[data-motion="reduced"]) *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:where(:root[data-motion="reduced"]) .tabbar,
+:where(:root[data-motion="reduced"]) .csheet__box,
+:where(:root[data-motion="reduced"]) .fcalc__fab { background: color-mix(in srgb, var(--surface) 97%, transparent); }
+:where(:root[data-motion="reduced"]) .dislens { background: color-mix(in srgb, var(--bg) 97%, transparent); }
+
 .muted { color: var(--text-dim); font-size: var(--t-sm); }
 .faint { color: var(--text-faint); font-size: var(--t-xs); }
 .mono { font-family: var(--mono); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
@@ -4137,6 +4153,22 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .pmenu__item:hover { background: var(--surface-2); }
 .pmenu__item--out { color: var(--coral); margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 var(--r-md) var(--r-md); }
 .pmenu__flag { margin-left: auto; }
+.pmenu__item--switch { justify-content: flex-start; }
+.pmenu__switchtext { display: grid; gap: 1px; min-width: 0; }
+.pmenu__switchtext small { color: var(--text-faint); font-size: var(--t-2xs); font-weight: var(--w-medium); }
+/* An on/off switch: the track lights when reduced motion is on. */
+.pmenu__switch {
+  flex: none; position: relative; margin-left: auto; width: 40px; height: 24px; border-radius: 999px;
+  background: var(--border-strong);
+  transition: background var(--dur-1) var(--ease);
+}
+.pmenu__switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.pmenu__item[aria-checked='true'] .pmenu__switch { background: var(--grad-blue); box-shadow: none; }
+.pmenu__item[aria-checked='true'] .pmenu__switch::after { transform: translateX(16px); }
 .photogrid__cell { display: block; aspect-ratio: 1; background: var(--surface-2); overflow: hidden; }
 .photogrid__cell img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-2) ease; }
 .photogrid__cell:hover img { transform: scale(1.04); }
@@ -7909,7 +7941,16 @@ a.ocust__name:hover { color: var(--accent-text); }
   .stage__bulbs span, .stage__spot, .stage__drape, .stage__floor i, .ticket, .ticket__curtain, .flip__tile, .ticket__dot, .remind__bell.is-ringing { animation: none; }
   .ticket__curtain { transition: none; }
   .belt__floor, .belt__scene, .belt__sun, .plane, .crate__box, .rail--belt .rail__icon { animation: none; }
-  .belt { overflow-x: auto; cursor: auto; }
+  /* Still, the belt is a row the finger scrolls: sideways panning has to be
+     allowed again (the moving belt takes only vertical, to drag it itself). */
+  .belt {
+    overflow-x: auto; cursor: auto; touch-action: pan-x pan-y; user-select: auto; -webkit-user-select: auto;
+    overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .belt::-webkit-scrollbar { display: none; }
+  .belt__run { transform: none !important; will-change: auto; }
+  /* The floor stays under the screen while the cartons scroll over it. */
+  .belt__floor { position: sticky; left: 0; }
   .belt__plane, .belt__flag, .crate__drop, .crate__plus { display: none; }
 }
 .ocusts { gap: 10px; }

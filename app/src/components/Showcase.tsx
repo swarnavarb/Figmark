@@ -8,6 +8,7 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
 import { Thumb } from './ui';
+import { useReducedMotion } from '../motion';
 
 /**
  * The two Buy-tab shelves that sell an event, each telling its own story.
@@ -368,7 +369,8 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
   const hover = useRef(false);
   const drag = useRef<{ x: number; from: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
-  const still = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  // Live, so flipping the switch in the profile menu stops or starts the belt at once.
+  const still = useReducedMotion();
 
   useEffect(() => {
     if (lots.length === 0 || still) return undefined;
@@ -379,6 +381,14 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
   useEffect(() => {
     const belt = run.current;
     if (!belt || still) return undefined;
+    /* Back from reduced motion, where the belt was a row the finger scrolled:
+       that scroll is taken up by the ride instead, or the cartons and the
+       floor would stay pushed aside in a box that no longer scrolls. */
+    const frame0 = belt.parentElement;
+    if (frame0 && frame0.scrollLeft) {
+      offset.current += frame0.scrollLeft;
+      frame0.scrollLeft = 0;
+    }
     let last = performance.now();
     let frame = 0;
     const step = (now: number) => {
@@ -399,7 +409,7 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
         frame = requestAnimationFrame(step);
       }
     });
-    return () => { stop(); cancelAnimationFrame(frame); };
+    return () => { stop(); cancelAnimationFrame(frame); belt.style.transform = ''; };
   }, [lots.length, still]);
 
   if (lots.length === 0) return null;

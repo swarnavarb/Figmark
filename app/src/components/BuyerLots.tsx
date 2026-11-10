@@ -8,6 +8,7 @@ import { formatMoney } from '../format';
 import { buyerStatus, type StatusFacts } from './OrderStatus';
 import { Modal, Thumb } from './ui';
 import '../styles/PurchasesPage.css';
+import { reducedMotion } from '../motion';
 
 /**
  * The buyer's side of a lot: the same box the seller packs, seen from the
@@ -114,7 +115,7 @@ export function BuyerLotBox({ group, onOpen }: { group: ItemGroup; onOpen: () =>
 
   function open() {
     if (opening) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { onOpen(); return; }
+    if (reducedMotion()) { onOpen(); return; }
     setOpening(true);
     window.setTimeout(() => { setOpening(false); onOpen(); }, LID_OPEN_MS);
   }

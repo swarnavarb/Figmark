@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
+import type { AtRule, Plugin as PostcssPlugin } from 'postcss';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
@@ -40,8 +41,59 @@ function bootFirst(): Plugin {
   };
 }
 
+/**
+ * Motion follows the reader's choice, not only the phone's.
+ *
+ * The stylesheets say what changes with reduced motion the usual way, in
+ * `@media (prefers-reduced-motion: reduce)` blocks (and a few
+ * `no-preference` ones). A media query cannot be switched off from a menu, so
+ * each block is rewritten here: its rules move out of the query and under
+ * `:where(:root[data-motion="reduced"])` (or `:not(...)` for no-preference), which
+ * src/motion.ts sets from the profile menu's switch, falling back to the
+ * phone's own setting. Any other condition in the same query stays a query.
+ */
+const MOTION_FEATURE = /\(\s*prefers-reduced-motion\s*:\s*(reduce|no-preference)\s*\)/;
+// In :where(), so a rule weighs exactly what it did inside the query and the
+// cascade between rules is unchanged.
+const MOTION_ON = '[data-motion="reduced"]';
+const MOTION_OFF = ':not([data-motion="reduced"])';
+
+function underMotion(selector: string, scope: string): string {
+  const trimmed = selector.trim();
+  // The root itself: the condition goes on it rather than above it.
+  const root = trimmed.match(/^(html|:root)(?![\w-])/);
+  if (root) return `${root[1]}:where(${scope})${trimmed.slice(root[1]!.length)}`;
+  return `:where(:root${scope}) ${trimmed}`;
+}
+
+const motionFollowsChoice: PostcssPlugin = {
+  postcssPlugin: 'figmark-motion-follows-choice',
+  AtRule: {
+    media(atRule) {
+      const found = atRule.params.match(MOTION_FEATURE);
+      if (!found) return;
+      const scope = found[1] === 'reduce' ? MOTION_ON : MOTION_OFF;
+      atRule.walkRules((rule) => {
+        // Keyframe steps (from, 50%) are not selectors.
+        if (rule.parent?.type === 'atrule' && /keyframes$/i.test((rule.parent as AtRule).name)) return;
+        rule.selectors = rule.selectors.map((selector) => underMotion(selector, scope));
+      });
+      const rest = atRule.params
+        .replace(MOTION_FEATURE, '')
+        .replace(/^\s*and\s+|\s+and\s*$/gi, '')
+        .replace(/\s+and\s+and\s+/gi, ' and ')
+        .trim();
+      if (rest) atRule.params = rest;
+      else atRule.replaceWith(...(atRule.nodes ?? []));
+    },
+  },
+};
+
 export default defineConfig({
   plugins: [react(), bootFirst()],
+  css: {
+    postcss: { plugins: [motionFollowsChoice] },
+  },
   resolve: {
     alias: {
       // The domain model is shared with the API rather than duplicated, so a
