@@ -47,8 +47,13 @@
 }
 .shopstrip__art { flex: none; width: 52px; height: 46px; color: #1A1712; opacity: 0.16; }
 .shopstrip--band .shopstrip__row {
-  margin: 0 calc(var(--page-pad) * -1) -22px; padding: 4px var(--page-pad) 26px; scroll-padding-inline: var(--page-pad);
+  display: flex; gap: 0;
+  margin: 0 calc(var(--page-pad) * -1) -22px; padding: 4px var(--page-pad) 48px; scroll-padding-inline: var(--page-pad);
 }
+/* On the street the shops stand a little smaller - zoom scales the whole
+   building, sign and lettering included, so it keeps its proportions - with
+   a lamp post in each gap. */
+.shopstrip--band .shoptile { flex: 0 0 160px; zoom: 0.86; }
 /* A building casts its shadow on the pavement, not a box around itself: the
    wall keeps only its own edge, and a soft pool spreads at its foot. */
 .shopstrip--band .shoptile { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
@@ -255,8 +260,9 @@
    moves on the compositor (transform, opacity) without repainting the street.
    Still for anybody who asks for less motion: a dusk street, as before. */
 .shopstrip--band {
-  --pave: 58px;
-  --day: 36s;
+  --pave: 84px;
+  /* A whole day, dawn to dawn: slow enough to read as a day, not a flicker. */
+  --day: 96s;
   position: relative; isolation: isolate;
   background: linear-gradient(180deg, #F7C9A8 0%, #F9DCC0 38%, #F5E8D6 70%);
 }
@@ -315,20 +321,48 @@
     linear-gradient(90deg, rgba(20, 16, 40, 0.3) 1px, transparent 1px) left bottom / 46px 100% repeat-x,
     linear-gradient(#6A5E7A, #554B68 70%, #463D58);
 }
-.shopscene > .shopscene__lamps { top: auto; bottom: calc(var(--pave) - 6px); height: 70px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 70'%3E%3Cpath fill='%234A4152' d='M44 70V18h3v52z'/%3E%3Cpath fill='none' stroke='%234A4152' stroke-width='2.4' stroke-linecap='round' d='M45.5 20q0-8 8-8'/%3E%3Cpath fill='%234A4152' d='M50 10h10l-2 4h-6z'/%3E%3Cellipse cx='55' cy='15' rx='3' ry='1.4' fill='%23E8DCC0'/%3E%3Crect x='41' y='66' width='9' height='4' rx='1' fill='%234A4152'/%3E%3C/svg%3E") left bottom / 240px 70px repeat-x; }
-.shopscene > .shopscene__glow { top: auto; height: calc(var(--pave) + 64px); opacity: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 122'%3E%3Cdefs%3E%3CradialGradient id='h'%3E%3Cstop offset='0' stop-color='%23FFE6A6'/%3E%3Cstop offset='.35' stop-color='%23FFD27A' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23FFC060' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='p'%3E%3Cstop offset='0' stop-color='%23FFD98A' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23FFC060' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='55' cy='16' r='22' fill='url(%23h)'/%3E%3Cellipse cx='58' cy='92' rx='58' ry='14' fill='url(%23p)'/%3E%3C/svg%3E") left bottom / 240px 122px repeat-x; }
-.shopscene > .shopscene__road { top: auto; bottom: 18px; height: 30px; }
-.shopscene__van { position: absolute; right: 100%; bottom: 0; width: 54px; height: 30px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 54 30'%3E%3Cpath fill='%23F2EADB' d='M2 6c0-2 1-3 3-3h30v21H2z'/%3E%3Cpath fill='%23E0573E' d='M35 9h9c2 0 3 1 4 2l4 6v7H35z'/%3E%3Cpath fill='%23BFE3F5' d='M38 11h6l4 6h-10z'/%3E%3Crect x='2' y='14' width='33' height='3' fill='%23E0573E'/%3E%3Cpath fill='%23C9A36A' d='M12 7h10v6H12z'/%3E%3Cpath stroke='%238A6A3C' stroke-width='.8' d='M17 7v6'/%3E%3Ccircle cx='12' cy='25' r='4.2' fill='%232A2530'/%3E%3Ccircle cx='12' cy='25' r='1.6' fill='%239A93A0'/%3E%3Ccircle cx='43' cy='25' r='4.2' fill='%232A2530'/%3E%3Ccircle cx='43' cy='25' r='1.6' fill='%239A93A0'/%3E%3Crect x='50' y='16' width='3' height='2.4' rx='.8' fill='%23FFE7A0'/%3E%3C/svg%3E") center / contain no-repeat; }
+
+/* A lamp post in the gap after each shop, in front of the street: its arm
+   reaches over the shop's corner. Its light (the i) comes on at dusk. */
+.shopstrip__lamp {
+  flex: 0 0 26px; position: relative; z-index: 1; align-self: flex-end; height: 190px; margin-bottom: -6px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 190'%3E%3Cpath fill='%233E3646' d='M13.5 190v-6h-3v-4h3V30h3v150h3v4h-3v6z'/%3E%3Cpath fill='none' stroke='%233E3646' stroke-width='2.6' stroke-linecap='round' d='M15 32q0-16-12-16'/%3E%3Cpath fill='%233E3646' d='M-2 12h12l-1 4H-1z'/%3E%3Cpath fill='%233E3646' d='M15 30l-3 2h6z'/%3E%3Cellipse cx='4' cy='17' rx='4.5' ry='1.8' fill='%23F3E6C4'/%3E%3C/svg%3E") center bottom / 30px 190px no-repeat;
+}
+.shopstrip__lamp i {
+  position: absolute; left: -27px; top: -12px; width: 120px; height: 250px; opacity: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 250'%3E%3Cdefs%3E%3CradialGradient id='h'%3E%3Cstop offset='0' stop-color='%23FFE6A6'/%3E%3Cstop offset='.3' stop-color='%23FFD27A' stop-opacity='.6'/%3E%3Cstop offset='1' stop-color='%23FFC060' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='p'%3E%3Cstop offset='0' stop-color='%23FFD98A' stop-opacity='.6'/%3E%3Cstop offset='1' stop-color='%23FFC060' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='40' cy='29' r='28' fill='url(%23h)'/%3E%3Cpath d='M40 25L8 214h64z' fill='%23FFE2A0' opacity='.12'/%3E%3Cellipse cx='40' cy='226' rx='56' ry='16' fill='url(%23p)'/%3E%3C/svg%3E") left top / 120px 250px no-repeat;
+}
+
+/* ── In front of the shops: people walking by, the van on its round ──────── */
+.shopfront { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; }
+.shopfront__walker { position: absolute; bottom: 12px; width: 30px; height: 58px; background: 0 0 / 60px 58px no-repeat; }
+.shopfront__walker--bag { left: 22%; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 52 50'%3E%3Cg transform='translate(0 0)'%3E%3Cpath d='M11 31l-4 17' stroke='%232F3350' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M16 31l5 17' stroke='%232F3350' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M10 16l-3 12' stroke='%23C99A74' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Crect x='8' y='13' width='11' height='19' rx='4' fill='%23E0573E'/%3E%3Cpath d='M17 16l4 11' stroke='%23D6A57E' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='13.5' cy='7.5' r='5' fill='%23E8BB94'/%3E%3Cpath d='M8.6 6.5a5 5 0 0 1 9.8-.6c-2 .4-5 0-6.6-1.6-.8 1.2-2 2-3.2 2.2z' fill='%232B2230'/%3E%3Crect x='19' y='25' width='7' height='8' rx='1' fill='%23F2B03C'/%3E%3Cpath d='M20.5 25a2 2 0 0 1 4 0' stroke='%23B97A1A' fill='none'/%3E%3C/g%3E%3Cg transform='translate(26 0)'%3E%3Cpath d='M12 31l0 17' stroke='%232F3350' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M15 31l0 17' stroke='%232F3350' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M10 16l-1 13' stroke='%23C99A74' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Crect x='8' y='13' width='11' height='19' rx='4' fill='%23E0573E'/%3E%3Cpath d='M17 16l1 13' stroke='%23D6A57E' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='13.5' cy='7.5' r='5' fill='%23E8BB94'/%3E%3Cpath d='M8.6 6.5a5 5 0 0 1 9.8-.6c-2 .4-5 0-6.6-1.6-.8 1.2-2 2-3.2 2.2z' fill='%232B2230'/%3E%3Crect x='19' y='25' width='7' height='8' rx='1' fill='%23F2B03C'/%3E%3Cpath d='M20.5 25a2 2 0 0 1 4 0' stroke='%23B97A1A' fill='none'/%3E%3C/g%3E%3C/svg%3E"); }
+.shopfront__walker--parcel { left: 58%; bottom: 19px; width: 27px; height: 52px; background-size: 54px 52px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 52 50'%3E%3Cg transform='translate(0 0)'%3E%3Cpath d='M11 31l-4 17' stroke='%233A3046' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M16 31l5 17' stroke='%233A3046' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M10 16l-3 12' stroke='%23C99A74' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Crect x='8' y='13' width='11' height='19' rx='4' fill='%233E7FD6'/%3E%3Cpath d='M17 16l4 11' stroke='%23D6A57E' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='13.5' cy='7.5' r='5' fill='%23E8BB94'/%3E%3Cpath d='M8.6 6.5a5 5 0 0 1 9.8-.6c-2 .4-5 0-6.6-1.6-.8 1.2-2 2-3.2 2.2z' fill='%232B2230'/%3E%3Crect x='4' y='14' width='12' height='10' rx='1' fill='%23C9A36A'/%3E%3Cpath d='M10 14v10' stroke='%238A6A3C' stroke-width='.8'/%3E%3C/g%3E%3Cg transform='translate(26 0)'%3E%3Cpath d='M12 31l0 17' stroke='%233A3046' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M15 31l0 17' stroke='%233A3046' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M10 16l-1 13' stroke='%23C99A74' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Crect x='8' y='13' width='11' height='19' rx='4' fill='%233E7FD6'/%3E%3Cpath d='M17 16l1 13' stroke='%23D6A57E' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='13.5' cy='7.5' r='5' fill='%23E8BB94'/%3E%3Cpath d='M8.6 6.5a5 5 0 0 1 9.8-.6c-2 .4-5 0-6.6-1.6-.8 1.2-2 2-3.2 2.2z' fill='%232B2230'/%3E%3Crect x='4' y='14' width='12' height='10' rx='1' fill='%23C9A36A'/%3E%3Cpath d='M10 14v10' stroke='%238A6A3C' stroke-width='.8'/%3E%3C/g%3E%3C/svg%3E"); transform: scaleX(-1); }
+.shopfront__walker--stroll { left: 82%; bottom: 7px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 52 50'%3E%3Cg transform='translate(0 0)'%3E%3Cpath d='M11 31l-4 17' stroke='%234A3C2E' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M16 31l5 17' stroke='%234A3C2E' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M10 16l-3 12' stroke='%23C99A74' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Crect x='8' y='13' width='11' height='19' rx='4' fill='%232FA37A'/%3E%3Cpath d='M17 16l4 11' stroke='%23D6A57E' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='13.5' cy='7.5' r='5' fill='%23E8BB94'/%3E%3Cpath d='M8.6 6.5a5 5 0 0 1 9.8-.6c-2 .4-5 0-6.6-1.6-.8 1.2-2 2-3.2 2.2z' fill='%232B2230'/%3E%3C/g%3E%3Cg transform='translate(26 0)'%3E%3Cpath d='M12 31l0 17' stroke='%234A3C2E' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M15 31l0 17' stroke='%234A3C2E' stroke-width='3.4' stroke-linecap='round' fill='none'/%3E%3Cpath d='M10 16l-1 13' stroke='%23C99A74' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Crect x='8' y='13' width='11' height='19' rx='4' fill='%232FA37A'/%3E%3Cpath d='M17 16l1 13' stroke='%23D6A57E' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='13.5' cy='7.5' r='5' fill='%23E8BB94'/%3E%3Cpath d='M8.6 6.5a5 5 0 0 1 9.8-.6c-2 .4-5 0-6.6-1.6-.8 1.2-2 2-3.2 2.2z' fill='%232B2230'/%3E%3C/g%3E%3C/svg%3E"); }
+.shopfront__van { position: absolute; right: 100%; bottom: 6px; width: 112px; height: 62px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 54 30'%3E%3Cpath fill='%23F2EADB' d='M2 6c0-2 1-3 3-3h30v21H2z'/%3E%3Cpath fill='%23E0573E' d='M35 9h9c2 0 3 1 4 2l4 6v7H35z'/%3E%3Cpath fill='%23BFE3F5' d='M38 11h6l4 6h-10z'/%3E%3Crect x='2' y='14' width='33' height='3' fill='%23E0573E'/%3E%3Cpath fill='%23C9A36A' d='M12 7h10v6H12z'/%3E%3Cpath stroke='%238A6A3C' stroke-width='.8' d='M17 7v6'/%3E%3Ccircle cx='12' cy='25' r='4.2' fill='%232A2530'/%3E%3Ccircle cx='12' cy='25' r='1.6' fill='%239A93A0'/%3E%3Ccircle cx='43' cy='25' r='4.2' fill='%232A2530'/%3E%3Ccircle cx='43' cy='25' r='1.6' fill='%239A93A0'/%3E%3Crect x='50' y='16' width='3' height='2.4' rx='.8' fill='%23FFE7A0'/%3E%3C/svg%3E") center / contain no-repeat; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .shopscene > *, .shopscene__sun, .shopscene__plane, .shopscene__birds, .shopscene__van {
+  /* Each at their own pace, both ways along the pavement; the negative
+     delays put them mid-stride when the page opens. */
+  .shopfront__walker { left: 0; animation: walk-right 46s linear infinite, walk-step 0.6s steps(2) infinite; }
+  .shopfront__walker--bag { animation-delay: -14s, 0s; }
+  .shopfront__walker--parcel { animation: walk-left 38s linear -24s infinite, walk-step-small 0.55s steps(2) infinite; }
+  .shopfront__walker--stroll { animation-duration: 64s, 0.75s; animation-delay: -50s, 0s; }
+}
+@keyframes walk-right { from { transform: translateX(-40px); } to { transform: translateX(calc(100vw + 40px)); } }
+@keyframes walk-left { from { transform: translateX(calc(100vw + 40px)) scaleX(-1); } to { transform: translateX(-40px) scaleX(-1); } }
+@keyframes walk-step { to { background-position: -60px 0; } }
+@keyframes walk-step-small { to { background-position: -54px 0; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .shopscene > *, .shopscene__sun, .shopscene__plane, .shopscene__birds, .shopfront__van, .shopstrip__lamp i {
     animation-duration: var(--day); animation-iteration-count: infinite; animation-timing-function: linear;
   }
   .shopscene__daysky { animation-name: scene-day; }
   .shopscene__nightsky { animation-name: scene-night; }
   .shopscene__stars { animation-name: scene-stars; }
   .shopscene__city--night, .shopscene > .shopscene__pave--night { animation-name: scene-lights; }
-  .shopscene > .shopscene__glow { animation-name: scene-lamps; }
+  .shopstrip__lamp i { animation-name: scene-lamps; }
   .shopscene > .shopscene__comet { animation-name: scene-comet; }
   .shopscene > .shopscene__moon { animation-name: scene-moon; }
   .shopscene__arc { animation-name: scene-arc; }
@@ -338,7 +372,7 @@
   .shopscene__birds { animation-name: scene-birds; }
   .shopscene__birds i { animation: scene-flap 0.45s ease-in-out infinite alternate; }
   .shopscene__birds i:nth-child(2) { animation-delay: -0.2s; }
-  .shopscene__van { animation-name: scene-van; }
+  .shopfront__van { animation-name: scene-van; }
   .shopstrip--band .shopstrip__title, .shopstrip--band .shopstrip__eyebrow, .shopstrip__art {
     animation: scene-ink var(--day) linear infinite;
   }
@@ -380,7 +414,7 @@
 @keyframes scene-birds { 0%, 38% { transform: translateX(0); } 54%, 100% { transform: translateX(calc(100vw + 120px)); } }
 @keyframes scene-flap { to { transform: scaleY(0.4); } }
 /* The van's morning round, left to right along the street. */
-@keyframes scene-van { 0%, 4% { transform: translateX(0); } 24%, 100% { transform: translateX(calc(100vw + 120px)); } }
+@keyframes scene-van { 0%, 4% { transform: translateX(0); } 17%, 100% { transform: translateX(calc(100vw + 140px)); } }
 /* The heading, dark on the day's sky and light on the night's. */
 @keyframes scene-ink { 0%, 61% { color: #1A1712; } 65%, 92% { color: #FFF4E0; } 95%, 100% { color: #1A1712; } }
 @keyframes scene-ink-soft { 0%, 61% { color: #8A5A3C; } 65%, 92% { color: #F3C9A0; } 95%, 100% { color: #8A5A3C; } }
