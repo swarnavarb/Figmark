@@ -3,6 +3,7 @@ import { useNow } from '../clock';
 import { Link } from 'react-router-dom';
 import { countryFlag } from '@shared/countries';
 import { ApiRequestError, api, type DropCardData, type FillingLot } from '../api';
+import { watchOnScreen } from '../pauseOffscreen';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
@@ -389,8 +390,16 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
       belt.style.transform = `translate3d(${-offset.current}px, 0, 0)`;
       frame = requestAnimationFrame(step);
     };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
+    // The belt runs only while it can be seen, and carries on from where it stopped.
+    const stop = watchOnScreen(belt, (visible) => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      if (visible) {
+        last = performance.now();
+        frame = requestAnimationFrame(step);
+      }
+    });
+    return () => { stop(); cancelAnimationFrame(frame); };
   }, [lots.length, still]);
 
   if (lots.length === 0) return null;

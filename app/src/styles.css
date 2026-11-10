@@ -10003,3 +10003,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   .qpreview__tile::after, .wincard::after { display: none; }
   .tabs--sticky, .qpreview__tile, .qpreview__img, .wincard, .medalcard { transition: none; }
 }
+
+/* Off screen, a looping animation rests where it is (pauseOffscreen.ts) and
+   carries on from there when its section scrolls back into view. */
+[data-offscreen], [data-offscreen]::before, [data-offscreen]::after,
+[data-offscreen] *, [data-offscreen] *::before, [data-offscreen] *::after { animation-play-state: paused !important; }
