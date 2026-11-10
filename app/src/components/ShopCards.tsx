@@ -10,6 +10,7 @@ import { startStreetLoops, useStreetPower } from './streetPower';
 import { Avatar } from './ui';
 import { brandHueFor, formatCount } from '../format';
 import '../styles/ShopCards.css';
+import { reducedMotion, useReducedMotion } from '../motion';
 
 /** A name cut to what a shop may be called now; names from before the limit end in "…". */
 export const shortName = (name: string) => (name.length > SHOP_NAME_MAX ? `${name.slice(0, SHOP_NAME_MAX - 1).trimEnd()}…` : name);
@@ -64,7 +65,7 @@ export function ShopTile({ shop }: { shop: ShopCard }) {
     event.preventDefault();
     if (entering) return;
     warmShop(shop);
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const still = reducedMotion();
     if (still) {
       navigate(to);
       return;
@@ -369,6 +370,7 @@ function Van({ lite }: { lite: boolean }) {
  */
 function StreetFront({ lite }: { lite: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const still = useReducedMotion();
   useEffect(() => {
     const street = ref.current;
     if (!street || typeof ResizeObserver === 'undefined') return undefined;
@@ -378,6 +380,8 @@ function StreetFront({ lite }: { lite: boolean }) {
     observer.observe(street);
     const lanes = [...street.querySelectorAll<HTMLElement>('[data-roam]')];
     lanes.forEach(lane => dressLane(lane, false));
+    // Reduced motion: nobody walks, so there are no laps to watch.
+    if (still) return () => observer.disconnect();
     if (lite) {
       /* Lite: a lap is noticed by one timer looking at the lanes twice a
          second. Listening for animationiteration instead would have Chrome
@@ -408,7 +412,7 @@ function StreetFront({ lite }: { lite: boolean }) {
     };
     street.addEventListener('animationiteration', onLap);
     return () => { observer.disconnect(); street.removeEventListener('animationiteration', onLap); };
-  }, [lite]);
+  }, [lite, still]);
   /* Lite: everybody is a stack of their poses. */
   const person = (look: Look) => (lite
     ? <span className={`walker walker--person walker--${look}`}>{posed(() => <Person look={look} />)}</span>
@@ -448,7 +452,9 @@ export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
   const ref = useRef<HTMLElement>(null);
   const lite = band && streetMode() === 'lite';
   const empty = !shops || shops.length === 0;
-  useStreetPower(ref, lite && !empty);
+  // Read here so flipping the switch stops (or restarts) the street at once.
+  const still = useReducedMotion();
+  useStreetPower(ref, lite && !empty && !still);
   if (empty) return null;
   return (
     <section ref={ref} className={`shopstrip${band ? ' shopstrip--band' : ''}${lite ? ' shopstrip--lite' : ''}`} aria-label={title}>

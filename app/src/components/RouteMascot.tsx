@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { RouteProblem } from '@shared/buttons';
 import { renderStepText, stepButtonLabel, type RouteStep } from '@shared/routes';
 import '../styles/RouteStudioPage.css';
+import { reducedMotion } from '../motion';
 
 /**
  * Pip, the parcel who helps write a tracking timeline.
@@ -55,7 +56,7 @@ export function Pip({ mood = 'happy', size = 64 }: { mood?: PipMood; size?: numb
 function useTyped(text: string): string {
   const [shown, setShown] = useState(text);
   useEffect(() => {
-    const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const still = reducedMotion();
     if (still) { setShown(text); return; }
     let at = 0;
     setShown('');

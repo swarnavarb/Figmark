@@ -20,6 +20,7 @@ import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
 import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
 import { PageLoading } from './components/Feedback';
+import { reducedMotion, setMotion, useReducedMotion } from './motion';
 
 /** The sign-in sheet, fetched the first time somebody needs it. */
 const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthModal })));
@@ -298,6 +299,7 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
   const isPro = isProActive(user?.pro ?? null);
   const hasStore = Boolean(user?.sellerProfile || user?.forwarderProfile || user?.capabilities.canSell);
   const feeLocked = Boolean(user?.feeLock);
+  const still = useReducedMotion();
 
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -362,6 +364,17 @@ export function ProfileMenu({ name, onSignOut }: { name: string; onSignOut: () =
               <Link role="menuitem" to="/shop?tab=offers" className="pmenu__item"><span aria-hidden="true">🎟️</span> Offers &amp; loyalty</Link>
             </>
           )}
+          <span className="pmenu__group">This device</span>
+          {/* Stays open on a flip, so the change can be seen and undone. */}
+          <button role="menuitemcheckbox" type="button" aria-checked={still}
+            className="pmenu__item pmenu__item--switch" onClick={() => setMotion(still ? 'full' : 'reduced')}>
+            <span aria-hidden="true">🐢</span>
+            <span className="pmenu__switchtext">
+              Reduce motion
+              <small>{still ? 'Still and light on battery' : 'Full animation'}</small>
+            </span>
+            <span className="pmenu__switch" aria-hidden="true" />
+          </button>
           <span className="pmenu__group">Help</span>
           <Link role="menuitem" to="/disputes" className="pmenu__item"><span aria-hidden="true">⚖️</span> My disputes</Link>
           <Link role="menuitem" to="/learn" className="pmenu__item"><span aria-hidden="true">📘</span> Learn</Link>
@@ -478,7 +491,7 @@ function RouteFade({ children }: { children: ReactNode }) {
     if (first.current) { first.current = false; return; }
     const element = ref.current;
     if (!element || typeof element.animate !== 'function') return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (reducedMotion()) return;
     element.animate([{ opacity: 0.001 }, { opacity: 1 }], { duration: 180, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
   }, [pathname]);
   return <div ref={ref} className="route-fade">{children}</div>;

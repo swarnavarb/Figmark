@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { reducedMotion } from '../motion';
 
 /*
  * The arcade game that plays behind the quest board on the Quests page.
@@ -50,7 +51,7 @@ export function QuestShooter({ volley = 0 }: {
     const canvas = ref.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const still = reducedMotion();
     let w = 0;
     let h = 0;
     const fit = () => {

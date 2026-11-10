@@ -8,6 +8,7 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
 import { Thumb } from './ui';
+import { reducedMotion } from '../motion';
 
 /**
  * The two Buy-tab shelves that sell an event, each telling its own story.
@@ -368,7 +369,7 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
   const hover = useRef(false);
   const drag = useRef<{ x: number; from: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
-  const still = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const still = reducedMotion();
 
   useEffect(() => {
     if (lots.length === 0 || still) return undefined;

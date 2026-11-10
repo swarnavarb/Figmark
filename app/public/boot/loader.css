@@ -79,13 +79,14 @@
    (styles.css) cuts every animation to one frame with !important, which froze
    the mark and made a slow load look like a hang, so this one says
    !important back. */
-@media (prefers-reduced-motion: reduce) {
-  .fmload__ring, .fmload__orbit, .fmload__mark::after { animation: none; }
-  .fmload__mark {
-    animation: fmload-fade 1.6s ease-in-out infinite !important;
-    animation-duration: 1.6s !important;
-    animation-iteration-count: infinite !important;
-  }
-  .boot__word { animation: none; color: #9FB0C9; background: none; }
-  @keyframes fmload-fade { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+/* Not a media query: public/boot/tone.js sets data-motion from the reader's
+   choice in the profile menu, else the phone's setting (src/motion.ts). */
+:root[data-motion="reduced"] .fmload__ring, :root[data-motion="reduced"] .fmload__orbit,
+:root[data-motion="reduced"] .fmload__mark::after { animation: none; }
+:root[data-motion="reduced"] .fmload__mark {
+  animation: fmload-fade 1.6s ease-in-out infinite !important;
+  animation-duration: 1.6s !important;
+  animation-iteration-count: infinite !important;
 }
+:root[data-motion="reduced"] .boot__word { animation: none; color: #9FB0C9; background: none; }
+@keyframes fmload-fade { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }

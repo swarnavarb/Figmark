@@ -26,6 +26,7 @@ import { Icon } from '../components/Icon';
 import { SkelRows } from '../components/PageSkeletons';
 import '../styles.css';
 import '../styles/admin.css';
+import { watchMotion } from '../motion';
 
 /**
  * The operations console.
@@ -354,6 +355,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element #root is missing from admin.html.');
 
+watchMotion();
 createRoot(container).render(
   <StrictMode>
     <Console />

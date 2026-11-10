@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import '../styles/AuthTour.css';
+import { reducedMotion } from '../motion';
 
 /**
  * The slides above the sign-in form: what Figmark does for the person buying
@@ -80,7 +81,7 @@ const SLIDES: Slide[] = [
 const TURN_MS = 6000;
 
 function prefersLessMotion() {
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  return reducedMotion();
 }
 
 export function AuthTour({ onSkip, still = false }: { onSkip: () => void; still?: boolean }) {

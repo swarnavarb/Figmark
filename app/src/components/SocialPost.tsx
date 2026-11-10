@@ -29,6 +29,7 @@ import { ContestPlay, GuessPlay, PollPlay, TeamChip } from './PostPlay';
 import { markOpened, useSeen } from '../seen';
 import { HASHTAG, MENTION } from '@shared/feed';
 import { tagKey, tagSlug } from '@shared/shop-tags';
+import { reducedMotion } from '../motion';
 
 /**
  * One post, and everything people do with it.
@@ -263,7 +264,7 @@ function SaleItem({ listing, post, nested, offerTo }: {
 }
 
 function reduceMotion(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  return reducedMotion();
 }
 
 /* ── The post ──────────────────────────────────────────────────────────── */
@@ -1085,7 +1086,7 @@ export function Lightbox({ photos, start, onClose, title, caption, about, by, po
   const img = useRef<HTMLImageElement>(null);
   const shell = useRef<HTMLDivElement>(null);
   const closing = useRef(false);
-  const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const still = reducedMotion();
 
   /** The transform that puts the full-size photo exactly over the thumbnail it came from. */
   const fromOrigin = () => {

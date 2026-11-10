@@ -92,6 +92,7 @@ import { EarnPill, earnOf } from '../components/Affiliate';
 import { ShopStatusSwitch } from '../components/ShopStatusSwitch';
 import '../styles/ShopPage.css';
 import { Select } from '../components/Select';
+import { reducedMotion } from '../motion';
 
 /* The Engage screen carries the whole post card; it arrives when it is opened. */
 const EngagePanel = lazy(() => import('../components/EngagePanel').then((module) => ({ default: module.EngagePanel })));
@@ -4683,7 +4684,7 @@ function LotCard({ summary, onOpen }: {
   function open() {
     if (opening) return;
     const still = typeof window !== 'undefined'
-      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      && reducedMotion();
     if (still) { onOpen(); return; }
     setOpening(true);
     window.setTimeout(onOpen, LID_OPEN_MS);
