@@ -14,9 +14,11 @@
  */
 export type StreetMode = 'lite' | 'classic';
 
-export const STREET_DEFAULT: StreetMode = 'lite';
+export const STREET_DEFAULT: StreetMode = 'classic';
 
-const KEY = 'figmark.street';
+// v2: a device that tried ?street=lite while lite was the default goes back
+// to the default (classic) rather than staying on lite.
+const KEY = 'figmark.street.v2';
 
 function isMode(value: unknown): value is StreetMode {
   return value === 'lite' || value === 'classic';

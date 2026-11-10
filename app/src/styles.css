@@ -7941,7 +7941,14 @@ a.ocust__name:hover { color: var(--accent-text); }
   .stage__bulbs span, .stage__spot, .stage__drape, .stage__floor i, .ticket, .ticket__curtain, .flip__tile, .ticket__dot, .remind__bell.is-ringing { animation: none; }
   .ticket__curtain { transition: none; }
   .belt__floor, .belt__scene, .belt__sun, .plane, .crate__box, .rail--belt .rail__icon { animation: none; }
-  .belt { overflow-x: auto; cursor: auto; }
+  /* Still, the belt is a row the finger scrolls: sideways panning has to be
+     allowed again (the moving belt takes only vertical, to drag it itself). */
+  .belt {
+    overflow-x: auto; cursor: auto; touch-action: pan-x pan-y; user-select: auto; -webkit-user-select: auto;
+    overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .belt::-webkit-scrollbar { display: none; }
+  .belt__run { transform: none !important; will-change: auto; }
   .belt__plane, .belt__flag, .crate__drop, .crate__plus { display: none; }
 }
 .ocusts { gap: 10px; }

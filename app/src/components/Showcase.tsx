@@ -8,7 +8,7 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
 import { Thumb } from './ui';
-import { reducedMotion } from '../motion';
+import { useReducedMotion } from '../motion';
 
 /**
  * The two Buy-tab shelves that sell an event, each telling its own story.
@@ -369,7 +369,8 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
   const hover = useRef(false);
   const drag = useRef<{ x: number; from: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
-  const still = reducedMotion();
+  // Live, so flipping the switch in the profile menu stops or starts the belt at once.
+  const still = useReducedMotion();
 
   useEffect(() => {
     if (lots.length === 0 || still) return undefined;
@@ -400,7 +401,7 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
         frame = requestAnimationFrame(step);
       }
     });
-    return () => { stop(); cancelAnimationFrame(frame); };
+    return () => { stop(); cancelAnimationFrame(frame); belt.style.transform = ''; };
   }, [lots.length, still]);
 
   if (lots.length === 0) return null;
