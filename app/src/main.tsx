@@ -19,6 +19,7 @@ import { loadRouteWords } from './routeWords';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { listenForErrors } from './errors';
 import { listenForPresses } from './pressFeedback';
+import { pauseOffscreenAnimations } from './pauseOffscreen';
 import { primeStartupReads } from './api';
 import { loaders, warmPage, warmTabsWhenIdle } from './pageLoaders';
 import './styles.css';
@@ -214,6 +215,7 @@ function App() {
 listenForErrors();
 // A spinner on whichever button was pressed and is now working.
 listenForPresses();
+pauseOffscreenAnimations();
 // Only shows notifications; it caches nothing, so the site loads as before.
 registerServiceWorker();
 // Android's install prompt can arrive at any moment; keep it for the guide.

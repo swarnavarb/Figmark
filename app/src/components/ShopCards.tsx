@@ -1,5 +1,5 @@
 import { ProBadge } from './Billing';
-import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { tagKey, tagSlug } from '@shared/shop-tags';
 import { SHOP_NAME_MAX } from '@shared/storefront';
@@ -114,21 +114,6 @@ export function ShopTile({ shop }: { shop: ShopCard }) {
   );
 }
 
-/** A faint storefront outline for the band's corner: a hint, not a picture. */
-function ShopArt() {
-  return (
-    <svg className="shopstrip__art" viewBox="0 0 64 56" fill="none" stroke="currentColor" strokeWidth="1.6"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 22v28h52V22" />
-      <path d="M4 10h56l-3 12H7z" />
-      <path d="M16 10l-2 12M26 10l-1 12M38 10l1 12M48 10l2 12" />
-      <path d="M7 22c0 4 9 4 9 0 0 4 9 4 9 0 0 4 9 4 9 0 0 4 9 4 9 0 0 4 9 4 9 0 0 4 3 4 3 0" />
-      <rect x="12" y="32" width="18" height="12" rx="1.5" />
-      <path d="M38 50V32h12v18" />
-    </svg>
-  );
-}
-
 /**
  * The street behind the band, as a day that loops: dawn, a van on its morning
  * round, a cargo plane over the rooftops at noon, birds heading home, sunset,
@@ -143,11 +128,12 @@ function StreetScene() {
       <span className="shopscene__nightsky" />
       <span className="shopscene__stars" />
       <span className="shopscene__comet" />
+      <span className="shopscene__comet shopscene__comet--late" />
       <span className="shopscene__arc"><span className="shopscene__sun" /></span>
       <span className="shopscene__moon" />
       <span className="shopscene__clouds" />
       <span><span className="shopscene__plane" /></span>
-      <span><span className="shopscene__birds"><i /><i /><i /></span></span>
+      <span><span className="shopscene__birds">{[0, 1, 2, 3, 4].map((n) => <Gull key={n} />)}</span></span>
       <span className="shopscene__city" />
       <span className="shopscene__city shopscene__city--night" />
       <span className="shopscene__pave" />
@@ -156,14 +142,126 @@ function StreetScene() {
   );
 }
 
-/** The pavement in front of the shops: people walking by, and the van. Drawn over the row, never in the way of a tap. */
-function StreetFront() {
+/** A gull, seen from the front: two wings that beat about the body. */
+function Gull() {
   return (
-    <div className="shopfront" aria-hidden="true">
-      <span className="shopfront__walker shopfront__walker--bag" />
-      <span className="shopfront__walker shopfront__walker--parcel" />
-      <span className="shopfront__walker shopfront__walker--stroll" />
-      <span className="shopfront__van" />
+    <svg className="gull" viewBox="0 0 24 12" aria-hidden="true">
+      <path className="gull__wing gull__wing--l" d="M12 6C9 1.5 5 .5 1 2.5c3.5 0 6.5 1.5 9.6 5z" />
+      <path className="gull__wing gull__wing--r" d="M12 6c3-4.5 7-5.5 11-3.5-3.5 0-6.5 1.5-9.6 5z" />
+      <ellipse className="gull__body" cx="12" cy="6.6" rx="2.2" ry="1.5" />
+    </svg>
+  );
+}
+
+type Look = 'bag' | 'parcel' | 'stroll' | 'kid' | 'runner' | 'chaser';
+
+/**
+ * Somebody on the pavement, jointed so they walk: each leg swings from the hip
+ * and each arm from the shoulder, and a bag hangs from the hand, swinging back
+ * against the arm so it keeps hanging straight down. Faces right.
+ */
+function Person({ look }: { look: Look }) {
+  const leg = (side: 'back' | 'front') => (
+    <g className={`shopper__leg shopper__leg--${side}`}>
+      <rect className="shopper__pants" x="13.2" y="33" width="4.8" height="24" rx="2.4" />
+      <path className="shopper__shoe" d="M12.6 55.5h6.2c2.6 0 3.8 1.2 3.8 2.6 0 .8-.6 1.4-1.4 1.4h-8.6z" />
+    </g>
+  );
+  const arm = (side: 'back' | 'front', hand?: ReactNode) => (
+    <g className={`shopper__arm shopper__arm--${side}`}>
+      <rect className="shopper__sleeve" x="13.6" y="16.5" width="4" height="16" rx="2" />
+      <circle className="shopper__skin" cx="15.6" cy="33.2" r="2" />
+      {hand}
+    </g>
+  );
+  return (
+    <svg className={`shopper shopper--${look}`} viewBox="0 0 32 64" aria-hidden="true">
+      {leg('back')}
+      {arm('back')}
+      <rect className="shopper__shirt" x="10.4" y="15" width="10.4" height="21" rx="4.6" />
+      <rect className="shopper__skin" x="13.9" y="11" width="3.4" height="5" />
+      <circle className="shopper__skin" cx="15.6" cy="8.6" r="5.6" />
+      <path className="shopper__hair" d="M10.1 8.4a5.6 5.6 0 0 1 11-1.6c-2.4.3-5.6-.2-7.4-1.8-.6 1.6-1.8 2.8-3.6 3.4z" />
+      {leg('front')}
+      {look === 'parcel' && (
+        <g className="shopper__box">
+          <rect x="18.5" y="19" width="12.5" height="11" rx="1.2" />
+          <path d="M24.7 19v11" />
+        </g>
+      )}
+      {arm('front', look === 'bag' ? (
+        <g className="shopper__hang">
+          <path className="shopper__handle" d="M13.4 37.6c0-3.6 4.4-3.6 4.4 0" />
+          <rect className="shopper__bag" x="11" y="37" width="9.2" height="10.5" rx="1.4" />
+        </g>
+      ) : undefined)}
+    </svg>
+  );
+}
+
+/** The van, side on, facing right: cargo box, cab, wheels that turn, lamps for the drive home. */
+function Van() {
+  const wheel = (cx: number) => (
+    <g className="van__wheel" key={cx}>
+      <circle cx={cx} cy="70" r="11" fill="#26222C" />
+      <circle cx={cx} cy="70" r="5.2" fill="#B9B2BE" />
+      <path d={`M${cx - 5} 70h10M${cx} 65v10`} stroke="#7C7584" strokeWidth="1.6" />
+    </g>
+  );
+  return (
+    <svg className="shopfront__van" viewBox="0 0 184 84" aria-hidden="true">
+      <path className="van__beam" d="M178 58l-2 4 96 20V46z" />
+      <ellipse cx="92" cy="81" rx="84" ry="3.6" fill="rgba(30, 20, 30, 0.22)" />
+      <rect x="4" y="8" width="114" height="60" rx="6" fill="#F4EDE0" />
+      <rect x="4" y="8" width="114" height="6" rx="3" fill="#FFFFFF" opacity=".55" />
+      <rect x="4" y="46" width="114" height="6" fill="#E0573E" />
+      <rect x="40" y="20" width="26" height="18" rx="2" fill="#C9A36A" />
+      <path d="M53 20v18M40 26h26" stroke="#8A6A3C" strokeWidth="1.2" />
+      <path d="M118 22h26c4.6 0 7.6 1.8 10 5.4l13.4 20.6c4.8 1 8.6 4.4 8.6 9.4V64c0 3-1.8 4.6-4.6 4.6H118z" fill="#E0573E" />
+      <path d="M136 27h8.4c2.6 0 4.2 1 5.6 3.2l10.6 16.4H136z" fill="#BFE3F5" />
+      <path d="M140 29l6 0-8 15" stroke="#FFFFFF" strokeWidth="1.4" opacity=".6" />
+      <path d="M131 25v41" stroke="#B8422E" strokeWidth="1.4" />
+      <rect x="124" y="50" width="5" height="1.8" rx=".9" fill="#B8422E" />
+      <rect className="van__lamp" x="172" y="54" width="6" height="4.4" rx="1.4" />
+      <rect x="112" y="64" width="68" height="5" rx="2.4" fill="#3A3440" />
+      <rect x="0" y="62" width="10" height="5" rx="2" fill="#3A3440" />
+      <circle cx="34" cy="70" r="13.4" fill="#3A3440" />
+      <circle cx="148" cy="70" r="13.4" fill="#3A3440" />
+      {wheel(34)}
+      {wheel(148)}
+    </svg>
+  );
+}
+
+/**
+ * The pavement in front of the shops: people walking by both ways, a parent
+ * with a skipping child, two children chasing a ball, and the van - out on its
+ * round in the morning, home with its lights on at night. Over the row, never
+ * in the way of a tap. It knows its own width so everybody walks at a
+ * person's pace however wide the street (--street-w).
+ */
+function StreetFront() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const street = ref.current;
+    if (!street || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = () => street.style.setProperty('--street-w', String(Math.round(street.offsetWidth)));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(street);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div className="shopfront" ref={ref} aria-hidden="true">
+      <span className="shopfront__lane shopfront__lane--parcel"><Person look="parcel" /></span>
+      <span className="shopfront__lane shopfront__lane--bag"><Person look="bag" /></span>
+      <span className="shopfront__lane shopfront__lane--stroll"><Person look="stroll" /><Person look="kid" /></span>
+      <span className="shopfront__lane shopfront__lane--chase">
+        <Person look="chaser" />
+        <Person look="runner" />
+        <span className="shopfront__ball" />
+      </span>
+      <Van />
     </div>
   );
 }
@@ -171,7 +269,7 @@ function StreetFront() {
 /**
  * A row of shops that scrolls sideways, under a heading. Nothing at all when empty.
  * As a band, it runs edge to edge between two wavy hems, with an eyebrow over
- * the title and a faint storefront in the corner.
+ * the title, on a street that lives through a day.
  */
 export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
   title: string;
@@ -190,16 +288,17 @@ export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
           {eyebrow && <span className="shopstrip__eyebrow">{eyebrow}</span>}
           <h2 className="shopstrip__title">{title}</h2>
         </span>
-        {band ? <ShopArt />
+        {band ? null
           /* With nothing to add under the title, a rule runs on from it instead. */
           : sub ? <span className="shopstrip__sub">{sub}</span> : <span className="shopstrip__rule" aria-hidden="true" />}
       </header>
       <div className="shopstrip__row">
-        {shops.map((shop) => band ? (
-          /* On the street, a lamp stands in the gap after every shop. */
+        {shops.map((shop, n) => band ? (
+          /* On the street, a lamp stands in every other gap between shops. */
           <Fragment key={shop.id}>
             <ShopTile shop={shop} />
-            <span className="shopstrip__lamp" aria-hidden="true"><i /></span>
+            {n % 2 === 0 ? <span className="shopstrip__lamp" aria-hidden="true"><i /></span>
+              : <span className="shopstrip__gap" aria-hidden="true" />}
           </Fragment>
         ) : <ShopTile key={shop.id} shop={shop} />)}
       </div>
