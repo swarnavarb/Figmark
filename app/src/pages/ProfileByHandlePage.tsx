@@ -21,9 +21,9 @@ import {
   Bio, FollowCounts, PageActions, RatingSheet, RatingSlab, ReviewsTab, ShelfCard, StoreLevelCard,
 } from '../components/ProfileParts';
 import { CollectorProfile } from './CollectorProfile';
-import { ShopStrip, shortName, tagPath } from '../components/ShopCards';
+import { ShopsForYou, shortName, tagPath, useShopsForYou } from '../components/ShopCards';
 import { tagKey } from '@shared/shop-tags';
-import type { ShopCard, ShopStatusView } from '../api';
+import type { ShopStatusView } from '../api';
 import '../styles/ProfileByHandlePage.css';
 
 /**
@@ -142,10 +142,7 @@ function Storefront({ data, isMe, onFollow, reload, onPulse }: {
       .catch(() => setLive(new Map()));
   }, [data.sellerId]);
   const now = Date.now();
-  const [similar, setSimilar] = useState<ShopCard[] | null>(null);
-  useEffect(() => {
-    void api.similarShops(data.sellerId).then((result) => setSimilar(result.shops)).catch(() => setSimilar(null));
-  }, [data.sellerId]);
+  const forYou = useShopsForYou();
   // What else the shop carries: the categories it declared under Also sells,
   // or, for a shop that has not picked any, what its listings say beyond its tags.
   const chosen = new Set(data.tags.map(tagKey));
@@ -333,7 +330,7 @@ function Storefront({ data, isMe, onFollow, reload, onPulse }: {
         )}
 
         <div className="storefront__similar">
-          <ShopStrip title="Similar shops" shops={similar} />
+          <ShopsForYou shops={forYou} skip={data.sellerId} />
         </div>
       </div>
 

@@ -87,5 +87,5 @@ a.pabout__chip:active { transform: scale(0.96); }
 .pabout__chip--more { background: transparent; border-style: dashed; color: var(--text-dim); border-color: var(--border-strong, rgba(255, 255, 255, 0.18)); }
 .pabout__chip--fact { background: var(--surface-2); border-color: var(--border); color: var(--text-dim); }
 
-/* Similar shops sit inside the page's margins, with room above them. */
+/* Shops for you sits at the foot of the page, with room above it. */
 .storefront__similar { margin-top: 28px; }

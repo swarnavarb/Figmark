@@ -27,7 +27,7 @@ function warmShop(shop: ShopCard) {
   // The same reads the page makes, in the same words: the page finds them already answered.
   void api.profile(shop.handle).catch(() => undefined);
   void api.feed({ seller: shop.id }).catch(() => undefined);
-  void api.similarShops(shop.id).catch(() => undefined);
+  void api.shopsForYou().catch(() => undefined);
 }
 
 /** Two tags on one line: the longer they run, the smaller they are set. */
@@ -403,4 +403,25 @@ export function ShopStrip({ title, sub, eyebrow, band = false, shops }: {
       {band && <StreetFront />}
     </section>
   );
+}
+
+/**
+ * Shops for you: the shops this buyer's likes, purchases and follows point to,
+ * on the street band. One section, drawn the same on the Shop tab and at the
+ * foot of every shop's page - change it here and both change.
+ */
+export function useShopsForYou(): ShopCard[] | null {
+  const [shops, setShops] = useState<ShopCard[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.shopsForYou().then((result) => { if (live) setShops(result.shops); }).catch(() => { if (live) setShops([]); });
+    return () => { live = false; };
+  }, []);
+  return shops;
+}
+
+/** The band itself. On a shop's own page, that shop is left off its own street. */
+export function ShopsForYou({ shops, skip }: { shops: ShopCard[] | null; skip?: string }) {
+  const shown = skip && shops ? shops.filter((shop) => shop.id !== skip) : shops;
+  return <ShopStrip band eyebrow="Handpicked" title="Shops for you" shops={shown} />;
 }
