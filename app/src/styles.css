@@ -7949,6 +7949,8 @@ a.ocust__name:hover { color: var(--accent-text); }
   }
   .belt::-webkit-scrollbar { display: none; }
   .belt__run { transform: none !important; will-change: auto; }
+  /* The floor stays under the screen while the cartons scroll over it. */
+  .belt__floor { position: sticky; left: 0; }
   .belt__plane, .belt__flag, .crate__drop, .crate__plus { display: none; }
 }
 .ocusts { gap: 10px; }

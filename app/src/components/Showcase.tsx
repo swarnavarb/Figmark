@@ -381,6 +381,14 @@ export function FillingBoxes({ lots }: { lots: FillingLot[] }) {
   useEffect(() => {
     const belt = run.current;
     if (!belt || still) return undefined;
+    /* Back from reduced motion, where the belt was a row the finger scrolled:
+       that scroll is taken up by the ride instead, or the cartons and the
+       floor would stay pushed aside in a box that no longer scrolls. */
+    const frame0 = belt.parentElement;
+    if (frame0 && frame0.scrollLeft) {
+      offset.current += frame0.scrollLeft;
+      frame0.scrollLeft = 0;
+    }
     let last = performance.now();
     let frame = 0;
     const step = (now: number) => {
