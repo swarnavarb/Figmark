@@ -16,7 +16,7 @@ import {
 import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
-import { ShopStrip } from '../components/ShopCards';
+import { ShopStrip, ShopsForYou, useShopsForYou } from '../components/ShopCards';
 import {
   ServiceCard, ServiceGrid, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch,
   type ForwarderPick, type ProviderPick, type Providers,
@@ -315,7 +315,7 @@ export function FeedPage() {
   /* Shops alongside items: the ones known for what was searched, and when
      just browsing, the ones this buyer's likes and purchases point to. */
   const [searchShops, setSearchShops] = useState<ShopCard[] | null>(null);
-  const [forYou, setForYou] = useState<ShopCard[] | null>(null);
+  const forYou = useShopsForYou();
   useEffect(() => {
     setSearchShops(null);
     if (!search) return;
@@ -323,9 +323,6 @@ export function FeedPage() {
     void api.searchShops(search, controller.signal).then((result) => setSearchShops(result.shops)).catch(() => undefined);
     return () => controller.abort();
   }, [search]);
-  useEffect(() => {
-    void api.shopsForYou().then((result) => setForYou(result.shops)).catch(() => setForYou([]));
-  }, []);
 
   // The categories under the chosen heading, and what a buyer can narrow them by.
   const members = group ? categoriesIn(group) : [];
@@ -476,7 +473,7 @@ export function FeedPage() {
       {wants === 'forwarder' && <ServiceStrip title="Forwarders" sub="Routes, days and price per kg" picks={providers.forwarders} />}
       {search && !photo && <ShopStrip title={`Shops for “${search}”`} sub="Known for it by name, tags or what they list" shops={searchShops} />}
       {showBoxes && !showShops && pending}
-      {browsing && showShops && <ShopStrip band eyebrow="Handpicked" title="Shops for you" shops={forYou} />}
+      {browsing && showShops && <ShopsForYou shops={forYou} />}
 
       {!showShops ? null : svc ? <ServiceResults kind={svc} providers={providers} params={params} /> : (
       <>
