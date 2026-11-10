@@ -336,7 +336,7 @@
 /* A lamp post in every other gap between shops, in front of the street: its arm
    reaches over the shop's corner. Its light (the i) comes on at dusk. */
 .shopstrip__lamp {
-  flex: 0 0 26px; position: relative; z-index: 1; align-self: flex-end; height: 190px; margin-bottom: -6px;
+  flex: 0 0 26px; pointer-events: none; position: relative; z-index: 1; align-self: flex-end; height: 190px; margin-bottom: -6px;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 190'%3E%3Cpath fill='%233E3646' d='M13.5 190v-6h-3v-4h3V30h3v150h3v4h-3v6z'/%3E%3Cpath fill='none' stroke='%233E3646' stroke-width='2.6' stroke-linecap='round' d='M15 32q0-16-12-16'/%3E%3Cpath fill='%233E3646' d='M-2 12h12l-1 4H-1z'/%3E%3Cpath fill='%233E3646' d='M15 30l-3 2h6z'/%3E%3Cellipse cx='4' cy='17' rx='4.5' ry='1.8' fill='%23F3E6C4'/%3E%3C/svg%3E") center bottom / 30px 190px no-repeat;
 }
 .shopstrip__lamp i {
@@ -345,7 +345,7 @@
 }
 /* The gaps without a lamp keep the same spacing. */
 /* The gaps without a lamp keep the same spacing, and a pot of flowers. */
-.shopstrip__gap { flex: 0 0 26px; position: relative; z-index: 1; align-self: flex-end; height: 34px; margin-bottom: -6px; }
+.shopstrip__gap { flex: 0 0 26px; pointer-events: none; position: relative; z-index: 1; align-self: flex-end; height: 34px; margin-bottom: -6px; }
 .shopstrip__gap i {
   position: absolute; left: -1px; bottom: 0; width: 28px; height: 34px;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 34'%3E%3Cpath d='M14 20V9M14 20l-6-8M14 20l6-7' stroke='%233F8F4E' stroke-width='1.6' fill='none'/%3E%3Cellipse cx='9' cy='17' rx='3' ry='1.6' fill='%234FA35E' transform='rotate(-30 9 17)'/%3E%3Cellipse cx='19' cy='17' rx='3' ry='1.6' fill='%234FA35E' transform='rotate(30 19 17)'/%3E%3Cg fill='%23F2789F'%3E%3Ccircle cx='14' cy='5' r='2.6'/%3E%3Ccircle cx='11' cy='8' r='2.6'/%3E%3Ccircle cx='17' cy='8' r='2.6'/%3E%3Ccircle cx='14' cy='11' r='2.6'/%3E%3C/g%3E%3Ccircle cx='14' cy='8' r='1.8' fill='%23F7D154'/%3E%3Ccircle cx='7' cy='11' r='2.4' fill='%23F7D154'/%3E%3Ccircle cx='21.4' cy='12' r='2.4' fill='%23FFFFFF'/%3E%3Cpath d='M5 20h18l-2.4 13H7.4z' fill='%23C2643C'/%3E%3Crect x='4' y='19' width='20' height='3.4' rx='1' fill='%23D9784E'/%3E%3C/svg%3E") center bottom / 28px 34px no-repeat;
@@ -385,6 +385,8 @@
 /* The dog shows on lanes that walk one; a walker holds the lead out, not a bag. */
 .dog { display: none; width: 34px; height: 22px; overflow: visible; }
 .is-dog .dog { display: block; }
+/* The children's game changes each time: a ball, a race, or one alone with the ball. */
+.no-ball .shopfront__ball, .solo .shopper--runner { display: none; }
 .is-dog .shopper__hang, .no-bag .shopper__hang { display: none; }
 .dog__coat, .dog__legs { fill: var(--coat, #C9883F); }
 .dog__ear { fill: #1E1A22; opacity: 0.45; }
@@ -446,6 +448,10 @@
 @keyframes street-chase {
   0% { transform: translateX(calc(var(--street-w) * 1px + 80px)) scaleX(-1); }
   40%, 100% { transform: translateX(-120px) scaleX(-1); }
+}
+@keyframes street-chase-r {
+  0% { transform: translateX(-120px); }
+  40%, 100% { transform: translateX(calc(var(--street-w) * 1px + 80px)); }
 }
 @keyframes shopper-stride { from { transform: rotate(var(--swing)); } to { transform: rotate(calc(var(--swing) * -1)); } }
 @keyframes shopper-arm { from { transform: rotate(var(--arm)); } to { transform: rotate(calc(var(--arm) * -1)); } }
@@ -524,8 +530,8 @@
   92% { opacity: 1; transform: translateY(-4px); }
   99%, 100% { opacity: 0; transform: translateY(-8px); }
 }
-/* Across from the left of the sky to the right, then back while it is night. */
-@keyframes scene-arc { 0% { transform: translateX(0); } 58%, 99% { transform: translateX(52%); } 100% { transform: translateX(0); } }
+/* Across from the left of the sky to the right, then back unseen in the night. */
+@keyframes scene-arc { 0% { transform: translateX(0); } 58%, 62% { transform: translateX(52%); } 96%, 100% { transform: translateX(0); } }
 @keyframes scene-sun {
   0% { transform: translateY(64px); background: #FFC88A; opacity: 1; }
   10% { transform: translateY(14px); background: #FFF0CC; }

@@ -15,7 +15,7 @@ export const shortName = (name: string) => (name.length > SHOP_NAME_MAX ? `${nam
 /** Where a tag's own page lives: "Resin kits" → /tags/resin-kit. */
 export const tagPath = (label: string) => `/tags/${encodeURIComponent(tagSlug(tagKey(label)))}`;
 
-const DOOR_SIGN = { open: 'Open', paused: 'Paused', stopped: 'Closed' } as const;
+const DOOR_SIGN = { open: 'Open', paused: 'BRB', stopped: 'Closed' } as const;
 
 /** How long the door takes to swing open before the shop's page shows. */
 const DOOR_MS = 520;
@@ -241,23 +241,30 @@ function dressLane(lane: HTMLElement, restart: boolean) {
     person.style.setProperty('--hair', pick(HAIRS));
   });
   lane.querySelector<SVGElement>('.dog')?.style.setProperty('--coat', pick(COATS));
+  if (kind === 'chase') {
+    const style = Math.random();
+    lane.classList.toggle('no-ball', style > 0.6);
+    lane.classList.toggle('solo', style > 0.4 && style <= 0.6);
+  }
   if (kind === 'bag') {
     const roll = Math.random();
     lane.classList.toggle('is-dog', roll < 0.35);
     lane.classList.toggle('no-bag', roll > 0.75);
   }
   if (!restart) return;
-  const speed = 28 + Math.random() * 20;
+  const chase = kind === 'chase';
+  const speed = chase ? 70 + Math.random() * 40 : 28 + Math.random() * 20;
   const width = lane.parentElement?.offsetWidth ?? 1200;
+  const left = Math.random() < 0.5;
   lane.style.animation = 'none';
   void lane.offsetWidth;
   lane.style.animation = '';
-  lane.style.animationName = Math.random() < 0.5 ? 'street-right' : 'street-left';
-  lane.style.animationDuration = `${(width + 120) / speed}s`;
-  lane.style.animationDelay = `${(0.5 + Math.random() * 7).toFixed(2)}s`;
+  lane.style.animationName = chase ? (left ? 'street-chase' : 'street-chase-r') : left ? 'street-left' : 'street-right';
+  lane.style.animationDuration = chase ? `${(width + 160) / speed / 0.4}s` : `${(width + 120) / speed}s`;
+  lane.style.animationDelay = `${(chase ? 4 + Math.random() * 14 : 0.5 + Math.random() * 7).toFixed(2)}s`;
   lane.style.animationFillMode = 'backwards';
   const adult = lane.querySelector<SVGElement>('.shopper');
-  if (adult && kind !== 'parcel') adult.style.setProperty('--gait', `${(20 / speed).toFixed(3)}s`);
+  if (adult && kind !== 'parcel' && !chase) adult.style.setProperty('--gait', `${(20 / speed).toFixed(3)}s`);
 }
 
 /** The van, side on, facing right: cargo box, cab, wheels that turn, lamps for the drive home. */
@@ -331,7 +338,7 @@ function StreetFront() {
       <span className="shopfront__lane shopfront__lane--bag" data-roam="bag"><Person look="bag" /><Dog /></span>
       <span className="shopfront__lane shopfront__lane--dog is-dog" data-roam="dog"><Person look="stroll" /><Dog /></span>
       <span className="shopfront__lane shopfront__lane--stroll" data-roam="stroll"><Person look="stroll" /><Person look="kid" /></span>
-      <span className="shopfront__lane shopfront__lane--chase">
+      <span className="shopfront__lane shopfront__lane--chase" data-roam="chase">
         <Person look="chaser" />
         <Person look="runner" />
         <span className="shopfront__ball" />

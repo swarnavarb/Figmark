@@ -121,6 +121,12 @@ async function shopsForYou(request: HttpRequest, _context: InvocationContext) {
       .slice(0, 10 - picks.length)
       .map((shop) => shopCard(shop))];
   }
+  // Shops away for a while still show on the street, with BRB on the door.
+  const away = shops
+    .filter((shop) => shop.orderState === 'paused' && shop.handle && !skip.has(shop.id) && !picks.some((row) => row.id === shop.id))
+    .slice(0, 2)
+    .map((shop) => shopCard(shop));
+  picks = [...picks.slice(0, 10 - away.length), ...away];
   return json(200, { shops: picks, basis });
 }
 
