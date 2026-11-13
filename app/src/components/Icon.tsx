@@ -21,7 +21,7 @@ export type IconName =
   | 'tag' | 'bolt' | 'lock' | 'bell' | 'message' | 'mail' | 'megaphone'
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image' | 'camera'
-  | 'trash' | 'sort' | 'filter' | 'external' | 'home' | 'phone'
+  | 'trash' | 'sort' | 'filter' | 'settings' | 'external' | 'home' | 'phone'
   | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy' | 'rising'
   | 'bookmark' | 'trophy' | 'mute' | 'hide';
 
@@ -72,6 +72,7 @@ const PATHS: Record<IconName, ReactNode> = {
   camera: (<><path d="M4.4 8.2a1.6 1.6 0 0 1 1.6-1.6h2.2l1.6-2.2h4.4l1.6 2.2H18a1.6 1.6 0 0 1 1.6 1.6v9.6A1.6 1.6 0 0 1 18 19.4H6a1.6 1.6 0 0 1-1.6-1.6Z" /><circle cx="12" cy="12.6" r="3.4" /></>),
   trash: (<><path d="M4.8 7.2h14.4M9.6 7.2V5.4a1.2 1.2 0 0 1 1.2-1.2h2.4a1.2 1.2 0 0 1 1.2 1.2v1.8" /><path d="M6.6 7.2 7.6 19a1.6 1.6 0 0 0 1.6 1.4h5.6A1.6 1.6 0 0 0 16.4 19l1-11.8" /></>),
   sort: <path d="M7 4.6v14.8M7 19.4l-3-3M17 19.4V4.6M17 4.6l3 3" />,
+  settings: (<><path d="M4 7h9M19 7h1M4 17h1M11 17h9" /><circle cx="16" cy="7" r="2.4" /><circle cx="8" cy="17" r="2.4" /></>),
   filter: <path d="M3.6 5.4h16.8l-6.6 7.6v6l-3.6 2v-8Z" />,
   external: (<><path d="M14 4.6h5.4V10" /><path d="m19.4 4.6-8 8" /><path d="M18 14v4.6a1.4 1.4 0 0 1-1.4 1.4H5.6a1.4 1.4 0 0 1-1.4-1.4V7.4A1.4 1.4 0 0 1 5.6 6H10" /></>),
   home: (<><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9.4h12V10" /><path d="M10 19.4v-6h4v6" /></>),

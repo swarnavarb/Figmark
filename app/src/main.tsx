@@ -52,6 +52,7 @@ const TrackPage = page(loaders.track, 'TrackPage');
 const ListingPage = page(loaders.listing, 'ListingPage');
 const SellPage = page(loaders.sell, 'SellPage');
 const ShopPage = page(loaders.shop, 'ShopPage');
+const ManagedShopPage = page(loaders.shop, 'ManagedShopPage');
 const LotBoardPage = page(loaders.lotBoard, 'LotBoardPage');
 const RouteRedirect = page(loaders.routes, 'RouteRedirect');
 const RouteStudioPage = page(loaders.routeStudio, 'RouteStudioPage');
@@ -167,6 +168,8 @@ function App() {
         <Route path="/open" element={members(<OpenPage />)} />
         <Route path="/services/store/:kind" element={members(<StoreConsolePage />)} />
         <Route path="/services/store/:kind/:ownerId" element={members(<StoreConsolePage />)} />
+        {/* A shop you help run: the Sell tab's console, opened from My services. */}
+        <Route path="/services/manage/:ownerId" element={members(<ManagedShopPage />)} />
         <Route path="/services/crew/:sellerId/:lotId" element={members(<CrewLotPage />)} />
         {/* Last of the four, so the static paths above win the match. */}
         <Route path="/services/:kind" element={<ServiceDirectoryPage />} />

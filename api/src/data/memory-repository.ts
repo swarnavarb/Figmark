@@ -5,7 +5,7 @@ import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { ROUTE_TEMPLATES, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
 import { withButtons } from '../../../shared/buttons.js';
-import type { PostTemplate } from '../../../shared/templates.js';
+import type { ListingDraft, PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
@@ -59,6 +59,7 @@ export class MemoryRepository implements Repository {
   private readonly lots = new Map<string, Lot>();
   private readonly routes = new Map<string, TrackingRoute>();
   private readonly templates = new Map<string, PostTemplate>();
+  private readonly listingDrafts = new Map<string, ListingDraft>();
   private readonly listings = new Map<string, Listing>();
   private readonly orders = new Map<string, Order>();
   private readonly comments = new Map<string, ListingComment>();
@@ -224,6 +225,29 @@ export class MemoryRepository implements Repository {
     const template = this.templates.get(templateId);
     if (!template || template.sellerId !== sellerId) return false;
     this.templates.delete(templateId);
+    return true;
+  }
+
+  async listListingDrafts(sellerId: string): Promise<ListingDraft[]> {
+    return [...this.listingDrafts.values()]
+      .filter((draft) => draft.sellerId === sellerId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getListingDraft(sellerId: string, draftId: string): Promise<ListingDraft | null> {
+    const draft = this.listingDrafts.get(draftId);
+    return draft && draft.sellerId === sellerId ? draft : null;
+  }
+
+  async saveListingDraft(draft: ListingDraft): Promise<ListingDraft> {
+    this.listingDrafts.set(draft.id, draft);
+    return draft;
+  }
+
+  async deleteListingDraft(sellerId: string, draftId: string): Promise<boolean> {
+    const draft = this.listingDrafts.get(draftId);
+    if (!draft || draft.sellerId !== sellerId) return false;
+    this.listingDrafts.delete(draftId);
     return true;
   }
 

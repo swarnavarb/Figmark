@@ -18,31 +18,16 @@
 .stat__label { font-size: var(--t-xs); color: var(--text-faint); font-weight: var(--w-semi); }
 .stat__value { font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.02em; margin-top: 3px; }
 .stat__note { font-size: var(--t-xs); color: var(--text-faint); margin-top: 2px; }
-.spark__bar { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: 0.85; }
-.spark__bar--empty { background: var(--border); opacity: 1; }
-.doors { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.door__flag { position: absolute; top: 12px; right: 12px; }
-.door__glyph { font-size: var(--t-xl); line-height: 1; }
-.door__title { font-size: var(--t-base); font-weight: var(--w-bold); letter-spacing: -0.01em; }
-.door__note {
-  font-size: var(--t-xs);
-  color: var(--text-dim);
-  line-height: 1.5;
-  /* Two lines at most. A door is a choice, and a paragraph inside one turns a
-     pair of options into a page of reading. */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.door--pro .door__title { padding-right: 42px; }
-.sections .chip--refunds { margin-left: auto; }
-.chip--refunds {
-  border: 1px dashed rgba(240, 171, 252, 0.6);
-  background: linear-gradient(135deg, rgba(217, 70, 239, 0.14), rgba(6, 214, 231, 0.10));
-  color: #F0ABFC;
-  font-weight: var(--w-semi);
-}
+
+
+
+
+
+
+
+
+
+
 .chip--pro { display: inline-flex; align-items: center; gap: 6px; border-color: rgba(251, 191, 36, 0.55); color: var(--gold-text); }
 .lotbox__bar { height: 4px; border-radius: 4px; background: rgba(54, 42, 26, 0.12); overflow: hidden; }
 .lotbox__value { font-size: var(--t-sm); color: var(--card-ink, inherit); font-variant-numeric: tabular-nums; }
@@ -447,22 +432,13 @@
 .pbook__tools .btn.is-on { border-color: var(--blue-text); color: #BFDBFE; background: rgba(59, 130, 246, 0.12); }
 .pbook__static .field { flex: 1 1 160px; }
 .pbook__splitrow > *, .pbook__formularow > * { min-width: 0; }
-.sellhome { display: grid; gap: var(--s3); }
-.sellhome__list { justify-self: stretch; justify-content: center; gap: var(--s2); }
-.todo__tile {
-  display: grid; gap: 2px; padding: var(--s3) 14px; text-align: left;
-  border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--surface); color: inherit; font: inherit; cursor: pointer;
-}
-.todo__new {
-  position: absolute; top: -8px; right: -4px; padding: 2px var(--s2); border-radius: var(--r-pill);
-  background: var(--coral, var(--coral)); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-bold, 700);
-  letter-spacing: .02em; text-transform: uppercase; transform: rotate(6deg);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .35); animation: todo-new-pop .4s var(--ease, ease-out) both;
-}
-.sellhome__list--slim { justify-self: start; }
-.selltabs { margin: 18px 0 0; }
-.selltabs .tab { gap: 6px; }
+
+
+
+
+
+
+
 .sfwiz__step { position: relative; display: grid; justify-items: center; }
 .sfwiz__jump {
   position: relative; z-index: 1; display: grid; justify-items: center; gap: 3px;
@@ -502,10 +478,10 @@
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-.door.door--pro:hover { border-color: var(--warn); box-shadow: inset 0 0 0 1px rgba(253, 230, 138, 0.3), 0 10px 28px rgba(245, 158, 11, 0.26); }
-.door--pro .door__title { color: var(--gold-pale); }
-.door--pro .door__note { color: rgba(254, 243, 199, 0.72); }
-.door--pro .door__glyph { color: var(--warn); }
+
+
+
+
 .chip--pro.is-on .probadge { background: var(--gold-ink); color: var(--gold-text); }
 .ins__lot:last-child { border-bottom: none; padding-bottom: 0; }
 .ocard__decide .orow__decide { justify-content: center; height: 42px; font-size: var(--t-sm); }
@@ -764,15 +740,10 @@ label.rdy__line { cursor: pointer; }
 .pbook__table tfoot td.pbook__num { color: var(--text-dim); }
 .pbook__table td.pbook__na { background: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255, 255, 255, 0.025) 6px 12px); }
 .pbook__calc { display: block; margin-top: 2px; color: var(--text-faint); font-size: var(--t-2xs); line-height: 1.3; }
-.todo__tile:hover { border-color: var(--border-strong); }
-.todo__tile.is-hot { border-color: var(--coral-line); background: linear-gradient(160deg, var(--coral-soft, var(--surface-2)), transparent 70%); }
-.todo__count { font-size: var(--t-xl, 1.5rem); line-height: 1.1; font-variant-numeric: tabular-nums; }
-.todo__label { font-size: var(--t-xs); color: var(--text-dim); }
-/* A new order since the seller last opened Orders: a sticker on the corner of its tile. */
-.todo__tile { position: relative; }
-@media (prefers-reduced-motion: reduce) {
-  .todo__new { animation: none; }
-}
+
+
+
+
 /* The timeline on top: every step, done ones ticked, the rest pending. */
 .sfwiz { display: grid; gap: var(--s4); max-width: 640px; }
 /* ── Opening a storefront: a walkthrough ─────────────────────────────── */
@@ -907,42 +878,28 @@ label.rdy__line { cursor: pointer; }
 .wcard__actions { display: flex; gap: var(--s2); flex-wrap: wrap; }
 .wcard__actions .btn { flex: 1 1 auto; }
 
-/* ── The dashboard over the Sell tab: four figures about the open tab ─── */
-.sdash {
-  position: relative; overflow: hidden; padding: 14px; border-radius: var(--r-lg);
-  border: 1px solid var(--violet-line);
-  background:
-    radial-gradient(120% 90% at 100% 0%, var(--violet-soft), transparent 60%),
-    radial-gradient(90% 80% at 0% 100%, var(--aqua-soft), transparent 65%),
-    var(--surface);
-}
-.sdash__body { display: grid; gap: 10px; }
-.sdash__title { margin: 0; font-size: var(--t-sm); font-weight: var(--w-bold, 700); letter-spacing: .04em; text-transform: uppercase; color: var(--text-dim); }
-.sdash__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
-@media (min-width: 560px) { .sdash__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.sdash__tile {
-  display: grid; align-content: start; gap: 2px; min-width: 0; padding: 10px var(--s3); text-align: left;
-  border: 1px solid var(--border); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface) 70%, transparent);
-  color: inherit; font: inherit; cursor: pointer;
-  animation: sdash-in .22s var(--ease, ease-out) both;
-  transition: border-color var(--dur-1), transform var(--dur-1);
-}
-.sdash__tile:hover { border-color: var(--border-strong); }
-.sdash__tile:active { transform: scale(.97); }
-.sdash__tile.is-hot { border-color: var(--coral-line); background: linear-gradient(160deg, var(--coral-soft), transparent 75%); }
-.sdash__tile--wait { cursor: default; animation: none; opacity: .5; }
-.sdash__value { font-size: var(--t-lg); line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.sdash__label { font-size: var(--t-xs); color: var(--text-dim); }
-.sdash__hint { font-size: var(--t-xs); color: var(--text-faint); }
-.sdash__note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
-.sdash__note span { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-.sdash__best b { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
-.sdash__step { padding: 2px var(--s2); border-radius: var(--r-pill); border: 1px dashed var(--border-strong); }
-.sdash__step.is-done { border-style: solid; border-color: var(--aqua-line); color: var(--text); }
-.sdash__line { display: block; width: 100%; height: 44px; }
-.sdash__area { fill: var(--violet-soft); }
-.sdash__stroke { fill: none; stroke: var(--violet-text); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-@keyframes sdash-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @media (prefers-reduced-motion: reduce) {
   .sdash__tile { animation: none; transition: none; }
 }
@@ -1031,7 +988,6 @@ label.rdy__line { cursor: pointer; }
 }
 .bulkbar span { color: var(--text-dim); font-size: var(--t-base); }
 .bulkbar b { color: var(--text); }
-.bulkbar__start { align-self: flex-start; }
 .itembulk { justify-content: flex-start; }
 .bulkbar__pct { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: var(--t-base); }
 .bulkbar__pct input { width: 84px; padding: 6px 8px; }
@@ -1043,3 +999,140 @@ label.rdy__line { cursor: pointer; }
   background: color-mix(in srgb, var(--bg) 70%, transparent); border: 2px solid var(--text-dim); color: var(--violet-ink);
 }
 .qpick.is-on { background: var(--violet); border-color: var(--violet-lit); }
+
+/* ── The seller's console ──────────────────────────────────────────────────
+   Whose shop, what is waiting, five tabs, then the work. One surface colour,
+   hairlines rather than cards, and colour only where something needs doing. */
+.sellpage { display: grid; gap: 0; align-content: start; }
+.shophead { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
+.shophead__id { display: grid; gap: 4px; min-width: 0; }
+.shophead__name {
+  margin: 0; font-size: var(--t-lg); line-height: 1.15; letter-spacing: -.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.shophead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.shophead__role { font-size: var(--t-xs); color: var(--text-faint); }
+.shophead__acts { display: flex; align-items: center; gap: var(--s2); flex: none; }
+.shophead__gear { width: 38px; height: 38px; border-radius: var(--r-pill); background: transparent; }
+.shophead__gear.is-on { color: var(--accent-text); border-color: var(--accent-line); background: var(--accent-soft); }
+.shophead__list { white-space: nowrap; }
+.statuspill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 8px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); background: transparent; color: var(--text-dim);
+  font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 1.5;
+}
+button.statuspill { cursor: pointer; }
+button.statuspill:hover { border-color: var(--border-strong); color: var(--text); }
+.statuspill i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.statuspill--open i { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.statuspill--paused i { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.statuspill--stopped i { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.statuspill--wait { width: 62px; opacity: .4; }
+
+.needsyou { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s2); margin-bottom: var(--s3); }
+.needsyou__label { font-size: var(--t-2xs); font-weight: var(--w-bold, 700); letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); margin-right: 2px; }
+.needsyou__item {
+  display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+  font: inherit; font-size: var(--t-sm); cursor: pointer; transition: border-color var(--dur-1), color var(--dur-1);
+}
+.needsyou__item b { color: var(--text); font-variant-numeric: tabular-nums; }
+.needsyou__item:hover { border-color: var(--border-strong); color: var(--text); }
+.needsyou__item.is-hot { border-color: var(--coral-line); background: var(--coral-soft); color: var(--text); }
+.needsyou__new {
+  margin-left: 2px; padding: 1px 6px; border-radius: var(--r-pill); background: var(--coral); color: var(--coral-ink);
+  font-size: var(--t-2xs); font-weight: var(--w-bold, 700); text-transform: uppercase; letter-spacing: .03em;
+}
+
+.selltabs { display: flex; border-bottom: 1px solid var(--border); margin: 0; }
+.selltab {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 2px 9px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none;
+  color: var(--text-faint); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+  transition: color var(--dur-1), border-color var(--dur-1);
+}
+.selltab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.selltab:hover { color: var(--text); }
+.selltab.is-on { color: var(--text); border-bottom-color: var(--accent-text); }
+.selltab.is-on svg { color: var(--accent-text); }
+@media (min-width: 620px) {
+  .selltab { flex-direction: row; justify-content: center; gap: var(--s2); font-size: var(--t-sm); padding: 12px 6px 11px; }
+}
+.sellsections { margin-top: var(--s3); margin-bottom: 0; padding-bottom: 0; }
+.sellbody { margin-top: var(--s4); }
+
+/* A few figures about the open tab: one hairline row, no card. */
+.sdash { margin-top: var(--s3); }
+.sdash__body { display: grid; gap: var(--s2); }
+.sdash__grid {
+  display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr));
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); overflow: hidden;
+}
+.sdash__tile {
+  display: grid; align-content: start; gap: 1px; min-width: 0; padding: 10px 10px 9px; text-align: left;
+  border: 0; border-left: 1px solid var(--border); background: none; color: inherit; font: inherit; cursor: pointer;
+  transition: background var(--dur-1);
+}
+.sdash__tile:first-child { border-left: 0; }
+.sdash__tile:hover { background: var(--surface-hover); }
+.sdash__tile--wait { cursor: default; opacity: .5; }
+.sdash__tile--wait:hover { background: none; }
+.sdash__value { display: flex; align-items: baseline; gap: 5px; font-size: var(--t-md); line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sdash__label { font-size: var(--t-2xs); color: var(--text-faint); line-height: 1.3; }
+.sdash__hint { font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-dim); }
+.sdash__note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.sdash__note span { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+.sdash__best b { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
+.sdash__step { padding: 2px var(--s2); border-radius: var(--r-pill); border: 1px dashed var(--border-strong); }
+.sdash__line { display: block; width: 100%; height: 36px; }
+.sdash__area { fill: var(--violet-soft); }
+.sdash__stroke { fill: none; stroke: var(--violet-text); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+
+/* Finding things: a search and a sort over a list. */
+.findbar { display: flex; gap: var(--s2); align-items: stretch; }
+.findbar__search {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 0 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--text-faint);
+  transition: border-color var(--dur-1);
+}
+.findbar__search:focus-within { border-color: var(--accent-line); color: var(--text-dim); }
+.findbar__search input {
+  flex: 1 1 auto; min-width: 0; padding: 10px 0; border: 0; background: none; outline: none;
+  color: var(--text); font: inherit; font-size: var(--t-base);
+}
+.findbar__search input::placeholder { color: var(--text-faint); }
+.findbar__sort { flex: 0 0 auto; max-width: 46%; }
+.findnote { display: flex; align-items: center; gap: var(--s2); margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.shelfacts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px var(--s4); min-height: 20px; }
+.shelfacts .linkbtn { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-sm); color: var(--text-dim); text-decoration: none; }
+.shelfacts .linkbtn:hover { color: var(--text); }
+.shelf__chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lowchip {
+  padding: 1px 8px; border-radius: var(--r-pill); border: 1px solid var(--coral-line); background: var(--coral-soft);
+  color: var(--coral-pale); font-size: var(--t-2xs); font-weight: var(--w-semi);
+}
+
+/* Drafts: a plain list, one line each. */
+.draftlist { display: grid; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+.draftrow { display: flex; align-items: center; gap: var(--s2); padding-right: var(--s3); border-top: 1px solid var(--border); }
+.draftrow:first-child { border-top: 0; }
+.draftrow__main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--s3); padding: 10px var(--s3); color: inherit; text-decoration: none; }
+.draftrow__main:hover { background: var(--surface-hover); }
+.draftrow__art { flex: none; width: 44px; height: 44px; border-radius: var(--r-sm); }
+.draftrow__text { flex: 1 1 auto; min-width: 0; display: grid; gap: 1px; }
+.draftrow__text b, .draftrow__text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.draftrow__text span { font-size: var(--t-xs); }
+.draftrow__go { flex: none; font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--accent-text); }
+.importlist { display: grid; gap: 6px; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); }
+.importlist__row { display: flex; justify-content: space-between; gap: var(--s3); font-size: var(--t-sm); }
+.importlist__row b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.importlist__row span { flex: none; }
+
+/* Reasons to tap, under the box they fill. */
+.sayagain { display: flex; flex-wrap: wrap; gap: 6px; }
+.sayagain__one {
+  max-width: 100%; padding: 5px 10px; border-radius: var(--r-pill); border: 1px solid var(--border); background: none;
+  color: var(--text-dim); font: inherit; font-size: var(--t-xs); text-align: left; cursor: pointer;
+}
+.sayagain__one:hover { color: var(--text); border-color: var(--border-strong); }
+.ocust__slip { display: block; margin-top: 4px; font-size: var(--t-xs); color: var(--text-dim); }

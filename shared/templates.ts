@@ -146,3 +146,32 @@ export function fillFrom(template: PostTemplate): TemplateFill {
     terms: template.terms ?? null,
   };
 }
+
+/**
+ * A listing started and not yet published, kept with the shop.
+ *
+ * The form used to be kept only in the browser it was typed in, so a draft
+ * begun on a phone was not there on the laptop, and the Sell tab's "Drafts"
+ * count had nothing to count. The form itself is stored as the sell screen
+ * wrote it - this is the screen's own unfinished work, not a listing - with
+ * the few fields a shelf needs to draw it lifted out beside it.
+ */
+export interface ListingDraft extends BaseDocument {
+  /** Partition key: the shop the draft will be listed in. */
+  sellerId: string;
+  /** Tells a draft from a Quick Fill template, which shares its container. */
+  docType: 'listingDraft';
+  title: string;
+  priceMinor: number | null;
+  category: string | null;
+  /** The lead photo, for the shelf card. */
+  photoUrl: string | null;
+  /** The sell form as it was left. Opaque to the server. */
+  form: Record<string, unknown>;
+  /** Who was typing: the owner, or a manager with the listings right. */
+  savedBy: string;
+}
+
+/** How many drafts one shop keeps, and how big one may be. */
+export const MAX_LISTING_DRAFTS = 50;
+export const MAX_DRAFT_BYTES = 60_000;

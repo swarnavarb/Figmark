@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { CHECKPOINT_COUNT_LABELS, type OrderCheckpoint } from '@shared/enums';
+import { CHECKPOINT_COUNT_LABELS, STORE_PERMISSION_LABELS, type OrderCheckpoint } from '@shared/enums';
+import type { StoreAccess } from '@shared/stores';
 import { countOf } from '@shared/board';
 import { CREW_CHECKPOINTS, type CrewRole } from '@shared/services';
 import type { StoreStatus } from '@shared/models';
@@ -513,18 +514,23 @@ export function MyServicesPage() {
   const [mine, setMine] = useState<MyServicesView | null>(null);
   const [asked, setAsked] = useState<RequestRow[]>([]);
   const [assigned, setAssigned] = useState<RequestRow[]>([]);
+  /** Shops somebody else owns that this person was given rights in. */
+  const [shops, setShops] = useState<StoreAccess[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      // Work handed to you, the lots and teams you are on, and what you asked for: one wait, not three.
-      const [services, requests, given] = await Promise.all([
+      // Work handed to you, the lots, shops and teams you are on, and what you asked for: one wait, not four.
+      const [services, requests, given, stores] = await Promise.all([
         api.myServices(),
         api.myServiceRequests().catch(() => ({ requests: [] })),
         api.assignedRequests().catch(() => ({ requests: [] })),
+        api.stores().catch(() => ({ stores: [] as StoreAccess[] })),
       ]);
       setAsked(requests.requests);
       setAssigned(given.requests);
+      // Packing a shop's lots is crew work, listed below; a shop is "run" by somebody with a console right in it.
+      setShops(stores.stores.filter((store) => !store.isOwner && store.permissions.some((right) => right !== 'export')));
       setMine(services);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your services.');
@@ -551,7 +557,7 @@ export function MyServicesPage() {
       <BackLink to="/services" title="My services" />
       <div className="page__head">
         <div>
-          <p className="muted">Work handed to you: requests assigned to you, lots shops named you on, and the teams you are on.</p>
+          <p className="muted">Work handed to you: requests assigned to you, shops you help run, lots shops named you on, and the teams you are on.</p>
         </div>
       </div>
 
@@ -567,9 +573,30 @@ export function MyServicesPage() {
         </section>
       )}
 
+      {/* A shop somebody else owns is a job: its console opens from here, not
+          from the Sell tab, which is only ever your own shop. */}
+      {shops.length > 0 && (
+        <section className="stack" style={{ marginBottom: 22 }}>
+          <h2 className="ms-section"><Icon name="tag" size={15} /> Shops you help run</h2>
+          {shops.map((shop) => (
+            <Link key={shop.ownerId} to={`/services/manage/${encodeURIComponent(shop.ownerId)}`} className="svc">
+              <span className="svc__glyph"><Icon name="box" size={22} /></span>
+              <span className="svc__body">
+                <span className="svc__name">{shop.name}</span>
+                <span className="faint">
+                  {shop.permissions.includes('admin')
+                    ? 'Everything: listings, orders, shipments and the numbers'
+                    : shop.permissions.map((permission) => STORE_PERMISSION_LABELS[permission]).join(' · ')}
+                </span>
+              </span>
+            </Link>
+          ))}
+        </section>
+      )}
+
       {mine === null ? (
         !error && <div className="stack"><SkelInline w={70} h={14} /><SkelCards n={1} h={76} chips={0} /></div>
-      ) : !enrolled(mine) && assigned.length === 0 ? (asked.length > 0 ? null :
+      ) : !enrolled(mine) && assigned.length === 0 ? (asked.length > 0 || shops.length > 0 ? null :
         <EmptyState icon={<Icon name="users" size={26} />} title="Nothing handed to you yet">
           When a team adds you, or a shop names you on a lot as its supplier or handler, the work shows up here.
           To run your own business, <Link to="/open">open one</Link>.

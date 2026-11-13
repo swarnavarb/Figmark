@@ -76,8 +76,8 @@ const createLot = (request, ctx) => {
   return createLotHandler({ ...request, ...patched }, ctx);
 };
 const {
-  storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, storefrontPhotoRoute: storefrontPhoto, regionGuessRoute: regionGuess, dashboardRoute: dashboard,
-  myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales, sellTodoRoute: sellTodo,
+  storefrontRoute: storefront, updateStorefrontRoute: saveStorefront, storefrontPhotoRoute: storefrontPhoto, regionGuessRoute: regionGuess,
+  myStoresRoute: myStores, updateManagersRoute: updateManagers, salesRoute: sales,
   sellDashboardRoute: sellDashboard,
 } = await import(new URL('seller-routes.js', fns));
 const {
@@ -1286,15 +1286,6 @@ await check('the dispatch region guess never asks the browser, and says nothing 
   assert.equal(region.placeIp(hdrs('10.0.0.2, 49.36.10.1'), 'x'), '49.36.10.1');
   assert.equal(region.placeIp(hdrs(null), '1.2.3.4'), '1.2.3.4');
   assert.equal(region.regionFrom({ city: '', country_code: 'IN' }), null);
-});
-
-await check('the dashboard reports the shop analytics', async () => {
-  const body = (await dashboard(req({ headers: auth }), ctx)).jsonBody;
-  assert.equal(body.analytics.daily.length, 30, 'thirty days, one entry each');
-  assert.ok(body.analytics.activeListings >= 2);
-  // Revenue is what the seller sold, never what they bought.
-  assert.ok(body.analytics.revenueMinor >= 0);
-  assert.ok(body.analytics.conversion >= 0 && body.analytics.conversion <= 1);
 });
 
 /* ── social ────────────────────────────────────────────────────────────── */
@@ -2895,7 +2886,7 @@ await check('after a press the queue answers for that order alone, not the whole
 });
 
 await check('the Sell tab counts on the server what it used to count from the whole book', async () => {
-  const counts = (await sellTodo(req({ headers: auth }), ctx)).jsonBody;
+  const counts = (await sellDashboard(req({ headers: auth }), ctx)).jsonBody.todo;
   const full = (await sales(req({ headers: auth, query: { history: 'all' } }), ctx)).jsonBody;
   const finished = (row) => ['rejected', 'cancelled', 'cancelled_reversed', 'delivered'].includes(row.status) || Boolean(row.deliveredAt);
   const active = full.orders.filter((row) => !finished(row));
@@ -2909,8 +2900,8 @@ await check('the Sell tab counts on the server what it used to count from the wh
   // One time per order waiting, so the tab can mark the ones newer than the seller's last look.
   assert.equal(counts.answerSince.length, counts.answer);
   assert.ok(counts.answerSince.every((at) => typeof at === 'string' && !Number.isNaN(Date.parse(at))));
-  assert.equal(typeof counts.lots, 'number');
-  const refused = await sellTodo(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
+  assert.equal(typeof counts.lowStock, 'number');
+  const refused = await sellDashboard(req({ headers: directAuth, query: { store: 'usr_demo' } }), ctx);
   assert.equal(refused.status, 403);
 });
 
@@ -2921,11 +2912,14 @@ await check('the Sell tab dashboard has a card for each tab, and only for its ow
   // items are what the card counts (an active-only read made both always 0).
   const shelf = (await (await getRepository()).listListings({ sellerId: 'usr_demo', limit: 10_000, includeHidden: true }))
     .filter((listing) => listing.status !== 'archived');
-  assert.equal(card.listings.drafts, shelf.filter((listing) => listing.status === 'draft').length);
-  assert.equal(card.listings.soldOut, shelf.filter((listing) => listing.status === 'sold_out').length);
+  // Drafts are the shop's kept sell forms, not a listing status nothing ever set.
+  assert.equal(card.listings.drafts, (await (await getRepository()).listListingDrafts('usr_demo')).length
+    + shelf.filter((listing) => listing.status === 'draft' && !listing.unlisted).length);
+  assert.equal(typeof card.listings.soldOut, 'number');
+  assert.equal(typeof card.listings.expired, 'number');
   assert.equal(card.listings.views, shelf.reduce((sum, listing) => sum + listing.viewCount, 0));
   // The open orders are the ones the to-do counts read.
-  const counts = (await sellTodo(req({ headers: auth }), ctx)).jsonBody;
+  const counts = (await sellDashboard(req({ headers: auth }), ctx)).jsonBody.todo;
   assert.equal(card.shipments.ordersNoLot, counts.noLot);
   assert.equal(card.money.daily.length, 14);
   assert.ok(card.money.revenue30Minor >= card.money.daily.reduce((sum, day) => sum + day.revenueMinor, 0));

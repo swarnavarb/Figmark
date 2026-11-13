@@ -25,7 +25,22 @@
   font-size: var(--t-2xs); color: var(--text-dim); white-space: nowrap;
 }
 /* Publish, always in reach: pinned above the tab bar on a phone. */
-.sellform__bar { display: grid; }
+.sellform__bar { display: grid; gap: var(--s2); }
+.sellform__btns { display: flex; gap: var(--s2); }
+.sellform__btns .btn--ghost { padding-inline: var(--s3); white-space: nowrap; }
+.sellform__btns .sellform__go { flex: 1 1 auto; }
+.sellform__needs { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.sellform__needs.is-shown { color: var(--coral-pale); }
+.sellform__again { justify-self: center; font-size: var(--t-sm); color: var(--text-dim); }
+.sellform__again:disabled { opacity: .5; cursor: default; }
+/* The card sits beside the form on a wide screen, so the button is a phone's. */
+@media (min-width: 900px) { .sellform__peek { display: none; } }
+@media (max-width: 899px) { .sellpreview { display: none; } }
+.sellpeek { display: grid; justify-items: center; }
+.sellpeek > * { width: min(260px, 100%); }
+.sellnums { align-items: start; grid-template-columns: 1fr 1fr; }
+.checkline { display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; font-size: var(--t-xs); color: var(--text-dim); cursor: pointer; }
+.checkline input { width: auto; margin: 0; }
 @media (max-width: 719px) {
   .sellform__bar {
     position: sticky; bottom: calc(var(--tabbar-h) + 8px); z-index: 5;

@@ -57,8 +57,10 @@ const {
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute, sellTodoRoute, sellDashboardRoute, orderStatusRoute, shopPulseRoute, payoutsRoute } =
+const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, myStoresRoute, updateManagersRoute, salesRoute, sellDashboardRoute, orderStatusRoute, shopPulseRoute, payoutsRoute } =
   await import(new URL('seller-routes.js', apiRoot));
+const { answerOrdersRoute, batchListingsRoute, listDraftsRoute, saveDraftRoute, deleteDraftRoute } =
+  await import(new URL('seller-desk-routes.js', apiRoot));
 const { makeTrackLinkRoute, publicTrackingRoute } = await import(new URL('public-track-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
@@ -261,12 +263,10 @@ const routes = [
   ['POST', '/api/me/storefront/save', updateStorefrontRoute],
   ['POST', '/api/me/storefront/photo', storefrontPhotoRoute],
   ['GET', '/api/me/region-guess', regionGuessRoute],
-  ['GET', '/api/me/dashboard', dashboardRoute],
   ['GET', '/api/me/sales', salesRoute],
   ['GET', '/api/me/payouts', payoutsRoute],
   ['POST', '/api/orders/:id/track-link', makeTrackLinkRoute],
   ['GET', '/api/track/:token', publicTrackingRoute],
-  ['GET', '/api/me/sell/todo', sellTodoRoute],
   ['GET', '/api/me/sell/dashboard', sellDashboardRoute],
   ['GET', '/api/me/stores', myStoresRoute],
   ['POST', '/api/me/storefront/orders', orderStatusRoute],
@@ -506,6 +506,11 @@ const routes = [
   ['POST', '/api/lots/:id/route', setLotRouteRoute],
   ['POST', '/api/orders/:id/step', stepItemRoute],
   ['GET', '/api/me/items', myItemsRoute],
+  ['POST', '/api/me/orders/answer', answerOrdersRoute],
+  ['POST', '/api/me/listings/batch', batchListingsRoute],
+  ['GET', '/api/me/drafts', listDraftsRoute],
+  ['POST', '/api/me/drafts/save', saveDraftRoute],
+  ['POST', '/api/me/drafts/:id/delete', deleteDraftRoute],
   ['GET', '/api/templates', listTemplatesRoute],
   ['POST', '/api/templates/new', saveTemplateRoute],
   ['POST', '/api/templates/:id/delete', deleteTemplateRoute],

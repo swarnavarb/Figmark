@@ -2,6 +2,8 @@ import { FeeHint } from '../components/Billing';
 import { ServiceNudge } from '../components/ServiceCards';
 import { haptic } from '../haptics';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { TagInput } from '../components/PageFields';
+import { PageLoading } from '../components/Feedback';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { tagKey } from '@shared/shop-tags';
 import { SOURCING_LABELS, type Sourcing } from '@shared/enums';
@@ -99,6 +101,8 @@ type SellDraft = {
   createdListingId?: string | null;
   /** When it was last written, so old visits' drafts can be let go. */
   savedAt?: number;
+  /** The copy of this form kept with the shop, once it has been saved as a draft. */
+  serverDraftId?: string | null;
 };
 
 /** How many visits' drafts are kept. Each visit has its own key, and nothing else ever removed them. */
@@ -205,14 +209,49 @@ function rememberEta(eta: { minDays: number; maxDays: number }): void {
 /** Comma-typed tags as a list. */
 const splitTags = (text: string) => text.split(',').map((tag) => tag.trim()).filter(Boolean);
 
+/**
+ * List something - or pick up a draft where it was left.
+ *
+ * `?draft=` names a draft kept with the shop: it is read before the form is
+ * drawn, so every field starts from it. Each visit is its own form, so
+ * "publish and list another" lands on a clean one.
+ */
 export function SellPage() {
+  const [params] = useSearchParams();
+  const location = useLocation();
+  const draftId = params.get('draft');
+  const storeId = params.get('store') ?? undefined;
+  const [kept, setKept] = useState<{ id: string; form: SellDraft; updatedAt: string } | null | 'missing'>(null);
+
+  useEffect(() => {
+    if (!draftId) return;
+    let cancelled = false;
+    setKept(null);
+    void api.draft(draftId, storeId)
+      .then((result) => { if (!cancelled) setKept({ id: result.draft.id, form: result.draft.form as unknown as SellDraft, updatedAt: result.draft.updatedAt }); })
+      .catch(() => { if (!cancelled) setKept('missing'); });
+    return () => { cancelled = true; };
+  }, [draftId, storeId]);
+
+  if (draftId && kept === null) return <PageLoading />;
+  return <SellForm key={location.key} serverDraft={draftId && kept && kept !== 'missing' ? kept : null}
+    draftMissing={Boolean(draftId) && kept === 'missing'} />;
+}
+
+function SellForm({ serverDraft, draftMissing }: {
+  serverDraft: { id: string; form: SellDraft; updatedAt: string } | null;
+  /** The link named a draft that is gone - published, or deleted on another device. */
+  draftMissing: boolean;
+}) {
   const { user } = useSession();
   const navigate = useNavigate();
-  const goBack = useGoBack('/shop');
   // Which shop this goes into. The sell tab passes it when a store is open, so
   // a manager lists into the shop they were looking at rather than their own.
   const [params] = useSearchParams();
   const storeId = params.get('store') ?? undefined;
+  // A shop somebody else owns is run from My services; your own, from the Sell tab.
+  const shopHome = storeId && user && storeId !== user.id ? `/services/manage/${encodeURIComponent(storeId)}` : '/shop';
+  const goBack = useGoBack(shopHome);
   // Arriving from the profit calculator's "List a new item": its selling price
   // and the costs it worked out come along.
   // A saved calculation also brings its name, where it should be shared, and
@@ -231,7 +270,10 @@ export function SellPage() {
     category?: string; condition?: string; tags?: string[]; photos?: PhotoDraft[];
     /** Stocked because a stock poll asked: its voters get first dibs. */
     fromPoll?: { channelId: string; postId: string; optionId: string | null; label: string; voters: number };
+    /** "Publish and list another": the listing that just went live from the form before this one. */
+    listed?: { id: string; title: string };
   } | null;
+  const justListed = prefill?.listed ?? null;
   const deal = prefill?.privateDeal ?? null;
   const fromPoll = deal ? null : prefill?.fromPoll ?? null;
 
@@ -243,6 +285,10 @@ export function SellPage() {
   // unless this visit came with something of its own to list.
   const [restored] = useState(() => {
     const visit = readDraft(draftKey);
+    // A draft kept with the shop, unless this visit has typed past it since.
+    if (serverDraft) {
+      return visit && (visit.savedAt ?? 0) > Date.parse(serverDraft.updatedAt) ? visit : { ...serverDraft.form, serverDraftId: serverDraft.id };
+    }
     const pending = location.state ? null : readPending();
     // A fresh page load reuses the same visit key, so the newer of the two wins.
     return (pending?.savedAt ?? 0) > (visit?.savedAt ?? 0) ? pending : visit ?? pending;
@@ -321,6 +367,14 @@ export function SellPage() {
      private-deal message after it did not. Publishing again then only retries
      the message, rather than making a second copy of the item. */
   const [createdListingId, setCreatedListingId] = useState<string | null>(restored?.createdListingId ?? null);
+  /** This form's copy kept with the shop, once Save draft has been pressed. */
+  const [serverDraftId, setServerDraftId] = useState<string | null>(restored?.serverDraftId ?? serverDraft?.id ?? null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+  /** The buyer's-eye card, opened over the form on a phone. */
+  const [peek, setPeek] = useState(false);
+  /** Which publish button was pressed: back to a fresh form, or on to the listing. */
+  const another = useRef(false);
 
   useEffect(() => { pruneDrafts(draftKey); }, [draftKey]);
 
@@ -334,7 +388,7 @@ export function SellPage() {
   latest.current = {
     title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
     preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId,
-    createdListingId,
+    createdListingId, serverDraftId,
   };
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -382,7 +436,7 @@ export function SellPage() {
     if (!canSell) return;
     let cancelled = false;
     void api
-      .myLots()
+      .myLots(storeId)
       .then((result) => {
         if (cancelled) return;
         setLots(result.lots.filter((entry) => entry.lot.status === 'open'));
@@ -391,13 +445,13 @@ export function SellPage() {
     return () => {
       cancelled = true;
     };
-  }, [canSell]);
+  }, [canSell, storeId]);
 
   useEffect(() => {
     if (!canSell) return;
     let cancelled = false;
     void api
-      .templates()
+      .templates(storeId)
       .then((result) => {
         if (cancelled) return;
         setTemplates(result.templates);
@@ -485,11 +539,14 @@ export function SellPage() {
   // usually long after the item goes up. Nothing waits on it.
   const etaIssue = termsProblem(terms);
   const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR && !etaIssue;
-  // Said beside a button that will not press, so nobody is left guessing why.
-  const publishBlocker = title.trim().length <= 2 ? 'Give it a title of at least 3 characters.'
-    : priceMinor < MIN_PRICE_MINOR ? `Set a price of at least ${formatMoney(MIN_PRICE_MINOR)}.`
-      : priceMinor > MAX_PRICE_MINOR ? `Set a price of at most ${formatMoney(MAX_PRICE_MINOR)}.`
-      : etaIssue;
+  // Everything still standing between this form and a listing, said at once
+  // and from the start - not one line at a time beside a button that will not press.
+  const basicsNeeded = [
+    title.trim().length <= 2 ? 'a title' : null,
+    priceMinor < MIN_PRICE_MINOR ? (price ? `a price of at least ${formatMoney(MIN_PRICE_MINOR)}` : 'a price')
+      : priceMinor > MAX_PRICE_MINOR ? `a price of at most ${formatMoney(MAX_PRICE_MINOR)}` : null,
+    etaIssue ? 'a delivery time' : null,
+  ].filter((text): text is string => Boolean(text));
   // The category's required questions are asked after the first press of
   // Publish, with the unanswered ones marked, rather than leaving a button
   // that will not press.
@@ -522,7 +579,6 @@ export function SellPage() {
     const preOrdering = preOrderMode && !deal;
     return [
       preOrdering ? `Pre-order · ${fillThreshold || 2} bookings` : null,
-      !preOrdering ? (terms.quantityMode === 'multiple' ? 'No fixed count' : `${Number(terms.quantity) || 0} in stock`) : null,
       terms.advance ? `${Number(terms.advancePercent) || 20}% advance` : null,
       terms.limited && !deal ? `Ends in ${terms.days} ${Number(terms.days) === 1 ? 'day' : 'days'}` : null,
       terms.affiliate && !deal ? 'Affiliate commission' : null,
@@ -533,8 +589,28 @@ export function SellPage() {
     ].filter((text): text is string => Boolean(text));
   }
 
+  /** Keep the form with the shop: on the Drafts shelf, on every device. */
+  async function saveServerDraft(): Promise<boolean> {
+    if (!latest.current) return false;
+    setSavingDraft(true);
+    setError(null);
+    try {
+      const result = await api.saveDraft(latest.current, serverDraftId, storeId);
+      setServerDraftId(result.draft.id);
+      setSavedNote('Draft saved. It is on your Drafts shelf, on any device.');
+      return true;
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'The draft did not save.');
+      return false;
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
   /** Not yet verified: keep the form for later, and go and verify. */
-  function saveForLater() {
+  async function saveForLater() {
+    // With the shop where it can be, and in this browser either way.
+    await saveServerDraft();
     if (latest.current) writePending(latest.current);
     // Kept for later now, so this visit's own copy has nothing left to do.
     try {
@@ -550,6 +626,13 @@ export function SellPage() {
 
   async function publish(event: FormEvent) {
     event.preventDefault();
+    if (!canPublish) {
+      setTriedPublish(true);
+      haptic('error');
+      document.querySelector<HTMLElement>(title.trim().length <= 2 ? '#sell-title' : etaIssue && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR ? '#sell-eta input' : '#sell-price')
+        ?.focus();
+      return;
+    }
     if (missing.length > 0) {
       setTriedPublish(true);
       setError(`Still to answer: ${missing.map((field) => field.label.replace(/\?$/, '').toLowerCase()).join(', ')}.`);
@@ -640,11 +723,19 @@ export function SellPage() {
         }
         published.current = true;
         clearDraft(draftKey);
+        if (serverDraftId) await api.deleteDraft(serverDraftId, storeId).catch(() => undefined);
         navigate(`/messages/${encodeURIComponent(deal.handle)}?as=${encodeURIComponent(deal.as)}`, { replace: true });
         return;
       }
       published.current = true;
       clearDraft(draftKey);
+      // Published, so it is no longer a draft anywhere.
+      if (serverDraftId) await api.deleteDraft(serverDraftId, storeId).catch(() => undefined);
+      if (another.current) {
+        // A clean form for the next one, saying what just went up.
+        navigate(`/sell${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { replace: true, state: { listed: { id: listingId, title: title.trim() } } });
+        return;
+      }
       navigate(`/listing/${listingId}`, { state: { published: true } });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not publish this listing.');
@@ -668,6 +759,32 @@ export function SellPage() {
       </main>
     );
   }
+
+  const previewCard = (
+    <div className="qloot qloot--new">
+      <Thumb seed={title || 'preview'} label={title || 'Your listing'} photo={leadPhoto({ photos })}
+        className="thumb qloot__art">
+        <RarityRibbon tier="new" />
+        <span className="qgrade">{attributes['condition'] ? facts.condition : 'Pick a condition'}</span>
+        {preOrderMode && !deal && <span className="qsticker-tag">Pre-order</span>}
+      </Thumb>
+      {terms.advance && <AdvanceStrip percent={Number(terms.advancePercent) || 20} />}
+      <div className="qloot__body">
+        <span className="qloot__title">{title || 'Your listing title'}</span>
+        <span className="qloot__price">{priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</span>
+        <span className="qloot__meta">
+          <b className={effectiveSourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[effectiveSourcing]}</b>
+          {' · '}{category}
+          {facts.authenticity && <>{' · '}<b className={facts.authenticity.genuine ? 'qok' : ''}>{facts.authenticity.label}</b></>}
+          {facts.size && <>{' · '}{facts.size}</>}
+        </span>
+        <span className="qloot__foot">
+          <span className="faint">just now</span>
+          <span className="qcrest">{user?.sellerProfile?.storefrontName ?? user?.displayName ?? 'You'}</span>
+        </span>
+      </div>
+    </div>
+  );
 
   return (
     <main className="page">
@@ -701,6 +818,17 @@ export function SellPage() {
         <p className="notice notice--info" style={{ marginBottom: 20 }}>
           You can fill this in now - it is kept as a draft in this browser. It goes live once your email, WhatsApp
           and Aadhaar are verified. <Link to="/verify">Verify now</Link>
+        </p>
+      )}
+
+      {justListed && (
+        <p className="notice notice--ok" role="status" style={{ marginBottom: 20 }}>
+          <b>{justListed.title}</b> is live. <Link to={`/listing/${encodeURIComponent(justListed.id)}`}>See it</Link> - or list the next one below.
+        </p>
+      )}
+      {draftMissing && (
+        <p className="notice notice--info" style={{ marginBottom: 20 }}>
+          That draft is no longer kept - it was published or deleted. This is a fresh form.
         </p>
       )}
 
@@ -744,17 +872,35 @@ export function SellPage() {
           <LBox icon="🏷️" title="The item">
             <label className="field">
               <span>Title</span>
-              <input value={title} onChange={(e) => setTitle(e.target.value)}
-                placeholder="1/7 scale figure, sealed" required />
+              <input id="sell-title" value={title} onChange={(e) => setTitle(e.target.value)}
+                placeholder="1/7 scale figure, sealed" aria-invalid={triedPublish && title.trim().length <= 2 ? true : undefined} />
             </label>
-            <div className="field-row">
+            {/* Price and stock side by side: the two numbers every listing has.
+                Stock used to sit under "More options", three taps from here. */}
+            <div className="field-row sellnums">
               <label className="field">
                 <span>Price (₹)</span>
-                <input type="number" min="1" step="1" value={price} inputMode="numeric"
-                  onChange={(e) => setPrice(e.target.value)} placeholder="1450" required />
-                <FeeHint kind="shop" priceMinor={priceMinor} />
+                <input id="sell-price" type="number" min="1" step="1" value={price} inputMode="numeric"
+                  onChange={(e) => setPrice(e.target.value)} placeholder="1450"
+                  aria-invalid={triedPublish && (priceMinor < MIN_PRICE_MINOR || priceMinor > MAX_PRICE_MINOR) ? true : undefined} />
               </label>
+              {!(preOrderMode && !deal) && (
+                <div className="field">
+                  <label htmlFor="sell-stock">In stock</label>
+                  <input id="sell-stock" type="number" inputMode="numeric" min="0" step="1"
+                    value={terms.quantityMode === 'multiple' ? '' : terms.quantity}
+                    placeholder={terms.quantityMode === 'multiple' ? 'Not counted' : '1'}
+                    disabled={terms.quantityMode === 'multiple'}
+                    onChange={(e) => setTerms({ ...terms, quantity: e.target.value })} />
+                  <label className="checkline">
+                    <input type="checkbox" checked={terms.quantityMode === 'multiple'}
+                      onChange={(e) => setTerms({ ...terms, quantityMode: e.target.checked ? 'multiple' : 'fixed' })} />
+                    No fixed count
+                  </label>
+                </div>
+              )}
             </div>
+            <FeeHint kind="shop" priceMinor={priceMinor} />
             {/* What is it? Tags, not a dropdown: every category is visible at
                 once, and the line under them says what lives in the one picked. */}
             <div className="field" role="group" aria-label="Category">
@@ -782,21 +928,10 @@ export function SellPage() {
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
                 placeholder="Condition, what's included…" />
             </label>
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="sell-tags">Tags</label>
-                <input id="sell-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="resin, sealed" />
-                {/* The shop's own tags, one tap each: listings and shop speak the same words. */}
-                {tagIdeas.length > 0 && (
-                  <div className="taginput__ideas">
-                    {tagIdeas.map((idea) => (
-                      <button key={idea} type="button" className="taginput__idea"
-                        onClick={() => setTags((now) => [...splitTags(now), idea].join(', '))}>+ {idea}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* Chips, not a comma-typed line: each tag is one thing to add or
+                take off, and the shop's own tags are one tap each. */}
+            <TagInput value={splitTags(tags)} onChange={(next) => setTags(next.join(', '))} ideas={tagIdeas}
+              hint="Words buyers search for: resin, sealed, 1/7 scale." fullHint="Six tags is the most a listing carries." />
           </LBox>
 
           {/* One question - where is it? - and the lot only for an import,
@@ -833,7 +968,7 @@ export function SellPage() {
           </LBox>
 
           {/* Asked of every item, never folded away: it is what buyers ask first. */}
-          <EtaFields value={terms} onChange={setTerms} />
+          <div id="sell-eta"><EtaFields value={terms} onChange={setTerms} /></div>
 
           {deal && <DealClock hours={dealHours} onChange={setDealHours} />}
 
@@ -856,7 +991,7 @@ export function SellPage() {
                   whenShort={whenShort} onWhenShort={setWhenShort} whenFull={whenFull} onWhenFull={setWhenFull} />
               )}
 
-              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} priceMinor={priceMinor} withEta={false} />
+              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} priceMinor={priceMinor} withEta={false} withStock={false} />
 
               {/* Telling people is part of listing, not a second job to remember
                   afterwards. Both on unless the seller says otherwise. */}
@@ -875,54 +1010,59 @@ export function SellPage() {
 
           {error && <ErrorNotice message={error} />}
 
-          {verified && publishBlocker && <p className="field__hint" role="status">{publishBlocker}</p>}
+          {savedNote && !error && <p className="notice notice--ok" role="status">{savedNote}</p>}
 
           {/* Pinned to the bottom of a phone screen, so it is never a scroll away. */}
           <div className="sellform__bar">
-            {verified ? (
-              <button type="submit" className="btn btn--lg btn--block sellform__go" disabled={busy || !canPublish}>
-                {busy ? (deal ? 'Sending…' : 'Publishing…') : deal ? '🤝 Send private deal' : '🚀 Publish listing'}
-              </button>
-            ) : (
-              <button type="button" className="btn btn--lg btn--block sellform__go" onClick={saveForLater}>
-                Save draft and verify
-              </button>
+            {verified && (basicsNeeded.length > 0 || missing.length > 0) && (
+              <p className={`sellform__needs${triedPublish ? ' is-shown' : ''}`} role="status">
+                Still needs {[...basicsNeeded, ...missing.map((field) => field.label.replace(/\?$/, '').toLowerCase())].join(', ')}.
+              </p>
             )}
+            <div className="sellform__btns">
+              <button type="button" className="btn btn--ghost sellform__peek" onClick={() => setPeek(true)}>Preview</button>
+              {!deal && (
+                <button type="button" className="btn btn--ghost" disabled={savingDraft || busy}
+                  onClick={() => void saveServerDraft()}>
+                  {savingDraft ? 'Saving…' : serverDraftId ? 'Save' : 'Save draft'}
+                </button>
+              )}
+              {verified ? (
+                <button type="submit" className="btn btn--lg sellform__go" disabled={busy} onClick={() => { another.current = false; }}>
+                  {busy ? (deal ? 'Sending…' : 'Publishing…') : deal ? 'Send private deal' : 'Publish'}
+                </button>
+              ) : (
+                <button type="button" className="btn btn--lg sellform__go" disabled={savingDraft} onClick={() => void saveForLater()}>
+                  Save and verify
+                </button>
+              )}
+            </div>
           </div>
+          {/* Under the bar rather than in it: the bar stays one row on a phone. */}
+          {verified && !deal && (
+            <button type="submit" className="linkbtn sellform__again" disabled={busy} onClick={() => { another.current = true; }}>
+              Publish and list another
+            </button>
+          )}
         </form>
 
         {/* The same card the Buy tab draws, so what the seller sees here is
-            what a buyer will scroll past. */}
+            what a buyer will scroll past. Beside the form on a wide screen;
+            behind the Preview button on a phone, where it used to sit under
+            the whole form. */}
         <aside className="sellpreview">
           <span className="lbox__hint">Preview</span>
-          <div className="qloot qloot--new">
-            <Thumb seed={title || 'preview'} label={title || 'Your listing'} photo={leadPhoto({ photos })}
-              className="thumb qloot__art">
-              <RarityRibbon tier="new" />
-              <span className="qgrade">{attributes['condition'] ? facts.condition : 'Pick a condition'}</span>
-              {preOrderMode && !deal && <span className="qsticker-tag">Pre-order</span>}
-            </Thumb>
-            {terms.advance && <AdvanceStrip percent={Number(terms.advancePercent) || 20} />}
-            <div className="qloot__body">
-              <span className="qloot__title">{title || 'Your listing title'}</span>
-              <span className="qloot__price">{priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</span>
-              <span className="qloot__meta">
-                <b className={effectiveSourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[effectiveSourcing]}</b>
-                {' · '}{category}
-                {facts.authenticity && <>{' · '}<b className={facts.authenticity.genuine ? 'qok' : ''}>{facts.authenticity.label}</b></>}
-                {facts.size && <>{' · '}{facts.size}</>}
-              </span>
-              <span className="qloot__foot">
-                <span className="faint">just now</span>
-                <span className="qcrest">{user?.sellerProfile?.storefrontName ?? user?.displayName ?? 'You'}</span>
-              </span>
-            </div>
-          </div>
+          {previewCard}
         </aside>
       </div>
 
       {/* Over the listing, not instead of it: the half-filled form waits
           underneath and the new lot comes back already picked. */}
+      {peek && (
+        <Modal title="How buyers see it" onClose={() => setPeek(false)}>
+          <div className="sellpeek">{previewCard}</div>
+        </Modal>
+      )}
       {openingLot && (
         <Modal title="New lot" onClose={() => setOpeningLot(false)}>
           <NewLotForm bare
@@ -930,7 +1070,7 @@ export function SellPage() {
             onDone={(lot) => {
               setOpeningLot(false);
               setLotId(lot.id);
-              void api.myLots()
+              void api.myLots(storeId)
                 .then((result) => setLots(result.lots.filter((entry) => entry.lot.status === 'open')))
                 .catch(() => undefined);
               setShape('lot');

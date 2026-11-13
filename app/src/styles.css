@@ -6518,7 +6518,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 @media (max-width: 719px) {
   :root:has(.sellform__bar) { scroll-padding-bottom: calc(var(--tabbar-h) + 88px); }
 }
-.sellform__go { margin-top: var(--s1); background: var(--grad-hero); border-color: transparent; box-shadow: var(--shadow-violet); }
+.sellform__go { background: var(--grad-hero); border-color: transparent; box-shadow: var(--shadow-violet); }
 .lbox__hint { font-size: var(--t-xs); color: var(--text-faint); }
 .ltoggle__text b { font-weight: var(--w-semi); }
 .ltoggle__text span { font-size: var(--t-xs); color: var(--text-faint); }
@@ -8882,8 +8882,6 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   padding: 0; border: 0; background: none; cursor: pointer;
   font: inherit; color: var(--accent-text); text-decoration: underline;
 }
-.todo { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--s2); }
-@keyframes todo-new-pop { from { transform: rotate(6deg) scale(.4); opacity: 0; } to { transform: rotate(6deg) scale(1); opacity: 1; } }
 .taginput__ideas { display: flex; flex-wrap: wrap; gap: 6px; }
 .taginput__idea {
   padding: 5px 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-pill);

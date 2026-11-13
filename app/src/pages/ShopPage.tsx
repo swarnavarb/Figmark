@@ -1,8 +1,8 @@
 import { GiveMoneyPanel } from '../components/GiveMoney';
 import { CancelFlagBanner, FeeLockBanner, ProGate, ProOwnerProvider, useProLocked } from '../components/Billing';
 import { confirmAsk, confirmSentence } from '../components/Ask';
-import { Suspense, lazy, useCallback, useEffect, useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
@@ -49,7 +49,7 @@ import { RestockChoice } from '../components/RestockChoice';
 import { ConditionTag } from '../components/ConditionTag';
 import { SlideToConfirm } from '../components/SlideToConfirm';
 import { Spinner } from '../components/Spinner';
-import { EXPIRY_WARNING_HOURS, REFUND_ORIGIN_LABELS, isExpired } from '@shared/payments';
+import { EXPIRY_WARNING_HOURS, REFUND_ORIGIN_LABELS, expiresSoon, isExpired, isLowStock } from '@shared/payments';
 import { isOpen, waitingOnShop } from '../engage';
 import {
   AdvanceStrip, DropTag, EditListingDialog, ExpiryChip, StockChip, TermsFields, termsDraft, termsFromTemplate, termsProblem, termsToTemplate,
@@ -62,7 +62,7 @@ import {
   ApiRequestError,
   api,
   mergeSales,
-  type DashboardResponse,
+  type DraftCard,
   type PostCard,
   type SellDashboard as SellDashboardData,
   type InsightsResponse,
@@ -89,7 +89,7 @@ import { CalcIcon } from '../components/CalcIcon';
 import { PictureField, TagInput } from '../components/PageFields';
 import { MoreMenu } from '../components/MoreMenu';
 import { EarnPill, earnOf } from '../components/Affiliate';
-import { ShopStatusSwitch } from '../components/ShopStatusSwitch';
+import { SHOP_STATUS_EVENT, ShopStatusSwitch } from '../components/ShopStatusSwitch';
 import { PayoutsPanel } from '../components/Payouts';
 import '../styles/ShopPage.css';
 import { Select } from '../components/Select';
@@ -120,44 +120,39 @@ type Section = 'items' | 'payments' | 'calculator' | 'refunds' | 'lots' | 'route
   | 'overview' | 'customers' | 'itemdata' | 'operations' | 'offers' | 'loyalty' | 'templates';
 
 const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'items', label: 'Items' },
-  // Payments was too narrow a name for what this screen does: money is one of
-  // six things an order needs answering about, and the other five had nowhere
-  // to live. The id stays `payments` - it is the identity, and renaming it
-  // would only be a way to break the rights that reference it.
+  { id: 'items', label: 'Listings' },
+  // The id stays `payments` - it is the identity, and renaming it would only
+  // be a way to break the links and rights that reference it.
   { id: 'payments', label: 'Orders' },
-  /* The Data tab, by job. Insights used to be one Pro tab of eighteen views;
-     each view now sits in the section it helps with, beside the free figures
-     there, and an old `?tab=insights&view=…` link lands in the right one. */
-  { id: 'overview', label: 'Overview' },
-  { id: 'customers', label: 'Customers' },
-  { id: 'itemdata', label: 'Items' },
-  { id: 'operations', label: 'Operations' },
-  // The sales report and the profit book. The id stays `analytics`: links and rights name it.
-  { id: 'analytics', label: 'Money' },
-  // Landed cost and margin on the seller's own rates - Pro.
-  { id: 'calculator', label: 'Calculator' },
   // Every amount owed back to a buyer - overpaid, cancelled, or a refund the
-  // seller starts - in one place, set apart on the right of the same row.
+  // seller starts - in one place, beside the orders it came from.
   { id: 'refunds', label: 'Refunds' },
   { id: 'lots', label: 'Lots' },
   { id: 'routes', label: 'Routes' },
-  // Quick fills: written here, used on a listing and on a live drop alike.
-  { id: 'templates', label: 'Quick fill' },
-  { id: 'storefront', label: 'Storefront' },
-  { id: 'people', label: 'People' },
   // Polls, debates, competitions and guesses the shop runs for its buyers.
   { id: 'engage', label: 'Engage' },
   // Every item's offers on one screen, beside the loyalty cards they never stack with.
   { id: 'offers', label: 'Offers' },
   // Stamp cards for repeat buyers - Pro.
   { id: 'loyalty', label: 'Loyalty cards' },
+  /* Insights, by job. An old `?tab=insights&view=…` link lands in the right one. */
+  { id: 'overview', label: 'Overview' },
+  { id: 'customers', label: 'Customers' },
+  { id: 'itemdata', label: 'Items' },
+  { id: 'operations', label: 'Operations' },
+  // Payouts, the orders report and the profit book. The id stays `analytics`: links and rights name it.
+  { id: 'analytics', label: 'Money' },
+  // Landed cost and margin on the seller's own rates - Pro.
+  { id: 'calculator', label: 'Calculator' },
+  { id: 'storefront', label: 'Storefront' },
+  // Quick fills: written here, used on a listing and on a live drop alike.
+  { id: 'templates', label: 'Quick fill' },
+  { id: 'people', label: 'People' },
 ];
 
 /**
  * Sections that are wholly Pro: they wear the gold chip and the PRO badge.
- * The other Data sections are free with Pro parts, marked where they sit. Pro
- * is open to every shop until it is switched on with real payments.
+ * The other Insights sections are free with Pro parts, marked where they sit.
  */
 const PRO_SECTIONS: readonly Section[] = ['calculator', 'loyalty'];
 
@@ -165,35 +160,28 @@ const PRO_SECTIONS: readonly Section[] = ['calculator', 'loyalty'];
 const DATA_SECTIONS: readonly Section[] = ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'];
 
 /**
- * Which sections belong to the same Sell-home card, so the chip bar under a
- * card only ever shows the handful of screens that card promised - not all
- * eight at once.
+ * The five places a shop's daily work lives, named after the job rather than
+ * the screen, and the settings behind the header's button. Each opens on its
+ * first section; the rest of its sections are chips under it. Setting a shop
+ * up is done once and looked at rarely, so it is not a sixth tab.
  */
-/**
- * The five places a shop's work lives, named after the job rather than the
- * screen. Each opens on its first section; the rest of its sections are chips
- * under it. Packing is not here: a packer works from My services.
- */
-type Group = 'items' | 'orders' | 'lots' | 'quickfill' | 'engage' | 'money' | 'settings';
+type Group = 'items' | 'orders' | 'lots' | 'grow' | 'insights' | 'settings';
 
 const SECTION_GROUPS: Record<Group, Section[]> = {
   items: ['items'],
   orders: ['payments', 'refunds'],
   lots: ['lots', 'routes'],
-  quickfill: ['templates'],
-  engage: ['engage', 'offers', 'loyalty'],
-  money: ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'],
-  settings: ['storefront', 'people'],
+  grow: ['engage', 'offers', 'loyalty'],
+  insights: ['overview', 'customers', 'itemdata', 'operations', 'analytics', 'calculator'],
+  settings: ['storefront', 'templates', 'people'],
 };
 
-const GROUP_TABS: { id: Group; label: string; icon: IconName }[] = [
+const GROUP_TABS: { id: Exclude<Group, 'settings'>; label: string; icon: IconName }[] = [
   { id: 'items', label: 'Listings', icon: 'tag' },
   { id: 'orders', label: 'Orders', icon: 'box' },
   { id: 'lots', label: 'Shipments', icon: 'truck' },
-  { id: 'quickfill', label: 'Quick fill', icon: 'bolt' },
-  { id: 'engage', label: 'Engage', icon: 'poll' },
-  { id: 'money', label: 'Data', icon: 'spark' },
-  { id: 'settings', label: 'Shop settings', icon: 'bank' },
+  { id: 'grow', label: 'Grow', icon: 'rising' },
+  { id: 'insights', label: 'Insights', icon: 'spark' },
 ];
 
 function groupOf(section: Section): Group {
@@ -201,17 +189,34 @@ function groupOf(section: Section): Group {
 }
 
 /**
- * The sell tab, which is two different screens depending on where you are.
+ * Where this shop's console lives: the Sell tab for the shop's owner, My
+ * services for somebody who helps run it. Every link the console makes to
+ * itself is built on this, so a manager moving between a lot and its orders
+ * stays in the shop they opened rather than landing in their own.
+ */
+const ShopBase = createContext('/shop');
+const useShopBase = () => useContext(ShopBase);
+
+/** The console's address for a shop, as its owner or as somebody who helps run it. */
+export function shopBaseFor(store: Pick<StoreAccess, 'ownerId' | 'isOwner'>): string {
+  return store.isOwner ? '/shop' : `/services/manage/${encodeURIComponent(store.ownerId)}`;
+}
+
+/**
+ * The Sell tab: your own shop, and nothing else.
  *
  * Before a store exists there is exactly one thing to offer: open one. Items
  * are listed from a shop and only from a shop, so a "list an item" door here
  * would lead to a refusal one screen later. Once a shop exists the tab becomes
- * its console.
+ * its console. A shop somebody else owns and you help run is a job, not your
+ * shop: it opens from My services.
  */
 export function ShopPage() {
   const [stores, setStores] = useState<StoreAccess[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  const cameFor = (useLocation().state as { store?: string } | null)?.store;
+  const { search } = useLocation();
 
   const load = useCallback(async () => {
     try {
@@ -228,10 +233,17 @@ export function ShopPage() {
   if (error) return <PageError message={error} />;
   if (!stores) return <PageLoading />;
 
-  if (stores.length === 0 && !opening) {
-    return <ShopStart onOpen={() => setOpening(true)} />;
+  // A link made for a shop this person helps run goes to that shop's own console.
+  const helped = stores.find((entry) => entry.ownerId === cameFor && !entry.isOwner);
+  if (helped) return <Navigate to={`${shopBaseFor(helped)}${search}`} replace />;
+
+  const own = stores.find((entry) => entry.isOwner);
+  const helping = stores.filter((entry) => !entry.isOwner);
+
+  if (!own && !opening) {
+    return <ShopStart onOpen={() => setOpening(true)} helping={helping} />;
   }
-  if (stores.length === 0) {
+  if (!own) {
     return (
       <main className="page tab-view">
         <BackBar onBack={() => setOpening(false)} title="Open your storefront" />
@@ -250,7 +262,45 @@ export function ShopPage() {
     );
   }
 
-  return <ShopConsole stores={stores} onChanged={load} />;
+  return <ShopConsole store={own} onChanged={load} />;
+}
+
+/**
+ * A shop you help run, opened from My services.
+ *
+ * The same console its owner has, showing only what your rights there reach.
+ */
+export function ManagedShopPage() {
+  const { ownerId } = useParams();
+  const navigate = useNavigate();
+  const [stores, setStores] = useState<StoreAccess[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setStores((await api.stores()).stores);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load that shop.');
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  if (error) return <PageError message={error} />;
+  if (!stores) return <PageLoading />;
+  const store = stores.find((entry) => entry.ownerId === ownerId);
+  // Your own shop is the Sell tab, whichever door you came through.
+  if (store?.isOwner) return <Navigate to="/shop" replace />;
+  if (!store) {
+    return (
+      <main className="page tab-view">
+        <BackBar onBack={() => navigate('/services/mine')}>My services</BackBar>
+        <EmptyState title="You do not help run this shop">
+          Its owner may have changed who has access. The shops you help run are listed under My services.
+        </EmptyState>
+      </main>
+    );
+  }
+  return <ShopConsole store={store} onChanged={load} />;
 }
 
 /**
@@ -258,37 +308,66 @@ export function ShopPage() {
  * open. The store opens its setup right here; a forwarder or an artist goes
  * to its application.
  */
-function ShopStart({ onOpen }: { onOpen: () => void }) {
+function ShopStart({ onOpen, helping }: { onOpen: () => void; helping: StoreAccess[] }) {
   return (
     <main className="page tab-view">
       <OpenBusinessHead />
+      {helping.length > 0 && (
+        <p className="notice notice--info">
+          {helping.length === 1 ? <>You help run <b>{helping[0]!.name}</b>. It</> : <>The {helping.length} shops you help run</>}{' '}
+          {helping.length === 1 ? 'opens' : 'open'} from <Link to="/services/mine">My services</Link>.
+        </p>
+      )}
       <SetupChecklist hasStore={false} onOpenStore={onOpen} />
       <OpenBusinessChooser onOpenStore={onOpen} />
     </main>
   );
 }
 
+/** The Sell tab's figures and what is waiting on the shop: one read, shared by the strip and the card. */
+function useSellData(storeId: string, section: Section | null) {
+  const [data, setData] = useState<SellDashboardData | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => { setData(null); setFailed(false); }, [storeId]);
+  useEffect(() => {
+    let cancelled = false;
+    /* Read when the console opens or changes section, and again only when the
+       bell brings news of an order or a payment - no clock of its own. */
+    const read = () => void api.sellDashboard(storeId)
+      .then((next) => { if (!cancelled) { setData(next); setFailed(false); } })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    read();
+    window.addEventListener(SALES_NEWS_EVENT, read);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SALES_NEWS_EVENT, read);
+    };
+  }, [storeId, section]);
+
+  return { data, failed };
+}
+
 /**
- * The sell tab once a shop exists.
+ * A shop's console.
  *
  * Sections rather than pages, because running a shop is one sitting: file an
- * item, check what is moving, look at the numbers. The store switcher only
- * appears for someone who acts in more than one.
+ * item, check what is moving, look at the numbers. From the top: whose shop
+ * and whether it is open, what is waiting on it, then the work itself.
  */
-function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: () => void | Promise<void> }) {
-  const cameFor = (useLocation().state as { store?: string } | null)?.store;
-  const [storeId, setStoreId] = useState(
-    stores.some((entry) => entry.ownerId === cameFor) ? cameFor! : stores[0]!.ownerId);
+function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () => void | Promise<void> }) {
+  const base = shopBaseFor(store);
+  const navigate = useNavigate();
   /*
    * The open section lives in the URL, not in this component.
    *
    * Because leaving the console and coming back is normal - Routes, a lot, an
-   * order - and a tab held in state puts you back on Items every time, which
+   * order - and a tab held in state puts you back on Listings every time, which
    * reads as the app having forgotten what you were doing.
    */
   const [params, setParams] = useSearchParams();
-  // The old Insights tab: its views now live in the Data sections. A link to
-  // one of them lands in the section that holds it, on the same view.
+  // The old Insights tab: its views now live in the Insights sections. A link
+  // to one of them lands in the section that holds it, on the same view.
   useEffect(() => {
     if (params.get('tab') !== 'insights') return;
     const view = params.get('view');
@@ -305,81 +384,96 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       copy.set('tab', next);
       // A sub-view belongs to the tab it was opened in, and so does an order
       // waiting to be filed into a lot about to be opened, an open lot, and
-      // a list's filter.
-      for (const key of ['view', 'file', 'lot', 'show', 'state', 'customer', 'edit']) copy.delete(key);
+      // a list's search and filters.
+      for (const key of ['view', 'file', 'lot', 'show', 'state', 'customer', 'edit', 'shelf', 'find', 'q', 'sort']) copy.delete(key);
       for (const [key, value] of Object.entries(extra)) copy.set(key, value);
       return copy;
     }, { replace: true });
 
-  const store = stores.find((entry) => entry.ownerId === storeId) ?? stores[0]!;
+  const isAdmin = store.permissions.includes('admin');
   // A section nobody may open should not be offered: a tab that answers 403 is
   // worse than a tab that is not there.
   const visible = SECTIONS.filter((entry) => {
     if (entry.id === 'items') return store.permissions.includes('listings');
+    // The sales book and the money owed back answer to the owner or an admin.
+    if (entry.id === 'payments' || entry.id === 'refunds') return isAdmin;
     if (DATA_SECTIONS.includes(entry.id)) return store.permissions.includes('analytics');
     if (entry.id === 'lots' || entry.id === 'routes') return store.permissions.includes('lots');
-    if (entry.id === 'storefront' || entry.id === 'people') return store.permissions.includes('admin');
+    if (entry.id === 'storefront' || entry.id === 'people') return isAdmin;
     if (entry.id === 'engage') return store.permissions.includes('posts');
     if (entry.id === 'offers' || entry.id === 'templates') return store.permissions.includes('listings');
     if (entry.id === 'loyalty') return store.isOwner;
     return true;
   });
   // No tab, or a tab this store cannot open: the first section it can, so
-  // the Sell tab never opens on an empty space under its buttons.
+  // the console never opens on an empty space under its buttons.
   const active = visible.find((entry) => entry.id === requested)?.id ?? visible[0]?.id ?? null;
+  const activeGroup = active ? groupOf(active) : null;
   const chips = active ? visible.filter((entry) => SECTION_GROUPS[groupOf(active)].includes(entry.id)) : [];
   const groups = GROUP_TABS.filter((group) => visible.some((entry) => SECTION_GROUPS[group.id].includes(entry.id)));
+  const hasSettings = visible.some((entry) => SECTION_GROUPS.settings.includes(entry.id));
   const openGroup = (group: Group) => {
     const first = visible.find((entry) => SECTION_GROUPS[group].includes(entry.id));
     if (first) setSection(first.id);
   };
+  const canList = store.permissions.includes('listings');
+  const { data, failed } = useSellData(store.ownerId, active);
 
   return (
+    <ShopBase.Provider value={base}>
     <ProOwnerProvider ownerId={store.ownerId}>
-    <main className="page tab-view">
-      <h1 className="sr-only">Sell</h1>
+    <main className="page tab-view sellpage">
+      {!store.isOwner && <BackBar onBack={() => navigate('/services/mine')}>My services</BackBar>}
       {store.isOwner && <FeeLockBanner />}
       {store.isOwner && <CancelFlagBanner />}
-      <SetupChecklist hasStore />
-      <SellHome store={store} canList={store.permissions.includes('listings')} onGo={setSection}
-        section={active} />
-      {/* Open, paused or stopped for orders: an admin's call, like the payment details. */}
-      {store.permissions.includes('admin') && <ShopStatusSwitch storeId={store.ownerId} />}
+      {store.isOwner && <SetupChecklist hasStore />}
 
-      {stores.length > 1 && (
-        <label className="field" style={{ marginBlock: 14 }}>
-          <span>Store</span>
-          <Select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
-            {stores.map((entry) => (
-              <option key={entry.ownerId} value={entry.ownerId}>
-                {entry.name}{entry.isOwner ? '' : ' — you help run this'}
-              </option>
-            ))}
-          </Select>
-        </label>
-      )}
+      <header className="shophead">
+        <div className="shophead__id">
+          <h1 className="shophead__name">{store.name}</h1>
+          <span className="shophead__meta">
+            <ShopStatusPill storeId={store.ownerId} onOpen={isAdmin ? () => setSection('storefront') : undefined} />
+            {!store.isOwner && <span className="shophead__role">You help run this shop</span>}
+          </span>
+        </div>
+        <div className="shophead__acts">
+          {hasSettings && (
+            <button type="button" className={`iconbtn shophead__gear${activeGroup === 'settings' ? ' is-on' : ''}`}
+              aria-label="Shop settings" aria-pressed={activeGroup === 'settings'} title="Shop settings"
+              onClick={() => openGroup('settings')}>
+              <Icon name="settings" size={18} />
+            </button>
+          )}
+          {canList && (
+            <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn shophead__list">
+              <Icon name="plus" size={16} /> List an item
+            </Link>
+          )}
+        </div>
+      </header>
 
-      <div className="tabs selltabs" role="tablist" aria-label="Shop" id="settings"
-        style={{ scrollMarginTop: 'calc(var(--nav-h, 56px) + 12px)' }}>
+      <NeedsYou store={store} todo={data?.todo ?? null} section={active} onGo={setSection} />
+
+      <nav className="selltabs" role="tablist" aria-label="Shop">
         {groups.map((group) => (
-          <button key={group.id} type="button" role="tab" aria-selected={active ? groupOf(active) === group.id : false}
-            className={`tab${active && groupOf(active) === group.id ? ' is-on' : ''}`}
+          <button key={group.id} type="button" role="tab" aria-selected={activeGroup === group.id}
+            className={`selltab${activeGroup === group.id ? ' is-on' : ''}`}
             onClick={() => openGroup(group.id)}>
-            <Icon name={group.icon} size={16} />
-            {group.label}
+            <Icon name={group.icon} size={17} />
+            <span>{group.label}</span>
           </button>
         ))}
-      </div>
+      </nav>
 
       {active && chips.length > 1 && (
-        <div className="sections" role="tablist" aria-label="Shop sections" style={{ marginTop: 12 }}>
+        <div className="sections sellsections" role="tablist" aria-label="Shop sections">
           {chips.map((entry) => (
             <button
               key={entry.id}
               type="button"
               role="tab"
               aria-selected={active === entry.id}
-              className={`chip${entry.id === 'refunds' ? ' chip--refunds' : ''}${PRO_SECTIONS.includes(entry.id) ? ' chip--pro' : ''}${active === entry.id ? ' is-on' : ''}`}
+              className={`chip${PRO_SECTIONS.includes(entry.id) ? ' chip--pro' : ''}${active === entry.id ? ' is-on' : ''}`}
               onClick={() => setSection(entry.id)}
             >
               {entry.id === 'calculator' && <CalcIcon size={16} />}
@@ -390,11 +484,18 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
         </div>
       )}
 
+      {activeGroup && <ShopFigures store={store} group={activeGroup} data={data} failed={failed} onGo={setSection} />}
+
+      {!active && (
+        <EmptyState title="Nothing to do here yet">
+          Your rights in this shop do not open any of its screens. Its owner can change them under People.
+        </EmptyState>
+      )}
+
       {/* Keyed so switching sections replays the entrance rather than swapping
-          content underneath a static frame. The Sell page itself never
-          changes - the workflow above stays put and only this area swaps. */}
+          content underneath a static frame. */}
       {active && (
-        <div className="tab-view" style={{ marginTop: chips.length > 1 ? 14 : 20 }} key={`${store.ownerId}:${active}`}>
+        <div className="tab-view sellbody" key={`${store.ownerId}:${active}`}>
           {active === 'items' && <MyItems store={store} />}
           {active === 'payments' && <Orders store={store} />}
           {active === 'overview' && <DataOverviewSection store={store} onGo={(section) => setSection(section)} />}
@@ -406,8 +507,16 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <Later><RoutesList spotlightNew={params.get('spotlight') === 'new'} /></Later>}
           {active === 'templates' && <TemplatesPanel store={store} />}
-          {active === 'analytics' && <><PayoutsPanel storeId={store.isOwner ? undefined : store.ownerId} /><div style={{ marginTop: 20 }} /><Analytics store={store} /><div style={{ marginTop: 20 }}><MoneyProBlock store={store} /></div></>}
-          {active === 'storefront' && <StorefrontEditor />}
+          {active === 'analytics' && <MoneySection store={store} />}
+          {active === 'storefront' && (
+            <div className="stack">
+              {/* Open, paused or closed for orders: an admin's call, like the payment details. */}
+              <ShopStatusSwitch storeId={store.ownerId} />
+              {store.isOwner
+                ? <StorefrontEditor />
+                : <p className="notice notice--info">The storefront itself - its name, photos and payment details - is edited by the shop’s owner.</p>}
+            </div>
+          )}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
           {active === 'engage' && <Later><EngagePanel store={store} /></Later>}
           {active === 'offers' && <Later><ShopOffers onLoyalty={visible.some((entry) => entry.id === 'loyalty') ? () => setSection('loyalty') : undefined} /></Later>}
@@ -416,167 +525,128 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
       )}
     </main>
     </ProOwnerProvider>
+    </ShopBase.Provider>
   );
 }
 
+const STATUS_WORDS = { open: 'Open', paused: 'Paused', stopped: 'Closed' } as const;
+
 /**
- * The top of the Sell tab: the thing a shop does most, and what is waiting.
+ * Whether the shop is taking orders, as one word beside its name.
  *
- * It used to lead with Analytics and Manage Store and a diagram of how items,
- * lots and routes relate, with "list an item" one section down. Now the
- * button comes first, then the counts that are somebody's next job - each one
- * a tap to the list it counts.
+ * The three-way switch used to sit above every tab; it is changed a few times
+ * a year, so it lives in the settings now and this is what is left on show.
  */
-function SellHome({ store, canList, onGo, section }: {
-  store: StoreAccess;
-  canList: boolean;
-  onGo: (section: Section, extra?: Record<string, string>) => void;
-  /** The section open under it: List an item leads only on Listings. */
-  section: Section | null;
-}) {
-  const [todo, setTodo] = useState<{ answer: number; since: string[]; noLot: number; noLotListings: number; lots: number } | null>(null);
-  const [seen, setSeen] = useState(() => readAnswerSeen(store.ownerId));
-  /** Whether the counts have been asked for and answered, whatever the answer - so a shop with none to show stops holding their place. */
-  const [todoAsked, setTodoAsked] = useState(false);
-  const seesLots = store.permissions.includes('lots');
-
-  useEffect(() => setSeen(readAnswerSeen(store.ownerId)), [store.ownerId]);
-
+function ShopStatusPill({ storeId, onOpen }: { storeId: string; onOpen?: () => void }) {
+  const [state, setState] = useState<keyof typeof STATUS_WORDS | null>(null);
   useEffect(() => {
     let cancelled = false;
-    /* Three numbers, counted on the server. Read when the Sell tab opens or
-       changes section, and again only when the bell brings news of an order
-       or a payment - no clock of its own. */
-    const read = () => void api.sellTodo(store.ownerId).catch(() => null).then((counts) => {
-      if (!cancelled) setTodoAsked(true);
-      // Nothing to count yet - an unverified shop is refused both - says nothing rather than zeros.
-      if (cancelled || !counts || (counts.answer === null && counts.lots === null)) return;
-      setTodo({
-        answer: counts.answer ?? 0,
-        since: counts.answerSince ?? [],
-        noLot: counts.noLot ?? 0,
-        noLotListings: counts.noLotListings ?? 0,
-        lots: seesLots ? counts.lots ?? 0 : 0,
-      });
-    });
-    read();
-    window.addEventListener(SALES_NEWS_EVENT, read);
+    setState(null);
+    void api.shopPulse(storeId).then((pulse) => { if (!cancelled) setState(pulse.orderStatus.state); }).catch(() => undefined);
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ storeId: string; status: { state: keyof typeof STATUS_WORDS } }>).detail;
+      if (detail?.storeId === storeId) setState(detail.status.state);
+    };
+    window.addEventListener(SHOP_STATUS_EVENT, changed);
     return () => {
       cancelled = true;
-      window.removeEventListener(SALES_NEWS_EVENT, read);
+      window.removeEventListener(SHOP_STATUS_EVENT, changed);
     };
-  }, [store.ownerId, seesLots, section]);
+  }, [storeId]);
+  if (!state) return <span className="statuspill statuspill--wait" aria-hidden="true">&nbsp;</span>;
+  const body = <><i aria-hidden="true" />{STATUS_WORDS[state]}</>;
+  return onOpen ? (
+    <button type="button" className={`statuspill statuspill--${state}`} onClick={onOpen}
+      aria-label={`Shop is ${STATUS_WORDS[state].toLowerCase()} for orders. Change`}>{body}</button>
+  ) : <span className={`statuspill statuspill--${state}`}>{body}</span>;
+}
+
+/**
+ * What is waiting on the shop, in one line over every tab.
+ *
+ * It used to be said three times: on a dashboard card, on a row of tiles under
+ * it, and again on the list's own filter. Now it is said here once, only when
+ * there is something to say, and each one is the way to the list it counts.
+ */
+function NeedsYou({ store, todo, section, onGo }: {
+  store: StoreAccess;
+  todo: SellDashboardData['todo'] | null;
+  section: Section | null;
+  onGo: (section: Section, extra?: Record<string, string>) => void;
+}) {
+  const [seen, setSeen] = useState(() => readAnswerSeen(store.ownerId));
+  useEffect(() => setSeen(readAnswerSeen(store.ownerId)), [store.ownerId]);
 
   /* Opening Orders is looking at them: whatever was new is not any more. */
+  const since = todo?.answerSince ?? null;
   useEffect(() => {
-    if (section !== 'payments' || !todo) return;
-    const latest = todo.since.reduce((max, at) => (at > max ? at : max), seen ?? '');
+    if (section !== 'payments' || !since) return;
+    const latest = since.reduce((max, at) => (at > max ? at : max), seen ?? '');
     if (latest && latest !== seen) {
       writeAnswerSeen(store.ownerId, latest);
       setSeen(latest);
     }
-  }, [section, todo, seen, store.ownerId]);
+  }, [section, since, seen, store.ownerId]);
 
-  const fresh = todo ? todo.since.filter((at) => !seen || at > seen).length : 0;
-
-  const tiles: { id: string; count: number; label: string; hot: boolean; fresh?: number; go: () => void }[] = todo ? [
-    { id: 'answer', count: todo.answer, label: todo.answer === 1 ? 'order to answer' : 'orders to answer',
-      hot: todo.answer > 0, fresh, go: () => onGo('payments', { show: 'answer' }) },
-    ...(seesLots ? [
-      /* Active orders waiting for a lot, and active imports on sale that no
-         lot carries yet: either one is a job on the lots, and one page lists
-         both. */
-      { id: 'nolot', count: todo.noLot + todo.noLotListings,
-        label: 'active orders & listings not in a lot',
-        hot: todo.noLot + todo.noLotListings > 0, go: () => onGo('lots', { view: 'unlotted' }) },
-      { id: 'lots', count: todo.lots, label: todo.lots === 1 ? 'lot on the move' : 'lots on the move',
-        hot: false, go: () => onGo('lots') },
-    ] : []),
-  ] : [];
+  if (!todo) return null;
+  const fresh = (since ?? []).filter((at) => !seen || at > seen).length;
+  const answer = todo.answer ?? 0;
+  const noLot = (todo.noLot ?? 0) + (todo.noLotListings ?? 0);
+  const low = todo.lowStock ?? 0;
+  const items: { id: string; count: number; label: string; hot?: boolean; fresh?: number; go: () => void }[] = [
+    { id: 'answer', count: answer, label: answer === 1 ? 'order to answer' : 'orders to answer', hot: true, fresh,
+      go: () => onGo('payments', { show: 'answer' }) },
+    /* Active orders waiting for a lot, and active imports on sale that no lot
+       carries yet: either one is a job on the lots, and one page lists both. */
+    { id: 'nolot', count: noLot, label: 'not in a lot', go: () => onGo('lots', { view: 'unlotted' }) },
+    { id: 'low', count: low, label: 'low on stock', go: () => onGo('items', { find: 'low' }) },
+  ].filter((item) => item.count > 0);
+  if (items.length === 0) return null;
 
   return (
-    <div className="sellhome">
-      {/* Quick fills are listing stationery: the listings card stays up over them. */}
-      <SellDashboard store={store} group={section && groupOf(section) !== 'quickfill' ? groupOf(section) : 'items'} onGo={onGo} />
-      {canList && (
-        <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`}
-          className={`btn sellhome__list${section === 'items' || section === null ? ' btn--lg' : ' sellhome__list--slim'}`}>
-          <Icon name="plus" size={18} /> List an item
-        </Link>
-      )}
-      {tiles.length > 0 && (
-        <div className="todo" aria-label="Waiting on you">
-          {tiles.map((tile) => (
-            <button key={tile.id} type="button" className={`todo__tile${tile.hot ? ' is-hot' : ''}`} onClick={tile.go}
-              aria-label={`${tile.count} ${tile.label}${tile.fresh ? `, ${tile.fresh} new` : ''}`}>
-              {tile.fresh ? <span className="todo__new" aria-hidden="true">{tile.fresh > 1 ? `${tile.fresh} new` : 'New'}</span> : null}
-              <b className="todo__count">{tile.count}</b>
-              <span className="todo__label">{tile.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {/* Before the counts arrive, the same tiles hold their place - with the
-          words they will say - so the tabs below do not jump down when they land. */}
-      {!todo && !todoAsked && (
-        <div className="todo" aria-hidden="true">
-          {(seesLots ? ['orders to answer', 'active orders & listings not in a lot', 'lots on the move'] : ['orders to answer']).map((label) => (
-            <span key={label} className="todo__tile">
-              <b className="todo__count"><SkelInline w={22} h={22} /></b>
-              <span className="todo__label">{label}</span>
-            </span>
-          ))}
-        </div>
-      )}
+    <div className="needsyou" role="group" aria-label="Needs you">
+      <span className="needsyou__label">Needs you</span>
+      {items.map((item) => (
+        <button key={item.id} type="button" className={`needsyou__item${item.hot ? ' is-hot' : ''}`} onClick={item.go}
+          aria-label={`${item.count} ${item.label}${item.fresh ? `, ${item.fresh} new` : ''}`}>
+          <b>{item.count}</b> {item.label}
+          {item.fresh ? <span className="needsyou__new" aria-hidden="true">{item.fresh > 1 ? `${item.fresh} new` : 'new'}</span> : null}
+        </button>
+      ))}
     </div>
   );
 }
 
-/** One figure on the dashboard card, and where a tap on it goes. */
-interface DashTile { label: string; value: string; hint?: string; hot?: boolean; go?: () => void }
+/** One figure on the card, and the list a tap on it opens. */
+interface DashTile { label: string; value: string; hint?: string; go?: () => void }
 
 const DASH_TITLES: Record<Group, string> = {
   items: 'Your listings',
   orders: 'Your orders',
   lots: 'Your shipments',
-  quickfill: 'Your listings',
-  engage: 'Your games',
-  money: 'Last 30 days',
+  grow: 'Your games',
+  insights: 'Last 30 days',
   settings: 'Your shop',
 };
 
 /**
- * The dashboard at the top of the Sell tab: four figures about whichever tab
- * is open, so Listings shows the shelf, Orders the book, Data the money.
+ * A few figures about whichever tab is open: Listings shows the shelf, Orders
+ * the book, Insights the money. Each one opens the list it counts, already
+ * filtered to it - a count that only opened the whole list was a number with
+ * nowhere to go.
  *
- * Every tab's figures come in one read, so changing tab swaps the card at
- * once. It is read again when the store changes, when the bell brings news of
- * a sale, and quietly on each change of tab, as the to-do counts are. Engage
- * is the one exception - its games are a different read, made the first time
- * that tab is opened.
+ * Nothing here repeats the "needs you" line above: what is waiting is said
+ * there, and these are the rest.
  */
-function SellDashboard({ store, group, onGo }: {
+function ShopFigures({ store, group, data, failed, onGo }: {
   store: StoreAccess;
   group: Group;
+  data: SellDashboardData | null;
+  failed: boolean;
   onGo: (section: Section, extra?: Record<string, string>) => void;
 }) {
-  const [data, setData] = useState<SellDashboardData | null>(null);
-  const [failed, setFailed] = useState(false);
   const [games, setGames] = useState<PostCard[] | null>(null);
-  const wantsGames = group === 'engage';
-
-  useEffect(() => {
-    let cancelled = false;
-    const read = () => void api.sellDashboard(store.ownerId)
-      .then((next) => !cancelled && (setData(next), setFailed(false)))
-      .catch(() => !cancelled && setFailed(true));
-    read();
-    window.addEventListener(SALES_NEWS_EVENT, read);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(SALES_NEWS_EVENT, read);
-    };
-  }, [store.ownerId, group]);
+  const wantsGames = group === 'grow';
 
   useEffect(() => setGames(null), [store.ownerId]);
   useEffect(() => {
@@ -597,65 +667,58 @@ function SellDashboard({ store, group, onGo }: {
   if (group === 'items' && data?.listings) {
     const it = data.listings;
     tiles = [
-      { label: 'On sale', value: count(it.onSale), go: () => onGo('items') },
-      { label: 'Drafts', value: count(it.drafts), go: () => onGo('items') },
-      { label: 'Sold out', value: count(it.soldOut), go: () => onGo('items') },
-      { label: `Ending in ${EXPIRY_WARNING_HOURS}h`, value: count(it.endingSoon), hot: it.endingSoon > 0, go: () => onGo('items') },
+      { label: 'On sale', value: count(it.onSale), go: () => onGo('items', { shelf: 'available' }) },
+      { label: 'Drafts', value: count(it.drafts), go: () => onGo('items', { shelf: 'drafts' }) },
+      { label: 'Sold out', value: count(it.soldOut), go: () => onGo('items', { shelf: 'sold_out' }) },
+      { label: `Ending in ${EXPIRY_WARNING_HOURS}h`, value: count(it.endingSoon), go: () => onGo('items', { find: 'ending' }) },
     ];
     note = (
       <>
         <span>{count(it.views)} views</span>
-        <span><Icon name="heart" size={14} /> {count(it.saves)} saves</span>
-        {it.best && <span className="sdash__best">Best seller this month: <b>{it.best.title}</b> · {count(it.best.units)} sold</span>}
+        <span><Icon name="heart" size={13} /> {count(it.saves)} saves</span>
+        {it.best && <span className="sdash__best">Best this month: <b>{it.best.title}</b> · {count(it.best.units)} sold</span>}
       </>
     );
   } else if (group === 'orders' && data?.orders) {
     const it = data.orders;
     tiles = [
-      { label: 'Open orders', value: count(it.open), go: () => onGo('payments') },
-      { label: 'Payment to confirm', value: count(it.claimed), hot: it.claimed > 0, go: () => onGo('payments', { show: 'answer' }) },
-      { label: 'Not paid yet', value: count(it.unpaid), go: () => onGo('payments') },
-      { label: 'On the way', value: count(it.inTransit), go: () => onGo('payments') },
+      { label: 'Open', value: count(it.open), go: () => onGo('payments') },
+      { label: 'Not paid yet', value: count(it.unpaid), go: () => onGo('payments', { show: 'unpaid' }) },
+      { label: 'On the way', value: count(it.inTransit), go: () => onGo('payments', { show: 'moving' }) },
+      { label: 'Delivered', value: count(it.delivered30), go: () => onGo('payments', { state: 'completed' }) },
     ];
-    note = (
-      <>
-        <span>{count(it.delivered30)} delivered in 30 days</span>
-        {it.cancelled30 > 0 && <span>{count(it.cancelled30)} called off</span>}
-      </>
-    );
+    note = <span>Delivered counts the last 30 days{it.cancelled30 > 0 ? ` · ${count(it.cancelled30)} called off` : ''}</span>;
   } else if (group === 'lots' && data?.shipments) {
     const it = data.shipments;
     tiles = [
-      { label: 'Lots open to join', value: count(it.open), go: () => onGo('lots') },
-      { label: 'Lots on the move', value: count(it.moving), go: () => onGo('lots') },
-      { label: 'Orders not in a lot', value: count(it.ordersNoLot), hot: it.ordersNoLot > 0, go: () => onGo('lots', { view: 'unlotted' }) },
-      { label: 'Imports not in a lot', value: count(it.listingsNoLot), hot: it.listingsNoLot > 0, go: () => onGo('lots', { view: 'unlotted' }) },
+      { label: 'Open to join', value: count(it.open), go: () => onGo('lots') },
+      { label: 'On the move', value: count(it.moving), go: () => onGo('lots') },
+      { label: 'Delivered or closed', value: count(it.done), go: () => onGo('lots') },
     ];
-    note = <span>{count(it.done)} {it.done === 1 ? 'lot' : 'lots'} delivered or closed</span>;
-  } else if (group === 'engage' && games) {
+  } else if (group === 'grow' && games) {
     const waiting = games.filter((card) => waitingOnShop(card)).length;
     const stock = games.filter((card) => card.social.poll?.stock).length;
     const running = games.filter((card) => isOpen(card)).length;
     tiles = [
       { label: 'Running now', value: count(running), go: () => onGo('engage') },
-      { label: 'Waiting on you', value: count(waiting), hot: waiting > 0, go: () => onGo('engage') },
+      { label: 'Waiting on you', value: count(waiting), go: () => onGo('engage') },
       { label: 'Stock polls', value: count(stock), go: () => onGo('engage') },
       { label: 'Run so far', value: count(games.length), go: () => onGo('engage') },
     ];
-  } else if (group === 'money' && data?.money) {
+  } else if (group === 'insights' && data?.money) {
     const it = data.money;
     const change = it.revenuePrev30Minor > 0 ? (it.revenue30Minor - it.revenuePrev30Minor) / it.revenuePrev30Minor : null;
     tiles = [
       { label: 'Takings', value: money(it.revenue30Minor),
-        hint: change === null ? undefined : `${change >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(change * 100))}% on the 30 days before`,
+        hint: change === null ? undefined : `${change >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(change * 100))}%`,
         go: () => onGo('analytics') },
       { label: 'Orders', value: count(it.orders30), go: () => onGo('analytics') },
       { label: 'Average order', value: money(it.averageMinor), go: () => onGo('analytics') },
-      { label: 'Conversion', value: `${(it.conversion * 100).toFixed(1)}%`, hint: 'Units sold per view', go: () => onGo('analytics') },
+      { label: 'Conversion', value: `${(it.conversion * 100).toFixed(1)}%`, go: () => onGo('itemdata') },
     ];
     // A flat line over a quiet fortnight says nothing the ₹0 does not.
     chart = it.daily.some((day) => day.revenueMinor > 0) ? it.daily : null;
-    note = <span>{count(it.units30)} {it.units30 === 1 ? 'piece' : 'pieces'} sold</span>;
+    note = <span>{count(it.units30)} {it.units30 === 1 ? 'piece' : 'pieces'} sold in 30 days</span>;
   } else if (group === 'settings' && data?.shop) {
     const it = data.shop;
     const setup = [
@@ -667,44 +730,37 @@ function SellDashboard({ store, group, onGo }: {
     const ready = setup.filter((step) => step.done).length;
     tiles = [
       { label: 'Followers', value: count(it.followers), go: () => onGo('storefront') },
-      { label: 'Team', value: count(it.team + 1), hint: it.team ? undefined : 'Just you', go: () => onGo('people') },
+      { label: 'Team', value: count(it.team + 1), go: () => onGo('people') },
       { label: 'Tier', value: it.tier.charAt(0).toUpperCase() + it.tier.slice(1), go: () => onGo('storefront') },
-      { label: 'Storefront set up', value: `${ready}/${setup.length}`, hot: ready < setup.length, go: () => onGo('storefront') },
+      { label: 'Set up', value: `${ready}/${setup.length}`, go: () => onGo('storefront') },
     ];
-    note = setup.map((step) => (
-      <span key={step.label} className={`sdash__step${step.done ? ' is-done' : ''}`}>
-        <Icon name={step.done ? 'check' : 'plus'} size={12} /> {step.label}
-      </span>
-    ));
+    note = ready < setup.length ? setup.filter((step) => !step.done).map((step) => (
+      <span key={step.label} className="sdash__step"><Icon name="plus" size={12} /> {step.label}</span>
+    )) : null;
   }
 
   // A card this person may not see is left out, rather than shown empty.
-  const hidden = data && !tiles && group !== 'engage';
+  const hidden = data && !tiles && group !== 'grow';
   if (hidden || (failed && !data)) return null;
 
   return (
-    <section className="sdash" aria-label={`Dashboard: ${DASH_TITLES[group]}`} aria-busy={!tiles}>
+    <section className="sdash" aria-label={DASH_TITLES[group]} aria-busy={!tiles}>
       <div className="sdash__body" key={group}>
-        <h2 className="sdash__title">{DASH_TITLES[group]}</h2>
-        {chart && <DashLine days={chart} />}
-        <div className="sdash__grid">
+        <div className="sdash__grid" style={{ ['--n' as string]: (tiles ?? [0, 0, 0, 0]).length }}>
           {(tiles ?? Array.from({ length: 4 }, () => null)).map((tile, index) => tile ? (
-            <button key={tile.label} type="button" className={`sdash__tile${tile.hot ? ' is-hot' : ''}`} onClick={tile.go}
-              style={{ animationDelay: `${index * 40}ms` }}>
-              <b className="sdash__value">{tile.value}</b>
+            <button key={tile.label} type="button" className="sdash__tile" onClick={tile.go}>
+              <b className="sdash__value">{tile.value}{tile.hint && <small className="sdash__hint">{tile.hint}</small>}</b>
               <span className="sdash__label">{tile.label}</span>
-              {tile.hint && <span className="sdash__hint">{tile.hint}</span>}
             </button>
           ) : (
             <span key={index} className="sdash__tile sdash__tile--wait" aria-hidden="true">
               <b className="sdash__value"><SkelInline w={24} h={20} /></b>
-              <span className="sdash__label"><SkelInline w={64} h={9} /></span>
+              <span className="sdash__label"><SkelInline w={56} h={9} /></span>
             </span>
           ))}
         </div>
+        {chart && <DashLine days={chart} />}
         {note && <p className="sdash__note">{note}</p>}
-        {/* The line under the counts, held while they load, so the card does not grow when they land. */}
-        {!tiles && !hidden && <p className="sdash__note" aria-hidden="true"><SkelInline w={150} h={9} /></p>}
       </div>
     </section>
   );
@@ -1351,17 +1407,55 @@ function SettingsSection({ icon, title, note, children }: { icon: IconName; titl
 /* ── Items ──────────────────────────────────────────────────────────────── */
 
 /** What is listed, and the way back to the lots that carry it. */
+type Shelf = 'available' | 'drafts' | 'sold_out' | 'expired' | 'drops';
+type ItemSort = 'new' | 'price_high' | 'price_low' | 'views' | 'stock';
+
+const ITEM_SORTS: { id: ItemSort; label: string }[] = [
+  { id: 'new', label: 'Newest' },
+  { id: 'price_high', label: 'Price: high to low' },
+  { id: 'price_low', label: 'Price: low to high' },
+  { id: 'views', label: 'Most viewed' },
+  { id: 'stock', label: 'Lowest stock' },
+];
+
+/** A narrower look at the shelf, reached from a count above it. */
+const FINDS: Record<string, { label: string; test: (listing: Listing) => boolean }> = {
+  low: { label: 'Low on stock', test: (listing) => isLowStock(listing) },
+  ending: { label: `Ending in ${EXPIRY_WARNING_HOURS}h`, test: (listing) => expiresSoon(listing) },
+};
+
+/**
+ * The shop's shelf: what is on sale, what was started, what ran out.
+ *
+ * One row to find things - a search and a sort - one row of shelves, and the
+ * items. Everything a shop does to several at once is behind Select.
+ */
 function MyItems({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<{ listings: Listing[] } | null>(null);
+  const [drafts, setDrafts] = useState<DraftCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // "Add to a power sale" from a saved calculation lands here, with it.
   const saleCalcs = (useLocation().state as { saleCalcs?: SavedCalc[] } | null)?.saleCalcs;
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const base = useShopBase();
   const dropLocked = useProLocked('powerSale', store.ownerId) === true;
-  const [mode, setMode] = useState<'stock' | 'power'>(
-    saleCalcs?.length || params.get('view') === 'power' ? 'power' : 'stock');
-  const [shelf, setShelf] = useState<'available' | 'expired' | 'sold_out'>('available');
+  /* Shelf, search and sort live in the URL, so opening an item and coming
+     back lands on the same list - and a count above the tab can point at one. */
+  const find = FINDS[params.get('find') ?? ''] ? params.get('find')! : null;
+  const shelf: Shelf = saleCalcs?.length || params.get('view') === 'power' ? 'drops'
+    : find ? 'available'
+      : (['drafts', 'sold_out', 'expired', 'drops'] as const).find((entry) => entry === params.get('shelf')) ?? 'available';
+  const query = params.get('q') ?? '';
+  const sort = ITEM_SORTS.find((entry) => entry.id === params.get('sort'))?.id ?? 'new';
+  const setParam = (changes: Record<string, string | null>) => setParams((current) => {
+    const copy = new URLSearchParams(current);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) copy.set(key, value); else copy.delete(key);
+    }
+    return copy;
+  }, { replace: true });
+
   const [editing, setEditing] = useState<Listing | null>(null);
   /** An import listing being pointed at a lot, from its own card. */
   const [tagging, setTagging] = useState<Listing | null>(null);
@@ -1371,49 +1465,69 @@ function MyItems({ store }: { store: StoreAccess }) {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkPct, setBulkPct] = useState('');
   const [bulkError, setBulkError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(() => {
     void api
-      .myListings()
+      .myListings(store.ownerId)
       .then(setData)
       .catch((err: unknown) =>
         setError(err instanceof ApiRequestError ? err.message : 'Could not load your listings.'),
       );
-  }, []);
+    void api.drafts(store.ownerId).then((result) => setDrafts(result.drafts)).catch(() => setDrafts([]));
+  }, [store.ownerId]);
   useEffect(load, [load]);
 
   if (error) return <ErrorNotice message={error} />;
 
-  const all = data?.listings.filter((listing) => listing.sellerId === store.ownerId) ?? [];
+  const all = data?.listings ?? [];
   // Expired is read off the clock; sold out only ever applies to a counted item.
-  const shelfOf = (listing: Listing) =>
-    isExpired(listing) ? 'expired' : listing.status === 'sold_out' ? 'sold_out' : 'available';
-  const counts = { available: 0, expired: 0, sold_out: 0 };
-  for (const listing of all) counts[shelfOf(listing)] += 1;
-  const mine = all.filter((listing) => shelfOf(listing) === shelf);
+  const shelfOf = (listing: Listing): Shelf =>
+    listing.status === 'draft' ? 'drafts' : isExpired(listing) ? 'expired' : listing.status === 'sold_out' ? 'sold_out' : 'available';
+  const counts = { available: 0, expired: 0, sold_out: 0, drafts: 0 };
+  for (const listing of all) counts[shelfOf(listing) as keyof typeof counts] += 1;
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (listing: Listing) => words.every((word) =>
+    `${listing.title} ${listing.category} ${(listing.tags ?? []).join(' ')}`.toLowerCase().includes(word));
+  /** Listings saved without being published: on the Drafts shelf, under the forms kept half-written. */
+  const unpublished = all.filter((listing) => listing.status === 'draft' && matches(listing));
+  const order: Record<ItemSort, (a: Listing, b: Listing) => number> = {
+    new: (a, b) => b.createdAt.localeCompare(a.createdAt),
+    price_high: (a, b) => b.priceMinor - a.priceMinor,
+    price_low: (a, b) => a.priceMinor - b.priceMinor,
+    views: (a, b) => b.viewCount - a.viewCount,
+    // A counted item before one with no fixed count, fewest left first.
+    stock: (a, b) => (a.quantityMode === 'multiple' ? Infinity : a.quantityAvailable)
+      - (b.quantityMode === 'multiple' ? Infinity : b.quantityAvailable),
+  };
+  const mine = all
+    .filter((listing) => shelfOf(listing) === shelf && matches(listing) && (!find || FINDS[find]!.test(listing)))
+    .sort(order[sort]);
+  const shownDrafts = (drafts ?? []).filter((draft) => words.every((word) => draft.title.toLowerCase().includes(word)));
   const chosen = picked ? mine.filter((listing) => picked.has(listing.id)) : [];
+  const many = (n: number) => (n === 1 ? '1 listing' : `${n} listings`);
 
-  /* The same edit, one listing at a time, so one refused (a price below the
-     floor, an offer it would break) is named and the rest still change. */
-  async function applyToPicked(label: string, change: (listing: Listing) => Promise<unknown>) {
+  /* The same change to every picked listing, in one request. Each is answered
+     for by name, so one refused (a price below the floor, an offer it would
+     break) is said and the rest still change. */
+  async function applyToPicked(label: string, change: (listing: Listing) => Parameters<typeof api.batchListings>[0][number]) {
     if (chosen.length === 0) return;
     setBulkBusy(true);
     setNotice(null);
     setBulkError(null);
-    const refused: string[] = [];
-    for (const listing of chosen) {
-      try {
-        await change(listing);
-      } catch (err) {
-        refused.push(`${listing.title}: ${err instanceof ApiRequestError ? err.message : 'not changed'}`);
-      }
+    try {
+      const answer = await api.batchListings(chosen.map(change));
+      const refused = answer.results.filter((entry) => !entry.ok)
+        .map((entry) => `${chosen.find((listing) => listing.id === entry.id)?.title ?? 'One listing'}: ${entry.message ?? 'not changed'}`);
+      if (refused.length > 0) setBulkError(`${answer.done} ${label}. ${refused.join(' ')}`);
+      else setNotice(`${many(answer.done)} ${label}.`);
+    } catch (err) {
+      setBulkError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     }
     setBulkBusy(false);
     setPicked(null);
     setBulkPct('');
     load();
-    if (refused.length > 0) setBulkError(`${chosen.length - refused.length} ${label}. ${refused.join(' ')}`);
-    else setNotice(`${chosen.length === 1 ? '1 listing' : `${chosen.length} listings`} ${label}.`);
   }
 
   const pct = Number(bulkPct);
@@ -1421,92 +1535,185 @@ function MyItems({ store }: { store: StoreAccess }) {
   /** A new price a whole rupee, so ₹999 up 10% reads ₹1,099 and not ₹1,098.90. */
   const repriced = (listing: Listing) => Math.max(100, Math.round((listing.priceMinor * (1 + pct / 100)) / 100) * 100);
 
+  async function removeDraft(draft: DraftCard) {
+    if (!await confirmAsk({
+      title: 'Delete this draft?',
+      body: `${draft.title || 'This untitled draft'} has not been published. Deleting it cannot be undone.`,
+      action: 'Delete draft',
+    })) return;
+    await api.deleteDraft(draft.id, store.ownerId).catch(() => undefined);
+    load();
+  }
+
+  const shelves: { id: Shelf; label: string; count?: number }[] = [
+    { id: 'available', label: 'On sale', count: counts.available },
+    { id: 'drafts', label: 'Drafts', count: (drafts?.length ?? 0) + counts.drafts },
+    { id: 'sold_out', label: 'Sold out', count: counts.sold_out },
+    { id: 'expired', label: 'Expired', count: counts.expired },
+    { id: 'drops', label: 'Live drops' },
+  ];
+
   return (
     <div className="stack">
-      {/* Two ways to sell, and they are genuinely different jobs. One item put
-          up for whoever finds it, or a run of them dropped into the channel on
-          a timer. Both are here because a shop does both, at different hours. */}
-      {/* "List an item" leads the Sell tab itself; what stays here is the
-          other way to sell, a run of items dropped into the channel on a timer. */}
-      <div className="doors">
-        <button type="button" className="door door--pro"
-          onClick={() => navigate(dropLocked ? '/pro' : `/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
-          <span className="probadge door__flag">{dropLocked ? '🔒 PRO' : 'PRO'}</span>
-          <span className="door__glyph" aria-hidden="true">{<Icon name="bolt" size={19} />}</span>
-          <span className="door__title">Start a live drop</span>
-          <span className="door__note">{dropLocked ? 'Part of Pro - tap to subscribe.' : 'A whole sale, on a timer, in your channel.'}</span>
-        </button>
-      </div>
-
-      <div className="segwrap">
-        <SegTabs label="Items view" value={mode} onChange={setMode} tabs={[
-          { id: 'stock', label: 'Your stock', count: all.length },
-          { id: 'power', label: 'Scheduled sales' },
-        ]} />
-        {mode === 'stock' && data && (
-          <SegTabs ext label="Shelf" value={shelf} onChange={setShelf} tabs={[
-            { id: 'available', label: 'Available', count: counts.available },
-            { id: 'expired', label: 'Expired', count: counts.expired },
-            { id: 'sold_out', label: 'Sold out', count: counts.sold_out },
-          ]} />
+      <div className="findbar">
+        <label className="findbar__search">
+          <Icon name="search" size={16} />
+          <input type="search" value={query} placeholder="Search your listings" aria-label="Search your listings"
+            onChange={(event) => setParam({ q: event.target.value || null })} />
+        </label>
+        {shelf !== 'drafts' && shelf !== 'drops' && (
+          <Select className="findbar__sort" value={sort} aria-label="Sort listings"
+            onChange={(event) => setParam({ sort: event.target.value === 'new' ? null : event.target.value })}>
+            {ITEM_SORTS.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+          </Select>
         )}
       </div>
 
-      {notice && <p className="notice notice--ok" role="status">{notice}</p>}
+      <div className="segwrap">
+        <SegTabs label="Shelf" value={shelf}
+          onChange={(next) => { setPicked(null); setParam({ shelf: next === 'available' ? null : next, find: null, view: null }); }}
+          tabs={shelves.filter((entry) => entry.id === 'available' || entry.id === 'drops' || entry.id === shelf || (entry.count ?? 0) > 0)} />
+      </div>
 
+      {find && (
+        <p className="findnote">
+          Showing <b>{FINDS[find]!.label.toLowerCase()}</b>
+          <button type="button" className="linkbtn" onClick={() => setParam({ find: null })}>Show all</button>
+        </p>
+      )}
+
+      {notice && <p className="notice notice--ok" role="status">{notice}</p>}
       {bulkError && <ErrorNotice message={bulkError} />}
-      {mode === 'stock' && mine.length > 1 && (
-        picked ? (
-          <div className="bulkbar itembulk" role="group" aria-label="Change several listings">
-            <span><b>{picked.size}</b> picked ·{' '}
-              <button type="button" className="linkbtn" onClick={() => setPicked(
-                picked.size === mine.length ? new Set() : new Set(mine.map((listing) => listing.id)))}>
-                {picked.size === mine.length ? 'None' : 'All'}
-              </button>
-            </span>
-            <label className="bulkbar__pct">
-              Price
-              <input inputMode="decimal" placeholder="+10 or -15" value={bulkPct} aria-label="Change price by percent"
-                onChange={(event) => setBulkPct(event.target.value.replace(/[^\d.+-]/g, ''))} />%
-            </label>
-            <button type="button" className="btn btn--sm" disabled={bulkBusy || chosen.length === 0 || !pctOk}
-              onClick={() => void applyToPicked('repriced', (listing) => api.editListing(listing.id, { priceMinor: repriced(listing) }))}>
-              Apply
+
+      {shelf !== 'drops' && shelf !== 'drafts' && picked ? (
+        <div className="bulkbar itembulk" role="group" aria-label="Change several listings">
+          <span><b>{picked.size}</b> picked ·{' '}
+            <button type="button" className="linkbtn" onClick={() => setPicked(
+              picked.size === mine.length ? new Set() : new Set(mine.map((listing) => listing.id)))}>
+              {picked.size === mine.length ? 'None' : 'All'}
             </button>
-            {shelf === 'available' && (
+          </span>
+          {shelf === 'available' && (
+            <>
+              <label className="bulkbar__pct">
+                Price
+                <input inputMode="decimal" placeholder="+10 or -15" value={bulkPct} aria-label="Change price by percent"
+                  onChange={(event) => setBulkPct(event.target.value.replace(/[^\d.+-]/g, ''))} />%
+              </label>
+              <button type="button" className="btn btn--sm" disabled={bulkBusy || chosen.length === 0 || !pctOk}
+                onClick={() => void applyToPicked('repriced', (listing) => ({ id: listing.id, edit: { priceMinor: repriced(listing) } }))}>
+                Apply
+              </button>
               <button type="button" className="btn btn--sm btn--ghost" disabled={bulkBusy || chosen.length === 0}
                 onClick={async () => {
                   if (!await confirmAsk({
-                    title: `Take ${chosen.length === 1 ? 'this listing' : `${chosen.length} listings`} off sale?`,
-                    body: 'They move to Expired, where Make available again brings any of them back. Orders already placed are not touched.',
+                    title: `Take ${many(chosen.length)} off sale?`,
+                    body: 'They move to Expired, where they can be made available again. Orders already placed are not touched.',
                     action: 'Take off sale',
                   })) return;
-                  void applyToPicked('taken off sale', (listing) => api.expireListing(listing.id));
+                  void applyToPicked('taken off sale', (listing) => ({ id: listing.id, expire: true }));
                 }}>
                 Take off sale
               </button>
-            )}
-            <button type="button" className="btn btn--sm btn--quiet" disabled={bulkBusy}
-              onClick={() => { setPicked(null); setBulkPct(''); }}>Done</button>
-          </div>
-        ) : (
-          <button type="button" className="btn btn--sm btn--ghost bulkbar__start" onClick={() => setPicked(new Set())}>
-            <Icon name="check" size={14} /> Select several
-          </button>
-        )
+            </>
+          )}
+          {shelf === 'expired' && (
+            <button type="button" className="btn btn--sm" disabled={bulkBusy || chosen.length === 0}
+              onClick={() => void applyToPicked('back on sale', (listing) => ({ id: listing.id, edit: { expiresAt: null } }))}>
+              Make available again
+            </button>
+          )}
+          {shelf !== 'available' && (
+            <button type="button" className="btn btn--sm btn--ghost" disabled={bulkBusy || chosen.length === 0}
+              onClick={async () => {
+                if (!await confirmAsk({
+                  title: `Remove ${many(chosen.length)} from your shop?`,
+                  body: 'They leave your shelf for good. Orders already placed keep their own record of what was bought.',
+                  action: 'Remove',
+                })) return;
+                void applyToPicked('removed', (listing) => ({ id: listing.id, remove: true }));
+              }}>
+              Remove
+            </button>
+          )}
+          <button type="button" className="btn btn--sm btn--quiet" disabled={bulkBusy}
+            onClick={() => { setPicked(null); setBulkPct(''); }}>Done</button>
+        </div>
+      ) : (
+        <div className="shelfacts">
+          {shelf !== 'drops' && shelf !== 'drafts' && mine.length > 1 && (
+            <button type="button" className="linkbtn" onClick={() => setPicked(new Set())}>
+              <Icon name="check" size={14} /> Select
+            </button>
+          )}
+          {shelf !== 'drops' && (
+            <button type="button" className="linkbtn" onClick={() => setImporting(true)}>
+              <Icon name="plus" size={14} /> Import a spreadsheet
+            </button>
+          )}
+          {shelf === 'drops' && (
+            <button type="button" className="linkbtn"
+              onClick={() => navigate(dropLocked ? '/pro' : `/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
+              <Icon name="bolt" size={14} /> {dropLocked ? 'Start a live drop (Pro)' : 'Start a live drop'}
+            </button>
+          )}
+        </div>
       )}
 
-      {mode === 'power' ? (
+      {shelf === 'drops' ? (
         <Later><PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} /></Later>
+      ) : shelf === 'drafts' ? (
+        !drafts ? <SkelCards n={2} h={72} /> : shownDrafts.length + unpublished.length === 0 ? (
+          <EmptyState title={query ? 'No draft matches that' : 'No drafts'}>
+            A listing you start and leave is kept here, on every device, until you publish it.
+          </EmptyState>
+        ) : (
+          <div className="draftlist">
+            {shownDrafts.map((draft) => (
+              <div key={draft.id} className="draftrow">
+                <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}&draft=${encodeURIComponent(draft.id)}`} className="draftrow__main">
+                  <Thumb seed={draft.id} label={draft.title || 'Draft'} photo={draft.photoUrl ? { url: draft.photoUrl } : null} className="thumb draftrow__art" />
+                  <span className="draftrow__text">
+                    <b>{draft.title || 'Untitled draft'}</b>
+                    <span className="faint">
+                      {[draft.priceMinor ? formatMoney(draft.priceMinor) : 'No price yet', draft.category, `edited ${timeAgo(draft.updatedAt)}`]
+                        .filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <span className="draftrow__go">Continue</span>
+                </Link>
+                <button type="button" className="iconbtn" aria-label={`Delete draft ${draft.title || 'Untitled draft'}`}
+                  onClick={() => void removeDraft(draft)}>
+                  <Icon name="trash" size={16} />
+                </button>
+              </div>
+            ))}
+            {unpublished.map((listing) => (
+              <div key={listing.id} className="draftrow">
+                <Link to={`/listing/${listing.id}`} className="draftrow__main">
+                  <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb draftrow__art" />
+                  <span className="draftrow__text">
+                    <b>{listing.title}</b>
+                    <span className="faint">{[formatMoney(listing.priceMinor, listing.currency), listing.category, 'not published'].join(' · ')}</span>
+                  </span>
+                  <span className="draftrow__go">Open</span>
+                </Link>
+              </div>
+            ))}
+          </div>
+        )
       ) : !data ? (
         <SkelCards n={3} h={96} chips={1} />
       ) : (
         <>
           {mine.length === 0 && (
-            <EmptyState title={shelf === 'expired' ? 'Nothing expired 🎉' : shelf === 'sold_out' ? 'Nothing sold out' : 'Nothing listed yet'}>
-              {shelf === 'available'
-                ? `Everything you list goes out under ${store.name}. It takes about a minute.`
-                : 'Items land here on their own and can be brought back from here.'}
+            <EmptyState title={query || find ? 'Nothing matches that'
+              : shelf === 'expired' ? 'Nothing expired' : shelf === 'sold_out' ? 'Nothing sold out' : 'Nothing listed yet'}>
+              {query || find
+                ? 'Try another word, or clear the search.'
+                : shelf === 'available'
+                  ? `Everything you list goes out under ${store.name}. It takes about a minute.`
+                  : 'Items land here on their own and can be brought back from here.'}
             </EmptyState>
           )}
           {/* The same collectible card buyers see on the Buy tab, so a shop
@@ -1521,7 +1728,7 @@ function MyItems({ store }: { store: StoreAccess }) {
                   if (next.has(listing.id)) next.delete(listing.id); else next.add(listing.id);
                   return next;
                 })}
-                onOpenLot={(lotId) => navigate(`/shop?tab=lots&lot=${encodeURIComponent(lotId)}`)}
+                onOpenLot={(lotId) => navigate(`${base}?tab=lots&lot=${encodeURIComponent(lotId)}`)}
                 onTag={() => { setNotice(null); setTagging(listing); }} />
             ))}
           </div>
@@ -1535,7 +1742,138 @@ function MyItems({ store }: { store: StoreAccess }) {
         <ListingIntoLot listing={tagging} store={store} onClose={() => setTagging(null)}
           onDone={(said) => { setTagging(null); setNotice(said); load(); }} />
       )}
+      {importing && (
+        <ImportListings store={store} onClose={() => setImporting(false)}
+          onDone={(made) => {
+            setImporting(false);
+            setNotice(`${made === 1 ? '1 draft' : `${made} drafts`} made. Add photos to each and publish.`);
+            setParam({ shelf: 'drafts', find: null });
+            load();
+          }} />
+      )}
     </div>
+  );
+}
+
+/** One line of a spreadsheet, split on commas, with "quoted, fields" kept whole. */
+function csvCells(line: string): string[] {
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i]!;
+    if (quoted) {
+      if (char === '"' && line[i + 1] === '"') { cell += '"'; i += 1; }
+      else if (char === '"') quoted = false;
+      else cell += char;
+    } else if (char === '"') quoted = true;
+    else if (char === ',' || char === '\t') { cells.push(cell.trim()); cell = ''; }
+    else cell += char;
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+
+interface ImportRow { title: string; price: string; category: string; quantity: string; description: string; tags: string }
+
+/** The rows of a pasted or uploaded sheet: a header naming the columns, then one item a line. */
+function readSheet(text: string): { rows: ImportRow[]; problem: string | null } {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) return { rows: [], problem: lines.length === 0 ? null : 'Add at least one item under the header row.' };
+  const head = csvCells(lines[0]!).map((name) => name.toLowerCase());
+  const at = (names: string[]) => head.findIndex((name) => names.includes(name));
+  const cols = {
+    title: at(['title', 'name', 'item']), price: at(['price', 'price (₹)', 'price (inr)', 'mrp']),
+    category: at(['category']), quantity: at(['quantity', 'qty', 'stock']),
+    description: at(['description', 'details']), tags: at(['tags']),
+  };
+  if (cols.title < 0) return { rows: [], problem: 'The first row needs a "title" column.' };
+  const rows = lines.slice(1).map((line) => {
+    const cells = csvCells(line);
+    const pick = (index: number) => (index >= 0 ? cells[index] ?? '' : '');
+    const category = canonicalCategory(pick(cols.category)) ?? '';
+    return {
+      title: pick(cols.title), price: pick(cols.price).replace(/[^\d.]/g, ''), category,
+      quantity: pick(cols.quantity).replace(/\D/g, ''), description: pick(cols.description), tags: pick(cols.tags),
+    };
+  }).filter((row) => row.title);
+  return { rows, problem: rows.length === 0 ? 'No row has a title.' : null };
+}
+
+const IMPORT_MAX = 40;
+const IMPORT_SAMPLE = 'title,price,category,quantity,tags\n"1/7 scale figure, sealed",1450,Figures,3,"resin, sealed"';
+
+/**
+ * Many listings started at once, from a spreadsheet.
+ *
+ * A shop that lists forty of the same kind of thing already has them in a
+ * sheet. Each row becomes a draft - not a live listing - because a listing
+ * needs its photos and its category's own answers, and those are added on the
+ * listing form, one tap from the Drafts shelf.
+ */
+function ImportListings({ store, onClose, onDone }: { store: StoreAccess; onClose: () => void; onDone: (made: number) => void }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { rows, problem } = useMemo(() => readSheet(text), [text]);
+  const taking = rows.slice(0, IMPORT_MAX);
+
+  async function make() {
+    setBusy(true);
+    setError(null);
+    let made = 0;
+    try {
+      for (const row of taking) {
+        await api.saveDraft({
+          title: row.title, price: row.price, description: row.description, tags: row.tags,
+          ...(row.category ? { category: row.category } : {}),
+          ...(row.quantity ? { terms: { quantityMode: 'fixed', quantity: row.quantity } } : {}),
+        }, null, store.ownerId);
+        made += 1;
+      }
+      onDone(made);
+    } catch (err) {
+      setError(`${made} made. ${err instanceof ApiRequestError ? err.message : 'The rest did not save.'}`);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Import a spreadsheet" onClose={onClose}>
+      <div className="stack">
+        <p className="muted">
+          Paste rows from a sheet, or choose a .csv file. The first row names the columns: <b>title</b>, and any of
+          price, category, quantity, description, tags. Each row becomes a draft to add photos to and publish.
+        </p>
+        <textarea rows={7} value={text} placeholder={IMPORT_SAMPLE} aria-label="Spreadsheet rows"
+          onChange={(event) => setText(event.target.value)} />
+        <input type="file" accept=".csv,text/csv,text/plain" aria-label="Choose a CSV file"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void file.text().then(setText);
+          }} />
+        {problem && <p className="field__hint" role="status">{problem}</p>}
+        {taking.length > 0 && (
+          <div className="importlist" aria-label="What will be made">
+            {taking.slice(0, 5).map((row, index) => (
+              <span key={index} className="importlist__row">
+                <b>{row.title}</b>
+                <span className="faint">{[row.price ? `₹${row.price}` : null, row.category, row.quantity ? `${row.quantity} in stock` : null].filter(Boolean).join(' · ')}</span>
+              </span>
+            ))}
+            {taking.length > 5 && <span className="faint">and {taking.length - 5} more</span>}
+            {rows.length > IMPORT_MAX && <span className="field__hint">Only the first {IMPORT_MAX} rows are taken at a time.</span>}
+          </div>
+        )}
+        {error && <ErrorNotice message={error} />}
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <button type="button" className="btn btn--quiet" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className="btn" disabled={busy || taking.length === 0} onClick={() => void make()}>
+            {busy ? 'Making drafts…' : taking.length ? `Make ${taking.length === 1 ? '1 draft' : `${taking.length} drafts`}` : 'Make drafts'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1587,7 +1925,10 @@ function ShelfCard({ listing, onEdit, onOpenLot, onTag, picked, onPick }: {
           <b className={sourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[sourcing]}</b>
           {' · '}{listing.category}
         </span>
-        <StockChip listing={listing} />
+        <span className="shelf__chips">
+          <StockChip listing={listing} />
+          {isLowStock(listing) && !expired && <span className="lowchip">Low stock</span>}
+        </span>
         <ExpiryChip listing={listing} />
 
         {view && (
@@ -1626,7 +1967,7 @@ function ShelfCard({ listing, onEdit, onOpenLot, onTag, picked, onPick }: {
 }
 
 /** What a seller can be looking for on this screen. */
-type OrderFilter = 'all' | 'answer' | 'nolot';
+type OrderFilter = 'all' | 'answer' | 'nolot' | 'unpaid' | 'moving';
 
 /** Done, either because the buyer confirmed it or because the seller ticked
  *  it delivered on the lot's own item list - either one is the same fact. */
@@ -1677,6 +2018,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   /** Where "check the items in" goes when this is drawn inside the lot. */
   onTracking?: () => void;
 }) {
+  const base = useShopBase();
   const [data, setData] = useState<SalesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<SaleRow | null>(null);
@@ -1694,7 +2036,9 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const filter = (['all', 'answer', 'nolot'] as const).find((entry) => entry === params.get('show')) ?? 'all';
+  const filter = (['all', 'answer', 'nolot', 'unpaid', 'moving'] as const).find((entry) => entry === params.get('show')) ?? 'all';
+  /** Typed into the search box: a buyer, an item, or an order's number. */
+  const query = lotId ? '' : params.get('q') ?? '';
   /** Delivered is done, called off is closed; everything else is still being worked. */
   const statusFilter: OrderState = (['completed', 'closed'] as const)
     .find((entry) => entry === params.get('state')) ?? 'active';
@@ -1863,20 +2207,38 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       body: `Each buyer is told their order is accepted, the same as pressing Accept on each one.`,
       action: `Accept all ${rows.length}`,
     })) return;
+    await answerMany(rows, 'accept', 'accepted');
+  }
+
+  /* Several claimed payments confirmed at once - for the seller who has just
+     been through their bank statement and found every one of them there. */
+  async function receivedAll(rows: SaleRow[]) {
+    if (rows.length === 0) return;
+    if (!await confirmAsk({
+      title: `Confirm ${rows.length} payments arrived?`,
+      body: `${formatTotals(rows.map((row) => ({ amountMinor: row.claim?.amountMinor ?? 0, currency: row.currency })))} in all. Check each one is in your account first: a buyer is told their payment was received, and that cannot be quietly taken back.`,
+      action: `Confirm all ${rows.length}`,
+    })) return;
+    await answerMany(rows, 'received', 'payments confirmed');
+  }
+
+  /* One request for the lot of them; one refused (sold out since, cancelled
+     by the buyer) is named and the rest still go through. */
+  async function answerMany(rows: SaleRow[], action: 'accept' | 'received', done: string) {
     setBusy(rows[0]!.id);
     setError(null);
-    const refused: string[] = [];
-    for (const row of rows) {
-      try {
-        await api.acceptOrder(row.id);
-      } catch (err) {
-        refused.push(`${row.itemName}: ${err instanceof ApiRequestError ? err.message : 'not accepted'}`);
-      }
+    setNotice(null);
+    try {
+      const answer = await api.answerOrders(rows.map((row) => row.id), action);
+      const refused = answer.results.filter((entry) => !entry.ok)
+        .map((entry) => `${rows.find((row) => row.id === entry.id)?.itemName ?? 'One order'}: ${entry.message ?? 'not done'}`);
+      if (refused.length > 0) setError(`${answer.done} ${done}. ${refused.join(' ')}`);
+      else setNotice(`${answer.done} ${done}.`);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
     }
     await load();
     setBusy(null);
-    if (refused.length > 0) setError(`${rows.length - refused.length} accepted. ${refused.join(' ')}`);
-    else setNotice(`${rows.length} orders accepted.`);
   }
 
   /* Confirming that a claimed payment arrived is the same one-tap shape as
@@ -1902,7 +2264,12 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   const needsAnswer = new Set([...data.waiting, ...data.placed].map((row) => row.id));
   /* Inside a lot, the book is that lot's orders and nothing else. */
   const book = lotId ? data.orders.filter((row) => row.lotId === lotId) : data.orders;
-  const scoped = book.filter((row) => stateOf(row) === statusFilter);
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const found = (row: SaleRow) => words.every((word) =>
+    `${row.itemName} ${row.buyer.name} ${row.buyer.handle ?? ''} ${row.id}`.toLowerCase().includes(word));
+  const scoped = book.filter((row) => stateOf(row) === statusFilter && found(row));
+  const unpaid = scoped.filter((row) => row.paymentStatus === 'unpaid' || row.paymentStatus === 'partially_paid');
+  const moving = scoped.filter((row) => row.status === 'shipped' || Boolean(row.dispatchedAt));
   /* The "All / To answer / No lot" split only means anything for active
      orders - a completed or cancelled one needs nothing answered and rides
      no lot search. */
@@ -1911,10 +2278,10 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
   /* "No lot" means nothing inside a lot, where every order has one. */
   /* Inside a lot "To answer" only shows while something needs answering, so
      with nothing left to answer the list falls back to everything. */
-  const chip = lotId && (filter === 'nolot' || (filter === 'answer' && toAnswer.length === 0)) ? 'all' : filter;
+  const chip = lotId && (filter !== 'answer' || toAnswer.length === 0) ? 'all' : filter;
   const shown = statusFilter !== 'active' || chip === 'all'
     ? scoped
-    : chip === 'answer' ? toAnswer : withoutLot;
+    : chip === 'answer' ? toAnswer : chip === 'unpaid' ? unpaid : chip === 'moving' ? moving : withoutLot;
   const countOfState = (state: OrderState) => book.filter((row) => stateOf(row) === state).length;
   /* One customer at a time, inside a lot: a parcel goes to a person, not to a
      line item, so that is how a lot is worked. */
@@ -1941,7 +2308,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
       })}
       onLotTracking={() => (onTracking
         ? onTracking()
-        : navigate(`/shop?tab=lots&lot=${encodeURIComponent(row.lotId ?? '')}&view=tracking`))}
+        : navigate(`${base}?tab=lots&lot=${encodeURIComponent(row.lotId ?? '')}&view=tracking`))}
       onFile={() => setFiling(row)}
       onReject={() => setRejecting(row)}
       onAccept={() => void accept(row)}
@@ -2018,10 +2385,25 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
           { id: 'all', label: ORDER_STATE_LABELS.active, count: activeCount },
           { id: 'answer', label: 'To answer', count: answerCount, hot: answerCount > 0 },
           { id: 'nolot', label: 'No lot', count: nolotCount },
+          // Reached from the figures above the tab; on the row only while open.
+          { id: 'unpaid', label: 'Not paid' },
+          { id: 'moving', label: 'On the way' },
           { id: 'completed', label: ORDER_STATE_LABELS.completed, count: countOfState('completed') },
           { id: 'closed', label: ORDER_STATE_LABELS.closed, count: countOfState('closed') },
         ];
         return (
+          <>
+          <div className="findbar">
+            <label className="findbar__search">
+              <Icon name="search" size={16} />
+              <input type="search" value={query} placeholder="Search by buyer, item or order number"
+                aria-label="Search orders" onChange={(event) => setParams((current) => {
+                  const copy = new URLSearchParams(current);
+                  if (event.target.value) copy.set('q', event.target.value); else copy.delete('q');
+                  return copy;
+                }, { replace: true })} />
+            </label>
+          </div>
           <div className="segwrap">
             <SegTabs label="Which orders" value={view}
               onChange={(next) => setParams((current) => {
@@ -2032,18 +2414,33 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
               }, { replace: true })}
               tabs={tabs.filter((tab) => tab.id === 'all' || tab.id === view || (tab.count ?? 0) > 0)} />
           </div>
+          </>
         );
       })()}
 
       {statusFilter === 'active' && chip === 'answer' && (() => {
         const acceptable = shown.filter((row) => row.canAccept);
-        return acceptable.length > 1 ? (
+        const claimed = shown.filter((row) => !row.canAccept && row.paymentStatus === 'claimed' && row.claim);
+        return acceptable.length > 1 || claimed.length > 1 ? (
           <div className="bulkbar" role="group" aria-label="Answer several orders">
-            <span><b>{acceptable.length}</b> orders waiting for your yes</span>
-            <button type="button" className="btn btn--sm" disabled={busy !== null}
-              onClick={() => void acceptAll(acceptable)}>
-              <Icon name="check" size={14} /> Accept all {acceptable.length}
-            </button>
+            {acceptable.length > 1 && (
+              <>
+                <span><b>{acceptable.length}</b> waiting for your yes</span>
+                <button type="button" className="btn btn--sm" disabled={busy !== null}
+                  onClick={() => void acceptAll(acceptable)}>
+                  <Icon name="check" size={14} /> Accept all {acceptable.length}
+                </button>
+              </>
+            )}
+            {claimed.length > 1 && (
+              <>
+                <span><b>{claimed.length}</b> payments to confirm</span>
+                <button type="button" className="btn btn--sm btn--ghost" disabled={busy !== null}
+                  onClick={() => void receivedAll(claimed)}>
+                  <Icon name="check" size={14} /> All received
+                </button>
+              </>
+            )}
           </div>
         ) : null;
       })()}
@@ -2059,18 +2456,23 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
               ? 'Nothing delivered yet'
               : statusFilter === 'closed'
                 ? 'Nothing cancelled or turned down'
+                : words.length > 0 ? 'No order matches that'
                 : chip === 'answer'
                   ? 'All caught up!'
-                  : chip === 'nolot' ? 'Every order is in a lot' : 'No active orders right now'}
+                  : chip === 'nolot' ? 'Every order is in a lot'
+                    : chip === 'unpaid' ? 'Nothing waiting to be paid' : chip === 'moving' ? 'Nothing on the way' : 'No active orders right now'}
           </b>
           <span className="faint">
             {statusFilter === 'completed'
               ? 'Orders land here once they reach the customer.'
               : statusFilter === 'closed'
                 ? 'Good news — every order is still going.'
+                : words.length > 0 ? 'Try a buyer’s name, an item, or part of the order number.'
                 : chip === 'answer'
                   ? 'Nothing is waiting on you.'
-                  : chip === 'nolot' ? 'Nothing is waiting to be filed.' : 'New orders show up here the moment someone buys.'}
+                  : chip === 'nolot' ? 'Nothing is waiting to be filed.'
+                    : chip === 'unpaid' ? 'Every active order is paid for.' : chip === 'moving' ? 'Dispatched orders show here until they are delivered.'
+                      : 'New orders show up here the moment someone buys.'}
           </span>
         </div>
       ) : customers ? (
@@ -2083,7 +2485,7 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
             </span>
           )}
           {customers.map((customer) => (
-            <CustomerOrders key={customer.key} customer={customer}
+            <CustomerOrders key={customer.key} customer={customer} shopName={store.name}
               open={isOpen(customer)} needsAnswer={needsAnswer}
               busy={busy !== null} working={customer.rows.some((row) => row.id === busy)}
               onReady={(ids, on) => void markReady(customer.rows.filter((row) => ids.includes(row.id)), on)}
@@ -2299,8 +2701,10 @@ function readyable(rows: readonly SaleRow[]): SaleRow[] {
     && !(row.bookingOnly && !row.accepted));
 }
 
-function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working = false, onReady, children }: {
+function CustomerOrders({ customer, shopName, open, needsAnswer, onToggle, busy, working = false, onReady, children }: {
   customer: CustomerGroup;
+  /** Printed at the top of the customer's packing slip. */
+  shopName: string;
   open: boolean;
   needsAnswer: ReadonlySet<string>;
   onToggle: (open: boolean) => void;
@@ -2353,6 +2757,11 @@ function CustomerOrders({ customer, open, needsAnswer, onToggle, busy, working =
           <span className={`badge badge--${tone === 'quiet' ? 'accent' : tone}`}>
             {pending <= 0 ? payWord : `${formatTotals(sum((row) => row.outstandingMinor), currency)} due`}
           </span>
+          {open && live.length > 0 && (
+            <button type="button" className="linkbtn ocust__slip" onClick={() => printPackingSlip(shopName, buyer.name, live)}>
+              Packing slip
+            </button>
+          )}
         </div>
         {open && live.length > 0 && (
           <div className="ocust__bar" role="progressbar" aria-label="Paid so far" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100}>
@@ -2649,11 +3058,11 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
 
   const load = useCallback(async () => {
     try {
-      setTemplates((await api.templates()).templates);
+      setTemplates((await api.templates(store.ownerId)).templates);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not load your quick fills.');
     }
-  }, []);
+  }, [store.ownerId]);
 
   useEffect(() => {
     void load();
@@ -2664,7 +3073,7 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
     setBusy(template.id);
     setError(null);
     try {
-      await api.deleteTemplate(template.id);
+      await api.deleteTemplate(template.id, store.ownerId);
       await load();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not delete.');
@@ -2809,7 +3218,7 @@ function TemplateForm({ store, template, onCancel, onSaved }: {
         defaultLotId: sourcing === 'import' && defaultLotId ? defaultLotId : null,
         // One buyer taking several is a live drop's question; kept as it was.
         terms: { ...termsToTemplate(terms), allowMultiple: template?.terms?.allowMultiple ?? false },
-      });
+      }, store.ownerId);
       onSaved();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
@@ -2962,9 +3371,10 @@ function OrderRow({
   onSettleReceived: () => void;
   onSettleDenied: () => void;
 }) {
+  const base = useShopBase();
   const awaitingClaim = Boolean(row.claim && row.claim.decision === null);
   /* The lot's own page, the same place its Lot button on the route line opens. */
-  const lotHref = row.lotId ? `/shop?tab=lots&lot=${encodeURIComponent(row.lotId)}` : null;
+  const lotHref = row.lotId ? `${base}?tab=lots&lot=${encodeURIComponent(row.lotId)}` : null;
   /* Something to press: not called off, and not a booking still waiting to be taken on. */
   const working = !isClosed(row) && !(row.bookingOnly && !row.accepted);
   const { tone, label } = orderTone(row, needsAnswer);
@@ -3859,6 +4269,7 @@ function ListingIntoLot({ listing, store, onClose, onDone }: {
   onClose: () => void;
   onDone: (said: string) => void;
 }) {
+  const base = useShopBase();
   const [lots, setLots] = useState<LotSummary[] | null>(null);
   const [lotId, setLotId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -3906,7 +4317,7 @@ function ListingIntoLot({ listing, store, onClose, onDone }: {
           <SkelRows n={2} />
         ) : lots.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
-            No lots open yet. <Link to="/shop?tab=lots&spotlight=new" onClick={onClose}>Create one</Link> first.
+            No lots open yet. <Link to={`${base}?tab=lots&spotlight=new`} onClick={onClose}>Create one</Link> first.
           </p>
         ) : (
           <fieldset className="pickset">
@@ -3949,6 +4360,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
   /** Handed what to tell the seller, now the order has left this list. */
   onDone: (said: string) => void;
 }) {
+  const base = useShopBase();
   const navigate = useNavigate();
   const [lots, setLots] = useState<LotSummary[] | null>(null);
   const [lotId, setLotId] = useState('');
@@ -3974,7 +4386,7 @@ function FileIntoLot({ row, store, onClose, onDone }: {
      lot and then having to find the order again. */
   function goCreateLot() {
     onClose();
-    navigate(`/shop?tab=lots&spotlight=new&file=${encodeURIComponent(row.id)}`);
+    navigate(`${base}?tab=lots&spotlight=new&file=${encodeURIComponent(row.id)}`);
   }
 
   const picked = lots?.find((entry) => entry.lot.id === lotId)?.lot ?? null;
@@ -4088,6 +4500,7 @@ function RejectOrder({ row, onClose, onDone }: {
     setError(null);
     try {
       await api.rejectOrder(row.id, reason.trim());
+      rememberReply('reject', reason);
       onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not turn that down.');
@@ -4106,6 +4519,7 @@ function RejectOrder({ row, onClose, onDone }: {
           <span>Why</span>
           <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3}
             placeholder="Sold the last one this morning — sorry. Happy to put you first on the next run." />
+          <SavedReplies kind="reject" onPick={setReason} />
           <span className="field__hint">
             They see this word for word. If they have already sent money, say what happens to it.
           </span>
@@ -4172,6 +4586,84 @@ function DenyClaimRow({ row, onClose, onDone }: {
   );
 }
 
+/* ── Saved replies ─────────────────────────────────────────────────────── */
+
+type ReplyKind = 'reject' | 'cancel';
+const REPLY_KEY = (kind: ReplyKind) => `figmark.sell.replies.${kind}`;
+const REPLY_STARTERS: Record<ReplyKind, string[]> = {
+  reject: ['Sold the last one before your order came in — sorry.', 'I can no longer source this item.', 'I cannot ship to your address.'],
+  cancel: ['Out of stock from my supplier.', 'Cancelled at the buyer’s request.', 'Payment was not received in time.'],
+};
+
+/** The reasons this seller has given before, newest first, then the starters. */
+function savedReplies(kind: ReplyKind): string[] {
+  let own: string[] = [];
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(REPLY_KEY(kind)) ?? '[]') as unknown;
+    if (Array.isArray(raw)) own = raw.filter((entry): entry is string => typeof entry === 'string');
+  } catch {
+    /* A private window: the starters alone. */
+  }
+  return [...new Set([...own, ...REPLY_STARTERS[kind]])].slice(0, 5);
+}
+
+/** Keep a reason just given, so the next order like it is one tap. */
+function rememberReply(kind: ReplyKind, reason: string): void {
+  const text = reason.trim();
+  if (text.length < 4 || text.length > 200) return;
+  try {
+    const kept = savedReplies(kind).filter((entry) => entry !== text && !REPLY_STARTERS[kind].includes(entry));
+    window.localStorage.setItem(REPLY_KEY(kind), JSON.stringify([text, ...kept].slice(0, 4)));
+  } catch {
+    /* Nothing kept. */
+  }
+}
+
+/**
+ * Reasons to tap rather than retype.
+ *
+ * Turning an order down is usually one of the same three sentences. What was
+ * said before is offered under the box; a tap fills it in, still editable.
+ */
+function SavedReplies({ kind, onPick }: { kind: ReplyKind; onPick: (text: string) => void }) {
+  const [replies] = useState(() => savedReplies(kind));
+  return (
+    <span className="sayagain" role="group" aria-label="Saved replies">
+      {replies.map((text) => (
+        <button key={text} type="button" className="sayagain__one" onClick={() => onPick(text)}>{text}</button>
+      ))}
+    </span>
+  );
+}
+
+/* ── Packing slip ──────────────────────────────────────────────────────── */
+
+const slipText = (value: string) => value.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!);
+
+/**
+ * One customer's parcel on a sheet of paper: who it is for and what goes in
+ * the box, with a tick box per line for whoever packs it. No price, because a
+ * slip travels inside a parcel that may be a gift.
+ */
+function printPackingSlip(shop: string, buyer: string, rows: readonly SaleRow[]): void {
+  const sheet = window.open('', '_blank', 'width=640,height=800');
+  if (!sheet) return;
+  const lines = rows.map((row) => `<tr><td class="tick"></td><td>${slipText(row.itemName)}</td><td class="qty">× ${row.quantity}</td><td class="id">${slipText(row.id.slice(-8).toUpperCase())}</td></tr>`).join('');
+  const units = rows.reduce((sum, row) => sum + row.quantity, 0);
+  sheet.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Packing slip - ${slipText(buyer)}</title><style>
+    body{font:14px/1.5 system-ui,sans-serif;color:#111;margin:32px}
+    h1{font-size:20px;margin:0 0 2px} p{margin:0;color:#555}
+    table{width:100%;border-collapse:collapse;margin-top:20px} td{padding:9px 6px;border-bottom:1px solid #ddd;vertical-align:top}
+    .tick{width:18px}.tick::before{content:"";display:block;width:14px;height:14px;border:1.5px solid #111;border-radius:3px;margin-top:3px}
+    .qty{white-space:nowrap;text-align:right;font-weight:600}.id{white-space:nowrap;text-align:right;color:#777;font-size:12px}
+    footer{margin-top:20px;color:#555}
+  </style></head><body><h1>${slipText(buyer)}</h1><p>Packing slip · ${slipText(shop)} · ${new Date().toLocaleDateString()}</p>
+  <table>${lines}</table><footer>${rows.length} ${rows.length === 1 ? 'line' : 'lines'} · ${units} ${units === 1 ? 'piece' : 'pieces'}</footer></body></html>`);
+  sheet.document.close();
+  sheet.focus();
+  sheet.print();
+}
+
 /**
  * Calling off an order already accepted or placed.
  *
@@ -4200,6 +4692,7 @@ function CancelOrderRow({ row, onClose, onDone }: {
     setError(null);
     try {
       await api.cancelOrder(row.id, { reason: reason.trim(), message: message.trim() || undefined, restock: restock === true });
+      rememberReply('cancel', reason);
       onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not cancel that.');
@@ -4218,6 +4711,7 @@ function CancelOrderRow({ row, onClose, onDone }: {
           <span>Why</span>
           <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3}
             placeholder="Out of stock, buyer requested it…" />
+          <SavedReplies kind="cancel" onPick={setReason} />
         </label>
         <label className="field">
           <span>Message to the buyer</span>
@@ -4255,6 +4749,7 @@ function Unlotted({ store, onBack }: {
   store: StoreAccess;
   onBack: () => void;
 }) {
+  const base = useShopBase();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<SaleRow[] | null>(null);
   const [listings, setListings] = useState<Listing[] | null>(null);
@@ -4309,7 +4804,7 @@ function Unlotted({ store, onBack }: {
                 {orders.map((row) => (
                   <WaitingOrderCard key={row.id} row={row}
                     onFile={() => { setNotice(null); setFiling(row); }}
-                    onOpen={() => navigate('/shop?tab=payments&show=nolot', { state: { focusOrder: row.id } })} />
+                    onOpen={() => navigate(`${base}?tab=payments&show=nolot`, { state: { focusOrder: row.id } })} />
                 ))}
               </div>
             )}
@@ -4323,7 +4818,7 @@ function Unlotted({ store, onBack }: {
               <div className="grid qgrid">
                 {listings.map((listing) => (
                   <ShelfCard key={listing.id} listing={listing} onEdit={() => setEditing(listing)}
-                    onOpenLot={(lotId) => navigate(`/shop?tab=lots&lot=${encodeURIComponent(lotId)}`)}
+                    onOpenLot={(lotId) => navigate(`${base}?tab=lots&lot=${encodeURIComponent(lotId)}`)}
                     onTag={() => { setNotice(null); setTagging(listing); }} />
                 ))}
               </div>
@@ -4581,6 +5076,7 @@ function ShipTogether({ store, orders, listings, onClose, onDone }: {
  * seller and the thing they were already looking at.
  */
 function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNew?: boolean }) {
+  const base = useShopBase();
   const [data, setData] = useState<LotsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -4607,7 +5103,7 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
     }
     try {
       await api.assignOrderToLot(fileOrder, { lotId: lot.id });
-      navigate('/shop?tab=payments', { replace: true, state: { focusOrder: fileOrder } });
+      navigate(`${base}?tab=payments`, { replace: true, state: { focusOrder: fileOrder } });
     } catch (err) {
       dropFileOrder();
       // Read first: a reload clears the error, and this one has to stay up.
@@ -4862,120 +5358,38 @@ function LotCard({ summary, onOpen }: {
 /* ── Analytics ──────────────────────────────────────────────────────────── */
 
 /** The numbers worth checking, and nothing that cannot be acted on. */
-function Analytics({ store }: { store: StoreAccess }) {
-  const [data, setData] = useState<DashboardResponse | null>(null);
+/**
+ * The shop's money: what is held and released, what is in flight, and the
+ * orders report with its export.
+ *
+ * The all-time revenue, thirty-day bars and best sellers that used to lead
+ * this screen are gone: they were a second, older copy of the figures above
+ * the tab and of Overview, read from an endpoint that only ever answered for
+ * the caller's own shop - so somebody helping run a shop saw their own
+ * numbers under its name.
+ */
+function MoneySection({ store }: { store: StoreAccess }) {
+  const shop = store.isOwner ? undefined : store.ownerId;
   const [pro, setPro] = useState<InsightsResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [proError, setProError] = useState<string | null>(null);
-  /** The day tapped on the chart - touch has no hover to show it on. */
-  const [picked, setPicked] = useState<string | null>(null);
 
-  useEffect(() => {
-    void api
-      .dashboard()
-      .then(setData)
-      .catch((err: unknown) =>
-        setError(err instanceof ApiRequestError ? err.message : 'Could not load your analytics.'),
-      );
-  }, []);
-
-  // A second request rather than a bigger first one: the shop figures come
-  // from listings and the consignment figures from the packing board, and one
-  // of them failing is no reason to show neither.
   useEffect(() => {
     setPro(null);
     setProError(null);
     void api
-      .insights(store.isOwner ? undefined : store.ownerId)
+      .insights(shop)
       .then(setPro)
       .catch((err: unknown) =>
-        setProError(
-          err instanceof ApiRequestError ? err.message : 'Could not load what is in flight.',
-        ),
-      );
-  }, [store.ownerId, store.isOwner]);
-
-  if (error) return <ErrorNotice message={error} />;
-  if (!data) return <div className="stack"><SkelTiles n={4} cols={2} /><SkelBlock h={180} /></div>;
-
-  const { analytics } = data;
-  const peak = Math.max(1, ...analytics.daily.map((day) => day.revenueMinor));
-  const dayLabel = (day: (typeof analytics.daily)[number]) =>
-    `${formatDateOrdinal(day.date)}: ${formatMoney(day.revenueMinor)} from ${day.orders} order${day.orders === 1 ? '' : 's'}`;
-  const pickedDay = analytics.daily.find((day) => day.date === picked) ?? null;
+        setProError(err instanceof ApiRequestError ? err.message : 'Could not load what is in flight.'));
+  }, [shop]);
 
   return (
     <div className="stack">
-      <div className="stats">
-        <Stat label="Revenue" value={formatMoney(analytics.revenueMinor)} note="All orders, excluding cancelled" />
-        <Stat label="Units sold" value={String(analytics.unitsSold)} note={`${analytics.orderCount} orders`} />
-        <Stat label="Views" value={String(analytics.views)} note={`${analytics.saves} saves`} />
-        <Stat
-          label="Conversion"
-          value={`${(analytics.conversion * 100).toFixed(1)}%`}
-          note="Units sold per view"
-        />
-      </div>
-
-      <div className="card card--pad stack">
-        <div>
-          <h2>Last 30 days</h2>
-          <span className="field__hint">Revenue per day. Tap a bar for that day.</span>
-        </div>
-        <div className="spark">
-          {analytics.daily.map((day) => (
-            <span
-              key={day.date}
-              role="button"
-              tabIndex={0}
-              aria-pressed={picked === day.date}
-              aria-label={dayLabel(day)}
-              className={`spark__bar${day.revenueMinor === 0 ? ' spark__bar--empty' : ''}`}
-              style={{
-                height: `${Math.max(4, (day.revenueMinor / peak) * 100)}%`,
-                cursor: 'pointer',
-                outline: picked === day.date ? '2px solid currentColor' : undefined,
-              }}
-              title={dayLabel(day)}
-              onClick={() => setPicked((current) => (current === day.date ? null : day.date))}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  setPicked((current) => (current === day.date ? null : day.date));
-                }
-              }}
-            />
-          ))}
-        </div>
-        <span className="field__hint" aria-live="polite">
-          {pickedDay ? dayLabel(pickedDay) : 'Nothing picked.'}
-        </span>
-      </div>
-
-      <div className="card card--pad stack">
-        <h2>Best performing</h2>
-        {analytics.topListings.length === 0 ? (
-          <p className="muted">Nothing listed yet.</p>
-        ) : (
-          analytics.topListings.map((listing) => (
-            <Link key={listing.id} to={`/listing/${listing.id}`} className="channel">
-              <div className="channel__body">
-                <div className="channel__top">
-                  <span className="channel__name">{listing.title}</span>
-                  <span className="badge">{listing.unitsSold} sold</span>
-                </div>
-                <span className="channel__last">
-                  {listing.viewCount} views · {listing.likeCount} saves
-                </span>
-              </div>
-            </Link>
-          ))
-        )}
-      </div>
-
+      {store.permissions.includes('admin') && <PayoutsPanel storeId={shop} />}
       {proError && <p className="faint">{proError}</p>}
       {pro && <RunningShop data={pro} />}
-      <SalesPanel shop={store.isOwner ? undefined : store.ownerId} />
+      <SalesPanel shop={shop} />
+      <MoneyProBlock store={store} />
     </div>
   );
 }

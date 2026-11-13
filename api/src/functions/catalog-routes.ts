@@ -1567,9 +1567,22 @@ async function myListings(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
+  /* `?store=` is a shop the caller helps run. It used to be ignored: the
+     answer was always the caller's own items, so a manager's Listings screen
+     filtered somebody else's shop out of their own shelf and showed nothing. */
+  const storeId = request.query.get('store');
+  let sellerId = user.id;
+  if (storeId && storeId !== user.id) {
+    const owner = await repository.getUserById(storeId);
+    if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+    if (!can(owner, user.id, 'listings')) {
+      return error(403, 'forbidden', 'You cannot see that store\u2019s items.');
+    }
+    sellerId = owner.id;
+  }
   // The same shelf as `/me/activity`: sold out and expired included, withdrawn
   // and scheduled-sale items not.
-  const listings = (await repository.listListings({ sellerId: user.id, includeHidden: true, limit: 10_000 }))
+  const listings = (await repository.listListings({ sellerId, includeHidden: true, limit: 10_000 }))
     .filter((row) => row.status !== 'archived' && !row.unlisted);
   return json(200, { listings });
 }

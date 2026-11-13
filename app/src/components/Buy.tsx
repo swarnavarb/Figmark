@@ -299,8 +299,10 @@ export function termsBody(draft: TermsDraft) {
  * date is its expiry, so both questions step aside rather than being asked
  * twice.
  */
-export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor, forTemplate = false, withEta = true }: {
+export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor, forTemplate = false, withEta = true, withStock = true }: {
   value: TermsDraft;
+  /** Ask how many there are here; off where the form asks it beside the price. */
+  withStock?: boolean;
   /** Ask the delivery time here too; off where the form asks it on its own, outside a fold. */
   withEta?: boolean;
   onChange: (next: TermsDraft) => void;
@@ -326,8 +328,8 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
     <>
       {withEta && <EtaFields value={value} onChange={onChange} optional={forTemplate} />}
 
-      <LBox icon="📦" title="Stock & payment">
-        {!preOrder && !forTemplate && (
+      <LBox icon={withStock ? '📦' : '💳'} title={withStock ? 'Stock & payment' : 'Payment'}>
+        {!preOrder && !forTemplate && withStock && (
           <>
             <OptionTiles label="Quantity" value={value.quantityMode} onChange={(quantityMode) => set({ quantityMode })}
               options={[

@@ -3,7 +3,7 @@ import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../share
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isPlaced } from '../../../shared/orders.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
-import type { PostTemplate } from '../../../shared/templates.js';
+import type { ListingDraft, PostTemplate } from '../../../shared/templates.js';
 import { createHash } from 'node:crypto';
 import { CosmosClient, type Container, type ContainerRequest, type Database, type IndexingPolicy } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
@@ -537,7 +537,8 @@ export class CosmosRepository implements Repository {
     const { resources } = await this.container('postTemplates')
       .items.query<PostTemplate>(
         {
-          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId ORDER BY c.name ASC',
+          // Drafts share the container; a template is whatever is not one.
+          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId AND NOT IS_DEFINED(c.docType) ORDER BY c.name ASC',
           parameters: [{ name: '@sellerId', value: sellerId }],
         },
         { partitionKey: sellerId },
@@ -551,9 +552,49 @@ export class CosmosRepository implements Repository {
       const { resource } = await this.container('postTemplates')
         .item(templateId, sellerId)
         .read<PostTemplate>();
-      return resource ?? null;
+      return resource && !(resource as { docType?: string }).docType ? resource : null;
     } catch {
       return null;
+    }
+  }
+
+  /* Listing drafts live beside the Quick Fill templates - same shop, same
+     partition, the same kind of thing (a form half filled in) - told apart by
+     `docType`, so no new container has to exist before this can deploy. */
+  async listListingDrafts(sellerId: string): Promise<ListingDraft[]> {
+    const { resources } = await this.container('postTemplates')
+      .items.query<ListingDraft>(
+        {
+          query: "SELECT * FROM c WHERE c.sellerId = @sellerId AND c.docType = 'listingDraft'",
+          parameters: [{ name: '@sellerId', value: sellerId }],
+        },
+        { partitionKey: sellerId },
+      )
+      .fetchAll();
+    // Sorted here: a shop keeps a few dozen at most, and no index is asked for.
+    return resources.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getListingDraft(sellerId: string, draftId: string): Promise<ListingDraft | null> {
+    try {
+      const { resource } = await this.container('postTemplates').item(draftId, sellerId).read<ListingDraft>();
+      return resource && resource.docType === 'listingDraft' ? resource : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveListingDraft(draft: ListingDraft): Promise<ListingDraft> {
+    const { resource } = await this.container('postTemplates').items.upsert<ListingDraft>(draft);
+    return resource ?? draft;
+  }
+
+  async deleteListingDraft(sellerId: string, draftId: string): Promise<boolean> {
+    try {
+      await this.container('postTemplates').item(draftId, sellerId).delete();
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -575,7 +616,8 @@ export class CosmosRepository implements Repository {
     const { resources } = await this.container('routes')
       .items.query<TrackingRoute>(
         {
-          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId ORDER BY c.name ASC',
+          // Drafts share the container; a template is whatever is not one.
+          query: 'SELECT * FROM c WHERE c.sellerId = @sellerId AND NOT IS_DEFINED(c.docType) ORDER BY c.name ASC',
           parameters: [{ name: '@sellerId', value: sellerId }],
         },
         { partitionKey: sellerId },
