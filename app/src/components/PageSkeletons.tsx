@@ -381,14 +381,23 @@ export function SkelGrid({ n = 4 }: { n?: number }) {
 /* ── The pages ─────────────────────────────────────────────────────────── */
 
 const SHAPES = {
+  /* The Buy tab, top to bottom as FeedPage draws it: the loot of the day, the
+     Drops stage, the square category badges, how it is sold, the filter
+     pickers, then the catalogue under its heading. Its own spacing lives in
+     styles.css (.psk-feed), since FeedPage.css only arrives with the page. */
   feed: () => (
-    <main className="page psk" style={{ paddingTop: 0 }}>
-      <span className="psk-row psk-row--between"><S w={150} h={36} r={999} /><S w={100} h={36} r={12} /></span>
-      <S h={112} r={16} />
-      <span className="psk-row psk-scroll">{Array.from({ length: 5 }, (_, i) => <span key={i} className="psk-cat"><S w={60} h={60} r="50%" /><S w={46} h={9} /></span>)}</span>
-      <span className="psk-row"><S w={228} h={40} r={999} /></span>
-      <span className="psk-row psk-scroll"><S w={96} h={34} r={999} /><S w={96} h={34} r={999} /><S w={120} h={34} r={999} /></span>
-      <S w={84} h={16} />
+    <main className="page psk psk-feed">
+      <div className="psk-feed__daily">
+        <S className="psk-feed__flip" w={86} h={118} r={12} />
+        <span className="psk-lines" style={{ flex: 1, maxWidth: 420 }}><S w="62%" h={10} /><S w="78%" h={18} /><S w="54%" h={10} /><S w={112} h={34} r={10} /></span>
+      </div>
+      <S className="psk-feed__stage" h={265} r={22} />
+      <span className="psk-row psk-scroll psk-feed__zones">
+        {Array.from({ length: 8 }, (_, i) => <span key={i} className="psk-feed__zone"><S w={58} h={58} r={18} /><S w={50} h={9} /></span>)}
+      </span>
+      <S className="psk-feed__kinds" w={340} h={44} r={14} />
+      <span className="psk-row psk-scroll psk-feed__filters"><S w={110} h={34} r={999} /><S w={112} h={34} r={999} /><S w={138} h={34} r={999} /><S w={150} h={34} r={999} /><S w={112} h={34} r={999} /></span>
+      <span className="psk-row psk-row--between psk-feed__head"><h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>All loot</h2><S w={54} h={10} /></span>
       <Grid n={4} />
     </main>
   ),
