@@ -2865,6 +2865,18 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 .psk-faces { display: inline-flex; }
 .psk-faces > * + * { margin-left: -8px; box-shadow: 0 0 0 2px var(--surface); }
 .psk-learn { display: flex; gap: var(--s3); align-items: flex-start; }
+/* The Buy tab (FeedPage): the page's own gaps between its sections. */
+.psk-feed { display: block; padding-top: 12px; }
+.psk-feed > * + * { margin-top: 14px; }
+.psk-feed__daily { display: flex; align-items: center; gap: var(--s4); min-height: 148px; padding: 14px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); }
+.psk-feed__flip { flex: none; transform: rotate(-5deg); }
+.psk-feed__stage { display: block; }
+.psk-feed > .psk-feed__zones { margin-top: 20px; gap: 4px; padding: 8px 4px 6px; }
+.psk-feed__zone { display: grid; justify-items: center; gap: 12px; width: 82px; flex: none; }
+.psk-feed__kinds { display: block; max-width: 100%; margin-top: 18px; }
+.psk-feed > .psk-feed__filters { margin-top: 16px; gap: 8px; }
+.psk-feed > .psk-feed__head { margin-top: 32px; }
+.psk-feed > .grid { margin-top: 10px; }
 
 @media (prefers-reduced-motion: reduce) {
   .skel, .psk-photo { animation: none; background: var(--surface-2); }
