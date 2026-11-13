@@ -194,6 +194,46 @@ export function cleanTypicalDays(value: unknown): number | undefined {
   return Number.isFinite(days) && days >= 1 ? Math.min(TYPICAL_DAYS_MAX, days) : undefined;
 }
 
+/** A step's name as two lots would both write it: case and spacing do not make it another step. */
+export function stepNameKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * How long each step has really taken on a shop's own lots, by step name.
+ *
+ * Read from each lot's history: the time from a move onto a step to the next
+ * move off it. The middle value rather than the average, because one lot
+ * stuck a month at customs should not make every lot's estimate a week late.
+ * Rounded up, since an estimate a day early is the one buyers complain about.
+ * A move still inside its undo window is not history yet, and a note is not a move.
+ */
+export function learnedStepDays(
+  lots: readonly { stageHistory?: readonly { enteredAt: string; step?: string; kind?: string; undoUntil?: string }[] }[],
+  now = Date.now(),
+): Record<string, { days: number; lots: number }> {
+  const spans = new Map<string, number[]>();
+  for (const lot of lots) {
+    const moves = (lot.stageHistory ?? [])
+      .filter((event) => event.step && (event.kind ?? 'step') === 'step'
+        && !(event.undoUntil && Date.parse(event.undoUntil) > now))
+      .sort((a, b) => Date.parse(a.enteredAt) - Date.parse(b.enteredAt));
+    for (let index = 0; index + 1 < moves.length; index += 1) {
+      const ms = Date.parse(moves[index + 1]!.enteredAt) - Date.parse(moves[index]!.enteredAt);
+      if (!Number.isFinite(ms) || ms < 0) continue;
+      const key = stepNameKey(moves[index]!.step!);
+      spans.set(key, [...(spans.get(key) ?? []), ms / 86_400_000]);
+    }
+  }
+  const out: Record<string, { days: number; lots: number }> = {};
+  for (const [key, list] of spans) {
+    const sorted = [...list].sort((a, b) => a - b);
+    const middle = sorted.length % 2 ? sorted[(sorted.length - 1) / 2]! : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2;
+    out[key] = { days: Math.min(TYPICAL_DAYS_MAX, Math.max(1, Math.ceil(middle))), lots: sorted.length };
+  }
+  return out;
+}
+
 /**
  * Roughly how many days are left once a lot is at `at`: what is left of the
  * step it is on, plus every later step's usual time. Null when any step

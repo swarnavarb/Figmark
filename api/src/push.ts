@@ -1,4 +1,5 @@
 import webpush from 'web-push';
+import { whatsappNotice, whatsappUpdatesEnabled } from './whatsapp-updates.js';
 import type { Notification, PushEndpoint } from '../../shared/models.js';
 import { categoryOf, inQuietHours, type NotificationCategory } from '../../shared/notifications.js';
 import type { getRepository } from './data/index.js';
@@ -180,6 +181,8 @@ export async function forgetEndpoints(repository: Repo, userId: string, endpoint
 
 /** One notice out to its person's devices. */
 export function pushNotice(repository: Repo, notice: Notification): Promise<number> {
+  // The same news on WhatsApp, for the kinds that go there; never waited on.
+  void whatsappNotice(repository, notice);
   return pushToUser(repository, notice.userId, {
     id: notice.id, title: notice.title, body: notice.body, link: notice.link,
     // The row's own id is the tag already for a folded notice: it keeps the
@@ -204,7 +207,7 @@ const LOOKBACK_MS = 15 * 60_000;
  * carries the same topic and replaces rather than repeats.
  */
 export async function sendHeldPushes(repository: Repo, now = Date.now()): Promise<number> {
-  if (!pushEnabled()) return 0;
+  if (!pushEnabled() && !whatsappUpdatesEnabled()) return 0;
   const due = await repository.listHeldNotificationsDue(
     new Date(now - LOOKBACK_MS).toISOString(),
     new Date(now).toISOString(),
@@ -233,7 +236,7 @@ let lastSweep = 0;
  * call from a hot path.
  */
 export async function sendHeldPushesSoon(repository: Repo, now = Date.now()): Promise<void> {
-  if (!pushEnabled() || now - lastSweep < 20_000) return;
+  if ((!pushEnabled() && !whatsappUpdatesEnabled()) || now - lastSweep < 20_000) return;
   lastSweep = now;
   try {
     await sendHeldPushes(repository, now);
@@ -251,7 +254,7 @@ export async function sendHeldPushesSoon(repository: Repo, now = Date.now()): Pr
  * guarantee. Unreferenced so it never keeps a process up on its own.
  */
 export function sendHeldPushesAt(repository: Repo, notBefore: string): void {
-  if (!pushEnabled()) return;
+  if (!pushEnabled() && !whatsappUpdatesEnabled()) return;
   void wakeAt(notBefore);
   const wait = Date.parse(notBefore) - Date.now() + 1000;
   if (!Number.isFinite(wait) || wait > LOOKBACK_MS) return;

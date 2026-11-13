@@ -1,3 +1,5 @@
+import type { PayoutSummary } from '@shared/payouts';
+import type { LotCostKey, LotSplit } from '@shared/lot-costs';
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
 import type { CardProgress, IssuedReward, LoyaltyApplied, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
 import type { StoreInsights } from '@shared/service-insights';
@@ -620,6 +622,21 @@ export interface LotsResponse {
   /** Orders sold, bound for a lot, and in none yet. */
   awaitingOrders: number;
 }
+
+/** One order's journey as anybody with its link sees it: nothing personal, nothing about money. */
+export interface PublicTracking {
+  itemName: string;
+  quantity: number;
+  photo: { url: string; thumbUrl: string | null } | null;
+  shop: { name: string; handle: string | null } | null;
+  status: 'moving' | 'delivered' | 'cancelled';
+  steps: string[];
+  at: number;
+  etaDays: number | null;
+  updates: { at: string; text: string }[];
+}
+
+export type PayoutsResponse = PayoutSummary & { days: number; buyers: Record<string, string> };
 
 export interface LotContents {
   lot: Lot;
@@ -1345,6 +1362,8 @@ export interface LotDetails {
   supplierHandle?: string;
   supplierContact?: string;
   supplierReference?: string;
+  /** The run's shared costs, in paise, and how they are split across its items. */
+  costs?: Partial<Record<LotCostKey, number>> & { splitBy?: LotSplit };
 }
 
 /* ── Social ────────────────────────────────────────────────────────────── */
@@ -2078,6 +2097,8 @@ export interface RoutesResponse {
   routes: TrackingRoute[];
   /** Per route: how many unfinished lots ride it, and how many carry an older copy. */
   usage: Record<string, { lots: number; behind: number }>;
+  /** Per step name (see `stepNameKey`): the middle of how long it really took on this shop's lots. */
+  learnedDays?: Record<string, { days: number; lots: number }>;
   /** The seven stages this app has always had, as a route you can pick. */
   builtIn: { routeId: string | null; name: string; steps: RouteStep[] };
   /** The shapes a shop can start from, described. */
@@ -3086,6 +3107,9 @@ export const api = {
   ) => post<{ lot: Lot }>('/lots', body),
   updateLotDetails: (id: string, body: Partial<LotDetails>) =>
     post<{ lot: Lot }>(`/lots/${encodeURIComponent(id)}/details`, body),
+  /** A link to this order's journey that opens without an account. */
+  trackLink: (orderId: string) => post<{ token: string; path: string }>(`/orders/${encodeURIComponent(orderId)}/track-link`, {}),
+  publicTracking: (token: string) => request<PublicTracking>(`/track/${encodeURIComponent(token)}`),
   lotContents: (id: string) => request<LotContents>(`/lots/${encodeURIComponent(id)}/contents`),
   assignToLot: (id: string, listingIds: string[], remove = false) =>
     post<{ changed: number }>(`/lots/${encodeURIComponent(id)}/assign`, { listingIds, remove }),
@@ -3312,6 +3336,9 @@ export const api = {
    * their lots (a `partial` answer, merged with `mergeSales`); `history: 'all'`
    * includes finished orders older than the window.
    */
+  /** The shop's money: held under Buyer Protection, released, and paid to it directly. */
+  payouts: (storeId?: string, days = 30) =>
+    request<PayoutsResponse>(`/me/payouts?days=${days}${storeId ? `&store=${encodeURIComponent(storeId)}` : ''}`),
   sales: (storeId?: string, options: { ids?: readonly string[]; history?: 'all' } = {}) => {
     const query = new URLSearchParams();
     if (storeId) query.set('store', storeId);

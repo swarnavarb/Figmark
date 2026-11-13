@@ -90,6 +90,7 @@ import { PictureField, TagInput } from '../components/PageFields';
 import { MoreMenu } from '../components/MoreMenu';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import { ShopStatusSwitch } from '../components/ShopStatusSwitch';
+import { PayoutsPanel } from '../components/Payouts';
 import '../styles/ShopPage.css';
 import { Select } from '../components/Select';
 import { reducedMotion } from '../motion';
@@ -405,7 +406,7 @@ function ShopConsole({ stores, onChanged }: { stores: StoreAccess[]; onChanged: 
           {active === 'lots' && <Lots store={store} spotlightNew={params.get('spotlight') === 'new'} />}
           {active === 'routes' && <Later><RoutesList spotlightNew={params.get('spotlight') === 'new'} /></Later>}
           {active === 'templates' && <TemplatesPanel store={store} />}
-          {active === 'analytics' && <><Analytics store={store} /><div style={{ marginTop: 20 }}><MoneyProBlock store={store} /></div></>}
+          {active === 'analytics' && <><PayoutsPanel storeId={store.isOwner ? undefined : store.ownerId} /><div style={{ marginTop: 20 }} /><Analytics store={store} /><div style={{ marginTop: 20 }}><MoneyProBlock store={store} /></div></>}
           {active === 'storefront' && <StorefrontEditor />}
           {active === 'people' && <People store={store} onChanged={onChanged} />}
           {active === 'engage' && <Later><EngagePanel store={store} /></Later>}
@@ -1365,6 +1366,11 @@ function MyItems({ store }: { store: StoreAccess }) {
   /** An import listing being pointed at a lot, from its own card. */
   const [tagging, setTagging] = useState<Listing | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Several listings picked to change at once; null while not picking. */
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkPct, setBulkPct] = useState('');
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void api
@@ -1385,6 +1391,35 @@ function MyItems({ store }: { store: StoreAccess }) {
   const counts = { available: 0, expired: 0, sold_out: 0 };
   for (const listing of all) counts[shelfOf(listing)] += 1;
   const mine = all.filter((listing) => shelfOf(listing) === shelf);
+  const chosen = picked ? mine.filter((listing) => picked.has(listing.id)) : [];
+
+  /* The same edit, one listing at a time, so one refused (a price below the
+     floor, an offer it would break) is named and the rest still change. */
+  async function applyToPicked(label: string, change: (listing: Listing) => Promise<unknown>) {
+    if (chosen.length === 0) return;
+    setBulkBusy(true);
+    setNotice(null);
+    setBulkError(null);
+    const refused: string[] = [];
+    for (const listing of chosen) {
+      try {
+        await change(listing);
+      } catch (err) {
+        refused.push(`${listing.title}: ${err instanceof ApiRequestError ? err.message : 'not changed'}`);
+      }
+    }
+    setBulkBusy(false);
+    setPicked(null);
+    setBulkPct('');
+    load();
+    if (refused.length > 0) setBulkError(`${chosen.length - refused.length} ${label}. ${refused.join(' ')}`);
+    else setNotice(`${chosen.length === 1 ? '1 listing' : `${chosen.length} listings`} ${label}.`);
+  }
+
+  const pct = Number(bulkPct);
+  const pctOk = bulkPct.trim() !== '' && Number.isFinite(pct) && pct !== 0 && pct > -90 && pct <= 500;
+  /** A new price a whole rupee, so ₹999 up 10% reads ₹1,099 and not ₹1,098.90. */
+  const repriced = (listing: Listing) => Math.max(100, Math.round((listing.priceMinor * (1 + pct / 100)) / 100) * 100);
 
   return (
     <div className="stack">
@@ -1419,6 +1454,48 @@ function MyItems({ store }: { store: StoreAccess }) {
 
       {notice && <p className="notice notice--ok" role="status">{notice}</p>}
 
+      {bulkError && <ErrorNotice message={bulkError} />}
+      {mode === 'stock' && mine.length > 1 && (
+        picked ? (
+          <div className="bulkbar itembulk" role="group" aria-label="Change several listings">
+            <span><b>{picked.size}</b> picked ·{' '}
+              <button type="button" className="linkbtn" onClick={() => setPicked(
+                picked.size === mine.length ? new Set() : new Set(mine.map((listing) => listing.id)))}>
+                {picked.size === mine.length ? 'None' : 'All'}
+              </button>
+            </span>
+            <label className="bulkbar__pct">
+              Price
+              <input inputMode="decimal" placeholder="+10 or -15" value={bulkPct} aria-label="Change price by percent"
+                onChange={(event) => setBulkPct(event.target.value.replace(/[^\d.+-]/g, ''))} />%
+            </label>
+            <button type="button" className="btn btn--sm" disabled={bulkBusy || chosen.length === 0 || !pctOk}
+              onClick={() => void applyToPicked('repriced', (listing) => api.editListing(listing.id, { priceMinor: repriced(listing) }))}>
+              Apply
+            </button>
+            {shelf === 'available' && (
+              <button type="button" className="btn btn--sm btn--ghost" disabled={bulkBusy || chosen.length === 0}
+                onClick={async () => {
+                  if (!await confirmAsk({
+                    title: `Take ${chosen.length === 1 ? 'this listing' : `${chosen.length} listings`} off sale?`,
+                    body: 'They move to Expired, where Make available again brings any of them back. Orders already placed are not touched.',
+                    action: 'Take off sale',
+                  })) return;
+                  void applyToPicked('taken off sale', (listing) => api.expireListing(listing.id));
+                }}>
+                Take off sale
+              </button>
+            )}
+            <button type="button" className="btn btn--sm btn--quiet" disabled={bulkBusy}
+              onClick={() => { setPicked(null); setBulkPct(''); }}>Done</button>
+          </div>
+        ) : (
+          <button type="button" className="btn btn--sm btn--ghost bulkbar__start" onClick={() => setPicked(new Set())}>
+            <Icon name="check" size={14} /> Select several
+          </button>
+        )
+      )}
+
       {mode === 'power' ? (
         <Later><PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} /></Later>
       ) : !data ? (
@@ -1437,6 +1514,13 @@ function MyItems({ store }: { store: StoreAccess }) {
           <div className="grid qgrid">
             {mine.map((listing) => (
               <ShelfCard key={listing.id} listing={listing} onEdit={() => setEditing(listing)}
+                picked={picked ? picked.has(listing.id) : undefined}
+                onPick={() => setPicked((current) => {
+                  if (!current) return current;
+                  const next = new Set(current);
+                  if (next.has(listing.id)) next.delete(listing.id); else next.add(listing.id);
+                  return next;
+                })}
                 onOpenLot={(lotId) => navigate(`/shop?tab=lots&lot=${encodeURIComponent(lotId)}`)}
                 onTag={() => { setNotice(null); setTagging(listing); }} />
             ))}
@@ -1460,8 +1544,11 @@ function MyItems({ store }: { store: StoreAccess }) {
  * the condition stamped on, with the shop's own numbers - stock, views,
  * saves, lot - where a buyer would see the seller's crest.
  */
-function ShelfCard({ listing, onEdit, onOpenLot, onTag }: {
+function ShelfCard({ listing, onEdit, onOpenLot, onTag, picked, onPick }: {
   listing: Listing;
+  /** Set while several are being picked: the card toggles instead of opening. */
+  picked?: boolean;
+  onPick?: () => void;
   onEdit: () => void;
   /** Open the lot this listing's sales go into. */
   onOpenLot: (lotId: string) => void;
@@ -1474,8 +1561,11 @@ function ShelfCard({ listing, onEdit, onOpenLot, onTag }: {
   const sourcing = listing.sourcing;
   const expired = isExpired(listing);
   return (
-    <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}`}>
+    <Link to={`/listing/${listing.id}`} className={`qloot qloot--${tier ?? 'plain'}${picked ? ' qpicked' : ''}`}
+      aria-pressed={picked === undefined ? undefined : picked}
+      onClick={picked === undefined ? undefined : (event) => { event.preventDefault(); onPick?.(); }}>
       <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb qloot__art">
+        {picked !== undefined && <span className={`qpick${picked ? ' is-on' : ''}`} aria-hidden="true">{picked ? '✓' : ''}</span>}
         {tier && <RarityRibbon tier={tier} />}
         <span className="qgrade" title="Condition">{factsOf(listing).condition}</span>
         {expired
@@ -1762,6 +1852,33 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
     }
   }
 
+  /* Every order waiting on a yes, said yes to in one go: a Monday morning
+     after a weekend drop is thirty taps otherwise. One request per order so
+     one refused (sold out since, cancelled by the buyer) is named and the rest
+     still go through. */
+  async function acceptAll(rows: SaleRow[]) {
+    if (rows.length === 0) return;
+    if (!await confirmAsk({
+      title: `Accept ${rows.length} orders?`,
+      body: `Each buyer is told their order is accepted, the same as pressing Accept on each one.`,
+      action: `Accept all ${rows.length}`,
+    })) return;
+    setBusy(rows[0]!.id);
+    setError(null);
+    const refused: string[] = [];
+    for (const row of rows) {
+      try {
+        await api.acceptOrder(row.id);
+      } catch (err) {
+        refused.push(`${row.itemName}: ${err instanceof ApiRequestError ? err.message : 'not accepted'}`);
+      }
+    }
+    await load();
+    setBusy(null);
+    if (refused.length > 0) setError(`${rows.length - refused.length} accepted. ${refused.join(' ')}`);
+    else setNotice(`${rows.length} orders accepted.`);
+  }
+
   /* Confirming that a claimed payment arrived is the same one-tap shape as
      Accept: nothing left to say, so nothing here should make the seller open
      the order to say it. Denying still needs a reason, so that opens its own
@@ -1916,6 +2033,19 @@ export function Orders({ store, lotId, onChanged, onTracking }: {
               tabs={tabs.filter((tab) => tab.id === 'all' || tab.id === view || (tab.count ?? 0) > 0)} />
           </div>
         );
+      })()}
+
+      {statusFilter === 'active' && chip === 'answer' && (() => {
+        const acceptable = shown.filter((row) => row.canAccept);
+        return acceptable.length > 1 ? (
+          <div className="bulkbar" role="group" aria-label="Answer several orders">
+            <span><b>{acceptable.length}</b> orders waiting for your yes</span>
+            <button type="button" className="btn btn--sm" disabled={busy !== null}
+              onClick={() => void acceptAll(acceptable)}>
+              <Icon name="check" size={14} /> Accept all {acceptable.length}
+            </button>
+          </div>
+        ) : null;
       })()}
 
       {shown.length === 0 ? (

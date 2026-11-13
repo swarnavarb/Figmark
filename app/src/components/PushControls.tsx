@@ -266,6 +266,16 @@ function PhoneSettings({ on }: { on: boolean }) {
         <input type="checkbox" role="switch" className="phoneprefs__switch"
           checked={!prefs.shopMessagesOff} onChange={() => void save({ shopMessagesOff: !prefs.shopMessagesOff })} />
       </label>
+      <label className="phoneprefs__row">
+        <span>
+          Shipment updates on WhatsApp
+          <span className="faint phoneprefs__hint">
+            When a lot carrying your order moves - customs cleared, out for delivery - a message to your verified WhatsApp number.
+          </span>
+        </span>
+        <input type="checkbox" role="switch" className="phoneprefs__switch"
+          checked={!prefs.whatsappUpdatesOff} onChange={() => void save({ whatsappUpdatesOff: !prefs.whatsappUpdatesOff })} />
+      </label>
     </div>
   );
 }

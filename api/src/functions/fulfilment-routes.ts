@@ -12,6 +12,7 @@ import {
   type LotRoute, type RouteStep, type StageIcon, type StepSide, type StepTrigger, ticksOf
 } from '../../../shared/routes.js';
 import { COUNTRIES } from '../../../shared/countries.js';
+import { cleanLotCosts } from '../../../shared/lot-costs.js';
 import { UNDO_EXPIRED, canUndo, undoTag, withoutUndo } from './undo.js';
 import { RECEIVED_AS_MAX, ladderBeforeLot, withButtons, withReceivedAs } from '../../../shared/buttons.js';
 import { NOT_ACCEPTED_MESSAGE, awaitingAcceptance, daysFrom, isCancelledLike, isStopped } from '../../../shared/orders.js';
@@ -108,6 +109,8 @@ interface LotDetailsBody {
   supplierHandle?: string;
   supplierContact?: string;
   supplierReference?: string;
+  /** The run's shared costs (freight, duty, fee, packing, last mile) and how to split them. */
+  costs?: unknown;
 }
 
 /** Null unless a supplier was actually named; a contact alone is not one. */
@@ -200,6 +203,12 @@ async function updateLotDetails(request: HttpRequest, _context: InvocationContex
       { ...body, supplierName: body.supplierName ?? lot.supplier?.name },
       tagged.id ?? (body.supplierHandle === undefined ? lot.supplier?.supplierUserId ?? null : null),
     );
+  }
+
+  if (body.costs !== undefined) {
+    const costs = cleanLotCosts(body.costs, new Date().toISOString());
+    if (!costs) return error(400, 'invalid_lot', 'Costs must be amounts of zero or more.');
+    lot.costModel = { ...lot.costModel, ...costs };
   }
 
   lot.updatedAt = new Date().toISOString();

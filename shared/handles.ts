@@ -33,7 +33,7 @@ export const APP_ROUTE_SEGMENTS: readonly string[] = [
   'admin', 'api', 'assets', 'batches', 'boot', 'buyer-settings', 'cart', 'community-service', 'discover', 'dispute', 'disputes', 'fees',
   'fonts', 'forwarders', 'i', 'index.html', 'learn', 'legal', 'listing', 'lot', 'lots', 'me', 'messages', 'open', 'order', 'packing',
   'pro', 'purchases', 'quests', 'r', 'refunds', 'routes', 's', 'sell', 'services', 'shop', 'social', 'sw.js', 'tags',
-  'verify', 'wallet',
+  'track', 'verify', 'wallet',
 ];
 
 /** Reserved because they are routes, would be mistaken for one, or soon will be. */

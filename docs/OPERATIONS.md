@@ -20,6 +20,7 @@ Set these as Static Web App application settings
 | `PUBLIC_ORIGIN` | `https://your-domain` first, then the azurestaticapps.net address | Share cards and preview links use the first one. |
 | `BREVO_API_KEY` / `MAILJET_*` / `RESEND_API_KEY`, `EMAIL_FROM` | from the providers | Verification, password reset and email-change codes. **Without one, nobody can verify an email, so nobody new can buy.** |
 | `WHATSAPP_BUSINESS_NUMBER`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | from Meta | Phone verification, needed to buy. |
+| `WHATSAPP_UPDATES_TEMPLATE`, `WHATSAPP_UPDATES_LANG` (default `en`), `SITE_ORIGIN` if `PUBLIC_ORIGINS` is unset | a Meta-approved template with two body variables: {{1}} the update ("Your item from Shop: Customs cleared"), {{2}} the order link | Shipment updates on WhatsApp when a lot moves. Needs the access token and phone number id above. Off until set; buyers can turn it off in their notification settings. |
 | `AADHAAR_QR_CERT` | UIDAI's offline-verification certificate | Needed to sell. |
 | `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` | `npm run push:keys` | Lock-screen notifications. |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare dashboard → Turnstile | CAPTCHA on sign-up. Off when unset. |

@@ -163,7 +163,7 @@ Then, as each one is ready (full table in [OPERATIONS.md](OPERATIONS.md#1-produc
 
 - Email: `BREVO_API_KEY`, `EMAIL_FROM`. Without one nobody can verify an email, so nobody new can buy.
 - Billing: buying Pro and paying platform fees are refused on production (503) while payments are simulated. Leave `FIGMARK_SIMULATED_BILLING` unset until a payment gateway is connected; setting it to `on` grants Pro and clears fees without taking any money.
-- WhatsApp: `WHATSAPP_BUSINESS_NUMBER`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`.
+- WhatsApp: `WHATSAPP_BUSINESS_NUMBER`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`; for shipment updates also `WHATSAPP_UPDATES_TEMPLATE` (see OPERATIONS.md).
 - Aadhaar: `AADHAAR_QR_CERT`.
 - Push: `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` (new keys from `npm run push:keys`, not development's).
 - CAPTCHA: `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`.

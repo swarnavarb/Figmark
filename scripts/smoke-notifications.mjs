@@ -361,7 +361,7 @@ await check('a category kept off the phone stays in the bell; quiet hours arrive
   assert.ok(night);
   const quiet = await saveSettings(req({ headers: pager.auth, body: { quietHours: true, timeZone: night } }), ctx);
   assert.equal(quiet.status, 200);
-  assert.deepEqual(quiet.jsonBody.prefs, { pushOff: ['social'], quietHours: true, timeZone: night, shopMessagesOff: false });
+  assert.deepEqual(quiet.jsonBody.prefs, { pushOff: ['social'], quietHours: true, timeZone: night, shopMessagesOff: false, whatsappUpdatesOff: false });
   assert.deepEqual((await settings(req({ headers: pager.auth }), ctx)).jsonBody.prefs, quiet.jsonBody.prefs);
   sent = [];
   await notify(repository, [pager.id], { kind: 'message', title: 'Late message', body: '', link: '/' });

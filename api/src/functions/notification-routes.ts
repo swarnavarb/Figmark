@@ -234,6 +234,7 @@ function prefsOf(prefs: NotificationPrefs | undefined): NotificationPrefs {
   return {
     pushOff: prefs?.pushOff ?? [], quietHours: prefs?.quietHours ?? false, timeZone: prefs?.timeZone ?? null,
     shopMessagesOff: prefs?.shopMessagesOff ?? false,
+    whatsappUpdatesOff: prefs?.whatsappUpdatesOff ?? false,
   };
 }
 
@@ -269,7 +270,7 @@ async function saveSettings(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
 
-  let body: { pushOff?: unknown; quietHours?: unknown; timeZone?: unknown; shopMessagesOff?: unknown };
+  let body: { pushOff?: unknown; quietHours?: unknown; timeZone?: unknown; shopMessagesOff?: unknown; whatsappUpdatesOff?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -284,6 +285,9 @@ async function saveSettings(request: HttpRequest, _context: InvocationContext) {
   if (body.shopMessagesOff !== undefined && typeof body.shopMessagesOff !== 'boolean') {
     return error(400, 'invalid_settings', 'Shop messages are on or off.');
   }
+  if (body.whatsappUpdatesOff !== undefined && typeof body.whatsappUpdatesOff !== 'boolean') {
+    return error(400, 'invalid_settings', 'WhatsApp updates are on or off.');
+  }
 
   const me = await repository.getUserById(user.id);
   if (!me) return error(404, 'not_found', 'No such account.');
@@ -295,6 +299,7 @@ async function saveSettings(request: HttpRequest, _context: InvocationContext) {
     quietHours: typeof body.quietHours === 'boolean' ? body.quietHours : current.quietHours,
     timeZone: validTimeZone(body.timeZone) ?? current.timeZone,
     shopMessagesOff: typeof body.shopMessagesOff === 'boolean' ? body.shopMessagesOff : current.shopMessagesOff,
+    whatsappUpdatesOff: typeof body.whatsappUpdatesOff === 'boolean' ? body.whatsappUpdatesOff : current.whatsappUpdatesOff,
   };
   await repository.updateUser({ ...me, notificationPrefs: next, updatedAt: new Date().toISOString() });
   return json(200, { prefs: next });

@@ -48,6 +48,7 @@ function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
 const FeedPage = page(loaders.feed, 'FeedPage');
 const DiscoverPage = page(loaders.discover, 'DiscoverPage');
 const LegalPage = page(loaders.legal, 'LegalPage');
+const TrackPage = page(loaders.track, 'TrackPage');
 const ListingPage = page(loaders.listing, 'ListingPage');
 const SellPage = page(loaders.sell, 'SellPage');
 const ShopPage = page(loaders.shop, 'ShopPage');
@@ -201,6 +202,8 @@ function App() {
         <Route path="/learn" element={<LearnPage />} />
         <Route path="/legal" element={<LegalPage />} />
         <Route path="/legal/:doc" element={<LegalPage />} />
+        {/* Open to anybody with the link: an order's journey, shared by its buyer or shop. */}
+        <Route path="/track/:token" element={<TrackPage />} />
         <Route path="/tags/:slug" element={<TagPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}

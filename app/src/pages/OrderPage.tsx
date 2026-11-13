@@ -29,6 +29,7 @@ import { PaymentHistory } from '../components/Buy';
 import { creditLeft, orderMoney } from '@shared/payments';
 import { ErrorNotice, Icon, Modal, PersonLink, PageError } from '../components/ui';
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
+import { ShareTracking } from '../components/ShareTracking';
 import { DirectTrack, TrackHero, endedOf, boxesFor, withLastMile } from '../components/OrderTrack';
 import { useStepActs } from '../components/StepActs';
 import { ItemCard, PriceChangeNote, Svg, Urgency } from '../components/ListingBlocks';
@@ -332,6 +333,7 @@ export function OrderPage() {
                courier, and the buyer's door. */
             <DirectTrack order={order} actFor={acts.actFor(-1)} />
           )}
+          {!endedOf(order) && <ShareTracking orderId={order.id} itemName={order.itemName} seller={seller} />}
         </div>
       )}
 

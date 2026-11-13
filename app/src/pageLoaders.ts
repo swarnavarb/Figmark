@@ -11,6 +11,7 @@ export const loaders = {
   feed: () => import('./pages/FeedPage'),
   discover: () => import('./pages/DiscoverPage'),
   legal: () => import('./pages/LegalPage'),
+  track: () => import('./pages/TrackPage'),
   listing: () => import('./pages/ListingPage'),
   sell: () => import('./pages/SellPage'),
   shop: () => import('./pages/ShopPage'),
