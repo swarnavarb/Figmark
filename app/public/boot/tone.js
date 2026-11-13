@@ -29,7 +29,8 @@
 })();
 
 // Full or reduced motion, before the first paint, so nothing starts moving
-// only to stop. The reader's choice from the profile menu, else the phone's.
+// only to stop. The signed-in account's choice from the profile menu (kept in
+// figmark:motion only while that account is signed in), else the phone's.
 // Keep in step with src/motion.ts.
 (function () {
   var choice = null;

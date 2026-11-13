@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { AuthUser, SignupResponse } from '@shared/contracts';
 import { disablePush } from './push';
 import { api, setSessionRejectedHandler, setVerificationRequiredHandler } from './api';
+import { motionFollowsAccount } from './motion';
 
 /**
  * The signed-in user, resolved once and shared.
@@ -217,6 +218,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setWarning(null);
     setSignupEmail(null);
   }, []);
+
+  // Motion follows the signed-in account's own choice, else the phone's
+  // setting. Waits for the session, so a signed-in reload doesn't flicker.
+  const accountId = user?.id ?? null;
+  useEffect(() => {
+    if (!loading) motionFollowsAccount(accountId);
+  }, [accountId, loading]);
 
   // Signed in: whatever asked for it is now allowed, so the popup goes.
   useEffect(() => {
