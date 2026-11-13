@@ -1863,9 +1863,9 @@ export function seedShippedLot(): Lot {
     status: 'closed',
     stage: 'dispatched_from_china',
     stageHistory: [
-      { stage: 'ordering', enteredAt: iso(-40), note: 'Lot opened.', recordedBy: 'usr_demo' },
-      { stage: 'china_wh_received', enteredAt: iso(-22), note: null, recordedBy: 'usr_demo' },
-      { stage: 'dispatched_from_china', enteredAt: iso(-9), note: 'Handed to the forwarder.', recordedBy: 'usr_demo' },
+      { stage: 'ordering', step: 'Supplier Accumulates Orders', enteredAt: iso(-40), note: 'Lot opened.', recordedBy: 'usr_demo' },
+      { stage: 'china_wh_received', step: 'Dispatched to Freight Forwarder', enteredAt: iso(-22), note: null, recordedBy: 'usr_demo' },
+      { stage: 'dispatched_from_china', step: 'Freight Forwarder Consolidates', enteredAt: iso(-9), note: 'Handed to the forwarder.', recordedBy: 'usr_demo' },
     ],
     estimatedDispatchAt: iso(-9),
     forwarder: {

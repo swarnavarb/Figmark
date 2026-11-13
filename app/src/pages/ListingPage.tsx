@@ -211,6 +211,25 @@ export function ListingPage() {
             </button>
             <InfoTip label="What Bump does"><BumpHelp /></InfoTip>
           </span>
+          {/* The next one of the same thing - another size, colour, or the next
+              run - starts from this one instead of an empty form. This item is
+              untouched; only a new listing is made. */}
+          <button type="button" className="btn btn--ghost" disabled={busy}
+            onClick={() => navigate(`/sell?store=${encodeURIComponent(listing.sellerId)}`, {
+              state: {
+                title: listing.title,
+                description: listing.description,
+                category: listing.category,
+                condition: listing.condition,
+                attributes: listing.attributes,
+                tags: listing.tags,
+                photos: listing.photos.map((photo) => ({ blobName: photo.blobName, url: photo.url, isPrimary: photo.isPrimary })),
+                priceMinor: listing.priceMinor,
+                copyOf: { id: listing.id, title: listing.title },
+              },
+            })}>
+            <Icon name="plus" size={14} /> List another like this
+          </button>
         </div>
       ) : listing.status === 'archived' ? (
         <p className="notice notice--warn">The seller has taken this item down. It can no longer be bought.</p>

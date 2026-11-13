@@ -1738,6 +1738,12 @@ export interface LotCostModel {
   localShippingMinor: number;
   /** Total shipment weight in grams, for the packing/box estimator. */
   totalWeightGrams: number;
+  /** The forwarder's own fee for the run. Absent on lots costed before it was asked. */
+  forwarderFeeMinor?: number;
+  /** How the shared costs are split across the items: by weight, by price, or per unit. Absent means price. */
+  splitBy?: 'weight' | 'value' | 'units';
+  /** When the seller last filled the costs in; absent while they never have. */
+  costedAt?: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -3067,6 +3073,8 @@ export interface NotificationPrefs {
   timeZone: string | null;
   /** No group messages from shops - "new drop for our VIPs" and the like. Order news still comes. */
   shopMessagesOff?: boolean;
+  /** No shipment updates on WhatsApp. Absent means on, for a verified number. */
+  whatsappUpdatesOff?: boolean;
 }
 
 export const CLIENT_PLATFORMS = ['ios', 'android', 'mac', 'windows', 'linux', 'other'] as const;

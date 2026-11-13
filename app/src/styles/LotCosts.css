@@ -1,0 +1,29 @@
+/* The lot's costs and what each item lands at. */
+.lotcost__fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.lotcost__field > span:first-child { font-size: var(--t-sm); color: var(--text-dim); }
+.lotcost__money { display: flex; align-items: center; gap: 6px; }
+.lotcost__money input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+.lotcost__split { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--t-base); color: var(--text-dim); }
+.lotcost__table { display: grid; gap: 2px; font-size: var(--t-sm); font-variant-numeric: tabular-nums; overflow-x: auto; }
+.lotcost__row {
+  display: grid; grid-template-columns: minmax(120px, 2fr) repeat(4, minmax(64px, 1fr)); gap: 8px;
+  align-items: center; padding: 8px 10px; border-radius: 8px; background: var(--surface-2);
+}
+.lotcost__row > span:not(:first-child) { text-align: right; }
+.lotcost__row--head { background: transparent; color: var(--text-faint); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: .04em; }
+.lotcost__row--total { background: var(--violet-soft); border: 1px solid var(--violet-line); font-weight: 700; }
+.lotcost__item { display: grid; min-width: 0; }
+.lotcost__item b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lotcost__item small { color: var(--text-faint); }
+.lotcost .is-gain { color: var(--aqua); }
+.lotcost .is-loss { color: var(--coral); }
+
+/* A phone has no room for five columns: each item becomes its name, then four labelled figures. */
+@media (max-width: 600px) {
+  .lotcost__row { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 4px; }
+  .lotcost__row--head { display: none; }
+  .lotcost__item { grid-column: 1 / -1; }
+  .lotcost__row--total > span:first-child { grid-column: 1 / -1; }
+  .lotcost__row > span:not(:first-child) { text-align: left; display: grid; }
+  .lotcost__row > span[data-label]::before { content: attr(data-label); font-size: var(--t-2xs); color: var(--text-faint); font-weight: 400; }
+}

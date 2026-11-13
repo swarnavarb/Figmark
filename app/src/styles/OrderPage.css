@@ -130,3 +130,9 @@
   margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md);
   background: var(--accent-soft); color: var(--accent-text); font-size: var(--t-sm);
 }
+
+/* The share card on the order page. */
+.sharetrack { display: grid; gap: 10px; }
+.sharetrack__text { display: grid; gap: 2px; }
+.sharetrack__acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.sharetrack__url { width: 100%; font-size: var(--t-sm); }

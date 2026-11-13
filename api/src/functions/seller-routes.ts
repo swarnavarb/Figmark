@@ -8,6 +8,7 @@ import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/
 import { actionsFor, awaitingAcceptance, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { creditIsLive, creditLeft, expiresSoon, isExpired, keptCreditMinor, orderMoney } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
+import { payoutsOf } from '../../../shared/payouts.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
 import { personRef } from '../../../shared/parties.js';
 import { hasArrived, readyGated, supplierIdOf } from '../../../shared/services.js';
@@ -1079,7 +1080,34 @@ app.http('me-storefront-save', { ...anon, methods: ['POST'], route: 'me/storefro
 app.http('me-region-guess', { ...anon, methods: ['GET'], route: 'me/region-guess', handler: regionGuessRoute });
 app.http('me-storefront-photo', { ...anon, methods: ['POST'], route: 'me/storefront/photo', handler: storefrontPhotoRoute });
 app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', handler: dashboardRoute });
+/**
+ * GET /api/me/payouts?store=&days= - the shop's money: held, released, direct.
+ *
+ * Owner or a manager with `admin`, the same right that answers payments.
+ */
+async function payouts(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const storeId = request.query.get('store') ?? user.id;
+  if (storeId !== user.id) {
+    const owner = await repository.getUserById(storeId);
+    if (!owner || !can(owner, user.id, 'admin')) {
+      return error(403, 'forbidden', 'You do not have rights to see this shop\'s money.');
+    }
+  }
+  const days = Math.min(365, Math.max(1, Math.round(Number(request.query.get('days') ?? 30)) || 30));
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const orders = await repository.listOrdersForSeller(storeId);
+  const summary = payoutsOf(orders, since);
+  const people = await repository.listUsersByIds([...new Set([...summary.held, ...summary.disputed, ...summary.released].map((row) => row.buyerId))]);
+  const names = Object.fromEntries(people.map((person) => [person.id, person.displayName]));
+  return json(200, { days, ...summary, buyers: names });
+}
+export const payoutsRoute = handler(payouts);
+
 app.http('me-sales', { ...anon, methods: ['GET'], route: 'me/sales', handler: salesRoute });
+app.http('me-payouts', { ...anon, methods: ['GET'], route: 'me/payouts', handler: payoutsRoute });
 app.http('me-sell-todo', { ...anon, methods: ['GET'], route: 'me/sell/todo', handler: sellTodoRoute });
 app.http('me-sell-dashboard', { ...anon, methods: ['GET'], route: 'me/sell/dashboard', handler: sellDashboardRoute });
 app.http('me-storefront-orders', { ...anon, methods: ['POST'], route: 'me/storefront/orders', handler: orderStatusRoute });

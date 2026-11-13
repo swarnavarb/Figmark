@@ -7,7 +7,7 @@ import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepK
 import { setButtonLibrary, stepKinds } from '@shared/route-buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  cleanTypicalDays, TYPICAL_DAYS_MAX, renderStepText, routeParts, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
+  cleanTypicalDays, stepNameKey, TYPICAL_DAYS_MAX, renderStepText, routeParts, routePartsLine, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
   type RouteStep, type StepAssignee, type StepTrigger, type TrackingRoute,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
@@ -635,6 +635,22 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
         </div>
       ) : (
       <div className="rslanes">
+        {(() => {
+          /* Steps this shop has run before, whose usual time is blank or not
+             what its own lots say: filled in one tap, each still editable. */
+          const pastDays = library?.learnedDays ?? {};
+          const fillable = steps.filter((step) => step.trigger !== 'delivered' && pastDays[stepNameKey(step.name)]
+            && pastDays[stepNameKey(step.name)]!.days !== step.typicalDays);
+          return fillable.length > 0 ? (
+            <div className="rslearn" role="group" aria-label="Usual days from your lots">
+              <span>📅 Your past lots know how long <b>{fillable.length === 1 ? '1 step' : `${fillable.length} steps`}</b> really take.</span>
+              <button type="button" className="btn btn--sm" onClick={() => setSteps((current) => current.map((step) => {
+                const seen = step.trigger === 'delivered' ? undefined : pastDays[stepNameKey(step.name)];
+                return seen ? { ...step, typicalDays: seen.days } : step;
+              }))}>Fill from my lots</button>
+            </div>
+          ) : null;
+        })()}
         {lanes.map((lane) => (
           <section key={lane.zone} id={`rs-lane-${lane.zone}`} className={`rslane rslane--${lane.zone}`}>
             <ZoneLine zone={lane.zone}
@@ -660,6 +676,7 @@ export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = '
                       problems={problems.filter((problem) => problem.stepId === step.id && problem.level === 'error').map((problem) => problem.text)}
                       lockedAbove={Boolean(given[index - 1]?.locked && index - 1 === 0)}
                       lockedBelow={isFixed(given[index + 1])}
+                      pastDays={library?.learnedDays?.[stepNameKey(step.name)]}
                       onChange={(patch) => setAt(index, patch)}
                       onRemove={() => removeAt(index)}
                       onMove={(to) => moveAt(index, to)}
@@ -952,8 +969,10 @@ function WaitMessageEditor({ step, onChange, onDone }: {
  * the button that reaches it - handed out, never chosen, with only its words
  * to change. Reordering and delete are behind the chevron.
  */
-function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow, onChange, onRemove, onMove }: {
+function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow, pastDays, onChange, onRemove, onMove }: {
   step: RouteStep;
+  /** How long this step has really taken on the shop's own lots, when it has run before. */
+  pastDays?: { days: number; lots: number };
   index: number;
   count: number;
   /** Which part of the journey it is in: inside the lot there are no buttons. */
@@ -1039,6 +1058,12 @@ function StepNode({ step, index, count, zone, problems, lockedAbove, lockedBelow
               value={step.typicalDays ?? ''} aria-label={`Days step ${index + 1} usually takes`}
               onChange={(event) => onChange({ typicalDays: cleanTypicalDays(event.target.value) })} />
             <span>days</span>
+            {pastDays && pastDays.days !== step.typicalDays && (
+              <button type="button" className="rsnode__learned" onClick={() => onChange({ typicalDays: pastDays.days })}
+                title={`The middle of ${pastDays.lots} ${pastDays.lots === 1 ? 'time' : 'times'} on your lots`}>
+                Your lots: {pastDays.days} {pastDays.days === 1 ? 'day' : 'days'} · use
+              </button>
+            )}
           </label>
         )}
 

@@ -312,3 +312,16 @@
   background: var(--surface-2); color: var(--text);
   font: inherit; font-variant-numeric: tabular-nums; text-align: center;
 }
+
+/* Usual days, from the shop's own lots. */
+.rsnode__days { flex-wrap: wrap; }
+.rsnode__learned {
+  padding: 3px 8px; border-radius: 999px; border: 1px solid var(--aqua-line);
+  background: var(--aqua-soft); color: var(--text); font: inherit; font-size: var(--t-xs); cursor: pointer;
+}
+.rslearn {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap;
+  padding: 10px 12px; margin-bottom: var(--s3); border-radius: var(--r-md, 12px);
+  border: 1px solid var(--aqua-line); background: var(--aqua-soft); font-size: var(--t-sm); color: var(--text-dim);
+}
+.rslearn b { color: var(--text); }

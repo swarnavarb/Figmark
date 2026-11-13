@@ -1022,3 +1022,24 @@ label.rdy__line { cursor: pointer; }
 .alsopick__opt.is-on { border-color: var(--aqua-line); border-style: solid; background: var(--aqua-soft); color: var(--text); }
 .alsopick__opt:disabled { opacity: 0.4; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .alsopick__caret, .alsopick__opt { transition: none; } }
+
+/* Several orders answered at once: a quiet bar above the list, never in the way of one. */
+.bulkbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--violet-soft); border: 1px solid var(--violet-line);
+}
+.bulkbar span { color: var(--text-dim); font-size: var(--t-base); }
+.bulkbar b { color: var(--text); }
+.bulkbar__start { align-self: flex-start; }
+.itembulk { justify-content: flex-start; }
+.bulkbar__pct { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: var(--t-base); }
+.bulkbar__pct input { width: 84px; padding: 6px 8px; }
+/* A card picked for a change to several: ringed, with a tick in its corner. */
+.qpicked { outline: 2px solid var(--violet-lit); outline-offset: 2px; }
+.qpick {
+  position: absolute; top: 8px; left: 8px; z-index: 3; display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 50%; font-weight: 800;
+  background: color-mix(in srgb, var(--bg) 70%, transparent); border: 2px solid var(--text-dim); color: var(--violet-ink);
+}
+.qpick.is-on { background: var(--violet); border-color: var(--violet-lit); }

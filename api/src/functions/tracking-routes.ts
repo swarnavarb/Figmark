@@ -5,7 +5,7 @@ import { AWAITING_LOT_ID, DIRECT_LOT_ID, asBuyerSees, inLot, isDirect, lotIsDone
 import type { Listing, Lot, Order, StageEvent, User } from '../../../shared/models.js';
 import { repriceCheckout, unavailableReason } from './placement.js';
 import {
-  BUILT_IN_ROUTE, coarseStage, currentStepOf, lotNo, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeJoinsLot, routeOf, sameSteps, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
+  BUILT_IN_ROUTE, coarseStage, currentStepOf, learnedStepDays, lotNo, lotNumberFrom, lotRefOf, itemStepOn, lotEndIndex, lotOffset, normaliseSteps, routeJoinsLot, routeOf, sameSteps, stepForStage, stepId, type LotRoute, type StageIcon, type StepAssignee, type StepSide, type StepTrigger, type TrackingRoute, ticksOf
 } from '../../../shared/routes.js';
 import { NOT_ACCEPTED_MESSAGE, actionsFor, awaitingAcceptance, isCancelledLike, isStopped, travellingStatus } from '../../../shared/orders.js';
 import { methodOf, orderMoney } from '../../../shared/payments.js';
@@ -88,6 +88,9 @@ async function listRoutes(request: HttpRequest, _context: InvocationContext) {
   return json(200, {
     routes,
     usage,
+    /* What each step has really taken on this shop's own lots, so "usually
+       N days" can start from the shop's history instead of a guess. */
+    learnedDays: learnedStepDays(lots),
     builtIn: BUILT_IN_ROUTE,
     /*
      * The shapes a shop can start from.

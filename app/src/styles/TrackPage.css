@@ -1,0 +1,35 @@
+/* A shared order's journey, readable by anybody. */
+.trackpage { max-width: 560px; display: grid; gap: 18px; }
+.trackpage__head { display: flex; gap: 14px; align-items: center; }
+.trackpage__head h1 { margin: 0; font-size: var(--t-lg); }
+.trackpage__head p { margin: 2px 0 0; }
+.trackpage__photo { width: 72px; height: 72px; border-radius: 14px; object-fit: cover; background: var(--surface-2); flex: none; }
+.trackpage__now {
+  display: grid; gap: 4px; padding: 16px; border-radius: 16px;
+  background: var(--violet-soft); border: 1px solid var(--violet-line);
+}
+.trackpage__now b { font-size: var(--t-lg); }
+.trackpage__now span { color: var(--text-dim); }
+.trackpage__now--delivered { background: var(--aqua-soft); border-color: var(--aqua-line); }
+.trackpage__now--cancelled { background: var(--coral-soft); border-color: var(--coral-line); }
+.trackpage__label { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: .06em; }
+.trackpage__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.trackpage__steps li {
+  position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 0; color: var(--text-faint);
+}
+.trackpage__steps li:not(:last-child)::after {
+  content: ''; position: absolute; left: 11px; top: 34px; bottom: -10px; width: 2px; background: var(--border);
+}
+.trackpage__steps li.is-done { color: var(--text-dim); }
+.trackpage__steps li.is-done::after { background: var(--violet-line); }
+.trackpage__steps li.is-now { color: var(--text); font-weight: 700; }
+.trackpage__dot {
+  width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 50%;
+  border: 2px solid var(--border-strong); font-size: var(--t-xs); background: var(--surface);
+}
+.trackpage__steps li.is-done .trackpage__dot { background: var(--violet); border-color: var(--violet); color: var(--violet-ink); }
+.trackpage__steps li.is-now .trackpage__dot { border-color: var(--violet-lit); box-shadow: 0 0 0 4px var(--violet-soft); }
+.trackpage__log h2 { font-size: var(--t-base); margin: 0 0 8px; }
+.trackpage__log ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: var(--t-base); }
+.trackpage__log time { color: var(--text-faint); margin-right: 6px; }
+.trackpage__foot { font-size: var(--t-xs); }

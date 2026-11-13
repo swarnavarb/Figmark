@@ -1,3 +1,4 @@
+import { LotCostCard } from '../components/LotCosts';
 import { haptic } from '../haptics';
 import { confirmSentence } from '../components/Ask';
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
@@ -1010,17 +1011,18 @@ function AddItemsPanel({ lotId, onClose, onAdded }: {
 
 /** One lot: what's in it, how to move it, and where the tracking goes. */
 /** Which face of a lot you are looking at. */
-type LotSection = 'people' | 'tracking' | 'crew' | 'settings';
+type LotSection = 'people' | 'tracking' | 'crew' | 'costs' | 'settings';
 
 const LOT_SECTIONS: { id: LotSection; label: string; icon: IconName; hint: string }[] = [
   { id: 'people', label: 'Customers', icon: 'users', hint: 'Customers & Orders: every order, customer by customer, and what each still owes' },
   { id: 'tracking', label: 'Tracking', icon: 'truck', hint: 'Where the whole lot is, and every item in it' },
   { id: 'crew', label: 'Crew', icon: 'plane', hint: 'Who moves it' },
+  { id: 'costs', label: 'Costs', icon: 'bank', hint: 'Freight, duty and fees, split into landed cost and margin per item' },
   { id: 'settings', label: 'Settings', icon: 'tag', hint: 'Its name and its route' },
 ];
 
 /**
- * One lot, in four faces.
+ * One lot, in five faces.
  *
  * It used to be one scroll with everything on it - the manifest, the ladder,
  * the forwarder, the crew, the listings - which is four jobs stacked into a
@@ -1624,6 +1626,10 @@ export function LotDetail({ lotId, onBack, customers }: {
 
       {section === 'crew' && (
         <CrewCard lot={lot} busy={busy} onRun={run} />
+      )}
+
+      {section === 'costs' && (
+        <LotCostCard lot={lot} orders={data.orders} listings={listings} items={items} onSaved={() => void load()} />
       )}
 
       {section === 'settings' && (

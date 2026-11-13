@@ -225,6 +225,9 @@ export function SellPage() {
     privateDeal?: { userId: string; handle: string; displayName: string; as: string };
     /** The shop's own item a private deal starts from - sold out and expired ones too. */
     fromItem?: { id: string; title: string; priceMinor: number; state: string };
+    /** "List another like this": the shop's own item this new listing starts as a copy of. */
+    copyOf?: { id: string; title: string };
+    attributes?: Attributes;
     category?: string; condition?: string; tags?: string[]; photos?: PhotoDraft[];
     /** Stocked because a stock poll asked: its voters get first dibs. */
     fromPoll?: { channelId: string; postId: string; optionId: string | null; label: string; voters: number };
@@ -257,6 +260,7 @@ export function SellPage() {
   // category's own wording where one stands for it.
   const [attributes, setAttributes] = useState<Attributes>(() => {
     if (restored?.attributes) return restored.attributes;
+    if (prefill?.attributes) return { ...prefill.attributes };
     const condition = conditionValueForTag(
       canonicalCategory(prefill?.category) ?? CATEGORIES[0]!, prefill?.condition);
     return condition ? { condition } : {};
@@ -290,6 +294,7 @@ export function SellPage() {
   /** A private deal's clock, in hours. */
   const [dealHours, setDealHours] = useState<number>(DEAL_DEFAULT_HOURS);
   const fromItem = deal ? prefill?.fromItem ?? null : null;
+  const copyOf = deal ? null : prefill?.copyOf ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The saved calculation this listing is made from, marked with the item once it is published. */
@@ -302,7 +307,7 @@ export function SellPage() {
      fills in stays editable, and "None" lets it go. */
   const [templates, setTemplates] = useState<PostTemplate[]>([]);
   // None when the form starts from an existing item: that item is the template.
-  const [templateId, setTemplateId] = useState<string>(() => restored?.templateId ?? (prefill?.fromItem ? '' : lastTemplate() ?? ''));
+  const [templateId, setTemplateId] = useState<string>(() => restored?.templateId ?? (prefill?.fromItem || prefill?.copyOf ? '' : lastTemplate() ?? ''));
   const [photos, setPhotos] = useState<PhotoDraft[]>(restored?.photos ?? prefill?.photos ?? []);
   const [preLot, setPreLot] = useState<RouteStep[] | null>(restored?.preLot ?? null);
   const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
@@ -400,7 +405,7 @@ export function SellPage() {
         const remembered = result.templates.find((row) => row.id === lastTemplate());
         const chosen = remembered ?? result.templates[0];
         // Coming back to a form already filled in: leave it as it was.
-        if (chosen && !restored && !prefill?.fromItem) {
+        if (chosen && !restored && !prefill?.fromItem && !prefill?.copyOf) {
           setTemplateId(chosen.id);
           applyTemplate(chosen, true);
         }
@@ -674,6 +679,12 @@ export function SellPage() {
               ? `Only ${deal.displayName} can see and buy this. It never appears in your shop, channel or the feed - once bought it is a normal order.`
               : 'About a minute. You can edit it any time.'}
           </p>
+          {copyOf && (
+            <p className="dealfrom">
+              A copy of <b>{copyOf.title}</b>, photos and all. Change what differs - size, colour, price, how
+              many - and publish. <Link to={`/listing/${encodeURIComponent(copyOf.id)}`}>The original</Link> stays as it is.
+            </p>
+          )}
           {fromItem && (
             <p className="dealfrom">
               Made from <b>{fromItem.title}</b>

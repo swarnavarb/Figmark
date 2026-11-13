@@ -34,6 +34,7 @@ import './functions/service-routes.js';
 import './functions/store-routes.js';
 import './functions/service-work-routes.js';
 import './functions/tracking-routes.js';
+import './functions/public-track-routes.js';
 import './functions/template-routes.js';
 import './functions/admin-routes.js';
 import './functions/overview-routes.js';
