@@ -3,10 +3,19 @@ import { useSyncExternalStore } from 'react';
 /**
  * Full motion or reduced motion, for the whole app.
  *
- * Until the reader picks, it follows the phone's own "reduce motion" setting.
- * Once they flip the switch in the profile menu, their choice wins either way:
- * full motion even on a phone that asks for less, or reduced on one that
- * doesn't. Kept on this device only.
+ * Signed out, it always follows the phone's own "reduce motion" setting.
+ * Signed in, it follows the phone too until that account flips the switch in
+ * the profile menu; from then on the account's choice wins either way: full
+ * motion even on a phone that asks for less, or reduced on one that doesn't.
+ * The choice is kept per account on this device, so an account signing in
+ * here for the first time starts from the phone's setting, and signing out
+ * hands the device back to the phone.
+ *
+ * Two keys in storage:
+ * - `figmark:motion:<account id>` - each account's own choice on this device.
+ * - `figmark:motion` - the choice in force right now, set only while an
+ *   account with a choice is signed in. public/boot/tone.js reads this one
+ *   before the first paint, since the session isn't known by then.
  *
  * The answer lives on <html data-motion="reduced|full">:
  * - Every `@media (prefers-reduced-motion: …)` block in the stylesheets is
@@ -22,16 +31,22 @@ import { useSyncExternalStore } from 'react';
 export type MotionChoice = 'full' | 'reduced';
 
 const KEY = 'figmark:motion';
+const accountKey = (id: string): string => `${KEY}:${id}`;
 const QUERY = '(prefers-reduced-motion: reduce)';
 const listeners = new Set<() => void>();
 /** The choice made this visit, for when storage is refused. */
 let picked: MotionChoice | null = null;
+/** The signed-in account, or null when nobody is (or before the session is known). */
+let account: string | null = null;
+
+function valid(value: string | null): MotionChoice | null {
+  return value === 'full' || value === 'reduced' ? value : null;
+}
 
 function stored(): MotionChoice | null {
   if (picked) return picked;
   try {
-    const value = localStorage.getItem(KEY);
-    return value === 'full' || value === 'reduced' ? value : null;
+    return valid(localStorage.getItem(KEY));
   } catch {
     return null;
   }
@@ -57,10 +72,32 @@ export function reducedMotion(): boolean {
 
 export function setMotion(choice: MotionChoice): void {
   picked = choice;
+  // Signed out, nothing is kept: the next visit follows the phone again.
+  if (account) {
+    try {
+      localStorage.setItem(accountKey(account), choice);
+      localStorage.setItem(KEY, choice);
+    } catch {
+      // Private browsing and the like: it holds for this visit.
+    }
+  }
+  apply();
+}
+
+/**
+ * Called by the session once it knows who is signed in, and again on every
+ * sign-in and sign-out. Puts that account's own choice in force, or the
+ * phone's setting when the account hasn't picked or nobody is signed in.
+ */
+export function motionFollowsAccount(id: string | null): void {
+  account = id;
+  picked = null;
   try {
-    localStorage.setItem(KEY, choice);
+    const choice = id ? valid(localStorage.getItem(accountKey(id))) : null;
+    if (choice) localStorage.setItem(KEY, choice);
+    else localStorage.removeItem(KEY);
   } catch {
-    // Private browsing and the like: it holds for this visit.
+    // Storage refused: the phone decides.
   }
   apply();
 }
