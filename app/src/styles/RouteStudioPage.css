@@ -106,7 +106,7 @@
 /* ── The route maker ───────────────────────────────────────────────────────
    One quiet column: the route's name, Edit or Preview, then its steps as a
    list in three labelled parts. A row is a step; tapping it opens the rest. */
-.rsstudio { display: grid; gap: var(--s4); padding-bottom: var(--s2); }
+.rsstudio { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); padding-bottom: var(--s2); }
 .rshead { display: grid; gap: var(--s3); }
 .rshead__top { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .rshead__name {
@@ -118,8 +118,8 @@
 .rshead__name:focus { outline: none; border-bottom-color: var(--accent); }
 .rshead__mode button { white-space: nowrap; padding: 7px var(--s3); }
 
-.rslanes { display: grid; gap: var(--s5); }
-.rslane { display: grid; gap: var(--s2); scroll-margin-top: 80px; }
+.rslanes { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
+.rslane { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2); scroll-margin-top: 80px; }
 .rslane--pre { --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line); }
 .rslane--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
 .rslane--post { --zone: var(--lime); --zone-soft: var(--lime-soft); --zone-line: var(--lime-line); }
@@ -135,13 +135,13 @@
 
 /* The steps of one part: a single card, a hairline between rows. */
 .rschain {
-  display: grid; border-radius: var(--r-lg); overflow: hidden;
+  display: grid; grid-template-columns: minmax(0, 1fr); border-radius: var(--r-lg); overflow: hidden;
   background: linear-gradient(90deg, var(--zone-soft), transparent 55%), var(--surface);
   box-shadow: inset 4px 0 0 var(--zone), inset 0 0 0 1px var(--zone-line);
 }
 .rsstep + .rsstep { border-top: 1px solid var(--zone-line); }
 .rsstep__row {
-  display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 52px; padding: var(--s2) var(--s4);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); width: 100%; min-height: 52px; padding: var(--s2) var(--s4);
   border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
 .rsstep--fixed .rsstep__row { cursor: default; }
@@ -155,14 +155,16 @@
 }
 .rsstep__pill--button { background: var(--accent-soft); color: var(--accent-text); }
 .rsstep__pill--days { background: var(--warn-soft); color: var(--warn); }
+.rsstep__pill--courier { background: var(--aqua-soft); color: var(--aqua); }
 .rsstep__pill--wrong { background: var(--danger-soft); color: var(--danger-text); }
-.rsstep__name { flex: 1; min-width: 0; font-size: var(--t-base); font-weight: var(--w-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rsstep { min-width: 0; }
+.rsstep__name { flex: 1 1 96px; min-width: 0; font-size: var(--t-base); font-weight: var(--w-medium); line-height: 1.3; overflow-wrap: anywhere; }
 .rsstep__name.is-blank { color: var(--text-faint); }
 .rsstep__meta { flex: none; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
 .rsstep.is-open .rsstep__row { min-height: 48px; }
 .rsstep.is-open .rsstep__name { font-weight: var(--w-semi); }
-.rsstep__edit { display: grid; gap: var(--s4); padding: var(--s1) var(--s4) var(--s4); }
-.rsstep__acts { display: flex; align-items: center; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); }
+.rsstep__edit { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); padding: var(--s1) var(--s4) var(--s4); }
+.rsstep__acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); }
 .rsstep__gap { flex: 1; }
 .rsstep__act {
   display: inline-flex; align-items: center; gap: var(--s1); height: 32px; padding: 0 var(--s2); border: 0; border-radius: var(--r-sm);
@@ -173,7 +175,7 @@
 .rsstep__act--danger:hover { color: var(--danger); background: var(--danger-soft); }
 
 /* A labelled field inside an open step. */
-.rsfield { display: grid; gap: 6px; min-width: 0; }
+.rsfield { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
 .rsfield > span, .rsbtn__label, .rsbtn__wholabel { font-size: var(--t-xs); color: var(--text-dim); }
 .rsfield input, .rsbtn__words {
   width: 100%; min-width: 0; height: 40px; padding: 0 var(--s3); border: 1px solid var(--border); border-radius: var(--r-sm);
@@ -188,14 +190,13 @@
 }
 .rsnode__days input:focus { outline: none; border-color: var(--accent); }
 .rsnode__learned { margin-left: auto; font-size: var(--t-xs); }
-.rscheck { display: flex; align-items: flex-start; gap: var(--s2); font-size: var(--t-sm); color: var(--text-dim); cursor: pointer; }
-.rscheck input { flex: none; margin-top: 2px; accent-color: var(--accent); }
 
 /* The button a step comes with: what it says, and who presses it. */
-.rsbtn { display: grid; gap: var(--s2); min-width: 0; }
-.rsbtn__row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s2); align-items: center; }
+.rsbtn { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2); min-width: 0; }
+.rsbtn__row { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.rsbtn__row .rsbtn__words { flex: 1 1 150px; width: auto; }
 .rsbtn__chip {
-  display: inline-flex; align-items: center; height: 32px; max-width: 46vw; padding: 0 var(--s3); border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; height: 32px; max-width: 100%; padding: 0 var(--s3); border-radius: var(--r-pill);
   background: var(--accent); color: #fff; font-size: var(--t-xs); font-weight: var(--w-semi); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
@@ -273,7 +274,7 @@
 /* The lot a route carries, and the people who work it: two groups of their
    own above the steps, each in a colour of its own. */
 .rsgroup {
-  display: grid; gap: var(--s3); padding: var(--s4); border-radius: var(--r-lg);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); min-width: 0; padding: var(--s4); border-radius: var(--r-lg);
   background: linear-gradient(180deg, var(--group-soft), transparent 120px), var(--surface);
   box-shadow: inset 0 0 0 1px var(--group-line);
 }
@@ -292,3 +293,20 @@
 .rsfield--lot { --zone: var(--coral); }
 .rsfield--post { --zone: var(--lime); }
 .rsfield--pre > span, .rsfield--lot > span, .rsfield--post > span { color: var(--zone); font-weight: var(--w-semi); }
+
+/* Courier name and AWB on a step: a switch, and the two fields it asks for. */
+.rscourier {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2); padding: var(--s3); border-radius: var(--r-md);
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
+}
+.rscourier.is-on { background: var(--aqua-soft); box-shadow: inset 0 0 0 1px var(--aqua-line); }
+.rscourier__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); cursor: pointer; }
+.rscourier__title { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--text); }
+.rscourier__always { flex: none; font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--aqua); }
+.rscourier__switch { flex: none; width: 20px; height: 20px; accent-color: var(--aqua); }
+.rscourier__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.rscourier__fields span {
+  display: grid; gap: 2px; padding: var(--s2) var(--s3); border-radius: var(--r-sm); border: 1px dashed var(--aqua-line);
+  font-size: var(--t-xs); color: var(--text);
+}
+.rscourier__fields em { font-style: normal; font-size: var(--t-2xs); color: var(--text-faint); overflow-wrap: anywhere; }

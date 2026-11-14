@@ -27,14 +27,13 @@ import { COUNTRIES } from '@shared/countries';
 import type { Lot } from '@shared/models';
 
 /**
- * Stands in for the real lot's countries while a route is being written -
- * nothing is attached to one yet. Read off the shop's own latest lot, so a
- * shop shipping Japan to India previews in those words; with no lot yet the
- * tokens read as plain "the origin" and "the destination".
+ * The two countries a route's {origin} and {dest} read in while it is being
+ * written. Nothing is picked beforehand: the steps say "the origin" and "the
+ * destination" until the lot's own countries are chosen, and follow them
+ * from then on.
  */
 type PreviewVars = { origin?: string | null; destination?: string | null };
-/** Until the shop has a lot of its own, {origin} and {dest} read on the commonest lane. */
-const EXAMPLE_LANE: PreviewVars = { origin: 'China', destination: 'India' };
+const NO_LANE: PreviewVars = {};
 const PreviewVarsContext = createContext<PreviewVars>({});
 
 /**
@@ -169,8 +168,7 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
   const [adding, setAdding] = useState<{ at: number; zone: StepZone } | null>(null);
   /** The one step whose details are open; the rest read as a plain list. */
   const [openId, setOpenId] = useState<string | null>(null);
-  /** The shop's own lane, so the preview reads in its countries rather than ours. */
-  const [laneVars, setVars] = useState<PreviewVars>(EXAMPLE_LANE);
+
   /** The lot to open on this route when it is saved, if it is given a name. */
   const withLot = Boolean(onLotOpened) && !sample;
   const [lot, setLot] = useState({ name: '', originCountry: '', destinationCountry: '', forwarderName: '', supplierHandle: '', handlerHandle: '' });
@@ -179,32 +177,12 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
   /* The steps read in the countries picked for the lot, as soon as there are any. */
   const vars: PreviewVars = withLot && (lot.originCountry || lot.destinationCountry)
     ? { origin: lot.originCountry || null, destination: lot.destinationCountry || null }
-    : laneVars;
+    : NO_LANE;
   /** The chain as last opened or saved: anything else on screen is unsaved work. */
   const [savedAs, setSavedAs] = useState<string | null>(null);
   const offerUndo = useUndo();
   /** Saved, and some unfinished lots still read the route's older steps. */
   const [behind, setBehind] = useState<{ route: TrackingRoute; lots: number; finish: () => void } | null>(null);
-
-  useEffect(() => {
-    if (sample) {
-      // A sample is read by every shop; it is previewed on the commonest lane.
-      setVars(EXAMPLE_LANE);
-      return;
-    }
-    void api.myLots().then((result) => {
-      const lane = result.lots.find((entry) => entry.lot.originCountry || entry.lot.destinationCountry)?.lot;
-      if (lane) {
-        setVars({ origin: lane.originCountry, destination: lane.destinationCountry });
-        // Most shops run the same lane again, so the next lot starts on it.
-        setLot((now) => ({
-          ...now,
-          originCountry: now.originCountry || lane.originCountry || '',
-          destinationCountry: now.destinationCountry || lane.destinationCountry || '',
-        }));
-      }
-    }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (sample) {
@@ -1014,6 +992,9 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
   const isDelivered = step.trigger === 'delivered';
   const fixed = isFixed(step);
   const hasButton = Boolean(stepTickKey(step));
+  /* The two steps that take a courier name and an AWB: the item's own
+     dispatch, always, and any step in the lot the seller switches it on for. */
+  const asksCourier = step.trigger === 'dispatched' || (zone === 'lot' && Boolean(step.forward));
 
   return (
     <div className={`rsstep${open ? ' is-open' : ''}${problems.length ? ' is-wrong' : ''}`} data-step={step.id}>
@@ -1024,6 +1005,7 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
         </span>
         {problems.length > 0 && <span className="rsstep__pill rsstep__pill--wrong">Fix</span>}
         {step.typicalDays ? <span className="rsstep__pill rsstep__pill--days">{step.typicalDays}d</span> : null}
+        {asksCourier && <span className="rsstep__pill rsstep__pill--courier">Courier</span>}
         {hasButton && <span className="rsstep__pill rsstep__pill--button">Button</span>}
         <Icon name={open ? 'up' : 'down'} size={14} />
       </button>
@@ -1079,9 +1061,6 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
               <PlaceTags what="button"
                 onAdd={(tag) => onChange({ button: `${(step.button || step.name).trimEnd()} ${tag}`.trim() })} />
               {problems.map((text) => <span key={text} className="rsbtn__wrong">{text}</span>)}
-              {step.trigger === 'dispatched' && (
-                <span className="rsbtn__note">Pressing it asks for the courier and AWB, both optional.</span>
-              )}
               {isDelivered && <span className="rsbtn__note">Pressing it asks first, then tells the buyer.</span>}
               {!isDelivered && <WhoPresses step={step} zone={zone} onChange={onChange} />}
               {step.custom && (
@@ -1108,12 +1087,36 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
             </div>
           )}
 
-          {zone === 'lot' && !fixed && (
-            <label className="rscheck">
-              <input type="checkbox" checked={Boolean(step.forward)}
-                onChange={(event) => onChange({ forward: event.target.checked || undefined })} />
-              <span>Ask for the courier and tracking ID when the lot moves here</span>
-            </label>
+          {/* Courier name and AWB: asked for when this step is reached, and
+              shown to buyers on it. Always on the item's dispatch; a switch on
+              any step in the lot, where the crate changes hands. */}
+          {(zone === 'lot' || step.trigger === 'dispatched') && (
+            <div className={`rscourier${asksCourier ? ' is-on' : ''}`}>
+              <label className="rscourier__head">
+                <span className="rscourier__title"><span aria-hidden="true">🚚</span> Courier name and AWB</span>
+                {step.trigger === 'dispatched'
+                  ? <span className="rscourier__always">Always asked</span>
+                  : (
+                    <input type="checkbox" className="rscourier__switch" checked={Boolean(step.forward)}
+                      aria-label={`Ask for the courier name and AWB at step ${index + 1}`}
+                      onChange={(event) => onChange({ forward: event.target.checked || undefined })} />
+                  )}
+              </label>
+              {asksCourier ? (
+                <>
+                  <span className="rscourier__fields" aria-hidden="true">
+                    <span>Courier name<em>e.g. DHL, Delhivery</em></span>
+                    <span>AWB / tracking ID<em>e.g. 1234567890</em></span>
+                  </span>
+                  <span className="rsbtn__note">
+                    You are asked for these two {step.trigger === 'dispatched' ? 'when you press the button' : 'when you move the lot here'}.
+                    Both are optional, and buyers see what you fill in.
+                  </span>
+                </>
+              ) : (
+                <span className="rsbtn__note">Turn on to add the courier name and AWB when the lot moves here.</span>
+              )}
+            </div>
           )}
 
           {hasNext && <WaitMessageEditor step={step} onChange={onChange} />}
@@ -1182,7 +1185,7 @@ const ZONE_CREW: Record<StepZone, { id: StepAssignee; label: string }> = {
 /**
  * The two place tags, a tap away while a step is being written: each turns
  * into the lot's own country - "Received at {origin} WH" reads "Received at
- * 🇨🇳 WH" on a China lot. Shown only on the card being edited.
+ * 🇨🇳 WH" once the lot ships from China. Shown only on the card being edited.
  */
 function PlaceTags({ what, onAdd }: { what: 'name' | 'button'; onAdd: (tag: string) => void }) {
   return (
