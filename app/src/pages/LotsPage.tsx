@@ -144,7 +144,7 @@ function CrewCard({ lot, busy, onRun }: {
           <PersonTag value={handlerHandle} onChange={setHandlerHandle}
             placeholder={lot.handler?.handlerUserId ? 'Tagged. Type another to change it.' : '@their_handle'} />
           <span className="field__hint">
-            Optional. Tag them and this lot appears under their My services, with the parcels to
+            Optional. Tag them and this lot appears in their Domestic handler workspace, with the parcels to
             make up and the buttons your route hands them. A name alone is a note to yourself.
           </span>
         </label>

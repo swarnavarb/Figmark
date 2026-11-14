@@ -477,15 +477,13 @@ const SHAPES = {
   services: () => (
     <main className="page tab-view psk">
       <Head title="Services" sub={2} />
-      <Card h={76}><span className="psk-row"><S w={42} h={42} r={12} /><span className="psk-lines" style={{ flex: 1 }}><S w="46%" h={16} /><S w="60%" h={10} /></span></span></Card>
-      <S w={110} h={14} />
       <Hero h={170} />
       <Hero h={170} />
     </main>
   ),
   servicesMine: () => (
     <main className="page psk">
-      <BackTitle title="My services" />
+      <BackTitle title="All my work" />
       <Lines n={2} />
       <S w={70} h={14} />
       <Rows n={2} />

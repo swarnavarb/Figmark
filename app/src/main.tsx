@@ -60,6 +60,7 @@ const ServicesPage = page(loaders.services, 'ServicesPage');
 const MyServicesPage = page(loaders.services, 'MyServicesPage');
 const ConsignmentsPage = page(loaders.services, 'ConsignmentsPage');
 const DistributionPage = page(loaders.services, 'DistributionPage');
+const SupplierPage = page(loaders.services, 'SupplierPage');
 const ServiceDirectoryPage = page(loaders.services, 'ServiceDirectoryPage');
 const StoreApplyPage = page(loaders.storeApply, 'StoreApplyPage');
 const OpenPage = page(loaders.open, 'OpenPage');
@@ -164,6 +165,7 @@ function App() {
         <Route path="/services/mine" element={members(<MyServicesPage />)} />
         <Route path="/services/mine/forwarder" element={members(<ConsignmentsPage />)} />
         <Route path="/services/mine/handler" element={members(<DistributionPage />)} />
+        <Route path="/services/mine/supplier" element={members(<SupplierPage />)} />
         <Route path="/services/apply/:kind" element={members(<StoreApplyPage />)} />
         <Route path="/open" element={members(<OpenPage />)} />
         <Route path="/services/store/:kind" element={members(<StoreConsolePage />)} />

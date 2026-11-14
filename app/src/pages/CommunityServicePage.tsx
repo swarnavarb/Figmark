@@ -4,7 +4,7 @@ import { DISPUTE_STATUS_LABELS } from '@shared/enums';
 import { ApiRequestError, api, type CommunityDesk } from '../api';
 import { EmptyState, ErrorNotice, PageError } from '../components/ui';
 import { formatDateOrdinal, formatMoney } from '../format';
-import { BackLink } from '../components/ScrollManager';
+import { WorkSwitcher } from '../components/WorkSwitcher';
 import { PageLoading, useToast } from '../components/Feedback';
 import '../styles/CommunityServicePage.css';
 
@@ -60,9 +60,10 @@ export function CommunityServicePage() {
 
   return (
     <main className="page tab-view">
-      <BackLink to="/services/mine" title="Community Service" />
+      <WorkSwitcher />
       <div className="page__head">
         <div>
+          <h1>Community Service</h1>
           <p className="muted">{desk.manager.name} · community manager since {formatDateOrdinal(desk.manager.since)}</p>
         </div>
         {/* Green when new disputes can reach them, red when they cannot - the

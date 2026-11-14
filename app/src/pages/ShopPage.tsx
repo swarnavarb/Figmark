@@ -37,6 +37,7 @@ import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
 import { SetupChecklist } from '../components/VerifyNudges';
 import { OpenBusinessChooser, OpenBusinessHead } from '../components/OpenBusiness';
+import { WorkSwitcher } from '../components/WorkSwitcher';
 import {
   BUILT_IN_ROUTE, currentStepOf as currentStepOfLot, lotOffset as lotOffsetOf, preSteps as preStepsOf,
   lotNo, lotNumberFrom, renderStepText, routeOf as routeOfLot,
@@ -204,13 +205,13 @@ export function shopBaseFor(store: Pick<StoreAccess, 'ownerId' | 'isOwner'>): st
 }
 
 /**
- * The Sell tab: your own shop, and nothing else.
+ * The Sell tab's home workspace: your own shop.
  *
  * Before a store exists there is exactly one thing to offer: open one. Items
  * are listed from a shop and only from a shop, so a "list an item" door here
  * would lead to a refusal one screen later. Once a shop exists the tab becomes
  * its console. A shop somebody else owns and you help run is a job, not your
- * shop: it opens from My services.
+ * shop: it opens from the workspace switcher at the top of the tab.
  */
 export function ShopPage() {
   const [stores, setStores] = useState<StoreAccess[] | null>(null);
@@ -267,7 +268,7 @@ export function ShopPage() {
 }
 
 /**
- * A shop you help run, opened from My services.
+ * A shop you help run, opened from the Sell tab's workspace switcher.
  *
  * The same console its owner has, showing only what your rights there reach.
  */
@@ -294,9 +295,9 @@ export function ManagedShopPage() {
   if (!store) {
     return (
       <main className="page tab-view">
-        <BackBar onBack={() => navigate('/services/mine')}>My services</BackBar>
+        <BackBar onBack={() => navigate('/services/mine')}>All my work</BackBar>
         <EmptyState title="You do not help run this shop">
-          Its owner may have changed who has access. The shops you help run are listed under My services.
+          Its owner may have changed who has access. The shops you help run are in the switcher at the top of the Sell tab.
         </EmptyState>
       </main>
     );
@@ -312,13 +313,9 @@ export function ManagedShopPage() {
 function ShopStart({ onOpen, helping }: { onOpen: () => void; helping: StoreAccess[] }) {
   return (
     <main className="page tab-view">
+      {/* No shop of your own, but other work: it is one tap away from here. */}
+      <WorkSwitcher title={helping.length > 0 ? 'Shops you help run and more' : undefined} />
       <OpenBusinessHead />
-      {helping.length > 0 && (
-        <p className="notice notice--info">
-          {helping.length === 1 ? <>You help run <b>{helping[0]!.name}</b>. It</> : <>The {helping.length} shops you help run</>}{' '}
-          {helping.length === 1 ? 'opens' : 'open'} from <Link to="/services/mine">My services</Link>.
-        </p>
-      )}
       <SetupChecklist hasStore={false} onOpenStore={onOpen} />
       <OpenBusinessChooser onOpenStore={onOpen} />
     </main>
@@ -425,7 +422,8 @@ function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () =
     <ShopBase.Provider value={base}>
     <ProOwnerProvider ownerId={store.ownerId}>
     <main className="page tab-view sellpage">
-      {!store.isOwner && <BackBar onBack={() => navigate('/services/mine')}>My services</BackBar>}
+      {/* Your shop, the shops you help run and every other job you do, one dropdown apart. */}
+      <WorkSwitcher />
       {store.isOwner && <FeeLockBanner />}
       {store.isOwner && <CancelFlagBanner />}
       {store.isOwner && <SetupChecklist hasStore />}

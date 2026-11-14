@@ -29,6 +29,7 @@ import { Picture, StatusPill, StoreMark, accentStyle } from '../components/Store
 import { useSession } from '../session';
 import { RequestRowCard } from '../components/ServiceWorkKit';
 import { BackBar, BackLink } from '../components/ScrollManager';
+import { WorkSwitcher, workHome } from '../components/WorkSwitcher';
 import { ConditionTag } from '../components/ConditionTag';
 import { PageLoading } from '../components/Feedback';
 import { SkelCards, SkelFaces, SkelInline } from '../components/PageSkeletons';
@@ -37,22 +38,25 @@ import '../styles/ServicesPage.css';
 /**
  * The trades around the trade.
  *
- * Two halves. At the top, one door - My services - for everybody: whatever a
- * person does for somebody else on Figmark is behind it, and if they do
- * nothing yet it says so. Under it, the services anyone can hire, each in its
- * own colours: the freight forwarders who fly a lot, and the artists who make a
- * piece one of a kind.
+ * Only the people you can hire, each in their own colours: the freight
+ * forwarders who fly a lot, and the artists who make a piece one of a kind -
+ * and under them, what you have asked of them. The work you do yourself, as a
+ * shop, a forwarder, an artist, a supplier, a handler or a community manager,
+ * is behind the Sell tab's workspace switcher.
  *
  * Suppliers and domestic handlers have no list here. A shop names them on a
- * lot, under Crew, and the lot turns up under that person's My services.
+ * lot, under Crew, and the lot turns up in that person's Supplier or Domestic
+ * handler workspace.
  */
 export function ServicesPage() {
   const { user } = useSession();
   const [mine, setMine] = useState<MyServicesView | null>(null);
+  const [asked, setAsked] = useState<RequestRow[]>([]);
 
   useEffect(() => {
     if (!user) return;
     void api.myServices().then(setMine).catch(() => setMine(null));
+    void api.myServiceRequests().then((result) => setAsked(result.requests)).catch(() => setAsked([]));
   }, [user]);
 
   return (
@@ -66,13 +70,27 @@ export function ServicesPage() {
         </div>
       </div>
 
-      <MyServicesButton mine={mine} signedIn={Boolean(user)} />
-
-      <h2 className="ms-section">Find a service</h2>
       <div className="svx-stack">
         <ServiceTile kind="forwarder" mine={mine} />
         <ServiceTile kind="artist" mine={mine} />
       </div>
+
+      {asked.length > 0 && (
+        <section className="stack" style={{ marginTop: 22 }}>
+          <h2 className="ms-section"><Icon name="send" size={15} /> Requests you sent</h2>
+          {asked.map((row) => (
+            <RequestRowCard key={row.request.id} request={row.request} due={row.due} side="customer" actions={row.actions}
+              to={`/services/requests/${row.request.kind}/${row.request.ownerId}/${row.request.id}`} />
+          ))}
+        </section>
+      )}
+
+      {user && (
+        <p className="faint svx-ownline">
+          Run a store, forward freight, paint, supply or hand out lots? Your own work is under{' '}
+          <Link to={workHome()}>Sell</Link> — switch between jobs from the dropdown at the top.
+        </p>
+      )}
     </main>
   );
 }
@@ -80,41 +98,6 @@ export function ServicesPage() {
 /** Whether this person has anything at all behind My services. */
 function enrolled(mine: MyServicesView | null): boolean {
   return Boolean(mine && (mine.stores.length > 0 || mine.crew.length > 0 || mine.communityManager));
-}
-
-/** The one door at the top of the tab, the same for everybody. */
-function MyServicesButton({ mine, signedIn }: { mine: MyServicesView | null; signedIn: boolean }) {
-  const waiting = (mine?.stores ?? []).reduce((sum, row) => sum + row.waiting, 0)
-    + (mine?.crew ?? []).filter((row) => row.toPress > 0).length;
-  const line = !signedIn
-    ? 'Sign in to see the work you do for others'
-    : mine === null
-      ? <SkelInline w={150} />
-      : !enrolled(mine)
-        ? 'You’re not enrolled in any services'
-        : waiting > 0
-          ? `${waiting} waiting on you`
-          : `${countOf3(mine)} · all caught up`;
-  return (
-    <Link to="/services/mine" className="svx-mine">
-      <span className="svx-mine__icon" aria-hidden="true"><Icon name="users" size={20} /></span>
-      <span className="svx-mine__body">
-        <span className="svx-mine__title">My services</span>
-        <span className="svx-mine__line">{line}</span>
-      </span>
-      {waiting > 0 && <span className="svx-mine__ping">{waiting}</span>}
-      <Icon name="right" size={18} className="svx-mine__go" />
-    </Link>
-  );
-}
-
-/** "2 stores, 3 lots", for the line under the button. */
-function countOf3(mine: MyServicesView): string {
-  const parts: string[] = [];
-  if (mine.stores.length) parts.push(`${mine.stores.length} ${mine.stores.length === 1 ? 'store' : 'stores'}`);
-  if (mine.crew.length) parts.push(`${mine.crew.length} ${mine.crew.length === 1 ? 'lot' : 'lots'}`);
-  if (mine.communityManager) parts.push('Community Service');
-  return parts.join(', ');
 }
 
 /* ── One service, in its own colours ───────────────────────────────────── */
@@ -398,6 +381,7 @@ function StudioSearch() {
 
 /** The ⋯ on a service's banner: apply, or carry on with an application or a store. */
 function ApplyMenu({ kind, mine }: { kind: StoreKind; mine: MyServicesView | null }) {
+  const { user } = useSession();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
   const status: StoreStatus | null = mine?.own[kind] ?? null;
@@ -412,10 +396,10 @@ function ApplyMenu({ kind, mine }: { kind: StoreKind; mine: MyServicesView | nul
   }, [open]);
 
   const live = status === 'approved' || status === 'suspended';
-  // A live store is run from My services, like every other job.
-  const target = live ? '/services/mine' : `/services/apply/${kind}`;
+  // A live store is run from the Sell tab, like every other job.
+  const target = live && user ? `/services/store/${kind}/${user.id}` : `/services/apply/${kind}`;
   const label = status === null ? THEME[kind].apply
-    : live ? 'Open in My services'
+    : live ? 'Open in Sell'
       : status === 'pending' ? 'View your application'
         : status === 'changes' ? 'Fix and resend your application'
           : status === 'rejected' ? 'Edit and reapply' : 'View your store';
@@ -500,19 +484,19 @@ export function ServiceDirectoryPage() {
   );
 }
 
-/* ── My services ────────────────────────────────────────────────────── */
+/* ── All my work ────────────────────────────────────────────────────── */
 
 /**
- * Everything this person does for somebody else, on one screen.
+ * Everything this person does, on one screen: the overview behind the Sell
+ * tab's workspace switcher.
  *
- * The stores they run or help run, and the lots a shop named them on - each
- * under the job they were named for. Nothing else: somebody with none of it is
- * told so, and where to apply.
+ * Requests handed to them, the stores they run or help run, and the lots a
+ * shop named them on - each under the job they were named for. Somebody with
+ * none of it is told so, and where to start.
  */
 export function MyServicesPage() {
   const { user } = useSession();
   const [mine, setMine] = useState<MyServicesView | null>(null);
-  const [asked, setAsked] = useState<RequestRow[]>([]);
   const [assigned, setAssigned] = useState<RequestRow[]>([]);
   /** Shops somebody else owns that this person was given rights in. */
   const [shops, setShops] = useState<StoreAccess[]>([]);
@@ -520,14 +504,12 @@ export function MyServicesPage() {
 
   const load = useCallback(async () => {
     try {
-      // Work handed to you, the lots, shops and teams you are on, and what you asked for: one wait, not four.
-      const [services, requests, given, stores] = await Promise.all([
+      // Work handed to you, and the lots, shops and teams you are on: one wait, not three.
+      const [services, given, stores] = await Promise.all([
         api.myServices(),
-        api.myServiceRequests().catch(() => ({ requests: [] })),
         api.assignedRequests().catch(() => ({ requests: [] })),
         api.stores().catch(() => ({ stores: [] as StoreAccess[] })),
       ]);
-      setAsked(requests.requests);
       setAssigned(given.requests);
       // Packing a shop's lots is crew work, listed below; a shop is "run" by somebody with a console right in it.
       setShops(stores.stores.filter((store) => !store.isOwner && store.permissions.some((right) => right !== 'export')));
@@ -544,8 +526,8 @@ export function MyServicesPage() {
   if (!user) {
     return (
       <main className="page">
-        <BackLink to="/services" title="My services" />
-        <EmptyState icon="◍" title="Sign in to see your services">
+        <BackLink to="/" title="All my work" />
+        <EmptyState icon="◍" title="Sign in to see your work">
           <Link to="/" className="btn">Sign in</Link>
         </EmptyState>
       </main>
@@ -554,10 +536,11 @@ export function MyServicesPage() {
 
   return (
     <main className="page">
-      <BackLink to="/services" title="My services" />
+      <WorkSwitcher />
       <div className="page__head">
         <div>
-          <p className="muted">Work handed to you: requests assigned to you, shops you help run, lots shops named you on, and the teams you are on.</p>
+          <h1>All my work</h1>
+          <p className="muted">Everything you do on Figmark: requests assigned to you, your stores, shops you help run, lots shops named you on, and the teams you are on.</p>
         </div>
       </div>
 
@@ -573,8 +556,7 @@ export function MyServicesPage() {
         </section>
       )}
 
-      {/* A shop somebody else owns is a job: its console opens from here, not
-          from the Sell tab, which is only ever your own shop. */}
+      {/* A shop somebody else owns is a job: its console is a workspace of its own. */}
       {shops.length > 0 && (
         <section className="stack" style={{ marginBottom: 22 }}>
           <h2 className="ms-section"><Icon name="tag" size={15} /> Shops you help run</h2>
@@ -596,7 +578,7 @@ export function MyServicesPage() {
 
       {mine === null ? (
         !error && <div className="stack"><SkelInline w={70} h={14} /><SkelCards n={1} h={76} chips={0} /></div>
-      ) : !enrolled(mine) && assigned.length === 0 ? (asked.length > 0 || shops.length > 0 ? null :
+      ) : !enrolled(mine) && assigned.length === 0 ? (shops.length > 0 ? null :
         <EmptyState icon={<Icon name="users" size={26} />} title="Nothing handed to you yet">
           When a team adds you, or a shop names you on a lot as its supplier or handler, the work shows up here.
           To run your own business, <Link to="/open">open one</Link>.
@@ -612,20 +594,18 @@ export function MyServicesPage() {
             </section>
           ))}
 
+          {mine.stores.some((row) => row.isOwner) && (
+            <section className="stack">
+              <h2 className="ms-section">Your stores</h2>
+              {mine.stores.filter((row) => row.isOwner).map((row) => <StoreRowCard key={`${row.kind}-${row.ownerId}`} row={row} />)}
+            </section>
+          )}
+
           {mine.stores.some((row) => !row.isOwner) && (
             <section className="stack">
               <h2 className="ms-section">Teams you’re on</h2>
               {mine.stores.filter((row) => !row.isOwner).map((row) => <StoreRowCard key={`${row.kind}-${row.ownerId}`} row={row} />)}
             </section>
-          )}
-
-          {mine.stores.some((row) => row.isOwner) && (
-            <p className="faint svx-ownline">
-              Your own {mine.stores.filter((row) => row.isOwner).length === 1 ? 'business is' : 'businesses are'} in the switcher under your profile picture:{' '}
-              {mine.stores.filter((row) => row.isOwner).map((row, index) => (
-                <span key={`${row.kind}-${row.ownerId}`}>{index > 0 && ' · '}<Link to={`/services/store/${row.kind}/${row.ownerId}`}>{row.name}</Link></span>
-              ))}
-            </p>
           )}
 
           {/* Only for the people Figmark has appointed community managers. */}
@@ -644,14 +624,55 @@ export function MyServicesPage() {
         </div>
       )}
 
-      {asked.length > 0 && (
-        <section className="stack" style={{ marginTop: 22 }}>
-          <h2 className="ms-section"><Icon name="send" size={15} /> Requests you sent</h2>
-          {asked.map((row) => (
-            <RequestRowCard key={row.request.id} request={row.request} due={row.due} side="customer" actions={row.actions}
-              to={`/services/requests/${row.request.kind}/${row.request.ownerId}/${row.request.id}`} />
-          ))}
-        </section>
+    </main>
+  );
+}
+
+/* ── The supplier's workspace ─────────────────────────────────────────── */
+
+/**
+ * The lots shops have named this person on as their supplier.
+ *
+ * Pieces to pack and the buttons the route handed them, never the buyers or
+ * the prices: a supplier packs a crate, and what each piece sold for is
+ * between the shop and its customer.
+ */
+export function SupplierPage() {
+  const [rows, setRows] = useState<CrewRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.myServices()
+      .then((view) => setRows(view.crew.filter((row) => row.role === 'supplier')))
+      .catch((err: unknown) => setError(err instanceof ApiRequestError ? err.message : 'Could not load your lots.'));
+  }, []);
+
+  const waiting = (rows ?? []).filter((row) => row.toPress > 0).length;
+  return (
+    <main className="page tab-view">
+      <WorkSwitcher />
+      <div className="page__head">
+        <div>
+          <h1>To pack</h1>
+          <p className="muted">
+            Lots shops have named you on as their supplier. Counted in pieces — you pack the crate, the shop knows the buyers.
+            {rows && rows.length > 0 && (waiting > 0 ? ` ${waiting} waiting on you.` : ' All caught up.')}
+          </p>
+        </div>
+      </div>
+
+      {error && <ErrorNotice message={error} />}
+
+      {rows === null ? (
+        !error && <SkelCards n={2} h={120} mark={false} chips={3} />
+      ) : rows.length === 0 ? (
+        <EmptyState icon={<Icon name="box" size={26} />} title="Nothing to pack yet">
+          When a shop names you on a lot as its supplier it lands here, with the pieces to pack.
+        </EmptyState>
+      ) : (
+        <div className="stack">
+          {rows.map((row) => <CrewCard key={`${row.role}-${row.lot.id}`} row={row} />)}
+        </div>
       )}
     </main>
   );
@@ -803,10 +824,11 @@ export function DistributionPage() {
   }
 
   return (
-    <main className="page">
-      <BackLink to="/services/mine" title="To distribute" />
+    <main className="page tab-view">
+      <WorkSwitcher />
       <div className="page__head">
         <div>
+          <h1>To distribute</h1>
           <p className="muted">
             Lots named to you. Counted in customers — three orders for one customer is one
             job.

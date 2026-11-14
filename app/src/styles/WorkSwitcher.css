@@ -1,0 +1,73 @@
+/*
+ * The workspace switcher at the top of the Sell tab: your shop, the shops
+ * you help run, your forwarding and art stores, supplier and handler work,
+ * and the Community Service desk. Each workspace wears its kind's hue.
+ */
+.wsw { position: relative; margin: 0 0 var(--s3); z-index: 30; }
+
+.wsw--aqua { --wsw: var(--aqua); --wsw-soft: var(--aqua-soft); --wsw-line: var(--aqua-line); }
+.wsw--blue { --wsw: var(--blue-text); --wsw-soft: var(--blue-soft); --wsw-line: var(--blue-line); }
+.wsw--pink { --wsw: var(--pink-text); --wsw-soft: var(--pink-soft); --wsw-line: var(--pink-line); }
+.wsw--lime { --wsw: var(--lime); --wsw-soft: var(--lime-soft); --wsw-line: var(--lime-line); }
+.wsw--gold { --wsw: var(--gold); --wsw-soft: var(--warn-soft); --wsw-line: rgba(245, 158, 11, 0.42); }
+.wsw--violet { --wsw: var(--violet-text); --wsw-soft: var(--violet-soft); --wsw-line: var(--violet-line); }
+
+.wsw__btn {
+  display: flex; align-items: center; gap: 10px;
+  max-width: 100%; padding: 7px 12px 7px 7px;
+  border: 0; border-radius: var(--r-pill);
+  background: var(--surface); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--wsw-line);
+  font: inherit; text-align: left; cursor: pointer;
+  transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+}
+.wsw__btn:hover { box-shadow: inset 0 0 0 1px var(--wsw); }
+.wsw__btn:active { transform: scale(0.98); }
+.wsw__btn[aria-expanded='true'] .wsw__chev { transform: rotate(180deg); }
+
+.wsw__icon {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--wsw-soft); color: var(--wsw);
+}
+.wsw__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.wsw__kicker { font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsw__name { font-weight: var(--w-bold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsw__chev { flex: 0 0 auto; color: var(--text-dim); transition: transform var(--dur-2) var(--ease); }
+.wsw__ping, .wsw__count {
+  flex: 0 0 auto; min-width: 20px; height: 20px; padding: 0 6px;
+  display: grid; place-items: center; border-radius: var(--r-pill);
+  background: var(--coral); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+
+.wsw__menu {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  width: min(340px, calc(100vw - 32px));
+  padding: 6px; border-radius: var(--r-lg);
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border), var(--shadow);
+  transform-origin: top left;
+  animation: wsw-in 160ms var(--ease) both;
+}
+@keyframes wsw-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) { .wsw__menu { animation: none; } }
+
+.wsw__item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px; border-radius: var(--r-md);
+  color: inherit; text-decoration: none;
+}
+.wsw__item:hover, .wsw__item:focus-visible { background: var(--surface-hover); }
+.wsw__item.is-on { background: var(--wsw-soft); }
+.wsw__item .wsw__text { flex: 1 1 auto; }
+.wsw__tick { flex: 0 0 auto; color: var(--wsw); }
+
+.wsw__foot {
+  display: flex; gap: 4px; margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.wsw__more {
+  flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px; border-radius: var(--r-md);
+  color: var(--text-dim); font-size: var(--t-sm); text-decoration: none;
+}
+.wsw__more:hover { background: var(--surface-hover); color: var(--text); }
