@@ -1270,7 +1270,7 @@ async function stepDays(request: HttpRequest, _context: InvocationContext) {
   }
   return json(200, await shopDays(repository, sellerId));
 }
-const stepDaysRoute = handler(stepDays);
+export const stepDaysRoute = handler(stepDays);
 
 const anon = { authLevel: 'anonymous' } as const;
 app.http('step-days', { ...anon, methods: ['GET'], route: 'step-days', handler: stepDaysRoute });

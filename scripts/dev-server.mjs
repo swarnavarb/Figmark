@@ -110,7 +110,7 @@ const {
 const { costsRoute, saveCostSheetRoute, saveOrderCostsRoute, saveOrderCostsBatchRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
 const { customersRoute, customerRoute, messageGroupRoute, dataOverviewRoute } = await import(new URL('customer-routes.js', apiRoot));
 const {
-  listRoutesRoute, saveRouteRoute, deleteRouteRoute, applyRouteRoute, closeLotRoute,
+  listRoutesRoute, stepDaysRoute, saveRouteRoute, deleteRouteRoute, applyRouteRoute, closeLotRoute,
   lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, setLotRouteRoute,
   stepItemRoute, myItemsRoute,
 } = await import(new URL('tracking-routes.js', apiRoot));
@@ -495,6 +495,7 @@ const routes = [
   ['GET', '/api/me/customers/:buyerId', customerRoute],
   ['GET', '/api/me/data/overview', dataOverviewRoute],
   ['GET', '/api/routes', listRoutesRoute],
+  ['GET', '/api/step-days', stepDaysRoute],
   ['POST', '/api/routes/new', saveRouteRoute],
   ['POST', '/api/routes/:id/delete', deleteRouteRoute],
   ['POST', '/api/routes/:id/apply', applyRouteRoute],
