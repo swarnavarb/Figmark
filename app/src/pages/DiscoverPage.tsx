@@ -120,20 +120,16 @@ const flowItems = (cards: PostCard[], lap: number): FlowItem[] => cards.map((car
   lap,
 }));
 
-/** What the divider says where the stream starts going round again. */
-const lapNote = (lap: number) => (lap === 1 ? 'You are all caught up. Here are older favourites.' : 'Round again, in a new order.');
-
 /**
  * The one stream: the server's order, with a rail of finds after the first few
- * posts and every few after that, until the finds run out; a line where the
- * stream starts going round again. The people, hunt and spotted rails go in
+ * posts and every few after that, until the finds run out. Going round again with
+ * older favourites is seamless: no line marks it. The people, hunt and spotted rails go in
  * once each, a few entries down, so the first screen is still posts.
  */
 function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; wants: WantRow[]; spotted: SpottedItem[] }): Entry[] {
   const queue = [...finds];
   const out: Entry[] = [];
   items.forEach((item, index) => {
-    if (item.lap > (items[index - 1]?.lap ?? 0)) out.push({ kind: 'divider', key: `lap${item.lap}`, text: lapNote(item.lap) });
     out.push({ kind: 'post', key: item.key, card: item.card });
     const count = index + 1;
     if ((count === FIRST_RAIL_AT || count % RAIL_EVERY === 0) && queue.length) out.push({ kind: 'rail', finds: queue.splice(0, RAIL) });
