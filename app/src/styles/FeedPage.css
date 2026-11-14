@@ -407,16 +407,25 @@
 
 /* ── Today's pick, once flipped: one line ───────────────────────────────── */
 .qdropline {
-  display: flex; align-items: center; gap: var(--s2); min-width: 0; margin: 0 0 var(--s3); padding: 10px var(--s3);
+  display: flex; align-items: center; gap: var(--s1); min-width: 0; margin: 0 0 var(--s3); padding: 4px 4px 4px var(--s3);
   border: 1px solid color-mix(in srgb, var(--q-gold) 45%, transparent); border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--q-gold) 8%, var(--surface)); color: var(--text); text-decoration: none;
-  font-size: var(--t-sm);
+  background: color-mix(in srgb, var(--q-gold) 8%, var(--surface));
+}
+.qdropline__link {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 6px 0;
+  color: var(--text); text-decoration: none; font-size: var(--t-sm);
 }
 .qdropline__mark { flex: none; color: var(--q-gold); display: grid; place-items: center; }
 .qdropline__label { flex: none; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--q-gold); }
 .qdropline__title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qdropline__price { flex: none; font-variant-numeric: tabular-nums; }
-.qdropline__go { flex: none; color: var(--text-faint); transform: rotate(-90deg); }
+.qdropline__toggle, .qdrop__fold {
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; cursor: pointer;
+  border: 0; border-radius: var(--r-sm); background: transparent; color: var(--q-gold);
+}
+.qdropline__toggle:hover, .qdrop__fold:hover { background: color-mix(in srgb, var(--q-gold) 16%, transparent); }
+/* The card's own arrow points up: it folds the card back into its line. */
+.qdrop__fold { position: absolute; top: 6px; right: 6px; transform: rotate(180deg); }
 
 /* ── Filters: Sort, one button for the rest, chips for what is on ───────── */
 .filters__open {
@@ -489,3 +498,5 @@
   -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
   mask-image: linear-gradient(90deg, #000 85%, transparent);
 }
+/* Room on the right of the open card for its fold arrow. */
+.qdrop.is-revealed .qdrop__body { padding-right: 34px; }

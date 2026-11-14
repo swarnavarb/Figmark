@@ -1681,7 +1681,8 @@ summary::-webkit-details-marker { display: none; }
   /* Glass, as the header is once scrolled: the page passes underneath as a
      blurred hint of movement. The blur is the bar's backdrop only - the tabs
      and the pill sit on top of it, sharp. */
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  /* 90% see-through: a tenth of the surface colour over the blurred page. */
+  background: color-mix(in srgb, var(--surface) 10%, transparent);
   backdrop-filter: blur(24px) saturate(1.6);
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
   border: 1px solid var(--border);

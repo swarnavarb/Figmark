@@ -655,6 +655,10 @@ function QuestBar() {
 function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
   const { view, act } = useQuest();
   const [busy, setBusy] = useState(false);
+  // Whether the flipped card is open in full; folded to a line unless opened.
+  const [open, setOpen] = useState(false);
+  const foldTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(foldTimer.current), []);
 
   const pick = useMemo(() => {
     const pool = ['legendary', 'epic'].map((tier) => listings.filter((listing) => listing.rarity.tier === tier))
@@ -667,23 +671,32 @@ function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
   if (!pick) return null;
   const revealed = Boolean(view?.dailyRevealed);
 
-  // Flipped already: the reveal has had its moment, so it is one line, not a stage.
-  if (revealed) {
+  // Flipped: one line, with an arrow to open the card again. Just flipped here,
+  // the card finishes turning over before it folds away.
+  if (revealed && !open) {
     return (
-      <Link to={`/listing/${pick.id}`} className="qdropline">
-        <span className="qdropline__mark" aria-hidden="true"><Glyph name="star" size={13} /></span>
-        <span className="qdropline__label">Today&rsquo;s pick</span>
-        <span className="qdropline__title">{pick.title}</span>
-        <b className="qdropline__price">{formatMoney(pick.priceMinor, pick.currency)}</b>
-        <Icon name="chevron" size={14} className="qdropline__go" />
-      </Link>
+      <div className="qdropline">
+        <Link to={`/listing/${pick.id}`} className="qdropline__link">
+          <span className="qdropline__mark" aria-hidden="true"><Glyph name="star" size={13} /></span>
+          <span className="qdropline__label">Today&rsquo;s pick</span>
+          <span className="qdropline__title">{pick.title}</span>
+          <b className="qdropline__price">{formatMoney(pick.priceMinor, pick.currency)}</b>
+        </Link>
+        <button type="button" className="qdropline__toggle" aria-expanded="false" aria-label="Show today's pick in full"
+          onClick={() => setOpen(true)}>
+          <Icon name="chevron" size={16} />
+        </button>
+      </div>
     );
   }
 
   async function reveal() {
     setBusy(true);
+    // Open while it turns over, then folded into its line.
+    setOpen(true);
     await act(api.questReveal, 'Loot revealed');
     setBusy(false);
+    foldTimer.current = window.setTimeout(() => setOpen(false), FLIP_MS + 1200);
   }
 
   return (
@@ -711,6 +724,10 @@ function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
               {pick.rarity.reasons[0] && ` · ${pick.rarity.reasons[0]}`}
             </p>
             <Link className="btn btn--sm qbtn-gold" to={`/listing/${pick.id}`}>See it</Link>
+            <button type="button" className="qdrop__fold" aria-expanded="true" aria-label="Show today's pick as one line"
+              onClick={() => { window.clearTimeout(foldTimer.current); setOpen(false); }}>
+              <Icon name="chevron" size={16} />
+            </button>
           </>
         ) : (
           <>
@@ -915,6 +932,9 @@ function countdown(hours: number): string {
   if (hours < 24) return `${Math.floor(hours)}h ${Math.floor((hours % 1) * 60)}m`;
   return `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h`;
 }
+
+/** How long the daily card takes to turn over (the flip's transition in styles.css). */
+const FLIP_MS = 700;
 
 /** Time until the India day turns, when the drop and the dailies reset. */
 function untilMidnight(now: number): string {
