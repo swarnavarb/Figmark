@@ -38,7 +38,7 @@ import { ConditionTag } from '../components/ConditionTag';
 import { PageSkeleton, SkelCards, SkelInline, SkelRows } from '../components/PageSkeletons';
 import { Select } from '../components/Select';
 import { DaysChip, useShopDays } from '../components/StepDays';
-import { daysLeftOfDelivery, daysLeftRange, rangeForStep } from '@shared/step-days';
+import { daysLeftRange, rangeForStep } from '@shared/step-days';
 
 /**
  * Who moves this lot, and how to reach them.
@@ -1152,13 +1152,7 @@ export function LotDetail({ lotId, onBack, customers }: {
   const usualDays = lotStep >= 0 ? rangeForStep(shopDays?.steps, route.steps[route.currentStep]?.name ?? '') : null;
   // Late only past the top of the usual range: the bottom of it is not a promise.
   const late = !lotIsDone(lot) && usualDays !== null && daysOnStep !== null && daysOnStep > usualDays.high;
-  /* Until every step still to come has been measured: the whole delivery's
-     usual range, counted from the first order in the lot. */
-  const firstOrderAt = data.orders.map((order) => order.placedAt ?? order.createdAt).filter(Boolean).sort()[0] ?? null;
-  const daysLeft = lotStep >= 0 && !lotIsDone(lot)
-    ? daysLeftRange(route.steps, route.currentStep, shopDays?.steps, daysOnStep ?? 0)
-      ?? daysLeftOfDelivery(firstOrderAt, shopDays?.delivery.import)
-    : null;
+  const daysLeft = lotStep >= 0 && !lotIsDone(lot) ? daysLeftRange(route.steps, route.currentStep, shopDays?.steps, daysOnStep ?? 0) : null;
   /* Who to ring about the step the lot is on: the forwarder while it is in
      their hands (a step handed to them, or any step before it lands), the
      handler once it is with them at the destination. */

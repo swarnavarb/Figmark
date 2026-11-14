@@ -32,7 +32,7 @@ import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus }
 import { ShareTracking } from '../components/ShareTracking';
 import { DirectTrack, TrackHero, endedOf, stepEmoji, withLastMile } from '../components/OrderTrack';
 import { DaysChip, useShopDays } from '../components/StepDays';
-import { daysLeftOfDelivery, daysLeftRange } from '@shared/step-days';
+import { daysLeftRange } from '@shared/step-days';
 import { useStepActs } from '../components/StepActs';
 import { ItemCard, PriceChangeNote, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
@@ -271,8 +271,7 @@ export function OrderPage() {
                     <span style={{ display: 'block', marginTop: 6 }}><LotPhaseBadge phase={data.route.lotPhase} /></span>
                   )}
                   {!endedOf(order) && order.status !== 'delivered' && (() => {
-                    const left = daysLeftRange(lotTrack!.steps, Math.max(0, lotAt), shopDays?.steps)
-                      ?? daysLeftOfDelivery(order.placedAt ?? order.createdAt, shopDays?.delivery.import);
+                    const left = daysLeftRange(lotTrack!.steps, Math.max(0, lotAt), shopDays?.steps);
                     return left && left.high > 0
                       ? <span style={{ display: 'block', marginTop: 6 }}><DaysChip range={{ ...left, low: Math.max(1, left.low) }} lead="About" /> to go</span>
                       : null;
@@ -323,15 +322,7 @@ export function OrderPage() {
             ) : (
               <TrackHero icon={endedOf(order) ? '🚫' : '⏳'}
                 now={endedOf(order)?.label ?? data.preLot.steps[data.preLot.currentStep]?.name ?? 'Ordered'}
-                sub={<>
-                  Not in a shipment lot yet — the rest of the journey appears once it is.
-                  {!endedOf(order) && (() => {
-                    const left = daysLeftOfDelivery(order.placedAt ?? order.createdAt, shopDays?.delivery.import);
-                    return left
-                      ? <span style={{ display: 'block', marginTop: 6 }}><DaysChip range={left} lead="About" /> to go</span>
-                      : null;
-                  })()}
-                </>}
+                sub="Not in a shipment lot yet — the rest of the journey appears once it is."
                 done={data.preLot.currentStep + 1} total={preTrack.steps.length + 1}>
                 <div className="trk__ladder">
                   <Ladder brief vars={places} steps={preTrack.steps} current={data.preLot.currentStep}
