@@ -151,6 +151,7 @@ function useNearScreen(onReach: (() => void) | null) {
  */
 function FollowingFeed() {
   const { voice } = useVoice();
+  const { user } = useSession();
   const as = voice.storeId;
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [next, setNext] = useState<string | null>(null);
@@ -282,11 +283,16 @@ function FollowingFeed() {
   // server sends, a room message is not drawn here.
   const shown = filter === 'saved' ? saved ?? [] : (posts ?? []).filter((card) => !inRoomOnly(card));
   const entries = foldRuns(shown);
-  // The line goes above the first post already seen, when something above it is new.
-  const caughtUpAt = filter === 'all' && lastVisit
+  // The line goes above the first post already seen, when something above it
+  // is new - new to this reader: an older post lifted by a friend taking part,
+  // or what they just posted themselves, is not news.
+  const seenAt = filter === 'all' && lastVisit
     ? entries.findIndex((entry, index) => index > 0 && entry.kind === 'post' && !entry.card.badges?.length
       && entry.card.post.createdAt <= lastVisit)
     : -1;
+  const isNews = (card: PostCard) => Boolean(lastVisit) && card.post.createdAt > lastVisit! && card.post.authorId !== user?.id;
+  const caughtUpAt = seenAt > 0 && entries.slice(0, seenAt)
+    .some((entry) => (entry.kind === 'post' ? [entry.card] : entry.cards).some(isNews)) ? seenAt : -1;
   const remove = (id: string) => setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null);
   const repost = (card: PostCard) => setPosts((all) => [card, ...(all ?? [])]);
   const done = filter === 'all' && posts !== null && posts.length > 0 && !next;
@@ -326,7 +332,7 @@ function FollowingFeed() {
             Follow a few and it fills up.
             <span className="feed__empty-go">
               <Link to="/discover" className="btn btn--sm">Find people in Discover</Link>
-              <Link to="/social?view=forums" className="btn btn--quiet btn--sm">Browse groups</Link>
+              <Link to="/social?view=forums" className="btn btn--quiet btn--sm">Browse forums</Link>
             </span>
           </EmptyState>
           <FollowSuggestions title="Start with these" onFollowed={() => void load()} />
@@ -453,19 +459,21 @@ function PostRun({ cards, drops, onRemoved, onReposted }: {
   if (open) {
     return <>{cards.map((card) => <SocialPostCard key={card.post.id} card={card} onRemoved={onRemoved} onReposted={onReposted} />)}</>;
   }
+  const photos = rest.slice(0, 4).flatMap((card) => {
+    const photo = thumbOf(card);
+    return photo ? [{ id: card.post.id, photo }] : [];
+  });
   const noun = drops ? (rest.length === 1 ? 'item' : 'items') : (rest.length === 1 ? 'post' : 'posts');
   return (
     <div className="dropbatch">
       <SocialPostCard card={first!} onRemoved={onRemoved} onReposted={onReposted} />
       <button type="button" className="dropbatch__more" onClick={() => setOpen(true)}>
-        <span className="dropbatch__thumbs" aria-hidden="true">
-          {rest.slice(0, 4).map((card) => {
-            const photo = thumbOf(card);
-            return photo
-              ? <img key={card.post.id} src={photo} alt="" loading="lazy" />
-              : <span key={card.post.id} className="dropbatch__blank" />;
-          })}
-        </span>
+        {/* Only real photos: a row of empty squares reads as something broken. */}
+        {photos.length > 0 && (
+          <span className="dropbatch__thumbs" aria-hidden="true">
+            {photos.map(({ id, photo }) => <img key={id} src={photo} alt="" loading="lazy" />)}
+          </span>
+        )}
         <span>
           <strong>{first!.author.name}</strong> posted {rest.length} more {noun}
         </span>

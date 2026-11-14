@@ -186,7 +186,7 @@
 .dropbatch__more > span:nth-child(2) { flex: 1 1 auto; }
 .dropbatch__more strong { color: var(--text); }
 .dropbatch__thumbs { display: flex; }
-.dropbatch__thumbs img, .dropbatch__blank {
+.dropbatch__thumbs img {
   width: 30px; height: 30px; border-radius: var(--r-sm); object-fit: cover;
   border: 2px solid var(--surface); margin-left: -8px; background: var(--surface-2);
 }

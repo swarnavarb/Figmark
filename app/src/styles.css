@@ -5258,16 +5258,6 @@ body.is-locked { overflow: hidden; }
   transform: skewX(-9deg); transform-origin: left bottom;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
 }
-.soctop__live {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px var(--s2) 2px 6px; border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.22);
-  font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
-}
-.soctop__live::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--sx-volt);
-  animation: live-dot 1.8s ease-out infinite;
-}
 .soctop__tools { display: flex; align-items: center; gap: var(--s2); margin-left: auto; }
 .soctop__icon, .soccompact__search {
   display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto;
@@ -5285,10 +5275,9 @@ body.is-locked { overflow: hidden; }
 .soctop .bell__panel { top: calc(env(safe-area-inset-top, 0px) + 60px); color: var(--text); }
 .soctop .pmenu__btn { background: #fff; }
 .soctop .pmenu__panel { color: var(--text); }
-/* A narrow phone has room for the title and the four buttons, not the Live tag too. */
+/* A narrow phone: the title and the four buttons, a little closer together. */
 @media (max-width: 360px) {
   .soctop__bar { gap: var(--s2); }
-  .soctop__live { display: none; }
   .soctop__tools { gap: 6px; }
 }
 
@@ -5633,7 +5622,6 @@ body.is-locked { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .soctop { animation: none; }
   .soccompact, .socsearch, .forumcard, .wanted .wantcard { transition: none; animation: none; }
-  .soctop__live::before { animation: none; }
 }
 
 /* All five sections in one row on a phone: icon over word, equal widths, so
@@ -5649,7 +5637,8 @@ body.is-locked { overflow: hidden; }
 .soctop__tabs .soctab > span:not(.soctab__badge) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (min-width: 720px) {
-  .soctop__tabs { max-width: 640px; }
+  .soctop__in, .soccompact__in { max-width: calc(640px + 2 * var(--page-pad)); }
+  .socialtab .wanted, .socialtab .forums { max-width: 640px; width: 100%; margin-inline: auto; }
   .soctop__tabs .soctab { flex-direction: row; font-size: var(--t-sm); padding: 10px var(--s2); }
 }
 .soccompact .soctab__badge { min-width: 16px; height: 16px; line-height: 16px; font-size: var(--t-2xs); }

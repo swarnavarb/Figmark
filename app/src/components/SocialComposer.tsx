@@ -184,15 +184,16 @@ export function Composer({ onPosted, forum = null }: {
 
   const tools = (
     <div className="writer__tools">
-      <button type="button" className="writer__tool writer__tool--photo"
+      <button type="button" className="writer__tool writer__tool--photo" aria-label="Add a photo" title="Photo"
         disabled={photos.length >= POST_MAX_PHOTOS}
         onClick={() => (open ? picker.current?.click() : expand(() => picker.current?.click()))}>
         <Icon name="image" size={18} /> <span>Photo</span>
       </button>
-      <button type="button" className="writer__tool writer__tool--poll" onClick={() => setPolling(true)}>
+      <button type="button" className="writer__tool writer__tool--poll" aria-label="Make a poll" title="Poll" onClick={() => setPolling(true)}>
         <Icon name="poll" size={18} /> <span>Poll</span>
       </button>
       <button type="button" className={`writer__tool writer__tool--vibe${vibe ? ' is-on' : ''}`}
+        aria-label="Colour background" aria-pressed={Boolean(vibe)} title="Colour"
         onClick={() => {
           if (!open) expand();
           if (vibe) {
@@ -206,6 +207,7 @@ export function Composer({ onPosted, forum = null }: {
       </button>
       {voice.storeId && !voice.storeId.includes(':') && (
         <button type="button" className={`writer__tool writer__tool--item${item || picking ? ' is-on' : ''}`}
+          aria-label="Attach an item for sale" title="Item"
           onClick={() => {
             if (!open) expand();
             setVibe(null);
@@ -217,6 +219,7 @@ export function Composer({ onPosted, forum = null }: {
       )}
       {!forum && !voice.storeId && (
         <button type="button" className={`writer__tool writer__tool--forum${target || choosingForum ? ' is-on' : ''}`}
+          aria-label="Post into a forum" title="Forum"
           onClick={() => {
             if (!open) expand();
             if (choosingForum) setChoosingForum(false);
