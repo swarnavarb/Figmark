@@ -32,7 +32,7 @@ import { Avatar, ErrorNotice, Icon, Modal, type IconName } from '../components/u
 import { ItemHead } from '../components/ItemHead';
 import { InfoTip } from '../components/InfoTip';
 import { endedOf } from '../components/OrderTrack';
-import { RouteStudio, routeStepsFrom } from './RouteStudioPage';
+import { RouteStudio } from './RouteStudioPage';
 import { ForwarderBooking } from '../components/ForwarderBooking';
 import { formatDate, formatMoney, formatWeight } from '../format';
 import { ConditionTag } from '../components/ConditionTag';
@@ -339,16 +339,13 @@ export function RouteSheet({ onSaved, onClose }: {
   );
 }
 
-/** Marks a ready-made route in the picker, as against one the shop has saved. */
-const READY = 'ready:';
-
 /**
  * Open a lot.
  *
  * Two cards, in the order a shop thinks of a shipment: the lot itself - its
  * name and the lane it ships on - and the people who work it at each part of
  * the journey. Then the route it travels, added from the shop's own routes
- * or written fresh on the Route Studio page.
+ * or written fresh on the Route Studio page. Samples live in the Studio, not here.
  *
  * Writing a route leaves this screen rather than covering it, so everything
  * typed here is kept as a draft and comes back, with the new route already
@@ -416,13 +413,8 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
   /* A route with nothing in its lot lane is for items shipped one by one; a
      lot put on it would have nothing of its own to move. */
   const routes = (library?.routes ?? []).filter(routeJoinsLot);
-  /* A shop with no route of its own yet picks from ready-made ones, saved as
-     its own the moment the lot opens. */
-  const readyMade = routes.length > 0 ? [] : [...(library?.routeTemplates ?? []), ...(library?.presets ?? [])]
-    .filter(routeJoinsLot);
   const vars = { origin: details.originCountry, destination: details.destinationCountry };
-  const picked = routes.find((route) => route.id === routeId)
-    ?? readyMade.find((route) => `${READY}${route.id}` === routeId) ?? null;
+  const picked = routes.find((route) => route.id === routeId) ?? null;
 
   /** Keep what is typed, and write the route on its own page. */
   function createRoute() {
@@ -433,7 +425,7 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
       forwarderName,
       supplierHandle,
       handlerHandle,
-      routeId: routeId.startsWith(READY) ? '' : routeId,
+      routeId,
       returnTo: `${location.pathname}${location.search}`,
     });
     navigate('/routes/studio/new?for=lot');
@@ -464,19 +456,13 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
     setBusy(true);
     setError(null);
     try {
-      // A ready-made route becomes the shop's own first, so the lot - and
-      // every lot after - can be pointed at it.
-      const template = routeId.startsWith(READY) ? readyMade.find((row) => `${READY}${row.id}` === routeId) : null;
-      const chosen = template
-        ? (await api.saveRoute({ name: template.name, steps: routeStepsFrom(template.steps) })).route.id
-        : routeId;
       const { lot } = await api.createLot({
         ...details,
         name: details.name.trim(),
         forwarderName: forwarderName.trim() || undefined,
         supplierHandle: supplierHandle.trim() || undefined,
         handlerHandle: handlerHandle.trim() || undefined,
-        routeId: chosen,
+        routeId,
       });
       clearLotDraft();
       onDone(lot);
@@ -487,16 +473,15 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
     }
   }
 
-  const pickRow = (id: string, route: { name: string; steps: readonly RouteStep[]; blurb?: string }, mine: boolean) => (
+  const pickRow = (id: string, route: { name: string; steps: readonly RouteStep[] }) => (
     <label key={id} className={`pick${routeId === id ? ' is-on' : ''}`}>
       <input type="radio" name="route" checked={routeId === id}
         onChange={() => { setRouteId(id); setPicking(false); setError(null); }} />
       <span className="pick__body">
         <span className="pick__name">
           {route.name}
-          {mine && id === lastRouteId && <span className="badge badge--quiet" style={{ marginLeft: 6 }}>Used on your last lot</span>}
+          {id === lastRouteId && <span className="badge badge--quiet" style={{ marginLeft: 6 }}>Used on your last lot</span>}
         </span>
-        {route.blurb && <span className="pick__note">{route.blurb}</span>}
         <span className="pick__steps">{summarise(route.steps, vars)}</span>
       </span>
     </label>
@@ -580,9 +565,7 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
 
         {library && picking && (
           <>
-            {routes.map((route) => pickRow(route.id, route, true))}
-            {readyMade.length > 0 && <span className="rsgroup__hint">Samples</span>}
-            {readyMade.map((route) => pickRow(`${READY}${route.id}`, route, false))}
+            {routes.map((route) => pickRow(route.id, route))}
             <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={createRoute}>
               <Icon name="plus" size={14} /> Create a new route
             </button>

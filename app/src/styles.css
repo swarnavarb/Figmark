@@ -10060,7 +10060,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* A labelled field: in an open route step, and on the new-lot cards. */
 .rsfield { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
 .rsfield > span, .rsbtn__label, .rsbtn__wholabel { font-size: var(--t-xs); color: var(--text-dim); }
-.rsfield input, .rsbtn__words {
+.rsfield input:not(.fmselect__required), .rsbtn__words {
   width: 100%; min-width: 0; height: 40px; padding: 0 var(--s3); border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-sm);
 }

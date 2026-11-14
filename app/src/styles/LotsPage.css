@@ -161,7 +161,6 @@
 .fb-offer.is-on { color: var(--ok); }
 .fb-confirm { display: grid; gap: 10px; padding: 14px; border-radius: var(--r-md); background: var(--sk-soft, var(--accent-soft)); font-size: var(--t-sm); }
 .fb { gap: 14px; }
-.pick__note { font-size: var(--t-xs); color: var(--text-dim); }
 @media (max-width: 520px) {
   .lotnav__tab { grid-auto-flow: row; gap: 2px; padding: 6px 2px; }
   .lotnav__label { font-size: var(--t-2xs); }
