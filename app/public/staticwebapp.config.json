@@ -63,6 +63,12 @@
     {
       "route": "/s/*",
       "rewrite": "/api/og"
+    },
+    {
+      "route": "/*",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
     }
   ],
   "globalHeaders": {
